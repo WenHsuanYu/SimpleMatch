@@ -39,3 +39,31 @@
 
 # debug information files
 *.dwo
+
+# Build output
+build/
+build-vcpkg/
+build-sanitize/
+build-vcpkg-sanitize/
+.gradle/
+
+# Local runtime config (do not commit secrets)
+config/simplematch.json
+
+# QuickFIX runtime artifacts (FileStoreFactory/FileLogFactory)
+data/fix/store/
+data/fix/log/
+data/fix/wal/
+
+# vcpkg installed packages (configured via VCPKG_INSTALLED_DIR)
+libs/vcpkg_installed/
+
+# clangd cache
+.cache/
+
+
+.vscode/
+
+compile_commands.json
+
+libs/
