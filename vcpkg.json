@@ -1,0 +1,16 @@
+{
+  "name": "simplematch",
+  "version-string": "0.1.0",
+  "description": "SimpleMatch monorepo (C++20) - dependencies managed via vcpkg (except vendored QuickFIX)",
+  "dependencies": [
+    "grpc",
+    "gtest",
+    "protobuf",
+    "nlohmann-json",
+    "librdkafka",
+    "libpqxx",
+    "hiredis",
+    "opentelemetry-cpp",
+    "prometheus-cpp"
+  ]
+}

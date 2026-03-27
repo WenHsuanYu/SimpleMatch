@@ -1,0 +1,41 @@
+{
+  "env": "dev",
+  "kafka": {
+    "brokers": "localhost:9092",
+    "topics": {
+      "ordersCommands": "orders.commands",
+      "ordersValidated": "orders.validated",
+      "matchingExecutions": "matching.executions",
+      "marketdataEvents": "marketdata.events",
+      "auditEvents": "audit.events"
+    },
+    "partitions": {
+      "ordersCommands": 15,
+      "ordersValidated": 15,
+      "matchingExecutions": 15
+    }
+  },
+  "postgres": {
+    "dsn": "postgresql://simplematch:simplematch@localhost:5432/simplematch"
+  },
+  "redis": {
+    "endpoints": ["localhost:6379"]
+  },
+  "grpc": {
+    "targets": {
+      "accountService": "dns:///account-service:50051"
+    }
+  },
+  "observability": {
+    "otel": {
+      "exporterOtlpEndpoint": "http://localhost:4318"
+    },
+    "prometheus": {
+      "port": 9464
+    }
+  },
+  "fixGateway": {
+    "quickfixConfigPath": "config/fix/acceptor.cfg",
+    "walPath": "data/fix/wal/inbound.wal"
+  }
+}

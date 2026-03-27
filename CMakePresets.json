@@ -1,0 +1,56 @@
+{
+  "version": 3,
+  "cmakeMinimumRequired": {
+    "major": 3,
+    "minor": 25,
+    "patch": 0
+  },
+  "configurePresets": [
+    {
+      "name": "vcpkg",
+      "displayName": "Dev (vcpkg, install to libs/)",
+      "generator": "Unix Makefiles",
+      "binaryDir": "${sourceDir}/build-vcpkg",
+      "cacheVariables": {
+        "CMAKE_BUILD_TYPE": "Debug",
+        "CMAKE_TOOLCHAIN_FILE": "$env{VCPKG_ROOT}/scripts/buildsystems/vcpkg.cmake",
+        "VCPKG_INSTALLED_DIR": "${sourceDir}/libs/vcpkg_installed"
+      }
+    },
+    {
+      "name": "vcpkg-sanitize",
+      "displayName": "Debug + Warnings + ASan/UBSan (vcpkg, install to libs/)",
+      "inherits": "vcpkg",
+      "binaryDir": "${sourceDir}/build-vcpkg-sanitize",
+      "cacheVariables": {
+        "SIMPLEMATCH_ENABLE_SANITIZERS": "ON"
+      }
+    }
+  ],
+  "buildPresets": [
+    {
+      "name": "vcpkg",
+      "configurePreset": "vcpkg"
+    },
+    {
+      "name": "vcpkg-sanitize",
+      "configurePreset": "vcpkg-sanitize"
+    }
+  ],
+  "testPresets": [
+    {
+      "name": "vcpkg",
+      "configurePreset": "vcpkg",
+      "output": {
+        "outputOnFailure": true
+      }
+    },
+    {
+      "name": "vcpkg-sanitize",
+      "configurePreset": "vcpkg-sanitize",
+      "output": {
+        "outputOnFailure": true
+      }
+    }
+  ]
+}
