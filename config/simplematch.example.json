@@ -34,7 +34,7 @@
       "port": 9464
     }
   },
-  "fixGateway": {
+  "quickfixGateway": {
     "quickfixConfigPath": "config/fix/acceptor.cfg",
     "walPath": "data/fix/wal/inbound.wal"
   }

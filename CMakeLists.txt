@@ -40,17 +40,5 @@ set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_CXX_EXTENSIONS OFF)
 
-find_package(Threads REQUIRED)
-
-# QuickFIX: this repo vendors headers + shared libs under libs/fix.
-add_library(QuickFIX::quickfix UNKNOWN IMPORTED)
-set_target_properties(QuickFIX::quickfix PROPERTIES
-  IMPORTED_LOCATION "${CMAKE_SOURCE_DIR}/libs/fix/lib/libquickfix.so"
-  INTERFACE_INCLUDE_DIRECTORIES "${CMAKE_SOURCE_DIR}/libs/fix/include"
-)
-
-add_subdirectory(services/fix-gateway)
-
-if(BUILD_TESTING)
-  add_subdirectory(tests)
-endif()
+# Native targets are intentionally absent right now.
+# Register future matching-engine or other native modules here when they land.

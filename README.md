@@ -1041,17 +1041,7 @@ QuickFIX 通常需要 session 設定與 FIX DataDictionary（FIX 版本 / custom
 └── CMakeLists.txt            # native build entry for matching-engine / native modules
 ```
 
-> 補充：目前 repo 仍暫時保留歷史 C++ `fix-gateway` 內容，但它已降級為 archived baseline。對外 FIX runtime 以 Java `quickfix-gateway` 為準；舊 C++ gateway 僅供 source archaeology 與移除前最終比對。
-
-### Legacy C++ Baseline Archive
-
-如果你要做 C++ `fix-gateway` 的最終移除，先看這三份封存文件：
-
-- `docs/quickfixj-replacement-plan.md`
-- `docs/fix-gateway-parity-table.md`
-- `services/fix-gateway/README.md`
-
-這些文件的用途是保留「舊 C++ gateway 實際曾經做到什麼」的歷史基準，不代表目前推薦的執行架構。
+> 補充：舊的 C++ FIX gateway 已自 repo 移除。對外 FIX runtime 以 Java `quickfix-gateway` 為準。
 
 ---
 

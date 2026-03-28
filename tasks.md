@@ -4,12 +4,12 @@
 >
 > 範圍假設：
 >
-> - 語言：C++20（依 README）
+> - 語言：polyglot（Java/Spring 為主；`matching-engine` 保留 C++20）
 > - Data plane：Kafka（at-least-once）+ 端到端冪等
 > - Control/Query plane：gRPC unary / streaming（明確 deadline / retry / breaker）
 > - System-of-record：PostgreSQL（含 outbox / processed_events）
 > - Read model：Redis（**Redis-first 查詢首選**；屬可重建 projection，權威仍在 DB/`account-service`）
-> - 對外：QuickFIX（C++，FIX 4.4，fix-gateway 作為 Acceptor）、gRPC streaming（marketdata-streamer）
+> - 對外：QuickFix/J（Java，FIX 4.4，`quickfix-gateway` 作為 Acceptor）、gRPC streaming（marketdata-streamer）
 > - Observability：OpenTelemetry + Prometheus + Grafana + Alertmanager
 >
 
@@ -143,7 +143,7 @@
 
 ## 4) 服務任務拆解（按微服務）
 
-## 4.1 `fix-gateway`（QuickFIX/C++，FIX 4.4，Acceptor）
+## 4.1 `quickfix-gateway`（QuickFix/J + Java/Spring，FIX 4.4，Acceptor）
 
 ### 4.1.1 FIX session / transport
 
@@ -201,7 +201,7 @@
 
 - [ ] `/healthz` `/readyz` `/metrics`
 
-### 4.1.8 （選用）`fix-gateway` ↔ `account-service`（session 身分/權限映射）
+### 4.1.8 （選用）`quickfix-gateway` ↔ `account-service`（session 身分/權限映射）
 
 > 對齊 README：此連線用途是 FIX session 身分 ↔ `account_id` 映射、帳戶/權限驗證。
 > 建議僅用於 session 建立/定期刷新，避免進入每筆下單的極短 ACK 路徑。
@@ -417,7 +417,7 @@
 
 ## 5) Debezium / CDC（Outbox 發佈）
 
-- [ ] Debezium connector for each outbox-owning service DB（fix-gateway, risk-service, matching-engine 等）
+- [ ] Debezium connector for each outbox-owning service DB（quickfix-gateway, risk-service, matching-engine 等）
 - [ ] topic routing：outbox.topic 欄位 → Kafka topic
 - [ ] at-least-once 期望：consumer 冪等必做
 - [ ] 監控：connector lag、error rate
