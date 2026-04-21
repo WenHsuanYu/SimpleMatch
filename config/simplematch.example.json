@@ -23,7 +23,8 @@
   },
   "grpc": {
     "targets": {
-      "accountService": "dns:///account-service:50051"
+      "accountService": "dns:///account-service:50051",
+      "riskService": "dns:///risk-service:50052"
     }
   },
   "observability": {
@@ -36,6 +37,17 @@
   },
   "quickfixGateway": {
     "quickfixConfigPath": "config/fix/acceptor.cfg",
-    "walPath": "data/fix/wal/inbound.wal"
+    "walPath": "data/fix/wal/inbound.wal",
+    "riskClient": {
+      "deadlineMillis": 1500,
+      "retry": {
+        "maxAttempts": 2,
+        "backoffMillis": 50
+      },
+      "breaker": {
+        "consecutiveFailures": 3,
+        "openDurationMillis": 1000
+      }
+    }
   }
 }

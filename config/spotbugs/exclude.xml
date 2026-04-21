@@ -1,0 +1,46 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<FindBugsFilter>
+  <Match>
+    <Class name="~.*\.generated\..*"/>
+  </Match>
+  <Match>
+    <Bug pattern="EI_EXPOSE_REP,EI_EXPOSE_REP2"/>
+    <Class name="com.simplematch.config.LoadedSimpleMatchConfig"/>
+  </Match>
+  <Match>
+    <Bug pattern="EI_EXPOSE_REP,EI_EXPOSE_REP2"/>
+    <Class name="com.simplematch.config.SimpleMatchConfig"/>
+  </Match>
+  <Match>
+    <Bug pattern="EI_EXPOSE_REP,EI_EXPOSE_REP2"/>
+    <Class name="~com\.simplematch\.config\.SimpleMatchConfig\$.*"/>
+  </Match>
+  <Match>
+    <Bug pattern="EI_EXPOSE_REP,EI_EXPOSE_REP2"/>
+    <Class name="com.simplematch.accountservice.bootstrap.AccountServiceRuntime"/>
+  </Match>
+  <Match>
+    <Bug pattern="EI_EXPOSE_REP,EI_EXPOSE_REP2"/>
+    <Class name="com.simplematch.riskservice.bootstrap.RiskServiceRuntime"/>
+  </Match>
+  <Match>
+    <Bug pattern="EI_EXPOSE_REP,EI_EXPOSE_REP2"/>
+    <Class name="com.simplematch.riskservice.grpc.RiskGrpcService"/>
+  </Match>
+  <Match>
+    <Bug pattern="EI_EXPOSE_REP,EI_EXPOSE_REP2"/>
+    <Class name="com.simplematch.riskservice.store.PostgresSubmissionStore"/>
+  </Match>
+  <Match>
+    <Bug pattern="EI_EXPOSE_REP,EI_EXPOSE_REP2"/>
+    <Class name="com.simplematch.quickfixgateway.fix.InboundFixMessageHandler"/>
+  </Match>
+  <Match>
+    <Bug pattern="EI_EXPOSE_REP2"/>
+    <Class name="com.simplematch.quickfixgateway.kafka.KafkaOrdersCommandPublisher"/>
+  </Match>
+  <Match>
+    <Bug pattern="EI_EXPOSE_REP2"/>
+    <Class name="com.simplematch.quickfixgateway.wal.WalReplayService"/>
+  </Match>
+</FindBugsFilter>
