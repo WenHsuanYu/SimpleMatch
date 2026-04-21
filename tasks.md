@@ -63,7 +63,7 @@
   - [ ] `Db::BeginTx()` / `Tx::Commit()` / `Tx::Rollback()`
 - [ ] `libs/db`：Outbox DAO
   - [ ] `OutboxRepo::Insert(tx, event_id, topic, key, partition_opt, payload, headers_json)`
-  - [ ] outbox 為 append-only（只 INSERT）
+  - [ ] event payload row 以 INSERT 建立，供 Debezium CDC 從 PostgreSQL outbox 讀取並發布到 Kafka
 - [ ] `libs/db`：Idempotency / Processed events DAO
   - [ ] `ProcessedEventsRepo::TryMarkProcessed(tx, consumer_name, event_id)`（成功才繼續）
   - [ ] 或 `InboxRepo::Upsert(event_id, ...)`（依你 schema）
@@ -121,7 +121,7 @@
 
 ### 3.1 Topics 建立與設定
 
-- [ ] 建立 topics：`orders.commands`, `orders.validated`, `matching.executions`, `marketdata.events`, `audit.events`（README 資料流圖預設存在；可用 `ENABLE_AUDIT_EVENTS` 關閉）
+- [ ] 建立 topics：`orders.validated`, `matching.executions`, `marketdata.events`, `audit.events`（README 資料流圖預設存在；可用 `ENABLE_AUDIT_EVENTS` 關閉）
 - [ ] topic 設定（最小）：
   - [ ] `replication.factor=3`（若環境支援）
   - [ ] `min.insync.replicas=2`
@@ -135,7 +135,7 @@
 
 - [ ] `orders`（含 `source_session_id`, `client_order_id/ClOrdID` 的 UNIQUE）
 - [ ] `executions`（`UNIQUE(order_id, exec_id)`）
-- [ ] `outbox`（append-only；`event_id UNIQUE`）
+- [ ] `outbox`（append-only event row；`event_id UNIQUE`，供 Debezium CDC 讀取）
 - [ ] `processed_events`（`(consumer_name, event_id)` PK）
 - [ ] `symbol_routing`（symbol→shard/partition；可選但建議）
 
@@ -147,32 +147,30 @@
 
 ### 4.1.1 FIX session / transport
 
-- [ ] QuickFIX acceptor config：`config/fix/acceptor.cfg`
-  - [ ] 最小必要欄位（示意）：`BeginString=FIX.4.4`, `ConnectionType=acceptor`, `SenderCompID`, `TargetCompID`, `SocketAcceptPort`, `HeartBtInt`
-  - [ ] 啟用/管理 dictionary：`UseDataDictionary=Y`, `DataDictionary=fix-spec/FIX44.xml`
+- [x] QuickFIX acceptor config：`config/fix/acceptor.cfg`
+  - [x] 最小必要欄位（示意）：`BeginString=FIX.4.4`, `ConnectionType=acceptor`, `SenderCompID`, `TargetCompID`, `SocketAcceptPort`, `HeartBtInt`
+  - [x] 啟用/管理 dictionary：`UseDataDictionary=Y`, `DataDictionary=fix-spec/FIX44.xml`
 - [ ] 支援 logon/logout、heartbeat、sequence reset（依對手方需求）
 - [ ] inbound/outbound message persistence（為了 resend/合規稽核；最小可先落檔）
   - [ ] `MessageStoreFactory`：`FileStoreFactory`（起步）→ 需要時改 DB store
   - [ ] `LogFactory`：`FileLogFactory`
   - [ ] resend/重送驗證：斷線重連、`ResendRequest`、gap fill、`PossDupFlag`/`OrigSendingTime`
 
-### 4.1.2 入口 ACK（DB commit 版 / WAL 版）
+### 4.1.2 入口 ACK（risk-service persistence-first）
 
-- [ ] 設計選項旗標：`ACK_MODE = db_commit | wal`
-- [ ] `db_commit` 路徑：
-  - [ ] `PersistOrderAndOutbox(tx, ...)` 成功後才回覆 PendingNew/Accepted
-- [ ] `wal` 路徑：
-  - [ ] `WalAppender::Append(record)`
-  - [ ] flush 策略（per-record vs group-commit）
-  - [ ] WAL 落盤成功後回覆 PendingNew/Accepted
-  - [ ] WAL ingester：讀 WAL → 寫 DB + outbox（`orders.commands`）
-  - [ ] crash recovery：重啟時從 WAL 重放未入 outbox 的記錄
+- [x] 主路徑：gateway 以同步 gRPC 將請求送到 `risk-service`
+- [x] 第一個成功 FIX ack 僅在 `risk-service` transaction commit 成功後回覆 `PendingNew/Accepted`
+- [x] 若 `risk-service` 同步判定失敗，gateway 直接回 `Rejected`
+- [ ] 若保留 WAL：
+  - [x] `WalAppender::Append(record)` 作為本地恢復 / 稽核輔助
+  - [ ] 明確標記 WAL 不再是主 ack 錨點
+  - [ ] 規劃 crash recovery / diagnostics 使用方式，不與主提交語意混淆
 
 ### 4.1.3 FIX → Domain command
 
-- [ ] `FixParser::ParseNewOrderSingle()` → `OrderCommand{type=NEW}`
-- [ ] `FixParser::ParseCancelRequest()` → `OrderCommand{type=CANCEL}`
-- [ ] 正規化欄位：symbol、side、qty、price、order_type、tif
+- [x] `FixParser::ParseNewOrderSingle()` → `OrderCommand{type=NEW}`
+- [x] `FixParser::ParseCancelRequest()` → `OrderCommand{type=CANCEL}`
+- [x] 正規化欄位：symbol、side、qty、price、order_type、tif
 - [ ] 市價單保護價（若採用）：`ComputeProtectionLimitPx()`
 
 ### 4.1.4 去重（FIX + 業務層）
@@ -182,10 +180,14 @@
   - [ ] `DedupRepo::FindOrCreateByClOrdId(session, trading_day, cl_ord_id)`
   - [ ] 重送一致：若 payload 相同回同結果；不同回 reject
 
-### 4.1.5 產出 `orders.commands`
+### 4.1.5 同步送交 `risk-service`（主路徑）
 
-- [ ] Outbox event producer：`OutboxRepo::Insert(... topic=orders.commands ...)`
-- [ ] 事件 key/partition：依 `symbol_routing` 指派 partition（若啟用）
+- [x] gRPC client：`RiskService::SubmitOrder()` / `CancelOrder()`
+- [x] request 內必須帶穩定冪等鍵：`client_order_id` / `ClOrdID`
+- [x] bounded retry：僅限暫態 transport 錯誤，且重試時必須沿用同一 idempotency key
+- [x] deadline / breaker / connection reuse 落地
+  - [x] deadline / connection reuse 已落地（blocking stub deadline + shared managed channel）
+  - [x] breaker 已落地（consecutive-failure open + cooldown half-open probe）
 
 ### 4.1.6 消費 `matching.executions` → FIX 回報
 
@@ -215,14 +217,19 @@
 
 ## 4.2 `risk-service`
 
-### 4.2.1 Kafka consumer：`orders.commands`
+### 4.2.1 gRPC server：primary ingress
 
-- [ ] 反序列化 `OrderCommand`
-- [ ] Idempotency：`ProcessedEventsRepo::TryMarkProcessed(consumer=risk, event_id/command_id)`
+- [x] 定義 `SubmitOrder` / `CancelOrder` gRPC API
+- [x] request 需攜帶 `client_order_id` / `ClOrdID`、`order_id`、必要 FIX 正規化欄位
+- [x] 同步回覆語意：只有在本地 transaction commit 成功後才回成功
+- [x] 唯一鍵冪等：相同 key 重送時回同一筆結果，不可重複建立訂單
+  - [x] PostgreSQL 唯一鍵 / transaction 版已完成
 
 ### 4.2.2 規則檢核
 
 - [ ] 基本格式、交易時段、symbol 合法
+  - [x] 基本必填格式檢核已落地
+  - [ ] 交易時段 / symbol registry 驗證尚未完成
 - [ ] 支援 LIMIT/MARKET × ROD/IOC/FOK（規則不合法直接 rejected）
 - [ ] 市價單保護價規則（若採用）
 
@@ -234,12 +241,17 @@
 
 ### 4.2.4 產出 `orders.validated` / `orders.rejected`
 
-- [ ] Outbox pattern：決策落 DB（可選）+ outbox insert → Debezium
-- [ ] Kafka key/partition：與 commands 同套路由（symbol）
+- [x] Outbox pattern：同步請求先完成本地 transaction，並寫入待發布事件到 outbox
+  - [x] `risk-service` service code 已切換為 Debezium CDC 導向：服務內只寫 append-only outbox，不再 app 內 publish
+  - [x] 清理 app 內 built-in relay 與其專屬 publish / lease state
+  - [x] 補正式 versioned PostgreSQL migration，既有 schema 明確移除 relay 專屬欄位
+- [x] Kafka key/partition：與 commands 同套路由（symbol）
 
 ### 4.2.5 endpoints
 
 - [ ] `/healthz` `/readyz` `/metrics`
+  - [x] `application.yaml` 已開 management exposure，服務 smoke test 已補上
+  - [ ] 自訂 `/healthz` `/readyz` alias 尚未補
 
 ---
 
@@ -264,11 +276,9 @@
 
 ### 4.3.3 撮合結果 durability / publish
 
-- [ ] A) Outbox+CDC（建議）
-  - [ ] 撮合結果寫入本地 journal 或 DB
-  - [ ] 同 tx outbox insert（topic=matching.executions）
-- [ ] B) 輕量直寫 Kafka（可選）
-  - [ ] producer acks=all + idempotent
+- [ ] 本地 WAL：`MatchResult` / 成交結果先強制落盤
+- [ ] WAL loader / ingester：以單一 PostgreSQL transaction 寫入成交結果 + outbox（topic=`matching.executions`）
+- [ ] Debezium CDC：由 PostgreSQL logical decoding / WAL 將 `matching.executions` 發布到 Kafka
 
 ### 4.3.4 主備接手（進階，可後做）
 
@@ -305,13 +315,13 @@
 - [ ] value 內附上投影水位（例如 `last_event_ts` 或 `topic/partition/offset`）方便 debug
 - [ ] 設計重建流程：可從 `matching.executions` replay 重建 Redis
 
-### 4.4.4 （可選，但 README 圖上預設存在）產出 `audit.events`
+### 4.4.4 產出 `audit.events`
 
 > 若你要把 `persistence` 做成「落地 + 稽核事件流輸出」的服務（README 的資料流圖是這個預設），就需要能穩定產生 `audit.events`。
 
 - [ ] 定義 `AuditEvent` schema（可先用 `proto/audit.proto`，或沿用既有 `ExecutionEvent` 加 audit metadata）
 - [ ] 從 `matching.executions` 映射產生 `AuditEvent`（例如：原事件摘要 + 落地後的 DB 主鍵/水位）
-- [ ] 可靠性：若 `audit.events` 開啟，使用 outbox（同 DB tx 內 insert outbox）→ Debezium → Kafka
+- [ ] 可靠性：若 `audit.events` 開啟，使用 outbox（同 DB tx 內 insert outbox）→ Debezium CDC → Kafka
 - [ ] 去重鍵：`audit_event_id`（可沿用上游 `event_id` 或 `exec_id` 衍生）
 - [ ] feature flag：`ENABLE_AUDIT_EVENTS=true|false`（MVP 可先關閉）
 
@@ -415,9 +425,11 @@
 
 ---
 
-## 5) Debezium / CDC（Outbox 發佈）
+## 5) Debezium / CDC（主線 Outbox 發佈）
 
-- [ ] Debezium connector for each outbox-owning service DB（quickfix-gateway, risk-service, matching-engine 等）
+- [ ] `risk-service`：配置 Debezium connector，將 PostgreSQL outbox 變更發布到 Kafka
+- [ ] `matching-engine`：配置 Debezium connector，將 PostgreSQL outbox 變更發布到 Kafka
+- [ ] 若 `persistence` 後續產生 `audit.events`，再為其 outbox DB 配置 Debezium connector
 - [ ] topic routing：outbox.topic 欄位 → Kafka topic
 - [ ] at-least-once 期望：consumer 冪等必做
 - [ ] 監控：connector lag、error rate
@@ -444,6 +456,10 @@
 
 ## 7) CI（GitHub Actions + kind）Smoke test
 
+- [x] Java 靜態分析已接入 Gradle build：`Checkstyle`、`SpotBugs`、`Error Prone` 可透過 `./gradlew staticAnalysis` 執行
+- [x] SpotBugs false-positive filter 已先收斂到已確認的 Spring config / runtime holder 類別，避免干擾實際問題
+- [x] 現有 GitHub Actions Java job 已接入 `./gradlew staticAnalysis`，並上傳 Checkstyle / SpotBugs 報告 artifacts
+- [x] GitHub Actions 已依變更路徑做 job-level filtering：docs-only 變更不再觸發 Java / Native 全量建置
 - [ ] workflow：起 kind cluster
 - [ ] `kubectl apply -f deploy/k8s/`
 - [ ] 等待 pods ready
@@ -489,7 +505,7 @@
 - [ ] README 補 link：
   - [ ] 指向 proto 檔
   - [ ] 指向 deploy/k8s
-  - [ ] 指向 CI workflow
+  - [x] 指向 CI workflow
 - [ ] Troubleshooting runbook：
   - [ ] Kafka lag 飆高怎麼查
   - [ ] outbox backlog 怎麼查
