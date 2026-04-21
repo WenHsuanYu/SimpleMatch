@@ -1,0 +1,203 @@
+name: CI
+
+on:
+  push:
+    branches:
+      - master
+      - main
+  # Keep untrusted contributions on pull_request with a read-only token.
+  # Do not switch this workflow to pull_request_target unless it is split so
+  # that no repository-controlled build code runs before an explicit trust gate.
+  pull_request:
+  workflow_dispatch:
+
+# Security posture:
+# - This workflow is intended for GitHub-hosted runners only.
+# - Do not run untrusted PRs from forks on self-hosted runners.
+# - If self-hosted runners are needed later, use a separate workflow limited to
+#   trusted branches, trusted actors, or manual dispatch after review.
+
+env:
+  VCPKG_COMMIT: b5d1a94fb7f88fd835e360fd23a45a09ceedbf48
+
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  changes:
+    name: Detect changed areas
+    runs-on: ubuntu-latest
+    outputs:
+      java: ${{ steps.filter.outputs.java }}
+      native: ${{ steps.filter.outputs.native }}
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Classify changed files
+        id: filter
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          if [[ "${{ github.event_name }}" == "workflow_dispatch" ]]; then
+            echo "java=true" >> "$GITHUB_OUTPUT"
+            echo "native=true" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+
+          if [[ "${{ github.event_name }}" == "pull_request" ]]; then
+            base_sha="${{ github.event.pull_request.base.sha }}"
+            head_sha="${{ github.event.pull_request.head.sha }}"
+          else
+            base_sha="${{ github.event.before }}"
+            head_sha="${{ github.sha }}"
+          fi
+
+          if [[ -z "$base_sha" || "$base_sha" =~ ^0+$ ]]; then
+            changed_files="$(git ls-files)"
+          else
+            changed_files="$(git diff --name-only "$base_sha" "$head_sha")"
+          fi
+
+          java=false
+          native=false
+
+          while IFS= read -r file; do
+            [[ -z "$file" ]] && continue
+
+            case "$file" in
+              .github/workflows/ci.yml|build.gradle.kts|settings.gradle.kts|gradlew|gradlew.bat|gradle/*|java-libs/*|proto/*|services/account-service/*|services/quickfix-gateway/*|services/risk-service/*|config/checkstyle/*|config/spotbugs/*|config/simplematch.example.json)
+                java=true
+                ;;
+            esac
+
+            case "$file" in
+              .github/workflows/ci.yml|CMakeLists.txt|CMakePresets.json|vcpkg.json|matching-engine/*|src/*|include/*|tests/*)
+                native=true
+                ;;
+            esac
+          done <<< "$changed_files"
+
+          echo "java=$java" >> "$GITHUB_OUTPUT"
+          echo "native=$native" >> "$GITHUB_OUTPUT"
+
+          echo "Changed files detected by CI:"
+          printf '%s\n' "$changed_files"
+
+  java:
+    name: Java / Gradle
+    needs: changes
+    if: needs.changes.outputs.java == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
+        with:
+          fetch-depth: 1
+          persist-credentials: false
+
+      - name: Validate Gradle Wrapper
+        uses: gradle/actions/wrapper-validation@ed408507eac070d1f99cc633dbcf757c94c7933a # v4.4.4
+
+      - name: Set up Temurin JDK 25
+        uses: actions/setup-java@c1e323688fd81a25caa38c78aa6df2d33d3e20d9 # v4.8.0
+        with:
+          distribution: temurin
+          java-version: '25'
+
+      - name: Set up Gradle cache
+        uses: gradle/actions/setup-gradle@ed408507eac070d1f99cc633dbcf757c94c7933a # v4.4.4
+
+      - name: Ensure wrapper is executable
+        run: chmod +x ./gradlew
+
+      - name: Run Java static analysis
+        run: ./gradlew --no-daemon --stacktrace staticAnalysis
+
+      - name: Run Java test suite
+        run: ./gradlew --no-daemon --stacktrace test :services:quickfix-gateway:certificationTest
+
+      - name: Upload Java reports
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: java-build-reports
+          if-no-files-found: ignore
+          path: |
+            **/build/reports/checkstyle/**
+            **/build/reports/spotbugs/**
+            **/build/reports/tests/**
+            **/build/test-results/**
+            **/build/reports/problems/**
+
+  native:
+    name: Native / CMake
+    needs: changes
+    if: needs.changes.outputs.native == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    env:
+      VCPKG_ROOT: ${{ github.workspace }}/.vcpkg
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
+        with:
+          fetch-depth: 1
+          persist-credentials: false
+
+      - name: Install native build prerequisites
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y build-essential pkg-config zip unzip tar
+
+      - name: Cache vcpkg downloads and archives
+        # Include the pinned vcpkg commit in the key so cached archives are not
+        # silently reused across toolchain or port-definition changes.
+        uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4.3.0
+        with:
+          path: |
+            ${{ env.VCPKG_ROOT }}/downloads
+            ~/.cache/vcpkg/archives
+          key: ${{ runner.os }}-vcpkg-${{ env.VCPKG_COMMIT }}-${{ hashFiles('vcpkg.json', 'CMakePresets.json') }}
+
+      - name: Bootstrap vcpkg
+        run: |
+          git clone --filter=blob:none https://github.com/microsoft/vcpkg.git "$VCPKG_ROOT"
+          git -C "$VCPKG_ROOT" checkout --detach "$VCPKG_COMMIT"
+          test "$(git -C "$VCPKG_ROOT" rev-parse HEAD)" = "$VCPKG_COMMIT"
+          "$VCPKG_ROOT/bootstrap-vcpkg.sh" -disableMetrics
+
+      - name: Show CMake version
+        run: cmake --version
+
+      - name: Configure native preset
+        run: cmake --preset vcpkg
+
+      - name: Build native preset
+        run: cmake --build --preset vcpkg --parallel 2
+
+      - name: Run native tests
+        run: ctest --preset vcpkg
+
+      - name: Upload native logs
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: native-build-logs
+          if-no-files-found: ignore
+          path: |
+            build-vcpkg/CMakeCache.txt
+            build-vcpkg/Testing/**
+            build-vcpkg/**/*.log
