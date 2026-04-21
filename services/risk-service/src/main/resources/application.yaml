@@ -1,0 +1,17 @@
+spring:
+  application:
+    name: risk-service
+  flyway:
+    enabled: false
+  kafka:
+    bootstrap-servers: ${simplematch.kafka.brokers:localhost:9092}
+    producer:
+      key-serializer: org.apache.kafka.common.serialization.StringSerializer
+      value-serializer: org.apache.kafka.common.serialization.ByteArraySerializer
+      acks: all
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info,metrics
