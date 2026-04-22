@@ -1,0 +1,90 @@
+syntax = "proto3";
+
+package simplematch.account.v1;
+
+option java_multiple_files = true;
+option java_package = "com.simplematch.contracts.account.v1";
+
+import "common.proto";
+
+service AccountService {
+  rpc GetLimits(GetLimitsRequest) returns (GetLimitsResponse);
+  rpc GetPositions(GetPositionsRequest) returns (GetPositionsResponse);
+  rpc Reserve(ReserveRequest) returns (ReserveResponse);
+  rpc ReleaseReservation(ReleaseReservationRequest) returns (ReleaseReservationResponse);
+  rpc ApplyFill(ApplyFillRequest) returns (ApplyFillResponse);
+}
+
+message GetLimitsRequest {
+  string account_id = 1;
+}
+
+message GetLimitsResponse {
+  string account_id = 1;
+  string currency = 2;
+  string available_notional = 3;
+  string reserved_notional = 4;
+  string utilized_notional = 5;
+}
+
+message GetPositionsRequest {
+  string account_id = 1;
+}
+
+message PositionSnapshot {
+  string account_id = 1;
+  string symbol = 2;
+  string long_qty = 3;
+  string short_qty = 4;
+}
+
+message GetPositionsResponse {
+  repeated PositionSnapshot positions = 1;
+}
+
+message ReserveRequest {
+  string request_id = 1;
+  string order_id = 2;
+  string account_id = 3;
+  string symbol = 4;
+  simplematch.common.v1.Side side = 5;
+  string quantity = 6;
+  string limit_price = 7;
+}
+
+message ReserveResponse {
+  string request_id = 1;
+  string order_id = 2;
+  simplematch.common.v1.ReservationStatus status = 3;
+  string reservation_id = 4;
+  string reason_code = 5;
+  string reason_text = 6;
+}
+
+message ReleaseReservationRequest {
+  string request_id = 1;
+  string reservation_id = 2;
+  string order_id = 3;
+  string reason_code = 4;
+}
+
+message ReleaseReservationResponse {
+  string request_id = 1;
+  string reservation_id = 2;
+  simplematch.common.v1.ReservationStatus status = 3;
+}
+
+message ApplyFillRequest {
+  string request_id = 1;
+  string reservation_id = 2;
+  string order_id = 3;
+  string exec_id = 4;
+  string fill_qty = 5;
+  string fill_px = 6;
+}
+
+message ApplyFillResponse {
+  string request_id = 1;
+  string reservation_id = 2;
+  simplematch.common.v1.ReservationStatus status = 3;
+}

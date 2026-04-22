@@ -1,0 +1,22 @@
+syntax = "proto3";
+
+package simplematch.marketdata.v1;
+
+option java_multiple_files = true;
+option java_package = "com.simplematch.contracts.marketdata.v1";
+
+import "marketdata.proto";
+import "matching.proto";
+
+service MarketDataService {
+  rpc SubscribeMarketData(SubscribeMarketDataRequest) returns (stream MarketDataEvent);
+  rpc SubscribePrivateNotifications(SubscribePrivateNotificationsRequest) returns (stream simplematch.matching.v1.ExecutionEvent);
+}
+
+message SubscribeMarketDataRequest {
+  repeated string symbols = 1;
+}
+
+message SubscribePrivateNotificationsRequest {
+  string account_id = 1;
+}

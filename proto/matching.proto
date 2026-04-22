@@ -1,0 +1,38 @@
+syntax = "proto3";
+
+package simplematch.matching.v1;
+
+option java_multiple_files = true;
+option java_package = "com.simplematch.contracts.matching.v1";
+
+import "common.proto";
+
+enum ExecutionType {
+  EXECUTION_TYPE_UNSPECIFIED = 0;
+  EXECUTION_TYPE_PENDING_NEW = 1;
+  EXECUTION_TYPE_NEW = 2;
+  EXECUTION_TYPE_PARTIAL_FILL = 3;
+  EXECUTION_TYPE_FILL = 4;
+  EXECUTION_TYPE_CANCELED = 5;
+  EXECUTION_TYPE_REJECTED = 6;
+  EXECUTION_TYPE_CANCEL_REJECTED = 7;
+}
+
+message ExecutionEvent {
+  simplematch.common.v1.EventMetadata metadata = 1;
+  string exec_id = 2;
+  string order_id = 3;
+  string account_id = 4;
+  string symbol = 5;
+  ExecutionType execution_type = 6;
+  string fill_qty = 7;
+  string fill_px = 8;
+  string cum_qty = 9;
+  string leaves_qty = 10;
+  string average_px = 11;
+  string text = 12;
+  string cl_ord_id = 13;
+  string orig_cl_ord_id = 14;
+  simplematch.common.v1.Side side = 15;
+  string cancel_cl_ord_id = 16;
+}

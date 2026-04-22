@@ -1,0 +1,40 @@
+syntax = "proto3";
+
+package simplematch.risk.v1;
+
+option java_multiple_files = true;
+option java_package = "com.simplematch.contracts.risk.v1";
+
+import "orders.proto";
+
+service RiskService {
+  rpc SubmitOrder(SubmitOrderRequest) returns (SubmitOrderResponse);
+  rpc CancelOrder(CancelOrderRequest) returns (CancelOrderResponse);
+}
+
+message SubmitOrderRequest {
+  simplematch.orders.v1.OrderCommand command = 1;
+}
+
+message SubmitOrderResponse {
+  string request_id = 1;
+  string order_id = 2;
+  string client_order_id = 3;
+  bool accepted = 4;
+  string reason_code = 5;
+  string reason_text = 6;
+}
+
+message CancelOrderRequest {
+  simplematch.orders.v1.OrderCommand command = 1;
+}
+
+message CancelOrderResponse {
+  string request_id = 1;
+  string order_id = 2;
+  string client_order_id = 3;
+  string original_client_order_id = 4;
+  bool accepted = 5;
+  string reason_code = 6;
+  string reason_text = 7;
+}

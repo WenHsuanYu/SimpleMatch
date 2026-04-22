@@ -1,0 +1,50 @@
+syntax = "proto3";
+
+package simplematch.orders.v1;
+
+option java_multiple_files = true;
+option java_package = "com.simplematch.contracts.orders.v1";
+
+import "common.proto";
+
+enum CommandType {
+  COMMAND_TYPE_UNSPECIFIED = 0;
+  COMMAND_TYPE_NEW = 1;
+  COMMAND_TYPE_CANCEL = 2;
+}
+
+message OrderCommand {
+  simplematch.common.v1.EventMetadata metadata = 1;
+  string command_id = 2;
+  string order_id = 3;
+  string account_id = 4;
+  string session_id = 5;
+  string client_order_id = 6;
+  string symbol = 7;
+  simplematch.common.v1.Side side = 8;
+  string quantity = 9;
+  string price = 10;
+  simplematch.common.v1.OrderType order_type = 11;
+  simplematch.common.v1.TimeInForce tif = 12;
+  CommandType command_type = 13;
+  string original_client_order_id = 14;
+}
+
+message OrderValidated {
+  simplematch.common.v1.EventMetadata metadata = 1;
+  string command_id = 2;
+  string order_id = 3;
+  string account_id = 4;
+  string symbol = 5;
+  string routing_partition = 6;
+}
+
+message OrderRejected {
+  simplematch.common.v1.EventMetadata metadata = 1;
+  string command_id = 2;
+  string order_id = 3;
+  string account_id = 4;
+  string symbol = 5;
+  string reject_reason_code = 6;
+  string reject_reason_text = 7;
+}
