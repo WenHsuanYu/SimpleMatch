@@ -26,7 +26,7 @@
 - **其餘服務改為 Java + Spring Cloud**，包含 `quickfix-gateway`、`account-service`、`risk-service`、`persistence`、`marketdata-publisher`、`marketdata-streamer`、`query-service`
 - 因此專案採 **polyglot monorepo**：Java 服務以 Gradle 建置，原生/低延遲服務以 CMake 建置
 
-送單與撮合主流程仍以 Kafka 事件串接為主。
+送單入口改為 `quickfix-gateway` 以**同步 gRPC** 呼叫 `risk-service`；`risk-service` 完成持久化後，再以 Kafka 事件串接後續撮合與下游。
 
 本文件描述此專案的**目標架構與落地方式**。目前 repo 可能尚未包含完整程式碼/腳手架；README 會以「建議/預期路徑」表述，便於後續逐步補齊。
 
@@ -37,7 +37,7 @@
 ### 目標
 
 - 以微服務拆分交易路徑：接單、驗證/風控、撮合、落地/回放、行情發布
-- 以 Kafka 事件流串接，降低服務耦合、提升擴充性與可觀測性
+- 以 gRPC + Kafka 組合串接：入口同步提交、風控後與下游非同步事件流，兼顧可靠性與可觀測性
 - 對外以 FIX（QuickFix/J，FIX 4.4）接單，並讓 **matching-engine** 以 C++ 維持最關鍵撮合路徑的順序性與低延遲特性 (建議 **P95 < 50ms**)
 
 ---
@@ -58,7 +58,6 @@ flowchart LR
   AS["Account Service\n(Java + Spring Cloud + gRPC)"]
 
   subgraph Kafka[Apache Kafka]
-    T1[(orders.commands)]
     T2[(orders.validated)]
     T3[(matching.executions)]
     T4[(marketdata.events)]
@@ -70,32 +69,34 @@ flowchart LR
   PS["Persistence / Replay\n(Java + Spring Cloud)"]
   MD["Market Data Publisher\n(Java + Spring Cloud)"]
 
-  %% Data plane (Kafka)
-  C2 --> FG --> T1
+  %% Ingress
+  C2 --> FG
   MS --> C3
 
   %% Control/query plane (gRPC)
+  FG -. sync order gRPC .-> RS
   FG -. internal gRPC .-> AS
   RS -. internal gRPC .-> AS
 
-  T1 --> RS --> T2
+  %% Data plane (Kafka)
+  RS --> T2
   T2 --> ME --> T3
   T3 --> PS --> T5
   T3 --> MD --> T4
   T4 --> MS
   T3 -. private fills/notifications .-> MS
 
-  %% optional feedback to clients
-  T3 -. execution report / ack .-> FG
+  %% feedback to clients
+  T3 -. execution report / result .-> FG
 ```
 
 ### 同步/非同步邊界
 
-- 對外（FIX）：採「**進系統即回覆**」的 ack；若追求更低延遲，建議以 **WAL（順序日誌）落盤成功**作為 ack 條件；保守版則以 **DB commit 成功**作為 ack 條件（Outbox pattern）
+- 對外（FIX）：第一個**成功** ack 建議以 `risk-service` 完成持久化為條件；`quickfix-gateway` 可保留本地 WAL 作為恢復/稽核輔助，但不再作為主 ack 錨點
 - 業務結果（成交/拒單/撤單結果）以 **Kafka 事件**回推，再由 FIX Gateway 轉成 ExecutionReport 等回報
 - 對內（服務間）：
-  - **資料面（data plane）/需保序與可回放的命令與結果**：以 Kafka topic 串接，預設 **at-least-once**，各服務需具備 idempotency（去重/重放安全）。其中 **Risk → Matching** 與 **Matching → 下游（persistence/marketdata/quickfix-gateway）** 建議維持 **Outbox pattern + MQ（Kafka）** 的組合，避免「已產生結果但發布失敗」或「重啟後無法回放」
-  - **控制面/查詢面（control plane / query plane）**：其餘互動改用 **gRPC（同步 unary + 非同步 streaming）**，並搭配 timeout/deadline、重試機制與斷路器，避免同步耦合造成雪崩
+  - **控制面（control plane）主提交路徑**：`quickfix-gateway` 以 **gRPC unary** 同步提交 `NewOrderSingle` / `OrderCancelRequest` 到 `risk-service`；gateway 只在收到 `risk-service` 的持久化成功回覆後，才回第一個成功 FIX ack。寫入型 RPC 目前僅允許**極小範圍、受限次數**的暫態 transport retry，且必須沿用同一個 `client_order_id` / `ClOrdID`，並由 `risk-service` 以唯一鍵保證冪等；連續失敗時 gateway 端 breaker 會短暫打開並 fail-closed
+  - **資料面（data plane）/需保序與可回放的命令與結果**：`risk-service` 之後的命令與結果仍以 Kafka topic 串接，預設 **at-least-once**，各服務需具備 idempotency（去重/重放安全）。主線做法統一為 **PostgreSQL outbox + Debezium CDC**；其中 `matching-engine` 另以前置本地 WAL 作為第一個 durability 錨點，再由 loader / ingester 把結果寫入 PostgreSQL outbox 後交由 Debezium 廣播
 
 ### 服務間通訊清單（可直接落地的邊界表）
 
@@ -103,9 +104,9 @@ flowchart LR
 
 | Link | 類型 | 目的 | 建議可靠性/策略 |
 | --- | --- | --- | --- |
-| `quickfix-gateway` → `risk-service`（`orders.commands`） | Kafka（data plane） | 下單/撤單命令進入風控 | **Outbox+CDC**（或 WAL → DB+Outbox）後送 Kafka；consumer 以 `(command_id)`/狀態機去重 |
-| `risk-service` → `matching-engine`（`orders.validated`） | Kafka（data plane） | 風控後進撮合（需保序） | **Outbox+CDC**（建議）或輕量直寫 Kafka；matching 需冪等 |
-| `matching-engine` → 下游（`matching.executions`） | Kafka（data plane） | 撮合結果（可回放/對帳/回報來源） | **Outbox+CDC**（建議）或輕量直寫 Kafka；下游以 `(order_id, exec_id)`/`(exec_id)` 去重 |
+| `quickfix-gateway` → `risk-service` | gRPC unary（primary ingress） | 同步提交下單/撤單命令進入風控 | 第一個成功 FIX ack 需等 `risk-service` 本地 transaction commit；gateway 僅對暫態 transport failure 做 bounded retry，且重試沿用同一 `client_order_id` / `ClOrdID`；連續失敗時 breaker fail-fast，整體仍以 fail-closed 為預設 |
+| `risk-service` → `matching-engine`（`orders.validated`） | Kafka（data plane） | 風控後進撮合（需保序） | **Outbox + Debezium CDC**（主線）；matching 需冪等 |
+| `matching-engine` → 下游（`matching.executions`） | Kafka（data plane） | 撮合結果（可回放/對帳/回報來源） | **本地 WAL + PostgreSQL transaction outbox + Debezium CDC**；下游以 `(order_id, exec_id)`/`(exec_id)` 去重 |
 | `risk-service` ↔ `account-service` | gRPC unary（control/query） | 查詢額度/部位、建立預扣 `Reserve` | 必設 deadline；讀取可重試；寫入預設不自動重試，若要重試需 `request_id`/唯一鍵冪等 |
 | `quickfix-gateway` ↔ `account-service` | gRPC unary（control/query） | **FIX session 身分 ↔ `account_id` 映射、帳戶/權限驗證（選用）** | 同上（deadline + breaker + bulkhead）；建議僅在 session 建立/定期刷新使用，避免放進每筆下單的極短 ack 路徑 |
 | `marketdata-streamer` → Clients | gRPC server-streaming（external） | 對外行情/私有通知推流 | 由 server 端以事件流推送；client 端需處理重連與 cursor（若有） |
@@ -128,7 +129,7 @@ flowchart LR
 若你的目標改成接近「交易所級 μs～低 ms」與更強的順序/公平性要求，常見會做的調整是：
 
 - **Client → Gateway：同步**（快速回覆「已接納」）
-- **Gateway → Risk：同步且 in-memory**（風控/預扣在記憶體中完成，避免跨網路 hop；若不採極致低延遲模式，則可維持 Java service 間 gRPC / Kafka 邊界）
+- **Gateway → Risk：同步且 persistence-first**（第一個成功 ack 需等 `risk-service` 完成持久化；gateway 可做極小範圍的記憶體內重試來吸收暫態網路錯誤，但不應把 gateway 記憶體當成主要 durability 錨點）
 - **Risk → Matching：定序移交（Sequencer）**：以 per-symbol（或 per-shard）sequence number 保證嚴格順序，再進撮合 loop
 - **Matching → 其他：全面非同步**：行情、落 DB、稽核、結算都不能阻塞撮合核心
 
@@ -147,9 +148,9 @@ flowchart LR
 
 | Service | Runtime | 說明 | In (Kafka) | Out (Kafka) | 對外介面 |
 | --- | --- | --- | --- | --- | --- |
-| `quickfix-gateway` | Java + Spring + QuickFix/J | FIX session 管理，FIX ↔ domain 轉換 | - / `matching.executions` | `orders.commands` | FIX |
+| `quickfix-gateway` | Java + Spring + QuickFix/J | FIX session 管理，FIX ↔ domain 轉換；同步 gRPC 提交到 `risk-service` | `matching.executions` | - | FIX |
 | `account-service` | Java + Spring Cloud | 帳戶/權限、交易額度與部位查詢；提供 **Reservation（預扣/釋放）** 與風控所需同步資料 | - | - | gRPC（internal） |
-| `risk-service` | Java + Spring Cloud | 基本檢核：格式、交易時段、限價/市價規則、風控 | `orders.commands` | `orders.validated` / `audit.events` | - |
+| `risk-service` | Java + Spring Cloud | 基本檢核：格式、交易時段、限價/市價規則、風控；作為同步提交的持久化錨點 | gRPC primary | `orders.validated` / `audit.events` | gRPC（internal） |
 | `matching-engine` | C++ | 撮合核心：訂單簿、撮合；支援 IOC（立即成交否則取消剩餘量）；產出成交/拒單/撤單結果 | `orders.validated` | `matching.executions` / `audit.events` | - |
 | `persistence` | Java + Spring Cloud | 落地事件流、建立索引、支援重放（replay） | `matching.executions` | `audit.events` | - |
 | `marketdata-publisher` | Java + Spring Cloud | 將撮合產出轉成行情事件（trade/quote） | `matching.executions` | `marketdata.events` | - |
@@ -165,8 +166,9 @@ flowchart LR
 本架構 **具備 CQRS 的核心元素**：將「寫入（commands/events）」與「查詢（read model）」分離，並用事件去更新查詢投影；但它屬於**輕量 CQRS**（不是每個 domain 都嚴格拆成獨立資料庫/獨立模型）。
 
 - **Command / Write path（寫入側）**：
-  - 對外下單/撤單透過 `quickfix-gateway` 進入系統，寫 DB + outbox 後發出 `orders.commands`。
-  - `risk-service`、`matching-engine` 依序消費/產生事件，最終輸出 `matching.executions`。
+  - 對外下單/撤單透過 `quickfix-gateway` 進入系統，經正規化後以同步 gRPC 提交到 `risk-service`。
+  - `risk-service` 以本地 transaction 完成持久化後，回覆 gateway 第一個成功 ack，並由 Debezium CDC 把 `outbox` 事件發布到 Kafka（`orders.validated` / `audit.events`）。
+  - `matching-engine` 之後依序消費/產生事件，最終輸出 `matching.executions`。
   - 重要副作用（例如額度預扣/釋放/成交轉實扣）由 `account-service` 以 reservation 形式維持一致性（內部 gRPC 或事件驅動更新）。
 
 - **Query / Read path（查詢側）**：
@@ -188,7 +190,7 @@ flowchart LR
 
 目前架構 **符合 Event Driven**：
 
-- 交易主流程以 Kafka topic 串接（`orders.commands` → `orders.validated` → `matching.executions`）。
+- 交易主流程在 `risk-service` 之後以 Kafka topic 串接（主線為 `orders.validated` → `matching.executions`）。
 - 以 Choreography Saga 讓各服務「消費事件 → 決定下一步 → 發出事件」，避免同步耦合。
 - 設計假設 at-least-once，並要求 consumer 冪等與可重放，符合事件驅動系統常見的故障模型。
 
@@ -199,12 +201,12 @@ flowchart LR
 符合的部分：
 
 - `matching.executions` 與 `marketdata.events` 本身就是 append-only 的事件流，`persistence` 也在做「從事件建立查詢投影（projections）」的工作。
-- Outbox + CDC 讓「事件發布」與「本地交易 commit」綁在一起，有利於可追溯與故障恢復。
+- Outbox + Debezium CDC 讓「事件發布」與「本地交易 commit」綁在一起，有利於可追溯與故障恢復。
 
 尚未完全符合（與典型 Event Sourcing 差異點）：
 
 - Event Sourcing 強調「**事件是系統的權威來源（source of truth）**，狀態是從事件重建而來」。目前設計仍以多張業務表（例如 `orders`、`executions`、以及 `account-service` 的額度/預扣狀態）作為主要權威狀態，事件更多是用於服務間整合與下游投影。
-- Outbox/CDC 解決的是可靠發布（delivery），但它寫入的是「要送出去的 integration event」，不等同於「完整且可重建 domain event store」。
+- Outbox + Debezium CDC 解決的是可靠發布（delivery），但它寫入的是「要送出去的 integration event」，不等同於「完整且可重建 domain event store」。
 
 若你希望收斂成更標準的 Event Sourcing（建議最小補齊項）：
 
@@ -215,7 +217,7 @@ flowchart LR
 
 ### 補充：把架構調整到「完全 Event Sourcing」的好處
 
-以你目前的設計（Kafka 事件主幹 + Outbox/CDC + 投影到 Postgres/Redis）來說，已經能拿到事件驅動系統的多數好處；如果再往「完全 Event Sourcing」收斂，常見額外收益會是：
+以你目前的設計（Kafka 事件主幹 + Outbox + Debezium CDC + 投影到 Postgres/Redis）來說，已經能拿到事件驅動系統的多數好處；如果再往「完全 Event Sourcing」收斂，常見額外收益會是：
 
 - **可重建性更強**：任何投影表/快取壞掉，可以直接從 event store 重播重建（不必靠備份或手動修資料）。
 - **可稽核/可追溯**：事件序列天然形成完整審計軌跡，能回答「為什麼變成這個狀態」（who/when/why）。
@@ -278,17 +280,17 @@ Projection 可以把它理解成：
 
 ### 重要觀念：很難做到「絕對不重複訊息」，但可以做到「重複不會重複生效」
 
-- Kafka/CDC 都可能在故障切換、重試、replay 時產生重複訊息
+- Kafka 與 Debezium CDC 都可能在故障切換、重試、replay 時產生重複訊息
 - 正確做法是讓每個 consumer 都具備 **idempotency（冪等）**，以 `order_id` / `event_id` / 狀態機版本控制，確保重複處理不會造成重複副作用
 
-### Outbox Pattern + Debezium CDC（你描述的方向）
+### Outbox Pattern + Debezium CDC
 
-當你擔心「broker 掛掉或 producer publish 失敗，導致漏單」時，Outbox + CDC 是很常見且務實的做法：
+當你擔心「broker 掛掉或 producer publish 失敗，導致漏單」時，Outbox pattern 搭配 Debezium CDC 是很常見且務實的做法：
 
 - 每個會對外發事件的服務，在自己的 **PostgreSQL** 交易中同時寫入：
   - 業務資料（例如：收到的委託、風控結果、成交回報）
   - `outbox` 表（一列代表一則待發布事件，包含 topic、key、payload、event_id、created_at）
-- Debezium 監聽 `outbox` 表的變更，把事件推到 Kafka
+- 後續由 Debezium 監聽 PostgreSQL logical decoding / WAL 中的 `outbox` 變更並推到 Kafka
 
 這可以把「是否成功寫 Kafka」的風險，轉成「是否成功 commit 到本地 DB」的風險（通常更好控、也更符合交易系統保守的設計）。
 
@@ -320,53 +322,41 @@ Projection 可以把它理解成：
 - 若 Kafka 暫時不可寫（broker down / leader 切換中），Debezium（Kafka Connect）通常會 retry，等 Kafka 恢復後再繼續送；DB 端 outbox 資料仍在，因此不會漏單。
 - 若你允許不安全的 Kafka 設定（例如 unclean leader election），可能出現「Kafka 曾經接受/回覆成功但後來資料遺失」的極端情況；這種情況 Debezium **不保證能自動偵測並修復**，所以應該用上面的 ISR/acks 設定去避免它。
 
-總結：Outbox+Debezium 解決「不漏單」很有效，但仍需 Kafka 自身用 ISR/acks/禁用 unclean election 來避免「已確認寫入卻遺失」的風險。
+總結：Outbox + Debezium CDC 能有效降低漏單風險，但仍需 Kafka 自身用 ISR/acks/禁用 unclean election 來避免「已確認寫入卻遺失」的風險。
 
-### 建議的「進系統即回覆」ACK 條件（WAL 版，延遲更低 P95 << 50ms）
+### 建議的第一個成功 ACK 條件（risk-service persistence-first 版）
 
-你希望 FIX 收到就回覆（進系統即可），同時又不希望「回了 ACK 但其實漏單」。若你想把 ACK 往前推、降低被 DB tail latency 影響，建議把「可靠錨點」從 DB commit 改為 **WAL（順序日誌）落盤成功**。
+既然主提交路徑改為 `quickfix-gateway` 同步呼叫 `risk-service`，第一個**成功** FIX ack 的最佳時點也應跟著改：不再以 gateway 本地 WAL 落盤作為主承諾，而是以 `risk-service` 完成持久化作為成功邊界。
 
 建議路徑：
 
-1. FIX Gateway 完成基本格式檢查（必要欄位、session 狀態）
-2. 以 append-only 方式寫入 **WAL**（建議包含：FIX session 身分、`MsgSeqNum`、`ClOrdID`、原始 FIX 或等價的 canonical 表示、internal `order_id`、`received_at`）
-3. **WAL 落盤成功後**立刻回 FIX ack（例如 `ExecutionReport` 表示已接受/委託中）
-4. 由背景執行緒/獨立 ingester 從 WAL 讀取，異步寫入 PostgreSQL（`orders`）並同 transaction 寫入 `outbox`（待發到 `orders.commands`）
-5. Debezium CDC 把 outbox 事件推到 Kafka，後續照既有 `orders.commands` → `risk-service` → `orders.validated` → `matching-engine`
+1. FIX Gateway 完成基本格式檢查（必要欄位、session 狀態、欄位正規化）
+2. Gateway 以同步 gRPC 把命令提交到 `risk-service`，沿用穩定的 `client_order_id` / `ClOrdID`
+3. `risk-service` 在本地 PostgreSQL transaction 內同時寫入 submission 狀態與 `outbox`
+4. **只有 transaction commit 成功**，`risk-service` 才回覆 gateway 成功
+5. Gateway 收到成功後，再送第一筆成功 FIX ack（例如 `ExecutionReport = PendingNew`）
+6. Debezium 再把 `risk-service` 的 `outbox` 事件送到 Kafka，進入 `orders.validated` → `matching-engine` → `matching.executions`
 
-#### 「比較像交易所」的回覆語意：兩階段（Accepted vs Live）
+對應的回覆語意建議：
 
-交易所常見會把「回覆」拆成兩個層級的承諾，避免 client 誤以為“已回覆 = 一定會成交/一定已進簿”。對應到本設計：
+- **階段 1：Accepted / PendingNew**
+  - 回覆時點：`risk-service` 完成持久化並回覆成功後
+  - FIX 回報建議：送一筆 `ExecutionReport` 表示 *PendingNew/委託中*，語意是「此單已被系統可靠接納，之後一定會有最終結果」
+- **階段 2：Live / New（選用）**
+  - 回覆時點：`risk-service` 已完成檢核並把事件成功發布到後續撮合路徑時
+  - FIX 回報建議：再送一筆 `ExecutionReport` 表示 *New/已進簿* 或等價狀態
 
-- **階段 1：Accepted / Received（不漏單承諾）**
-  - 回覆時點：**WAL 落盤成功**（或保守版的 DB commit + outbox）
-  - FIX 回報建議：送一筆 `ExecutionReport` 表示 *PendingNew/委託中*（語意是「我已可靠接納、之後一定會給你最終結果」）
-- **階段 2：Live / New（已通過檢核、已進撮合佇列或委託簿）**
-  - 回覆時點：`risk-service` 檢核通過，且命令已被 `matching-engine` 接管（或狀態進到 `MATCHING`）
-  - FIX 回報建議：再送一筆 `ExecutionReport` 表示 *New/已進簿*（語意是「此單已具備撮合資格」）
+若 `risk-service` 在同步路徑上直接判定不通過，gateway 應直接回 `Rejected`，而不是先回成功 ack 再補拒絕。
 
-若風控失敗，則以 `ExecutionReport` 的 *Rejected*（或對應拒單訊息）作為最終結果；重送時以 `ClOrdID` 去重，確保同一命令不會重複生效。
+#### WAL 的新角色
 
-注意事項（WAL 版的關鍵）：
+在這個模型下，gateway 的 WAL 若保留，定位應收斂為：
 
-- **WAL 必須可回放**：FIX Gateway 重啟時必須能從 WAL 恢復「哪些已回 ACK 但尚未進 outbox」的請求，確保最終一定會被發到 Kafka。
-- **WAL 落盤策略（group commit）**：可用批次 flush（例如每 X μs 或每 N 筆）在延遲與 durability 間取捨；若要強保證，則每筆都需要確保落盤語意。
-- **HA/容災**：若你要把「已回 ACK」視為強承諾，WAL 需配合磁碟可靠度與（可選）同步複寫到備援節點，否則單機磁碟故障仍可能造成遺失。
+- 本地恢復與稽核診斷
+- 同步 RPC 失敗時的人工或背景補償輔助
+- FIX session 與業務層 trace 對帳的附加證據
 
-#### 保守版（DB commit 後回 ACK）
-
-若你優先追求「最容易證明不漏單」，可以維持原本做法：
-
-- FIX Gateway 完成基本格式檢查後，將請求寫入 PostgreSQL（`orders`/`commands`）
-- 同一個 transaction 寫入 `outbox`（待發到 `orders.commands`）
-- **transaction commit 成功後**回 FIX ack
-
-為了把延遲壓在 50ms 內，FIX Gateway 的同步路徑建議只做：
-
-- FIX session 驗證、必要欄位驗證、基本防呆（例如價格/數量格式）
-- DB 單筆交易寫入（小交易、索引齊全）
-
-風控與撮合的結果不要卡在 ack 路徑上。
+它**不再**是第一個成功 ack 的主錨點，也不應取代 `risk-service` 的持久化責任。
 
 ### 訂單狀態機（建議）
 
@@ -375,7 +365,7 @@ Projection 可以把它理解成：
 建議以事件驅動的狀態機表達（示意）：
 
 - `RECEIVED`：FIX Gateway 已接收（尚未 commit DB 前的暫態，可不落地）
-- `PENDING`（委託中）：寫 DB + outbox commit 成功並回 ACK 後
+- `PENDING`（委託中）：`risk-service` transaction commit 成功，且 gateway 已回第一個成功 ack 後
 - `RISK_CHECKING`（風控中）：risk-service 已開始處理（可選，視你是否要呈現）
 - `MATCHING`（撮合中）：已通過風控，等待撮合/已進撮合佇列
 - `DONE`：終態（`FILLED` / `PARTIALLY_FILLED` + `CANCELLED` / `REJECTED` / `EXPIRED`）
@@ -386,14 +376,13 @@ Projection 可以把它理解成：
 - 狀態透明：risk 卡住 vs 撮合卡住可區分
 - Saga 事件更清楚：每一步狀態由哪個服務負責推進可追蹤
 
-### Risk → Kafka → Matching 該怎麼做？（建議兩種等級）
+### Risk → Kafka → Matching（主線）
 
-#### A. 強一致保守版（建議交易系統採用）
-
-- `risk-service` 消費 `orders.commands` 後，不直接 publish，而是：
+- 主路徑：`risk-service` 先處理來自 gateway 的同步 gRPC 請求，於持久化成功後把事件寫入 PostgreSQL outbox，再由 Debezium CDC 廣播到 Kafka
+- `risk-service` 以 DB transaction 寫入 `risk_decision`（或更新 order 狀態）與 `outbox`：
   1) 以 DB transaction 寫入 `risk_decision`（或更新 order 狀態）
   2) 同 transaction 寫入 `outbox`（要發到 `orders.validated` 或 `audit.events`）
-  3) Debezium 發到 Kafka
+  3) Debezium 透過 PostgreSQL logical decoding / WAL 將 `outbox` 事件送到 Kafka
 
 風控檢核若需要「同步讀取」交易額度/部位，建議：
 
@@ -427,34 +416,19 @@ Projection 可以把它理解成：
 - broker 掛掉：不會漏（因為事件在 DB outbox）
 - 事件重放：不會重複生效（因為 matching 會去重/檢查狀態機）
 
-#### B. 輕量版（延遲更低、依賴 Kafka 設定）
-
-- `risk-service` 直接用 Kafka producer 發 `orders.validated`
-- producer 設定建議：`acks=all`、啟用 idempotent producer、合理的重試與超時
-- matching 仍需做冪等（不然重複訊息仍可能造成重複生效）
-
-若你最在意「萬無一失」，通常會偏向 A。
-
-### Matching → Kafka → 下游（persistence/marketdata/quickfix-gateway）該怎麼做？
+### Matching → Kafka → 下游（persistence/marketdata/quickfix-gateway）主線
 
 撮合結果（`matching.executions`）通常被視為系統最重要的事件流之一：它既是對外回報的來源，也是對帳/重放的依據。若你希望它在故障下「不漏、不亂序、可回放」，建議比照 `risk-service` 採用 Outbox pattern。
 
-#### A. 保守版：Outbox + CDC（建議）
+`matching-engine` 對同一個 `symbol` 的撮合 loop 產出結果後，不直接 publish，而是採用三段式可靠性鏈條：
 
-- `matching-engine` 對同一個 `symbol` 的撮合 loop 產出結果後，不直接 publish，而是：
-  1) 以「本地落地」方式寫入結果（可為 `executions`/`order_state` 或 append-only 的 `matching_journal`）
-  2) 同 transaction 寫入 `outbox`（要發到 `matching.executions` 與/或 `audit.events`）
-  3) Debezium CDC 發到 Kafka
+1. 先把 `MatchResult` / `ExecutionEvent` 寫入本地 WAL，並以同步落盤確保第一個 durability 錨點。
+2. 再由 WAL loader / ingester 以單一 PostgreSQL transaction 同時寫入成交結果與 `outbox`。
+3. 最後由 Debezium 讀取 PostgreSQL logical decoding / WAL 中的 `outbox` 變更，將 `matching.executions` 廣播到 Kafka。
 
 注意：這會把 DB I/O 帶入撮合後半段路徑。若你追求更極致的撮合延遲，應把「落地」拆出來（例如 matching 只寫本地 WAL/journal，後台 ingester 再落 DB + outbox），但語意上仍維持「先有可回放的 durability 錨點，再對外/對下游發布」。
 
-#### B. 輕量版：Matching 直寫 Kafka（延遲更低、依賴 Kafka 設定）
-
-- `matching-engine` 直接用 Kafka producer 發 `matching.executions`
-- producer 設定建議：`acks=all`、啟用 idempotent producer、合理的重試與超時
-- 下游（`persistence`/`quickfix-gateway`）仍需做冪等（`exec_id` 唯一鍵 / processed table）
-
-若你最在意「撮合結果萬無一失可回放」，通常會偏向 A。
+若你最在意「撮合結果萬無一失可回放」，主線仍應維持 WAL -> PostgreSQL transaction outbox -> Debezium CDC 這條鏈。
 
 ### 其餘服務間互動：gRPC（同步/非同步）+ 重試 + 斷路器（最低規範）
 
@@ -509,9 +483,9 @@ Projection 可以把它理解成：
 
 以送單為例（示意事件鏈）：
 
-1. FIX Gateway：DB commit + outbox → Debezium → `orders.commands`
-2. risk-service：決策落 DB + outbox → Debezium → `orders.validated`（或 `orders.rejected`）
-3. matching-engine：撮合結果落地 + outbox → Debezium → `matching.executions`（或輕量版直接 publish）
+1. FIX Gateway：同步 gRPC 提交到 `risk-service`
+2. risk-service：本地 transaction commit 成功後回覆 gateway，再由 PostgreSQL outbox + Debezium CDC 發布 `orders.validated`（或 `orders.rejected`）
+3. matching-engine：本地 WAL → PostgreSQL transaction outbox → Debezium CDC → `matching.executions`
 4. persistence：批次落地成交/狀態（batch commit）並更新查詢投影
 5. FIX Gateway：消費 `matching.executions`，轉為 FIX 回報
 
@@ -529,7 +503,6 @@ Choreography Saga 一般**不做分散式交易回滾**（不會像同一個 DB 
 ### Topic 命名慣例（建議）
 
 - 使用 `{domain}.{type}` 形式：
-  - `orders.commands`：送單/撤單 command
   - `orders.validated`：通過檢核後可進撮合的 command
   - `matching.executions`：撮合結果事件（成交、部分成交、拒單、撤單結果…）
   - `marketdata.events`：行情事件（trade/quote…）
@@ -541,9 +514,8 @@ Choreography Saga 一般**不做分散式交易回滾**（不會像同一個 DB 
 
   | Topic | Key / Partition | Payload（Protobuf） | Produced by | Consumed by | 冪等 / 去重建議 |
   | --- | --- | --- | --- | --- | --- |
-  | `orders.commands` | **按股票路由**（見下），同一 `symbol` 必須保序 | `OrderCommand` | `quickfix-gateway`（Outbox+CDC） | `risk-service` | 以 `(command_id)` 或 `(order_id, command_seq)` 去重；狀態機檢查 |
-  | `orders.validated` | **按股票路由**（與 commands 同一套路由） | `OrderValidated` / `OrderRejected` | `risk-service`（Outbox+CDC） | `matching-engine` | matching 以 `(command_id)` 或 `(order_id, command_seq)` 去重；非法狀態轉移直接忽略 |
-  | `matching.executions` | key = `symbol`（保序） | `ExecutionEvent` | `matching-engine`（建議 Outbox+CDC；或輕量版直接 publish） | `persistence`, `marketdata-publisher`, `quickfix-gateway` | `persistence` 以 `(order_id, exec_id)` 唯一鍵；`quickfix-gateway` 以 `(exec_id)` 去重 |
+  | `orders.validated` | key = `symbol`（保序） | `OrderValidated` / `OrderRejected` | `risk-service`（Outbox + Debezium CDC） | `matching-engine` | matching 以 `(command_id)` 或 `(order_id, command_seq)` 去重；非法狀態轉移直接忽略 |
+  | `matching.executions` | key = `symbol`（保序） | `ExecutionEvent` | `matching-engine`（本地 WAL + PostgreSQL transaction outbox + Debezium CDC） | `persistence`, `marketdata-publisher`, `quickfix-gateway` | `persistence` 以 `(order_id, exec_id)` 唯一鍵；`quickfix-gateway` 以 `(exec_id)` 去重 |
   | `marketdata.events` | key = `symbol` | `MarketDataEvent` | `marketdata-publisher` | `marketdata-streamer`（對外推流）, （其他下游） | 允許重複（可用 `(event_id)` 去重或以時間窗合併） |
   | `audit.events` | key = `symbol` 或 `order_id`（視查詢方式） | `AuditEvent` | 各服務 | （稽核/資料平台） | 允許重複；如需強一致稽核可用 `(event_id)` 唯一 |
 
@@ -667,7 +639,7 @@ Choreography Saga 一般**不做分散式交易回滾**（不會像同一個 DB 
 
   不論哪種方式，關鍵是：
 
-  - `orders.commands` 與 `orders.validated` 必須用**同一套路由規則**，確保同一 symbol 的命令序列一致
+  - `risk-service` 寫出 `orders.validated` 與 `matching-engine` 消費該事件流時，必須用**同一套路由規則**，確保同一 symbol 的命令序列一致
   - `matching.executions` 至少要以 `symbol` 保序（通常 key = symbol 即可）
 
   #### 路由表更新的注意事項（重要）
@@ -728,7 +700,7 @@ Choreography Saga 一般**不做分散式交易回滾**（不會像同一個 DB 
 
 實務上常見做法：
 
-- `orders.commands` / `orders.validated`：**按股票路由**（本專案以 `symbol` 為核心）
+- `orders.validated`：**按股票路由**（本專案以 `symbol` 為核心）
 - `matching.executions`：key = `symbol`（保序）
 
 ### Delivery semantics 與去重
@@ -748,7 +720,7 @@ Kafka 常用語意是 **at-least-once**：同一事件可能被處理多次。�
 
 ---
 
-## 資料模型（PostgreSQL / Debezium / Redis）
+## 資料模型（PostgreSQL / Outbox / Redis）
 
 本章節提供「可實作」的資料表草案，並對齊：
 
@@ -805,7 +777,7 @@ Kafka 常用語意是 **at-least-once**：同一事件可能被處理多次。�
 
 #### `outbox`
 
-用途：Outbox pattern 的事件暫存（由 Debezium CDC 發往 Kafka）。建議採 **append-only**，避免更新造成 CDC 複雜化。
+用途：Outbox pattern 的事件暫存，作為 Debezium CDC 的發布來源。目標狀態下，outbox 應維持 append-only event row，讓 Debezium 透過 PostgreSQL logical decoding / WAL 穩定讀取變更並轉送到 Kafka。
 
 - 主鍵：`outbox_id`（bigserial）
 - 建議欄位：
@@ -814,7 +786,7 @@ Kafka 常用語意是 **at-least-once**：同一事件可能被處理多次。�
   - `aggregate_type`, `aggregate_id`（方便追查）
   - `created_at`
 
-Debezium 只需要看得到 INSERT；consumer 端仍需以 `event_id` 去重。
+建議做法是把 publisher 狀態與 event row 分開思考：目標架構中的 outbox 負責保存待發布事件本身，Debezium connector 的 offset / retry / 續傳則交由 Kafka Connect / Debezium 管理；consumer 端仍需以 `event_id` 去重。
 
 #### `processed_events`
 
@@ -911,7 +883,7 @@ client / internal API  --gRPC-->  query-service  --get-->  Redis
 ### 角色
 
 - `quickfix-gateway` 使用 **Java + Spring** 作為服務框架，並以 **QuickFix/J** 作為 FIX engine，對外提供 **FIX 4.4 Acceptor**
-- 將 FIX message 映射為內部 domain command/event（Protobuf），再送進 Kafka
+- 將 FIX message 映射為內部 domain command，並以同步 gRPC 提交到 `risk-service`
 - 將撮合結果（`matching.executions`）映射回 FIX（例如 ExecutionReport）並回推給 FIX client（若需要）
 
 ### 與 C++ 撮合核心的邊界
@@ -922,8 +894,8 @@ client / internal API  --gRPC-->  query-service  --get-->  Redis
 
 ### 建議支援的交易流（示意）
 
-- 下單：`NewOrderSingle` → `orders.commands`
-- 撤單：`OrderCancelRequest` → `orders.commands`
+- 下單：`NewOrderSingle` → `risk-service`（gRPC）→ `orders.validated`
+- 撤單：`OrderCancelRequest` → `risk-service`（gRPC）→ 後續結果事件
 - 回報（一般）：`ExecutionReport` ← `matching.executions`
 - 回報（撤單被拒，FIX 慣例）：`OrderCancelReject` ← `matching.executions`
 
@@ -950,7 +922,7 @@ client / internal API  --gRPC-->  query-service  --get-->  Redis
 
 | `matching.executions` 事件語意 | FIX 回報訊息 | `ExecType(150)` / `OrdStatus(39)` | 必填（除了通用欄位以外） |
 | --- | --- | --- | --- |
-| **已可靠接納**（WAL/DB commit 後的階段 1 ACK，選用） | `ExecutionReport (35=8)` | `ExecType=PendingNew` / `OrdStatus=PendingNew` | 建議同時帶 `ClOrdID(11)`、`OrderQty(38)`、`OrdType(40)`、`TimeInForce(59)`（視對手方要求） |
+| **已可靠接納**（`risk-service` 持久化成功後的階段 1 ACK） | `ExecutionReport (35=8)` | `ExecType=PendingNew` / `OrdStatus=PendingNew` | 建議同時帶 `ClOrdID(11)`、`OrderQty(38)`、`OrdType(40)`、`TimeInForce(59)`（視對手方要求） |
 | **已進簿/具撮合資格**（階段 2 Live/NEW，選用） | `ExecutionReport (35=8)` | `ExecType=New` / `OrdStatus=New` | 若你做兩階段 ACK，這筆用同一 `OrderID(37)` 關聯 |
 | **部分成交** | `ExecutionReport (35=8)` | `ExecType=PartialFill` / `OrdStatus=PartiallyFilled` | `LastQty(32)`, `LastPx(31)`, `CumQty(14)`, `LeavesQty(151)`, `AvgPx(6)` |
 | **完全成交** | `ExecutionReport (35=8)` | `ExecType=Fill` / `OrdStatus=Filled` | `LastQty(32)`, `LastPx(31)`, `CumQty(14)`, `LeavesQty(151)=0`, `AvgPx(6)` |
@@ -966,7 +938,7 @@ client / internal API  --gRPC-->  query-service  --get-->  Redis
 
 ### FIX 重送（Resend）與去重（Dedup）必備語意（重要）
 
-若採用「WAL 落盤後就回 ACK」的策略，FIX Gateway 必須具備完整的重送與去重能力，避免 client timeout 重送或 FIX session 層 Resend 造成重複下單。
+若第一個成功 ack 改為 `risk-service` 持久化成功後才回，FIX Gateway 仍必須具備完整的重送與去重能力，避免 client timeout 重送或 FIX session 層 Resend 造成重複下單。
 
 建議把問題拆成兩層：
 
@@ -982,7 +954,7 @@ client / internal API  --gRPC-->  query-service  --get-->  Redis
     - 若內容不一致：回覆拒單（Duplicate/ClOrdID conflict）並記錄稽核
   - 撤單也需去重：`OrderCancelRequest` 通常用新的 `ClOrdID` + `OrigClOrdID` 指向原委託；需防止同一撤單重送造成多次取消副作用
 
-實作上，WAL 本身就可以承擔「去重索引」的資料來源：至少要能查到某 `(TradingDay, ClOrdID)` 是否已接受，並能回覆同一結果。
+實作上，主去重權威應在 `risk-service` 的資料庫唯一鍵與查詢邏輯；gateway 的 WAL 若保留，可作為輔助對帳來源，但不應成為唯一的去重真相。
 
 ### 支援的下單類型（應包含）
 
@@ -1049,9 +1021,9 @@ QuickFIX 通常需要 session 設定與 FIX DataDictionary（FIX 版本 / custom
 
 ### 工具需求（建議）
 
-- Java：JDK 25 + Gradle
+- Java：JDK 25
 - C++：GCC/Clang（C++20）
-- Java 服務建置：Gradle
+- Java 服務建置：Gradle Wrapper（`./gradlew`）
 - Native 服務建置：CMake + vcpkg
 
 ### 主要依賴（方向性）
@@ -1062,11 +1034,46 @@ QuickFIX 通常需要 session 設定與 FIX DataDictionary（FIX 版本 / custom
 
 ### Java 服務建置範例
 
+repo root 已提供 Gradle Wrapper，可直接使用 `./gradlew`，不需要另外安裝系統級 Gradle。
+
 ```bash
-gradle :java-libs:simplematch-contracts:build
-gradle :services:quickfix-gateway:test
-gradle :services:account-service:test
+./gradlew :java-libs:simplematch-contracts:build
+./gradlew :services:quickfix-gateway:test
+./gradlew :services:account-service:test
+./gradlew :services:risk-service:test
 ```
+
+### `risk-service` schema migration commands
+
+`risk-service` 的 PostgreSQL migration 已可直接透過 Gradle 執行：
+
+```bash
+./gradlew riskServiceFlywayInfo
+./gradlew riskServiceFlywayMigrate
+./gradlew riskServiceFlywayValidate
+./gradlew riskServiceFlywayRepair
+./gradlew riskServiceFlywayBaseline
+./gradlew riskServiceFlywayClean
+```
+
+`risk-service` 目前明確將 `baselineVersion` 設為 `1`，因為既有的 runtime-managed schema 已經對應到 `V1__create_risk_service_tables.sql` 的結構，遷移到 Flyway 時需要從 `V2` 開始接手後續演進，而不是重放 `V1`。
+
+`flywayClean` 仍會註冊 task，但預設是停用的；只有在明確 opt-in 時才允許執行，避免誤刪 schema。
+
+若要直接覆蓋連線資訊，可使用 Gradle properties 或環境變數：
+
+```bash
+./gradlew riskServiceFlywayMigrate -PriskServiceFlywayDsn=postgresql://simplematch:simplematch@localhost:5432/simplematch
+./gradlew riskServiceFlywayMigrate -PriskServiceFlywayJdbcUrl=jdbc:postgresql://localhost:5432/simplematch -PriskServiceFlywayUsername=simplematch -PriskServiceFlywayPassword=simplematch
+```
+
+若你真的要在本機允許 `clean`，需在執行時明確 opt-in：
+
+```bash
+./gradlew riskServiceFlywayClean -PriskServiceFlywayDsn=postgresql://simplematch:simplematch@localhost:5432/simplematch -PriskServiceFlywayAllowClean=true
+```
+
+慣例 plugin 會優先讀取 service-scoped 覆蓋來源：`-PriskServiceFlywayDsn`、`-PriskServiceFlywayJdbcUrl`、`-PriskServiceFlywayUsername`、`-PriskServiceFlywayPassword`、`-PriskServiceFlywayAllowClean`，以及對應的 `RISK_SERVICE_FLYWAY_DSN`、`RISK_SERVICE_FLYWAY_JDBC_URL`、`RISK_SERVICE_FLYWAY_USERNAME`、`RISK_SERVICE_FLYWAY_PASSWORD`、`RISK_SERVICE_FLYWAY_ALLOW_CLEAN`。為了相容既有腳本，也接受 `-PflywayDsn`、`-PflywayJdbcUrl`、`-PflywayUsername`、`-PflywayPassword`，以及 `SIMPLEMATCH_POSTGRES_DSN`、`FLYWAY_JDBC_URL`、`FLYWAY_USERNAME`、`FLYWAY_PASSWORD`。
 
 ### Native 服務建置範例
 
@@ -1089,9 +1096,18 @@ cmake -S . -B build \
 cmake --build build -j
 ```
 
+### CI
+
+repo 內已提供 GitHub Actions workflow：[.github/workflows/ci.yml](.github/workflows/ci.yml)。它會直接驗證和本地一致的兩條建置路徑：
+
+- Java：`./gradlew staticAnalysis` + `./gradlew test` + `./gradlew :services:quickfix-gateway:certificationTest`
+- Native：`cmake --preset vcpkg` + `cmake --build --preset vcpkg` + `ctest --preset vcpkg`
+
 補充（本 repo 的落地狀態）：
 
 - Java 微服務目前以 Gradle multi-project 管理。
+- Java job 會上傳 Checkstyle / SpotBugs / test reports artifact，方便 CI 失敗時直接回看報告。
+- workflow 會先判斷變更範圍；只有 Java 相關檔案變更時才跑 Gradle job，只有 Native 相關檔案變更時才跑 CMake job，避免 docs-only 變更觸發整套重建。
 - native build tree 仍存在，主要作為歷史 C++ baseline 與未來 `matching-engine` 的建置入口。
 - FIX dictionary 的穩定 runtime 路徑為 `fix-spec/FIX44.xml`。
 
@@ -1185,8 +1201,8 @@ Consul 也能做 service discovery，但它通常適用於：
 
 對於 `quickfix-gateway`，建議至少維持以下驗證入口：
 
-- `gradle :services:quickfix-gateway:test`
-- `gradle :services:quickfix-gateway:certificationTest`
+- `./gradlew :services:quickfix-gateway:test`
+- `./gradlew :services:quickfix-gateway:certificationTest`
 
 ---
 
@@ -1196,7 +1212,7 @@ Consul 也能做 service discovery，但它通常適用於：
 
 ### Trace（分散式追蹤）
 
-- 建議導入 OpenTelemetry（或等價方案），至少串起：`quickfix-gateway` →（WAL/DB/outbox）→ Kafka → `risk-service` → `matching-engine` → Kafka → `quickfix-gateway`
+- 建議導入 OpenTelemetry（或等價方案），至少串起：`quickfix-gateway` → gRPC → `risk-service` → Kafka → `matching-engine` → Kafka → `quickfix-gateway`
 - Trace/Span 必須攜帶可對帳的 domain id（作為 attributes）：`order_id`、`ClOrdID`、`command_id`、`exec_id`、`symbol`、`account_id`
 - Kafka 消費/產出建議記錄：topic、partition、offset、lag（當下估計值）
 
@@ -1210,7 +1226,7 @@ Consul 也能做 service discovery，但它通常適用於：
 ### Metrics（Prometheus 指標起步）
 
 - **Kafka**：consumer lag、poll latency、commit latency、rebalances 次數、produce error/timeout 次數
-- **Outbox/WAL**：outbox backlog、WAL backlog、ingester 追上速度（records/sec）、最老未送出事件 age
+- **Outbox / optional WAL**：outbox backlog、必要時的 WAL backlog、補償流程追上速度（records/sec）、最老未送出事件 age
 - **撮合**：每 symbol/shard 吞吐（orders/sec）、撮合 loop latency（p50/p95/p99）、order book rebuild time
 - **gRPC（控制面）**：每 RPC 的成功率、錯誤碼分佈、latency（p50/p95/p99）、breaker open 次數
 
@@ -1221,7 +1237,7 @@ Consul 也能做 service discovery，但它通常適用於：
 - 資料來源：Grafana 以 Prometheus 作為 data source（同叢集內可直接連到 Prometheus service）。
 - 儀表板最小集合（起步即可）：
   - **Kafka / data plane**：各 consumer group 的 lag、consume rate、commit latency、produce error。
-  - **Outbox / WAL**：backlog（筆數）與 oldest event age（最老事件延遲）、ingester 追上速度。
+  - **Outbox / optional WAL**：backlog（筆數）與 oldest event age（最老事件延遲）、補償流程追上速度。
   - **撮合**：撮合 loop latency（p50/p95/p99）、吞吐（orders/sec）、每 shard/symbol 熱點分佈。
   - **gRPC（控制面）**：每 RPC 的 RPS、錯誤碼分佈、latency（p50/p95/p99）、breaker open 次數。
 
@@ -1234,7 +1250,7 @@ Consul 也能做 service discovery，但它通常適用於：
 - 建議流程：Prometheus 設定 alerting rules → 由 Alertmanager 做去重/抑制/路由 → 發到 Slack/Email（或你習慣的通知渠道）。
 - 告警最小集合（示意，門檻依環境調整）：
   - **Kafka lag 持續升高**：某 consumer group lag 在一段時間內單調上升或超過門檻。
-  - **Outbox/WAL backlog 或 oldest age 超標**：代表 durability 錨點已寫入但下游送不出去，會造成延遲擴大。
+  - **Outbox backlog 或補償佇列 age 超標**：代表 `risk-service` 已持久化但後續事件送不出去，會造成延遲擴大。
   - **撮合無進展**：某 shard 在系統預期有流量時，長時間沒有新的處理進度（可用吞吐/offset/狀態推進指標判斷）。
   - **錯誤率尖峰**：gRPC `UNAVAILABLE`/timeout 比例升高、或 producer/consumer error 突增。
   - **基礎健康**：pod crashloop、重啟頻繁、readiness 長時間不 ready。
