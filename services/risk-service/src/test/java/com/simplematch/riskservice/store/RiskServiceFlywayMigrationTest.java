@@ -5,11 +5,15 @@ import static org.assertj.core.api.Assertions.assertThat;
 import java.util.List;
 import java.util.UUID;
 import org.flywaydb.core.Flyway;
+import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.jdbc.datasource.DriverManagerDataSource;
 
 class RiskServiceFlywayMigrationTest {
+  // 驗證 Flyway 遷移會移除舊版 outbox relay 欄位與索引，同時保留現行欄位。
+  // 情境：先建立舊版 schema，再執行 risk-service migration 驗證升級結果。
+  @DisplayName("Flyway 遷移會清除舊版 relay 欄位與索引")
   @Test
   void migrateDropsLegacyRelayColumnsFromExistingOutboxSchema() {
     final DriverManagerDataSource dataSource = new DriverManagerDataSource();
@@ -77,6 +81,7 @@ class RiskServiceFlywayMigrationTest {
     }
     assertThat(hasColumn(jdbcTemplate, "TOPIC")).isTrue();
     assertThat(hasColumn(jdbcTemplate, "CREATED_AT_UNIX_MS")).isTrue();
+    assertThat(hasIndex(jdbcTemplate, "IDX_OUTBOX_PUBLISHABLE")).isFalse();
   }
 
   private boolean hasColumn(JdbcTemplate jdbcTemplate, String columnName) {
@@ -89,6 +94,19 @@ class RiskServiceFlywayMigrationTest {
             """,
             Integer.class,
             columnName)
+        > 0;
+  }
+
+  private boolean hasIndex(JdbcTemplate jdbcTemplate, String indexName) {
+    return jdbcTemplate.queryForObject(
+            """
+            SELECT COUNT(*)
+            FROM INFORMATION_SCHEMA.INDEXES
+            WHERE UPPER(TABLE_NAME) = 'OUTBOX'
+              AND UPPER(INDEX_NAME) = ?
+            """,
+            Integer.class,
+            indexName)
         > 0;
   }
 }

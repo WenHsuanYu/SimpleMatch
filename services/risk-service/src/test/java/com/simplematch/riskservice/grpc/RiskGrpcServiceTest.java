@@ -17,6 +17,7 @@ import com.simplematch.riskservice.store.PostgresSubmissionStore;
 import java.util.UUID;
 import org.flywaydb.core.Flyway;
 import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.jdbc.datasource.DataSourceTransactionManager;
@@ -47,6 +48,9 @@ class RiskGrpcServiceTest {
         "orders.validated");
   }
 
+    // 驗證 submitOrder 在持久化成功後，會回傳 accepted 的 gRPC 回應內容。
+    // 情境：提交一筆有效新單，確認 observer 收到完成訊號且回傳訂單資訊正確。
+    @DisplayName("submitOrder 成功持久化後會回傳 accepted 回應")
   @Test
   void submitOrderReturnsAcceptedResponseAfterPersistence() {
     final RiskGrpcService service = new RiskGrpcService(store);
@@ -63,6 +67,9 @@ class RiskGrpcServiceTest {
     assertThat(observer.value().getClientOrderId()).isEqualTo("C1");
   }
 
+    // 驗證 cancelOrder 缺少 originalClientOrderId 時，會回傳拒絕結果而非丟出 gRPC 錯誤。
+    // 情境：提交欄位不完整的取消單，確認回應內的 reason code 符合驗證規則。
+    @DisplayName("cancelOrder 缺少原始客戶單號時會回傳 rejected")
   @Test
   void cancelOrderReturnsRejectedResponseWhenOriginalClientOrderIdIsMissing() {
     final RiskGrpcService service = new RiskGrpcService(store);
@@ -90,6 +97,9 @@ class RiskGrpcServiceTest {
     assertThat(observer.value().getReasonCode()).isEqualTo("MISSING_ORIGINAL_CLIENT_ORDER_ID");
   }
 
+    // 驗證 submitOrder 會將非預期的 command type 正規化成 NEW 再持久化。
+    // 情境：送入 command type 被誤設為 CANCEL 的新單，確認資料庫內最終仍記錄為 NEW。
+    @DisplayName("submitOrder 會將非預期 command type 正規化為 NEW")
   @Test
   void submitOrderNormalizesUnexpectedCommandTypeToNew() {
     final RiskGrpcService service = new RiskGrpcService(store);
@@ -113,6 +123,9 @@ class RiskGrpcServiceTest {
         "C2")).isEqualTo("COMMAND_TYPE_NEW");
   }
 
+    // 驗證 cancelOrder 會將非預期的 command type 正規化成 CANCEL 再持久化。
+    // 情境：送入 command type 被誤設為 NEW 的取消單，確認資料庫內最終仍記錄為 CANCEL。
+    @DisplayName("cancelOrder 會將非預期 command type 正規化為 CANCEL")
   @Test
   void cancelOrderNormalizesUnexpectedCommandTypeToCancel() {
     final RiskGrpcService service = new RiskGrpcService(store);
@@ -136,6 +149,9 @@ class RiskGrpcServiceTest {
         "CXL-1")).isEqualTo("COMMAND_TYPE_CANCEL");
   }
 
+    // 驗證 submitOrder 收到預設空指令時，會回傳預期的驗證拒絕碼。
+    // 情境：直接傳入 OrderCommand.getDefaultInstance()，確認結果為 rejected 而非例外。
+    @DisplayName("submitOrder 遇到預設空指令時會回傳預期拒絕碼")
   @Test
   void submitOrderRejectsDefaultCommandInstanceWithExpectedReason() {
     final RiskGrpcService service = new RiskGrpcService(store);
@@ -151,6 +167,9 @@ class RiskGrpcServiceTest {
     assertThat(observer.value().getReasonCode()).isEqualTo("MISSING_CLIENT_ORDER_ID");
   }
 
+    // 驗證 cancelOrder 收到預設空指令時，會回傳預期的驗證拒絕碼。
+    // 情境：直接傳入 OrderCommand.getDefaultInstance()，確認取消流程也會回傳一致的 rejected 結果。
+    @DisplayName("cancelOrder 遇到預設空指令時會回傳預期拒絕碼")
   @Test
   void cancelOrderRejectsDefaultCommandInstanceWithExpectedReason() {
     final RiskGrpcService service = new RiskGrpcService(store);

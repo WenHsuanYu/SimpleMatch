@@ -25,6 +25,7 @@ import java.util.concurrent.TimeUnit;
 import java.util.stream.Stream;
 import org.flywaydb.core.Flyway;
 import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.Arguments;
@@ -64,6 +65,9 @@ class PostgresSubmissionStoreTest {
         "orders.validated");
   }
 
+  // 驗證相同冪等鍵的重複送單會重用首次成功寫入的提交與 outbox 事件。
+  // 情境：第二次送單只更換 commandId，但 clientOrderId 與指令型別相同。
+  @DisplayName("重複冪等鍵的新單會重用既有成功提交")
   @Test
   void persistsAcceptedSubmissionAndReusesItForDuplicateIdempotencyKey() {
     final OrderCommand command = newNewOrder("cmd-1", "O-C1", "C1");
@@ -92,6 +96,9 @@ class PostgresSubmissionStoreTest {
         "COMMAND_TYPE_NEW|C1"))).isEqualTo("orders.validated");
   }
 
+  // 驗證新單缺少必要欄位時，風控層會依不同輸入給出對應的拒絕碼。
+  // 情境：使用參數化測試覆蓋 clientOrderId、orderId、accountId、symbol、quantity、side、price 等缺漏案例。
+  @DisplayName("新單缺少必要欄位時會依情境回傳對應拒絕碼")
   @ParameterizedTest(name = "{0}")
   @MethodSource("invalidNewOrderCases")
   void rejectsInvalidNewOrdersWithSpecificReasonCodes(
@@ -106,6 +113,9 @@ class PostgresSubmissionStoreTest {
     assertThat(countRows("outbox")).isEqualTo(1);
   }
 
+  // 驗證不完整的限價單在第一次被拒絕後，後續重複請求仍會回傳同一筆拒絕結果。
+  // 情境：限價單缺少 price，且第二次請求只更換 commandId。
+  @DisplayName("不完整限價單的重複請求會重用既有拒絕結果")
   @Test
   void rejectsIncompleteLimitOrderAndPersistsRejectionForDuplicateRequests() {
     final OrderCommand invalid = newNewOrder("cmd-1", "O-C1", "C1").toBuilder().clearPrice().build();
@@ -119,6 +129,9 @@ class PostgresSubmissionStoreTest {
     assertThat(jdbcTemplate.queryForObject("SELECT COUNT(*) FROM outbox", Integer.class)).isEqualTo(1);
   }
 
+  // 驗證取消單若缺少原始客戶單號，會被視為無效請求並拒絕。
+  // 情境：建立一筆 CANCEL 指令，但不設定 originalClientOrderId。
+  @DisplayName("取消單缺少原始客戶單號時會被拒絕")
   @Test
   void rejectsCancelWithoutOriginalClientOrderId() {
     final OrderCommand cancel = OrderCommand.newBuilder()
@@ -140,6 +153,9 @@ class PostgresSubmissionStoreTest {
     assertThat(submission.reasonCode()).isEqualTo("MISSING_ORIGINAL_CLIENT_ORDER_ID");
   }
 
+  // 驗證空指令輸入會被拒絕，且仍會輸出可追蹤的 rejected outbox 事件。
+  // 情境：連續兩次傳入 null，確認冪等去重與 rejected payload/header 契約都正確。
+  @DisplayName("空指令會被拒絕並寫入 rejected outbox 事件")
   @Test
   void rejectsEmptyCommandAndWritesRejectedOutboxEvent() throws Exception {
     final StoredSubmission first = store.persist(null);
@@ -161,6 +177,9 @@ class PostgresSubmissionStoreTest {
     assertThat(rejected.getRejectReasonText()).isEqualTo("risk command payload is required");
   }
 
+  // 驗證市價單不需要 price 欄位即可通過風控驗證。
+  // 情境：將原本的有效新單改成 MARKET 並移除 price。
+  @DisplayName("市價單缺少價格時仍可通過驗證")
   @Test
   void acceptsMarketOrderWithoutPrice() {
     final OrderCommand command = newNewOrderBuilder("cmd-1", "O-C1", "C1")
@@ -175,6 +194,9 @@ class PostgresSubmissionStoreTest {
     assertThat(submission.reasonText()).isEmpty();
   }
 
+  // 驗證有效取消單在缺少 symbol 時，會退回使用 orderId 作為 outbox message key。
+  // 情境：建立合法 CANCEL 指令，檢查持久化結果與 validated payload 內容。
+  @DisplayName("有效取消單在缺少商品代碼時會使用 orderId 作為訊息鍵")
   @Test
   void acceptsValidCancelAndUsesOrderIdAsMessageKeyWhenSymbolIsMissing() throws Exception {
     final OrderCommand cancel = newCancelOrderBuilder("cmd-1", "O-C1", "CXL-1", "C1")
@@ -192,6 +214,9 @@ class PostgresSubmissionStoreTest {
     assertThat(validated.getCommandId()).isEqualTo(submission.requestId());
   }
 
+  // 驗證成功提交時寫出的 outbox payload、headers 與聚合欄位符合事件契約。
+  // 情境：提交一筆有效新單，逐一比對 outbox 列與 OrderValidated protobuf 內容。
+  @DisplayName("成功提交會寫出符合契約的 validated outbox payload")
   @Test
   void persistsAcceptedOutboxPayloadContract() throws Exception {
     final OrderCommand command = newNewOrder("cmd-1", "O-C1", "C1");
@@ -219,6 +244,9 @@ class PostgresSubmissionStoreTest {
     assertThat(validated.getSymbol()).isEqualTo(command.getSymbol());
   }
 
+  // 驗證拒絕提交時寫出的 outbox payload、headers 與拒絕原因符合事件契約。
+  // 情境：送出缺少 price 的限價單，檢查 OrderRejected protobuf 與 outbox 欄位一致。
+  @DisplayName("拒絕提交會寫出符合契約的 rejected outbox payload")
   @Test
   void persistsRejectedOutboxPayloadContract() throws Exception {
     final OrderCommand command = newNewOrder("cmd-1", "O-C1", "C1").toBuilder().clearPrice().build();
@@ -245,6 +273,9 @@ class PostgresSubmissionStoreTest {
     assertThat(rejected.getRejectReasonText()).isEqualTo("price is required for limit orders");
   }
 
+  // 驗證若 outbox headers 序列化失敗，整個交易會回滾，不留下半套資料。
+  // 情境：使用刻意拋出例外的 ObjectMapper 建立 store，再嘗試持久化有效新單。
+  @DisplayName("outbox 序列化失敗時會回滾整筆提交")
   @Test
   void rollsBackSubmissionWhenOutboxSerializationFails() {
     final PostgresSubmissionStore failingStore = new PostgresSubmissionStore(
@@ -260,6 +291,9 @@ class PostgresSubmissionStoreTest {
     assertThat(countRows("outbox")).isZero();
   }
 
+  // 驗證併發插入同一冪等鍵時，延後提交的執行緒會回讀勝出者的結果，而不是產生第二筆資料。
+  // 情境：用阻塞查詢模擬 duplicate key race，確認最終只保留一筆 submission 與 outbox。
+  @DisplayName("併發重複插入時會回傳既有提交而非重複寫入")
   @Test
   void returnsExistingSubmissionWhenConcurrentInsertCausesDuplicateKey() throws Exception {
     final OrderCommand delayedCommand = newNewOrder("cmd-delayed", "O-C1", "C1");
@@ -296,6 +330,9 @@ class PostgresSubmissionStoreTest {
     }
   }
 
+  // 驗證資料超過資料庫欄位長度限制時，整個交易會失敗且不留下任何殘留資料。
+  // 情境：以參數化測試覆蓋 requestId、orderId、clientOrderId 等超長輸入。
+  @DisplayName("必要欄位超過資料庫長度限制時會回滾")
   @ParameterizedTest(name = "{0}")
   @MethodSource("oversizedCommandCases")
   void rollsBackWhenRequiredColumnsExceedDatabaseLength(String ignoredCaseName, OrderCommand command) {
@@ -304,6 +341,9 @@ class PostgresSubmissionStoreTest {
     assertThat(countRows("outbox")).isZero();
   }
 
+  // 驗證包含 SQL 特殊字元與 Unicode 的輸入會被當成純資料保存，而不會破壞持久化流程。
+  // 情境：clientOrderId 與 symbol 含有引號、SQL 片段、德文字元與中文/emoji。
+  @DisplayName("特殊字元輸入會被安全保存而不影響持久化")
   @Test
   void storesSpecialCharactersAsDataWithoutBreakingPersistence() {
     final String clientOrderId = "C1';DROP TABLE outbox;--" + "-\u6e2c\u8a66-\uD83D\uDE80";
@@ -330,6 +370,9 @@ class PostgresSubmissionStoreTest {
             submission.idempotencyKey()))).isEqualTo(symbol);
   }
 
+  // 驗證重複送出同一冪等鍵時，既有 outbox event id 會保持穩定，不會因 requestId 改變而重算。
+  // 情境：第二次送單更換 commandId，並檢查資料庫中的 outbox_event_id 是否仍等於首次結果。
+  @DisplayName("重複提交不會改變既有 outbox event id")
   @Test
   void keepsOutboxEventIdStableForDuplicateSubmissions() {
     final OrderCommand command = newNewOrder("cmd-1", "O-C1", "C1");
