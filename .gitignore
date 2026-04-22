@@ -67,3 +67,4 @@ libs/vcpkg_installed/
 compile_commands.json
 
 libs/
+plan-simpleMatchQuickfix.prompt.md
