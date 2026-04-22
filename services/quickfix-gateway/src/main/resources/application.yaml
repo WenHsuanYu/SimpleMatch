@@ -1,0 +1,25 @@
+spring:
+  application:
+    name: quickfix-gateway
+  kafka:
+    bootstrap-servers: ${simplematch.kafka.brokers:localhost:9092}
+    producer:
+      key-serializer: org.apache.kafka.common.serialization.StringSerializer
+      value-serializer: org.apache.kafka.common.serialization.ByteArraySerializer
+      acks: all
+    consumer:
+      group-id: ${spring.application.name}
+      auto-offset-reset: earliest
+      key-deserializer: org.apache.kafka.common.serialization.StringDeserializer
+      value-deserializer: org.apache.kafka.common.serialization.ByteArrayDeserializer
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info,metrics
+
+simplematch:
+  quickfix-gateway:
+    data-plane-enabled: true
+    replay-enabled: true
