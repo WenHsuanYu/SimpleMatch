@@ -3,6 +3,10 @@ plugins {
   id("com.google.protobuf")
 }
 
+java {
+  withSourcesJar()
+}
+
 dependencies {
   api("com.google.protobuf:protobuf-java:4.31.1")
   api("io.grpc:grpc-protobuf:1.80.0")

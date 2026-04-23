@@ -1,0 +1,213 @@
+package com.simplematch.riskservice.submission;
+
+import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
+
+import com.fasterxml.jackson.core.JsonProcessingException;
+import com.fasterxml.jackson.databind.ObjectMapper;
+import com.simplematch.contracts.common.v1.OrderType;
+import com.simplematch.contracts.common.v1.Side;
+import com.simplematch.contracts.common.v1.TimeInForce;
+import com.simplematch.contracts.orders.v1.CommandType;
+import java.time.Clock;
+import java.time.Instant;
+import java.time.ZoneOffset;
+import java.util.ArrayDeque;
+import java.util.ArrayList;
+import java.util.List;
+import java.util.Optional;
+import org.junit.jupiter.api.Test;
+import org.springframework.dao.DuplicateKeyException;
+import org.springframework.transaction.PlatformTransactionManager;
+import org.springframework.transaction.TransactionDefinition;
+import org.springframework.transaction.TransactionException;
+import org.springframework.transaction.TransactionStatus;
+import org.springframework.transaction.support.SimpleTransactionStatus;
+import org.springframework.transaction.support.TransactionTemplate;
+
+class TransactionalSubmissionServiceTest {
+  private static final Clock FIXED_CLOCK = Clock.fixed(Instant.ofEpochMilli(100L), ZoneOffset.UTC);
+
+  @Test
+  void persistsSubmissionAndOutboxWhenIdempotencyKeyIsNew() {
+    final RecordingSubmissionRepository submissionRepository = new RecordingSubmissionRepository();
+    submissionRepository.queueFindResult(Optional.empty());
+    final RecordingOutboxRepository outboxRepository = new RecordingOutboxRepository();
+    final TransactionalSubmissionService service = new TransactionalSubmissionService(
+        new SubmissionIdempotencyKeyFactory(),
+        new SubmissionValidator(FIXED_CLOCK),
+        new SubmissionOutboxFactory(new ObjectMapper(), "orders.validated"),
+        submissionRepository,
+        outboxRepository,
+        newTransactionTemplate());
+
+    final SubmissionResult submission = service.persist(newNewOrder("cmd-1", "O-C1", "C1"));
+
+    assertThat(submission.accepted()).isTrue();
+    assertThat(submissionRepository.insertedSubmission).isEqualTo(submission);
+    assertThat(submissionRepository.insertedOutboxEventId).isEqualTo(outboxRepository.inserted.getFirst().eventId());
+    assertThat(outboxRepository.inserted).hasSize(1);
+    assertThat(outboxRepository.inserted.getFirst().aggregateId()).isEqualTo("O-C1");
+    assertThat(outboxRepository.inserted.getFirst().topic()).isEqualTo("orders.validated");
+  }
+
+  @Test
+  void returnsExistingSubmissionWithoutBuildingOutbox() {
+    final RecordingSubmissionRepository submissionRepository = new RecordingSubmissionRepository();
+    final SubmissionResult existing = new SubmissionResult(
+        "COMMAND_TYPE_NEW|C1",
+        "cmd-existing",
+        "O-C1",
+        "C1",
+        "",
+        CommandType.COMMAND_TYPE_NEW,
+        true,
+        "",
+        "",
+        99L);
+    submissionRepository.queueFindResult(Optional.of(existing));
+    final TransactionalSubmissionService service = new TransactionalSubmissionService(
+        new SubmissionIdempotencyKeyFactory(),
+        new SubmissionValidator(FIXED_CLOCK),
+        new SubmissionOutboxFactory(failingObjectMapper(), "orders.validated"),
+        submissionRepository,
+        new RecordingOutboxRepository(),
+        newTransactionTemplate());
+
+    final SubmissionResult submission = service.persist(newNewOrder("cmd-1", "O-C1", "C1"));
+
+    assertThat(submission).isEqualTo(existing);
+    assertThat(submissionRepository.insertedSubmission).isNull();
+  }
+
+  @Test
+  void returnsExistingSubmissionWhenInsertHitsDuplicateKey() {
+    final RecordingSubmissionRepository submissionRepository = new RecordingSubmissionRepository();
+    final SubmissionResult existing = new SubmissionResult(
+        "COMMAND_TYPE_NEW|C1",
+        "cmd-winner",
+        "O-C1",
+        "C1",
+        "",
+        CommandType.COMMAND_TYPE_NEW,
+        true,
+        "",
+        "",
+        100L);
+    submissionRepository.queueFindResult(Optional.empty());
+    submissionRepository.queueFindResult(Optional.of(existing));
+    submissionRepository.failWithDuplicateKey = true;
+    final RecordingOutboxRepository outboxRepository = new RecordingOutboxRepository();
+    final TransactionalSubmissionService service = new TransactionalSubmissionService(
+        new SubmissionIdempotencyKeyFactory(),
+        new SubmissionValidator(FIXED_CLOCK),
+        new SubmissionOutboxFactory(new ObjectMapper(), "orders.validated"),
+        submissionRepository,
+        outboxRepository,
+        newTransactionTemplate());
+
+    final SubmissionResult submission = service.persist(newNewOrder("cmd-loser", "O-C1", "C1"));
+
+    assertThat(submission).isEqualTo(existing);
+    assertThat(outboxRepository.inserted).isEmpty();
+  }
+
+  @Test
+  void rethrowsDuplicateKeyWhenConflictCannotBeResolved() {
+    final RecordingSubmissionRepository submissionRepository = new RecordingSubmissionRepository();
+    submissionRepository.queueFindResult(Optional.empty());
+    submissionRepository.queueFindResult(Optional.empty());
+    submissionRepository.failWithDuplicateKey = true;
+    final TransactionalSubmissionService service = new TransactionalSubmissionService(
+        new SubmissionIdempotencyKeyFactory(),
+        new SubmissionValidator(FIXED_CLOCK),
+        new SubmissionOutboxFactory(new ObjectMapper(), "orders.validated"),
+        submissionRepository,
+        new RecordingOutboxRepository(),
+        newTransactionTemplate());
+
+    assertThatThrownBy(() -> service.persist(newNewOrder("cmd-1", "O-C1", "C1")))
+        .isInstanceOf(DuplicateKeyException.class);
+  }
+
+    private static SubmissionCommand newNewOrder(String commandId, String orderId, String clientOrderId) {
+    return new SubmissionCommand(
+      commandId,
+      orderId,
+      "ACC-1",
+      "FIX.4.4:CLIENT->SIMPLEMATCH",
+      clientOrderId,
+      "AAPL",
+      Side.SIDE_BUY,
+      "10",
+      "101.25",
+      OrderType.ORDER_TYPE_LIMIT,
+      TimeInForce.TIME_IN_FORCE_ROD,
+      CommandType.COMMAND_TYPE_NEW,
+      "");
+  }
+
+  private static TransactionTemplate newTransactionTemplate() {
+    return new TransactionTemplate(new NoOpTransactionManager());
+  }
+
+  private static ObjectMapper failingObjectMapper() {
+    return new ObjectMapper() {
+      @Override
+      public String writeValueAsString(Object value) throws JsonProcessingException {
+        throw new JsonProcessingException("boom") {
+          private static final long serialVersionUID = 1L;
+        };
+      }
+    };
+  }
+
+  private static final class RecordingSubmissionRepository implements SubmissionRepository {
+    private final ArrayDeque<Optional<SubmissionResult>> findResults = new ArrayDeque<>();
+    private SubmissionResult insertedSubmission;
+    private String insertedOutboxEventId;
+    private boolean failWithDuplicateKey;
+
+    private void queueFindResult(Optional<SubmissionResult> result) {
+      findResults.addLast(result);
+    }
+
+    @Override
+    public Optional<SubmissionResult> findByIdempotencyKey(String idempotencyKey) {
+      return findResults.isEmpty() ? Optional.empty() : findResults.removeFirst();
+    }
+
+    @Override
+    public void insert(SubmissionResult submission, String outboxEventId) {
+      if (failWithDuplicateKey) {
+        throw new DuplicateKeyException("duplicate");
+      }
+      insertedSubmission = submission;
+      insertedOutboxEventId = outboxEventId;
+    }
+  }
+
+  private static final class RecordingOutboxRepository implements OutboxRepository {
+    private final List<OutboxRecord> inserted = new ArrayList<>();
+
+    @Override
+    public void insert(OutboxRecord record) {
+      inserted.add(record);
+    }
+  }
+
+  private static final class NoOpTransactionManager implements PlatformTransactionManager {
+    @Override
+    public TransactionStatus getTransaction(TransactionDefinition definition) throws TransactionException {
+      return new SimpleTransactionStatus();
+    }
+
+    @Override
+    public void commit(TransactionStatus status) throws TransactionException {
+    }
+
+    @Override
+    public void rollback(TransactionStatus status) throws TransactionException {
+    }
+  }
+}

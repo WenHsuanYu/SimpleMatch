@@ -13,7 +13,14 @@ import com.simplematch.contracts.risk.v1.CancelOrderRequest;
 import com.simplematch.contracts.risk.v1.CancelOrderResponse;
 import com.simplematch.contracts.risk.v1.SubmitOrderRequest;
 import com.simplematch.contracts.risk.v1.SubmitOrderResponse;
-import com.simplematch.riskservice.store.PostgresSubmissionStore;
+import com.simplematch.riskservice.store.JdbcOutboxRepository;
+import com.simplematch.riskservice.store.JdbcSubmissionRepository;
+import com.simplematch.riskservice.submission.SubmissionIdempotencyKeyFactory;
+import com.simplematch.riskservice.submission.SubmissionOutboxFactory;
+import com.simplematch.riskservice.submission.SubmissionService;
+import com.simplematch.riskservice.submission.SubmissionValidator;
+import com.simplematch.riskservice.submission.TransactionalSubmissionService;
+import java.time.Clock;
 import java.util.UUID;
 import org.flywaydb.core.Flyway;
 import org.junit.jupiter.api.BeforeEach;
@@ -26,7 +33,7 @@ import org.springframework.transaction.support.TransactionTemplate;
 
 class RiskGrpcServiceTest {
   private JdbcTemplate jdbcTemplate;
-  private PostgresSubmissionStore store;
+  private SubmissionService submissionService;
 
   @BeforeEach
   void setUp() {
@@ -41,11 +48,13 @@ class RiskGrpcServiceTest {
       .locations("classpath:db/migration/risk-service")
       .load()
       .migrate();
-    store = new PostgresSubmissionStore(
-        jdbcTemplate,
-        new TransactionTemplate(new DataSourceTransactionManager(dataSource)),
-        new ObjectMapper(),
-        "orders.validated");
+    submissionService = new TransactionalSubmissionService(
+        new SubmissionIdempotencyKeyFactory(),
+        new SubmissionValidator(Clock.systemUTC()),
+        new SubmissionOutboxFactory(new ObjectMapper(), "orders.validated"),
+        new JdbcSubmissionRepository(jdbcTemplate),
+        new JdbcOutboxRepository(jdbcTemplate),
+        new TransactionTemplate(new DataSourceTransactionManager(dataSource)));
   }
 
     // 驗證 submitOrder 在持久化成功後，會回傳 accepted 的 gRPC 回應內容。
@@ -53,7 +62,7 @@ class RiskGrpcServiceTest {
     @DisplayName("submitOrder 成功持久化後會回傳 accepted 回應")
   @Test
   void submitOrderReturnsAcceptedResponseAfterPersistence() {
-    final RiskGrpcService service = new RiskGrpcService(store);
+      final RiskGrpcService service = new RiskGrpcService(submissionService);
     final TestStreamObserver<SubmitOrderResponse> observer = new TestStreamObserver<>();
 
     service.submitOrder(
@@ -72,7 +81,7 @@ class RiskGrpcServiceTest {
     @DisplayName("cancelOrder 缺少原始客戶單號時會回傳 rejected")
   @Test
   void cancelOrderReturnsRejectedResponseWhenOriginalClientOrderIdIsMissing() {
-    final RiskGrpcService service = new RiskGrpcService(store);
+      final RiskGrpcService service = new RiskGrpcService(submissionService);
     final TestStreamObserver<CancelOrderResponse> observer = new TestStreamObserver<>();
 
     service.cancelOrder(
@@ -102,7 +111,7 @@ class RiskGrpcServiceTest {
     @DisplayName("submitOrder 會將非預期 command type 正規化為 NEW")
   @Test
   void submitOrderNormalizesUnexpectedCommandTypeToNew() {
-    final RiskGrpcService service = new RiskGrpcService(store);
+      final RiskGrpcService service = new RiskGrpcService(submissionService);
     final TestStreamObserver<SubmitOrderResponse> observer = new TestStreamObserver<>();
 
     service.submitOrder(
@@ -128,7 +137,7 @@ class RiskGrpcServiceTest {
     @DisplayName("cancelOrder 會將非預期 command type 正規化為 CANCEL")
   @Test
   void cancelOrderNormalizesUnexpectedCommandTypeToCancel() {
-    final RiskGrpcService service = new RiskGrpcService(store);
+      final RiskGrpcService service = new RiskGrpcService(submissionService);
     final TestStreamObserver<CancelOrderResponse> observer = new TestStreamObserver<>();
 
     service.cancelOrder(
@@ -154,7 +163,7 @@ class RiskGrpcServiceTest {
     @DisplayName("submitOrder 遇到預設空指令時會回傳預期拒絕碼")
   @Test
   void submitOrderRejectsDefaultCommandInstanceWithExpectedReason() {
-    final RiskGrpcService service = new RiskGrpcService(store);
+      final RiskGrpcService service = new RiskGrpcService(submissionService);
     final TestStreamObserver<SubmitOrderResponse> observer = new TestStreamObserver<>();
 
     service.submitOrder(
@@ -172,7 +181,7 @@ class RiskGrpcServiceTest {
     @DisplayName("cancelOrder 遇到預設空指令時會回傳預期拒絕碼")
   @Test
   void cancelOrderRejectsDefaultCommandInstanceWithExpectedReason() {
-    final RiskGrpcService service = new RiskGrpcService(store);
+      final RiskGrpcService service = new RiskGrpcService(submissionService);
     final TestStreamObserver<CancelOrderResponse> observer = new TestStreamObserver<>();
 
     service.cancelOrder(

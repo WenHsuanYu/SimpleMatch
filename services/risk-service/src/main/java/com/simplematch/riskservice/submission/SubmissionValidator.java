@@ -3,7 +3,6 @@ package com.simplematch.riskservice.submission;
 import com.simplematch.contracts.common.v1.OrderType;
 import com.simplematch.contracts.common.v1.Side;
 import com.simplematch.contracts.orders.v1.CommandType;
-import com.simplematch.contracts.orders.v1.OrderCommand;
 import java.time.Clock;
 import java.util.Objects;
 
@@ -15,16 +14,13 @@ public final class SubmissionValidator {
   }
 
   public SubmissionDecision evaluate(
-      OrderCommand command,
-      CommandType expectedType,
+      SubmissionCommand command,
       String idempotencyKey) {
-    final CommandType resolvedExpectedType = expectedType == null
-        ? CommandType.COMMAND_TYPE_UNSPECIFIED
-        : expectedType;
+    final SubmissionCommand normalizedCommand = command == null ? SubmissionCommand.empty() : command;
     final long now = clock.instant().toEpochMilli();
 
-    if ((command == null || OrderCommand.getDefaultInstance().equals(command))
-        && resolvedExpectedType == CommandType.COMMAND_TYPE_UNSPECIFIED) {
+    if (normalizedCommand.isEmpty()
+        && normalizedCommand.commandType() == CommandType.COMMAND_TYPE_UNSPECIFIED) {
       return rejected(
           idempotencyKey,
           "",
@@ -35,100 +31,98 @@ public final class SubmissionValidator {
           now,
           "EMPTY_COMMAND",
           "risk command payload is required",
-          OrderCommand.getDefaultInstance());
-    }
+              SubmissionCommand.empty());
+            }
 
-    final OrderCommand normalizedCommand = normalize(command, resolvedExpectedType);
-
-    if (normalizedCommand.getClientOrderId().isBlank()) {
+            if (normalizedCommand.clientOrderId().isBlank()) {
       return rejected(
           idempotencyKey,
-          normalizedCommand.getCommandId(),
-          normalizedCommand.getOrderId(),
+              normalizedCommand.commandId(),
+              normalizedCommand.orderId(),
           "",
-          normalizedCommand.getOriginalClientOrderId(),
-          normalizedCommand.getCommandType(),
+              normalizedCommand.originalClientOrderId(),
+              normalizedCommand.commandType(),
           now,
           "MISSING_CLIENT_ORDER_ID",
           "client_order_id is required",
           normalizedCommand);
     }
-    if (normalizedCommand.getOrderId().isBlank()) {
+            if (normalizedCommand.orderId().isBlank()) {
       return rejected(
           idempotencyKey,
-          normalizedCommand.getCommandId(),
+              normalizedCommand.commandId(),
           "",
-          normalizedCommand.getClientOrderId(),
-          normalizedCommand.getOriginalClientOrderId(),
-          normalizedCommand.getCommandType(),
+              normalizedCommand.clientOrderId(),
+              normalizedCommand.originalClientOrderId(),
+              normalizedCommand.commandType(),
           now,
           "MISSING_ORDER_ID",
           "order_id is required",
           normalizedCommand);
     }
 
-    if (normalizedCommand.getCommandType() == CommandType.COMMAND_TYPE_NEW) {
-      if (normalizedCommand.getAccountId().isBlank()) {
+            if (normalizedCommand.commandType() == CommandType.COMMAND_TYPE_NEW) {
+          if (normalizedCommand.accountId().isBlank()) {
         return rejected(
             idempotencyKey,
-            normalizedCommand.getCommandId(),
-            normalizedCommand.getOrderId(),
-            normalizedCommand.getClientOrderId(),
-            normalizedCommand.getOriginalClientOrderId(),
-            normalizedCommand.getCommandType(),
+            normalizedCommand.commandId(),
+            normalizedCommand.orderId(),
+            normalizedCommand.clientOrderId(),
+            normalizedCommand.originalClientOrderId(),
+            normalizedCommand.commandType(),
             now,
             "MISSING_ACCOUNT_ID",
             "account_id is required",
             normalizedCommand);
       }
-      if (normalizedCommand.getSymbol().isBlank()) {
+          if (normalizedCommand.symbol().isBlank()) {
         return rejected(
             idempotencyKey,
-            normalizedCommand.getCommandId(),
-            normalizedCommand.getOrderId(),
-            normalizedCommand.getClientOrderId(),
-            normalizedCommand.getOriginalClientOrderId(),
-            normalizedCommand.getCommandType(),
+            normalizedCommand.commandId(),
+            normalizedCommand.orderId(),
+            normalizedCommand.clientOrderId(),
+            normalizedCommand.originalClientOrderId(),
+            normalizedCommand.commandType(),
             now,
             "MISSING_SYMBOL",
             "symbol is required",
             normalizedCommand);
       }
-      if (normalizedCommand.getQuantity().isBlank()) {
+          if (normalizedCommand.quantity().isBlank()) {
         return rejected(
             idempotencyKey,
-            normalizedCommand.getCommandId(),
-            normalizedCommand.getOrderId(),
-            normalizedCommand.getClientOrderId(),
-            normalizedCommand.getOriginalClientOrderId(),
-            normalizedCommand.getCommandType(),
+            normalizedCommand.commandId(),
+            normalizedCommand.orderId(),
+            normalizedCommand.clientOrderId(),
+            normalizedCommand.originalClientOrderId(),
+            normalizedCommand.commandType(),
             now,
             "MISSING_QUANTITY",
             "quantity is required",
             normalizedCommand);
       }
-      if (normalizedCommand.getSide() == Side.SIDE_UNSPECIFIED) {
+          if (normalizedCommand.side() == Side.SIDE_UNSPECIFIED) {
         return rejected(
             idempotencyKey,
-            normalizedCommand.getCommandId(),
-            normalizedCommand.getOrderId(),
-            normalizedCommand.getClientOrderId(),
-            normalizedCommand.getOriginalClientOrderId(),
-            normalizedCommand.getCommandType(),
+            normalizedCommand.commandId(),
+            normalizedCommand.orderId(),
+            normalizedCommand.clientOrderId(),
+            normalizedCommand.originalClientOrderId(),
+            normalizedCommand.commandType(),
             now,
             "MISSING_SIDE",
             "side is required",
             normalizedCommand);
       }
-      if (normalizedCommand.getOrderType() == OrderType.ORDER_TYPE_LIMIT
-          && normalizedCommand.getPrice().isBlank()) {
+          if (normalizedCommand.orderType() == OrderType.ORDER_TYPE_LIMIT
+              && normalizedCommand.price().isBlank()) {
         return rejected(
             idempotencyKey,
-            normalizedCommand.getCommandId(),
-            normalizedCommand.getOrderId(),
-            normalizedCommand.getClientOrderId(),
-            normalizedCommand.getOriginalClientOrderId(),
-            normalizedCommand.getCommandType(),
+            normalizedCommand.commandId(),
+            normalizedCommand.orderId(),
+            normalizedCommand.clientOrderId(),
+            normalizedCommand.originalClientOrderId(),
+            normalizedCommand.commandType(),
             now,
             "MISSING_PRICE",
             "price is required for limit orders",
@@ -136,15 +130,15 @@ public final class SubmissionValidator {
       }
     }
 
-    if (normalizedCommand.getCommandType() == CommandType.COMMAND_TYPE_CANCEL
-        && normalizedCommand.getOriginalClientOrderId().isBlank()) {
+            if (normalizedCommand.commandType() == CommandType.COMMAND_TYPE_CANCEL
+            && normalizedCommand.originalClientOrderId().isBlank()) {
       return rejected(
           idempotencyKey,
-          normalizedCommand.getCommandId(),
-          normalizedCommand.getOrderId(),
-          normalizedCommand.getClientOrderId(),
+              normalizedCommand.commandId(),
+              normalizedCommand.orderId(),
+              normalizedCommand.clientOrderId(),
           "",
-          normalizedCommand.getCommandType(),
+              normalizedCommand.commandType(),
           now,
           "MISSING_ORIGINAL_CLIENT_ORDER_ID",
           "original_client_order_id is required for cancel requests",
@@ -154,11 +148,11 @@ public final class SubmissionValidator {
     return new SubmissionDecision(
         new SubmissionResult(
             idempotencyKey,
-            normalizedCommand.getCommandId(),
-            normalizedCommand.getOrderId(),
-            normalizedCommand.getClientOrderId(),
-            normalizedCommand.getOriginalClientOrderId(),
-            normalizedCommand.getCommandType(),
+        normalizedCommand.commandId(),
+        normalizedCommand.orderId(),
+        normalizedCommand.clientOrderId(),
+        normalizedCommand.originalClientOrderId(),
+        normalizedCommand.commandType(),
             true,
             "",
             "",
@@ -176,7 +170,7 @@ public final class SubmissionValidator {
       long createdAtUnixMs,
       String reasonCode,
       String reasonText,
-      OrderCommand normalizedCommand) {
+      SubmissionCommand normalizedCommand) {
     return new SubmissionDecision(
         new SubmissionResult(
             idempotencyKey,
@@ -190,19 +184,5 @@ public final class SubmissionValidator {
             reasonText,
             createdAtUnixMs),
         normalizedCommand);
-  }
-
-  private OrderCommand normalize(OrderCommand command, CommandType expectedType) {
-    if (command == null || OrderCommand.getDefaultInstance().equals(command)) {
-      if (expectedType == CommandType.COMMAND_TYPE_UNSPECIFIED) {
-        return OrderCommand.getDefaultInstance();
-      }
-      return OrderCommand.newBuilder().setCommandType(expectedType).build();
-    }
-    if (expectedType != CommandType.COMMAND_TYPE_UNSPECIFIED
-        && command.getCommandType() != expectedType) {
-      return command.toBuilder().setCommandType(expectedType).build();
-    }
-    return command;
   }
 }

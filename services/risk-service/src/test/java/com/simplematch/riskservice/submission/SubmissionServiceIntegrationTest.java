@@ -1,4 +1,4 @@
-package com.simplematch.riskservice.store;
+package com.simplematch.riskservice.submission;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
@@ -14,13 +14,8 @@ import com.simplematch.contracts.orders.v1.CommandType;
 import com.simplematch.contracts.orders.v1.OrderCommand;
 import com.simplematch.contracts.orders.v1.OrderRejected;
 import com.simplematch.contracts.orders.v1.OrderValidated;
-import com.simplematch.riskservice.submission.SubmissionCommand;
-import com.simplematch.riskservice.submission.SubmissionIdempotencyKeyFactory;
-import com.simplematch.riskservice.submission.SubmissionOutboxFactory;
-import com.simplematch.riskservice.submission.SubmissionResult;
-import com.simplematch.riskservice.submission.SubmissionService;
-import com.simplematch.riskservice.submission.SubmissionValidator;
-import com.simplematch.riskservice.submission.TransactionalSubmissionService;
+import com.simplematch.riskservice.store.JdbcOutboxRepository;
+import com.simplematch.riskservice.store.JdbcSubmissionRepository;
 import java.nio.charset.StandardCharsets;
 import java.util.Arrays;
 import java.util.List;

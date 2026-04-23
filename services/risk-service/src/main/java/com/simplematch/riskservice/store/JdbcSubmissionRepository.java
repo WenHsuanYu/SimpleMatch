@@ -1,0 +1,76 @@
+package com.simplematch.riskservice.store;
+
+import com.simplematch.contracts.orders.v1.CommandType;
+import com.simplematch.riskservice.submission.SubmissionRepository;
+import com.simplematch.riskservice.submission.SubmissionResult;
+import java.util.Objects;
+import java.util.Optional;
+import org.springframework.jdbc.core.JdbcTemplate;
+import org.springframework.jdbc.core.RowMapper;
+
+public final class JdbcSubmissionRepository implements SubmissionRepository {
+  private static final RowMapper<SubmissionResult> SUBMISSION_ROW_MAPPER = (resultSet, rowNum) ->
+      new SubmissionResult(
+          resultSet.getString("idempotency_key"),
+          resultSet.getString("request_id"),
+          resultSet.getString("order_id"),
+          resultSet.getString("client_order_id"),
+          resultSet.getString("original_client_order_id"),
+          CommandType.valueOf(resultSet.getString("command_type")),
+          resultSet.getBoolean("accepted"),
+          resultSet.getString("reason_code"),
+          resultSet.getString("reason_text"),
+          resultSet.getLong("created_at_unix_ms"));
+
+  private final JdbcTemplate jdbcTemplate;
+
+  public JdbcSubmissionRepository(JdbcTemplate jdbcTemplate) {
+    this.jdbcTemplate = Objects.requireNonNull(jdbcTemplate);
+  }
+
+  @Override
+  public Optional<SubmissionResult> findByIdempotencyKey(String idempotencyKey) {
+    return jdbcTemplate.query(
+            """
+                SELECT idempotency_key, request_id, order_id, client_order_id, original_client_order_id,
+                       command_type, accepted, reason_code, reason_text, created_at_unix_ms
+                FROM risk_submissions
+                WHERE idempotency_key = ?
+                """,
+            SUBMISSION_ROW_MAPPER,
+            idempotencyKey)
+        .stream()
+        .findFirst();
+  }
+
+  @Override
+  public void insert(SubmissionResult submission, String outboxEventId) {
+    jdbcTemplate.update(
+        """
+            INSERT INTO risk_submissions (
+              idempotency_key,
+              request_id,
+              order_id,
+              client_order_id,
+              original_client_order_id,
+              command_type,
+              accepted,
+              reason_code,
+              reason_text,
+              created_at_unix_ms,
+              outbox_event_id
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            """,
+        submission.idempotencyKey(),
+        submission.requestId(),
+        submission.orderId(),
+        submission.clientOrderId(),
+        submission.originalClientOrderId(),
+        submission.commandType().name(),
+        submission.accepted(),
+        submission.reasonCode(),
+        submission.reasonText(),
+        submission.createdAtUnixMs(),
+        outboxEventId);
+  }
+}

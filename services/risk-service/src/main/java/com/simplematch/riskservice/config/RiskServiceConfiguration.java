@@ -3,8 +3,13 @@ package com.simplematch.riskservice.config;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.simplematch.config.SimpleMatchConfig;
 import com.simplematch.riskservice.bootstrap.RiskServiceRuntime;
-import com.simplematch.riskservice.store.PostgresSubmissionStore;
-import com.simplematch.riskservice.store.SubmissionStore;
+import com.simplematch.riskservice.store.JdbcOutboxRepository;
+import com.simplematch.riskservice.store.JdbcSubmissionRepository;
+import com.simplematch.riskservice.submission.SubmissionIdempotencyKeyFactory;
+import com.simplematch.riskservice.submission.SubmissionOutboxFactory;
+import com.simplematch.riskservice.submission.SubmissionService;
+import com.simplematch.riskservice.submission.SubmissionValidator;
+import com.simplematch.riskservice.submission.TransactionalSubmissionService;
 import com.zaxxer.hikari.HikariDataSource;
 import java.time.Clock;
 import javax.sql.DataSource;
@@ -64,15 +69,18 @@ public class RiskServiceConfiguration {
   }
 
   @Bean
-  SubmissionStore submissionStore(
+  SubmissionService submissionService(
       JdbcTemplate riskJdbcTemplate,
       TransactionTemplate riskTransactionTemplate,
+      Clock riskServiceClock,
       ObjectMapper objectMapper,
       SimpleMatchConfig config) {
-    return new PostgresSubmissionStore(
-        riskJdbcTemplate,
-        riskTransactionTemplate,
-        objectMapper,
-        config.getKafka().getTopics().getOrdersValidated());
+    return new TransactionalSubmissionService(
+        new SubmissionIdempotencyKeyFactory(),
+        new SubmissionValidator(riskServiceClock),
+        new SubmissionOutboxFactory(objectMapper, config.getKafka().getTopics().getOrdersValidated()),
+        new JdbcSubmissionRepository(riskJdbcTemplate),
+        new JdbcOutboxRepository(riskJdbcTemplate),
+        riskTransactionTemplate);
   }
 }

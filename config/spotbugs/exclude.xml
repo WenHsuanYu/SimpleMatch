@@ -32,6 +32,22 @@
     <Class name="com.simplematch.riskservice.store.PostgresSubmissionStore"/>
   </Match>
   <Match>
+    <Bug pattern="EI_EXPOSE_REP2"/>
+    <Class name="com.simplematch.riskservice.store.JdbcOutboxRepository"/>
+  </Match>
+  <Match>
+    <Bug pattern="EI_EXPOSE_REP2"/>
+    <Class name="com.simplematch.riskservice.store.JdbcSubmissionRepository"/>
+  </Match>
+  <Match>
+    <Bug pattern="EI_EXPOSE_REP2"/>
+    <Class name="com.simplematch.riskservice.submission.SubmissionOutboxFactory"/>
+  </Match>
+  <Match>
+    <Bug pattern="EI_EXPOSE_REP2"/>
+    <Class name="com.simplematch.riskservice.submission.TransactionalSubmissionService"/>
+  </Match>
+  <Match>
     <Bug pattern="EI_EXPOSE_REP,EI_EXPOSE_REP2"/>
     <Class name="com.simplematch.quickfixgateway.fix.InboundFixMessageHandler"/>
   </Match>
