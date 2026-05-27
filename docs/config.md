@@ -46,13 +46,13 @@ Minimum snapshot shape:
 
 ```json
 {
-	"entries": [
-		{
-			"symbol": "AAPL",
-			"routingBucket": "mega-cap-tech",
-			"kafkaPartitionId": 7
-		}
-	]
+ "entries": [
+  {
+   "symbol": "AAPL",
+   "routingBucket": "mega-cap-tech",
+   "kafkaPartitionId": 7
+  }
+ ]
 }
 ```
 
@@ -103,4 +103,3 @@ QuickFIX continuity defaults:
 
 - the repo default `config/quickfix/acceptor.cfg` now uses `ResetOnLogon=N`, `ResetOnLogout=N`, and `ResetOnDisconnect=N`
 - Kubernetes continuity deployments should mount owner-local persistent storage for QuickFIX file store, file log, and WAL paths
-

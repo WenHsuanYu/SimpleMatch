@@ -1,4 +1,15 @@
-# Native Dependencies
+# Dependencies
+
+## Java and Gradle
+
+This repo's Java dependencies are managed through the root Gradle build plus each module's own `build.gradle.kts` file.
+
+- The root [build.gradle.kts](/home/alexyu/SimpleMatch/build.gradle.kts) centralizes shared Java build conventions across subprojects.
+- Lombok is applied centrally to every Gradle project under `services/*` via `compileOnly`, `annotationProcessor`, `testCompileOnly`, and `testAnnotationProcessor`.
+- Shared modules under `shared-java/*` are not opted into Lombok by default.
+- After changing root dependency wiring, validate with a focused module compile before running broader static analysis.
+
+## Native Dependencies
 
 This repo is primarily a Gradle/Java workspace today.
 

@@ -27,6 +27,7 @@ allprojects {
 }
 
 val mockitoCoreVersion = "5.17.0"
+val lombokVersion = "1.18.42"
 
 val checkstyleAndSpotbugsProjects = setOf(
     ":shared-java:simplematch-config",
@@ -52,6 +53,13 @@ subprojects {
       toolchain {
         languageVersion = JavaLanguageVersion.of(25)
       }
+    }
+
+    if (projectPath.startsWith(":services:")) {
+      dependencies.add("compileOnly", "org.projectlombok:lombok:$lombokVersion")
+      dependencies.add("annotationProcessor", "org.projectlombok:lombok:$lombokVersion")
+      dependencies.add("testCompileOnly", "org.projectlombok:lombok:$lombokVersion")
+      dependencies.add("testAnnotationProcessor", "org.projectlombok:lombok:$lombokVersion")
     }
 
     val mockitoAgent = configurations.create("mockitoAgent")
