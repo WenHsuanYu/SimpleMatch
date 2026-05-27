@@ -6,10 +6,6 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
-import com.simplematch.contracts.common.v1.OrderType;
-import com.simplematch.contracts.common.v1.Side;
-import com.simplematch.contracts.common.v1.TimeInForce;
-import com.simplematch.contracts.orders.v1.CommandType;
 import com.simplematch.contracts.orders.v1.OrderRejected;
 import com.simplematch.contracts.orders.v1.OrderValidated;
 import java.nio.charset.StandardCharsets;
@@ -18,7 +14,10 @@ import org.junit.jupiter.api.Test;
 
 class SubmissionOutboxFactoryTest {
   private final ObjectMapper objectMapper = new ObjectMapper();
-  private final SubmissionOutboxFactory factory = new SubmissionOutboxFactory(objectMapper, "orders.validated");
+  private final SubmissionOutboxFactory factory = new SubmissionOutboxFactory(
+      objectMapper,
+      "orders.validated",
+      symbol -> "AAPL".equals(symbol) ? 7 : 0);
 
   @Test
   void createsAcceptedOutboxRecord() throws Exception {
@@ -30,6 +29,7 @@ class SubmissionOutboxFactoryTest {
 
     assertThat(record.topic()).isEqualTo("orders.validated");
     assertThat(record.messageKey()).isEqualTo("AAPL");
+    assertThat(record.kafkaPartitionId()).isEqualTo(7);
     assertThat(record.payloadType()).isEqualTo(OrderValidated.getDescriptor().getFullName());
     assertThat(record.aggregateType()).isEqualTo("risk_submission");
     assertThat(record.aggregateId()).isEqualTo("O-C1");
@@ -45,6 +45,7 @@ class SubmissionOutboxFactoryTest {
     assertThat(payload.getOrderId()).isEqualTo("O-C1");
     assertThat(payload.getAccountId()).isEqualTo("ACC-1");
     assertThat(payload.getSymbol()).isEqualTo("AAPL");
+    assertThat(payload.getRoutingPartition()).isEqualTo("7");
   }
 
   @Test
@@ -123,7 +124,10 @@ class SubmissionOutboxFactoryTest {
 
   @Test
   void wrapsHeaderSerializationFailures() {
-    final SubmissionOutboxFactory failingFactory = new SubmissionOutboxFactory(failingObjectMapper(), "orders.validated");
+    final SubmissionOutboxFactory failingFactory = new SubmissionOutboxFactory(
+      failingObjectMapper(),
+      "orders.validated",
+      symbol -> 7);
 
     assertThatThrownBy(() -> failingFactory.create(acceptedDecision()))
         .isInstanceOf(IllegalStateException.class)

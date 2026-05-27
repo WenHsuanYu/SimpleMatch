@@ -65,9 +65,9 @@ class SubmissionServiceIntegrationTest {
     submissionService = newSubmissionService(jdbcTemplate, objectMapper);
   }
 
-  // 驗證相同冪等鍵的重複送單會重用首次成功寫入的提交與 outbox 事件。
-  // 情境：第二次送單只更換 commandId，但 clientOrderId 與指令型別相同。
-  @DisplayName("重複冪等鍵的新單會重用既有成功提交")
+  // Verify that duplicate submissions with the same idempotency key reuse the first successfully stored submission and outbox event.
+  // Scenario: the second submission changes only the commandId, while clientOrderId and command type stay the same.
+  @DisplayName("duplicate idempotency keys reuse the existing successful submission")
   @Test
   void persistsAcceptedSubmissionAndReusesItForDuplicateIdempotencyKey() {
     final OrderCommand command = newNewOrder("cmd-1", "O-C1", "C1");
@@ -96,9 +96,9 @@ class SubmissionServiceIntegrationTest {
         "COMMAND_TYPE_NEW|C1"))).isEqualTo("orders.validated");
   }
 
-  // 驗證新單缺少必要欄位時，風控層會依不同輸入給出對應的拒絕碼。
-  // 情境：使用參數化測試覆蓋 clientOrderId、orderId、accountId、symbol、quantity、side、price 等缺漏案例。
-  @DisplayName("新單缺少必要欄位時會依情境回傳對應拒絕碼")
+  // Verify that when a new order is missing required fields, the risk layer returns the corresponding rejection code for each input.
+  // Scenario: use a parameterized test to cover missing clientOrderId, orderId, accountId, symbol, quantity, side, and price cases.
+  @DisplayName("new orders missing required fields return the matching rejection code")
   @ParameterizedTest(name = "{0}")
   @MethodSource("invalidNewOrderCases")
   void rejectsInvalidNewOrdersWithSpecificReasonCodes(
@@ -113,9 +113,9 @@ class SubmissionServiceIntegrationTest {
     assertThat(countRows("outbox")).isEqualTo(1);
   }
 
-  // 驗證不完整的限價單在第一次被拒絕後，後續重複請求仍會回傳同一筆拒絕結果。
-  // 情境：限價單缺少 price，且第二次請求只更換 commandId。
-  @DisplayName("不完整限價單的重複請求會重用既有拒絕結果")
+  // Verify that an incomplete limit order returns the same rejection result for later duplicate requests after the first rejection.
+  // Scenario: the limit order is missing price, and the second request changes only the commandId.
+  @DisplayName("duplicate requests for an incomplete limit order reuse the existing rejection result")
   @Test
   void rejectsIncompleteLimitOrderAndPersistsRejectionForDuplicateRequests() {
     final OrderCommand invalid = newNewOrder("cmd-1", "O-C1", "C1").toBuilder().clearPrice().build();
@@ -129,9 +129,9 @@ class SubmissionServiceIntegrationTest {
     assertThat(jdbcTemplate.queryForObject("SELECT COUNT(*) FROM outbox", Integer.class)).isEqualTo(1);
   }
 
-  // 驗證取消單若缺少原始客戶單號，會被視為無效請求並拒絕。
-  // 情境：建立一筆 CANCEL 指令，但不設定 originalClientOrderId。
-  @DisplayName("取消單缺少原始客戶單號時會被拒絕")
+  // Verify that a cancel order missing the original client order id is treated as an invalid request and rejected.
+  // Scenario: build a CANCEL command without setting originalClientOrderId.
+  @DisplayName("cancel orders are rejected when the original client order id is missing")
   @Test
   void rejectsCancelWithoutOriginalClientOrderId() {
     final OrderCommand cancel = OrderCommand.newBuilder()
@@ -153,9 +153,9 @@ class SubmissionServiceIntegrationTest {
     assertThat(submission.reasonCode()).isEqualTo("MISSING_ORIGINAL_CLIENT_ORDER_ID");
   }
 
-  // 驗證空指令輸入會被拒絕，且仍會輸出可追蹤的 rejected outbox 事件。
-  // 情境：連續兩次傳入 null，確認冪等去重與 rejected payload/header 契約都正確。
-  @DisplayName("空指令會被拒絕並寫入 rejected outbox 事件")
+  // Verify that an empty command input is rejected and still emits a traceable rejected outbox event.
+  // Scenario: pass null twice in a row and confirm the idempotent deduplication and rejected payload/header contract are both correct.
+  @DisplayName("empty commands are rejected and written as rejected outbox events")
   @Test
   void rejectsEmptyCommandAndWritesRejectedOutboxEvent() throws Exception {
     final SubmissionResult first = persist((OrderCommand) null);
@@ -177,9 +177,9 @@ class SubmissionServiceIntegrationTest {
     assertThat(rejected.getRejectReasonText()).isEqualTo("risk command payload is required");
   }
 
-  // 驗證市價單不需要 price 欄位即可通過風控驗證。
-  // 情境：將原本的有效新單改成 MARKET 並移除 price。
-  @DisplayName("市價單缺少價格時仍可通過驗證")
+  // Verify that a market order can pass risk validation without a price field.
+  // Scenario: convert a valid new order to MARKET and remove the price.
+  @DisplayName("market orders still pass validation without a price")
   @Test
   void acceptsMarketOrderWithoutPrice() {
     final OrderCommand command = newNewOrderBuilder("cmd-1", "O-C1", "C1")
@@ -194,9 +194,9 @@ class SubmissionServiceIntegrationTest {
     assertThat(submission.reasonText()).isEmpty();
   }
 
-  // 驗證有效取消單在缺少 symbol 時，會退回使用 orderId 作為 outbox message key。
-  // 情境：建立合法 CANCEL 指令，檢查持久化結果與 validated payload 內容。
-  @DisplayName("有效取消單在缺少商品代碼時會使用 orderId 作為訊息鍵")
+  // Verify that a valid cancel order falls back to orderId as the outbox message key when symbol is missing.
+  // Scenario: build a valid CANCEL command and inspect the persisted result and validated payload contents.
+  @DisplayName("valid cancel orders use orderId as the message key when symbol is missing")
   @Test
   void acceptsValidCancelAndUsesOrderIdAsMessageKeyWhenSymbolIsMissing() throws Exception {
     final OrderCommand cancel = newCancelOrderBuilder("cmd-1", "O-C1", "CXL-1", "C1")
@@ -207,16 +207,17 @@ class SubmissionServiceIntegrationTest {
     final OrderValidated validated = OrderValidated.parseFrom(outboxRow.payload());
 
     assertThat(submission.accepted()).isTrue();
-    assertThat(submission.commandType()).isEqualTo(CommandType.COMMAND_TYPE_CANCEL);
+    assertThat(submission.commandType())
+      .isEqualTo(com.simplematch.riskservice.submission.CommandType.COMMAND_TYPE_CANCEL);
     assertThat(outboxRow.messageKey()).isEqualTo(submission.orderId());
     assertThat(outboxRow.payloadType()).isEqualTo(OrderValidated.getDescriptor().getFullName());
     assertThat(validated.getOrderId()).isEqualTo(submission.orderId());
     assertThat(validated.getCommandId()).isEqualTo(submission.requestId());
   }
 
-  // 驗證成功提交時寫出的 outbox payload、headers 與聚合欄位符合事件契約。
-  // 情境：提交一筆有效新單，逐一比對 outbox 列與 OrderValidated protobuf 內容。
-  @DisplayName("成功提交會寫出符合契約的 validated outbox payload")
+  // Verify that the outbox payload, headers, and aggregate fields written on success match the event contract.
+  // Scenario: submit a valid new order and compare the outbox row with the OrderValidated protobuf contents field by field.
+  @DisplayName("successful submissions write a validated outbox payload that matches the contract")
   @Test
   void persistsAcceptedOutboxPayloadContract() throws Exception {
     final OrderCommand command = newNewOrder("cmd-1", "O-C1", "C1");
@@ -228,6 +229,7 @@ class SubmissionServiceIntegrationTest {
 
     assertThat(outboxRow.topic()).isEqualTo("orders.validated");
     assertThat(outboxRow.messageKey()).isEqualTo(command.getSymbol());
+    assertThat(outboxRow.kafkaPartitionId()).isEqualTo(7);
     assertThat(outboxRow.payloadType()).isEqualTo(OrderValidated.getDescriptor().getFullName());
     assertThat(outboxRow.aggregateType()).isEqualTo("risk_submission");
     assertThat(outboxRow.aggregateId()).isEqualTo(submission.orderId());
@@ -242,11 +244,12 @@ class SubmissionServiceIntegrationTest {
     assertThat(validated.getOrderId()).isEqualTo(submission.orderId());
     assertThat(validated.getAccountId()).isEqualTo(command.getAccountId());
     assertThat(validated.getSymbol()).isEqualTo(command.getSymbol());
+    assertThat(validated.getRoutingPartition()).isEqualTo("7");
   }
 
-  // 驗證拒絕提交時寫出的 outbox payload、headers 與拒絕原因符合事件契約。
-  // 情境：送出缺少 price 的限價單，檢查 OrderRejected protobuf 與 outbox 欄位一致。
-  @DisplayName("拒絕提交會寫出符合契約的 rejected outbox payload")
+  // Verify that the outbox payload, headers, and rejection reason written for rejected submissions match the event contract.
+  // Scenario: submit a limit order without price and confirm the OrderRejected protobuf matches the outbox fields.
+  @DisplayName("rejected submissions write a rejected outbox payload that matches the contract")
   @Test
   void persistsRejectedOutboxPayloadContract() throws Exception {
     final OrderCommand command = newNewOrder("cmd-1", "O-C1", "C1").toBuilder().clearPrice().build();
@@ -259,6 +262,7 @@ class SubmissionServiceIntegrationTest {
     assertThat(submission.accepted()).isFalse();
     assertThat(outboxRow.topic()).isEqualTo("orders.validated");
     assertThat(outboxRow.messageKey()).isEqualTo(command.getSymbol());
+    assertThat(outboxRow.kafkaPartitionId()).isEqualTo(7);
     assertThat(outboxRow.payloadType()).isEqualTo(OrderRejected.getDescriptor().getFullName());
     assertThat(outboxRow.aggregateType()).isEqualTo("risk_submission");
     assertThat(outboxRow.aggregateId()).isEqualTo(submission.orderId());
@@ -273,9 +277,9 @@ class SubmissionServiceIntegrationTest {
     assertThat(rejected.getRejectReasonText()).isEqualTo("price is required for limit orders");
   }
 
-  // 驗證若 outbox headers 序列化失敗，整個交易會回滾，不留下半套資料。
-  // 情境：使用刻意拋出例外的 ObjectMapper 建立 store，再嘗試持久化有效新單。
-  @DisplayName("outbox 序列化失敗時會回滾整筆提交")
+  // Verify that if outbox header serialization fails, the entire transaction rolls back and leaves no partial data behind.
+  // Scenario: create the store with an ObjectMapper that intentionally throws, then try to persist a valid new order.
+  @DisplayName("outbox serialization failures roll back the entire submission")
   @Test
   void rollsBackSubmissionWhenOutboxSerializationFails() {
     final SubmissionService failingService = newSubmissionService(jdbcTemplate, failingObjectMapper());
@@ -287,9 +291,9 @@ class SubmissionServiceIntegrationTest {
     assertThat(countRows("outbox")).isZero();
   }
 
-  // 驗證併發插入同一冪等鍵時，延後提交的執行緒會回讀勝出者的結果，而不是產生第二筆資料。
-  // 情境：用阻塞查詢模擬 duplicate key race，確認最終只保留一筆 submission 與 outbox。
-  @DisplayName("併發重複插入時會回傳既有提交而非重複寫入")
+  // Verify that when concurrent inserts use the same idempotency key, the delayed thread reads back the winner's result instead of creating a second record.
+  // Scenario: use a blocking query to simulate a duplicate-key race and confirm only one submission and one outbox row remain.
+  @DisplayName("concurrent duplicate inserts return the existing submission instead of writing another")
   @Test
   void returnsExistingSubmissionWhenConcurrentInsertCausesDuplicateKey() throws Exception {
     final OrderCommand delayedCommand = newNewOrder("cmd-delayed", "O-C1", "C1");
@@ -324,9 +328,9 @@ class SubmissionServiceIntegrationTest {
     }
   }
 
-  // 驗證資料超過資料庫欄位長度限制時，整個交易會失敗且不留下任何殘留資料。
-  // 情境：以參數化測試覆蓋 requestId、orderId、clientOrderId 等超長輸入。
-  @DisplayName("必要欄位超過資料庫長度限制時會回滾")
+  // Verify that the full transaction fails and leaves no residual data when values exceed the database column length limits.
+  // Scenario: use a parameterized test to cover oversized requestId, orderId, and clientOrderId inputs.
+  @DisplayName("rolls back when required fields exceed database length limits")
   @ParameterizedTest(name = "{0}")
   @MethodSource("oversizedCommandCases")
   void rollsBackWhenRequiredColumnsExceedDatabaseLength(String ignoredCaseName, OrderCommand command) {
@@ -335,9 +339,9 @@ class SubmissionServiceIntegrationTest {
     assertThat(countRows("outbox")).isZero();
   }
 
-  // 驗證包含 SQL 特殊字元與 Unicode 的輸入會被當成純資料保存，而不會破壞持久化流程。
-  // 情境：clientOrderId 與 symbol 含有引號、SQL 片段、德文字元與中文/emoji。
-  @DisplayName("特殊字元輸入會被安全保存而不影響持久化")
+  // Verify that inputs containing SQL special characters and Unicode are stored as plain data without breaking persistence.
+  // Scenario: clientOrderId and symbol contain quotes, SQL fragments, German characters, and Unicode/emoji.
+  @DisplayName("special-character input is stored safely without affecting persistence")
   @Test
   void storesSpecialCharactersAsDataWithoutBreakingPersistence() {
     final String clientOrderId = "C1';DROP TABLE outbox;--" + "-\u6e2c\u8a66-\uD83D\uDE80";
@@ -364,9 +368,9 @@ class SubmissionServiceIntegrationTest {
             submission.idempotencyKey()))).isEqualTo(symbol);
   }
 
-  // 驗證重複送出同一冪等鍵時，既有 outbox event id 會保持穩定，不會因 requestId 改變而重算。
-  // 情境：第二次送單更換 commandId，並檢查資料庫中的 outbox_event_id 是否仍等於首次結果。
-  @DisplayName("重複提交不會改變既有 outbox event id")
+  // Verify that duplicate submissions with the same idempotency key keep the existing outbox event id stable instead of recalculating it when the requestId changes.
+  // Scenario: resubmit the order with a different commandId and confirm the stored outbox_event_id still matches the first result.
+  @DisplayName("duplicate submissions do not change the existing outbox event id")
   @Test
   void keepsOutboxEventIdStableForDuplicateSubmissions() {
     final OrderCommand command = newNewOrder("cmd-1", "O-C1", "C1");
@@ -463,13 +467,58 @@ class SubmissionServiceIntegrationTest {
         command.getSessionId(),
         command.getClientOrderId(),
         command.getSymbol(),
-        command.getSide(),
+        toSubmissionSide(command.getSide()),
         command.getQuantity(),
         command.getPrice(),
-        command.getOrderType(),
-        command.getTif(),
-        command.getCommandType(),
+        toSubmissionOrderType(command.getOrderType()),
+        toSubmissionTimeInForce(command.getTif()),
+        toSubmissionCommandType(command.getCommandType()),
         command.getOriginalClientOrderId());
+  }
+
+  private static com.simplematch.riskservice.submission.Side toSubmissionSide(Side side) {
+    if (side == null) {
+      return com.simplematch.riskservice.submission.Side.SIDE_UNSPECIFIED;
+    }
+    return switch (side) {
+      case SIDE_BUY -> com.simplematch.riskservice.submission.Side.SIDE_BUY;
+      case SIDE_SELL -> com.simplematch.riskservice.submission.Side.SIDE_SELL;
+      default -> com.simplematch.riskservice.submission.Side.SIDE_UNSPECIFIED;
+    };
+  }
+
+  private static com.simplematch.riskservice.submission.OrderType toSubmissionOrderType(OrderType orderType) {
+    if (orderType == null) {
+      return com.simplematch.riskservice.submission.OrderType.ORDER_TYPE_UNSPECIFIED;
+    }
+    return switch (orderType) {
+      case ORDER_TYPE_LIMIT -> com.simplematch.riskservice.submission.OrderType.ORDER_TYPE_LIMIT;
+      case ORDER_TYPE_MARKET -> com.simplematch.riskservice.submission.OrderType.ORDER_TYPE_MARKET;
+      default -> com.simplematch.riskservice.submission.OrderType.ORDER_TYPE_UNSPECIFIED;
+    };
+  }
+
+  private static com.simplematch.riskservice.submission.TimeInForce toSubmissionTimeInForce(TimeInForce timeInForce) {
+    if (timeInForce == null) {
+      return com.simplematch.riskservice.submission.TimeInForce.TIME_IN_FORCE_UNSPECIFIED;
+    }
+    return switch (timeInForce) {
+      case TIME_IN_FORCE_ROD -> com.simplematch.riskservice.submission.TimeInForce.TIME_IN_FORCE_ROD;
+      case TIME_IN_FORCE_IOC -> com.simplematch.riskservice.submission.TimeInForce.TIME_IN_FORCE_IOC;
+      case TIME_IN_FORCE_FOK -> com.simplematch.riskservice.submission.TimeInForce.TIME_IN_FORCE_FOK;
+      default -> com.simplematch.riskservice.submission.TimeInForce.TIME_IN_FORCE_UNSPECIFIED;
+    };
+  }
+
+  private static com.simplematch.riskservice.submission.CommandType toSubmissionCommandType(CommandType commandType) {
+    if (commandType == null) {
+      return com.simplematch.riskservice.submission.CommandType.COMMAND_TYPE_UNSPECIFIED;
+    }
+    return switch (commandType) {
+      case COMMAND_TYPE_NEW -> com.simplematch.riskservice.submission.CommandType.COMMAND_TYPE_NEW;
+      case COMMAND_TYPE_CANCEL -> com.simplematch.riskservice.submission.CommandType.COMMAND_TYPE_CANCEL;
+      default -> com.simplematch.riskservice.submission.CommandType.COMMAND_TYPE_UNSPECIFIED;
+    };
   }
 
   private static OrderCommand.Builder newNewOrderBuilder(String commandId, String orderId, String clientOrderId) {
@@ -532,7 +581,7 @@ class SubmissionServiceIntegrationTest {
         idempotencyKey);
     return jdbcTemplate.queryForObject(
         """
-        SELECT event_id, topic, message_key, payload, payload_type, headers_json,
+        SELECT event_id, topic, message_key, kafka_partition_id, payload, payload_type, headers_json,
                aggregate_type, aggregate_id, created_at_unix_ms
         FROM outbox
         WHERE event_id = ?
@@ -541,6 +590,7 @@ class SubmissionServiceIntegrationTest {
             resultSet.getString("event_id"),
             resultSet.getString("topic"),
             resultSet.getString("message_key"),
+          resultSet.getObject("kafka_partition_id", Integer.class),
             resultSet.getBytes("payload"),
             resultSet.getString("payload_type"),
             resultSet.getString("headers_json"),
@@ -571,7 +621,10 @@ class SubmissionServiceIntegrationTest {
     return new TransactionalSubmissionService(
         new SubmissionIdempotencyKeyFactory(),
         new SubmissionValidator(java.time.Clock.systemUTC()),
-        new SubmissionOutboxFactory(mapper, "orders.validated"),
+        new SubmissionOutboxFactory(
+            mapper,
+            "orders.validated",
+            symbol -> "AAPL".equals(symbol) ? 7 : 0),
         new JdbcSubmissionRepository(submissionJdbcTemplate),
         new JdbcOutboxRepository(submissionJdbcTemplate),
         transactionTemplate);
@@ -628,6 +681,7 @@ class SubmissionServiceIntegrationTest {
     private final String eventId;
     private final String topic;
     private final String messageKey;
+    private final Integer kafkaPartitionId;
     private final byte[] payload;
     private final String payloadType;
     private final String headersJson;
@@ -639,6 +693,7 @@ class SubmissionServiceIntegrationTest {
         String eventId,
         String topic,
         String messageKey,
+      Integer kafkaPartitionId,
         byte[] payload,
         String payloadType,
         String headersJson,
@@ -648,6 +703,7 @@ class SubmissionServiceIntegrationTest {
       this.eventId = Objects.requireNonNull(eventId);
       this.topic = Objects.requireNonNull(topic);
       this.messageKey = Objects.requireNonNull(messageKey);
+      this.kafkaPartitionId = kafkaPartitionId;
       this.payload = Arrays.copyOf(Objects.requireNonNull(payload), payload.length);
       this.payloadType = Objects.requireNonNull(payloadType);
       this.headersJson = Objects.requireNonNull(headersJson);
@@ -666,6 +722,10 @@ class SubmissionServiceIntegrationTest {
 
     private String messageKey() {
       return messageKey;
+    }
+
+    private Integer kafkaPartitionId() {
+      return kafkaPartitionId;
     }
 
     private byte[] payload() {

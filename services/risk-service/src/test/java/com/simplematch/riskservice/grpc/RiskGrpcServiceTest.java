@@ -57,9 +57,9 @@ class RiskGrpcServiceTest {
         new TransactionTemplate(new DataSourceTransactionManager(dataSource)));
   }
 
-    // 驗證 submitOrder 在持久化成功後，會回傳 accepted 的 gRPC 回應內容。
-    // 情境：提交一筆有效新單，確認 observer 收到完成訊號且回傳訂單資訊正確。
-    @DisplayName("submitOrder 成功持久化後會回傳 accepted 回應")
+    // Verify that submitOrder returns an accepted gRPC response after persistence succeeds.
+    // Scenario: submit a valid new order and confirm the observer receives completion and the expected order data.
+    @DisplayName("submitOrder returns an accepted response after persistence")
   @Test
   void submitOrderReturnsAcceptedResponseAfterPersistence() {
       final RiskGrpcService service = new RiskGrpcService(submissionService);
@@ -76,9 +76,9 @@ class RiskGrpcServiceTest {
     assertThat(observer.value().getClientOrderId()).isEqualTo("C1");
   }
 
-    // 驗證 cancelOrder 缺少 originalClientOrderId 時，會回傳拒絕結果而非丟出 gRPC 錯誤。
-    // 情境：提交欄位不完整的取消單，確認回應內的 reason code 符合驗證規則。
-    @DisplayName("cancelOrder 缺少原始客戶單號時會回傳 rejected")
+    // Verify that cancelOrder returns a rejection instead of a gRPC error when originalClientOrderId is missing.
+    // Scenario: submit an incomplete cancel order and confirm the response reason code matches the validation rule.
+    @DisplayName("cancelOrder returns rejected when the original client order id is missing")
   @Test
   void cancelOrderReturnsRejectedResponseWhenOriginalClientOrderIdIsMissing() {
       final RiskGrpcService service = new RiskGrpcService(submissionService);
@@ -106,9 +106,9 @@ class RiskGrpcServiceTest {
     assertThat(observer.value().getReasonCode()).isEqualTo("MISSING_ORIGINAL_CLIENT_ORDER_ID");
   }
 
-    // 驗證 submitOrder 會將非預期的 command type 正規化成 NEW 再持久化。
-    // 情境：送入 command type 被誤設為 CANCEL 的新單，確認資料庫內最終仍記錄為 NEW。
-    @DisplayName("submitOrder 會將非預期 command type 正規化為 NEW")
+    // Verify that submitOrder normalizes an unexpected command type to NEW before persistence.
+    // Scenario: send a new order whose command type was mistakenly set to CANCEL and confirm the database stores NEW.
+    @DisplayName("submitOrder normalizes unexpected command type to NEW")
   @Test
   void submitOrderNormalizesUnexpectedCommandTypeToNew() {
       final RiskGrpcService service = new RiskGrpcService(submissionService);
@@ -132,9 +132,9 @@ class RiskGrpcServiceTest {
         "C2")).isEqualTo("COMMAND_TYPE_NEW");
   }
 
-    // 驗證 cancelOrder 會將非預期的 command type 正規化成 CANCEL 再持久化。
-    // 情境：送入 command type 被誤設為 NEW 的取消單，確認資料庫內最終仍記錄為 CANCEL。
-    @DisplayName("cancelOrder 會將非預期 command type 正規化為 CANCEL")
+    // Verify that cancelOrder normalizes an unexpected command type to CANCEL before persistence.
+    // Scenario: send a cancel order whose command type was mistakenly set to NEW and confirm the database stores CANCEL.
+    @DisplayName("cancelOrder normalizes unexpected command type to CANCEL")
   @Test
   void cancelOrderNormalizesUnexpectedCommandTypeToCancel() {
       final RiskGrpcService service = new RiskGrpcService(submissionService);
@@ -158,9 +158,9 @@ class RiskGrpcServiceTest {
         "CXL-1")).isEqualTo("COMMAND_TYPE_CANCEL");
   }
 
-    // 驗證 submitOrder 收到預設空指令時，會回傳預期的驗證拒絕碼。
-    // 情境：直接傳入 OrderCommand.getDefaultInstance()，確認結果為 rejected 而非例外。
-    @DisplayName("submitOrder 遇到預設空指令時會回傳預期拒絕碼")
+    // Verify that submitOrder returns the expected validation rejection code when it receives the default empty command.
+    // Scenario: pass OrderCommand.getDefaultInstance() directly and confirm the result is rejected rather than an exception.
+    @DisplayName("submitOrder returns the expected rejection code for the default empty command")
   @Test
   void submitOrderRejectsDefaultCommandInstanceWithExpectedReason() {
       final RiskGrpcService service = new RiskGrpcService(submissionService);
@@ -176,9 +176,9 @@ class RiskGrpcServiceTest {
     assertThat(observer.value().getReasonCode()).isEqualTo("MISSING_CLIENT_ORDER_ID");
   }
 
-    // 驗證 cancelOrder 收到預設空指令時，會回傳預期的驗證拒絕碼。
-    // 情境：直接傳入 OrderCommand.getDefaultInstance()，確認取消流程也會回傳一致的 rejected 結果。
-    @DisplayName("cancelOrder 遇到預設空指令時會回傳預期拒絕碼")
+    // Verify that cancelOrder returns the expected validation rejection code when it receives the default empty command.
+    // Scenario: pass OrderCommand.getDefaultInstance() directly and confirm the cancel flow also returns a consistent rejected result.
+    @DisplayName("cancelOrder returns the expected rejection code for the default empty command")
   @Test
   void cancelOrderRejectsDefaultCommandInstanceWithExpectedReason() {
       final RiskGrpcService service = new RiskGrpcService(submissionService);

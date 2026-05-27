@@ -3,7 +3,7 @@ package com.simplematch.riskservice.store;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
-import com.simplematch.contracts.orders.v1.CommandType;
+import com.simplematch.riskservice.submission.CommandType;
 import com.simplematch.riskservice.submission.SubmissionRepository;
 import com.simplematch.riskservice.submission.SubmissionResult;
 import java.util.UUID;

@@ -2,7 +2,6 @@ package com.simplematch.riskservice.submission;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
-import com.simplematch.contracts.orders.v1.CommandType;
 import org.junit.jupiter.api.Test;
 
 class SubmissionIdempotencyKeyFactoryTest {

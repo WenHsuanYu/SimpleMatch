@@ -11,9 +11,9 @@ import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.jdbc.datasource.DriverManagerDataSource;
 
 class RiskServiceFlywayMigrationTest {
-  // 驗證 Flyway 遷移會移除舊版 outbox relay 欄位與索引，同時保留現行欄位。
-  // 情境：先建立舊版 schema，再執行 risk-service migration 驗證升級結果。
-  @DisplayName("Flyway 遷移會清除舊版 relay 欄位與索引")
+  // Verify that the Flyway migration removes legacy outbox relay columns and indexes while preserving current columns.
+  // Scenario: create the legacy schema first, then run the risk-service migration and validate the upgrade result.
+  @DisplayName("Flyway migration removes legacy relay columns and indexes")
   @Test
   void migrateDropsLegacyRelayColumnsFromExistingOutboxSchema() {
     final DriverManagerDataSource dataSource = new DriverManagerDataSource();
@@ -80,6 +80,7 @@ class RiskServiceFlywayMigrationTest {
       assertThat(hasColumn(jdbcTemplate, columnName)).isFalse();
     }
     assertThat(hasColumn(jdbcTemplate, "TOPIC")).isTrue();
+    assertThat(hasColumn(jdbcTemplate, "KAFKA_PARTITION_ID")).isTrue();
     assertThat(hasColumn(jdbcTemplate, "CREATED_AT_UNIX_MS")).isTrue();
     assertThat(hasIndex(jdbcTemplate, "IDX_OUTBOX_PUBLISHABLE")).isFalse();
   }

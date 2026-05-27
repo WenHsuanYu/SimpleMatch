@@ -2,10 +2,6 @@ package com.simplematch.riskservice.submission;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
-import com.simplematch.contracts.common.v1.OrderType;
-import com.simplematch.contracts.common.v1.Side;
-import com.simplematch.contracts.common.v1.TimeInForce;
-import com.simplematch.contracts.orders.v1.CommandType;
 import java.time.Clock;
 import java.time.Instant;
 import java.time.ZoneOffset;

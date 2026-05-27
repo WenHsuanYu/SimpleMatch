@@ -22,9 +22,9 @@ class RiskServiceApplicationTest {
   @Autowired
   private RiskServiceRuntime runtime;
 
-  // 驗證 risk-service 啟動時能載入共享設定、覆寫資料庫 DSN，並建立 runtime。
-  // 情境：停用 gRPC 後啟動 Spring context，確認預設環境、gRPC 埠與測試資料庫連線值。
-  @DisplayName("risk-service 啟動時會載入共享設定與 runtime")
+  // Verify that risk-service loads shared config, overrides the database DSN, and creates its runtime on startup.
+  // Scenario: start the Spring context with gRPC disabled and confirm the default environment, gRPC port, and test database DSN.
+  @DisplayName("risk-service loads shared config and runtime on startup")
   @Test
   void contextLoadsWithSharedConfig() {
     assertThat(simpleMatchConfig.getEnv()).isEqualTo("dev");

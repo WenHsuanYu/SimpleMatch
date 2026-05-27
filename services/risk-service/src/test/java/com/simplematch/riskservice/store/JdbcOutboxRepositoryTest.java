@@ -41,7 +41,7 @@ class JdbcOutboxRepositoryTest {
 
     final OutboxRecord stored = jdbcTemplate.queryForObject(
         """
-        SELECT event_id, topic, message_key, payload, payload_type, headers_json,
+        SELECT event_id, topic, message_key, kafka_partition_id, payload, payload_type, headers_json,
                aggregate_type, aggregate_id, created_at_unix_ms
         FROM outbox
         WHERE event_id = ?
@@ -50,6 +50,7 @@ class JdbcOutboxRepositoryTest {
             resultSet.getString("event_id"),
             resultSet.getString("topic"),
             resultSet.getString("message_key"),
+          resultSet.getObject("kafka_partition_id", Integer.class),
             resultSet.getBytes("payload"),
             resultSet.getString("payload_type"),
             resultSet.getString("headers_json"),
@@ -61,6 +62,7 @@ class JdbcOutboxRepositoryTest {
     assertThat(stored.eventId()).isEqualTo(record.eventId());
     assertThat(stored.topic()).isEqualTo(record.topic());
     assertThat(stored.messageKey()).isEqualTo(record.messageKey());
+    assertThat(stored.kafkaPartitionId()).isEqualTo(record.kafkaPartitionId());
     assertThat(stored.payload()).containsExactly(record.payload());
     assertThat(stored.payloadType()).isEqualTo(record.payloadType());
     assertThat(stored.headersJson()).isEqualTo(record.headersJson());
@@ -84,6 +86,7 @@ class JdbcOutboxRepositoryTest {
         eventId,
         "orders.validated",
         "AAPL",
+      7,
         new byte[] {1, 2, 3},
         "com.simplematch.contracts.orders.v1.OrderValidated",
         "{\"event_id\":\"" + eventId + "\"}",

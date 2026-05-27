@@ -1,0 +1,1 @@
+ALTER TABLE outbox ADD COLUMN kafka_partition_id INTEGER;
