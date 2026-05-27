@@ -8,6 +8,7 @@ import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
+import org.springframework.core.env.Environment;
 
 @SpringBootTest(
     properties = {
@@ -24,13 +25,19 @@ class QuickFixGatewayApplicationTest {
   @Autowired
   private QuickFixGatewayRuntime runtime;
 
-  // 驗證 quickfix-gateway 啟動時會載入 runtime 與必要的路徑設定。
-  // 情境：停用 acceptor、data plane 與 replay 後啟動 Spring context，檢查設定值是否正確綁定。
-  @DisplayName("quickfix-gateway 啟動時會載入 runtime 與路徑設定")
+  @Autowired
+  private Environment environment;
+
+  // Verify that quickfix-gateway loads its runtime and required path settings on startup.
+  // Scenario: start the Spring context with the acceptor, data plane, and replay disabled, then confirm the settings are bound correctly.
+  @DisplayName("quickfix-gateway loads runtime and path settings on startup")
   @Test
   void contextLoadsWithQuickFixRuntime() {
-    assertThat(simpleMatchConfig.getQuickfixGateway().getQuickfixConfigPath()).isEqualTo("config/fix/acceptor.cfg");
-    assertThat(runtime.quickfixConfigPath().toString()).endsWith("config/fix/acceptor.cfg");
-    assertThat(runtime.walPath().toString()).endsWith("data/fix/wal/inbound.wal");
+    assertThat(simpleMatchConfig.getQuickfixGateway().getQuickfixConfigPath()).isEqualTo("config/quickfix/acceptor.cfg");
+    assertThat(runtime.quickfixConfigPath().toString()).endsWith("config/quickfix/acceptor.cfg");
+    assertThat(runtime.walPath().toString()).endsWith("data/quickfix/wal/inbound.wal");
+    assertThat(simpleMatchConfig.getQuickfixGateway().getOwnerId()).isEqualTo("quickfix-gateway-0");
+    assertThat(runtime.ownerId()).isEqualTo("quickfix-gateway-0");
+    assertThat(environment.getProperty("spring.kafka.consumer.group-id")).isEqualTo("quickfix-gateway-0");
   }
 }

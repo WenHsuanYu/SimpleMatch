@@ -1,0 +1,30 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: quickfix-gateway-quickfix-config
+data:
+  acceptor-continuity.cfg: |
+    [DEFAULT]
+    ConnectionType=acceptor
+    BeginString=FIX.4.4
+    UseDataDictionary=Y
+    # The container image must provide fix-spec/FIX44.xml at runtime.
+    DataDictionary=fix-spec/FIX44.xml
+
+    FileStorePath=/var/lib/simplematch/quickfix-gateway/store
+    FileLogPath=/var/lib/simplematch/quickfix-gateway/log
+
+    HeartBtInt=30
+    StartTime=00:00:00
+    EndTime=23:59:59
+
+    SocketAcceptPort=5001
+    SocketReuseAddress=Y
+
+    ResetOnLogon=N
+    ResetOnLogout=N
+    ResetOnDisconnect=N
+
+    [SESSION]
+    SenderCompID=SIMPLEMATCH
+    TargetCompID=CLIENT

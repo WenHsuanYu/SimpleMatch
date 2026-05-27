@@ -43,8 +43,9 @@ public final class QuickFixAcceptorLifecycle implements SmartLifecycle {
       acceptor.start();
       running = true;
       logger.info(
-          "quickfix-gateway acceptor started env={} quickfix_cfg={} wal={}",
+          "quickfix-gateway acceptor started env={} owner_id={} quickfix_cfg={} wal={}",
           runtime.env(),
+          runtime.ownerId(),
           runtime.quickfixConfigPath(),
           runtime.walPath());
     } catch (Exception e) {
@@ -66,7 +67,7 @@ public final class QuickFixAcceptorLifecycle implements SmartLifecycle {
       }
     }
     running = false;
-    logger.info("quickfix-gateway acceptor stopped");
+    logger.info("quickfix-gateway acceptor stopped owner_id={}", runtime.ownerId());
   }
 
   @Override
@@ -87,6 +88,6 @@ public final class QuickFixAcceptorLifecycle implements SmartLifecycle {
 
   @Override
   public int getPhase() {
-    return 0;
+    return 100;
   }
 }

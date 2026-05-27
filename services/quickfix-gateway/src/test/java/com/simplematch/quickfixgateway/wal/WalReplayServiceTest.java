@@ -24,9 +24,9 @@ class WalReplayServiceTest {
   @TempDir
   Path tempDir;
 
-  // 驗證 replay service 會將 WAL 中的既有記錄重新發佈為 OrderCommand。
-  // 情境：先手動寫入一筆 WAL，再執行 replayAll 並檢查發佈出去的命令內容。
-  @DisplayName("重播服務會將 WAL 指令重新發佈")
+  // Verify that the replay service republishes existing WAL records as OrderCommand messages.
+  // Scenario: manually write one WAL entry, then run replayAll and inspect the published command.
+  @DisplayName("the replay service republishes WAL commands")
   @Test
   void replayAllPublishesStoredOrderCommands() {
     final WalAppender walAppender = new WalAppender(tempDir.resolve("replay.wal"), StandardCharsets.UTF_8);

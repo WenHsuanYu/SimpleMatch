@@ -61,9 +61,9 @@ class QuickFixCertificationEvidenceTest {
   @TempDir
   Path tempDir;
 
-  // 驗證 QuickFIX 模擬器可完成基線連線、送單、回報與 WAL 留痕整體流程。
-  // 情境：啟動 acceptor 與 initiator，送出一筆新單並檢查 execution report、WAL 與日誌證據。
-  @DisplayName("QuickFIX 模擬器會驗證基線連線與下單流程")
+  // Verify that the QuickFIX simulator completes the baseline connection, order submission, execution report, and WAL trace flow end to end.
+  // Scenario: start the acceptor and initiator, send one new order, and check the execution report, WAL, and log evidence.
+  @DisplayName("the QuickFIX simulator verifies the baseline connection and order flow")
   @Test
   void quickFixSimulatorVerifiesSessionLifecycleAndBaselinePath(CapturedOutput output) throws Exception {
     final int port = reservePort();

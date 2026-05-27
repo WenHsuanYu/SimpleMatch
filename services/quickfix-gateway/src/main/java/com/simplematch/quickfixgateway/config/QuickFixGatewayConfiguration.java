@@ -9,13 +9,17 @@ import com.simplematch.quickfixgateway.fix.OrderSessionRegistry;
 import com.simplematch.quickfixgateway.fix.QuickFixSessionMessageSender;
 import com.simplematch.quickfixgateway.fix.QuickFixAcceptorLifecycle;
 import com.simplematch.quickfixgateway.fix.QuickFixApplicationAdapter;
+import com.simplematch.quickfixgateway.health.QuickFixGatewayReadinessHealthIndicator;
+import com.simplematch.quickfixgateway.health.QuickFixGatewayStartupLifecycle;
+import com.simplematch.quickfixgateway.health.QuickFixGatewayStartupRecovery;
+import com.simplematch.quickfixgateway.health.QuickFixGatewayStartupState;
 import com.simplematch.quickfixgateway.kafka.KafkaOrdersCommandPublisher;
 import com.simplematch.quickfixgateway.kafka.MatchingExecutionConsumer;
+import com.simplematch.quickfixgateway.kafka.NoopOrdersCommandPublisher;
 import com.simplematch.quickfixgateway.kafka.OrdersCommandPublisher;
 import com.simplematch.quickfixgateway.risk.GrpcRiskSubmissionClient;
 import com.simplematch.quickfixgateway.risk.ResilientRiskSubmissionClient;
 import com.simplematch.quickfixgateway.risk.RiskSubmissionClient;
-import com.simplematch.quickfixgateway.wal.QuickFixWalReplayRunner;
 import com.simplematch.quickfixgateway.wal.WalAppender;
 import com.simplematch.quickfixgateway.wal.WalReplayService;
 import io.grpc.ManagedChannel;
@@ -25,7 +29,8 @@ import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.time.Clock;
-import java.util.concurrent.CompletableFuture;
+import org.springframework.beans.factory.ObjectProvider;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
@@ -48,7 +53,11 @@ public class QuickFixGatewayConfiguration {
       Files.createDirectories(walParent);
     }
 
-    return new QuickFixGatewayRuntime(simpleMatchConfig.getEnv(), quickfixConfigPath, walPath);
+    return new QuickFixGatewayRuntime(
+      simpleMatchConfig.getEnv(),
+      quickfixConfigPath,
+      walPath,
+      simpleMatchConfig.getQuickfixGateway().getOwnerId());
   }
 
   @Bean
@@ -99,7 +108,7 @@ public class QuickFixGatewayConfiguration {
   }
 
   @Bean
-  @ConditionalOnProperty(name = "simplematch.quickfix-gateway.data-plane-enabled", havingValue = "true", matchIfMissing = true)
+  @ConditionalOnProperty(name = "simplematch.quickfix-gateway.compatibility-publish-enabled", havingValue = "true")
   OrdersCommandPublisher ordersCommandPublisher(
       KafkaTemplate<String, byte[]> kafkaTemplate,
       SimpleMatchConfig simpleMatchConfig) {
@@ -109,14 +118,9 @@ public class QuickFixGatewayConfiguration {
   }
 
   @Bean
-  @ConditionalOnProperty(name = "simplematch.quickfix-gateway.data-plane-enabled", havingValue = "false")
+  @ConditionalOnProperty(name = "simplematch.quickfix-gateway.compatibility-publish-enabled", havingValue = "false", matchIfMissing = true)
   OrdersCommandPublisher noopOrdersCommandPublisher() {
-    return new OrdersCommandPublisher() {
-      @Override
-      public CompletableFuture<Void> publish(com.simplematch.contracts.orders.v1.OrderCommand command) {
-        return CompletableFuture.completedFuture(null);
-      }
-    };
+    return new NoopOrdersCommandPublisher();
   }
 
   @Bean
@@ -125,9 +129,41 @@ public class QuickFixGatewayConfiguration {
   }
 
   @Bean
-  @ConditionalOnProperty(name = "simplematch.quickfix-gateway.replay-enabled", havingValue = "true", matchIfMissing = true)
-  QuickFixWalReplayRunner quickFixWalReplayRunner(WalReplayService walReplayService) {
-    return new QuickFixWalReplayRunner(walReplayService);
+  QuickFixGatewayStartupRecovery quickFixGatewayStartupRecovery(
+      WalReplayService walReplayService,
+      @Value("${simplematch.quickfix-gateway.compatibility-publish-enabled:false}") boolean compatibilityPublishEnabled,
+      @Value("${simplematch.quickfix-gateway.replay-enabled:true}") boolean replayEnabled) {
+    if (compatibilityPublishEnabled && replayEnabled) {
+      return walReplayService::replayAll;
+    }
+    return () -> 0;
+  }
+
+  @Bean
+  QuickFixGatewayStartupState quickFixGatewayStartupState() {
+    return new QuickFixGatewayStartupState();
+  }
+
+  @Bean
+  QuickFixGatewayStartupLifecycle quickFixGatewayStartupLifecycle(
+      QuickFixGatewayRuntime runtime,
+      QuickFixGatewayStartupRecovery startupRecovery,
+      QuickFixGatewayStartupState startupState) {
+    return new QuickFixGatewayStartupLifecycle(runtime.ownerId(), startupRecovery, startupState);
+  }
+
+  @Bean("quickfixGatewayReadyHealthIndicator")
+  QuickFixGatewayReadinessHealthIndicator quickfixGatewayReadyHealthIndicator(
+      QuickFixGatewayStartupState startupState,
+      ObjectProvider<QuickFixAcceptorLifecycle> acceptorLifecycleProvider,
+      @Value("${simplematch.quickfix-gateway.acceptor-enabled:true}") boolean acceptorEnabled) {
+    return new QuickFixGatewayReadinessHealthIndicator(
+        startupState,
+        acceptorEnabled,
+        () -> {
+          final QuickFixAcceptorLifecycle lifecycle = acceptorLifecycleProvider.getIfAvailable();
+          return lifecycle != null && lifecycle.isRunning();
+        });
   }
 
   @Bean

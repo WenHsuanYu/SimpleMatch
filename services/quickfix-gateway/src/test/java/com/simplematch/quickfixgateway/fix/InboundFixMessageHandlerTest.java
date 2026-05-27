@@ -52,9 +52,9 @@ class InboundFixMessageHandlerTest {
   private static final Instant FIXED_INSTANT = Instant.parse("2024-03-27T08:09:10.123Z");
   private static final Clock FIXED_CLOCK = Clock.fixed(FIXED_INSTANT, ZoneOffset.UTC);
 
-  // 驗證新單基線流程會完整寫入 WAL、發佈 OrderCommand、註冊 session 狀態，並回送 Pending New。
-  // 情境：提交一筆合法限價新單，檢查 WAL、命令內容、registry 狀態與 FIX 回覆是否一致。
-  @DisplayName("新單基線流程會寫入 WAL、發佈命令並回送 Pending New")
+  // Verify that the new-order baseline flow writes the WAL, publishes the OrderCommand, registers session state, and sends a Pending New response.
+  // Scenario: submit a valid limit order and check that the WAL, command contents, registry state, and FIX response all match.
+  @DisplayName("the new-order baseline flow writes WAL, publishes the command, and sends Pending New")
   @Test
   void newOrderBaselinePathWritesExactWalPublishesExactCommandRegistersStateAndSendsPendingNew() throws Exception {
     final WalAppender walAppender = new WalAppender(tempDir.resolve("inbound.wal"), StandardCharsets.UTF_8);
@@ -160,9 +160,9 @@ class InboundFixMessageHandlerTest {
                     + "|150=A|39=A|54=1|151=10|14=0|6=0|11=C1|55=AAPL|60=2024-03-27T08:09:10.123Z");
   }
 
-  // 驗證取消支援不會污染後續新單的基線行為。
-  // 情境：先送新單、再送取消、再送第二筆新單，確認 WAL 順序、registry 狀態與第二筆 Pending New 都正確。
-  @DisplayName("取消流程不會影響後續新單基線流程")
+  // Verify that cancel support does not pollute the baseline behavior for subsequent new orders.
+  // Scenario: send a new order, then a cancel, then a second new order, and confirm the WAL order, registry state, and second Pending New response are all correct.
+  @DisplayName("the cancel flow does not affect the subsequent new-order baseline flow")
   @Test
   void cancelSupportDoesNotAlterSubsequentNewOrderBaselinePath() throws Exception {
     final WalAppender walAppender = new WalAppender(tempDir.resolve("inbound.wal"), StandardCharsets.UTF_8);
@@ -231,9 +231,9 @@ class InboundFixMessageHandlerTest {
                 "35=8|37=O-C2|150=A|39=A|54=2|151=20|14=0|6=0|11=C2|55=MSFT|60=2024-03-27T08:09:10.123Z");
   }
 
-  // 驗證 Pending New 的 ExecID 會刻意使用 WAL recordId，確保事件可追溯。
-  // 情境：送出一筆新單後抓取回送訊息，確認 tag 17 與 WAL recordId 對齊。
-  @DisplayName("Pending New 的 ExecID 會使用 WAL recordId 以利追蹤")
+  // Verify that the Pending New ExecID intentionally uses the WAL recordId so the event remains traceable.
+  // Scenario: send a new order and inspect the returned message to confirm tag 17 matches the WAL recordId.
+  @DisplayName("Pending New ExecID uses the WAL recordId for traceability")
   @Test
   void pendingNewExecIdIntentionallyUsesWalRecordIdForTraceability() throws Exception {
     final WalAppender walAppender = new WalAppender(tempDir.resolve("inbound.wal"), StandardCharsets.UTF_8);
@@ -264,9 +264,9 @@ class InboundFixMessageHandlerTest {
     assertThat(messageCaptor.getValue().getString(17)).doesNotMatch("E\\d+");
   }
 
-  // 驗證風控提交失敗時，拒絕訊息文字會帶出具體的 reason code 與說明。
-  // 情境：模擬 circuit open 失敗，確認 FIX reject text 含有 RISK_CIRCUIT_OPEN 與對應描述。
-  @DisplayName("風控提交失敗時拒絕訊息會帶出具體原因碼")
+  // Verify that when risk submission fails, the reject message text includes the specific reason code and explanation.
+  // Scenario: simulate a circuit-open failure and confirm the FIX reject text contains RISK_CIRCUIT_OPEN and the matching description.
+  @DisplayName("risk submission failures surface a specific reason code in the reject message")
   @Test
   void submitFailureUsesSpecificRiskReasonCodeInRejectText() throws Exception {
     final WalAppender walAppender = new WalAppender(tempDir.resolve("inbound.wal"), StandardCharsets.UTF_8);

@@ -22,9 +22,9 @@ class WalAppenderTest {
 
   private final ObjectMapper objectMapper = new ObjectMapper();
 
-  // 驗證 append 後再 readAll，WAL 記錄內容與順序都會被完整保留。
-  // 情境：依序寫入新單與取消兩筆記錄，再從檔案與 API 兩側驗證回讀結果。
-  @DisplayName("append 與 readAll 會保留 WAL 記錄內容")
+  // Verify that append followed by readAll preserves both the WAL record contents and their order.
+  // Scenario: write a new order and a cancel record in sequence, then verify the replay results from both the file and the API.
+  @DisplayName("append and readAll preserve WAL record contents")
   @Test
   void appendAndReadAllPreservesWalRecords() throws Exception {
     final Path walPath = tempDir.resolve("inbound.wal");
@@ -77,9 +77,9 @@ class WalAppenderTest {
     }
   }
 
-  // 驗證 WAL 契約會以每行一筆 JSON 的結構化格式落盤。
-  // 情境：寫入單一記錄後直接讀取檔案文字，確認 JSON 欄位名稱與值都正確。
-  @DisplayName("WAL 會以逐行 JSON 契約格式持久化")
+  // Verify that the WAL contract persists each record as one JSON object per line.
+  // Scenario: write a single record and read the file text directly to confirm the JSON fields and values are correct.
+  @DisplayName("the WAL persists as line-delimited JSON")
   @Test
   void walContractIntentionallyPersistsStructuredJsonPerLine() throws Exception {
     final Path walPath = tempDir.resolve("inbound.wal");

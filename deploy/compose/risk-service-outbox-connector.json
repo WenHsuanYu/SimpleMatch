@@ -1,0 +1,32 @@
+{
+  "name": "risk-service-outbox",
+  "config": {
+    "connector.class": "io.debezium.connector.postgresql.PostgresConnector",
+    "tasks.max": "1",
+    "database.hostname": "${POSTGRES_HOST}",
+    "database.port": "${POSTGRES_PORT}",
+    "database.user": "${POSTGRES_USER}",
+    "database.password": "${POSTGRES_PASSWORD}",
+    "database.dbname": "${POSTGRES_DB}",
+    "topic.prefix": "simplematch-risk-service",
+    "plugin.name": "pgoutput",
+    "slot.name": "risk_service_outbox",
+    "publication.name": "dbz_risk_service_outbox",
+    "publication.autocreate.mode": "filtered",
+    "table.include.list": "public.outbox",
+    "tombstones.on.delete": "false",
+    "key.converter": "org.apache.kafka.connect.storage.StringConverter",
+    "key.converter.schemas.enable": "false",
+    "value.converter": "org.apache.kafka.connect.converters.ByteArrayConverter",
+    "transforms": "outbox",
+    "transforms.outbox.type": "io.debezium.transforms.outbox.EventRouter",
+    "transforms.outbox.route.by.field": "topic",
+    "transforms.outbox.route.topic.replacement": "${routedByValue}",
+    "transforms.outbox.table.field.event.id": "event_id",
+    "transforms.outbox.table.field.event.key": "message_key",
+    "transforms.outbox.table.field.event.payload": "payload",
+    "transforms.outbox.table.field.event.timestamp": "created_at_unix_ms",
+    "transforms.outbox.table.field.event.type": "payload_type",
+    "transforms.outbox.table.fields.additional.placement": "kafka_partition_id:partition"
+  }
+}

@@ -29,9 +29,9 @@ import quickfix.Message;
 import quickfix.SessionID;
 
 class MatchingExecutionConsumerTest {
-    // 驗證已註冊的成交事件會被轉成對應的 FIX Execution Report 並送回原 session。
-    // 情境：registry 內已有被接受的新單，收到 EXECUTION_TYPE_NEW 後應產生標準回報。
-    @DisplayName("已追蹤訂單的成交事件會轉成 Execution Report")
+    // Verify that a tracked execution event is converted into the corresponding FIX Execution Report and sent back to the original session.
+    // Scenario: the registry already contains an accepted new order; receiving EXECUTION_TYPE_NEW should generate the standard report.
+    @DisplayName("tracked order executions are converted into Execution Reports")
   @Test
   void executionEventBuildsExecutionReportForTrackedOrder() throws Exception {
     final OrderSessionRegistry registry = new OrderSessionRegistry();
@@ -91,9 +91,9 @@ class MatchingExecutionConsumerTest {
         .isEqualTo("35=8|37=O-C1|17=E2|150=0|39=0|54=1|151=10|14=0|6=0|11=C1|55=AAPL|60=2024-03-27T08:09:10.123Z");
   }
 
-    // 驗證取消被拒絕的成交事件會轉成 FIX Order Cancel Reject。
-    // 情境：收到 CANCEL_REJECTED 事件且 registry 可回推出原訂單狀態，應送出 35=9 訊息。
-    @DisplayName("取消失敗事件會轉成 Order Cancel Reject")
+    // Verify that a rejected cancel execution is converted into a FIX Order Cancel Reject.
+    // Scenario: receive a CANCEL_REJECTED event and, when the registry can resolve the original order state, send a 35=9 message.
+    @DisplayName("cancel failure events are converted into Order Cancel Reject")
   @Test
   void cancelRejectedExecutionBuildsOrderCancelReject() throws Exception {
     final OrderSessionRegistry registry = new OrderSessionRegistry();
@@ -154,9 +154,9 @@ class MatchingExecutionConsumerTest {
         .isEqualTo("35=9|37=O-C1|11=CXL-1|41=C1|39=A|434=1|102=0|58=too late to cancel");
   }
 
-    // 驗證缺少必要補充欄位的成交事件會立即失敗，避免送出不完整 FIX 訊息。
-    // 情境：建立只有基本欄位的 execution event，確認 consumer 直接拋錯且不呼叫 sender。
-    @DisplayName("缺少必要補充資料的成交事件會快速失敗")
+    // Verify that an execution event missing required enrichment fails immediately to avoid sending an incomplete FIX message.
+    // Scenario: build an execution event with only the base fields, then confirm the consumer throws and does not call the sender.
+    @DisplayName("execution events missing required enrichment fail fast")
   @Test
   void executionEventWithoutRequiredEnrichmentFailsFast() throws Exception {
     final OrderSessionRegistry registry = new OrderSessionRegistry();

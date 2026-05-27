@@ -21,9 +21,9 @@ class ResilientRiskSubmissionClientTest {
       .setClientOrderId("C-1")
       .build();
 
-  // 驗證暫時性風控故障時，client 會用相同命令重試直到成功。
-  // 情境：第一次回傳 UNAVAILABLE、第二次成功，確認重試次數與 sleep 次數都符合預期。
-  @DisplayName("暫時性故障時會以同一指令重試直到成功")
+  // Verify that the client retries the same command until success when the risk service fails temporarily.
+  // Scenario: the first call returns UNAVAILABLE and the second succeeds, so the retry count and sleep count should match expectations.
+  @DisplayName("temporary failures are retried with the same command until success")
   @Test
   void retriesTransientFailureWithSameCommandUntilSuccess() {
     final AtomicInteger attempts = new AtomicInteger();
@@ -58,9 +58,9 @@ class ResilientRiskSubmissionClientTest {
     assertThat(sleepCalls.get()).isEqualTo(1);
   }
 
-  // 驗證連續失敗達門檻後，斷路器會打開並在冷卻期內快速失敗。
-  // 情境：連續觸發 UNAVAILABLE 直到斷路器開啟，再推進時鐘確認冷卻後重新嘗試。
-  @DisplayName("達到門檻後斷路器會快速失敗直到冷卻結束")
+  // Verify that the circuit breaker opens after repeated failures and then fails fast during the cooldown period.
+  // Scenario: repeatedly trigger UNAVAILABLE until the breaker opens, then advance the clock to confirm retries resume after cooldown.
+  @DisplayName("after the threshold, the circuit breaker fails fast until cooldown ends")
   @Test
   void opensCircuitAfterThresholdAndFailsFastUntilCooldownExpires() {
     final AtomicInteger attempts = new AtomicInteger();

@@ -18,9 +18,9 @@ class FixMessageMapperGoldenTest {
   private final FixMessageMapper fixMessageMapper =
       new FixMessageMapper(Clock.fixed(Instant.parse("2024-03-27T08:09:10.123Z"), ZoneOffset.UTC));
 
-    // 驗證 Pending New Execution Report 的欄位輸出與黃金快照一致。
-    // 情境：用固定時鐘建立訊息，確保產生的 FIX 欄位順序與內容不變。
-    @DisplayName("Pending New 回報會符合黃金快照")
+    // Verify that the Pending New Execution Report fields match the golden snapshot.
+    // Scenario: build the message with a fixed clock so the FIX field order and contents remain stable.
+    @DisplayName("Pending New reports match the golden snapshot")
   @Test
   void pendingNewExecutionReportMatchesGoldenSnapshot() {
     final String snapshot = FixMessageSnapshot.snapshot(
@@ -38,9 +38,9 @@ class FixMessageMapperGoldenTest {
         .isEqualTo("35=8|37=O-C1|17=E1|150=A|39=A|54=1|151=10|14=0|6=0|11=C1|55=AAPL|60=2024-03-27T08:09:10.123Z");
   }
 
-    // 驗證 Cancel Reject 訊息的欄位輸出與黃金快照一致。
-    // 情境：提供完整狀態與 CANCEL_REJECTED 事件，確認 mapper 產生的訊息契約穩定。
-    @DisplayName("Cancel Reject 訊息會符合黃金快照")
+    // Verify that the Cancel Reject message fields match the golden snapshot.
+    // Scenario: provide the full state and a CANCEL_REJECTED event, then confirm the mapper output remains stable.
+    @DisplayName("Cancel Reject messages match the golden snapshot")
   @Test
   void orderCancelRejectMatchesGoldenSnapshot() {
     final OrderSessionState state = new OrderSessionState(

@@ -128,16 +128,64 @@
   - [ ] producer `acks=all`
   - [ ] 禁用 unclean leader election（broker 層）
 - [ ] partition 策略：
-  - [ ] key = `symbol`（至少保證同 symbol 保序）
-  - [ ] 若要固定路由：`symbol_routing`（symbol→partition_id）
+  - [ ] `matching.executions`：key = `symbol`（至少保證同 symbol 保序）
+  - [x] `orders.validated`：`risk-service` 已依 published snapshot 計算 `kafka_partition_id`，寫入 outbox 與 `OrderValidated.routing_partition`，並由 Debezium connector 明確指定 partition
+  - [ ] follow-up：matching-engine 若也需要本地 routing 判斷，再載入同一份 published snapshot
+  - [ ] follow-up：若要盤前人工 override / 版本化管理，再升級成 `routing_snapshots` + `symbol_routing_entries`
 
 ### 3.2 Postgres schema（最小可跑）
 
-- [ ] `orders`（含 `source_session_id`, `client_order_id/ClOrdID` 的 UNIQUE）
-- [ ] `executions`（`UNIQUE(order_id, exec_id)`）
-- [ ] `outbox`（append-only event row；`event_id UNIQUE`，供 Debezium CDC 讀取）
-- [ ] `processed_events`（`(consumer_name, event_id)` PK）
-- [ ] `symbol_routing`（symbol→shard/partition；可選但建議）
+- [ ] `risk-service` local schema
+  - [x] `risk_submissions`（同步 ingress journal；`UNIQUE(idempotency_key)`、`UNIQUE(outbox_event_id)`）
+  - [x] `outbox`（append-only event row；`event_id UNIQUE`，供 Debezium CDC 讀取；已含 `kafka_partition_id`）
+- [ ] `account-service` authority schema
+  - [x] `account_limits`（帳戶/商品/日額度 bucket；含 `limit_total_notional`, `reserved_notional`, `utilized_notional`, `available_notional`）
+  - [x] `account_positions`（per-account, per-symbol 持倉快照；`UNIQUE(account_id, symbol)`）
+  - [x] `account_reservations`（open orders 預扣狀態；`reservation_id = order_id` 或 `request_id`）
+- [ ] projection / read-model schema
+  - [x] `orders`（含 `source_session_id`, `client_order_id/ClOrdID` 的 UNIQUE）
+  - [x] `executions`（`UNIQUE(order_id, exec_id)`）
+  - [x] `processed_events`（`(consumer_name, event_id)` PK）
+- [ ] routing / config schema
+  - [ ] `symbol_routing`（symbol→shard/partition；可選但建議；MVP 可先不建表）
+  - [ ] `routing_snapshots`（版本 / 交易日 / 發布狀態）
+  - [ ] `symbol_routing_entries`（snapshot 下的 symbol 映射；partition 決策由 `routing_bucket` / `kafka_partition_id` 欄位表達）
+
+### 3.3 Flyway rollout（目前只有 `risk-service` 已接線）
+
+- [x] `risk-service` 已接入 `simplematch.flyway-service`，並以 versioned migration 管理 `risk_submissions` + local `outbox`
+- [x] `risk-service` 已新增 `kafka_partition_id` migration，讓 Debezium 可使用 explicit partition placement
+- [x] `account-service` 接入 `simplematch.flyway-service`
+- [x] `account-service` 初始 migration：`account_limits`, `account_positions`, `account_reservations`
+- [x] `persistence` 接入 `simplematch.flyway-service`
+- [x] `persistence` 初始 migration：`orders`, `executions`, `processed_events`
+- [ ] `matching-engine` / WAL loader-ingester 決定 schema owner 後接入 Flyway
+  - [ ] 若 `matching-engine` 自有 PostgreSQL / outbox，建立 service-local result journal / `outbox`
+  - [ ] 若 `executions` 最終由 `persistence` 單獨落地，避免在 `matching-engine` 端重複定義 read-model tables
+- [ ] `symbol_routing` schema owner 決策與初始 migration（MVP 先用 config/snapshot；若未來落表，優先收斂到單一 `reference-data` / `routing-config` owner）
+- [ ] `reference-data-service` / `routing-config-service` owner 決策（Phase 1 不建 service；先用 published snapshot）
+- [ ] 進入 Phase 2 時，再接入 Flyway 並建立 `routing_snapshots` + `symbol_routing_entries`
+
+### 3.4 Routing rollout（依三階段）
+
+- [x] Phase 1 基礎：`risk-service` 已以 published routing snapshot（config/file）計算 routing；熱路徑不查 DB
+  - [x] `simplematch.routing.snapshotPath` 已接入 risk-service，預設載入 classpath sample，可覆寫到外部 published snapshot
+  - [x] `quickfix-gateway` 維持不變，仍只送 `OrderCommand` 到 `risk-service`
+  - [x] repo 已提供 Debezium connector 範本，把 outbox `kafka_partition_id` 套用到 Kafka partition
+  - [ ] matching-engine 若要自行判斷 routing，仍需載入同一份 published snapshot
+  - [ ] 盤前 reload / 盤中不變更的操作流程仍待制度化
+- [ ] Phase 2：owner schema
+  - [ ] 優先採 `reference-data-service`
+  - [ ] 若只做較窄範圍，可退而採 `routing-config-service`
+  - [ ] 單一 owner，多個 readers
+- [ ] Phase 3：admin API / publish flow
+  - [ ] 管理 draft routing
+  - [ ] publish 某個交易日的 snapshot
+  - [ ] data-plane 服務只載入 published snapshot
+
+### 3.5 Kafka key/partition：business key 與 explicit partition 分離
+
+- [x] `risk-service` 已以 published routing snapshot 計算 `kafka_partition_id`，保留 `message_key` 作為業務鍵，並明確指定 `orders.validated` partition
 
 ---
 
@@ -161,6 +209,7 @@
 - [x] 主路徑：gateway 以同步 gRPC 將請求送到 `risk-service`
 - [x] 第一個成功 FIX ack 僅在 `risk-service` transaction commit 成功後回覆 `PendingNew/Accepted`
 - [x] 若 `risk-service` 同步判定失敗，gateway 直接回 `Rejected`
+- [x] `orders.commands` compatibility publish / WAL replay 不再視為主線；目前預設停用，僅保留遷移或診斷時顯式開啟
 - [ ] 若保留 WAL：
   - [x] `WalAppender::Append(record)` 作為本地恢復 / 稽核輔助
   - [ ] 明確標記 WAL 不再是主 ack 錨點
@@ -201,7 +250,7 @@
 
 ### 4.1.7 endpoints
 
-- [ ] `/healthz` `/readyz` `/metrics`
+- [x] `/healthz` `/readyz` `/metrics`
 
 ### 4.1.8 （選用）`quickfix-gateway` ↔ `account-service`（session 身分/權限映射）
 
@@ -209,6 +258,15 @@
 > 建議僅用於 session 建立/定期刷新，避免進入每筆下單的極短 ACK 路徑。
 
 - [ ] gRPC client：`AccountService::ResolveSessionIdentity()`（或以 `GetAccountProfile()` 等形式）
+
+### 4.1.9 `quickfix-gateway` session-aware scale-out baseline
+
+- [x] 建立 `docs/quickfix-gateway-session-scale-plan.md`
+- [x] 新增 `quickfixGateway.ownerId` 配置與 owner-aware consumer group 預設
+- [x] `quickfix-gateway` StatefulSet / per-owner Service / PVC manifests
+- [x] startup recovery + readiness gating
+- [ ] shared state / owner lease / fencing
+- [ ] standby promotion / route transfer
 - [ ] 在 Logon / Session 建立時：取得 `account_id` / 權限/風控等級（若需要）並快取於 session context
 - [ ] failure policy：連不上 `account-service` 時拒絕建立 session（fail-closed）或降級（依需求選一個）
 - [ ] deadline / breaker / bulkhead 落地（與 `risk-service` 同一套最低規範）
@@ -235,8 +293,8 @@
 
 ### 4.2.3 交易額度 / reservation（control plane gRPC）
 
-- [ ] gRPC client：`AccountService::GetLimits/GetPositions`（快取可選）
-- [ ] `Reserve(order_id/request_id, ...)`（冪等）
+- [ ] gRPC client：`AccountService::GetLimits/GetPositions`（快取可選；回傳需對齊 `account_limits` / `account_positions`）
+- [ ] `Reserve(order_id/request_id, ...)`（冪等；由 `account-service` 更新 `account_reservations`）
 - [ ] deadline / retry / breaker / bulkhead 落地
 
 ### 4.2.4 產出 `orders.validated` / `orders.rejected`
@@ -245,6 +303,7 @@
   - [x] `risk-service` service code 已切換為 Debezium CDC 導向：服務內只寫 append-only outbox，不再 app 內 publish
   - [x] 清理 app 內 built-in relay 與其專屬 publish / lease state
   - [x] 補正式 versioned PostgreSQL migration，既有 schema 明確移除 relay 專屬欄位
+- [x] `risk_submissions` 作為 local ingress journal，與 outbox event 一對一關聯
 - [x] Kafka key/partition：與 commands 同套路由（symbol）
 
 ### 4.2.5 endpoints
@@ -335,8 +394,12 @@
 
 ## 4.5 `marketdata-publisher`
 
-- [ ] consume `matching.executions`
-- [ ] 產出 `marketdata.events`（trade/quote）
+- [ ] v1：consume `matching.executions`
+- [ ] v1：先產出 `marketdata.events` 的 `TradeUpdate`
+- [ ] quote / `TopOfBookUpdate` 後補：待有穩定 order book / quote projection 後再加，避免先造 synthetic quote
+- [ ] 決定發布可靠性：
+  - [ ] 若市場資料也要求 durability，沿用 outbox + CDC
+  - [ ] 若 MVP 接受較弱保證，先明確記錄 direct publish 的限制
 - [ ] 去重策略（可選）：event_id / 時間窗合併
 - [ ] `/healthz` `/readyz` `/metrics`
 
@@ -346,22 +409,30 @@
 
 ### 4.6.1 Kafka consumers
 
-- [ ] consume `marketdata.events`
-- [ ] （可選）consume `matching.executions` 做 private notifications
+- [ ] v1：consume `marketdata.events`
+- [ ] private notifications 走分流：`matching.executions` 另做 private stream，不與公開 market data 混在同一條 stream
 
-### 4.6.2 gRPC server
+### 4.6.2 gRPC server（v1）
 
 - [ ] `SubscribeMarketData(request) -> stream MarketDataEvent`
-- [ ] `SubscribePrivateNotifications(request) -> stream PrivateNotification`
+- [ ] v1 先做 steady-state delta stream，不要求 per-client replay Kafka opening burst
 - [ ] backpressure / flow control（最小：每連線 buffer 上限，超過就斷線或降級）
 
-### 4.6.3 AuthN/AuthZ
+### 4.6.3 snapshot / delta / resync（follow-up）
+
+- [ ] snapshot 由 Redis read model 提供（例如 `sym:{symbol}:top`），不要由 streamer 臨時掃 Kafka 組裝
+- [ ] client bootstrap：先拿 snapshot，再續接 delta stream
+- [ ] resync：lag 過大 / 斷線恢復時，重新拿 snapshot，不重播整段 Kafka 開盤事件
+- [ ] 協定演進：補 `marketdata.proto` / `marketdata_service.proto` 的 snapshot-oriented message shape
+- [ ] 協定演進：補 sequence / watermark / resume token，避免 client 直接理解 Kafka offset
+
+### 4.6.4 AuthN/AuthZ
 
 - [ ] TLS
 - [ ] mTLS 或 JWT（選一個最小可跑）
 - [ ] private stream：account_id 由憑證/claims 映射，不接受 client 任意指定
 
-### 4.6.4 endpoints
+### 4.6.5 endpoints
 
 - [ ] `/healthz` `/readyz` `/metrics`
 
@@ -380,14 +451,15 @@
 ### 4.7.2 Kafka consumer（建議）：`matching.executions`
 
 - [ ] fill：`ApplyFill(exec_id, order_id, ...)`
-- [ ] cancel/IOC leaves：`Release(order_id, ...)`
+- [ ] cancel/IOC leaves：`ReleaseReservation(reservation_id/order_id, ...)`
 - [ ] Idempotency：`exec_id` / `event_id`
 
 ### 4.7.3 交易額度資料模型（不含現金版）
 
-- [ ] `limits`（帳戶/商品/日）
-- [ ] `reservations`（open orders 占用）
-- [ ] `utilized`（成交後占用，可由 positions 或另表推導）
+- [ ] `account_limits`（帳戶/商品/日額度 bucket；含 `reserved_notional` / `utilized_notional` / `available_notional`）
+- [ ] `account_positions`（per-account, per-symbol 持倉快照）
+- [ ] `account_reservations`（open orders 預扣狀態；`reservation_id = order_id` 或 `request_id`）
+- [ ] `utilized` 先作為 `account_limits.utilized_notional` materialized 欄位；若後續 exposure 邏輯獨立再拆表
 - [ ] `available = limit_total - reserved - utilized`
 
 ### 4.7.4 endpoints
@@ -427,10 +499,10 @@
 
 ## 5) Debezium / CDC（主線 Outbox 發佈）
 
-- [ ] `risk-service`：配置 Debezium connector，將 PostgreSQL outbox 變更發布到 Kafka
+- [x] `risk-service`：已提供 Debezium connector 範本，將 PostgreSQL outbox 變更發布到 Kafka，並以 `kafka_partition_id` 指定 partition
 - [ ] `matching-engine`：配置 Debezium connector，將 PostgreSQL outbox 變更發布到 Kafka
 - [ ] 若 `persistence` 後續產生 `audit.events`，再為其 outbox DB 配置 Debezium connector
-- [ ] topic routing：outbox.topic 欄位 → Kafka topic
+- [x] topic routing：outbox.topic 欄位 → Kafka topic
 - [ ] at-least-once 期望：consumer 冪等必做
 - [ ] 監控：connector lag、error rate
 
@@ -456,9 +528,9 @@
 
 ## 7) CI（GitHub Actions + kind）Smoke test
 
-- [x] Java 靜態分析已接入 Gradle build：`Checkstyle`、`SpotBugs`、`Error Prone` 可透過 `./gradlew staticAnalysis` 執行
+- [x] Java 靜態分析已接入 Gradle build：`./gradlew staticAnalysis` 會對所有 Java 模組執行 blocking `Error Prone` 編譯，並對既定模組執行 `Checkstyle` / `SpotBugs`
 - [x] SpotBugs false-positive filter 已先收斂到已確認的 Spring config / runtime holder 類別，避免干擾實際問題
-- [x] 現有 GitHub Actions Java job 已接入 `./gradlew staticAnalysis`，並上傳 Checkstyle / SpotBugs 報告 artifacts
+- [x] 現有 GitHub Actions Java job 已接入同一個 `./gradlew staticAnalysis` blocking gate，並上傳 Checkstyle / SpotBugs 報告 artifacts
 - [x] GitHub Actions 已依變更路徑做 job-level filtering：docs-only 變更不再觸發 Java / Native 全量建置
 - [ ] workflow：起 kind cluster
 - [ ] `kubectl apply -f deploy/k8s/`

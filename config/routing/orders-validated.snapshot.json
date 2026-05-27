@@ -1,0 +1,16 @@
+{
+  "snapshotId": "local-dev",
+  "effectiveTradingDay": "2025-01-01",
+  "entries": [
+    {
+      "symbol": "AAPL",
+      "routingBucket": "mega-cap-tech",
+      "kafkaPartitionId": 7
+    },
+    {
+      "symbol": "TSLA",
+      "routingBucket": "growth-auto",
+      "kafkaPartitionId": 11
+    }
+  ]
+}

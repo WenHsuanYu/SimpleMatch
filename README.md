@@ -514,7 +514,7 @@ Choreography Saga 一般**不做分散式交易回滾**（不會像同一個 DB 
 
   | Topic | Key / Partition | Payload（Protobuf） | Produced by | Consumed by | 冪等 / 去重建議 |
   | --- | --- | --- | --- | --- | --- |
-  | `orders.validated` | key = `symbol`（保序） | `OrderValidated` / `OrderRejected` | `risk-service`（Outbox + Debezium CDC） | `matching-engine` | matching 以 `(command_id)` 或 `(order_id, command_seq)` 去重；非法狀態轉移直接忽略 |
+  | `orders.validated` | partition = `outbox.kafka_partition_id`（由 `risk-service` 載入 published snapshot 計算，並由 Debezium connector 套用 explicit partition placement；同一 `symbol` 於同一交易日需穩定落到同一 partition） | `OrderValidated` / `OrderRejected` | `risk-service`（Outbox + Debezium CDC） | `matching-engine` | matching 以 `(command_id)` 或 `(order_id, command_seq)` 去重；非法狀態轉移直接忽略 |
   | `matching.executions` | key = `symbol`（保序） | `ExecutionEvent` | `matching-engine`（本地 WAL + PostgreSQL transaction outbox + Debezium CDC） | `persistence`, `marketdata-publisher`, `quickfix-gateway` | `persistence` 以 `(order_id, exec_id)` 唯一鍵；`quickfix-gateway` 以 `(exec_id)` 去重 |
   | `marketdata.events` | key = `symbol` | `MarketDataEvent` | `marketdata-publisher` | `marketdata-streamer`（對外推流）, （其他下游） | 允許重複（可用 `(event_id)` 去重或以時間窗合併） |
   | `audit.events` | key = `symbol` 或 `order_id`（視查詢方式） | `AuditEvent` | 各服務 | （稽核/資料平台） | 允許重複；如需強一致稽核可用 `(event_id)` 唯一 |
@@ -611,6 +611,56 @@ Choreography Saga 一般**不做分散式交易回滾**（不會像同一個 DB 
     - `SubscribePrivateNotifications`：`account_id` 建議由憑證/Token 映射而來，避免 client 任意指定。
   - **隔離與流控**：針對每個連線做 rate limit/backpressure，避免單一 client 拉爆推流服務。
 
+  #### 開盤大量行情：`snapshot -> delta -> resync`（推薦流程）
+
+  若要支撐開盤瞬間的大量行情訂閱，建議把市場資料明確拆成三層，而不是讓 client 直接重播內部 Kafka 開盤洪流：
+
+  - **內部 bus**：`marketdata.events` 作為服務間共享的標準化行情事件流。
+  - **對外 streamer**：`marketdata-streamer` 對外維持 gRPC streaming，負責 symbol filter、ACL、連線 buffer/backpressure。
+  - **snapshot / read model**：Redis（例如 `sym:{symbol}:top`）作為 client 初始快照與 resync 的來源。
+
+  推薦互動流程：
+
+  1. client 建立 `SubscribeMarketData` 連線，帶上要訂閱的 symbols。
+  1. `marketdata-streamer` 先回一份 snapshot（來自 Redis read model，而不是臨時掃 Kafka）。
+  1. snapshot 送完後，連線切到 steady-state delta stream，持續推送 `marketdata.events` 的增量更新。
+  1. 若 client 斷線、lag 過大、或 streamer 判定本地 buffer 已失去連續性，則不要為該 client 重播整段開盤事件；應要求它重新 bootstrap：先拿最新 snapshot，再續接新的 delta。
+
+  這樣做的原因是：
+
+  - 開盤尖峰時，若每個 client 都要求重播 raw Kafka event burst，`marketdata-streamer` 會把內部匯流排壓力放大成 per-client 重播成本。
+  - snapshot 與 delta 分離後，市場資料的「最新狀態」由 Redis read model 承接，「後續變化」由 stream 承接，斷線恢復成本更穩定。
+  - 這也讓公開 market data 與私有 execution notifications 維持分離：公開流看 `marketdata.events`，私有流仍走 `matching.executions` / private notifications。
+
+  協定層建議：
+
+  - snapshot 不要硬塞進現有 `MarketDataEvent` 的增量語意中，較佳做法是後續另外擴充 snapshot-oriented message shape。
+  - delta event 建議帶 sequence / watermark / event metadata，讓 streamer 與 client 能判定是否需要 resync。
+  - `SubscribeMarketData` 若未來要支援斷線續接，應補 last seen sequence / resume token，而不是要求 client 自己理解 Kafka offset。
+
+  > MVP 若尚未補齊 snapshot 協定，也應先維持這個責任分工：client 不直接碰 Kafka；streamer 負責重連後的再同步策略；Redis 作為 snapshot/read model 的實作基礎。
+
+  #### 市場資料實作順序（依本次 session plan）
+
+  為了避免一開始就把 client-facing 協定綁死在尚未落地的內部實作上，建議 rollout 順序如下：
+
+  1. 先固定目前基線：`account-service` 與 `persistence` 的 Flyway/schema 已先落地，視為市場資料主線的前置條件。
+  1. **第一步：`marketdata-publisher`**
+  - 消費 `matching.executions`
+  - 先把公開 market data 正規化成 `marketdata.events`
+  - 若目前沒有穩定的 order book / quote 投影來源，先以 `TradeUpdate` 為主，`TopOfBookUpdate` 後補
+  1. **第二步：`marketdata-streamer`**
+  - 消費 `marketdata.events`
+  - 實作 `SubscribeMarketData`
+  - 每個連線維持 bounded buffer，並定義 overload 時的斷線/降級策略
+  - 私有通知維持分流，不與公開 market data 混在同一條公開 stream
+  1. **第三步：snapshot + delta / resync 協定**
+  - 擴充 `marketdata.proto` / `marketdata_service.proto`
+  - 讓 snapshot 成為 bootstrap step，delta 成為 steady-state stream
+  - 以 Redis read model 作為 snapshot backing store，而不是 per-client replay Kafka
+  1. **第四步：文件與 backlog 對齊**
+  - 每完成一個 executable slice，就更新 README / tasks，而不是先寫完完整最終態協定再回頭補程式
+
   ### Partition / Sharding 策略（以股票為單位，支援熱點調整）
 
   你提出的策略很務實：
@@ -626,36 +676,106 @@ Choreography Saga 一般**不做分散式交易回滾**（不會像同一個 DB 
   - 若用 `account_id` 分區：同一檔股票的買賣單會散落多個 partition，撮合引擎要跨分區合併 order book，等於回到分散式鎖/共識的難題
   - 用 `symbol`（或 symbol 路由）分區：同一檔股票的命令與撮合事件天然保序，撮合引擎可以「單執行緒/單實例」處理該 symbol 的 order book
 
-  #### 具體落地：用「路由表」控制 symbol → partition
+    這裡其實有兩個不同層次的問題，建議分開理解：
 
-  Kafka 的「key」通常用 hash 決定 partition；要做到「某一檔股票固定去指定 partition」，建議採其中一種做法：
+    - **誰來處理某個 partition / shard**：這是 `matching-engine` 的 owner / failover 規則。
+    - **上游 producer 如何把某個 `symbol` 對應到固定 partition**：這才是 published routing snapshot 要解決的問題。
 
-  1. **Producer 明確指定 partition（推薦）**
-      - 維護一份 `symbol_routing`（symbol → partition_id）
-      - `quickfix-gateway`、`risk-service` 發事件時直接指定 partition
-  1. **用可調整的 routing key（折衷）**
-      - key 不直接用 symbol，而是 `routing_key`（例如 `shard-03`、`symbol-2330`）
-      - 透過改變 routing_key 讓特定 symbol 落到不同 hash bucket
+    先把 shard owner 與接手規則講清楚，再看 routing snapshot 的 producer-side 落地，讀者會比較不容易把兩件事混在一起。
 
-  不論哪種方式，關鍵是：
+    #### 固定 partition → `matching-engine-N`（避免 rebalance 換人）
 
-  - `risk-service` 寫出 `orders.validated` 與 `matching-engine` 消費該事件流時，必須用**同一套路由規則**，確保同一 symbol 的命令序列一致
-  - `matching.executions` 至少要以 `symbol` 保序（通常 key = symbol 即可）
+    你希望做到「partition 0 永遠由 match service 0 處理，且主掛了由備接手，但不要因為 consumer group rebalance 改變固定關係」。這在交易撮合場景很常見，建議做法是：
+
+    - **不要使用 `subscribe()` 的 consumer group 自動分配**：自動分配的設計目標就是讓 partition 會在 group 成員間搬移（rebalance），這與「固定綁定」相衝突。
+    - **改用 StatefulSet + 手動 `assign()` 綁定 partition**：以 Kubernetes `StatefulSet` 部署 `matching-engine`，讓 instance 身分固定為 `matching-engine-0/1/2/...`；`matching-engine-0` 啟動後只 `assign()` `orders.validated` 的 partition 0（以及它負責的其他 partitions，若有），`matching-engine-1` 只負責 partition 1，以此類推。這種模式下不走 consumer group balance，因此**不會發生 rebalance 造成 partition 換人**。
+
+    #### 主備接手（Active-Standby）與 fencing（避免雙主）
+
+    > 名詞釐清：Kafka 的 ISR（in-sync replicas）是 **broker/topic 的副本機制**，不是 service 的副本機制。你要的是「服務層主備」。
+
+    若你希望 `matching-engine-0` 出問題時由備援快速接手，但仍維持「partition 0 ↔ shard-0」這種固定關係，建議：
+
+    - **同 shard 一主一備**：例如 `matching-engine-0`（主）+ `matching-engine-0-standby`（備）。
+    - **備援持續追上狀態**（warm standby）：備援可以用另一個 consumer group 跟讀同樣的事件流，用來重建 order book/狀態，但在未接管前不得對外產生成交結果。
+    - **fencing（硬性仲裁）**：用 etcd/Consul/ZooKeeper/Postgres advisory lock 等做「每個 shard/partition 一把鎖」；只有拿到鎖的 instance 才允許產出 `matching.executions`（或寫入 matching outbox/journal），接手流程也必須先取得鎖，再開始對外產出結果，避免雙主同時撮合同一 partition。
+    - **offset 對齊**：備援接管前需先對齊主的最後處理進度（例如讀取主群組的 committed offset，`seek()` 從該點開始），避免漏單或大量重播造成延遲尖峰。
+
+    以上做法把「固定綁定」與「主備切換」從 Kafka rebalance 解耦：rebalance 是 consumer group 的機制；而交易撮合 shard owner 的切換，應由你自己的仲裁/fencing 規則決定。
+
+  #### 具體落地：用 published routing snapshot 控制 symbol → partition
+
+  Kafka 的「key」通常用 hash 決定 partition；但若你希望實際落點由額外欄位決定，而不是直接用 `symbol` 字串當 key，建議把路由拆成兩層：
+
+  - `symbol`：業務識別，回答「這是哪檔商品」；同一商品在同一交易日內必須穩定落到同一 shard / partition
+  - `routing_bucket` / `routing_partition`：基礎設施欄位，回答「這筆命令實際送去哪個 Kafka partition」
+  - `risk-service`、`matching-engine`、必要時的 `quickfix-gateway` 都應在啟動或盤前載入同一份 published snapshot
+
+  因此 `orders.validated` 的 producer 應：
+
+  1. 先依 published routing snapshot 找到該 `symbol` 對應的 `routing_bucket` / `kafka_partition_id`
+  2. 在 producer 端明確指定 partition
+  3. 把 `symbol` 保留在 payload 裡做業務追蹤與下游處理，而不是直接拿 `symbol` 字串當 partition key
+
+  目前 Phase 1 runtime 已落地如下：
+
+  - `risk-service` 在啟動時透過 `simplematch.routing.snapshotPath` 載入 published snapshot；預設值是 classpath sample `classpath:routing/orders-validated.snapshot.json`，部署時可覆寫到外部 published snapshot 檔案。
+  - `quickfix-gateway` 維持只把 `OrderCommand` 送到 `risk-service`，不自行計算 routing。
+  - `risk-service` 會把最終 `kafka_partition_id` 寫入 outbox row，並把 `OrderValidated.routing_partition` 填成相同 numeric partition id 的字串值。
+  - `message_key` 仍保留業務鍵語意（優先 `symbol`，缺漏時 fallback `order_id` / `UNKNOWN`）；真正的 Kafka partition 由 outbox row 的 `kafka_partition_id` 決定。
+  - 若 snapshot 未列出某個 `symbol`，目前回退到 `floorMod(symbol.hashCode(), ordersValidatedPartitionCount)` 的穩定 partition，避免 Phase 1 因缺少映射而中斷送單。
+  - Debezium connector 範本已放在 `deploy/compose/risk-service-outbox-connector.json` 與 `deploy/k8s/risk-service-outbox-connector-configmap.yaml`，並用 `transforms.outbox.table.fields.additional.placement=kafka_partition_id:partition` 套用 explicit partition。
+
+  > MVP 若當前只需要把全市場股票平均分散到 15 個 partition，可先不要急著落 table 或 service。
+  > 先用一份 published snapshot 檔案明確化路由規則，讓 `risk-service` 與任何實際 producer 共用同一份 snapshot；熱路徑不查 DB。
+
+  #### 三階段 rollout（推薦）
+
+  1. **第一階段：維持 config/snapshot，先不要建 service**
+     - 把 routing 規則明確化成一份 published snapshot
+     - 這時可以先用檔案，不一定先建表
+     - 規則來源只有一個
+     - `risk-service` 與任何實際 producer 都載入同一份 snapshot
+     - 熱路徑不查 DB
+  2. **第二階段：需要盤前調整與版本化時，再建 owner schema**
+     - 建議新增單一 owner；若要偏好，優先選 `reference-data-service`
+     - 若只想先做較窄範圍，也可命名為 `routing-config-service`
+     - 多個 data-plane 服務只讀 published snapshot，不共寫 routing 真相
+  3. **第三階段：再補 admin API / publish flow**
+     - 管理 draft routing
+     - publish 某個交易日的 snapshot
+     - 讓 data-plane 服務載入 published snapshot
+     - 盤中不變更，只在盤前切換
+
+  #### `symbol_routing` owner 與資料表設計（Phase 2 之後）
+
+  若後續真的需要把 routing 規則做成資料表，不建議只做一張平面的 `symbol_routing`。較穩的是兩層：
+
+  | 表 | 用途 | 關鍵欄位（建議） |
+  | --- | --- | --- |
+  | `routing_snapshots` | 描述一個 routing 版本 / 交易日 / 發布狀態 | `snapshot_id`, `effective_trading_day`, `version`, `status`, `created_at`, `published_at`, `created_by` |
+  | `symbol_routing_entries` | 某 snapshot 下每個 symbol 的映射與 partition 決策輸入 | `snapshot_id`, `symbol`, `shard_id`, `routing_bucket`, `kafka_partition_id`, `routing_mode`, `updated_at` |
+
+  - `symbol` 是 lookup key，不直接等於 Kafka partition key。
+  - `routing_bucket` / `kafka_partition_id` 等欄位，才是真正決定 partition 的值。
+  - **預設分片**：以 shard_count=15 為例，可把「每 100 檔一 shard」當作營運規則，實作上以 published snapshot 或 `symbol_routing_entries` 記錄實際映射（避免依賴 symbol 排序/編碼規則）。
+  - **熱門股票獨立分區**：將該 `symbol` 對應的 `routing_bucket` / `kafka_partition_id` 設為專用 partition，並確保 `risk-service` 與任何實際 producer 使用相同 snapshot。
 
   #### 路由表更新的注意事項（重要）
 
   你這裡的需求是「**觀察到某檔成交量偏高後，在隔日開盤前手動調整**」，這比執行時期動態遷移簡單許多，也更安全。
 
-  建議把 `symbol_routing` 做成「可版本化/可生效日」的設定，並在每日開盤前固定載入一份快照：
+  建議把 routing 規則做成「可版本化 / 可生效日」的 snapshot，並在每日開盤前固定載入一份 published snapshot：
 
-  - `symbol_routing` 增加 `effective_trading_day`（或 `effective_from`）欄位
-  - 每個 producer/consumer（`quickfix-gateway`、`risk-service`、`matching-engine`）在服務啟動或開盤前載入「當日 routing snapshot」
+  - `routing_snapshots` 以 `effective_trading_day` / `status` 表達哪個版本對當日生效
+  - `symbol_routing_entries` 保存該 snapshot 下每個 `symbol` 的 shard / routing bucket / partition 映射
+  - 每個 producer/consumer（`risk-service`、`matching-engine`、必要時的 `quickfix-gateway`）在服務啟動或盤前載入「當日 routing snapshot」
   - 交易時段內 **不變更 routing**（避免同一交易日內破壞保序）
 
   盤前手動調整流程（建議）：
 
   1. 依前一日統計（symbol 吞吐、lag、撮合耗時）決定要獨立分區的 hot symbols
-  1. 更新 `symbol_routing` 的 `effective_trading_day = next_day`
+  1. 更新 draft `symbol_routing_entries`，並 publish 對應的 `routing_snapshots` 到 `next_day`
   1. 開盤前重新部署/重啟相關服務，確保載入相同 snapshot
 
   這樣做的效果是：
@@ -663,32 +783,6 @@ Choreography Saga 一般**不做分散式交易回滾**（不會像同一個 DB 
   - 不需要在交易中停單或等待水位
   - 不需要搬移既有訊息；因為新交易日從新的 routing 開始生效
   - 同一交易日內同一 `symbol` 的命令仍能保序
-
-  #### 固定 partition → `matching-engine-N`（避免 rebalance 換人）
-
-  你希望做到「partition 0 永遠由 match service 0 處理，且主掛了由備接手，但不要因為 consumer group rebalance 改變固定關係」。這在交易撮合場景很常見，建議做法是：
-
-  - **不要使用 `subscribe()` 的 consumer group 自動分配**：自動分配的設計目標就是讓 partition 會在 group 成員間搬移（rebalance），這與「固定綁定」相衝突
-  - **改用 StatefulSet + 手動 `assign()` 綁定 partition**：
-    - 以 Kubernetes `StatefulSet` 部署 `matching-engine`，讓 instance 身分固定為 `matching-engine-0/1/2/...`
-    - `matching-engine-0` 啟動後只 `assign()` `orders.validated` 的 partition 0（以及它負責的其他 partitions，若有）
-    - `matching-engine-1` 只負責 partition 1，以此類推
-    - 這種模式下不走 consumer group balance，因此**不會發生 rebalance 造成 partition 換人**
-
-  #### 主備接手（Active-Standby）與 fencing（避免雙主）
-
-  > 名詞釐清：Kafka 的 ISR（in-sync replicas）是 **broker/topic 的副本機制**，不是 service 的副本機制。你要的是「服務層主備」。
-
-  若你希望 `matching-engine-0` 出問題時由備援快速接手，但仍維持「partition 0 ↔ shard-0」這種固定關係，建議：
-
-  - **同 shard 一主一備**：例如 `matching-engine-0`（主）+ `matching-engine-0-standby`（備）
-  - **備援持續追上狀態**（warm standby）：備援可以用另一個 consumer group 跟讀同樣的事件流，用來重建 order book/狀態，但在未接管前不得對外產生成交結果
-  - **fencing（硬性仲裁）**：用 etcd/Consul/ZooKeeper/Postgres advisory lock 等做「每個 shard/partition 一把鎖」
-    - 只有拿到鎖的 instance 才允許產出 `matching.executions`（或寫入 matching outbox/journal）
-    - 接手流程必須先取得鎖，再開始對外產出結果，避免雙主同時撮合同一 partition
-  - **offset 對齊**：備援接管前需先對齊主的最後處理進度（例如讀取主群組的 committed offset，`seek()` 從該點開始），避免漏單或大量重播造成延遲尖峰
-
-  以上做法把「固定綁定」與「主備切換」從 Kafka rebalance 解耦：rebalance 是 consumer group 的機制；而交易撮合 shard owner 的切換，應由你自己的仲裁/fencing 規則決定。
 
 ### Partition key 原則（建議）
 
@@ -700,7 +794,7 @@ Choreography Saga 一般**不做分散式交易回滾**（不會像同一個 DB 
 
 實務上常見做法：
 
-- `orders.validated`：**按股票路由**（本專案以 `symbol` 為核心）
+- `orders.validated`：**按股票一致性路由**（本專案仍以 `symbol` 為核心，但實際 partition 由 `routing_bucket` / `routing_partition` 明確指定）
 - `matching.executions`：key = `symbol`（保序）
 
 ### Delivery semantics 與去重
@@ -711,7 +805,7 @@ Kafka 常用語意是 **at-least-once**：同一事件可能被處理多次。�
 - `created_at`（unix millis）
 - `source`（服務名）
 
-各服務以 `(event_id)` 做去重、或以資料庫/快取保存最近處理過的事件。
+各服務以 `(event_id)` 去重、或以資料庫/快取保存最近處理過的事件。
 
 ### 序列化格式（本專案選擇）
 
@@ -734,14 +828,15 @@ Kafka 常用語意是 **at-least-once**：同一事件可能被處理多次。�
 
 ### Symbol 分片與熱點路由（你描述的策略）
 
-你希望「1500 檔、每 100 檔一分片」並支援單一股票可獨立調整。建議用一張路由表把策略顯式化：
+你希望「1500 檔、每 100 檔一分片」並支援單一股票可獨立調整。建議用一張路由表把策略顯式化；MVP 可先用 published snapshot 檔案，若後續落表，建議用兩層：
 
 | 表 | 用途 | 關鍵欄位（建議） |
 | --- | --- | --- |
-| `symbol_routing` | 統一管理 symbol → shard/partition | `symbol`（PK）, `shard_id`, `kafka_partition_id`, `routing_mode`, `updated_at` |
+| `routing_snapshots` | 描述一個 routing 版本 / 交易日 / 發布狀態 | `snapshot_id`, `effective_trading_day`, `version`, `status`, `created_at`, `published_at`, `created_by` |
+| `symbol_routing_entries` | 某 snapshot 下每個 symbol 的映射與 partition 決策輸入 | `snapshot_id`, `symbol`, `shard_id`, `routing_bucket`, `kafka_partition_id`, `routing_mode`, `updated_at` |
 
-- **預設分片**：以 shard_count=15 為例，可把「每 100 檔一 shard」當作營運規則，實作上以 `symbol_routing` 記錄實際映射（避免依賴 symbol 排序/編碼規則）。
-- **熱門股票獨立分區**：將該 `symbol` 的 `kafka_partition_id` 設為專用 partition，並確保 `quickfix-gateway`/`risk-service` 發事件時使用相同路由。
+- **預設分片**：以 shard_count=15 為例，可把「每 100 檔一 shard」當作營運規則，實作上以 published snapshot 或 `symbol_routing_entries` 記錄實際映射（避免依賴 symbol 排序/編碼規則）。
+- **熱門股票獨立分區**：將該 `symbol` 對應的 `routing_bucket` / `kafka_partition_id` 設為專用 partition，並確保 `risk-service` 與任何實際 producer 使用相同 snapshot。
 
 ### DB 表草案（核心）
 
@@ -763,6 +858,26 @@ Kafka 常用語意是 **at-least-once**：同一事件可能被處理多次。�
   - `INDEX (symbol, created_at)`（按股票查）
   - `INDEX (account_id, status)`（帳戶未完成委託查詢）
   - 分區：建議以 `shard_id` 做 LIST/RANGE partition（配合你的 shard 規劃）
+
+#### `risk_submissions`（`risk-service` local ingress journal）
+
+用途：記錄 `risk-service` 每次同步 ingress 的提交結果，作為第一個成功 ACK 的持久化邊界、idempotency lookup、以及對應 outbox event 的關聯。
+
+這張表不是 `orders` 的替代品：
+
+- `risk_submissions` 回答的是「`risk-service` 曾收到什麼命令、判定是否接受、回了什麼結果」。
+- `orders` 回答的是「這張單在整體系統生命週期中的目前狀態」。
+- 目前 repo 內已實際以 Flyway 建立 `risk_submissions`；`orders` 仍是 README 目標架構中的較完整業務狀態表。
+
+- 主鍵：`id`（identity / bigserial）
+- 建議欄位：
+  - `idempotency_key`, `request_id`, `order_id`
+  - `client_order_id`, `original_client_order_id`, `command_type`
+  - `accepted`, `reason_code`, `reason_text`
+  - `created_at_unix_ms`, `outbox_event_id`
+- 建議約束/索引：
+  - `UNIQUE (idempotency_key)`（確保同一同步提交重送時回同結果）
+  - `UNIQUE (outbox_event_id)`（確保 ingress decision 與 outbox event 一對一）
 
 #### `executions`
 
@@ -803,7 +918,49 @@ Kafka 常用語意是 **at-least-once**：同一事件可能被處理多次。�
 - `reserved`（已預扣/鎖定，對應未完成委託）
 - `position`（部位；買賣方向可用 long/short 或以多張表表示）
 
-建議至少需要一張 reservations 表，並用唯一鍵保證冪等：
+`utilized` 與 `position` 不是同一層概念：
+
+- `position`：帳戶在某商品上的持倉快照，回答「目前持有多少」。
+- `utilized`：帳戶額度中已被成交或既有曝險實際占用的風控數值，回答「目前已用掉多少可交易額度」；在目前 proto 裡以 `utilized_notional` 對外暴露。
+- 關係：`utilized` 可以由 `positions`、成交事件與風控規則推導；MVP 可先把它 materialize 成 `account_limits` 的欄位，而不是先獨立成另一張 `utilized` 表。
+
+名詞對照（避免混淆）：
+
+- `reservation`：指單筆委託對帳戶可用額度產生的預扣狀態，是領域概念，不等同於某一張資料表。
+- `Reserve` / `ReleaseReservation` / `ApplyFill`：指 `risk-service` 與 `account-service` 之間用來建立、釋放、或套用成交到預扣狀態的內部 gRPC 操作。
+- `account_reservations`：指 `account-service` 內部用來持久化 reservation 狀態的資料表。
+- ownership：`risk-service` 只透過內部 gRPC 使用 reservation 能力，不直接寫入 `account_reservations`；真正持有並更新此狀態的服務是 `account-service`。
+
+#### `account_limits`
+
+用途：提供 `GetLimits` 查詢與風控同步檢查所需的額度快照；`available` / `reserved` / `utilized` 建議在這一層聚合呈現。
+
+- 主鍵：`limit_id`（identity / bigserial）
+- 建議欄位：
+  - `account_id`, `scope_type`, `scope_key`, `trading_day`
+  - `currency`, `limit_total_notional`
+  - `reserved_notional`, `utilized_notional`, `available_notional`
+  - `updated_at`
+- 建議約束/索引：
+  - `UNIQUE (account_id, scope_type, scope_key, trading_day)`
+  - `INDEX (account_id, trading_day)`
+
+> 註：`scope_type/scope_key` 用來兼容 tasks 裡提到的「帳戶/商品/日」額度模型；若目前只做帳戶級額度，可先固定為 account-level bucket。
+
+#### `account_positions`
+
+用途：提供 `GetPositions` 查詢與 `ApplyFill` 後的持倉快照；這張表對應的是 per-account, per-symbol 的部位狀態，而不是額度聚合值。
+
+- 主鍵：`position_id`（identity / bigserial）
+- 建議欄位：
+  - `account_id`, `symbol`
+  - `long_qty`, `short_qty`
+  - `updated_at`
+- 建議約束/索引：
+  - `UNIQUE (account_id, symbol)`
+  - `INDEX (symbol)`
+
+reservation 狀態本身則建議至少需要一張表，並用唯一鍵保證冪等：
 
 #### `account_reservations`
 
@@ -866,6 +1023,8 @@ client / internal API  --gRPC-->  query-service  --get-->  Redis
 - `sym:{symbol}:top` → 最佳五檔/最新成交摘要（hash/json）
 
 查詢服務（`query-service`）優先讀 Redis，必要時回落 Postgres。
+
+對公開市場資料，`sym:{symbol}:top` 這類 key 也適合作為 `marketdata-streamer` 提供 snapshot / resync 的 backing store：client 先拿 Redis snapshot，再續接增量 stream，而不是在重連時要求伺服器重播整段 Kafka 開盤事件。
 
 #### 一致性與可運維注意事項（建議最低規範）
 
@@ -1100,13 +1259,13 @@ cmake --build build -j
 
 repo 內已提供 GitHub Actions workflow：[.github/workflows/ci.yml](.github/workflows/ci.yml)。它會直接驗證和本地一致的兩條建置路徑：
 
-- Java：`./gradlew staticAnalysis` + `./gradlew test` + `./gradlew :services:quickfix-gateway:certificationTest`
+- Java：`./gradlew staticAnalysis`（對所有 Java 模組執行 blocking Error Prone 編譯，並對既定模組執行 Checkstyle / SpotBugs）+ `./gradlew test` + `./gradlew :services:quickfix-gateway:certificationTest`
 - Native：`cmake --preset vcpkg` + `cmake --build --preset vcpkg` + `ctest --preset vcpkg`
 
 補充（本 repo 的落地狀態）：
 
 - Java 微服務目前以 Gradle multi-project 管理。
-- Java job 會上傳 Checkstyle / SpotBugs / test reports artifact，方便 CI 失敗時直接回看報告。
+- Java job 會執行 repo-wide blocking Error Prone；Checkstyle / SpotBugs / test reports 會上傳 artifact，方便 CI 失敗時直接回看報告。
 - workflow 會先判斷變更範圍；只有 Java 相關檔案變更時才跑 Gradle job，只有 Native 相關檔案變更時才跑 CMake job，避免 docs-only 變更觸發整套重建。
 - native build tree 仍存在，主要作為歷史 C++ baseline 與未來 `matching-engine` 的建置入口。
 - FIX dictionary 的穩定 runtime 路徑為 `fix-spec/FIX44.xml`。
@@ -1118,6 +1277,8 @@ repo 內已提供 GitHub Actions workflow：[.github/workflows/ci.yml](.github/w
 目標：在本機用最少步驟跑起 Kafka 與各服務。
 
 > 若你採用建議路徑，docker-compose 檔案可放在 `deploy/compose/docker-compose.yml`。
+>
+> 若要在本機額外驗證 Debezium / Kafka Connect，`deploy/compose/kafka-connect.local.yml` 應使用 **官方 Apache Kafka image**，而不是 Redpanda。現在建議的本地 broker 範例為 `apache/kafka:4.2.0`（依 Apache downloads index 目前最新穩定版）。
 
 ```bash
 docker compose -f deploy/compose/docker-compose.yml up -d
@@ -1188,7 +1349,7 @@ Consul 也能做 service discovery，但它通常適用於：
 - 若你**確定部署目標就是 K8s + kind**：選 **Kubernetes Service + DNS**，最簡、學習曲線低、也最符合「精簡版本」
 - 只有在你後續確定要做 **跨叢集/跨環境** 或想引入 **Service Mesh 治理** 時，再評估 Consul（或直接評估雲端/平台的 mesh）
 
-> 補充：撮合分片的「固定 shard owner」不建議依賴 service discovery；它應由你自己的 routing/仲裁（fencing）規則決定（見前述 partition→matching-engine 固定綁定段落）。
+> 補充：撮合分片的「固定 shard owner」不建議依賴 service discovery；它應由你自己的 routing/仲裁（fencing）規則決定（見前述「固定 partition → `matching-engine-N`」與「主備接手（Active-Standby）與 fencing」小節）。
 
 ---
 

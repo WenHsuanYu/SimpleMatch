@@ -1,0 +1,75 @@
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: quickfix-gateway
+spec:
+  serviceName: quickfix-gateway-headless
+  replicas: 2
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: quickfix-gateway
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: quickfix-gateway
+    spec:
+      terminationGracePeriodSeconds: 30
+      containers:
+        - name: quickfix-gateway
+          image: quickfix-gateway:latest
+          imagePullPolicy: IfNotPresent
+          env:
+            - name: SIMPLEMATCH_QUICKFIX_GATEWAY_OWNER_ID
+              valueFrom:
+                fieldRef:
+                  fieldPath: metadata.name
+            - name: SIMPLEMATCH_QUICKFIX_GATEWAY_QUICKFIX_CONFIG
+              value: /etc/simplematch/quickfix/acceptor-continuity.cfg
+            - name: SIMPLEMATCH_QUICKFIX_GATEWAY_WAL_PATH
+              value: /var/lib/simplematch/quickfix-gateway/wal/inbound.wal
+            - name: SIMPLEMATCH_KAFKA_BROKERS
+              value: kafka:9092
+            - name: SIMPLEMATCH_GRPC_TARGETS_RISK_SERVICE
+              value: dns:///risk-service:6565
+          ports:
+            - name: fix
+              containerPort: 5001
+            - name: management
+              containerPort: 8080
+          startupProbe:
+            httpGet:
+              path: /readyz
+              port: management
+            failureThreshold: 24
+            periodSeconds: 5
+          readinessProbe:
+            httpGet:
+              path: /readyz
+              port: management
+            initialDelaySeconds: 2
+            periodSeconds: 5
+          livenessProbe:
+            httpGet:
+              path: /healthz/liveness
+              port: management
+            initialDelaySeconds: 10
+            periodSeconds: 10
+          volumeMounts:
+            - name: quickfix-config
+              mountPath: /etc/simplematch/quickfix/acceptor-continuity.cfg
+              subPath: acceptor-continuity.cfg
+            - name: quickfix-data
+              mountPath: /var/lib/simplematch/quickfix-gateway
+      volumes:
+        - name: quickfix-config
+          configMap:
+            name: quickfix-gateway-quickfix-config
+  volumeClaimTemplates:
+    - metadata:
+        name: quickfix-data
+      spec:
+        accessModes:
+          - ReadWriteOnce
+        resources:
+          requests:
+            storage: 2Gi
