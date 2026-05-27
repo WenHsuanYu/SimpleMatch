@@ -5,11 +5,14 @@ import com.simplematch.config.SimpleMatchConfig;
 import com.simplematch.riskservice.bootstrap.RiskServiceRuntime;
 import com.simplematch.riskservice.store.JdbcOutboxRepository;
 import com.simplematch.riskservice.store.JdbcSubmissionRepository;
+import com.simplematch.riskservice.submission.FileRoutingPartitionResolver;
+import com.simplematch.riskservice.submission.RoutingPartitionResolver;
 import com.simplematch.riskservice.submission.SubmissionIdempotencyKeyFactory;
 import com.simplematch.riskservice.submission.SubmissionOutboxFactory;
 import com.simplematch.riskservice.submission.SubmissionService;
 import com.simplematch.riskservice.submission.SubmissionValidator;
 import com.simplematch.riskservice.submission.TransactionalSubmissionService;
+import java.nio.file.Path;
 import com.zaxxer.hikari.HikariDataSource;
 import java.time.Clock;
 import javax.sql.DataSource;
@@ -69,16 +72,30 @@ public class RiskServiceConfiguration {
   }
 
   @Bean
+  RoutingPartitionResolver routingPartitionResolver(
+      ObjectMapper objectMapper,
+      SimpleMatchConfig config) {
+    return FileRoutingPartitionResolver.load(
+        objectMapper,
+        Path.of(config.getRouting().getSnapshotPath()),
+        config.getKafka().getPartitions().getOrdersValidated());
+  }
+
+  @Bean
   SubmissionService submissionService(
       JdbcTemplate riskJdbcTemplate,
       TransactionTemplate riskTransactionTemplate,
       Clock riskServiceClock,
       ObjectMapper objectMapper,
+      RoutingPartitionResolver routingPartitionResolver,
       SimpleMatchConfig config) {
     return new TransactionalSubmissionService(
         new SubmissionIdempotencyKeyFactory(),
         new SubmissionValidator(riskServiceClock),
-        new SubmissionOutboxFactory(objectMapper, config.getKafka().getTopics().getOrdersValidated()),
+        new SubmissionOutboxFactory(
+            objectMapper,
+            config.getKafka().getTopics().getOrdersValidated(),
+            routingPartitionResolver),
         new JdbcSubmissionRepository(riskJdbcTemplate),
         new JdbcOutboxRepository(riskJdbcTemplate),
         riskTransactionTemplate);

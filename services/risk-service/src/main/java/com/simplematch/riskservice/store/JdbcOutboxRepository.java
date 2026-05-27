@@ -20,17 +20,19 @@ public final class JdbcOutboxRepository implements OutboxRepository {
               event_id,
               topic,
               message_key,
+              kafka_partition_id,
               payload,
               payload_type,
               headers_json,
               aggregate_type,
               aggregate_id,
               created_at_unix_ms
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """,
         record.eventId(),
         record.topic(),
         record.messageKey(),
+        record.kafkaPartitionId(),
         record.payload(),
         record.payloadType(),
         record.headersJson(),

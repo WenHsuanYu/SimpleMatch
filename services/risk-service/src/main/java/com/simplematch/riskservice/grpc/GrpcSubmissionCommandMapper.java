@@ -1,12 +1,18 @@
 package com.simplematch.riskservice.grpc;
 
-import com.simplematch.contracts.orders.v1.CommandType;
 import com.simplematch.contracts.orders.v1.OrderCommand;
+import com.simplematch.riskservice.submission.CommandType;
+import com.simplematch.riskservice.submission.OrderType;
+import com.simplematch.riskservice.submission.Side;
 import com.simplematch.riskservice.submission.SubmissionCommand;
+import com.simplematch.riskservice.submission.TimeInForce;
 
 final class GrpcSubmissionCommandMapper {
-  SubmissionCommand map(OrderCommand command, CommandType expectedType) {
-    final SubmissionCommand emptyCommand = SubmissionCommand.empty().withCommandType(expectedType);
+  SubmissionCommand map(
+      OrderCommand command,
+      com.simplematch.contracts.orders.v1.CommandType expectedType) {
+    final CommandType normalizedExpectedType = toCommandType(expectedType);
+    final SubmissionCommand emptyCommand = SubmissionCommand.empty().withCommandType(normalizedExpectedType);
     if (command == null || OrderCommand.getDefaultInstance().equals(command)) {
       return emptyCommand;
     }
@@ -18,13 +24,58 @@ final class GrpcSubmissionCommandMapper {
         command.getSessionId(),
         command.getClientOrderId(),
         command.getSymbol(),
-        command.getSide(),
+        toSide(command.getSide()),
         command.getQuantity(),
         command.getPrice(),
-        command.getOrderType(),
-        command.getTif(),
-        command.getCommandType(),
+        toOrderType(command.getOrderType()),
+        toTimeInForce(command.getTif()),
+        toCommandType(command.getCommandType()),
         command.getOriginalClientOrderId());
-    return mappedCommand.withCommandType(expectedType);
+    return mappedCommand.withCommandType(normalizedExpectedType);
+  }
+
+  private static Side toSide(com.simplematch.contracts.common.v1.Side side) {
+    if (side == null) {
+      return Side.SIDE_UNSPECIFIED;
+    }
+    return switch (side) {
+      case SIDE_BUY -> Side.SIDE_BUY;
+      case SIDE_SELL -> Side.SIDE_SELL;
+      default -> Side.SIDE_UNSPECIFIED;
+    };
+  }
+
+  private static OrderType toOrderType(com.simplematch.contracts.common.v1.OrderType orderType) {
+    if (orderType == null) {
+      return OrderType.ORDER_TYPE_UNSPECIFIED;
+    }
+    return switch (orderType) {
+      case ORDER_TYPE_LIMIT -> OrderType.ORDER_TYPE_LIMIT;
+      case ORDER_TYPE_MARKET -> OrderType.ORDER_TYPE_MARKET;
+      default -> OrderType.ORDER_TYPE_UNSPECIFIED;
+    };
+  }
+
+  private static TimeInForce toTimeInForce(com.simplematch.contracts.common.v1.TimeInForce timeInForce) {
+    if (timeInForce == null) {
+      return TimeInForce.TIME_IN_FORCE_UNSPECIFIED;
+    }
+    return switch (timeInForce) {
+      case TIME_IN_FORCE_ROD -> TimeInForce.TIME_IN_FORCE_ROD;
+      case TIME_IN_FORCE_IOC -> TimeInForce.TIME_IN_FORCE_IOC;
+      case TIME_IN_FORCE_FOK -> TimeInForce.TIME_IN_FORCE_FOK;
+      default -> TimeInForce.TIME_IN_FORCE_UNSPECIFIED;
+    };
+  }
+
+  private static CommandType toCommandType(com.simplematch.contracts.orders.v1.CommandType commandType) {
+    if (commandType == null) {
+      return CommandType.COMMAND_TYPE_UNSPECIFIED;
+    }
+    return switch (commandType) {
+      case COMMAND_TYPE_NEW -> CommandType.COMMAND_TYPE_NEW;
+      case COMMAND_TYPE_CANCEL -> CommandType.COMMAND_TYPE_CANCEL;
+      default -> CommandType.COMMAND_TYPE_UNSPECIFIED;
+    };
   }
 }

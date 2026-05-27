@@ -12,8 +12,8 @@ dependencyManagement {
 }
 
 dependencies {
-  implementation(project(":java-libs:simplematch-config"))
-  implementation(project(":java-libs:simplematch-contracts"))
+  implementation(project(":shared-java:simplematch-config"))
+  implementation(project(":shared-java:simplematch-contracts"))
   implementation("org.springframework.boot:spring-boot-starter")
   implementation("org.springframework.boot:spring-boot-starter-actuator")
   implementation("org.springframework.boot:spring-boot-starter-jdbc")

@@ -13,13 +13,23 @@ import java.util.UUID;
 public final class SubmissionOutboxFactory {
   private static final String AGGREGATE_TYPE = "risk_submission";
   private static final String CONTENT_TYPE = "application/x-protobuf";
+  private static final int DEFAULT_PARTITION_ID = 0;
 
   private final ObjectMapper objectMapper;
   private final String ordersValidatedTopic;
+  private final RoutingPartitionResolver routingPartitionResolver;
 
   public SubmissionOutboxFactory(ObjectMapper objectMapper, String ordersValidatedTopic) {
+    this(objectMapper, ordersValidatedTopic, symbol -> DEFAULT_PARTITION_ID);
+  }
+
+  public SubmissionOutboxFactory(
+      ObjectMapper objectMapper,
+      String ordersValidatedTopic,
+      RoutingPartitionResolver routingPartitionResolver) {
     this.objectMapper = Objects.requireNonNull(objectMapper);
     this.ordersValidatedTopic = Objects.requireNonNull(ordersValidatedTopic);
+    this.routingPartitionResolver = Objects.requireNonNull(routingPartitionResolver);
   }
 
   public OutboxRecord create(SubmissionDecision decision) {
@@ -27,12 +37,14 @@ public final class SubmissionOutboxFactory {
     final SubmissionCommand command = decision.command();
     final String eventId = eventId(submission);
     final String payloadType = payloadType(submission);
+    final int kafkaPartitionId = kafkaPartitionId(command);
 
     return new OutboxRecord(
         eventId,
         ordersValidatedTopic,
         messageKey(command),
-        payloadBytes(submission, command, eventId),
+        kafkaPartitionId,
+        payloadBytes(submission, command, eventId, kafkaPartitionId),
         payloadType,
         headersJson(eventId, payloadType),
         AGGREGATE_TYPE,
@@ -40,7 +52,11 @@ public final class SubmissionOutboxFactory {
         submission.createdAtUnixMs());
   }
 
-  private byte[] payloadBytes(SubmissionResult submission, SubmissionCommand command, String eventId) {
+  private byte[] payloadBytes(
+      SubmissionResult submission,
+      SubmissionCommand command,
+      String eventId,
+      int kafkaPartitionId) {
     if (submission.accepted()) {
       return OrderValidated.newBuilder()
           .setMetadata(eventMetadata(eventId, submission.createdAtUnixMs()))
@@ -48,6 +64,7 @@ public final class SubmissionOutboxFactory {
           .setOrderId(submission.orderId())
           .setAccountId(command.accountId())
           .setSymbol(command.symbol())
+          .setRoutingPartition(Integer.toString(kafkaPartitionId))
           .build()
           .toByteArray();
     }
@@ -98,6 +115,13 @@ public final class SubmissionOutboxFactory {
       return command.orderId();
     }
     return "UNKNOWN";
+  }
+
+  private int kafkaPartitionId(SubmissionCommand command) {
+    if (command == null || command.symbol().isBlank()) {
+      return DEFAULT_PARTITION_ID;
+    }
+    return routingPartitionResolver.resolve(command.symbol());
   }
 
   private String eventId(SubmissionResult submission) {

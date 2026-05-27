@@ -1,10 +1,5 @@
 package com.simplematch.riskservice.submission;
 
-import com.simplematch.contracts.common.v1.OrderType;
-import com.simplematch.contracts.common.v1.Side;
-import com.simplematch.contracts.common.v1.TimeInForce;
-import com.simplematch.contracts.orders.v1.CommandType;
-
 public record SubmissionCommand(
     String commandId,
     String orderId,

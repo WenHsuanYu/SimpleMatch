@@ -1,7 +1,5 @@
 package com.simplematch.riskservice.submission;
 
-import com.simplematch.contracts.orders.v1.CommandType;
-
 public record SubmissionResult(
     String idempotencyKey,
     String requestId,
