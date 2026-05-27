@@ -25,6 +25,8 @@ import org.springframework.transaction.support.TransactionTemplate;
 
 @Configuration
 public class RiskServiceConfiguration {
+  private static final String RISK_SERVICE_SCHEMA = "risk_service";
+
   @Bean
   ObjectMapper riskObjectMapper() {
     return new ObjectMapper();
@@ -51,6 +53,7 @@ public class RiskServiceConfiguration {
     if (parsedJdbcDsn.password() != null) {
       dataSource.setPassword(parsedJdbcDsn.password());
     }
+    dataSource.setSchema(RISK_SERVICE_SCHEMA);
     dataSource.setMaximumPoolSize(4);
     dataSource.setPoolName("risk-service-hikari");
     return dataSource;

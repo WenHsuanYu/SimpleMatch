@@ -271,6 +271,8 @@ Projection 可以把它理解成：
 - **先讓 `Reservation` 這種需要可追溯/可對帳的邏輯，走事件為權威**（因為你已經有預扣/釋放/成交轉實扣的需求，事件序列能清楚解釋每一次變化）。
 - `Order` 則可先維持「狀態表為權威 + 事件通知」，等流程穩定後再評估是否值得全面事件溯源。
 
+> 補充：資料庫拓樸目前明確採 **單一 PostgreSQL instance + 每服務各自擁有 schema**。這不改變 `aggregate_type` 的語意；例如 `risk_submission` 仍是 outbox row 的領域識別，不是 schema 名稱。實作觸點與 rollout checklist 見 [docs/database-architecture.md](docs/database-architecture.md)。
+
 ## 可靠性與一致性（交易不漏單、不重複「生效」）
 
 交易系統要避免的核心問題通常分兩類：

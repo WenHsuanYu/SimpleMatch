@@ -30,4 +30,5 @@ simpleMatchFlyway {
   serviceName.set("persistence")
   migrationLocations.set(listOf("filesystem:${project.projectDir}/src/main/resources/db/migration/persistence"))
   baselineVersion.set("1")
+  schemaName.set("persistence")
 }

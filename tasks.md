@@ -135,23 +135,31 @@
 
 ### 3.2 Postgres schema（最小可跑）
 
-- [ ] `risk-service` local schema
+- [x] 架構決策已固定：採 **單一 PostgreSQL instance + 每服務各自 schema owner**；細節、實作觸點與 checklist 見 [docs/database-architecture.md](docs/database-architecture.md)
+- [ ] follow-up：後續若新增新的持久化服務，或讓既有服務加入新的 JDBC runtime / connector 觸點，必須從第一個 migration 起就採 schema-qualified owner model
+
+- [x] `risk-service` local schema
   - [x] `risk_submissions`（同步 ingress journal；`UNIQUE(idempotency_key)`、`UNIQUE(outbox_event_id)`）
   - [x] `outbox`（append-only event row；`event_id UNIQUE`，供 Debezium CDC 讀取；已含 `kafka_partition_id`）
-- [ ] `account-service` authority schema
+- [x] `account-service` authority schema
   - [x] `account_limits`（帳戶/商品/日額度 bucket；含 `limit_total_notional`, `reserved_notional`, `utilized_notional`, `available_notional`）
   - [x] `account_positions`（per-account, per-symbol 持倉快照；`UNIQUE(account_id, symbol)`）
   - [x] `account_reservations`（open orders 預扣狀態；`reservation_id = order_id` 或 `request_id`）
-- [ ] projection / read-model schema
+- [x] `account-service` migration 已顯式落在 `account_service` schema，migration test 也已在 owner schema 下驗證
+- [x] projection / read-model schema
   - [x] `orders`（含 `source_session_id`, `client_order_id/ClOrdID` 的 UNIQUE）
   - [x] `executions`（`UNIQUE(order_id, exec_id)`）
   - [x] `processed_events`（`(consumer_name, event_id)` PK）
+- [x] `persistence` migration 已顯式落在 `persistence` schema，migration test 也已在 owner schema 下驗證
 - [ ] routing / config schema
   - [ ] `symbol_routing`（symbol→shard/partition；可選但建議；MVP 可先不建表）
   - [ ] `routing_snapshots`（版本 / 交易日 / 發布狀態）
   - [ ] `symbol_routing_entries`（snapshot 下的 symbol 映射；partition 決策由 `routing_bucket` / `kafka_partition_id` 欄位表達）
 
-### 3.3 Flyway rollout（目前只有 `risk-service` 已接線）
+### 3.3 Flyway rollout
+
+- [x] `simplematch.flyway-service` 已支援 per-service schema 設定（`schemaName` + service-scoped property / env override），並把 Flyway `defaultSchema` / `schemas` 對齊到 owner schema
+- [x] `risk-service` / `account-service` / `persistence` build script 已明確宣告 owner schema
 
 - [x] `risk-service` 已接入 `simplematch.flyway-service`，並以 versioned migration 管理 `risk_submissions` + local `outbox`
 - [x] `risk-service` 已新增 `kafka_partition_id` migration，讓 Debezium 可使用 explicit partition placement

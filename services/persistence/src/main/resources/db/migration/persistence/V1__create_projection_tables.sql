@@ -1,4 +1,6 @@
-CREATE TABLE IF NOT EXISTS orders (
+CREATE SCHEMA IF NOT EXISTS persistence;
+
+CREATE TABLE IF NOT EXISTS persistence.orders (
   order_id VARCHAR(255) PRIMARY KEY,
   account_id VARCHAR(255) NOT NULL,
   symbol VARCHAR(64) NOT NULL,
@@ -19,12 +21,12 @@ CREATE TABLE IF NOT EXISTS orders (
 );
 
 CREATE INDEX IF NOT EXISTS idx_orders_symbol_created_at
-    ON orders (symbol, created_at_unix_ms);
+  ON persistence.orders (symbol, created_at_unix_ms);
 
 CREATE INDEX IF NOT EXISTS idx_orders_account_status
-    ON orders (account_id, status);
+  ON persistence.orders (account_id, status);
 
-CREATE TABLE IF NOT EXISTS executions (
+CREATE TABLE IF NOT EXISTS persistence.executions (
   exec_id VARCHAR(255) PRIMARY KEY,
   order_id VARCHAR(255) NOT NULL,
   symbol VARCHAR(64) NOT NULL,
@@ -37,9 +39,9 @@ CREATE TABLE IF NOT EXISTS executions (
 );
 
 CREATE INDEX IF NOT EXISTS idx_executions_symbol_created_at
-    ON executions (symbol, created_at_unix_ms);
+  ON persistence.executions (symbol, created_at_unix_ms);
 
-CREATE TABLE IF NOT EXISTS processed_events (
+CREATE TABLE IF NOT EXISTS persistence.processed_events (
   consumer_name VARCHAR(255) NOT NULL,
   event_id VARCHAR(255) NOT NULL,
   processed_at_unix_ms BIGINT NOT NULL,

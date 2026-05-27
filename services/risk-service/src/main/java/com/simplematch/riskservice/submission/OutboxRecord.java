@@ -19,12 +19,12 @@ public final class OutboxRecord {
             String eventId,
             String topic,
             String messageKey,
-        byte[] payload,
-        String payloadType,
-        String headersJson,
-        String aggregateType,
-        String aggregateId,
-        long createdAtUnixMs) {
+            byte[] payload,
+            String payloadType,
+            String headersJson,
+            String aggregateType,
+            String aggregateId,
+            long createdAtUnixMs) {
     this(
         eventId,
         topic,
@@ -39,10 +39,10 @@ public final class OutboxRecord {
     }
 
     public OutboxRecord(
-        String eventId,
-        String topic,
-        String messageKey,
-        Integer kafkaPartitionId,
+            String eventId,
+            String topic,
+            String messageKey,
+            Integer kafkaPartitionId,
             byte[] payload,
             String payloadType,
             String headersJson,

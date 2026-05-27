@@ -34,7 +34,7 @@ public final class JdbcSubmissionRepository implements SubmissionRepository {
             """
                 SELECT idempotency_key, request_id, order_id, client_order_id, original_client_order_id,
                        command_type, accepted, reason_code, reason_text, created_at_unix_ms
-                FROM risk_submissions
+          FROM risk_service.risk_submissions
                 WHERE idempotency_key = ?
                 """,
             SUBMISSION_ROW_MAPPER,
@@ -47,7 +47,7 @@ public final class JdbcSubmissionRepository implements SubmissionRepository {
   public void insert(SubmissionResult submission, String outboxEventId) {
     jdbcTemplate.update(
         """
-            INSERT INTO risk_submissions (
+            INSERT INTO risk_service.risk_submissions (
               idempotency_key,
               request_id,
               order_id,

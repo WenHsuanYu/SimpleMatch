@@ -16,7 +16,7 @@ public final class JdbcOutboxRepository implements OutboxRepository {
   public void insert(OutboxRecord record) {
     jdbcTemplate.update(
         """
-            INSERT INTO outbox (
+            INSERT INTO risk_service.outbox (
               event_id,
               topic,
               message_key,

@@ -10,12 +10,17 @@ import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.jdbc.datasource.DriverManagerDataSource;
 
 class AccountServiceFlywayMigrationTest {
+  private static final String SCHEMA_NAME = "ACCOUNT_SERVICE";
+
   @DisplayName("Flyway migration creates the account-service authority tables")
   @Test
   void migrateCreatesAuthorityTables() {
     final DriverManagerDataSource dataSource = new DriverManagerDataSource();
     dataSource.setDriverClassName("org.h2.Driver");
-    dataSource.setUrl("jdbc:h2:mem:" + UUID.randomUUID() + ";MODE=PostgreSQL;DB_CLOSE_DELAY=-1");
+    dataSource.setUrl(
+        "jdbc:h2:mem:"
+            + UUID.randomUUID()
+            + ";MODE=PostgreSQL;DB_CLOSE_DELAY=-1;INIT=CREATE SCHEMA IF NOT EXISTS account_service\\;SET SCHEMA account_service");
     final JdbcTemplate jdbcTemplate = new JdbcTemplate(dataSource);
 
     Flyway.configure()
@@ -41,9 +46,11 @@ class AccountServiceFlywayMigrationTest {
             """
             SELECT COUNT(*)
             FROM INFORMATION_SCHEMA.TABLES
-            WHERE UPPER(TABLE_NAME) = ?
+            WHERE UPPER(TABLE_SCHEMA) = ?
+              AND UPPER(TABLE_NAME) = ?
             """,
             Integer.class,
+            SCHEMA_NAME,
             tableName)
         > 0;
   }
@@ -53,10 +60,12 @@ class AccountServiceFlywayMigrationTest {
             """
             SELECT COUNT(*)
             FROM INFORMATION_SCHEMA.COLUMNS
-            WHERE UPPER(TABLE_NAME) = ?
+            WHERE UPPER(TABLE_SCHEMA) = ?
+              AND UPPER(TABLE_NAME) = ?
               AND UPPER(COLUMN_NAME) = ?
             """,
             Integer.class,
+            SCHEMA_NAME,
             tableName,
             columnName)
         > 0;

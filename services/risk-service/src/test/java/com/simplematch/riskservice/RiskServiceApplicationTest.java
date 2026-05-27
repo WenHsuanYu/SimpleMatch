@@ -11,7 +11,7 @@ import org.springframework.boot.test.context.SpringBootTest;
 
 @SpringBootTest(
     properties = {
-    "simplematch.postgres.dsn=jdbc:h2:mem:risk-context;MODE=PostgreSQL;DB_CLOSE_DELAY=-1",
+  "simplematch.postgres.dsn=jdbc:h2:mem:risk-context;MODE=PostgreSQL;DB_CLOSE_DELAY=-1;INIT=CREATE SCHEMA IF NOT EXISTS risk_service\\;SET SCHEMA risk_service",
         "simplematch.risk-service.grpc.enabled=false",
         "spring.main.web-application-type=none"
     })
@@ -29,6 +29,7 @@ class RiskServiceApplicationTest {
   void contextLoadsWithSharedConfig() {
     assertThat(simpleMatchConfig.getEnv()).isEqualTo("dev");
     assertThat(runtime.grpcPort()).isEqualTo(50052);
-    assertThat(simpleMatchConfig.getPostgres().getDsn()).isEqualTo("jdbc:h2:mem:risk-context;MODE=PostgreSQL;DB_CLOSE_DELAY=-1");
+    assertThat(simpleMatchConfig.getPostgres().getDsn()).isEqualTo(
+        "jdbc:h2:mem:risk-context;MODE=PostgreSQL;DB_CLOSE_DELAY=-1;INIT=CREATE SCHEMA IF NOT EXISTS risk_service;SET SCHEMA risk_service");
   }
 }

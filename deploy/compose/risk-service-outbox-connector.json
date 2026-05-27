@@ -13,7 +13,7 @@
     "slot.name": "risk_service_outbox",
     "publication.name": "dbz_risk_service_outbox",
     "publication.autocreate.mode": "filtered",
-    "table.include.list": "public.outbox",
+    "table.include.list": "risk_service.outbox",
     "tombstones.on.delete": "false",
     "key.converter": "org.apache.kafka.connect.storage.StringConverter",
     "key.converter.schemas.enable": "false",

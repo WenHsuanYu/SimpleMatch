@@ -17,6 +17,7 @@ abstract class SimpleMatchFlywayExtension @Inject constructor(objects: ObjectFac
   val serviceName: Property<String> = objects.property(String::class.java)
   val migrationLocations: ListProperty<String> = objects.listProperty(String::class.java)
   val baselineVersion: Property<String> = objects.property(String::class.java)
+  val schemaName: Property<String> = objects.property(String::class.java)
   val cleanDisabled: Property<Boolean> = objects.property(Boolean::class.java)
 
   init {
@@ -38,12 +39,17 @@ class SimpleMatchFlywayServicePlugin : Plugin<Project> {
           ?: throw IllegalStateException("simpleMatchFlyway.migrationLocations must be configured for ${project.path}")
       val configuredBaselineVersion = extension.baselineVersion.orNull
           ?: throw IllegalStateException("simpleMatchFlyway.baselineVersion must be configured for ${project.path}")
+      val configuredSchemaName = resolveSchema(project, configuredServiceName, extension)
 
       project.extensions.configure(FlywayExtension::class.java) {
         baselineOnMigrate = true
         baselineVersion = configuredBaselineVersion
         cleanDisabled = resolveCleanDisabled(project, configuredServiceName, extension)
         locations = migrationLocations.toTypedArray()
+        if (configuredSchemaName != null) {
+          defaultSchema = configuredSchemaName
+          schemas = arrayOf(configuredSchemaName)
+        }
       }
 
       configureFlywayTasks(project, configuredServiceName, extension)
@@ -59,6 +65,7 @@ class SimpleMatchFlywayServicePlugin : Plugin<Project> {
       group = "database"
       doFirst {
         val connection = resolveConnection(project, serviceName)
+        val schemaName = resolveSchema(project, serviceName, extension)
         project.extensions.configure(FlywayExtension::class.java) {
           baselineOnMigrate = true
           baselineVersion = extension.baselineVersion.get()
@@ -67,9 +74,22 @@ class SimpleMatchFlywayServicePlugin : Plugin<Project> {
           url = connection.jdbcUrl
           user = connection.username
           password = connection.password
+          if (schemaName != null) {
+            defaultSchema = schemaName
+            schemas = arrayOf(schemaName)
+          }
         }
       }
     }
+  }
+
+  private fun resolveSchema(
+      project: Project,
+      serviceName: String,
+      extension: SimpleMatchFlywayExtension): String? {
+    val envPrefix = serviceNameToEnvPrefix(serviceName)
+    return propertyOrEnv(project, "${serviceName}FlywaySchema", "${envPrefix}_FLYWAY_SCHEMA")
+        ?: extension.schemaName.orNull?.takeIf { it.isNotBlank() }
   }
 
   private fun registerRootTasks(project: Project, serviceName: String) {

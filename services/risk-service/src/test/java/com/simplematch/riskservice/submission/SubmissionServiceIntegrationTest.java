@@ -51,7 +51,10 @@ class SubmissionServiceIntegrationTest {
   void setUp() {
     final DriverManagerDataSource dataSource = new DriverManagerDataSource();
     dataSource.setDriverClassName("org.h2.Driver");
-    dataSource.setUrl("jdbc:h2:mem:" + UUID.randomUUID() + ";MODE=PostgreSQL;DB_CLOSE_DELAY=-1");
+    dataSource.setUrl(
+      "jdbc:h2:mem:"
+        + UUID.randomUUID()
+        + ";MODE=PostgreSQL;DB_CLOSE_DELAY=-1;INIT=CREATE SCHEMA IF NOT EXISTS risk_service\\;SET SCHEMA risk_service");
     jdbcTemplate = new JdbcTemplate(dataSource);
     transactionTemplate = new TransactionTemplate(new DataSourceTransactionManager(dataSource));
     objectMapper = new ObjectMapper();
@@ -653,7 +656,7 @@ class SubmissionServiceIntegrationTest {
     public <T> List<T> query(String sql, RowMapper<T> rowMapper, Object... args) throws DataAccessException {
       final List<T> result = delegate.query(sql, rowMapper, args);
       if (!blocked
-          && sql.contains("FROM risk_submissions")
+          && sql.contains("FROM risk_service.risk_submissions")
           && args.length == 1
           && expectedIdempotencyKey.equals(args[0])
           && result.isEmpty()) {
