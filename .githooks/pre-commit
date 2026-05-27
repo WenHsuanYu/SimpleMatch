@@ -1,0 +1,8 @@
+#!/usr/bin/env bash
+
+set -euo pipefail
+
+repo_root="$(git rev-parse --show-toplevel)"
+
+"$repo_root/scripts/pre-commit-java-fast-check.sh"
+"$repo_root/scripts/check-flyway-migration-layout.sh" --staged

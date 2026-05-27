@@ -8,6 +8,8 @@ import org.gradle.api.tasks.testing.Test
 import org.gradle.api.tasks.compile.JavaCompile
 import org.gradle.jvm.toolchain.JavaLanguageVersion
 import org.gradle.api.plugins.JavaPluginExtension
+import org.gradle.api.tasks.Classpath
+import org.gradle.process.CommandLineArgumentProvider
 
 plugins {
   base
@@ -24,31 +26,72 @@ allprojects {
   }
 }
 
-val staticAnalysisProjects = setOf(
-    ":java-libs:simplematch-config",
+val mockitoCoreVersion = "5.17.0"
+
+val checkstyleAndSpotbugsProjects = setOf(
+    ":shared-java:simplematch-config",
     ":services:account-service",
+  ":services:persistence",
     ":services:quickfix-gateway",
     ":services:risk-service")
+
+val staticAnalysisTask = tasks.register("staticAnalysis") {
+  group = "verification"
+  description =
+      "Runs blocking Error Prone compilation for every Java module, plus Checkstyle and SpotBugs for curated modules."
+}
 
 subprojects {
   group = rootProject.group
   version = rootProject.version
 
   plugins.withType<JavaPlugin> {
+    val projectPath = project.path
+
     extensions.configure(JavaPluginExtension::class.java) {
       toolchain {
         languageVersion = JavaLanguageVersion.of(25)
       }
     }
 
-    tasks.withType(Test::class.java).configureEach {
-      useJUnitPlatform()
+    val mockitoAgent = configurations.create("mockitoAgent")
+
+    dependencies.add("mockitoAgent", "org.mockito:mockito-core:$mockitoCoreVersion") {
+      isTransitive = false
     }
 
-    if (path in staticAnalysisProjects) {
+    tasks.withType(Test::class.java).configureEach {
+      useJUnitPlatform()
+      jvmArgumentProviders.add(object : CommandLineArgumentProvider {
+        @get:Classpath
+        val mockitoAgentClasspath = mockitoAgent
+
+        override fun asArguments(): Iterable<String> =
+            listOf("-javaagent:${mockitoAgentClasspath.singleFile.absolutePath}")
+      })
+    }
+
+    pluginManager.apply("net.ltgt.errorprone")
+    dependencies.add("errorprone", "com.google.errorprone:error_prone_core:2.39.0")
+
+    rootProject.tasks.named(staticAnalysisTask.name) {
+      dependsOn("$projectPath:classes", "$projectPath:testClasses")
+    }
+
+    tasks.withType(JavaCompile::class.java).configureEach {
+      options.encoding = "UTF-8"
+      options.errorprone.disableWarningsInGeneratedCode.set(true)
+      options.errorprone.excludedPaths.set(".*/build/generated(?:/.+)?")
+      options.errorprone.errorproneArgs.addAll(
+          listOf(
+              "-Xep:MissingOverride:ERROR",
+              "-Xep:EqualsGetClass:ERROR",
+              "-Xep:FutureReturnValueIgnored:ERROR"))
+    }
+
+    if (path in checkstyleAndSpotbugsProjects) {
       pluginManager.apply("checkstyle")
       pluginManager.apply("com.github.spotbugs")
-      pluginManager.apply("net.ltgt.errorprone")
 
       extensions.configure(CheckstyleExtension::class.java) {
         toolVersion = "10.26.1"
@@ -66,18 +109,8 @@ subprojects {
         excludeFilter.set(rootProject.layout.projectDirectory.file("config/spotbugs/exclude.xml"))
       }
 
-      dependencies.add("errorprone", "com.google.errorprone:error_prone_core:2.39.0")
-
-      tasks.withType(JavaCompile::class.java).configureEach {
-        options.encoding = "UTF-8"
-        options.errorprone.disableWarningsInGeneratedCode.set(true)
-        options.errorprone.excludedPaths.set(".*/build/generated(?:/.+)?")
-        options.errorprone.errorproneArgs.addAll(
-            listOf(
-                "-XepAllErrorsAsWarnings",
-                "-Xep:MissingOverride:WARN",
-                "-Xep:EqualsGetClass:WARN",
-                "-Xep:FutureReturnValueIgnored:WARN"))
+      rootProject.tasks.named(staticAnalysisTask.name) {
+        dependsOn("$projectPath:checkstyleMain", "$projectPath:spotbugsMain")
       }
 
       tasks.withType(Checkstyle::class.java).configureEach {
@@ -109,16 +142,4 @@ subprojects {
       }
     }
   }
-}
-
-tasks.register("staticAnalysis") {
-  group = "verification"
-  description = "Runs Checkstyle, SpotBugs, and Error Prone backed compilation for analyzed Java modules."
-  dependsOn(
-      staticAnalysisProjects.flatMap { projectPath ->
-        listOf(
-            "$projectPath:classes",
-            "$projectPath:checkstyleMain",
-            "$projectPath:spotbugsMain")
-      })
 }

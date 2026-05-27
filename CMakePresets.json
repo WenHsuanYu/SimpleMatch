@@ -8,18 +8,18 @@
   "configurePresets": [
     {
       "name": "vcpkg",
-      "displayName": "Dev (vcpkg, install to libs/)",
+      "displayName": "Dev (vcpkg, install to third_party/)",
       "generator": "Unix Makefiles",
       "binaryDir": "${sourceDir}/build-vcpkg",
       "cacheVariables": {
         "CMAKE_BUILD_TYPE": "Debug",
         "CMAKE_TOOLCHAIN_FILE": "$env{VCPKG_ROOT}/scripts/buildsystems/vcpkg.cmake",
-        "VCPKG_INSTALLED_DIR": "${sourceDir}/libs/vcpkg_installed"
+        "VCPKG_INSTALLED_DIR": "${sourceDir}/third_party/vcpkg_installed"
       }
     },
     {
       "name": "vcpkg-sanitize",
-      "displayName": "Debug + Warnings + ASan/UBSan (vcpkg, install to libs/)",
+      "displayName": "Debug + Warnings + ASan/UBSan (vcpkg, install to third_party/)",
       "inherits": "vcpkg",
       "binaryDir": "${sourceDir}/build-vcpkg-sanitize",
       "cacheVariables": {

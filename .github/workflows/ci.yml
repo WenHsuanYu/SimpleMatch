@@ -33,6 +33,7 @@ jobs:
     runs-on: ubuntu-latest
     outputs:
       java: ${{ steps.filter.outputs.java }}
+      flyway: ${{ steps.filter.outputs.flyway }}
       native: ${{ steps.filter.outputs.native }}
 
     steps:
@@ -50,6 +51,7 @@ jobs:
 
           if [[ "${{ github.event_name }}" == "workflow_dispatch" ]]; then
             echo "java=true" >> "$GITHUB_OUTPUT"
+            echo "flyway=true" >> "$GITHUB_OUTPUT"
             echo "native=true" >> "$GITHUB_OUTPUT"
             exit 0
           fi
@@ -69,25 +71,33 @@ jobs:
           fi
 
           java=false
+          flyway=false
           native=false
 
           while IFS= read -r file; do
             [[ -z "$file" ]] && continue
 
             case "$file" in
-              .github/workflows/ci.yml|build.gradle.kts|settings.gradle.kts|gradlew|gradlew.bat|gradle/*|java-libs/*|proto/*|services/account-service/*|services/quickfix-gateway/*|services/risk-service/*|config/checkstyle/*|config/spotbugs/*|config/simplematch.example.json)
+              .github/workflows/ci.yml|build.gradle.kts|settings.gradle.kts|gradlew|gradlew.bat|gradle/*|build-logic/*|shared-java/*|proto/*|services/account-service/*|services/persistence/*|services/quickfix-gateway/*|services/risk-service/*|config/checkstyle/*|config/spotbugs/*|config/simplematch.example.json)
                 java=true
                 ;;
             esac
 
             case "$file" in
-              .github/workflows/ci.yml|CMakeLists.txt|CMakePresets.json|vcpkg.json|matching-engine/*|src/*|include/*|tests/*)
+              .github/workflows/ci.yml|build.gradle.kts|settings.gradle.kts|gradlew|gradlew.bat|gradle/*|build-logic/*|services/account-service/*|services/persistence/*|services/risk-service/*)
+                flyway=true
+                ;;
+            esac
+
+            case "$file" in
+              .github/workflows/ci.yml|CMakeLists.txt|CMakePresets.json|vcpkg.json|third_party/*|matching-engine/*|src/*|include/*|tests/*)
                 native=true
                 ;;
             esac
           done <<< "$changed_files"
 
           echo "java=$java" >> "$GITHUB_OUTPUT"
+          echo "flyway=$flyway" >> "$GITHUB_OUTPUT"
           echo "native=$native" >> "$GITHUB_OUTPUT"
 
           echo "Changed files detected by CI:"
@@ -123,7 +133,7 @@ jobs:
       - name: Ensure wrapper is executable
         run: chmod +x ./gradlew
 
-      - name: Run Java static analysis
+      - name: Run repo-wide Java static analysis
         run: ./gradlew --no-daemon --stacktrace staticAnalysis
 
       - name: Run Java test suite
@@ -142,6 +152,64 @@ jobs:
             **/build/test-results/**
             **/build/reports/problems/**
             ${{ steps.gradle-setup.outputs.build-results-json }} 
+
+  flyway:
+    name: Flyway / PostgreSQL
+    needs: changes
+    if: needs.changes.outputs.flyway == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: simplematch
+          POSTGRES_PASSWORD: simplematch
+          POSTGRES_DB: postgres
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U simplematch -d postgres"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
+        with:
+          fetch-depth: 1
+          persist-credentials: false
+
+      - name: Validate Gradle Wrapper
+        uses: gradle/actions/wrapper-validation@ed408507eac070d1f99cc633dbcf757c94c7933a # v4.4.4
+
+      - name: Set up Temurin JDK 25
+        uses: actions/setup-java@c1e323688fd81a25caa38c78aa6df2d33d3e20d9 # v4.8.0
+        with:
+          distribution: temurin
+          java-version: '25'
+
+      - name: Set up Gradle cache
+        uses: gradle/actions/setup-gradle@ed408507eac070d1f99cc633dbcf757c94c7933a # v4.4.4
+
+      - name: Install PostgreSQL client
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y postgresql-client
+
+      - name: Ensure wrapper is executable
+        run: chmod +x ./gradlew
+
+      - name: Run Flyway and PostgreSQL smoke checks
+        env:
+          CI_POSTGRES_HOST: 127.0.0.1
+          CI_POSTGRES_PORT: '5432'
+          CI_POSTGRES_USER: simplematch
+          CI_POSTGRES_PASSWORD: simplematch
+          CI_POSTGRES_ADMIN_DB: postgres
+        run: bash scripts/run-flyway-ci-checks.sh
 
   native:
     name: Native / CMake

@@ -5,7 +5,7 @@ pluginManagement {
 		mavenCentral()
 	}
 	plugins {
-		id("org.springframework.boot") version "3.5.13"
+		id("org.springframework.boot") version "3.5.14"
 		id("io.spring.dependency-management") version "1.1.7"
 		id("com.google.protobuf") version "0.9.5"
 	}
@@ -13,14 +13,16 @@ pluginManagement {
 
 rootProject.name = "SimpleMatch"
 
-include(":java-libs:simplematch-config")
-include(":java-libs:simplematch-contracts")
+include(":shared-java:simplematch-config")
+include(":shared-java:simplematch-contracts")
 include(":services:account-service")
+include(":services:persistence")
 include(":services:quickfix-gateway")
 include(":services:risk-service")
 
-project(":java-libs:simplematch-config").projectDir = file("java-libs/simplematch-config")
-project(":java-libs:simplematch-contracts").projectDir = file("java-libs/simplematch-contracts")
+project(":shared-java:simplematch-config").projectDir = file("shared-java/simplematch-config")
+project(":shared-java:simplematch-contracts").projectDir = file("shared-java/simplematch-contracts")
 project(":services:account-service").projectDir = file("services/account-service")
+project(":services:persistence").projectDir = file("services/persistence")
 project(":services:quickfix-gateway").projectDir = file("services/quickfix-gateway")
 project(":services:risk-service").projectDir = file("services/risk-service")
