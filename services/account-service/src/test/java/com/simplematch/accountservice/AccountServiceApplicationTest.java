@@ -21,9 +21,9 @@ class AccountServiceApplicationTest {
   @Autowired
   private AccountServiceRuntime runtime;
 
-  // 驗證 account-service 啟動時能正確載入共享設定並建立執行期物件。
-  // 情境：停用 gRPC 後啟動 Spring context，檢查預設環境與 gRPC 埠設定。
-  @DisplayName("account-service 啟動時會載入共享設定與 runtime")
+  // Verify that account-service loads shared configuration and creates its runtime on startup.
+  // Scenario: start the Spring context with gRPC disabled and check the default environment and gRPC port.
+  @DisplayName("account-service loads shared config and runtime on startup")
   @Test
   void contextLoadsWithSharedConfig() {
     assertThat(simpleMatchConfig.getEnv()).isEqualTo("dev");
