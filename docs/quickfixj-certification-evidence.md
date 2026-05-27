@@ -48,7 +48,7 @@ The automated simulator currently verifies all of the following in one run:
 - FIX logon is completed and logged
 - inbound application traffic reaches `fromApp(...)`
 - baseline `35=D -> WAL -> PendingNew` path executes end-to-end
-- the simulator does not depend on the old vendored `libs/fix/share/quickfix/FIX44.xml` path
+- the simulator does not depend on the old vendored QuickFIX dictionary path from the removed C++ baseline
 - outbound acknowledgement fields include:
   - `35=8`
   - `37=O-C1`

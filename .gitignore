@@ -68,3 +68,4 @@ compile_commands.json
 
 third_party/
 plan-simpleMatchQuickfix.prompt.md
+Concept/*.md

@@ -27,6 +27,9 @@
       "riskService": "dns:///risk-service:50052"
     }
   },
+  "routing": {
+    "snapshotPath": "config/routing/orders-validated.snapshot.json"
+  },
   "observability": {
     "otel": {
       "exporterOtlpEndpoint": "http://localhost:4318"
@@ -36,8 +39,9 @@
     }
   },
   "quickfixGateway": {
-    "quickfixConfigPath": "config/fix/acceptor.cfg",
-    "walPath": "data/fix/wal/inbound.wal",
+    "quickfixConfigPath": "config/quickfix/acceptor.cfg",
+    "walPath": "data/quickfix/wal/inbound.wal",
+    "ownerId": "quickfix-gateway-0",
     "riskClient": {
       "deadlineMillis": 1500,
       "retry": {

@@ -3,6 +3,7 @@
 This repo is primarily a Gradle/Java workspace today.
 
 - The active FIX runtime dependency is **QuickFix/J** in `services/quickfix-gateway`.
+- `services/quickfix-gateway` now also carries Spring Boot web + actuator runtime dependencies so Kubernetes probes can terminate on `/healthz` and `/readyz`.
 - Native dependency guidance is retained only for future native modules such as `matching-engine`.
 - Most native dependencies are expected to be installed via **vcpkg** using the manifest at `vcpkg.json`.
 
@@ -22,7 +23,7 @@ On Linux you may also need system packages (varies by distro/toolchain), e.g.:
 
 ```bash
 # Recommended: use CMake Presets.
-# This repo's `vcpkg` preset also sets VCPKG_INSTALLED_DIR to `libs/vcpkg_installed/`.
+# This repo's `vcpkg` preset also sets VCPKG_INSTALLED_DIR to `third_party/vcpkg_installed/`.
 cmake --preset vcpkg
 cmake --build --preset vcpkg -j
 
@@ -31,7 +32,7 @@ cmake --build --preset vcpkg -j
 # cmake -S . -B build-vcpkg \
 #   -DCMAKE_BUILD_TYPE=Release \
 #   -DCMAKE_TOOLCHAIN_FILE=$VCPKG_ROOT/scripts/buildsystems/vcpkg.cmake \
-#   -DVCPKG_INSTALLED_DIR=$PWD/libs/vcpkg_installed
+#   -DVCPKG_INSTALLED_DIR=$PWD/third_party/vcpkg_installed
 # cmake --build build-vcpkg -j
 ```
 

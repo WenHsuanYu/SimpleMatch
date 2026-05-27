@@ -42,14 +42,14 @@
 
 3. ~~補資料轉換層驗證~~
    - 目標：鎖住 outbox payload、headers、message key、event id、aggregate 欄位的生成規則。
-    - 目前狀態：已完成第二批。
-    - 已完成測試：
+   - 目前狀態：已完成第二批。
+   - 已完成測試：
        - `SubmissionOutboxFactoryTest`
 
 4. ~~補 persistence adapter 驗證~~
    - 目標：鎖住 `risk_submissions` 與 `outbox` 的 row mapping、insert、find 邏輯。
-    - 目前狀態：已完成第三批。
-    - 已完成測試：
+   - 目前狀態：已完成第三批。
+   - 已完成測試：
        - `JdbcSubmissionRepositoryTest`
        - `JdbcOutboxRepositoryTest`
 
