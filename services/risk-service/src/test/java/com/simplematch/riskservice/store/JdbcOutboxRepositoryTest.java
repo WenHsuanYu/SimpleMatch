@@ -49,17 +49,21 @@ class JdbcOutboxRepositoryTest {
         FROM outbox
         WHERE event_id = ?
         """,
-        (resultSet, rowNum) -> new OutboxRecord(
+        (resultSet, rowNum) -> OutboxRecord.create(
+          new OutboxRecord.EventInfo(
             resultSet.getString("event_id"),
+            resultSet.getLong("created_at_unix_ms")),
+          OutboxRecord.Routing.of(
             resultSet.getString("topic"),
             resultSet.getString("message_key"),
-          resultSet.getObject("kafka_partition_id", Integer.class),
+            resultSet.getObject("kafka_partition_id", Integer.class)),
+          new OutboxRecord.PayloadEnvelope(
             resultSet.getBytes("payload"),
             resultSet.getString("payload_type"),
-            resultSet.getString("headers_json"),
+            resultSet.getString("headers_json")),
+          new OutboxRecord.AggregateRef(
             resultSet.getString("aggregate_type"),
-            resultSet.getString("aggregate_id"),
-            resultSet.getLong("created_at_unix_ms")),
+            resultSet.getString("aggregate_id"))),
         record.eventId());
 
     assertThat(stored.eventId()).isEqualTo(record.eventId());
@@ -85,17 +89,14 @@ class JdbcOutboxRepositoryTest {
   }
 
   private OutboxRecord outboxRecord(String eventId) {
-    return new OutboxRecord(
-        eventId,
-        "orders.validated",
-        "AAPL",
-      7,
-        new byte[] {1, 2, 3},
-        "com.simplematch.contracts.orders.v1.OrderValidated",
-        "{\"event_id\":\"" + eventId + "\"}",
-        "risk_submission",
-        "O-C1",
-        100L);
+    return OutboxRecord.create(
+        new OutboxRecord.EventInfo(eventId, 100L),
+        OutboxRecord.Routing.withPartition("orders.validated", "AAPL", 7),
+        new OutboxRecord.PayloadEnvelope(
+            new byte[] {1, 2, 3},
+            "com.simplematch.contracts.orders.v1.OrderValidated",
+            "{\"event_id\":\"" + eventId + "\"}"),
+        new OutboxRecord.AggregateRef("risk_submission", "O-C1"));
   }
 
   private int countRows(String tableName) {

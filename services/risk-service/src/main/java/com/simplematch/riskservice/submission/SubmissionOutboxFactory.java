@@ -39,17 +39,14 @@ public final class SubmissionOutboxFactory {
     final String payloadType = payloadType(submission);
     final int kafkaPartitionId = kafkaPartitionId(command);
 
-    return new OutboxRecord(
-        eventId,
-        ordersValidatedTopic,
-        messageKey(command),
-        kafkaPartitionId,
+    return OutboxRecord.create(
+      new OutboxRecord.EventInfo(eventId, submission.createdAtUnixMs()),
+      OutboxRecord.Routing.withPartition(ordersValidatedTopic, messageKey(command), kafkaPartitionId),
+      new OutboxRecord.PayloadEnvelope(
         payloadBytes(submission, command, eventId, kafkaPartitionId),
         payloadType,
-        headersJson(eventId, payloadType),
-        AGGREGATE_TYPE,
-        submission.orderId(),
-        submission.createdAtUnixMs());
+        headersJson(eventId, payloadType)),
+      new OutboxRecord.AggregateRef(AGGREGATE_TYPE, submission.orderId()));
   }
 
   private byte[] payloadBytes(
