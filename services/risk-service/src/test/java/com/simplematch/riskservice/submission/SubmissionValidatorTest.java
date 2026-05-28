@@ -27,20 +27,22 @@ class SubmissionValidatorTest {
 
   @Test
   void rejectsMissingPriceForLimitOrder() {
-    final SubmissionCommand command = new SubmissionCommand(
+    final ResolvedSubmissionCommand command = new ResolvedSubmissionCommand(SubmissionCommand.create(
+      new SubmissionCommand.RequestMetadata(
         "cmd-1",
         "O-C1",
         "ACC-1",
         "FIX.4.4:CLIENT->SIMPLEMATCH",
         "C1",
+        ""),
+      new SubmissionCommand.OrderDetails(
         "AAPL",
         Side.SIDE_BUY,
         "10",
         "",
         OrderType.ORDER_TYPE_LIMIT,
-        TimeInForce.TIME_IN_FORCE_ROD,
-        CommandType.COMMAND_TYPE_NEW,
-        "");
+        TimeInForce.TIME_IN_FORCE_ROD)),
+        CommandType.COMMAND_TYPE_NEW);
     final SubmissionDecision decision = validator.evaluate(
         command,
         "COMMAND_TYPE_NEW|C1");
@@ -51,20 +53,22 @@ class SubmissionValidatorTest {
 
   @Test
   void acceptsMarketOrderWithoutPrice() {
-    final SubmissionCommand command = new SubmissionCommand(
-      "cmd-1",
-      "O-C1",
-      "ACC-1",
-      "FIX.4.4:CLIENT->SIMPLEMATCH",
-      "C1",
-      "AAPL",
-      Side.SIDE_BUY,
-      "10",
-      "",
-      OrderType.ORDER_TYPE_MARKET,
-      TimeInForce.TIME_IN_FORCE_ROD,
-      CommandType.COMMAND_TYPE_NEW,
-      "");
+    final ResolvedSubmissionCommand command = new ResolvedSubmissionCommand(SubmissionCommand.create(
+      new SubmissionCommand.RequestMetadata(
+        "cmd-1",
+        "O-C1",
+        "ACC-1",
+        "FIX.4.4:CLIENT->SIMPLEMATCH",
+        "C1",
+        ""),
+      new SubmissionCommand.OrderDetails(
+        "AAPL",
+        Side.SIDE_BUY,
+        "10",
+        "",
+        OrderType.ORDER_TYPE_MARKET,
+        TimeInForce.TIME_IN_FORCE_ROD)),
+      CommandType.COMMAND_TYPE_NEW);
     final SubmissionDecision decision = validator.evaluate(
       command,
         "COMMAND_TYPE_NEW|C1");
@@ -77,20 +81,22 @@ class SubmissionValidatorTest {
   @Test
   void rejectsCancelWithoutOriginalClientOrderId() {
     final SubmissionDecision decision = validator.evaluate(
-      new SubmissionCommand(
-        "cmd-1",
-        "O-C1",
-        "ACC-1",
-        "FIX.4.4:CLIENT->SIMPLEMATCH",
-        "CXL-1",
-        "AAPL",
-        Side.SIDE_BUY,
-        "10",
-        "101.25",
-        OrderType.ORDER_TYPE_LIMIT,
-        TimeInForce.TIME_IN_FORCE_ROD,
-        CommandType.COMMAND_TYPE_CANCEL,
-        ""),
+      new ResolvedSubmissionCommand(SubmissionCommand.create(
+        new SubmissionCommand.RequestMetadata(
+            "cmd-1",
+            "O-C1",
+            "ACC-1",
+            "FIX.4.4:CLIENT->SIMPLEMATCH",
+            "CXL-1",
+            ""),
+        new SubmissionCommand.OrderDetails(
+            "AAPL",
+            Side.SIDE_BUY,
+            "10",
+            "101.25",
+            OrderType.ORDER_TYPE_LIMIT,
+            TimeInForce.TIME_IN_FORCE_ROD)),
+        CommandType.COMMAND_TYPE_CANCEL),
         "COMMAND_TYPE_CANCEL|CXL-1");
 
     assertThat(decision.submission().accepted()).isFalse();
@@ -98,7 +104,7 @@ class SubmissionValidatorTest {
   }
 
   @Test
-  void returnsEmptyCommandWhenCommandAndExpectedTypeAreUnspecified() {
+  void returnsUnspecifiedCommandWhenCommandAndExpectedTypeAreUnspecified() {
     final SubmissionDecision decision = validator.evaluate(
         null,
         "UNKNOWN|");
@@ -106,13 +112,13 @@ class SubmissionValidatorTest {
     assertThat(decision.submission().accepted()).isFalse();
     assertThat(decision.submission().reasonCode()).isEqualTo("EMPTY_COMMAND");
     assertThat(decision.submission().commandType()).isEqualTo(CommandType.COMMAND_TYPE_UNSPECIFIED);
-    assertThat(decision.command()).isEqualTo(SubmissionCommand.empty());
+    assertThat(decision.command()).isEqualTo(ResolvedSubmissionCommand.unspecified());
   }
 
   @Test
-  void rejectsDefaultCommandForNewOrderAfterNormalization() {
+  void rejectsTypedEmptyNewOrderAfterNormalization() {
     final SubmissionDecision decision = validator.evaluate(
-        SubmissionCommand.empty().withCommandType(CommandType.COMMAND_TYPE_NEW),
+        ResolvedSubmissionCommand.typedEmpty(CommandType.COMMAND_TYPE_NEW),
         "COMMAND_TYPE_NEW|");
 
     assertThat(decision.submission().accepted()).isFalse();
@@ -120,20 +126,22 @@ class SubmissionValidatorTest {
     assertThat(decision.command().commandType()).isEqualTo(CommandType.COMMAND_TYPE_NEW);
   }
 
-  private SubmissionCommand newNewOrder(String commandId, String orderId, String clientOrderId) {
-    return new SubmissionCommand(
+  private ResolvedSubmissionCommand newNewOrder(String commandId, String orderId, String clientOrderId) {
+    return new ResolvedSubmissionCommand(SubmissionCommand.create(
+      new SubmissionCommand.RequestMetadata(
         commandId,
         orderId,
         "ACC-1",
         "FIX.4.4:CLIENT->SIMPLEMATCH",
         clientOrderId,
+        ""),
+      new SubmissionCommand.OrderDetails(
         "AAPL",
         Side.SIDE_BUY,
         "10",
         "101.25",
         OrderType.ORDER_TYPE_LIMIT,
-        TimeInForce.TIME_IN_FORCE_ROD,
-        CommandType.COMMAND_TYPE_NEW,
-        "");
+        TimeInForce.TIME_IN_FORCE_ROD)),
+        CommandType.COMMAND_TYPE_NEW);
   }
 }

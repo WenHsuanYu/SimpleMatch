@@ -34,7 +34,7 @@ public final class SubmissionOutboxFactory {
 
   public OutboxRecord create(SubmissionDecision decision) {
     final SubmissionResult submission = decision.submission();
-    final SubmissionCommand command = decision.command();
+    final SubmissionCommand command = decision.command().payload();
     final String eventId = eventId(submission);
     final String payloadType = payloadType(submission);
     final int kafkaPartitionId = kafkaPartitionId(command);

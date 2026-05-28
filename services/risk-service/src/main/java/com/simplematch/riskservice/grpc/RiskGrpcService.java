@@ -7,7 +7,7 @@ import com.simplematch.contracts.risk.v1.CancelOrderResponse;
 import com.simplematch.contracts.risk.v1.RiskServiceGrpc;
 import com.simplematch.contracts.risk.v1.SubmitOrderRequest;
 import com.simplematch.contracts.risk.v1.SubmitOrderResponse;
-import com.simplematch.riskservice.submission.SubmissionCommand;
+import com.simplematch.riskservice.submission.ResolvedSubmissionCommand;
 import com.simplematch.riskservice.submission.SubmissionResult;
 import com.simplematch.riskservice.submission.SubmissionService;
 import io.grpc.stub.StreamObserver;
@@ -45,7 +45,7 @@ public class RiskGrpcService extends RiskServiceGrpc.RiskServiceImplBase {
   @Override
   public void submitOrder(SubmitOrderRequest request, StreamObserver<SubmitOrderResponse> responseObserver) {
     final SubmissionResult submission = submissionService.persist(
-      toSubmissionCommand(request.getCommand(), CommandType.COMMAND_TYPE_NEW));
+      toResolvedSubmissionCommand(request.getCommand(), CommandType.COMMAND_TYPE_NEW));
     responseObserver.onNext(SubmitOrderResponse.newBuilder()
         .setRequestId(submission.requestId())
         .setOrderId(submission.orderId())
@@ -67,7 +67,7 @@ public class RiskGrpcService extends RiskServiceGrpc.RiskServiceImplBase {
   @Override
   public void cancelOrder(CancelOrderRequest request, StreamObserver<CancelOrderResponse> responseObserver) {
     final SubmissionResult submission = submissionService.persist(
-      toSubmissionCommand(request.getCommand(), CommandType.COMMAND_TYPE_CANCEL));
+      toResolvedSubmissionCommand(request.getCommand(), CommandType.COMMAND_TYPE_CANCEL));
     responseObserver.onNext(CancelOrderResponse.newBuilder()
         .setRequestId(submission.requestId())
         .setOrderId(submission.orderId())
@@ -90,7 +90,7 @@ public class RiskGrpcService extends RiskServiceGrpc.RiskServiceImplBase {
    * @param expectedType the command type required by the RPC being handled
    * @return a command whose type matches the request being processed
    */
-  private SubmissionCommand toSubmissionCommand(OrderCommand command, CommandType expectedType) {
+  private ResolvedSubmissionCommand toResolvedSubmissionCommand(OrderCommand command, CommandType expectedType) {
     return COMMAND_MAPPER.map(command, expectedType);
   }
 }

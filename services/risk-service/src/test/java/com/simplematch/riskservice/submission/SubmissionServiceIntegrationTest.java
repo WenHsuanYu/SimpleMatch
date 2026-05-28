@@ -452,31 +452,33 @@ class SubmissionServiceIntegrationTest {
   }
 
   private SubmissionResult persist(OrderCommand command) {
-    return submissionService.persist(toSubmissionCommand(command));
+    return submissionService.persist(toResolvedSubmissionCommand(command));
   }
 
   private SubmissionResult persist(SubmissionService service, OrderCommand command) {
-    return service.persist(toSubmissionCommand(command));
+    return service.persist(toResolvedSubmissionCommand(command));
   }
 
-  private static SubmissionCommand toSubmissionCommand(OrderCommand command) {
+  private static ResolvedSubmissionCommand toResolvedSubmissionCommand(OrderCommand command) {
     if (command == null) {
       return null;
     }
-    return new SubmissionCommand(
-        command.getCommandId(),
-        command.getOrderId(),
-        command.getAccountId(),
-        command.getSessionId(),
-        command.getClientOrderId(),
-        command.getSymbol(),
-        toSubmissionSide(command.getSide()),
-        command.getQuantity(),
-        command.getPrice(),
-        toSubmissionOrderType(command.getOrderType()),
-        toSubmissionTimeInForce(command.getTif()),
-        toSubmissionCommandType(command.getCommandType()),
-        command.getOriginalClientOrderId());
+    final SubmissionCommand payload = SubmissionCommand.create(
+        new SubmissionCommand.RequestMetadata(
+            command.getCommandId(),
+            command.getOrderId(),
+            command.getAccountId(),
+            command.getSessionId(),
+            command.getClientOrderId(),
+            command.getOriginalClientOrderId()),
+        new SubmissionCommand.OrderDetails(
+            command.getSymbol(),
+            toSubmissionSide(command.getSide()),
+            command.getQuantity(),
+            command.getPrice(),
+            toSubmissionOrderType(command.getOrderType()),
+            toSubmissionTimeInForce(command.getTif())));
+    return new ResolvedSubmissionCommand(payload, toSubmissionCommandType(command.getCommandType()));
   }
 
   private static com.simplematch.riskservice.submission.Side toSubmissionSide(Side side) {

@@ -126,21 +126,23 @@ class TransactionalSubmissionServiceTest {
         .isInstanceOf(DuplicateKeyException.class);
   }
 
-    private static SubmissionCommand newNewOrder(String commandId, String orderId, String clientOrderId) {
-    return new SubmissionCommand(
-      commandId,
-      orderId,
-      "ACC-1",
-      "FIX.4.4:CLIENT->SIMPLEMATCH",
-      clientOrderId,
-      "AAPL",
-      Side.SIDE_BUY,
-      "10",
-      "101.25",
-      OrderType.ORDER_TYPE_LIMIT,
-      TimeInForce.TIME_IN_FORCE_ROD,
-      CommandType.COMMAND_TYPE_NEW,
-      "");
+  private static ResolvedSubmissionCommand newNewOrder(String commandId, String orderId, String clientOrderId) {
+    return new ResolvedSubmissionCommand(SubmissionCommand.create(
+        new SubmissionCommand.RequestMetadata(
+            commandId,
+            orderId,
+            "ACC-1",
+            "FIX.4.4:CLIENT->SIMPLEMATCH",
+            clientOrderId,
+            ""),
+        new SubmissionCommand.OrderDetails(
+            "AAPL",
+            Side.SIDE_BUY,
+            "10",
+            "101.25",
+            OrderType.ORDER_TYPE_LIMIT,
+            TimeInForce.TIME_IN_FORCE_ROD)),
+        CommandType.COMMAND_TYPE_NEW);
   }
 
   private static TransactionTemplate newTransactionTemplate() {

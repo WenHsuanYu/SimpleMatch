@@ -84,7 +84,7 @@ class SubmissionOutboxFactoryTest {
             "",
             "",
             101L),
-        command);
+          new ResolvedSubmissionCommand(command, CommandType.COMMAND_TYPE_CANCEL));
 
     final OutboxRecord record = factory.create(decision);
 
@@ -105,7 +105,7 @@ class SubmissionOutboxFactoryTest {
             "EMPTY_COMMAND",
             "risk command payload is required",
             102L),
-          SubmissionCommand.empty());
+          ResolvedSubmissionCommand.unspecified());
 
     final OutboxRecord record = factory.create(decision);
 
@@ -147,24 +147,25 @@ class SubmissionOutboxFactoryTest {
             "",
             "",
             100L),
-        newNewOrder());
+          new ResolvedSubmissionCommand(newNewOrder(), CommandType.COMMAND_TYPE_NEW));
   }
 
   private SubmissionDecision rejectedDecision() {
-    final SubmissionCommand command = new SubmissionCommand(
-      "cmd-1",
-      "O-C1",
-      "ACC-1",
-      "FIX.4.4:CLIENT->SIMPLEMATCH",
-      "C1",
-      "AAPL",
-      Side.SIDE_BUY,
-      "10",
-      "",
-      OrderType.ORDER_TYPE_LIMIT,
-      TimeInForce.TIME_IN_FORCE_ROD,
-      CommandType.COMMAND_TYPE_NEW,
-      "");
+    final SubmissionCommand command = SubmissionCommand.create(
+      new SubmissionCommand.RequestMetadata(
+        "cmd-1",
+        "O-C1",
+        "ACC-1",
+        "FIX.4.4:CLIENT->SIMPLEMATCH",
+        "C1",
+        ""),
+      new SubmissionCommand.OrderDetails(
+        "AAPL",
+        Side.SIDE_BUY,
+        "10",
+        "",
+        OrderType.ORDER_TYPE_LIMIT,
+        TimeInForce.TIME_IN_FORCE_ROD));
     return new SubmissionDecision(
         new SubmissionResult(
             "COMMAND_TYPE_NEW|C1",
@@ -177,41 +178,37 @@ class SubmissionOutboxFactoryTest {
             "MISSING_PRICE",
             "price is required for limit orders",
             100L),
-        command);
+          new ResolvedSubmissionCommand(command, CommandType.COMMAND_TYPE_NEW));
   }
 
   private SubmissionCommand newNewOrder() {
-    return new SubmissionCommand(
+    return SubmissionCommand.create(
+      new SubmissionCommand.RequestMetadata(
         "cmd-1",
         "O-C1",
         "ACC-1",
         "FIX.4.4:CLIENT->SIMPLEMATCH",
         "C1",
+        ""),
+      new SubmissionCommand.OrderDetails(
         "AAPL",
         Side.SIDE_BUY,
         "10",
         "101.25",
         OrderType.ORDER_TYPE_LIMIT,
-        TimeInForce.TIME_IN_FORCE_ROD,
-        CommandType.COMMAND_TYPE_NEW,
-        "");
+        TimeInForce.TIME_IN_FORCE_ROD));
   }
 
   private SubmissionCommand cancelCommand() {
-    return new SubmissionCommand(
+    return SubmissionCommand.create(
+      new SubmissionCommand.RequestMetadata(
         "cmd-2",
         "O-C1",
         "ACC-1",
         "FIX.4.4:CLIENT->SIMPLEMATCH",
         "CXL-1",
-        "",
-        Side.SIDE_UNSPECIFIED,
-        "",
-        "",
-        OrderType.ORDER_TYPE_UNSPECIFIED,
-        TimeInForce.TIME_IN_FORCE_UNSPECIFIED,
-        CommandType.COMMAND_TYPE_CANCEL,
-        "C1");
+        "C1"),
+      SubmissionCommand.OrderDetails.empty());
   }
 
   private String expectedEventId(SubmissionResult submission) {

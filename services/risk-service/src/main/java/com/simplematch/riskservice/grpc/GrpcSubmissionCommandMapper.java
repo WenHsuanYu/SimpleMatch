@@ -3,35 +3,38 @@ package com.simplematch.riskservice.grpc;
 import com.simplematch.contracts.orders.v1.OrderCommand;
 import com.simplematch.riskservice.submission.CommandType;
 import com.simplematch.riskservice.submission.OrderType;
+import com.simplematch.riskservice.submission.ResolvedSubmissionCommand;
 import com.simplematch.riskservice.submission.Side;
 import com.simplematch.riskservice.submission.SubmissionCommand;
 import com.simplematch.riskservice.submission.TimeInForce;
 
 final class GrpcSubmissionCommandMapper {
-  SubmissionCommand map(
+  ResolvedSubmissionCommand map(
       OrderCommand command,
       com.simplematch.contracts.orders.v1.CommandType expectedType) {
     final CommandType normalizedExpectedType = toCommandType(expectedType);
-    final SubmissionCommand emptyCommand = SubmissionCommand.empty().withCommandType(normalizedExpectedType);
+    final ResolvedSubmissionCommand typedEmptyCommand = ResolvedSubmissionCommand.typedEmpty(normalizedExpectedType);
     if (command == null || OrderCommand.getDefaultInstance().equals(command)) {
-      return emptyCommand;
+      return typedEmptyCommand;
     }
 
-    final SubmissionCommand mappedCommand = new SubmissionCommand(
+    final SubmissionCommand mappedCommand = SubmissionCommand.create(
+      new SubmissionCommand.RequestMetadata(
         command.getCommandId(),
         command.getOrderId(),
         command.getAccountId(),
         command.getSessionId(),
         command.getClientOrderId(),
+        command.getOriginalClientOrderId()),
+      new SubmissionCommand.OrderDetails(
         command.getSymbol(),
         toSide(command.getSide()),
         command.getQuantity(),
         command.getPrice(),
         toOrderType(command.getOrderType()),
-        toTimeInForce(command.getTif()),
-        toCommandType(command.getCommandType()),
-        command.getOriginalClientOrderId());
-    return mappedCommand.withCommandType(normalizedExpectedType);
+        toTimeInForce(command.getTif())));
+    return new ResolvedSubmissionCommand(mappedCommand, toCommandType(command.getCommandType()))
+        .withResolvedCommandType(normalizedExpectedType);
   }
 
   private static Side toSide(com.simplematch.contracts.common.v1.Side side) {

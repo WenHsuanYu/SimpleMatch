@@ -13,32 +13,34 @@ class SubmissionIdempotencyKeyFactoryTest {
   }
 
   @Test
-  void usesCommandTypeForEmptyCommand() {
-    assertThat(factory.create(SubmissionCommand.empty().withCommandType(CommandType.COMMAND_TYPE_NEW)))
+  void usesCommandTypeForTypedEmptyCommand() {
+    assertThat(factory.create(ResolvedSubmissionCommand.typedEmpty(CommandType.COMMAND_TYPE_NEW)))
         .isEqualTo("COMMAND_TYPE_NEW|");
   }
 
   @Test
   void usesNormalizedCommandTypeAndClientOrderId() {
-    final SubmissionCommand command = SubmissionCommand.empty()
-        .withCommandType(CommandType.COMMAND_TYPE_CANCEL)
-        .withCommandType(CommandType.COMMAND_TYPE_NEW);
-    final SubmissionCommand normalizedCommand = new SubmissionCommand(
-        command.commandId(),
-        command.orderId(),
-        command.accountId(),
-        command.sessionId(),
+    final ResolvedSubmissionCommand command = ResolvedSubmissionCommand.typedEmpty(CommandType.COMMAND_TYPE_CANCEL)
+      .withResolvedCommandType(CommandType.COMMAND_TYPE_NEW);
+    final SubmissionCommand normalizedCommand = SubmissionCommand.create(
+      new SubmissionCommand.RequestMetadata(
+        command.payload().commandId(),
+        command.payload().orderId(),
+        command.payload().accountId(),
+        command.payload().sessionId(),
         "C1",
-        command.symbol(),
-        command.side(),
-        command.quantity(),
-        command.price(),
-        command.orderType(),
-        command.tif(),
-        command.commandType(),
-        command.originalClientOrderId());
+        command.payload().originalClientOrderId()),
+      new SubmissionCommand.OrderDetails(
+        command.payload().symbol(),
+        command.payload().side(),
+        command.payload().quantity(),
+        command.payload().price(),
+        command.payload().orderType(),
+        command.payload().tif()));
+    final ResolvedSubmissionCommand normalizedResolvedCommand =
+        new ResolvedSubmissionCommand(normalizedCommand, command.commandType());
 
-    assertThat(factory.create(normalizedCommand))
+    assertThat(factory.create(normalizedResolvedCommand))
         .isEqualTo("COMMAND_TYPE_NEW|C1");
   }
 }

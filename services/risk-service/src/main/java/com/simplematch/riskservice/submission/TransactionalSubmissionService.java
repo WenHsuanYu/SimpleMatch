@@ -28,8 +28,10 @@ public final class TransactionalSubmissionService implements SubmissionService {
   }
 
   @Override
-  public SubmissionResult persist(SubmissionCommand command) {
-    final SubmissionCommand normalizedCommand = command == null ? SubmissionCommand.empty() : command;
+  public SubmissionResult persist(ResolvedSubmissionCommand command) {
+    final ResolvedSubmissionCommand normalizedCommand = command == null
+        ? ResolvedSubmissionCommand.unspecified()
+        : command;
     final String idempotencyKey = idempotencyKeyFactory.create(normalizedCommand);
     final SubmissionDecision decision = submissionValidator.evaluate(normalizedCommand, idempotencyKey);
 
