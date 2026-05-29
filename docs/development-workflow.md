@@ -168,7 +168,7 @@ Run validation in the order that gives the fastest useful feedback.
   - Installed pre-commit hooks also validate Flyway migration naming and directory placement.
 - CI automation:
   - GitHub Actions enforces `./gradlew staticAnalysis` as the blocking repo-wide Error Prone gate, plus the Java test suite for Java-related changes.
-  - GitHub Actions also runs Flyway info, validate, and migrate tasks plus PostgreSQL smoke checks for Flyway-managed services.
+  - GitHub Actions runs Flyway info and migrate tasks plus PostgreSQL smoke checks for Flyway-managed services.
 - Native build:
   - `cmake --preset vcpkg`
   - `cmake --build --preset vcpkg -j`

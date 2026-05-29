@@ -69,6 +69,23 @@ flyway_service_env_prefix() {
   esac
 }
 
+flyway_service_schema() {
+  case "$1" in
+    account-service)
+      printf '%s\n' 'account_service'
+      ;;
+    persistence)
+      printf '%s\n' 'persistence'
+      ;;
+    risk-service)
+      printf '%s\n' 'risk_service'
+      ;;
+    *)
+      return 1
+      ;;
+  esac
+}
+
 flyway_service_migration_dir() {
   case "$1" in
     account-service|persistence|risk-service)

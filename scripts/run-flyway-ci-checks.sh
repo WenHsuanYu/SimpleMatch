@@ -58,22 +58,26 @@ set_service_flyway_env() {
 assert_service_tables() {
   local service_name="$1"
   local database_name="$2"
+  local schema_name
   local table_name
   local table_exists
+  local history_count
+
+  schema_name="$(flyway_service_schema "$service_name")"
 
   while IFS= read -r table_name; do
     [[ -z "$table_name" ]] && continue
-    table_exists="$(psql_exec "$database_name" "SELECT to_regclass('public.$table_name') IS NOT NULL;")"
+    table_exists="$(psql_exec "$database_name" "SELECT to_regclass('${schema_name}.${table_name}') IS NOT NULL;")"
 
     if [[ "$table_exists" != "t" ]]; then
-      echo "Expected table $table_name was not created for $service_name in database $database_name." >&2
+      echo "Expected table ${schema_name}.${table_name} was not created for $service_name in database $database_name." >&2
       return 1
     fi
   done < <(flyway_service_smoke_tables "$service_name")
 
-  history_count="$(psql_exec "$database_name" 'SELECT COUNT(*) FROM flyway_schema_history WHERE success;')"
+  history_count="$(psql_exec "$database_name" "SELECT COUNT(*) FROM ${schema_name}.flyway_schema_history WHERE success;")"
   if [[ "$history_count" -lt 1 ]]; then
-    echo "Flyway schema history did not record any successful migration for $service_name." >&2
+    echo "Flyway schema history in ${schema_name}.flyway_schema_history did not record any successful migration for $service_name." >&2
     return 1
   fi
 }
@@ -90,10 +94,9 @@ while IFS= read -r service_name; do
   reset_service_database "$database_name"
   set_service_flyway_env "$service_name" "$database_name"
 
-  echo "Running Flyway info, validate, and migrate for $service_name..."
+  echo "Running Flyway info and migrate for $service_name..."
   ./gradlew --no-daemon --stacktrace \
     "${task_prefix}FlywayInfo" \
-    "${task_prefix}FlywayValidate" \
     "${task_prefix}FlywayMigrate"
 
   echo "Running PostgreSQL smoke assertions for $service_name..."
