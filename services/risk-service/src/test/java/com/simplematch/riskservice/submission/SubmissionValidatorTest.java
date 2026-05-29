@@ -1,6 +1,9 @@
 package com.simplematch.riskservice.submission;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static com.simplematch.riskservice.submission.SubmissionCommandFixtures.newOrderPayload;
+import static com.simplematch.riskservice.submission.SubmissionCommandFixtures.resolvedCancelOrder;
+import static com.simplematch.riskservice.submission.SubmissionCommandFixtures.resolvedNewOrder;
 
 import java.time.Clock;
 import java.time.Instant;
@@ -16,7 +19,7 @@ class SubmissionValidatorTest {
   @Test
   void returnsAcceptedDecisionForValidNewOrder() {
     final SubmissionDecision decision = validator.evaluate(
-        newNewOrder("cmd-1", "O-C1", "C1"),
+        resolvedNewOrder("cmd-1", "O-C1", "C1"),
         "COMMAND_TYPE_NEW|C1");
 
     assertThat(decision.submission().accepted()).isTrue();
@@ -27,22 +30,12 @@ class SubmissionValidatorTest {
 
   @Test
   void rejectsMissingPriceForLimitOrder() {
-    final ResolvedSubmissionCommand command = new ResolvedSubmissionCommand(SubmissionCommand.create(
-      new SubmissionCommand.RequestMetadata(
+    final ResolvedSubmissionCommand command = resolvedNewOrder(
         "cmd-1",
         "O-C1",
-        "ACC-1",
-        "FIX.4.4:CLIENT->SIMPLEMATCH",
         "C1",
-        ""),
-      new SubmissionCommand.OrderDetails(
-        "AAPL",
-        Side.SIDE_BUY,
-        "10",
         "",
-        OrderType.ORDER_TYPE_LIMIT,
-        TimeInForce.TIME_IN_FORCE_ROD)),
-        CommandType.COMMAND_TYPE_NEW);
+        OrderType.ORDER_TYPE_LIMIT);
     final SubmissionDecision decision = validator.evaluate(
         command,
         "COMMAND_TYPE_NEW|C1");
@@ -53,22 +46,12 @@ class SubmissionValidatorTest {
 
   @Test
   void acceptsMarketOrderWithoutPrice() {
-    final ResolvedSubmissionCommand command = new ResolvedSubmissionCommand(SubmissionCommand.create(
-      new SubmissionCommand.RequestMetadata(
+    final ResolvedSubmissionCommand command = resolvedNewOrder(
         "cmd-1",
         "O-C1",
-        "ACC-1",
-        "FIX.4.4:CLIENT->SIMPLEMATCH",
         "C1",
-        ""),
-      new SubmissionCommand.OrderDetails(
-        "AAPL",
-        Side.SIDE_BUY,
-        "10",
         "",
-        OrderType.ORDER_TYPE_MARKET,
-        TimeInForce.TIME_IN_FORCE_ROD)),
-      CommandType.COMMAND_TYPE_NEW);
+        OrderType.ORDER_TYPE_MARKET);
     final SubmissionDecision decision = validator.evaluate(
       command,
         "COMMAND_TYPE_NEW|C1");
@@ -81,22 +64,7 @@ class SubmissionValidatorTest {
   @Test
   void rejectsCancelWithoutOriginalClientOrderId() {
     final SubmissionDecision decision = validator.evaluate(
-      new ResolvedSubmissionCommand(SubmissionCommand.create(
-        new SubmissionCommand.RequestMetadata(
-            "cmd-1",
-            "O-C1",
-            "ACC-1",
-            "FIX.4.4:CLIENT->SIMPLEMATCH",
-            "CXL-1",
-            ""),
-        new SubmissionCommand.OrderDetails(
-            "AAPL",
-            Side.SIDE_BUY,
-            "10",
-            "101.25",
-            OrderType.ORDER_TYPE_LIMIT,
-            TimeInForce.TIME_IN_FORCE_ROD)),
-        CommandType.COMMAND_TYPE_CANCEL),
+      resolvedCancelOrder("cmd-1", "O-C1", "CXL-1", ""),
         "COMMAND_TYPE_CANCEL|CXL-1");
 
     assertThat(decision.submission().accepted()).isFalse();
@@ -124,24 +92,5 @@ class SubmissionValidatorTest {
     assertThat(decision.submission().accepted()).isFalse();
     assertThat(decision.submission().reasonCode()).isEqualTo("MISSING_CLIENT_ORDER_ID");
     assertThat(decision.command().commandType()).isEqualTo(CommandType.COMMAND_TYPE_NEW);
-  }
-
-  private ResolvedSubmissionCommand newNewOrder(String commandId, String orderId, String clientOrderId) {
-    return new ResolvedSubmissionCommand(SubmissionCommand.create(
-      new SubmissionCommand.RequestMetadata(
-        commandId,
-        orderId,
-        "ACC-1",
-        "FIX.4.4:CLIENT->SIMPLEMATCH",
-        clientOrderId,
-        ""),
-      new SubmissionCommand.OrderDetails(
-        "AAPL",
-        Side.SIDE_BUY,
-        "10",
-        "101.25",
-        OrderType.ORDER_TYPE_LIMIT,
-        TimeInForce.TIME_IN_FORCE_ROD)),
-        CommandType.COMMAND_TYPE_NEW);
   }
 }

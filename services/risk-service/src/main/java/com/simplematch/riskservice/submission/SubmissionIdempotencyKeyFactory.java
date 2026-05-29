@@ -9,6 +9,6 @@ public final class SubmissionIdempotencyKeyFactory {
     if (normalizedCommand.isCompletelyUnspecified()) {
       return "UNKNOWN|";
     }
-    return resolvedType.name() + "|" + normalizedCommand.payload().clientOrderId();
+    return resolvedType.name() + "|" + normalizedCommand.payload().clientOrderIdValue().value();
   }
 }

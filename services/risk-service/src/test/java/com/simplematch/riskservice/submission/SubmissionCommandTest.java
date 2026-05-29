@@ -38,8 +38,12 @@ class SubmissionCommandTest {
             TimeInForce.TIME_IN_FORCE_ROD));
 
     assertThat(command.commandId()).isEqualTo("cmd-1");
+              assertThat(command.orderIdValue()).isEqualTo(new SubmissionCommand.OrderId("O-C1"));
+              assertThat(command.clientOrderIdValue()).isEqualTo(new SubmissionCommand.ClientOrderId("C1"));
     assertThat(command.clientOrderId()).isEqualTo("C1");
     assertThat(command.symbol()).isEqualTo("AAPL");
+              assertThat(command.quantityValue()).isEqualTo(new SubmissionCommand.Quantity("10"));
+              assertThat(command.priceValue()).isEqualTo(new SubmissionCommand.Price("101.25"));
     assertThat(command.orderType()).isEqualTo(OrderType.ORDER_TYPE_LIMIT);
     assertThat(command.originalClientOrderId()).isEqualTo("OC1");
   }
@@ -51,6 +55,10 @@ class SubmissionCommandTest {
         new SubmissionCommand.OrderDetails(null, null, null, null, null, null));
 
     assertThat(command.hasNoPayloadFields()).isTrue();
+    assertThat(command.orderIdValue().isBlank()).isTrue();
+    assertThat(command.clientOrderIdValue().isBlank()).isTrue();
+    assertThat(command.quantityValue().isBlank()).isTrue();
+    assertThat(command.priceValue().isBlank()).isTrue();
   }
 
   @Test

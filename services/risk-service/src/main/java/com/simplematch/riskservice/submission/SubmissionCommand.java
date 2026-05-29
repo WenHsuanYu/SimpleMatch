@@ -10,6 +10,74 @@ public final class SubmissionCommand {
   private final OrderDetails orderDetails;
 
   /**
+   * Represents a normalized order identifier.
+   */
+  public record OrderId(String value) {
+    public OrderId {
+      value = nullToEmpty(value);
+    }
+
+    public static OrderId empty() {
+      return new OrderId("");
+    }
+
+    public boolean isBlank() {
+      return value.isBlank();
+    }
+  }
+
+  /**
+   * Represents a normalized client order identifier.
+   */
+  public record ClientOrderId(String value) {
+    public ClientOrderId {
+      value = nullToEmpty(value);
+    }
+
+    public static ClientOrderId empty() {
+      return new ClientOrderId("");
+    }
+
+    public boolean isBlank() {
+      return value.isBlank();
+    }
+  }
+
+  /**
+   * Represents a normalized quantity.
+   */
+  public record Quantity(String value) {
+    public Quantity {
+      value = nullToEmpty(value);
+    }
+
+    public static Quantity empty() {
+      return new Quantity("");
+    }
+
+    public boolean isBlank() {
+      return value.isBlank();
+    }
+  }
+
+  /**
+   * Represents a normalized price.
+   */
+  public record Price(String value) {
+    public Price {
+      value = nullToEmpty(value);
+    }
+
+    public static Price empty() {
+      return new Price("");
+    }
+
+    public boolean isBlank() {
+      return value.isBlank();
+    }
+  }
+
+  /**
    * Groups the request-scoped identifiers and session context for a submission payload.
    *
    * @param commandId the transport-level command identifier
@@ -19,20 +87,43 @@ public final class SubmissionCommand {
    * @param clientOrderId the client-provided order identifier
    * @param originalClientOrderId the original client order identifier for replacement or cancel flows
    */
-  public record RequestMetadata(
-      String commandId,
-      String orderId,
-      String accountId,
-      String sessionId,
-      String clientOrderId,
-      String originalClientOrderId) {
-    public RequestMetadata {
-      commandId = nullToEmpty(commandId);
-      orderId = nullToEmpty(orderId);
-      accountId = nullToEmpty(accountId);
-      sessionId = nullToEmpty(sessionId);
-      clientOrderId = nullToEmpty(clientOrderId);
-      originalClientOrderId = nullToEmpty(originalClientOrderId);
+  public static final class RequestMetadata {
+    private final String commandId;
+    private final OrderId orderId;
+    private final String accountId;
+    private final String sessionId;
+    private final ClientOrderId clientOrderId;
+    private final ClientOrderId originalClientOrderId;
+
+    public RequestMetadata(
+        String commandId,
+        String orderId,
+        String accountId,
+        String sessionId,
+        String clientOrderId,
+        String originalClientOrderId) {
+      this(
+          commandId,
+          new OrderId(orderId),
+          accountId,
+          sessionId,
+          new ClientOrderId(clientOrderId),
+          new ClientOrderId(originalClientOrderId));
+    }
+
+    private RequestMetadata(
+        String commandId,
+        OrderId orderId,
+        String accountId,
+        String sessionId,
+        ClientOrderId clientOrderId,
+        ClientOrderId originalClientOrderId) {
+      this.commandId = nullToEmpty(commandId);
+      this.orderId = orderId == null ? OrderId.empty() : orderId;
+      this.accountId = nullToEmpty(accountId);
+      this.sessionId = nullToEmpty(sessionId);
+      this.clientOrderId = clientOrderId == null ? ClientOrderId.empty() : clientOrderId;
+      this.originalClientOrderId = originalClientOrderId == null ? ClientOrderId.empty() : originalClientOrderId;
     }
 
     /**
@@ -42,6 +133,79 @@ public final class SubmissionCommand {
      */
     public static RequestMetadata empty() {
       return new RequestMetadata("", "", "", "", "", "");
+    }
+
+    public String commandId() {
+      return commandId;
+    }
+
+    public String orderId() {
+      return orderId.value();
+    }
+
+    public OrderId orderIdValue() {
+      return orderId;
+    }
+
+    public String accountId() {
+      return accountId;
+    }
+
+    public String sessionId() {
+      return sessionId;
+    }
+
+    public String clientOrderId() {
+      return clientOrderId.value();
+    }
+
+    public ClientOrderId clientOrderIdValue() {
+      return clientOrderId;
+    }
+
+    public String originalClientOrderId() {
+      return originalClientOrderId.value();
+    }
+
+    public ClientOrderId originalClientOrderIdValue() {
+      return originalClientOrderId;
+    }
+
+    @Override
+    public boolean equals(Object other) {
+      if (this == other) {
+        return true;
+      }
+      if (!(other instanceof RequestMetadata that)) {
+        return false;
+      }
+      return commandId.equals(that.commandId)
+          && orderId.equals(that.orderId)
+          && accountId.equals(that.accountId)
+          && sessionId.equals(that.sessionId)
+          && clientOrderId.equals(that.clientOrderId)
+          && originalClientOrderId.equals(that.originalClientOrderId);
+    }
+
+    @Override
+    public int hashCode() {
+      return Objects.hash(
+          commandId,
+          orderId,
+          accountId,
+          sessionId,
+          clientOrderId,
+          originalClientOrderId);
+    }
+
+    @Override
+    public String toString() {
+      return "RequestMetadata[commandId=" + commandId
+          + ", orderId=" + orderId
+          + ", accountId=" + accountId
+          + ", sessionId=" + sessionId
+          + ", clientOrderId=" + clientOrderId
+          + ", originalClientOrderId=" + originalClientOrderId + "]";
     }
   }
 
@@ -55,20 +219,37 @@ public final class SubmissionCommand {
    * @param orderType the submitted order type
    * @param tif the submitted time in force
    */
-  public record OrderDetails(
-      String symbol,
-      Side side,
-      String quantity,
-      String price,
-      OrderType orderType,
-      TimeInForce tif) {
-    public OrderDetails {
-      symbol = nullToEmpty(symbol);
-      side = side == null ? Side.SIDE_UNSPECIFIED : side;
-      quantity = nullToEmpty(quantity);
-      price = nullToEmpty(price);
-      orderType = orderType == null ? OrderType.ORDER_TYPE_UNSPECIFIED : orderType;
-      tif = tif == null ? TimeInForce.TIME_IN_FORCE_UNSPECIFIED : tif;
+  public static final class OrderDetails {
+    private final String symbol;
+    private final Side side;
+    private final Quantity quantity;
+    private final Price price;
+    private final OrderType orderType;
+    private final TimeInForce tif;
+
+    public OrderDetails(
+        String symbol,
+        Side side,
+        String quantity,
+        String price,
+        OrderType orderType,
+        TimeInForce tif) {
+      this(symbol, side, new Quantity(quantity), new Price(price), orderType, tif);
+    }
+
+    private OrderDetails(
+        String symbol,
+        Side side,
+        Quantity quantity,
+        Price price,
+        OrderType orderType,
+        TimeInForce tif) {
+      this.symbol = nullToEmpty(symbol);
+      this.side = side == null ? Side.SIDE_UNSPECIFIED : side;
+      this.quantity = quantity == null ? Quantity.empty() : quantity;
+      this.price = price == null ? Price.empty() : price;
+      this.orderType = orderType == null ? OrderType.ORDER_TYPE_UNSPECIFIED : orderType;
+      this.tif = tif == null ? TimeInForce.TIME_IN_FORCE_UNSPECIFIED : tif;
     }
 
     /**
@@ -84,6 +265,69 @@ public final class SubmissionCommand {
           "",
           OrderType.ORDER_TYPE_UNSPECIFIED,
           TimeInForce.TIME_IN_FORCE_UNSPECIFIED);
+    }
+
+    public String symbol() {
+      return symbol;
+    }
+
+    public Side side() {
+      return side;
+    }
+
+    public String quantity() {
+      return quantity.value();
+    }
+
+    public Quantity quantityValue() {
+      return quantity;
+    }
+
+    public String price() {
+      return price.value();
+    }
+
+    public Price priceValue() {
+      return price;
+    }
+
+    public OrderType orderType() {
+      return orderType;
+    }
+
+    public TimeInForce tif() {
+      return tif;
+    }
+
+    @Override
+    public boolean equals(Object other) {
+      if (this == other) {
+        return true;
+      }
+      if (!(other instanceof OrderDetails that)) {
+        return false;
+      }
+      return symbol.equals(that.symbol)
+          && side == that.side
+          && quantity.equals(that.quantity)
+          && price.equals(that.price)
+          && orderType == that.orderType
+          && tif == that.tif;
+    }
+
+    @Override
+    public int hashCode() {
+      return Objects.hash(symbol, side, quantity, price, orderType, tif);
+    }
+
+    @Override
+    public String toString() {
+      return "OrderDetails[symbol=" + symbol
+          + ", side=" + side
+          + ", quantity=" + quantity
+          + ", price=" + price
+          + ", orderType=" + orderType
+          + ", tif=" + tif + "]";
     }
   }
 
@@ -137,6 +381,10 @@ public final class SubmissionCommand {
     return requestMetadata.orderId();
   }
 
+  public OrderId orderIdValue() {
+    return requestMetadata.orderIdValue();
+  }
+
   public String accountId() {
     return requestMetadata.accountId();
   }
@@ -147,6 +395,10 @@ public final class SubmissionCommand {
 
   public String clientOrderId() {
     return requestMetadata.clientOrderId();
+  }
+
+  public ClientOrderId clientOrderIdValue() {
+    return requestMetadata.clientOrderIdValue();
   }
 
   public String symbol() {
@@ -161,8 +413,16 @@ public final class SubmissionCommand {
     return orderDetails.quantity();
   }
 
+  public Quantity quantityValue() {
+    return orderDetails.quantityValue();
+  }
+
   public String price() {
     return orderDetails.price();
+  }
+
+  public Price priceValue() {
+    return orderDetails.priceValue();
   }
 
   public OrderType orderType() {
@@ -175,6 +435,10 @@ public final class SubmissionCommand {
 
   public String originalClientOrderId() {
     return requestMetadata.originalClientOrderId();
+  }
+
+  public ClientOrderId originalClientOrderIdValue() {
+    return requestMetadata.originalClientOrderIdValue();
   }
 
   /**
@@ -193,17 +457,17 @@ public final class SubmissionCommand {
    */
   public boolean hasNoPayloadFields() {
     return commandId().isBlank()
-        && orderId().isBlank()
+      && orderIdValue().isBlank()
         && accountId().isBlank()
         && sessionId().isBlank()
-        && clientOrderId().isBlank()
+      && clientOrderIdValue().isBlank()
         && symbol().isBlank()
         && side() == Side.SIDE_UNSPECIFIED
-        && quantity().isBlank()
-        && price().isBlank()
+      && quantityValue().isBlank()
+      && priceValue().isBlank()
         && orderType() == OrderType.ORDER_TYPE_UNSPECIFIED
         && tif() == TimeInForce.TIME_IN_FORCE_UNSPECIFIED
-        && originalClientOrderId().isBlank();
+      && originalClientOrderIdValue().isBlank();
   }
 
   @Override

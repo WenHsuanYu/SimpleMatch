@@ -108,8 +108,8 @@ public final class SubmissionOutboxFactory {
     if (command != null && !command.symbol().isBlank()) {
       return command.symbol();
     }
-    if (command != null && !command.orderId().isBlank()) {
-      return command.orderId();
+    if (command != null && !command.orderIdValue().isBlank()) {
+      return command.orderIdValue().value();
     }
     return "UNKNOWN";
   }

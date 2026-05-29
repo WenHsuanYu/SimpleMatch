@@ -2,6 +2,9 @@ package com.simplematch.riskservice.submission;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
+import static com.simplematch.riskservice.submission.SubmissionCommandFixtures.cancelOrderPayload;
+import static com.simplematch.riskservice.submission.SubmissionCommandFixtures.newOrderPayload;
+import static com.simplematch.riskservice.submission.SubmissionCommandFixtures.resolvedNewOrder;
 
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.JsonNode;
@@ -71,7 +74,7 @@ class SubmissionOutboxFactoryTest {
 
   @Test
   void fallsBackToOrderIdWhenSymbolIsMissing() {
-    final SubmissionCommand command = cancelCommand();
+    final SubmissionCommand command = cancelOrderPayload("cmd-2", "O-C1", "CXL-1", "C1");
     final SubmissionDecision decision = new SubmissionDecision(
         new SubmissionResult(
             "COMMAND_TYPE_CANCEL|CXL-1",
@@ -147,25 +150,16 @@ class SubmissionOutboxFactoryTest {
             "",
             "",
             100L),
-          new ResolvedSubmissionCommand(newNewOrder(), CommandType.COMMAND_TYPE_NEW));
+          resolvedNewOrder("cmd-1", "O-C1", "C1"));
   }
 
   private SubmissionDecision rejectedDecision() {
-    final SubmissionCommand command = SubmissionCommand.create(
-      new SubmissionCommand.RequestMetadata(
+    final SubmissionCommand command = newOrderPayload(
         "cmd-1",
         "O-C1",
-        "ACC-1",
-        "FIX.4.4:CLIENT->SIMPLEMATCH",
         "C1",
-        ""),
-      new SubmissionCommand.OrderDetails(
-        "AAPL",
-        Side.SIDE_BUY,
-        "10",
         "",
-        OrderType.ORDER_TYPE_LIMIT,
-        TimeInForce.TIME_IN_FORCE_ROD));
+        OrderType.ORDER_TYPE_LIMIT);
     return new SubmissionDecision(
         new SubmissionResult(
             "COMMAND_TYPE_NEW|C1",
@@ -179,36 +173,6 @@ class SubmissionOutboxFactoryTest {
             "price is required for limit orders",
             100L),
           new ResolvedSubmissionCommand(command, CommandType.COMMAND_TYPE_NEW));
-  }
-
-  private SubmissionCommand newNewOrder() {
-    return SubmissionCommand.create(
-      new SubmissionCommand.RequestMetadata(
-        "cmd-1",
-        "O-C1",
-        "ACC-1",
-        "FIX.4.4:CLIENT->SIMPLEMATCH",
-        "C1",
-        ""),
-      new SubmissionCommand.OrderDetails(
-        "AAPL",
-        Side.SIDE_BUY,
-        "10",
-        "101.25",
-        OrderType.ORDER_TYPE_LIMIT,
-        TimeInForce.TIME_IN_FORCE_ROD));
-  }
-
-  private SubmissionCommand cancelCommand() {
-    return SubmissionCommand.create(
-      new SubmissionCommand.RequestMetadata(
-        "cmd-2",
-        "O-C1",
-        "ACC-1",
-        "FIX.4.4:CLIENT->SIMPLEMATCH",
-        "CXL-1",
-        "C1"),
-      SubmissionCommand.OrderDetails.empty());
   }
 
   private String expectedEventId(SubmissionResult submission) {

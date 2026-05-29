@@ -2,6 +2,7 @@ package com.simplematch.riskservice.submission;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
+import static com.simplematch.riskservice.submission.SubmissionCommandFixtures.resolvedNewOrder;
 
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
@@ -37,7 +38,7 @@ class TransactionalSubmissionServiceTest {
         outboxRepository,
         newTransactionTemplate());
 
-    final SubmissionResult submission = service.persist(newNewOrder("cmd-1", "O-C1", "C1"));
+    final SubmissionResult submission = service.persist(resolvedNewOrder("cmd-1", "O-C1", "C1"));
 
     assertThat(submission.accepted()).isTrue();
     assertThat(submissionRepository.insertedSubmission).isEqualTo(submission);
@@ -70,7 +71,7 @@ class TransactionalSubmissionServiceTest {
         new RecordingOutboxRepository(),
         newTransactionTemplate());
 
-    final SubmissionResult submission = service.persist(newNewOrder("cmd-1", "O-C1", "C1"));
+    final SubmissionResult submission = service.persist(resolvedNewOrder("cmd-1", "O-C1", "C1"));
 
     assertThat(submission).isEqualTo(existing);
     assertThat(submissionRepository.insertedSubmission).isNull();
@@ -102,7 +103,7 @@ class TransactionalSubmissionServiceTest {
         outboxRepository,
         newTransactionTemplate());
 
-    final SubmissionResult submission = service.persist(newNewOrder("cmd-loser", "O-C1", "C1"));
+    final SubmissionResult submission = service.persist(resolvedNewOrder("cmd-loser", "O-C1", "C1"));
 
     assertThat(submission).isEqualTo(existing);
     assertThat(outboxRepository.inserted).isEmpty();
@@ -122,27 +123,8 @@ class TransactionalSubmissionServiceTest {
         new RecordingOutboxRepository(),
         newTransactionTemplate());
 
-    assertThatThrownBy(() -> service.persist(newNewOrder("cmd-1", "O-C1", "C1")))
+    assertThatThrownBy(() -> service.persist(resolvedNewOrder("cmd-1", "O-C1", "C1")))
         .isInstanceOf(DuplicateKeyException.class);
-  }
-
-  private static ResolvedSubmissionCommand newNewOrder(String commandId, String orderId, String clientOrderId) {
-    return new ResolvedSubmissionCommand(SubmissionCommand.create(
-        new SubmissionCommand.RequestMetadata(
-            commandId,
-            orderId,
-            "ACC-1",
-            "FIX.4.4:CLIENT->SIMPLEMATCH",
-            clientOrderId,
-            ""),
-        new SubmissionCommand.OrderDetails(
-            "AAPL",
-            Side.SIDE_BUY,
-            "10",
-            "101.25",
-            OrderType.ORDER_TYPE_LIMIT,
-            TimeInForce.TIME_IN_FORCE_ROD)),
-        CommandType.COMMAND_TYPE_NEW);
   }
 
   private static TransactionTemplate newTransactionTemplate() {

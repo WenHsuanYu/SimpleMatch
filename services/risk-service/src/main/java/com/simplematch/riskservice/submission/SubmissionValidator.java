@@ -32,7 +32,7 @@ public final class SubmissionValidator {
                                         ResolvedSubmissionCommand.unspecified());
         }
 
-                if (payload.clientOrderId().isBlank()) {
+                if (payload.clientOrderIdValue().isBlank()) {
             return rejected(
                     idempotencyKey,
                                         payload.commandId(),
@@ -46,7 +46,7 @@ public final class SubmissionValidator {
                     normalizedCommand);
         }
 
-                if (payload.orderId().isBlank()) {
+                if (payload.orderIdValue().isBlank()) {
             return rejected(
                     idempotencyKey,
                                         payload.commandId(),
@@ -87,7 +87,7 @@ public final class SubmissionValidator {
                         "symbol is required",
                         normalizedCommand);
             }
-                        if (payload.quantity().isBlank()) {
+                        if (payload.quantityValue().isBlank()) {
                 return rejected(
                         idempotencyKey,
                                                 payload.commandId(),
@@ -114,7 +114,7 @@ public final class SubmissionValidator {
                         normalizedCommand);
             }
                         if (payload.orderType() == OrderType.ORDER_TYPE_LIMIT
-                                        && payload.price().isBlank()) {
+                                        && payload.priceValue().isBlank()) {
                 return rejected(
                         idempotencyKey,
                                                 payload.commandId(),
@@ -130,7 +130,7 @@ public final class SubmissionValidator {
         }
 
                 if (resolvedCommandType == CommandType.COMMAND_TYPE_CANCEL
-                                && payload.originalClientOrderId().isBlank()) {
+                                && payload.originalClientOrderIdValue().isBlank()) {
             return rejected(
                     idempotencyKey,
                                         payload.commandId(),
