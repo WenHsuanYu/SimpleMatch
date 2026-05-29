@@ -38,7 +38,10 @@ class SubmissionCommandTest {
             TimeInForce.TIME_IN_FORCE_ROD));
 
     assertThat(command.commandId()).isEqualTo("cmd-1");
+              assertThat(command.commandIdValue()).isEqualTo(new SubmissionCommand.CommandId("cmd-1"));
               assertThat(command.orderIdValue()).isEqualTo(new SubmissionCommand.OrderId("O-C1"));
+              assertThat(command.accountIdValue()).isEqualTo(new SubmissionCommand.AccountId("ACC-1"));
+    assertThat(command.sessionIdValue()).isEqualTo(new SubmissionCommand.SessionId("FIX.4.4:CLIENT->SIMPLEMATCH"));
               assertThat(command.clientOrderIdValue()).isEqualTo(new SubmissionCommand.ClientOrderId("C1"));
     assertThat(command.clientOrderId()).isEqualTo("C1");
     assertThat(command.symbol()).isEqualTo("AAPL");
@@ -55,7 +58,10 @@ class SubmissionCommandTest {
         new SubmissionCommand.OrderDetails(null, null, null, null, null, null));
 
     assertThat(command.hasNoPayloadFields()).isTrue();
+    assertThat(command.commandIdValue().isBlank()).isTrue();
     assertThat(command.orderIdValue().isBlank()).isTrue();
+    assertThat(command.accountIdValue().isBlank()).isTrue();
+    assertThat(command.sessionIdValue().isBlank()).isTrue();
     assertThat(command.clientOrderIdValue().isBlank()).isTrue();
     assertThat(command.quantityValue().isBlank()).isTrue();
     assertThat(command.priceValue().isBlank()).isTrue();

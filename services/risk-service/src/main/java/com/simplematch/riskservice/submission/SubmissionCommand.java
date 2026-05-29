@@ -12,6 +12,23 @@ public final class SubmissionCommand {
   /**
    * Represents a normalized order identifier.
    */
+  public record CommandId(String value) {
+    public CommandId {
+      value = nullToEmpty(value);
+    }
+
+    public static CommandId empty() {
+      return new CommandId("");
+    }
+
+    public boolean isBlank() {
+      return value.isBlank();
+    }
+  }
+
+  /**
+   * Represents a normalized order identifier.
+   */
   public record OrderId(String value) {
     public OrderId {
       value = nullToEmpty(value);
@@ -19,6 +36,40 @@ public final class SubmissionCommand {
 
     public static OrderId empty() {
       return new OrderId("");
+    }
+
+    public boolean isBlank() {
+      return value.isBlank();
+    }
+  }
+
+  /**
+   * Represents a normalized account identifier.
+   */
+  public record AccountId(String value) {
+    public AccountId {
+      value = nullToEmpty(value);
+    }
+
+    public static AccountId empty() {
+      return new AccountId("");
+    }
+
+    public boolean isBlank() {
+      return value.isBlank();
+    }
+  }
+
+  /**
+   * Represents a normalized session identifier.
+   */
+  public record SessionId(String value) {
+    public SessionId {
+      value = nullToEmpty(value);
+    }
+
+    public static SessionId empty() {
+      return new SessionId("");
     }
 
     public boolean isBlank() {
@@ -88,10 +139,10 @@ public final class SubmissionCommand {
    * @param originalClientOrderId the original client order identifier for replacement or cancel flows
    */
   public static final class RequestMetadata {
-    private final String commandId;
+    private final CommandId commandId;
     private final OrderId orderId;
-    private final String accountId;
-    private final String sessionId;
+    private final AccountId accountId;
+    private final SessionId sessionId;
     private final ClientOrderId clientOrderId;
     private final ClientOrderId originalClientOrderId;
 
@@ -103,25 +154,25 @@ public final class SubmissionCommand {
         String clientOrderId,
         String originalClientOrderId) {
       this(
-          commandId,
+          new CommandId(commandId),
           new OrderId(orderId),
-          accountId,
-          sessionId,
+          new AccountId(accountId),
+              new SessionId(sessionId),
           new ClientOrderId(clientOrderId),
           new ClientOrderId(originalClientOrderId));
     }
 
     private RequestMetadata(
-        String commandId,
+        CommandId commandId,
         OrderId orderId,
-        String accountId,
-        String sessionId,
+        AccountId accountId,
+        SessionId sessionId,
         ClientOrderId clientOrderId,
         ClientOrderId originalClientOrderId) {
-      this.commandId = nullToEmpty(commandId);
+      this.commandId = commandId == null ? CommandId.empty() : commandId;
       this.orderId = orderId == null ? OrderId.empty() : orderId;
-      this.accountId = nullToEmpty(accountId);
-      this.sessionId = nullToEmpty(sessionId);
+      this.accountId = accountId == null ? AccountId.empty() : accountId;
+      this.sessionId = sessionId == null ? SessionId.empty() : sessionId;
       this.clientOrderId = clientOrderId == null ? ClientOrderId.empty() : clientOrderId;
       this.originalClientOrderId = originalClientOrderId == null ? ClientOrderId.empty() : originalClientOrderId;
     }
@@ -136,6 +187,10 @@ public final class SubmissionCommand {
     }
 
     public String commandId() {
+      return commandId.value();
+    }
+
+    public CommandId commandIdValue() {
       return commandId;
     }
 
@@ -148,10 +203,18 @@ public final class SubmissionCommand {
     }
 
     public String accountId() {
+      return accountId.value();
+    }
+
+    public AccountId accountIdValue() {
       return accountId;
     }
 
     public String sessionId() {
+      return sessionId.value();
+    }
+
+    public SessionId sessionIdValue() {
       return sessionId;
     }
 
@@ -377,6 +440,10 @@ public final class SubmissionCommand {
     return requestMetadata.commandId();
   }
 
+  public CommandId commandIdValue() {
+    return requestMetadata.commandIdValue();
+  }
+
   public String orderId() {
     return requestMetadata.orderId();
   }
@@ -389,8 +456,16 @@ public final class SubmissionCommand {
     return requestMetadata.accountId();
   }
 
+  public AccountId accountIdValue() {
+    return requestMetadata.accountIdValue();
+  }
+
   public String sessionId() {
     return requestMetadata.sessionId();
+  }
+
+  public SessionId sessionIdValue() {
+    return requestMetadata.sessionIdValue();
   }
 
   public String clientOrderId() {
@@ -456,10 +531,10 @@ public final class SubmissionCommand {
    * @return {@code true} when the command carries no payload fields
    */
   public boolean hasNoPayloadFields() {
-    return commandId().isBlank()
+    return commandIdValue().isBlank()
       && orderIdValue().isBlank()
-        && accountId().isBlank()
-        && sessionId().isBlank()
+        && accountIdValue().isBlank()
+        && sessionIdValue().isBlank()
       && clientOrderIdValue().isBlank()
         && symbol().isBlank()
         && side() == Side.SIDE_UNSPECIFIED

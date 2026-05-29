@@ -61,7 +61,7 @@ public final class SubmissionValidator {
         }
 
                 if (resolvedCommandType == CommandType.COMMAND_TYPE_NEW) {
-                        if (payload.accountId().isBlank()) {
+                        if (payload.accountIdValue().isBlank()) {
                 return rejected(
                         idempotencyKey,
                                                 payload.commandId(),
