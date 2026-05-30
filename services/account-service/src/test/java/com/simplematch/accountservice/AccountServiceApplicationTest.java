@@ -11,7 +11,9 @@ import org.springframework.boot.test.context.SpringBootTest;
 
 @SpringBootTest(
     properties = {
+    "simplematch.postgres.dsn=jdbc:h2:mem:account-context;MODE=PostgreSQL;DB_CLOSE_DELAY=-1;INIT=CREATE SCHEMA IF NOT EXISTS account_service\\;SET SCHEMA account_service",
         "simplematch.account-service.grpc.enabled=false",
+      "spring.flyway.enabled=false",
         "spring.main.web-application-type=none"
     })
 class AccountServiceApplicationTest {
@@ -28,5 +30,7 @@ class AccountServiceApplicationTest {
   void contextLoadsWithSharedConfig() {
     assertThat(simpleMatchConfig.getEnv()).isEqualTo("dev");
     assertThat(runtime.grpcPort()).isEqualTo(50051);
+    assertThat(simpleMatchConfig.getPostgres().getDsn()).isEqualTo(
+        "jdbc:h2:mem:account-context;MODE=PostgreSQL;DB_CLOSE_DELAY=-1;INIT=CREATE SCHEMA IF NOT EXISTS account_service;SET SCHEMA account_service");
   }
 }

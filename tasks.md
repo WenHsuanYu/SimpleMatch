@@ -309,7 +309,7 @@
 
 ## 4.2 `risk-service`
 
-> 交叉驗證結果：`risk-service` 已完成 gRPC ingress、基本欄位驗證、transactional submission + PostgreSQL outbox baseline；但 `account-service` 同步查詢 / reservation 依賴、交易時段 / symbol registry、IOC/FOK 規則矩陣，以及 `/healthz` / `/readyz` alias 仍未落地。
+> 交叉驗證結果：`risk-service` 已完成 gRPC ingress、基本欄位驗證、transactional submission + PostgreSQL outbox baseline；`account-service` 的 `Reserve` 已有同步 `request_id` 冪等寫入骨架，但同步查詢依賴、reservation release/fill 路徑、交易時段 / symbol registry、IOC/FOK 規則矩陣，以及 `/healthz` / `/readyz` alias 仍未落地。
 
 ### 4.2.1 gRPC server：primary ingress
 
@@ -331,10 +331,12 @@
 
 ### 4.2.3 交易額度 / reservation（同步 gRPC 依賴）
 
-> 現況：workspace 未找到 `risk-service` 端任何 `AccountServiceGrpc` client wiring；而 `services/account-service` 的 gRPC server skeleton 目前仍對 `GetLimits` / `GetPositions` / `Reserve` 回 `UNIMPLEMENTED`。
+> 現況：workspace 未找到 `risk-service` 端任何 `AccountServiceGrpc` client wiring；`services/account-service` 已為 `Reserve` 落地 `request_id` 冪等寫入骨架，但 `GetLimits` / `GetPositions` / `ReleaseReservation` / `ApplyFill` 仍回 `UNIMPLEMENTED`。
 
 - [ ] gRPC client：`AccountService::GetLimits/GetPositions`（快取可選；回傳需對齊 `account_limits` / `account_positions`）
-- [ ] `Reserve(order_id/request_id, ...)`（冪等；由 `account-service` 更新 `account_reservations`）
+- [x] `Reserve(order_id/request_id, ...)`（冪等；由 `account-service` 更新 `account_reservations`）
+  - [x] 目前先持久化 accepted reservation row 並以 `request_id` 重送回同結果
+  - [ ] `account_limits.available/reserved` 同步扣減仍待補
 - [ ] deadline / retry / breaker / bulkhead 落地
 
 ### 4.2.4 產出 `orders.validated` / `orders.rejected`
@@ -491,15 +493,15 @@
 
 ## 4.7 `account-service`
 
-> `proto/account_service.proto`、Spring Boot module、gRPC server skeleton 已存在，但 `AccountGrpcService` 目前仍回 `UNIMPLEMENTED`；以下勾選以實際可用功能與已落地 schema 為準。
+> `proto/account_service.proto`、Spring Boot module、gRPC server skeleton 已存在；目前 `Reserve` 已可把 `request_id` 持久化到 `account_reservations` 並重送回同結果，但 `GetLimits` / `GetPositions` / `ReleaseReservation` / `ApplyFill` 仍未實作。以下勾選以實際可用功能與已落地 schema 為準。
 
 ### 4.7.1 gRPC server（同步查詢 / reservation）
 
 - [ ] `GetLimits(account_id)`
 - [ ] `GetPositions(account_id)`
-- [ ] `Reserve(request_id/order_id, ...)`（冪等）
-  - [ ] 唯一鍵：`reservation_id = order_id` 或 `request_id`
-  - [ ] 重送回同結果
+- [x] `Reserve(request_id/order_id, ...)`（冪等）
+  - [x] 唯一鍵：目前 schema 對 `reservation_id = order_id`、`request_id`、`order_id` 都有 UNIQUE
+  - [x] 重送回同結果
 
 ### 4.7.2 Kafka consumer（建議）：`matching.executions`
 

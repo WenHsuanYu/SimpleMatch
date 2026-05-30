@@ -48,6 +48,14 @@
     <Class name="com.simplematch.riskservice.submission.TransactionalSubmissionService"/>
   </Match>
   <Match>
+    <Bug pattern="EI_EXPOSE_REP2"/>
+    <Class name="com.simplematch.accountservice.store.JdbcReservationRepository"/>
+  </Match>
+  <Match>
+    <Bug pattern="EI_EXPOSE_REP2"/>
+    <Class name="com.simplematch.accountservice.reservation.IdempotentReservationService"/>
+  </Match>
+  <Match>
     <Bug pattern="EI_EXPOSE_REP,EI_EXPOSE_REP2"/>
     <Class name="com.simplematch.quickfixgateway.fix.InboundFixMessageHandler"/>
   </Match>
