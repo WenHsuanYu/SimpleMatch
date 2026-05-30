@@ -2,10 +2,10 @@
 
 以 **C++ 撮合核心 + Java/Spring Cloud 周邊服務** 實作的事件驅動撮合系統（microservices）。
 
-系統採 **雙平面（two-plane）** 通訊：
+系統把「業務平面」與「互動方式」分開描述：
 
-- **資料面（data plane）**：以 **Apache Kafka** 作為服務間資料匯流排，承載需要保序、可回放的命令與結果（並在關鍵段落使用 Outbox pattern）
-- **控制面/查詢面（control/query plane）**：以 **gRPC** 承載同步查詢與控制互動（搭配 timeout / retry / circuit breaker）
+- **核心業務資料面（business data plane）**：承載下單、風控、撮合、成交回報、行情與查詢所需的交易資料流。此資料面內再分成兩條路徑：以 **gRPC** 承載同步准入與同步查詢依賴，以 **Apache Kafka** 承載需要保序、可回放的非同步命令與結果（並在關鍵段落使用 Outbox pattern）
+- **營運控制面（operational control plane）**：承載管理、配置、調度與治理，例如風控規則下發、交易對上下架、routing snapshot publish、breaker / rate-limit 參數調整；不在交易 hot path 上
 
 對外提供：
 
@@ -16,7 +16,7 @@
 - **內部 gRPC**：用於 gateway 與其他服務（例如帳戶/權限、查詢）做同步互動
 - **對外 gRPC streaming（行情/通知）**：由 `marketdata-streamer` 對外推送全市場行情與交易雙方私有資訊
 
-> 補充：交易額度（limits）與部位（positions）屬於「控制面/查詢面」資料，建議由獨立的內部服務提供內部 gRPC（例如 `account-service`）給 `risk-service` 使用。
+> 補充：交易額度（limits）與部位（positions）屬於核心業務資料面中的同步風控/查詢依賴，建議由獨立的內部服務提供內部 gRPC（例如 `account-service`）給 `risk-service` 使用。
 >
 > 若業務要求「**掛單就要扣交易額度**」，建議用 **Reservation（預扣/鎖定）** 機制：下單通過風控時先預扣可用額度，成交後轉為實扣，撤單/到期/IOC 剩餘取消則釋放預扣。
 
@@ -73,12 +73,12 @@ flowchart LR
   C2 --> FG
   MS --> C3
 
-  %% Control/query plane (gRPC)
+  %% Business data plane: synchronous ingress/read path (gRPC)
   FG -. sync order gRPC .-> RS
   FG -. internal gRPC .-> AS
   RS -. internal gRPC .-> AS
 
-  %% Data plane (Kafka)
+  %% Business data plane: asynchronous ordered execution path (Kafka)
   RS --> T2
   T2 --> ME --> T3
   T3 --> PS --> T5
@@ -92,11 +92,14 @@ flowchart LR
 
 ### 同步/非同步邊界
 
+本節以「互動方式」描述邊界，而不是把協定直接等同於平面：`quickfix-gateway -> risk-service` 的同步提交與 `risk-service -> matching-engine` 之後的 Kafka 事件流都屬於核心業務資料面，只是前者是**同步准入路徑**，後者是**非同步保序執行路徑**。真正的營運控制面則是配置、調度與治理介面，不畫在這條交易主路徑中。
+
 - 對外（FIX）：第一個**成功** ack 建議以 `risk-service` 完成持久化為條件；`quickfix-gateway` 可保留本地 WAL 作為恢復/稽核輔助，但不再作為主 ack 錨點
 - 業務結果（成交/拒單/撤單結果）以 **Kafka 事件**回推，再由 FIX Gateway 轉成 ExecutionReport 等回報
 - 對內（服務間）：
-  - **控制面（control plane）主提交路徑**：`quickfix-gateway` 以 **gRPC unary** 同步提交 `NewOrderSingle` / `OrderCancelRequest` 到 `risk-service`；gateway 只在收到 `risk-service` 的持久化成功回覆後，才回第一個成功 FIX ack。寫入型 RPC 目前僅允許**極小範圍、受限次數**的暫態 transport retry，且必須沿用同一個 `client_order_id` / `ClOrdID`，並由 `risk-service` 以唯一鍵保證冪等；連續失敗時 gateway 端 breaker 會短暫打開並 fail-closed
-  - **資料面（data plane）/需保序與可回放的命令與結果**：`risk-service` 之後的命令與結果仍以 Kafka topic 串接，預設 **at-least-once**，各服務需具備 idempotency（去重/重放安全）。主線做法統一為 **PostgreSQL outbox + Debezium CDC**；其中 `matching-engine` 另以前置本地 WAL 作為第一個 durability 錨點，再由 loader / ingester 把結果寫入 PostgreSQL outbox 後交由 Debezium 廣播
+  - **資料面中的同步准入路徑（synchronous ingress lane）**：`quickfix-gateway` 以 **gRPC unary** 同步提交 `NewOrderSingle` / `OrderCancelRequest` 到 `risk-service`；gateway 只在收到 `risk-service` 的持久化成功回覆後，才回第一個成功 FIX ack。寫入型 RPC 目前僅允許**極小範圍、受限次數**的暫態 transport retry，且必須沿用同一個 `client_order_id` / `ClOrdID`，並由 `risk-service` 以唯一鍵保證冪等；連續失敗時 gateway 端 breaker 會短暫打開並 fail-closed
+  - **資料面中的非同步保序執行路徑（asynchronous ordered execution lane）**：`risk-service` 之後的命令與結果仍以 Kafka topic 串接，預設 **at-least-once**，各服務需具備 idempotency（去重/重放安全）。主線做法統一為 **PostgreSQL outbox + Debezium CDC**；其中 `matching-engine` 另以前置本地 WAL 作為第一個 durability 錨點，再由 loader / ingester 把結果寫入 PostgreSQL outbox 後交由 Debezium 廣播
+  - **營運控制面（operational control plane，獨立於交易主線）**：例如風控規則動態下發、交易對上下架、routing snapshot publish、breaker / 限流策略調整；這些流量可用 gRPC、管理 API 或其他配置機制承載，但不應混稱為交易主提交路徑
 
 ### 服務間通訊清單（可直接落地的邊界表）
 
@@ -104,12 +107,12 @@ flowchart LR
 
 | Link | 類型 | 目的 | 建議可靠性/策略 |
 | --- | --- | --- | --- |
-| `quickfix-gateway` → `risk-service` | gRPC unary（primary ingress） | 同步提交下單/撤單命令進入風控 | 第一個成功 FIX ack 需等 `risk-service` 本地 transaction commit；gateway 僅對暫態 transport failure 做 bounded retry，且重試沿用同一 `client_order_id` / `ClOrdID`；連續失敗時 breaker fail-fast，整體仍以 fail-closed 為預設 |
-| `risk-service` → `matching-engine`（`orders.validated`） | Kafka（data plane） | 風控後進撮合（需保序） | **Outbox + Debezium CDC**（主線）；matching 需冪等 |
-| `matching-engine` → 下游（`matching.executions`） | Kafka（data plane） | 撮合結果（可回放/對帳/回報來源） | **本地 WAL + PostgreSQL transaction outbox + Debezium CDC**；下游以 `(order_id, exec_id)`/`(exec_id)` 去重 |
-| `risk-service` ↔ `account-service` | gRPC unary（control/query） | 查詢額度/部位、建立預扣 `Reserve` | 必設 deadline；讀取可重試；寫入預設不自動重試，若要重試需 `request_id`/唯一鍵冪等 |
-| `quickfix-gateway` ↔ `account-service` | gRPC unary（control/query） | **FIX session 身分 ↔ `account_id` 映射、帳戶/權限驗證（選用）** | 同上（deadline + breaker + bulkhead）；建議僅在 session 建立/定期刷新使用，避免放進每筆下單的極短 ack 路徑 |
-| `marketdata-streamer` → Clients | gRPC server-streaming（external） | 對外行情/私有通知推流 | 由 server 端以事件流推送；client 端需處理重連與 cursor（若有） |
+| `quickfix-gateway` → `risk-service` | gRPC unary（業務資料面 / 同步准入） | 同步提交下單/撤單命令進入風控 | 第一個成功 FIX ack 需等 `risk-service` 本地 transaction commit；gateway 僅對暫態 transport failure 做 bounded retry，且重試沿用同一 `client_order_id` / `ClOrdID`；連續失敗時 breaker fail-fast，整體仍以 fail-closed 為預設 |
+| `risk-service` → `matching-engine`（`orders.validated`） | Kafka（業務資料面 / 非同步保序路徑） | 風控後進撮合（需保序） | **Outbox + Debezium CDC**（主線）；matching 需冪等 |
+| `matching-engine` → 下游（`matching.executions`） | Kafka（業務資料面 / 非同步保序路徑） | 撮合結果（可回放/對帳/回報來源） | **本地 WAL + PostgreSQL transaction outbox + Debezium CDC**；下游以 `(order_id, exec_id)`/`(exec_id)` 去重 |
+| `risk-service` ↔ `account-service` | gRPC unary（業務資料面 / 同步依賴） | 查詢額度/部位、建立預扣 `Reserve` | 必設 deadline；讀取可重試；寫入預設不自動重試，若要重試需 `request_id`/唯一鍵冪等 |
+| `quickfix-gateway` ↔ `account-service` | gRPC unary（session bootstrap / 同步依賴） | **FIX session 身分 ↔ `account_id` 映射、帳戶/權限驗證（選用）** | 同上（deadline + breaker + bulkhead）；建議僅在 session 建立/定期刷新使用，避免放進每筆下單的極短 ack 路徑 |
+| `marketdata-streamer` → Clients | gRPC server-streaming（對外推流） | 對外行情/私有通知推流 | 由 server 端以事件流推送；client 端需處理重連與 cursor（若有） |
 
 > 註：若新增 `query-service`，建議它只走 gRPC（讀 Postgres/Redis projections），不要直接讀 Kafka。
 >
@@ -464,7 +467,7 @@ Projection 可以把它理解成：
   - 若你需要 client 端更平均的負載分散，可評估 client-side LB（例如 round-robin over endpoints）；但這屬於進階項，side project 可先用預設行為
 
 - **Keepalive 與連線池**：
-  - 對控制面 RPC：建議維持少量長連線（connection reuse），避免每筆都重建 TCP/TLS
+  - 對同步 gRPC 路徑：建議維持少量長連線（connection reuse），避免每筆都重建 TCP/TLS
   - 設定合理 keepalive，避免 NAT/idle timeout 造成“看似連著其實已斷”的長尾 timeout
 
 - **冪等（寫入型）落地規範**：
@@ -1004,7 +1007,7 @@ transaction commit 成功後，再提交 Kafka offset（避免「DB 沒寫但 of
 ASCII（推薦讀寫路徑）：
 
 ```text
-               (data plane)                     (read path)
+               (async event path)               (read path)
 matching-engine  --matching.executions-->  persistence  --(upsert)-->  Redis (read model)
                                                           |                ^
                                                           +--(upsert)-->  Postgres (system-of-record)
@@ -1051,7 +1054,7 @@ client / internal API  --gRPC-->  query-service  --get-->  Redis
 
 - `quickfix-gateway` 本身不承擔撮合邏輯；它是 Java/Spring 邊界服務
 - `matching-engine` 保留 C++，負責訂單簿、成交順序與撮合結果產生
-- `quickfix-gateway` 與 `matching-engine` 之間以 Kafka 事件契約（必要時搭配 gRPC control plane）互動，而不是共享 process 內記憶體
+- `quickfix-gateway` 與 `matching-engine` 之間以 Kafka 事件契約（必要時搭配獨立的 gRPC 管理/查詢介面）互動，而不是共享 process 內記憶體
 
 ### 建議支援的交易流（示意）
 
@@ -1327,7 +1330,7 @@ kubectl describe pod <pod-name>
 
 ### Service discovery：Kubernetes Service + DNS vs Consul（如何選）
 
-你預期部署在 Kubernetes（GitHub Actions 用 kind）時，最精簡且足夠的 service discovery 通常就是 **Kubernetes Service + DNS**。
+你預期部署在 Kubernetes（例如本機用 kind）時，最精簡且足夠的 service discovery 通常就是 **Kubernetes Service + DNS**。
 
 #### Kubernetes Service + DNS（建議作為本專案預設）
 
@@ -1371,7 +1374,7 @@ Consul 也能做 service discovery，但它通常適用於：
 
 ## Observability（可觀測性，建議最小集合）
 
-這個專案的資料面（FIX/WAL/Kafka/撮合）很容易遇到「看起來卡住但不知道卡哪裡」的問題；建議從一開始就把可觀測性做成跨服務一致的最小集合。
+這個專案的交易主資料路徑（FIX/WAL/Kafka/撮合）很容易遇到「看起來卡住但不知道卡哪裡」的問題；建議從一開始就把可觀測性做成跨服務一致的最小集合。
 
 ### Trace（分散式追蹤）
 
@@ -1391,7 +1394,7 @@ Consul 也能做 service discovery，但它通常適用於：
 - **Kafka**：consumer lag、poll latency、commit latency、rebalances 次數、produce error/timeout 次數
 - **Outbox / optional WAL**：outbox backlog、必要時的 WAL backlog、補償流程追上速度（records/sec）、最老未送出事件 age
 - **撮合**：每 symbol/shard 吞吐（orders/sec）、撮合 loop latency（p50/p95/p99）、order book rebuild time
-- **gRPC（控制面）**：每 RPC 的成功率、錯誤碼分佈、latency（p50/p95/p99）、breaker open 次數
+- **gRPC（同步入口 / 同步依賴）**：每 RPC 的成功率、錯誤碼分佈、latency（p50/p95/p99）、breaker open 次數
 
 ### Dashboards（Grafana）
 
@@ -1399,10 +1402,10 @@ Consul 也能做 service discovery，但它通常適用於：
 
 - 資料來源：Grafana 以 Prometheus 作為 data source（同叢集內可直接連到 Prometheus service）。
 - 儀表板最小集合（起步即可）：
-  - **Kafka / data plane**：各 consumer group 的 lag、consume rate、commit latency、produce error。
+  - **Kafka / 非同步保序路徑**：各 consumer group 的 lag、consume rate、commit latency、produce error。
   - **Outbox / optional WAL**：backlog（筆數）與 oldest event age（最老事件延遲）、補償流程追上速度。
   - **撮合**：撮合 loop latency（p50/p95/p99）、吞吐（orders/sec）、每 shard/symbol 熱點分佈。
-  - **gRPC（控制面）**：每 RPC 的 RPS、錯誤碼分佈、latency（p50/p95/p99）、breaker open 次數。
+  - **gRPC（同步入口 / 同步依賴）**：每 RPC 的 RPS、錯誤碼分佈、latency（p50/p95/p99）、breaker open 次數。
 
 > 建議所有 metrics 都帶一致的 label（例如 `service`、`env`、`shard_id`、`symbol`），不然 Grafana 很難切分與 drill-down。
 

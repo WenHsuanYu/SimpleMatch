@@ -5,8 +5,8 @@
 > 範圍假設：
 >
 > - 語言：polyglot（Java/Spring 為主；`matching-engine` 保留 C++20）
-> - Data plane：Kafka（at-least-once）+ 端到端冪等
-> - Control/Query plane：gRPC unary / streaming（明確 deadline / retry / breaker）
+> - 核心業務資料面：gRPC + Kafka；其中 gRPC 承載同步准入 / 查詢依賴，Kafka 承載非同步保序事件流
+> - 營運控制面：配置 / 調度 / 策略下發另行處理，不在本 checklist 的交易主線範圍內
 > - System-of-record：PostgreSQL（含 outbox / processed_events）
 > - Read model：Redis（**Redis-first 查詢首選**；屬可重建 projection，權威仍在 DB/`account-service`）
 > - 對外：QuickFix/J（Java，FIX 4.4，`quickfix-gateway` 作為 Acceptor）、gRPC streaming（marketdata-streamer）
@@ -17,7 +17,7 @@
 
 ## 0) Repo / Monorepo 結構（專案骨架）
 
-- [x] 建立目錄（若尚未建立）：`services/`, `libs/`, `proto/`, `config/`, `deploy/`, `docs/`
+- [x] 建立目錄（若尚未建立）：`services/`, `shared-java/`, `proto/`, `config/`, `deploy/`, `docs/`
 - [x] 建立頂層 `CMakeLists.txt`（或 workspace-level build 指南）
 - [x] 建立 vcpkg/依賴說明：QuickFIX（C++）、gRPC、protobuf、librdkafka、PostgreSQL client、Redis client、OTel SDK、Prometheus exporter
 - [x] 統一設定載入方式（環境變數 + config 檔）：
@@ -25,27 +25,36 @@
   - [x] Kafka brokers / topics / partitions
   - [x] Postgres DSN
   - [x] Redis endpoints
-  - [x] gRPC targets（control plane）
+  - [x] gRPC targets（同步依賴）
   - [x] Observability（OTel exporter、Prometheus port）
 
 ---
 
-## 1) 共用 libs（跨服務重用）
+## 1) 共用 modules（跨服務重用）
+
+> 目前 Java 共用程式碼實際落在 `shared-java/`；以下仍沿用 `libs/*` 的條目，應視為對應 shared module 的待辦，而不是現行 repo 目錄名稱。
+> 交叉驗證結果：`shared-java/` 目前只有 `simplematch-config` 與 `simplematch-contracts`；Kafka / DB / gRPC / observability runtime 仍以 service-local 類別分散在各服務，尚未抽成 shared module。
 
 ### 1.1 logging / config / time
 
 - [ ] `libs/common`：結構化 JSON logging（統一欄位）
+  - [x] 現況：workspace 未找到 `LogContext`、MDC/trace context helper、logback JSON encoder 或 repo-level structured logging 設定；服務目前直接使用 SLF4J 預設 logger
   - [ ] `LogContext`：`service`, `env`, `trace_id`, `span_id`, `order_id`, `cl_ord_id`, `event_id`, `symbol`, `account_id`
   - [ ] logger 初始化（level、sink、格式）
   - [ ] request/trace context 注入 helper
-- [ ] `libs/common`：config loader
-  - [ ] `LoadConfig()`：env + yaml/toml/json（選一種）
+- [x] `shared-java/simplematch-config`：config loader
+  - [x] `SimpleMatchConfigLoader` / Spring environment post-processor：env + json
+  - [x] `SimpleMatchConfig` 已涵蓋 Kafka / Postgres / Redis / gRPC / routing / observability 共用設定模型
   - [ ] 嚴格驗證必填欄位（啟動即 fail-fast）
+    - [x] 現況：只有 setter 級別的 non-blank / positive guard，尚未建立 required-field fail-fast 驗證器
 - [ ] `libs/common`：時間/ID 工具
+  - [x] 現況：workspace 未找到 shared `NowUnixMs()` / `UuidV7()` helper；服務內目前直接使用 `Clock` / `Instant.now(clock)` 取時
   - [ ] `NowUnixMs()`
-  - [ ] `UuidV4()`
+  - [ ] `UuidV7()`
 
 ### 1.2 Kafka wrapper（producer/consumer）
+
+> 現況：`shared-java/` 尚無共用 Kafka runtime module；workspace 只找到 service-local baseline，例如 `quickfix-gateway` 內的 `KafkaOrdersCommandPublisher`（producer）與 `MatchingExecutionConsumer`（consumer）。
 
 - [ ] `libs/kafka`：producer wrapper
   - [ ] `KafkaProducer::Publish(topic, key, value, headers, partition_opt)`
@@ -59,6 +68,8 @@
 
 ### 1.3 Postgres 存取層（含 outbox / processed_events）
 
+> 現況：`shared-java/` 尚無共用 JDBC / transaction / outbox / processed-events module；目前僅見 service-local 實作，例如 `risk-service` 內的 `JdbcSubmissionRepository`、`JdbcOutboxRepository` 與 `TransactionTemplate` wiring。
+
 - [ ] `libs/db`：連線池/交易封裝
   - [ ] `Db::BeginTx()` / `Tx::Commit()` / `Tx::Rollback()`
 - [ ] `libs/db`：Outbox DAO
@@ -68,13 +79,17 @@
   - [ ] `ProcessedEventsRepo::TryMarkProcessed(tx, consumer_name, event_id)`（成功才繼續）
   - [ ] 或 `InboxRepo::Upsert(event_id, ...)`（依你 schema）
 
-### 1.4 gRPC client utilities（control plane 韌性）
+### 1.4 gRPC client utilities（同步依賴韌性）
+
+> 現況：`shared-java/simplematch-config` 已提供 gRPC targets 與 deadline / retry / breaker 參數模型；但 shared gRPC client utility 尚未存在，runtime 目前只見 `quickfix-gateway` 內的 `GrpcRiskSubmissionClient`、`ResilientRiskSubmissionClient` 與 circuit breaker。
 
 - [ ] `libs/grpc`：統一 deadline/timeout 設定 helper
 - [ ] `libs/grpc`：重試策略（只對 Get* 類安全讀取啟用）
 - [ ] `libs/grpc`：circuit breaker / bulkhead（可先做最簡版：連續失敗 N 次→短暫熔斷）
 
 ### 1.5 Observability SDK（OTel + Prometheus）
+
+> 現況：`shared-java/simplematch-config` 已有 OTLP endpoint / Prometheus port 的共用設定模型，但 shared tracer / metrics helper 尚未存在；服務端 `/metrics` baseline 目前只明確落在 `quickfix-gateway` 與 `risk-service`，不是 repo-level observability SDK。
 
 - [ ] `libs/obs`：OpenTelemetry tracer 初始化
   - [ ] 支援 OTLP exporter（HTTP/gRPC）
@@ -87,39 +102,47 @@
 
 ## 2) Protobuf / FIX domain model（契約先行）
 
+> 此節核對的是 proto 契約與 codegen 來源；不代表所有對應的 server handler 或 downstream runtime 都已完成。
+>
+> 現況：`shared-java/simplematch-contracts` 直接以 repo root 的 `proto/*.proto` 作為 protobuf / gRPC codegen source，`quickfix-gateway` 與 `risk-service` 已引用生成的 contracts；`account-service` 的 gRPC server skeleton 已接上 generated stub，但目前仍回 `UNIMPLEMENTED`。
+
 ### 2.1 Protobuf：Kafka payload schemas
 
-- [ ] `proto/orders.proto`
-  - [ ] `OrderCommand`（new/cancel；含 `command_id`, `order_id`, `account_id`, `symbol`, `side`, `qty`, `price`, `order_type`, `tif`, `created_at`）
-  - [ ] `OrderValidated` / `OrderRejected`（含 reason code）
-- [ ] `proto/matching.proto`
-  - [ ] `ExecutionEvent`（fill/cancel/reject；含 `exec_id`, `order_id`, `symbol`, `fill_qty`, `fill_px`, `leaves_qty`, `event_id`, `created_at`）
-- [ ] `proto/marketdata.proto`
-  - [ ] `MarketDataEvent`（trade/quote；含 `event_id`, `symbol`, `ts_unix_ms`）
+- [x] `proto/orders.proto`
+  - [x] `OrderCommand`（new/cancel；`metadata` 內含 `schema_version` / `event_id` / `created_at_unix_ms`，body 含 `command_id`, `order_id`, `account_id`, `session_id`, `client_order_id`, `symbol`, `side`, `quantity`, `price`, `order_type`, `tif`）
+  - [x] `OrderValidated` / `OrderRejected`（`metadata` 內含 event metadata；`OrderRejected` 含 reason code / text）
+- [x] `proto/matching.proto`
+  - [x] `ExecutionEvent`（fill/cancel/reject；`metadata` 內含 `event_id` / `created_at_unix_ms`，body 含 `exec_id`, `order_id`, `account_id`, `symbol`, `fill_qty`, `fill_px`, `leaves_qty`, `cl_ord_id`, `orig_cl_ord_id`, `cancel_cl_ord_id`）
+- [x] `proto/marketdata.proto`
+  - [x] `MarketDataEvent`（trade/quote；`metadata` 內含 `event_id` / `created_at_unix_ms`，payload 為 `TradeUpdate` 或 `TopOfBookUpdate`，`symbol` 位於 payload）
 - [ ] schema versioning 規範
-  - [ ] message 加 `schema_version` 或在 headers 帶版本
+  - [x] message 加 `schema_version` 或在 headers 帶版本（`common.proto` 的 `EventMetadata.schema_version` 已落地，`risk-service` outbox payload 也會填 `v1`）
   - [ ] 相容性策略：只加欄位、不重用 field number
 
-### 2.2 gRPC：control/query plane APIs
+### 2.2 gRPC APIs（同步入口、查詢與 streaming）
 
-- [ ] `proto/account_service.proto`
-  - [ ] `GetLimits(account_id)` / `GetPositions(account_id)`
-  - [ ] `Reserve(request_id/order_id, ...)`（冪等）
-  - [ ] 回傳包含 reservation 狀態（reserved/available/utilized）
-- [ ] `proto/marketdata_service.proto`
-  - [ ] `SubscribeMarketData(...)` server-streaming
-  - [ ] `SubscribePrivateNotifications(...)` server-streaming
+- [x] `proto/account_service.proto`
+  - [x] `GetLimits(account_id)` / `GetPositions(account_id)`
+  - [x] `Reserve(request_id/order_id, ...)`（冪等）
+  - [x] `GetLimitsResponse` 回傳 `available_notional` / `reserved_notional` / `utilized_notional`；`ReserveResponse` 回傳 `ReservationStatus`、`reservation_id` 與 reason fields
+- [x] `proto/marketdata_service.proto`
+  - [x] `SubscribeMarketData(...)` server-streaming
+  - [x] `SubscribePrivateNotifications(...)` server-streaming
 
 ### 2.3 FIX ↔ domain mapping 規範
+
+> 現況：`quickfix-gateway` 的 runtime mapping 已存在於 `InboundFixMessageHandler` / `WalRecord`，可把 `NewOrderSingle` / `OrderCancelRequest` 正規化成 `OrderCommand`；README 已補 `matching.executions -> FIX` 回報對照與目標中的 `ClOrdID` 去重語意，但正式的 FIX -> `OrderCommand` 欄位表尚未文件化，`risk-service` 當前冪等鍵也仍是 `COMMAND_TYPE|client_order_id`，尚未提升到 `(SenderCompID, TargetCompID, TradingDay, ClOrdID)`。
 
 - [ ] FIX 欄位到 `OrderCommand` 的 mapping 文件化（欄位表）
 - [ ] `ClOrdID` 去重 key 定義：`(SenderCompID, TargetCompID, TradingDay, ClOrdID)`
 
 ---
 
-## 3) Data plane topics（Kafka）與資料庫 schema
+## 3) Kafka topics（非同步保序路徑）與資料庫 schema
 
 ### 3.1 Topics 建立與設定
+
+> 現況：repo 已在 `config/simplematch*.json`、`shared-java/simplematch-config` 與 README 固定 topic 名稱與建議 partition catalog，並提供 `risk-service` 的 Debezium connector 範本；但尚無 topic provisioning script / manifest，也尚未把 broker-level `replication.factor` / `min.insync.replicas` / `unclean leader election` 轉成可執行的 infra 定義。`acks=all` 目前只見於 Spring Kafka baseline config（`quickfix-gateway` 與 `risk-service`），不是完整 data-plane rollout。
 
 - [ ] 建立 topics：`orders.validated`, `matching.executions`, `marketdata.events`, `audit.events`（README 資料流圖預設存在；可用 `ENABLE_AUDIT_EVENTS` 關閉）
 - [ ] topic 設定（最小）：
@@ -135,6 +158,8 @@
 
 ### 3.2 Postgres schema（最小可跑）
 
+> 現況：`risk-service` / `account-service` / `persistence` 三個 owner schema 的 migration SQL 與 Flyway 測試都已存在，並且與 [docs/database-architecture.md](docs/database-architecture.md) 對齊；routing / config tables 仍完全未落地。owner-schema-first 也已被寫入 `docs/database-architecture.md` 與 repo root `AGENTS.md`，作為後續新增持久化服務的 guardrail，而不是已結束的一次性 rollout。
+
 - [x] 架構決策已固定：採 **單一 PostgreSQL instance + 每服務各自 schema owner**；細節、實作觸點與 checklist 見 [docs/database-architecture.md](docs/database-architecture.md)
 - [ ] follow-up：後續若新增新的持久化服務，或讓既有服務加入新的 JDBC runtime / connector 觸點，必須從第一個 migration 起就採 schema-qualified owner model
 
@@ -144,7 +169,7 @@
 - [x] `account-service` authority schema
   - [x] `account_limits`（帳戶/商品/日額度 bucket；含 `limit_total_notional`, `reserved_notional`, `utilized_notional`, `available_notional`）
   - [x] `account_positions`（per-account, per-symbol 持倉快照；`UNIQUE(account_id, symbol)`）
-  - [x] `account_reservations`（open orders 預扣狀態；`reservation_id = order_id` 或 `request_id`）
+  - [x] `account_reservations`（open orders 預扣狀態；目前 schema 對 `reservation_id`、`request_id`、`order_id` 都設 UNIQUE）
 - [x] `account-service` migration 已顯式落在 `account_service` schema，migration test 也已在 owner schema 下驗證
 - [x] projection / read-model schema
   - [x] `orders`（含 `source_session_id`, `client_order_id/ClOrdID` 的 UNIQUE）
@@ -177,7 +202,7 @@
 ### 3.4 Routing rollout（依三階段）
 
 - [x] Phase 1 基礎：`risk-service` 已以 published routing snapshot（config/file）計算 routing；熱路徑不查 DB
-  - [x] `simplematch.routing.snapshotPath` 已接入 risk-service，預設載入 classpath sample，可覆寫到外部 published snapshot
+  - [x] `simplematch.routing.snapshotPath` 已接入 risk-service；shared config model 的 fallback 預設載入 classpath sample，而 repo 內 checked-in `config/simplematch*.json` 目前指向 `config/routing/orders-validated.snapshot.json`，也可覆寫到外部 published snapshot
   - [x] `quickfix-gateway` 維持不變，仍只送 `OrderCommand` 到 `risk-service`
   - [x] repo 已提供 Debezium connector 範本，把 outbox `kafka_partition_id` 套用到 Kafka partition
   - [ ] matching-engine 若要自行判斷 routing，仍需載入同一份 published snapshot
@@ -203,13 +228,13 @@
 
 ### 4.1.1 FIX session / transport
 
-- [x] QuickFIX acceptor config：`config/fix/acceptor.cfg`
+- [x] QuickFIX acceptor config：`config/quickfix/acceptor.cfg`
   - [x] 最小必要欄位（示意）：`BeginString=FIX.4.4`, `ConnectionType=acceptor`, `SenderCompID`, `TargetCompID`, `SocketAcceptPort`, `HeartBtInt`
   - [x] 啟用/管理 dictionary：`UseDataDictionary=Y`, `DataDictionary=fix-spec/FIX44.xml`
-- [ ] 支援 logon/logout、heartbeat、sequence reset（依對手方需求）
-- [ ] inbound/outbound message persistence（為了 resend/合規稽核；最小可先落檔）
-  - [ ] `MessageStoreFactory`：`FileStoreFactory`（起步）→ 需要時改 DB store
-  - [ ] `LogFactory`：`FileLogFactory`
+- [x] 支援 logon/logout、heartbeat、sequence reset baseline（QuickFIX/J callbacks + `HeartBtInt` / `ResetOn*` config 已接入）
+- [x] inbound/outbound message persistence（為了 resend/合規稽核；file-based baseline 已接入）
+  - [x] `MessageStoreFactory`：`FileStoreFactory`（起步）→ 需要時改 DB store
+  - [x] `LogFactory`：`FileLogFactory`
   - [ ] resend/重送驗證：斷線重連、`ResendRequest`、gap fill、`PossDupFlag`/`OrigSendingTime`
 
 ### 4.1.2 入口 ACK（risk-service persistence-first）
@@ -233,6 +258,7 @@
 ### 4.1.4 去重（FIX + 業務層）
 
 - [ ] FIX session 層：配合 QuickFIX 行為處理 `ResendRequest`, `PossDupFlag`, `OrigSendingTime`（並確保 message store 能支援重送）
+  - [x] QuickFIX/J session callback 與 file store/log baseline 已接入
 - [ ] 業務層：ClOrdID idempotency
   - [ ] `DedupRepo::FindOrCreateByClOrdId(session, trading_day, cl_ord_id)`
   - [ ] 重送一致：若 payload 相同回同結果；不同回 reject
@@ -248,12 +274,12 @@
 
 ### 4.1.6 消費 `matching.executions` → FIX 回報
 
-- [ ] Kafka consumer：`matching.executions`
-- [ ] `ExecutionEvent` → FIX `ExecutionReport`（成交/狀態更新/撤單成功）
-- [ ] 撤單被拒（FIX 慣例）：`ExecutionEvent` → FIX `OrderCancelReject (35=9)`
-  - [ ] 必填：`ClOrdID(11)`（撤單請求）、`OrigClOrdID(41)`（原委託）、`OrdStatus(39)`（原委託狀態）
-  - [ ] 原因：`CxlRejReason(102)` + `Text(58)`（若有）、`CxlRejResponseTo(434)=1`
-- [ ] 去重：`exec_id` / `(order_id, exec_id)`
+- [x] Kafka consumer：`matching.executions`
+- [x] `ExecutionEvent` → FIX `ExecutionReport`（成交/狀態更新/撤單成功）
+- [x] 撤單被拒（FIX 慣例）：`ExecutionEvent` → FIX `OrderCancelReject (35=9)`
+  - [x] 必填：`ClOrdID(11)`（撤單請求）、`OrigClOrdID(41)`（原委託）、`OrdStatus(39)`（原委託狀態）
+  - [x] 原因：`CxlRejReason(102)` + `Text(58)`（若有）、`CxlRejResponseTo(434)=1`
+- [x] 去重：目前以 `exec_id` 去重（非 `(order_id, exec_id)`）
 - [ ] session 斷線/重連：可重送回報（FIX resend）
 
 ### 4.1.7 endpoints
@@ -283,6 +309,8 @@
 
 ## 4.2 `risk-service`
 
+> 交叉驗證結果：`risk-service` 已完成 gRPC ingress、基本欄位驗證、transactional submission + PostgreSQL outbox baseline；但 `account-service` 同步查詢 / reservation 依賴、交易時段 / symbol registry、IOC/FOK 規則矩陣，以及 `/healthz` / `/readyz` alias 仍未落地。
+
 ### 4.2.1 gRPC server：primary ingress
 
 - [x] 定義 `SubmitOrder` / `CancelOrder` gRPC API
@@ -297,9 +325,13 @@
   - [x] 基本必填格式檢核已落地
   - [ ] 交易時段 / symbol registry 驗證尚未完成
 - [ ] 支援 LIMIT/MARKET × ROD/IOC/FOK（規則不合法直接 rejected）
+  - [x] LIMIT / MARKET 的價格必填差異已驗證（limit 缺 price reject；market 可無 price）
+  - [ ] IOC / FOK 與非法組合拒絕語義尚未完成
 - [ ] 市價單保護價規則（若採用）
 
-### 4.2.3 交易額度 / reservation（control plane gRPC）
+### 4.2.3 交易額度 / reservation（同步 gRPC 依賴）
+
+> 現況：workspace 未找到 `risk-service` 端任何 `AccountServiceGrpc` client wiring；而 `services/account-service` 的 gRPC server skeleton 目前仍對 `GetLimits` / `GetPositions` / `Reserve` 回 `UNIMPLEMENTED`。
 
 - [ ] gRPC client：`AccountService::GetLimits/GetPositions`（快取可選；回傳需對齊 `account_limits` / `account_positions`）
 - [ ] `Reserve(order_id/request_id, ...)`（冪等；由 `account-service` 更新 `account_reservations`）
@@ -317,12 +349,14 @@
 ### 4.2.5 endpoints
 
 - [ ] `/healthz` `/readyz` `/metrics`
-  - [x] `application.yaml` 已開 management exposure，服務 smoke test 已補上
+  - [x] 預設 actuator 已 expose `health` / `info` / `metrics`
   - [ ] 自訂 `/healthz` `/readyz` alias 尚未補
 
 ---
 
 ## 4.3 `matching-engine`
+
+> 現況：workspace 目前沒有 `services/matching-engine/` 或對應 native module；README / docs 只保留 C++ matching-engine 的架構與 rollout 規劃，因此以下項目都仍屬未開始。
 
 ### 4.3.1 消費 `orders.validated`
 
@@ -361,10 +395,13 @@
 
 ## 4.4 `persistence`（sink / projection builder）
 
+> Spring Boot module、owner schema、`orders` / `executions` / `processed_events` tables 已存在；交叉驗證結果顯示目前只有 Spring Boot entrypoint + Flyway migration/test baseline，build 尚未引入 `spring-kafka` 或 Redis runtime，因此仍缺 Kafka consumer、projection writer 與完整 actuator 暴露。
+
 ### 4.4.1 Kafka consumer：`matching.executions`
 
 - [ ] 反序列化 ExecutionEvent
 - [ ] Idempotency：`ProcessedEventsRepo::TryMarkProcessed(consumer=persistence, event_id/exec_id)`
+  - [x] `processed_events` table schema 已存在
 
 ### 4.4.2 batch commit
 
@@ -395,12 +432,16 @@
 ### 4.4.5 endpoints
 
 - [ ] `/healthz` `/readyz` `/metrics`
+  - [x] Spring Boot app 與 `health` / `info` actuator exposure 已存在
+  - [ ] `metrics` exposure 與 root alias 尚未補
 
 > 註：若 `persistence` 要產生衍生事件流（例如 audit/events），才需要在 `persistence` 端引入 Outbox。
 
 ---
 
 ## 4.5 `marketdata-publisher`
+
+> 現況：workspace 未見 `services/marketdata-publisher/`；目前只有 `proto/marketdata.proto` 契約與 README 架構描述，因此以下項目都仍屬未開始。
 
 - [ ] v1：consume `matching.executions`
 - [ ] v1：先產出 `marketdata.events` 的 `TradeUpdate`
@@ -414,6 +455,8 @@
 ---
 
 ## 4.6 `marketdata-streamer`（external gRPC streaming）
+
+> 現況：workspace 未見 `services/marketdata-streamer/`；目前只有 `proto/marketdata.proto` / `proto/marketdata_service.proto` 契約與 README 架構說明，尚無 runtime consumer / gRPC server 實作。
 
 ### 4.6.1 Kafka consumers
 
@@ -448,7 +491,9 @@
 
 ## 4.7 `account-service`
 
-### 4.7.1 gRPC server（control plane）
+> `proto/account_service.proto`、Spring Boot module、gRPC server skeleton 已存在，但 `AccountGrpcService` 目前仍回 `UNIMPLEMENTED`；以下勾選以實際可用功能與已落地 schema 為準。
+
+### 4.7.1 gRPC server（同步查詢 / reservation）
 
 - [ ] `GetLimits(account_id)`
 - [ ] `GetPositions(account_id)`
@@ -464,15 +509,19 @@
 
 ### 4.7.3 交易額度資料模型（不含現金版）
 
-- [ ] `account_limits`（帳戶/商品/日額度 bucket；含 `reserved_notional` / `utilized_notional` / `available_notional`）
-- [ ] `account_positions`（per-account, per-symbol 持倉快照）
-- [ ] `account_reservations`（open orders 預扣狀態；`reservation_id = order_id` 或 `request_id`）
-- [ ] `utilized` 先作為 `account_limits.utilized_notional` materialized 欄位；若後續 exposure 邏輯獨立再拆表
+> PostgreSQL schema / migration 已落地；這裡的勾選代表 tables / columns 已存在，不代表 reserve / release / apply-fill runtime 已完成。
+
+- [x] `account_limits`（帳戶/商品/日額度 bucket；含 `reserved_notional` / `utilized_notional` / `available_notional`）
+- [x] `account_positions`（per-account, per-symbol 持倉快照）
+- [x] `account_reservations`（open orders 預扣狀態；目前 schema 對 `reservation_id`、`request_id`、`order_id` 都設 UNIQUE）
+- [x] `utilized` 先作為 `account_limits.utilized_notional` materialized 欄位；若後續 exposure 邏輯獨立再拆表
 - [ ] `available = limit_total - reserved - utilized`
 
 ### 4.7.4 endpoints
 
 - [ ] `/healthz` `/readyz` `/metrics`
+  - [x] Spring Boot app 與 `health` / `info` actuator exposure 已存在
+  - [ ] `metrics` exposure 與 root alias 尚未補
 
 ---
 
@@ -480,6 +529,7 @@
 
 > 目的：把查詢流量從權威服務（例如 `account-service` / Postgres）分離，提供低延遲 read API。
 > 對齊 README：`query-service` 建議只走 gRPC/HTTP 讀 Postgres/Redis projections，**不要直接讀 Kafka**。
+> 現況：workspace 未見 `services/query-service/`；README 目前僅保留 Redis-first query service 的架構規劃，尚無實際 gRPC/HTTP、Redis 或 Postgres 查詢模組。
 
 ### 4.8.1 讀路徑（Redis-first + fallback）
 
@@ -507,43 +557,72 @@
 
 ## 5) Debezium / CDC（主線 Outbox 發佈）
 
+> 現況：repo 已有 `risk-service` 的 Debezium / Kafka Connect compose + K8s connector 模板，以及手動套用腳本；`matching-engine` / `persistence` connector 與 connector monitoring 尚未出現。
+
 - [x] `risk-service`：已提供 Debezium connector 範本，將 PostgreSQL outbox 變更發布到 Kafka，並以 `kafka_partition_id` 指定 partition
+  - [x] `deploy/compose/risk-service-outbox-connector.json`、`deploy/k8s/risk-service-outbox-connector-configmap.yaml` 與 `deploy/compose/apply-risk-service-outbox-connector.sh` 已存在
 - [ ] `matching-engine`：配置 Debezium connector，將 PostgreSQL outbox 變更發布到 Kafka
+  - [ ] workspace 未找到 `matching-engine` connector config 或對應 K8s/compose scaffold
 - [ ] 若 `persistence` 後續產生 `audit.events`，再為其 outbox DB 配置 Debezium connector
+  - [ ] workspace 未找到 `persistence` outbox / `audit.events` connector config
 - [x] topic routing：outbox.topic 欄位 → Kafka topic
 - [ ] at-least-once 期望：consumer 冪等必做
+  - [x] `quickfix-gateway` 消費 `matching.executions` 時已以 `exec_id` 做 in-memory 去重
+  - [x] `persistence` schema 已有 `processed_events` table
+  - [ ] `persistence` / `account-service` 的 consumer runtime 與 durable processed-events DAO 尚未落地
 - [ ] 監控：connector lag、error rate
+  - [ ] repo 未見 connector status / lag / error-rate 指標、Prometheus rule 或 dashboard
 
 ---
 
 ## 6) Kubernetes（kind）部署與設定
 
+> 現況：`deploy/k8s/` 目前只有 `quickfix-gateway` continuity / session-aware scale-out scaffold（StatefulSet、headless/per-owner Service、QuickFIX ConfigMap）與 `risk-service` outbox connector ConfigMap；尚未形成整個系統的 kind 部署集合。
+
 ### 6.1 manifests（最小）
 
 - [ ] Namespace
 - [ ] Deployments/StatefulSets：各服務
+  - [x] `quickfix-gateway` StatefulSet 已存在
+  - [ ] `risk-service` / `account-service` / `persistence` / `matching-engine` manifests 未見
 - [ ] Services：內部 DNS
+  - [x] `quickfix-gateway` headless / per-owner Services 已存在
+  - [ ] 其餘服務 Service manifests 未見
 - [ ] ConfigMaps/Secrets：Kafka/Postgres/Redis/gRPC targets
+  - [x] QuickFIX config 與 risk-service outbox connector ConfigMap 已存在
+  - [ ] Secrets 與 service runtime config aggregation 未見
 - [ ] Probes：liveness/readiness
+  - [x] `quickfix-gateway` 已有 startup/readiness/liveness probes
 - [ ] 資源限制：requests/limits（避免 noisy neighbor）
+  - [ ] 目前只見 PVC storage request，container CPU/memory requests/limits 未見
 
 ### 6.2 固定 shard owner（matching-engine）
 
 - [ ] matching-engine 用 StatefulSet
+  - [ ] workspace 未找到 `matching-engine` K8s manifests
 - [ ] 每個 pod 透過 env/args 指定要 `assign()` 哪些 partitions
+  - [ ] workspace 未找到 `matching-engine` assign-partition env/args scaffold
 
 ---
 
-## 7) CI（GitHub Actions + kind）Smoke test
+## 7) CI（GitHub Actions；kind smoke test 待補）
+
+> 現況：`.github/workflows/ci.yml` 已有 changed-area gating、Java static analysis + repo-wide test/certification、Flyway/PostgreSQL smoke、native configure/build/test；kind cluster 與 `kubectl` deploy smoke 尚未進 CI。
 
 - [x] Java 靜態分析已接入 Gradle build：`./gradlew staticAnalysis` 會對所有 Java 模組執行 blocking `Error Prone` 編譯，並對既定模組執行 `Checkstyle` / `SpotBugs`
 - [x] SpotBugs false-positive filter 已先收斂到已確認的 Spring config / runtime holder 類別，避免干擾實際問題
 - [x] 現有 GitHub Actions Java job 已接入同一個 `./gradlew staticAnalysis` blocking gate，並上傳 Checkstyle / SpotBugs 報告 artifacts
 - [x] GitHub Actions 已依變更路徑做 job-level filtering：docs-only 變更不再觸發 Java / Native 全量建置
+- [x] GitHub Actions Java job 已執行 repo-wide `test` 與 `:services:quickfix-gateway:certificationTest`
+- [x] GitHub Actions 已執行 Flyway / PostgreSQL smoke checks（`bash scripts/run-flyway-ci-checks.sh`）
+- [x] GitHub Actions 已執行 native configure/build/test（CMake preset + `ctest --preset vcpkg`）
 - [ ] workflow：起 kind cluster
+  - [ ] workflow 尚未安裝或建立 kind cluster
 - [ ] `kubectl apply -f deploy/k8s/`
+  - [ ] README 有手動指令，但 CI workflow 尚未自動套用 manifests
 - [ ] 等待 pods ready
 - [ ] 最小驗證：
+  - [x] 現況：CI 目前沒有任何 kind / K8s smoke assertions
   - [ ] 呼叫 `/readyz`
   - [ ] scrape `/metrics`（至少回 200）
   - [ ] （可選）丟一筆測試 command（用簡化 producer）→ 看到 matching.executions
