@@ -17,6 +17,8 @@ message SubmitOrderRequest {
 }
 
 message SubmitOrderResponse {
+  // Synchronous/RPC name for the operation identifier.
+  // In the current implementation this is the same underlying value as OrderCommand.command_id.
   string request_id = 1;
   string order_id = 2;
   string client_order_id = 3;
@@ -30,6 +32,8 @@ message CancelOrderRequest {
 }
 
 message CancelOrderResponse {
+  // Synchronous/RPC name for the operation identifier.
+  // In the current implementation this is the same underlying value as OrderCommand.command_id.
   string request_id = 1;
   string order_id = 2;
   string client_order_id = 3;

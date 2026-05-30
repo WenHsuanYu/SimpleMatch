@@ -15,6 +15,8 @@ enum CommandType {
 
 message OrderCommand {
   simplematch.common.v1.EventMetadata metadata = 1;
+  // Event/command-lane name for the operation identifier.
+  // Current synchronous RPC and storage boundaries may expose this same value as request_id.
   string command_id = 2;
   string order_id = 3;
   string account_id = 4;
@@ -32,6 +34,9 @@ message OrderCommand {
 
 message OrderValidated {
   simplematch.common.v1.EventMetadata metadata = 1;
+  // Echoes the original OrderCommand.command_id.
+  // The current risk-service implementation persists this same operation identifier as request_id
+  // on synchronous/storage boundaries before writing it back into validated events as command_id.
   string command_id = 2;
   string order_id = 3;
   string account_id = 4;
@@ -41,6 +46,9 @@ message OrderValidated {
 
 message OrderRejected {
   simplematch.common.v1.EventMetadata metadata = 1;
+  // Echoes the original OrderCommand.command_id.
+  // The current risk-service implementation persists this same operation identifier as request_id
+  // on synchronous/storage boundaries before writing it back into rejected events as command_id.
   string command_id = 2;
   string order_id = 3;
   string account_id = 4;

@@ -43,6 +43,9 @@ message GetPositionsResponse {
 }
 
 message ReserveRequest {
+  // Synchronous write-lane name for the operation identifier.
+  // Current upstream mapping uses the same underlying value that enters risk-service as
+  // orders.OrderCommand.command_id and is exposed there as request_id.
   string request_id = 1;
   string order_id = 2;
   string account_id = 3;
@@ -53,6 +56,7 @@ message ReserveRequest {
 }
 
 message ReserveResponse {
+  // Echoes the ReserveRequest.request_id operation identifier.
   string request_id = 1;
   string order_id = 2;
   simplematch.common.v1.ReservationStatus status = 3;
@@ -62,6 +66,9 @@ message ReserveResponse {
 }
 
 message ReleaseReservationRequest {
+  // Synchronous write-lane name for the operation identifier.
+  // Current upstream mapping uses the same underlying value that enters risk-service as
+  // orders.OrderCommand.command_id and is exposed there as request_id.
   string request_id = 1;
   string reservation_id = 2;
   string order_id = 3;
@@ -69,12 +76,16 @@ message ReleaseReservationRequest {
 }
 
 message ReleaseReservationResponse {
+  // Echoes the ReleaseReservationRequest.request_id operation identifier.
   string request_id = 1;
   string reservation_id = 2;
   simplematch.common.v1.ReservationStatus status = 3;
 }
 
 message ApplyFillRequest {
+  // Synchronous write-lane name for the operation identifier.
+  // Current upstream mapping uses the same underlying value that enters risk-service as
+  // orders.OrderCommand.command_id and is exposed there as request_id.
   string request_id = 1;
   string reservation_id = 2;
   string order_id = 3;
@@ -84,6 +95,7 @@ message ApplyFillRequest {
 }
 
 message ApplyFillResponse {
+  // Echoes the ApplyFillRequest.request_id operation identifier.
   string request_id = 1;
   string reservation_id = 2;
   simplematch.common.v1.ReservationStatus status = 3;
