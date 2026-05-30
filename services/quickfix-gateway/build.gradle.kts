@@ -15,6 +15,7 @@ dependencyManagement {
 dependencies {
   implementation(project(":shared-java:simplematch-config"))
   implementation(project(":shared-java:simplematch-contracts"))
+  implementation("com.github.f4b6a3:uuid-creator:6.1.1")
   implementation("org.springframework.boot:spring-boot-starter")
   implementation("org.springframework.boot:spring-boot-starter-actuator")
   implementation("org.springframework.boot:spring-boot-starter-web")

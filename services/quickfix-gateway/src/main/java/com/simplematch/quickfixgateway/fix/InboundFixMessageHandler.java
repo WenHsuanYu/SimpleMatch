@@ -12,7 +12,6 @@ import com.simplematch.quickfixgateway.wal.WalAppender;
 import com.simplematch.quickfixgateway.wal.WalRecord;
 import java.time.Clock;
 import java.time.Instant;
-import java.util.UUID;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import quickfix.FieldMap;
@@ -39,6 +38,7 @@ public final class InboundFixMessageHandler {
   private final FixSessionMessageSender fixSessionMessageSender;
   private final OrderSessionRegistry orderSessionRegistry;
   private final FixMessageMapper fixMessageMapper;
+  private final CommandIdGenerator commandIdGenerator;
   private final Clock clock;
 
   public InboundFixMessageHandler(
@@ -49,12 +49,33 @@ public final class InboundFixMessageHandler {
       OrderSessionRegistry orderSessionRegistry,
       FixMessageMapper fixMessageMapper,
       Clock clock) {
+    this(
+        walAppender,
+        ordersCommandPublisher,
+        riskSubmissionClient,
+        fixSessionMessageSender,
+        orderSessionRegistry,
+        fixMessageMapper,
+        new CommandIdGenerator(),
+        clock);
+  }
+
+  InboundFixMessageHandler(
+      WalAppender walAppender,
+      OrdersCommandPublisher ordersCommandPublisher,
+      RiskSubmissionClient riskSubmissionClient,
+      FixSessionMessageSender fixSessionMessageSender,
+      OrderSessionRegistry orderSessionRegistry,
+      FixMessageMapper fixMessageMapper,
+      CommandIdGenerator commandIdGenerator,
+      Clock clock) {
     this.walAppender = walAppender;
     this.ordersCommandPublisher = ordersCommandPublisher;
     this.riskSubmissionClient = riskSubmissionClient;
     this.fixSessionMessageSender = fixSessionMessageSender;
     this.orderSessionRegistry = orderSessionRegistry;
     this.fixMessageMapper = fixMessageMapper;
+    this.commandIdGenerator = commandIdGenerator;
     this.clock = clock;
   }
 
@@ -80,7 +101,7 @@ public final class InboundFixMessageHandler {
     final String orderId = orderIdFor(clientOrderId);
     final WalRecord walRecord = new WalRecord(
         "v1",
-        UUID.randomUUID().toString(),
+      commandIdGenerator.nextCommandId(),
         now.toEpochMilli(),
         "quickfix-gateway",
         sessionId.toString(),
@@ -127,7 +148,7 @@ public final class InboundFixMessageHandler {
     final OrderSessionState existing = orderSessionRegistry.find(orderId).orElse(null);
     final WalRecord walRecord = new WalRecord(
         "v1",
-        UUID.randomUUID().toString(),
+      commandIdGenerator.nextCommandId(),
         Instant.now(clock).toEpochMilli(),
         "quickfix-gateway",
         sessionId.toString(),

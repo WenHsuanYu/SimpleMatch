@@ -25,6 +25,7 @@ import java.time.Clock;
 import java.time.Instant;
 import java.time.ZoneOffset;
 import java.util.List;
+import java.util.UUID;
 import java.util.concurrent.CompletableFuture;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
@@ -85,6 +86,7 @@ class InboundFixMessageHandlerTest {
     final WalRecord walRecord = walRecords.getFirst();
     assertThat(walRecord.schemaVersion()).isEqualTo("v1");
     assertThat(walRecord.recordId()).isNotBlank();
+    assertUuidVersionSeven(walRecord.recordId());
     assertThat(walRecord.createdAtUnixMs()).isEqualTo(FIXED_INSTANT.toEpochMilli());
     assertThat(walRecord.sourceService()).isEqualTo("quickfix-gateway");
     assertThat(walRecord.sessionId()).isEqualTo(sessionId.toString());
@@ -191,6 +193,9 @@ class InboundFixMessageHandlerTest {
 
     final List<WalRecord> walRecords = walAppender.readAll();
     assertThat(walRecords).hasSize(3);
+    assertUuidVersionSeven(walRecords.get(0).recordId());
+    assertUuidVersionSeven(walRecords.get(1).recordId());
+    assertUuidVersionSeven(walRecords.get(2).recordId());
     assertThat(walRecords.get(0).messageType()).isEqualTo(NewOrderSingle.MSGTYPE);
     assertThat(walRecords.get(1).messageType()).isEqualTo(OrderCancelRequest.MSGTYPE);
     assertThat(walRecords.get(2).messageType()).isEqualTo(NewOrderSingle.MSGTYPE);
@@ -257,6 +262,7 @@ class InboundFixMessageHandlerTest {
         new SessionID("FIX.4.4", "CLIENT1", "SIMPLEMATCH"));
 
     final WalRecord walRecord = walAppender.readAll().getFirst();
+  assertUuidVersionSeven(walRecord.recordId());
     final ArgumentCaptor<Message> messageCaptor = ArgumentCaptor.forClass(Message.class);
     verify(sender).send(any(SessionID.class), messageCaptor.capture());
 
@@ -321,5 +327,9 @@ class InboundFixMessageHandlerTest {
     cancel.setString(Account.FIELD, account);
     cancel.setString(TransactTime.FIELD, "20240327-08:09:10.123");
     return cancel;
+  }
+
+  private void assertUuidVersionSeven(String rawUuid) {
+    assertThat(UUID.fromString(rawUuid).version()).isEqualTo(7);
   }
 }

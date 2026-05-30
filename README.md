@@ -451,6 +451,7 @@ Projection 可以把它理解成：
 
 - 同步 gRPC / service-local storage（例如 `risk_submissions`, `account_reservations`）目前使用 `request_id`
 - ingress `OrderCommand` 與下游事件（例如 `OrderValidated`, `OrderRejected`）目前使用 `command_id`
+- ingress `OrderCommand.command_id` 目前由 `quickfix-gateway` 以 UUID v7 產生；同步邊界仍以 `request_id` 承載同一個值
 - `risk-service` 當前實作會把 ingress `command_id` 原值持久化為 `request_id`，再把同一值寫回事件的 `command_id`
 
 換句話說：在目前程式實作裡，`request_id` 是同步/RPC/storage 邊界的名稱，`command_id` 是事件/command 邊界的名稱；兩者當前是**同值異名**，不是兩條獨立的 identity 軸。
