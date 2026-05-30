@@ -6,6 +6,7 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import com.simplematch.riskservice.submission.CommandType;
 import com.simplematch.riskservice.submission.SubmissionRepository;
 import com.simplematch.riskservice.submission.SubmissionResult;
+import java.time.LocalDate;
 import java.util.UUID;
 import org.flywaydb.core.Flyway;
 import org.junit.jupiter.api.BeforeEach;
@@ -45,6 +46,14 @@ class JdbcSubmissionRepositoryTest {
 
     assertThat(repository.findByIdempotencyKey(submission.idempotencyKey())).contains(submission);
     assertThat(jdbcTemplate.queryForObject(
+      "SELECT session_id FROM risk_submissions WHERE idempotency_key = ?",
+      String.class,
+      submission.idempotencyKey())).isEqualTo("FIX.4.4:CLIENT->SIMPLEMATCH");
+    assertThat(jdbcTemplate.queryForObject(
+      "SELECT trading_day FROM risk_submissions WHERE idempotency_key = ?",
+      LocalDate.class,
+      submission.idempotencyKey())).isEqualTo(LocalDate.of(2024, 3, 27));
+    assertThat(jdbcTemplate.queryForObject(
         "SELECT outbox_event_id FROM risk_submissions WHERE idempotency_key = ?",
         String.class,
         submission.idempotencyKey())).isEqualTo("outbox-1");
@@ -69,6 +78,8 @@ class JdbcSubmissionRepositoryTest {
     return new SubmissionResult(
         "COMMAND_TYPE_CANCEL|CXL-1",
         "cmd-1",
+      "FIX.4.4:CLIENT->SIMPLEMATCH",
+      LocalDate.of(2024, 3, 27),
         "O-C1",
         "CXL-1",
         "C1",

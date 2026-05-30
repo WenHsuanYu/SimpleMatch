@@ -7,6 +7,7 @@ import static com.simplematch.riskservice.submission.SubmissionCommandFixtures.r
 
 import java.time.Clock;
 import java.time.Instant;
+import java.time.LocalDate;
 import java.time.ZoneOffset;
 import org.junit.jupiter.api.Test;
 
@@ -25,6 +26,8 @@ class SubmissionValidatorTest {
     assertThat(decision.submission().accepted()).isTrue();
     assertThat(decision.submission().commandType()).isEqualTo(CommandType.COMMAND_TYPE_NEW);
     assertThat(decision.submission().createdAtUnixMs()).isEqualTo(NOW);
+    assertThat(decision.submission().tradingDay())
+      .isEqualTo(LocalDate.ofInstant(Instant.ofEpochMilli(NOW), ZoneOffset.UTC));
     assertThat(decision.command().commandType()).isEqualTo(CommandType.COMMAND_TYPE_NEW);
   }
 

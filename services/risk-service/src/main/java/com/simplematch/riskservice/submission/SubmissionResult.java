@@ -1,5 +1,7 @@
 package com.simplematch.riskservice.submission;
 
+import java.time.LocalDate;
+
 /**
  * Persisted result of a risk-service submission attempt.
  *
@@ -7,6 +9,8 @@ package com.simplematch.riskservice.submission;
  * @param requestId the persisted operation identifier exposed as {@code request_id} on synchronous
  *     RPC and storage boundaries; this is currently the same underlying value as the ingress
  *     {@code command_id}
+ * @param sessionId the session identifier carried by the submission payload
+ * @param tradingDay the business trading day derived from the gateway event timestamp in UTC
  * @param orderId the order identifier carried by the submission
  * @param clientOrderId the client-provided order identifier
  * @param originalClientOrderId the original client order identifier for cancel flows
@@ -19,6 +23,8 @@ package com.simplematch.riskservice.submission;
 public record SubmissionResult(
         String idempotencyKey,
         String requestId,
+    String sessionId,
+    LocalDate tradingDay,
         String orderId,
         String clientOrderId,
         String originalClientOrderId,

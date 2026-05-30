@@ -79,6 +79,8 @@ class SubmissionOutboxFactoryTest {
         new SubmissionResult(
             "COMMAND_TYPE_CANCEL|CXL-1",
             "cmd-2",
+          command.sessionId(),
+          java.time.LocalDate.of(2024, 3, 27),
             "O-C1",
             "CXL-1",
             "C1",
@@ -100,6 +102,8 @@ class SubmissionOutboxFactoryTest {
         new SubmissionResult(
             "UNKNOWN|",
             "",
+          "",
+          java.time.LocalDate.of(1970, 1, 1),
             "",
             "",
             "",
@@ -142,6 +146,8 @@ class SubmissionOutboxFactoryTest {
         new SubmissionResult(
             "COMMAND_TYPE_NEW|C1",
             "cmd-1",
+          "FIX.4.4:CLIENT->SIMPLEMATCH",
+          java.time.LocalDate.of(2024, 3, 27),
             "O-C1",
             "C1",
             "",
@@ -164,6 +170,8 @@ class SubmissionOutboxFactoryTest {
         new SubmissionResult(
             "COMMAND_TYPE_NEW|C1",
             "cmd-1",
+          command.sessionId(),
+          java.time.LocalDate.of(2024, 3, 27),
             "O-C1",
             "C1",
             "",

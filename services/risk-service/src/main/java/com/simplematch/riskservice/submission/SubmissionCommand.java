@@ -1,5 +1,6 @@
 package com.simplematch.riskservice.submission;
 
+import java.time.LocalDate;
 import java.util.Objects;
 
 /**
@@ -138,6 +139,7 @@ public final class SubmissionCommand {
     private final SessionId sessionId;
     private final ClientOrderId clientOrderId;
     private final ClientOrderId originalClientOrderId;
+    private final LocalDate tradingDay;
 
     /**
      * Creates request metadata from transport and business identifiers.
@@ -157,12 +159,42 @@ public final class SubmissionCommand {
         String clientOrderId,
         String originalClientOrderId) {
       this(
+          commandId,
+          orderId,
+          accountId,
+          sessionId,
+          clientOrderId,
+          originalClientOrderId,
+          null);
+    }
+
+    /**
+     * Creates request metadata from transport and business identifiers.
+     *
+     * @param commandId the transport-level command identifier
+     * @param orderId the internal or client-visible order identifier
+     * @param accountId the account that owns the submission
+     * @param sessionId the session that produced the submission
+     * @param clientOrderId the client-provided order identifier
+     * @param originalClientOrderId the original client order identifier for replacement or cancel flows
+     * @param tradingDay the business trading day derived from the gateway event timestamp when available
+     */
+    public RequestMetadata(
+        String commandId,
+        String orderId,
+        String accountId,
+        String sessionId,
+        String clientOrderId,
+        String originalClientOrderId,
+        LocalDate tradingDay) {
+      this(
           new CommandId(commandId),
           new OrderId(orderId),
           new AccountId(accountId),
-              new SessionId(sessionId),
+          new SessionId(sessionId),
           new ClientOrderId(clientOrderId),
-          new ClientOrderId(originalClientOrderId));
+          new ClientOrderId(originalClientOrderId),
+          tradingDay);
     }
 
     private RequestMetadata(
@@ -171,13 +203,15 @@ public final class SubmissionCommand {
         AccountId accountId,
         SessionId sessionId,
         ClientOrderId clientOrderId,
-        ClientOrderId originalClientOrderId) {
+        ClientOrderId originalClientOrderId,
+        LocalDate tradingDay) {
       this.commandId = commandId == null ? CommandId.empty() : commandId;
       this.orderId = orderId == null ? OrderId.empty() : orderId;
       this.accountId = accountId == null ? AccountId.empty() : accountId;
       this.sessionId = sessionId == null ? SessionId.empty() : sessionId;
       this.clientOrderId = clientOrderId == null ? ClientOrderId.empty() : clientOrderId;
       this.originalClientOrderId = originalClientOrderId == null ? ClientOrderId.empty() : originalClientOrderId;
+      this.tradingDay = tradingDay;
     }
 
     /**
@@ -186,7 +220,7 @@ public final class SubmissionCommand {
      * @return empty request metadata
      */
     public static RequestMetadata empty() {
-      return new RequestMetadata("", "", "", "", "", "");
+      return new RequestMetadata("", "", "", "", "", "", null);
     }
 
     public String commandId() {
@@ -237,6 +271,10 @@ public final class SubmissionCommand {
       return originalClientOrderId;
     }
 
+    public LocalDate tradingDay() {
+      return tradingDay;
+    }
+
     @Override
     public boolean equals(Object other) {
       if (this == other) {
@@ -250,7 +288,8 @@ public final class SubmissionCommand {
           && accountId.equals(that.accountId)
           && sessionId.equals(that.sessionId)
           && clientOrderId.equals(that.clientOrderId)
-          && originalClientOrderId.equals(that.originalClientOrderId);
+          && originalClientOrderId.equals(that.originalClientOrderId)
+          && Objects.equals(tradingDay, that.tradingDay);
     }
 
     @Override
@@ -261,7 +300,8 @@ public final class SubmissionCommand {
           accountId,
           sessionId,
           clientOrderId,
-          originalClientOrderId);
+              originalClientOrderId,
+              tradingDay);
     }
 
     @Override
@@ -271,7 +311,8 @@ public final class SubmissionCommand {
           + ", accountId=" + accountId
           + ", sessionId=" + sessionId
           + ", clientOrderId=" + clientOrderId
-          + ", originalClientOrderId=" + originalClientOrderId + "]";
+          + ", originalClientOrderId=" + originalClientOrderId
+          + ", tradingDay=" + tradingDay + "]";
     }
   }
 
@@ -522,6 +563,10 @@ public final class SubmissionCommand {
     return requestMetadata.originalClientOrderIdValue();
   }
 
+  public LocalDate tradingDay() {
+    return requestMetadata.tradingDay();
+  }
+
   /**
    * Returns a command with no payload fields.
    *
@@ -548,7 +593,8 @@ public final class SubmissionCommand {
       && priceValue().isBlank()
         && orderType() == OrderType.ORDER_TYPE_UNSPECIFIED
         && tif() == TimeInForce.TIME_IN_FORCE_UNSPECIFIED
-      && originalClientOrderIdValue().isBlank();
+      && originalClientOrderIdValue().isBlank()
+      && tradingDay() == null;
   }
 
   @Override

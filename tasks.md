@@ -266,9 +266,9 @@
 - [ ] 業務層：FIX `ClOrdID` idempotency（目標 key = `(SenderCompID, TargetCompID, TradingDay, ClOrdID)`）
   - [ ] `DedupRepo::FindOrCreateByClOrdId(session, trading_day, cl_ord_id)`
   - [ ] 重送一致：若 payload 相同回同結果；不同回 reject
-  - [ ] 讓 ingress journal 具備 FIX business identity 所需欄位：`risk_submissions` 補 `session_id` / `trading_day`，並明確定義其來源（FIX session / trading calendar）
+  - [x] 讓 ingress journal 具備 FIX business identity 所需欄位：`risk_submissions` 補 `session_id` / `trading_day`，並明確定義其來源（目前 `trading_day = gateway created_at_unix_ms` 的 UTC 日期）
   - [ ] 將目前 runtime dedup 與目標 FIX business dedup 的對齊路徑文件化：在 gateway / risk-service / persistence 三處明確標註目前 key、目標 key、以及遷移期間的相容策略
-  - 現況：gateway 會攜帶 `session_id`，projection `orders` 也已有 `UNIQUE(source_session_id, client_order_id)`；但 risk ingress 尚未使用 `(session, trading_day, cl_ord_id)` 做 dedup。
+  - 現況：gateway 會攜帶 `session_id`，projection `orders` 也已有 `UNIQUE(source_session_id, client_order_id)`；`risk_submissions.session_id` / `trading_day` 已落庫，但 risk ingress 仍尚未使用 `(session, trading_day, cl_ord_id)` 做 dedup。
 
 ### 4.1.5 同步送交 `risk-service`（主路徑）
 
@@ -326,7 +326,8 @@
 - [x] 目前版 ingress 唯一鍵冪等：相同 current key 重送時回同一筆結果，不可重複建立訂單
   - [x] PostgreSQL 唯一鍵 / transaction 版已完成
   - 現況：`risk-service` 當前 key 為 `COMMAND_TYPE|client_order_id`，尚未等同 FIX 業務層的 `(SenderCompID, TargetCompID, TradingDay, ClOrdID)` 去重。
-  - [ ] `risk_submissions` 補 `session_id` / `trading_day` 欄位，讓 ingress journal 能直接表達 FIX business identity，而非只存衍生 `idempotency_key`
+  - [x] `risk_submissions` 補 `session_id` / `trading_day` 欄位，讓 ingress journal 能直接表達 FIX business identity，而非只存衍生 `idempotency_key`
+    - [x] 現況：`session_id` 已落庫；`trading_day` 已以 gateway `created_at_unix_ms` 的 UTC 日期落庫
   - [ ] 將 ingress UNIQUE 約束由單一 `idempotency_key` 演進為業務欄位組合（例如 `(session_id, trading_day, command_type, client_order_id)`；最終組合以 FIX/session identity 決策為準）
   - [ ] 決定 `idempotency_key` 最終保留型態：轉型期間保留為可讀衍生欄位；最終收斂為 generated column、普通 derived column，或在 migration 完成後移除
 

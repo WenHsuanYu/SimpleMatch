@@ -21,6 +21,7 @@ import com.simplematch.riskservice.submission.SubmissionService;
 import com.simplematch.riskservice.submission.SubmissionValidator;
 import com.simplematch.riskservice.submission.TransactionalSubmissionService;
 import java.time.Clock;
+import java.time.LocalDate;
 import java.util.UUID;
 import org.flywaydb.core.Flyway;
 import org.junit.jupiter.api.BeforeEach;
@@ -32,6 +33,8 @@ import org.springframework.jdbc.datasource.DriverManagerDataSource;
 import org.springframework.transaction.support.TransactionTemplate;
 
 class RiskGrpcServiceTest {
+  private static final long GATEWAY_CREATED_AT_UNIX_MS = 1711526950123L;
+
   private JdbcTemplate jdbcTemplate;
   private SubmissionService submissionService;
 
@@ -77,6 +80,14 @@ class RiskGrpcServiceTest {
     assertThat(observer.value().getAccepted()).isTrue();
     assertThat(observer.value().getOrderId()).isEqualTo("O-C1");
     assertThat(observer.value().getClientOrderId()).isEqualTo("C1");
+    assertThat(jdbcTemplate.queryForObject(
+      "SELECT session_id FROM risk_submissions WHERE client_order_id = ?",
+      String.class,
+      "C1")).isEqualTo("FIX.4.4:CLIENT->SIMPLEMATCH");
+    assertThat(jdbcTemplate.queryForObject(
+      "SELECT trading_day FROM risk_submissions WHERE client_order_id = ?",
+      LocalDate.class,
+      "C1")).isEqualTo(LocalDate.of(2024, 3, 27));
   }
 
     // Verify that cancelOrder returns a rejection instead of a gRPC error when originalClientOrderId is missing.
@@ -93,7 +104,7 @@ class RiskGrpcServiceTest {
                 .setMetadata(EventMetadata.newBuilder()
                     .setSchemaVersion("v1")
                     .setEventId("cmd-2")
-                    .setCreatedAtUnixMs(1L)
+                    .setCreatedAtUnixMs(GATEWAY_CREATED_AT_UNIX_MS)
                     .setSourceService("quickfix-gateway")
                     .build())
                 .setCommandId("cmd-2")
@@ -202,7 +213,7 @@ class RiskGrpcServiceTest {
         .setMetadata(EventMetadata.newBuilder()
             .setSchemaVersion("v1")
             .setEventId(commandId)
-            .setCreatedAtUnixMs(1L)
+          .setCreatedAtUnixMs(GATEWAY_CREATED_AT_UNIX_MS)
             .setSourceService("quickfix-gateway")
             .build())
         .setCommandId(commandId)
@@ -225,7 +236,7 @@ class RiskGrpcServiceTest {
         .setMetadata(EventMetadata.newBuilder()
             .setSchemaVersion("v1")
             .setEventId(commandId)
-            .setCreatedAtUnixMs(1L)
+          .setCreatedAtUnixMs(GATEWAY_CREATED_AT_UNIX_MS)
             .setSourceService("quickfix-gateway")
             .build())
         .setCommandId(commandId)

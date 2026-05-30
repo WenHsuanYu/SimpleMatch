@@ -7,6 +7,9 @@ import com.simplematch.riskservice.submission.ResolvedSubmissionCommand;
 import com.simplematch.riskservice.submission.Side;
 import com.simplematch.riskservice.submission.SubmissionCommand;
 import com.simplematch.riskservice.submission.TimeInForce;
+import java.time.Instant;
+import java.time.LocalDate;
+import java.time.ZoneOffset;
 
 final class GrpcSubmissionCommandMapper {
   ResolvedSubmissionCommand map(
@@ -25,7 +28,8 @@ final class GrpcSubmissionCommandMapper {
         command.getAccountId(),
         command.getSessionId(),
         command.getClientOrderId(),
-        command.getOriginalClientOrderId()),
+        command.getOriginalClientOrderId(),
+        tradingDayFor(command)),
       new SubmissionCommand.OrderDetails(
         command.getSymbol(),
         toSide(command.getSide()),
@@ -35,6 +39,17 @@ final class GrpcSubmissionCommandMapper {
         toTimeInForce(command.getTif())));
     return new ResolvedSubmissionCommand(mappedCommand, toCommandType(command.getCommandType()))
         .withResolvedCommandType(normalizedExpectedType);
+  }
+
+  private static LocalDate tradingDayFor(OrderCommand command) {
+    if (command == null || !command.hasMetadata()) {
+      return null;
+    }
+    final long createdAtUnixMs = command.getMetadata().getCreatedAtUnixMs();
+    if (createdAtUnixMs <= 0) {
+      return null;
+    }
+    return Instant.ofEpochMilli(createdAtUnixMs).atZone(ZoneOffset.UTC).toLocalDate();
   }
 
   private static Side toSide(com.simplematch.contracts.common.v1.Side side) {

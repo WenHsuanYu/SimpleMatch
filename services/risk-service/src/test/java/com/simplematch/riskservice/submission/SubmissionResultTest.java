@@ -2,6 +2,7 @@ package com.simplematch.riskservice.submission;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
+import java.time.LocalDate;
 import org.junit.jupiter.api.Test;
 
 class SubmissionResultTest {
@@ -10,6 +11,8 @@ class SubmissionResultTest {
     final SubmissionResult submission = new SubmissionResult(
         "COMMAND_TYPE_NEW|C1",
         "cmd-1",
+      "FIX.4.4:CLIENT->SIMPLEMATCH",
+      LocalDate.of(2024, 3, 27),
         "O-C1",
         "C1",
         "",
@@ -20,5 +23,7 @@ class SubmissionResultTest {
         100L);
 
     assertThat(submission.commandId()).isEqualTo("cmd-1");
+    assertThat(submission.sessionId()).isEqualTo("FIX.4.4:CLIENT->SIMPLEMATCH");
+    assertThat(submission.tradingDay()).isEqualTo(LocalDate.of(2024, 3, 27));
   }
 }

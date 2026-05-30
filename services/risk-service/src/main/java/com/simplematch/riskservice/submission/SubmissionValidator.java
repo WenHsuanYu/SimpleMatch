@@ -1,6 +1,8 @@
 package com.simplematch.riskservice.submission;
 
 import java.time.Clock;
+import java.time.LocalDate;
+import java.time.ZoneOffset;
 import java.util.Objects;
 
 public final class SubmissionValidator {
@@ -17,6 +19,7 @@ public final class SubmissionValidator {
                 final SubmissionCommand payload = normalizedCommand.payload();
                 final CommandType resolvedCommandType = normalizedCommand.commandType();
         final long now = clock.instant().toEpochMilli();
+                final LocalDate tradingDay = resolveTradingDay(payload);
 
         if (normalizedCommand.isCompletelyUnspecified()) {
             return rejected(
@@ -148,6 +151,8 @@ public final class SubmissionValidator {
                 new SubmissionResult(
                         idempotencyKey,
                         payload.commandId(),
+                        payload.sessionId(),
+                        tradingDay,
                         payload.orderId(),
                         payload.clientOrderId(),
                         payload.originalClientOrderId(),
@@ -174,6 +179,8 @@ public final class SubmissionValidator {
                 new SubmissionResult(
                         idempotencyKey,
                         requestId,
+                        normalizedCommand.payload().sessionId(),
+                        resolveTradingDay(normalizedCommand.payload()),
                         orderId,
                         clientOrderId,
                         originalClientOrderId,
@@ -184,4 +191,12 @@ public final class SubmissionValidator {
                         createdAtUnixMs),
                 normalizedCommand);
     }
+
+        private LocalDate resolveTradingDay(SubmissionCommand payload) {
+                final LocalDate payloadTradingDay = payload == null ? null : payload.tradingDay();
+                if (payloadTradingDay != null) {
+                        return payloadTradingDay;
+                }
+                return clock.instant().atZone(ZoneOffset.UTC).toLocalDate();
+        }
 }

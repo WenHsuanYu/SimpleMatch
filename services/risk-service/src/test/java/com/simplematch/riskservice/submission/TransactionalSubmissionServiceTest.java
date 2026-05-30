@@ -6,6 +6,7 @@ import static com.simplematch.riskservice.submission.SubmissionCommandFixtures.r
 
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import java.time.LocalDate;
 import java.time.Clock;
 import java.time.Instant;
 import java.time.ZoneOffset;
@@ -54,6 +55,8 @@ class TransactionalSubmissionServiceTest {
     final SubmissionResult existing = new SubmissionResult(
         "COMMAND_TYPE_NEW|C1",
         "cmd-existing",
+      "FIX.4.4:CLIENT->SIMPLEMATCH",
+      LocalDate.of(2024, 3, 27),
         "O-C1",
         "C1",
         "",
@@ -83,6 +86,8 @@ class TransactionalSubmissionServiceTest {
     final SubmissionResult existing = new SubmissionResult(
         "COMMAND_TYPE_NEW|C1",
         "cmd-winner",
+      "FIX.4.4:CLIENT->SIMPLEMATCH",
+      LocalDate.of(2024, 3, 27),
         "O-C1",
         "C1",
         "",

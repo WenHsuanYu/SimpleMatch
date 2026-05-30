@@ -84,25 +84,28 @@ class RiskServiceFlywayMigrationTest {
             "LEASE_EXPIRES_AT_UNIX_MS",
             "PUBLISH_ATTEMPTS",
             "LAST_ERROR")) {
-      assertThat(hasColumn(jdbcTemplate, columnName)).isFalse();
+      assertThat(hasColumn(jdbcTemplate, "OUTBOX", columnName)).isFalse();
     }
-    assertThat(hasColumn(jdbcTemplate, "TOPIC")).isTrue();
-    assertThat(hasColumn(jdbcTemplate, "KAFKA_PARTITION_ID")).isTrue();
-    assertThat(hasColumn(jdbcTemplate, "CREATED_AT_UNIX_MS")).isTrue();
+    assertThat(hasColumn(jdbcTemplate, "OUTBOX", "TOPIC")).isTrue();
+    assertThat(hasColumn(jdbcTemplate, "OUTBOX", "KAFKA_PARTITION_ID")).isTrue();
+    assertThat(hasColumn(jdbcTemplate, "OUTBOX", "CREATED_AT_UNIX_MS")).isTrue();
+    assertThat(hasColumn(jdbcTemplate, "RISK_SUBMISSIONS", "SESSION_ID")).isTrue();
+    assertThat(hasColumn(jdbcTemplate, "RISK_SUBMISSIONS", "TRADING_DAY")).isTrue();
     assertThat(hasIndex(jdbcTemplate, "IDX_OUTBOX_PUBLISHABLE")).isFalse();
   }
 
-  private boolean hasColumn(JdbcTemplate jdbcTemplate, String columnName) {
+  private boolean hasColumn(JdbcTemplate jdbcTemplate, String tableName, String columnName) {
     return jdbcTemplate.queryForObject(
             """
             SELECT COUNT(*)
             FROM INFORMATION_SCHEMA.COLUMNS
             WHERE UPPER(TABLE_SCHEMA) = ?
-              AND UPPER(TABLE_NAME) = 'OUTBOX'
+              AND UPPER(TABLE_NAME) = ?
               AND UPPER(COLUMN_NAME) = ?
             """,
             Integer.class,
             SCHEMA_NAME,
+            tableName,
             columnName)
         > 0;
   }

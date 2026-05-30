@@ -9,6 +9,7 @@ import com.simplematch.contracts.common.v1.TimeInForce;
 import com.simplematch.contracts.orders.v1.CommandType;
 import com.simplematch.contracts.orders.v1.OrderCommand;
 import com.simplematch.riskservice.submission.ResolvedSubmissionCommand;
+import java.time.LocalDate;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 
@@ -24,6 +25,7 @@ class GrpcSubmissionCommandMapperTest {
     assertThat(mapped.payload().orderId()).isEqualTo("O-C1");
     assertThat(mapped.payload().accountId()).isEqualTo("ACC-1");
     assertThat(mapped.payload().sessionId()).isEqualTo("FIX.4.4:CLIENT->SIMPLEMATCH");
+    assertThat(mapped.payload().tradingDay()).isEqualTo(LocalDate.of(2024, 3, 27));
     assertThat(mapped.payload().clientOrderId()).isEqualTo("C1");
     assertThat(mapped.payload().symbol()).isEqualTo("AAPL");
     assertThat(mapped.payload().side()).isEqualTo(com.simplematch.riskservice.submission.Side.SIDE_BUY);
@@ -60,7 +62,7 @@ class GrpcSubmissionCommandMapperTest {
         .setMetadata(EventMetadata.newBuilder()
             .setSchemaVersion("v1")
             .setEventId("cmd-1")
-            .setCreatedAtUnixMs(1L)
+          .setCreatedAtUnixMs(1711526950123L)
             .setSourceService("quickfix-gateway")
             .build())
         .setCommandId("cmd-1")

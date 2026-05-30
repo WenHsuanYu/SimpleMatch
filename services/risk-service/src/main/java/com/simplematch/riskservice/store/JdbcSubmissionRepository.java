@@ -3,6 +3,7 @@ package com.simplematch.riskservice.store;
 import com.simplematch.riskservice.submission.CommandType;
 import com.simplematch.riskservice.submission.SubmissionRepository;
 import com.simplematch.riskservice.submission.SubmissionResult;
+import java.time.LocalDate;
 import java.util.Objects;
 import java.util.Optional;
 import org.springframework.jdbc.core.JdbcTemplate;
@@ -13,6 +14,8 @@ public final class JdbcSubmissionRepository implements SubmissionRepository {
       new SubmissionResult(
           resultSet.getString("idempotency_key"),
           resultSet.getString("request_id"),
+        resultSet.getString("session_id"),
+          resultSet.getObject("trading_day", LocalDate.class),
           resultSet.getString("order_id"),
           resultSet.getString("client_order_id"),
           resultSet.getString("original_client_order_id"),
@@ -32,7 +35,7 @@ public final class JdbcSubmissionRepository implements SubmissionRepository {
   public Optional<SubmissionResult> findByIdempotencyKey(String idempotencyKey) {
     return jdbcTemplate.query(
             """
-                SELECT idempotency_key, request_id, order_id, client_order_id, original_client_order_id,
+              SELECT idempotency_key, request_id, session_id, trading_day, order_id, client_order_id, original_client_order_id,
                        command_type, accepted, reason_code, reason_text, created_at_unix_ms
           FROM risk_service.risk_submissions
                 WHERE idempotency_key = ?
@@ -50,6 +53,8 @@ public final class JdbcSubmissionRepository implements SubmissionRepository {
             INSERT INTO risk_service.risk_submissions (
               idempotency_key,
               request_id,
+              session_id,
+              trading_day,
               order_id,
               client_order_id,
               original_client_order_id,
@@ -59,10 +64,12 @@ public final class JdbcSubmissionRepository implements SubmissionRepository {
               reason_text,
               created_at_unix_ms,
               outbox_event_id
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """,
         submission.idempotencyKey(),
         submission.requestId(),
+          submission.sessionId(),
+          submission.tradingDay(),
         submission.orderId(),
         submission.clientOrderId(),
         submission.originalClientOrderId(),
