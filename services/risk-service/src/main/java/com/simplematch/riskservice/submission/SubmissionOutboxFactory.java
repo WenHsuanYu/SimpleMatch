@@ -57,7 +57,7 @@ public final class SubmissionOutboxFactory {
     if (submission.accepted()) {
       return OrderValidated.newBuilder()
           .setMetadata(eventMetadata(eventId, submission.createdAtUnixMs()))
-          .setCommandId(submission.requestId())
+          .setCommandId(submission.commandId())
           .setOrderId(submission.orderId())
           .setAccountId(command.accountId())
           .setSymbol(command.symbol())
@@ -68,7 +68,7 @@ public final class SubmissionOutboxFactory {
 
     return OrderRejected.newBuilder()
         .setMetadata(eventMetadata(eventId, submission.createdAtUnixMs()))
-        .setCommandId(submission.requestId())
+    .setCommandId(submission.commandId())
         .setOrderId(submission.orderId())
         .setAccountId(command.accountId())
         .setSymbol(command.symbol())
@@ -124,7 +124,7 @@ public final class SubmissionOutboxFactory {
   private String eventId(SubmissionResult submission) {
     final String source = submission.idempotencyKey()
         + "|"
-        + submission.requestId()
+        + submission.commandId()
         + "|"
         + submission.orderId()
         + "|"

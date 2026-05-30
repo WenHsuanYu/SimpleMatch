@@ -129,14 +129,7 @@ public final class SubmissionCommand {
   }
 
   /**
-   * Groups the request-scoped identifiers and session context for a submission payload.
-   *
-   * @param commandId the transport-level command identifier
-   * @param orderId the internal or client-visible order identifier
-   * @param accountId the account that owns the submission
-   * @param sessionId the session that produced the submission
-   * @param clientOrderId the client-provided order identifier
-   * @param originalClientOrderId the original client order identifier for replacement or cancel flows
+    * Groups the request-scoped identifiers and session context for a submission payload.
    */
   public static final class RequestMetadata {
     private final CommandId commandId;
@@ -146,6 +139,16 @@ public final class SubmissionCommand {
     private final ClientOrderId clientOrderId;
     private final ClientOrderId originalClientOrderId;
 
+    /**
+     * Creates request metadata from transport and business identifiers.
+     *
+     * @param commandId the transport-level command identifier
+     * @param orderId the internal or client-visible order identifier
+     * @param accountId the account that owns the submission
+     * @param sessionId the session that produced the submission
+     * @param clientOrderId the client-provided order identifier
+     * @param originalClientOrderId the original client order identifier for replacement or cancel flows
+     */
     public RequestMetadata(
         String commandId,
         String orderId,
@@ -273,14 +276,7 @@ public final class SubmissionCommand {
   }
 
   /**
-   * Groups the order-specific payload fields for a submission payload.
-   *
-   * @param symbol the submitted symbol
-   * @param side the submitted side
-   * @param quantity the submitted quantity
-   * @param price the submitted price
-   * @param orderType the submitted order type
-   * @param tif the submitted time in force
+    * Groups the order-specific payload fields for a submission payload.
    */
   public static final class OrderDetails {
     private final String symbol;
@@ -290,6 +286,16 @@ public final class SubmissionCommand {
     private final OrderType orderType;
     private final TimeInForce tif;
 
+    /**
+     * Creates order details from the incoming payload fields.
+     *
+     * @param symbol the submitted symbol
+     * @param side the submitted side
+     * @param quantity the submitted quantity
+     * @param price the submitted price
+     * @param orderType the submitted order type
+     * @param tif the submitted time in force
+     */
     public OrderDetails(
         String symbol,
         Side side,

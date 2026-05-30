@@ -447,6 +447,14 @@ Projection 可以把它理解成：
 - **Bulkhead（隔離）**：把不同下游依賴的連線池/執行緒池隔離，避免某個依賴卡住拖垮整個服務
 - **Fail-open vs Fail-closed 要明確**：風控相關預設應 fail-closed（依賴不可用則拒單/拒絕預扣），行情/查詢可視需求 fail-open（回快取/降級資料）
 
+目前 repo 的同步/事件邊界命名仍有一個既有現況需要明確記住：`request_id` 與 `command_id` 現在不是兩個不同的 business identity，而是同一個操作識別碼在不同邊界的名稱。
+
+- 同步 gRPC / service-local storage（例如 `risk_submissions`, `account_reservations`）目前使用 `request_id`
+- ingress `OrderCommand` 與下游事件（例如 `OrderValidated`, `OrderRejected`）目前使用 `command_id`
+- `risk-service` 當前實作會把 ingress `command_id` 原值持久化為 `request_id`，再把同一值寫回事件的 `command_id`
+
+換句話說：在目前程式實作裡，`request_id` 是同步/RPC/storage 邊界的名稱，`command_id` 是事件/command 邊界的名稱；兩者當前是**同值異名**，不是兩條獨立的 identity 軸。
+
 #### gRPC 落地細節（建議值/可執行規範）
 
 - **Deadline 建議值（起步）**：
@@ -880,6 +888,7 @@ Kafka 常用語意是 **at-least-once**：同一事件可能被處理多次。�
   - `client_order_id`, `original_client_order_id`, `command_type`
   - `accepted`, `reason_code`, `reason_text`
   - `created_at_unix_ms`, `outbox_event_id`
+- 命名備註：此處的 `request_id` 目前持久化的是 ingress `OrderCommand.command_id` 同一個值；`risk-service` 只是沿用同步/RPC 邊界的 `request_id` 命名，尚未把兩者拆成不同欄位語意
 - 建議約束/索引：
   - `UNIQUE (idempotency_key)`（確保同一同步提交重送時回同結果）
   - `UNIQUE (outbox_event_id)`（確保 ingress decision 與 outbox event 一對一）
