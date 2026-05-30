@@ -17,6 +17,7 @@ import java.time.Clock;
 import java.time.Instant;
 import java.time.ZoneOffset;
 import java.util.List;
+import java.util.UUID;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.TimeUnit;
@@ -125,10 +126,18 @@ class QuickFixCertificationEvidenceTest {
 
       final List<WalRecord> walRecords = walAppender.readAll();
       assertThat(walRecords).hasSize(1);
-      assertThat(walRecords.getFirst().orderId()).isEqualTo("O-C1");
-      assertThat(walRecords.getFirst().clientOrderId()).isEqualTo("C1");
-      assertThat(walRecords.getFirst().messageType()).isEqualTo(NewOrderSingle.MSGTYPE);
-      assertThat(walRecords.getFirst().rawFix()).contains("35=D").contains("11=C1");
+                  final WalRecord walRecord = walRecords.getFirst();
+                  assertThat(walRecord.orderId()).isEqualTo("O-C1");
+                  assertThat(walRecord.clientOrderId()).isEqualTo("C1");
+                  assertThat(walRecord.messageType()).isEqualTo(NewOrderSingle.MSGTYPE);
+                  assertThat(walRecord.rawFix()).contains("35=D").contains("11=C1");
+                  assertUuidVersionSeven(walRecord.recordId());
+                  assertThat(executionReport.getString(17)).isEqualTo("E-" + walRecord.recordId());
+
+                  final OrderCommand publishedCommand = ordersCommandPublisher.lastPublishedCommand();
+                  assertThat(publishedCommand.getCommandId()).isEqualTo(walRecord.recordId());
+                  assertThat(publishedCommand.getMetadata().getEventId()).isEqualTo(walRecord.recordId());
+                  assertUuidVersionSeven(publishedCommand.getCommandId());
 
       initiator.stop();
       assertThat(initiatorApplication.awaitLogout()).isTrue();
@@ -251,10 +260,21 @@ class QuickFixCertificationEvidenceTest {
     assertThat(output.getOut() + output.getErr()).contains(expected);
   }
 
+  private void assertUuidVersionSeven(String rawUuid) {
+    assertThat(UUID.fromString(rawUuid).version()).isEqualTo(7);
+  }
+
   private static final class OrdersCommandPublisher implements com.simplematch.quickfixgateway.kafka.OrdersCommandPublisher {
+    private final AtomicReference<OrderCommand> lastPublishedCommand = new AtomicReference<>();
+
     @Override
     public CompletableFuture<Void> publish(OrderCommand command) {
+      lastPublishedCommand.set(command);
       return CompletableFuture.completedFuture(null);
+    }
+
+    private OrderCommand lastPublishedCommand() {
+      return lastPublishedCommand.get();
     }
   }
 
