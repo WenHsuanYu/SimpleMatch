@@ -165,7 +165,7 @@
 - [ ] follow-up：後續若新增新的持久化服務，或讓既有服務加入新的 JDBC runtime / connector 觸點，必須從第一個 migration 起就採 schema-qualified owner model
 
 - [x] `risk-service` local schema
-  - [x] `risk_submissions`（同步 ingress journal；`UNIQUE(idempotency_key)`、`UNIQUE(outbox_event_id)`）
+  - [x] `risk_submissions`（同步 ingress journal；`UNIQUE(session_id, trading_day, command_type, client_order_id)`、`UNIQUE(outbox_event_id)`）
   - [x] `outbox`（append-only event row；`event_id UNIQUE`，供 Debezium CDC 讀取；已含 `kafka_partition_id`）
 - [x] `account-service` authority schema
   - [x] `account_limits`（帳戶/商品/日額度 bucket；含 `limit_total_notional`, `reserved_notional`, `utilized_notional`, `available_notional`）
@@ -268,13 +268,13 @@
   - [ ] 重送一致：若 payload 相同回同結果；不同回 reject
   - [x] 讓 ingress journal 具備 FIX business identity 所需欄位：`risk_submissions` 補 `session_id` / `trading_day`，並明確定義其來源（目前 `trading_day = gateway created_at_unix_ms` 的 UTC 日期）
   - [ ] 將目前 runtime dedup 與目標 FIX business dedup 的對齊路徑文件化：在 gateway / risk-service / persistence 三處明確標註目前 key、目標 key、以及遷移期間的相容策略
-  - 現況：gateway 會攜帶 `session_id`，projection `orders` 也已有 `UNIQUE(source_session_id, client_order_id)`；`risk_submissions.session_id` / `trading_day` 已落庫，但 risk ingress 仍尚未使用 `(session, trading_day, cl_ord_id)` 做 dedup。
+  - 現況：gateway 會攜帶 `session_id`，projection `orders` 也已有 `UNIQUE(source_session_id, client_order_id)`；`risk_submissions` 已以 `(session_id, trading_day, command_type, client_order_id)` 做 ingress dedup，但與最終 FIX `(SenderCompID, TargetCompID, TradingDay, ClOrdID)` 表述的對齊文件仍待補齊。
 
 ### 4.1.5 同步送交 `risk-service`（主路徑）
 
 - [x] gRPC client：`RiskService::SubmitOrder()` / `CancelOrder()`
 - [x] request 內必須帶穩定、可重送的 client-supplied id：`client_order_id` / `ClOrdID`
-- [x] bounded retry：僅限暫態 transport 錯誤，且重試時必須沿用同一 idempotency key
+- [x] bounded retry：僅限暫態 transport 錯誤，且重試時必須沿用同一個 ingress business identity（至少同一 `session_id` / `trading_day` / `command_type` / `client_order_id`）
 - [x] deadline / breaker / connection reuse 落地
   - [x] deadline / connection reuse 已落地（blocking stub deadline + shared managed channel）
   - [x] breaker 已落地（consecutive-failure open + cooldown half-open probe）
@@ -325,11 +325,11 @@
 - [x] 同步回覆語意：只有在本地 transaction commit 成功後才回成功
 - [x] 目前版 ingress 唯一鍵冪等：相同 current key 重送時回同一筆結果，不可重複建立訂單
   - [x] PostgreSQL 唯一鍵 / transaction 版已完成
-  - 現況：`risk-service` 當前 key 為 `COMMAND_TYPE|client_order_id`，尚未等同 FIX 業務層的 `(SenderCompID, TargetCompID, TradingDay, ClOrdID)` 去重。
-  - [x] `risk_submissions` 補 `session_id` / `trading_day` 欄位，讓 ingress journal 能直接表達 FIX business identity，而非只存衍生 `idempotency_key`
+  - 現況：`risk-service` 當前 authoritative key 已是 `(session_id, trading_day, command_type, client_order_id)`；舊的 `idempotency_key` transitional 欄位與 runtime 生成路徑都已移除，但這仍尚未等同最終 FIX 業務層的 `(SenderCompID, TargetCompID, TradingDay, ClOrdID)` 命名表述。
+  - [x] `risk_submissions` 補 `session_id` / `trading_day` 欄位，讓 ingress journal 能直接表達 FIX business identity
     - [x] 現況：`session_id` 已落庫；`trading_day` 已以 gateway `created_at_unix_ms` 的 UTC 日期落庫
-  - [ ] 將 ingress UNIQUE 約束由單一 `idempotency_key` 演進為業務欄位組合（例如 `(session_id, trading_day, command_type, client_order_id)`；最終組合以 FIX/session identity 決策為準）
-  - [ ] 決定 `idempotency_key` 最終保留型態：轉型期間保留為可讀衍生欄位；最終收斂為 generated column、普通 derived column，或在 migration 完成後移除
+  - [x] 將 ingress UNIQUE 約束由單一欄位演進為業務欄位組合（目前為 `(session_id, trading_day, command_type, client_order_id)`；最終組合命名仍以 FIX/session identity 決策為準）
+  - [x] 移除 `idempotency_key` transitional 欄位、runtime generator 與 outbox event-id 對它的依賴
 
 ### 4.2.2 規則檢核
 

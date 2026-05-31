@@ -7,6 +7,9 @@ This repo's Java dependencies are managed through the root Gradle build plus eac
 - The root [build.gradle.kts](/home/alexyu/SimpleMatch/build.gradle.kts) centralizes shared Java build conventions across subprojects.
 - Lombok is applied centrally to every Gradle project under `services/*` via `compileOnly`, `annotationProcessor`, `testCompileOnly`, and `testAnnotationProcessor`.
 - Shared modules under `shared-java/*` are not opted into Lombok by default.
+- Prefer Java `record` for simple immutable carriers before Lombok.
+- Use Lombok sparingly in `services/*` to remove Spring boilerplate such as required-args constructors or logging.
+- Do not treat Lombok as a blanket style: avoid broad annotations such as `@Data`, and keep domain, configuration, mutable, validation-heavy, normalization-heavy, custom-equality, or defensive-copy types handwritten.
 - After changing root dependency wiring, validate with a focused module compile before running broader static analysis.
 
 ## Native Dependencies

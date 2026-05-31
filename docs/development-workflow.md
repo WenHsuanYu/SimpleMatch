@@ -83,11 +83,15 @@ Implement the smallest production change that makes the tests pass.
 - Organize Java code by feature or domain, not by technical layer.
 - Use constructor injection for required dependencies.
 - Keep dependency fields `private final`.
+- Prefer Java `record` for simple immutable carriers before reaching for Lombok.
+- In `services/*`, Lombok may be used narrowly for Spring boilerplate such as required-args constructors or logging. Avoid broad annotations such as `@Data`, and keep domain, configuration, mutable, validation-heavy, normalization-heavy, custom-equality, or defensive-copy types handwritten.
 - Use `@ConfigurationProperties` for type-safe configuration binding.
 - Use profiles for environment-specific behavior.
 - Use DTOs for boundary contracts instead of exposing persistence entities.
 - Use Bean Validation for request validation.
-- Use `@Transactional` on the smallest scope that needs a transaction.
+- Prefer `@Transactional` on public concrete application or service methods that own a business transaction.
+- Keep `JdbcTemplate` confined to thin repository adapters.
+- If only a smaller section of a method should hold the transaction, keep expensive pre-work and external calls outside the transaction and use `TransactionTemplate` or another narrow programmatic boundary for the minimal transactional region.
 - Use SLF4J with parameterized logging.
 
 ### PostgreSQL migration conventions

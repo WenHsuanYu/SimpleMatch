@@ -4,6 +4,7 @@ import java.time.Clock;
 import java.util.Objects;
 import org.springframework.dao.DuplicateKeyException;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
 
 /**
  * Reservation service that replays the stored result for repeated {@code request_id} values.
@@ -19,6 +20,7 @@ public class IdempotentReservationService implements ReservationService {
   }
 
   @Override
+  @Transactional
   public ReservationRecord reserve(ReserveOperation operation) {
     final ReservationRecord existing = reservationRepository.findByRequestId(operation.requestId())
         .orElse(null);

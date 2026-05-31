@@ -12,6 +12,8 @@ These instructions apply to the whole repository.
 - Do not widen scope without a concrete reason.
 - PostgreSQL schema changes must use versioned Flyway migrations via the shared `simplematch.flyway-service` convention; do not reintroduce runtime migration or ad hoc schema initialization flows.
 - For Java changes, require tests and Javadocs where members are public, protected, or non-obvious.
+- For Java, prefer records for simple immutable carriers. In `services/*`, Lombok may be used narrowly to remove Spring boilerplate such as required-args constructors or logging, but avoid broad annotations such as `@Data` and keep domain, config, mutable, validation-heavy, normalization-heavy, custom-equality, or defensive-copy types handwritten.
+- For Spring JDBC code, prefer `@Transactional` on public concrete application or service methods that own a business transaction. Keep `JdbcTemplate` in thin repository adapters, and when only part of a method should be transactional, use `TransactionTemplate` or another narrow programmatic boundary instead of widening the full method or moving transaction ownership into repositories.
 - If the task matches a workflow skill, treat that skill as required guidance, not optional reading.
 - After completing any code task, run a concise bad-smell avoidance checklist against [badCodeSmell.md](badCodeSmell.md) and call out any remaining risks.
 

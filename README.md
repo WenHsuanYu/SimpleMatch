@@ -875,7 +875,7 @@ Kafka 常用語意是 **at-least-once**：同一事件可能被處理多次。�
 
 #### `risk_submissions`（`risk-service` local ingress journal）
 
-用途：記錄 `risk-service` 每次同步 ingress 的提交結果，作為第一個成功 ACK 的持久化邊界、idempotency lookup、以及對應 outbox event 的關聯。
+用途：記錄 `risk-service` 每次同步 ingress 的提交結果，作為第一個成功 ACK 的持久化邊界、ingress dedup lookup、以及對應 outbox event 的關聯。
 
 這張表不是 `orders` 的替代品：
 
@@ -885,14 +885,14 @@ Kafka 常用語意是 **at-least-once**：同一事件可能被處理多次。�
 
 - 主鍵：`id`（identity / bigserial）
 - 建議欄位：
-  - `idempotency_key`, `request_id`, `session_id`, `trading_day`, `order_id`
+  - `request_id`, `session_id`, `trading_day`, `order_id`
   - `client_order_id`, `original_client_order_id`, `command_type`
   - `accepted`, `reason_code`, `reason_text`
   - `created_at_unix_ms`, `outbox_event_id`
 - 命名備註：此處的 `request_id` 目前持久化的是 ingress `OrderCommand.command_id` 同一個值；`risk-service` 只是沿用同步/RPC 邊界的 `request_id` 命名，尚未把兩者拆成不同欄位語意
 - 現況：`risk_submissions` 已持久化 `session_id` 與 `trading_day`；`trading_day` 目前以 gateway `created_at_unix_ms` 的 UTC 日期計算
 - 建議約束/索引：
-  - `UNIQUE (idempotency_key)`（確保同一同步提交重送時回同結果）
+  - `UNIQUE (session_id, trading_day, command_type, client_order_id)`（目前 ingress journal 的業務層 dedup key）
   - `UNIQUE (outbox_event_id)`（確保 ingress decision 與 outbox event 一對一）
 
 #### `executions`

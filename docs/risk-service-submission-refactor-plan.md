@@ -34,11 +34,10 @@
      - `RiskServiceApplicationTest`
 
 2. ~~補純規則層驗證~~
-   - 目標：把驗證規則與 idempotency key 規則抽成純單元測試，避免後續重構把規則改壞。
+   - 目標：把驗證規則與 ingress dedup 規則抽成純單元測試，避免後續重構把規則改壞。
    - 目前狀態：已完成第一批。
    - 已完成測試：
      - `SubmissionValidatorTest`
-     - `SubmissionIdempotencyKeyFactoryTest`
 
 3. ~~補資料轉換層驗證~~
    - 目標：鎖住 outbox payload、headers、message key、event id、aggregate 欄位的生成規則。
@@ -63,7 +62,6 @@
    - 已建立：
      - `SubmissionResult`
      - `SubmissionDecision`
-     - `SubmissionIdempotencyKeyFactory`
      - `SubmissionValidator`
 
 2. ~~建立 outbox 轉換模型與 factory~~
@@ -102,9 +100,7 @@
 
 - ~~`services/risk-service/src/main/java/com/simplematch/riskservice/submission/SubmissionResult.java`~~
 - ~~`services/risk-service/src/main/java/com/simplematch/riskservice/submission/SubmissionDecision.java`~~
-- ~~`services/risk-service/src/main/java/com/simplematch/riskservice/submission/SubmissionIdempotencyKeyFactory.java`~~
 - ~~`services/risk-service/src/main/java/com/simplematch/riskservice/submission/SubmissionValidator.java`~~
-- ~~`services/risk-service/src/test/java/com/simplematch/riskservice/submission/SubmissionIdempotencyKeyFactoryTest.java`~~
 - ~~`services/risk-service/src/test/java/com/simplematch/riskservice/submission/SubmissionValidatorTest.java`~~
 
 ## 第二批已完成的檔案
@@ -148,9 +144,7 @@
 
 - ~~新增 `SubmissionResult`~~
 - ~~新增 `SubmissionDecision`~~
-- ~~新增 `SubmissionIdempotencyKeyFactory`~~
 - ~~新增 `SubmissionValidator`~~
-- ~~新增 `SubmissionIdempotencyKeyFactoryTest`~~
 - ~~新增 `SubmissionValidatorTest`~~
 - ~~執行新測試並確認通過~~
 - ~~執行既有關鍵整合測試並確認通過~~
@@ -203,7 +197,7 @@
 ## 驗證命令
 
 ```bash
-./gradlew :services:risk-service:test --tests '*SubmissionValidatorTest' --tests '*SubmissionIdempotencyKeyFactoryTest' --tests '*SubmissionOutboxFactoryTest'
+./gradlew :services:risk-service:test --tests '*SubmissionValidatorTest' --tests '*SubmissionOutboxFactoryTest'
 ./gradlew :services:risk-service:test --tests '*JdbcSubmissionRepositoryTest' --tests '*JdbcOutboxRepositoryTest'
 ./gradlew :services:risk-service:test --tests '*TransactionalSubmissionServiceTest' --tests '*SubmissionServiceIntegrationTest' --tests '*RiskGrpcServiceTest'
 ./gradlew :services:risk-service:test --tests '*RiskServiceApplicationTest'
