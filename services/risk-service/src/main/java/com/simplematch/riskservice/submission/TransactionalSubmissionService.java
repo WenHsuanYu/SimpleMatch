@@ -5,7 +5,6 @@ import org.springframework.dao.DuplicateKeyException;
 import org.springframework.transaction.support.TransactionTemplate;
 
 public final class TransactionalSubmissionService implements SubmissionService {
-  private final SubmissionIdempotencyKeyFactory idempotencyKeyFactory;
   private final SubmissionValidator submissionValidator;
   private final SubmissionOutboxFactory submissionOutboxFactory;
   private final SubmissionRepository submissionRepository;
@@ -13,13 +12,11 @@ public final class TransactionalSubmissionService implements SubmissionService {
   private final TransactionTemplate transactionTemplate;
 
   public TransactionalSubmissionService(
-      SubmissionIdempotencyKeyFactory idempotencyKeyFactory,
       SubmissionValidator submissionValidator,
       SubmissionOutboxFactory submissionOutboxFactory,
       SubmissionRepository submissionRepository,
       OutboxRepository outboxRepository,
       TransactionTemplate transactionTemplate) {
-    this.idempotencyKeyFactory = Objects.requireNonNull(idempotencyKeyFactory);
     this.submissionValidator = Objects.requireNonNull(submissionValidator);
     this.submissionOutboxFactory = Objects.requireNonNull(submissionOutboxFactory);
     this.submissionRepository = Objects.requireNonNull(submissionRepository);
@@ -32,8 +29,7 @@ public final class TransactionalSubmissionService implements SubmissionService {
     final ResolvedSubmissionCommand normalizedCommand = command == null
         ? ResolvedSubmissionCommand.unspecified()
         : command;
-    final String idempotencyKey = idempotencyKeyFactory.create(normalizedCommand);
-    final SubmissionDecision decision = submissionValidator.evaluate(normalizedCommand, idempotencyKey);
+    final SubmissionDecision decision = submissionValidator.evaluate(normalizedCommand);
 
     final SubmissionResult persistedSubmission = transactionTemplate.execute(status -> persist(decision));
     if (persistedSubmission == null) {
@@ -43,8 +39,8 @@ public final class TransactionalSubmissionService implements SubmissionService {
   }
 
   private SubmissionResult persist(SubmissionDecision decision) {
-    final String idempotencyKey = decision.submission().idempotencyKey();
-    final SubmissionResult existing = submissionRepository.findByIdempotencyKey(idempotencyKey).orElse(null);
+    final SubmissionBusinessKey businessKey = decision.submission().businessKey();
+    final SubmissionResult existing = submissionRepository.findByBusinessKey(businessKey).orElse(null);
     if (existing != null) {
       return existing;
     }
@@ -56,7 +52,7 @@ public final class TransactionalSubmissionService implements SubmissionService {
       outboxRepository.insert(outboxRecord);
       return decision.submission();
     } catch (DuplicateKeyException duplicateKeyException) {
-      return submissionRepository.findByIdempotencyKey(idempotencyKey)
+      return submissionRepository.findByBusinessKey(businessKey)
           .orElseThrow(() -> duplicateKeyException);
     }
   }

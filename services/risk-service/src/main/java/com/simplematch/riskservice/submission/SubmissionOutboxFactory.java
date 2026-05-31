@@ -122,8 +122,15 @@ public final class SubmissionOutboxFactory {
   }
 
   private String eventId(SubmissionResult submission) {
-    final String source = submission.idempotencyKey()
-        + "|"
+    final SubmissionBusinessKey businessKey = submission.businessKey();
+    final String source = businessKey.sessionId()
+      + "|"
+      + businessKey.tradingDay()
+      + "|"
+      + businessKey.commandType().name()
+      + "|"
+      + businessKey.clientOrderId()
+      + "|"
         + submission.commandId()
         + "|"
         + submission.orderId()

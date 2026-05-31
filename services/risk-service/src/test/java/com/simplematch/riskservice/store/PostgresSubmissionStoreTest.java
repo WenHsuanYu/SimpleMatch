@@ -16,7 +16,6 @@ import com.simplematch.contracts.orders.v1.OrderRejected;
 import com.simplematch.contracts.orders.v1.OrderValidated;
 import com.simplematch.riskservice.submission.ResolvedSubmissionCommand;
 import com.simplematch.riskservice.submission.SubmissionCommand;
-import com.simplematch.riskservice.submission.SubmissionIdempotencyKeyFactory;
 import com.simplematch.riskservice.submission.SubmissionOutboxFactory;
 import com.simplematch.riskservice.submission.SubmissionResult;
 import com.simplematch.riskservice.submission.SubmissionService;
@@ -74,15 +73,16 @@ class SubmissionServiceIntegrationTest {
     submissionService = newSubmissionService(jdbcTemplate, objectMapper);
   }
 
-  // Verify that duplicate submissions with the same idempotency key reuse the first successfully stored submission and outbox event.
-  // Scenario: the second submission changes only the commandId, while clientOrderId and command type stay the same.
-  @DisplayName("duplicate idempotency keys reuse the existing successful submission")
+  // Verify that duplicate submissions with the same business key reuse the first successfully stored submission and outbox event.
+  // Scenario: the second submission changes only the commandId, while session, trading day, clientOrderId, and command type stay the same.
+  @DisplayName("duplicate business keys reuse the existing successful submission")
   @Test
-  void persistsAcceptedSubmissionAndReusesItForDuplicateIdempotencyKey() {
+  void persistsAcceptedSubmissionAndReusesItForDuplicateBusinessKey() {
     final OrderCommand command = newNewOrder("cmd-1", "O-C1", "C1");
 
     final SubmissionResult first = persist(command);
     final SubmissionResult duplicate = persist(command.toBuilder().setCommandId("cmd-2").build());
+    final String outboxEventId = storedOutboxEventId(first);
 
     assertThat(first.accepted()).isTrue();
     assertThat(first.requestId()).isEqualTo("cmd-1");
@@ -92,18 +92,41 @@ class SubmissionServiceIntegrationTest {
     assertThat(jdbcTemplate.queryForObject(
       "SELECT created_at_unix_ms FROM outbox WHERE event_id = ?",
       Long.class,
-      jdbcTemplate.queryForObject(
-        "SELECT outbox_event_id FROM risk_submissions WHERE idempotency_key = ?",
-        String.class,
-        "COMMAND_TYPE_NEW|C1"))).isEqualTo(first.createdAtUnixMs());
+      outboxEventId)).isEqualTo(first.createdAtUnixMs());
     assertThat(jdbcTemplate.queryForObject(
       "SELECT topic FROM outbox WHERE event_id = ?",
       String.class,
-      jdbcTemplate.queryForObject(
-        "SELECT outbox_event_id FROM risk_submissions WHERE idempotency_key = ?",
-        String.class,
-        "COMMAND_TYPE_NEW|C1"))).isEqualTo("orders.validated");
+      outboxEventId)).isEqualTo("orders.validated");
   }
+
+    // Verify that the PostgreSQL-backed journal can store separate submissions when the FIX session changes and the business key differs.
+    // Scenario: keep clientOrderId and command type unchanged, but change the FIX session so the composite business key differs.
+    @DisplayName("different sessions produce separate submissions for the same client order id")
+    @Test
+    void persistsSeparateSubmissionsWhenOnlySessionDiffers() {
+    final OrderCommand first = newNewOrder("cmd-1", "O-C1", "C1");
+    final OrderCommand second = first.toBuilder()
+      .setCommandId("cmd-2")
+      .setOrderId("O-C2")
+      .setSessionId("FIX.4.4:CLIENT2->SIMPLEMATCH")
+      .setMetadata(first.getMetadata().toBuilder().setEventId("cmd-2").build())
+      .build();
+
+    final SubmissionResult firstResult = persist(first);
+    final SubmissionResult secondResult = persist(second);
+
+    assertThat(firstResult).isNotEqualTo(secondResult);
+    assertThat(countRows("risk_submissions")).isEqualTo(2);
+    assertThat(jdbcTemplate.queryForObject(
+      "SELECT COUNT(*) FROM risk_submissions WHERE client_order_id = ?",
+      Integer.class,
+      firstResult.clientOrderId())).isEqualTo(2);
+    assertThat(jdbcTemplate.queryForObject(
+      "SELECT COUNT(*) FROM risk_submissions WHERE session_id = ? AND client_order_id = ?",
+      Integer.class,
+      "FIX.4.4:CLIENT2->SIMPLEMATCH",
+      "C1")).isEqualTo(1);
+    }
 
   // Verify that when a new order is missing required fields, the risk layer returns the corresponding rejection code for each input.
   // Scenario: use a parameterized test to cover missing clientOrderId, orderId, accountId, symbol, quantity, side, and price cases.
@@ -169,7 +192,7 @@ class SubmissionServiceIntegrationTest {
   void rejectsEmptyCommandAndWritesRejectedOutboxEvent() throws Exception {
     final SubmissionResult first = persist((OrderCommand) null);
     final SubmissionResult duplicate = persist((OrderCommand) null);
-    final OutboxRow outboxRow = outboxRowForIdempotencyKey(first.idempotencyKey());
+    final OutboxRow outboxRow = outboxRowForSubmission(first);
     final OrderRejected rejected = OrderRejected.parseFrom(outboxRow.payload());
     final JsonNode headers = objectMapper.readTree(outboxRow.headersJson());
 
@@ -212,7 +235,7 @@ class SubmissionServiceIntegrationTest {
         .build();
 
     final SubmissionResult submission = persist(cancel);
-    final OutboxRow outboxRow = outboxRowForIdempotencyKey(submission.idempotencyKey());
+    final OutboxRow outboxRow = outboxRowForSubmission(submission);
     final OrderValidated validated = OrderValidated.parseFrom(outboxRow.payload());
 
     assertThat(submission.accepted()).isTrue();
@@ -232,7 +255,7 @@ class SubmissionServiceIntegrationTest {
     final OrderCommand command = newNewOrder("cmd-1", "O-C1", "C1");
 
     final SubmissionResult submission = persist(command);
-    final OutboxRow outboxRow = outboxRowForIdempotencyKey(submission.idempotencyKey());
+    final OutboxRow outboxRow = outboxRowForSubmission(submission);
     final OrderValidated validated = OrderValidated.parseFrom(outboxRow.payload());
     final JsonNode headers = objectMapper.readTree(outboxRow.headersJson());
 
@@ -264,7 +287,7 @@ class SubmissionServiceIntegrationTest {
     final OrderCommand command = newNewOrder("cmd-1", "O-C1", "C1").toBuilder().clearPrice().build();
 
     final SubmissionResult submission = persist(command);
-    final OutboxRow outboxRow = outboxRowForIdempotencyKey(submission.idempotencyKey());
+    final OutboxRow outboxRow = outboxRowForSubmission(submission);
     final OrderRejected rejected = OrderRejected.parseFrom(outboxRow.payload());
     final JsonNode headers = objectMapper.readTree(outboxRow.headersJson());
 
@@ -300,7 +323,7 @@ class SubmissionServiceIntegrationTest {
     assertThat(countRows("outbox")).isZero();
   }
 
-  // Verify that when concurrent inserts use the same idempotency key, the delayed thread reads back the winner's result instead of creating a second record.
+  // Verify that when concurrent inserts use the same business key, the delayed thread reads back the winner's result instead of creating a second record.
   // Scenario: use a blocking query to simulate a duplicate-key race and confirm only one submission and one outbox row remain.
   @DisplayName("concurrent duplicate inserts return the existing submission instead of writing another")
   @Test
@@ -312,7 +335,10 @@ class SubmissionServiceIntegrationTest {
     final SubmissionService delayedService = newSubmissionService(
       new BlockingJdbcTemplate(
         jdbcTemplate,
-        delayedCommand.getCommandType().name() + "|" + delayedCommand.getClientOrderId(),
+        delayedCommand.getSessionId(),
+        java.time.LocalDate.now(java.time.Clock.systemUTC()),
+        delayedCommand.getCommandType().name(),
+        delayedCommand.getClientOrderId(),
         firstLookupCompleted,
         allowDelayedInsert),
       objectMapper);
@@ -365,19 +391,16 @@ class SubmissionServiceIntegrationTest {
     assertThat(countRows("risk_submissions")).isEqualTo(1);
     assertThat(countRows("outbox")).isEqualTo(1);
     assertThat(jdbcTemplate.queryForObject(
-        "SELECT client_order_id FROM risk_submissions WHERE idempotency_key = ?",
+      "SELECT client_order_id FROM risk_submissions WHERE request_id = ?",
         String.class,
-        submission.idempotencyKey())).isEqualTo(clientOrderId);
+      submission.requestId())).isEqualTo(clientOrderId);
     assertThat(jdbcTemplate.queryForObject(
         "SELECT message_key FROM outbox WHERE event_id = ?",
         String.class,
-        jdbcTemplate.queryForObject(
-            "SELECT outbox_event_id FROM risk_submissions WHERE idempotency_key = ?",
-            String.class,
-            submission.idempotencyKey()))).isEqualTo(symbol);
+      storedOutboxEventId(submission))).isEqualTo(symbol);
   }
 
-  // Verify that when the same idempotency key is submitted again, the existing outbox event id stays stable instead of being recalculated when the requestId changes.
+    // Verify that when the same business key is submitted again, the existing outbox event id stays stable instead of being recalculated when the requestId changes.
   // Scenario: change the commandId on the second submission and confirm the stored outbox_event_id still matches the first result.
   @DisplayName("duplicate submissions do not change the existing outbox event id")
   @Test
@@ -386,10 +409,7 @@ class SubmissionServiceIntegrationTest {
 
     final SubmissionResult first = persist(command);
     final SubmissionResult duplicate = persist(command.toBuilder().setCommandId("cmd-2").build());
-    final String storedOutboxEventId = jdbcTemplate.queryForObject(
-        "SELECT outbox_event_id FROM risk_submissions WHERE idempotency_key = ?",
-        String.class,
-        first.idempotencyKey());
+    final String storedOutboxEventId = storedOutboxEventId(first);
 
     assertThat(duplicate).isEqualTo(first);
     assertThat(storedOutboxEventId).isEqualTo(expectedOutboxEventId(first));
@@ -585,11 +605,8 @@ class SubmissionServiceIntegrationTest {
     };
   }
 
-  private OutboxRow outboxRowForIdempotencyKey(String idempotencyKey) {
-    final String eventId = jdbcTemplate.queryForObject(
-        "SELECT outbox_event_id FROM risk_submissions WHERE idempotency_key = ?",
-        String.class,
-        idempotencyKey);
+  private OutboxRow outboxRowForSubmission(SubmissionResult submission) {
+    final String eventId = storedOutboxEventId(submission);
     return jdbcTemplate.queryForObject(
         """
         SELECT event_id, topic, message_key, kafka_partition_id, payload, payload_type, headers_json,
@@ -611,13 +628,38 @@ class SubmissionServiceIntegrationTest {
         eventId);
   }
 
+  private String storedOutboxEventId(SubmissionResult submission) {
+    final var businessKey = submission.businessKey();
+    return jdbcTemplate.queryForObject(
+        """
+        SELECT outbox_event_id
+        FROM risk_submissions
+        WHERE session_id = ?
+          AND trading_day = ?
+          AND command_type = ?
+          AND client_order_id = ?
+        """,
+        String.class,
+        businessKey.sessionId(),
+        businessKey.tradingDay(),
+        businessKey.commandType().name(),
+        businessKey.clientOrderId());
+  }
+
   private int countRows(String tableName) {
     return jdbcTemplate.queryForObject("SELECT COUNT(*) FROM " + tableName, Integer.class);
   }
 
   private String expectedOutboxEventId(SubmissionResult submission) {
-    final String source = submission.idempotencyKey()
+    final var businessKey = submission.businessKey();
+    final String source = businessKey.sessionId()
         + "|"
+      + businessKey.tradingDay()
+      + "|"
+      + businessKey.commandType().name()
+      + "|"
+      + businessKey.clientOrderId()
+      + "|"
         + submission.requestId()
         + "|"
         + submission.orderId()
@@ -630,7 +672,6 @@ class SubmissionServiceIntegrationTest {
 
   private SubmissionService newSubmissionService(JdbcTemplate submissionJdbcTemplate, ObjectMapper mapper) {
     return new TransactionalSubmissionService(
-        new SubmissionIdempotencyKeyFactory(),
         new SubmissionValidator(java.time.Clock.systemUTC()),
         new SubmissionOutboxFactory(
             mapper,
@@ -643,19 +684,28 @@ class SubmissionServiceIntegrationTest {
 
   private static final class BlockingJdbcTemplate extends JdbcTemplate {
     private final JdbcTemplate delegate;
-    private final String expectedIdempotencyKey;
+    private final String expectedSessionId;
+    private final java.time.LocalDate expectedTradingDay;
+    private final String expectedCommandType;
+    private final String expectedClientOrderId;
     private final CountDownLatch firstLookupCompleted;
     private final CountDownLatch allowDelayedInsert;
     private boolean blocked;
 
     private BlockingJdbcTemplate(
         JdbcTemplate delegate,
-        String expectedIdempotencyKey,
+        String expectedSessionId,
+        java.time.LocalDate expectedTradingDay,
+        String expectedCommandType,
+        String expectedClientOrderId,
         CountDownLatch firstLookupCompleted,
         CountDownLatch allowDelayedInsert) {
       super(delegate.getDataSource());
       this.delegate = delegate;
-      this.expectedIdempotencyKey = expectedIdempotencyKey;
+      this.expectedSessionId = expectedSessionId;
+      this.expectedTradingDay = expectedTradingDay;
+      this.expectedCommandType = expectedCommandType;
+      this.expectedClientOrderId = expectedClientOrderId;
       this.firstLookupCompleted = firstLookupCompleted;
       this.allowDelayedInsert = allowDelayedInsert;
     }
@@ -665,8 +715,11 @@ class SubmissionServiceIntegrationTest {
       final List<T> result = delegate.query(sql, rowMapper, args);
       if (!blocked
           && sql.contains("FROM risk_service.risk_submissions")
-          && args.length == 1
-          && expectedIdempotencyKey.equals(args[0])
+          && args.length == 4
+          && expectedSessionId.equals(args[0])
+          && expectedTradingDay.equals(args[1])
+          && expectedCommandType.equals(args[2])
+          && expectedClientOrderId.equals(args[3])
           && result.isEmpty()) {
         blocked = true;
         firstLookupCompleted.countDown();

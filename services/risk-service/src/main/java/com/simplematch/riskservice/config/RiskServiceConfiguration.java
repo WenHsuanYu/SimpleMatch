@@ -7,7 +7,6 @@ import com.simplematch.riskservice.store.JdbcOutboxRepository;
 import com.simplematch.riskservice.store.JdbcSubmissionRepository;
 import com.simplematch.riskservice.submission.FileRoutingPartitionResolver;
 import com.simplematch.riskservice.submission.RoutingPartitionResolver;
-import com.simplematch.riskservice.submission.SubmissionIdempotencyKeyFactory;
 import com.simplematch.riskservice.submission.SubmissionOutboxFactory;
 import com.simplematch.riskservice.submission.SubmissionService;
 import com.simplematch.riskservice.submission.SubmissionValidator;
@@ -93,7 +92,6 @@ public class RiskServiceConfiguration {
       RoutingPartitionResolver routingPartitionResolver,
       SimpleMatchConfig config) {
     return new TransactionalSubmissionService(
-        new SubmissionIdempotencyKeyFactory(),
         new SubmissionValidator(riskServiceClock),
         new SubmissionOutboxFactory(
             objectMapper,

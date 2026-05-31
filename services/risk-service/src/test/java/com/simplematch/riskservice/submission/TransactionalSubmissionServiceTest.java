@@ -27,12 +27,11 @@ class TransactionalSubmissionServiceTest {
   private static final Clock FIXED_CLOCK = Clock.fixed(Instant.ofEpochMilli(100L), ZoneOffset.UTC);
 
   @Test
-  void persistsSubmissionAndOutboxWhenIdempotencyKeyIsNew() {
+  void persistsSubmissionAndOutboxWhenBusinessKeyIsNew() {
     final RecordingSubmissionRepository submissionRepository = new RecordingSubmissionRepository();
     submissionRepository.queueFindResult(Optional.empty());
     final RecordingOutboxRepository outboxRepository = new RecordingOutboxRepository();
     final TransactionalSubmissionService service = new TransactionalSubmissionService(
-        new SubmissionIdempotencyKeyFactory(),
         new SubmissionValidator(FIXED_CLOCK),
         new SubmissionOutboxFactory(new ObjectMapper(), "orders.validated"),
         submissionRepository,
@@ -53,10 +52,9 @@ class TransactionalSubmissionServiceTest {
   void returnsExistingSubmissionWithoutBuildingOutbox() {
     final RecordingSubmissionRepository submissionRepository = new RecordingSubmissionRepository();
     final SubmissionResult existing = new SubmissionResult(
-        "COMMAND_TYPE_NEW|C1",
         "cmd-existing",
-      "FIX.4.4:CLIENT->SIMPLEMATCH",
-      LocalDate.of(2024, 3, 27),
+        "FIX.4.4:CLIENT->SIMPLEMATCH",
+        LocalDate.of(2024, 3, 27),
         "O-C1",
         "C1",
         "",
@@ -67,7 +65,6 @@ class TransactionalSubmissionServiceTest {
         99L);
     submissionRepository.queueFindResult(Optional.of(existing));
     final TransactionalSubmissionService service = new TransactionalSubmissionService(
-        new SubmissionIdempotencyKeyFactory(),
         new SubmissionValidator(FIXED_CLOCK),
         new SubmissionOutboxFactory(failingObjectMapper(), "orders.validated"),
         submissionRepository,
@@ -84,10 +81,9 @@ class TransactionalSubmissionServiceTest {
   void returnsExistingSubmissionWhenInsertHitsDuplicateKey() {
     final RecordingSubmissionRepository submissionRepository = new RecordingSubmissionRepository();
     final SubmissionResult existing = new SubmissionResult(
-        "COMMAND_TYPE_NEW|C1",
         "cmd-winner",
-      "FIX.4.4:CLIENT->SIMPLEMATCH",
-      LocalDate.of(2024, 3, 27),
+        "FIX.4.4:CLIENT->SIMPLEMATCH",
+        LocalDate.of(2024, 3, 27),
         "O-C1",
         "C1",
         "",
@@ -101,7 +97,6 @@ class TransactionalSubmissionServiceTest {
     submissionRepository.failWithDuplicateKey = true;
     final RecordingOutboxRepository outboxRepository = new RecordingOutboxRepository();
     final TransactionalSubmissionService service = new TransactionalSubmissionService(
-        new SubmissionIdempotencyKeyFactory(),
         new SubmissionValidator(FIXED_CLOCK),
         new SubmissionOutboxFactory(new ObjectMapper(), "orders.validated"),
         submissionRepository,
@@ -121,7 +116,6 @@ class TransactionalSubmissionServiceTest {
     submissionRepository.queueFindResult(Optional.empty());
     submissionRepository.failWithDuplicateKey = true;
     final TransactionalSubmissionService service = new TransactionalSubmissionService(
-        new SubmissionIdempotencyKeyFactory(),
         new SubmissionValidator(FIXED_CLOCK),
         new SubmissionOutboxFactory(new ObjectMapper(), "orders.validated"),
         submissionRepository,
@@ -158,7 +152,7 @@ class TransactionalSubmissionServiceTest {
     }
 
     @Override
-    public Optional<SubmissionResult> findByIdempotencyKey(String idempotencyKey) {
+    public Optional<SubmissionResult> findByBusinessKey(SubmissionBusinessKey businessKey) {
       return findResults.isEmpty() ? Optional.empty() : findResults.removeFirst();
     }
 

@@ -19,9 +19,7 @@ class SubmissionValidatorTest {
 
   @Test
   void returnsAcceptedDecisionForValidNewOrder() {
-    final SubmissionDecision decision = validator.evaluate(
-        resolvedNewOrder("cmd-1", "O-C1", "C1"),
-        "COMMAND_TYPE_NEW|C1");
+    final SubmissionDecision decision = validator.evaluate(resolvedNewOrder("cmd-1", "O-C1", "C1"));
 
     assertThat(decision.submission().accepted()).isTrue();
     assertThat(decision.submission().commandType()).isEqualTo(CommandType.COMMAND_TYPE_NEW);
@@ -39,9 +37,7 @@ class SubmissionValidatorTest {
         "C1",
         "",
         OrderType.ORDER_TYPE_LIMIT);
-    final SubmissionDecision decision = validator.evaluate(
-        command,
-        "COMMAND_TYPE_NEW|C1");
+    final SubmissionDecision decision = validator.evaluate(command);
 
     assertThat(decision.submission().accepted()).isFalse();
     assertThat(decision.submission().reasonCode()).isEqualTo("MISSING_PRICE");
@@ -55,9 +51,7 @@ class SubmissionValidatorTest {
         "C1",
         "",
         OrderType.ORDER_TYPE_MARKET);
-    final SubmissionDecision decision = validator.evaluate(
-      command,
-        "COMMAND_TYPE_NEW|C1");
+    final SubmissionDecision decision = validator.evaluate(command);
 
     assertThat(decision.submission().accepted()).isTrue();
     assertThat(decision.submission().reasonCode()).isEmpty();
@@ -67,8 +61,7 @@ class SubmissionValidatorTest {
   @Test
   void rejectsCancelWithoutOriginalClientOrderId() {
     final SubmissionDecision decision = validator.evaluate(
-      resolvedCancelOrder("cmd-1", "O-C1", "CXL-1", ""),
-        "COMMAND_TYPE_CANCEL|CXL-1");
+        resolvedCancelOrder("cmd-1", "O-C1", "CXL-1", ""));
 
     assertThat(decision.submission().accepted()).isFalse();
     assertThat(decision.submission().reasonCode()).isEqualTo("MISSING_ORIGINAL_CLIENT_ORDER_ID");
@@ -76,9 +69,7 @@ class SubmissionValidatorTest {
 
   @Test
   void returnsUnspecifiedCommandWhenCommandAndExpectedTypeAreUnspecified() {
-    final SubmissionDecision decision = validator.evaluate(
-        null,
-        "UNKNOWN|");
+    final SubmissionDecision decision = validator.evaluate(null);
 
     assertThat(decision.submission().accepted()).isFalse();
     assertThat(decision.submission().reasonCode()).isEqualTo("EMPTY_COMMAND");
@@ -89,8 +80,7 @@ class SubmissionValidatorTest {
   @Test
   void rejectsTypedEmptyNewOrderAfterNormalization() {
     final SubmissionDecision decision = validator.evaluate(
-        ResolvedSubmissionCommand.typedEmpty(CommandType.COMMAND_TYPE_NEW),
-        "COMMAND_TYPE_NEW|");
+      ResolvedSubmissionCommand.typedEmpty(CommandType.COMMAND_TYPE_NEW));
 
     assertThat(decision.submission().accepted()).isFalse();
     assertThat(decision.submission().reasonCode()).isEqualTo("MISSING_CLIENT_ORDER_ID");

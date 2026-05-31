@@ -1,6 +1,7 @@
 package com.simplematch.riskservice.store;
 
 import com.simplematch.riskservice.submission.CommandType;
+import com.simplematch.riskservice.submission.SubmissionBusinessKey;
 import com.simplematch.riskservice.submission.SubmissionRepository;
 import com.simplematch.riskservice.submission.SubmissionResult;
 import java.time.LocalDate;
@@ -12,9 +13,8 @@ import org.springframework.jdbc.core.RowMapper;
 public final class JdbcSubmissionRepository implements SubmissionRepository {
   private static final RowMapper<SubmissionResult> SUBMISSION_ROW_MAPPER = (resultSet, rowNum) ->
       new SubmissionResult(
-          resultSet.getString("idempotency_key"),
           resultSet.getString("request_id"),
-        resultSet.getString("session_id"),
+          resultSet.getString("session_id"),
           resultSet.getObject("trading_day", LocalDate.class),
           resultSet.getString("order_id"),
           resultSet.getString("client_order_id"),
@@ -32,16 +32,22 @@ public final class JdbcSubmissionRepository implements SubmissionRepository {
   }
 
   @Override
-  public Optional<SubmissionResult> findByIdempotencyKey(String idempotencyKey) {
+  public Optional<SubmissionResult> findByBusinessKey(SubmissionBusinessKey businessKey) {
     return jdbcTemplate.query(
             """
-              SELECT idempotency_key, request_id, session_id, trading_day, order_id, client_order_id, original_client_order_id,
+              SELECT request_id, session_id, trading_day, order_id, client_order_id, original_client_order_id,
                        command_type, accepted, reason_code, reason_text, created_at_unix_ms
-          FROM risk_service.risk_submissions
-                WHERE idempotency_key = ?
+                FROM risk_service.risk_submissions
+                WHERE session_id = ?
+                  AND trading_day = ?
+                  AND command_type = ?
+                  AND client_order_id = ?
                 """,
             SUBMISSION_ROW_MAPPER,
-            idempotencyKey)
+            businessKey.sessionId(),
+            businessKey.tradingDay(),
+            businessKey.commandType().name(),
+            businessKey.clientOrderId())
         .stream()
         .findFirst();
   }
@@ -51,7 +57,6 @@ public final class JdbcSubmissionRepository implements SubmissionRepository {
     jdbcTemplate.update(
         """
             INSERT INTO risk_service.risk_submissions (
-              idempotency_key,
               request_id,
               session_id,
               trading_day,
@@ -64,12 +69,11 @@ public final class JdbcSubmissionRepository implements SubmissionRepository {
               reason_text,
               created_at_unix_ms,
               outbox_event_id
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """,
-        submission.idempotencyKey(),
         submission.requestId(),
-          submission.sessionId(),
-          submission.tradingDay(),
+        submission.sessionId(),
+        submission.tradingDay(),
         submission.orderId(),
         submission.clientOrderId(),
         submission.originalClientOrderId(),

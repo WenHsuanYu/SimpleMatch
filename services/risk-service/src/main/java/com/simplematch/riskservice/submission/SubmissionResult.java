@@ -5,7 +5,6 @@ import java.time.LocalDate;
 /**
  * Persisted result of a risk-service submission attempt.
  *
- * @param idempotencyKey the storage key used to deduplicate repeated submissions
  * @param requestId the persisted operation identifier exposed as {@code request_id} on synchronous
  *     RPC and storage boundaries; this is currently the same underlying value as the ingress
  *     {@code command_id}
@@ -21,10 +20,9 @@ import java.time.LocalDate;
  * @param createdAtUnixMs the persistence timestamp in epoch milliseconds
  */
 public record SubmissionResult(
-        String idempotencyKey,
         String requestId,
-    String sessionId,
-    LocalDate tradingDay,
+        String sessionId,
+        LocalDate tradingDay,
         String orderId,
         String clientOrderId,
         String originalClientOrderId,
@@ -41,5 +39,14 @@ public record SubmissionResult(
      */
     public String commandId() {
         return requestId;
+    }
+
+    /**
+     * Returns the FIX-facing business key for this persisted submission.
+     *
+     * @return the business key derived from session, trading day, command type, and client order id
+     */
+    public SubmissionBusinessKey businessKey() {
+        return SubmissionBusinessKey.from(this);
     }
 }

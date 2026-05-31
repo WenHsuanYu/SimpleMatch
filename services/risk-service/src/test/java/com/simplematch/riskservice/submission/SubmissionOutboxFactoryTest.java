@@ -77,10 +77,9 @@ class SubmissionOutboxFactoryTest {
     final SubmissionCommand command = cancelOrderPayload("cmd-2", "O-C1", "CXL-1", "C1");
     final SubmissionDecision decision = new SubmissionDecision(
         new SubmissionResult(
-            "COMMAND_TYPE_CANCEL|CXL-1",
             "cmd-2",
-          command.sessionId(),
-          java.time.LocalDate.of(2024, 3, 27),
+            command.sessionId(),
+            java.time.LocalDate.of(2024, 3, 27),
             "O-C1",
             "CXL-1",
             "C1",
@@ -100,10 +99,9 @@ class SubmissionOutboxFactoryTest {
   void fallsBackToUnknownWhenSymbolAndOrderIdAreMissing() {
     final SubmissionDecision decision = new SubmissionDecision(
         new SubmissionResult(
-            "UNKNOWN|",
             "",
-          "",
-          java.time.LocalDate.of(1970, 1, 1),
+            "",
+            java.time.LocalDate.of(1970, 1, 1),
             "",
             "",
             "",
@@ -144,10 +142,9 @@ class SubmissionOutboxFactoryTest {
   private SubmissionDecision acceptedDecision() {
     return new SubmissionDecision(
         new SubmissionResult(
-            "COMMAND_TYPE_NEW|C1",
             "cmd-1",
-          "FIX.4.4:CLIENT->SIMPLEMATCH",
-          java.time.LocalDate.of(2024, 3, 27),
+            "FIX.4.4:CLIENT->SIMPLEMATCH",
+            java.time.LocalDate.of(2024, 3, 27),
             "O-C1",
             "C1",
             "",
@@ -168,10 +165,9 @@ class SubmissionOutboxFactoryTest {
         OrderType.ORDER_TYPE_LIMIT);
     return new SubmissionDecision(
         new SubmissionResult(
-            "COMMAND_TYPE_NEW|C1",
             "cmd-1",
-          command.sessionId(),
-          java.time.LocalDate.of(2024, 3, 27),
+            command.sessionId(),
+            java.time.LocalDate.of(2024, 3, 27),
             "O-C1",
             "C1",
             "",
@@ -184,8 +180,15 @@ class SubmissionOutboxFactoryTest {
   }
 
   private String expectedEventId(SubmissionResult submission) {
-    final String source = submission.idempotencyKey()
-        + "|"
+    final SubmissionBusinessKey businessKey = submission.businessKey();
+    final String source = businessKey.sessionId()
+      + "|"
+      + businessKey.tradingDay()
+      + "|"
+      + businessKey.commandType().name()
+      + "|"
+      + businessKey.clientOrderId()
+      + "|"
         + submission.requestId()
         + "|"
         + submission.orderId()

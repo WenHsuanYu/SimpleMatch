@@ -15,7 +15,6 @@ import com.simplematch.contracts.risk.v1.SubmitOrderRequest;
 import com.simplematch.contracts.risk.v1.SubmitOrderResponse;
 import com.simplematch.riskservice.store.JdbcOutboxRepository;
 import com.simplematch.riskservice.store.JdbcSubmissionRepository;
-import com.simplematch.riskservice.submission.SubmissionIdempotencyKeyFactory;
 import com.simplematch.riskservice.submission.SubmissionOutboxFactory;
 import com.simplematch.riskservice.submission.SubmissionService;
 import com.simplematch.riskservice.submission.SubmissionValidator;
@@ -55,7 +54,6 @@ class RiskGrpcServiceTest {
       .load()
       .migrate();
     submissionService = new TransactionalSubmissionService(
-        new SubmissionIdempotencyKeyFactory(),
         new SubmissionValidator(Clock.systemUTC()),
         new SubmissionOutboxFactory(new ObjectMapper(), "orders.validated"),
         new JdbcSubmissionRepository(jdbcTemplate),

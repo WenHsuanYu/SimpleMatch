@@ -89,9 +89,13 @@ class RiskServiceFlywayMigrationTest {
     assertThat(hasColumn(jdbcTemplate, "OUTBOX", "TOPIC")).isTrue();
     assertThat(hasColumn(jdbcTemplate, "OUTBOX", "KAFKA_PARTITION_ID")).isTrue();
     assertThat(hasColumn(jdbcTemplate, "OUTBOX", "CREATED_AT_UNIX_MS")).isTrue();
+    assertThat(hasColumn(jdbcTemplate, "RISK_SUBMISSIONS", "IDEMPOTENCY_KEY")).isFalse();
     assertThat(hasColumn(jdbcTemplate, "RISK_SUBMISSIONS", "SESSION_ID")).isTrue();
     assertThat(hasColumn(jdbcTemplate, "RISK_SUBMISSIONS", "TRADING_DAY")).isTrue();
-    assertThat(hasIndex(jdbcTemplate, "IDX_OUTBOX_PUBLISHABLE")).isFalse();
+    assertThat(hasUniqueConstraint(jdbcTemplate, "RISK_SUBMISSIONS", "RISK_SUBMISSIONS_BUSINESS_KEY_KEY")).isTrue();
+    assertThat(hasUniqueConstraint(jdbcTemplate, "RISK_SUBMISSIONS", "RISK_SUBMISSIONS_IDEMPOTENCY_KEY_KEY")).isFalse();
+    assertThat(hasIndex(jdbcTemplate, "RISK_SUBMISSIONS", "IDX_RISK_SUBMISSIONS_IDEMPOTENCY_KEY")).isFalse();
+    assertThat(hasIndex(jdbcTemplate, "OUTBOX", "IDX_OUTBOX_PUBLISHABLE")).isFalse();
   }
 
   private boolean hasColumn(JdbcTemplate jdbcTemplate, String tableName, String columnName) {
@@ -110,17 +114,35 @@ class RiskServiceFlywayMigrationTest {
         > 0;
   }
 
-  private boolean hasIndex(JdbcTemplate jdbcTemplate, String indexName) {
+  private boolean hasUniqueConstraint(JdbcTemplate jdbcTemplate, String tableName, String constraintName) {
+    return jdbcTemplate.queryForObject(
+            """
+            SELECT COUNT(*)
+            FROM INFORMATION_SCHEMA.TABLE_CONSTRAINTS
+            WHERE UPPER(TABLE_SCHEMA) = ?
+              AND UPPER(TABLE_NAME) = ?
+              AND UPPER(CONSTRAINT_NAME) = ?
+              AND UPPER(CONSTRAINT_TYPE) = 'UNIQUE'
+            """,
+            Integer.class,
+            SCHEMA_NAME,
+            tableName,
+            constraintName)
+        > 0;
+  }
+
+  private boolean hasIndex(JdbcTemplate jdbcTemplate, String tableName, String indexName) {
     return jdbcTemplate.queryForObject(
             """
             SELECT COUNT(*)
             FROM INFORMATION_SCHEMA.INDEXES
             WHERE UPPER(TABLE_SCHEMA) = ?
-              AND UPPER(TABLE_NAME) = 'OUTBOX'
+              AND UPPER(TABLE_NAME) = ?
               AND UPPER(INDEX_NAME) = ?
             """,
             Integer.class,
             SCHEMA_NAME,
+            tableName,
             indexName)
         > 0;
   }
