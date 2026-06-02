@@ -14,9 +14,9 @@ import com.simplematch.contracts.orders.v1.CommandType;
 import com.simplematch.contracts.orders.v1.OrderCommand;
 import com.simplematch.contracts.orders.v1.OrderRejected;
 import com.simplematch.contracts.orders.v1.OrderValidated;
+import com.simplematch.riskservice.outbox.SubmissionOutboxFactory;
 import com.simplematch.riskservice.submission.ResolvedSubmissionCommand;
 import com.simplematch.riskservice.submission.SubmissionCommand;
-import com.simplematch.riskservice.submission.SubmissionOutboxFactory;
 import com.simplematch.riskservice.submission.SubmissionResult;
 import com.simplematch.riskservice.submission.SubmissionService;
 import com.simplematch.riskservice.submission.SubmissionValidator;
@@ -108,7 +108,8 @@ class SubmissionServiceIntegrationTest {
     final OrderCommand second = first.toBuilder()
       .setCommandId("cmd-2")
       .setOrderId("O-C2")
-      .setSessionId("FIX.4.4:CLIENT2->SIMPLEMATCH")
+      .setSenderCompId("CLIENT2")
+      .setTargetCompId("SIMPLEMATCH")
       .setMetadata(first.getMetadata().toBuilder().setEventId("cmd-2").build())
       .build();
 
@@ -118,13 +119,14 @@ class SubmissionServiceIntegrationTest {
     assertThat(firstResult).isNotEqualTo(secondResult);
     assertThat(countRows("risk_submissions")).isEqualTo(2);
     assertThat(jdbcTemplate.queryForObject(
-      "SELECT COUNT(*) FROM risk_submissions WHERE client_order_id = ?",
+      "SELECT COUNT(*) FROM risk_submissions WHERE cl_ord_id = ?",
       Integer.class,
-      firstResult.clientOrderId())).isEqualTo(2);
+      firstResult.clOrdId())).isEqualTo(2);
     assertThat(jdbcTemplate.queryForObject(
-      "SELECT COUNT(*) FROM risk_submissions WHERE session_id = ? AND client_order_id = ?",
+      "SELECT COUNT(*) FROM risk_submissions WHERE sender_comp_id = ? AND target_comp_id = ? AND cl_ord_id = ?",
       Integer.class,
-      "FIX.4.4:CLIENT2->SIMPLEMATCH",
+      "CLIENT2",
+      "SIMPLEMATCH",
       "C1")).isEqualTo(1);
     }
 
@@ -175,14 +177,16 @@ class SubmissionServiceIntegrationTest {
             .build())
         .setCommandId("cmd-1")
         .setOrderId("O-C1")
-        .setClientOrderId("CXL-1")
+        .setSenderCompId("CLIENT")
+        .setTargetCompId("SIMPLEMATCH")
+        .setClOrdId("CXL-1")
         .setCommandType(CommandType.COMMAND_TYPE_CANCEL)
         .build();
 
     final SubmissionResult submission = persist(cancel);
 
     assertThat(submission.accepted()).isFalse();
-    assertThat(submission.reasonCode()).isEqualTo("MISSING_ORIGINAL_CLIENT_ORDER_ID");
+    assertThat(submission.reasonCode()).isEqualTo("MISSING_ORIG_CL_ORD_ID");
   }
 
   // Verify that an empty command input is rejected and still emits a traceable rejected outbox event.
@@ -335,10 +339,11 @@ class SubmissionServiceIntegrationTest {
     final SubmissionService delayedService = newSubmissionService(
       new BlockingJdbcTemplate(
         jdbcTemplate,
-        delayedCommand.getSessionId(),
+        delayedCommand.getSenderCompId(),
+        delayedCommand.getTargetCompId(),
         java.time.LocalDate.now(java.time.Clock.systemUTC()),
         delayedCommand.getCommandType().name(),
-        delayedCommand.getClientOrderId(),
+        delayedCommand.getClOrdId(),
         firstLookupCompleted,
         allowDelayedInsert),
       objectMapper);
@@ -391,7 +396,7 @@ class SubmissionServiceIntegrationTest {
     assertThat(countRows("risk_submissions")).isEqualTo(1);
     assertThat(countRows("outbox")).isEqualTo(1);
     assertThat(jdbcTemplate.queryForObject(
-      "SELECT client_order_id FROM risk_submissions WHERE request_id = ?",
+      "SELECT cl_ord_id FROM risk_submissions WHERE request_id = ?",
         String.class,
       submission.requestId())).isEqualTo(clientOrderId);
     assertThat(jdbcTemplate.queryForObject(
@@ -418,9 +423,9 @@ class SubmissionServiceIntegrationTest {
   private static Stream<Arguments> invalidNewOrderCases() {
     return Stream.of(
         Arguments.of(
-            "missing client_order_id",
-            newNewOrderBuilder("cmd-1", "O-C1", "C1").clearClientOrderId().build(),
-            "MISSING_CLIENT_ORDER_ID"),
+          "missing cl_ord_id",
+          newNewOrderBuilder("cmd-1", "O-C1", "C1").clearClOrdId().build(),
+          "MISSING_CL_ORD_ID"),
         Arguments.of(
             "missing order_id",
             newNewOrderBuilder("cmd-1", "O-C1", "C1").clearOrderId().build(),
@@ -467,9 +472,9 @@ class SubmissionServiceIntegrationTest {
                 .setOrderId(oversized)
                 .build()),
         Arguments.of(
-            "oversized client_order_id",
+          "oversized cl_ord_id",
             newNewOrderBuilder("cmd-1", "O-C1", "C1")
-                .setClientOrderId(oversized)
+            .setClOrdId(oversized)
                 .build()));
   }
 
@@ -494,9 +499,10 @@ class SubmissionServiceIntegrationTest {
             command.getCommandId(),
             command.getOrderId(),
             command.getAccountId(),
-            command.getSessionId(),
-            command.getClientOrderId(),
-            command.getOriginalClientOrderId()),
+        command.getSenderCompId(),
+        command.getTargetCompId(),
+        command.getClOrdId(),
+        command.getOrigClOrdId()),
         new SubmissionCommand.OrderDetails(
             command.getSymbol(),
             toSubmissionSide(command.getSide()),
@@ -563,8 +569,9 @@ class SubmissionServiceIntegrationTest {
         .setCommandId(commandId)
         .setOrderId(orderId)
         .setAccountId("ACC-1")
-        .setSessionId("FIX.4.4:CLIENT->SIMPLEMATCH")
-        .setClientOrderId(clientOrderId)
+        .setSenderCompId("CLIENT")
+        .setTargetCompId("SIMPLEMATCH")
+        .setClOrdId(clientOrderId)
         .setSymbol("AAPL")
         .setSide(Side.SIDE_BUY)
         .setQuantity("10")
@@ -589,8 +596,10 @@ class SubmissionServiceIntegrationTest {
         .setCommandId(commandId)
         .setOrderId(orderId)
         .setAccountId("ACC-1")
-        .setClientOrderId(clientOrderId)
-        .setOriginalClientOrderId(originalClientOrderId)
+          .setSenderCompId("CLIENT")
+          .setTargetCompId("SIMPLEMATCH")
+          .setClOrdId(clientOrderId)
+          .setOrigClOrdId(originalClientOrderId)
         .setCommandType(CommandType.COMMAND_TYPE_CANCEL);
   }
 
@@ -634,16 +643,18 @@ class SubmissionServiceIntegrationTest {
         """
         SELECT outbox_event_id
         FROM risk_submissions
-        WHERE session_id = ?
+        WHERE sender_comp_id = ?
+          AND target_comp_id = ?
           AND trading_day = ?
           AND command_type = ?
-          AND client_order_id = ?
+          AND cl_ord_id = ?
         """,
         String.class,
-        businessKey.sessionId(),
+        businessKey.senderCompId(),
+        businessKey.targetCompId(),
         businessKey.tradingDay(),
         businessKey.commandType().name(),
-        businessKey.clientOrderId());
+        businessKey.clOrdId());
   }
 
   private int countRows(String tableName) {
@@ -652,13 +663,15 @@ class SubmissionServiceIntegrationTest {
 
   private String expectedOutboxEventId(SubmissionResult submission) {
     final var businessKey = submission.businessKey();
-    final String source = businessKey.sessionId()
+    final String source = businessKey.senderCompId()
+        + "|"
+        + businessKey.targetCompId()
         + "|"
       + businessKey.tradingDay()
       + "|"
       + businessKey.commandType().name()
       + "|"
-      + businessKey.clientOrderId()
+      + businessKey.clOrdId()
       + "|"
         + submission.requestId()
         + "|"
@@ -684,28 +697,31 @@ class SubmissionServiceIntegrationTest {
 
   private static final class BlockingJdbcTemplate extends JdbcTemplate {
     private final JdbcTemplate delegate;
-    private final String expectedSessionId;
+    private final String expectedSenderCompId;
+    private final String expectedTargetCompId;
     private final java.time.LocalDate expectedTradingDay;
     private final String expectedCommandType;
-    private final String expectedClientOrderId;
+    private final String expectedClOrdId;
     private final CountDownLatch firstLookupCompleted;
     private final CountDownLatch allowDelayedInsert;
     private boolean blocked;
 
     private BlockingJdbcTemplate(
         JdbcTemplate delegate,
-        String expectedSessionId,
+        String expectedSenderCompId,
+        String expectedTargetCompId,
         java.time.LocalDate expectedTradingDay,
         String expectedCommandType,
-        String expectedClientOrderId,
+        String expectedClOrdId,
         CountDownLatch firstLookupCompleted,
         CountDownLatch allowDelayedInsert) {
       super(delegate.getDataSource());
       this.delegate = delegate;
-      this.expectedSessionId = expectedSessionId;
+      this.expectedSenderCompId = expectedSenderCompId;
+      this.expectedTargetCompId = expectedTargetCompId;
       this.expectedTradingDay = expectedTradingDay;
       this.expectedCommandType = expectedCommandType;
-      this.expectedClientOrderId = expectedClientOrderId;
+      this.expectedClOrdId = expectedClOrdId;
       this.firstLookupCompleted = firstLookupCompleted;
       this.allowDelayedInsert = allowDelayedInsert;
     }
@@ -715,11 +731,12 @@ class SubmissionServiceIntegrationTest {
       final List<T> result = delegate.query(sql, rowMapper, args);
       if (!blocked
           && sql.contains("FROM risk_service.risk_submissions")
-          && args.length == 4
-          && expectedSessionId.equals(args[0])
-          && expectedTradingDay.equals(args[1])
-          && expectedCommandType.equals(args[2])
-          && expectedClientOrderId.equals(args[3])
+          && args.length == 5
+          && expectedSenderCompId.equals(args[0])
+          && expectedTargetCompId.equals(args[1])
+          && expectedTradingDay.equals(args[2])
+          && expectedCommandType.equals(args[3])
+          && expectedClOrdId.equals(args[4])
           && result.isEmpty()) {
         blocked = true;
         firstLookupCompleted.countDown();

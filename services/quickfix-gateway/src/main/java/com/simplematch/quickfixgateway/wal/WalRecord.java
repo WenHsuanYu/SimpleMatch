@@ -12,11 +12,12 @@ public record WalRecord(
     String recordId,
     long createdAtUnixMs,
     String sourceService,
-    String sessionId,
+  String senderCompId,
+  String targetCompId,
     String messageType,
     String orderId,
-    String clientOrderId,
-    String originalClientOrderId,
+  String clOrdId,
+  String origClOrdId,
     String accountId,
     String symbol,
     Side side,
@@ -38,8 +39,9 @@ public record WalRecord(
         .setCommandId(recordId)
         .setOrderId(orderId)
         .setAccountId(accountId == null ? "" : accountId)
-        .setSessionId(sessionId == null ? "" : sessionId)
-        .setClientOrderId(clientOrderId == null ? "" : clientOrderId)
+        .setSenderCompId(senderCompId == null ? "" : senderCompId)
+        .setTargetCompId(targetCompId == null ? "" : targetCompId)
+        .setClOrdId(clOrdId == null ? "" : clOrdId)
         .setSymbol(symbol == null ? "" : symbol)
         .setSide(side == null ? Side.SIDE_UNSPECIFIED : side)
         .setQuantity(quantity == null ? "" : quantity)
@@ -47,7 +49,7 @@ public record WalRecord(
         .setOrderType(orderType == null ? OrderType.ORDER_TYPE_UNSPECIFIED : orderType)
         .setTif(tif == null ? TimeInForce.TIME_IN_FORCE_UNSPECIFIED : tif)
         .setCommandType(commandType == null ? CommandType.COMMAND_TYPE_UNSPECIFIED : commandType)
-        .setOriginalClientOrderId(originalClientOrderId == null ? "" : originalClientOrderId)
+        .setOrigClOrdId(origClOrdId == null ? "" : origClOrdId)
         .build();
   }
 }

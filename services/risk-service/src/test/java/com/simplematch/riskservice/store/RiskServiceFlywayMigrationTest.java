@@ -90,7 +90,13 @@ class RiskServiceFlywayMigrationTest {
     assertThat(hasColumn(jdbcTemplate, "OUTBOX", "KAFKA_PARTITION_ID")).isTrue();
     assertThat(hasColumn(jdbcTemplate, "OUTBOX", "CREATED_AT_UNIX_MS")).isTrue();
     assertThat(hasColumn(jdbcTemplate, "RISK_SUBMISSIONS", "IDEMPOTENCY_KEY")).isFalse();
-    assertThat(hasColumn(jdbcTemplate, "RISK_SUBMISSIONS", "SESSION_ID")).isTrue();
+    assertThat(hasColumn(jdbcTemplate, "RISK_SUBMISSIONS", "SESSION_ID")).isFalse();
+    assertThat(hasColumn(jdbcTemplate, "RISK_SUBMISSIONS", "CLIENT_ORDER_ID")).isFalse();
+    assertThat(hasColumn(jdbcTemplate, "RISK_SUBMISSIONS", "ORIGINAL_CLIENT_ORDER_ID")).isFalse();
+    assertThat(hasColumn(jdbcTemplate, "RISK_SUBMISSIONS", "SENDER_COMP_ID")).isTrue();
+    assertThat(hasColumn(jdbcTemplate, "RISK_SUBMISSIONS", "TARGET_COMP_ID")).isTrue();
+    assertThat(hasColumn(jdbcTemplate, "RISK_SUBMISSIONS", "CL_ORD_ID")).isTrue();
+    assertThat(hasColumn(jdbcTemplate, "RISK_SUBMISSIONS", "ORIG_CL_ORD_ID")).isTrue();
     assertThat(hasColumn(jdbcTemplate, "RISK_SUBMISSIONS", "TRADING_DAY")).isTrue();
     assertThat(hasUniqueConstraint(jdbcTemplate, "RISK_SUBMISSIONS", "RISK_SUBMISSIONS_BUSINESS_KEY_KEY")).isTrue();
     assertThat(hasUniqueConstraint(jdbcTemplate, "RISK_SUBMISSIONS", "RISK_SUBMISSIONS_IDEMPOTENCY_KEY_KEY")).isFalse();

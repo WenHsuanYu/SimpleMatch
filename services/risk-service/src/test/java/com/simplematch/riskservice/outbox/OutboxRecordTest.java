@@ -1,9 +1,8 @@
-package com.simplematch.riskservice.submission;
+package com.simplematch.riskservice.outbox;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
-import com.simplematch.riskservice.outbox.OutboxRecord;
 import org.junit.jupiter.api.Test;
 
 class OutboxRecordTest {

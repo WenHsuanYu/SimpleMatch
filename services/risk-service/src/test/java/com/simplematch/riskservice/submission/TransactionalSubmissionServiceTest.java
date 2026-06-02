@@ -6,6 +6,9 @@ import static com.simplematch.riskservice.submission.SubmissionCommandFixtures.r
 
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.simplematch.riskservice.outbox.OutboxRecord;
+import com.simplematch.riskservice.outbox.OutboxRepository;
+import com.simplematch.riskservice.outbox.SubmissionOutboxFactory;
 import java.time.LocalDate;
 import java.time.Clock;
 import java.time.Instant;
@@ -53,7 +56,8 @@ class TransactionalSubmissionServiceTest {
     final RecordingSubmissionRepository submissionRepository = new RecordingSubmissionRepository();
     final SubmissionResult existing = new SubmissionResult(
         "cmd-existing",
-        "FIX.4.4:CLIENT->SIMPLEMATCH",
+      "CLIENT",
+      "SIMPLEMATCH",
         LocalDate.of(2024, 3, 27),
         "O-C1",
         "C1",
@@ -82,7 +86,8 @@ class TransactionalSubmissionServiceTest {
     final RecordingSubmissionRepository submissionRepository = new RecordingSubmissionRepository();
     final SubmissionResult existing = new SubmissionResult(
         "cmd-winner",
-        "FIX.4.4:CLIENT->SIMPLEMATCH",
+      "CLIENT",
+      "SIMPLEMATCH",
         LocalDate.of(2024, 3, 27),
         "O-C1",
         "C1",

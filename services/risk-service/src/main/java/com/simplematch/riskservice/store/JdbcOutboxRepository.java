@@ -1,7 +1,7 @@
 package com.simplematch.riskservice.store;
 
-import com.simplematch.riskservice.submission.OutboxRecord;
-import com.simplematch.riskservice.submission.OutboxRepository;
+import com.simplematch.riskservice.outbox.OutboxRecord;
+import com.simplematch.riskservice.outbox.OutboxRepository;
 import java.util.Objects;
 import org.springframework.jdbc.core.JdbcTemplate;
 

@@ -94,20 +94,21 @@ public final class InboundFixMessageHandler {
 
   private void handleNewOrder(Message message, SessionID sessionId) throws FieldNotFound {
     final Instant now = Instant.now(clock);
-    final String clientOrderId = message.getString(ClOrdID.FIELD);
+    final String clOrdId = message.getString(ClOrdID.FIELD);
     final String symbol = message.getString(Symbol.FIELD);
     final Side side = mapSide(message.getChar(quickfix.field.Side.FIELD));
     final String quantity = message.getString(OrderQty.FIELD);
-    final String orderId = orderIdFor(clientOrderId);
+    final String orderId = orderIdFor(clOrdId);
     final WalRecord walRecord = new WalRecord(
         "v1",
       commandIdGenerator.nextCommandId(),
         now.toEpochMilli(),
         "quickfix-gateway",
-        sessionId.toString(),
+        inboundSenderCompId(sessionId),
+        inboundTargetCompId(sessionId),
         quickfix.fix44.NewOrderSingle.MSGTYPE,
         orderId,
-        clientOrderId,
+        clOrdId,
         "",
         optionalString(message, Account.FIELD),
         symbol,
@@ -131,7 +132,7 @@ public final class InboundFixMessageHandler {
     final Message pendingNew = fixMessageMapper.buildPendingNew(
         walRecord.orderId(),
         nextPendingExecId(walRecord.recordId()),
-        walRecord.clientOrderId(),
+      walRecord.clOrdId(),
         walRecord.symbol(),
         walRecord.side(),
         walRecord.quantity(),
@@ -142,20 +143,21 @@ public final class InboundFixMessageHandler {
   }
 
   private void handleCancelOrder(Message message, SessionID sessionId) throws FieldNotFound {
-    final String originalClientOrderId = message.getString(OrigClOrdID.FIELD);
-    final String cancelClientOrderId = message.getString(ClOrdID.FIELD);
-    final String orderId = orderIdFor(originalClientOrderId);
+    final String origClOrdId = message.getString(OrigClOrdID.FIELD);
+    final String cancelClOrdId = message.getString(ClOrdID.FIELD);
+    final String orderId = orderIdFor(origClOrdId);
     final OrderSessionState existing = orderSessionRegistry.find(orderId).orElse(null);
     final WalRecord walRecord = new WalRecord(
         "v1",
       commandIdGenerator.nextCommandId(),
         Instant.now(clock).toEpochMilli(),
         "quickfix-gateway",
-        sessionId.toString(),
+        inboundSenderCompId(sessionId),
+        inboundTargetCompId(sessionId),
         OrderCancelRequest.MSGTYPE,
         orderId,
-        cancelClientOrderId,
-        originalClientOrderId,
+        cancelClOrdId,
+        origClOrdId,
         optionalString(message, Account.FIELD, existing == null ? "" : existing.accountId()),
         optionalString(message, Symbol.FIELD, existing == null ? "" : existing.symbol()),
         existing == null ? Side.SIDE_UNSPECIFIED : existing.side(),
@@ -197,7 +199,7 @@ public final class InboundFixMessageHandler {
         final Message rejected = fixMessageMapper.buildRejected(
             walRecord.orderId(),
             nextRejectedExecId(walRecord.recordId()),
-            walRecord.clientOrderId(),
+            walRecord.clOrdId(),
             walRecord.symbol(),
             walRecord.side(),
             walRecord.quantity(),
@@ -212,7 +214,7 @@ public final class InboundFixMessageHandler {
       final Message rejected = fixMessageMapper.buildRejected(
           walRecord.orderId(),
           nextRejectedExecId(walRecord.recordId()),
-          walRecord.clientOrderId(),
+          walRecord.clOrdId(),
           walRecord.symbol(),
           walRecord.side(),
           walRecord.quantity(),
@@ -233,8 +235,8 @@ public final class InboundFixMessageHandler {
       if (!submission.accepted()) {
         final Message rejected = fixMessageMapper.buildOrderCancelReject(
             walRecord.orderId(),
-            walRecord.clientOrderId(),
-            walRecord.originalClientOrderId(),
+            walRecord.clOrdId(),
+            walRecord.origClOrdId(),
             existing == null ? '8' : existing.currentOrdStatus(),
             rejectText(submission));
         fixSessionMessageSender.send(sessionId, rejected);
@@ -245,8 +247,8 @@ public final class InboundFixMessageHandler {
       logger.warn("risk-service cancel failed for command_id={} reason_code={}", command.getCommandId(), failure.reasonCode(), error);
       final Message rejected = fixMessageMapper.buildOrderCancelReject(
           walRecord.orderId(),
-          walRecord.clientOrderId(),
-          walRecord.originalClientOrderId(),
+          walRecord.clOrdId(),
+          walRecord.origClOrdId(),
           existing == null ? '8' : existing.currentOrdStatus(),
           failure.reasonCode() + ": " + failure.reasonText());
       fixSessionMessageSender.send(sessionId, rejected);
@@ -275,6 +277,15 @@ public final class InboundFixMessageHandler {
 
   private String nextRejectedExecId(String recordId) {
     return "RJ-" + recordId;
+  }
+
+  // QuickFIX exposes the acceptor-side session as local -> remote, so inbound FIX 49/56 are reversed.
+  private String inboundSenderCompId(SessionID sessionId) {
+    return sessionId.getTargetCompID();
+  }
+
+  private String inboundTargetCompId(SessionID sessionId) {
+    return sessionId.getSenderCompID();
   }
 
   private String rejectText(RiskSubmissionResult submission) {

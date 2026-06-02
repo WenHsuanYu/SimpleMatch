@@ -14,11 +14,12 @@ public final class JdbcSubmissionRepository implements SubmissionRepository {
   private static final RowMapper<SubmissionResult> SUBMISSION_ROW_MAPPER = (resultSet, rowNum) ->
       new SubmissionResult(
           resultSet.getString("request_id"),
-          resultSet.getString("session_id"),
+          resultSet.getString("sender_comp_id"),
+          resultSet.getString("target_comp_id"),
           resultSet.getObject("trading_day", LocalDate.class),
           resultSet.getString("order_id"),
-          resultSet.getString("client_order_id"),
-          resultSet.getString("original_client_order_id"),
+          resultSet.getString("cl_ord_id"),
+          resultSet.getString("orig_cl_ord_id"),
           CommandType.valueOf(resultSet.getString("command_type")),
           resultSet.getBoolean("accepted"),
           resultSet.getString("reason_code"),
@@ -35,19 +36,21 @@ public final class JdbcSubmissionRepository implements SubmissionRepository {
   public Optional<SubmissionResult> findByBusinessKey(SubmissionBusinessKey businessKey) {
     return jdbcTemplate.query(
             """
-              SELECT request_id, session_id, trading_day, order_id, client_order_id, original_client_order_id,
+              SELECT request_id, sender_comp_id, target_comp_id, trading_day, order_id, cl_ord_id, orig_cl_ord_id,
                        command_type, accepted, reason_code, reason_text, created_at_unix_ms
                 FROM risk_service.risk_submissions
-                WHERE session_id = ?
+                WHERE sender_comp_id = ?
+                  AND target_comp_id = ?
                   AND trading_day = ?
                   AND command_type = ?
-                  AND client_order_id = ?
+                  AND cl_ord_id = ?
                 """,
             SUBMISSION_ROW_MAPPER,
-            businessKey.sessionId(),
+            businessKey.senderCompId(),
+            businessKey.targetCompId(),
             businessKey.tradingDay(),
             businessKey.commandType().name(),
-            businessKey.clientOrderId())
+            businessKey.clOrdId())
         .stream()
         .findFirst();
   }
@@ -58,25 +61,27 @@ public final class JdbcSubmissionRepository implements SubmissionRepository {
         """
             INSERT INTO risk_service.risk_submissions (
               request_id,
-              session_id,
+              sender_comp_id,
+              target_comp_id,
               trading_day,
               order_id,
-              client_order_id,
-              original_client_order_id,
+              cl_ord_id,
+              orig_cl_ord_id,
               command_type,
               accepted,
               reason_code,
               reason_text,
               created_at_unix_ms,
               outbox_event_id
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """,
         submission.requestId(),
-        submission.sessionId(),
+          submission.senderCompId(),
+          submission.targetCompId(),
         submission.tradingDay(),
         submission.orderId(),
-        submission.clientOrderId(),
-        submission.originalClientOrderId(),
+          submission.clOrdId(),
+          submission.origClOrdId(),
         submission.commandType().name(),
         submission.accepted(),
         submission.reasonCode(),

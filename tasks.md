@@ -110,7 +110,7 @@
 ### 2.1 Protobuf：Kafka payload schemas
 
 - [x] `proto/orders.proto`
-  - [x] `OrderCommand`（new/cancel；`metadata` 內含 `schema_version` / `event_id` / `created_at_unix_ms`，body 含 `command_id`, `order_id`, `account_id`, `session_id`, `client_order_id`, `symbol`, `side`, `quantity`, `price`, `order_type`, `tif`）
+  - [x] `OrderCommand`（new/cancel；`metadata` 內含 `schema_version` / `event_id` / `created_at_unix_ms`，body 含 `command_id`, `order_id`, `account_id`, `sender_comp_id`, `target_comp_id`, `cl_ord_id`, `orig_cl_ord_id`, `symbol`, `side`, `quantity`, `price`, `order_type`, `tif`）
   - [x] `OrderValidated` / `OrderRejected`（`metadata` 內含 event metadata；`OrderRejected` 含 reason code / text）
 - [x] `proto/matching.proto`
   - [x] `ExecutionEvent`（fill/cancel/reject；`metadata` 內含 `event_id` / `created_at_unix_ms`，body 含 `exec_id`, `order_id`, `account_id`, `symbol`, `fill_qty`, `fill_px`, `leaves_qty`, `cl_ord_id`, `orig_cl_ord_id`, `cancel_cl_ord_id`）
@@ -132,7 +132,7 @@
 
 ### 2.3 FIX ↔ domain mapping 規範
 
-> 現況：`quickfix-gateway` 的 runtime mapping 已存在於 `InboundFixMessageHandler` / `WalRecord`，可把 `NewOrderSingle` / `OrderCancelRequest` 正規化成 `OrderCommand`；`persistence.orders` 也已對 `(source_session_id, client_order_id)` 建立 UNIQUE。這代表 contract 與 projection schema 已有 session-scoped identity 基線；但 FIX 業務層 `ClOrdID` 去重尚未完成。`risk-service` 目前的 ingress 冪等鍵仍是 `COMMAND_TYPE|client_order_id`，`order_id` 也仍由 gateway 以 `O-<ClOrdID>` 派生，尚未收斂到 `(SenderCompID, TargetCompID, TradingDay, ClOrdID)` 或 opaque internal order identity。
+> 現況：`quickfix-gateway` 的 runtime mapping 已存在於 `InboundFixMessageHandler` / `WalRecord`，可把 `NewOrderSingle` / `OrderCancelRequest` 正規化成 `OrderCommand`；`persistence.orders` 已對 `(sender_comp_id, target_comp_id, cl_ord_id)` 建立 UNIQUE，`risk_submissions` 已以 `(sender_comp_id, target_comp_id, trading_day, command_type, cl_ord_id)` 做 ingress dedup。contract、gateway、risk-service 與 projection schema 的 FIX-facing naming 已對齊；`order_id` 目前仍由 gateway 以 `O-<ClOrdID>` 派生，尚未演進為 opaque internal order identity。
 
 - [ ] FIX 欄位到 `OrderCommand` 的 mapping 文件化（欄位表）
 - [ ] `ClOrdID` 去重 key 定義：`(SenderCompID, TargetCompID, TradingDay, ClOrdID)`
@@ -165,7 +165,7 @@
 - [ ] follow-up：後續若新增新的持久化服務，或讓既有服務加入新的 JDBC runtime / connector 觸點，必須從第一個 migration 起就採 schema-qualified owner model
 
 - [x] `risk-service` local schema
-  - [x] `risk_submissions`（同步 ingress journal；`UNIQUE(session_id, trading_day, command_type, client_order_id)`、`UNIQUE(outbox_event_id)`）
+  - [x] `risk_submissions`（同步 ingress journal；`UNIQUE(sender_comp_id, target_comp_id, trading_day, command_type, cl_ord_id)`、`UNIQUE(outbox_event_id)`）
   - [x] `outbox`（append-only event row；`event_id UNIQUE`，供 Debezium CDC 讀取；已含 `kafka_partition_id`）
 - [x] `account-service` authority schema
   - [x] `account_limits`（帳戶/商品/日額度 bucket；含 `limit_total_notional`, `reserved_notional`, `utilized_notional`, `available_notional`）
@@ -173,8 +173,8 @@
   - [x] `account_reservations`（open orders 預扣狀態；目前 schema 對 `reservation_id`、`request_id`、`order_id` 都設 UNIQUE）
 - [x] `account-service` migration 已顯式落在 `account_service` schema，migration test 也已在 owner schema 下驗證
 - [x] projection / read-model schema
-  - [x] `orders`（projection/read-model；含 `source_session_id`, `client_order_id/ClOrdID` 的 UNIQUE）
-    - 現況：此約束代表下游 projection 採 session-scoped uniqueness，不代表 gateway/risk ingress dedup 已完成相同語意的對齊。
+  - [x] `orders`（projection/read-model；含 `sender_comp_id`, `target_comp_id`, `cl_ord_id/ClOrdID` 的 UNIQUE）
+    - 現況：此約束已與 gateway/risk-service 的 FIX-facing identity naming 對齊；projection 仍以 `order_id` 作為權威狀態主鍵。
   - [x] `executions`（`UNIQUE(order_id, exec_id)`）
   - [x] `processed_events`（`(consumer_name, event_id)` PK）
 - [x] `persistence` migration 已顯式落在 `persistence` schema，migration test 也已在 owner schema 下驗證
@@ -266,15 +266,15 @@
 - [ ] 業務層：FIX `ClOrdID` idempotency（目標 key = `(SenderCompID, TargetCompID, TradingDay, ClOrdID)`）
   - [ ] `DedupRepo::FindOrCreateByClOrdId(session, trading_day, cl_ord_id)`
   - [ ] 重送一致：若 payload 相同回同結果；不同回 reject
-  - [x] 讓 ingress journal 具備 FIX business identity 所需欄位：`risk_submissions` 補 `session_id` / `trading_day`，並明確定義其來源（目前 `trading_day = gateway created_at_unix_ms` 的 UTC 日期）
-  - [ ] 將目前 runtime dedup 與目標 FIX business dedup 的對齊路徑文件化：在 gateway / risk-service / persistence 三處明確標註目前 key、目標 key、以及遷移期間的相容策略
-  - 現況：gateway 會攜帶 `session_id`，projection `orders` 也已有 `UNIQUE(source_session_id, client_order_id)`；`risk_submissions` 已以 `(session_id, trading_day, command_type, client_order_id)` 做 ingress dedup，但與最終 FIX `(SenderCompID, TargetCompID, TradingDay, ClOrdID)` 表述的對齊文件仍待補齊。
+  - [x] 讓 ingress journal 具備 FIX business identity 所需欄位：`risk_submissions` 補 `sender_comp_id` / `target_comp_id` / `trading_day`，並明確定義其來源（目前 `trading_day = gateway created_at_unix_ms` 的 UTC 日期）
+  - [x] 將目前 runtime dedup 與目標 FIX business dedup 的對齊路徑文件化：在 gateway / risk-service / persistence 三處明確標註目前 key 與 FIX-facing naming
+  - 現況：gateway 目前攜帶 `sender_comp_id` / `target_comp_id`；projection `orders` 已有 `UNIQUE(sender_comp_id, target_comp_id, cl_ord_id)`；`risk_submissions` 已以 `(sender_comp_id, target_comp_id, trading_day, command_type, cl_ord_id)` 做 ingress dedup。
 
 ### 4.1.5 同步送交 `risk-service`（主路徑）
 
 - [x] gRPC client：`RiskService::SubmitOrder()` / `CancelOrder()`
-- [x] request 內必須帶穩定、可重送的 client-supplied id：`client_order_id` / `ClOrdID`
-- [x] bounded retry：僅限暫態 transport 錯誤，且重試時必須沿用同一個 ingress business identity（至少同一 `session_id` / `trading_day` / `command_type` / `client_order_id`）
+- [x] request 內必須帶穩定、可重送的 client-supplied id：`cl_ord_id` / `ClOrdID`
+- [x] bounded retry：僅限暫態 transport 錯誤，且重試時必須沿用同一個 ingress business identity（至少同一 `sender_comp_id` / `target_comp_id` / `trading_day` / `command_type` / `cl_ord_id`）
 - [x] deadline / breaker / connection reuse 落地
   - [x] deadline / connection reuse 已落地（blocking stub deadline + shared managed channel）
   - [x] breaker 已落地（consecutive-failure open + cooldown half-open probe）
@@ -321,14 +321,14 @@
 ### 4.2.1 gRPC server：primary ingress
 
 - [x] 定義 `SubmitOrder` / `CancelOrder` gRPC API
-- [x] request 需攜帶 `client_order_id` / `ClOrdID`、`order_id`、必要 FIX 正規化欄位
+- [x] request 需攜帶 `cl_ord_id` / `ClOrdID`、`order_id`、必要 FIX 正規化欄位
 - [x] 同步回覆語意：只有在本地 transaction commit 成功後才回成功
 - [x] 目前版 ingress 唯一鍵冪等：相同 current key 重送時回同一筆結果，不可重複建立訂單
   - [x] PostgreSQL 唯一鍵 / transaction 版已完成
-  - 現況：`risk-service` 當前 authoritative key 已是 `(session_id, trading_day, command_type, client_order_id)`；舊的 `idempotency_key` transitional 欄位與 runtime 生成路徑都已移除，但這仍尚未等同最終 FIX 業務層的 `(SenderCompID, TargetCompID, TradingDay, ClOrdID)` 命名表述。
-  - [x] `risk_submissions` 補 `session_id` / `trading_day` 欄位，讓 ingress journal 能直接表達 FIX business identity
-    - [x] 現況：`session_id` 已落庫；`trading_day` 已以 gateway `created_at_unix_ms` 的 UTC 日期落庫
-  - [x] 將 ingress UNIQUE 約束由單一欄位演進為業務欄位組合（目前為 `(session_id, trading_day, command_type, client_order_id)`；最終組合命名仍以 FIX/session identity 決策為準）
+  - 現況：`risk-service` 當前 authoritative key 已是 `(sender_comp_id, target_comp_id, trading_day, command_type, cl_ord_id)`；舊的 `idempotency_key` transitional 欄位與 runtime 生成路徑都已移除，FIX-facing naming 也已對齊到最終業務表述。
+  - [x] `risk_submissions` 補 `sender_comp_id` / `target_comp_id` / `trading_day` 欄位，讓 ingress journal 能直接表達 FIX business identity
+    - [x] 現況：`sender_comp_id` / `target_comp_id` 已落庫；`trading_day` 已以 gateway `created_at_unix_ms` 的 UTC 日期落庫
+  - [x] 將 ingress UNIQUE 約束由單一欄位演進為業務欄位組合（目前為 `(sender_comp_id, target_comp_id, trading_day, command_type, cl_ord_id)`）
   - [x] 移除 `idempotency_key` transitional 欄位、runtime generator 與 outbox event-id 對它的依賴
 
 ### 4.2.2 規則檢核

@@ -6,16 +6,18 @@ import java.util.Objects;
 /**
  * Canonical FIX-facing business identity for a persisted risk submission.
  *
- * @param sessionId the originating FIX session identifier
+ * @param senderCompId the originating FIX SenderCompID
+ * @param targetCompId the originating FIX TargetCompID
  * @param tradingDay the UTC trading day derived from gateway ingress time
  * @param commandType the normalized command type
- * @param clientOrderId the client-provided order identifier
+ * @param clOrdId the FIX ClOrdID carried by the submission payload
  */
 public record SubmissionBusinessKey(
-    String sessionId,
+  String senderCompId,
+  String targetCompId,
     LocalDate tradingDay,
     CommandType commandType,
-    String clientOrderId) {
+  String clOrdId) {
 
   /**
    * Creates a business key from a persisted submission result.
@@ -26,9 +28,10 @@ public record SubmissionBusinessKey(
   public static SubmissionBusinessKey from(SubmissionResult submission) {
     Objects.requireNonNull(submission, "submission");
     return new SubmissionBusinessKey(
-        submission.sessionId(),
+        submission.senderCompId(),
+        submission.targetCompId(),
         submission.tradingDay(),
         submission.commandType(),
-        submission.clientOrderId());
+        submission.clOrdId());
   }
 }

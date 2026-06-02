@@ -24,9 +24,10 @@ class GrpcSubmissionCommandMapperTest {
     assertThat(mapped.payload().commandId()).isEqualTo("cmd-1");
     assertThat(mapped.payload().orderId()).isEqualTo("O-C1");
     assertThat(mapped.payload().accountId()).isEqualTo("ACC-1");
-    assertThat(mapped.payload().sessionId()).isEqualTo("FIX.4.4:CLIENT->SIMPLEMATCH");
+    assertThat(mapped.payload().senderCompId()).isEqualTo("CLIENT");
+    assertThat(mapped.payload().targetCompId()).isEqualTo("SIMPLEMATCH");
     assertThat(mapped.payload().tradingDay()).isEqualTo(LocalDate.of(2024, 3, 27));
-    assertThat(mapped.payload().clientOrderId()).isEqualTo("C1");
+    assertThat(mapped.payload().clOrdId()).isEqualTo("C1");
     assertThat(mapped.payload().symbol()).isEqualTo("AAPL");
     assertThat(mapped.payload().side()).isEqualTo(com.simplematch.riskservice.submission.Side.SIDE_BUY);
     assertThat(mapped.payload().quantity()).isEqualTo("10");
@@ -34,7 +35,7 @@ class GrpcSubmissionCommandMapperTest {
     assertThat(mapped.payload().orderType()).isEqualTo(com.simplematch.riskservice.submission.OrderType.ORDER_TYPE_LIMIT);
     assertThat(mapped.payload().tif()).isEqualTo(com.simplematch.riskservice.submission.TimeInForce.TIME_IN_FORCE_ROD);
     assertThat(mapped.commandType()).isEqualTo(com.simplematch.riskservice.submission.CommandType.COMMAND_TYPE_NEW);
-    assertThat(mapped.payload().originalClientOrderId()).isEqualTo("");
+    assertThat(mapped.payload().origClOrdId()).isEqualTo("");
   }
 
   @DisplayName("default instance preserves the expected command type")
@@ -68,8 +69,9 @@ class GrpcSubmissionCommandMapperTest {
         .setCommandId("cmd-1")
         .setOrderId("O-C1")
         .setAccountId("ACC-1")
-        .setSessionId("FIX.4.4:CLIENT->SIMPLEMATCH")
-        .setClientOrderId("C1")
+        .setSenderCompId("CLIENT")
+        .setTargetCompId("SIMPLEMATCH")
+        .setClOrdId("C1")
         .setSymbol("AAPL")
         .setSide(Side.SIDE_BUY)
         .setQuantity("10")

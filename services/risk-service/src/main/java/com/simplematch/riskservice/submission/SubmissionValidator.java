@@ -34,16 +34,16 @@ public final class SubmissionValidator {
           ResolvedSubmissionCommand.unspecified());
     }
 
-    if (payload.clientOrderIdValue().isBlank()) {
+    if (payload.clOrdIdValue().isBlank()) {
       return rejected(
           payload.commandId(),
           payload.orderId(),
           "",
-          payload.originalClientOrderId(),
+          payload.origClOrdId(),
           resolvedCommandType,
           now,
-          "MISSING_CLIENT_ORDER_ID",
-          "client_order_id is required",
+          "MISSING_CL_ORD_ID",
+          "cl_ord_id is required",
           normalizedCommand);
     }
 
@@ -51,8 +51,8 @@ public final class SubmissionValidator {
       return rejected(
           payload.commandId(),
           "",
-          payload.clientOrderId(),
-          payload.originalClientOrderId(),
+          payload.clOrdId(),
+          payload.origClOrdId(),
           resolvedCommandType,
           now,
           "MISSING_ORDER_ID",
@@ -65,8 +65,8 @@ public final class SubmissionValidator {
         return rejected(
             payload.commandId(),
             payload.orderId(),
-            payload.clientOrderId(),
-            payload.originalClientOrderId(),
+          payload.clOrdId(),
+          payload.origClOrdId(),
             resolvedCommandType,
             now,
             "MISSING_ACCOUNT_ID",
@@ -77,8 +77,8 @@ public final class SubmissionValidator {
         return rejected(
             payload.commandId(),
             payload.orderId(),
-            payload.clientOrderId(),
-            payload.originalClientOrderId(),
+          payload.clOrdId(),
+          payload.origClOrdId(),
             resolvedCommandType,
             now,
             "MISSING_SYMBOL",
@@ -89,8 +89,8 @@ public final class SubmissionValidator {
         return rejected(
             payload.commandId(),
             payload.orderId(),
-            payload.clientOrderId(),
-            payload.originalClientOrderId(),
+          payload.clOrdId(),
+          payload.origClOrdId(),
             resolvedCommandType,
             now,
             "MISSING_QUANTITY",
@@ -101,8 +101,8 @@ public final class SubmissionValidator {
         return rejected(
             payload.commandId(),
             payload.orderId(),
-            payload.clientOrderId(),
-            payload.originalClientOrderId(),
+          payload.clOrdId(),
+          payload.origClOrdId(),
             resolvedCommandType,
             now,
             "MISSING_SIDE",
@@ -113,8 +113,8 @@ public final class SubmissionValidator {
         return rejected(
             payload.commandId(),
             payload.orderId(),
-            payload.clientOrderId(),
-            payload.originalClientOrderId(),
+          payload.clOrdId(),
+          payload.origClOrdId(),
             resolvedCommandType,
             now,
             "MISSING_PRICE",
@@ -124,27 +124,28 @@ public final class SubmissionValidator {
     }
 
     if (resolvedCommandType == CommandType.COMMAND_TYPE_CANCEL
-        && payload.originalClientOrderIdValue().isBlank()) {
+        && payload.origClOrdIdValue().isBlank()) {
       return rejected(
           payload.commandId(),
           payload.orderId(),
-          payload.clientOrderId(),
+          payload.clOrdId(),
           "",
           resolvedCommandType,
           now,
-          "MISSING_ORIGINAL_CLIENT_ORDER_ID",
-          "original_client_order_id is required for cancel requests",
+          "MISSING_ORIG_CL_ORD_ID",
+          "orig_cl_ord_id is required for cancel requests",
           normalizedCommand);
     }
 
     return new SubmissionDecision(
         new SubmissionResult(
             payload.commandId(),
-            payload.sessionId(),
+            payload.senderCompId(),
+            payload.targetCompId(),
             tradingDay,
             payload.orderId(),
-            payload.clientOrderId(),
-            payload.originalClientOrderId(),
+            payload.clOrdId(),
+            payload.origClOrdId(),
             resolvedCommandType,
             true,
             "",
@@ -156,8 +157,8 @@ public final class SubmissionValidator {
   private SubmissionDecision rejected(
       String requestId,
       String orderId,
-      String clientOrderId,
-      String originalClientOrderId,
+      String clOrdId,
+      String origClOrdId,
       CommandType commandType,
       long createdAtUnixMs,
       String reasonCode,
@@ -166,11 +167,12 @@ public final class SubmissionValidator {
     return new SubmissionDecision(
         new SubmissionResult(
             requestId,
-            normalizedCommand.payload().sessionId(),
+        normalizedCommand.payload().senderCompId(),
+        normalizedCommand.payload().targetCompId(),
             resolveTradingDay(normalizedCommand.payload()),
             orderId,
-            clientOrderId,
-            originalClientOrderId,
+        clOrdId,
+        origClOrdId,
             commandType,
             false,
             reasonCode,

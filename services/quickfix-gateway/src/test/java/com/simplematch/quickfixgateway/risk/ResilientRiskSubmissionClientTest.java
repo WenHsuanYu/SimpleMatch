@@ -18,7 +18,7 @@ class ResilientRiskSubmissionClientTest {
   private static final OrderCommand NEW_ORDER = OrderCommand.newBuilder()
       .setCommandType(CommandType.COMMAND_TYPE_NEW)
       .setOrderId("O-1")
-      .setClientOrderId("C-1")
+      .setClOrdId("C-1")
       .build();
 
   // Verify that the client retries the same command until success when the risk service fails temporarily.

@@ -8,11 +8,12 @@ import java.time.LocalDate;
  * @param requestId the persisted operation identifier exposed as {@code request_id} on synchronous
  *     RPC and storage boundaries; this is currently the same underlying value as the ingress
  *     {@code command_id}
- * @param sessionId the session identifier carried by the submission payload
+ * @param senderCompId the FIX SenderCompID carried by the submission payload
+ * @param targetCompId the FIX TargetCompID carried by the submission payload
  * @param tradingDay the business trading day derived from the gateway event timestamp in UTC
  * @param orderId the order identifier carried by the submission
- * @param clientOrderId the client-provided order identifier
- * @param originalClientOrderId the original client order identifier for cancel flows
+ * @param clOrdId the FIX ClOrdID carried by the submission payload
+ * @param origClOrdId the FIX OrigClOrdID for cancel flows
  * @param commandType the normalized command type selected for the submission
  * @param accepted whether the submission passed validation and persistence
  * @param reasonCode the rejection reason code, or blank when accepted
@@ -21,11 +22,12 @@ import java.time.LocalDate;
  */
 public record SubmissionResult(
         String requestId,
-        String sessionId,
+        String senderCompId,
+        String targetCompId,
         LocalDate tradingDay,
         String orderId,
-        String clientOrderId,
-        String originalClientOrderId,
+        String clOrdId,
+        String origClOrdId,
         CommandType commandType,
         boolean accepted,
         String reasonCode,
@@ -44,7 +46,7 @@ public record SubmissionResult(
     /**
      * Returns the FIX-facing business key for this persisted submission.
      *
-     * @return the business key derived from session, trading day, command type, and client order id
+     * @return the business key derived from sender/target, trading day, command type, and ClOrdID
      */
     public SubmissionBusinessKey businessKey() {
         return SubmissionBusinessKey.from(this);

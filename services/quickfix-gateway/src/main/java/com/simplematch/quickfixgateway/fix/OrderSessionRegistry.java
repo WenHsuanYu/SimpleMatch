@@ -19,7 +19,7 @@ public final class OrderSessionRegistry implements ExecutionSessionResolver {
             sessionId,
             walRecord.orderId(),
             walRecord.accountId(),
-            walRecord.clientOrderId(),
+            walRecord.clOrdId(),
             walRecord.symbol(),
             walRecord.side(),
             walRecord.quantity(),
@@ -35,7 +35,7 @@ public final class OrderSessionRegistry implements ExecutionSessionResolver {
                   sessionId,
                   walRecord.orderId(),
                   walRecord.accountId(),
-                  walRecord.originalClientOrderId(),
+                  walRecord.origClOrdId(),
                   walRecord.symbol(),
                   walRecord.side(),
                   walRecord.quantity(),
@@ -43,8 +43,8 @@ public final class OrderSessionRegistry implements ExecutionSessionResolver {
               : existing;
           state.lastCancelRequest(
               new OrderSessionState.CancelRequestState(
-                  walRecord.clientOrderId(),
-                  walRecord.originalClientOrderId()));
+                  walRecord.clOrdId(),
+                  walRecord.origClOrdId()));
           return state;
         });
   }

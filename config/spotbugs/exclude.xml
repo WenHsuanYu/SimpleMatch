@@ -41,7 +41,7 @@
   </Match>
   <Match>
     <Bug pattern="EI_EXPOSE_REP2"/>
-    <Class name="com.simplematch.riskservice.submission.SubmissionOutboxFactory"/>
+    <Class name="com.simplematch.riskservice.outbox.SubmissionOutboxFactory"/>
   </Match>
   <Match>
     <Bug pattern="EI_EXPOSE_REP2"/>

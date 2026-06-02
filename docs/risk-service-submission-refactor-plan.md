@@ -105,9 +105,9 @@
 
 ## 第二批已完成的檔案
 
-- ~~`services/risk-service/src/main/java/com/simplematch/riskservice/submission/OutboxRecord.java`~~
-- ~~`services/risk-service/src/main/java/com/simplematch/riskservice/submission/SubmissionOutboxFactory.java`~~
-- ~~`services/risk-service/src/test/java/com/simplematch/riskservice/submission/SubmissionOutboxFactoryTest.java`~~
+- ~~`services/risk-service/src/main/java/com/simplematch/riskservice/outbox/OutboxRecord.java`~~
+- ~~`services/risk-service/src/main/java/com/simplematch/riskservice/outbox/SubmissionOutboxFactory.java`~~
+- ~~`services/risk-service/src/test/java/com/simplematch/riskservice/outbox/SubmissionOutboxFactoryTest.java`~~
 
 ## 第三批已完成的檔案
 

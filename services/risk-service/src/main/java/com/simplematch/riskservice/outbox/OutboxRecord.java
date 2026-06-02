@@ -1,4 +1,4 @@
-package com.simplematch.riskservice.submission;
+package com.simplematch.riskservice.outbox;
 
 import java.util.Arrays;
 import java.util.Objects;

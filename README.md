@@ -97,7 +97,7 @@ flowchart LR
 - 對外（FIX）：第一個**成功** ack 建議以 `risk-service` 完成持久化為條件；`quickfix-gateway` 可保留本地 WAL 作為恢復/稽核輔助，但不再作為主 ack 錨點
 - 業務結果（成交/拒單/撤單結果）以 **Kafka 事件**回推，再由 FIX Gateway 轉成 ExecutionReport 等回報
 - 對內（服務間）：
-  - **資料面中的同步准入路徑（synchronous ingress lane）**：`quickfix-gateway` 以 **gRPC unary** 同步提交 `NewOrderSingle` / `OrderCancelRequest` 到 `risk-service`；gateway 只在收到 `risk-service` 的持久化成功回覆後，才回第一個成功 FIX ack。寫入型 RPC 目前僅允許**極小範圍、受限次數**的暫態 transport retry，且必須沿用同一個 `client_order_id` / `ClOrdID`，並由 `risk-service` 以唯一鍵保證冪等；連續失敗時 gateway 端 breaker 會短暫打開並 fail-closed
+  - **資料面中的同步准入路徑（synchronous ingress lane）**：`quickfix-gateway` 以 **gRPC unary** 同步提交 `NewOrderSingle` / `OrderCancelRequest` 到 `risk-service`；gateway 只在收到 `risk-service` 的持久化成功回覆後，才回第一個成功 FIX ack。寫入型 RPC 目前僅允許**極小範圍、受限次數**的暫態 transport retry，且必須沿用同一個 `cl_ord_id` / `ClOrdID`，並由 `risk-service` 以唯一鍵保證冪等；連續失敗時 gateway 端 breaker 會短暫打開並 fail-closed
   - **資料面中的非同步保序執行路徑（asynchronous ordered execution lane）**：`risk-service` 之後的命令與結果仍以 Kafka topic 串接，預設 **at-least-once**，各服務需具備 idempotency（去重/重放安全）。主線做法統一為 **PostgreSQL outbox + Debezium CDC**；其中 `matching-engine` 另以前置本地 WAL 作為第一個 durability 錨點，再由 loader / ingester 把結果寫入 PostgreSQL outbox 後交由 Debezium 廣播
   - **營運控制面（operational control plane，獨立於交易主線）**：例如風控規則動態下發、交易對上下架、routing snapshot publish、breaker / 限流策略調整；這些流量可用 gRPC、管理 API 或其他配置機制承載，但不應混稱為交易主提交路徑
 
@@ -107,7 +107,7 @@ flowchart LR
 
 | Link | 類型 | 目的 | 建議可靠性/策略 |
 | --- | --- | --- | --- |
-| `quickfix-gateway` → `risk-service` | gRPC unary（業務資料面 / 同步准入） | 同步提交下單/撤單命令進入風控 | 第一個成功 FIX ack 需等 `risk-service` 本地 transaction commit；gateway 僅對暫態 transport failure 做 bounded retry，且重試沿用同一 `client_order_id` / `ClOrdID`；連續失敗時 breaker fail-fast，整體仍以 fail-closed 為預設 |
+| `quickfix-gateway` → `risk-service` | gRPC unary（業務資料面 / 同步准入） | 同步提交下單/撤單命令進入風控 | 第一個成功 FIX ack 需等 `risk-service` 本地 transaction commit；gateway 僅對暫態 transport failure 做 bounded retry，且重試沿用同一 `cl_ord_id` / `ClOrdID`；連續失敗時 breaker fail-fast，整體仍以 fail-closed 為預設 |
 | `risk-service` → `matching-engine`（`orders.validated`） | Kafka（業務資料面 / 非同步保序路徑） | 風控後進撮合（需保序） | **Outbox + Debezium CDC**（主線）；matching 需冪等 |
 | `matching-engine` → 下游（`matching.executions`） | Kafka（業務資料面 / 非同步保序路徑） | 撮合結果（可回放/對帳/回報來源） | **本地 WAL + PostgreSQL transaction outbox + Debezium CDC**；下游以 `(order_id, exec_id)`/`(exec_id)` 去重 |
 | `risk-service` ↔ `account-service` | gRPC unary（業務資料面 / 同步依賴） | 查詢額度/部位、建立預扣 `Reserve` | 必設 deadline；讀取可重試；寫入預設不自動重試，若要重試需 `request_id`/唯一鍵冪等 |
@@ -336,7 +336,7 @@ Projection 可以把它理解成：
 建議路徑：
 
 1. FIX Gateway 完成基本格式檢查（必要欄位、session 狀態、欄位正規化）
-2. Gateway 以同步 gRPC 把命令提交到 `risk-service`，沿用穩定的 `client_order_id` / `ClOrdID`
+2. Gateway 以同步 gRPC 把命令提交到 `risk-service`，沿用穩定的 `cl_ord_id` / `ClOrdID`
 3. `risk-service` 在本地 PostgreSQL transaction 內同時寫入 submission 狀態與 `outbox`
 4. **只有 transaction commit 成功**，`risk-service` 才回覆 gateway 成功
 5. Gateway 收到成功後，再送第一筆成功 FIX ack（例如 `ExecutionReport = PendingNew`）
@@ -866,9 +866,9 @@ Kafka 常用語意是 **at-least-once**：同一事件可能被處理多次。�
   - 委託：`side`, `order_type`（LIMIT/MARKET）, `tif`（ROD/IOC/FOK）, `qty`, `price`（市價可為 NULL）
   - 狀態：`status`（PENDING/RISK_CHECKING/MATCHING/FILLED/PARTIALLY_FILLED/CANCELLED/REJECTED/EXPIRED）
   - 版本：`state_version`（樂觀鎖用）、`last_command_id`
-  - 追蹤：`created_at`, `updated_at`, `source_session_id`（FIX session）
+  - 追蹤：`created_at`, `updated_at`, `sender_comp_id`, `target_comp_id`, `cl_ord_id`
 - 建議約束/索引：
-  - `UNIQUE (source_session_id, client_order_id)`（避免 client 重送造成多筆 order）
+  - `UNIQUE (sender_comp_id, target_comp_id, cl_ord_id)`（避免同一 FIX business identity 被重送時產生多筆 order）
   - `INDEX (symbol, created_at)`（按股票查）
   - `INDEX (account_id, status)`（帳戶未完成委託查詢）
   - 分區：建議以 `shard_id` 做 LIST/RANGE partition（配合你的 shard 規劃）
@@ -885,14 +885,14 @@ Kafka 常用語意是 **at-least-once**：同一事件可能被處理多次。�
 
 - 主鍵：`id`（identity / bigserial）
 - 建議欄位：
-  - `request_id`, `session_id`, `trading_day`, `order_id`
-  - `client_order_id`, `original_client_order_id`, `command_type`
+  - `request_id`, `sender_comp_id`, `target_comp_id`, `trading_day`, `order_id`
+  - `cl_ord_id`, `orig_cl_ord_id`, `command_type`
   - `accepted`, `reason_code`, `reason_text`
   - `created_at_unix_ms`, `outbox_event_id`
 - 命名備註：此處的 `request_id` 目前持久化的是 ingress `OrderCommand.command_id` 同一個值；`risk-service` 只是沿用同步/RPC 邊界的 `request_id` 命名，尚未把兩者拆成不同欄位語意
-- 現況：`risk_submissions` 已持久化 `session_id` 與 `trading_day`；`trading_day` 目前以 gateway `created_at_unix_ms` 的 UTC 日期計算
+- 現況：`risk_submissions` 已持久化 `sender_comp_id`、`target_comp_id` 與 `trading_day`；`trading_day` 目前以 gateway `created_at_unix_ms` 的 UTC 日期計算
 - 建議約束/索引：
-  - `UNIQUE (session_id, trading_day, command_type, client_order_id)`（目前 ingress journal 的業務層 dedup key）
+  - `UNIQUE (sender_comp_id, target_comp_id, trading_day, command_type, cl_ord_id)`（目前 ingress journal 的業務層 dedup key）
   - `UNIQUE (outbox_event_id)`（確保 ingress decision 與 outbox event 一對一）
 
 #### `executions`

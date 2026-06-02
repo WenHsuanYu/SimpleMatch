@@ -77,7 +77,7 @@ class InboundFixMessageHandlerTest {
         FIXED_CLOCK);
 
     final NewOrderSingle order = newNewOrder("C1", "AAPL", '1', "10", "101.25", "ACC-1");
-    final SessionID sessionId = new SessionID("FIX.4.4", "CLIENT1", "SIMPLEMATCH");
+    final SessionID sessionId = new SessionID("FIX.4.4", "SIMPLEMATCH", "CLIENT1");
     handler.handle(order, sessionId);
 
     final List<WalRecord> walRecords = walAppender.readAll();
@@ -89,11 +89,12 @@ class InboundFixMessageHandlerTest {
     assertUuidVersionSeven(walRecord.recordId());
     assertThat(walRecord.createdAtUnixMs()).isEqualTo(FIXED_INSTANT.toEpochMilli());
     assertThat(walRecord.sourceService()).isEqualTo("quickfix-gateway");
-    assertThat(walRecord.sessionId()).isEqualTo(sessionId.toString());
+    assertThat(walRecord.senderCompId()).isEqualTo("CLIENT1");
+    assertThat(walRecord.targetCompId()).isEqualTo("SIMPLEMATCH");
     assertThat(walRecord.messageType()).isEqualTo(NewOrderSingle.MSGTYPE);
     assertThat(walRecord.orderId()).isEqualTo("O-C1");
-    assertThat(walRecord.clientOrderId()).isEqualTo("C1");
-    assertThat(walRecord.originalClientOrderId()).isEmpty();
+    assertThat(walRecord.clOrdId()).isEqualTo("C1");
+    assertThat(walRecord.origClOrdId()).isEmpty();
     assertThat(walRecord.accountId()).isEqualTo("ACC-1");
     assertThat(walRecord.symbol()).isEqualTo("AAPL");
     assertThat(walRecord.side()).isEqualTo(Side.SIDE_BUY);
@@ -115,9 +116,10 @@ class InboundFixMessageHandlerTest {
     assertThat(command.getCommandType()).isEqualTo(CommandType.COMMAND_TYPE_NEW);
     assertThat(command.getOrderId()).isEqualTo("O-C1");
     assertThat(command.getAccountId()).isEqualTo("ACC-1");
-    assertThat(command.getSessionId()).isEqualTo(sessionId.toString());
-    assertThat(command.getClientOrderId()).isEqualTo("C1");
-    assertThat(command.getOriginalClientOrderId()).isEmpty();
+    assertThat(command.getSenderCompId()).isEqualTo("CLIENT1");
+    assertThat(command.getTargetCompId()).isEqualTo("SIMPLEMATCH");
+    assertThat(command.getClOrdId()).isEqualTo("C1");
+    assertThat(command.getOrigClOrdId()).isEmpty();
     assertThat(command.getSymbol()).isEqualTo("AAPL");
     assertThat(command.getSide()).isEqualTo(Side.SIDE_BUY);
     assertThat(command.getQuantity()).isEqualTo("10");
@@ -129,7 +131,7 @@ class InboundFixMessageHandlerTest {
     assertThat(sessionState.sessionId()).isEqualTo(sessionId);
     assertThat(sessionState.orderId()).isEqualTo("O-C1");
     assertThat(sessionState.accountId()).isEqualTo("ACC-1");
-    assertThat(sessionState.clientOrderId()).isEqualTo("C1");
+    assertThat(sessionState.clOrdId()).isEqualTo("C1");
     assertThat(sessionState.symbol()).isEqualTo("AAPL");
     assertThat(sessionState.side()).isEqualTo(Side.SIDE_BUY);
     assertThat(sessionState.quantity()).isEqualTo("10");
@@ -186,7 +188,7 @@ class InboundFixMessageHandlerTest {
         new FixMessageMapper(FIXED_CLOCK),
         FIXED_CLOCK);
 
-    final SessionID sessionId = new SessionID("FIX.4.4", "CLIENT1", "SIMPLEMATCH");
+    final SessionID sessionId = new SessionID("FIX.4.4", "SIMPLEMATCH", "CLIENT1");
     handler.handle(newNewOrder("C1", "AAPL", '1', "10", "101.25", "ACC-1"), sessionId);
     handler.handle(newCancelRequest("C1", "CXL-1", "ACC-1"), sessionId);
     handler.handle(newNewOrder("C2", "MSFT", '2', "20", "305.50", "ACC-2"), sessionId);
@@ -204,12 +206,12 @@ class InboundFixMessageHandlerTest {
 
     final OrderSessionState firstOrderState = registry.find("O-C1").orElseThrow();
     assertThat(firstOrderState.lastCancelRequest()).isNotNull();
-    assertThat(firstOrderState.lastCancelRequest().cancelClientOrderId()).isEqualTo("CXL-1");
-    assertThat(firstOrderState.lastCancelRequest().originalClientOrderId()).isEqualTo("C1");
+    assertThat(firstOrderState.lastCancelRequest().cancelClOrdId()).isEqualTo("CXL-1");
+    assertThat(firstOrderState.lastCancelRequest().origClOrdId()).isEqualTo("C1");
 
     final OrderSessionState secondOrderState = registry.find("O-C2").orElseThrow();
     assertThat(secondOrderState.accountId()).isEqualTo("ACC-2");
-    assertThat(secondOrderState.clientOrderId()).isEqualTo("C2");
+    assertThat(secondOrderState.clOrdId()).isEqualTo("C2");
     assertThat(secondOrderState.symbol()).isEqualTo("MSFT");
     assertThat(secondOrderState.side()).isEqualTo(Side.SIDE_SELL);
     assertThat(secondOrderState.quantity()).isEqualTo("20");
@@ -259,7 +261,7 @@ class InboundFixMessageHandlerTest {
 
     handler.handle(
         newNewOrder("C1", "AAPL", '1', "10", "101.25", "ACC-1"),
-        new SessionID("FIX.4.4", "CLIENT1", "SIMPLEMATCH"));
+        new SessionID("FIX.4.4", "SIMPLEMATCH", "CLIENT1"));
 
     final WalRecord walRecord = walAppender.readAll().getFirst();
   assertUuidVersionSeven(walRecord.recordId());
@@ -292,7 +294,7 @@ class InboundFixMessageHandlerTest {
 
     handler.handle(
         newNewOrder("C1", "AAPL", '1', "10", "101.25", "ACC-1"),
-        new SessionID("FIX.4.4", "CLIENT1", "SIMPLEMATCH"));
+        new SessionID("FIX.4.4", "SIMPLEMATCH", "CLIENT1"));
 
     final ArgumentCaptor<Message> messageCaptor = ArgumentCaptor.forClass(Message.class);
     verify(sender).send(any(SessionID.class), messageCaptor.capture());

@@ -42,7 +42,7 @@
 
 - 將 `OrderSessionRegistry` 從純記憶體狀態演進成可恢復狀態
 - recovery pipeline 在 pod ready 前重建：
-  - `order_id -> session_id / gatewayOwnerId`
+  - `order_id -> SenderCompID / TargetCompID / gatewayOwnerId`
   - cancel context
   - execution dedup 基線
 - 重新定義 `matching.executions` 的 consume 模型

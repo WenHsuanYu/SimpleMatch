@@ -20,8 +20,8 @@ message OrderCommand {
   string command_id = 2;
   string order_id = 3;
   string account_id = 4;
-  string session_id = 5;
-  string client_order_id = 6;
+  string sender_comp_id = 5;
+  string cl_ord_id = 6;
   string symbol = 7;
   simplematch.common.v1.Side side = 8;
   string quantity = 9;
@@ -29,7 +29,8 @@ message OrderCommand {
   simplematch.common.v1.OrderType order_type = 11;
   simplematch.common.v1.TimeInForce tif = 12;
   CommandType command_type = 13;
-  string original_client_order_id = 14;
+  string orig_cl_ord_id = 14;
+  string target_comp_id = 15;
 }
 
 message OrderValidated {

@@ -34,7 +34,8 @@ class WalAppenderTest {
           "cmd-1",
           1L,
           "quickfix-gateway",
-          "FIX.4.4:CLIENT->GW",
+          "CLIENT",
+          "GW",
           "D",
           "O-C1",
           "C1",
@@ -53,7 +54,8 @@ class WalAppenderTest {
           "cmd-2",
           2L,
           "quickfix-gateway",
-          "FIX.4.4:CLIENT->GW",
+          "CLIENT",
+          "GW",
           "F",
           "O-C1",
           "CXL-1",
@@ -89,7 +91,8 @@ class WalAppenderTest {
           "cmd-1",
           1L,
           "quickfix-gateway",
-          "FIX.4.4:CLIENT->GW",
+          "CLIENT",
+          "GW",
           "D",
           "O-C1",
           "C1",
@@ -114,9 +117,11 @@ class WalAppenderTest {
       assertThat(json.path("schemaVersion").asText()).isEqualTo("v1");
       assertThat(json.path("recordId").asText()).isEqualTo("cmd-1");
       assertThat(json.path("sourceService").asText()).isEqualTo("quickfix-gateway");
+      assertThat(json.path("senderCompId").asText()).isEqualTo("CLIENT");
+      assertThat(json.path("targetCompId").asText()).isEqualTo("GW");
       assertThat(json.path("messageType").asText()).isEqualTo("D");
       assertThat(json.path("orderId").asText()).isEqualTo("O-C1");
-      assertThat(json.path("clientOrderId").asText()).isEqualTo("C1");
+      assertThat(json.path("clOrdId").asText()).isEqualTo("C1");
       assertThat(json.path("rawFix").asText()).isEqualTo("8=FIX.4.4|35=D");
     }
   }

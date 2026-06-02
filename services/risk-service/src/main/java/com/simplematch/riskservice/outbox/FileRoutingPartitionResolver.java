@@ -1,4 +1,4 @@
-package com.simplematch.riskservice.submission;
+package com.simplematch.riskservice.outbox;
 
 import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
 import com.fasterxml.jackson.databind.ObjectMapper;

@@ -1,21 +1,25 @@
-package com.simplematch.riskservice.submission;
+package com.simplematch.riskservice.outbox;
 
-import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.simplematch.contracts.common.v1.EventMetadata;
 import com.simplematch.contracts.orders.v1.OrderRejected;
 import com.simplematch.contracts.orders.v1.OrderValidated;
+import com.simplematch.riskservice.submission.SubmissionBusinessKey;
+import com.simplematch.riskservice.submission.SubmissionCommand;
+import com.simplematch.riskservice.submission.SubmissionDecision;
+import com.simplematch.riskservice.submission.SubmissionResult;
 import java.nio.charset.StandardCharsets;
-import java.util.Map;
 import java.util.Objects;
 import java.util.UUID;
 
-public final class SubmissionOutboxFactory {
+/**
+ * Aggregate-specific outbox factory for risk submission events.
+ */
+public final class SubmissionOutboxFactory extends AbstractOutboxEventFactory<SubmissionDecision> {
   private static final String AGGREGATE_TYPE = "risk_submission";
   private static final String CONTENT_TYPE = "application/x-protobuf";
   private static final int DEFAULT_PARTITION_ID = 0;
 
-  private final ObjectMapper objectMapper;
   private final String ordersValidatedTopic;
   private final RoutingPartitionResolver routingPartitionResolver;
 
@@ -27,26 +31,30 @@ public final class SubmissionOutboxFactory {
       ObjectMapper objectMapper,
       String ordersValidatedTopic,
       RoutingPartitionResolver routingPartitionResolver) {
-    this.objectMapper = Objects.requireNonNull(objectMapper);
-    this.ordersValidatedTopic = Objects.requireNonNull(ordersValidatedTopic);
-    this.routingPartitionResolver = Objects.requireNonNull(routingPartitionResolver);
+    super(objectMapper, CONTENT_TYPE);
+    this.ordersValidatedTopic = Objects.requireNonNull(ordersValidatedTopic, "ordersValidatedTopic");
+    this.routingPartitionResolver = Objects.requireNonNull(routingPartitionResolver, "routingPartitionResolver");
   }
 
-  public OutboxRecord create(SubmissionDecision decision) {
-    final SubmissionResult submission = decision.submission();
-    final SubmissionCommand command = decision.command().payload();
+  @Override
+  protected OutboxEvent buildEvent(SubmissionDecision decision) {
+    final SubmissionDecision resolvedDecision = Objects.requireNonNull(decision, "decision");
+    final SubmissionResult submission = resolvedDecision.submission();
+    final SubmissionCommand command = resolvedDecision.command().payload();
     final String eventId = eventId(submission);
     final String payloadType = payloadType(submission);
-    final int kafkaPartitionId = kafkaPartitionId(command);
+    final Integer kafkaPartitionId = kafkaPartitionId(command);
 
-    return OutboxRecord.create(
-      new OutboxRecord.EventInfo(eventId, submission.createdAtUnixMs()),
-      OutboxRecord.Routing.withPartition(ordersValidatedTopic, messageKey(command), kafkaPartitionId),
-      new OutboxRecord.PayloadEnvelope(
+    return new OutboxEvent(
+        eventId,
+        submission.createdAtUnixMs(),
+        ordersValidatedTopic,
+        messageKey(command),
+        kafkaPartitionId,
         payloadBytes(submission, command, eventId, kafkaPartitionId),
         payloadType,
-        headersJson(eventId, payloadType)),
-      new OutboxRecord.AggregateRef(AGGREGATE_TYPE, submission.orderId()));
+        AGGREGATE_TYPE,
+        submission.orderId());
   }
 
   private byte[] payloadBytes(
@@ -68,7 +76,7 @@ public final class SubmissionOutboxFactory {
 
     return OrderRejected.newBuilder()
         .setMetadata(eventMetadata(eventId, submission.createdAtUnixMs()))
-    .setCommandId(submission.commandId())
+        .setCommandId(submission.commandId())
         .setOrderId(submission.orderId())
         .setAccountId(command.accountId())
         .setSymbol(command.symbol())
@@ -93,17 +101,6 @@ public final class SubmissionOutboxFactory {
         : OrderRejected.getDescriptor().getFullName();
   }
 
-  private String headersJson(String eventId, String payloadType) {
-    try {
-      return objectMapper.writeValueAsString(Map.of(
-          "event_id", eventId,
-          "content_type", CONTENT_TYPE,
-          "payload_type", payloadType));
-    } catch (JsonProcessingException jsonProcessingException) {
-      throw new IllegalStateException("failed to serialize outbox headers", jsonProcessingException);
-    }
-  }
-
   private String messageKey(SubmissionCommand command) {
     if (command != null && !command.symbol().isBlank()) {
       return command.symbol();
@@ -123,14 +120,16 @@ public final class SubmissionOutboxFactory {
 
   private String eventId(SubmissionResult submission) {
     final SubmissionBusinessKey businessKey = submission.businessKey();
-    final String source = businessKey.sessionId()
-      + "|"
-      + businessKey.tradingDay()
-      + "|"
-      + businessKey.commandType().name()
-      + "|"
-      + businessKey.clientOrderId()
-      + "|"
+    final String source = businessKey.senderCompId()
+        + "|"
+        + businessKey.targetCompId()
+        + "|"
+        + businessKey.tradingDay()
+        + "|"
+        + businessKey.commandType().name()
+        + "|"
+        + businessKey.clOrdId()
+        + "|"
         + submission.commandId()
         + "|"
         + submission.orderId()

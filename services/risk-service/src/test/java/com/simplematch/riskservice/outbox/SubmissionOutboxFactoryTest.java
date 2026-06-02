@@ -1,18 +1,22 @@
-package com.simplematch.riskservice.submission;
+package com.simplematch.riskservice.outbox;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
-import static com.simplematch.riskservice.submission.SubmissionCommandFixtures.cancelOrderPayload;
-import static com.simplematch.riskservice.submission.SubmissionCommandFixtures.newOrderPayload;
-import static com.simplematch.riskservice.submission.SubmissionCommandFixtures.resolvedNewOrder;
 
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.simplematch.contracts.orders.v1.OrderRejected;
 import com.simplematch.contracts.orders.v1.OrderValidated;
-import com.simplematch.riskservice.outbox.OutboxRecord;
-import com.simplematch.riskservice.outbox.SubmissionOutboxFactory;
+import com.simplematch.riskservice.submission.CommandType;
+import com.simplematch.riskservice.submission.OrderType;
+import com.simplematch.riskservice.submission.ResolvedSubmissionCommand;
+import com.simplematch.riskservice.submission.Side;
+import com.simplematch.riskservice.submission.SubmissionBusinessKey;
+import com.simplematch.riskservice.submission.SubmissionCommand;
+import com.simplematch.riskservice.submission.SubmissionDecision;
+import com.simplematch.riskservice.submission.SubmissionResult;
+import com.simplematch.riskservice.submission.TimeInForce;
 import java.nio.charset.StandardCharsets;
 import java.util.UUID;
 import org.junit.jupiter.api.Test;
@@ -158,11 +162,11 @@ class SubmissionOutboxFactoryTest {
             "",
             "",
             100L),
-          resolvedNewOrder("cmd-1", "O-C1", "C1"));
+            resolvedNewOrder("cmd-1", "O-C1", "C1"));
   }
 
   private SubmissionDecision rejectedDecision() {
-    final SubmissionCommand command = newOrderPayload(
+              final SubmissionCommand command = newOrderPayload(
         "cmd-1",
         "O-C1",
         "C1",
@@ -182,7 +186,58 @@ class SubmissionOutboxFactoryTest {
             "MISSING_PRICE",
             "price is required for limit orders",
             100L),
-          new ResolvedSubmissionCommand(command, CommandType.COMMAND_TYPE_NEW));
+        new ResolvedSubmissionCommand(command, CommandType.COMMAND_TYPE_NEW));
+  }
+
+  private SubmissionCommand newOrderPayload(
+      String commandId,
+      String orderId,
+      String clOrdId,
+      String price,
+      OrderType orderType) {
+    return SubmissionCommand.create(
+        requestMetadata(commandId, orderId, clOrdId, ""),
+        new SubmissionCommand.OrderDetails(
+            "AAPL",
+            Side.SIDE_BUY,
+            "10",
+            price,
+            orderType,
+            TimeInForce.TIME_IN_FORCE_ROD));
+  }
+
+  private SubmissionCommand cancelOrderPayload(
+      String commandId,
+      String orderId,
+      String clOrdId,
+      String origClOrdId) {
+    return SubmissionCommand.create(
+        requestMetadata(commandId, orderId, clOrdId, origClOrdId),
+        SubmissionCommand.OrderDetails.empty());
+  }
+
+  private ResolvedSubmissionCommand resolvedNewOrder(
+      String commandId,
+      String orderId,
+      String clOrdId) {
+    return new ResolvedSubmissionCommand(
+        newOrderPayload(commandId, orderId, clOrdId, "101.25", OrderType.ORDER_TYPE_LIMIT),
+        CommandType.COMMAND_TYPE_NEW);
+  }
+
+  private SubmissionCommand.RequestMetadata requestMetadata(
+      String commandId,
+      String orderId,
+      String clOrdId,
+      String origClOrdId) {
+    return new SubmissionCommand.RequestMetadata(
+        commandId,
+        orderId,
+        "ACC-1",
+        "CLIENT",
+        "SIMPLEMATCH",
+        clOrdId,
+        origClOrdId);
   }
 
   private String expectedEventId(SubmissionResult submission) {

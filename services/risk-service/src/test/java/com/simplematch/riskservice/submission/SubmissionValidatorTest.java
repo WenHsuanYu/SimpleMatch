@@ -1,7 +1,6 @@
 package com.simplematch.riskservice.submission;
 
 import static org.assertj.core.api.Assertions.assertThat;
-import static com.simplematch.riskservice.submission.SubmissionCommandFixtures.newOrderPayload;
 import static com.simplematch.riskservice.submission.SubmissionCommandFixtures.resolvedCancelOrder;
 import static com.simplematch.riskservice.submission.SubmissionCommandFixtures.resolvedNewOrder;
 
@@ -64,7 +63,7 @@ class SubmissionValidatorTest {
         resolvedCancelOrder("cmd-1", "O-C1", "CXL-1", ""));
 
     assertThat(decision.submission().accepted()).isFalse();
-    assertThat(decision.submission().reasonCode()).isEqualTo("MISSING_ORIGINAL_CLIENT_ORDER_ID");
+    assertThat(decision.submission().reasonCode()).isEqualTo("MISSING_ORIG_CL_ORD_ID");
   }
 
   @Test
@@ -83,7 +82,7 @@ class SubmissionValidatorTest {
       ResolvedSubmissionCommand.typedEmpty(CommandType.COMMAND_TYPE_NEW));
 
     assertThat(decision.submission().accepted()).isFalse();
-    assertThat(decision.submission().reasonCode()).isEqualTo("MISSING_CLIENT_ORDER_ID");
+    assertThat(decision.submission().reasonCode()).isEqualTo("MISSING_CL_ORD_ID");
     assertThat(decision.command().commandType()).isEqualTo(CommandType.COMMAND_TYPE_NEW);
   }
 }

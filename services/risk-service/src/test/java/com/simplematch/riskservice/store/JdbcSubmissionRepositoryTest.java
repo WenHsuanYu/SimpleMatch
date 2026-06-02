@@ -47,9 +47,13 @@ class JdbcSubmissionRepositoryTest {
 
     assertThat(repository.findByBusinessKey(submission.businessKey())).contains(submission);
     assertThat(jdbcTemplate.queryForObject(
-      "SELECT session_id FROM risk_submissions WHERE request_id = ?",
+      "SELECT sender_comp_id FROM risk_submissions WHERE request_id = ?",
       String.class,
-      submission.requestId())).isEqualTo("FIX.4.4:CLIENT->SIMPLEMATCH");
+      submission.requestId())).isEqualTo("CLIENT");
+    assertThat(jdbcTemplate.queryForObject(
+      "SELECT target_comp_id FROM risk_submissions WHERE request_id = ?",
+      String.class,
+      submission.requestId())).isEqualTo("SIMPLEMATCH");
     assertThat(jdbcTemplate.queryForObject(
       "SELECT trading_day FROM risk_submissions WHERE request_id = ?",
       LocalDate.class,
@@ -63,7 +67,8 @@ class JdbcSubmissionRepositoryTest {
   @Test
   void returnsEmptyWhenBusinessKeyDoesNotExist() {
     assertThat(repository.findByBusinessKey(new SubmissionBusinessKey(
-        "FIX.4.4:CLIENT->OTHER",
+        "CLIENT",
+        "OTHER",
         LocalDate.of(2024, 3, 27),
         CommandType.COMMAND_TYPE_CANCEL,
         "missing"))).isEmpty();
@@ -84,11 +89,12 @@ class JdbcSubmissionRepositoryTest {
     final SubmissionResult first = acceptedSubmission();
     final SubmissionResult second = new SubmissionResult(
         "cmd-2",
-        "FIX.4.4:CLIENT2->SIMPLEMATCH",
+        "CLIENT2",
+        "SIMPLEMATCH",
         first.tradingDay(),
         "O-C2",
-        first.clientOrderId(),
-        first.originalClientOrderId(),
+        first.clOrdId(),
+        first.origClOrdId(),
         first.commandType(),
         first.accepted(),
         first.reasonCode(),
@@ -101,15 +107,16 @@ class JdbcSubmissionRepositoryTest {
     assertThat(countRows("risk_submissions")).isEqualTo(2);
     assertThat(repository.findByBusinessKey(second.businessKey())).contains(second);
     assertThat(jdbcTemplate.queryForObject(
-        "SELECT COUNT(*) FROM risk_submissions WHERE client_order_id = ?",
+      "SELECT COUNT(*) FROM risk_submissions WHERE cl_ord_id = ?",
         Integer.class,
-        first.clientOrderId())).isEqualTo(2);
+      first.clOrdId())).isEqualTo(2);
   }
 
   private SubmissionResult acceptedSubmission() {
     return new SubmissionResult(
         "cmd-1",
-        "FIX.4.4:CLIENT->SIMPLEMATCH",
+      "CLIENT",
+      "SIMPLEMATCH",
         LocalDate.of(2024, 3, 27),
         "O-C1",
         "CXL-1",

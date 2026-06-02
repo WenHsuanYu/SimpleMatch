@@ -35,8 +35,11 @@ class PersistenceFlywayMigrationTest {
     assertThat(hasTable(jdbcTemplate, "EXECUTIONS")).isTrue();
     assertThat(hasTable(jdbcTemplate, "PROCESSED_EVENTS")).isTrue();
 
-    assertThat(hasColumn(jdbcTemplate, "ORDERS", "SOURCE_SESSION_ID")).isTrue();
-    assertThat(hasColumn(jdbcTemplate, "ORDERS", "CLIENT_ORDER_ID")).isTrue();
+    assertThat(hasColumn(jdbcTemplate, "ORDERS", "SOURCE_SESSION_ID")).isFalse();
+    assertThat(hasColumn(jdbcTemplate, "ORDERS", "CLIENT_ORDER_ID")).isFalse();
+    assertThat(hasColumn(jdbcTemplate, "ORDERS", "SENDER_COMP_ID")).isTrue();
+    assertThat(hasColumn(jdbcTemplate, "ORDERS", "TARGET_COMP_ID")).isTrue();
+    assertThat(hasColumn(jdbcTemplate, "ORDERS", "CL_ORD_ID")).isTrue();
     assertThat(hasColumn(jdbcTemplate, "EXECUTIONS", "FILL_QTY")).isTrue();
     assertThat(hasColumn(jdbcTemplate, "PROCESSED_EVENTS", "CONSUMER_NAME")).isTrue();
   }

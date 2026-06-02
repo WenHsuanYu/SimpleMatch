@@ -1,11 +1,9 @@
-package com.simplematch.riskservice.submission;
+package com.simplematch.riskservice.outbox;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
-import com.simplematch.riskservice.outbox.FileRoutingPartitionResolver;
-import com.simplematch.riskservice.outbox.RoutingPartitionResolver;
 import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;

@@ -13,9 +13,9 @@ import com.simplematch.contracts.risk.v1.CancelOrderRequest;
 import com.simplematch.contracts.risk.v1.CancelOrderResponse;
 import com.simplematch.contracts.risk.v1.SubmitOrderRequest;
 import com.simplematch.contracts.risk.v1.SubmitOrderResponse;
+import com.simplematch.riskservice.outbox.SubmissionOutboxFactory;
 import com.simplematch.riskservice.store.JdbcOutboxRepository;
 import com.simplematch.riskservice.store.JdbcSubmissionRepository;
-import com.simplematch.riskservice.submission.SubmissionOutboxFactory;
 import com.simplematch.riskservice.submission.SubmissionService;
 import com.simplematch.riskservice.submission.SubmissionValidator;
 import com.simplematch.riskservice.submission.TransactionalSubmissionService;
@@ -77,13 +77,17 @@ class RiskGrpcServiceTest {
     assertThat(observer.error()).isNull();
     assertThat(observer.value().getAccepted()).isTrue();
     assertThat(observer.value().getOrderId()).isEqualTo("O-C1");
-    assertThat(observer.value().getClientOrderId()).isEqualTo("C1");
+    assertThat(observer.value().getClOrdId()).isEqualTo("C1");
     assertThat(jdbcTemplate.queryForObject(
-      "SELECT session_id FROM risk_submissions WHERE client_order_id = ?",
+      "SELECT sender_comp_id FROM risk_submissions WHERE cl_ord_id = ?",
       String.class,
-      "C1")).isEqualTo("FIX.4.4:CLIENT->SIMPLEMATCH");
+      "C1")).isEqualTo("CLIENT");
     assertThat(jdbcTemplate.queryForObject(
-      "SELECT trading_day FROM risk_submissions WHERE client_order_id = ?",
+      "SELECT target_comp_id FROM risk_submissions WHERE cl_ord_id = ?",
+      String.class,
+      "C1")).isEqualTo("SIMPLEMATCH");
+    assertThat(jdbcTemplate.queryForObject(
+      "SELECT trading_day FROM risk_submissions WHERE cl_ord_id = ?",
       LocalDate.class,
       "C1")).isEqualTo(LocalDate.of(2024, 3, 27));
   }
@@ -107,7 +111,7 @@ class RiskGrpcServiceTest {
                     .build())
                 .setCommandId("cmd-2")
                 .setOrderId("O-C1")
-                .setClientOrderId("CXL-1")
+                    .setClOrdId("CXL-1")
                 .build())
             .build(),
         observer);
@@ -115,7 +119,7 @@ class RiskGrpcServiceTest {
     assertThat(observer.completed()).isTrue();
     assertThat(observer.error()).isNull();
     assertThat(observer.value().getAccepted()).isFalse();
-    assertThat(observer.value().getReasonCode()).isEqualTo("MISSING_ORIGINAL_CLIENT_ORDER_ID");
+    assertThat(observer.value().getReasonCode()).isEqualTo("MISSING_ORIG_CL_ORD_ID");
   }
 
     // Verify that submitOrder normalizes an unexpected command type to NEW before persistence.
@@ -130,7 +134,7 @@ class RiskGrpcServiceTest {
         SubmitOrderRequest.newBuilder()
             .setCommand(newNewOrder("cmd-3", "O-C2", "C2").toBuilder()
                 .setCommandType(CommandType.COMMAND_TYPE_CANCEL)
-                .clearOriginalClientOrderId()
+              .clearOrigClOrdId()
                 .build())
             .build(),
         observer);
@@ -139,7 +143,7 @@ class RiskGrpcServiceTest {
     assertThat(observer.error()).isNull();
     assertThat(observer.value().getAccepted()).isTrue();
     assertThat(jdbcTemplate.queryForObject(
-        "SELECT command_type FROM risk_submissions WHERE client_order_id = ?",
+      "SELECT command_type FROM risk_submissions WHERE cl_ord_id = ?",
         String.class,
         "C2")).isEqualTo("COMMAND_TYPE_NEW");
   }
@@ -163,9 +167,9 @@ class RiskGrpcServiceTest {
     assertThat(observer.completed()).isTrue();
     assertThat(observer.error()).isNull();
     assertThat(observer.value().getAccepted()).isTrue();
-    assertThat(observer.value().getOriginalClientOrderId()).isEqualTo("C1");
+    assertThat(observer.value().getOrigClOrdId()).isEqualTo("C1");
     assertThat(jdbcTemplate.queryForObject(
-        "SELECT command_type FROM risk_submissions WHERE client_order_id = ?",
+      "SELECT command_type FROM risk_submissions WHERE cl_ord_id = ?",
         String.class,
         "CXL-1")).isEqualTo("COMMAND_TYPE_CANCEL");
   }
@@ -185,7 +189,7 @@ class RiskGrpcServiceTest {
     assertThat(observer.completed()).isTrue();
     assertThat(observer.error()).isNull();
     assertThat(observer.value().getAccepted()).isFalse();
-    assertThat(observer.value().getReasonCode()).isEqualTo("MISSING_CLIENT_ORDER_ID");
+    assertThat(observer.value().getReasonCode()).isEqualTo("MISSING_CL_ORD_ID");
   }
 
     // Verify that cancelOrder returns the expected validation rejection code when it receives the default empty command.
@@ -203,7 +207,7 @@ class RiskGrpcServiceTest {
     assertThat(observer.completed()).isTrue();
     assertThat(observer.error()).isNull();
     assertThat(observer.value().getAccepted()).isFalse();
-    assertThat(observer.value().getReasonCode()).isEqualTo("MISSING_CLIENT_ORDER_ID");
+    assertThat(observer.value().getReasonCode()).isEqualTo("MISSING_CL_ORD_ID");
   }
 
   private OrderCommand newNewOrder(String commandId, String orderId, String clientOrderId) {
@@ -217,8 +221,9 @@ class RiskGrpcServiceTest {
         .setCommandId(commandId)
         .setOrderId(orderId)
         .setAccountId("ACC-1")
-        .setSessionId("FIX.4.4:CLIENT->SIMPLEMATCH")
-        .setClientOrderId(clientOrderId)
+        .setSenderCompId("CLIENT")
+        .setTargetCompId("SIMPLEMATCH")
+        .setClOrdId(clientOrderId)
         .setSymbol("AAPL")
         .setSide(Side.SIDE_BUY)
         .setQuantity("10")
@@ -239,8 +244,10 @@ class RiskGrpcServiceTest {
             .build())
         .setCommandId(commandId)
         .setOrderId(orderId)
-        .setClientOrderId(clientOrderId)
-        .setOriginalClientOrderId(originalClientOrderId)
+        .setSenderCompId("CLIENT")
+        .setTargetCompId("SIMPLEMATCH")
+        .setClOrdId(clientOrderId)
+        .setOrigClOrdId(originalClientOrderId)
         .setCommandType(CommandType.COMMAND_TYPE_CANCEL)
         .build();
   }

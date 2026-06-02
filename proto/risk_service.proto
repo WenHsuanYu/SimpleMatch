@@ -21,7 +21,7 @@ message SubmitOrderResponse {
   // In the current implementation this is the same underlying value as OrderCommand.command_id.
   string request_id = 1;
   string order_id = 2;
-  string client_order_id = 3;
+  string cl_ord_id = 3;
   bool accepted = 4;
   string reason_code = 5;
   string reason_text = 6;
@@ -36,8 +36,8 @@ message CancelOrderResponse {
   // In the current implementation this is the same underlying value as OrderCommand.command_id.
   string request_id = 1;
   string order_id = 2;
-  string client_order_id = 3;
-  string original_client_order_id = 4;
+  string cl_ord_id = 3;
+  string orig_cl_ord_id = 4;
   bool accepted = 5;
   string reason_code = 6;
   string reason_text = 7;

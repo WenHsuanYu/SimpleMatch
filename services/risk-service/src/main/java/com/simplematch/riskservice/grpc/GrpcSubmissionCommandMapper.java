@@ -26,9 +26,10 @@ final class GrpcSubmissionCommandMapper {
         command.getCommandId(),
         command.getOrderId(),
         command.getAccountId(),
-        command.getSessionId(),
-        command.getClientOrderId(),
-        command.getOriginalClientOrderId(),
+        command.getSenderCompId(),
+        command.getTargetCompId(),
+        command.getClOrdId(),
+        command.getOrigClOrdId(),
         tradingDayFor(command)),
       new SubmissionCommand.OrderDetails(
         command.getSymbol(),

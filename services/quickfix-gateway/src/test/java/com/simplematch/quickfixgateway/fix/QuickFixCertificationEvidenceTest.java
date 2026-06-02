@@ -128,7 +128,9 @@ class QuickFixCertificationEvidenceTest {
       assertThat(walRecords).hasSize(1);
                   final WalRecord walRecord = walRecords.getFirst();
                   assertThat(walRecord.orderId()).isEqualTo("O-C1");
-                  assertThat(walRecord.clientOrderId()).isEqualTo("C1");
+                  assertThat(walRecord.senderCompId()).isEqualTo("CLIENT");
+                  assertThat(walRecord.targetCompId()).isEqualTo("SIMPLEMATCH");
+                  assertThat(walRecord.clOrdId()).isEqualTo("C1");
                   assertThat(walRecord.messageType()).isEqualTo(NewOrderSingle.MSGTYPE);
                   assertThat(walRecord.rawFix()).contains("35=D").contains("11=C1");
                   assertUuidVersionSeven(walRecord.recordId());
@@ -137,6 +139,9 @@ class QuickFixCertificationEvidenceTest {
                   final OrderCommand publishedCommand = ordersCommandPublisher.lastPublishedCommand();
                   assertThat(publishedCommand.getCommandId()).isEqualTo(walRecord.recordId());
                   assertThat(publishedCommand.getMetadata().getEventId()).isEqualTo(walRecord.recordId());
+                  assertThat(publishedCommand.getSenderCompId()).isEqualTo("CLIENT");
+                  assertThat(publishedCommand.getTargetCompId()).isEqualTo("SIMPLEMATCH");
+                  assertThat(publishedCommand.getClOrdId()).isEqualTo("C1");
                   assertUuidVersionSeven(publishedCommand.getCommandId());
 
       initiator.stop();

@@ -62,15 +62,15 @@ public final class SubmissionCommand {
   }
 
   /**
-   * Represents a normalized session identifier.
+   * Represents a normalized FIX SenderCompID.
    */
-  public record SessionId(String value) {
-    public SessionId {
+  public record SenderCompId(String value) {
+    public SenderCompId {
       value = nullToEmpty(value);
     }
 
-    public static SessionId empty() {
-      return new SessionId("");
+    public static SenderCompId empty() {
+      return new SenderCompId("");
     }
 
     public boolean isBlank() {
@@ -79,15 +79,49 @@ public final class SubmissionCommand {
   }
 
   /**
-   * Represents a normalized client order identifier.
+   * Represents a normalized FIX TargetCompID.
    */
-  public record ClientOrderId(String value) {
-    public ClientOrderId {
+  public record TargetCompId(String value) {
+    public TargetCompId {
       value = nullToEmpty(value);
     }
 
-    public static ClientOrderId empty() {
-      return new ClientOrderId("");
+    public static TargetCompId empty() {
+      return new TargetCompId("");
+    }
+
+    public boolean isBlank() {
+      return value.isBlank();
+    }
+  }
+
+  /**
+   * Represents a normalized FIX ClOrdID.
+   */
+  public record ClOrdId(String value) {
+    public ClOrdId {
+      value = nullToEmpty(value);
+    }
+
+    public static ClOrdId empty() {
+      return new ClOrdId("");
+    }
+
+    public boolean isBlank() {
+      return value.isBlank();
+    }
+  }
+
+  /**
+   * Represents a normalized FIX OrigClOrdID.
+   */
+  public record OrigClOrdId(String value) {
+    public OrigClOrdId {
+      value = nullToEmpty(value);
+    }
+
+    public static OrigClOrdId empty() {
+      return new OrigClOrdId("");
     }
 
     public boolean isBlank() {
@@ -130,15 +164,16 @@ public final class SubmissionCommand {
   }
 
   /**
-    * Groups the request-scoped identifiers and session context for a submission payload.
+     * Groups the request-scoped identifiers and FIX routing context for a submission payload.
    */
   public static final class RequestMetadata {
     private final CommandId commandId;
     private final OrderId orderId;
     private final AccountId accountId;
-    private final SessionId sessionId;
-    private final ClientOrderId clientOrderId;
-    private final ClientOrderId originalClientOrderId;
+      private final SenderCompId senderCompId;
+      private final TargetCompId targetCompId;
+      private final ClOrdId clOrdId;
+      private final OrigClOrdId origClOrdId;
     private final LocalDate tradingDay;
 
     /**
@@ -147,24 +182,27 @@ public final class SubmissionCommand {
      * @param commandId the transport-level command identifier
      * @param orderId the internal or client-visible order identifier
      * @param accountId the account that owns the submission
-     * @param sessionId the session that produced the submission
-     * @param clientOrderId the client-provided order identifier
-     * @param originalClientOrderId the original client order identifier for replacement or cancel flows
+       * @param senderCompId the FIX SenderCompID carried by the submission payload
+       * @param targetCompId the FIX TargetCompID carried by the submission payload
+       * @param clOrdId the FIX ClOrdID carried by the submission payload
+       * @param origClOrdId the FIX OrigClOrdID for cancel flows
      */
     public RequestMetadata(
         String commandId,
         String orderId,
         String accountId,
-        String sessionId,
-        String clientOrderId,
-        String originalClientOrderId) {
+          String senderCompId,
+          String targetCompId,
+          String clOrdId,
+          String origClOrdId) {
       this(
           commandId,
           orderId,
           accountId,
-          sessionId,
-          clientOrderId,
-          originalClientOrderId,
+            senderCompId,
+            targetCompId,
+            clOrdId,
+            origClOrdId,
           null);
     }
 
@@ -174,26 +212,29 @@ public final class SubmissionCommand {
      * @param commandId the transport-level command identifier
      * @param orderId the internal or client-visible order identifier
      * @param accountId the account that owns the submission
-     * @param sessionId the session that produced the submission
-     * @param clientOrderId the client-provided order identifier
-     * @param originalClientOrderId the original client order identifier for replacement or cancel flows
+     * @param senderCompId the FIX SenderCompID carried by the submission payload
+     * @param targetCompId the FIX TargetCompID carried by the submission payload
+     * @param clOrdId the FIX ClOrdID carried by the submission payload
+     * @param origClOrdId the FIX OrigClOrdID for cancel flows
      * @param tradingDay the business trading day derived from the gateway event timestamp when available
      */
     public RequestMetadata(
         String commandId,
         String orderId,
         String accountId,
-        String sessionId,
-        String clientOrderId,
-        String originalClientOrderId,
+        String senderCompId,
+        String targetCompId,
+        String clOrdId,
+        String origClOrdId,
         LocalDate tradingDay) {
       this(
           new CommandId(commandId),
           new OrderId(orderId),
           new AccountId(accountId),
-          new SessionId(sessionId),
-          new ClientOrderId(clientOrderId),
-          new ClientOrderId(originalClientOrderId),
+          new SenderCompId(senderCompId),
+          new TargetCompId(targetCompId),
+          new ClOrdId(clOrdId),
+          new OrigClOrdId(origClOrdId),
           tradingDay);
     }
 
@@ -201,16 +242,18 @@ public final class SubmissionCommand {
         CommandId commandId,
         OrderId orderId,
         AccountId accountId,
-        SessionId sessionId,
-        ClientOrderId clientOrderId,
-        ClientOrderId originalClientOrderId,
+        SenderCompId senderCompId,
+        TargetCompId targetCompId,
+        ClOrdId clOrdId,
+        OrigClOrdId origClOrdId,
         LocalDate tradingDay) {
       this.commandId = commandId == null ? CommandId.empty() : commandId;
       this.orderId = orderId == null ? OrderId.empty() : orderId;
       this.accountId = accountId == null ? AccountId.empty() : accountId;
-      this.sessionId = sessionId == null ? SessionId.empty() : sessionId;
-      this.clientOrderId = clientOrderId == null ? ClientOrderId.empty() : clientOrderId;
-      this.originalClientOrderId = originalClientOrderId == null ? ClientOrderId.empty() : originalClientOrderId;
+      this.senderCompId = senderCompId == null ? SenderCompId.empty() : senderCompId;
+      this.targetCompId = targetCompId == null ? TargetCompId.empty() : targetCompId;
+      this.clOrdId = clOrdId == null ? ClOrdId.empty() : clOrdId;
+      this.origClOrdId = origClOrdId == null ? OrigClOrdId.empty() : origClOrdId;
       this.tradingDay = tradingDay;
     }
 
@@ -220,7 +263,7 @@ public final class SubmissionCommand {
      * @return empty request metadata
      */
     public static RequestMetadata empty() {
-      return new RequestMetadata("", "", "", "", "", "", null);
+      return new RequestMetadata("", "", "", "", "", "", "", null);
     }
 
     public String commandId() {
@@ -247,28 +290,36 @@ public final class SubmissionCommand {
       return accountId;
     }
 
-    public String sessionId() {
-      return sessionId.value();
+    public String senderCompId() {
+      return senderCompId.value();
     }
 
-    public SessionId sessionIdValue() {
-      return sessionId;
+    public SenderCompId senderCompIdValue() {
+      return senderCompId;
     }
 
-    public String clientOrderId() {
-      return clientOrderId.value();
+    public String targetCompId() {
+      return targetCompId.value();
     }
 
-    public ClientOrderId clientOrderIdValue() {
-      return clientOrderId;
+    public TargetCompId targetCompIdValue() {
+      return targetCompId;
     }
 
-    public String originalClientOrderId() {
-      return originalClientOrderId.value();
+    public String clOrdId() {
+      return clOrdId.value();
     }
 
-    public ClientOrderId originalClientOrderIdValue() {
-      return originalClientOrderId;
+    public ClOrdId clOrdIdValue() {
+      return clOrdId;
+    }
+
+    public String origClOrdId() {
+      return origClOrdId.value();
+    }
+
+    public OrigClOrdId origClOrdIdValue() {
+      return origClOrdId;
     }
 
     public LocalDate tradingDay() {
@@ -286,9 +337,10 @@ public final class SubmissionCommand {
       return commandId.equals(that.commandId)
           && orderId.equals(that.orderId)
           && accountId.equals(that.accountId)
-          && sessionId.equals(that.sessionId)
-          && clientOrderId.equals(that.clientOrderId)
-          && originalClientOrderId.equals(that.originalClientOrderId)
+          && senderCompId.equals(that.senderCompId)
+          && targetCompId.equals(that.targetCompId)
+          && clOrdId.equals(that.clOrdId)
+          && origClOrdId.equals(that.origClOrdId)
           && Objects.equals(tradingDay, that.tradingDay);
     }
 
@@ -298,10 +350,11 @@ public final class SubmissionCommand {
           commandId,
           orderId,
           accountId,
-          sessionId,
-          clientOrderId,
-              originalClientOrderId,
-              tradingDay);
+          senderCompId,
+          targetCompId,
+          clOrdId,
+          origClOrdId,
+          tradingDay);
     }
 
     @Override
@@ -309,9 +362,10 @@ public final class SubmissionCommand {
       return "RequestMetadata[commandId=" + commandId
           + ", orderId=" + orderId
           + ", accountId=" + accountId
-          + ", sessionId=" + sessionId
-          + ", clientOrderId=" + clientOrderId
-          + ", originalClientOrderId=" + originalClientOrderId
+          + ", senderCompId=" + senderCompId
+          + ", targetCompId=" + targetCompId
+          + ", clOrdId=" + clOrdId
+          + ", origClOrdId=" + origClOrdId
           + ", tradingDay=" + tradingDay + "]";
     }
   }
@@ -466,7 +520,7 @@ public final class SubmissionCommand {
   }
 
   /**
-   * Returns the grouped request-scoped identifiers and session context.
+  * Returns the grouped request-scoped identifiers and FIX routing context.
    *
    * @return the normalized request metadata
    */
@@ -507,20 +561,28 @@ public final class SubmissionCommand {
     return requestMetadata.accountIdValue();
   }
 
-  public String sessionId() {
-    return requestMetadata.sessionId();
+  public String senderCompId() {
+    return requestMetadata.senderCompId();
   }
 
-  public SessionId sessionIdValue() {
-    return requestMetadata.sessionIdValue();
+  public SenderCompId senderCompIdValue() {
+    return requestMetadata.senderCompIdValue();
   }
 
-  public String clientOrderId() {
-    return requestMetadata.clientOrderId();
+  public String targetCompId() {
+    return requestMetadata.targetCompId();
   }
 
-  public ClientOrderId clientOrderIdValue() {
-    return requestMetadata.clientOrderIdValue();
+  public TargetCompId targetCompIdValue() {
+    return requestMetadata.targetCompIdValue();
+  }
+
+  public String clOrdId() {
+    return requestMetadata.clOrdId();
+  }
+
+  public ClOrdId clOrdIdValue() {
+    return requestMetadata.clOrdIdValue();
   }
 
   public String symbol() {
@@ -555,12 +617,12 @@ public final class SubmissionCommand {
     return orderDetails.tif();
   }
 
-  public String originalClientOrderId() {
-    return requestMetadata.originalClientOrderId();
+  public String origClOrdId() {
+    return requestMetadata.origClOrdId();
   }
 
-  public ClientOrderId originalClientOrderIdValue() {
-    return requestMetadata.originalClientOrderIdValue();
+  public OrigClOrdId origClOrdIdValue() {
+    return requestMetadata.origClOrdIdValue();
   }
 
   public LocalDate tradingDay() {
@@ -585,15 +647,16 @@ public final class SubmissionCommand {
     return commandIdValue().isBlank()
       && orderIdValue().isBlank()
         && accountIdValue().isBlank()
-        && sessionIdValue().isBlank()
-      && clientOrderIdValue().isBlank()
+        && senderCompIdValue().isBlank()
+        && targetCompIdValue().isBlank()
+      && clOrdIdValue().isBlank()
         && symbol().isBlank()
         && side() == Side.SIDE_UNSPECIFIED
       && quantityValue().isBlank()
       && priceValue().isBlank()
         && orderType() == OrderType.ORDER_TYPE_UNSPECIFIED
         && tif() == TimeInForce.TIME_IN_FORCE_UNSPECIFIED
-      && originalClientOrderIdValue().isBlank()
+      && origClOrdIdValue().isBlank()
       && tradingDay() == null;
   }
 

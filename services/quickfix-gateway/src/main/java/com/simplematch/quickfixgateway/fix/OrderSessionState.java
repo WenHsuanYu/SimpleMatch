@@ -7,7 +7,7 @@ public final class OrderSessionState {
   private final SessionID sessionId;
   private final String orderId;
   private final String accountId;
-  private final String clientOrderId;
+  private final String clOrdId;
   private final String symbol;
   private final Side side;
   private final String quantity;
@@ -19,7 +19,7 @@ public final class OrderSessionState {
       SessionID sessionId,
       String orderId,
       String accountId,
-      String clientOrderId,
+      String clOrdId,
       String symbol,
       Side side,
       String quantity,
@@ -27,7 +27,7 @@ public final class OrderSessionState {
     this.sessionId = sessionId;
     this.orderId = orderId;
     this.accountId = accountId;
-    this.clientOrderId = clientOrderId;
+    this.clOrdId = clOrdId;
     this.symbol = symbol;
     this.side = side;
     this.quantity = quantity;
@@ -46,8 +46,8 @@ public final class OrderSessionState {
     return accountId;
   }
 
-  public String clientOrderId() {
-    return clientOrderId;
+  public String clOrdId() {
+    return clOrdId;
   }
 
   public String symbol() {
@@ -78,6 +78,6 @@ public final class OrderSessionState {
     this.lastCancelRequest = lastCancelRequest;
   }
 
-  public record CancelRequestState(String cancelClientOrderId, String originalClientOrderId) {
+  public record CancelRequestState(String cancelClOrdId, String origClOrdId) {
   }
 }

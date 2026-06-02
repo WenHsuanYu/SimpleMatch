@@ -35,7 +35,8 @@ class WalReplayServiceTest {
         "cmd-1",
         1L,
         "quickfix-gateway",
-        "FIX.4.4:CLIENT->GW",
+      "CLIENT",
+      "GW",
         "D",
         "O-C1",
         "C1",
@@ -60,6 +61,9 @@ class WalReplayServiceTest {
     verify(publisher).publish(captor.capture());
     assertThat(captor.getValue().getCommandId()).isEqualTo("cmd-1");
     assertThat(captor.getValue().getOrderId()).isEqualTo("O-C1");
+    assertThat(captor.getValue().getSenderCompId()).isEqualTo("CLIENT");
+    assertThat(captor.getValue().getTargetCompId()).isEqualTo("GW");
+    assertThat(captor.getValue().getClOrdId()).isEqualTo("C1");
     assertThat(captor.getValue().getSymbol()).isEqualTo("AAPL");
   }
 }

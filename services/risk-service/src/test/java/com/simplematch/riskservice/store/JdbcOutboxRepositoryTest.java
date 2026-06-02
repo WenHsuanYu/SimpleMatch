@@ -3,8 +3,8 @@ package com.simplematch.riskservice.store;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
-import com.simplematch.riskservice.submission.OutboxRecord;
-import com.simplematch.riskservice.submission.OutboxRepository;
+import com.simplematch.riskservice.outbox.OutboxRecord;
+import com.simplematch.riskservice.outbox.OutboxRepository;
 import java.util.UUID;
 import org.flywaydb.core.Flyway;
 import org.junit.jupiter.api.BeforeEach;
