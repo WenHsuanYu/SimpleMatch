@@ -683,6 +683,7 @@
   - [x] [#6](https://github.com/WenHsuanYu/SimpleMatch/issues/6) 發布 development 與 operations platform specifications
   - [x] [#7](https://github.com/WenHsuanYu/SimpleMatch/issues/7) 新增 service-owned target documentation
   - [x] [#8](https://github.com/WenHsuanYu/SimpleMatch/issues/8) 將 README 收斂為 target-architecture landing page
+  - [x] [#9](https://github.com/WenHsuanYu/SimpleMatch/issues/9) 完成 canonical documentation 與 compatibility navigation audit
 - [ ] README 補 link：
   - [ ] 指向 proto 檔
   - [ ] 指向 deploy/k8s
