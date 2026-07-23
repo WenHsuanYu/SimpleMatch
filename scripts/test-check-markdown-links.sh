@@ -55,6 +55,9 @@ printf '%s\n' '# Child' '' '## Present' >"$fixture_root/missing-heading/child.md
 assert_fails_with 'a missing local heading' 'Missing heading' "$checker" "$fixture_root/missing-heading/README.md"
 
 assert_succeeds 'the repository README and documentation indexes by default' "$checker"
+assert_succeeds 'the retained database and configuration execution guides' "$checker" \
+  "$repo_root/docs/database-architecture.md" \
+  "$repo_root/docs/config.md"
 
 readme="$repo_root/README.md"
 if ! grep -Fq '](services/docs/README.md)' "$readme"; then

@@ -9,8 +9,9 @@ record of a particular delivery phase.
 SimpleMatch remains a polyglot monorepo. Java and Spring Cloud services live
 under `services/` and share Gradle build logic; the latency-sensitive native
 matching core uses CMake. Protocol definitions are kept in `proto/`, FIX
-dictionaries in `fix-spec/`, and QuickFix session configuration under
-`config/fix/`. Cross-cutting target specifications live in `services/docs/`;
+dictionaries in `fix-spec/`, and QuickFix session configuration at
+[config/quickfix/acceptor.cfg](../../../config/quickfix/acceptor.cfg).
+Cross-cutting target specifications live in `services/docs/`;
 service-owned target specifications live beside their owning service.
 
 ## Toolchain
