@@ -37,11 +37,53 @@ When a change crosses a service boundary, messaging boundary, or deployment boun
 
 ## Layer 3: Skill routing
 
-- Use `solid` for architecture, refactoring, debugging, review, and other non-trivial code changes.
-- Use `cloud-design-patterns` for distributed-system, messaging, reliability, scaling, and deployment decisions.
-- Use `java-springboot` for Spring Boot application code, configuration, controllers, services, and persistence wiring.
-- Use `java-junit` for unit, integration, parameterized, and Spring Boot tests.
-- Use `java-docs` for Javadocs on public/protected members and any non-obvious Java code.
-- Use `postgresql-code-review` for PostgreSQL schema, migration, SQL safety, and maintainability review.
-- Use `postgresql-optimization` for PostgreSQL query design, indexing, and performance-sensitive SQL changes.
-- If a task spans multiple categories, consult all relevant skills before editing.
+Use an available workflow skill whenever its description matches the task. Read its
+`SKILL.md` before acting and follow it in addition to these repository rules. Do
+not claim to use a skill that is unavailable; apply the relevant guidance in this
+file and `docs/development-workflow.md` directly instead.
+
+- Use `diagnosing-bugs` to investigate reported failures, errors, regressions, or
+  performance problems. Diagnose first; implement a fix only when requested.
+- Use `tdd` when the request explicitly asks for test-first development,
+  red-green-refactor, or integration-test-led work. Regardless, keep the default
+  test-first workflow in Layer 2 for all non-trivial changes.
+- Use `codebase-design` for non-trivial module boundaries, refactoring seams,
+  testability, or interface-deepening decisions.
+- Use `design-an-interface` when the user asks to explore or compare API/module
+  interface alternatives.
+- Use `domain-modeling` when introducing or clarifying business terminology,
+  bounded concepts, or an architectural decision.
+- Use `prototype` only for a deliberately throwaway experiment that answers a
+  design question; do not treat a prototype as production implementation.
+- Use `code-review` for reviews of changes since a commit, branch, tag, or
+  merge-base. Use `resolving-merge-conflicts` for an in-progress merge or rebase.
+- Use `research` when the task requires external technical or product research
+  captured as a Markdown artifact in this repository.
+- Use `setup-pre-commit` only when adding or changing Husky, lint-staged, or
+  pre-commit automation. Use `git-guardrails-claude-code` only for Claude Code
+  git-safety hooks.
+- Use `github:github`, `github:gh-address-comments`, `github:gh-fix-ci`, and
+  `github:yeet` only for the corresponding GitHub repository, review-comment,
+  GitHub Actions, and publish-a-draft-PR workflows.
+- Use `openai-docs` only for OpenAI/Codex product or API questions, and
+  `find-skills` when the user asks to discover or install an additional skill.
+
+For Spring Boot, JUnit, Javadocs, PostgreSQL, distributed-systems, and native
+changes, no repository-specific skill is currently required. Follow Layers 1 and
+2 directly: preserve the Java/Spring/Javadoc/Flyway rules, explicitly assess
+cross-service reliability concerns, and run the relevant Gradle, Flyway, or CMake
+validation. If multiple available skills match, use all of them in the smallest
+order that covers the task.
+
+## graphify
+
+This project has a knowledge graph at graphify-out/ with god nodes, community structure, and cross-file relationships.
+
+When the user types `/graphify`, use the installed graphify skill or instructions before doing anything else.
+
+Rules:
+- For codebase questions, first run `graphify query "<question>"` when graphify-out/graph.json exists. Use `graphify path "<A>" "<B>"` for relationships and `graphify explain "<concept>"` for focused concepts. These return a scoped subgraph, usually much smaller than GRAPH_REPORT.md or raw grep output.
+- Dirty graphify-out/ files are expected after hooks or incremental updates; dirty graph files are not a reason to skip graphify. Only skip graphify if the task is about stale or incorrect graph output, or the user explicitly says not to use it.
+- If graphify-out/wiki/index.md exists, use it for broad navigation instead of raw source browsing.
+- Read graphify-out/GRAPH_REPORT.md only for broad architecture review or when query/path/explain do not surface enough context.
+- After modifying code, run `graphify update .` to keep the graph current (AST-only, no API cost).
