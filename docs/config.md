@@ -1,4 +1,9 @@
-# Config (env + JSON)
+# Configuration Runbook (env + JSON)
+
+The canonical target configuration ownership and safety rules are in
+[the target platform specification](../services/docs/platform/configuration.md).
+This page records current keys, aliases, defaults, and operational endpoints;
+it is not a second target-configuration source.
 
 This repo uses **environment variables** plus an **optional JSON config file**.
 

@@ -70,4 +70,46 @@ done
 
 assert_succeeds 'the architecture index and its canonical specifications' "$checker" "$architecture_index"
 
+contracts_index="$repo_root/services/docs/contracts/README.md"
+for contract_specification in kafka-events.md grpc-apis.md fix-gateway.md; do
+  if ! grep -Fq "($contract_specification)" "$contracts_index"; then
+    echo "Missing contracts index entry: $contract_specification" >&2
+    exit 1
+  fi
+done
+
+assert_succeeds 'the contracts index and its canonical specifications' "$checker" "$contracts_index"
+
+platform_index="$repo_root/services/docs/platform/README.md"
+for platform_specification in \
+  data-model.md \
+  database-architecture.md \
+  configuration.md \
+  development-environment.md \
+  deployment.md \
+  observability.md \
+  testing.md \
+  troubleshooting.md; do
+  if ! grep -Fq "($platform_specification)" "$platform_index"; then
+    echo "Missing platform index entry: $platform_specification" >&2
+    exit 1
+  fi
+done
+
+assert_succeeds 'the platform index and its canonical specifications' "$checker" "$platform_index"
+
+target_docs_index="$repo_root/services/docs/README.md"
+for service_documentation in \
+  ../account-service/docs/README.md \
+  ../risk-service/docs/README.md \
+  ../quickfix-gateway/docs/README.md \
+  ../persistence/docs/README.md; do
+  if ! grep -Fq "($service_documentation)" "$target_docs_index"; then
+    echo "Missing service documentation index entry: $service_documentation" >&2
+    exit 1
+  fi
+done
+
+assert_succeeds 'the target documentation index and service-owned specifications' "$checker" "$target_docs_index"
+
 echo 'Markdown link checks passed.'
