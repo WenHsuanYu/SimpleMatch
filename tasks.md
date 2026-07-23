@@ -675,6 +675,14 @@
 ## 9) 文件 / 操作手冊（補齊落地）
 
 - [ ] `tasks.md`（本檔）維護：每個里程碑完成時打勾
+- [ ] [README and technical documentation refactor](docs/readme-documentation-refactor-spec.md)（GitHub issue [#1](https://github.com/WenHsuanYu/SimpleMatch/issues/1)）：將目標技術規格收斂至 `services/docs/`，並保留穩定索引與 forwarding pages
+  - [x] [#2](https://github.com/WenHsuanYu/SimpleMatch/issues/2) 建立 cross-cutting docs index 與 Markdown link-validation seam
+  - [x] [#3](https://github.com/WenHsuanYu/SimpleMatch/issues/3) 發布 cross-cutting architecture specifications
+  - [x] [#4](https://github.com/WenHsuanYu/SimpleMatch/issues/4) 發布 Kafka、gRPC 與 FIX contract specifications
+  - [x] [#5](https://github.com/WenHsuanYu/SimpleMatch/issues/5) 發布 data、database 與 configuration platform specifications
+  - [x] [#6](https://github.com/WenHsuanYu/SimpleMatch/issues/6) 發布 development 與 operations platform specifications
+  - [x] [#7](https://github.com/WenHsuanYu/SimpleMatch/issues/7) 新增 service-owned target documentation
+  - [x] [#8](https://github.com/WenHsuanYu/SimpleMatch/issues/8) 將 README 收斂為 target-architecture landing page
 - [ ] README 補 link：
   - [ ] 指向 proto 檔
   - [ ] 指向 deploy/k8s

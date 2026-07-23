@@ -56,6 +56,17 @@ assert_fails_with 'a missing local heading' 'Missing heading' "$checker" "$fixtu
 
 assert_succeeds 'the repository README and documentation indexes by default' "$checker"
 
+readme="$repo_root/README.md"
+if ! grep -Fq '](services/docs/README.md)' "$readme"; then
+  echo 'Missing stable target documentation entry link in README' >&2
+  exit 1
+fi
+
+if grep -Eq '\]\(services/docs/(architecture|contracts|platform)/README\.md\)' "$readme"; then
+  echo 'README links directly to a documentation area instead of the stable entry point' >&2
+  exit 1
+fi
+
 architecture_index="$repo_root/services/docs/architecture/README.md"
 for architecture_specification in \
   system-boundaries.md \

@@ -50,14 +50,5 @@ detailed topology, ordering, eventing, and reliability decisions are in the
 
 ## Documentation
 
-Cross-cutting target specifications are grouped by concern:
-
-- [Architecture](services/docs/architecture/README.md) — system boundaries,
-  ordering and latency, eventing and CQRS, and reliability and consistency.
-- [Contracts](services/docs/contracts/README.md) — cross-service protocols and
-  compatibility rules.
-- [Platform](services/docs/platform/README.md) — data, environment,
-  deployment, and operational specifications.
-
-Repository workflow guidance, tasks, phase gates, and certification evidence
-remain outside this target-specification tree.
+Use the [target documentation index](services/docs/README.md) to navigate all
+technical target specifications.
