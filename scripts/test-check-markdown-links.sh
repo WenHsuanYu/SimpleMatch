@@ -4,6 +4,7 @@ set -euo pipefail
 
 script_dir="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
 checker="$script_dir/check-markdown-links.sh"
+repo_root="$(cd -- "$script_dir/.." && pwd)"
 fixture_root="$(mktemp -d)"
 
 cleanup() {
@@ -54,5 +55,19 @@ printf '%s\n' '# Child' '' '## Present' >"$fixture_root/missing-heading/child.md
 assert_fails_with 'a missing local heading' 'Missing heading' "$checker" "$fixture_root/missing-heading/README.md"
 
 assert_succeeds 'the repository README and documentation indexes by default' "$checker"
+
+architecture_index="$repo_root/services/docs/architecture/README.md"
+for architecture_specification in \
+  system-boundaries.md \
+  ordering-and-latency.md \
+  eventing-and-cqrs.md \
+  reliability-and-consistency.md; do
+  if ! grep -Fq "($architecture_specification)" "$architecture_index"; then
+    echo "Missing architecture index entry: $architecture_specification" >&2
+    exit 1
+  fi
+done
+
+assert_succeeds 'the architecture index and its canonical specifications' "$checker" "$architecture_index"
 
 echo 'Markdown link checks passed.'
