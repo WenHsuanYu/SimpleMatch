@@ -233,10 +233,10 @@ before the broader phase gate.
 
 ### Phase 0: Establish a trustworthy baseline
 
-- [ ] Commit 0.1: Review the current dirty worktree, classify intended source
+- [x] Commit 0.1: Review the current dirty worktree, classify intended source
   changes versus generated or runtime artifacts, and checkpoint only intended
   work.
-- [ ] Commit 0.2: Record the current module inventory and label documented but
+- [x] Commit 0.2: Record the current module inventory and label documented but
   missing deployables as target capabilities.
 - [x] Commit 0.3: Add black-box characterization tests for the current FIX new
   order, cancellation, risk response, durable submission, and outbox behavior.
