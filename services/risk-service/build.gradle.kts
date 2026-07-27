@@ -15,8 +15,6 @@ dependencies {
 }
 
 simpleMatchFlyway {
-  serviceName.set("riskService")
-  migrationLocations.set(listOf("filesystem:${project.projectDir}/src/main/resources/db/migration/risk-service"))
-  baselineVersion.set("1")
+  serviceId.set("risk-service")
   schemaName.set("risk_service")
 }

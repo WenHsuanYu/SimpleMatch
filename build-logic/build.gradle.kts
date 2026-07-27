@@ -1,4 +1,5 @@
 import org.jetbrains.kotlin.gradle.dsl.JvmTarget
+import org.gradle.api.tasks.testing.Test
 
 plugins {
   `kotlin-dsl`
@@ -29,6 +30,11 @@ dependencies {
   implementation(libs.spring.boot.gradle.plugin)
   implementation(libs.spring.dependency.management.gradle.plugin)
   compileOnly("javax.inject:javax.inject:1")
+  testImplementation(kotlin("test"))
+}
+
+tasks.withType<Test>().configureEach {
+  useJUnitPlatform()
 }
 
 gradlePlugin {

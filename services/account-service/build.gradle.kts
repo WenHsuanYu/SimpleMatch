@@ -16,8 +16,6 @@ dependencies {
 }
 
 simpleMatchFlyway {
-  serviceName.set("accountService")
-  migrationLocations.set(listOf("filesystem:${project.projectDir}/src/main/resources/db/migration/account-service"))
-  baselineVersion.set("1")
+  serviceId.set("account-service")
   schemaName.set("account_service")
 }
