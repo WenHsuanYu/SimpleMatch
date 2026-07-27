@@ -2,6 +2,7 @@ package com.simplematch.riskservice.store;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
+import static com.simplematch.riskservice.testsupport.TestCommandIds.normalize;
 
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
@@ -21,7 +22,6 @@ import com.simplematch.riskservice.submission.SubmissionResult;
 import com.simplematch.riskservice.submission.SubmissionService;
 import com.simplematch.riskservice.submission.SubmissionValidator;
 import com.simplematch.riskservice.submission.TransactionalSubmissionService;
-import java.nio.charset.StandardCharsets;
 import java.util.Arrays;
 import java.util.List;
 import java.util.Objects;
@@ -81,22 +81,22 @@ class SubmissionServiceIntegrationTest {
     final OrderCommand command = newNewOrder("cmd-1", "O-C1", "C1");
 
     final SubmissionResult first = persist(command);
-    final SubmissionResult duplicate = persist(command.toBuilder().setCommandId("cmd-2").build());
+    final SubmissionResult duplicate = persist(command.toBuilder().setCommandId(normalize("cmd-2")).build());
     final String outboxEventId = storedOutboxEventId(first);
 
     assertThat(first.accepted()).isTrue();
-    assertThat(first.requestId()).isEqualTo("cmd-1");
+    assertThat(first.requestId()).isEqualTo(command.getCommandId());
     assertThat(duplicate).isEqualTo(first);
     assertThat(jdbcTemplate.queryForObject("SELECT COUNT(*) FROM risk_submissions", Integer.class)).isEqualTo(1);
     assertThat(jdbcTemplate.queryForObject("SELECT COUNT(*) FROM outbox", Integer.class)).isEqualTo(1);
     assertThat(jdbcTemplate.queryForObject(
       "SELECT created_at_unix_ms FROM outbox WHERE event_id = ?",
       Long.class,
-      outboxEventId)).isEqualTo(first.createdAtUnixMs());
+      UUID.fromString(outboxEventId))).isEqualTo(first.createdAtUnixMs());
     assertThat(jdbcTemplate.queryForObject(
       "SELECT topic FROM outbox WHERE event_id = ?",
       String.class,
-      outboxEventId)).isEqualTo("orders.validated");
+      UUID.fromString(outboxEventId))).isEqualTo("orders.validated");
   }
 
     // Verify that the PostgreSQL-backed journal can store separate submissions when the FIX session changes and the business key differs.
@@ -106,11 +106,11 @@ class SubmissionServiceIntegrationTest {
     void persistsSeparateSubmissionsWhenOnlySessionDiffers() {
     final OrderCommand first = newNewOrder("cmd-1", "O-C1", "C1");
     final OrderCommand second = first.toBuilder()
-      .setCommandId("cmd-2")
+      .setCommandId(normalize("cmd-2"))
       .setOrderId("O-C2")
       .setSenderCompId("CLIENT2")
       .setTargetCompId("SIMPLEMATCH")
-      .setMetadata(first.getMetadata().toBuilder().setEventId("cmd-2").build())
+      .setMetadata(first.getMetadata().toBuilder().setEventId(normalize("cmd-2")).build())
       .build();
 
     final SubmissionResult firstResult = persist(first);
@@ -147,6 +147,21 @@ class SubmissionServiceIntegrationTest {
     assertThat(countRows("outbox")).isEqualTo(1);
   }
 
+  @DisplayName("missing session identity fields return the matching rejection code")
+  @ParameterizedTest(name = "{0}")
+  @MethodSource("missingSessionIdentityCases")
+  void rejectsMissingSessionIdentityWithSpecificReasonCodes(
+      String ignoredCaseName,
+      OrderCommand command,
+      String expectedReasonCode) {
+    final SubmissionResult submission = persist(command);
+
+    assertThat(submission.accepted()).isFalse();
+    assertThat(submission.reasonCode()).isEqualTo(expectedReasonCode);
+    assertThat(countRows("risk_submissions")).isEqualTo(1);
+    assertThat(countRows("outbox")).isEqualTo(1);
+  }
+
   // Verify that an incomplete limit order returns the same rejection result for later duplicate requests after the first rejection.
   // Scenario: the limit order is missing price, and the second request changes only the commandId.
   @DisplayName("duplicate requests for an incomplete limit order reuse the existing rejection result")
@@ -155,7 +170,7 @@ class SubmissionServiceIntegrationTest {
     final OrderCommand invalid = newNewOrder("cmd-1", "O-C1", "C1").toBuilder().clearPrice().build();
 
     final SubmissionResult first = persist(invalid);
-    final SubmissionResult duplicate = persist(invalid.toBuilder().setCommandId("cmd-2").build());
+    final SubmissionResult duplicate = persist(invalid.toBuilder().setCommandId(normalize("cmd-2")).build());
 
     assertThat(first.accepted()).isFalse();
     assertThat(first.reasonCode()).isEqualTo("MISSING_PRICE");
@@ -171,11 +186,11 @@ class SubmissionServiceIntegrationTest {
     final OrderCommand cancel = OrderCommand.newBuilder()
         .setMetadata(EventMetadata.newBuilder()
             .setSchemaVersion("v1")
-            .setEventId("cmd-1")
+        .setEventId(normalize("cmd-1"))
             .setCreatedAtUnixMs(1L)
             .setSourceService("quickfix-gateway")
             .build())
-        .setCommandId("cmd-1")
+      .setCommandId(normalize("cmd-1"))
         .setOrderId("O-C1")
         .setSenderCompId("CLIENT")
         .setTargetCompId("SIMPLEMATCH")
@@ -333,7 +348,7 @@ class SubmissionServiceIntegrationTest {
   @Test
   void returnsExistingSubmissionWhenConcurrentInsertCausesDuplicateKey() throws Exception {
     final OrderCommand delayedCommand = newNewOrder("cmd-delayed", "O-C1", "C1");
-    final OrderCommand winnerCommand = delayedCommand.toBuilder().setCommandId("cmd-winner").build();
+    final OrderCommand winnerCommand = delayedCommand.toBuilder().setCommandId(normalize("cmd-winner")).build();
     final CountDownLatch firstLookupCompleted = new CountDownLatch(1);
     final CountDownLatch allowDelayedInsert = new CountDownLatch(1);
     final SubmissionService delayedService = newSubmissionService(
@@ -359,7 +374,7 @@ class SubmissionServiceIntegrationTest {
       final SubmissionResult delayedResult = delayedFuture.get(5, TimeUnit.SECONDS);
 
       assertThat(delayedResult).isEqualTo(winner);
-      assertThat(delayedResult.requestId()).isEqualTo("cmd-winner");
+  assertThat(delayedResult.requestId()).isEqualTo(normalize("cmd-winner"));
       assertThat(countRows("risk_submissions")).isEqualTo(1);
       assertThat(countRows("outbox")).isEqualTo(1);
     } finally {
@@ -368,16 +383,117 @@ class SubmissionServiceIntegrationTest {
     }
   }
 
-  // Verify that when data exceeds database column length limits, the entire transaction fails and leaves no residual data.
-  // Scenario: use a parameterized test to cover oversized requestId, orderId, and clientOrderId inputs.
-  @DisplayName("rolls back when required fields exceed database length limits")
+  // Verify that oversized request and order identifiers are rejected before persistence and still emit a rejected journal entry.
+  // Scenario: keep the existing oversized inputs but expect validator-driven rejection instead of a JDBC failure.
+  @DisplayName("oversized request and order identifiers are rejected before the database write")
   @ParameterizedTest(name = "{0}")
-  @MethodSource("oversizedCommandCases")
-  void rollsBackWhenRequiredColumnsExceedDatabaseLength(String ignoredCaseName, OrderCommand command) {
-    assertThatThrownBy(() -> persist(command)).isInstanceOf(DataAccessException.class);
-    assertThat(countRows("risk_submissions")).isZero();
-    assertThat(countRows("outbox")).isZero();
+  @MethodSource("applicationValidatedOversizedCommandCases")
+  void rejectsOversizedRequestOrOrderIdentifiersBeforePersistence(
+      String ignoredCaseName,
+      OrderCommand command,
+      String expectedReasonCode) {
+    final SubmissionResult submission = persist(command);
+
+    assertThat(submission.accepted()).isFalse();
+    assertThat(submission.reasonCode()).isEqualTo(expectedReasonCode);
+    assertThat(countRows("risk_submissions")).isEqualTo(1);
+    assertThat(countRows("outbox")).isEqualTo(1);
   }
+
+  @DisplayName("oversized session identity fields are rejected before the database write")
+  @ParameterizedTest(name = "{0}")
+  @MethodSource("oversizedSessionIdentityCases")
+  void rejectsOversizedSessionIdentityBeforePersistence(
+      String ignoredCaseName,
+      OrderCommand command,
+      String expectedReasonCode) {
+    final SubmissionResult submission = persist(command);
+
+    assertThat(submission.accepted()).isFalse();
+    assertThat(submission.reasonCode()).isEqualTo(expectedReasonCode);
+    assertThat(countRows("risk_submissions")).isEqualTo(1);
+    assertThat(countRows("outbox")).isEqualTo(1);
+  }
+
+  @DisplayName("oversized symbol is rejected before persistence and falls back to orderId for outbox message key")
+  @Test
+  void rejectsOversizedSymbolBeforePersistence() throws Exception {
+    final String oversized = "X".repeat(300);
+    final OrderCommand command = newNewOrderBuilder("cmd-1", "O-C1", "C1")
+        .setSymbol(oversized)
+        .build();
+
+    final SubmissionResult submission = persist(command);
+    final OutboxRow outboxRow = outboxRowForSubmission(submission);
+    final OrderRejected rejected = OrderRejected.parseFrom(outboxRow.payload());
+
+    assertThat(submission.accepted()).isFalse();
+    assertThat(submission.reasonCode()).isEqualTo("OVERSIZED_SYMBOL");
+    assertThat(countRows("risk_submissions")).isEqualTo(1);
+    assertThat(countRows("outbox")).isEqualTo(1);
+    assertThat(outboxRow.messageKey()).isEqualTo(command.getOrderId());
+    assertThat(rejected.getSymbol()).isEqualTo(oversized);
+  }
+
+    // Verify that oversized ClOrdID is rejected before persistence while still storing the raw value separately from the dedup key.
+    // Scenario: repeat the same oversized order twice and confirm the persisted business key stays deterministic.
+    @DisplayName("oversized cl_ord_id is rejected before persistence and keeps raw data separately")
+    @Test
+    void rejectsOversizedClOrdIdBeforePersistenceAndKeepsRawData() {
+    final String oversized = "X".repeat(300);
+    final OrderCommand command = newNewOrderBuilder("cmd-1", "O-C1", "C1")
+      .setClOrdId(oversized)
+      .build();
+
+    final SubmissionResult first = persist(command);
+    final SubmissionResult duplicate = persist(
+      command.toBuilder()
+        .setCommandId(normalize("cmd-2"))
+        .setMetadata(command.getMetadata().toBuilder().setEventId(normalize("cmd-2")).build())
+        .build());
+
+    assertThat(first.accepted()).isFalse();
+    assertThat(first.reasonCode()).isEqualTo("OVERSIZED_CL_ORD_ID");
+    assertThat(first.clOrdId()).isEqualTo(oversized);
+    assertThat(duplicate).isEqualTo(first);
+    assertThat(countRows("risk_submissions")).isEqualTo(1);
+    assertThat(countRows("outbox")).isEqualTo(1);
+    assertThat(jdbcTemplate.queryForObject(
+      "SELECT raw_cl_ord_id FROM risk_submissions WHERE request_id = ?",
+      String.class,
+      first.requestId())).isEqualTo(oversized);
+    assertThat(jdbcTemplate.queryForObject(
+      "SELECT cl_ord_id FROM risk_submissions WHERE request_id = ?",
+      String.class,
+      first.requestId())).isEqualTo(first.persistedClOrdId());
+    }
+
+    // Verify that oversized OrigClOrdID is rejected before persistence while keeping the raw response value available.
+    // Scenario: cancel rejects with the raw orig_cl_ord_id echoed back and a persistence-safe value stored separately.
+    @DisplayName("oversized orig_cl_ord_id is rejected before persistence and keeps raw data separately")
+    @Test
+    void rejectsOversizedOrigClOrdIdBeforePersistenceAndKeepsRawData() {
+    final String oversized = "X".repeat(300);
+    final OrderCommand command = newCancelOrderBuilder("cmd-1", "O-C1", "CXL-1", "C1")
+      .setOrigClOrdId(oversized)
+      .build();
+
+    final SubmissionResult submission = persist(command);
+
+    assertThat(submission.accepted()).isFalse();
+    assertThat(submission.reasonCode()).isEqualTo("OVERSIZED_ORIG_CL_ORD_ID");
+    assertThat(submission.origClOrdId()).isEqualTo(oversized);
+    assertThat(countRows("risk_submissions")).isEqualTo(1);
+    assertThat(countRows("outbox")).isEqualTo(1);
+    assertThat(jdbcTemplate.queryForObject(
+      "SELECT raw_orig_cl_ord_id FROM risk_submissions WHERE request_id = ?",
+      String.class,
+      submission.requestId())).isEqualTo(oversized);
+    assertThat(jdbcTemplate.queryForObject(
+      "SELECT orig_cl_ord_id FROM risk_submissions WHERE request_id = ?",
+      String.class,
+      submission.requestId())).isEqualTo(submission.persistedOrigClOrdId());
+    }
 
   // Verify that inputs containing SQL special characters and Unicode are stored as plain data without breaking persistence.
   // Scenario: clientOrderId and symbol contain quotes, SQL fragments, German characters, and Unicode/emoji.
@@ -402,7 +518,7 @@ class SubmissionServiceIntegrationTest {
     assertThat(jdbcTemplate.queryForObject(
         "SELECT message_key FROM outbox WHERE event_id = ?",
         String.class,
-      storedOutboxEventId(submission))).isEqualTo(symbol);
+      UUID.fromString(storedOutboxEventId(submission)))).isEqualTo(symbol);
   }
 
     // Verify that when the same business key is submitted again, the existing outbox event id stays stable instead of being recalculated when the requestId changes.
@@ -413,11 +529,13 @@ class SubmissionServiceIntegrationTest {
     final OrderCommand command = newNewOrder("cmd-1", "O-C1", "C1");
 
     final SubmissionResult first = persist(command);
-    final SubmissionResult duplicate = persist(command.toBuilder().setCommandId("cmd-2").build());
-    final String storedOutboxEventId = storedOutboxEventId(first);
+    final String firstStoredOutboxEventId = storedOutboxEventId(first);
+    final SubmissionResult duplicate = persist(command.toBuilder().setCommandId(normalize("cmd-2")).build());
+    final String duplicateStoredOutboxEventId = storedOutboxEventId(first);
 
     assertThat(duplicate).isEqualTo(first);
-    assertThat(storedOutboxEventId).isEqualTo(expectedOutboxEventId(first));
+    assertThat(duplicateStoredOutboxEventId).isEqualTo(firstStoredOutboxEventId);
+    assertUuidVersionSeven(duplicateStoredOutboxEventId);
   }
 
   private static Stream<Arguments> invalidNewOrderCases() {
@@ -452,7 +570,23 @@ class SubmissionServiceIntegrationTest {
             "MISSING_PRICE"));
   }
 
-  private static Stream<Arguments> oversizedCommandCases() {
+      private static Stream<Arguments> missingSessionIdentityCases() {
+      return Stream.of(
+        Arguments.of(
+          "missing sender_comp_id",
+          newNewOrderBuilder("cmd-1", "O-C1", "C1")
+            .clearSenderCompId()
+            .build(),
+          "MISSING_SENDER_COMP_ID"),
+        Arguments.of(
+          "missing target_comp_id",
+          newNewOrderBuilder("cmd-1", "O-C1", "C1")
+            .clearTargetCompId()
+            .build(),
+          "MISSING_TARGET_COMP_ID"));
+      }
+
+  private static Stream<Arguments> applicationValidatedOversizedCommandCases() {
     final String oversized = "X".repeat(300);
     return Stream.of(
         Arguments.of(
@@ -465,18 +599,32 @@ class SubmissionServiceIntegrationTest {
                     .setCreatedAtUnixMs(1L)
                     .setSourceService("quickfix-gateway")
                     .build())
-                .build()),
+                  .build(),
+                "OVERSIZED_REQUEST_ID"),
         Arguments.of(
             "oversized order_id",
             newNewOrderBuilder("cmd-1", "O-C1", "C1")
                 .setOrderId(oversized)
-                .build()),
-        Arguments.of(
-          "oversized cl_ord_id",
+                  .build(),
+                "OVERSIZED_ORDER_ID"));
+            }
+
+        private static Stream<Arguments> oversizedSessionIdentityCases() {
+        final String oversized = "X".repeat(300);
+        return Stream.of(
+          Arguments.of(
+            "oversized sender_comp_id",
             newNewOrderBuilder("cmd-1", "O-C1", "C1")
-            .setClOrdId(oversized)
-                .build()));
-  }
+              .setSenderCompId(oversized)
+              .build(),
+            "OVERSIZED_SENDER_COMP_ID"),
+          Arguments.of(
+            "oversized target_comp_id",
+            newNewOrderBuilder("cmd-1", "O-C1", "C1")
+              .setTargetCompId(oversized)
+              .build(),
+            "OVERSIZED_TARGET_COMP_ID"));
+        }
 
   private OrderCommand newNewOrder(String commandId, String orderId, String clientOrderId) {
     return newNewOrderBuilder(commandId, orderId, clientOrderId).build();
@@ -559,14 +707,15 @@ class SubmissionServiceIntegrationTest {
   }
 
   private static OrderCommand.Builder newNewOrderBuilder(String commandId, String orderId, String clientOrderId) {
+    final String normalizedCommandId = normalize(commandId);
     return OrderCommand.newBuilder()
         .setMetadata(EventMetadata.newBuilder()
             .setSchemaVersion("v1")
-            .setEventId(commandId)
+        .setEventId(normalizedCommandId)
             .setCreatedAtUnixMs(1L)
             .setSourceService("quickfix-gateway")
             .build())
-        .setCommandId(commandId)
+      .setCommandId(normalizedCommandId)
         .setOrderId(orderId)
         .setAccountId("ACC-1")
         .setSenderCompId("CLIENT")
@@ -586,14 +735,15 @@ class SubmissionServiceIntegrationTest {
       String orderId,
       String clientOrderId,
       String originalClientOrderId) {
+    final String normalizedCommandId = normalize(commandId);
     return OrderCommand.newBuilder()
         .setMetadata(EventMetadata.newBuilder()
             .setSchemaVersion("v1")
-            .setEventId(commandId)
+        .setEventId(normalizedCommandId)
             .setCreatedAtUnixMs(1L)
             .setSourceService("quickfix-gateway")
             .build())
-        .setCommandId(commandId)
+      .setCommandId(normalizedCommandId)
         .setOrderId(orderId)
         .setAccountId("ACC-1")
           .setSenderCompId("CLIENT")
@@ -624,7 +774,7 @@ class SubmissionServiceIntegrationTest {
         WHERE event_id = ?
         """,
         (resultSet, rowNum) -> new OutboxRow(
-            resultSet.getString("event_id"),
+          resultSet.getObject("event_id", UUID.class).toString(),
             resultSet.getString("topic"),
             resultSet.getString("message_key"),
           resultSet.getObject("kafka_partition_id", Integer.class),
@@ -634,7 +784,7 @@ class SubmissionServiceIntegrationTest {
             resultSet.getString("aggregate_type"),
             resultSet.getString("aggregate_id"),
             resultSet.getLong("created_at_unix_ms")),
-        eventId);
+        UUID.fromString(eventId));
   }
 
   private String storedOutboxEventId(SubmissionResult submission) {
@@ -648,39 +798,23 @@ class SubmissionServiceIntegrationTest {
           AND trading_day = ?
           AND command_type = ?
           AND cl_ord_id = ?
+          AND business_key_surrogated = ?
         """,
-        String.class,
+          UUID.class,
         businessKey.senderCompId(),
         businessKey.targetCompId(),
         businessKey.tradingDay(),
         businessKey.commandType().name(),
-        businessKey.clOrdId());
+          businessKey.clOrdId(),
+          businessKey.businessKeySurrogated()).toString();
   }
 
   private int countRows(String tableName) {
     return jdbcTemplate.queryForObject("SELECT COUNT(*) FROM " + tableName, Integer.class);
   }
 
-  private String expectedOutboxEventId(SubmissionResult submission) {
-    final var businessKey = submission.businessKey();
-    final String source = businessKey.senderCompId()
-        + "|"
-        + businessKey.targetCompId()
-        + "|"
-      + businessKey.tradingDay()
-      + "|"
-      + businessKey.commandType().name()
-      + "|"
-      + businessKey.clOrdId()
-      + "|"
-        + submission.requestId()
-        + "|"
-        + submission.orderId()
-        + "|"
-        + submission.reasonCode()
-        + "|"
-        + submission.accepted();
-    return UUID.nameUUIDFromBytes(source.getBytes(StandardCharsets.UTF_8)).toString();
+  private void assertUuidVersionSeven(String rawUuid) {
+    assertThat(UUID.fromString(rawUuid).version()).isEqualTo(7);
   }
 
   private SubmissionService newSubmissionService(JdbcTemplate submissionJdbcTemplate, ObjectMapper mapper) {
@@ -731,12 +865,13 @@ class SubmissionServiceIntegrationTest {
       final List<T> result = delegate.query(sql, rowMapper, args);
       if (!blocked
           && sql.contains("FROM risk_service.risk_submissions")
-          && args.length == 5
+          && args.length == 6
           && expectedSenderCompId.equals(args[0])
           && expectedTargetCompId.equals(args[1])
           && expectedTradingDay.equals(args[2])
           && expectedCommandType.equals(args[3])
           && expectedClOrdId.equals(args[4])
+          && Boolean.FALSE.equals(args[5])
           && result.isEmpty()) {
         blocked = true;
         firstLookupCompleted.countDown();

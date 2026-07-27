@@ -5,6 +5,7 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static com.simplematch.riskservice.submission.SubmissionCommandFixtures.cancelOrderPayload;
 import static com.simplematch.riskservice.submission.SubmissionCommandFixtures.newOrderPayload;
 import static com.simplematch.riskservice.submission.SubmissionCommandFixtures.resolvedNewOrder;
+import static com.simplematch.riskservice.testsupport.TestCommandIds.normalize;
 
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.JsonNode;
@@ -13,7 +14,6 @@ import com.simplematch.contracts.orders.v1.OrderRejected;
 import com.simplematch.contracts.orders.v1.OrderValidated;
 import com.simplematch.riskservice.outbox.OutboxRecord;
 import com.simplematch.riskservice.outbox.SubmissionOutboxFactory;
-import java.nio.charset.StandardCharsets;
 import java.util.UUID;
 import org.junit.jupiter.api.Test;
 
@@ -39,14 +39,14 @@ class SubmissionOutboxFactoryTest {
     assertThat(record.aggregateType()).isEqualTo("risk_submission");
     assertThat(record.aggregateId()).isEqualTo("O-C1");
     assertThat(record.createdAtUnixMs()).isEqualTo(100L);
-    assertThat(record.eventId()).isEqualTo(expectedEventId(decision.submission()));
+    assertUuidVersionSeven(record.eventId());
     assertThat(headers.get("event_id").asText()).isEqualTo(record.eventId());
     assertThat(headers.get("content_type").asText()).isEqualTo("application/x-protobuf");
     assertThat(headers.get("payload_type").asText()).isEqualTo(record.payloadType());
     assertThat(payload.getMetadata().getEventId()).isEqualTo(record.eventId());
     assertThat(payload.getMetadata().getCreatedAtUnixMs()).isEqualTo(100L);
     assertThat(payload.getMetadata().getSourceService()).isEqualTo("risk-service");
-    assertThat(payload.getCommandId()).isEqualTo("cmd-1");
+    assertThat(payload.getCommandId()).isEqualTo(normalize("cmd-1"));
     assertThat(payload.getOrderId()).isEqualTo("O-C1");
     assertThat(payload.getAccountId()).isEqualTo("ACC-1");
     assertThat(payload.getSymbol()).isEqualTo("AAPL");
@@ -63,10 +63,10 @@ class SubmissionOutboxFactoryTest {
 
     assertThat(record.messageKey()).isEqualTo("AAPL");
     assertThat(record.payloadType()).isEqualTo(OrderRejected.getDescriptor().getFullName());
-    assertThat(record.eventId()).isEqualTo(expectedEventId(decision.submission()));
+  assertUuidVersionSeven(record.eventId());
     assertThat(headers.get("event_id").asText()).isEqualTo(record.eventId());
     assertThat(headers.get("payload_type").asText()).isEqualTo(record.payloadType());
-    assertThat(payload.getCommandId()).isEqualTo("cmd-1");
+    assertThat(payload.getCommandId()).isEqualTo(normalize("cmd-1"));
     assertThat(payload.getOrderId()).isEqualTo("O-C1");
     assertThat(payload.getAccountId()).isEqualTo("ACC-1");
     assertThat(payload.getSymbol()).isEqualTo("AAPL");
@@ -79,7 +79,7 @@ class SubmissionOutboxFactoryTest {
     final SubmissionCommand command = cancelOrderPayload("cmd-2", "O-C1", "CXL-1", "C1");
     final SubmissionDecision decision = new SubmissionDecision(
         new SubmissionResult(
-            "cmd-2",
+        normalize("cmd-2"),
         command.senderCompId(),
         command.targetCompId(),
             java.time.LocalDate.of(2024, 3, 27),
@@ -122,13 +122,15 @@ class SubmissionOutboxFactoryTest {
   }
 
   @Test
-  void createsStableEventIdForEquivalentSubmission() {
+  void createsDistinctEventIdsForEquivalentSubmission() {
     final SubmissionDecision decision = acceptedDecision();
 
     final OutboxRecord first = factory.create(decision);
     final OutboxRecord second = factory.create(decision);
 
-    assertThat(first.eventId()).isEqualTo(second.eventId());
+    assertThat(first.eventId()).isNotEqualTo(second.eventId());
+    assertUuidVersionSeven(first.eventId());
+    assertUuidVersionSeven(second.eventId());
   }
 
   @Test
@@ -146,7 +148,7 @@ class SubmissionOutboxFactoryTest {
   private SubmissionDecision acceptedDecision() {
     return new SubmissionDecision(
         new SubmissionResult(
-            "cmd-1",
+          normalize("cmd-1"),
         "CLIENT",
         "SIMPLEMATCH",
             java.time.LocalDate.of(2024, 3, 27),
@@ -170,7 +172,7 @@ class SubmissionOutboxFactoryTest {
         OrderType.ORDER_TYPE_LIMIT);
     return new SubmissionDecision(
         new SubmissionResult(
-            "cmd-1",
+          normalize("cmd-1"),
         command.senderCompId(),
         command.targetCompId(),
             java.time.LocalDate.of(2024, 3, 27),
@@ -185,26 +187,8 @@ class SubmissionOutboxFactoryTest {
           new ResolvedSubmissionCommand(command, CommandType.COMMAND_TYPE_NEW));
   }
 
-  private String expectedEventId(SubmissionResult submission) {
-    final SubmissionBusinessKey businessKey = submission.businessKey();
-    final String source = businessKey.senderCompId()
-      + "|"
-      + businessKey.targetCompId()
-      + "|"
-      + businessKey.tradingDay()
-      + "|"
-      + businessKey.commandType().name()
-      + "|"
-      + businessKey.clOrdId()
-      + "|"
-        + submission.requestId()
-        + "|"
-        + submission.orderId()
-        + "|"
-        + submission.reasonCode()
-        + "|"
-        + submission.accepted();
-    return UUID.nameUUIDFromBytes(source.getBytes(StandardCharsets.UTF_8)).toString();
+  private void assertUuidVersionSeven(String rawUuid) {
+    assertThat(UUID.fromString(rawUuid).version()).isEqualTo(7);
   }
 
   private ObjectMapper failingObjectMapper() {

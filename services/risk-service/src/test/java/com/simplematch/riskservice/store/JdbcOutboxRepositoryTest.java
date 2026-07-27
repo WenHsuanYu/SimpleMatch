@@ -14,6 +14,8 @@ import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.jdbc.datasource.DriverManagerDataSource;
 
 class JdbcOutboxRepositoryTest {
+  private static final String EVENT_ID_ONE = "00000000-0000-7000-8000-000000000001";
+
   private JdbcTemplate jdbcTemplate;
   private OutboxRepository repository;
 
@@ -38,7 +40,7 @@ class JdbcOutboxRepositoryTest {
 
   @Test
   void insertsOutboxRecord() {
-    final OutboxRecord record = outboxRecord("event-1");
+    final OutboxRecord record = outboxRecord(EVENT_ID_ONE);
 
     repository.insert(record);
 
@@ -51,7 +53,7 @@ class JdbcOutboxRepositoryTest {
         """,
         (resultSet, rowNum) -> OutboxRecord.create(
           new OutboxRecord.EventInfo(
-            resultSet.getString("event_id"),
+            resultSet.getObject("event_id", UUID.class).toString(),
             resultSet.getLong("created_at_unix_ms")),
           OutboxRecord.Routing.of(
             resultSet.getString("topic"),
@@ -64,7 +66,7 @@ class JdbcOutboxRepositoryTest {
           new OutboxRecord.AggregateRef(
             resultSet.getString("aggregate_type"),
             resultSet.getString("aggregate_id"))),
-        record.eventId());
+        UUID.fromString(record.eventId()));
 
     assertThat(stored.eventId()).isEqualTo(record.eventId());
     assertThat(stored.topic()).isEqualTo(record.topic());
@@ -80,10 +82,10 @@ class JdbcOutboxRepositoryTest {
 
   @Test
   void throwsDuplicateKeyWhenEventIdAlreadyExists() {
-    final OutboxRecord record = outboxRecord("event-1");
+    final OutboxRecord record = outboxRecord(EVENT_ID_ONE);
     repository.insert(record);
 
-    assertThatThrownBy(() -> repository.insert(outboxRecord("event-1")))
+    assertThatThrownBy(() -> repository.insert(outboxRecord(EVENT_ID_ONE)))
         .isInstanceOf(DuplicateKeyException.class);
     assertThat(countRows("outbox")).isEqualTo(1);
   }

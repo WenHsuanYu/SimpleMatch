@@ -68,7 +68,7 @@ class QuickFixCertificationEvidenceTest {
   @Test
   void quickFixSimulatorVerifiesSessionLifecycleAndBaselinePath(CapturedOutput output) throws Exception {
     final int port = reservePort();
-    final Path dictionaryPath = workspaceRoot().resolve("fix-spec/FIX44.xml");
+    final Path dictionaryPath = workspaceRoot().resolve("config/quickfix/fix-spec/FIX44.xml");
     assertThat(dictionaryPath).exists();
 
     final Path acceptorConfigPath = writeAcceptorConfig(port, dictionaryPath);

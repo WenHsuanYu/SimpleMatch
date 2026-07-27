@@ -21,7 +21,7 @@ dependencies {
   compileOnly("jakarta.annotation:jakarta.annotation-api:3.0.0")
 
   testImplementation("com.h2database:h2")
-  testImplementation("org.flywaydb:flyway-core:12.3.0")
+  testImplementation("org.flywaydb:flyway-core:12.7.0")
   testImplementation("org.springframework:spring-jdbc")
   testImplementation("org.springframework.boot:spring-boot-starter-test")
 }

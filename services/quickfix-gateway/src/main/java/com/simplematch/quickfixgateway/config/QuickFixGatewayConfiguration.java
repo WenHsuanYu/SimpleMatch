@@ -195,6 +195,12 @@ public class QuickFixGatewayConfiguration {
   QuickFixAcceptorLifecycle quickFixAcceptorLifecycle(
       QuickFixApplicationAdapter application,
       QuickFixGatewayRuntime runtime) {
+
+//    if (runtime == null) {
+//      System.out.println("QuickFixGatewayRuntime is null");
+//
+//    }
+
     return new QuickFixAcceptorLifecycle(application, runtime);
   }
 

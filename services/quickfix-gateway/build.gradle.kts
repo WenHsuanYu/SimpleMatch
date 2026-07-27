@@ -4,7 +4,7 @@ plugins {
   id("io.spring.dependency-management")
 }
 
-val testSourceSet = the<org.gradle.api.plugins.JavaPluginExtension>().sourceSets.getByName("test")
+val testSourceSet = the<JavaPluginExtension>().sourceSets.getByName("test")
 
 dependencyManagement {
   imports {
@@ -15,15 +15,14 @@ dependencyManagement {
 dependencies {
   implementation(project(":shared-java:simplematch-config"))
   implementation(project(":shared-java:simplematch-contracts"))
-  implementation("com.github.f4b6a3:uuid-creator:6.1.1")
   implementation("org.springframework.boot:spring-boot-starter")
   implementation("org.springframework.boot:spring-boot-starter-actuator")
   implementation("org.springframework.boot:spring-boot-starter-web")
   implementation("org.springframework.kafka:spring-kafka")
   implementation("org.springframework.boot:spring-boot-starter-validation")
   implementation("io.grpc:grpc-netty-shaded:1.80.0")
-  implementation("org.quickfixj:quickfixj-core:3.0.0")
-  implementation("org.quickfixj:quickfixj-messages-fix44:3.0.0")
+  implementation("org.quickfixj:quickfixj-core:3.0.1")
+  implementation("org.quickfixj:quickfixj-messages-fix44:3.0.1")
 
   annotationProcessor("org.springframework.boot:spring-boot-configuration-processor")
 

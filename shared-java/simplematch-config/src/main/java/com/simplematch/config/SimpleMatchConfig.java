@@ -1,7 +1,6 @@
 package com.simplematch.config;
 
 import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
-import com.google.errorprone.annotations.InlineMe;
 import java.util.ArrayList;
 import java.util.List;
 import org.springframework.boot.context.properties.ConfigurationProperties;
@@ -98,16 +97,16 @@ public final class SimpleMatchConfig {
     }
   }
 
-  @Deprecated
-  public QuickFixGateway getFixGateway() {
-    return quickfixGateway;
-  }
+//  @Deprecated
+//  public QuickFixGateway getFixGateway() {
+//    return quickfixGateway;
+//  }
 
-  @Deprecated
-  @InlineMe(replacement = "this.setQuickfixGateway(fixGateway)")
-  public void setFixGateway(QuickFixGateway fixGateway) {
-    setQuickfixGateway(fixGateway);
-  }
+//  @Deprecated
+//  @InlineMe(replacement = "this.setQuickfixGateway(fixGateway)")
+//  public void setFixGateway(QuickFixGateway fixGateway) {
+//    setQuickfixGateway(fixGateway);
+//  }
 
   @JsonIgnoreProperties(ignoreUnknown = true)
   public static final class Kafka {

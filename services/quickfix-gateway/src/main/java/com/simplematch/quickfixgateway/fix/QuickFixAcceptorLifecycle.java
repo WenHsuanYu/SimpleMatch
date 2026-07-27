@@ -39,6 +39,10 @@ public final class QuickFixAcceptorLifecycle implements SmartLifecycle {
       final FileStoreFactory storeFactory = new FileStoreFactory(settings);
       final FileLogFactory logFactory = new FileLogFactory(settings);
       final MessageFactory messageFactory = new DefaultMessageFactory();
+
+      //debug
+      logger.info("{} starting...", runtime.quickfixConfigPath());
+
       acceptor = new SocketAcceptor(application, storeFactory, settings, logFactory, messageFactory);
       acceptor.start();
       running = true;
@@ -81,10 +85,6 @@ public final class QuickFixAcceptorLifecycle implements SmartLifecycle {
     return running;
   }
 
-  @Override
-  public boolean isAutoStartup() {
-    return true;
-  }
 
   @Override
   public int getPhase() {

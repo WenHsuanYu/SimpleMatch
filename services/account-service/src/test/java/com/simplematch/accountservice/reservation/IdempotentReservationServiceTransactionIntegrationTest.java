@@ -26,6 +26,7 @@ import org.springframework.transaction.support.TransactionSynchronizationManager
 class IdempotentReservationServiceTransactionIntegrationTest {
   private static final Clock FIXED_CLOCK =
       Clock.fixed(Instant.ofEpochMilli(100L), ZoneOffset.UTC);
+  private static final String REQUEST_ID = "01971cbe-0f5a-7c69-9d6c-8e7f6a5b4c3d";
 
   @Autowired
   private ReservationService reservationService;
@@ -46,7 +47,7 @@ class IdempotentReservationServiceTransactionIntegrationTest {
 
   private static ReserveOperation reserveOperation() {
     return new ReserveOperation(
-        "cmd-1",
+      REQUEST_ID,
         "O-1",
         "ACC-1",
         "AAPL",

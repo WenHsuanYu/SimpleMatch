@@ -1,10 +1,10 @@
 package com.simplematch.quickfixgateway.fix;
 
-import com.github.f4b6a3.uuid.UuidCreator;
+import com.simplematch.config.SimpleMatchUuids;
 
 final class CommandIdGenerator {
 
   String nextCommandId() {
-    return UuidCreator.getTimeOrderedEpoch().toString();
+    return SimpleMatchUuids.uuidV7().toString();
   }
 }

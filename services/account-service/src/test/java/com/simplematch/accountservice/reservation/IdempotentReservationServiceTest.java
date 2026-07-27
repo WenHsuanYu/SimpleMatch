@@ -16,6 +16,7 @@ import org.springframework.dao.DuplicateKeyException;
 
 class IdempotentReservationServiceTest {
   private static final Clock FIXED_CLOCK = Clock.fixed(Instant.ofEpochMilli(100L), ZoneOffset.UTC);
+  private static final String REQUEST_ID = "01971cbe-0f5a-7c69-9d6c-8e7f6a5b4c3d";
 
   @Test
   void persistsAcceptedReservationWhenRequestIdIsNew() {
@@ -27,7 +28,7 @@ class IdempotentReservationServiceTest {
 
     final ReservationRecord reservation = service.reserve(reserveOperation());
 
-    assertThat(reservation.requestId()).isEqualTo("cmd-1");
+    assertThat(reservation.requestId()).isEqualTo(REQUEST_ID);
     assertThat(reservation.reservationId()).isEqualTo("O-1");
     assertThat(reservation.status()).isEqualTo(ReservationStatus.RESERVATION_STATUS_ACCEPTED);
     assertThat(reservationRepository.insertedReservation).isEqualTo(reservation);
@@ -80,7 +81,7 @@ class IdempotentReservationServiceTest {
 
   private static ReserveOperation reserveOperation() {
     return new ReserveOperation(
-        "cmd-1",
+      REQUEST_ID,
         "O-1",
         "ACC-1",
         "AAPL",

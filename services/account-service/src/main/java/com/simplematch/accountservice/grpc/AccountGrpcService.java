@@ -14,6 +14,7 @@ import io.grpc.Status;
 import io.grpc.stub.StreamObserver;
 import java.math.BigDecimal;
 import java.util.Objects;
+import java.util.UUID;
 import org.springframework.stereotype.Service;
 
 /**
@@ -28,6 +29,7 @@ import org.springframework.stereotype.Service;
 @Service
 public class AccountGrpcService extends AccountServiceGrpc.AccountServiceImplBase {
   private static final String MESSAGE = "account-service logic is not implemented yet";
+  private static final int MAX_PERSISTED_IDENTIFIER_LENGTH = 255;
   private final ReservationService reservationService;
 
   public AccountGrpcService(ReservationService reservationService) {
@@ -97,7 +99,7 @@ public class AccountGrpcService extends AccountServiceGrpc.AccountServiceImplBas
   }
 
   private ReserveOperation toReserveOperation(ReserveRequest request) {
-    return new ReserveOperation(
+    final ReserveOperation operation = new ReserveOperation(
         request.getRequestId(),
         request.getOrderId(),
         request.getAccountId(),
@@ -105,6 +107,29 @@ public class AccountGrpcService extends AccountServiceGrpc.AccountServiceImplBas
         request.getSide(),
         parsePositiveDecimal(request.getQuantity(), "quantity"),
         parseOptionalPositiveDecimal(request.getLimitPrice(), "limit_price"));
+    validateIngressIdentifiers(operation.requestId(), operation.orderId());
+    return operation;
+  }
+
+  private void validateIngressIdentifiers(String requestId, String orderId) {
+    validateBoundedIdentifier(requestId, "request_id");
+    validateUuidIdentifier(requestId, "request_id");
+    validateBoundedIdentifier(orderId, "order_id");
+  }
+
+  private void validateUuidIdentifier(String value, String fieldName) {
+    try {
+      UUID.fromString(value);
+    } catch (IllegalArgumentException illegalArgumentException) {
+      throw new IllegalArgumentException(fieldName + " must be a UUID", illegalArgumentException);
+    }
+  }
+
+  private void validateBoundedIdentifier(String value, String fieldName) {
+    if (value.length() > MAX_PERSISTED_IDENTIFIER_LENGTH) {
+      throw new IllegalArgumentException(
+          fieldName + " must be <= " + MAX_PERSISTED_IDENTIFIER_LENGTH + " characters");
+    }
   }
 
   private BigDecimal parsePositiveDecimal(String rawValue, String fieldName) {

@@ -3,6 +3,7 @@ package com.simplematch.riskservice.submission;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static com.simplematch.riskservice.submission.SubmissionCommandFixtures.resolvedNewOrder;
+import static com.simplematch.riskservice.testsupport.TestCommandIds.normalize;
 
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
@@ -55,7 +56,7 @@ class TransactionalSubmissionServiceTest {
   void returnsExistingSubmissionWithoutBuildingOutbox() {
     final RecordingSubmissionRepository submissionRepository = new RecordingSubmissionRepository();
     final SubmissionResult existing = new SubmissionResult(
-        "cmd-existing",
+        normalize("cmd-existing"),
       "CLIENT",
       "SIMPLEMATCH",
         LocalDate.of(2024, 3, 27),
@@ -85,7 +86,7 @@ class TransactionalSubmissionServiceTest {
   void returnsExistingSubmissionWhenInsertHitsDuplicateKey() {
     final RecordingSubmissionRepository submissionRepository = new RecordingSubmissionRepository();
     final SubmissionResult existing = new SubmissionResult(
-        "cmd-winner",
+        normalize("cmd-winner"),
       "CLIENT",
       "SIMPLEMATCH",
         LocalDate.of(2024, 3, 27),

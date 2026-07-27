@@ -1,6 +1,7 @@
 package com.simplematch.riskservice.grpc;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static com.simplematch.riskservice.testsupport.TestCommandIds.normalize;
 
 import com.simplematch.contracts.common.v1.EventMetadata;
 import com.simplematch.contracts.common.v1.OrderType;
@@ -21,7 +22,7 @@ class GrpcSubmissionCommandMapperTest {
   void mapsProtobufCommandToDomainCommand() {
     final ResolvedSubmissionCommand mapped = mapper.map(newNewOrder(), CommandType.COMMAND_TYPE_NEW);
 
-    assertThat(mapped.payload().commandId()).isEqualTo("cmd-1");
+    assertThat(mapped.payload().commandId()).isEqualTo(normalize("cmd-1"));
     assertThat(mapped.payload().orderId()).isEqualTo("O-C1");
     assertThat(mapped.payload().accountId()).isEqualTo("ACC-1");
     assertThat(mapped.payload().senderCompId()).isEqualTo("CLIENT");
@@ -62,11 +63,11 @@ class GrpcSubmissionCommandMapperTest {
     return OrderCommand.newBuilder()
         .setMetadata(EventMetadata.newBuilder()
             .setSchemaVersion("v1")
-            .setEventId("cmd-1")
+            .setEventId(normalize("cmd-1"))
           .setCreatedAtUnixMs(1711526950123L)
             .setSourceService("quickfix-gateway")
             .build())
-        .setCommandId("cmd-1")
+        .setCommandId(normalize("cmd-1"))
         .setOrderId("O-C1")
         .setAccountId("ACC-1")
         .setSenderCompId("CLIENT")

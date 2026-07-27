@@ -75,6 +75,20 @@ cross-service reliability concerns, and run the relevant Gradle, Flyway, or CMak
 validation. If multiple available skills match, use all of them in the smallest
 order that covers the task.
 
+## Agent skills
+
+### Issue tracker
+
+Issues and PRDs are tracked in this repository's GitHub Issues. See `docs/agents/issue-tracker.md`.
+
+### Triage labels
+
+This repository uses the default five triage labels. See `docs/agents/triage-labels.md`.
+
+### Domain docs
+
+This repository uses a single-context domain-documentation layout. See `docs/agents/domain.md`.
+
 ## graphify
 
 This project has a knowledge graph at graphify-out/ with god nodes, community structure, and cross-file relationships.

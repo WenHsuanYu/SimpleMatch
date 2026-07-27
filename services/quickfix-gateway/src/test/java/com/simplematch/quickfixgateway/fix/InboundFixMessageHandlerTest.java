@@ -5,6 +5,7 @@ import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.when;
 
 import com.simplematch.contracts.common.v1.OrderType;
@@ -302,6 +303,93 @@ class InboundFixMessageHandlerTest {
         .isEqualTo("RISK_CIRCUIT_OPEN: risk-service circuit breaker is open");
   }
 
+    @DisplayName("oversized new-order client identity is rejected before WAL append")
+    @Test
+    void oversizedNewOrderIdentityIsRejectedBeforeWalAppend() throws Exception {
+    final WalAppender walAppender = new WalAppender(tempDir.resolve("inbound.wal"), StandardCharsets.UTF_8);
+    final OrdersCommandPublisher publisher = mock(OrdersCommandPublisher.class);
+    final RiskSubmissionClient riskSubmissionClient = mock(RiskSubmissionClient.class);
+    final FixSessionMessageSender sender = mock(FixSessionMessageSender.class);
+    final InboundFixMessageHandler handler = new InboundFixMessageHandler(
+      walAppender,
+      publisher,
+      riskSubmissionClient,
+      sender,
+      new OrderSessionRegistry(),
+      new FixMessageMapper(FIXED_CLOCK),
+      FIXED_CLOCK);
+
+    handler.handle(
+      newNewOrder(oversizedIdentity("C"), "AAPL", '1', "10", "101.25", "ACC-1"),
+      new SessionID("FIX.4.4", "SIMPLEMATCH", "CLIENT1"));
+
+    assertThat(walAppender.readAll()).isEmpty();
+    verifyNoInteractions(riskSubmissionClient, publisher);
+
+    final ArgumentCaptor<Message> messageCaptor = ArgumentCaptor.forClass(Message.class);
+    verify(sender).send(any(SessionID.class), messageCaptor.capture());
+    assertThat(messageCaptor.getValue().getString(58))
+      .isEqualTo("OVERSIZED_CL_ORD_ID: cl_ord_id must be <= 64 characters");
+    }
+
+    @DisplayName("oversized cancel original client order id is rejected before WAL append")
+    @Test
+    void oversizedCancelIdentityIsRejectedBeforeWalAppend() throws Exception {
+    final WalAppender walAppender = new WalAppender(tempDir.resolve("inbound.wal"), StandardCharsets.UTF_8);
+    final OrdersCommandPublisher publisher = mock(OrdersCommandPublisher.class);
+    final RiskSubmissionClient riskSubmissionClient = mock(RiskSubmissionClient.class);
+    final FixSessionMessageSender sender = mock(FixSessionMessageSender.class);
+    final InboundFixMessageHandler handler = new InboundFixMessageHandler(
+      walAppender,
+      publisher,
+      riskSubmissionClient,
+      sender,
+      new OrderSessionRegistry(),
+      new FixMessageMapper(FIXED_CLOCK),
+      FIXED_CLOCK);
+
+    handler.handle(
+      newCancelRequest(oversizedIdentity("ORIG-"), "CXL-1", "ACC-1"),
+      new SessionID("FIX.4.4", "SIMPLEMATCH", "CLIENT1"));
+
+    assertThat(walAppender.readAll()).isEmpty();
+    verifyNoInteractions(riskSubmissionClient, publisher);
+
+    final ArgumentCaptor<Message> messageCaptor = ArgumentCaptor.forClass(Message.class);
+    verify(sender).send(any(SessionID.class), messageCaptor.capture());
+    assertThat(messageCaptor.getValue().getString(58))
+      .isEqualTo("OVERSIZED_ORIG_CL_ORD_ID: orig_cl_ord_id must be <= 64 characters");
+    }
+
+    @DisplayName("oversized inbound sender comp id is rejected before WAL append")
+    @Test
+    void oversizedSessionIdentityIsRejectedBeforeWalAppend() throws Exception {
+    final WalAppender walAppender = new WalAppender(tempDir.resolve("inbound.wal"), StandardCharsets.UTF_8);
+    final OrdersCommandPublisher publisher = mock(OrdersCommandPublisher.class);
+    final RiskSubmissionClient riskSubmissionClient = mock(RiskSubmissionClient.class);
+    final FixSessionMessageSender sender = mock(FixSessionMessageSender.class);
+    final InboundFixMessageHandler handler = new InboundFixMessageHandler(
+      walAppender,
+      publisher,
+      riskSubmissionClient,
+      sender,
+      new OrderSessionRegistry(),
+      new FixMessageMapper(FIXED_CLOCK),
+      FIXED_CLOCK);
+
+    handler.handle(
+      newNewOrder("C1", "AAPL", '1', "10", "101.25", "ACC-1"),
+      new SessionID("FIX.4.4", "SIMPLEMATCH", oversizedIdentity("CLIENT")));
+
+    assertThat(walAppender.readAll()).isEmpty();
+    verifyNoInteractions(riskSubmissionClient, publisher);
+
+    final ArgumentCaptor<Message> messageCaptor = ArgumentCaptor.forClass(Message.class);
+    verify(sender).send(any(SessionID.class), messageCaptor.capture());
+    assertThat(messageCaptor.getValue().getString(58))
+      .isEqualTo("OVERSIZED_SENDER_COMP_ID: sender_comp_id must be <= 64 characters");
+    }
+
   private NewOrderSingle newNewOrder(
       String clientOrderId,
       String symbol,
@@ -333,5 +421,9 @@ class InboundFixMessageHandlerTest {
 
   private void assertUuidVersionSeven(String rawUuid) {
     assertThat(UUID.fromString(rawUuid).version()).isEqualTo(7);
+  }
+
+  private String oversizedIdentity(String prefix) {
+    return prefix + "X".repeat(65);
   }
 }

@@ -16,7 +16,8 @@ This service is the target external FIX entrypoint in the current SimpleMatch ar
 - optionally replaying WAL records through the legacy compatibility publish path when compatibility publish is explicitly enabled
 - consuming `matching.executions` and mapping them back to outbound FIX responses
 
-The runtime QuickFIX session config defaults to `config/quickfix/acceptor.cfg`, which now uses `fix-spec/FIX44.xml` as the shared FIX dictionary.
+The runtime QuickFIX session config defaults to `config/quickfix/acceptor.cfg`, which now uses
+`../../config/quickfix/fix-spec/FIX44.xml` as the shared FIX dictionary.
 
 Session-aware deployment baseline:
 

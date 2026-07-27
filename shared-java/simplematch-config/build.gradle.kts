@@ -5,6 +5,7 @@ plugins {
 dependencies {
   api("com.fasterxml.jackson.core:jackson-databind:2.19.2")
   api("org.springframework.boot:spring-boot:3.5.14")
+  implementation("com.github.f4b6a3:uuid-creator:6.1.1")
   compileOnly("com.google.errorprone:error_prone_annotations:2.39.0")
   testImplementation("org.springframework.boot:spring-boot:3.5.14")
   testImplementation("org.junit.jupiter:junit-jupiter:5.12.2")

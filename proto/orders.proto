@@ -16,7 +16,9 @@ enum CommandType {
 message OrderCommand {
   simplematch.common.v1.EventMetadata metadata = 1;
   // Event/command-lane name for the operation identifier.
+  // This value is carried on the wire as a string but is expected to be a UUID-backed identifier.
   // Current synchronous RPC and storage boundaries may expose this same value as request_id.
+  // Gateway ingress currently generates UUIDv7 values for new commands.
   string command_id = 2;
   string order_id = 3;
   string account_id = 4;
@@ -38,6 +40,7 @@ message OrderValidated {
   // Echoes the original OrderCommand.command_id.
   // The current risk-service implementation persists this same operation identifier as request_id
   // on synchronous/storage boundaries before writing it back into validated events as command_id.
+  // The field remains a wire string even though the runtime value is UUID-backed.
   string command_id = 2;
   string order_id = 3;
   string account_id = 4;
@@ -50,6 +53,7 @@ message OrderRejected {
   // Echoes the original OrderCommand.command_id.
   // The current risk-service implementation persists this same operation identifier as request_id
   // on synchronous/storage boundaries before writing it back into rejected events as command_id.
+  // The field remains a wire string even though the runtime value is UUID-backed.
   string command_id = 2;
   string order_id = 3;
   string account_id = 4;

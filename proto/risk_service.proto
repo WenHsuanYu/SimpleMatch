@@ -19,6 +19,7 @@ message SubmitOrderRequest {
 message SubmitOrderResponse {
   // Synchronous/RPC name for the operation identifier.
   // In the current implementation this is the same underlying value as OrderCommand.command_id.
+  // The field remains a wire string even though the runtime value is UUID-backed.
   string request_id = 1;
   string order_id = 2;
   string cl_ord_id = 3;
@@ -34,6 +35,7 @@ message CancelOrderRequest {
 message CancelOrderResponse {
   // Synchronous/RPC name for the operation identifier.
   // In the current implementation this is the same underlying value as OrderCommand.command_id.
+  // The field remains a wire string even though the runtime value is UUID-backed.
   string request_id = 1;
   string order_id = 2;
   string cl_ord_id = 3;

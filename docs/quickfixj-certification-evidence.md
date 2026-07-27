@@ -32,7 +32,7 @@ It then:
 
 1. starts `QuickFixAcceptorLifecycle`
 2. starts a QuickFIX/J `SocketInitiator` acting as the simulator
-3. loads the repository-local dictionary at `fix-spec/FIX44.xml`
+3. loads the repository-local dictionary at `../config/quickfix/fix-spec/FIX44.xml`
 4. waits for FIX logon
 5. sends `NewOrderSingle (35=D)` with `ClOrdID=C1`
 6. waits for the `ExecutionReport(PendingNew)` reply

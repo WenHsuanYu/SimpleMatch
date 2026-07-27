@@ -1,6 +1,7 @@
 package com.simplematch.riskservice.submission;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static com.simplematch.riskservice.testsupport.TestCommandIds.normalize;
 
 import java.lang.reflect.Constructor;
 import org.junit.jupiter.api.Test;
@@ -23,7 +24,7 @@ class SubmissionCommandTest {
   void createBuildsPayloadFromGroupedParameters() {
     final SubmissionCommand command = SubmissionCommand.create(
         new SubmissionCommand.RequestMetadata(
-            "cmd-1",
+          normalize("cmd-1"),
             "O-C1",
             "ACC-1",
         "CLIENT",
@@ -38,8 +39,8 @@ class SubmissionCommandTest {
             OrderType.ORDER_TYPE_LIMIT,
             TimeInForce.TIME_IN_FORCE_ROD));
 
-    assertThat(command.commandId()).isEqualTo("cmd-1");
-              assertThat(command.commandIdValue()).isEqualTo(new SubmissionCommand.CommandId("cmd-1"));
+    assertThat(command.commandId()).isEqualTo(normalize("cmd-1"));
+          assertThat(command.commandIdValue()).isEqualTo(new SubmissionCommand.CommandId(normalize("cmd-1")));
               assertThat(command.orderIdValue()).isEqualTo(new SubmissionCommand.OrderId("O-C1"));
               assertThat(command.accountIdValue()).isEqualTo(new SubmissionCommand.AccountId("ACC-1"));
     assertThat(command.senderCompIdValue()).isEqualTo(new SubmissionCommand.SenderCompId("CLIENT"));

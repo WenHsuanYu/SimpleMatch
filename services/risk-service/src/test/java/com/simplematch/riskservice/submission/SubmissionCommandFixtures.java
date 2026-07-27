@@ -1,5 +1,7 @@
 package com.simplematch.riskservice.submission;
 
+import static com.simplematch.riskservice.testsupport.TestCommandIds.normalize;
+
 final class SubmissionCommandFixtures {
   private static final String DEFAULT_ACCOUNT_ID = "ACC-1";
   private static final String DEFAULT_SENDER_COMP_ID = "CLIENT";
@@ -81,7 +83,7 @@ final class SubmissionCommandFixtures {
       String clOrdId,
       String origClOrdId) {
     return new SubmissionCommand.RequestMetadata(
-        commandId,
+      normalize(commandId),
         orderId,
         DEFAULT_ACCOUNT_ID,
         DEFAULT_SENDER_COMP_ID,

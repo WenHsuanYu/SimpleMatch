@@ -7,6 +7,8 @@ option java_package = "com.simplematch.contracts.common.v1";
 
 message EventMetadata {
   string schema_version = 1;
+  // Event identifier carried on the wire as a string.
+  // Runtime producers currently generate UUID-backed values; new ingress and outbox events use UUIDv7.
   string event_id = 2;
   int64 created_at_unix_ms = 3;
   string source_service = 4;

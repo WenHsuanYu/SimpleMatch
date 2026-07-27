@@ -1,6 +1,7 @@
 package com.simplematch.riskservice.grpc;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static com.simplematch.riskservice.testsupport.TestCommandIds.normalize;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.simplematch.contracts.common.v1.EventMetadata;
@@ -105,13 +106,15 @@ class RiskGrpcServiceTest {
             .setCommand(OrderCommand.newBuilder()
                 .setMetadata(EventMetadata.newBuilder()
                     .setSchemaVersion("v1")
-                    .setEventId("cmd-2")
+                  .setEventId(normalize("cmd-2"))
                     .setCreatedAtUnixMs(GATEWAY_CREATED_AT_UNIX_MS)
                     .setSourceService("quickfix-gateway")
                     .build())
-                .setCommandId("cmd-2")
+                .setCommandId(normalize("cmd-2"))
                 .setOrderId("O-C1")
-                    .setClOrdId("CXL-1")
+                .setSenderCompId("CLIENT")
+                .setTargetCompId("SIMPLEMATCH")
+                .setClOrdId("CXL-1")
                 .build())
             .build(),
         observer);
@@ -210,15 +213,44 @@ class RiskGrpcServiceTest {
     assertThat(observer.value().getReasonCode()).isEqualTo("MISSING_CL_ORD_ID");
   }
 
+  @DisplayName("submitOrder echoes the raw oversized cl_ord_id while persisting a surrogate key")
+  @Test
+  void submitOrderEchoesRawOversizedClOrdId() {
+    final RiskGrpcService service = new RiskGrpcService(submissionService);
+    final TestStreamObserver<SubmitOrderResponse> observer = new TestStreamObserver<>();
+    final String oversized = "X".repeat(300);
+
+    service.submitOrder(
+        SubmitOrderRequest.newBuilder()
+            .setCommand(newNewOrder("cmd-5", "O-C5", "C5").toBuilder().setClOrdId(oversized).build())
+            .build(),
+        observer);
+
+    assertThat(observer.completed()).isTrue();
+    assertThat(observer.error()).isNull();
+    assertThat(observer.value().getAccepted()).isFalse();
+    assertThat(observer.value().getReasonCode()).isEqualTo("OVERSIZED_CL_ORD_ID");
+    assertThat(observer.value().getClOrdId()).isEqualTo(oversized);
+    assertThat(jdbcTemplate.queryForObject(
+        "SELECT raw_cl_ord_id FROM risk_submissions WHERE request_id = ?",
+        String.class,
+        observer.value().getRequestId())).isEqualTo(oversized);
+    assertThat(jdbcTemplate.queryForObject(
+        "SELECT cl_ord_id FROM risk_submissions WHERE request_id = ?",
+        String.class,
+      observer.value().getRequestId())).hasSize(64);
+  }
+
   private OrderCommand newNewOrder(String commandId, String orderId, String clientOrderId) {
+    final String normalizedCommandId = normalize(commandId);
     return OrderCommand.newBuilder()
         .setMetadata(EventMetadata.newBuilder()
             .setSchemaVersion("v1")
-            .setEventId(commandId)
+            .setEventId(normalizedCommandId)
           .setCreatedAtUnixMs(GATEWAY_CREATED_AT_UNIX_MS)
             .setSourceService("quickfix-gateway")
             .build())
-        .setCommandId(commandId)
+        .setCommandId(normalizedCommandId)
         .setOrderId(orderId)
         .setAccountId("ACC-1")
         .setSenderCompId("CLIENT")
@@ -235,14 +267,15 @@ class RiskGrpcServiceTest {
   }
 
   private OrderCommand newCancelOrder(String commandId, String orderId, String clientOrderId, String originalClientOrderId) {
+    final String normalizedCommandId = normalize(commandId);
     return OrderCommand.newBuilder()
         .setMetadata(EventMetadata.newBuilder()
             .setSchemaVersion("v1")
-            .setEventId(commandId)
+            .setEventId(normalizedCommandId)
           .setCreatedAtUnixMs(GATEWAY_CREATED_AT_UNIX_MS)
             .setSourceService("quickfix-gateway")
             .build())
-        .setCommandId(commandId)
+        .setCommandId(normalizedCommandId)
         .setOrderId(orderId)
         .setSenderCompId("CLIENT")
         .setTargetCompId("SIMPLEMATCH")

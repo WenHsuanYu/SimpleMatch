@@ -48,10 +48,10 @@
   - [ ] 嚴格驗證必填欄位（啟動即 fail-fast）
     - [x] 現況：只有 setter 級別的 non-blank / positive guard，尚未建立 required-field fail-fast 驗證器
 - [ ] `libs/common`：時間/ID 工具
-  - [x] 現況：workspace 未找到 shared `NowUnixMs()` / `UuidV7()` helper；服務內目前直接使用 `Clock` / `Instant.now(clock)` 取時
+  - [ ] 現況：workspace 仍未找到 shared `NowUnixMs()` helper；`UuidV7()` 已由 `shared-java/simplematch-config` 提供
   - [ ] `NowUnixMs()`
-  - [ ] `UuidV7()`
-  - [ ] 將 ingress operation identity 接到 shared `UuidV7()` helper：`quickfix-gateway` 產生的 `command_id` / 下游同步邊界的 `request_id` 維持同值異名，但來源統一為 UUID v7
+  - [x] `UuidV7()`
+  - [x] 將 ingress operation identity 接到 shared `UuidV7()` helper：`quickfix-gateway` 產生的 `command_id` / 下游同步邊界的 `request_id` 維持同值異名，但來源統一為 UUID v7
 
 ### 1.2 Kafka wrapper（producer/consumer）
 
@@ -255,8 +255,19 @@
 - [x] `FixParser::ParseNewOrderSingle()` → `OrderCommand{type=NEW}`
 - [x] `FixParser::ParseCancelRequest()` → `OrderCommand{type=CANCEL}`
 - [x] 正規化欄位：symbol、side、qty、price、order_type、tif
-- [ ] `command_id` 生成策略收斂：gateway ingress 改以 `UuidV7()` 產生 `OrderCommand.command_id`（第一階段先維持 proto / gRPC / DB 欄位型別為字串，且不與 `request_id` / `command_id` rename 綁在同一個 slice）
+- [x] `command_id` 生成策略收斂：gateway ingress 改以 `UuidV7()` 產生 `OrderCommand.command_id`（第一階段先維持 proto / gRPC / DB 欄位型別為字串，且不與 `request_id` / `command_id` rename 綁在同一個 slice）
+- [x] `risk-service` internal outbox UUID 收斂：`risk_service.outbox.event_id` 與 `risk_service.risk_submissions.outbox_event_id` 已透過 Flyway `V9` 升為 PostgreSQL `UUID`，repository 端改用 UUID binding；`request_id` / `command_id` 仍暫留在 string contract slice
+- [x] `risk-service` validator 先行攔截 oversized `request_id` / `order_id`：`SubmissionValidator` 已將這兩條路徑從 DB-driven rollback 改為應用層 rejection，並同步更新 unit/integration tests
+- [x] `risk-service` validator 已補齊 non-UUID `request_id` ingress validation：`SubmissionValidator` 現在會對非 UUID `request_id` 回 `INVALID_REQUEST_ID` rejection，且 `risk-service` repo-local tests 已把 legacy `cmd-*` fixture 收斂為 UUID-shaped command ids
+- [x] `risk-service` validator 先行攔截缺失與 oversized `sender_comp_id` / `target_comp_id`：對 business-key session identity 改為應用層 rejection，且 rejected persistence path 以 deterministic digest surrogate 保存 dedup 所需欄位，避免 DB 長度例外
+- [x] `risk-service` oversized `symbol` 路徑改為應用層 rejection：validator 先回 `OVERSIZED_SYMBOL`，outbox `message_key` / partition fallback 改以 safe key（優先 `order_id`，否則 default partition）避免 rejected outbox 再次因 symbol 長度寫失敗
+- [x] `cl_ord_id` / `orig_cl_ord_id` 的應用層長度驗證已落地：`risk-service` 以 raw-vs-persisted strategy + Flyway `V10` 新增 `raw_cl_ord_id` / `raw_orig_cl_ord_id`；gRPC response 保留 raw 值，`risk_submissions.cl_ord_id` 繼續承擔 dedup/business-key persisted 值
+  - [x] surrogate redesign：`risk-service` 已透過 Flyway `V11` 把 rejected business-key surrogate 收斂成 64-char SHA-256 digest，並新增 `business_key_surrogated` 旗標避免和 accepted raw key 撞值；`sender_comp_id` / `target_comp_id` / `cl_ord_id` 不再被 surrogate 格式卡住 `VARCHAR(64)` 收斂，詳見 `docs/field-typing-phase2-gates.md`
+  - [x] follow-up gate：`orig_cl_ord_id` 新寫入已改成 64-char compact digest，但是否存在需要從 pre-`V11` 舊資料回填的 legacy row，仍需 live DB profiling 確認；詳見 `docs/field-typing-phase2-gates.md`
+- [x] `quickfix-gateway` ingress precheck 已在 WAL 前攔截 oversized FIX identity：`InboundFixMessageHandler` 先檢查 `sender_comp_id` / `target_comp_id` / `cl_ord_id` / `orig_cl_ord_id` 的 64 字元上限，直接回 FIX reject，不再把 oversized 請求送進 WAL、`risk-service` 或 compatibility publish
 - [ ] `order_id` canonical identity 決策與收斂（目前 gateway 以 `O-<ClOrdID>` 派生並對外回報；若要演進成 opaque internal id，需同步調整 FIX `OrderID(37)` 映射與 cross-service 契約）
+  - [x] Phase 2 repo-local gate finding：現行 `O-<ClOrdID>` derivation 代表 `order_id` 既不是 UUID，也可能在 `ClOrdID=64` 時長到 66 chars；因此目前不能直接收斂到 native UUID 或 `VARCHAR(64)`，詳見 `docs/field-typing-phase2-gates.md`
+  - [x] Phase 2 repo-local design finding：UUIDv7 適合作為 opaque internal `order_id` 候選，但不能直接取代 `orderIdFor(clOrdId)`；gateway 還需要把 submit / duplicate replay / cancel lookup 都改成依 canonical `order_id` 與 FIX business-key lookup 運作，詳見 `docs/field-typing-phase2-gates.md`
 - [ ] 市價單保護價（若採用）：`ComputeProtectionLimitPx()`
 
 ### 4.1.4 去重（FIX + 業務層）
@@ -416,6 +427,8 @@
 - [ ] 反序列化 ExecutionEvent
 - [ ] Idempotency：`ProcessedEventsRepo::TryMarkProcessed(consumer=persistence, event_id/exec_id)`
   - [x] `processed_events` table schema 已存在
+  - [x] raw column audit：目前 `persistence` 只有 projection / idempotency schema，尚未有會把 FIX identity 從 DB 回吐成同步 contract 的 runtime；Phase 1 保持 bounded persisted 欄位即可，不需要複製 `risk-service` 的 `raw_*` 欄位模式
+  - [x] Phase 2 repo-local gate finding：`processed_events.event_id` 與 `orders.last_command_id` 目前都缺少 workspace 內的 writer runtime 證據，所以 native UUID migration gate 仍是 blocked；詳見 `docs/field-typing-phase2-gates.md`
 
 ### 4.4.2 batch commit
 
@@ -514,6 +527,9 @@
 - [x] `Reserve(request_id/order_id, ...)`（冪等）
   - [x] 唯一鍵：目前 schema 對 `reservation_id = order_id`、`request_id`、`order_id` 都有 UNIQUE
   - [x] 重送回同結果
+  - [x] ingress validation：`AccountGrpcService` 現在會在 JDBC 前拒絕非 UUID 的 `request_id`，並拒絕超過 255 chars 的 `request_id` / `order_id`，以 gRPC `INVALID_ARGUMENT` 回應而不是 DB-driven `INTERNAL`
+  - [x] raw column audit：`account_reservations` 目前只需 replay bounded 的 `request_id` / `order_id` / `reservation_id` 到 gRPC response，沒有像 `risk-service` 那樣「持久化 surrogate、回應 raw FIX identity」的需求；Phase 1 只需 ingress validation + bounded persisted 欄位，不需要額外 `raw_*` 欄位
+  - [x] Phase 2 repo-local gate finding：`reservation_id` 目前對齊 `order_id`，所以跟著 `order_id` 一起卡在「非 UUID、且可能 >64 chars」的 blocker 上；詳見 `docs/field-typing-phase2-gates.md`
 
 ### 4.7.2 Kafka consumer（建議）：`matching.executions`
 

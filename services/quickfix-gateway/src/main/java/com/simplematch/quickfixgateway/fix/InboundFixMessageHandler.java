@@ -31,6 +31,7 @@ import quickfix.fix44.OrderCancelRequest;
 
 public final class InboundFixMessageHandler {
   private static final Logger logger = LoggerFactory.getLogger(InboundFixMessageHandler.class);
+  private static final int MAX_FIX_IDENTITY_LENGTH = 64;
 
   private final WalAppender walAppender;
   private final OrdersCommandPublisher ordersCommandPublisher;
@@ -98,14 +99,25 @@ public final class InboundFixMessageHandler {
     final String symbol = message.getString(Symbol.FIELD);
     final Side side = mapSide(message.getChar(quickfix.field.Side.FIELD));
     final String quantity = message.getString(OrderQty.FIELD);
+    final String senderCompId = inboundSenderCompId(sessionId);
+    final String targetCompId = inboundTargetCompId(sessionId);
+    final FixIdentityValidationFailure identityFailure = validateFixIdentity(
+        senderCompId,
+        targetCompId,
+        clOrdId,
+        "");
+    if (identityFailure != null) {
+      rejectOversizedNewOrderIdentity(identityFailure, sessionId, clOrdId, symbol, side, quantity, now);
+      return;
+    }
     final String orderId = orderIdFor(clOrdId);
     final WalRecord walRecord = new WalRecord(
         "v1",
       commandIdGenerator.nextCommandId(),
         now.toEpochMilli(),
         "quickfix-gateway",
-        inboundSenderCompId(sessionId),
-        inboundTargetCompId(sessionId),
+        senderCompId,
+        targetCompId,
         quickfix.fix44.NewOrderSingle.MSGTYPE,
         orderId,
         clOrdId,
@@ -145,6 +157,17 @@ public final class InboundFixMessageHandler {
   private void handleCancelOrder(Message message, SessionID sessionId) throws FieldNotFound {
     final String origClOrdId = message.getString(OrigClOrdID.FIELD);
     final String cancelClOrdId = message.getString(ClOrdID.FIELD);
+    final String senderCompId = inboundSenderCompId(sessionId);
+    final String targetCompId = inboundTargetCompId(sessionId);
+    final FixIdentityValidationFailure identityFailure = validateFixIdentity(
+        senderCompId,
+        targetCompId,
+        cancelClOrdId,
+        origClOrdId);
+    if (identityFailure != null) {
+      rejectOversizedCancelIdentity(identityFailure, sessionId, cancelClOrdId, origClOrdId);
+      return;
+    }
     final String orderId = orderIdFor(origClOrdId);
     final OrderSessionState existing = orderSessionRegistry.find(orderId).orElse(null);
     final WalRecord walRecord = new WalRecord(
@@ -152,8 +175,8 @@ public final class InboundFixMessageHandler {
       commandIdGenerator.nextCommandId(),
         Instant.now(clock).toEpochMilli(),
         "quickfix-gateway",
-        inboundSenderCompId(sessionId),
-        inboundTargetCompId(sessionId),
+        senderCompId,
+        targetCompId,
         OrderCancelRequest.MSGTYPE,
         orderId,
         cancelClOrdId,
@@ -267,6 +290,51 @@ public final class InboundFixMessageHandler {
     return message.getHeader();
   }
 
+  private FixIdentityValidationFailure validateFixIdentity(
+      String senderCompId,
+      String targetCompId,
+      String clOrdId,
+      String origClOrdId) {
+    final FixIdentityValidationFailure senderFailure = oversizedFixIdentity(
+        "sender_comp_id",
+        senderCompId,
+        "OVERSIZED_SENDER_COMP_ID");
+    if (senderFailure != null) {
+      return senderFailure;
+    }
+    final FixIdentityValidationFailure targetFailure = oversizedFixIdentity(
+        "target_comp_id",
+        targetCompId,
+        "OVERSIZED_TARGET_COMP_ID");
+    if (targetFailure != null) {
+      return targetFailure;
+    }
+    final FixIdentityValidationFailure clOrdIdFailure = oversizedFixIdentity(
+        "cl_ord_id",
+        clOrdId,
+        "OVERSIZED_CL_ORD_ID");
+    if (clOrdIdFailure != null) {
+      return clOrdIdFailure;
+    }
+    return oversizedFixIdentity("orig_cl_ord_id", origClOrdId, "OVERSIZED_ORIG_CL_ORD_ID");
+  }
+
+  private FixIdentityValidationFailure oversizedFixIdentity(
+      String fieldName,
+      String value,
+      String reasonCode) {
+    if (!exceedsFixIdentityLength(value)) {
+      return null;
+    }
+    return new FixIdentityValidationFailure(
+        reasonCode,
+        fieldName + " must be <= " + MAX_FIX_IDENTITY_LENGTH + " characters");
+  }
+
+  private boolean exceedsFixIdentityLength(String value) {
+    return value != null && value.length() > MAX_FIX_IDENTITY_LENGTH;
+  }
+
   private String orderIdFor(String clientOrderId) {
     return "O-" + clientOrderId;
   }
@@ -289,13 +357,51 @@ public final class InboundFixMessageHandler {
   }
 
   private String rejectText(RiskSubmissionResult submission) {
-    if (submission.reasonCode() == null || submission.reasonCode().isBlank()) {
-      return submission.reasonText();
+    return rejectText(submission.reasonCode(), submission.reasonText());
+  }
+
+  private void rejectOversizedNewOrderIdentity(
+      FixIdentityValidationFailure identityFailure,
+      SessionID sessionId,
+      String clOrdId,
+      String symbol,
+      Side side,
+      String quantity,
+      Instant now) {
+    final Message rejected = fixMessageMapper.buildRejected(
+        orderIdFor(clOrdId),
+        nextRejectedExecId(commandIdGenerator.nextCommandId()),
+        clOrdId,
+        symbol,
+        side,
+        quantity,
+        rejectText(identityFailure.reasonCode(), identityFailure.reasonText()),
+        now);
+    fixSessionMessageSender.send(sessionId, rejected);
+  }
+
+  private void rejectOversizedCancelIdentity(
+      FixIdentityValidationFailure identityFailure,
+      SessionID sessionId,
+      String cancelClOrdId,
+      String origClOrdId) {
+    final Message rejected = fixMessageMapper.buildOrderCancelReject(
+        orderIdFor(origClOrdId),
+        cancelClOrdId,
+        origClOrdId,
+        '8',
+        rejectText(identityFailure.reasonCode(), identityFailure.reasonText()));
+    fixSessionMessageSender.send(sessionId, rejected);
+  }
+
+  private String rejectText(String reasonCode, String reasonText) {
+    if (reasonCode == null || reasonCode.isBlank()) {
+      return reasonText;
     }
-    if (submission.reasonText() == null || submission.reasonText().isBlank()) {
-      return submission.reasonCode();
+    if (reasonText == null || reasonText.isBlank()) {
+      return reasonCode;
     }
-    return submission.reasonCode() + ": " + submission.reasonText();
+    return reasonCode + ": " + reasonText;
   }
 
   private Side mapSide(char value) {
@@ -343,5 +449,8 @@ public final class InboundFixMessageHandler {
       return null;
     }
     return fieldMap.getChar(field);
+  }
+
+  private record FixIdentityValidationFailure(String reasonCode, String reasonText) {
   }
 }

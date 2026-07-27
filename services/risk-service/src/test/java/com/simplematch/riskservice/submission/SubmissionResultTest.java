@@ -1,6 +1,7 @@
 package com.simplematch.riskservice.submission;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static com.simplematch.riskservice.testsupport.TestCommandIds.normalize;
 
 import java.time.LocalDate;
 import org.junit.jupiter.api.Test;
@@ -9,7 +10,7 @@ class SubmissionResultTest {
   @Test
   void exposesCommandIdAliasForPersistedRequestId() {
     final SubmissionResult submission = new SubmissionResult(
-        "cmd-1",
+      normalize("cmd-1"),
         "CLIENT",
         "SIMPLEMATCH",
         LocalDate.of(2024, 3, 27),
@@ -22,7 +23,7 @@ class SubmissionResultTest {
         "",
         100L);
 
-    assertThat(submission.commandId()).isEqualTo("cmd-1");
+    assertThat(submission.commandId()).isEqualTo(normalize("cmd-1"));
       assertThat(submission.senderCompId()).isEqualTo("CLIENT");
       assertThat(submission.targetCompId()).isEqualTo("SIMPLEMATCH");
     assertThat(submission.tradingDay()).isEqualTo(LocalDate.of(2024, 3, 27));
@@ -32,6 +33,7 @@ class SubmissionResultTest {
           "SIMPLEMATCH",
             LocalDate.of(2024, 3, 27),
             CommandType.COMMAND_TYPE_NEW,
-            "C1"));
+            "C1",
+            false));
   }
 }

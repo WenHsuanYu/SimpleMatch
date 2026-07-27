@@ -2,6 +2,7 @@ package com.simplematch.riskservice.store;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
+import static com.simplematch.riskservice.testsupport.TestCommandIds.normalize;
 
 import com.simplematch.riskservice.submission.CommandType;
 import com.simplematch.riskservice.submission.SubmissionBusinessKey;
@@ -17,6 +18,9 @@ import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.jdbc.datasource.DriverManagerDataSource;
 
 class JdbcSubmissionRepositoryTest {
+  private static final String OUTBOX_EVENT_ID_ONE = "00000000-0000-7000-8000-000000000011";
+  private static final String OUTBOX_EVENT_ID_TWO = "00000000-0000-7000-8000-000000000012";
+
   private JdbcTemplate jdbcTemplate;
   private SubmissionRepository repository;
 
@@ -43,7 +47,7 @@ class JdbcSubmissionRepositoryTest {
   void insertsAndFindsSubmissionByBusinessKey() {
     final SubmissionResult submission = acceptedSubmission();
 
-    repository.insert(submission, "outbox-1");
+    repository.insert(submission, OUTBOX_EVENT_ID_ONE);
 
     assertThat(repository.findByBusinessKey(submission.businessKey())).contains(submission);
     assertThat(jdbcTemplate.queryForObject(
@@ -60,8 +64,8 @@ class JdbcSubmissionRepositoryTest {
       submission.requestId())).isEqualTo(LocalDate.of(2024, 3, 27));
     assertThat(jdbcTemplate.queryForObject(
         "SELECT outbox_event_id FROM risk_submissions WHERE request_id = ?",
-        String.class,
-        submission.requestId())).isEqualTo("outbox-1");
+      UUID.class,
+      submission.requestId()).toString()).isEqualTo(OUTBOX_EVENT_ID_ONE);
   }
 
   @Test
@@ -71,15 +75,16 @@ class JdbcSubmissionRepositoryTest {
         "OTHER",
         LocalDate.of(2024, 3, 27),
         CommandType.COMMAND_TYPE_CANCEL,
-        "missing"))).isEmpty();
+      "missing",
+      false))).isEmpty();
   }
 
   @Test
   void throwsDuplicateKeyWhenBusinessKeyAlreadyExists() {
     final SubmissionResult submission = acceptedSubmission();
-    repository.insert(submission, "outbox-1");
+    repository.insert(submission, OUTBOX_EVENT_ID_ONE);
 
-    assertThatThrownBy(() -> repository.insert(submission, "outbox-2"))
+    assertThatThrownBy(() -> repository.insert(submission, OUTBOX_EVENT_ID_TWO))
         .isInstanceOf(DuplicateKeyException.class);
     assertThat(countRows("risk_submissions")).isEqualTo(1);
   }
@@ -88,7 +93,7 @@ class JdbcSubmissionRepositoryTest {
   void allowsSameClientOrderIdAcrossSessions() {
     final SubmissionResult first = acceptedSubmission();
     final SubmissionResult second = new SubmissionResult(
-        "cmd-2",
+      normalize("cmd-2"),
         "CLIENT2",
         "SIMPLEMATCH",
         first.tradingDay(),
@@ -101,8 +106,8 @@ class JdbcSubmissionRepositoryTest {
         first.reasonText(),
         101L);
 
-    repository.insert(first, "outbox-1");
-    repository.insert(second, "outbox-2");
+    repository.insert(first, OUTBOX_EVENT_ID_ONE);
+    repository.insert(second, OUTBOX_EVENT_ID_TWO);
 
     assertThat(countRows("risk_submissions")).isEqualTo(2);
     assertThat(repository.findByBusinessKey(second.businessKey())).contains(second);
@@ -112,9 +117,87 @@ class JdbcSubmissionRepositoryTest {
       first.clOrdId())).isEqualTo(2);
   }
 
+  @Test
+  void storesSeparateRawAndPersistedFixIdentityValues() {
+    final String rawClOrdId = "X".repeat(300);
+    final String rawOrigClOrdId = "Y".repeat(300);
+    final SubmissionResult rejectedSubmission = new SubmissionResult(
+      normalize("cmd-3"),
+        "CLIENT",
+        "SIMPLEMATCH",
+        LocalDate.of(2024, 3, 27),
+        "O-C3",
+        rawClOrdId,
+        rawOrigClOrdId,
+        CommandType.COMMAND_TYPE_CANCEL,
+        false,
+        "OVERSIZED_CL_ORD_ID",
+        "cl_ord_id must be <= 64 characters",
+        102L,
+        "a".repeat(64),
+        "b".repeat(64),
+        true);
+
+    repository.insert(rejectedSubmission, OUTBOX_EVENT_ID_ONE);
+
+    assertThat(repository.findByBusinessKey(rejectedSubmission.businessKey())).contains(rejectedSubmission);
+    assertThat(jdbcTemplate.queryForObject(
+        "SELECT raw_cl_ord_id FROM risk_submissions WHERE request_id = ?",
+        String.class,
+        rejectedSubmission.requestId())).isEqualTo(rawClOrdId);
+    assertThat(jdbcTemplate.queryForObject(
+        "SELECT cl_ord_id FROM risk_submissions WHERE request_id = ?",
+        String.class,
+        rejectedSubmission.requestId())).isEqualTo(rejectedSubmission.persistedClOrdId());
+    assertThat(jdbcTemplate.queryForObject(
+      "SELECT business_key_surrogated FROM risk_submissions WHERE request_id = ?",
+      Boolean.class,
+      rejectedSubmission.requestId())).isTrue();
+    }
+
+    @Test
+    void allowsSamePersistedBusinessKeyWhenSurrogateFlagDiffers() {
+    final String persistedKey = "a".repeat(64);
+    final SubmissionResult plainSubmission = new SubmissionResult(
+      normalize("cmd-plain"),
+      "CLIENT",
+      "SIMPLEMATCH",
+      LocalDate.of(2024, 3, 27),
+      "O-C-plain",
+      persistedKey,
+      "",
+      CommandType.COMMAND_TYPE_NEW,
+      true,
+      "",
+      "",
+      103L);
+    final SubmissionResult surrogatedSubmission = new SubmissionResult(
+      normalize("cmd-surrogate"),
+      "CLIENT",
+      "SIMPLEMATCH",
+      LocalDate.of(2024, 3, 27),
+      "O-C-surrogate",
+      "X".repeat(300),
+      "",
+      CommandType.COMMAND_TYPE_NEW,
+      false,
+      "OVERSIZED_CL_ORD_ID",
+      "cl_ord_id must be <= 64 characters",
+      104L,
+      persistedKey,
+      "",
+      true);
+
+    repository.insert(plainSubmission, OUTBOX_EVENT_ID_ONE);
+    repository.insert(surrogatedSubmission, OUTBOX_EVENT_ID_TWO);
+
+    assertThat(repository.findByBusinessKey(plainSubmission.businessKey())).contains(plainSubmission);
+    assertThat(repository.findByBusinessKey(surrogatedSubmission.businessKey())).contains(surrogatedSubmission);
+  }
+
   private SubmissionResult acceptedSubmission() {
     return new SubmissionResult(
-        "cmd-1",
+        normalize("cmd-1"),
       "CLIENT",
       "SIMPLEMATCH",
         LocalDate.of(2024, 3, 27),
