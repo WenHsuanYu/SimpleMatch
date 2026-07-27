@@ -14,6 +14,7 @@ import org.gradle.kotlin.dsl.getByType
 /** Applies the repository's stable protobuf and gRPC Java generation contract. */
 class SimpleMatchProtobufContractsPlugin : Plugin<Project> {
   override fun apply(project: Project) {
+    project.pluginManager.apply("simplematch.java-conventions")
     project.pluginManager.apply("java-library")
     project.pluginManager.apply("com.google.protobuf")
 

@@ -26,9 +26,11 @@ dependencies {
   implementation(gradleApi())
   implementation(libs.flyway.gradle.plugin)
   implementation(libs.flyway.database.postgresql)
+  implementation(libs.errorprone.gradle.plugin)
   implementation(libs.protobuf.gradle.plugin)
   implementation(libs.spring.boot.gradle.plugin)
   implementation(libs.spring.dependency.management.gradle.plugin)
+  implementation(libs.spotbugs.gradle.plugin)
   compileOnly("javax.inject:javax.inject:1")
   testImplementation(kotlin("test"))
 }
@@ -50,6 +52,14 @@ gradlePlugin {
     register("simpleMatchProtobufContracts") {
       id = "simplematch.protobuf-contracts"
       implementationClass = "com.simplematch.gradle.SimpleMatchProtobufContractsPlugin"
+    }
+    register("simpleMatchJavaConventions") {
+      id = "simplematch.java-conventions"
+      implementationClass = "com.simplematch.gradle.SimpleMatchJavaConventionsPlugin"
+    }
+    register("simpleMatchJavaQuality") {
+      id = "simplematch.java-quality"
+      implementationClass = "com.simplematch.gradle.SimpleMatchJavaQualityPlugin"
     }
   }
 }

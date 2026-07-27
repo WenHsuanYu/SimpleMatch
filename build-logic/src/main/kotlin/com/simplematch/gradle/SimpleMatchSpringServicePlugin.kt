@@ -15,7 +15,8 @@ import org.gradle.kotlin.dsl.getByType
  */
 class SimpleMatchSpringServicePlugin : Plugin<Project> {
   override fun apply(project: Project) {
-    project.pluginManager.apply("java")
+    project.pluginManager.apply("simplematch.java-conventions")
+    project.pluginManager.apply("simplematch.java-quality")
     project.pluginManager.apply("org.springframework.boot")
     project.pluginManager.apply("io.spring.dependency-management")
 

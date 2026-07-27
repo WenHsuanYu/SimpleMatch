@@ -1,5 +1,7 @@
 plugins {
   `java-library`
+  id("simplematch.java-conventions")
+  id("simplematch.java-quality")
 }
 
 dependencies {
