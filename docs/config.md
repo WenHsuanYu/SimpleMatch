@@ -1,110 +1,91 @@
-# Configuration Runbook (env + JSON)
+# Configuration Runbook
 
-The canonical target configuration ownership and safety rules are in
-[the target platform specification](../services/docs/platform/configuration.md).
-This page records current keys, aliases, defaults, and operational endpoints;
-it is not a second target-configuration source.
+Spring's `Environment` is the only SimpleMatch runtime configuration authority.
+The retired `SIMPLEMATCH_CONFIG` JSON file, `config/simplematch.json`, and the
+legacy `simplematch.fix-gateway.*` aliases are not read.
 
-This repo uses **environment variables** plus an **optional JSON config file**.
+## Environments
+
+Exactly one environment profile is active: `local`, `test`, `staging`, or
+`production`. Kubernetes is a deployment platform, never a Spring profile.
+Every service defaults to `local`; deployments select another profile with
+`SPRING_PROFILES_ACTIVE`.
+
+The profile and `simplematch.environment` must agree. The same canonical
+property names bind in every profile. The base `application.yaml` supplies
+safe, non-secret defaults and the profile file supplies only the environment
+identity. Default Taiwan-market configuration is `TWD` and `Asia/Taipei`.
 
 ## Precedence
 
-1. CLI flags (when supported by a service)
-2. Environment variables
-3. JSON config file
-4. Service defaults
+For one property, the effective order is:
 
-## Config file discovery
+1. Test-only properties and command-line arguments.
+2. Environment variables, including canonical relaxed names such as
+   `SIMPLEMATCH_KAFKA_BROKERS`.
+3. Kubernetes ConfigMap and Secret Config Data imports when Kubernetes support
+   is enabled.
+4. Profile-specific `application-{profile}.yaml`.
+5. Base `application.yaml` and typed-property defaults.
 
-Services may load a JSON file from:
+Spring's normal Config Data rules apply within each source. Do not create two
+different deployment sources for the same key: the startup validator rejects
+any overlap between Kubernetes ConfigMap and Secret keys.
 
-- `SIMPLEMATCH_CONFIG` (absolute or relative path), else
-- `config/simplematch.json` if present (recommended for local dev), else
-- no file (env + defaults only)
+## Typed Ownership
 
-## Common keys (Task 0)
+`PlatformProperties` owns shared Kafka, PostgreSQL, Redis, gRPC, routing,
+observability, currency, and time-zone settings under `simplematch.*`.
+`QuickFixGatewayProperties` owns gateway paths, owner identity, feature flags,
+and risk-client policy under `simplematch.quickfix-gateway.*`.
 
-Top-level keys in `config/simplematch*.json`:
+Useful canonical keys include:
 
-- `env`: `dev` | `stage` | `prod`
-- `kafka.brokers`: e.g. `localhost:9092`
-- `kafka.topics.*`: topic names
-- `kafka.partitions.*`: integer partition counts (catalog / desired)
-- `postgres.dsn`: Postgres DSN
-- `redis.endpoints`: string array
-- `grpc.targets.*`: gRPC target strings
-- `routing.snapshotPath`: published routing snapshot JSON path
-- `observability.otel.exporterOtlpEndpoint`: OTLP endpoint
-- `observability.prometheus.port`: metrics port
+- `simplematch.kafka.brokers`
+- `simplematch.kafka.topics.*`
+- `simplematch.postgres.dsn`
+- `simplematch.grpc.targets.*`
+- `simplematch.routing.snapshot-path`
+- `simplematch.market.currency` (`TWD`)
+- `simplematch.market.time-zone` (`Asia/Taipei`)
+- `simplematch.quickfix-gateway.owner-id`
+- `simplematch.quickfix-gateway.quickfix-config-path`
+- `simplematch.quickfix-gateway.wal-path`
 
-Debezium / Kafka Connect publication is external infrastructure, so there is no longer an in-app `riskService.outboxRelay.*` config block in `risk-service`.
+## Kubernetes
 
-Database migrations are managed through the Gradle Flyway convention tasks rather than a runtime config flag.
+Each Spring service defaults to `optional:kubernetes:` through Config Data for
+local use. A Kubernetes workload sets
+`SIMPLEMATCH_KUBERNETES_CONFIG_IMPORT=kubernetes:` and
+`SIMPLEMATCH_KUBERNETES_ENABLED=true`, so an unavailable required source fails
+startup instead of being silently skipped. The configured sources are
+`simplematch-platform-config`, `{service}-config`, and `{service}-secrets`.
+The client uses named reads and least-privilege RBAC.
 
-## Routing snapshot
+`staging` and `production` fail startup unless a Kubernetes ConfigMap and a
+Kubernetes Secret are both present. `simplematch.postgres.dsn` must come from
+the Secret in those environments. Secrets are externally provisioned; no
+Secret value, DSN credential, token, or password is committed to this
+repository. `deploy/k8s/quickfix-gateway-configuration-rbac.yaml` is the
+reference RBAC shape, and `deploy/k8s/simplematch-platform-configmap.yaml`
+contains only non-sensitive data.
 
-JSON:
+The risk-service Debezium connector template resolves its database username
+and password from Kafka Connect environment variables. Those environment
+variables must be injected from a Kubernetes Secret.
 
-- `routing.snapshotPath`: published routing snapshot file path. The default is `classpath:routing/orders-validated.snapshot.json`, and local or production deployments should override it with a shared external file such as `config/routing/orders-validated.snapshot.json`.
+## Change Policy
 
-Minimum snapshot shape:
+Configuration is startup-only in staging and production. Apply a validated
+ConfigMap or Secret change, then perform a controlled rolling restart. Do not
+enable automatic refresh for admission, routing, session, or transport policy.
+Local and test changes take effect on process restart.
 
-```json
-{
- "entries": [
-  {
-   "symbol": "AAPL",
-   "routingBucket": "mega-cap-tech",
-   "kafkaPartitionId": 7
-  }
- ]
-}
-```
+## Routing Snapshot
 
-At startup, `risk-service` reads this snapshot. If a `symbol` is not listed, it falls back to the stable partition `floorMod(symbol.hashCode(), simplematch.kafka.partitions.ordersValidated)`.
-
-Debezium / Kafka Connect 仍屬外部基礎設施，但 repo 已提供第一版 connector 範本：
-
-- `deploy/compose/risk-service-outbox-connector.json`
-- `deploy/k8s/risk-service-outbox-connector-configmap.yaml`
-
-這兩份範本都會把 outbox row 的 `kafka_partition_id` 透過 Debezium Outbox Event Router SMT 映射成 Kafka record 的 explicit partition。
-
-## quickfix-gateway
-
-JSON:
-
-- `quickfixGateway.quickfixConfigPath`: path to QuickFIX acceptor config (`.cfg`)
-- `quickfixGateway.walPath`: inbound WAL path
-- `quickfixGateway.ownerId`: stable logical gateway owner id used for session-aware deployment and owner-specific consumer group defaults
-
-Canonical environment variable overrides:
-
-- `SIMPLEMATCH_QUICKFIX_GATEWAY_QUICKFIX_CONFIG`
-- `SIMPLEMATCH_QUICKFIX_GATEWAY_WAL_PATH`
-- `SIMPLEMATCH_QUICKFIX_GATEWAY_OWNER_ID`
-
-Legacy environment variable overrides retained for compatibility:
-
-- `SIMPLEMATCH_ENV`
-- `SIMPLEMATCH_FIX_QUICKFIX_CONFIG`
-- `SIMPLEMATCH_FIX_WAL_PATH`
-
-Legacy aliases are deprecated compatibility paths. New config should use `quickfixGateway`, `simplematch.quickfix-gateway.*`, and `SIMPLEMATCH_QUICKFIX_GATEWAY_*`.
-
-Phase 1 session-aware scale-out baseline:
-
-- `simplematch.quickfix-gateway.owner-id` defaults to `quickfix-gateway-0`
-- `quickfix-gateway` now defaults its Kafka `matching.executions` consumer group id to the configured owner id rather than the shared application name
-- this is only the owner identity skeleton for same-owner restart; it is not yet a full standby failover implementation
-
-Operational endpoints:
-
-- `quickfix-gateway` now exposes `/healthz`, `/healthz/liveness`, `/readyz`, and `/metrics` on the management HTTP port
-- `/readyz` stays out of service until startup recovery finishes
-- when `simplematch.quickfix-gateway.acceptor-enabled=true`, readiness also requires the QuickFIX acceptor lifecycle to be running
-
-QuickFIX continuity defaults:
-
-- the repo default `config/quickfix/acceptor.cfg` now uses `ResetOnLogon=N`, `ResetOnLogout=N`, and `ResetOnDisconnect=N`
-- Kubernetes continuity deployments should mount owner-local persistent storage for QuickFIX file store, file log, and WAL paths
+`simplematch.routing.snapshot-path` identifies the published routing input.
+Risk-service loads it at startup and derives a stable fallback partition from
+`simplematch.kafka.partitions.orders-validated` for symbols absent from the
+snapshot. Debezium/Kafka Connect remains external infrastructure; the
+connector manifests are deployment templates rather than application
+configuration.

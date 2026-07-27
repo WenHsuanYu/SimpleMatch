@@ -35,6 +35,7 @@ class SimpleMatchSpringServicePlugin : Plugin<Project> {
       add("implementation", "org.springframework.boot:spring-boot-starter")
       add("implementation", "org.springframework.boot:spring-boot-starter-actuator")
       add("implementation", "org.springframework.boot:spring-boot-starter-validation")
+      add("implementation", "org.springframework.cloud:spring-cloud-starter-kubernetes-client-config")
       add("runtimeOnly", "org.postgresql:postgresql")
       add("compileOnly", catalog.findLibrary("jakarta-annotation-api").get())
       add("annotationProcessor", catalog.findLibrary("lombok").get())

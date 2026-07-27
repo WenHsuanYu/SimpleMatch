@@ -1,0 +1,12 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: quickfix-gateway-config
+data:
+  application.yaml: |
+    simplematch:
+      quickfix-gateway:
+        quickfix-config-path: /etc/simplematch/quickfix/acceptor-continuity.cfg
+        wal-path: /var/lib/simplematch/quickfix-gateway/wal/inbound.wal
+        data-plane-enabled: true
+        replay-enabled: true

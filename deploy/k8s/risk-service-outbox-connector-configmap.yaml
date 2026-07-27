@@ -7,12 +7,14 @@ data:
     {
       "name": "risk-service-outbox",
       "config": {
+        "config.providers": "env",
+        "config.providers.env.class": "org.apache.kafka.common.config.provider.EnvVarConfigProvider",
         "connector.class": "io.debezium.connector.postgresql.PostgresConnector",
         "tasks.max": "1",
         "database.hostname": "postgres",
         "database.port": "5432",
-        "database.user": "simplematch",
-        "database.password": "simplematch",
+        "database.user": "${env:RISK_SERVICE_POSTGRES_USER}",
+        "database.password": "${env:RISK_SERVICE_POSTGRES_PASSWORD}",
         "database.dbname": "simplematch",
         "topic.prefix": "simplematch-risk-service",
         "plugin.name": "pgoutput",

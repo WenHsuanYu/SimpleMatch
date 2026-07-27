@@ -285,31 +285,31 @@ Rollback:
 
 ### Phase 2: Make Spring configuration authoritative
 
-- [ ] Commit 2.1: Add tests for base YAML, profile YAML, environment overrides,
+- [x] Commit 2.1: Add tests for base YAML, profile YAML, environment overrides,
   and test-only override precedence.
-- [ ] Commit 2.2: Add service-scoped typed configuration objects with startup
+- [x] Commit 2.2: Add service-scoped typed configuration objects with startup
   validation while retaining the existing compatibility facade.
-- [ ] Commit 2.3: Bind the compatibility facade from Spring Environment instead
+- [x] Commit 2.3: Bind the compatibility facade from Spring Environment instead
   of independent file discovery.
-- [ ] Commit 2.4: Add environment-profile exclusivity and staging or production
+- [x] Commit 2.4: Add environment-profile exclusivity and staging or production
   security-policy validation.
-- [ ] Commit 2.5: Add Kubernetes ConfigMap and Secret imports with disjoint key
+- [x] Commit 2.5: Add Kubernetes ConfigMap and Secret imports with disjoint key
   validation.
-- [ ] Commit 2.6: Add fail-fast behavior for missing required Kubernetes
+- [x] Commit 2.6: Add fail-fast behavior for missing required Kubernetes
   configuration.
-- [ ] Commit 2.7: Remove custom environment alias resolution after every caller
+- [x] Commit 2.7: Remove custom environment alias resolution after every caller
   uses typed properties.
-- [ ] Commit 2.8: Remove the custom loader after compatibility tests prove it is
+- [x] Commit 2.8: Remove the custom loader after compatibility tests prove it is
   unused.
-- [ ] Commit 2.9: Document the configuration matrix, precedence, secret
+- [x] Commit 2.9: Document the configuration matrix, precedence, secret
   ownership, and restart policy.
 
 Phase gate:
 
-- [ ] The same property names bind in local, test, staging, and production.
-- [ ] ConfigMap and Secret conflicts fail validation.
-- [ ] Sensitive values are absent from committed configuration.
-- [ ] Each Spring application starts under local and test profiles.
+- [x] The same property names bind in local, test, staging, and production.
+- [x] ConfigMap and Secret conflicts fail validation.
+- [x] Sensitive values are absent from committed configuration.
+- [x] Each Spring application starts under local and test profiles.
 
 Rollback:
 

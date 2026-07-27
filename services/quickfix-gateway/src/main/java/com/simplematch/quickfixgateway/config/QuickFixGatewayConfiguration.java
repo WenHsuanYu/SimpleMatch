@@ -1,6 +1,6 @@
 package com.simplematch.quickfixgateway.config;
 
-import com.simplematch.config.SimpleMatchConfig;
+import com.simplematch.config.PlatformProperties;
 import com.simplematch.quickfixgateway.fix.ExecutionSessionResolver;
 import com.simplematch.quickfixgateway.fix.FixMessageMapper;
 import com.simplematch.quickfixgateway.fix.FixSessionMessageSender;
@@ -30,8 +30,9 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.time.Clock;
 import org.springframework.beans.factory.ObjectProvider;
-import org.springframework.beans.factory.annotation.Value;
+import org.springframework.beans.factory.SmartInitializingSingleton;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
+import org.springframework.boot.context.properties.EnableConfigurationProperties;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.kafka.annotation.EnableKafka;
@@ -39,25 +40,34 @@ import org.springframework.kafka.core.KafkaTemplate;
 
 @Configuration
 @EnableKafka
+@EnableConfigurationProperties(QuickFixGatewayProperties.class)
 public class QuickFixGatewayConfiguration {
   @Bean
-  QuickFixGatewayRuntime quickFixGatewayRuntime(SimpleMatchConfig simpleMatchConfig) throws IOException {
-    final Path quickfixConfigPath = resolve(simpleMatchConfig.getQuickfixGateway().getQuickfixConfigPath());
+  SmartInitializingSingleton quickFixGatewayPropertiesValidation(
+      QuickFixGatewayProperties gatewayProperties) {
+    return () -> QuickFixGatewayPropertiesValidator.validate(gatewayProperties);
+  }
+
+  @Bean
+  QuickFixGatewayRuntime quickFixGatewayRuntime(
+      PlatformProperties platformProperties,
+      QuickFixGatewayProperties gatewayProperties) throws IOException {
+    final Path quickfixConfigPath = resolve(gatewayProperties.quickfixConfigPath());
     if (!Files.exists(quickfixConfigPath)) {
       throw new IllegalStateException("QuickFIX/J config not found: " + quickfixConfigPath);
     }
 
-    final Path walPath = resolve(simpleMatchConfig.getQuickfixGateway().getWalPath());
+    final Path walPath = resolve(gatewayProperties.walPath());
     final Path walParent = walPath.getParent();
     if (walParent != null) {
       Files.createDirectories(walParent);
     }
 
     return new QuickFixGatewayRuntime(
-      simpleMatchConfig.getEnv(),
+      platformProperties.environment(),
       quickfixConfigPath,
       walPath,
-      simpleMatchConfig.getQuickfixGateway().getOwnerId());
+      gatewayProperties.ownerId());
   }
 
   @Bean
@@ -86,24 +96,27 @@ public class QuickFixGatewayConfiguration {
   }
 
   @Bean(destroyMethod = "shutdownNow")
-  ManagedChannel riskServiceChannel(SimpleMatchConfig simpleMatchConfig) {
-    return ManagedChannelBuilder.forTarget(simpleMatchConfig.getGrpc().getTargets().getRiskService())
+  ManagedChannel riskServiceChannel(PlatformProperties platformProperties) {
+    return ManagedChannelBuilder.forTarget(platformProperties.grpc().targets().riskService())
         .usePlaintext()
         .build();
   }
 
   @Bean
-  RiskSubmissionClient riskSubmissionClient(ManagedChannel riskServiceChannel, Clock quickFixGatewayClock, SimpleMatchConfig simpleMatchConfig) {
-    final SimpleMatchConfig.RiskClient riskClient = simpleMatchConfig.getQuickfixGateway().getRiskClient();
+  RiskSubmissionClient riskSubmissionClient(
+      ManagedChannel riskServiceChannel,
+      Clock quickFixGatewayClock,
+      QuickFixGatewayProperties gatewayProperties) {
+    final QuickFixGatewayProperties.RiskClientProperties riskClient = gatewayProperties.riskClient();
     final RiskSubmissionClient delegate = new GrpcRiskSubmissionClient(
         riskServiceChannel,
-        riskClient.getDeadlineMillis());
+        riskClient.deadlineMillis());
     return new ResilientRiskSubmissionClient(
         delegate,
-        riskClient.getRetry().getMaxAttempts(),
-        riskClient.getRetry().getBackoffMillis(),
-        riskClient.getBreaker().getConsecutiveFailures(),
-        riskClient.getBreaker().getOpenDurationMillis(),
+        riskClient.retry().maxAttempts(),
+        riskClient.retry().backoffMillis(),
+        riskClient.breaker().consecutiveFailures(),
+        riskClient.breaker().openDurationMillis(),
         quickFixGatewayClock);
   }
 
@@ -111,10 +124,10 @@ public class QuickFixGatewayConfiguration {
   @ConditionalOnProperty(name = "simplematch.quickfix-gateway.compatibility-publish-enabled", havingValue = "true")
   OrdersCommandPublisher ordersCommandPublisher(
       KafkaTemplate<String, byte[]> kafkaTemplate,
-      SimpleMatchConfig simpleMatchConfig) {
+      PlatformProperties platformProperties) {
     return new KafkaOrdersCommandPublisher(
         kafkaTemplate,
-        simpleMatchConfig.getKafka().getTopics().getOrdersCommands());
+        platformProperties.kafka().topics().ordersCommands());
   }
 
   @Bean
@@ -131,9 +144,8 @@ public class QuickFixGatewayConfiguration {
   @Bean
   QuickFixGatewayStartupRecovery quickFixGatewayStartupRecovery(
       WalReplayService walReplayService,
-      @Value("${simplematch.quickfix-gateway.compatibility-publish-enabled:false}") boolean compatibilityPublishEnabled,
-      @Value("${simplematch.quickfix-gateway.replay-enabled:true}") boolean replayEnabled) {
-    if (compatibilityPublishEnabled && replayEnabled) {
+      QuickFixGatewayProperties gatewayProperties) {
+    if (gatewayProperties.compatibilityPublishEnabled() && gatewayProperties.replayEnabled()) {
       return walReplayService::replayAll;
     }
     return () -> 0;
@@ -156,10 +168,10 @@ public class QuickFixGatewayConfiguration {
   QuickFixGatewayReadinessHealthIndicator quickfixGatewayReadyHealthIndicator(
       QuickFixGatewayStartupState startupState,
       ObjectProvider<QuickFixAcceptorLifecycle> acceptorLifecycleProvider,
-      @Value("${simplematch.quickfix-gateway.acceptor-enabled:true}") boolean acceptorEnabled) {
+      QuickFixGatewayProperties gatewayProperties) {
     return new QuickFixGatewayReadinessHealthIndicator(
         startupState,
-        acceptorEnabled,
+        gatewayProperties.acceptorEnabled(),
         () -> {
           final QuickFixAcceptorLifecycle lifecycle = acceptorLifecycleProvider.getIfAvailable();
           return lifecycle != null && lifecycle.isRunning();
@@ -195,12 +207,6 @@ public class QuickFixGatewayConfiguration {
   QuickFixAcceptorLifecycle quickFixAcceptorLifecycle(
       QuickFixApplicationAdapter application,
       QuickFixGatewayRuntime runtime) {
-
-//    if (runtime == null) {
-//      System.out.println("QuickFixGatewayRuntime is null");
-//
-//    }
-
     return new QuickFixAcceptorLifecycle(application, runtime);
   }
 

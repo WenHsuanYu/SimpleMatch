@@ -1,7 +1,7 @@
 package com.simplematch.riskservice.config;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
-import com.simplematch.config.SimpleMatchConfig;
+import com.simplematch.config.PlatformProperties;
 import com.simplematch.riskservice.bootstrap.RiskServiceRuntime;
 import com.simplematch.riskservice.outbox.FileRoutingPartitionResolver;
 import com.simplematch.riskservice.outbox.RoutingPartitionResolver;
@@ -37,13 +37,13 @@ public class RiskServiceConfiguration {
   }
 
   @Bean
-  RiskServiceRuntime riskServiceRuntime(SimpleMatchConfig config) {
-    return RiskServiceRuntime.from(config);
+  RiskServiceRuntime riskServiceRuntime(PlatformProperties properties) {
+    return RiskServiceRuntime.from(properties);
   }
 
   @Bean
-  DataSource riskServiceDataSource(SimpleMatchConfig config) {
-    final PostgresJdbcConfig parsedJdbcDsn = PostgresJdbcConfig.parse(config.getPostgres().getDsn());
+  DataSource riskServiceDataSource(PlatformProperties properties) {
+    final PostgresJdbcConfig parsedJdbcDsn = PostgresJdbcConfig.parse(properties.postgres().dsn());
     final HikariDataSource dataSource = new HikariDataSource();
     dataSource.setJdbcUrl(parsedJdbcDsn.jdbcUrl());
     if (parsedJdbcDsn.username() != null) {
@@ -76,11 +76,11 @@ public class RiskServiceConfiguration {
   @Bean
   RoutingPartitionResolver routingPartitionResolver(
       ObjectMapper objectMapper,
-      SimpleMatchConfig config) {
+      PlatformProperties properties) {
     return FileRoutingPartitionResolver.load(
         objectMapper,
-        Path.of(config.getRouting().getSnapshotPath()),
-        config.getKafka().getPartitions().getOrdersValidated());
+        Path.of(properties.routing().snapshotPath()),
+        properties.kafka().partitions().ordersValidated());
   }
 
   @Bean
@@ -90,12 +90,12 @@ public class RiskServiceConfiguration {
       Clock riskServiceClock,
       ObjectMapper objectMapper,
       RoutingPartitionResolver routingPartitionResolver,
-      SimpleMatchConfig config) {
+      PlatformProperties properties) {
     return new TransactionalSubmissionService(
         new SubmissionValidator(riskServiceClock),
         new SubmissionOutboxFactory(
             objectMapper,
-            config.getKafka().getTopics().getOrdersValidated(),
+            properties.kafka().topics().ordersValidated(),
             routingPartitionResolver),
         new JdbcSubmissionRepository(riskJdbcTemplate),
         new JdbcOutboxRepository(riskJdbcTemplate),

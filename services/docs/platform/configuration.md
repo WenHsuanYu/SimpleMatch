@@ -16,7 +16,7 @@ The system has three configuration scopes:
 
 | Scope | Owner | Examples |
 | --- | --- | --- |
-| Shared platform | `SimpleMatchConfig` and deployment environment | Kafka, PostgreSQL, Redis, gRPC, routing, and observability settings |
+| Shared platform | `PlatformProperties` and deployment environment | Kafka, PostgreSQL, Redis, gRPC, routing, observability, currency, and time-zone settings |
 | Service-owned runtime | The owning service | Listener addresses, dependency deadlines, concurrency, and feature policy |
 | External infrastructure | Deployment and platform tooling | Kafka Connect, database credentials, Kubernetes resources, and secrets |
 
@@ -25,13 +25,15 @@ setting is not a licence for a service to mutate another service's policy.
 
 ## Resolution and safety rules
 
-The target precedence is explicit command-line override, environment override,
-configuration file, then safe service default. A deployment must be able to
-identify the final source of a value without inspecting multiple competing
-defaults.
+The implementation uses the Spring Environment and Config Data. Test and
+command-line properties override environment variables; those override
+Kubernetes imports; profile YAML overrides base YAML and typed safe defaults.
+A deployment must be able to identify the final source of a value without
+inspecting multiple competing defaults.
 
-- Secrets are supplied by the deployment secret mechanism, never committed in
-  JSON configuration or emitted in logs.
+- Secrets are supplied by Kubernetes Secrets, never committed in YAML,
+  ConfigMaps, fixtures, or emitted in logs. ConfigMaps and Secrets have
+  disjoint property-key ownership.
 - A config change that affects wire compatibility, event ordering, persistence,
   or matching behaviour follows the relevant contract or release process; it
   is not an ad-hoc runtime toggle.
@@ -44,14 +46,12 @@ defaults.
 
 ## Change propagation
 
-Control-plane updates are versioned and observable. Services either apply a
-validated configuration atomically at a documented refresh boundary or require
-a restart. No refresh may partially apply a multi-setting policy, and each
-service documents whether a setting is startup-only, refreshable, or immutable
-for the lifetime of a process.
+Control-plane updates are versioned and observable. Current staging and
+production settings require a controlled rolling restart; no runtime refresh
+may partially apply a multi-setting policy.
 
 ## Target versus execution state
 
 This page is the target authority for configuration ownership and safety. The
 [configuration runbook](../../../docs/config.md) lists current key names,
-legacy aliases, connector templates, and operational endpoints.
+precedence, secret ownership, connector templates, and operational endpoints.

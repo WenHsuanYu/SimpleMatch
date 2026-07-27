@@ -31,8 +31,7 @@ Session-aware deployment baseline:
 Current repo state is no longer a bootstrap-only scaffold. The Java gateway already includes:
 
 - QuickFix/J acceptor lifecycle wiring and session logging
-- config binding through `SimpleMatchConfig` and Spring `@ConfigurationProperties`
-- legacy config override compatibility for app-config, QuickFIX config, WAL path, and environment
+- config binding through `PlatformProperties` and `QuickFixGatewayProperties`
 - `NewOrderSingle (35=D)` ingestion
 - local WAL append-and-flush before the first accept/reject decision is emitted
 - synchronous gRPC submission to `risk-service`
@@ -52,17 +51,10 @@ Two intentional Java-specific differences from the historical C++ gateway baseli
 
 ## Configuration
 
-The service keeps the legacy override inputs used by the earlier migration work:
-
-- `--app-config`
-- `--quickfix-config`
-- `--wal`
-- `SIMPLEMATCH_CONFIG`
-- `SIMPLEMATCH_ENV`
-- `SIMPLEMATCH_QUICKFIX_GATEWAY_QUICKFIX_CONFIG`
-- `SIMPLEMATCH_QUICKFIX_GATEWAY_WAL_PATH`
-- `SIMPLEMATCH_FIX_QUICKFIX_CONFIG`
-- `SIMPLEMATCH_FIX_WAL_PATH`
+Configuration is resolved only through Spring Config Data. Use canonical Spring
+properties or relaxed environment names such as
+`SIMPLEMATCH_QUICKFIX_GATEWAY_OWNER_ID`; JSON config discovery and legacy
+`SIMPLEMATCH_FIX_*` aliases are not supported.
 
 Important Spring properties:
 
@@ -74,14 +66,7 @@ Important Spring properties:
 - `simplematch.grpc.targets.risk-service`: gRPC target used for synchronous `risk-service` submission
 - `simplematch.quickfix-gateway.risk-client.*`: deadline, bounded retry, and breaker settings for `risk-service` calls
 
-Compatibility notes:
-
-- JSON config now prefers `quickfixGateway`, while the old `fixGateway` key is still accepted.
-- Spring property names now prefer `simplematch.quickfix-gateway.*`, while the old `simplematch.fix-gateway.*` names are still aliased.
-- The old `SIMPLEMATCH_FIX_*` environment variables are still accepted as legacy aliases.
-- Deprecated aliases currently emit warnings when they are used so remaining downstream configs can be migrated before full removal.
-
-Default paths from the shared config library:
+Default paths from `QuickFixGatewayProperties`:
 
 - QuickFIX config: `config/quickfix/acceptor.cfg`
 - WAL path: `data/quickfix/wal/inbound.wal`

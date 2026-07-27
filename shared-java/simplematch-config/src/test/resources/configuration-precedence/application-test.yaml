@@ -1,0 +1,4 @@
+simplematch:
+  environment: test
+  kafka:
+    brokers: profile-broker:9092

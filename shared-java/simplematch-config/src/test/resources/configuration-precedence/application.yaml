@@ -1,0 +1,4 @@
+simplematch:
+  environment: local
+  kafka:
+    brokers: base-broker:9092

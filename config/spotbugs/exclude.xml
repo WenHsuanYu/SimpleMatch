@@ -5,26 +5,6 @@
   </Match>
   <Match>
     <Bug pattern="EI_EXPOSE_REP,EI_EXPOSE_REP2"/>
-    <Class name="com.simplematch.config.LoadedSimpleMatchConfig"/>
-  </Match>
-  <Match>
-    <Bug pattern="EI_EXPOSE_REP,EI_EXPOSE_REP2"/>
-    <Class name="com.simplematch.config.SimpleMatchConfig"/>
-  </Match>
-  <Match>
-    <Bug pattern="EI_EXPOSE_REP,EI_EXPOSE_REP2"/>
-    <Class name="~com\.simplematch\.config\.SimpleMatchConfig\$.*"/>
-  </Match>
-  <Match>
-    <Bug pattern="EI_EXPOSE_REP,EI_EXPOSE_REP2"/>
-    <Class name="com.simplematch.accountservice.bootstrap.AccountServiceRuntime"/>
-  </Match>
-  <Match>
-    <Bug pattern="EI_EXPOSE_REP,EI_EXPOSE_REP2"/>
-    <Class name="com.simplematch.riskservice.bootstrap.RiskServiceRuntime"/>
-  </Match>
-  <Match>
-    <Bug pattern="EI_EXPOSE_REP,EI_EXPOSE_REP2"/>
     <Class name="com.simplematch.riskservice.grpc.RiskGrpcService"/>
   </Match>
   <Match>

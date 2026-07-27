@@ -1,6 +1,26 @@
 spring:
   application:
     name: risk-service
+  profiles:
+    default: local
+  config:
+    import: ${SIMPLEMATCH_KUBERNETES_CONFIG_IMPORT:optional:kubernetes:}
+  cloud:
+    kubernetes:
+      config:
+        enabled: ${SIMPLEMATCH_KUBERNETES_ENABLED:false}
+        fail-fast: true
+        retry:
+          enabled: false
+        read-type: SINGLE
+        sources:
+          - name: simplematch-platform-config
+          - name: ${spring.application.name}-config
+      secrets:
+        enabled: ${SIMPLEMATCH_KUBERNETES_ENABLED:false}
+        enable-api: ${SIMPLEMATCH_KUBERNETES_ENABLED:false}
+        sources:
+          - name: ${spring.application.name}-secrets
   flyway:
     enabled: false
   kafka:

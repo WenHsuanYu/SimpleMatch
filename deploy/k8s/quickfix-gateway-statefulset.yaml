@@ -13,24 +13,23 @@ spec:
       labels:
         app.kubernetes.io/name: quickfix-gateway
     spec:
+      serviceAccountName: quickfix-gateway
       terminationGracePeriodSeconds: 30
       containers:
         - name: quickfix-gateway
           image: quickfix-gateway:latest
           imagePullPolicy: IfNotPresent
           env:
+            - name: SPRING_PROFILES_ACTIVE
+              value: production
+            - name: SIMPLEMATCH_KUBERNETES_ENABLED
+              value: "true"
+            - name: SIMPLEMATCH_KUBERNETES_CONFIG_IMPORT
+              value: kubernetes:
             - name: SIMPLEMATCH_QUICKFIX_GATEWAY_OWNER_ID
               valueFrom:
                 fieldRef:
                   fieldPath: metadata.name
-            - name: SIMPLEMATCH_QUICKFIX_GATEWAY_QUICKFIX_CONFIG
-              value: /etc/simplematch/quickfix/acceptor-continuity.cfg
-            - name: SIMPLEMATCH_QUICKFIX_GATEWAY_WAL_PATH
-              value: /var/lib/simplematch/quickfix-gateway/wal/inbound.wal
-            - name: SIMPLEMATCH_KAFKA_BROKERS
-              value: kafka:9092
-            - name: SIMPLEMATCH_GRPC_TARGETS_RISK_SERVICE
-              value: dns:///risk-service:6565
           ports:
             - name: fix
               containerPort: 5001

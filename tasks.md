@@ -42,11 +42,10 @@
   - [ ] `LogContext`：`service`, `env`, `trace_id`, `span_id`, `order_id`, `cl_ord_id`, `event_id`, `symbol`, `account_id`
   - [ ] logger 初始化（level、sink、格式）
   - [ ] request/trace context 注入 helper
-- [x] `shared-java/simplematch-config`：config loader
-  - [x] `SimpleMatchConfigLoader` / Spring environment post-processor：env + json
-  - [x] `SimpleMatchConfig` 已涵蓋 Kafka / Postgres / Redis / gRPC / routing / observability 共用設定模型
-  - [ ] 嚴格驗證必填欄位（啟動即 fail-fast）
-    - [x] 現況：只有 setter 級別的 non-blank / positive guard，尚未建立 required-field fail-fast 驗證器
+- [x] `shared-java/simplematch-config`：Spring configuration authority
+  - [x] `PlatformProperties` 由 Spring Environment 綁定 Kafka / Postgres / Redis / gRPC / routing / observability / Taiwan market defaults
+  - [x] `QuickFixGatewayProperties` 擁有 gateway-local settings；JSON loader、legacy alias 與 custom post-processor 已移除
+  - [x] profile exclusivity、ConfigMap/Secret key ownership、以及 staging/production required Kubernetes inputs 在啟動時 fail-fast 驗證
 - [ ] `libs/common`：時間/ID 工具
   - [ ] 現況：workspace 仍未找到 shared `NowUnixMs()` helper；`UuidV7()` 已由 `shared-java/simplematch-config` 提供
   - [ ] `NowUnixMs()`
