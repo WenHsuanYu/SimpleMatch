@@ -325,7 +325,7 @@
 
 ## 4.2 `risk-service`
 
-> 交叉驗證結果：`risk-service` 已完成 gRPC ingress、基本欄位驗證、transactional submission + PostgreSQL outbox baseline；`account-service` 的 `Reserve` 已有同步 `request_id` 冪等寫入骨架，但同步查詢依賴、reservation release/fill 路徑、交易時段 / symbol registry、IOC/FOK 規則矩陣，以及 `/healthz` / `/readyz` alias 仍未落地。
+> 交叉驗證結果：`risk-service` 已完成 v2 durable admission journal、pending saga、account reservation adapter、accepted/rejected binary outbox、recovery、CDC-lag backpressure 與 v1 compatibility adapter；既有 v1 ingress 仍保留。交易時段與完整 IOC/FOK 規則矩陣屬後續 Phase 8 範圍。
 
 ### 4.2.1 gRPC server：primary ingress
 
@@ -352,7 +352,7 @@
 
 ### 4.2.3 交易額度 / reservation（同步 gRPC 依賴）
 
-> 現況：workspace 未找到 `risk-service` 端任何 `AccountServiceGrpc` client wiring；`services/account-service` 已為 `Reserve` 落地 `request_id` 冪等寫入骨架，但 `GetLimits` / `GetPositions` / `ReleaseReservation` / `ApplyFill` 仍回 `UNIMPLEMENTED`。
+> 現況：`risk-service` 已透過 `GrpcAccountReservationClient` 呼叫 account reservation v1 adapter；account authority 已提供 limits、positions、release、fill 與 lifecycle outbox。
 
 - [ ] gRPC client：`AccountService::GetLimits/GetPositions`（快取可選；回傳需對齊 `account_limits` / `account_positions`）
 - [x] `Reserve(order_id/request_id, ...)`（冪等；由 `account-service` 更新 `account_reservations`）
@@ -521,12 +521,12 @@
 
 ## 4.7 `account-service`
 
-> `proto/account_service.proto`、Spring Boot module、gRPC server skeleton 已存在；目前 `Reserve` 已可把 `request_id` 持久化到 `account_reservations` 並重送回同結果，但 `GetLimits` / `GetPositions` / `ReleaseReservation` / `ApplyFill` 仍未實作。以下勾選以實際可用功能與已落地 schema 為準。
+> `proto/account_service.proto`、Spring Boot module、gRPC server 與 authority transaction service 已存在；Reserve、GetLimits、GetPositions、ReleaseReservation、ApplyFill 均接到權威資料庫與 lifecycle outbox。以下勾選以實際可用功能與已落地 schema 為準。
 
 ### 4.7.1 gRPC server（同步查詢 / reservation）
 
-- [ ] `GetLimits(account_id)`
-- [ ] `GetPositions(account_id)`
+- [x] `GetLimits(account_id)`
+- [x] `GetPositions(account_id)`
 - [x] `Reserve(request_id/order_id, ...)`（冪等）
   - [x] 唯一鍵：目前 schema 對 `reservation_id = order_id`、`request_id`、`order_id` 都有 UNIQUE
   - [x] 重送回同結果
@@ -536,9 +536,9 @@
 
 ### 4.7.2 Kafka consumer（建議）：`matching.executions`
 
-- [ ] fill：`ApplyFill(exec_id, order_id, ...)`
-- [ ] cancel/IOC leaves：`ReleaseReservation(reservation_id/order_id, ...)`
-- [ ] Idempotency：`exec_id` / `event_id`
+- [x] fill：`ApplyFill(exec_id, order_id, ...)`
+- [x] cancel/IOC leaves：`ReleaseReservation(reservation_id/order_id, ...)`
+- [x] Idempotency：`exec_id` / `event_id`
 
 ### 4.7.3 交易額度資料模型（不含現金版）
 
@@ -548,7 +548,12 @@
 - [x] `account_positions`（per-account, per-symbol 持倉快照）
 - [x] `account_reservations`（open orders 預扣狀態；目前 schema 對 `reservation_id`、`request_id`、`order_id` 都設 UNIQUE）
 - [x] `utilized` 先作為 `account_limits.utilized_notional` materialized 欄位；若後續 exposure 邏輯獨立再拆表
-- [ ] `available = limit_total - reserved - utilized`
+- [x] `available = limit_total - reserved - utilized`
+
+### Phase 6/7 completion evidence
+
+- [x] [Phase 6 account reservation authority](docs/phase-6-account-reservation-authority.md)
+- [x] [Phase 7 durable risk admission](docs/phase-7-durable-risk-admission.md)
 
 ### 4.7.4 endpoints
 

@@ -80,6 +80,16 @@ public record ReservationRecord(
         createdAtUnixMs);
   }
 
+  /** Creates a stable rejected reservation result without changing account balances. */
+  public static ReservationRecord rejected(
+      ReserveOperation operation, String reasonCode, String reasonText, long createdAtUnixMs) {
+    return new ReservationRecord(
+        operation.orderId(), operation.requestId(), operation.orderId(), operation.accountId(), operation.symbol(),
+        operation.side(), operation.quantity(), operation.limitPrice(), BigDecimal.ZERO,
+        ReservationStatus.RESERVATION_STATUS_REJECTED, reasonCode, reasonText,
+        createdAtUnixMs, createdAtUnixMs);
+  }
+
   private static String requireNonBlank(String value, String fieldName) {
     if (value == null || value.isBlank()) {
       throw new IllegalArgumentException(fieldName + " must not be blank");

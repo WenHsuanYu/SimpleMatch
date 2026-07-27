@@ -1,0 +1,20 @@
+syntax = "proto3";
+
+package simplematch.risk.v2;
+
+option java_multiple_files = true;
+option java_package = "com.simplematch.contracts.risk.v2";
+
+import "orders_v2.proto";
+
+message OrderAdmissionResponse {
+  oneof outcome {
+    simplematch.orders.v2.OrderAdmissionAccepted accepted = 1;
+    simplematch.orders.v2.OrderAdmissionRejected rejected = 2;
+  }
+}
+
+service OrderAdmissionService {
+  rpc SubmitNewOrder(simplematch.orders.v2.NewOrderCommand) returns (OrderAdmissionResponse);
+  rpc SubmitCancel(simplematch.orders.v2.CancelOrderCommand) returns (OrderAdmissionResponse);
+}

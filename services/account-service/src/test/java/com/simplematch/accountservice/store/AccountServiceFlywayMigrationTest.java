@@ -13,7 +13,7 @@ import org.springframework.jdbc.datasource.DriverManagerDataSource;
 class AccountServiceFlywayMigrationTest {
   private static final String SCHEMA_NAME = "ACCOUNT_SERVICE";
 
-  @DisplayName("an empty database receives the complete account-service V1 schema")
+  @DisplayName("an empty database receives the complete account-service authority schema")
   @Test
   void migrateEmptyDatabaseCreatesAuthorityTables() {
     final JdbcTemplate jdbcTemplate = new JdbcTemplate(newDataSource());
@@ -23,7 +23,7 @@ class AccountServiceFlywayMigrationTest {
     assertThat(hasTable(jdbcTemplate, "ACCOUNT_LIMITS")).isTrue();
     assertThat(hasTable(jdbcTemplate, "ACCOUNT_POSITIONS")).isTrue();
     assertThat(hasTable(jdbcTemplate, "ACCOUNT_RESERVATIONS")).isTrue();
-    assertThat(appliedMigrationCount(jdbcTemplate)).isEqualTo(1);
+    assertThat(appliedMigrationCount(jdbcTemplate)).isEqualTo(2);
   }
 
   @DisplayName("a second account-service migration is a no-op")

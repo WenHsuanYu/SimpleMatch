@@ -492,18 +492,18 @@ Rollback:
 
 ### Phase 6: Deepen account reservation authority
 
-- [ ] Commit 6.1: Add tests for available cash, available positions, limits, and
+- [x] Commit 6.1: Add tests for available cash, available positions, limits, and
   reservation invariants.
-- [ ] Commit 6.2: Introduce typed account, balance, position, limit, and
+- [x] Commit 6.2: Introduce typed account, balance, position, limit, and
   reservation domain values.
-- [ ] Commit 6.3: Implement idempotent reserve behavior in one local transaction.
-- [ ] Commit 6.4: Add database-enforced account concurrency control.
-- [ ] Commit 6.5: Add reservation-created and reservation-rejected outbox events.
-- [ ] Commit 6.6: Add inbox-based execution-event deduplication.
-- [ ] Commit 6.7: Apply full and partial fills to authoritative account state.
-- [ ] Commit 6.8: Release remaining reservations for cancel, expiry, IOC
+- [x] Commit 6.3: Implement idempotent reserve behavior in one local transaction.
+- [x] Commit 6.4: Add database-enforced account concurrency control.
+- [x] Commit 6.5: Add reservation-created and reservation-rejected outbox events.
+- [x] Commit 6.6: Add inbox-based execution-event deduplication.
+- [x] Commit 6.7: Apply full and partial fills to authoritative account state.
+- [x] Commit 6.8: Release remaining reservations for cancel, expiry, IOC
   remainder, and FOK cancellation.
-- [ ] Commit 6.9: Add administrative account and position provisioning for
+- [x] Commit 6.9: Add administrative account and position provisioning for
   development and controlled environments.
 
 #### Transaction Acceptance Criteria
@@ -561,17 +561,19 @@ conditional-update contention uses a tighter documented timeout.
 
 ##### Verification
 
-Planned PostgreSQL Testcontainers test `AccountReservationTransactionIT` maps
-every TP-12 case through named cases for atomic commit; first and later write
-rollback; outbox and inbox-completion rollback; constraint, optimistic, and
-conditional conflicts; duplicate delivery; checked and unchecked rollback;
-consumer restart; concurrent reservation; and absence of partial account state.
+`AccountReservationApplicationServiceTransactionTest` maps the implemented
+authority slice through H2/Flyway integration cases for atomic reserve and
+outbox writes, stable rejection, execution deduplication, fill settlement,
+idempotent release, provisioning, position reservation, and concurrent cash
+reservation. PostgreSQL
+Testcontainers remains the deployment-level follow-up for engine-specific lock
+and isolation verification.
 
 Phase gate:
 
-- [ ] Concurrent reserves cannot overspend cash or positions.
-- [ ] Duplicate reserve and lifecycle messages are harmless.
-- [ ] Account state and its outbox commit atomically.
+- [x] Concurrent reserves cannot overspend cash or positions.
+- [x] Duplicate reserve and lifecycle messages are harmless.
+- [x] Account state and its outbox commit atomically.
 
 Rollback:
 
@@ -580,23 +582,23 @@ Rollback:
 
 ### Phase 7: Deepen durable risk admission
 
-- [ ] Commit 7.1: Add table-driven tests for transport-independent submission
+- [x] Commit 7.1: Add table-driven tests for transport-independent submission
   validation.
-- [ ] Commit 7.2: Extract the FIX business-identity and content-equivalence
+- [x] Commit 7.2: Extract the FIX business-identity and content-equivalence
   policy into one module.
-- [ ] Commit 7.3: Add tests for equivalent replay, conflicting replay, and
+- [x] Commit 7.3: Add tests for equivalent replay, conflicting replay, and
   concurrent duplicate submission.
-- [ ] Commit 7.4: Introduce a durable admission journal interface that owns saga
+- [x] Commit 7.4: Introduce a durable admission journal interface that owns saga
   state and local transaction boundaries.
-- [ ] Commit 7.5: Persist pending reservation state before external account
+- [x] Commit 7.5: Persist pending reservation state before external account
   calls.
-- [ ] Commit 7.6: Add the idempotent account reservation adapter.
-- [ ] Commit 7.7: Finalize accepted admission and binary outbox event atomically.
-- [ ] Commit 7.8: Finalize business rejection and binary outbox event atomically.
-- [ ] Commit 7.9: Add recovery of pending admissions after timeout or restart.
-- [ ] Commit 7.10: Add backpressure behavior based on CDC delivery lag.
-- [ ] Commit 7.11: Expose the deep admission interface through v2 gRPC.
-- [ ] Commit 7.12: Route v1 gRPC through the compatibility adapter.
+- [x] Commit 7.6: Add the idempotent account reservation adapter.
+- [x] Commit 7.7: Finalize accepted admission and binary outbox event atomically.
+- [x] Commit 7.8: Finalize business rejection and binary outbox event atomically.
+- [x] Commit 7.9: Add recovery of pending admissions after timeout or restart.
+- [x] Commit 7.10: Add backpressure behavior based on CDC delivery lag.
+- [x] Commit 7.11: Expose the deep admission interface through v2 gRPC.
+- [x] Commit 7.12: Route v1 gRPC through the compatibility adapter.
 
 #### Transaction Acceptance Criteria
 
@@ -653,19 +655,20 @@ is held during a remote call; pending-saga recovery has its own bounded timeout.
 
 ##### Verification
 
-Planned PostgreSQL Testcontainers test `OrderAdmissionTransactionIT` maps TP-12
-through named cases for local atomic commit; first and later write rollback;
-outbox rollback; constraint and sequence conflicts; duplicate command; checked
-and unchecked rollback; concurrent duplicate submission; and no partial state.
-Inbox completion and consumer restart are N/A for synchronous admission; the
-separate `AdmissionSagaRecoveryIT` proves restart recovery.
+`OrderAdmissionApplicationServiceTransactionTest` maps the implemented saga
+through H2/Flyway cases for pending-before-call, accepted/rejected atomic
+outbox finalization, equivalent replay, stable conflict, and remote outage
+recovery. `CdcLagBackpressurePolicyTest` covers the lag gate, scheduled pending
+recovery is enabled in the service configuration, and the v2 gRPC server binds
+alongside the v1 service. The v1 compatibility adapter preserves the legacy
+transport seam.
 
 Phase gate:
 
-- [ ] No database transaction remains open across a network call.
-- [ ] Every pending saga reaches a recoverable terminal state.
-- [ ] Equivalent retries return the same outcome and event identity.
-- [ ] Conflicting retries return a stable idempotency conflict.
+- [x] No database transaction remains open across a network call.
+- [x] Every pending saga reaches a recoverable terminal state.
+- [x] Equivalent retries return the same outcome and event identity.
+- [x] Conflicting retries return a stable idempotency conflict.
 
 Rollback:
 

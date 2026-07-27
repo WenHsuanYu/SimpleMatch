@@ -20,8 +20,8 @@ for the existing repository; it is not a second target-architecture source.
 
 | File | Implementation evidence |
 | --- | --- |
-| [account-service V1](../services/account-service/src/main/resources/db/migration/account-service/V1__create_account_service_tables.sql) | Creates the typed `account_service` authority tables from an empty database. |
-| [risk-service V1](../services/risk-service/src/main/resources/db/migration/risk-service/V1__create_risk_service_tables.sql) | Creates the typed `risk_service` decision and binary outbox tables from an empty database. |
+| [account-service V2](../services/account-service/src/main/resources/db/migration/account-service/V2__add_account_authority_lifecycle_tables.sql) | Extends the typed `account_service` authority tables with lifecycle columns, inbox, and binary outbox. |
+| [risk-service V2](../services/risk-service/src/main/resources/db/migration/risk-service/V2__add_durable_admission_journal.sql) | Adds the durable `risk_service` admission journal beside the decision and binary outbox tables. |
 | [persistence V1](../services/persistence/src/main/resources/db/migration/persistence/V1__create_projection_tables.sql) | Creates the typed `persistence` projection and inbox tables from an empty database. |
 | [marketdata-publisher V1](../services/marketdata-publisher/src/main/resources/db/migration/marketdata-publisher/V1__create_marketdata_publisher_tables.sql) | Creates immutable market snapshots, one active snapshot per trading day, and the transactional publication outbox. |
 

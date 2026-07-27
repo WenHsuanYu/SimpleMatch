@@ -14,7 +14,8 @@ import org.springframework.context.annotation.Configuration;
 public class GrpcServerConfiguration {
   @Bean
   @ConditionalOnProperty(name = "simplematch.risk-service.grpc.enabled", havingValue = "true", matchIfMissing = true)
-  SmartLifecycle grpcServerLifecycle(RiskServiceRuntime runtime, RiskGrpcService service) {
+  SmartLifecycle grpcServerLifecycle(
+      RiskServiceRuntime runtime, RiskGrpcService legacyService, OrderAdmissionGrpcService admissionService) {
     return new SmartLifecycle() {
       private Server server;
       private volatile boolean running;
@@ -26,7 +27,8 @@ public class GrpcServerConfiguration {
         }
         try {
           server = ServerBuilder.forPort(runtime.grpcPort())
-              .addService((BindableService) service)
+              .addService((BindableService) legacyService)
+              .addService((BindableService) admissionService)
               .build()
               .start();
           running = true;

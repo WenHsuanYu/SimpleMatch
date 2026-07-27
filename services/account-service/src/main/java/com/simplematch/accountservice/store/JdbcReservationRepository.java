@@ -4,6 +4,7 @@ import com.simplematch.accountservice.reservation.ReservationRecord;
 import com.simplematch.accountservice.reservation.ReservationRepository;
 import com.simplematch.contracts.common.v1.ReservationStatus;
 import com.simplematch.contracts.common.v1.Side;
+import java.math.BigDecimal;
 import java.util.Objects;
 import java.util.Optional;
 import org.springframework.jdbc.core.JdbcTemplate;
@@ -69,11 +70,14 @@ public class JdbcReservationRepository implements ReservationRepository {
               limit_price,
               reserved_notional,
               status,
-              reason_code,
-              reason_text,
-              created_at_unix_ms,
-              updated_at_unix_ms
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            reason_code,
+            reason_text,
+            created_at_unix_ms,
+            updated_at_unix_ms,
+            remaining_quantity,
+            filled_quantity,
+            version
+          ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """,
         reservation.reservationId(),
         reservation.requestId(),
@@ -88,6 +92,9 @@ public class JdbcReservationRepository implements ReservationRepository {
         reservation.reasonCode(),
         reservation.reasonText(),
         reservation.createdAtUnixMs(),
-        reservation.updatedAtUnixMs());
+        reservation.updatedAtUnixMs(),
+        reservation.quantity(),
+        BigDecimal.ZERO,
+        0L);
   }
 }

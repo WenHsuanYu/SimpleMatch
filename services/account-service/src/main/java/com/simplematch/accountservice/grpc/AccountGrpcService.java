@@ -3,7 +3,12 @@ package com.simplematch.accountservice.grpc;
 import com.simplematch.accountservice.reservation.ReservationRecord;
 import com.simplematch.accountservice.reservation.ReservationService;
 import com.simplematch.accountservice.reservation.ReserveOperation;
+import com.simplematch.accountservice.authority.AccountLimit;
+import com.simplematch.accountservice.authority.AccountPosition;
 import com.simplematch.contracts.account.v1.AccountServiceGrpc;
+import com.simplematch.contracts.account.v1.GetLimitsResponse;
+import com.simplematch.contracts.account.v1.GetPositionsResponse;
+import com.simplematch.contracts.account.v1.PositionSnapshot;
 import com.simplematch.contracts.account.v1.ApplyFillRequest;
 import com.simplematch.contracts.account.v1.GetLimitsRequest;
 import com.simplematch.contracts.account.v1.GetPositionsRequest;
@@ -22,9 +27,8 @@ import org.springframework.stereotype.Service;
  *
  * <p>The write RPCs in this service intentionally use {@code request_id} as the synchronous name
  * for the same operation identifier that enters the trading flow as {@code command_id} on
- * {@code OrderCommand}. The reserve path now persists and replays that identifier via
- * {@code account_reservations}; the remaining write paths stay unimplemented until the reservation
- * state machine is widened beyond the first idempotent ingress slice.
+ * {@code OrderCommand}. All reservation lifecycle paths delegate to the account authority service;
+ * the unsupported-operation response remains only for compatibility test doubles.
  */
 @Service
 public class AccountGrpcService extends AccountServiceGrpc.AccountServiceImplBase {
@@ -38,12 +42,37 @@ public class AccountGrpcService extends AccountServiceGrpc.AccountServiceImplBas
 
   @Override
   public void getLimits(GetLimitsRequest request, StreamObserver<com.simplematch.contracts.account.v1.GetLimitsResponse> responseObserver) {
-    responseObserver.onError(Status.UNIMPLEMENTED.withDescription(MESSAGE).asRuntimeException());
+    try {
+      final AccountLimit limit = reservationService.getLimits(request.getAccountId());
+      responseObserver.onNext(GetLimitsResponse.newBuilder()
+          .setAccountId(limit.accountId()).setCurrency(limit.currency())
+          .setAvailableNotional(limit.availableNotional().toPlainString())
+          .setReservedNotional(limit.reservedNotional().toPlainString())
+          .setUtilizedNotional(limit.utilizedNotional().toPlainString()).build());
+      responseObserver.onCompleted();
+    } catch (UnsupportedOperationException unsupported) {
+      responseObserver.onError(Status.UNIMPLEMENTED.withDescription(MESSAGE).asRuntimeException());
+    } catch (RuntimeException failure) {
+      responseObserver.onError(Status.INTERNAL.withDescription("failed to read account limits").asRuntimeException());
+    }
   }
 
   @Override
   public void getPositions(GetPositionsRequest request, StreamObserver<com.simplematch.contracts.account.v1.GetPositionsResponse> responseObserver) {
-    responseObserver.onError(Status.UNIMPLEMENTED.withDescription(MESSAGE).asRuntimeException());
+    try {
+      final GetPositionsResponse.Builder response = GetPositionsResponse.newBuilder();
+      for (AccountPosition position : reservationService.getPositions(request.getAccountId())) {
+        response.addPositions(PositionSnapshot.newBuilder().setAccountId(position.accountId())
+            .setSymbol(position.symbol()).setLongQty(position.longQuantity().toPlainString())
+            .setShortQty(position.shortQuantity().toPlainString()).build());
+      }
+      responseObserver.onNext(response.build());
+      responseObserver.onCompleted();
+    } catch (UnsupportedOperationException unsupported) {
+      responseObserver.onError(Status.UNIMPLEMENTED.withDescription(MESSAGE).asRuntimeException());
+    } catch (RuntimeException failure) {
+      responseObserver.onError(Status.INTERNAL.withDescription("failed to read account positions").asRuntimeException());
+    }
   }
 
   /**
@@ -76,26 +105,43 @@ public class AccountGrpcService extends AccountServiceGrpc.AccountServiceImplBas
     }
   }
 
-  /**
-   * Rejects the unimplemented release RPC.
-   *
-   * <p>{@code request_id} is the control-plane name for the upstream operation identifier currently
-   * carried as {@code command_id} on order events.
-   */
+  /** Releases a reservation and returns its terminal lifecycle state. */
   @Override
   public void releaseReservation(ReleaseReservationRequest request, StreamObserver<com.simplematch.contracts.account.v1.ReleaseReservationResponse> responseObserver) {
-    responseObserver.onError(Status.UNIMPLEMENTED.withDescription(MESSAGE).asRuntimeException());
+    try {
+      final ReservationRecord reservation = reservationService.release(
+          request.getRequestId(), request.getReservationId(), request.getOrderId(), request.getReasonCode());
+      responseObserver.onNext(com.simplematch.contracts.account.v1.ReleaseReservationResponse.newBuilder()
+          .setRequestId(reservation.requestId()).setReservationId(reservation.reservationId())
+          .setStatus(reservation.status()).build());
+      responseObserver.onCompleted();
+    } catch (UnsupportedOperationException unsupported) {
+      responseObserver.onError(Status.UNIMPLEMENTED.withDescription(MESSAGE).asRuntimeException());
+    } catch (IllegalArgumentException invalid) {
+      responseObserver.onError(Status.INVALID_ARGUMENT.withDescription(invalid.getMessage()).asRuntimeException());
+    } catch (RuntimeException failure) {
+      responseObserver.onError(Status.INTERNAL.withDescription("failed to release reservation").asRuntimeException());
+    }
   }
 
-  /**
-   * Rejects the unimplemented fill-application RPC.
-   *
-   * <p>{@code request_id} is the control-plane name for the upstream operation identifier currently
-   * carried as {@code command_id} on order events.
-   */
+  /** Applies one execution fill, deduplicated by execution identifier. */
   @Override
   public void applyFill(ApplyFillRequest request, StreamObserver<com.simplematch.contracts.account.v1.ApplyFillResponse> responseObserver) {
-    responseObserver.onError(Status.UNIMPLEMENTED.withDescription(MESSAGE).asRuntimeException());
+    try {
+      final ReservationRecord reservation = reservationService.applyFill(
+          request.getRequestId(), request.getReservationId(), request.getOrderId(), request.getExecId(),
+          parsePositiveDecimal(request.getFillQty(), "fill_qty"), parsePositiveDecimal(request.getFillPx(), "fill_px"));
+      responseObserver.onNext(com.simplematch.contracts.account.v1.ApplyFillResponse.newBuilder()
+          .setRequestId(reservation.requestId()).setReservationId(reservation.reservationId())
+          .setStatus(reservation.status()).build());
+      responseObserver.onCompleted();
+    } catch (UnsupportedOperationException unsupported) {
+      responseObserver.onError(Status.UNIMPLEMENTED.withDescription(MESSAGE).asRuntimeException());
+    } catch (IllegalArgumentException invalid) {
+      responseObserver.onError(Status.INVALID_ARGUMENT.withDescription(invalid.getMessage()).asRuntimeException());
+    } catch (RuntimeException failure) {
+      responseObserver.onError(Status.INTERNAL.withDescription("failed to apply fill").asRuntimeException());
+    }
   }
 
   private ReserveOperation toReserveOperation(ReserveRequest request) {

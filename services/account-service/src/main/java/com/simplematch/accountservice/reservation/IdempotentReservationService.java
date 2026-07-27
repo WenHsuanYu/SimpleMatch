@@ -3,13 +3,11 @@ package com.simplematch.accountservice.reservation;
 import java.time.Clock;
 import java.util.Objects;
 import org.springframework.dao.DuplicateKeyException;
-import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 /**
  * Reservation service that replays the stored result for repeated {@code request_id} values.
  */
-@Service
 public class IdempotentReservationService implements ReservationService {
   private final ReservationRepository reservationRepository;
   private final Clock clock;
