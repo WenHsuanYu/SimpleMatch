@@ -257,27 +257,27 @@ Rollback:
 
 ### Phase 1: Consolidate build and dependency policy
 
-- [ ] Commit 1.1: Move shared library and plugin versions into the version
+- [x] Commit 1.1: Move shared library and plugin versions into the version
   catalog without changing resolved versions.
-- [ ] Commit 1.2: Add a Spring service convention module and migrate one
+- [x] Commit 1.2: Add a Spring service convention module and migrate one
   no-behavior-change service as proof.
-- [ ] Commit 1.3: Migrate the remaining Spring services to the convention
+- [x] Commit 1.3: Migrate the remaining Spring services to the convention
   module one at a time.
-- [ ] Commit 1.4: Add a Protobuf convention module and migrate contract
+- [x] Commit 1.4: Add a Protobuf convention module and migrate contract
   generation without changing generated interfaces.
-- [ ] Commit 1.5: Deepen the existing Flyway convention around service identity,
+- [x] Commit 1.5: Deepen the existing Flyway convention around service identity,
   schema, migration location, and validation tasks.
-- [ ] Commit 1.6: Remove root build path predicates and duplicated dependency
+- [x] Commit 1.6: Remove root build path predicates and duplicated dependency
   declarations made obsolete by conventions.
-- [ ] Commit 1.7: Add dependency locking or verification appropriate to the
+- [x] Commit 1.7: Add dependency locking or verification appropriate to the
   repository's release workflow.
 
 Phase gate:
 
-- [ ] Dependency resolution is unchanged except for explicitly documented
+- [x] Dependency resolution is unchanged except for explicitly documented
   corrections.
-- [ ] All Java tests and static analysis pass.
-- [ ] Flyway task discovery remains intact.
+- [x] All Java tests and static analysis pass.
+- [x] Flyway task discovery remains intact.
 
 Rollback:
 

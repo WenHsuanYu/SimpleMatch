@@ -22,6 +22,10 @@ repositories {
   mavenCentral()
 }
 
+dependencyLocking {
+  lockAllConfigurations()
+}
+
 dependencies {
   implementation(gradleApi())
   implementation(libs.flyway.gradle.plugin)

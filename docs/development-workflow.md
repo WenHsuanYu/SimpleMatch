@@ -134,7 +134,7 @@ Run validation in the order that gives the fastest useful feedback.
 
 1. Run the narrowest relevant unit or integration tests first.
 2. Run the service test suite for the touched module.
-3. Run `./gradlew staticAnalysis` for Java changes.
+3. Run `./gradlew -q staticAnalysis` for Java changes.
 4. Run the relevant service smoke or certification test when available.
 
 ### PostgreSQL changes
@@ -160,7 +160,7 @@ Run validation in the order that gives the fastest useful feedback.
   - `./gradlew :services:risk-service:test`
   - `./gradlew :services:quickfix-gateway:certificationTest`
 - Static analysis:
-  - `./gradlew staticAnalysis`
+  - `./gradlew -q staticAnalysis`
   - This is the blocking repo-wide Error Prone gate for all Java modules; Checkstyle and SpotBugs remain enabled for the curated service/module set configured in Gradle.
 - Flyway examples:
   - `./gradlew riskServiceFlywayInfo`
@@ -171,7 +171,7 @@ Run validation in the order that gives the fastest useful feedback.
   - Installed pre-commit hooks run targeted Gradle compile/checkstyle checks for staged Java or Gradle changes.
   - Installed pre-commit hooks also validate Flyway migration naming and directory placement.
 - CI automation:
-  - GitHub Actions enforces `./gradlew staticAnalysis` as the blocking repo-wide Error Prone gate, plus the Java test suite for Java-related changes.
+  - GitHub Actions enforces `./gradlew staticAnalysis` as the blocking repo-wide Error Prone gate, plus the Java test suite for Java-related changes. Local runs may add `-q` to reduce lifecycle noise while retaining actionable diagnostics.
   - GitHub Actions runs Flyway info and migrate tasks plus PostgreSQL smoke checks for Flyway-managed services.
 - Native build:
   - `cmake --preset vcpkg`

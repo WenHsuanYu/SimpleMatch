@@ -692,6 +692,7 @@
 
 - [ ] `tasks.md`（本檔）維護：每個里程碑完成時打勾
 - [x] [Taiwan event-driven refactor plan](docs/taiwan-event-driven-refactor-plan.md) Phase 0: establish the recoverable baseline through worktree review, module inventory, FIX/risk/WAL/outbox characterization, v1 Protobuf compatibility inventory, and validation evidence (GitHub issue [#10](https://github.com/WenHsuanYu/SimpleMatch/issues/10))
+- [x] [Taiwan event-driven refactor plan](docs/taiwan-event-driven-refactor-plan.md) Phase 1: centralize version ownership, Spring/Protobuf/Flyway/Java conventions, and checked-in Gradle dependency locks; gate evidence is in [Phase 1 build and dependency policy](docs/phase-1-build-dependency-policy.md).
 - [x] [README and technical documentation refactor](docs/readme-documentation-refactor-spec.md)（GitHub issue [#1](https://github.com/WenHsuanYu/SimpleMatch/issues/1)）：將目標技術規格收斂至 `services/docs/`，並保留穩定索引與 forwarding pages
   - [x] [#2](https://github.com/WenHsuanYu/SimpleMatch/issues/2) 建立 cross-cutting docs index 與 Markdown link-validation seam
   - [x] [#3](https://github.com/WenHsuanYu/SimpleMatch/issues/3) 發布 cross-cutting architecture specifications

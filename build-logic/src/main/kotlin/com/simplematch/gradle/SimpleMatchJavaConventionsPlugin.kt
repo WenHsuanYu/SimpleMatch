@@ -23,6 +23,9 @@ class SimpleMatchJavaConventionsPlugin : Plugin<Project> {
     project.extensions.getByType<JavaPluginExtension>().toolchain {
       languageVersion.set(JavaLanguageVersion.of(25))
     }
+    project.dependencyLocking {
+      lockAllConfigurations()
+    }
 
     val mockitoAgent = project.configurations.maybeCreate("mockitoAgent")
     val mockitoDependency = project.dependencies.create(catalog.coordinate("mockito-core"))

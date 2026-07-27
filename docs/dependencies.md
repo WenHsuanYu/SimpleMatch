@@ -2,15 +2,35 @@
 
 ## Java and Gradle
 
-This repo's Java dependencies are managed through the root Gradle build plus each module's own `build.gradle.kts` file.
+This repo's Java dependencies use an explicit ownership model.
 
-- The root [build.gradle.kts](/home/alexyu/SimpleMatch/build.gradle.kts) centralizes shared Java build conventions across subprojects.
-- Lombok is applied centrally to every Gradle project under `services/*` via `compileOnly`, `annotationProcessor`, `testCompileOnly`, and `testAnnotationProcessor`.
+- [gradle/libs.versions.toml](/home/alexyu/SimpleMatch/gradle/libs.versions.toml) is the single source for pinned plugin and third-party library versions.
+- `simplematch.java-conventions` supplies the Java 25 toolchain, JUnit platform, Mockito agent, Error Prone, and dependency locking to every Java module.
+- `simplematch.java-quality` adds Checkstyle and SpotBugs where the module has production Java sources that require those checks.
+- `simplematch.spring-service` owns common Spring Boot service dependencies, the Spring Cloud BOM, and narrow Lombok wiring. JDBC, Kafka, gRPC, QuickFIX/J, and Flyway remain in the service build that uses them.
+- `simplematch.protobuf-contracts` owns the shared protobuf source set and gRPC Java generation configuration.
+- `simplematch.flyway-service` owns service identity, derived migration locations, owner schema wiring, and stable root Flyway task aliases.
 - Shared modules under `shared-java/*` are not opted into Lombok by default.
 - Prefer Java `record` for simple immutable carriers before Lombok.
 - Use Lombok sparingly in `services/*` to remove Spring boilerplate such as required-args constructors or logging.
 - Do not treat Lombok as a blanket style: avoid broad annotations such as `@Data`, and keep domain, configuration, mutable, validation-heavy, normalization-heavy, custom-equality, or defensive-copy types handwritten.
-- After changing root dependency wiring, validate with a focused module compile before running broader static analysis.
+- Gradle dependency locks are checked in as each Java module's `gradle.lockfile`, plus the root and included-build `settings-gradle.lockfile` catalog locks. Update them intentionally with:
+
+  ```bash
+  ./gradlew -q \
+    :shared-java:simplematch-config:dependencies \
+    :shared-java:simplematch-contracts:dependencies \
+    :services:account-service:dependencies \
+    :services:persistence:dependencies \
+    :services:quickfix-gateway:dependencies \
+    :services:risk-service:dependencies \
+    --write-locks
+  ./gradlew -q -p build-logic dependencies --write-locks
+  ```
+
+  Review every lockfile diff before committing.
+- For local validation, prefer `./gradlew -q <task>` to keep routine Gradle lifecycle output out of the console. `-q` does not hide failures, compiler diagnostics, test failures, or tool warnings. CI retains `--stacktrace` for failure diagnosis.
+- After changing dependency wiring, validate with a focused module compile or test before running broader static analysis.
 
 ## Native Dependencies
 
