@@ -317,27 +317,27 @@ Rollback:
 
 ### Phase 3: Introduce v2 domain contracts
 
-- [ ] Commit 3.1: Add the common v2 event metadata envelope and schema
+- [x] Commit 3.1: Add the common v2 event metadata envelope and schema
   compatibility checks.
-- [ ] Commit 3.2: Add typed UUID-backed identifiers and validation rules.
-- [ ] Commit 3.3: Add fixed-point price, TWD notional, and share-quantity
+- [x] Commit 3.2: Add typed UUID-backed identifiers and validation rules.
+- [x] Commit 3.3: Add fixed-point price, TWD notional, and share-quantity
   contracts.
-- [ ] Commit 3.4: Add instrument identity, venue MIC, trading day, snapshot ID,
+- [x] Commit 3.4: Add instrument identity, venue MIC, trading day, snapshot ID,
   and session-state contracts.
-- [ ] Commit 3.5: Add v2 new-order and cancel commands.
-- [ ] Commit 3.6: Add v2 admission outcome events.
-- [ ] Commit 3.7: Add v2 reservation commands and account lifecycle events.
-- [ ] Commit 3.8: Add v2 matching lifecycle and execution events.
-- [ ] Commit 3.9: Add v1-to-v2 ingress adapters with round-trip compatibility
+- [x] Commit 3.5: Add v2 new-order and cancel commands.
+- [x] Commit 3.6: Add v2 admission outcome events.
+- [x] Commit 3.7: Add v2 reservation commands and account lifecycle events.
+- [x] Commit 3.8: Add v2 matching lifecycle and execution events.
+- [x] Commit 3.9: Add v1-to-v2 ingress adapters with round-trip compatibility
   tests.
-- [ ] Commit 3.10: Add stable rejection and cancellation reason catalogs.
+- [x] Commit 3.10: Add stable rejection and cancellation reason catalogs.
 
 Phase gate:
 
-- [ ] Field numbers are never reused.
-- [ ] Invalid UUID, price, quantity, currency, and timestamp values fail at the
+- [x] Field numbers are never reused.
+- [x] Invalid UUID, price, quantity, currency, and timestamp values fail at the
   intended seam.
-- [ ] Existing v1 behavior remains available through adapters.
+- [x] Existing v1 behavior remains available through adapters.
 
 Rollback:
 

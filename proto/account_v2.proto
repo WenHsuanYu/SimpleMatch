@@ -1,0 +1,49 @@
+syntax = "proto3";
+
+package simplematch.account.v2;
+
+option java_multiple_files = true;
+option java_package = "com.simplematch.contracts.account.v2";
+
+import "common_v2.proto";
+import "orders_v2.proto";
+
+enum ReservationAction {
+  RESERVATION_ACTION_UNSPECIFIED = 0;
+  RESERVATION_ACTION_RESERVE = 1;
+  RESERVATION_ACTION_RELEASE = 2;
+  RESERVATION_ACTION_APPLY_FILL = 3;
+}
+
+enum AccountLifecycleState {
+  ACCOUNT_LIFECYCLE_STATE_UNSPECIFIED = 0;
+  ACCOUNT_LIFECYCLE_STATE_RESERVED = 1;
+  ACCOUNT_LIFECYCLE_STATE_REJECTED = 2;
+  ACCOUNT_LIFECYCLE_STATE_RELEASED = 3;
+  ACCOUNT_LIFECYCLE_STATE_FILLED = 4;
+}
+
+message ReservationCommand {
+  simplematch.common.v2.EventMetadata metadata = 1;
+  string reservation_id = 2;
+  string command_id = 3;
+  string order_id = 4;
+  string account_id = 5;
+  ReservationAction action = 6;
+  simplematch.common.v2.VenueInstrument instrument = 7;
+  simplematch.common.v2.Side side = 8;
+  simplematch.orders.v2.ShareQuantity quantity = 9;
+  simplematch.common.v2.TwdNotional notional = 10;
+}
+
+message AccountLifecycleEvent {
+  simplematch.common.v2.EventMetadata metadata = 1;
+  string reservation_id = 2;
+  string order_id = 3;
+  string account_id = 4;
+  AccountLifecycleState state = 5;
+  simplematch.common.v2.TwdNotional reserved_notional = 6;
+  simplematch.orders.v2.ShareQuantity reserved_quantity = 7;
+  string reason_code = 8;
+  string reason_detail = 9;
+}

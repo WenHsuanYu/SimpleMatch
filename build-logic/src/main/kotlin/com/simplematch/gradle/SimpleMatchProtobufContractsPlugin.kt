@@ -27,10 +27,14 @@ class SimpleMatchProtobufContractsPlugin : Plugin<Project> {
         proto {
           srcDir("../../proto")
           include("common.proto")
+          include("common_v2.proto")
           include("orders.proto")
+          include("orders_v2.proto")
           include("matching.proto")
+          include("matching_v2.proto")
           include("marketdata.proto")
           include("account_service.proto")
+          include("account_v2.proto")
           include("risk_service.proto")
           include("marketdata_service.proto")
         }

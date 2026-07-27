@@ -1,0 +1,44 @@
+syntax = "proto3";
+
+package simplematch.matching.v2;
+
+option java_multiple_files = true;
+option java_package = "com.simplematch.contracts.matching.v2";
+
+import "common_v2.proto";
+import "orders_v2.proto";
+
+enum OrderLifecycleState {
+  ORDER_LIFECYCLE_STATE_UNSPECIFIED = 0;
+  ORDER_LIFECYCLE_STATE_ACCEPTED = 1;
+  ORDER_LIFECYCLE_STATE_RESTING = 2;
+  ORDER_LIFECYCLE_STATE_PARTIALLY_FILLED = 3;
+  ORDER_LIFECYCLE_STATE_FILLED = 4;
+  ORDER_LIFECYCLE_STATE_CANCELED = 5;
+  ORDER_LIFECYCLE_STATE_REJECTED = 6;
+}
+
+message OrderLifecycleEvent {
+  simplematch.common.v2.EventMetadata metadata = 1;
+  string order_id = 2;
+  string account_id = 3;
+  simplematch.common.v2.VenueInstrument instrument = 4;
+  OrderLifecycleState state = 5;
+  simplematch.orders.v2.CancellationReason cancellation_reason = 6;
+  string reason_detail = 7;
+  simplematch.orders.v2.ShareQuantity leaves_quantity = 8;
+}
+
+message ExecutionEvent {
+  simplematch.common.v2.EventMetadata metadata = 1;
+  string execution_id = 2;
+  string order_id = 3;
+  string account_id = 4;
+  simplematch.common.v2.VenueInstrument instrument = 5;
+  simplematch.common.v2.Side side = 6;
+  simplematch.orders.v2.ShareQuantity fill_quantity = 7;
+  simplematch.common.v2.TwdPrice fill_price = 8;
+  simplematch.orders.v2.ShareQuantity cumulative_quantity = 9;
+  simplematch.orders.v2.ShareQuantity leaves_quantity = 10;
+  simplematch.common.v2.TwdPrice average_price = 11;
+}

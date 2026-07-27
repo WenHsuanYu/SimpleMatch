@@ -34,10 +34,12 @@ day.
 
 ## Event identity and minimum envelope
 
-Every event uses the protobuf metadata defined in
-[`common.proto`](../../../proto/common.proto): `schema_version`, `event_id`,
-`created_at_unix_ms`, and `source_service`. `event_id` identifies one emitted
-event and is the preferred consumer-deduplication key when it is available.
+Every v1 event uses the metadata in
+[`common.proto`](../../../proto/common.proto). Additive v2 events use
+[`common_v2.proto`](../../../proto/common_v2.proto), which adds correlation and
+optional causation identifiers to the stable schema version, event identity,
+timestamp, and source-service fields. `event_id` identifies one emitted event
+and is the preferred consumer-deduplication key when it is available.
 
 Order commands and decisions use the messages in
 [`orders.proto`](../../../proto/orders.proto). `command_id` identifies the
@@ -51,6 +53,11 @@ Identifiers are wire strings to preserve protocol compatibility. Producers
 currently generate UUID-backed event and command values, but consumers must
 treat the identifier as opaque rather than depend on a particular textual
 encoding.
+
+The v2 transition contract makes internal identifiers UUID-backed and uses
+signed 64-bit `0.0001 TWD` fixed-point price/notional values plus whole-share
+quantities. See [v2 domain contracts](v2-domain-contracts.md) for the additive
+wire types and v1 ingress adapter.
 
 ## Evolution and compatibility
 

@@ -1,0 +1,91 @@
+syntax = "proto3";
+
+package simplematch.orders.v2;
+
+option java_multiple_files = true;
+option java_package = "com.simplematch.contracts.orders.v2";
+
+import "common_v2.proto";
+
+// Signed whole-share quantity. Phase-one quantities must be positive for new orders.
+message ShareQuantity {
+  int64 shares = 1;
+}
+
+enum AdmissionRejectReason {
+  ADMISSION_REJECT_REASON_UNSPECIFIED = 0;
+  ADMISSION_REJECT_REASON_INVALID_COMMAND = 1;
+  ADMISSION_REJECT_REASON_INVALID_INSTRUMENT = 2;
+  ADMISSION_REJECT_REASON_UNSUPPORTED_SESSION = 3;
+  ADMISSION_REJECT_REASON_RISK_LIMIT = 4;
+  ADMISSION_REJECT_REASON_DUPLICATE_COMMAND = 5;
+  ADMISSION_REJECT_REASON_UNAVAILABLE = 6;
+}
+
+enum CancellationReason {
+  CANCELLATION_REASON_UNSPECIFIED = 0;
+  CANCELLATION_REASON_USER_REQUEST = 1;
+  CANCELLATION_REASON_IOC_REMAINDER = 2;
+  CANCELLATION_REASON_FOK_NOT_FILLED = 3;
+  CANCELLATION_REASON_SESSION_EXPIRED = 4;
+  CANCELLATION_REASON_MARKET_HALTED = 5;
+  CANCELLATION_REASON_UNKNOWN_ORDER = 6;
+  CANCELLATION_REASON_TOO_LATE = 7;
+  CANCELLATION_REASON_DUPLICATE_REQUEST = 8;
+}
+
+message NewOrderCommand {
+  simplematch.common.v2.EventMetadata metadata = 1;
+  string command_id = 2;
+  string order_id = 3;
+  string account_id = 4;
+  simplematch.common.v2.VenueInstrument instrument = 5;
+  simplematch.common.v2.Side side = 6;
+  ShareQuantity quantity = 7;
+  simplematch.common.v2.TwdPrice limit_price = 8;
+  simplematch.common.v2.OrderType order_type = 9;
+  simplematch.common.v2.TimeInForce tif = 10;
+  simplematch.common.v2.Currency currency = 11;
+  simplematch.common.v2.TradingDay trading_day = 12;
+  simplematch.common.v2.SessionState session_state = 13;
+  string routing_snapshot_id = 14;
+  simplematch.common.v2.TwdNotional estimated_notional = 15;
+  string sender_comp_id = 16;
+  string target_comp_id = 17;
+  string cl_ord_id = 18;
+}
+
+message CancelOrderCommand {
+  simplematch.common.v2.EventMetadata metadata = 1;
+  string command_id = 2;
+  string order_id = 3;
+  string account_id = 4;
+  simplematch.common.v2.VenueInstrument instrument = 5;
+  simplematch.common.v2.TradingDay trading_day = 6;
+  simplematch.common.v2.SessionState session_state = 7;
+  string sender_comp_id = 8;
+  string target_comp_id = 9;
+  string cl_ord_id = 10;
+  string orig_cl_ord_id = 11;
+  simplematch.common.v2.Side side = 12;
+}
+
+message OrderAdmissionAccepted {
+  simplematch.common.v2.EventMetadata metadata = 1;
+  string command_id = 2;
+  string order_id = 3;
+  string account_id = 4;
+  simplematch.common.v2.VenueInstrument instrument = 5;
+  string routing_snapshot_id = 6;
+  int32 routing_partition = 7;
+}
+
+message OrderAdmissionRejected {
+  simplematch.common.v2.EventMetadata metadata = 1;
+  string command_id = 2;
+  string order_id = 3;
+  string account_id = 4;
+  simplematch.common.v2.VenueInstrument instrument = 5;
+  AdmissionRejectReason reason = 6;
+  string reason_detail = 7;
+}
