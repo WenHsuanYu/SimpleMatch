@@ -12,13 +12,13 @@ operational database management bounded while retaining service-level data
 ownership. A service does not gain access to another service's data merely
 because both schemas are hosted by the same PostgreSQL deployment.
 
-| Service | Target schema | Intended responsibility |
-| --- | --- | --- |
-| `risk-service` | `risk_service` | Durable admissions, risk decisions, and outbox records |
-| `account-service` | `account_service` | Limits, positions, and reservations |
-| `persistence` | `persistence` | Execution, order, and audit projections |
-| `matching-engine` | `matching_engine` | Reserved for a PostgreSQL-owned journal or outbox if one is introduced |
-| `quickfix-gateway` | `quickfix_gateway` | Reserved for PostgreSQL-owned FIX continuity metadata if introduced |
+| Service            | Target schema      | Intended responsibility                                                |
+|--------------------|--------------------|------------------------------------------------------------------------|
+| `risk-service`     | `risk_service`     | Durable admissions, risk decisions, and outbox records                 |
+| `account-service`  | `account_service`  | Limits, positions, and reservations                                    |
+| `persistence`      | `persistence`      | Execution, order, and audit projections                                |
+| `matching-engine`  | `matching_engine`  | Reserved for a PostgreSQL-owned journal or outbox if one is introduced |
+| `quickfix-gateway` | `quickfix_gateway` | Reserved for PostgreSQL-owned FIX continuity metadata if introduced    |
 
 Other services receive a schema only when they have a clear persistent ownership
 need. A shared `public` schema is not an integration boundary.

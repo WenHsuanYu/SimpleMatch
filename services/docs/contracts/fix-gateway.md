@@ -57,7 +57,7 @@ business deduplication decision.
 ## Compatibility
 
 FIX 4.4 and the repository dictionary at
-[`fix-spec/FIX44.xml`](../../../fix-spec/FIX44.xml) are the baseline. A
+[`../../../config/quickfix/fix-spec/FIX44.xml`](../../../config/quickfix/fix-spec/FIX44.xml) are the baseline. A
 counterparty-specific field, tag, or session rule is a versioned extension:
 it must be negotiated and tested with a dedicated dictionary or configuration,
 not silently change the baseline meanings above. The cross-service event and

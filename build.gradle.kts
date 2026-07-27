@@ -17,14 +17,7 @@ plugins {
   id("net.ltgt.errorprone") version "4.3.0" apply false
 }
 
-group = "com.simplematch"
-version = "0.1.0-SNAPSHOT"
 
-allprojects {
-  repositories {
-    mavenCentral()
-  }
-}
 
 val mockitoCoreVersion = "5.17.0"
 val lombokVersion = "1.18.42"
@@ -32,7 +25,7 @@ val lombokVersion = "1.18.42"
 val checkstyleAndSpotbugsProjects = setOf(
     ":shared-java:simplematch-config",
     ":services:account-service",
-  ":services:persistence",
+    ":services:persistence",
     ":services:quickfix-gateway",
     ":services:risk-service")
 
@@ -40,6 +33,15 @@ val staticAnalysisTask = tasks.register("staticAnalysis") {
   group = "verification"
   description =
       "Runs blocking Error Prone compilation for every Java module, plus Checkstyle and SpotBugs for curated modules."
+}
+
+allprojects {
+  group = "com.simplematch"
+  version = "0.1.0-SNAPSHOT"
+
+  repositories {
+    mavenCentral()
+  }
 }
 
 subprojects {

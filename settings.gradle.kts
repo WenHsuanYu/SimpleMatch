@@ -1,3 +1,4 @@
+
 pluginManagement {
 	includeBuild("build-logic")
 	repositories {
@@ -11,14 +12,17 @@ pluginManagement {
 	}
 }
 
+
 rootProject.name = "SimpleMatch"
 
-include(":shared-java:simplematch-config")
-include(":shared-java:simplematch-contracts")
-include(":services:account-service")
-include(":services:persistence")
-include(":services:quickfix-gateway")
-include(":services:risk-service")
+include(
+	":shared-java:simplematch-config",
+	":shared-java:simplematch-contracts",
+	":services:account-service",
+	":services:persistence",
+	":services:quickfix-gateway",
+	":services:risk-service",
+)
 
 project(":shared-java:simplematch-config").projectDir = file("shared-java/simplematch-config")
 project(":shared-java:simplematch-contracts").projectDir = file("shared-java/simplematch-contracts")

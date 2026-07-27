@@ -51,9 +51,9 @@ build-vcpkg-sanitize/
 config/simplematch.json
 
 # QuickFIX runtime artifacts (FileStoreFactory/FileLogFactory)
-data/quickfix/store/
-data/quickfix/log/
-data/quickfix/wal/
+data/quickfix/store/*
+data/quickfix/log/*
+data/quickfix/wal/*
 
 # vcpkg installed packages (configured via VCPKG_INSTALLED_DIR)
 third_party/vcpkg_installed/
@@ -61,7 +61,7 @@ third_party/vcpkg_installed/
 # clangd cache
 .cache/
 
-
+.idea/
 .vscode/
 
 compile_commands.json
