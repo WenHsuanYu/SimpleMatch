@@ -147,6 +147,23 @@ phases, and avoiding a repository-wide rewrite.
 - [ ] Event-delivery backlog is bounded by an admission backpressure policy.
 - [ ] Delayed commands never execute in a later trading session.
 
+### Transaction ownership and consistency
+
+- [ ] Every affected phase follows the canonical
+  [Cross-Cutting Transaction and Consistency Policy](cross-cutting-transaction-and-consistency-policy.md)
+  (TP-1 through TP-12).
+- [ ] An externally invoked public concrete application-service method uses
+  `@Transactional` by default for each all-local business outcome.
+- [ ] `TransactionTemplate` is used only for deliberately narrow,
+  database-dependent critical sections; state-independent validation, expensive
+  computation or serialization, file I/O, and remote calls remain outside.
+- [ ] Repositories do not own cross-repository business transactions.
+- [ ] A remote side effect uses an explicit outbox, idempotency, compensation,
+  reconciliation, or persisted-intent/saga design.
+- [ ] Every phase that changes a persisted consistency boundary defines its
+  `Transaction Acceptance Criteria` before implementation and passes its mapped
+  PostgreSQL-backed integration tests before its phase gate is complete.
+
 ### Admission and account consistency
 
 - [ ] FIX gateway to risk admission remains synchronous.
@@ -230,6 +247,13 @@ market-data streamer, and query service.
 Each item below is intended to be one small commit unless its acceptance test
 shows it must be split further. Every commit runs the narrowest relevant tests
 before the broader phase gate.
+
+The required `Transaction Acceptance Criteria` sections below reference the
+canonical [Cross-Cutting Transaction and Consistency Policy](cross-cutting-transaction-and-consistency-policy.md).
+They are a readiness gate: criteria must be complete before a phase begins, and
+the mapped PostgreSQL-backed integration tests must pass before a phase is
+complete. Run `bash scripts/check-transaction-acceptance-criteria.sh` to verify
+the documentation structure; it does not replace behavioral review or tests.
 
 ### Phase 0: Establish a trustworthy baseline
 
@@ -371,7 +395,7 @@ Phase gate:
 - [x] Every service migrates from an empty database.
 - [x] Re-running migrate is a no-op.
 - [x] Constraints reject invalid business values.
-- [ ] Repository queries have justified indexes and reviewed plans.
+- [x] Repository queries have justified indexes and reviewed plans.
 
 Rollback:
 
@@ -394,6 +418,65 @@ Rollback:
   snapshots.
 - [ ] Commit 5.9: Add deterministic replay and simulator adapters for local and
   test environments.
+
+#### Transaction Acceptance Criteria
+
+##### Applicable policy
+
+TP-1 through TP-12 in the [canonical policy](cross-cutting-transaction-and-consistency-policy.md).
+
+##### Transaction owner
+
+The public `MarketSnapshotApplicationService.publishSnapshot` operation owns
+the all-local publication transaction and uses `@Transactional` by default.
+
+##### Atomic writes
+
+Snapshot version, metadata, complete contents or their immutable reference,
+activation state, publication metadata, and the snapshot-published outbox record
+commit or roll back together.
+
+##### Work outside the transaction
+
+Source parsing, schema and static-field validation, tick and trading-unit
+normalization, deterministic snapshot construction, and serialization independent
+of generated values occur before the transaction.
+
+##### Work inside the transaction
+
+Current-version validation, version allocation, active-snapshot conflict checks,
+snapshot persistence and activation, and any final envelope dependent on the
+persisted version remain inside.
+
+##### Failure outcome
+
+No new active snapshot is visible if any snapshot or outbox write fails. No
+metadata, contents, activation, or publication event may be partially committed.
+
+##### Retry and idempotency
+
+The same source identity and checksum return the existing publication result;
+changed content has an explicit new-version outcome.
+
+##### Concurrency control
+
+A unique current-snapshot constraint plus version allocation prevents two active
+versions. A losing publisher receives a deterministic conflict or re-reads the
+published result.
+
+##### Timeout policy
+
+The operation inherits the documented market-data service transaction timeout;
+active-version locking uses a tighter documented timeout.
+
+##### Verification
+
+Planned PostgreSQL Testcontainers test
+`MarketSnapshotPublicationTransactionIT` maps TP-12 through named cases for
+atomic commit, first and later mutation rollback, outbox rollback, constraint
+rejection, concurrent activation conflict, duplicate import, checked and
+unchecked rollback, and absence of partial state. Inbox completion and consumer
+restart are N/A because this operation does not consume an event.
 
 Phase gate:
 
@@ -420,6 +503,67 @@ Rollback:
   remainder, and FOK cancellation.
 - [ ] Commit 6.9: Add administrative account and position provisioning for
   development and controlled environments.
+
+#### Transaction Acceptance Criteria
+
+##### Applicable policy
+
+TP-1 through TP-12 in the [canonical policy](cross-cutting-transaction-and-consistency-policy.md).
+
+##### Transaction owner
+
+The public `AccountReservationApplicationService.reserve` and lifecycle
+event-processing operation each own their all-local transaction and use
+`@Transactional` by default.
+
+##### Atomic writes
+
+Inbox claim or deduplication, account and reservation mutation, account version,
+processed aggregate sequence, lifecycle result, account outbox record, and inbox
+completion commit or roll back together as one applicable processing outcome.
+
+##### Work outside the transaction
+
+Transport decoding, authentication, envelope-shape and static-field validation,
+and deterministic calculations independent of account state occur before the
+transaction.
+
+##### Work inside the transaction
+
+Inbox duplicate checks, account load with concurrency control, available-funds
+or position validation, reservation mutation, version and sequence checks,
+outbox creation, and inbox completion remain inside.
+
+##### Failure outcome
+
+Infrastructure or outbox failure leaves the inbound event retryable without a
+reservation. Insufficient funds may atomically persist a stable rejection and
+required outbox event, but never a reservation.
+
+##### Retry and idempotency
+
+The same event ID never reserves, settles, releases, or adjusts twice. Stale or
+duplicate aggregate sequences have an explicit no-op, duplicate, quarantine, or
+rejection outcome.
+
+##### Concurrency control
+
+Per-account optimistic versioning or conditional updates serialize authoritative
+mutation. A losing concurrent reserve observes a conflict or retriable result;
+it cannot over-reserve.
+
+##### Timeout policy
+
+The service inherits its documented default transaction timeout; account-lock or
+conditional-update contention uses a tighter documented timeout.
+
+##### Verification
+
+Planned PostgreSQL Testcontainers test `AccountReservationTransactionIT` maps
+every TP-12 case through named cases for atomic commit; first and later write
+rollback; outbox and inbox-completion rollback; constraint, optimistic, and
+conditional conflicts; duplicate delivery; checked and unchecked rollback;
+consumer restart; concurrent reservation; and absence of partial account state.
 
 Phase gate:
 
@@ -451,6 +595,68 @@ Rollback:
 - [ ] Commit 7.10: Add backpressure behavior based on CDC delivery lag.
 - [ ] Commit 7.11: Expose the deep admission interface through v2 gRPC.
 - [ ] Commit 7.12: Route v1 gRPC through the compatibility adapter.
+
+#### Transaction Acceptance Criteria
+
+##### Applicable policy
+
+TP-1 through TP-12 in the [canonical policy](cross-cutting-transaction-and-consistency-policy.md).
+
+##### Transaction owner
+
+The public `OrderAdmissionApplicationService.beginAdmission` and
+`finalizeAdmission` operations own their respective local transactions and use
+`@Transactional` by default.
+
+##### Atomic writes
+
+For each local admission outcome, idempotency state, durable decision, order
+state and status, aggregate sequence, validated rule or snapshot reference,
+reason, and matching admitted or rejected outbox event commit or roll back
+together.
+
+##### Work outside the transaction
+
+Decode, authenticate, statically validate, calculate pure values, perform remote
+checks, and serialize data independent of persisted identifiers before a local
+transaction.
+
+##### Work inside the transaction
+
+Duplicate detection, current-state checks, sequence allocation, order and
+decision persistence, final dependent envelope construction, and idempotency
+result persistence remain inside.
+
+##### Failure outcome
+
+No accepted order lacks its admitted event, no event exists for an uncommitted
+order, and no duplicate idempotency key creates another authoritative order.
+
+##### Retry and idempotency
+
+The persisted admission saga and idempotent account command recover remote
+success followed by local failure. Equivalent retries reproduce the original
+outcome; conflicting retries receive a stable conflict.
+
+##### Concurrency control
+
+A unique command or idempotency key and monotonic aggregate sequence allocation
+select one result. A losing concurrent submitter reads that result or receives a
+stable conflict.
+
+##### Timeout policy
+
+The local transaction inherits the documented admission timeout. No transaction
+is held during a remote call; pending-saga recovery has its own bounded timeout.
+
+##### Verification
+
+Planned PostgreSQL Testcontainers test `OrderAdmissionTransactionIT` maps TP-12
+through named cases for local atomic commit; first and later write rollback;
+outbox rollback; constraint and sequence conflicts; duplicate command; checked
+and unchecked rollback; concurrent duplicate submission; and no partial state.
+Inbox completion and consumer restart are N/A for synchronous admission; the
+separate `AdmissionSagaRecoveryIT` proves restart recovery.
 
 Phase gate:
 
@@ -572,6 +778,64 @@ Rollback:
 - [ ] Commit 11.5: Publish account lifecycle outcomes through the account
   outbox.
 
+#### Transaction Acceptance Criteria
+
+##### Applicable policy
+
+TP-1 through TP-12 in the [canonical policy](cross-cutting-transaction-and-consistency-policy.md).
+
+##### Transaction owner
+
+The public `AccountLifecycleEventProcessor.process` operation owns the local
+event-processing transaction and uses `@Transactional` by default.
+
+##### Atomic writes
+
+Inbox claim or deduplication, balance or position mutation, reservation
+settlement or release, account version, aggregate sequence, lifecycle outcome,
+account outbox record, and inbox completion commit or roll back together.
+
+##### Work outside the transaction
+
+Decode, validate the envelope and static fields, authenticate where applicable,
+and calculate state-independent values before the transaction.
+
+##### Work inside the transaction
+
+Duplicate checks, account lock or version checks, lifecycle-transition
+validation, reservation mutation, sequence handling, outbox creation, and inbox
+completion remain inside.
+
+##### Failure outcome
+
+Database, serialization, lock, or outbox failure leaves the event retryable and
+does not mark the inbox complete. A valid business rejection persists only the
+defined durable rejection outcome.
+
+##### Retry and idempotency
+
+Duplicate events are no-ops or reproduce their stored result. Sequence gaps are
+quarantined without advancing account state.
+
+##### Concurrency control
+
+Per-account optimistic versioning, a conditional update, or row locking prevents
+double settlement or release. The losing delivery is retried, rejected, or
+quarantined explicitly.
+
+##### Timeout policy
+
+The processor inherits the documented account-service timeout and uses a tighter
+timeout for account-lock contention.
+
+##### Verification
+
+Planned PostgreSQL Testcontainers test `AccountLifecycleTransactionIT` maps every
+TP-12 case through named cases for atomic commit; first and later write rollback;
+outbox and inbox-completion rollback; constraint; lock or version conflict;
+duplicate delivery; checked and unchecked rollback; restart before acknowledgement;
+concurrent processing; and no partial account state.
+
 Phase gate:
 
 - [ ] Every terminal matching outcome settles or releases its reservation.
@@ -597,6 +861,65 @@ Rollback:
   fallback.
 - [ ] Commit 12.9: Add account-summary and active-market-snapshot queries.
 
+#### Transaction Acceptance Criteria
+
+##### Applicable policy
+
+TP-1 through TP-12 in the [canonical policy](cross-cutting-transaction-and-consistency-policy.md).
+
+##### Transaction owner
+
+The public `ProjectionEventProcessor.process` operation owns the durable
+projection transaction and uses `@Transactional` by default.
+
+##### Atomic writes
+
+Inbox state, aggregate-sequence or projection-version check, PostgreSQL
+projection mutation, checkpoint, any generated outbox record, and inbox
+completion commit or roll back together.
+
+##### Work outside the transaction
+
+Decode, static validation, replacement-payload preparation, and expensive Redis
+serialization occur before the transaction. Redis publication is retried or
+rebuilt after the durable PostgreSQL commit.
+
+##### Work inside the transaction
+
+Duplicate detection, version and sequence checks, durable projection mutation,
+checkpoint movement, generated outbox insertion, and inbox completion remain
+inside.
+
+##### Failure outcome
+
+The inbox cannot complete without its projection update, and a failed local
+transaction leaves the event retryable. Redis cannot make a PostgreSQL update
+appear atomically published.
+
+##### Retry and idempotency
+
+Incremental updates never double-apply. Stale events are ignored, recorded, or
+quarantined; a gap pauses or resynchronizes instead of silently advancing.
+
+##### Concurrency control
+
+Projection version or aggregate sequence conditional updates reject stale writers.
+The losing event is ignored, retried, or quarantined according to its contract.
+
+##### Timeout policy
+
+The processor inherits the documented projection-service timeout; sequence or
+checkpoint locks use a tighter documented timeout.
+
+##### Verification
+
+Planned PostgreSQL Testcontainers test `ProjectionEventTransactionIT` maps every
+TP-12 case through named cases for atomic commit; first and later write rollback;
+generated-outbox and inbox-completion rollback; constraint; conditional-update
+conflict; duplicates; checked and unchecked rollback; restart; concurrent
+projection updates; and no partial state. Generated-outbox cases are N/A, with
+that reason, for a projection that emits no event.
+
 Phase gate:
 
 - [ ] Redis can be deleted and rebuilt without business-state loss.
@@ -618,6 +941,72 @@ Rollback:
 - [ ] Commit 13.6: Detect sequence gaps and resynchronize instead of streaming
   inconsistent deltas.
 - [ ] Commit 13.7: Add slow-consumer backpressure and disconnect policy.
+
+#### Transaction Acceptance Criteria
+
+##### Applicable policy
+
+TP-1 through TP-12 in the [canonical policy](cross-cutting-transaction-and-consistency-policy.md),
+including its bounded replay and recovery rules.
+
+##### Transaction owner
+
+The public `MarketDataProjectionApplicationService.process` operation owns each
+live durable update with `@Transactional`; `replayBatch` owns a bounded,
+deliberately narrow `TransactionTemplate` database critical section after batch
+construction.
+
+##### Atomic writes
+
+For each live event or replay batch, durable projection changes, aggregate or
+stream sequence progress, inbox or replay deduplication, recovery metadata, and
+any intentionally emitted outbox record commit or roll back together. Redis
+snapshots and streaming occur after that durable outcome.
+
+##### Work outside the transaction
+
+Decode, validate, batch, serialize snapshots, write Redis, wait for Kafka
+acknowledgements, and perform streaming I/O outside the database boundary.
+
+##### Work inside the transaction
+
+Sequence and gap checks, durable projection writes, bounded checkpoint movement,
+inbox or replay deduplication, recovery metadata, and permitted outbox writes
+remain inside.
+
+##### Failure outcome
+
+A failed batch does not advance its checkpoint; recovery resumes from the last
+committed point. Readers observe either the old complete projection or an
+atomically activated rebuilt projection, never a partial mixture.
+
+##### Retry and idempotency
+
+Replay and live duplicate delivery are idempotent. Sequence gaps pause,
+quarantine, or resynchronize; replay suppresses downstream publication unless a
+documented test proves it is intentionally enabled.
+
+##### Concurrency control
+
+Per-instrument sequence conditional updates and an atomic shadow-projection
+cutover prevent stale or concurrent writers from advancing a stream. A losing
+writer is retried, ignored as stale, or quarantined explicitly.
+
+##### Timeout policy
+
+Live processing inherits the documented market-data timeout. Each replay batch
+has a tighter bounded transaction timeout; a complete replay is never one
+transaction.
+
+##### Verification
+
+Planned PostgreSQL Testcontainers test `MarketDataReplayTransactionIT` maps every
+TP-12 case through named cases for successful batch commit; first and later
+write rollback; permitted-outbox and inbox rollback; constraints; conditional
+conflicts; duplicate replay; checked and unchecked rollback; restart after
+partial work; concurrent stream updates; and no partial projection or
+checkpoint. Inbox or outbox cases are N/A, with that reason, for a projection
+contract that does not use them.
 
 Phase gate:
 

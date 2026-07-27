@@ -28,6 +28,22 @@ permissions:
   contents: read
 
 jobs:
+  transaction-criteria:
+    name: Transaction criteria documentation
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
+        with:
+          fetch-depth: 1
+          persist-credentials: false
+
+      - name: Verify transaction criteria structure
+        run: |
+          bash scripts/test-check-transaction-acceptance-criteria.sh
+          bash scripts/check-transaction-acceptance-criteria.sh
+
   changes:
     name: Detect changed areas
     runs-on: ubuntu-latest
