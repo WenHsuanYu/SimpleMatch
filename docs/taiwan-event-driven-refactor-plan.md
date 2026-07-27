@@ -404,19 +404,19 @@ Rollback:
 
 ### Phase 5: Create the market-reference publisher capability
 
-- [ ] Commit 5.1: Scaffold the documented market-data publisher as a Spring Boot
+- [x] Commit 5.1: Scaffold the documented market-data publisher as a Spring Boot
   service without runtime consumers.
-- [ ] Commit 5.2: Add immutable market snapshot types and fixture-based tests.
-- [ ] Commit 5.3: Add Taiwan trading-calendar and holiday resolution tests.
-- [ ] Commit 5.4: Add instrument identity, venue, board-lot, tick-table, and
+- [x] Commit 5.2: Add immutable market snapshot types and fixture-based tests.
+- [x] Commit 5.3: Add Taiwan trading-calendar and holiday resolution tests.
+- [x] Commit 5.4: Add instrument identity, venue, board-lot, tick-table, and
   eligibility import validation.
-- [ ] Commit 5.5: Add daily reference-price and absolute price-limit validation.
-- [ ] Commit 5.6: Add snapshot persistence with source timestamp, checksum, and
+- [x] Commit 5.5: Add daily reference-price and absolute price-limit validation.
+- [x] Commit 5.6: Add snapshot persistence with source timestamp, checksum, and
   activation state.
-- [ ] Commit 5.7: Add snapshot publication through the service outbox.
-- [ ] Commit 5.8: Add readiness behavior for missing, stale, or invalid daily
+- [x] Commit 5.7: Add snapshot publication through the service outbox.
+- [x] Commit 5.8: Add readiness behavior for missing, stale, or invalid daily
   snapshots.
-- [ ] Commit 5.9: Add deterministic replay and simulator adapters for local and
+- [x] Commit 5.9: Add deterministic replay and simulator adapters for local and
   test environments.
 
 #### Transaction Acceptance Criteria
@@ -466,23 +466,25 @@ published result.
 
 ##### Timeout policy
 
-The operation inherits the documented market-data service transaction timeout;
-active-version locking uses a tighter documented timeout.
+The publication transaction has a 10-second timeout. The active-version lock
+query has a tighter 2-second JDBC timeout.
 
 ##### Verification
 
-Planned PostgreSQL Testcontainers test
 `MarketSnapshotPublicationTransactionIT` maps TP-12 through named cases for
 atomic commit, first and later mutation rollback, outbox rollback, constraint
 rejection, concurrent activation conflict, duplicate import, checked and
 unchecked rollback, and absence of partial state. Inbox completion and consumer
-restart are N/A because this operation does not consume an event.
+restart are N/A because this operation does not consume an event. The companion
+`MarketSnapshotPublicationPostgresIT` runs the same Flyway migration and a
+durable snapshot/outbox assertion against an explicitly supplied isolated
+PostgreSQL DSN.
 
 Phase gate:
 
-- [ ] XTAI and ROCO fixtures produce deterministic snapshots.
-- [ ] Unsupported instruments carry explicit eligibility reasons.
-- [ ] No trading module calls an exchange website synchronously.
+- [x] XTAI and ROCO fixtures produce deterministic snapshots.
+- [x] Unsupported instruments carry explicit eligibility reasons.
+- [x] No trading module calls an exchange website synchronously.
 
 Rollback:
 

@@ -12,6 +12,10 @@ architecture; repository contents may be delivered incrementally.
 - The **operational control plane** carries configuration, scheduling, trading
   pair lifecycle, routing snapshots, and breaker or rate-limit policy. It is
   deliberately outside the trading hot path.
+- The **market-reference publisher** owns versioned daily XTAI and ROCO
+  reference snapshots. It validates and activates offline source inputs, then
+  publishes the durable snapshot event through its outbox; trading modules use
+  the active snapshot rather than making exchange-website calls.
 - `matching-engine` remains the C++ owner of matching order, fairness, and the
   latency-sensitive deterministic loop. Peripheral services use Java and
   Spring Cloud. The repository remains a polyglot monorepo: Gradle builds Java

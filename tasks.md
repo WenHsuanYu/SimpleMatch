@@ -466,7 +466,12 @@
 
 ## 4.5 `marketdata-publisher`
 
-> 現況：workspace 未見 `services/marketdata-publisher/`；目前只有 `proto/marketdata.proto` 契約與 README 架構描述，因此以下項目都仍屬未開始。
+> 現況：`services/marketdata-publisher/` 已提供每日市場參考 snapshot publisher；
+> `proto/marketdata.proto` 的 public trade/quote event publisher 仍未開始。
+
+> Phase 5 已新增 `services/marketdata-publisher/` 作為每日市場參考資料的離線匯入、
+> immutable snapshot、activation 與 transactional outbox owner。它不消費 runtime
+> execution，也不發布 public trade/quote；下列 market-data event 工作仍屬後續 phase。
 
 - [ ] v1：consume `matching.executions`
 - [ ] v1：先產出 `marketdata.events` 的 `TradeUpdate`

@@ -23,6 +23,7 @@ for the existing repository; it is not a second target-architecture source.
 | [account-service V1](../services/account-service/src/main/resources/db/migration/account-service/V1__create_account_service_tables.sql) | Creates the typed `account_service` authority tables from an empty database. |
 | [risk-service V1](../services/risk-service/src/main/resources/db/migration/risk-service/V1__create_risk_service_tables.sql) | Creates the typed `risk_service` decision and binary outbox tables from an empty database. |
 | [persistence V1](../services/persistence/src/main/resources/db/migration/persistence/V1__create_projection_tables.sql) | Creates the typed `persistence` projection and inbox tables from an empty database. |
+| [marketdata-publisher V1](../services/marketdata-publisher/src/main/resources/db/migration/marketdata-publisher/V1__create_marketdata_publisher_tables.sql) | Creates immutable market snapshots, one active snapshot per trading day, and the transactional publication outbox. |
 
 The reset's field meaning, range, nullability, constraints, and index review
 are recorded in the [Phase 4 data dictionary](phase-4-data-dictionary.md).
@@ -37,6 +38,7 @@ search path. They must not rely on implicit `public`.
 | Area               | Implementation evidence                                                                                                                                                                                 |
 |--------------------|---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
 | Runtime datasource | [RiskServiceConfiguration.java](../services/risk-service/src/main/java/com/simplematch/riskservice/config/RiskServiceConfiguration.java) selects the `risk_service` schema.                             |
+| Market-reference datasource | [MarketdataPublisherConfiguration.java](../services/marketdata-publisher/src/main/java/com/simplematch/marketdatapublisher/config/MarketdataPublisherConfiguration.java) selects the `marketdata_publisher` schema. |
 | Outbox connector   | [Compose connector](../deploy/compose/risk-service-outbox-connector.json) and [Kubernetes connector](../deploy/k8s/risk-service-outbox-connector-configmap.yaml) use the schema-qualified outbox table. |
 | Migration tests    | The risk, account, and persistence service migration tests validate their owner schemas.                                                                                                                |
 

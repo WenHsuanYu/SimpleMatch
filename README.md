@@ -44,7 +44,7 @@ detailed topology, ordering, eventing, and reliability decisions are in the
 | `risk-service` | Java, Spring Cloud | Validation, risk decisions, and durable admission |
 | `matching-engine` | C++ | Deterministic order-book matching |
 | `persistence` | Java, Spring Cloud | Projections, replay, and audit integration |
-| `marketdata-publisher` | Java, Spring Cloud | Market-data event creation |
+| `marketdata-publisher` | Java, Spring Cloud | Versioned daily market-reference snapshots and transactional publication |
 | `marketdata-streamer` | Java, Spring Cloud | Public and private streaming views |
 | `query-service` | Java, Spring Cloud | Optional internal projection queries |
 

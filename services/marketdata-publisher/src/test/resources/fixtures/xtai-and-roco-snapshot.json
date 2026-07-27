@@ -1,0 +1,51 @@
+{
+  "sourceIdentity": "twse-tpex-2026-07-27",
+  "sourceTimestampUnixMs": 1785110400000,
+  "tradingDay": "2026-07-27",
+  "holidays": ["2026-10-09"],
+  "instruments": [
+    {
+      "symbol": "2330",
+      "venueMic": "XTAI",
+      "securityType": "COMMON_STOCK",
+      "boardLotShares": 1000,
+      "referencePrice": "1000",
+      "lowerPriceLimit": "900",
+      "upperPriceLimit": "1100",
+      "tickBands": [
+        {"upperExclusive": "10", "tickSize": "0.01"},
+        {"upperExclusive": "50", "tickSize": "0.05"},
+        {"upperExclusive": "100", "tickSize": "0.1"},
+        {"tickSize": "0.5"}
+      ]
+    },
+    {
+      "symbol": "6488",
+      "venueMic": "ROCO",
+      "securityType": "COMMON_STOCK",
+      "boardLotShares": 1000,
+      "referencePrice": "200",
+      "lowerPriceLimit": "180",
+      "upperPriceLimit": "220",
+      "tickBands": [
+        {"upperExclusive": "10", "tickSize": "0.01"},
+        {"upperExclusive": "50", "tickSize": "0.05"},
+        {"upperExclusive": "100", "tickSize": "0.1"},
+        {"tickSize": "0.5"}
+      ]
+    },
+    {
+      "symbol": "0050",
+      "venueMic": "XTAI",
+      "securityType": "ETF",
+      "boardLotShares": 1000,
+      "referencePrice": "200",
+      "lowerPriceLimit": "180",
+      "upperPriceLimit": "220",
+      "tickBands": [
+        {"upperExclusive": "10", "tickSize": "0.01"},
+        {"tickSize": "0.05"}
+      ]
+    }
+  ]
+}
