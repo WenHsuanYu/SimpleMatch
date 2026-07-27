@@ -2,6 +2,7 @@ package com.simplematch.riskservice.config;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.simplematch.config.PlatformProperties;
+import com.simplematch.config.PostgresJdbcUrl;
 import com.simplematch.riskservice.bootstrap.RiskServiceRuntime;
 import com.simplematch.riskservice.admission.AccountReservationClient;
 import com.simplematch.riskservice.admission.AdmissionBackpressurePolicy;
@@ -33,6 +34,7 @@ import org.springframework.transaction.support.TransactionTemplate;
 
 @Configuration
 @EnableScheduling
+@SuppressWarnings("PMD.TooManyMethods") // Spring wiring seam keeps service-owned dependencies explicit.
 public class RiskServiceConfiguration {
   private static final String RISK_SERVICE_SCHEMA = "risk_service";
 
@@ -53,7 +55,7 @@ public class RiskServiceConfiguration {
 
   @Bean
   DataSource riskServiceDataSource(PlatformProperties properties) {
-    final PostgresJdbcConfig parsedJdbcDsn = PostgresJdbcConfig.parse(properties.postgres().dsn());
+    final PostgresJdbcUrl parsedJdbcDsn = PostgresJdbcUrl.parse(properties.postgres().dsn());
     final HikariDataSource dataSource = new HikariDataSource();
     dataSource.setJdbcUrl(parsedJdbcDsn.jdbcUrl());
     if (parsedJdbcDsn.username() != null) {

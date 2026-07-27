@@ -94,7 +94,7 @@ jobs:
             [[ -z "$file" ]] && continue
 
             case "$file" in
-              .github/workflows/ci.yml|build.gradle.kts|settings.gradle.kts|gradlew|gradlew.bat|gradle/*|build-logic/*|shared-java/*|proto/*|services/account-service/*|services/persistence/*|services/quickfix-gateway/*|services/risk-service/*|config/checkstyle/*|config/spotbugs/*|config/simplematch.example.json)
+              .github/workflows/ci.yml|build.gradle.kts|settings.gradle.kts|gradlew|gradlew.bat|gradle/*|build-logic/*|shared-java/*|proto/*|services/account-service/*|services/marketdata-publisher/*|services/persistence/*|services/quickfix-gateway/*|services/risk-service/*|config/checkstyle/*|config/pmd/*|config/spotbugs/*|config/simplematch.example.json)
                 java=true
                 ;;
             esac
@@ -163,6 +163,7 @@ jobs:
           if-no-files-found: ignore
           path: |
             **/build/reports/checkstyle/**
+            **/build/reports/pmd/**
             **/build/reports/spotbugs/**
             **/build/reports/tests/**
             **/build/test-results/**

@@ -7,12 +7,15 @@ import org.gradle.api.Project
 import org.gradle.api.artifacts.VersionCatalogsExtension
 import org.gradle.api.plugins.quality.Checkstyle
 import org.gradle.api.plugins.quality.CheckstyleExtension
+import org.gradle.api.plugins.quality.Pmd
+import org.gradle.api.plugins.quality.PmdExtension
 import org.gradle.kotlin.dsl.getByType
 
-/** Adds the repository's blocking Checkstyle and SpotBugs policy to a Java module. */
+/** Adds the repository's blocking Java quality policy to a Java module. */
 class SimpleMatchJavaQualityPlugin : Plugin<Project> {
   override fun apply(project: Project) {
     project.pluginManager.apply("checkstyle")
+    project.pluginManager.apply("pmd")
     project.pluginManager.apply("com.github.spotbugs")
 
     val catalog = project.extensions.getByType<VersionCatalogsExtension>().named("libs")
@@ -26,6 +29,12 @@ class SimpleMatchJavaQualityPlugin : Plugin<Project> {
               .absolutePath
       isIgnoreFailures = false
       maxWarnings = 0
+    }
+    project.extensions.getByType<PmdExtension>().apply {
+      toolVersion = catalog.findVersion("pmd").get().requiredVersion
+      ruleSets = emptyList()
+      ruleSetFiles =
+          project.files(project.rootProject.layout.projectDirectory.file(PmdPolicy.RULESET_PATH))
     }
     project.extensions.getByType<SpotBugsExtension>().apply {
       toolVersion.set(catalog.findVersion("spotbugs-tool").get().requiredVersion)
@@ -42,7 +51,17 @@ class SimpleMatchJavaQualityPlugin : Plugin<Project> {
         html.required.set(true)
       }
     }
-    project.tasks.matching { it.name == "checkstyleTest" || it.name == "spotbugsTest" }.configureEach {
+    project.tasks.withType(Pmd::class.java).configureEach {
+      setSource(project.fileTree(project.projectDir.resolve("src/main/java")) { include("**/*.java") })
+      ignoreFailures = false
+      reports {
+        xml.required.set(true)
+        html.required.set(true)
+      }
+    }
+    project.tasks
+        .matching { it.name == "checkstyleTest" || it.name == "pmdTest" || it.name == "spotbugsTest" }
+        .configureEach {
       enabled = false
     }
     project.tasks.withType(SpotBugsTask::class.java).configureEach {
@@ -56,10 +75,13 @@ class SimpleMatchJavaQualityPlugin : Plugin<Project> {
       }
     }
     project.tasks.named("check") {
-      dependsOn("checkstyleMain", "spotbugsMain")
+      dependsOn("checkstyleMain", "pmdMain", "spotbugsMain")
     }
     project.rootProject.tasks.named("staticAnalysis") {
-      dependsOn("${project.path}:checkstyleMain", "${project.path}:spotbugsMain")
+      dependsOn(
+          "${project.path}:checkstyleMain",
+          "${project.path}:pmdMain",
+          "${project.path}:spotbugsMain")
     }
   }
 }

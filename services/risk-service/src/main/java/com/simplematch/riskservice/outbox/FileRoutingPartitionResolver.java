@@ -58,6 +58,7 @@ public final class FileRoutingPartitionResolver implements RoutingPartitionResol
     return Math.floorMod(symbol.hashCode(), partitionCount);
   }
 
+  @SuppressWarnings("PMD.CyclomaticComplexity") // Snapshot validation reports each invalid routing shape precisely.
   private static Map<String, Integer> partitionsBySymbol(
       List<RoutingEntry> entries,
       int partitionCount,

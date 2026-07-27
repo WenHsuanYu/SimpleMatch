@@ -29,6 +29,7 @@ import quickfix.field.Price;
 import quickfix.field.Symbol;
 import quickfix.fix44.OrderCancelRequest;
 
+@SuppressWarnings("PMD.TooManyMethods") // FIX ingress transaction coordination remains behind one handler seam.
 public final class InboundFixMessageHandler {
   private static final Logger logger = LoggerFactory.getLogger(InboundFixMessageHandler.class);
   private static final int MAX_FIX_IDENTITY_LENGTH = 64;

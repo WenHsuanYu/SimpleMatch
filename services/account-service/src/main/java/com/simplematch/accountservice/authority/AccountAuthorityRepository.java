@@ -5,6 +5,7 @@ import java.util.List;
 import java.util.Optional;
 
 /** Persistence port for account authority rows and lifecycle idempotency. */
+@SuppressWarnings("PMD.TooManyMethods") // Authoritative-account port; split only with separate adapters.
 public interface AccountAuthorityRepository {
   /** Locks the account limit row for one trading day. */
   Optional<AccountLimit> findLimitForUpdate(String accountId, LocalDate tradingDay);

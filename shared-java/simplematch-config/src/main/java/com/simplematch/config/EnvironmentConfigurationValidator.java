@@ -45,21 +45,7 @@ public final class EnvironmentConfigurationValidator {
   }
 
   private void validatePlatformProperties(PlatformProperties properties) {
-    if (properties.kafka().partitions().ordersCommands() <= 0
-        || properties.kafka().partitions().ordersValidated() <= 0
-        || properties.kafka().partitions().matchingExecutions() <= 0) {
-      throw new IllegalStateException("Kafka partition counts must be positive.");
-    }
-    if (properties.observability().prometheus().port() < 1
-        || properties.observability().prometheus().port() > 65_535) {
-      throw new IllegalStateException("Prometheus port must be between 1 and 65535.");
-    }
-    if (!"TWD".equals(properties.market().currency())) {
-      throw new IllegalStateException("Phase-one market currency must be TWD.");
-    }
-    if (!"Asia/Taipei".equals(properties.market().timeZone())) {
-      throw new IllegalStateException("Phase-one market time zone must be Asia/Taipei.");
-    }
+    PlatformSettingsValidator.validate(properties);
   }
 
   private Set<String> activeEnvironmentProfiles(ConfigurableEnvironment environment) {

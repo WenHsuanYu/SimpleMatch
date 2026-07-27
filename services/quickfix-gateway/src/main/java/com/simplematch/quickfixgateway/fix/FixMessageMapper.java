@@ -30,6 +30,7 @@ import quickfix.field.Symbol;
 import quickfix.field.Text;
 import quickfix.field.TransactTime;
 
+@SuppressWarnings("PMD.TooManyMethods") // FIX protocol mapper keeps one wire-format seam.
 public final class FixMessageMapper {
   private static final DateTimeFormatter FIX_TIMESTAMP =
       DateTimeFormatter.ofPattern("yyyyMMdd-HH:mm:ss.SSS").withZone(ZoneOffset.UTC);

@@ -13,6 +13,7 @@ import java.util.UUID;
 /**
  * Validates normalized risk submissions before they enter the transactional persistence flow.
  */
+@SuppressWarnings("PMD.TooManyMethods") // Submission policy keeps acceptance and durable-result construction local.
 public final class SubmissionValidator {
   private static final int MAX_PERSISTED_IDENTIFIER_LENGTH = 255;
   private static final int MAX_PERSISTED_FIX_IDENTITY_LENGTH = 64;
@@ -35,6 +36,7 @@ public final class SubmissionValidator {
    * @param command the normalized submission command, or {@code null} for an unspecified command
    * @return the submission decision that should be persisted
    */
+  @SuppressWarnings("PMD.CyclomaticComplexity") // Validation order defines stable rejection precedence.
   public SubmissionDecision evaluate(ResolvedSubmissionCommand command) {
     final ResolvedSubmissionCommand normalizedCommand = command == null
         ? ResolvedSubmissionCommand.unspecified()

@@ -10,6 +10,7 @@ import java.time.ZoneId;
 import java.util.Objects;
 
 /** Converts representable v1 order commands to and from the additive v2 contracts. */
+@SuppressWarnings("PMD.TooManyMethods") // V1 wire compatibility seam; retire with v1 order ingress.
 public final class V1OrderCommandAdapter {
   private static final ZoneId TAIPEI = ZoneId.of("Asia/Taipei");
 

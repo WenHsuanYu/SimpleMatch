@@ -6,9 +6,10 @@ This repo's Java dependencies use an explicit ownership model.
 
 - [gradle/libs.versions.toml](/home/alexyu/SimpleMatch/gradle/libs.versions.toml) is the single source for pinned plugin and third-party library versions.
 - `simplematch.java-conventions` supplies the Java 25 toolchain, JUnit platform, Mockito agent, Error Prone, and dependency locking to every Java module.
-- `simplematch.java-quality` adds Checkstyle and SpotBugs where the module has production Java sources that require those checks.
+- `simplematch.java-quality` adds blocking Checkstyle, PMD 7.24.0, and SpotBugs where the module has production Java sources that require those checks.
 - `simplematch.spring-service` owns common Spring Boot service dependencies, the Spring Cloud BOM, and narrow Lombok wiring. JDBC, Kafka, gRPC, QuickFIX/J, and Flyway remain in the service build that uses them.
 - `simplematch.protobuf-contracts` owns the shared protobuf source set and gRPC Java generation configuration.
+- Protobuf contracts opt into the PMD design gate through `simplematch.java-quality`; their historical conventions-only Checkstyle/SpotBugs lifecycle remains disabled to avoid treating generated contract support code as service quality scope.
 - `simplematch.flyway-service` owns service identity, derived migration locations, owner schema wiring, and stable root Flyway task aliases.
 - Shared modules under `shared-java/*` are not opted into Lombok by default.
 - Prefer Java `record` for simple immutable carriers before Lombok.

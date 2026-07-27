@@ -16,6 +16,7 @@ import org.springframework.stereotype.Component;
 @Component
 public final class OrderAdmissionValidator {
   /** Converts a valid v2 command into the journal's transport-independent carrier. */
+  @SuppressWarnings("PMD.CyclomaticComplexity") // Admission validation is deliberately one visible policy boundary.
   public AdmissionCommand validate(NewOrderCommand command) {
     if (command == null) {
       throw new AdmissionValidationException("INVALID_COMMAND", "new order command is required");
@@ -64,6 +65,7 @@ public final class OrderAdmissionValidator {
   }
 
   /** Converts a valid cancel command into the same durable identity carrier. */
+  @SuppressWarnings("PMD.CyclomaticComplexity") // Cancel validation is an indivisible admission policy.
   public AdmissionCommand validateCancel(CancelOrderCommand command) {
     if (command == null) {
       throw new AdmissionValidationException("INVALID_COMMAND", "cancel command is required");

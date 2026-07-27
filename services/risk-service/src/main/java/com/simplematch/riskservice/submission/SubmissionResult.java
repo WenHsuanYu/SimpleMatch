@@ -58,6 +58,9 @@ public record SubmissionResult(
      * @param reasonText the rejection reason text, or blank when accepted
      * @param createdAtUnixMs the persistence timestamp in epoch milliseconds
      */
+    /** @deprecated Use the canonical record constructor; retained for wire compatibility tracked by issue #21. */
+    @Deprecated(forRemoval = false)
+    @SuppressWarnings("PMD.ExcessiveParameterList")
     public SubmissionResult(
         String requestId,
         String senderCompId,
@@ -108,6 +111,9 @@ public record SubmissionResult(
      * @param persistedClOrdId the persisted business-key-safe ClOrdID used for storage
      * @param persistedOrigClOrdId the persisted OrigClOrdID value stored in the journal
      */
+    /** @deprecated Use the canonical record constructor; retained for wire compatibility tracked by issue #21. */
+    @Deprecated(forRemoval = false)
+    @SuppressWarnings("PMD.ExcessiveParameterList")
     public SubmissionResult(
         String requestId,
         String senderCompId,

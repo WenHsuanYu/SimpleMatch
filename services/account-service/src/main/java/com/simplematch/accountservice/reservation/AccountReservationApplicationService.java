@@ -26,6 +26,7 @@ import org.springframework.transaction.annotation.Transactional;
 
 /** Owns account reservation, release, fill, and authoritative balance transactions. */
 @Service
+@SuppressWarnings("PMD.TooManyMethods") // Transaction owner keeps reservation lifecycle local.
 public class AccountReservationApplicationService implements ReservationService {
   private static final ZoneId TAIPEI = ZoneId.of("Asia/Taipei");
   private static final int TRANSACTION_TIMEOUT_SECONDS = 8;
@@ -143,6 +144,7 @@ public class AccountReservationApplicationService implements ReservationService 
   /** Applies one execution fill once, using the account inbox as the deduplication boundary. */
   @Override
   @Transactional(timeout = TRANSACTION_TIMEOUT_SECONDS)
+  @SuppressWarnings("PMD.CyclomaticComplexity") // Atomic fill state transition is intentionally one transaction.
   public ReservationRecord applyFill(
       String requestId, String reservationId, String orderId, String executionId,
       BigDecimal fillQuantity, BigDecimal fillPrice) {
@@ -151,6 +153,7 @@ public class AccountReservationApplicationService implements ReservationService 
 
   /** Applies a fill while also rejecting a stale aggregate sequence when supplied. */
   @Transactional(timeout = TRANSACTION_TIMEOUT_SECONDS)
+  @SuppressWarnings("PMD.CyclomaticComplexity") // Atomic fill state transition is intentionally one transaction.
   public ReservationRecord applyFill(
       String requestId, String reservationId, String orderId, String executionId, Long aggregateSequence,
       BigDecimal fillQuantity, BigDecimal fillPrice) {

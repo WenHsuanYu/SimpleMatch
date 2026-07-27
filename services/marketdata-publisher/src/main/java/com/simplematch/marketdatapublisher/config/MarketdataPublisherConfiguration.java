@@ -2,6 +2,7 @@ package com.simplematch.marketdatapublisher.config;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.simplematch.config.PlatformProperties;
+import com.simplematch.config.PostgresJdbcUrl;
 import com.simplematch.config.SimpleMatchUuids;
 import com.simplematch.marketdatapublisher.health.MarketSnapshotReadinessHealthIndicator;
 import com.simplematch.marketdatapublisher.publication.JdbcMarketSnapshotRepository;
@@ -41,7 +42,7 @@ public class MarketdataPublisherConfiguration {
   /** Creates the service-owned PostgreSQL datasource. */
   @Bean
   DataSource dataSource(PlatformProperties properties) {
-    final PostgresJdbcConfig parsed = PostgresJdbcConfig.parse(properties.postgres().dsn());
+    final PostgresJdbcUrl parsed = PostgresJdbcUrl.parse(properties.postgres().dsn());
     final HikariDataSource dataSource = new HikariDataSource();
     dataSource.setJdbcUrl(parsed.jdbcUrl());
     if (parsed.username() != null) {

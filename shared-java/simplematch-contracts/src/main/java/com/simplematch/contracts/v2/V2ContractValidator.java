@@ -1,10 +1,7 @@
 package com.simplematch.contracts.v2;
 
-import com.simplematch.contracts.common.v2.Currency;
 import com.simplematch.contracts.common.v2.EventMetadata;
-import com.simplematch.contracts.common.v2.OrderType;
 import com.simplematch.contracts.common.v2.SessionState;
-import com.simplematch.contracts.common.v2.Side;
 import com.simplematch.contracts.orders.v2.CancelOrderCommand;
 import com.simplematch.contracts.orders.v2.NewOrderCommand;
 
@@ -34,33 +31,17 @@ public final class V2ContractValidator {
     if (command == null) {
       throw new DomainValidationException("new order command is required");
     }
+    validateNewOrderIdentity(command);
+    NewOrderCharacteristicsValidator.validate(command);
+    validateFixIdentity(command.getSenderCompId(), command.getTargetCompId(), command.getClOrdId(), "");
+  }
+
+  private void validateNewOrderIdentity(NewOrderCommand command) {
     validate(command.getMetadata());
     V2Identifiers.CommandId.parse(command.getCommandId());
     V2Identifiers.OrderId.parse(command.getOrderId());
     V2Identifiers.AccountId.parse(command.getAccountId());
     validateInstrument(command.getInstrument().getSymbol(), command.getInstrument().getVenueMic());
-    if (command.getSide() == Side.SIDE_UNSPECIFIED) {
-      throw new DomainValidationException("side is required");
-    }
-    new ShareQuantity(command.getQuantity().getShares());
-    validatePrice(command);
-    if (command.getTif() == com.simplematch.contracts.common.v2.TimeInForce.TIME_IN_FORCE_UNSPECIFIED) {
-      throw new DomainValidationException("tif is required");
-    }
-    if (command.getCurrency() != Currency.CURRENCY_TWD) {
-      throw new DomainValidationException("currency must be TWD");
-    }
-    TradingDay.parse(command.getTradingDay().getIsoDate());
-    if (command.getSessionState() == SessionState.SESSION_STATE_UNSPECIFIED) {
-      throw new DomainValidationException("session_state is required");
-    }
-    if (!command.getRoutingSnapshotId().isBlank()) {
-      V2Identifiers.SnapshotId.parse(command.getRoutingSnapshotId());
-    }
-    if (command.hasEstimatedNotional() && command.getEstimatedNotional().getUnits() <= 0) {
-      throw new DomainValidationException("estimated_notional must be positive when present");
-    }
-    validateFixIdentity(command.getSenderCompId(), command.getTargetCompId(), command.getClOrdId(), "");
   }
 
   /** Validates a cancel-order command before durable admission. */
@@ -82,19 +63,6 @@ public final class V2ContractValidator {
         command.getTargetCompId(),
         command.getClOrdId(),
         command.getOrigClOrdId());
-  }
-
-  private void validatePrice(NewOrderCommand command) {
-    if (command.getOrderType() == OrderType.ORDER_TYPE_LIMIT) {
-      new TwdPrice(command.getLimitPrice().getUnits());
-      return;
-    }
-    if (command.getOrderType() != OrderType.ORDER_TYPE_MARKET) {
-      throw new DomainValidationException("order_type is required");
-    }
-    if (command.hasLimitPrice()) {
-      throw new DomainValidationException("market orders must not carry limit_price");
-    }
   }
 
   private void validateInstrument(String symbol, String venueMic) {

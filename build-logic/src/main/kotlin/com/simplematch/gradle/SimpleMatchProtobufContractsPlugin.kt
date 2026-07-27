@@ -15,6 +15,13 @@ import org.gradle.kotlin.dsl.getByType
 class SimpleMatchProtobufContractsPlugin : Plugin<Project> {
   override fun apply(project: Project) {
     project.pluginManager.apply("simplematch.java-conventions")
+    project.pluginManager.apply("simplematch.java-quality")
+    // Protobuf contracts historically ran conventions only. Keep generated/contract
+    // sources outside the repository-wide Checkstyle and SpotBugs policy while
+    // retaining the PMD design gate introduced for issue #21.
+    project.tasks
+        .matching { it.name == "checkstyleMain" || it.name == "spotbugsMain" }
+        .configureEach { enabled = false }
     project.pluginManager.apply("java-library")
     project.pluginManager.apply("com.google.protobuf")
 

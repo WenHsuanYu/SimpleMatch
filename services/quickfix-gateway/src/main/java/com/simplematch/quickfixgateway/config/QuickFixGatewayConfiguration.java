@@ -41,6 +41,7 @@ import org.springframework.kafka.core.KafkaTemplate;
 @Configuration
 @EnableKafka
 @EnableConfigurationProperties(QuickFixGatewayProperties.class)
+@SuppressWarnings("PMD.TooManyMethods") // Spring wiring seam; bean methods remain explicit for operational dependencies.
 public class QuickFixGatewayConfiguration {
   @Bean
   SmartInitializingSingleton quickFixGatewayPropertiesValidation(

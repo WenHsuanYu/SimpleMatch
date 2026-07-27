@@ -92,7 +92,7 @@ public class JdbcAdmissionJournalRepository implements AdmissionJournalRepositor
   }
 
   private boolean isPostgres() {
-    return jdbcTemplate.execute((ConnectionCallback<Boolean>) connection ->
-        connection.getMetaData().getDatabaseProductName().contains("PostgreSQL"));
+    return Objects.requireNonNull(jdbcTemplate.execute((ConnectionCallback<Boolean>) connection ->
+        connection.getMetaData().getDatabaseProductName().contains("PostgreSQL")), "database product name");
   }
 }

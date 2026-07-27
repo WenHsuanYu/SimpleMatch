@@ -6,6 +6,7 @@ import java.util.Objects;
 /**
  * Represents the normalized payload fields for a submission.
  */
+@SuppressWarnings("PMD.TooManyMethods") // Normalized submission facade preserves existing transport callers.
 public final class SubmissionCommand {
   private final RequestMetadata requestMetadata;
   private final OrderDetails orderDetails;
@@ -166,6 +167,7 @@ public final class SubmissionCommand {
   /**
      * Groups the request-scoped identifiers and FIX routing context for a submission payload.
    */
+  @SuppressWarnings("PMD.TooManyMethods") // Request metadata exposes typed and wire-compatible identifiers.
   public static final class RequestMetadata {
     private final CommandId commandId;
     private final OrderId orderId;
@@ -373,6 +375,7 @@ public final class SubmissionCommand {
   /**
     * Groups the order-specific payload fields for a submission payload.
    */
+  @SuppressWarnings("PMD.TooManyMethods") // Order details exposes typed and wire-compatible quantities.
   public static final class OrderDetails {
     private final String symbol;
     private final Side side;

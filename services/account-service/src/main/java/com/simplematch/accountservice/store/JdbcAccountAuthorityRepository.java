@@ -20,6 +20,7 @@ import org.springframework.stereotype.Repository;
 
 /** Thin JDBC adapter for account limits, positions, reservations, and inbox claims. */
 @Repository
+@SuppressWarnings("PMD.TooManyMethods") // One JDBC adapter implements the authoritative-account port.
 public class JdbcAccountAuthorityRepository implements AccountAuthorityRepository {
   private static final int LOCK_QUERY_TIMEOUT_SECONDS = 2;
   private static final RowMapper<AccountLimit> LIMIT_MAPPER = (rs, row) -> new AccountLimit(
@@ -200,9 +201,10 @@ public class JdbcAccountAuthorityRepository implements AccountAuthorityRepositor
   public boolean claimInbox(String consumerName, String eventId, String aggregateId, Long aggregateSequence,
       long receivedAt) {
     final boolean postgres = isPostgres();
-    if (!postgres && jdbcTemplate.queryForObject(
+    final Integer inboxCount = jdbcTemplate.queryForObject(
         "SELECT COUNT(*) FROM account_service.inbox WHERE consumer_name = ? AND event_id = ?", Integer.class,
-        consumerName, UUID.fromString(eventId)) > 0) {
+        consumerName, UUID.fromString(eventId));
+    if (!postgres && inboxCount != null && inboxCount > 0) {
       return false;
     }
     final String insert = postgres
@@ -236,8 +238,8 @@ public class JdbcAccountAuthorityRepository implements AccountAuthorityRepositor
   }
 
   private boolean isPostgres() {
-    return jdbcTemplate.execute((ConnectionCallback<Boolean>) connection ->
-        connection.getMetaData().getDatabaseProductName().contains("PostgreSQL"));
+    return Objects.requireNonNull(jdbcTemplate.execute((ConnectionCallback<Boolean>) connection ->
+        connection.getMetaData().getDatabaseProductName().contains("PostgreSQL")), "database product name");
   }
 
   private String reservationSelect() {

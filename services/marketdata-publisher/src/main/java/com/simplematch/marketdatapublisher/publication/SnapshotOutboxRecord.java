@@ -4,6 +4,7 @@ import java.util.Objects;
 import java.util.UUID;
 
 /** Binary outbox event that makes a committed snapshot publication externally visible. */
+@SuppressWarnings("PMD.TooManyMethods") // Immutable outbox value exposes required defensive-copy accessors.
 public final class SnapshotOutboxRecord {
   private final UUID eventId;
   private final String topic;

@@ -3,6 +3,7 @@ package com.simplematch.quickfixgateway.fix;
 import com.simplematch.contracts.common.v1.Side;
 import quickfix.SessionID;
 
+@SuppressWarnings("PMD.TooManyMethods") // Mutable session state requires explicit synchronized-state accessors.
 public final class OrderSessionState {
   private final SessionID sessionId;
   private final String orderId;
