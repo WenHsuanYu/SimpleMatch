@@ -161,6 +161,57 @@ class QuickFixCertificationEvidenceTest {
     }
   }
 
+  @DisplayName("the QuickFIX simulator returns a rejected risk submission without publishing the order")
+  @Test
+  void quickFixSimulatorPersistsRejectedRiskSubmissionAndReturnsFixReject() throws Exception {
+    final int port = reservePort();
+    final Path dictionaryPath = workspaceRoot().resolve("config/quickfix/fix-spec/FIX44.xml");
+    final Path acceptorConfigPath = writeAcceptorConfig(port, dictionaryPath);
+    final Path initiatorConfigPath = writeInitiatorConfig(port, dictionaryPath);
+    final Path walPath = tempDir.resolve("wal").resolve("inbound.wal");
+    final WalAppender walAppender = new WalAppender(walPath, StandardCharsets.UTF_8);
+    final OrdersCommandPublisher ordersCommandPublisher = new OrdersCommandPublisher();
+    final QuickFixAcceptorLifecycle acceptorLifecycle = new QuickFixAcceptorLifecycle(
+        new QuickFixApplicationAdapter(
+            new InboundFixMessageHandler(
+                walAppender,
+                ordersCommandPublisher,
+                new RejectingRiskSubmissionClient(),
+                new QuickFixSessionMessageSender(),
+                new OrderSessionRegistry(),
+                new FixMessageMapper(FIXED_CLOCK),
+                FIXED_CLOCK)),
+        new QuickFixGatewayRuntime("test", acceptorConfigPath, walPath));
+    final TestInitiatorApplication initiatorApplication = new TestInitiatorApplication();
+    final SocketInitiator initiator = new SocketInitiator(
+        initiatorApplication,
+        new FileStoreFactory(new SessionSettings(initiatorConfigPath.toString())),
+        new SessionSettings(initiatorConfigPath.toString()),
+        new FileLogFactory(new SessionSettings(initiatorConfigPath.toString())),
+        new DefaultMessageFactory());
+
+    try {
+      acceptorLifecycle.start();
+      initiator.start();
+      assertThat(initiatorApplication.awaitLogon()).isTrue();
+      assertThat(Session.sendToTarget(newOrder("C1", "AAPL", "10", "101.25", "ACC-1"), initiatorApplication.sessionId())).isTrue();
+
+      final Message executionReport = initiatorApplication.awaitApplicationMessage();
+      assertThat(FixMessageSnapshot.snapshot(executionReport, MsgType.FIELD, 37, 150, 39, 11, 55, 58))
+          .isEqualTo(
+              "35=8|37=O-C1|150=8|39=8|11=C1|55=AAPL|58=INSUFFICIENT_BUYING_POWER: available cash is insufficient");
+      assertThat(walAppender.readAll()).singleElement().satisfies(walRecord -> {
+        assertThat(walRecord.orderId()).isEqualTo("O-C1");
+        assertThat(walRecord.clOrdId()).isEqualTo("C1");
+      });
+      assertThat(ordersCommandPublisher.lastPublishedCommand()).isNull();
+    } finally {
+      safeStop(initiator);
+      acceptorLifecycle.stop();
+      walAppender.close();
+    }
+  }
+
   private Path writeAcceptorConfig(int port, Path dictionaryPath) throws IOException {
     final Path configPath = tempDir.resolve("acceptor.cfg");
     Files.writeString(
@@ -287,6 +338,22 @@ class QuickFixCertificationEvidenceTest {
     @Override
     public RiskSubmissionResult submitNewOrder(OrderCommand command) {
       return new RiskSubmissionResult(command.getOrderId(), true, "", "");
+    }
+
+    @Override
+    public RiskSubmissionResult submitCancel(OrderCommand command) {
+      return new RiskSubmissionResult(command.getOrderId(), true, "", "");
+    }
+  }
+
+  private static final class RejectingRiskSubmissionClient implements RiskSubmissionClient {
+    @Override
+    public RiskSubmissionResult submitNewOrder(OrderCommand command) {
+      return new RiskSubmissionResult(
+          command.getOrderId(),
+          false,
+          "INSUFFICIENT_BUYING_POWER",
+          "available cash is insufficient");
     }
 
     @Override

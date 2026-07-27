@@ -691,6 +691,7 @@
 ## 9) 文件 / 操作手冊（補齊落地）
 
 - [ ] `tasks.md`（本檔）維護：每個里程碑完成時打勾
+- [x] [Taiwan event-driven refactor plan](docs/taiwan-event-driven-refactor-plan.md) Commit 0.3: characterize the current FIX ingress risk-rejection boundary, durable WAL record, and no-publish behavior (GitHub issue [#10](https://github.com/WenHsuanYu/SimpleMatch/issues/10))
 - [x] [README and technical documentation refactor](docs/readme-documentation-refactor-spec.md)（GitHub issue [#1](https://github.com/WenHsuanYu/SimpleMatch/issues/1)）：將目標技術規格收斂至 `services/docs/`，並保留穩定索引與 forwarding pages
   - [x] [#2](https://github.com/WenHsuanYu/SimpleMatch/issues/2) 建立 cross-cutting docs index 與 Markdown link-validation seam
   - [x] [#3](https://github.com/WenHsuanYu/SimpleMatch/issues/3) 發布 cross-cutting architecture specifications

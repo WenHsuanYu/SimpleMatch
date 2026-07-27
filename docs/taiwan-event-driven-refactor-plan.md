@@ -238,7 +238,7 @@ before the broader phase gate.
   work.
 - [ ] Commit 0.2: Record the current module inventory and label documented but
   missing deployables as target capabilities.
-- [ ] Commit 0.3: Add black-box characterization tests for the current FIX new
+- [x] Commit 0.3: Add black-box characterization tests for the current FIX new
   order, cancellation, risk response, durable submission, and outbox behavior.
 - [ ] Commit 0.4: Add a machine-checked compatibility inventory for current v1
   Protobuf messages and field numbers.
