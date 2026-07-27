@@ -30,7 +30,7 @@ class SimpleMatchJavaQualityPlugin : Plugin<Project> {
     project.extensions.getByType<SpotBugsExtension>().apply {
       toolVersion.set(catalog.findVersion("spotbugs-tool").get().requiredVersion)
       ignoreFailures.set(false)
-      showProgress.set(true)
+      showProgress.set(false)
       excludeFilter.set(project.rootProject.layout.projectDirectory.file("config/spotbugs/exclude.xml"))
     }
 
