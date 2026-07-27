@@ -38,6 +38,7 @@ junit-platform-launcher = { module = "org.junit.platform:junit-platform-launcher
 lombok = { module = "org.projectlombok:lombok", version.ref = "lombok" }
 mockito-core = { module = "org.mockito:mockito-core", version.ref = "mockito" }
 protobuf-java = { module = "com.google.protobuf:protobuf-java", version.ref = "protobuf" }
+protobuf-gradle-plugin = { module = "com.google.protobuf:protobuf-gradle-plugin", version.ref = "protobuf-gradle-plugin" }
 protobuf-protoc = { module = "com.google.protobuf:protoc", version.ref = "protobuf" }
 quickfixj-core = { module = "org.quickfixj:quickfixj-core", version.ref = "quickfixj" }
 quickfixj-messages-fix44 = { module = "org.quickfixj:quickfixj-messages-fix44", version.ref = "quickfixj" }
