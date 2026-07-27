@@ -41,11 +41,39 @@ StatefulSet and service scaffolding plus a risk-service outbox connector
 ConfigMap. It is not a complete Kubernetes deployment for every intended
 service.
 
-## Completion Evidence
+## 0.4 Compatibility Inventory
 
 Commit 0.3 is recorded by the QuickFIX characterization test. Commit 0.4 adds
 the checked-in v1 message-field inventory at
 `shared-java/simplematch-contracts/src/test/resources/v1-protobuf-field-numbers.properties`.
 `V1ProtobufCompatibilityInventoryTest` compares that inventory with generated
 Protobuf descriptors and fails on a field addition, removal, rename, or number
-change. Commit 0.5 records validation evidence before the Phase 0 gate closes.
+change.
+
+## 0.5 Validation Evidence
+
+The following checks passed on 2026-07-27:
+
+| Command | Result |
+| --- | --- |
+| `./gradlew -q staticAnalysis` | Passed |
+| `./gradlew -q test :services:quickfix-gateway:certificationTest` | Passed |
+| `bash scripts/test-check-markdown-links.sh` | Passed |
+| `cmake -S . -B /tmp/simplematch-phase0-cmake` | Passed |
+| `cmake --build /tmp/simplematch-phase0-cmake` | Passed; no native target is registered yet |
+
+The Flyway/PostgreSQL smoke script is an environment-only blocker:
+`bash scripts/run-flyway-ci-checks.sh` fails before migration execution because
+the local PostgreSQL role cannot create the ephemeral
+`simplematch_account_service_ci` database. A role with `CREATEDB`, or the CI
+PostgreSQL service configuration, is required to run that check. This is not a
+schema or application-code failure.
+
+## Phase Gate
+
+- [x] Current behavior is characterized by the existing FIX, risk submission,
+  WAL, outbox, and QuickFIX certification tests.
+- [x] The module inventory labels README-only services and the matching engine
+  as target capabilities rather than implemented deployables.
+- [x] The baseline is recoverable through the dedicated Phase 0 checkpoint
+  commits; no production runtime behavior changed in this phase.

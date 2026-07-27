@@ -242,14 +242,14 @@ before the broader phase gate.
   order, cancellation, risk response, durable submission, and outbox behavior.
 - [x] Commit 0.4: Add a machine-checked compatibility inventory for current v1
   Protobuf messages and field numbers.
-- [ ] Commit 0.5: Record the passing baseline validation results and known
+- [x] Commit 0.5: Record the passing baseline validation results and known
   environment-only blockers.
 
 Phase gate:
 
-- [ ] Current behavior is characterized.
-- [ ] No target capability is described as already implemented.
-- [ ] The baseline commit is recoverable.
+- [x] Current behavior is characterized.
+- [x] No target capability is described as already implemented.
+- [x] The baseline commit is recoverable.
 
 Rollback:
 
