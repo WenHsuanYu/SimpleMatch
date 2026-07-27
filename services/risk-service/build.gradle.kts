@@ -1,13 +1,13 @@
 plugins {
   java
-  id("org.springframework.boot")
-  id("io.spring.dependency-management")
+  alias(libs.plugins.spring.boot)
+  alias(libs.plugins.spring.dependency.management)
   id("simplematch.flyway-service")
 }
 
 dependencyManagement {
   imports {
-    mavenBom("org.springframework.cloud:spring-cloud-dependencies:2025.0.1")
+    mavenBom("org.springframework.cloud:spring-cloud-dependencies:${libs.versions.spring.cloud.get()}")
   }
 }
 
@@ -19,14 +19,14 @@ dependencies {
   implementation("org.springframework.boot:spring-boot-starter-jdbc")
   implementation("org.springframework.boot:spring-boot-starter-validation")
   implementation("com.fasterxml.jackson.core:jackson-databind")
-  implementation("io.grpc:grpc-netty-shaded:1.80.0")
-  implementation("io.grpc:grpc-protobuf:1.80.0")
-  implementation("io.grpc:grpc-stub:1.80.0")
+  implementation(libs.grpc.netty.shaded)
+  implementation(libs.grpc.protobuf)
+  implementation(libs.grpc.stub)
   runtimeOnly("org.postgresql:postgresql")
-  compileOnly("jakarta.annotation:jakarta.annotation-api:3.0.0")
+  compileOnly(libs.jakarta.annotation.api)
 
   testImplementation("com.h2database:h2")
-  testImplementation("org.flywaydb:flyway-core:12.7.0")
+  testImplementation(libs.flyway.core)
   testImplementation("org.springframework.boot:spring-boot-starter-test")
 }
 

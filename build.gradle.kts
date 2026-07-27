@@ -13,14 +13,16 @@ import org.gradle.process.CommandLineArgumentProvider
 
 plugins {
   base
-  id("com.github.spotbugs") version "6.2.4" apply false
-  id("net.ltgt.errorprone") version "4.3.0" apply false
+  alias(libs.plugins.spotbugs) apply false
+  alias(libs.plugins.errorprone) apply false
 }
 
 
 
-val mockitoCoreVersion = "5.17.0"
-val lombokVersion = "1.18.42"
+val mockitoCoreVersion = libs.versions.mockito.get()
+val lombokVersion = libs.versions.lombok.get()
+val checkstyleToolVersion = libs.versions.checkstyle.get()
+val spotbugsToolVersion = libs.versions.spotbugs.tool.get()
 
 val checkstyleAndSpotbugsProjects = setOf(
     ":shared-java:simplematch-config",
@@ -82,7 +84,7 @@ subprojects {
     }
 
     pluginManager.apply("net.ltgt.errorprone")
-    dependencies.add("errorprone", "com.google.errorprone:error_prone_core:2.39.0")
+    dependencies.add("errorprone", libs.errorprone.core)
 
     rootProject.tasks.named(staticAnalysisTask.name) {
       dependsOn("$projectPath:classes", "$projectPath:testClasses")
@@ -104,7 +106,7 @@ subprojects {
       pluginManager.apply("com.github.spotbugs")
 
       extensions.configure(CheckstyleExtension::class.java) {
-        toolVersion = "10.26.1"
+        toolVersion = checkstyleToolVersion
         configDirectory.set(rootProject.layout.projectDirectory.dir("config/checkstyle"))
         configProperties["checkstyle.suppressions.file"] =
             rootProject.layout.projectDirectory.file("config/checkstyle/suppressions.xml").asFile.absolutePath
@@ -113,7 +115,7 @@ subprojects {
       }
 
       extensions.configure(SpotBugsExtension::class.java) {
-        toolVersion.set("4.9.4")
+        toolVersion.set(spotbugsToolVersion)
         ignoreFailures.set(false)
         showProgress.set(true)
         excludeFilter.set(rootProject.layout.projectDirectory.file("config/spotbugs/exclude.xml"))

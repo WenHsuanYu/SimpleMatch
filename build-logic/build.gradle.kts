@@ -23,8 +23,8 @@ repositories {
 
 dependencies {
   implementation(gradleApi())
-  implementation("org.flywaydb:flyway-gradle-plugin:12.7.0")
-  implementation("org.flywaydb:flyway-database-postgresql:12.7.0")
+  implementation(libs.flyway.gradle.plugin)
+  implementation(libs.flyway.database.postgresql)
   compileOnly("javax.inject:javax.inject:1")
 }
 

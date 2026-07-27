@@ -1,14 +1,14 @@
 plugins {
   java
-  id("org.springframework.boot")
-  id("io.spring.dependency-management")
+  alias(libs.plugins.spring.boot)
+  alias(libs.plugins.spring.dependency.management)
 }
 
 val testSourceSet = the<JavaPluginExtension>().sourceSets.getByName("test")
 
 dependencyManagement {
   imports {
-    mavenBom("org.springframework.cloud:spring-cloud-dependencies:2025.0.1")
+    mavenBom("org.springframework.cloud:spring-cloud-dependencies:${libs.versions.spring.cloud.get()}")
   }
 }
 
@@ -20,9 +20,9 @@ dependencies {
   implementation("org.springframework.boot:spring-boot-starter-web")
   implementation("org.springframework.kafka:spring-kafka")
   implementation("org.springframework.boot:spring-boot-starter-validation")
-  implementation("io.grpc:grpc-netty-shaded:1.80.0")
-  implementation("org.quickfixj:quickfixj-core:3.0.1")
-  implementation("org.quickfixj:quickfixj-messages-fix44:3.0.1")
+  implementation(libs.grpc.netty.shaded)
+  implementation(libs.quickfixj.core)
+  implementation(libs.quickfixj.messages.fix44)
 
   annotationProcessor("org.springframework.boot:spring-boot-configuration-processor")
 

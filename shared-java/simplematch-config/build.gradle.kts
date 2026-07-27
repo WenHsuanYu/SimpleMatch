@@ -3,12 +3,12 @@ plugins {
 }
 
 dependencies {
-  api("com.fasterxml.jackson.core:jackson-databind:2.19.2")
-  api("org.springframework.boot:spring-boot:3.5.14")
-  implementation("com.github.f4b6a3:uuid-creator:6.1.1")
-  compileOnly("com.google.errorprone:error_prone_annotations:2.39.0")
-  testImplementation("org.springframework.boot:spring-boot:3.5.14")
-  testImplementation("org.junit.jupiter:junit-jupiter:5.12.2")
-  testRuntimeOnly("org.junit.jupiter:junit-jupiter-engine:5.12.2")
-  testRuntimeOnly("org.junit.platform:junit-platform-launcher:1.12.2")
+  api(libs.jackson.databind)
+  api("org.springframework.boot:spring-boot:${libs.versions.spring.boot.get()}")
+  implementation(libs.uuid.creator)
+  compileOnly(libs.errorprone.annotations)
+  testImplementation("org.springframework.boot:spring-boot:${libs.versions.spring.boot.get()}")
+  testImplementation(libs.junit.jupiter)
+  testRuntimeOnly(libs.junit.jupiter.engine)
+  testRuntimeOnly(libs.junit.platform.launcher)
 }
