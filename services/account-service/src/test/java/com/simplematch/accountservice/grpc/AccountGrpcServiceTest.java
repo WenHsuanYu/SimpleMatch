@@ -38,8 +38,6 @@ class AccountGrpcServiceTest {
             + ";MODE=PostgreSQL;DB_CLOSE_DELAY=-1;INIT=CREATE SCHEMA IF NOT EXISTS account_service\\;SET SCHEMA account_service");
     jdbcTemplate = new JdbcTemplate(dataSource);
     Flyway.configure()
-        .baselineOnMigrate(true)
-        .baselineVersion("1")
         .dataSource(dataSource)
         .locations("classpath:db/migration/account-service")
         .load()

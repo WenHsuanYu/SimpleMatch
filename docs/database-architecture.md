@@ -18,14 +18,16 @@ for the existing repository; it is not a second target-architecture source.
 
 ### Migration SQL
 
-| File                                                                                                                                    | Implementation evidence                                                                                                          |
-|-----------------------------------------------------------------------------------------------------------------------------------------|----------------------------------------------------------------------------------------------------------------------------------|
-| [risk-service V1](../services/risk-service/src/main/resources/db/migration/risk-service/V1__create_risk_service_tables.sql)             | Creates the `risk_service` schema and its initial tables.                                                                        |
-| [risk-service V2](../services/risk-service/src/main/resources/db/migration/risk-service/V2__drop_legacy_outbox_relay_columns.sql)       | Uses schema-qualified object changes.                                                                                            |
-| [risk-service V3](../services/risk-service/src/main/resources/db/migration/risk-service/V3__add_outbox_kafka_partition_id.sql)          | Adds partition routing to `risk_service.outbox`.                                                                                 |
-| risk-service V9 UUID migration                                                                                                          | Converts `event_id` and `outbox_event_id` to PostgreSQL `UUID` while the outer synchronous contract retains string `request_id`. |
-| [account-service V1](../services/account-service/src/main/resources/db/migration/account-service/V1__create_account_service_tables.sql) | Creates the `account_service` schema and tables.                                                                                 |
-| [persistence V1](../services/persistence/src/main/resources/db/migration/persistence/V1__create_projection_tables.sql)                  | Creates the `persistence` schema and projection tables.                                                                          |
+| File | Implementation evidence |
+| --- | --- |
+| [account-service V1](../services/account-service/src/main/resources/db/migration/account-service/V1__create_account_service_tables.sql) | Creates the typed `account_service` authority tables from an empty database. |
+| [risk-service V1](../services/risk-service/src/main/resources/db/migration/risk-service/V1__create_risk_service_tables.sql) | Creates the typed `risk_service` decision and binary outbox tables from an empty database. |
+| [persistence V1](../services/persistence/src/main/resources/db/migration/persistence/V1__create_projection_tables.sql) | Creates the typed `persistence` projection and inbox tables from an empty database. |
+
+The reset's field meaning, range, nullability, constraints, and index review
+are recorded in the [Phase 4 data dictionary](phase-4-data-dictionary.md).
+The previous chains remain recoverable at the `phase-4-pre-flyway-reset` tag;
+ordinary migration tasks use `baselineOnMigrate = false`.
 
 Migrations must either use schema-qualified object names or set an explicit
 search path. They must not rely on implicit `public`.

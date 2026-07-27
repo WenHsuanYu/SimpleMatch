@@ -1,0 +1,78 @@
+# Phase 4 Data Dictionary and Index Review
+
+This execution record defines the clean-install V1 schemas delivered by Phase 4.
+The target topology and ownership rules remain in the
+[platform database architecture](../services/docs/platform/database-architecture.md).
+
+## Ownership and representation
+
+| Owner | Tables | Responsibility |
+| --- | --- | --- |
+| `account_service` | `account_limits`, `account_positions`, `account_reservations` | Account authority, position snapshots, and idempotent reservation ingress. |
+| `risk_service` | `risk_submissions`, `outbox` | Durable risk decisions and transactional event publication. |
+| `persistence` | `orders`, `executions`, `inbox` | Rebuildable projections and consumer-side event deduplication. |
+
+Money and quantity columns use `NUMERIC(38,8)`: decimal TWD notionals, prices,
+and quantities are stored exactly, have no implicit unit conversion, and are
+never nullable when a business value is required. Epoch timestamps are non-null
+`BIGINT` milliseconds and reject negative values. PostgreSQL `UUID` is used for
+durable event identities. Bounded text fields reject only values whose domain is
+already stable in the current runtime; ingress validation remains responsible
+for forming rejection records from malformed input.
+
+## Field catalog
+
+| Owner table | Fields: type, nullability, range, and invariant |
+| --- | --- |
+| `account_limits` | `id BIGINT` generated primary key; non-null `account_id`, `scope_type`, `scope_key` (scope text nonblank), `trading_day DATE`, and `currency VARCHAR(3)` (`TWD` only); non-null `limit_total_notional`, `reserved_notional`, `utilized_notional`, and `available_notional NUMERIC(38,8)` (all non-negative and available equals total minus reserved and utilized); non-null non-negative `updated_at_unix_ms BIGINT`. |
+| `account_positions` | `id BIGINT` generated primary key; non-null `account_id` and nonblank `symbol VARCHAR(64)`; non-null non-negative `long_qty` and `short_qty NUMERIC(38,8)`; non-null non-negative `updated_at_unix_ms BIGINT`. |
+| `account_reservations` | `id BIGINT` generated primary key; non-null nonblank `reservation_id`, `request_id`, `order_id`, `account_id VARCHAR(255)`, and `symbol VARCHAR(64)`; non-null `side VARCHAR(16)` (`SIDE_BUY` or `SIDE_SELL`); non-null positive `quantity NUMERIC(38,8)`; nullable non-negative `limit_price NUMERIC(38,8)`; non-null non-negative `reserved_notional NUMERIC(38,8)`; non-null supported `status VARCHAR(64)`; non-null `reason_code VARCHAR(255)` and `reason_text TEXT` (both may be empty for success); non-null ordered `created_at_unix_ms` and `updated_at_unix_ms BIGINT`; nullable `released_at_unix_ms BIGINT`, which cannot precede creation. |
+| `risk_submissions` | `id BIGINT` generated primary key; non-null `request_id`, `sender_comp_id`, `target_comp_id`, `order_id`, `cl_ord_id`, and `orig_cl_ord_id VARCHAR(255)`; non-null `trading_day DATE`; non-null `raw_cl_ord_id` and `raw_orig_cl_ord_id TEXT`; non-null `command_type VARCHAR(64)` (`COMMAND_TYPE_NEW`, `COMMAND_TYPE_CANCEL`, or persisted `COMMAND_TYPE_UNSPECIFIED` rejection); non-null `accepted BOOLEAN`, `reason_code VARCHAR(255)`, `reason_text TEXT`, `business_key_surrogated BOOLEAN`, and non-negative `created_at_unix_ms BIGINT`; non-null unique `outbox_event_id UUID`. |
+| `outbox` | `id BIGINT` generated primary key; non-null unique `event_id UUID`; nonblank `topic`, `payload_type VARCHAR(255)`, `headers_json TEXT`, and `aggregate_type VARCHAR(255)`; non-null `message_key` and `aggregate_id VARCHAR(255)` (either may be empty for a rejection without a usable business identity); nullable non-negative `kafka_partition_id INTEGER`; non-null nonempty `payload BYTEA`; non-null non-negative `created_at_unix_ms BIGINT`. |
+| `orders` | Non-null primary-key `order_id VARCHAR(255)`; non-null `account_id VARCHAR(255)`, nonblank `symbol VARCHAR(64)`, non-negative `shard_id INTEGER`, bounded `side`, `order_type`, and `tif VARCHAR(16)`, positive `qty NUMERIC(38,8)`, nullable non-negative `price NUMERIC(38,8)`, nonblank `status VARCHAR(64)`, non-negative `state_version BIGINT`, nullable `last_command_id VARCHAR(255)`, non-null `sender_comp_id`, `target_comp_id`, `cl_ord_id VARCHAR(255)`, and ordered non-negative creation/update timestamps. |
+| `executions` | Non-null primary-key `exec_id VARCHAR(255)`; non-null `order_id VARCHAR(255)`, nonblank `symbol VARCHAR(64)`, non-negative `shard_id INTEGER`, positive `fill_qty NUMERIC(38,8)`, non-negative `fill_price NUMERIC(38,8)`, nullable `liquidity_flag VARCHAR(32)`, and non-negative `created_at_unix_ms BIGINT`. |
+| `inbox` | Non-null nonblank `consumer_name VARCHAR(255)`, non-null `event_id UUID`, and non-null non-negative `received_at_unix_ms BIGINT`; `(consumer_name, event_id)` is the primary key. |
+
+## Account authority
+
+| Table | Business meaning and required values | Constraints and query ownership |
+| --- | --- | --- |
+| `account_limits` | One TWD notional limit for an account, scope, and trading day. All monetary values are non-negative decimal TWD amounts. | Unique `(account_id, scope_type, scope_key, trading_day)`; scope text is nonblank; `currency = 'TWD'`; available amount equals total minus reserved and utilized. No non-constraint index: no account-limit repository query exists yet. |
+| `account_positions` | Long and short quantity snapshot for one account and symbol. Quantities are non-negative decimal share amounts. | Unique `(account_id, symbol)`; symbol nonblank; quantities and timestamp non-negative. No non-constraint index: no repository query exists yet. |
+| `account_reservations` | Idempotent reservation outcome. Quantity is positive; price may be absent for a market order; reserved notional is non-negative. | Unique `reservation_id`, `request_id`, and `order_id`; side is buy or sell; status is an explicit supported reservation status; timestamps are ordered. `JdbcReservationRepository.findByRequestId` uses the `request_id` unique index. |
+
+## Risk admission and publication
+
+| Table | Business meaning and required values | Constraints and query ownership |
+| --- | --- | --- |
+| `risk_submissions` | Immutable result of one risk-admission decision. It retains normalized and raw FIX IDs so invalid ingress can be diagnosed without losing the submitted value. | UUID `outbox_event_id` is unique. The idempotency key is the unique business key `(sender_comp_id, target_comp_id, trading_day, command_type, cl_ord_id, business_key_surrogated)`. New and cancel are business commands; `COMMAND_TYPE_UNSPECIFIED` is retained only for durable rejected ingress. Timestamp is non-negative. `JdbcSubmissionRepository.findByBusinessKey` uses that unique index. |
+| `outbox` | Binary event envelope committed with the risk decision. `payload` is mandatory nonempty bytes; headers are nonempty serialized metadata. | UUID `event_id` is unique; a Kafka partition is null or non-negative; topic, payload type, headers, and aggregate type are nonblank. Message key and aggregate ID may be empty only for a persisted rejection without a usable business identity. `idx_outbox_created_at(created_at_unix_ms, id)` is retained solely for the named operational query: chronological CDC recovery/age scans over durable rows. |
+
+## Persistence projections and inbox
+
+| Table | Business meaning and required values | Constraints and query ownership |
+| --- | --- | --- |
+| `orders` | Current order projection. Quantity is positive; a limit price is non-negative when present; shard and version are non-negative. | Unique FIX identity `(sender_comp_id, target_comp_id, cl_ord_id)`; side, order type, and time-in-force are bounded; status is nonblank; timestamps are ordered. No non-constraint index is created until a repository query exists. |
+| `executions` | Immutable execution projection. Fill quantity is positive and fill price is non-negative. | `exec_id` is the primary key and `(order_id, exec_id)` is unique; shard and timestamp are non-negative. No non-constraint index is created until a repository query exists. |
+| `inbox` | Consumer deduplication record written in the same transaction as a projection update. | Primary key `(consumer_name, event_id)` provides uniqueness and the lookup index. Consumer name is nonblank, event identity is UUID, and receipt time is non-negative. |
+
+## Phase-gate verification
+
+- Each service has exactly one active versioned V1 migration and a focused H2
+  clean-install test that also proves a second `migrate` does not add a versioned
+  history row.
+- The tests insert invalid reservation, risk, outbox, and projection values and
+  assert constraint rejection.
+- `scripts/run-flyway-ci-checks.sh` provisions an empty PostgreSQL database per
+  owner, invokes migrate twice, and asserts the owner tables and successful
+  history entry.
+- `scripts/check-flyway-query-plans.sh` uses `EXPLAIN (COSTS OFF)` with
+  sequential scans disabled to verify the actual PostgreSQL index plan for each
+  named repository or CDC query. The reset deliberately removes speculative
+  account and projection indexes.
+
+## Rollback
+
+`phase-4-pre-flyway-reset` is the immutable Git checkpoint for the former
+migration chains. Restore that tag's migration directories and recreate only
+disposable development schemas; never baseline an unexpectedly nonempty schema.

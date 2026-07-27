@@ -345,32 +345,32 @@ Rollback:
 
 ### Phase 4: Reset Flyway histories into typed V1 schemas
 
-- [ ] Commit 4.1: Add a reviewed data dictionary containing business meaning,
+- [x] Commit 4.1: Add a reviewed data dictionary containing business meaning,
   units, ranges, nullability, constraints, and query ownership.
-- [ ] Commit 4.2: Tag or otherwise checkpoint the old migration histories before
+- [x] Commit 4.2: Tag or otherwise checkpoint the old migration histories before
   active scripts are replaced.
-- [ ] Commit 4.3: Replace the account migration chain with one typed V1 schema
+- [x] Commit 4.3: Replace the account migration chain with one typed V1 schema
   and clean-install migration test.
-- [ ] Commit 4.4: Replace the risk migration chain with one typed V1 schema and
+- [x] Commit 4.4: Replace the risk migration chain with one typed V1 schema and
   clean-install migration test.
-- [ ] Commit 4.5: Replace the persistence migration chain with one typed V1
+- [x] Commit 4.5: Replace the persistence migration chain with one typed V1
   schema and clean-install migration test.
-- [ ] Commit 4.6: Add consistent inbox tables and uniqueness constraints to
+- [x] Commit 4.6: Add consistent inbox tables and uniqueness constraints to
   database-writing consumers.
-- [ ] Commit 4.7: Add the binary outbox table shape to event-originating
+- [x] Commit 4.7: Add the binary outbox table shape to event-originating
   services.
-- [ ] Commit 4.8: Replace legacy-upgrade tests with empty-schema and invariant
+- [x] Commit 4.8: Replace legacy-upgrade tests with empty-schema and invariant
   tests.
-- [ ] Commit 4.9: Disable permissive baseline-on-migrate behavior for ordinary
+- [x] Commit 4.9: Disable permissive baseline-on-migrate behavior for ordinary
   clean installations.
-- [ ] Commit 4.10: Update Flyway smoke checks and schema documentation for the
+- [x] Commit 4.10: Update Flyway smoke checks and schema documentation for the
   reset.
 
 Phase gate:
 
-- [ ] Every service migrates from an empty database.
-- [ ] Re-running migrate is a no-op.
-- [ ] Constraints reject invalid business values.
+- [x] Every service migrates from an empty database.
+- [x] Re-running migrate is a no-op.
+- [x] Constraints reject invalid business values.
 - [ ] Repository queries have justified indexes and reviewed plans.
 
 Rollback:

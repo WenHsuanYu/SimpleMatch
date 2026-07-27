@@ -103,7 +103,7 @@ flyway_service_smoke_tables() {
       printf '%s\n' account_limits account_positions account_reservations
       ;;
     persistence)
-      printf '%s\n' orders executions processed_events
+      printf '%s\n' orders executions inbox
       ;;
     risk-service)
       printf '%s\n' outbox risk_submissions

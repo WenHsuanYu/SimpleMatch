@@ -94,11 +94,15 @@ while IFS= read -r service_name; do
   reset_service_database "$database_name"
   set_service_flyway_env "$service_name" "$database_name"
 
-  echo "Running Flyway info and migrate for $service_name..."
-  ./gradlew --no-daemon --stacktrace \
+  echo "Running Flyway info and migrate twice for $service_name..."
+  ./gradlew -q --no-daemon --stacktrace \
     "${task_prefix}FlywayInfo" \
+    "${task_prefix}FlywayMigrate"
+
+  ./gradlew -q --no-daemon --stacktrace \
     "${task_prefix}FlywayMigrate"
 
   echo "Running PostgreSQL smoke assertions for $service_name..."
   assert_service_tables "$service_name" "$database_name"
+  bash "$repo_root/scripts/check-flyway-query-plans.sh" "$database_name" "$service_name"
 done < <(flyway_known_services)

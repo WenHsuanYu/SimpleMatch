@@ -1,6 +1,7 @@
 package com.simplematch.persistence.store;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 import java.util.UUID;
 import org.flywaydb.core.Flyway;
@@ -12,36 +13,74 @@ import org.springframework.jdbc.datasource.DriverManagerDataSource;
 class PersistenceFlywayMigrationTest {
   private static final String SCHEMA_NAME = "PERSISTENCE";
 
-  @DisplayName("Flyway migration creates the persistence projection tables")
+  @DisplayName("an empty database receives the complete persistence V1 schema")
   @Test
-  void migrateCreatesProjectionTables() {
+  void migrateEmptyDatabaseCreatesProjectionAndInboxTables() {
+    final JdbcTemplate jdbcTemplate = new JdbcTemplate(newDataSource());
+
+    migrate(jdbcTemplate.getDataSource());
+
+    assertThat(hasTable(jdbcTemplate, "ORDERS")).isTrue();
+    assertThat(hasTable(jdbcTemplate, "EXECUTIONS")).isTrue();
+    assertThat(hasTable(jdbcTemplate, "INBOX")).isTrue();
+    assertThat(appliedMigrationCount(jdbcTemplate)).isEqualTo(1);
+  }
+
+  @DisplayName("a second persistence migration is a no-op")
+  @Test
+  void repeatedMigrateIsNoOp() {
+    final JdbcTemplate jdbcTemplate = new JdbcTemplate(newDataSource());
+
+    migrate(jdbcTemplate.getDataSource());
+    final int migrationsAfterFirstRun = appliedMigrationCount(jdbcTemplate);
+    migrate(jdbcTemplate.getDataSource());
+
+    assertThat(appliedMigrationCount(jdbcTemplate)).isEqualTo(migrationsAfterFirstRun);
+  }
+
+  @DisplayName("projection constraints reject invalid quantities")
+  @Test
+  void constraintsRejectInvalidBusinessValues() {
+    final JdbcTemplate jdbcTemplate = new JdbcTemplate(newDataSource());
+    migrate(jdbcTemplate.getDataSource());
+
+    assertThatThrownBy(
+            () ->
+                jdbcTemplate.update(
+                    """
+                    INSERT INTO persistence.orders (
+                      order_id, account_id, symbol, shard_id, side, order_type, tif, qty, status,
+                      state_version, sender_comp_id, target_comp_id, cl_ord_id, created_at_unix_ms,
+                      updated_at_unix_ms
+                    ) VALUES ('order-1', 'account-1', '2330', 0, 'SIDE_BUY', 'ORDER_TYPE_LIMIT',
+                      'TIME_IN_FORCE_ROD', 0, 'NEW', 0, 'CLIENT', 'SIMPLEMATCH', 'clord-1', 1, 1)
+                    """))
+        .isInstanceOf(RuntimeException.class);
+  }
+
+  private DriverManagerDataSource newDataSource() {
     final DriverManagerDataSource dataSource = new DriverManagerDataSource();
     dataSource.setDriverClassName("org.h2.Driver");
-    dataSource.setUrl(
-        "jdbc:h2:mem:"
-            + UUID.randomUUID()
-            + ";MODE=PostgreSQL;DB_CLOSE_DELAY=-1;INIT=CREATE SCHEMA IF NOT EXISTS persistence\\;SET SCHEMA persistence");
-    final JdbcTemplate jdbcTemplate = new JdbcTemplate(dataSource);
+    dataSource.setUrl("jdbc:h2:mem:" + UUID.randomUUID() + ";MODE=PostgreSQL;DB_CLOSE_DELAY=-1");
+    return dataSource;
+  }
 
+  private void migrate(javax.sql.DataSource dataSource) {
     Flyway.configure()
-        .baselineOnMigrate(true)
-        .baselineVersion("1")
         .dataSource(dataSource)
         .locations("classpath:db/migration/persistence")
         .load()
         .migrate();
+  }
 
-    assertThat(hasTable(jdbcTemplate, "ORDERS")).isTrue();
-    assertThat(hasTable(jdbcTemplate, "EXECUTIONS")).isTrue();
-    assertThat(hasTable(jdbcTemplate, "PROCESSED_EVENTS")).isTrue();
-
-    assertThat(hasColumn(jdbcTemplate, "ORDERS", "SOURCE_SESSION_ID")).isFalse();
-    assertThat(hasColumn(jdbcTemplate, "ORDERS", "CLIENT_ORDER_ID")).isFalse();
-    assertThat(hasColumn(jdbcTemplate, "ORDERS", "SENDER_COMP_ID")).isTrue();
-    assertThat(hasColumn(jdbcTemplate, "ORDERS", "TARGET_COMP_ID")).isTrue();
-    assertThat(hasColumn(jdbcTemplate, "ORDERS", "CL_ORD_ID")).isTrue();
-    assertThat(hasColumn(jdbcTemplate, "EXECUTIONS", "FILL_QTY")).isTrue();
-    assertThat(hasColumn(jdbcTemplate, "PROCESSED_EVENTS", "CONSUMER_NAME")).isTrue();
+  private int appliedMigrationCount(JdbcTemplate jdbcTemplate) {
+    return jdbcTemplate.queryForObject(
+        """
+        SELECT COUNT(*)
+        FROM "flyway_schema_history"
+        WHERE "success" AND "version" IS NOT NULL
+        """,
+        Integer.class);
   }
 
   private boolean hasTable(JdbcTemplate jdbcTemplate, String tableName) {
@@ -55,22 +94,6 @@ class PersistenceFlywayMigrationTest {
             Integer.class,
             SCHEMA_NAME,
             tableName)
-        > 0;
-  }
-
-  private boolean hasColumn(JdbcTemplate jdbcTemplate, String tableName, String columnName) {
-    return jdbcTemplate.queryForObject(
-            """
-            SELECT COUNT(*)
-            FROM INFORMATION_SCHEMA.COLUMNS
-            WHERE UPPER(TABLE_SCHEMA) = ?
-              AND UPPER(TABLE_NAME) = ?
-              AND UPPER(COLUMN_NAME) = ?
-            """,
-            Integer.class,
-            SCHEMA_NAME,
-            tableName,
-            columnName)
         > 0;
   }
 }

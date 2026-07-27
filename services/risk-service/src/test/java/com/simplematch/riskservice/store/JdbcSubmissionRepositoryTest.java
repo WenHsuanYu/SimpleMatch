@@ -34,8 +34,6 @@ class JdbcSubmissionRepositoryTest {
         + ";MODE=PostgreSQL;DB_CLOSE_DELAY=-1;INIT=CREATE SCHEMA IF NOT EXISTS risk_service\\;SET SCHEMA risk_service");
     jdbcTemplate = new JdbcTemplate(dataSource);
     Flyway.configure()
-        .baselineOnMigrate(true)
-        .baselineVersion("1")
         .dataSource(dataSource)
         .locations("classpath:db/migration/risk-service")
         .load()

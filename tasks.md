@@ -7,7 +7,7 @@
 > - 語言：polyglot（Java/Spring 為主；`matching-engine` 保留 C++20）
 > - 核心業務資料面：gRPC + Kafka；其中 gRPC 承載同步准入 / 查詢依賴，Kafka 承載非同步保序事件流
 > - 營運控制面：配置 / 調度 / 策略下發另行處理，不在本 checklist 的交易主線範圍內
-> - System-of-record：PostgreSQL（含 outbox / processed_events）
+> - System-of-record：PostgreSQL（含 outbox / inbox）
 > - Read model：Redis（**Redis-first 查詢首選**；屬可重建 projection，權威仍在 DB/`account-service`）
 > - 對外：QuickFix/J（Java，FIX 4.4，`quickfix-gateway` 作為 Acceptor）、gRPC streaming（marketdata-streamer）
 > - Observability：OpenTelemetry + Prometheus + Grafana + Alertmanager
@@ -66,7 +66,7 @@
   - [ ] offset commit 策略可選：sync/async
   - [ ] 指標：poll latency、commit latency、consumer lag（可從 librdkafka 統計/自算）
 
-### 1.3 Postgres 存取層（含 outbox / processed_events）
+### 1.3 Postgres 存取層（含 outbox / inbox）
 
 > 現況：`shared-java/` 尚無共用 JDBC / transaction / outbox / processed-events module；目前僅見 service-local 實作，例如 `risk-service` 內的 `JdbcSubmissionRepository`、`JdbcOutboxRepository` 與 `TransactionTemplate` wiring。
 
@@ -158,7 +158,7 @@
 
 ### 3.2 Postgres schema（最小可跑）
 
-> 現況：`risk-service` / `account-service` / `persistence` 三個 owner schema 的 migration SQL 與 Flyway 測試都已存在，並且與 [docs/database-architecture.md](docs/database-architecture.md) 對齊；routing / config tables 仍完全未落地。owner-schema-first 也已被寫入 `docs/database-architecture.md` 與 repo root `AGENTS.md`，作為後續新增持久化服務的 guardrail，而不是已結束的一次性 rollout。
+> 現況：`risk-service` / `account-service` / `persistence` 各自只有一個從空資料庫安裝的 typed V1 migration，並由 clean-install、no-op 和 constraint tests 驗證；欄位字典、索引審查與 rollback checkpoint 見 [Phase 4 data dictionary](docs/phase-4-data-dictionary.md)。routing / config tables 仍完全未落地。owner-schema-first 也已被寫入 `docs/database-architecture.md` 與 repo root `AGENTS.md`，作為後續新增持久化服務的 guardrail，而不是已結束的一次性 rollout。
 
 - [x] 架構決策已固定：採 **單一 PostgreSQL instance + 每服務各自 schema owner**；細節、實作觸點與 checklist 見 [docs/database-architecture.md](docs/database-architecture.md)
 - [ ] follow-up：後續若新增新的持久化服務，或讓既有服務加入新的 JDBC runtime / connector 觸點，必須從第一個 migration 起就採 schema-qualified owner model
@@ -175,7 +175,7 @@
   - [x] `orders`（projection/read-model；含 `sender_comp_id`, `target_comp_id`, `cl_ord_id/ClOrdID` 的 UNIQUE）
     - 現況：此約束已與 gateway/risk-service 的 FIX-facing identity naming 對齊；projection 仍以 `order_id` 作為權威狀態主鍵。
   - [x] `executions`（`UNIQUE(order_id, exec_id)`）
-  - [x] `processed_events`（`(consumer_name, event_id)` PK）
+  - [x] `inbox`（`(consumer_name, event_id)` PK）
 - [x] `persistence` migration 已顯式落在 `persistence` schema，migration test 也已在 owner schema 下驗證
 - [ ] routing / config schema
   - [ ] `symbol_routing`（symbol→shard/partition；可選但建議；MVP 可先不建表）
@@ -187,12 +187,11 @@
 - [x] `simplematch.flyway-service` 已支援 per-service schema 設定（`schemaName` + service-scoped property / env override），並把 Flyway `defaultSchema` / `schemas` 對齊到 owner schema
 - [x] `risk-service` / `account-service` / `persistence` build script 已明確宣告 owner schema
 
-- [x] `risk-service` 已接入 `simplematch.flyway-service`，並以 versioned migration 管理 `risk_submissions` + local `outbox`
-- [x] `risk-service` 已新增 `kafka_partition_id` migration，讓 Debezium 可使用 explicit partition placement
+- [x] `risk-service` 已接入 `simplematch.flyway-service`，並以 typed V1 migration 管理 `risk_submissions` + binary local `outbox`（含 `kafka_partition_id`）
 - [x] `account-service` 接入 `simplematch.flyway-service`
 - [x] `account-service` 初始 migration：`account_limits`, `account_positions`, `account_reservations`
 - [x] `persistence` 接入 `simplematch.flyway-service`
-- [x] `persistence` 初始 migration：`orders`, `executions`, `processed_events`
+- [x] `persistence` typed V1 migration：`orders`, `executions`, `inbox`
 - [ ] `matching-engine` / WAL loader-ingester 決定 schema owner 後接入 Flyway
   - [ ] 若 `matching-engine` 自有 PostgreSQL / outbox，建立 service-local result journal / `outbox`
   - [ ] 若 `executions` 最終由 `persistence` 單獨落地，避免在 `matching-engine` 端重複定義 read-model tables
@@ -255,14 +254,14 @@
 - [x] `FixParser::ParseCancelRequest()` → `OrderCommand{type=CANCEL}`
 - [x] 正規化欄位：symbol、side、qty、price、order_type、tif
 - [x] `command_id` 生成策略收斂：gateway ingress 改以 `UuidV7()` 產生 `OrderCommand.command_id`（第一階段先維持 proto / gRPC / DB 欄位型別為字串，且不與 `request_id` / `command_id` rename 綁在同一個 slice）
-- [x] `risk-service` internal outbox UUID 收斂：`risk_service.outbox.event_id` 與 `risk_service.risk_submissions.outbox_event_id` 已透過 Flyway `V9` 升為 PostgreSQL `UUID`，repository 端改用 UUID binding；`request_id` / `command_id` 仍暫留在 string contract slice
+- [x] `risk-service` internal outbox UUID 收斂：`risk_service.outbox.event_id` 與 `risk_service.risk_submissions.outbox_event_id` 已在 typed Flyway `V1` 定義為 PostgreSQL `UUID`，repository 端使用 UUID binding；`request_id` / `command_id` 仍暫留在 string contract slice
 - [x] `risk-service` validator 先行攔截 oversized `request_id` / `order_id`：`SubmissionValidator` 已將這兩條路徑從 DB-driven rollback 改為應用層 rejection，並同步更新 unit/integration tests
 - [x] `risk-service` validator 已補齊 non-UUID `request_id` ingress validation：`SubmissionValidator` 現在會對非 UUID `request_id` 回 `INVALID_REQUEST_ID` rejection，且 `risk-service` repo-local tests 已把 legacy `cmd-*` fixture 收斂為 UUID-shaped command ids
 - [x] `risk-service` validator 先行攔截缺失與 oversized `sender_comp_id` / `target_comp_id`：對 business-key session identity 改為應用層 rejection，且 rejected persistence path 以 deterministic digest surrogate 保存 dedup 所需欄位，避免 DB 長度例外
 - [x] `risk-service` oversized `symbol` 路徑改為應用層 rejection：validator 先回 `OVERSIZED_SYMBOL`，outbox `message_key` / partition fallback 改以 safe key（優先 `order_id`，否則 default partition）避免 rejected outbox 再次因 symbol 長度寫失敗
-- [x] `cl_ord_id` / `orig_cl_ord_id` 的應用層長度驗證已落地：`risk-service` 以 raw-vs-persisted strategy + Flyway `V10` 新增 `raw_cl_ord_id` / `raw_orig_cl_ord_id`；gRPC response 保留 raw 值，`risk_submissions.cl_ord_id` 繼續承擔 dedup/business-key persisted 值
-  - [x] surrogate redesign：`risk-service` 已透過 Flyway `V11` 把 rejected business-key surrogate 收斂成 64-char SHA-256 digest，並新增 `business_key_surrogated` 旗標避免和 accepted raw key 撞值；`sender_comp_id` / `target_comp_id` / `cl_ord_id` 不再被 surrogate 格式卡住 `VARCHAR(64)` 收斂，詳見 `docs/field-typing-phase2-gates.md`
-  - [x] follow-up gate：`orig_cl_ord_id` 新寫入已改成 64-char compact digest，但是否存在需要從 pre-`V11` 舊資料回填的 legacy row，仍需 live DB profiling 確認；詳見 `docs/field-typing-phase2-gates.md`
+- [x] `cl_ord_id` / `orig_cl_ord_id` 的應用層長度驗證已落地：`risk-service` 的 typed Flyway `V1` 包含 raw-vs-persisted strategy 所需的 `raw_cl_ord_id` / `raw_orig_cl_ord_id`；gRPC response 保留 raw 值，`risk_submissions.cl_ord_id` 繼續承擔 dedup/business-key persisted 值
+  - [x] surrogate redesign：typed Flyway `V1` 直接定義 64-char SHA-256 rejected business-key surrogate 與 `business_key_surrogated` 旗標，避免和 accepted raw key 撞值；詳見 `docs/field-typing-phase2-gates.md`
+  - [x] follow-up gate：重建 schema 不含 pre-reset legacy rows；任何保留舊資料的環境必須在切換前完成 live DB profile/backfill，詳見 `docs/field-typing-phase2-gates.md`
 - [x] `quickfix-gateway` ingress precheck 已在 WAL 前攔截 oversized FIX identity：`InboundFixMessageHandler` 先檢查 `sender_comp_id` / `target_comp_id` / `cl_ord_id` / `orig_cl_ord_id` 的 64 字元上限，直接回 FIX reject，不再把 oversized 請求送進 WAL、`risk-service` 或 compatibility publish
 - [ ] `order_id` canonical identity 決策與收斂（目前 gateway 以 `O-<ClOrdID>` 派生並對外回報；若要演進成 opaque internal id，需同步調整 FIX `OrderID(37)` 映射與 cross-service 契約）
   - [x] Phase 2 repo-local gate finding：現行 `O-<ClOrdID>` derivation 代表 `order_id` 既不是 UUID，也可能在 `ClOrdID=64` 時長到 66 chars；因此目前不能直接收斂到 native UUID 或 `VARCHAR(64)`，詳見 `docs/field-typing-phase2-gates.md`
@@ -419,15 +418,15 @@
 
 ## 4.4 `persistence`（sink / projection builder）
 
-> Spring Boot module、owner schema、`orders` / `executions` / `processed_events` tables 已存在；交叉驗證結果顯示目前只有 Spring Boot entrypoint + Flyway migration/test baseline，build 尚未引入 `spring-kafka` 或 Redis runtime，因此仍缺 Kafka consumer、projection writer 與完整 actuator 暴露。
+> Spring Boot module、owner schema、`orders` / `executions` / `inbox` tables 已存在；交叉驗證結果顯示目前只有 Spring Boot entrypoint + Flyway migration/test baseline，build 尚未引入 `spring-kafka` 或 Redis runtime，因此仍缺 Kafka consumer、projection writer 與完整 actuator 暴露。
 
 ### 4.4.1 Kafka consumer：`matching.executions`
 
 - [ ] 反序列化 ExecutionEvent
-- [ ] Idempotency：`ProcessedEventsRepo::TryMarkProcessed(consumer=persistence, event_id/exec_id)`
-  - [x] `processed_events` table schema 已存在
+- [ ] Idempotency：`InboxRepo::TryMarkProcessed(consumer=persistence, event_id/exec_id)`
+  - [x] `inbox` table schema 已存在
   - [x] raw column audit：目前 `persistence` 只有 projection / idempotency schema，尚未有會把 FIX identity 從 DB 回吐成同步 contract 的 runtime；Phase 1 保持 bounded persisted 欄位即可，不需要複製 `risk-service` 的 `raw_*` 欄位模式
-  - [x] Phase 2 repo-local gate finding：`processed_events.event_id` 與 `orders.last_command_id` 目前都缺少 workspace 內的 writer runtime 證據，所以 native UUID migration gate 仍是 blocked；詳見 `docs/field-typing-phase2-gates.md`
+  - [x] Phase 2 repo-local gate finding：`inbox.event_id` 已在 typed V1 為 UUID；`orders.last_command_id` 仍缺 workspace 內的 writer runtime 證據，詳見 `docs/field-typing-phase2-gates.md`
 
 ### 4.4.2 batch commit
 
@@ -597,8 +596,8 @@
 - [x] topic routing：outbox.topic 欄位 → Kafka topic
 - [ ] at-least-once 期望：consumer 冪等必做
   - [x] `quickfix-gateway` 消費 `matching.executions` 時已以 `exec_id` 做 in-memory 去重
-  - [x] `persistence` schema 已有 `processed_events` table
-  - [ ] `persistence` / `account-service` 的 consumer runtime 與 durable processed-events DAO 尚未落地
+  - [x] `persistence` schema 已有 `inbox` table
+  - [ ] `persistence` / `account-service` 的 consumer runtime 與 durable inbox DAO 尚未落地
 - [ ] 監控：connector lag、error rate
   - [ ] repo 未見 connector status / lag / error-rate 指標、Prometheus rule 或 dashboard
 

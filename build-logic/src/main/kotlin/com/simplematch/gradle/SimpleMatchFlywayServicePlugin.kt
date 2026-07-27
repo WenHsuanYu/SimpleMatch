@@ -72,7 +72,7 @@ class SimpleMatchFlywayServicePlugin : Plugin<Project> {
           }
 
       flywayExtension.apply {
-        baselineOnMigrate = true
+        baselineOnMigrate = false
         this.baselineVersion = baselineVersion
         this.cleanDisabled = cleanDisabled
         locations = migrationLocations

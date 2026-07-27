@@ -60,8 +60,6 @@ class SubmissionServiceIntegrationTest {
     transactionTemplate = new TransactionTemplate(new DataSourceTransactionManager(dataSource));
     objectMapper = new ObjectMapper();
     Flyway.configure()
-      .baselineOnMigrate(true)
-      .baselineVersion("1")
       .dataSource(dataSource)
       .locations("classpath:db/migration/risk-service")
       .load()

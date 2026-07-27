@@ -18,14 +18,14 @@ Anything marked `conditional` or `blocked` still needs a live PostgreSQL profile
 
 | Field family | Current source of truth | Repo-local finding | Gate |
 | --- | --- | --- | --- |
-| `risk_service.outbox.event_id`, `risk_submissions.outbox_event_id` | `risk-service` outbox runtime already writes UUID values | already migrated to native `UUID` in `V9` | pass |
+| `risk_service.outbox.event_id`, `risk_submissions.outbox_event_id` | `risk-service` outbox runtime already writes UUID values | defined as native `UUID` in the clean-install typed `V1` | pass |
 | `request_id` in `risk-service` and `account-service` | `quickfix-gateway` now generates `command_id` with UUIDv7, and both services reject non-UUID `request_id` values at ingress | new gateway-originated traffic fits UUID; repo-local positive fixtures now align, but historical-data migration is not yet proven | conditional |
 | `order_id` in `risk-service`, `account-service`, and `persistence` | `quickfix-gateway` derives `order_id` as `O-<ClOrdID>` | not UUID-backed today; with `ClOrdID` capped at 64, derived `order_id` can reach 66 chars, so a direct `VARCHAR(64)` migration would truncate valid traffic | fail |
 | `reservation_id` in `account-service` | currently aligned with `order_id` | inherits the same non-UUID and >64 risk as `order_id` | fail |
 | `sender_comp_id`, `target_comp_id`, `cl_ord_id`, `orig_cl_ord_id` accepted traffic | `quickfix-gateway` ingress now rejects values over 64 chars before WAL | accepted-path traffic is ready for a 64-char bound | pass |
-| rejected `sender_comp_id`, `target_comp_id`, `cl_ord_id` rows in `risk_submissions` | `risk-service` `V11` compacts surrogates to 64-char SHA-256 digests and persists `business_key_surrogated` alongside the business key | rejected business-key rows now fit a future `VARCHAR(64)` shrink without colliding with accepted rows | pass |
-| rejected `orig_cl_ord_id` rows in `risk_submissions` | new writes now compact to a 64-char digest, but repo-local profiling still cannot prove whether pre-`V11` persisted values exist in real DBs | live DB profile/backfill check still required before shrinking legacy stored rows | conditional |
-| `persistence.processed_events.event_id` | consumer runtime not implemented in this workspace | schema is still `VARCHAR(255)` and no writer exists here to prove UUID-only input | blocked |
+| rejected `sender_comp_id`, `target_comp_id`, `cl_ord_id` rows in `risk_submissions` | typed `V1` compacts surrogates to 64-char SHA-256 digests and persists `business_key_surrogated` alongside the business key | rejected business-key rows now fit a future `VARCHAR(64)` shrink without colliding with accepted rows | pass |
+| rejected `orig_cl_ord_id` rows in `risk_submissions` | new writes compact to a 64-char digest; the clean reset has no pre-reset rows | retained-data environments still require live profiling/backfill before the reset | conditional |
+| `persistence.inbox.event_id` | consumer runtime is not implemented in this workspace | clean-install schema is native `UUID`; runtime proof remains a separate consumer-delivery concern | pass |
 | `persistence.orders.last_command_id` | intended to come from upstream command ids | runtime writer not implemented in this workspace; likely UUID-backed once populated from gateway command ids, but not yet proven end to end | blocked |
 
 ## Concrete Findings
@@ -81,13 +81,13 @@ Implication:
 
 - rejected `sender_comp_id`, `target_comp_id`, and `cl_ord_id` rows are now compatible with a future `VARCHAR(64)` shrink
 - accepted rows and surrogated rejected rows can coexist safely even when the persisted `cl_ord_id` text matches
-- `orig_cl_ord_id` is no longer a new-write blocker, but live DB profiling still has to confirm whether any pre-`V11` persisted values need backfill before a shrink
+- `orig_cl_ord_id` is no longer a new-write blocker, but retained-data environments still need profiling before reset
 
 ### 4. `persistence` gates are still partially blocked by missing runtime
 
 `persistence` already has the target schema surface, but this workspace does not yet contain the Kafka consumer / projection writer that would populate:
 
-- `processed_events.event_id`
+- `inbox.event_id`
 - `orders.last_command_id`
 
 Implication:
@@ -136,10 +136,10 @@ FROM account_service.account_reservations;
 SELECT
   COUNT(*) AS total_rows,
   COUNT(*) FILTER (
-    WHERE event_id !~* '^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$'
+    WHERE event_id::text !~* '^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$'
   ) AS non_uuid_event_id_rows,
-  MAX(char_length(event_id)) AS max_event_id_len
-FROM persistence.processed_events;
+  MAX(char_length(event_id::text)) AS max_event_id_len
+FROM persistence.inbox;
 
 SELECT
   COUNT(*) AS total_rows,
@@ -160,4 +160,4 @@ FROM persistence.orders;
 1. Keep `request_id` on the UUID migration path, but require live DB confirmation before changing column types.
 2. Keep `order_id` / `reservation_id` on an opaque UUIDv7 path only after gateway replaces `orderIdFor(clOrdId)` with canonical-id generation plus recoverable FIX-business-key lookup.
 3. Profile or backfill any legacy `orig_cl_ord_id` rows before shrinking persisted FIX identity columns in `risk-service`.
-4. Leave `persistence.processed_events.event_id` and `orders.last_command_id` in the `blocked` state until a writer runtime or real DB sample is available.
+4. Keep `orders.last_command_id` in the `blocked` state until a writer runtime or real DB sample is available; `persistence.inbox.event_id` is already UUID in typed V1.
