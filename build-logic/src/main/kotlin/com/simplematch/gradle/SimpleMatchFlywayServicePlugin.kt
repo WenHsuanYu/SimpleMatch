@@ -1,17 +1,17 @@
 package com.simplematch.gradle
 
-import java.net.URI
-import java.net.URISyntaxException
-import java.util.Locale
-import javax.inject.Inject
 import org.flywaydb.gradle.FlywayExtension
 import org.gradle.api.Plugin
 import org.gradle.api.Project
 import org.gradle.api.model.ObjectFactory
 import org.gradle.api.provider.ListProperty
 import org.gradle.api.provider.Property
-import org.gradle.kotlin.dsl.configure
+import org.gradle.api.provider.ProviderFactory
 import org.gradle.kotlin.dsl.create
+import java.net.URI
+import java.net.URISyntaxException
+import java.util.*
+import javax.inject.Inject
 
 abstract class SimpleMatchFlywayExtension @Inject constructor(objects: ObjectFactory) {
   val serviceName: Property<String> = objects.property(String::class.java)
@@ -30,30 +30,51 @@ class SimpleMatchFlywayServicePlugin : Plugin<Project> {
     project.pluginManager.apply("org.flywaydb.flyway")
 
     val extension = project.extensions.create<SimpleMatchFlywayExtension>("simpleMatchFlyway")
+    val providers = project.providers
+    val flywayExtension = project.extensions.getByType(FlywayExtension::class.java)
 
     project.afterEvaluate {
-      val configuredServiceName = extension.serviceName.orNull
-          ?: throw IllegalStateException("simpleMatchFlyway.serviceName must be configured for ${project.path}")
-      val migrationLocations = extension.migrationLocations.orNull
-          ?.takeIf { it.isNotEmpty() }
-          ?: throw IllegalStateException("simpleMatchFlyway.migrationLocations must be configured for ${project.path}")
-      val configuredBaselineVersion = extension.baselineVersion.orNull
-          ?: throw IllegalStateException("simpleMatchFlyway.baselineVersion must be configured for ${project.path}")
-      val configuredSchemaName = resolveSchema(project, configuredServiceName, extension)
+      val configuredServiceName = extension.serviceName.get()
+      val migrationLocations = extension.migrationLocations.get().toTypedArray()
+      val baselineVersion = extension.baselineVersion.get()
+      val fallbackSchemaName = extension.schemaName.orNull?.takeIf { it.isNotBlank() }
+      val defaultCleanDisabled = extension.cleanDisabled.get()
+      val schemaName = resolveSchema(providers, configuredServiceName, fallbackSchemaName)
+      val cleanDisabled = resolveCleanDisabled(providers, configuredServiceName, defaultCleanDisabled)
 
-      project.extensions.configure(FlywayExtension::class.java) {
+      var connection: FlywayConnection? = null
+      if (isFlywayTaskRequested(project, configuredServiceName)) {
+        connection = resolveConnection(providers, configuredServiceName, project.path)
+      }
+
+      flywayExtension.apply {
         baselineOnMigrate = true
-        baselineVersion = configuredBaselineVersion
-        cleanDisabled = resolveCleanDisabled(project, configuredServiceName, extension)
-        locations = migrationLocations.toTypedArray()
-        if (configuredSchemaName != null) {
-          defaultSchema = configuredSchemaName
-          schemas = arrayOf(configuredSchemaName)
+        this.baselineVersion = baselineVersion
+        this.cleanDisabled = cleanDisabled
+        locations = migrationLocations
+        if (connection != null) {
+          url = connection.jdbcUrl
+          user = connection.username
+          password = connection.password
+        }
+        if (schemaName != null) {
+          defaultSchema = schemaName
+          schemas = arrayOf(schemaName)
         }
       }
 
       configureFlywayTasks(project, configuredServiceName, extension)
       registerRootTasks(project, configuredServiceName)
+    }
+  }
+
+  private fun isFlywayTaskRequested(project: Project, serviceName: String): Boolean {
+    val serviceTaskPrefix = serviceName.lowercase(Locale.ROOT) + "flyway"
+    return project.gradle.startParameter.taskNames.any { requested ->
+      val normalized = requested.substringAfterLast(':').lowercase(Locale.ROOT)
+      requested.startsWith(project.path + ":flyway")
+          || normalized.startsWith(serviceTaskPrefix)
+          || normalized.startsWith("flyway") && normalized.endsWith("all")
     }
   }
 
@@ -63,33 +84,16 @@ class SimpleMatchFlywayServicePlugin : Plugin<Project> {
       extension: SimpleMatchFlywayExtension) {
     project.tasks.matching { it.name.startsWith("flyway") }.configureEach {
       group = "database"
-      doFirst {
-        val connection = resolveConnection(project, serviceName)
-        val schemaName = resolveSchema(project, serviceName, extension)
-        project.extensions.configure(FlywayExtension::class.java) {
-          baselineOnMigrate = true
-          baselineVersion = extension.baselineVersion.get()
-          cleanDisabled = resolveCleanDisabled(project, serviceName, extension)
-          locations = extension.migrationLocations.get().toTypedArray()
-          url = connection.jdbcUrl
-          user = connection.username
-          password = connection.password
-          if (schemaName != null) {
-            defaultSchema = schemaName
-            schemas = arrayOf(schemaName)
-          }
-        }
-      }
     }
   }
 
   private fun resolveSchema(
-      project: Project,
+      providers: ProviderFactory,
       serviceName: String,
-      extension: SimpleMatchFlywayExtension): String? {
+      fallbackSchemaName: String?): String? {
     val envPrefix = serviceNameToEnvPrefix(serviceName)
-    return propertyOrEnv(project, "${serviceName}FlywaySchema", "${envPrefix}_FLYWAY_SCHEMA")
-        ?: extension.schemaName.orNull?.takeIf { it.isNotBlank() }
+    return propertyOrEnv(providers, "${serviceName}FlywaySchema", "${envPrefix}_FLYWAY_SCHEMA")
+        ?: fallbackSchemaName
   }
 
   private fun registerRootTasks(project: Project, serviceName: String) {
@@ -125,36 +129,39 @@ class SimpleMatchFlywayServicePlugin : Plugin<Project> {
     }
   }
 
-  private fun resolveConnection(project: Project, serviceName: String): FlywayConnection {
+  private fun resolveConnection(
+      providers: ProviderFactory,
+      serviceName: String,
+      projectPath: String): FlywayConnection {
     val envPrefix = serviceNameToEnvPrefix(serviceName)
-    val dsn = propertyOrEnv(project, "${serviceName}FlywayDsn", "${envPrefix}_FLYWAY_DSN")
-        ?: propertyOrEnv(project, "flywayDsn", "SIMPLEMATCH_POSTGRES_DSN")
+    val dsn = propertyOrEnv(providers, "${serviceName}FlywayDsn", "${envPrefix}_FLYWAY_DSN")
+        ?: propertyOrEnv(providers, "flywayDsn", "SIMPLEMATCH_POSTGRES_DSN")
     if (dsn != null) {
       return parseDsn(dsn)
     }
 
-    val jdbcUrl = propertyOrEnv(project, "${serviceName}FlywayJdbcUrl", "${envPrefix}_FLYWAY_JDBC_URL")
-        ?: propertyOrEnv(project, "flywayJdbcUrl", "FLYWAY_JDBC_URL")
-        ?: propertyOrEnv(project, "flywayUrl", "FLYWAY_URL")
+    val jdbcUrl = propertyOrEnv(providers, "${serviceName}FlywayJdbcUrl", "${envPrefix}_FLYWAY_JDBC_URL")
+        ?: propertyOrEnv(providers, "flywayJdbcUrl", "FLYWAY_JDBC_URL")
+        ?: propertyOrEnv(providers, "flywayUrl", "FLYWAY_URL")
         ?: throw IllegalStateException(
-            "Missing Flyway connection settings for ${project.path}; set -P${serviceName}FlywayDsn, "
+            "Missing Flyway connection settings for ${projectPath}; set -P${serviceName}FlywayDsn, "
                 + "-P${serviceName}FlywayJdbcUrl, or the matching environment variables.")
 
     return FlywayConnection(
         jdbcUrl,
-        propertyOrEnv(project, "${serviceName}FlywayUsername", "${envPrefix}_FLYWAY_USERNAME")
-            ?: propertyOrEnv(project, "flywayUsername", "FLYWAY_USERNAME")
-            ?: propertyOrEnv(project, "flywayUser", "FLYWAY_USER"),
-        propertyOrEnv(project, "${serviceName}FlywayPassword", "${envPrefix}_FLYWAY_PASSWORD")
-            ?: propertyOrEnv(project, "flywayPassword", "FLYWAY_PASSWORD"))
+        propertyOrEnv(providers, "${serviceName}FlywayUsername", "${envPrefix}_FLYWAY_USERNAME")
+            ?: propertyOrEnv(providers, "flywayUsername", "FLYWAY_USERNAME")
+            ?: propertyOrEnv(providers, "flywayUser", "FLYWAY_USER"),
+        propertyOrEnv(providers, "${serviceName}FlywayPassword", "${envPrefix}_FLYWAY_PASSWORD")
+            ?: propertyOrEnv(providers, "flywayPassword", "FLYWAY_PASSWORD"))
   }
 
   private fun resolveCleanDisabled(
-      project: Project,
+      providers: ProviderFactory,
       serviceName: String,
-      extension: SimpleMatchFlywayExtension): Boolean {
+      defaultCleanDisabled: Boolean): Boolean {
     val envPrefix = serviceNameToEnvPrefix(serviceName)
-    val allowClean = propertyOrEnv(project, "${serviceName}FlywayAllowClean", "${envPrefix}_FLYWAY_ALLOW_CLEAN")
+    val allowClean = propertyOrEnv(providers, "${serviceName}FlywayAllowClean", "${envPrefix}_FLYWAY_ALLOW_CLEAN")
         ?.lowercase(Locale.ROOT)
         ?.let { value ->
           when (value) {
@@ -164,17 +171,16 @@ class SimpleMatchFlywayServicePlugin : Plugin<Project> {
                 "Invalid boolean for ${serviceName}FlywayAllowClean/${envPrefix}_FLYWAY_ALLOW_CLEAN: $value")
           }
         }
-    return if (allowClean == true) false else extension.cleanDisabled.get()
+        return if (allowClean == true) false else defaultCleanDisabled
   }
 
-  private fun propertyOrEnv(project: Project, propertyName: String, envName: String): String? {
-    val propertyValue = project.findProperty(propertyName) as String?
-    if (!propertyValue.isNullOrBlank()) {
-      return propertyValue
-    }
-    val environmentValue = System.getenv(envName)
-    return environmentValue?.takeIf { it.isNotBlank() }
-  }
+  private fun propertyOrEnv(
+      providers: ProviderFactory,
+      propertyName: String,
+      envName: String
+  ): String? =
+      providers.gradleProperty(propertyName).orNull
+          ?: providers.environmentVariable(envName).orNull
 
   private fun parseDsn(rawValue: String): FlywayConnection {
     if (rawValue.startsWith("jdbc:")) {
