@@ -240,7 +240,7 @@ before the broader phase gate.
   missing deployables as target capabilities.
 - [x] Commit 0.3: Add black-box characterization tests for the current FIX new
   order, cancellation, risk response, durable submission, and outbox behavior.
-- [ ] Commit 0.4: Add a machine-checked compatibility inventory for current v1
+- [x] Commit 0.4: Add a machine-checked compatibility inventory for current v1
   Protobuf messages and field numbers.
 - [ ] Commit 0.5: Record the passing baseline validation results and known
   environment-only blockers.

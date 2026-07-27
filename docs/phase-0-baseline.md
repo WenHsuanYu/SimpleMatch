@@ -43,6 +43,9 @@ service.
 
 ## Completion Evidence
 
-Commit 0.3 is recorded by the QuickFIX characterization test. Commits 0.4 and
-0.5 add the v1 Protobuf compatibility inventory and validation evidence before
-the Phase 0 gate is closed.
+Commit 0.3 is recorded by the QuickFIX characterization test. Commit 0.4 adds
+the checked-in v1 message-field inventory at
+`shared-java/simplematch-contracts/src/test/resources/v1-protobuf-field-numbers.properties`.
+`V1ProtobufCompatibilityInventoryTest` compares that inventory with generated
+Protobuf descriptors and fails on a field addition, removal, rename, or number
+change. Commit 0.5 records validation evidence before the Phase 0 gate closes.
