@@ -1,8 +1,5 @@
 package com.simplematch.riskservice.grpc;
 
-import static org.assertj.core.api.Assertions.assertThat;
-import static com.simplematch.riskservice.testsupport.TestCommandIds.normalize;
-
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.simplematch.contracts.common.v1.EventMetadata;
 import com.simplematch.contracts.common.v1.OrderType;
@@ -20,9 +17,6 @@ import com.simplematch.riskservice.store.JdbcSubmissionRepository;
 import com.simplematch.riskservice.submission.SubmissionService;
 import com.simplematch.riskservice.submission.SubmissionValidator;
 import com.simplematch.riskservice.submission.TransactionalSubmissionService;
-import java.time.Clock;
-import java.time.LocalDate;
-import java.util.UUID;
 import org.flywaydb.core.Flyway;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
@@ -32,254 +26,261 @@ import org.springframework.jdbc.datasource.DataSourceTransactionManager;
 import org.springframework.jdbc.datasource.DriverManagerDataSource;
 import org.springframework.transaction.support.TransactionTemplate;
 
+import java.time.Clock;
+import java.time.LocalDate;
+import java.util.UUID;
+
+import static com.simplematch.riskservice.testsupport.TestCommandIds.normalize;
+import static org.assertj.core.api.Assertions.assertThat;
+
 class RiskGrpcServiceTest {
-  private static final long GATEWAY_CREATED_AT_UNIX_MS = 1711526950123L;
+    private static final long GATEWAY_CREATED_AT_UNIX_MS = 1711526950123L;
 
-  private JdbcTemplate jdbcTemplate;
-  private SubmissionService submissionService;
+    private JdbcTemplate jdbcTemplate;
+    private SubmissionService submissionService;
 
-  @BeforeEach
-  void setUp() {
-    final DriverManagerDataSource dataSource = new DriverManagerDataSource();
-    dataSource.setDriverClassName("org.h2.Driver");
-    dataSource.setUrl(
-      "jdbc:h2:mem:"
-        + UUID.randomUUID()
-        + ";MODE=PostgreSQL;DB_CLOSE_DELAY=-1;INIT=CREATE SCHEMA IF NOT EXISTS risk_service\\;SET SCHEMA risk_service");
-    jdbcTemplate = new JdbcTemplate(dataSource);
-    Flyway.configure()
-      .dataSource(dataSource)
-      .locations("classpath:db/migration/risk-service")
-      .load()
-      .migrate();
-    submissionService = new TransactionalSubmissionService(
-        new SubmissionValidator(Clock.systemUTC()),
-        new SubmissionOutboxFactory(new ObjectMapper(), "orders.validated"),
-        new JdbcSubmissionRepository(jdbcTemplate),
-        new JdbcOutboxRepository(jdbcTemplate),
-        new TransactionTemplate(new DataSourceTransactionManager(dataSource)));
-  }
+    @BeforeEach
+    void setUp() {
+        final DriverManagerDataSource dataSource = new DriverManagerDataSource();
+        dataSource.setDriverClassName("org.h2.Driver");
+        dataSource.setUrl(
+                "jdbc:h2:mem:"
+                        + UUID.randomUUID()
+                        + ";MODE=PostgreSQL;DB_CLOSE_DELAY=-1;INIT=CREATE SCHEMA IF NOT EXISTS risk_service\\;SET SCHEMA risk_service");
+        jdbcTemplate = new JdbcTemplate(dataSource);
+        Flyway.configure()
+                .dataSource(dataSource)
+                .locations("classpath:db/migration/risk-service")
+                .load()
+                .migrate();
+        submissionService = new TransactionalSubmissionService(
+                new SubmissionValidator(Clock.systemUTC()),
+                new SubmissionOutboxFactory(new ObjectMapper(), "orders.validated"),
+                new JdbcSubmissionRepository(jdbcTemplate),
+                new JdbcOutboxRepository(jdbcTemplate),
+                new TransactionTemplate(new DataSourceTransactionManager(dataSource)));
+    }
 
     // Verify that submitOrder returns an accepted gRPC response after persistence succeeds.
     // Scenario: submit a valid new order and confirm the observer receives completion and the expected order data.
     @DisplayName("submitOrder returns an accepted response after persistence")
-  @Test
-  void submitOrderReturnsAcceptedResponseAfterPersistence() {
-      final RiskGrpcService service = new RiskGrpcService(submissionService);
-    final TestStreamObserver<SubmitOrderResponse> observer = new TestStreamObserver<>();
+    @Test
+    void submitOrderReturnsAcceptedResponseAfterPersistence() {
+        final RiskGrpcService service = new RiskGrpcService(submissionService);
+        final TestStreamObserver<SubmitOrderResponse> observer = new TestStreamObserver<>();
 
-    service.submitOrder(
-        SubmitOrderRequest.newBuilder().setCommand(newNewOrder("cmd-1", "O-C1", "C1")).build(),
-        observer);
+        service.submitOrder(
+                SubmitOrderRequest.newBuilder().setCommand(newNewOrder("cmd-1", "O-C1", "C1")).build(),
+                observer);
 
-    assertThat(observer.completed()).isTrue();
-    assertThat(observer.error()).isNull();
-    assertThat(observer.value().getAccepted()).isTrue();
-    assertThat(observer.value().getOrderId()).isEqualTo("O-C1");
-    assertThat(observer.value().getClOrdId()).isEqualTo("C1");
-    assertThat(jdbcTemplate.queryForObject(
-      "SELECT sender_comp_id FROM risk_submissions WHERE cl_ord_id = ?",
-      String.class,
-      "C1")).isEqualTo("CLIENT");
-    assertThat(jdbcTemplate.queryForObject(
-      "SELECT target_comp_id FROM risk_submissions WHERE cl_ord_id = ?",
-      String.class,
-      "C1")).isEqualTo("SIMPLEMATCH");
-    assertThat(jdbcTemplate.queryForObject(
-      "SELECT trading_day FROM risk_submissions WHERE cl_ord_id = ?",
-      LocalDate.class,
-      "C1")).isEqualTo(LocalDate.of(2024, 3, 27));
-  }
+        assertThat(observer.completed()).isTrue();
+        assertThat(observer.error()).isNull();
+        assertThat(observer.value().getAccepted()).isTrue();
+        assertThat(observer.value().getOrderId()).isEqualTo("O-C1");
+        assertThat(observer.value().getClOrdId()).isEqualTo("C1");
+        assertThat(jdbcTemplate.queryForObject(
+                "SELECT sender_comp_id FROM risk_submissions WHERE cl_ord_id = ?",
+                String.class,
+                "C1")).isEqualTo("CLIENT");
+        assertThat(jdbcTemplate.queryForObject(
+                "SELECT target_comp_id FROM risk_submissions WHERE cl_ord_id = ?",
+                String.class,
+                "C1")).isEqualTo("SIMPLEMATCH");
+        assertThat(jdbcTemplate.queryForObject(
+                "SELECT trading_day FROM risk_submissions WHERE cl_ord_id = ?",
+                LocalDate.class,
+                "C1")).isEqualTo(LocalDate.of(2024, 3, 27));
+    }
 
     // Verify that cancelOrder returns a rejection instead of a gRPC error when originalClientOrderId is missing.
     // Scenario: submit an incomplete cancel order and confirm the response reason code matches the validation rule.
     @DisplayName("cancelOrder returns rejected when the original client order id is missing")
-  @Test
-  void cancelOrderReturnsRejectedResponseWhenOriginalClientOrderIdIsMissing() {
-      final RiskGrpcService service = new RiskGrpcService(submissionService);
-    final TestStreamObserver<CancelOrderResponse> observer = new TestStreamObserver<>();
+    @Test
+    void cancelOrderReturnsRejectedResponseWhenOriginalClientOrderIdIsMissing() {
+        final RiskGrpcService service = new RiskGrpcService(submissionService);
+        final TestStreamObserver<CancelOrderResponse> observer = new TestStreamObserver<>();
 
-    service.cancelOrder(
-        CancelOrderRequest.newBuilder()
-            .setCommand(OrderCommand.newBuilder()
-                .setMetadata(EventMetadata.newBuilder()
-                    .setSchemaVersion("v1")
-                  .setEventId(normalize("cmd-2"))
-                    .setCreatedAtUnixMs(GATEWAY_CREATED_AT_UNIX_MS)
-                    .setSourceService("quickfix-gateway")
-                    .build())
-                .setCommandId(normalize("cmd-2"))
-                .setOrderId("O-C1")
-                .setSenderCompId("CLIENT")
-                .setTargetCompId("SIMPLEMATCH")
-                .setClOrdId("CXL-1")
-                .build())
-            .build(),
-        observer);
+        service.cancelOrder(
+                CancelOrderRequest.newBuilder()
+                        .setCommand(OrderCommand.newBuilder()
+                                .setMetadata(EventMetadata.newBuilder()
+                                        .setSchemaVersion("v1")
+                                        .setEventId(normalize("cmd-2"))
+                                        .setCreatedAtUnixMs(GATEWAY_CREATED_AT_UNIX_MS)
+                                        .setSourceService("quickfix-gateway")
+                                        .build())
+                                .setCommandId(normalize("cmd-2"))
+                                .setOrderId("O-C1")
+                                .setSenderCompId("CLIENT")
+                                .setTargetCompId("SIMPLEMATCH")
+                                .setClOrdId("CXL-1")
+                                .build())
+                        .build(),
+                observer);
 
-    assertThat(observer.completed()).isTrue();
-    assertThat(observer.error()).isNull();
-    assertThat(observer.value().getAccepted()).isFalse();
-    assertThat(observer.value().getReasonCode()).isEqualTo("MISSING_ORIG_CL_ORD_ID");
-  }
+        assertThat(observer.completed()).isTrue();
+        assertThat(observer.error()).isNull();
+        assertThat(observer.value().getAccepted()).isFalse();
+        assertThat(observer.value().getReasonCode()).isEqualTo("MISSING_ORIG_CL_ORD_ID");
+    }
 
     // Verify that submitOrder normalizes an unexpected command type to NEW before persistence.
     // Scenario: send a new order whose command type was mistakenly set to CANCEL and confirm the database stores NEW.
     @DisplayName("submitOrder normalizes unexpected command type to NEW")
-  @Test
-  void submitOrderNormalizesUnexpectedCommandTypeToNew() {
-      final RiskGrpcService service = new RiskGrpcService(submissionService);
-    final TestStreamObserver<SubmitOrderResponse> observer = new TestStreamObserver<>();
+    @Test
+    void submitOrderNormalizesUnexpectedCommandTypeToNew() {
+        final RiskGrpcService service = new RiskGrpcService(submissionService);
+        final TestStreamObserver<SubmitOrderResponse> observer = new TestStreamObserver<>();
 
-    service.submitOrder(
-        SubmitOrderRequest.newBuilder()
-            .setCommand(newNewOrder("cmd-3", "O-C2", "C2").toBuilder()
-                .setCommandType(CommandType.COMMAND_TYPE_CANCEL)
-              .clearOrigClOrdId()
-                .build())
-            .build(),
-        observer);
+        service.submitOrder(
+                SubmitOrderRequest.newBuilder()
+                        .setCommand(newNewOrder("cmd-3", "O-C2", "C2").toBuilder()
+                                .setCommandType(CommandType.COMMAND_TYPE_CANCEL)
+                                .clearOrigClOrdId()
+                                .build())
+                        .build(),
+                observer);
 
-    assertThat(observer.completed()).isTrue();
-    assertThat(observer.error()).isNull();
-    assertThat(observer.value().getAccepted()).isTrue();
-    assertThat(jdbcTemplate.queryForObject(
-      "SELECT command_type FROM risk_submissions WHERE cl_ord_id = ?",
-        String.class,
-        "C2")).isEqualTo("COMMAND_TYPE_NEW");
-  }
+        assertThat(observer.completed()).isTrue();
+        assertThat(observer.error()).isNull();
+        assertThat(observer.value().getAccepted()).isTrue();
+        assertThat(jdbcTemplate.queryForObject(
+                "SELECT command_type FROM risk_submissions WHERE cl_ord_id = ?",
+                String.class,
+                "C2")).isEqualTo("COMMAND_TYPE_NEW");
+    }
 
     // Verify that cancelOrder normalizes an unexpected command type to CANCEL before persistence.
     // Scenario: send a cancel order whose command type was mistakenly set to NEW and confirm the database stores CANCEL.
     @DisplayName("cancelOrder normalizes unexpected command type to CANCEL")
-  @Test
-  void cancelOrderNormalizesUnexpectedCommandTypeToCancel() {
-      final RiskGrpcService service = new RiskGrpcService(submissionService);
-    final TestStreamObserver<CancelOrderResponse> observer = new TestStreamObserver<>();
+    @Test
+    void cancelOrderNormalizesUnexpectedCommandTypeToCancel() {
+        final RiskGrpcService service = new RiskGrpcService(submissionService);
+        final TestStreamObserver<CancelOrderResponse> observer = new TestStreamObserver<>();
 
-    service.cancelOrder(
-        CancelOrderRequest.newBuilder()
-            .setCommand(newCancelOrder("cmd-4", "O-C1", "CXL-1", "C1").toBuilder()
-                .setCommandType(CommandType.COMMAND_TYPE_NEW)
-                .build())
-            .build(),
-        observer);
+        service.cancelOrder(
+                CancelOrderRequest.newBuilder()
+                        .setCommand(newCancelOrder("cmd-4", "O-C1", "CXL-1", "C1").toBuilder()
+                                .setCommandType(CommandType.COMMAND_TYPE_NEW)
+                                .build())
+                        .build(),
+                observer);
 
-    assertThat(observer.completed()).isTrue();
-    assertThat(observer.error()).isNull();
-    assertThat(observer.value().getAccepted()).isTrue();
-    assertThat(observer.value().getOrigClOrdId()).isEqualTo("C1");
-    assertThat(jdbcTemplate.queryForObject(
-      "SELECT command_type FROM risk_submissions WHERE cl_ord_id = ?",
-        String.class,
-        "CXL-1")).isEqualTo("COMMAND_TYPE_CANCEL");
-  }
+        assertThat(observer.completed()).isTrue();
+        assertThat(observer.error()).isNull();
+        assertThat(observer.value().getAccepted()).isTrue();
+        assertThat(observer.value().getOrigClOrdId()).isEqualTo("C1");
+        assertThat(jdbcTemplate.queryForObject(
+                "SELECT command_type FROM risk_submissions WHERE cl_ord_id = ?",
+                String.class,
+                "CXL-1")).isEqualTo("COMMAND_TYPE_CANCEL");
+    }
 
     // Verify that submitOrder returns the expected validation rejection code when it receives the default empty command.
     // Scenario: pass OrderCommand.getDefaultInstance() directly and confirm the result is rejected rather than an exception.
     @DisplayName("submitOrder returns the expected rejection code for the default empty command")
-  @Test
-  void submitOrderRejectsDefaultCommandInstanceWithExpectedReason() {
-      final RiskGrpcService service = new RiskGrpcService(submissionService);
-    final TestStreamObserver<SubmitOrderResponse> observer = new TestStreamObserver<>();
+    @Test
+    void submitOrderRejectsDefaultCommandInstanceWithExpectedReason() {
+        final RiskGrpcService service = new RiskGrpcService(submissionService);
+        final TestStreamObserver<SubmitOrderResponse> observer = new TestStreamObserver<>();
 
-    service.submitOrder(
-        SubmitOrderRequest.newBuilder().setCommand(OrderCommand.getDefaultInstance()).build(),
-        observer);
+        service.submitOrder(
+                SubmitOrderRequest.newBuilder().setCommand(OrderCommand.getDefaultInstance()).build(),
+                observer);
 
-    assertThat(observer.completed()).isTrue();
-    assertThat(observer.error()).isNull();
-    assertThat(observer.value().getAccepted()).isFalse();
-    assertThat(observer.value().getReasonCode()).isEqualTo("MISSING_CL_ORD_ID");
-  }
+        assertThat(observer.completed()).isTrue();
+        assertThat(observer.error()).isNull();
+        assertThat(observer.value().getAccepted()).isFalse();
+        assertThat(observer.value().getReasonCode()).isEqualTo("MISSING_CL_ORD_ID");
+    }
 
     // Verify that cancelOrder returns the expected validation rejection code when it receives the default empty command.
     // Scenario: pass OrderCommand.getDefaultInstance() directly and confirm the cancel flow also returns a consistent rejected result.
     @DisplayName("cancelOrder returns the expected rejection code for the default empty command")
-  @Test
-  void cancelOrderRejectsDefaultCommandInstanceWithExpectedReason() {
-      final RiskGrpcService service = new RiskGrpcService(submissionService);
-    final TestStreamObserver<CancelOrderResponse> observer = new TestStreamObserver<>();
+    @Test
+    void cancelOrderRejectsDefaultCommandInstanceWithExpectedReason() {
+        final RiskGrpcService service = new RiskGrpcService(submissionService);
+        final TestStreamObserver<CancelOrderResponse> observer = new TestStreamObserver<>();
 
-    service.cancelOrder(
-        CancelOrderRequest.newBuilder().setCommand(OrderCommand.getDefaultInstance()).build(),
-        observer);
+        service.cancelOrder(
+                CancelOrderRequest.newBuilder().setCommand(OrderCommand.getDefaultInstance()).build(),
+                observer);
 
-    assertThat(observer.completed()).isTrue();
-    assertThat(observer.error()).isNull();
-    assertThat(observer.value().getAccepted()).isFalse();
-    assertThat(observer.value().getReasonCode()).isEqualTo("MISSING_CL_ORD_ID");
-  }
+        assertThat(observer.completed()).isTrue();
+        assertThat(observer.error()).isNull();
+        assertThat(observer.value().getAccepted()).isFalse();
+        assertThat(observer.value().getReasonCode()).isEqualTo("MISSING_CL_ORD_ID");
+    }
 
-  @DisplayName("submitOrder echoes the raw oversized cl_ord_id while persisting a surrogate key")
-  @Test
-  void submitOrderEchoesRawOversizedClOrdId() {
-    final RiskGrpcService service = new RiskGrpcService(submissionService);
-    final TestStreamObserver<SubmitOrderResponse> observer = new TestStreamObserver<>();
-    final String oversized = "X".repeat(300);
+    @DisplayName("submitOrder echoes the raw oversized cl_ord_id while persisting a surrogate key")
+    @Test
+    void submitOrderEchoesRawOversizedClOrdId() {
+        final RiskGrpcService service = new RiskGrpcService(submissionService);
+        final TestStreamObserver<SubmitOrderResponse> observer = new TestStreamObserver<>();
+        final String oversized = "X".repeat(300);
 
-    service.submitOrder(
-        SubmitOrderRequest.newBuilder()
-            .setCommand(newNewOrder("cmd-5", "O-C5", "C5").toBuilder().setClOrdId(oversized).build())
-            .build(),
-        observer);
+        service.submitOrder(
+                SubmitOrderRequest.newBuilder()
+                        .setCommand(newNewOrder("cmd-5", "O-C5", "C5").toBuilder().setClOrdId(oversized).build())
+                        .build(),
+                observer);
 
-    assertThat(observer.completed()).isTrue();
-    assertThat(observer.error()).isNull();
-    assertThat(observer.value().getAccepted()).isFalse();
-    assertThat(observer.value().getReasonCode()).isEqualTo("OVERSIZED_CL_ORD_ID");
-    assertThat(observer.value().getClOrdId()).isEqualTo(oversized);
-    assertThat(jdbcTemplate.queryForObject(
-        "SELECT raw_cl_ord_id FROM risk_submissions WHERE request_id = ?",
-        String.class,
-        observer.value().getRequestId())).isEqualTo(oversized);
-    assertThat(jdbcTemplate.queryForObject(
-        "SELECT cl_ord_id FROM risk_submissions WHERE request_id = ?",
-        String.class,
-      observer.value().getRequestId())).hasSize(64);
-  }
+        assertThat(observer.completed()).isTrue();
+        assertThat(observer.error()).isNull();
+        assertThat(observer.value().getAccepted()).isFalse();
+        assertThat(observer.value().getReasonCode()).isEqualTo("OVERSIZED_CL_ORD_ID");
+        assertThat(observer.value().getClOrdId()).isEqualTo(oversized);
+        assertThat(jdbcTemplate.queryForObject(
+                "SELECT raw_cl_ord_id FROM risk_submissions WHERE request_id = ?",
+                String.class,
+                observer.value().getRequestId())).isEqualTo(oversized);
+        assertThat(jdbcTemplate.queryForObject(
+                "SELECT cl_ord_id FROM risk_submissions WHERE request_id = ?",
+                String.class,
+                observer.value().getRequestId())).hasSize(64);
+    }
 
-  private OrderCommand newNewOrder(String commandId, String orderId, String clientOrderId) {
-    final String normalizedCommandId = normalize(commandId);
-    return OrderCommand.newBuilder()
-        .setMetadata(EventMetadata.newBuilder()
-            .setSchemaVersion("v1")
-            .setEventId(normalizedCommandId)
-          .setCreatedAtUnixMs(GATEWAY_CREATED_AT_UNIX_MS)
-            .setSourceService("quickfix-gateway")
-            .build())
-        .setCommandId(normalizedCommandId)
-        .setOrderId(orderId)
-        .setAccountId("ACC-1")
-        .setSenderCompId("CLIENT")
-        .setTargetCompId("SIMPLEMATCH")
-        .setClOrdId(clientOrderId)
-        .setSymbol("AAPL")
-        .setSide(Side.SIDE_BUY)
-        .setQuantity("10")
-        .setPrice("101.25")
-        .setOrderType(OrderType.ORDER_TYPE_LIMIT)
-        .setTif(TimeInForce.TIME_IN_FORCE_ROD)
-        .setCommandType(CommandType.COMMAND_TYPE_NEW)
-        .build();
-  }
+    private OrderCommand newNewOrder(String commandId, String orderId, String clientOrderId) {
+        final String normalizedCommandId = normalize(commandId);
+        return OrderCommand.newBuilder()
+                .setMetadata(EventMetadata.newBuilder()
+                        .setSchemaVersion("v1")
+                        .setEventId(normalizedCommandId)
+                        .setCreatedAtUnixMs(GATEWAY_CREATED_AT_UNIX_MS)
+                        .setSourceService("quickfix-gateway")
+                        .build())
+                .setCommandId(normalizedCommandId)
+                .setOrderId(orderId)
+                .setAccountId("ACC-1")
+                .setSenderCompId("CLIENT")
+                .setTargetCompId("SIMPLEMATCH")
+                .setClOrdId(clientOrderId)
+                .setSymbol("AAPL")
+                .setSide(Side.SIDE_BUY)
+                .setQuantity("10")
+                .setPrice("101.25")
+                .setOrderType(OrderType.ORDER_TYPE_LIMIT)
+                .setTif(TimeInForce.TIME_IN_FORCE_ROD)
+                .setCommandType(CommandType.COMMAND_TYPE_NEW)
+                .build();
+    }
 
-  private OrderCommand newCancelOrder(String commandId, String orderId, String clientOrderId, String originalClientOrderId) {
-    final String normalizedCommandId = normalize(commandId);
-    return OrderCommand.newBuilder()
-        .setMetadata(EventMetadata.newBuilder()
-            .setSchemaVersion("v1")
-            .setEventId(normalizedCommandId)
-          .setCreatedAtUnixMs(GATEWAY_CREATED_AT_UNIX_MS)
-            .setSourceService("quickfix-gateway")
-            .build())
-        .setCommandId(normalizedCommandId)
-        .setOrderId(orderId)
-        .setSenderCompId("CLIENT")
-        .setTargetCompId("SIMPLEMATCH")
-        .setClOrdId(clientOrderId)
-        .setOrigClOrdId(originalClientOrderId)
-        .setCommandType(CommandType.COMMAND_TYPE_CANCEL)
-        .build();
-  }
+    private OrderCommand newCancelOrder(String commandId, String orderId, String clientOrderId, String originalClientOrderId) {
+        final String normalizedCommandId = normalize(commandId);
+        return OrderCommand.newBuilder()
+                .setMetadata(EventMetadata.newBuilder()
+                        .setSchemaVersion("v1")
+                        .setEventId(normalizedCommandId)
+                        .setCreatedAtUnixMs(GATEWAY_CREATED_AT_UNIX_MS)
+                        .setSourceService("quickfix-gateway")
+                        .build())
+                .setCommandId(normalizedCommandId)
+                .setOrderId(orderId)
+                .setSenderCompId("CLIENT")
+                .setTargetCompId("SIMPLEMATCH")
+                .setClOrdId(clientOrderId)
+                .setOrigClOrdId(originalClientOrderId)
+                .setCommandType(CommandType.COMMAND_TYPE_CANCEL)
+                .build();
+    }
 }

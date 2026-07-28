@@ -8,6 +8,7 @@ import com.simplematch.contracts.orders.v1.OrderValidated;
 import com.simplematch.riskservice.submission.SubmissionCommand;
 import com.simplematch.riskservice.submission.SubmissionDecision;
 import com.simplematch.riskservice.submission.SubmissionResult;
+
 import java.util.Objects;
 
 /**
@@ -27,7 +28,7 @@ public final class SubmissionOutboxFactory extends AbstractOutboxEventFactory<Su
     }
 
     public SubmissionOutboxFactory(ObjectMapper objectMapper, String ordersValidatedTopic,
-            RoutingPartitionResolver routingPartitionResolver) {
+                                   RoutingPartitionResolver routingPartitionResolver) {
         super(objectMapper, CONTENT_TYPE);
         this.ordersValidatedTopic = Objects.requireNonNull(ordersValidatedTopic, "ordersValidatedTopic");
         this.routingPartitionResolver = Objects.requireNonNull(routingPartitionResolver, "routingPartitionResolver");
@@ -55,7 +56,7 @@ public final class SubmissionOutboxFactory extends AbstractOutboxEventFactory<Su
     }
 
     private byte[] payloadBytes(SubmissionResult submission, SubmissionCommand command,
-            String eventId, int kafkaPartitionId) {
+                                String eventId, int kafkaPartitionId) {
 
         if (submission.accepted()) {
             return OrderValidated.newBuilder()

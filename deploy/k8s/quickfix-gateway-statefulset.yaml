@@ -25,7 +25,8 @@ spec:
             - name: SIMPLEMATCH_KUBERNETES_ENABLED
               value: "true"
             - name: SIMPLEMATCH_KUBERNETES_CONFIG_IMPORT
-              value: kubernetes:
+              value:
+                kubernetes:
             - name: SIMPLEMATCH_QUICKFIX_GATEWAY_OWNER_ID
               valueFrom:
                 fieldRef:

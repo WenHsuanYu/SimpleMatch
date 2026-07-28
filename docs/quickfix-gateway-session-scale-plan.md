@@ -2,7 +2,8 @@
 
 ## 目標
 
-本計畫的目標是為 `quickfix-gateway` 建立可水平擴展的 session-aware 架構，先實現「同一 FIX session 永遠回到同一 logical gateway owner」，再逐步補上 standby failover。
+本計畫的目標是為 `quickfix-gateway` 建立可水平擴展的 session-aware 架構，先實現「同一 FIX session 永遠回到同一 logical
+gateway owner」，再逐步補上 standby failover。
 
 短期目標是 correctness 與 recoverability，不是先追求任意 replica 接手。
 
@@ -42,9 +43,9 @@
 
 - 將 `OrderSessionRegistry` 從純記憶體狀態演進成可恢復狀態
 - recovery pipeline 在 pod ready 前重建：
-  - `order_id -> SenderCompID / TargetCompID / gatewayOwnerId`
-  - cancel context
-  - execution dedup 基線
+    - `order_id -> SenderCompID / TargetCompID / gatewayOwnerId`
+    - cancel context
+    - execution dedup 基線
 - 重新定義 `matching.executions` 的 consume 模型
 - 短期採每個 owner 獨立 consumer group、全量 consume + 本地過濾
 - 長期可把 `gatewayOwnerId` 帶入 contracts，讓 gateway 只收自己的 execution
@@ -61,8 +62,8 @@
 - primary crash 且超過 restart budget 時，promotion standby
 - 以 fencing 保證同一時間只有一個合法 owner
 - route transfer 同時處理：
-  - client reconnect 入口
-  - internal execution routing
+    - client reconnect 入口
+    - internal execution routing
 - 若 shared state 未同步完成，系統必須 fail-closed，而不是錯誤接手 session
 
 ## 關鍵名詞

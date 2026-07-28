@@ -4,18 +4,27 @@
 
 This repo's Java dependencies use an explicit ownership model.
 
-- [gradle/libs.versions.toml](/home/alexyu/SimpleMatch/gradle/libs.versions.toml) is the single source for pinned plugin and third-party library versions.
-- `simplematch.java-conventions` supplies the Java 25 toolchain, JUnit platform, Mockito agent, Error Prone, and dependency locking to every Java module.
-- `simplematch.java-quality` adds blocking Checkstyle, PMD 7.24.0, and SpotBugs where the module has production Java sources that require those checks.
-- `simplematch.spring-service` owns common Spring Boot service dependencies, the Spring Cloud BOM, and narrow Lombok wiring. JDBC, Kafka, gRPC, QuickFIX/J, and Flyway remain in the service build that uses them.
+- [gradle/libs.versions.toml](/home/alexyu/SimpleMatch/gradle/libs.versions.toml) is the single source for pinned plugin
+  and third-party library versions.
+- `simplematch.java-conventions` supplies the Java 25 toolchain, JUnit platform, Mockito agent, Error Prone, and
+  dependency locking to every Java module.
+- `simplematch.java-quality` adds blocking Checkstyle, PMD 7.24.0, and SpotBugs where the module has production Java
+  sources that require those checks.
+- `simplematch.spring-service` owns common Spring Boot service dependencies, the Spring Cloud BOM, and narrow Lombok
+  wiring. JDBC, Kafka, gRPC, QuickFIX/J, and Flyway remain in the service build that uses them.
 - `simplematch.protobuf-contracts` owns the shared protobuf source set and gRPC Java generation configuration.
-- Protobuf contracts opt into the PMD design gate through `simplematch.java-quality`; their historical conventions-only Checkstyle/SpotBugs lifecycle remains disabled to avoid treating generated contract support code as service quality scope.
-- `simplematch.flyway-service` owns service identity, derived migration locations, owner schema wiring, and stable root Flyway task aliases.
+- Protobuf contracts opt into the PMD design gate through `simplematch.java-quality`; their historical conventions-only
+  Checkstyle/SpotBugs lifecycle remains disabled to avoid treating generated contract support code as service quality
+  scope.
+- `simplematch.flyway-service` owns service identity, derived migration locations, owner schema wiring, and stable root
+  Flyway task aliases.
 - Shared modules under `shared-java/*` are not opted into Lombok by default.
 - Prefer Java `record` for simple immutable carriers before Lombok.
 - Use Lombok sparingly in `services/*` to remove Spring boilerplate such as required-args constructors or logging.
-- Do not treat Lombok as a blanket style: avoid broad annotations such as `@Data`, and keep domain, configuration, mutable, validation-heavy, normalization-heavy, custom-equality, or defensive-copy types handwritten.
-- Gradle dependency locks are checked in as each Java module's `gradle.lockfile`, plus the root and included-build `settings-gradle.lockfile` catalog locks. Update them intentionally with:
+- Do not treat Lombok as a blanket style: avoid broad annotations such as `@Data`, and keep domain, configuration,
+  mutable, validation-heavy, normalization-heavy, custom-equality, or defensive-copy types handwritten.
+- Gradle dependency locks are checked in as each Java module's `gradle.lockfile`, plus the root and included-build
+  `settings-gradle.lockfile` catalog locks. Update them intentionally with:
 
   ```bash
   ./gradlew -q \
@@ -30,15 +39,19 @@ This repo's Java dependencies use an explicit ownership model.
   ```
 
   Review every lockfile diff before committing.
-- For local validation, prefer `./gradlew -q <task>` to keep routine Gradle lifecycle output out of the console. `-q` does not hide failures, compiler diagnostics, test failures, or tool warnings. CI retains `--stacktrace` for failure diagnosis.
-- After changing dependency wiring, validate with a focused module compile or test before running broader static analysis.
+- For local validation, prefer `./gradlew -q <task>` to keep routine Gradle lifecycle output out of the console. `-q`
+  does not hide failures, compiler diagnostics, test failures, or tool warnings. CI retains `--stacktrace` for failure
+  diagnosis.
+- After changing dependency wiring, validate with a focused module compile or test before running broader static
+  analysis.
 
 ## Native Dependencies
 
 This repo is primarily a Gradle/Java workspace today.
 
 - The active FIX runtime dependency is **QuickFix/J** in `services/quickfix-gateway`.
-- `services/quickfix-gateway` now also carries Spring Boot web + actuator runtime dependencies so Kubernetes probes can terminate on `/healthz` and `/readyz`.
+- `services/quickfix-gateway` now also carries Spring Boot web + actuator runtime dependencies so Kubernetes probes can
+  terminate on `/healthz` and `/readyz`.
 - Native dependency guidance is retained only for future native modules such as `matching-engine`.
 - Most native dependencies are expected to be installed via **vcpkg** using the manifest at `vcpkg.json`.
 
@@ -75,4 +88,5 @@ cmake --build --preset vcpkg -j
 
 - `nlohmann-json` is used for loading the app JSON config (Task 0).
 - If you are building without vcpkg, you must provide `nlohmann_json` to CMake via your environment/toolchain.
-- When a real native `matching-engine` target lands in the repo, revisit this document together with the root CMake/vcpkg setup.
+- When a real native `matching-engine` target lands in the repo, revisit this document together with the root
+  CMake/vcpkg setup.

@@ -1,23 +1,22 @@
-
 pluginManagement {
-	includeBuild("build-logic")
-	repositories {
-		gradlePluginPortal()
-		mavenCentral()
-	}
+    includeBuild("build-logic")
+    repositories {
+        gradlePluginPortal()
+        mavenCentral()
+    }
 }
 
 
 rootProject.name = "SimpleMatch"
 
 include(
-	":shared-java:simplematch-config",
-	":shared-java:simplematch-contracts",
-	":services:account-service",
-	":services:marketdata-publisher",
-	":services:persistence",
-	":services:quickfix-gateway",
-	":services:risk-service",
+    ":shared-java:simplematch-config",
+    ":shared-java:simplematch-contracts",
+    ":services:account-service",
+    ":services:marketdata-publisher",
+    ":services:persistence",
+    ":services:quickfix-gateway",
+    ":services:risk-service",
 )
 
 project(":shared-java:simplematch-config").projectDir = file("shared-java/simplematch-config")

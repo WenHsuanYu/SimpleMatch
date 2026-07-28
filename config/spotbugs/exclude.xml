@@ -1,50 +1,50 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <FindBugsFilter>
-  <Match>
-    <Class name="~.*\.generated\..*"/>
-  </Match>
-  <Match>
-    <Bug pattern="EI_EXPOSE_REP,EI_EXPOSE_REP2"/>
-    <Class name="com.simplematch.riskservice.grpc.RiskGrpcService"/>
-  </Match>
-  <Match>
-    <Bug pattern="EI_EXPOSE_REP,EI_EXPOSE_REP2"/>
-    <Class name="com.simplematch.riskservice.store.PostgresSubmissionStore"/>
-  </Match>
-  <Match>
-    <Bug pattern="EI_EXPOSE_REP2"/>
-    <Class name="com.simplematch.riskservice.store.JdbcOutboxRepository"/>
-  </Match>
-  <Match>
-    <Bug pattern="EI_EXPOSE_REP2"/>
-    <Class name="com.simplematch.riskservice.store.JdbcSubmissionRepository"/>
-  </Match>
-  <Match>
-    <Bug pattern="EI_EXPOSE_REP2"/>
-    <Class name="com.simplematch.riskservice.outbox.SubmissionOutboxFactory"/>
-  </Match>
-  <Match>
-    <Bug pattern="EI_EXPOSE_REP2"/>
-    <Class name="com.simplematch.riskservice.submission.TransactionalSubmissionService"/>
-  </Match>
-  <Match>
-    <Bug pattern="EI_EXPOSE_REP2"/>
-    <Class name="com.simplematch.accountservice.store.JdbcReservationRepository"/>
-  </Match>
-  <Match>
-    <Bug pattern="EI_EXPOSE_REP2"/>
-    <Class name="com.simplematch.accountservice.reservation.IdempotentReservationService"/>
-  </Match>
-  <Match>
-    <Bug pattern="EI_EXPOSE_REP,EI_EXPOSE_REP2"/>
-    <Class name="com.simplematch.quickfixgateway.fix.InboundFixMessageHandler"/>
-  </Match>
-  <Match>
-    <Bug pattern="EI_EXPOSE_REP2"/>
-    <Class name="com.simplematch.quickfixgateway.kafka.KafkaOrdersCommandPublisher"/>
-  </Match>
-  <Match>
-    <Bug pattern="EI_EXPOSE_REP2"/>
-    <Class name="com.simplematch.quickfixgateway.wal.WalReplayService"/>
-  </Match>
+    <Match>
+        <Class name="~.*\.generated\..*"/>
+    </Match>
+    <Match>
+        <Bug pattern="EI_EXPOSE_REP,EI_EXPOSE_REP2"/>
+        <Class name="com.simplematch.riskservice.grpc.RiskGrpcService"/>
+    </Match>
+    <Match>
+        <Bug pattern="EI_EXPOSE_REP,EI_EXPOSE_REP2"/>
+        <Class name="com.simplematch.riskservice.store.PostgresSubmissionStore"/>
+    </Match>
+    <Match>
+        <Bug pattern="EI_EXPOSE_REP2"/>
+        <Class name="com.simplematch.riskservice.store.JdbcOutboxRepository"/>
+    </Match>
+    <Match>
+        <Bug pattern="EI_EXPOSE_REP2"/>
+        <Class name="com.simplematch.riskservice.store.JdbcSubmissionRepository"/>
+    </Match>
+    <Match>
+        <Bug pattern="EI_EXPOSE_REP2"/>
+        <Class name="com.simplematch.riskservice.outbox.SubmissionOutboxFactory"/>
+    </Match>
+    <Match>
+        <Bug pattern="EI_EXPOSE_REP2"/>
+        <Class name="com.simplematch.riskservice.submission.TransactionalSubmissionService"/>
+    </Match>
+    <Match>
+        <Bug pattern="EI_EXPOSE_REP2"/>
+        <Class name="com.simplematch.accountservice.store.JdbcReservationRepository"/>
+    </Match>
+    <Match>
+        <Bug pattern="EI_EXPOSE_REP2"/>
+        <Class name="com.simplematch.accountservice.reservation.IdempotentReservationService"/>
+    </Match>
+    <Match>
+        <Bug pattern="EI_EXPOSE_REP,EI_EXPOSE_REP2"/>
+        <Class name="com.simplematch.quickfixgateway.fix.InboundFixMessageHandler"/>
+    </Match>
+    <Match>
+        <Bug pattern="EI_EXPOSE_REP2"/>
+        <Class name="com.simplematch.quickfixgateway.kafka.KafkaOrdersCommandPublisher"/>
+    </Match>
+    <Match>
+        <Bug pattern="EI_EXPOSE_REP2"/>
+        <Class name="com.simplematch.quickfixgateway.wal.WalReplayService"/>
+    </Match>
 </FindBugsFilter>

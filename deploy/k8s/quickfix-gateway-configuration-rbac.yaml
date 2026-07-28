@@ -8,14 +8,14 @@ kind: Role
 metadata:
   name: quickfix-gateway-configuration-reader
 rules:
-  - apiGroups: [""]
-    resources: ["configmaps"]
-    resourceNames: ["simplematch-platform-config", "quickfix-gateway-config"]
-    verbs: ["get"]
-  - apiGroups: [""]
-    resources: ["secrets"]
-    resourceNames: ["quickfix-gateway-secrets"]
-    verbs: ["get"]
+  - apiGroups: [ "" ]
+    resources: [ "configmaps" ]
+    resourceNames: [ "simplematch-platform-config", "quickfix-gateway-config" ]
+    verbs: [ "get" ]
+  - apiGroups: [ "" ]
+    resources: [ "secrets" ]
+    resourceNames: [ "quickfix-gateway-secrets" ]
+    verbs: [ "get" ]
 ---
 apiVersion: rbac.authorization.k8s.io/v1
 kind: RoleBinding

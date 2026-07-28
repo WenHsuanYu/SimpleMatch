@@ -1,12 +1,12 @@
 plugins {
-  base
+    base
 }
 
 allprojects {
-  group = "com.simplematch"
-  version = "0.1.0-SNAPSHOT"
+    group = "com.simplematch"
+    version = "0.1.0-SNAPSHOT"
 
-  repositories {
-    mavenCentral()
-  }
+    repositories {
+        mavenCentral()
+    }
 }

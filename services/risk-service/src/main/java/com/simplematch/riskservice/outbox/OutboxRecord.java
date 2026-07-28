@@ -39,10 +39,10 @@ public final class OutboxRecord {
     /**
      * Creates an outbox record from grouped event, routing, payload, and aggregate metadata.
      *
-     * @param event the event identity and creation timestamp
-     * @param routing the destination topic, message key, and optional partition
+     * @param event           the event identity and creation timestamp
+     * @param routing         the destination topic, message key, and optional partition
      * @param payloadEnvelope the serialized payload and headers persisted to the outbox
-     * @param aggregate the aggregate reference associated with the outbox row
+     * @param aggregate       the aggregate reference associated with the outbox row
      * @return a validated outbox record
      */
     public static OutboxRecord create(
@@ -56,7 +56,7 @@ public final class OutboxRecord {
     /**
      * Event identity and creation timestamp for an outbox record.
      *
-     * @param eventId the unique event identifier
+     * @param eventId         the unique event identifier
      * @param createdAtUnixMs the event creation time in epoch milliseconds
      */
     public record EventInfo(String eventId, long createdAtUnixMs) {
@@ -71,8 +71,8 @@ public final class OutboxRecord {
     /**
      * Routing metadata for an outbox record.
      *
-     * @param topic the destination topic
-     * @param messageKey the message key used for routing
+     * @param topic            the destination topic
+     * @param messageKey       the message key used for routing
      * @param kafkaPartitionId the optional Kafka partition override
      */
     public record Routing(String topic, String messageKey, Integer kafkaPartitionId) {
@@ -87,8 +87,8 @@ public final class OutboxRecord {
         /**
          * Creates routing metadata with an explicit partition.
          *
-         * @param topic the destination topic
-         * @param messageKey the message key used for routing
+         * @param topic            the destination topic
+         * @param messageKey       the message key used for routing
          * @param kafkaPartitionId the target partition id
          * @return routing metadata with a partition override
          */
@@ -99,7 +99,7 @@ public final class OutboxRecord {
         /**
          * Creates routing metadata without an explicit partition.
          *
-         * @param topic the destination topic
+         * @param topic      the destination topic
          * @param messageKey the message key used for routing
          * @return routing metadata without a partition override
          */
@@ -110,8 +110,8 @@ public final class OutboxRecord {
         /**
          * Creates routing metadata from a nullable partition value.
          *
-         * @param topic the destination topic
-         * @param messageKey the message key used for routing
+         * @param topic            the destination topic
+         * @param messageKey       the message key used for routing
          * @param kafkaPartitionId the nullable partition id
          * @return routing metadata for the provided inputs
          */
@@ -133,7 +133,7 @@ public final class OutboxRecord {
         /**
          * Creates a payload envelope.
          *
-         * @param payload the serialized message payload
+         * @param payload     the serialized message payload
          * @param payloadType the payload schema or type identifier
          * @param headersJson the serialized transport headers
          */
@@ -160,7 +160,7 @@ public final class OutboxRecord {
      * Aggregate reference associated with an outbox row.
      *
      * @param aggregateType the aggregate type name
-     * @param aggregateId the aggregate identifier, which may be blank for validation failures
+     * @param aggregateId   the aggregate identifier, which may be blank for validation failures
      */
     public record AggregateRef(String aggregateType, String aggregateId) {
         public AggregateRef {
@@ -229,7 +229,7 @@ public final class OutboxRecord {
                 && eventId.equals(that.eventId)
                 && topic.equals(that.topic)
                 && messageKey.equals(that.messageKey)
-            && Objects.equals(kafkaPartitionId, that.kafkaPartitionId)
+                && Objects.equals(kafkaPartitionId, that.kafkaPartitionId)
                 && Arrays.equals(payload, that.payload)
                 && payloadType.equals(that.payloadType)
                 && headersJson.equals(that.headersJson)

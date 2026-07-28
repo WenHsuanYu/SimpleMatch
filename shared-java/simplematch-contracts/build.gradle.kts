@@ -1,3 +1,3 @@
 plugins {
-  id("simplematch.protobuf-contracts")
+    id("simplematch.protobuf-contracts")
 }
