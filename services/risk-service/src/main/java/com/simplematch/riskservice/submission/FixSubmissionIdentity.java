@@ -6,8 +6,8 @@ import java.util.Objects;
 /**
  * FIX-facing business identity observed at the risk-service boundary.
  *
- * <p>Sender, target, current client order, and original client order identifiers are distinct
- * value types. The compiler therefore rejects positional exchanges between FIX fields that are all
+ * <p>Sender, target, current client order, and original client order identifiers are distinct value
+ * types. The compiler therefore rejects positional exchanges between FIX fields that are all
  * represented as strings on the wire.
  *
  * @param senderCompId the persisted-safe FIX SenderCompID
@@ -17,17 +17,17 @@ import java.util.Objects;
  * @param origClOrdId the raw original client order identifier for cancel flows
  */
 public record FixSubmissionIdentity(
-        SubmissionCommand.SenderCompId senderCompId,
-        SubmissionCommand.TargetCompId targetCompId,
-        LocalDate tradingDay,
-        SubmissionCommand.ClOrdId clOrdId,
-        SubmissionCommand.OrigClOrdId origClOrdId) {
-    /** Requires a complete typed FIX identity. */
-    public FixSubmissionIdentity {
-        senderCompId = Objects.requireNonNull(senderCompId, "senderCompId");
-        targetCompId = Objects.requireNonNull(targetCompId, "targetCompId");
-        tradingDay = Objects.requireNonNull(tradingDay, "tradingDay");
-        clOrdId = Objects.requireNonNull(clOrdId, "clOrdId");
-        origClOrdId = Objects.requireNonNull(origClOrdId, "origClOrdId");
-    }
+    SubmissionCommand.SenderCompId senderCompId,
+    SubmissionCommand.TargetCompId targetCompId,
+    LocalDate tradingDay,
+    SubmissionCommand.ClOrdId clOrdId,
+    SubmissionCommand.OrigClOrdId origClOrdId) {
+  /** Requires a complete typed FIX identity. */
+  public FixSubmissionIdentity {
+    senderCompId = Objects.requireNonNull(senderCompId, "senderCompId");
+    targetCompId = Objects.requireNonNull(targetCompId, "targetCompId");
+    tradingDay = Objects.requireNonNull(tradingDay, "tradingDay");
+    clOrdId = Objects.requireNonNull(clOrdId, "clOrdId");
+    origClOrdId = Objects.requireNonNull(origClOrdId, "origClOrdId");
+  }
 }

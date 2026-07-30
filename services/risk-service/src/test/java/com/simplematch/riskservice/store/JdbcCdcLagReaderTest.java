@@ -30,11 +30,9 @@ class JdbcCdcLagReaderTest {
 
     try (ResultSet resultSet = mock(ResultSet.class)) {
 
-      when(resultSet.getObject("lag_events", Long.class))
-          .thenReturn(12L);
+      when(resultSet.getObject("lag_events", Long.class)).thenReturn(12L);
 
-      when(resultSet.getObject("updated_at_unix_ms", Long.class))
-          .thenReturn(1_000L);
+      when(resultSet.getObject("updated_at_unix_ms", Long.class)).thenReturn(1_000L);
 
       when(jdbcTemplate.queryForObject(
               anyString(),
@@ -63,16 +61,11 @@ class JdbcCdcLagReaderTest {
 
     try (ResultSet resultSet = mock(ResultSet.class)) {
 
-      when(resultSet.getObject("lag_events", Long.class))
-          .thenReturn(null);
+      when(resultSet.getObject("lag_events", Long.class)).thenReturn(null);
 
-      when(resultSet.getObject("updated_at_unix_ms", Long.class))
-          .thenReturn(1_000L);
+      when(resultSet.getObject("updated_at_unix_ms", Long.class)).thenReturn(1_000L);
 
-      when(jdbcTemplate.queryForObject(
-              anyString(),
-              getAny(),
-              eq("orders.validated")))
+      when(jdbcTemplate.queryForObject(anyString(), getAny(), eq("orders.validated")))
           .thenAnswer(
               invocation -> {
                 final RowMapper<CdcLagSnapshot> mapper = invocation.getArgument(1);

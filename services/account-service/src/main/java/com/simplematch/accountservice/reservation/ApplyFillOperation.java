@@ -9,9 +9,9 @@ import java.util.Objects;
  * @param fill the execution fill to apply idempotently
  */
 public record ApplyFillOperation(ReservationIdentity reservation, ExecutionFill fill) {
-    /** Requires both domain values so an incomplete command cannot enter the application service. */
-    public ApplyFillOperation {
-        reservation = Objects.requireNonNull(reservation, "reservation");
-        fill = Objects.requireNonNull(fill, "fill");
-    }
+  /** Requires both domain values so an incomplete command cannot enter the application service. */
+  public ApplyFillOperation {
+    reservation = Objects.requireNonNull(reservation, "reservation");
+    fill = Objects.requireNonNull(fill, "fill");
+  }
 }

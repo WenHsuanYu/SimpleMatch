@@ -47,6 +47,8 @@ Useful canonical keys include:
 - `simplematch.quickfix-gateway.owner-id`
 - `simplematch.quickfix-gateway.quickfix-config-path`
 - `simplematch.quickfix-gateway.wal-path`
+- `simplematch.risk-service.scheduling-enabled` (defaults to `true`; set to `false` only
+  when background admission recovery must be disabled, such as a narrow context test)
 
 ## Kubernetes
 

@@ -109,7 +109,7 @@ ownership.
 
 ## Design review trigger for long parameter lists
 
-More than five parameters triggers review rather than automatic wrapping. Review asks whether the values form a named
+More than seven parameters triggers review rather than automatic wrapping. Review asks whether the values form a named
 business concept, have different life cycles, can be exchanged because of identical Java types, or expose multiple class
 responsibilities. A parameter object is accepted only when it adds domain language or owns invariants. Generic
 `Parameters`, `Context`, or dependency-bag types that merely hide coupling are rejected.

@@ -10,19 +10,19 @@ import java.util.Objects;
  * @param transactTime the FIX TransactTime
  */
 public record FixExecutionIdentity(ExecutionId executionId, Instant transactTime) {
-    /** Requires a complete execution identity. */
-    public FixExecutionIdentity {
-        executionId = Objects.requireNonNull(executionId, "executionId");
-        transactTime = Objects.requireNonNull(transactTime, "transactTime");
-    }
+  /** Requires a complete execution identity. */
+  public FixExecutionIdentity {
+    executionId = Objects.requireNonNull(executionId, "executionId");
+    transactTime = Objects.requireNonNull(transactTime, "transactTime");
+  }
 
-    /** Execution identity rendered in FIX tag 17. */
-    public record ExecutionId(String value) {
-        /** Requires a nonblank execution identity. */
-        public ExecutionId {
-            if (value == null || value.isBlank()) {
-                throw new IllegalArgumentException("execution_id must not be blank");
-            }
-        }
+  /** Execution identity rendered in FIX tag 17. */
+  public record ExecutionId(String value) {
+    /** Requires a nonblank execution identity. */
+    public ExecutionId {
+      if (value == null || value.isBlank()) {
+        throw new IllegalArgumentException("execution_id must not be blank");
+      }
     }
+  }
 }

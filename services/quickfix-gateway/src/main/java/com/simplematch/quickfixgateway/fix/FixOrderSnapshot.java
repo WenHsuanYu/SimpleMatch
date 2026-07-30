@@ -2,7 +2,6 @@ package com.simplematch.quickfixgateway.fix;
 
 import com.simplematch.contracts.common.v1.Side;
 import com.simplematch.quickfixgateway.wal.WalRecord;
-
 import java.util.Objects;
 
 /**
@@ -19,67 +18,63 @@ import java.util.Objects;
  * @param quantity the canonical decimal order quantity
  */
 public record FixOrderSnapshot(
-        OrderId orderId,
-        ClientOrderId clientOrderId,
-        Symbol symbol,
-        Side side,
-        Quantity quantity) {
-    /** Requires a complete FIX report context. */
-    public FixOrderSnapshot {
-        orderId = Objects.requireNonNull(orderId, "orderId");
-        clientOrderId = Objects.requireNonNull(clientOrderId, "clientOrderId");
-        symbol = Objects.requireNonNull(symbol, "symbol");
-        side = Objects.requireNonNull(side, "side");
-        quantity = Objects.requireNonNull(quantity, "quantity");
-    }
+    OrderId orderId, ClientOrderId clientOrderId, Symbol symbol, Side side, Quantity quantity) {
+  /** Requires a complete FIX report context. */
+  public FixOrderSnapshot {
+    orderId = Objects.requireNonNull(orderId, "orderId");
+    clientOrderId = Objects.requireNonNull(clientOrderId, "clientOrderId");
+    symbol = Objects.requireNonNull(symbol, "symbol");
+    side = Objects.requireNonNull(side, "side");
+    quantity = Objects.requireNonNull(quantity, "quantity");
+  }
 
-    /** Creates the report context from the durable gateway WAL record. */
-    public static FixOrderSnapshot from(WalRecord record) {
-        Objects.requireNonNull(record, "record");
-        return new FixOrderSnapshot(
-                new OrderId(record.orderId()),
-                new ClientOrderId(record.clOrdId()),
-                new Symbol(record.symbol()),
-                record.side(),
-                new Quantity(record.quantity()));
-    }
+  /** Creates the report context from the durable gateway WAL record. */
+  public static FixOrderSnapshot from(WalRecord record) {
+    Objects.requireNonNull(record, "record");
+    return new FixOrderSnapshot(
+        new OrderId(record.orderId()),
+        new ClientOrderId(record.clOrdId()),
+        new Symbol(record.symbol()),
+        record.side(),
+        new Quantity(record.quantity()));
+  }
 
-    /** Server-assigned order identity rendered in FIX tag 37. */
-    public record OrderId(String value) {
-        /** Requires a nonblank order identity. */
-        public OrderId {
-            value = requireNonBlank(value, "order_id");
-        }
+  /** Server-assigned order identity rendered in FIX tag 37. */
+  public record OrderId(String value) {
+    /** Requires a nonblank order identity. */
+    public OrderId {
+      value = requireNonBlank(value, "order_id");
     }
+  }
 
-    /** Client order identity rendered in FIX tag 11. */
-    public record ClientOrderId(String value) {
-        /** Requires a nonblank client order identity. */
-        public ClientOrderId {
-            value = requireNonBlank(value, "cl_ord_id");
-        }
+  /** Client order identity rendered in FIX tag 11. */
+  public record ClientOrderId(String value) {
+    /** Requires a nonblank client order identity. */
+    public ClientOrderId {
+      value = requireNonBlank(value, "cl_ord_id");
     }
+  }
 
-    /** Instrument symbol rendered in FIX tag 55. */
-    public record Symbol(String value) {
-        /** Requires a nonblank symbol. */
-        public Symbol {
-            value = requireNonBlank(value, "symbol");
-        }
+  /** Instrument symbol rendered in FIX tag 55. */
+  public record Symbol(String value) {
+    /** Requires a nonblank symbol. */
+    public Symbol {
+      value = requireNonBlank(value, "symbol");
     }
+  }
 
-    /** Canonical decimal quantity text rendered in quantity fields when present. */
-    public record Quantity(String value) {
-        /** Normalizes an absent quantity to the explicit empty representation. */
-        public Quantity {
-            value = Objects.requireNonNullElse(value, "");
-        }
+  /** Canonical decimal quantity text rendered in quantity fields when present. */
+  public record Quantity(String value) {
+    /** Normalizes an absent quantity to the explicit empty representation. */
+    public Quantity {
+      value = Objects.requireNonNullElse(value, "");
     }
+  }
 
-    private static String requireNonBlank(String value, String fieldName) {
-        if (value == null || value.isBlank()) {
-            throw new IllegalArgumentException(fieldName + " must not be blank");
-        }
-        return value;
+  private static String requireNonBlank(String value, String fieldName) {
+    if (value == null || value.isBlank()) {
+      throw new IllegalArgumentException(fieldName + " must not be blank");
     }
+    return value;
+  }
 }

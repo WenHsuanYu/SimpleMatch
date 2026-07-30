@@ -9,17 +9,17 @@ import java.util.Objects;
  * @param reason the stable release reason supplied by the lifecycle caller
  */
 public record ReleaseReservationOperation(ReservationIdentity reservation, ReleaseReason reason) {
-    /** Requires the identity and an explicit release reason value. */
-    public ReleaseReservationOperation {
-        reservation = Objects.requireNonNull(reservation, "reservation");
-        reason = Objects.requireNonNull(reason, "reason");
-    }
+  /** Requires the identity and an explicit release reason value. */
+  public ReleaseReservationOperation {
+    reservation = Objects.requireNonNull(reservation, "reservation");
+    reason = Objects.requireNonNull(reason, "reason");
+  }
 
-    /** Stable machine-readable release reason. */
-    public record ReleaseReason(String value) {
-        /** Normalizes an omitted reason to the explicit empty representation. */
-        public ReleaseReason {
-            value = Objects.requireNonNullElse(value, "");
-        }
+  /** Stable machine-readable release reason. */
+  public record ReleaseReason(String value) {
+    /** Normalizes an omitted reason to the explicit empty representation. */
+    public ReleaseReason {
+      value = Objects.requireNonNullElse(value, "");
     }
+  }
 }

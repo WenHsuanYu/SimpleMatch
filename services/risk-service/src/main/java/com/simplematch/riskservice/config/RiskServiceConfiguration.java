@@ -30,12 +30,10 @@ import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.jdbc.datasource.DataSourceTransactionManager;
-import org.springframework.scheduling.annotation.EnableScheduling;
 import org.springframework.transaction.PlatformTransactionManager;
 import org.springframework.transaction.support.TransactionTemplate;
 
 @Configuration
-@EnableScheduling
 @EnableConfigurationProperties(RiskServiceProperties.class)
 @SuppressWarnings("PMD.TooManyMethods")
 // Spring wiring seam keeps service-owned dependencies explicit.

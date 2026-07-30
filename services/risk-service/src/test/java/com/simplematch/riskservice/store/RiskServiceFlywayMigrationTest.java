@@ -1,9 +1,9 @@
 package com.simplematch.riskservice.store;
 
+import static com.simplematch.riskservice.testsupport.H2TestDatabaseUrl.uniquePostgresModeUrl;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
-import java.util.UUID;
 import org.flywaydb.core.Flyway;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
@@ -22,7 +22,7 @@ class RiskServiceFlywayMigrationTest {
 
     assertThat(hasTable(jdbcTemplate, "RISK_SUBMISSIONS")).isTrue();
     assertThat(hasTable(jdbcTemplate, "OUTBOX")).isTrue();
-    assertThat(appliedMigrationCount(jdbcTemplate)).isEqualTo(3);
+    assertThat(appliedMigrationCount(jdbcTemplate)).isEqualTo(4);
   }
 
   @DisplayName("a second risk-service migration is a no-op")
@@ -80,7 +80,7 @@ class RiskServiceFlywayMigrationTest {
   private DriverManagerDataSource newDataSource() {
     final DriverManagerDataSource dataSource = new DriverManagerDataSource();
     dataSource.setDriverClassName("org.h2.Driver");
-    dataSource.setUrl("jdbc:h2:mem:" + UUID.randomUUID() + ";MODE=PostgreSQL;DB_CLOSE_DELAY=-1");
+    dataSource.setUrl(uniquePostgresModeUrl());
     return dataSource;
   }
 

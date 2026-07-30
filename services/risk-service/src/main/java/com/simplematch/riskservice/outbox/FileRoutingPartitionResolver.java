@@ -56,7 +56,7 @@ public final class FileRoutingPartitionResolver implements RoutingPartitionResol
 
   @SuppressWarnings(
       "PMD.CyclomaticComplexity") // Snapshot validation reports each invalid routing shape
-                                  // precisely.
+  // precisely.
   private static Map<String, Integer> partitionsBySymbol(
       List<RoutingEntry> entries, int partitionCount, Path snapshotPath) {
     final Map<String, Integer> partitionsBySymbol = new HashMap<>();

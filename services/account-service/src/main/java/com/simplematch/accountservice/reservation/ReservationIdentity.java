@@ -13,42 +13,43 @@ import java.util.Objects;
  * @param reservationId the account-owned reservation identifier
  * @param orderId the order that owns the reservation
  */
-public record ReservationIdentity(RequestId requestId, ReservationId reservationId, OrderId orderId) {
-    /** Requires every typed identity component. */
-    public ReservationIdentity {
-        requestId = Objects.requireNonNull(requestId, "requestId");
-        reservationId = Objects.requireNonNull(reservationId, "reservationId");
-        orderId = Objects.requireNonNull(orderId, "orderId");
-    }
+public record ReservationIdentity(
+    RequestId requestId, ReservationId reservationId, OrderId orderId) {
+  /** Requires every typed identity component. */
+  public ReservationIdentity {
+    requestId = Objects.requireNonNull(requestId, "requestId");
+    reservationId = Objects.requireNonNull(reservationId, "reservationId");
+    orderId = Objects.requireNonNull(orderId, "orderId");
+  }
 
-    /** Idempotent operation identity used by the synchronous reservation boundary. */
-    public record RequestId(String value) {
-        /** Requires a nonblank request identifier. */
-        public RequestId {
-            value = requireNonBlank(value, "request_id");
-        }
+  /** Idempotent operation identity used by the synchronous reservation boundary. */
+  public record RequestId(String value) {
+    /** Requires a nonblank request identifier. */
+    public RequestId {
+      value = requireNonBlank(value, "request_id");
     }
+  }
 
-    /** Account-owned identity of one reservation. */
-    public record ReservationId(String value) {
-        /** Requires a nonblank reservation identifier. */
-        public ReservationId {
-            value = requireNonBlank(value, "reservation_id");
-        }
+  /** Account-owned identity of one reservation. */
+  public record ReservationId(String value) {
+    /** Requires a nonblank reservation identifier. */
+    public ReservationId {
+      value = requireNonBlank(value, "reservation_id");
     }
+  }
 
-    /** Identity of the order that owns the reservation. */
-    public record OrderId(String value) {
-        /** Requires a nonblank order identifier. */
-        public OrderId {
-            value = requireNonBlank(value, "order_id");
-        }
+  /** Identity of the order that owns the reservation. */
+  public record OrderId(String value) {
+    /** Requires a nonblank order identifier. */
+    public OrderId {
+      value = requireNonBlank(value, "order_id");
     }
+  }
 
-    private static String requireNonBlank(String value, String fieldName) {
-        if (value == null || value.isBlank()) {
-            throw new IllegalArgumentException(fieldName + " must not be blank");
-        }
-        return value;
+  private static String requireNonBlank(String value, String fieldName) {
+    if (value == null || value.isBlank()) {
+      throw new IllegalArgumentException(fieldName + " must not be blank");
     }
+    return value;
+  }
 }

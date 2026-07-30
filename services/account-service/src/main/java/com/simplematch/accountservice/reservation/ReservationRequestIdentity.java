@@ -13,42 +13,43 @@ import java.util.Objects;
  * @param orderId the order that owns the requested authority
  * @param accountId the account from which authority is requested
  */
-public record ReservationRequestIdentity(RequestId requestId, OrderId orderId, AccountId accountId) {
-    /** Requires all three typed identifiers. */
-    public ReservationRequestIdentity {
-        requestId = Objects.requireNonNull(requestId, "requestId");
-        orderId = Objects.requireNonNull(orderId, "orderId");
-        accountId = Objects.requireNonNull(accountId, "accountId");
-    }
+public record ReservationRequestIdentity(
+    RequestId requestId, OrderId orderId, AccountId accountId) {
+  /** Requires all three typed identifiers. */
+  public ReservationRequestIdentity {
+    requestId = Objects.requireNonNull(requestId, "requestId");
+    orderId = Objects.requireNonNull(orderId, "orderId");
+    accountId = Objects.requireNonNull(accountId, "accountId");
+  }
 
-    /** Idempotency identity of one reserve operation. */
-    public record RequestId(String value) {
-        /** Requires a nonblank request identifier. */
-        public RequestId {
-            value = requireNonBlank(value, "request_id");
-        }
+  /** Idempotency identity of one reserve operation. */
+  public record RequestId(String value) {
+    /** Requires a nonblank request identifier. */
+    public RequestId {
+      value = requireNonBlank(value, "request_id");
     }
+  }
 
-    /** Order identity associated with the reservation. */
-    public record OrderId(String value) {
-        /** Requires a nonblank order identifier. */
-        public OrderId {
-            value = requireNonBlank(value, "order_id");
-        }
+  /** Order identity associated with the reservation. */
+  public record OrderId(String value) {
+    /** Requires a nonblank order identifier. */
+    public OrderId {
+      value = requireNonBlank(value, "order_id");
     }
+  }
 
-    /** Account identity whose authority is reserved. */
-    public record AccountId(String value) {
-        /** Requires a nonblank account identifier. */
-        public AccountId {
-            value = requireNonBlank(value, "account_id");
-        }
+  /** Account identity whose authority is reserved. */
+  public record AccountId(String value) {
+    /** Requires a nonblank account identifier. */
+    public AccountId {
+      value = requireNonBlank(value, "account_id");
     }
+  }
 
-    private static String requireNonBlank(String value, String fieldName) {
-        if (value == null || value.isBlank()) {
-            throw new IllegalArgumentException(fieldName + " must not be blank");
-        }
-        return value;
+  private static String requireNonBlank(String value, String fieldName) {
+    if (value == null || value.isBlank()) {
+      throw new IllegalArgumentException(fieldName + " must not be blank");
     }
+    return value;
+  }
 }

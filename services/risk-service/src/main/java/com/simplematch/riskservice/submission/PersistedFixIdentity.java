@@ -10,12 +10,12 @@ import java.util.Objects;
  * @param surrogated whether any business-key component required a deterministic surrogate
  */
 public record PersistedFixIdentity(
-        SubmissionCommand.ClOrdId clOrdId,
-        SubmissionCommand.OrigClOrdId origClOrdId,
-        boolean surrogated) {
-    /** Requires explicit typed storage values. */
-    public PersistedFixIdentity {
-        clOrdId = Objects.requireNonNull(clOrdId, "clOrdId");
-        origClOrdId = Objects.requireNonNull(origClOrdId, "origClOrdId");
-    }
+    SubmissionCommand.ClOrdId clOrdId,
+    SubmissionCommand.OrigClOrdId origClOrdId,
+    boolean surrogated) {
+  /** Requires explicit typed storage values. */
+  public PersistedFixIdentity {
+    clOrdId = Objects.requireNonNull(clOrdId, "clOrdId");
+    origClOrdId = Objects.requireNonNull(origClOrdId, "origClOrdId");
+  }
 }

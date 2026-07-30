@@ -30,7 +30,7 @@ public record WalRecord(
 
   @SuppressWarnings(
       "PMD.CyclomaticComplexity") // Null normalization defines the durable WAL compatibility
-                                  // contract.
+  // contract.
   public OrderCommand toOrderCommand() {
     return OrderCommand.newBuilder()
         .setMetadata(

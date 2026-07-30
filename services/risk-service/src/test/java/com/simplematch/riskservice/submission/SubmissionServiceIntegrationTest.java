@@ -1,5 +1,6 @@
 package com.simplematch.riskservice.submission;
 
+import static com.simplematch.riskservice.testsupport.H2TestDatabaseUrl.uniqueRiskServiceUrl;
 import static com.simplematch.riskservice.testsupport.TestCommandIds.normalize;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
@@ -52,10 +53,7 @@ class SubmissionServiceIntegrationTest {
   void setUp() {
     final DriverManagerDataSource dataSource = new DriverManagerDataSource();
     dataSource.setDriverClassName("org.h2.Driver");
-    dataSource.setUrl(
-        "jdbc:h2:mem:"
-            + UUID.randomUUID()
-            + ";MODE=PostgreSQL;DB_CLOSE_DELAY=-1;INIT=CREATE SCHEMA IF NOT EXISTS risk_service\\;SET SCHEMA risk_service");
+    dataSource.setUrl(uniqueRiskServiceUrl());
     jdbcTemplate = new JdbcTemplate(dataSource);
     transactionTemplate = new TransactionTemplate(new DataSourceTransactionManager(dataSource));
     objectMapper = new ObjectMapper();

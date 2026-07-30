@@ -9,16 +9,16 @@ import java.util.UUID;
  * @param snapshotId the explicit present-or-absent routing snapshot identity
  */
 public record AdmissionRoutingReference(RoutingSnapshotId snapshotId) {
-    /** Requires an explicit routing-snapshot value object. */
-    public AdmissionRoutingReference {
-        snapshotId = Objects.requireNonNull(snapshotId, "snapshotId");
-    }
+  /** Requires an explicit routing-snapshot value object. */
+  public AdmissionRoutingReference {
+    snapshotId = Objects.requireNonNull(snapshotId, "snapshotId");
+  }
 
-    /** Optional routing snapshot identity. */
-    public record RoutingSnapshotId(UUID value) {
-        /** Returns whether a routing snapshot is present. */
-        public boolean isPresent() {
-            return value != null;
-        }
+  /** Optional routing snapshot identity. */
+  public record RoutingSnapshotId(UUID value) {
+    /** Returns whether a routing snapshot is present. */
+    public boolean isPresent() {
+      return value != null;
     }
+  }
 }

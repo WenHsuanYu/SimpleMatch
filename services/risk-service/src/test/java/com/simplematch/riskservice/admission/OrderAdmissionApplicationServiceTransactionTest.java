@@ -247,7 +247,7 @@ class OrderAdmissionApplicationServiceTransactionTest {
       final DriverManagerDataSource dataSource = new DriverManagerDataSource();
       dataSource.setDriverClassName("org.h2.Driver");
       dataSource.setUrl(
-          "jdbc:h2:mem:risk-admission;MODE=PostgreSQL;DB_CLOSE_DELAY=-1;INIT=CREATE SCHEMA IF NOT EXISTS risk_service\\;SET SCHEMA risk_service");
+          "jdbc:h2:mem:riskadmission;MODE=PostgreSQL;DB_CLOSE_DELAY=-1;INIT=CREATE SCHEMA IF NOT EXISTS risk_service\\;SET SCHEMA risk_service");
       Flyway.configure()
           .dataSource(dataSource)
           .locations("classpath:db/migration/risk-service")
