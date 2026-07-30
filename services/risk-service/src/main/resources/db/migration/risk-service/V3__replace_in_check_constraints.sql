@@ -38,3 +38,4 @@ ALTER TABLE risk_service.admission_journal
         ELSE FALSE
       END
     );
+

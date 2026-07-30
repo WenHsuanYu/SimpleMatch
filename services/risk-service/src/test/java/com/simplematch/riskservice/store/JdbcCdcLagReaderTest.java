@@ -5,7 +5,6 @@ import static com.simplematch.riskservice.admission.AdmissionBackpressureExcepti
 import static com.simplematch.riskservice.admission.AdmissionBackpressureException.Reason.METRIC_UNAVAILABLE;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
-import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.mock;
@@ -31,9 +30,11 @@ class JdbcCdcLagReaderTest {
 
     try (ResultSet resultSet = mock(ResultSet.class)) {
 
-      when(resultSet.getObject("lag_events", Long.class)).thenReturn(12L);
+      when(resultSet.getObject("lag_events", Long.class))
+          .thenReturn(12L);
 
-      when(resultSet.getObject("updated_at_unix_ms", Long.class)).thenReturn(1_000L);
+      when(resultSet.getObject("updated_at_unix_ms", Long.class))
+          .thenReturn(1_000L);
 
       when(jdbcTemplate.queryForObject(
               anyString(),
@@ -62,11 +63,16 @@ class JdbcCdcLagReaderTest {
 
     try (ResultSet resultSet = mock(ResultSet.class)) {
 
-      when(resultSet.getObject("lag_events", Long.class)).thenReturn(null);
+      when(resultSet.getObject("lag_events", Long.class))
+          .thenReturn(null);
 
-      when(resultSet.getObject("updated_at_unix_ms", Long.class)).thenReturn(1_000L);
+      when(resultSet.getObject("updated_at_unix_ms", Long.class))
+          .thenReturn(1_000L);
 
-      when(jdbcTemplate.queryForObject(anyString(), any(RowMapper.class), eq("orders.validated")))
+      when(jdbcTemplate.queryForObject(
+              anyString(),
+              getAny(),
+              eq("orders.validated")))
           .thenAnswer(
               invocation -> {
                 final RowMapper<CdcLagSnapshot> mapper = invocation.getArgument(1);
@@ -91,7 +97,7 @@ class JdbcCdcLagReaderTest {
   void mapsMissingMetricToStableFailure() {
     final JdbcTemplate jdbcTemplate = mock(JdbcTemplate.class);
 
-    when(jdbcTemplate.queryForObject(anyString(), any(RowMapper.class), eq("orders.validated")))
+    when(jdbcTemplate.queryForObject(anyString(), getAny(), eq("orders.validated")))
         .thenThrow(new EmptyResultDataAccessException(1));
 
     final JdbcCdcLagReader reader = new JdbcCdcLagReader(jdbcTemplate);
@@ -106,11 +112,15 @@ class JdbcCdcLagReaderTest {
             });
   }
 
+  private static <T> RowMapper<T> getAny() {
+    return ArgumentMatchers.any();
+  }
+
   @Test
   void mapsDatabaseFailureToUnavailable() {
     final JdbcTemplate jdbcTemplate = mock(JdbcTemplate.class);
 
-    when(jdbcTemplate.queryForObject(anyString(), any(RowMapper.class), eq("orders.validated")))
+    when(jdbcTemplate.queryForObject(anyString(), getAny(), eq("orders.validated")))
         .thenThrow(new DataAccessResourceFailureException("database unavailable"));
 
     final JdbcCdcLagReader reader = new JdbcCdcLagReader(jdbcTemplate);
