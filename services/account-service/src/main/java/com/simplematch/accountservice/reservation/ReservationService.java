@@ -45,24 +45,6 @@ public interface ReservationService {
   }
 
   /**
-   * Releases remaining reservation authority from the deprecated transport-shaped arguments.
-   *
-   * @deprecated Use {@link #release(ReleaseReservationOperation)} so request, reservation, and
-   *     order identifiers cannot be exchanged at call sites.
-   */
-  @Deprecated(forRemoval = false)
-  default ReservationRecord release(
-      String requestId, String reservationId, String orderId, String reasonCode) {
-    return release(
-        new ReleaseReservationOperation(
-            new ReservationIdentity(
-                new ReservationIdentity.RequestId(requestId),
-                new ReservationIdentity.ReservationId(reservationId),
-                new ReservationIdentity.OrderId(orderId)),
-            new ReleaseReservationOperation.ReleaseReason(reasonCode)));
-  }
-
-  /**
    * Applies one execution fill idempotently.
    *
    * @param operation the validated reservation identity and execution fill
@@ -72,31 +54,4 @@ public interface ReservationService {
     throw new UnsupportedOperationException("fill application is not available");
   }
 
-  /**
-   * Applies an execution fill from the deprecated transport-shaped arguments.
-   *
-   * @deprecated Use {@link #applyFill(ApplyFillOperation)} so reservation identity and execution
-   *     values cannot be misplaced at call sites.
-   */
-  @Deprecated(forRemoval = false)
-  @SuppressWarnings({"PMD.ExcessiveParameterList", "checkstyle:ParameterNumber"})
-  default ReservationRecord applyFill(
-      String requestId,
-      String reservationId,
-      String orderId,
-      String executionId,
-      java.math.BigDecimal fillQuantity,
-      java.math.BigDecimal fillPrice) {
-    return applyFill(
-        new ApplyFillOperation(
-            new ReservationIdentity(
-                new ReservationIdentity.RequestId(requestId),
-                new ReservationIdentity.ReservationId(reservationId),
-                new ReservationIdentity.OrderId(orderId)),
-            new ExecutionFill(
-                new ExecutionFill.ExecutionId(executionId),
-                ExecutionFill.AggregateSequence.absent(),
-                new ExecutionFill.FillQuantity(fillQuantity),
-                new ExecutionFill.FillPrice(fillPrice))));
-  }
 }

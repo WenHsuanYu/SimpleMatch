@@ -44,13 +44,15 @@ class IdempotentReservationServiceTransactionIntegrationTest {
 
   private static ReserveOperation reserveOperation() {
     return new ReserveOperation(
-        REQUEST_ID,
-        "O-1",
-        "ACC-1",
-        "AAPL",
-        Side.SIDE_BUY,
-        new BigDecimal("10"),
-        new BigDecimal("101.25"));
+        new ReservationRequestIdentity(
+            new ReservationRequestIdentity.RequestId(REQUEST_ID),
+            new ReservationRequestIdentity.OrderId("O-1"),
+            new ReservationRequestIdentity.AccountId("ACC-1")),
+        new ReservationTerms(
+            new ReservationTerms.InstrumentSymbol("AAPL"),
+            Side.SIDE_BUY,
+            new ReservationTerms.ReservationQuantity(new BigDecimal("10")),
+            new ReservationTerms.LimitPrice(new BigDecimal("101.25"))));
   }
 
   @Configuration

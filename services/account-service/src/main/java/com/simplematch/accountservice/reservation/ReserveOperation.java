@@ -21,34 +21,6 @@ public record ReserveOperation(ReservationRequestIdentity identity, ReservationT
     terms = Objects.requireNonNull(terms, "terms");
   }
 
-  /**
-   * Creates a reserve operation from the deprecated transport-shaped arguments.
-   *
-   * @deprecated Use the domain-value constructor; retained while callers migrate from the flat
-   *     transport-shaped signature.
-   */
-  @Deprecated(forRemoval = false)
-  @SuppressWarnings({"PMD.ExcessiveParameterList", "checkstyle:ParameterNumber"})
-  public ReserveOperation(
-      String requestId,
-      String orderId,
-      String accountId,
-      String symbol,
-      Side side,
-      BigDecimal quantity,
-      BigDecimal limitPrice) {
-    this(
-        new ReservationRequestIdentity(
-            new ReservationRequestIdentity.RequestId(requestId),
-            new ReservationRequestIdentity.OrderId(orderId),
-            new ReservationRequestIdentity.AccountId(accountId)),
-        new ReservationTerms(
-            new ReservationTerms.InstrumentSymbol(symbol),
-            side,
-            new ReservationTerms.ReservationQuantity(quantity),
-            new ReservationTerms.LimitPrice(limitPrice)));
-  }
-
   /** Returns the wire-compatible request identifier. */
   public String requestId() {
     return identity.requestId().value();

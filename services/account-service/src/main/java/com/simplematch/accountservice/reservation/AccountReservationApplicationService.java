@@ -29,7 +29,6 @@ import org.springframework.transaction.annotation.Transactional;
 /** Owns account reservation, release, fill, and authoritative balance transactions. */
 @Service
 @RequiredArgsConstructor
-@SuppressWarnings("PMD.TooManyMethods") // Transaction owner keeps reservation lifecycle local.
 public class AccountReservationApplicationService implements ReservationService {
   private static final ZoneId TAIPEI = ZoneId.of("Asia/Taipei");
   private static final int TRANSACTION_TIMEOUT_SECONDS = 8;
@@ -167,7 +166,7 @@ public class AccountReservationApplicationService implements ReservationService 
       return toLegacy(reservation);
     }
     final long now = clock.millis();
-    releaseCancelledAuthority(reservation, now);
+    AccountAuthorityTransitions.releaseCancelledAuthority(accounts, clock, reservation, now);
     final AccountReservation changed =
         new AccountReservation(
             reservation.reservationId(),
@@ -193,28 +192,9 @@ public class AccountReservationApplicationService implements ReservationService 
     return toLegacy(changed);
   }
 
-  /**
-   * Releases a reservation from deprecated transport-shaped arguments.
-   *
-   * @deprecated Use {@link #release(ReleaseReservationOperation)}.
-   */
-  @Deprecated(forRemoval = false)
-  public ReservationRecord release(
-      String requestId, String reservationId, String orderId, String reasonCode) {
-    return release(
-        new ReleaseReservationOperation(
-            new ReservationIdentity(
-                new ReservationIdentity.RequestId(requestId),
-                new ReservationIdentity.ReservationId(reservationId),
-                new ReservationIdentity.OrderId(orderId)),
-            new ReleaseReservationOperation.ReleaseReason(reasonCode)));
-  }
-
   /** Applies one execution fill once, using the account inbox as the deduplication boundary. */
   @Override
   @Transactional(timeout = TRANSACTION_TIMEOUT_SECONDS)
-  @SuppressWarnings(
-      "PMD.CyclomaticComplexity") // Atomic fill state transition is intentionally one transaction.
   public ReservationRecord applyFill(ApplyFillOperation operation) {
     Objects.requireNonNull(operation, "operation");
     final ReservationIdentity identity = operation.reservation();
@@ -234,13 +214,7 @@ public class AccountReservationApplicationService implements ReservationService 
         accounts
             .findReservationForUpdate(identity.reservationId().value())
             .orElseThrow(() -> new IllegalArgumentException("reservation not found"));
-    if (!reservation.requestId().equals(identity.requestId().value())
-        || !reservation.orderId().equals(identity.orderId().value())) {
-      throw new IllegalArgumentException("reservation identity does not match fill");
-    }
-    if (fill.quantity().value().compareTo(reservation.remainingQuantity()) > 0) {
-      throw new IllegalArgumentException("fill quantity exceeds remaining reservation quantity");
-    }
+    AccountAuthorityTransitions.validateFill(reservation, identity, fill);
     final long now = clock.millis();
     final BigDecimal fillNotional = fill.notional();
     final BigDecimal remaining = reservation.remainingQuantity().subtract(fill.quantity().value());
@@ -248,7 +222,8 @@ public class AccountReservationApplicationService implements ReservationService 
         remaining.signum() == 0
             ? reservation.reservedNotional()
             : reservation.reservedNotional().min(fillNotional);
-    applyFilledAuthority(reservation, fill, releasedNotional, now);
+    AccountAuthorityTransitions.applyFilledAuthority(
+        accounts, clock, reservation, fill, releasedNotional, now);
     final ReservationStatus status =
         remaining.signum() == 0
             ? ReservationStatus.RESERVATION_STATUS_APPLIED
@@ -283,34 +258,6 @@ public class AccountReservationApplicationService implements ReservationService 
     return toLegacy(changed);
   }
 
-  /**
-   * Applies a fill from deprecated transport-shaped arguments.
-   *
-   * @deprecated Use {@link #applyFill(ApplyFillOperation)}.
-   */
-  @Deprecated(forRemoval = false)
-  @SuppressWarnings({"PMD.ExcessiveParameterList", "checkstyle:ParameterNumber"})
-  public ReservationRecord applyFill(
-      String requestId,
-      String reservationId,
-      String orderId,
-      String executionId,
-      Long aggregateSequence,
-      BigDecimal fillQuantity,
-      BigDecimal fillPrice) {
-    return applyFill(
-        new ApplyFillOperation(
-            new ReservationIdentity(
-                new ReservationIdentity.RequestId(requestId),
-                new ReservationIdentity.ReservationId(reservationId),
-                new ReservationIdentity.OrderId(orderId)),
-            new ExecutionFill(
-                new ExecutionFill.ExecutionId(executionId),
-                new ExecutionFill.AggregateSequence(aggregateSequence),
-                new ExecutionFill.FillQuantity(fillQuantity),
-                new ExecutionFill.FillPrice(fillPrice))));
-  }
-
   /** Provisions an account-wide daily cash limit for controlled administration. */
   @Transactional
   public void provisionLimit(String accountId, LocalDate tradingDay, BigDecimal totalNotional) {
@@ -337,99 +284,6 @@ public class AccountReservationApplicationService implements ReservationService 
     return toLegacy(rejected);
   }
 
-  private void releaseCancelledAuthority(AccountReservation reservation, long now) {
-    final LocalDate tradingDay = clock.instant().atZone(TAIPEI).toLocalDate();
-    if (reservation.side() == Side.SIDE_BUY) {
-      final AccountLimit limit =
-          accounts
-              .findLimitForUpdate(reservation.accountId(), tradingDay)
-              .orElseThrow(() -> new IllegalStateException("account limit is not provisioned"));
-      final AccountLimit changed =
-          limit.withBalances(
-              limit
-                  .reservedNotional()
-                  .subtract(reservation.reservedNotional())
-                  .max(BigDecimal.ZERO),
-              limit.utilizedNotional(),
-              limit.availableNotional().add(reservation.reservedNotional()),
-              limit.version() + 1,
-              now);
-      accounts.updateLimit(changed, limit.version());
-      return;
-    }
-
-    final AccountPosition position =
-        accounts
-            .findPositionForUpdate(reservation.accountId(), reservation.symbol())
-            .orElseThrow(() -> new IllegalStateException("position is not provisioned"));
-    final BigDecimal released =
-        position.reservedLongQuantity().min(reservation.remainingQuantity());
-    final AccountPosition changed =
-        new AccountPosition(
-            position.accountId(),
-            position.symbol(),
-            position.longQuantity(),
-            position.shortQuantity(),
-            position.reservedLongQuantity().subtract(released),
-            position.reservedShortQuantity(),
-            position.version() + 1,
-            now);
-    accounts.updatePosition(changed, position.version());
-  }
-
-  private void applyFilledAuthority(
-      AccountReservation reservation, ExecutionFill fill, BigDecimal releasedNotional, long now) {
-    final LocalDate tradingDay = clock.instant().atZone(TAIPEI).toLocalDate();
-    if (reservation.side() == Side.SIDE_BUY) {
-      final AccountLimit limit =
-          accounts
-              .findLimitForUpdate(reservation.accountId(), tradingDay)
-              .orElseThrow(() -> new IllegalStateException("account limit is not provisioned"));
-      final AccountLimit changed =
-          limit.withBalances(
-              limit.reservedNotional().subtract(releasedNotional).max(BigDecimal.ZERO),
-              limit.utilizedNotional().add(fill.notional()),
-              limit.availableNotional().add(releasedNotional).subtract(fill.notional()),
-              limit.version() + 1,
-              now);
-      accounts.updateLimit(changed, limit.version());
-
-      final AccountPosition position =
-          accounts
-              .findPositionForUpdate(reservation.accountId(), reservation.symbol())
-              .orElseThrow(() -> new IllegalStateException("position is not provisioned"));
-      final AccountPosition changedPosition =
-          new AccountPosition(
-              position.accountId(),
-              position.symbol(),
-              position.longQuantity().add(fill.quantity().value()),
-              position.shortQuantity(),
-              position.reservedLongQuantity(),
-              position.reservedShortQuantity(),
-              position.version() + 1,
-              now);
-      accounts.updatePosition(changedPosition, position.version());
-      return;
-    }
-
-    final AccountPosition position =
-        accounts
-            .findPositionForUpdate(reservation.accountId(), reservation.symbol())
-            .orElseThrow(() -> new IllegalStateException("position is not provisioned"));
-    final BigDecimal released = position.reservedLongQuantity().min(fill.quantity().value());
-    final AccountPosition changed =
-        new AccountPosition(
-            position.accountId(),
-            position.symbol(),
-            position.longQuantity().subtract(released),
-            position.shortQuantity(),
-            position.reservedLongQuantity().subtract(released),
-            position.reservedShortQuantity(),
-            position.version() + 1,
-            now);
-    accounts.updatePosition(changed, position.version());
-  }
-
   private void emit(
       AccountReservation reservation, AccountLifecycleState state, String reasonCode, long now) {
     final String eventId = SimpleMatchUuids.uuidV7().toString();
@@ -448,7 +302,12 @@ public class AccountReservationApplicationService implements ReservationService 
             .setState(state)
             .setReservedNotional(
                 TwdNotional.newBuilder()
-                    .setUnits(toFixedUnits(reservation.reservedNotional()))
+                    .setUnits(
+                        reservation
+                            .reservedNotional()
+                            .movePointRight(4)
+                            .setScale(0, RoundingMode.UNNECESSARY)
+                            .longValueExact())
                     .build())
             .setReservedQuantity(
                 ShareQuantity.newBuilder()
@@ -468,10 +327,6 @@ public class AccountReservationApplicationService implements ReservationService 
             "account_reservation",
             reservation.reservationId(),
             now));
-  }
-
-  private long toFixedUnits(BigDecimal value) {
-    return value.movePointRight(4).setScale(0, RoundingMode.UNNECESSARY).longValueExact();
   }
 
   private ReservationRecord toLegacy(AccountReservation reservation) {
