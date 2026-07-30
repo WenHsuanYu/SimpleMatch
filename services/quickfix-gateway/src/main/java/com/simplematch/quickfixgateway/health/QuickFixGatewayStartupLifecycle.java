@@ -16,6 +16,7 @@ public final class QuickFixGatewayStartupLifecycle implements SmartLifecycle {
 
   private volatile boolean running;
 
+  /** Creates the lifecycle that coordinates owner-scoped startup recovery. */
   public QuickFixGatewayStartupLifecycle(
       String ownerId,
       QuickFixGatewayStartupRecovery startupRecovery,

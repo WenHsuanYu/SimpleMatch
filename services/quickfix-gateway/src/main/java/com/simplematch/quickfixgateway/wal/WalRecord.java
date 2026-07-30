@@ -7,6 +7,7 @@ import com.simplematch.contracts.common.v1.TimeInForce;
 import com.simplematch.contracts.orders.v1.CommandType;
 import com.simplematch.contracts.orders.v1.OrderCommand;
 
+/** Represents one durable inbound FIX command in the gateway-local write-ahead log. */
 public record WalRecord(
     String schemaVersion,
     String recordId,
@@ -28,6 +29,7 @@ public record WalRecord(
     CommandType commandType,
     String rawFix) {
 
+  /** Converts this durable record to the compatibility order-command contract. */
   @SuppressWarnings(
       "PMD.CyclomaticComplexity") // Null normalization defines the durable WAL compatibility
   // contract.

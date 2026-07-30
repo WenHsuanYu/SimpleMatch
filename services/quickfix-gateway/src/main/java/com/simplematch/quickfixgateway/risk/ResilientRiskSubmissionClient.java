@@ -7,6 +7,7 @@ import java.util.EnumSet;
 import java.util.Set;
 import java.util.function.Supplier;
 
+/** Adds bounded retry and circuit-breaking behavior around synchronous risk admission. */
 public final class ResilientRiskSubmissionClient implements RiskSubmissionClient {
   @FunctionalInterface
   interface Sleeper {
@@ -23,6 +24,7 @@ public final class ResilientRiskSubmissionClient implements RiskSubmissionClient
   private final RiskSubmissionCircuitBreaker circuitBreaker;
   private final Sleeper sleeper;
 
+  /** Creates a client with bounded retry and circuit-breaker settings. */
   public ResilientRiskSubmissionClient(
       RiskSubmissionClient delegate,
       int maxAttempts,

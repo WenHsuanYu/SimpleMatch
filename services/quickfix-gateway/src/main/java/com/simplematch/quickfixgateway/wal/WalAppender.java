@@ -12,6 +12,7 @@ import java.nio.file.StandardOpenOption;
 import java.util.ArrayList;
 import java.util.List;
 
+/** Appends and replays the gateway-local durable inbound FIX write-ahead log. */
 public final class WalAppender implements AutoCloseable {
   private final Path walPath;
   private final Charset charset;
@@ -19,6 +20,7 @@ public final class WalAppender implements AutoCloseable {
   private final FileChannel fileChannel;
   private final Object monitor = new Object();
 
+  /** Opens the durable WAL at the supplied path with the supplied character encoding. */
   public WalAppender(Path walPath, Charset charset) {
     try {
       this.walPath = walPath;
@@ -39,6 +41,7 @@ public final class WalAppender implements AutoCloseable {
     }
   }
 
+  /** Appends a record and forces its bytes to the operating-system file channel. */
   public void appendAndFlush(WalRecord walRecord) {
     try {
       final byte[] payload =
@@ -52,6 +55,7 @@ public final class WalAppender implements AutoCloseable {
     }
   }
 
+  /** Reads all nonblank records from the current local WAL. */
   public List<WalRecord> readAll() {
     final List<WalRecord> records = new ArrayList<>();
     if (!Files.exists(walPath)) {
@@ -72,6 +76,7 @@ public final class WalAppender implements AutoCloseable {
     }
   }
 
+  /** Returns the physical path of the local WAL file. */
   public Path walPath() {
     return walPath;
   }

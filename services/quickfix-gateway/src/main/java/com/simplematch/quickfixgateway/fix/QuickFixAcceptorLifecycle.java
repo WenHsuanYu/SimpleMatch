@@ -14,6 +14,7 @@ import quickfix.MessageFactory;
 import quickfix.SessionSettings;
 import quickfix.SocketAcceptor;
 
+/** Owns the QuickFIX/J acceptor lifecycle for one gateway runtime. */
 public final class QuickFixAcceptorLifecycle implements SmartLifecycle {
   private static final Logger logger = LoggerFactory.getLogger(QuickFixAcceptorLifecycle.class);
 
@@ -23,6 +24,7 @@ public final class QuickFixAcceptorLifecycle implements SmartLifecycle {
   private volatile boolean running;
   private SocketAcceptor acceptor;
 
+  /** Creates an acceptor lifecycle using the supplied application callbacks and runtime paths. */
   public QuickFixAcceptorLifecycle(
       QuickFixApplicationAdapter application, QuickFixGatewayRuntime runtime) {
     this.application = application;

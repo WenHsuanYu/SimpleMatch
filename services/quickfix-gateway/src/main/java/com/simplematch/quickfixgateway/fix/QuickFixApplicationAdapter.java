@@ -12,11 +12,13 @@ import quickfix.RejectLogon;
 import quickfix.SessionID;
 import quickfix.UnsupportedMessageType;
 
+/** Adapts QuickFIX/J application callbacks to the gateway's inbound order handler. */
 public final class QuickFixApplicationAdapter implements Application {
   private static final Logger logger = LoggerFactory.getLogger(QuickFixApplicationAdapter.class);
 
   private final InboundFixMessageHandler inboundFixMessageHandler;
 
+  /** Creates an adapter that delegates inbound application messages to the supplied handler. */
   public QuickFixApplicationAdapter(InboundFixMessageHandler inboundFixMessageHandler) {
     this.inboundFixMessageHandler = inboundFixMessageHandler;
   }

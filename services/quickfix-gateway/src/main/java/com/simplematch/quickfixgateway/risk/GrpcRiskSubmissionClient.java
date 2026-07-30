@@ -9,10 +9,12 @@ import com.simplematch.contracts.risk.v1.SubmitOrderResponse;
 import io.grpc.ManagedChannel;
 import java.util.concurrent.TimeUnit;
 
+/** Submits gateway order commands to risk-service through its blocking gRPC contract. */
 public final class GrpcRiskSubmissionClient implements RiskSubmissionClient {
   private final RiskServiceGrpc.RiskServiceBlockingStub blockingStub;
   private final long deadlineMillis;
 
+  /** Creates a client whose RPC calls use the supplied channel and deadline. */
   public GrpcRiskSubmissionClient(ManagedChannel managedChannel, long deadlineMillis) {
     this.blockingStub = RiskServiceGrpc.newBlockingStub(managedChannel);
     this.deadlineMillis = deadlineMillis;

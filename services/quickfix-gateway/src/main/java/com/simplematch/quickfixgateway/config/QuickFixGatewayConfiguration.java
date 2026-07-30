@@ -38,6 +38,7 @@ import org.springframework.context.annotation.Configuration;
 import org.springframework.kafka.annotation.EnableKafka;
 import org.springframework.kafka.core.KafkaTemplate;
 
+/** Wires the QuickFIX gateway's runtime, messaging, and recovery components. */
 @Configuration
 @EnableKafka
 @EnableConfigurationProperties(QuickFixGatewayProperties.class)

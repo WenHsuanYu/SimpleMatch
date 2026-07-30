@@ -8,10 +8,12 @@ import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
 import quickfix.SessionID;
 
+/** Tracks the session context needed to render asynchronous matching executions. */
 public final class OrderSessionRegistry implements ExecutionSessionResolver {
   private final ConcurrentHashMap<String, OrderSessionState> states = new ConcurrentHashMap<>();
   private final Set<String> seenExecIds = ConcurrentHashMap.newKeySet();
 
+  /** Registers a newly admitted order with the originating FIX session. */
   public void registerAcceptedOrder(SessionID sessionId, WalRecord walRecord, char ordStatus) {
     states.put(
         walRecord.orderId(),
@@ -26,6 +28,7 @@ public final class OrderSessionRegistry implements ExecutionSessionResolver {
             ordStatus));
   }
 
+  /** Registers a cancel request and retains its client correlation identifiers. */
   public void registerCancelRequest(SessionID sessionId, WalRecord walRecord) {
     states.compute(
         walRecord.orderId(),
@@ -49,6 +52,7 @@ public final class OrderSessionRegistry implements ExecutionSessionResolver {
         });
   }
 
+  /** Finds the session state for an order, when it is still known locally. */
   public Optional<OrderSessionState> find(String orderId) {
     return Optional.ofNullable(states.get(orderId));
   }
@@ -58,10 +62,12 @@ public final class OrderSessionRegistry implements ExecutionSessionResolver {
     return find(executionEvent.getOrderId()).map(OrderSessionState::sessionId);
   }
 
+  /** Returns whether an execution identifier has not yet been processed. */
   public boolean markExecutionSeen(String execId) {
     return seenExecIds.add(execId);
   }
 
+  /** Applies an execution outcome to the locally tracked order session state. */
   public void applyExecution(ExecutionEvent executionEvent) {
     final OrderSessionState state = states.get(executionEvent.getOrderId());
     if (state == null) {

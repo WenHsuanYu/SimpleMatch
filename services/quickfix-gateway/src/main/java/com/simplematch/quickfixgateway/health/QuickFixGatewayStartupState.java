@@ -18,34 +18,41 @@ public final class QuickFixGatewayStartupState {
 
   private volatile String failureMessage = "";
 
+  /** Returns the current gateway startup phase. */
   public Phase phase() {
     return phase.get();
   }
 
+  /** Returns the number of WAL records replayed by the latest successful recovery. */
   public int replayedWalRecords() {
     return replayedWalRecords.get();
   }
 
+  /** Returns the latest startup failure message, if any. */
   public String failureMessage() {
     return failureMessage;
   }
 
+  /** Returns whether startup recovery has completed successfully. */
   public boolean isReady() {
     return phase.get() == Phase.READY;
   }
 
+  /** Marks recovery as in progress and clears previous recovery state. */
   public void markRecovering() {
     replayedWalRecords.set(0);
     failureMessage = "";
     phase.set(Phase.RECOVERING);
   }
 
+  /** Marks recovery as successful with its replayed-record count. */
   public void markReady(int replayedRecords) {
     replayedWalRecords.set(replayedRecords);
     failureMessage = "";
     phase.set(Phase.READY);
   }
 
+  /** Marks recovery as failed and records a diagnostic message. */
   public void markFailed(Throwable failure) {
     replayedWalRecords.set(0);
     failureMessage = resolveFailureMessage(failure);

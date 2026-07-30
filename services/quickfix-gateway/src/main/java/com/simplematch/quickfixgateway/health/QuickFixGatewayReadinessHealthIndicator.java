@@ -10,6 +10,7 @@ public final class QuickFixGatewayReadinessHealthIndicator implements HealthIndi
   private final boolean acceptorEnabled;
   private final BooleanSupplier acceptorRunning;
 
+  /** Creates an indicator from recovery state and the configured acceptor availability probe. */
   public QuickFixGatewayReadinessHealthIndicator(
       QuickFixGatewayStartupState startupState,
       boolean acceptorEnabled,

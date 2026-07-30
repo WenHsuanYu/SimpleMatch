@@ -13,6 +13,7 @@ public record QuickFixGatewayProperties(
     Boolean compatibilityPublishEnabled,
     Boolean replayEnabled,
     RiskClientProperties riskClient) {
+  /** Normalizes absent configuration values to the gateway's compatibility defaults. */
   public QuickFixGatewayProperties {
     quickfixConfigPath = defaultString(quickfixConfigPath, "config/quickfix/acceptor.cfg");
     walPath = defaultString(walPath, "data/quickfix/wal/inbound.wal");
@@ -27,6 +28,7 @@ public record QuickFixGatewayProperties(
   /** Bounded synchronous risk-client resilience policy. */
   public record RiskClientProperties(
       Integer deadlineMillis, RetryProperties retry, BreakerProperties breaker) {
+    /** Normalizes the risk-client resilience settings to bounded defaults. */
     public RiskClientProperties {
       deadlineMillis = positiveOrDefault(deadlineMillis, 1_500);
       retry = retry == null ? RetryProperties.defaults() : retry;
@@ -40,6 +42,7 @@ public record QuickFixGatewayProperties(
 
   /** Retry settings for transient synchronous risk calls. */
   public record RetryProperties(Integer maxAttempts, Integer backoffMillis) {
+    /** Normalizes retry settings to their configured defaults. */
     public RetryProperties {
       maxAttempts = positiveOrDefault(maxAttempts, 2);
       backoffMillis = nonNegativeOrDefault(backoffMillis, 50);
@@ -52,6 +55,7 @@ public record QuickFixGatewayProperties(
 
   /** Circuit-breaker settings for unavailable risk-service dependencies. */
   public record BreakerProperties(Integer consecutiveFailures, Integer openDurationMillis) {
+    /** Normalizes circuit-breaker settings to their configured defaults. */
     public BreakerProperties {
       consecutiveFailures = positiveOrDefault(consecutiveFailures, 3);
       openDurationMillis = positiveOrDefault(openDurationMillis, 1_000);

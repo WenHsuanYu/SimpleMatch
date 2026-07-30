@@ -5,6 +5,7 @@ import quickfix.Session;
 import quickfix.SessionID;
 import quickfix.SessionNotFound;
 
+/** Sends FIX messages through the active QuickFIX/J session registry. */
 public final class QuickFixSessionMessageSender implements FixSessionMessageSender {
   @Override
   public void send(SessionID sessionId, Message message) {

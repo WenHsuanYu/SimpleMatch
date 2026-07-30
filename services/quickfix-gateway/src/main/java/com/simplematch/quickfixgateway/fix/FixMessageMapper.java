@@ -30,6 +30,7 @@ import quickfix.field.TransactTime;
 import quickfix.fix44.ExecutionReport;
 import quickfix.fix44.OrderCancelReject;
 
+/** Renders stable FIX 4.4 execution and cancel-rejection messages from gateway domain values. */
 @SuppressWarnings("PMD.TooManyMethods") // FIX protocol mapper keeps one wire-format seam.
 public final class FixMessageMapper {
   private static final DateTimeFormatter FIX_TIMESTAMP =
@@ -37,6 +38,7 @@ public final class FixMessageMapper {
 
   private final Clock clock;
 
+  /** Creates a mapper whose fallback timestamps are supplied by the given clock. */
   public FixMessageMapper(Clock clock) {
     this.clock = clock;
   }
@@ -56,6 +58,31 @@ public final class FixMessageMapper {
     report.setString(Symbol.FIELD, order.symbol().value());
     report.setString(TransactTime.FIELD, FIX_TIMESTAMP.format(execution.transactTime()));
     return report;
+  }
+
+  /**
+   * Builds a Pending New execution report from the legacy scalar adapter values.
+   *
+   * @deprecated Use {@link #buildPendingNew(FixOrderSnapshot, FixExecutionIdentity)}.
+   */
+  @Deprecated(forRemoval = false)
+  @SuppressWarnings({"PMD.ExcessiveParameterList", "checkstyle:ParameterNumber"})
+  public ExecutionReport buildPendingNew(
+      String orderId,
+      String execId,
+      String clientOrderId,
+      String symbol,
+      Side side,
+      String quantity,
+      Instant transactTime) {
+    return buildPendingNew(
+        new FixOrderSnapshot(
+            new FixOrderSnapshot.OrderId(orderId),
+            new FixOrderSnapshot.ClientOrderId(clientOrderId),
+            new FixOrderSnapshot.Symbol(symbol),
+            side,
+            new FixOrderSnapshot.Quantity(quantity)),
+        new FixExecutionIdentity(new FixExecutionIdentity.ExecutionId(execId), transactTime));
   }
 
   /** Builds a rejected execution report from explicit FIX adapter values. */
@@ -83,29 +110,8 @@ public final class FixMessageMapper {
   }
 
   /**
-   * @deprecated Use {@link #buildPendingNew(FixOrderSnapshot, FixExecutionIdentity)}.
-   */
-  @Deprecated(forRemoval = false)
-  @SuppressWarnings({"PMD.ExcessiveParameterList", "checkstyle:ParameterNumber"})
-  public ExecutionReport buildPendingNew(
-      String orderId,
-      String execId,
-      String clientOrderId,
-      String symbol,
-      Side side,
-      String quantity,
-      Instant transactTime) {
-    return buildPendingNew(
-        new FixOrderSnapshot(
-            new FixOrderSnapshot.OrderId(orderId),
-            new FixOrderSnapshot.ClientOrderId(clientOrderId),
-            new FixOrderSnapshot.Symbol(symbol),
-            side,
-            new FixOrderSnapshot.Quantity(quantity)),
-        new FixExecutionIdentity(new FixExecutionIdentity.ExecutionId(execId), transactTime));
-  }
-
-  /**
+   * Builds a rejected execution report from the legacy scalar adapter values.
+   *
    * @deprecated Use {@link #buildRejected(FixOrderSnapshot, FixExecutionIdentity, String)}.
    */
   @Deprecated(forRemoval = false)
@@ -130,6 +136,7 @@ public final class FixMessageMapper {
         text);
   }
 
+  /** Renders an execution report from matching's execution event and session state. */
   public Message buildExecutionReport(ExecutionEvent executionEvent, OrderSessionState state) {
     final ExecutionReport report = new ExecutionReport();
     report.setString(OrderID.FIELD, executionEvent.getOrderId());
@@ -165,6 +172,7 @@ public final class FixMessageMapper {
     return report;
   }
 
+  /** Renders a cancel rejection from a matching execution event and its session state. */
   public OrderCancelReject buildOrderCancelReject(
       ExecutionEvent executionEvent, OrderSessionState state) {
     final String cancelClientOrderId = executionEvent.getCancelClOrdId();
@@ -188,6 +196,7 @@ public final class FixMessageMapper {
     return reject;
   }
 
+  /** Renders a cancel rejection from the explicit FIX correlation fields. */
   public OrderCancelReject buildOrderCancelReject(
       String orderId,
       String cancelClientOrderId,
@@ -207,6 +216,7 @@ public final class FixMessageMapper {
     return reject;
   }
 
+  /** Returns the current instant from this mapper's clock. */
   public Instant now() {
     return Instant.now(clock);
   }

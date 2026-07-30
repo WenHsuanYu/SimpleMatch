@@ -14,6 +14,7 @@ import org.springframework.kafka.annotation.KafkaListener;
 import quickfix.Message;
 import quickfix.SessionID;
 
+/** Converts matching execution events into FIX responses for their originating sessions. */
 public final class MatchingExecutionConsumer {
   private static final Logger logger = LoggerFactory.getLogger(MatchingExecutionConsumer.class);
 
@@ -22,6 +23,9 @@ public final class MatchingExecutionConsumer {
   private final FixMessageMapper fixMessageMapper;
   private final FixSessionMessageSender fixSessionMessageSender;
 
+  /**
+   * Creates the consumer with session lookup, deduplication, rendering, and sending collaborators.
+   */
   public MatchingExecutionConsumer(
       ExecutionSessionResolver executionSessionResolver,
       OrderSessionRegistry orderSessionRegistry,
@@ -33,6 +37,7 @@ public final class MatchingExecutionConsumer {
     this.fixSessionMessageSender = fixSessionMessageSender;
   }
 
+  /** Renders and sends one deduplicated matching execution event. */
   @KafkaListener(topics = "${simplematch.kafka.topics.matching-executions:matching.executions}")
   public void onExecution(byte[] payload) throws InvalidProtocolBufferException {
     final ExecutionEvent executionEvent = ExecutionEvent.parseFrom(payload);

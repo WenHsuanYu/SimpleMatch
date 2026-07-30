@@ -29,6 +29,7 @@ import quickfix.field.Price;
 import quickfix.field.Symbol;
 import quickfix.fix44.OrderCancelRequest;
 
+/** Translates inbound FIX orders into durable, risk-admitted gateway commands. */
 @SuppressWarnings(
     "PMD.TooManyMethods") // FIX ingress transaction coordination remains behind one handler seam.
 public final class InboundFixMessageHandler {
@@ -44,6 +45,7 @@ public final class InboundFixMessageHandler {
   private final CommandIdGenerator commandIdGenerator;
   private final Clock clock;
 
+  /** Creates the inbound handler with its durable, risk, and FIX-session collaborators. */
   public InboundFixMessageHandler(
       WalAppender walAppender,
       OrdersCommandPublisher ordersCommandPublisher,
@@ -82,6 +84,7 @@ public final class InboundFixMessageHandler {
     this.clock = clock;
   }
 
+  /** Handles one inbound application message for its QuickFIX session. */
   public void handle(Message message, SessionID sessionId)
       throws FieldNotFound, UnsupportedMessageType {
     final String msgType = header(message).getString(MsgType.FIELD);
@@ -368,6 +371,16 @@ public final class InboundFixMessageHandler {
     return rejectText(submission.reasonCode(), submission.reasonText());
   }
 
+  private String rejectText(String reasonCode, String reasonText) {
+    if (reasonCode == null || reasonCode.isBlank()) {
+      return reasonText;
+    }
+    if (reasonText == null || reasonText.isBlank()) {
+      return reasonCode;
+    }
+    return reasonCode + ": " + reasonText;
+  }
+
   private void rejectOversizedNewOrderIdentity(
       FixIdentityValidationFailure identityFailure,
       SessionID sessionId,
@@ -394,16 +407,6 @@ public final class InboundFixMessageHandler {
             '8',
             rejectText(identityFailure.reasonCode(), identityFailure.reasonText()));
     fixSessionMessageSender.send(sessionId, rejected);
-  }
-
-  private String rejectText(String reasonCode, String reasonText) {
-    if (reasonCode == null || reasonCode.isBlank()) {
-      return reasonText;
-    }
-    if (reasonText == null || reasonText.isBlank()) {
-      return reasonCode;
-    }
-    return reasonCode + ": " + reasonText;
   }
 
   private Side mapSide(char value) {
