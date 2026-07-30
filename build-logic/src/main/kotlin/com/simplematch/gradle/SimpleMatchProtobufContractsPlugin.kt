@@ -1,5 +1,6 @@
 package com.simplematch.gradle
 
+import com.github.spotbugs.snom.SpotBugsTask
 import com.google.protobuf.gradle.ProtobufExtension
 import com.google.protobuf.gradle.proto
 import org.gradle.api.Plugin
@@ -13,17 +14,23 @@ import org.gradle.kotlin.dsl.getByType
 
 /** Applies the repository's stable protobuf and gRPC Java generation contract. */
 class SimpleMatchProtobufContractsPlugin : Plugin<Project> {
+    private companion object {
+        const val HANDWRITTEN_CONTRACTS_CLASS_PATTERN = "com.simplematch.contracts.v2.*"
+    }
+
     override fun apply(project: Project) {
         project.pluginManager.apply("simplematch.java-conventions")
         project.pluginManager.apply("simplematch.java-quality")
-        // Protobuf contracts historically ran conventions only. Keep generated/contract
-        // sources outside the repository-wide Checkstyle and SpotBugs policy while
-        // retaining the PMD design gate introduced for issue #21.
-        project.tasks
-            .matching { it.name == "checkstyleMain" || it.name == "spotbugsMain" }
-            .configureEach { enabled = false }
         project.pluginManager.apply("java-library")
         project.pluginManager.apply("com.google.protobuf")
+
+        project.tasks
+            .withType(SpotBugsTask::class.java)
+            .matching { it.name == "spotbugsMain" }
+            .configureEach {
+                sourceDirs.setFrom(project.projectDir.resolve("src/main/java"))
+                onlyAnalyze.set(listOf(HANDWRITTEN_CONTRACTS_CLASS_PATTERN))
+            }
 
         val catalog = project.extensions.getByType<VersionCatalogsExtension>().named("libs")
         project.extensions.configure<JavaPluginExtension> {

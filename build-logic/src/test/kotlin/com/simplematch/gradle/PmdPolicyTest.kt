@@ -7,15 +7,15 @@ import kotlin.test.assertEquals
 import kotlin.test.assertTrue
 
 class PmdPolicyTest {
-
-
     @Test
-    fun `checked in ruleset contains exactly the approved references`() {
+    fun `loads a unique set of Java rule references from the checked in ruleset`() {
         val ruleset = Path.of("../config/pmd/simplematch-design.xml")
         val contents = Files.readString(ruleset)
-        val references = Regex("rule ref=\"([^\"]+)\"").findAll(contents).map { it.groupValues[1] }.toList()
+        val references = PmdPolicy.ruleReferences(ruleset)
 
-//        assertEquals(PmdPolicy.ruleReferences, references)
         assertTrue(contents.contains("handwritten"))
+        assertEquals(PmdPolicy.EXPECTED_RULE_COUNT, references.size)
+        assertEquals(references.size, references.toSet().size)
+        assertTrue(references.all { it.startsWith("category/java/") })
     }
 }
