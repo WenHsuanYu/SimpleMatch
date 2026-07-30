@@ -25,3 +25,35 @@ duplicated here.
 
 This page is the target specification entry point for risk-owned behavior. Keep admission, validation, and risk-owned
 persistence decisions here; keep shared architecture and contracts in their cross-cutting canonical documents.
+
+## Domain model
+
+`AdmissionCommand` is composed from typed identity, order facts, FIX identity, and an optional routing reference. Its
+canonical constructor cannot exchange command/order/account UUIDs or sender/target/client-order strings. A durable
+submission result is likewise composed instead of represented as one flat primitive record:
+
+- `SubmissionReference` identifies the request, order, and normalized command type.
+- `FixSubmissionIdentity` carries the FIX-facing business identity and trading day.
+- `PersistedFixIdentity` carries storage-safe client-order identifiers and the surrogate decision.
+- `SubmissionOutcome` is either accepted or contains one `SubmissionRejection`.
+- `AdmissionFailure` represents a transport-independent reason that v2 admission cannot continue.
+
+`SubmissionValidator` creates these values after normalization. JDBC and gRPC adapters translate them to storage and
+protobuf fields; they do not define the business meaning. A business rejection remains a durable domain outcome rather
+than an infrastructure exception or dead-letter event.
+
+## Domain model
+
+`AdmissionCommand` is composed from typed identity, order facts, FIX identity, and an optional routing reference. Its
+canonical constructor cannot exchange command/order/account UUIDs or sender/target/client-order strings. A durable
+submission result is likewise composed instead of represented as one flat primitive record:
+
+- `SubmissionReference` identifies the request, order, and normalized command type.
+- `FixSubmissionIdentity` carries the FIX-facing business identity and trading day.
+- `PersistedFixIdentity` carries storage-safe client-order identifiers and the surrogate decision.
+- `SubmissionOutcome` is either accepted or contains one `SubmissionRejection`.
+- `AdmissionFailure` represents a transport-independent reason that v2 admission cannot continue.
+
+`SubmissionValidator` creates these values after normalization. JDBC and gRPC adapters translate them to storage and
+protobuf fields; they do not define the business meaning. A business rejection remains a durable domain outcome rather
+than an infrastructure exception or dead-letter event.

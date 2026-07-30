@@ -48,4 +48,8 @@ reliability decisions are in the
 
 ## Documentation
 
-Use the [target documentation index](services/docs/README.md) to navigate all technical target specifications.
+Start with the [domain context and context map](CONTEXT.md) for bounded-context ownership and ubiquitous language. Use
+then the [target documentation index](services/docs/README.md) to navigate detailed architecture, contract, platform,
+and service specifications. Domain-value decisions for parameter-safe APIs are recorded in
+[ADR 0002](docs/adr/0002-domain-values-for-wide-call-boundaries.md). The concrete migration and intentional
+exceptions are listed in the [domain parameter-safety refactor](docs/domain-parameter-safety-refactor.md).

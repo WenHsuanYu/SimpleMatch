@@ -24,3 +24,29 @@ their owning services and the cross-cutting documentation.
 
 This page is the target specification entry point for account-owned behavior. Keep account-specific decisions here. Keep
 shared transport, event, and platform rules in `services/docs/` so they remain canonical across services.
+
+## Domain language and lifecycle commands
+
+The account domain exposes three use-case commands rather than transport-shaped parameter lists:
+
+- `ReserveOperation` combines `ReservationRequestIdentity` with `ReservationTerms`.
+- `ReleaseReservationOperation` combines the locked `ReservationIdentity` with a release reason.
+- `ApplyFillOperation` combines `ReservationIdentity` with one `ExecutionFill`.
+
+Each request, reservation, order, account, execution, quantity, and price role has a distinct Java type. Transport parsing
+remains in `AccountGrpcService`; `AccountReservationApplicationService` remains the transaction owner. Context-free
+invariants are checked while the command is created, while state-dependent invariants are checked after locking
+account-owned state, including identity equality and `fill quantity <= remaining quantity`.
+
+## Domain language and lifecycle commands
+
+The account domain exposes three use-case commands rather than transport-shaped parameter lists:
+
+- `ReserveOperation` combines `ReservationRequestIdentity` with `ReservationTerms`.
+- `ReleaseReservationOperation` combines the locked `ReservationIdentity` with a release reason.
+- `ApplyFillOperation` combines `ReservationIdentity` with one `ExecutionFill`.
+
+Each request, reservation, order, account, execution, quantity, and price role has a distinct Java type. Transport parsing
+remains in `AccountGrpcService`; `AccountReservationApplicationService` remains the transaction owner. Context-free
+invariants are checked while the command is created, while state-dependent invariants are checked after locking
+account-owned state, including identity equality and `fill quantity <= remaining quantity`.

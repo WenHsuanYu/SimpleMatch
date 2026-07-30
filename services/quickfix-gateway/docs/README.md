@@ -19,3 +19,23 @@ ordering, or reliability specifications.
 
 Keep FIX-session and ingress-specific decisions with this service. Keep cross-service protocols and architecture rules
 in `services/docs/`.
+
+## Anti-corruption layer
+
+FIX is an external protocol model, not the internal order domain. `FixOrderSnapshot` and `FixExecutionIdentity` form the
+small adapter vocabulary needed by `FixMessageMapper`. Production callers create the order snapshot from the durable
+`WalRecord`, then supply one execution identity and, for rejection, one reason text. This removes positional seven- and
+eight-argument calls while keeping QuickFIX classes and FIX field semantics inside the gateway.
+
+The gateway must not promote FIX-specific fields such as `ClOrdID`, `ExecID`, or `OrdStatus` into shared domain types.
+The mapper remains responsible for the exact wire representation, which is protected by golden-message tests.
+
+## Anti-corruption layer
+
+FIX is an external protocol model, not the internal order domain. `FixOrderSnapshot` and `FixExecutionIdentity` form the
+small adapter vocabulary needed by `FixMessageMapper`. Production callers create the order snapshot from the durable
+`WalRecord`, then supply one execution identity and, for rejection, one reason text. This removes positional seven- and
+eight-argument calls while keeping QuickFIX classes and FIX field semantics inside the gateway.
+
+The gateway must not promote FIX-specific fields such as `ClOrdID`, `ExecID`, or `OrdStatus` into shared domain types.
+The mapper remains responsible for the exact wire representation, which is protected by golden-message tests.
