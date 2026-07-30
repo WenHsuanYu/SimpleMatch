@@ -92,7 +92,7 @@ public final class SubmissionValidator {
     }
 
     final SubmissionDecision oversizedIdentifierDecision =
-        oversizedIdentifierDecision(payload, resolvedCommandType, now, normalizedCommand);
+        oversizedIdentifierDecision(payload, now, normalizedCommand);
     if (oversizedIdentifierDecision != null) {
       return oversizedIdentifierDecision;
     }
@@ -196,7 +196,6 @@ public final class SubmissionValidator {
 
   private SubmissionDecision oversizedIdentifierDecision(
       SubmissionCommand payload,
-      CommandType resolvedCommandType,
       long now,
       ResolvedSubmissionCommand normalizedCommand) {
     if (exceedsPersistedIdentifierLength(payload.commandId())) {
