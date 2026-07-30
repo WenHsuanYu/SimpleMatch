@@ -53,6 +53,7 @@ public final class OutboxRecord {
    * @param createdAtUnixMs the event creation time in epoch milliseconds
    */
   public record EventInfo(String eventId, long createdAtUnixMs) {
+    /** Validates the event identity and creation timestamp. */
     public EventInfo {
       eventId = requireNonBlank(eventId, "eventId");
       if (createdAtUnixMs < 0) {
@@ -69,6 +70,7 @@ public final class OutboxRecord {
    * @param kafkaPartitionId the optional Kafka partition override
    */
   public record Routing(String topic, String messageKey, Integer kafkaPartitionId) {
+    /** Validates the destination routing metadata. */
     public Routing {
       topic = requireNonBlank(topic, "topic");
       messageKey = requireNonBlank(messageKey, "messageKey");
@@ -134,14 +136,17 @@ public final class OutboxRecord {
       this.headersJson = requireNonBlank(headersJson, "headersJson");
     }
 
+    /** Returns a defensive copy of the serialized payload. */
     public byte[] payload() {
       return Arrays.copyOf(payload, payload.length);
     }
 
+    /** Returns the payload schema or type identifier. */
     public String payloadType() {
       return payloadType;
     }
 
+    /** Returns the serialized transport headers. */
     public String headersJson() {
       return headersJson;
     }
@@ -154,48 +159,59 @@ public final class OutboxRecord {
    * @param aggregateId the aggregate identifier, which may be blank for validation failures
    */
   public record AggregateRef(String aggregateType, String aggregateId) {
+    /** Validates the aggregate type and identifier. */
     public AggregateRef {
       aggregateType = requireNonBlank(aggregateType, "aggregateType");
       Objects.requireNonNull(aggregateId, "aggregateId");
     }
   }
 
+  /** Returns the unique outbox event identifier. */
   public String eventId() {
     return eventId;
   }
 
+  /** Returns the destination topic. */
   public String topic() {
     return topic;
   }
 
+  /** Returns the routing message key. */
   public String messageKey() {
     return messageKey;
   }
 
+  /** Returns the optional Kafka partition override. */
   public Integer kafkaPartitionId() {
     return kafkaPartitionId;
   }
 
+  /** Returns a defensive copy of the serialized payload. */
   public byte[] payload() {
     return Arrays.copyOf(payload, payload.length);
   }
 
+  /** Returns the payload schema or type identifier. */
   public String payloadType() {
     return payloadType;
   }
 
+  /** Returns the serialized transport headers. */
   public String headersJson() {
     return headersJson;
   }
 
+  /** Returns the aggregate type associated with the event. */
   public String aggregateType() {
     return aggregateType;
   }
 
+  /** Returns the aggregate identifier associated with the event. */
   public String aggregateId() {
     return aggregateId;
   }
 
+  /** Returns the event creation timestamp in epoch milliseconds. */
   public long createdAtUnixMs() {
     return createdAtUnixMs;
   }

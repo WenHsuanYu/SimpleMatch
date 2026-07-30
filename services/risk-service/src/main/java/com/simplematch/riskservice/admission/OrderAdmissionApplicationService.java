@@ -8,8 +8,9 @@ import java.time.Clock;
 import java.time.Duration;
 import java.time.Instant;
 import java.util.List;
-import java.util.Objects;
 import java.util.UUID;
+import lombok.NonNull;
+import lombok.RequiredArgsConstructor;
 import org.springframework.dao.DuplicateKeyException;
 import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Service;
@@ -18,37 +19,18 @@ import org.springframework.transaction.support.TransactionTemplate;
 
 /** Coordinates the durable admission saga without holding a database transaction across RPC. */
 @Service
+@RequiredArgsConstructor
 public class OrderAdmissionApplicationService {
   private static final int TRANSACTION_TIMEOUT_SECONDS = 8;
   private static final Duration RECOVERY_AGE = Duration.ofSeconds(30);
-  private final OrderAdmissionValidator validator;
-  private final AdmissionJournalRepository journal;
-  private final OutboxRepository outbox;
-  private final AccountReservationClient account;
-  private final AdmissionOutboxFactory events;
-  private final AdmissionBackpressurePolicy backpressure;
-  private final Clock clock;
-  private final TransactionTemplate transactionTemplate;
-
-  /** Creates the durable admission coordinator and its external account adapter. */
-  public OrderAdmissionApplicationService(
-      OrderAdmissionValidator validator,
-      AdmissionJournalRepository journal,
-      OutboxRepository outbox,
-      AccountReservationClient account,
-      AdmissionOutboxFactory events,
-      AdmissionBackpressurePolicy backpressure,
-      Clock clock,
-      TransactionTemplate transactionTemplate) {
-    this.validator = Objects.requireNonNull(validator, "validator");
-    this.journal = Objects.requireNonNull(journal, "journal");
-    this.outbox = Objects.requireNonNull(outbox, "outbox");
-    this.account = Objects.requireNonNull(account, "account");
-    this.events = Objects.requireNonNull(events, "events");
-    this.backpressure = Objects.requireNonNull(backpressure, "backpressure");
-    this.clock = Objects.requireNonNull(clock, "clock");
-    this.transactionTemplate = Objects.requireNonNull(transactionTemplate, "transactionTemplate");
-  }
+  private final @NonNull OrderAdmissionValidator validator;
+  private final @NonNull AdmissionJournalRepository journal;
+  private final @NonNull OutboxRepository outbox;
+  private final @NonNull AccountReservationClient account;
+  private final @NonNull AdmissionOutboxFactory events;
+  private final @NonNull AdmissionBackpressurePolicy backpressure;
+  private final @NonNull Clock clock;
+  private final @NonNull TransactionTemplate transactionTemplate;
 
   /** Validates, journals, calls account outside a transaction, then finalizes admission. */
   public AdmissionResult admit(NewOrderCommand command) {

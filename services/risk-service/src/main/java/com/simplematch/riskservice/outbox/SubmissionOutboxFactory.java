@@ -20,10 +20,12 @@ public final class SubmissionOutboxFactory extends AbstractOutboxEventFactory<Su
   private final String ordersValidatedTopic;
   private final RoutingPartitionResolver routingPartitionResolver;
 
+  /** Creates a factory that assigns valid symbols to the default partition. */
   public SubmissionOutboxFactory(ObjectMapper objectMapper, String ordersValidatedTopic) {
     this(objectMapper, ordersValidatedTopic, symbol -> DEFAULT_PARTITION_ID);
   }
 
+  /** Creates a factory that delegates valid-symbol partitioning to the resolver. */
   public SubmissionOutboxFactory(
       ObjectMapper objectMapper,
       String ordersValidatedTopic,

@@ -10,6 +10,8 @@ import java.util.List;
 import java.util.Objects;
 import java.util.Optional;
 import java.util.UUID;
+import lombok.NonNull;
+import lombok.RequiredArgsConstructor;
 import org.springframework.jdbc.core.ConnectionCallback;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.jdbc.core.RowMapper;
@@ -17,6 +19,7 @@ import org.springframework.stereotype.Repository;
 
 /** Thin JDBC adapter for the risk-owned durable admission journal. */
 @Repository
+@RequiredArgsConstructor
 public class JdbcAdmissionJournalRepository implements AdmissionJournalRepository {
   private static final RowMapper<AdmissionJournalEntry> MAPPER =
       (resultSet, row) ->
@@ -45,12 +48,7 @@ public class JdbcAdmissionJournalRepository implements AdmissionJournalRepositor
               resultSet.getLong("created_at_unix_ms"),
               resultSet.getLong("updated_at_unix_ms"));
 
-  private final JdbcTemplate jdbcTemplate;
-
-  /** Creates the repository with the risk-service datasource. */
-  public JdbcAdmissionJournalRepository(JdbcTemplate jdbcTemplate) {
-    this.jdbcTemplate = Objects.requireNonNull(jdbcTemplate, "jdbcTemplate");
-  }
+  private final @NonNull JdbcTemplate jdbcTemplate;
 
   @Override
   public Optional<AdmissionJournalEntry> findByCommandId(UUID commandId) {
@@ -79,14 +77,14 @@ public class JdbcAdmissionJournalRepository implements AdmissionJournalRepositor
     final String suffix = isPostgres() ? " ON CONFLICT DO NOTHING" : "";
     return jdbcTemplate.update(
             """
-                        INSERT INTO risk_service.admission_journal (
-                          command_id, order_id, account_id, symbol, venue_mic, side, quantity,
-                          limit_price_units, order_type, tif, trading_day, sender_comp_id,
-                          target_comp_id, cl_ord_id, routing_snapshot_id, routing_partition, state,
-                          reservation_id, reason_code, reason_detail, version,
-                          created_at_unix_ms, updated_at_unix_ms)
-                        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-                        """
+            INSERT INTO risk_service.admission_journal (
+              command_id, order_id, account_id, symbol, venue_mic, side, quantity,
+              limit_price_units, order_type, tif, trading_day, sender_comp_id,
+              target_comp_id, cl_ord_id, routing_snapshot_id, routing_partition, state,
+              reservation_id, reason_code, reason_detail, version,
+              created_at_unix_ms, updated_at_unix_ms)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            """
                 + suffix,
             entry.commandId(),
             entry.orderId(),
@@ -147,13 +145,14 @@ public class JdbcAdmissionJournalRepository implements AdmissionJournalRepositor
   }
 
   private String select() {
-    return """
-                SELECT command_id, order_id, account_id, symbol, venue_mic, side, quantity,
-                  limit_price_units, order_type, tif, trading_day, sender_comp_id, target_comp_id,
-                  cl_ord_id, routing_snapshot_id, routing_partition, state, reservation_id,
-                  reason_code, reason_detail, version, created_at_unix_ms, updated_at_unix_ms
-                FROM risk_service.admission_journal
-                """;
+    return
+        """
+        SELECT command_id, order_id, account_id, symbol, venue_mic, side, quantity,
+          limit_price_units, order_type, tif, trading_day, sender_comp_id, target_comp_id,
+          cl_ord_id, routing_snapshot_id, routing_partition, state, reservation_id,
+          reason_code, reason_detail, version, created_at_unix_ms, updated_at_unix_ms
+        FROM risk_service.admission_journal
+        """;
   }
 
   private boolean isPostgres() {

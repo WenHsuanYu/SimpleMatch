@@ -5,20 +5,19 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import java.util.Arrays;
 import java.util.Map;
 import java.util.Objects;
+import lombok.AccessLevel;
+import lombok.NonNull;
+import lombok.RequiredArgsConstructor;
 
 /**
  * Reusable base factory for composing {@link OutboxRecord} instances across aggregates.
  *
  * @param <T> the source type used by the concrete factory
  */
+@RequiredArgsConstructor(access = AccessLevel.PROTECTED)
 public abstract class AbstractOutboxEventFactory<T> implements OutboxEventFactory<T> {
-  private final ObjectMapper objectMapper;
-  private final String contentType;
-
-  protected AbstractOutboxEventFactory(ObjectMapper objectMapper, String contentType) {
-    this.objectMapper = Objects.requireNonNull(objectMapper, "objectMapper");
-    this.contentType = Objects.requireNonNull(contentType, "contentType");
-  }
+  private final @NonNull ObjectMapper objectMapper;
+  private final @NonNull String contentType;
 
   @Override
   public final OutboxRecord create(T source) {

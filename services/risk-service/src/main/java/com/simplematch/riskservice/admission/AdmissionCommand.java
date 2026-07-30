@@ -30,6 +30,8 @@ public record AdmissionCommand(
   }
 
   /**
+   * Creates a compatibility command from the former flat parameter list.
+   *
    * @deprecated Use the composed domain constructor; retained for journal-recovery compatibility
    *     while positional callers migrate.
    */

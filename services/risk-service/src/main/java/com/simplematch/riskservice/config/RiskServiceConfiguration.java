@@ -33,6 +33,7 @@ import org.springframework.jdbc.datasource.DataSourceTransactionManager;
 import org.springframework.transaction.PlatformTransactionManager;
 import org.springframework.transaction.support.TransactionTemplate;
 
+/** Configures risk-service persistence, admission, and submission collaborators. */
 @Configuration
 @EnableConfigurationProperties(RiskServiceProperties.class)
 @SuppressWarnings("PMD.TooManyMethods")

@@ -14,9 +14,9 @@ import io.grpc.stub.StreamObserver;
 import org.springframework.stereotype.Service;
 
 /**
- * gRPC adapter for the risk service.
+ * Bridges legacy risk protobuf requests to submission outcomes.
  *
- * <p>This class keeps the transport-layer responsibilities small: it normalizes incoming order
+ * <p>It keeps the transport-layer responsibilities small: it normalizes incoming order
  * commands, delegates persistence to {@link SubmissionService}, and translates the stored result
  * back into the protobuf response expected by clients.
  */

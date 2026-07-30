@@ -2,6 +2,7 @@ package com.simplematch.riskservice.submission;
 
 /** Submission command payload paired with the resolved command type selected by the caller. */
 public record ResolvedSubmissionCommand(SubmissionCommand payload, CommandType commandType) {
+  /** Normalizes absent payload and command-type values to their unspecified forms. */
   public ResolvedSubmissionCommand {
     payload = payload == null ? SubmissionCommand.unspecified() : payload;
     commandType = commandType == null ? CommandType.COMMAND_TYPE_UNSPECIFIED : commandType;

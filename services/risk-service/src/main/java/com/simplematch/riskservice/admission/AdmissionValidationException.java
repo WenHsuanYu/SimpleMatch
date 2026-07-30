@@ -7,6 +7,8 @@ public final class AdmissionValidationException extends IllegalArgumentException
   private final AdmissionFailure failure;
 
   /**
+   * Creates a compatibility exception from a reason code and detail.
+   *
    * @deprecated Use {@link #AdmissionValidationException(AdmissionFailure)} so reason code and
    *     detail cannot be exchanged positionally.
    */

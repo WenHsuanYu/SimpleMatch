@@ -12,6 +12,7 @@ import java.util.Locale;
 import java.util.Map;
 import java.util.Objects;
 
+/** Resolves symbol partitions from a validated routing-snapshot file. */
 public final class FileRoutingPartitionResolver implements RoutingPartitionResolver {
   private final Map<String, Integer> partitionsBySymbol;
   private final int partitionCount;
@@ -22,6 +23,7 @@ public final class FileRoutingPartitionResolver implements RoutingPartitionResol
     this.partitionCount = partitionCount;
   }
 
+  /** Loads and validates a routing snapshot for the supplied partition count. */
   public static FileRoutingPartitionResolver load(
       ObjectMapper objectMapper, Path snapshotPath, int partitionCount) {
     Objects.requireNonNull(objectMapper, "objectMapper");

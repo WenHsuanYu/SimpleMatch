@@ -10,6 +10,7 @@ import org.springframework.context.SmartLifecycle;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 
+/** Configures the gRPC lifecycle for both legacy submission and v2 admission APIs. */
 @Configuration
 public class GrpcServerConfiguration {
   @Bean

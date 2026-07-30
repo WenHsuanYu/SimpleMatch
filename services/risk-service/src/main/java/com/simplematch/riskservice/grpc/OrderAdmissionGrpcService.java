@@ -21,7 +21,11 @@ import java.time.Clock;
 import java.util.UUID;
 import org.springframework.stereotype.Service;
 
-/** gRPC adapter for the durable v2 order-admission seam. */
+/**
+ * Bridges the durable v2 order-admission seam to protobuf responses.
+ *
+ * <p>The adapter maps terminal admission outcomes to v2 protobuf responses.
+ */
 @Service
 public final class OrderAdmissionGrpcService
     extends OrderAdmissionServiceGrpc.OrderAdmissionServiceImplBase {

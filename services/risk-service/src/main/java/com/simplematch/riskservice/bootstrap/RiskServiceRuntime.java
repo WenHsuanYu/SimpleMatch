@@ -4,9 +4,11 @@ import com.simplematch.config.PlatformProperties;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
+/** Holds the resolved risk-service runtime settings. */
 public record RiskServiceRuntime(int grpcPort) {
   private static final Pattern PORT_PATTERN = Pattern.compile(":(\\d+)$");
 
+  /** Resolves the runtime settings from shared platform properties. */
   public static RiskServiceRuntime from(PlatformProperties properties) {
     final String target = properties.grpc().targets().riskService();
     final Matcher matcher = PORT_PATTERN.matcher(target);

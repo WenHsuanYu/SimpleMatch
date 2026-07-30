@@ -7,6 +7,7 @@ import java.util.Objects;
 import org.springframework.dao.DuplicateKeyException;
 import org.springframework.transaction.support.TransactionTemplate;
 
+/** Persists submission state and outbox records within one local transaction. */
 public final class TransactionalSubmissionService implements SubmissionService {
   private final SubmissionValidator submissionValidator;
   private final OutboxEventFactory<SubmissionDecision> outboxEventFactory;
@@ -14,6 +15,9 @@ public final class TransactionalSubmissionService implements SubmissionService {
   private final OutboxRepository outboxRepository;
   private final TransactionTemplate transactionTemplate;
 
+  /**
+   * Creates the transactional submission service with its validation and persistence dependencies.
+   */
   public TransactionalSubmissionService(
       SubmissionValidator submissionValidator,
       OutboxEventFactory<SubmissionDecision> outboxEventFactory,

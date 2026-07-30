@@ -17,6 +17,7 @@ import java.util.UUID;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.jdbc.core.RowMapper;
 
+/** JDBC adapter for the idempotent risk-submission journal. */
 public final class JdbcSubmissionRepository implements SubmissionRepository {
   private static final RowMapper<SubmissionResult> SUBMISSION_ROW_MAPPER =
       (resultSet, rowNum) -> {
@@ -49,6 +50,7 @@ public final class JdbcSubmissionRepository implements SubmissionRepository {
 
   private final JdbcTemplate jdbcTemplate;
 
+  /** Creates the repository with the risk-service data source. */
   public JdbcSubmissionRepository(JdbcTemplate jdbcTemplate) {
     this.jdbcTemplate = Objects.requireNonNull(jdbcTemplate, "jdbcTemplate");
   }
@@ -58,19 +60,19 @@ public final class JdbcSubmissionRepository implements SubmissionRepository {
     return jdbcTemplate
         .query(
             """
-                                SELECT request_id, sender_comp_id, target_comp_id, trading_day,
-                                  order_id, cl_ord_id, orig_cl_ord_id, raw_cl_ord_id, raw_orig_cl_ord_id,
-                                  command_type, accepted, reason_code, reason_text,
-                                  business_key_surrogated,
-                                  created_at_unix_ms
-                                FROM risk_service.risk_submissions
-                                WHERE sender_comp_id = ?
-                                    AND target_comp_id = ?
-                                    AND trading_day = ?
-                                    AND command_type = ?
-                                    AND cl_ord_id = ?
-                                    AND business_key_surrogated = ?
-                                """,
+            SELECT request_id, sender_comp_id, target_comp_id, trading_day,
+              order_id, cl_ord_id, orig_cl_ord_id, raw_cl_ord_id, raw_orig_cl_ord_id,
+              command_type, accepted, reason_code, reason_text,
+              business_key_surrogated,
+              created_at_unix_ms
+            FROM risk_service.risk_submissions
+            WHERE sender_comp_id = ?
+                AND target_comp_id = ?
+                AND trading_day = ?
+                AND command_type = ?
+                AND cl_ord_id = ?
+                AND business_key_surrogated = ?
+            """,
             SUBMISSION_ROW_MAPPER,
             businessKey.senderCompId(),
             businessKey.targetCompId(),
@@ -86,25 +88,25 @@ public final class JdbcSubmissionRepository implements SubmissionRepository {
   public void insert(SubmissionResult submission, String outboxEventId) {
     jdbcTemplate.update(
         """
-                        INSERT INTO risk_service.risk_submissions (
-                            request_id,
-                            sender_comp_id,
-                            target_comp_id,
-                            trading_day,
-                            order_id,
-                            cl_ord_id,
-                            orig_cl_ord_id,
-                            raw_cl_ord_id,
-                            raw_orig_cl_ord_id,
-                            command_type,
-                            accepted,
-                            reason_code,
-                            reason_text,
-                            business_key_surrogated,
-                            created_at_unix_ms,
-                            outbox_event_id
-                          ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-                        """,
+        INSERT INTO risk_service.risk_submissions (
+            request_id,
+            sender_comp_id,
+            target_comp_id,
+            trading_day,
+            order_id,
+            cl_ord_id,
+            orig_cl_ord_id,
+            raw_cl_ord_id,
+            raw_orig_cl_ord_id,
+            command_type,
+            accepted,
+            reason_code,
+            reason_text,
+            business_key_surrogated,
+            created_at_unix_ms,
+            outbox_event_id
+          ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        """,
         submission.requestId(),
         submission.senderCompId(),
         submission.targetCompId(),

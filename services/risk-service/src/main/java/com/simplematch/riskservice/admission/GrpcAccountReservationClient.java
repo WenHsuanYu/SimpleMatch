@@ -12,7 +12,11 @@ import java.math.RoundingMode;
 import java.util.UUID;
 import java.util.concurrent.TimeUnit;
 
-/** gRPC adapter that keeps account RPCs outside risk database transactions. */
+/**
+ * Bridges risk admission to account reservation without holding a local transaction.
+ *
+ * <p>The admission application service invokes this adapter only between its local transactions.
+ */
 public final class GrpcAccountReservationClient implements AccountReservationClient, AutoCloseable {
   private final ManagedChannel channel;
   private final AccountServiceGrpc.AccountServiceBlockingStub account;
