@@ -5,14 +5,16 @@ import com.simplematch.accountservice.reservation.ReservationRepository;
 import com.simplematch.contracts.common.v1.ReservationStatus;
 import com.simplematch.contracts.common.v1.Side;
 import java.math.BigDecimal;
-import java.util.Objects;
 import java.util.Optional;
+import lombok.NonNull;
+import lombok.RequiredArgsConstructor;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.jdbc.core.RowMapper;
 import org.springframework.stereotype.Repository;
 
 /** JDBC-backed reservation repository for the account-service ingress table. */
 @Repository
+@RequiredArgsConstructor
 public class JdbcReservationRepository implements ReservationRepository {
   private static final RowMapper<ReservationRecord> RESERVATION_ROW_MAPPER =
       (resultSet, rowNum) ->
@@ -32,11 +34,7 @@ public class JdbcReservationRepository implements ReservationRepository {
               resultSet.getLong("created_at_unix_ms"),
               resultSet.getLong("updated_at_unix_ms"));
 
-  private final JdbcTemplate jdbcTemplate;
-
-  public JdbcReservationRepository(JdbcTemplate jdbcTemplate) {
-    this.jdbcTemplate = Objects.requireNonNull(jdbcTemplate);
-  }
+  @NonNull private final JdbcTemplate jdbcTemplate;
 
   @Override
   public Optional<ReservationRecord> findByRequestId(String requestId) {
@@ -48,7 +46,7 @@ public class JdbcReservationRepository implements ReservationRepository {
                                        created_at_unix_ms, updated_at_unix_ms
                                   FROM account_service.account_reservations
                                  WHERE request_id = ?
-                                """,
+            """,
             RESERVATION_ROW_MAPPER,
             requestId)
         .stream()
@@ -78,7 +76,7 @@ public class JdbcReservationRepository implements ReservationRepository {
                           filled_quantity,
                           version
                         ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-                        """,
+        """,
         reservation.reservationId(),
         reservation.requestId(),
         reservation.orderId(),

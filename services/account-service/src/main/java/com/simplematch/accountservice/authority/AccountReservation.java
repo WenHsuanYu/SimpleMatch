@@ -117,8 +117,8 @@ public record AccountReservation(
       String accountId,
       String symbol,
       Side side,
-      java.math.BigDecimal quantity,
-      java.math.BigDecimal limitPrice) {}
+      BigDecimal quantity,
+      BigDecimal limitPrice) {}
 
   private static void text(String value, String field) {
     if (value == null || value.isBlank()) {

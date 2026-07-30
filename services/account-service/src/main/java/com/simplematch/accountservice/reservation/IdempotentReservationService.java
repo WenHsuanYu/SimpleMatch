@@ -1,19 +1,16 @@
 package com.simplematch.accountservice.reservation;
 
 import java.time.Clock;
-import java.util.Objects;
+import lombok.NonNull;
+import lombok.RequiredArgsConstructor;
 import org.springframework.dao.DuplicateKeyException;
 import org.springframework.transaction.annotation.Transactional;
 
 /** Reservation service that replays the stored result for repeated {@code request_id} values. */
+@RequiredArgsConstructor
 public class IdempotentReservationService implements ReservationService {
-  private final ReservationRepository reservationRepository;
-  private final Clock clock;
-
-  public IdempotentReservationService(ReservationRepository reservationRepository, Clock clock) {
-    this.reservationRepository = Objects.requireNonNull(reservationRepository);
-    this.clock = Objects.requireNonNull(clock);
-  }
+  @NonNull private final ReservationRepository reservationRepository;
+  @NonNull private final Clock clock;
 
   @Override
   @Transactional

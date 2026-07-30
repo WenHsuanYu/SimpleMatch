@@ -45,6 +45,8 @@ public interface ReservationService {
   }
 
   /**
+   * Releases remaining reservation authority from the deprecated transport-shaped arguments.
+   *
    * @deprecated Use {@link #release(ReleaseReservationOperation)} so request, reservation, and
    *     order identifiers cannot be exchanged at call sites.
    */
@@ -71,6 +73,8 @@ public interface ReservationService {
   }
 
   /**
+   * Applies an execution fill from the deprecated transport-shaped arguments.
+   *
    * @deprecated Use {@link #applyFill(ApplyFillOperation)} so reservation identity and execution
    *     values cannot be misplaced at call sites.
    */

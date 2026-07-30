@@ -10,6 +10,7 @@ import org.springframework.context.SmartLifecycle;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 
+/** Configures the account-service gRPC server lifecycle. */
 @Configuration
 public class GrpcServerConfiguration {
   @Bean

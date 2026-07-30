@@ -13,6 +13,8 @@ import java.util.List;
 import java.util.Objects;
 import java.util.Optional;
 import java.util.UUID;
+import lombok.NonNull;
+import lombok.RequiredArgsConstructor;
 import org.springframework.jdbc.core.ConnectionCallback;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.jdbc.core.RowMapper;
@@ -20,6 +22,7 @@ import org.springframework.stereotype.Repository;
 
 /** Thin JDBC adapter for account limits, positions, reservations, and inbox claims. */
 @Repository
+@RequiredArgsConstructor
 @SuppressWarnings(
     "PMD.TooManyMethods") // One JDBC adapter implements the authoritative-account port.
 public class JdbcAccountAuthorityRepository implements AccountAuthorityRepository {
@@ -68,12 +71,7 @@ public class JdbcAccountAuthorityRepository implements AccountAuthorityRepositor
               rs.getLong("created_at_unix_ms"),
               rs.getLong("updated_at_unix_ms"));
 
-  private final JdbcTemplate jdbcTemplate;
-
-  /** Creates the repository with the account-service datasource. */
-  public JdbcAccountAuthorityRepository(JdbcTemplate jdbcTemplate) {
-    this.jdbcTemplate = Objects.requireNonNull(jdbcTemplate, "jdbcTemplate");
-  }
+  @NonNull private final JdbcTemplate jdbcTemplate;
 
   @Override
   public Optional<AccountLimit> findLimitForUpdate(String accountId, LocalDate tradingDay) {
@@ -84,7 +82,7 @@ public class JdbcAccountAuthorityRepository implements AccountAuthorityRepositor
                         FROM account_service.account_limits
                         WHERE account_id = ? AND scope_type = 'ACCOUNT' AND scope_key = '*' AND trading_day = ?
                         FOR UPDATE
-                        """,
+        """,
         LIMIT_MAPPER,
         accountId,
         tradingDay);
@@ -98,7 +96,7 @@ public class JdbcAccountAuthorityRepository implements AccountAuthorityRepositor
                           utilized_notional, available_notional, version, updated_at_unix_ms
                         FROM account_service.account_limits
                         WHERE account_id = ? AND scope_type = 'ACCOUNT' AND scope_key = '*' AND trading_day = ?
-                        """,
+            """,
             LIMIT_MAPPER,
             accountId,
             tradingDay)
@@ -115,7 +113,7 @@ public class JdbcAccountAuthorityRepository implements AccountAuthorityRepositor
                         FROM account_service.account_positions
                         WHERE account_id = ? AND symbol = ?
                         FOR UPDATE
-                        """,
+        """,
         POSITION_MAPPER,
         accountId,
         symbol);
@@ -130,7 +128,7 @@ public class JdbcAccountAuthorityRepository implements AccountAuthorityRepositor
                           version, updated_at_unix_ms
                         FROM account_service.account_positions
                         WHERE account_id = ? AND symbol = ?
-                        """,
+            """,
             POSITION_MAPPER,
             accountId,
             symbol)
@@ -146,7 +144,7 @@ public class JdbcAccountAuthorityRepository implements AccountAuthorityRepositor
                           version, updated_at_unix_ms
                         FROM account_service.account_positions
                         WHERE account_id = ? ORDER BY symbol
-                        """,
+        """,
         POSITION_MAPPER,
         accountId);
   }
@@ -163,12 +161,15 @@ public class JdbcAccountAuthorityRepository implements AccountAuthorityRepositor
   public void claimReservationRequest(String requestId, long claimedAtUnixMs) {
     final String insert =
         isPostgres()
-            ? "INSERT INTO account_service.reservation_request_locks (request_id, created_at_unix_ms) VALUES (?, ?) "
+            ? "INSERT INTO account_service.reservation_request_locks "
+                + "(request_id, created_at_unix_ms) VALUES (?, ?) "
                 + "ON CONFLICT (request_id) DO NOTHING"
-            : "MERGE INTO account_service.reservation_request_locks (request_id, created_at_unix_ms) KEY(request_id) VALUES (?, ?)";
+            : "MERGE INTO account_service.reservation_request_locks "
+                + "(request_id, created_at_unix_ms) KEY(request_id) VALUES (?, ?)";
     jdbcTemplate.update(insert, requestId, claimedAtUnixMs);
     queryForUpdate(
-        "SELECT request_id FROM account_service.reservation_request_locks WHERE request_id = ? FOR UPDATE",
+        "SELECT request_id FROM account_service.reservation_request_locks "
+            + "WHERE request_id = ? FOR UPDATE",
         (rows, row) -> rows.getString("request_id"),
         requestId);
   }
@@ -189,7 +190,7 @@ public class JdbcAccountAuthorityRepository implements AccountAuthorityRepositor
                           account_id, scope_type, scope_key, trading_day, currency, limit_total_notional,
                           reserved_notional, utilized_notional, available_notional, version, updated_at_unix_ms)
                         VALUES (?, 'ACCOUNT', '*', ?, ?, ?, ?, ?, ?, ?, ?)
-                        """,
+        """,
         limit.accountId(),
         limit.tradingDay(),
         limit.currency(),
@@ -209,7 +210,7 @@ public class JdbcAccountAuthorityRepository implements AccountAuthorityRepositor
                           account_id, symbol, long_qty, short_qty, reserved_long_qty, reserved_short_qty,
                           version, updated_at_unix_ms)
                         VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-                        """,
+        """,
         position.accountId(),
         position.symbol(),
         position.longQuantity(),
@@ -229,7 +230,7 @@ public class JdbcAccountAuthorityRepository implements AccountAuthorityRepositor
                           reserved_notional, status, reason_code, reason_text, created_at_unix_ms, updated_at_unix_ms,
                           remaining_quantity, filled_quantity, version)
                         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-                        """,
+        """,
         reservation.reservationId(),
         reservation.requestId(),
         reservation.orderId(),
@@ -254,7 +255,8 @@ public class JdbcAccountAuthorityRepository implements AccountAuthorityRepositor
     update(
         "UPDATE account_service.account_limits SET reserved_notional = ?, utilized_notional = ?, "
             + "available_notional = ?, version = ?, updated_at_unix_ms = ? "
-            + "WHERE account_id = ? AND scope_type = 'ACCOUNT' AND scope_key = '*' AND trading_day = ? AND version = ?",
+            + "WHERE account_id = ? AND scope_type = 'ACCOUNT' AND scope_key = '*' "
+            + "AND trading_day = ? AND version = ?",
         limit.reservedNotional(),
         limit.utilizedNotional(),
         limit.availableNotional(),
@@ -268,7 +270,8 @@ public class JdbcAccountAuthorityRepository implements AccountAuthorityRepositor
   @Override
   public void updatePosition(AccountPosition position, long expectedVersion) {
     update(
-        "UPDATE account_service.account_positions SET long_qty = ?, short_qty = ?, reserved_long_qty = ?, "
+        "UPDATE account_service.account_positions SET long_qty = ?, short_qty = ?, "
+            + "reserved_long_qty = ?, "
             + "reserved_short_qty = ?, version = ?, updated_at_unix_ms = ? "
             + "WHERE account_id = ? AND symbol = ? AND version = ?",
         position.longQuantity(),
@@ -285,8 +288,10 @@ public class JdbcAccountAuthorityRepository implements AccountAuthorityRepositor
   @Override
   public void updateReservation(AccountReservation reservation, long expectedVersion) {
     update(
-        "UPDATE account_service.account_reservations SET remaining_quantity = ?, filled_quantity = ?, "
-            + "reserved_notional = ?, status = ?, reason_code = ?, reason_text = ?, version = ?, updated_at_unix_ms = ? "
+        "UPDATE account_service.account_reservations "
+            + "SET remaining_quantity = ?, filled_quantity = ?, "
+            + "reserved_notional = ?, status = ?, reason_code = ?, reason_text = ?, version = ?, "
+            + "updated_at_unix_ms = ? "
             + "WHERE reservation_id = ? AND version = ?",
         reservation.remainingQuantity(),
         reservation.filledQuantity(),
@@ -319,9 +324,13 @@ public class JdbcAccountAuthorityRepository implements AccountAuthorityRepositor
     }
     final String insert =
         postgres
-            ? "INSERT INTO account_service.inbox (consumer_name, event_id, aggregate_id, aggregate_sequence, received_at_unix_ms) "
+            ? "INSERT INTO account_service.inbox "
+                + "(consumer_name, event_id, aggregate_id, aggregate_sequence, "
+                + "received_at_unix_ms) "
                 + "VALUES (?, ?, ?, ?, ?) ON CONFLICT DO NOTHING"
-            : "MERGE INTO account_service.inbox (consumer_name, event_id, aggregate_id, aggregate_sequence, received_at_unix_ms) "
+            : "MERGE INTO account_service.inbox "
+                + "(consumer_name, event_id, aggregate_id, aggregate_sequence, "
+                + "received_at_unix_ms) "
                 + "KEY(consumer_name, event_id) VALUES (?, ?, ?, ?, ?)";
     return jdbcTemplate.update(
             insert,
@@ -365,11 +374,12 @@ public class JdbcAccountAuthorityRepository implements AccountAuthorityRepositor
   }
 
   private String reservationSelect() {
-    return """
+    return
+        """
                 SELECT reservation_id, request_id, order_id, account_id, symbol, side, quantity, limit_price,
                   reserved_notional, status, reason_code, reason_text, created_at_unix_ms, updated_at_unix_ms,
                   remaining_quantity, filled_quantity, version
                 FROM account_service.account_reservations
-                """;
+        """;
   }
 }

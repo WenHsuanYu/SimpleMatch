@@ -22,6 +22,8 @@ public record ReserveOperation(ReservationRequestIdentity identity, ReservationT
   }
 
   /**
+   * Creates a reserve operation from the deprecated transport-shaped arguments.
+   *
    * @deprecated Use the domain-value constructor; retained while callers migrate from the flat
    *     transport-shaped signature.
    */

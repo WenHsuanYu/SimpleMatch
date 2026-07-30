@@ -39,6 +39,7 @@ public record ReservationRecord(
     String reasonText,
     long createdAtUnixMs,
     long updatedAtUnixMs) {
+  /** Validates persisted reservation values. */
   public ReservationRecord {
     reservationId = requireNonBlank(reservationId, "reservation_id");
     requestId = requireNonBlank(requestId, "request_id");

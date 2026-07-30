@@ -8,6 +8,7 @@ import javax.sql.DataSource;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 
+/** Configures account-service persistence infrastructure. */
 @Configuration
 public class AccountPersistenceConfiguration {
   private static final String ACCOUNT_SERVICE_SCHEMA = "account_service";

@@ -21,11 +21,14 @@ import java.time.LocalDate;
 import java.time.ZoneId;
 import java.util.List;
 import java.util.Objects;
+import lombok.NonNull;
+import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 /** Owns account reservation, release, fill, and authoritative balance transactions. */
 @Service
+@RequiredArgsConstructor
 @SuppressWarnings("PMD.TooManyMethods") // Transaction owner keeps reservation lifecycle local.
 public class AccountReservationApplicationService implements ReservationService {
   private static final ZoneId TAIPEI = ZoneId.of("Asia/Taipei");
@@ -33,17 +36,9 @@ public class AccountReservationApplicationService implements ReservationService 
   private static final String OUTBOX_TOPIC = "account.lifecycle";
   private static final String CONSUMER_NAME = "account-service-execution";
 
-  private final AccountAuthorityRepository accounts;
-  private final AccountOutboxRepository outbox;
-  private final Clock clock;
-
-  /** Creates an authority service with account-owned persistence ports. */
-  public AccountReservationApplicationService(
-      AccountAuthorityRepository accounts, AccountOutboxRepository outbox, Clock clock) {
-    this.accounts = Objects.requireNonNull(accounts, "accounts");
-    this.outbox = Objects.requireNonNull(outbox, "outbox");
-    this.clock = Objects.requireNonNull(clock, "clock");
-  }
+  @NonNull private final AccountAuthorityRepository accounts;
+  @NonNull private final AccountOutboxRepository outbox;
+  @NonNull private final Clock clock;
 
   /** Reserves cash or available long position and emits a durable lifecycle event. */
   @Override
@@ -199,6 +194,8 @@ public class AccountReservationApplicationService implements ReservationService 
   }
 
   /**
+   * Releases a reservation from deprecated transport-shaped arguments.
+   *
    * @deprecated Use {@link #release(ReleaseReservationOperation)}.
    */
   @Deprecated(forRemoval = false)
@@ -287,6 +284,8 @@ public class AccountReservationApplicationService implements ReservationService 
   }
 
   /**
+   * Applies a fill from deprecated transport-shaped arguments.
+   *
    * @deprecated Use {@link #applyFill(ApplyFillOperation)}.
    */
   @Deprecated(forRemoval = false)

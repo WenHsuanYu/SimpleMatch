@@ -28,11 +28,12 @@ import io.grpc.stub.StreamObserver;
 import org.springframework.stereotype.Service;
 
 import java.math.BigDecimal;
-import java.util.Objects;
 import java.util.UUID;
+import lombok.NonNull;
+import lombok.RequiredArgsConstructor;
 
 /**
- * gRPC entry point for account-service control-plane operations.
+ * Handles account-service control-plane operations through gRPC.
  *
  * <p>The write RPCs in this service intentionally use {@code request_id} as the synchronous name
  * for the same operation identifier that enters the trading flow as {@code command_id} on
@@ -40,14 +41,11 @@ import java.util.UUID;
  * the unsupported-operation response remains only for compatibility test doubles.
  */
 @Service
+@RequiredArgsConstructor
 public class AccountGrpcService extends AccountServiceGrpc.AccountServiceImplBase {
     private static final String MESSAGE = "account-service logic is not implemented yet";
     private static final int MAX_PERSISTED_IDENTIFIER_LENGTH = 255;
-    private final ReservationService reservationService;
-
-    public AccountGrpcService(ReservationService reservationService) {
-        this.reservationService = Objects.requireNonNull(reservationService);
-    }
+    @NonNull private final ReservationService reservationService;
 
     @Override
     public void getLimits(
