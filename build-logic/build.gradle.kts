@@ -27,12 +27,12 @@ dependencyLocking {
 
 dependencies {
     implementation(gradleApi())
+    implementation(platform(libs.spring.boot.bom))
     implementation(libs.flyway.gradle.plugin)
     implementation(libs.flyway.database.postgresql)
     implementation(libs.errorprone.gradle.plugin)
     implementation(libs.protobuf.gradle.plugin)
     implementation(libs.spring.boot.gradle.plugin)
-    implementation(libs.spring.dependency.management.gradle.plugin)
     implementation(libs.spotbugs.gradle.plugin)
     compileOnly("javax.inject:javax.inject:1")
     testImplementation(kotlin("test"))

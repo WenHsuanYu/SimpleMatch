@@ -23,7 +23,7 @@ class RiskServiceFlywayMigrationTest {
 
         assertThat(hasTable(jdbcTemplate, "RISK_SUBMISSIONS")).isTrue();
         assertThat(hasTable(jdbcTemplate, "OUTBOX")).isTrue();
-        assertThat(appliedMigrationCount(jdbcTemplate)).isEqualTo(2);
+        assertThat(appliedMigrationCount(jdbcTemplate)).isEqualTo(3);
     }
 
     @DisplayName("a second risk-service migration is a no-op")

@@ -4,14 +4,18 @@
 
 This repo's Java dependencies use an explicit ownership model.
 
-- [gradle/libs.versions.toml](/home/alexyu/SimpleMatch/gradle/libs.versions.toml) is the single source for pinned plugin
-  and third-party library versions.
-- `simplematch.java-conventions` supplies the Java 25 toolchain, JUnit platform, Mockito agent, Error Prone, and
-  dependency locking to every Java module.
+- [gradle/libs.versions.toml](/home/alexyu/SimpleMatch/gradle/libs.versions.toml) owns plugin versions, BOM coordinates,
+  and non-BOM dependency versions. Libraries managed by Spring Boot or Spring Cloud use versionless catalog aliases;
+  their version is resolved only through the applied BOM.
+- `simplematch.java-conventions` supplies the Java 25 toolchain, JUnit platform, Mockito agent, Error Prone warnings,
+  and dependency locking to every Java module. Error Prone ignores generated sources and is disabled for any
+  `compileGeneratedJava` task.
 - `simplematch.java-quality` adds blocking Checkstyle, PMD 7.24.0, and SpotBugs where the module has production Java
   sources that require those checks.
-- `simplematch.spring-service` owns common Spring Boot service dependencies, the Spring Cloud BOM, and narrow Lombok
-  wiring. JDBC, Kafka, gRPC, QuickFIX/J, and Flyway remain in the service build that uses them.
+- `simplematch.spring-service` owns common Spring Boot and Spring Cloud native Gradle BOM platforms, plus narrow
+  Lombok wiring. JDBC, Kafka, gRPC, QuickFIX/J, and Flyway remain in the service build that uses them.
+- `simplematch.protobuf-contracts` exports the Spring Boot BOM with its protobuf/gRPC API dependencies, so generated
+  contract consumers resolve the same BOM-managed library versions without catalog duplication.
 - `simplematch.protobuf-contracts` owns the shared protobuf source set and gRPC Java generation configuration.
 - Protobuf contracts opt into the PMD design gate through `simplematch.java-quality`; their historical conventions-only
   Checkstyle/SpotBugs lifecycle remains disabled to avoid treating generated contract support code as service quality
@@ -44,6 +48,12 @@ This repo's Java dependencies use an explicit ownership model.
   diagnosis.
 - After changing dependency wiring, validate with a focused module compile or test before running broader static
   analysis.
+- Flyway and H2 runtime/test dependencies are versionless catalog aliases and resolve exclusively through the Spring
+  Boot BOM. `protoc` remains explicitly versioned because the protobuf BOM does not manage the compiler artifact. The
+  Flyway Gradle plugin remains an explicit build-tool artifact, aligned with Spring Boot 4.1's Flyway line, because the
+  BOM has no constraint for that plugin artifact.
+- H2 2.4 has a cross-session bug for `CHECK (... IN (...))` constraints. Flyway-managed enum checks use versioned
+  compatibility migrations with `CASE` expressions instead, while preserving the same PostgreSQL constraint semantics.
 
 ## Native Dependencies
 

@@ -6,7 +6,7 @@ val testSourceSet = the<JavaPluginExtension>().sourceSets.getByName("test")
 
 dependencies {
     implementation("org.springframework.boot:spring-boot-starter-web")
-    implementation("org.springframework.kafka:spring-kafka")
+    implementation("org.springframework.boot:spring-boot-starter-kafka")
     implementation(libs.grpc.netty.shaded)
     implementation(libs.quickfixj.core)
     implementation(libs.quickfixj.messages.fix44)

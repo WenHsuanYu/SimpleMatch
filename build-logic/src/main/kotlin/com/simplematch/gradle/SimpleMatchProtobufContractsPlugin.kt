@@ -65,6 +65,7 @@ class SimpleMatchProtobufContractsPlugin : Plugin<Project> {
             }
         }
         project.dependencies.apply {
+            add("api", platform(catalog.findLibrary("spring-boot-bom").get()))
             add("api", catalog.findLibrary("protobuf-java").get())
             add("api", catalog.findLibrary("grpc-protobuf").get())
             add("api", catalog.findLibrary("grpc-stub").get())
@@ -77,6 +78,7 @@ class SimpleMatchProtobufContractsPlugin : Plugin<Project> {
 
     private fun VersionCatalog.coordinate(alias: String): String {
         val dependency = findLibrary(alias).get().get()
-        return "${dependency.module.group}:${dependency.module.name}:${dependency.versionConstraint.requiredVersion}"
+        val module = "${dependency.module.group}:${dependency.module.name}"
+        return dependency.versionConstraint.requiredVersion.takeIf(String::isNotBlank)?.let { "$module:$it" } ?: module
     }
 }

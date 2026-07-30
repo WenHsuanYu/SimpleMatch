@@ -4,7 +4,7 @@ plugins {
 }
 
 dependencies {
-    testImplementation("com.h2database:h2")
+    testImplementation(libs.h2)
     testImplementation(libs.flyway.core)
     testImplementation("org.springframework:spring-jdbc")
 }

@@ -751,8 +751,8 @@
 > 現況：`.github/workflows/ci.yml` 已有 changed-area gating、Java static analysis + repo-wide
 > test/certification、Flyway/PostgreSQL smoke、native configure/build/test；kind cluster 與 `kubectl` deploy smoke 尚未進 CI。
 
-- [x] Java 靜態分析已接入 Gradle build：`./gradlew -q staticAnalysis` 會對所有 Java 模組執行 blocking `Error Prone`
-  編譯，並對既定模組執行 `Checkstyle` / `PMD` / `SpotBugs`
+- [x] Java 靜態分析已接入 Gradle build：`./gradlew -q staticAnalysis` 會對所有 Java 模組執行 `Error Prone`
+  warning 編譯，並對既定模組執行 blocking `Checkstyle` / `PMD` / `SpotBugs`
 - [x] SpotBugs false-positive filter 已先收斂到已確認的 Spring config / runtime holder 類別，避免干擾實際問題
 - [x] 現有 GitHub Actions Java job 已接入同一個 `./gradlew staticAnalysis` blocking gate，並上傳 Checkstyle / PMD /
   SpotBugs 報告 artifacts

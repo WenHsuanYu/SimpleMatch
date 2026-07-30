@@ -1,6 +1,5 @@
 package com.simplematch.gradle
 
-import io.spring.gradle.dependencymanagement.dsl.DependencyManagementExtension
 import org.gradle.api.Plugin
 import org.gradle.api.Project
 import org.gradle.api.artifacts.VersionCatalogsExtension
@@ -17,19 +16,12 @@ class SimpleMatchSpringServicePlugin : Plugin<Project> {
         project.pluginManager.apply("simplematch.java-conventions")
         project.pluginManager.apply("simplematch.java-quality")
         project.pluginManager.apply("org.springframework.boot")
-        project.pluginManager.apply("io.spring.dependency-management")
 
         val catalog = project.extensions.getByType<VersionCatalogsExtension>().named("libs")
-        val dependencyManagement =
-            project.extensions.getByType<DependencyManagementExtension>()
-        dependencyManagement.imports {
-            mavenBom(
-                "org.springframework.cloud:spring-cloud-dependencies:"
-                        + catalog.findVersion("spring-cloud").get().requiredVersion
-            )
-        }
 
         project.dependencies.apply {
+            add("implementation", platform(catalog.findLibrary("spring-boot-bom").get()))
+            add("implementation", platform(catalog.findLibrary("spring-cloud-bom").get()))
             add("implementation", project.project(":shared-java:simplematch-config"))
             add("implementation", project.project(":shared-java:simplematch-contracts"))
             add("implementation", "org.springframework.boot:spring-boot-starter")

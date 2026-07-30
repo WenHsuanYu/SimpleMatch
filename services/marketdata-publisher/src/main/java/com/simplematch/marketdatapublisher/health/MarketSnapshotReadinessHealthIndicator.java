@@ -3,8 +3,8 @@ package com.simplematch.marketdatapublisher.health;
 import com.simplematch.marketdatapublisher.publication.MarketSnapshotRepository;
 import com.simplematch.marketdatapublisher.publication.PublishedMarketSnapshot;
 import com.simplematch.marketdatapublisher.snapshot.PreparedMarketSnapshot;
-import org.springframework.boot.actuate.health.Health;
-import org.springframework.boot.actuate.health.HealthIndicator;
+import org.springframework.boot.health.contributor.Health;
+import org.springframework.boot.health.contributor.HealthIndicator;
 
 import java.time.Clock;
 import java.time.LocalDate;

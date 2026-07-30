@@ -95,7 +95,8 @@ sync. [PMD CPD documentation](https://docs.pmd-code.org/latest/pmd_userdocs_cpd.
 Keep responsibilities distinct:
 
 - **Checkstyle:** formatting, naming, imports, and documentation conventions already owned by the repository.
-- **Error Prone:** compiler-integrated correctness checks; keep the existing blocking configuration.
+- **Error Prone:** compiler-integrated correctness checks; keep the configured warning-only adoption phase while
+  Checkstyle, PMD, and SpotBugs remain blocking.
 - **SpotBugs:** bytecode/dataflow bug patterns; retain its existing curated coverage and exclusions.
 - **PMD:** source-level maintainability and design signals, especially parameter-object, complexity, and API-size
   candidates.

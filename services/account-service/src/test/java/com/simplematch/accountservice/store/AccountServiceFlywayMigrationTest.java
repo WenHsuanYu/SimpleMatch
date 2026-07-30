@@ -24,7 +24,7 @@ class AccountServiceFlywayMigrationTest {
         assertThat(hasTable(jdbcTemplate, "ACCOUNT_LIMITS")).isTrue();
         assertThat(hasTable(jdbcTemplate, "ACCOUNT_POSITIONS")).isTrue();
         assertThat(hasTable(jdbcTemplate, "ACCOUNT_RESERVATIONS")).isTrue();
-        assertThat(appliedMigrationCount(jdbcTemplate)).isEqualTo(2);
+        assertThat(appliedMigrationCount(jdbcTemplate)).isEqualTo(3);
     }
 
     @DisplayName("a second account-service migration is a no-op")

@@ -24,7 +24,7 @@ class PersistenceFlywayMigrationTest {
         assertThat(hasTable(jdbcTemplate, "ORDERS")).isTrue();
         assertThat(hasTable(jdbcTemplate, "EXECUTIONS")).isTrue();
         assertThat(hasTable(jdbcTemplate, "INBOX")).isTrue();
-        assertThat(appliedMigrationCount(jdbcTemplate)).isEqualTo(1);
+        assertThat(appliedMigrationCount(jdbcTemplate)).isEqualTo(2);
     }
 
     @DisplayName("a second persistence migration is a no-op")

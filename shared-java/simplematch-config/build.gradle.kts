@@ -5,12 +5,13 @@ plugins {
 }
 
 dependencies {
-    api("org.springframework.boot:spring-boot:${libs.versions.spring.boot.get()}")
-    api("org.springframework.boot:spring-boot-autoconfigure:${libs.versions.spring.boot.get()}")
+    api(platform(libs.spring.boot.bom))
+    api("org.springframework.boot:spring-boot")
+    api("org.springframework.boot:spring-boot-autoconfigure")
     implementation(libs.uuid.creator)
     compileOnly(libs.errorprone.annotations)
-    testImplementation("org.springframework.boot:spring-boot:${libs.versions.spring.boot.get()}")
-    testImplementation("org.springframework.boot:spring-boot-starter-test:${libs.versions.spring.boot.get()}")
+    testImplementation("org.springframework.boot:spring-boot")
+    testImplementation("org.springframework.boot:spring-boot-starter-test")
     testImplementation(libs.junit.jupiter)
     testRuntimeOnly(libs.junit.jupiter.engine)
     testRuntimeOnly(libs.junit.platform.launcher)

@@ -6,7 +6,7 @@ import com.simplematch.marketdatapublisher.publication.SnapshotPublicationFailur
 import com.simplematch.marketdatapublisher.snapshot.PreparedMarketSnapshot;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
-import org.springframework.boot.actuate.health.Status;
+import org.springframework.boot.health.contributor.Status;
 
 import java.time.Clock;
 import java.time.Instant;

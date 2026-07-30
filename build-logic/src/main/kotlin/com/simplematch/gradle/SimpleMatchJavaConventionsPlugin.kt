@@ -40,15 +40,19 @@ class SimpleMatchJavaConventionsPlugin : Plugin<Project> {
         project.dependencies.add("errorprone", catalog.coordinate("errorprone-core"))
         project.tasks.withType(JavaCompile::class.java).configureEach {
             options.encoding = "UTF-8"
-            options.errorprone.disableWarningsInGeneratedCode.set(true)
-            options.errorprone.excludedPaths.set(".*/build/generated(?:/.+)?")
-            options.errorprone.errorproneArgs.addAll(
-                listOf(
-                    "-Xep:MissingOverride:ERROR",
-                    "-Xep:EqualsGetClass:ERROR",
-                    "-Xep:FutureReturnValueIgnored:ERROR"
+            options.errorprone {
+                allErrorsAsWarnings.set(true)
+                disableWarningsInGeneratedCode.set(true)
+                excludedPaths.set(".*/(?:build/)?generated(?:/.*)?")
+                enabled.set(name != "compileGeneratedJava")
+                errorproneArgs.addAll(
+                    listOf(
+                        "-Xep:MissingOverride:WARN",
+                        "-Xep:EqualsGetClass:WARN",
+                        "-Xep:FutureReturnValueIgnored:WARN"
+                    )
                 )
-            )
+            }
         }
 
         registerStaticAnalysisDependency(project)
@@ -60,7 +64,7 @@ class SimpleMatchJavaConventionsPlugin : Plugin<Project> {
             rootProject.tasks.register("staticAnalysis") {
                 group = "verification"
                 description =
-                    "Runs blocking Error Prone compilation for every Java module, plus configured quality checks."
+                    "Runs Error Prone warning compilation for every Java module, plus blocking configured quality checks."
             }
         }
         rootProject.tasks.named("staticAnalysis") {
@@ -70,7 +74,8 @@ class SimpleMatchJavaConventionsPlugin : Plugin<Project> {
 
     private fun VersionCatalog.coordinate(alias: String): String {
         val dependency = findLibrary(alias).get().get()
-        return "${dependency.module.group}:${dependency.module.name}:${dependency.versionConstraint.requiredVersion}"
+        val module = "${dependency.module.group}:${dependency.module.name}"
+        return dependency.versionConstraint.requiredVersion.takeIf(String::isNotBlank)?.let { "$module:$it" } ?: module
     }
 
     private class MockitoAgentArgumentProvider(

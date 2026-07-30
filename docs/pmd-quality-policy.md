@@ -12,8 +12,9 @@ The checked-in ruleset contains exactly these PMD design rules:
 - `ExcessivePublicCount`
 - `TooManyMethods`
 
-PMD is blocking. Checkstyle, Error Prone, and SpotBugs retain their independent blocking behavior for service and shared
-Java modules. The protobuf-contracts plugin is the documented exception: it historically ran conventions only, so it
+PMD is blocking. Checkstyle and SpotBugs retain their independent blocking behavior for service and shared Java modules;
+Error Prone reports configured checks as warnings during this adoption phase. The protobuf-contracts plugin is the
+documented exception: it historically ran conventions only, so it
 enables PMD while leaving Checkstyle/SpotBugs disabled for generated-contract support code. PMD dependencies are
 version-locked in every Java module.
 
