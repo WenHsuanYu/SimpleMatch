@@ -16,11 +16,11 @@ public final class JdbcSnapshotOutbox implements SnapshotOutbox {
   public void insert(SnapshotOutboxRecord record) {
     jdbcTemplate.update(
         """
-                INSERT INTO marketdata_publisher.outbox (
-                  event_id, topic, message_key, payload, payload_type, headers_json, aggregate_type, aggregate_id,
-                  created_at_unix_ms
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
-                """,
+        INSERT INTO marketdata_publisher.outbox (
+          event_id, topic, message_key, payload, payload_type, headers_json, aggregate_type, aggregate_id,
+          created_at_unix_ms
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+        """,
         record.eventId(),
         record.topic(),
         record.messageKey(),

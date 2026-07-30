@@ -41,11 +41,11 @@ public final class JdbcMarketSnapshotRepository implements MarketSnapshotReposit
     return jdbcTemplate
         .query(
             """
-                        SELECT snapshot_id, trading_day, version, source_identity, source_timestamp_unix_ms, checksum,
-                          snapshot_payload, active, published_at_unix_ms
-                        FROM marketdata_publisher.market_snapshots
-                        WHERE source_identity = ? AND checksum = ?
-                        """,
+            SELECT snapshot_id, trading_day, version, source_identity, source_timestamp_unix_ms, checksum,
+              snapshot_payload, active, published_at_unix_ms
+            FROM marketdata_publisher.market_snapshots
+            WHERE source_identity = ? AND checksum = ?
+            """,
             ROW_MAPPER,
             sourceIdentity,
             checksum)
@@ -58,11 +58,11 @@ public final class JdbcMarketSnapshotRepository implements MarketSnapshotReposit
     return jdbcTemplate
         .query(
             """
-                        SELECT snapshot_id, trading_day, version, source_identity, source_timestamp_unix_ms, checksum,
-                          snapshot_payload, active, published_at_unix_ms
-                        FROM marketdata_publisher.market_snapshots
-                        WHERE trading_day = ? AND active
-                        """,
+            SELECT snapshot_id, trading_day, version, source_identity, source_timestamp_unix_ms, checksum,
+              snapshot_payload, active, published_at_unix_ms
+            FROM marketdata_publisher.market_snapshots
+            WHERE trading_day = ? AND active
+            """,
             ROW_MAPPER,
             tradingDay)
         .stream()
@@ -74,13 +74,13 @@ public final class JdbcMarketSnapshotRepository implements MarketSnapshotReposit
     return jdbcTemplate
         .query(
             """
-                        SELECT snapshot_id, trading_day, version, source_identity, source_timestamp_unix_ms, checksum,
-                          snapshot_payload, active, published_at_unix_ms
-                        FROM marketdata_publisher.market_snapshots
-                        WHERE active
-                        ORDER BY trading_day DESC
-                        LIMIT 1
-                        """,
+            SELECT snapshot_id, trading_day, version, source_identity, source_timestamp_unix_ms, checksum,
+              snapshot_payload, active, published_at_unix_ms
+            FROM marketdata_publisher.market_snapshots
+            WHERE active
+            ORDER BY trading_day DESC
+            LIMIT 1
+            """,
             ROW_MAPPER)
         .stream()
         .findFirst();
@@ -94,12 +94,12 @@ public final class JdbcMarketSnapshotRepository implements MarketSnapshotReposit
               try (PreparedStatement statement =
                   connection.prepareStatement(
                       """
-                    SELECT snapshot_id, trading_day, version, source_identity, source_timestamp_unix_ms, checksum,
-                      snapshot_payload, active, published_at_unix_ms
-                    FROM marketdata_publisher.market_snapshots
-                    WHERE trading_day = ? AND active
-                    FOR UPDATE
-                    """)) {
+                      SELECT snapshot_id, trading_day, version, source_identity, source_timestamp_unix_ms, checksum,
+                        snapshot_payload, active, published_at_unix_ms
+                      FROM marketdata_publisher.market_snapshots
+                      WHERE trading_day = ? AND active
+                      FOR UPDATE
+                      """)) {
                 statement.setObject(1, tradingDay);
                 statement.setQueryTimeout(ACTIVE_SNAPSHOT_LOCK_TIMEOUT_SECONDS);
                 try (ResultSet rows = statement.executeQuery()) {
@@ -113,7 +113,8 @@ public final class JdbcMarketSnapshotRepository implements MarketSnapshotReposit
   public long nextVersion(LocalDate tradingDay) {
     return Objects.requireNonNull(
         jdbcTemplate.queryForObject(
-            "SELECT COALESCE(MAX(version), 0) + 1 FROM marketdata_publisher.market_snapshots WHERE trading_day = ?",
+            "SELECT COALESCE(MAX(version), 0) + 1 FROM marketdata_publisher.market_snapshots "
+                + "WHERE trading_day = ?",
             Long.class,
             tradingDay),
         "next snapshot version query returned no value");
@@ -123,10 +124,10 @@ public final class JdbcMarketSnapshotRepository implements MarketSnapshotReposit
   public void deactivateActive(LocalDate tradingDay) {
     jdbcTemplate.update(
         """
-                        UPDATE marketdata_publisher.market_snapshots
-                        SET active = FALSE, active_trading_day = NULL
-                        WHERE trading_day = ? AND active
-                        """,
+        UPDATE marketdata_publisher.market_snapshots
+        SET active = FALSE, active_trading_day = NULL
+        WHERE trading_day = ? AND active
+        """,
         tradingDay);
   }
 
@@ -134,11 +135,11 @@ public final class JdbcMarketSnapshotRepository implements MarketSnapshotReposit
   public void insert(PublishedMarketSnapshot snapshot) {
     jdbcTemplate.update(
         """
-                        INSERT INTO marketdata_publisher.market_snapshots (
-                          snapshot_id, trading_day, version, source_identity, source_timestamp_unix_ms, checksum,
-                          snapshot_payload, active, active_trading_day, published_at_unix_ms
-                        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-                        """,
+        INSERT INTO marketdata_publisher.market_snapshots (
+          snapshot_id, trading_day, version, source_identity, source_timestamp_unix_ms, checksum,
+          snapshot_payload, active, active_trading_day, published_at_unix_ms
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        """,
         snapshot.snapshotId(),
         snapshot.tradingDay(),
         snapshot.version(),

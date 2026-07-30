@@ -10,6 +10,8 @@ import java.util.Map;
 import java.util.Objects;
 import java.util.UUID;
 import java.util.function.Supplier;
+import lombok.NonNull;
+import lombok.RequiredArgsConstructor;
 import org.springframework.dao.DuplicateKeyException;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -18,6 +20,7 @@ import org.springframework.transaction.annotation.Transactional;
  * event.
  */
 @SuppressWarnings("checkstyle:LineLength")
+@RequiredArgsConstructor
 public class MarketSnapshotApplicationService {
   @SuppressWarnings("checkstyle:Indentation")
   static final String SNAPSHOT_PUBLISHED_TOPIC = "market-reference.snapshots";
@@ -29,39 +32,22 @@ public class MarketSnapshotApplicationService {
   private static final int TRANSACTION_TIMEOUT_SECONDS = 10;
 
   @SuppressWarnings("checkstyle:Indentation")
-  private final MarketSnapshotRepository snapshots;
+  @NonNull private final MarketSnapshotRepository snapshots;
 
   @SuppressWarnings("checkstyle:Indentation")
-  private final SnapshotOutbox outbox;
+  @NonNull private final SnapshotOutbox outbox;
 
   @SuppressWarnings("checkstyle:Indentation")
-  private final ObjectMapper objectMapper;
+  @NonNull private final ObjectMapper objectMapper;
 
   @SuppressWarnings("checkstyle:Indentation")
-  private final Clock clock;
+  @NonNull private final Clock clock;
 
   @SuppressWarnings("checkstyle:Indentation")
-  private final Supplier<UUID> snapshotIds;
+  @NonNull private final Supplier<UUID> snapshotIds;
 
   @SuppressWarnings("checkstyle:Indentation")
-  private final Supplier<UUID> eventIds;
-
-  /** Creates the application service with transaction-local persistence dependencies. */
-  @SuppressWarnings("checkstyle:Indentation")
-  public MarketSnapshotApplicationService(
-      MarketSnapshotRepository snapshots,
-      SnapshotOutbox outbox,
-      ObjectMapper objectMapper,
-      Clock clock,
-      Supplier<UUID> snapshotIds,
-      Supplier<UUID> eventIds) {
-    this.snapshots = Objects.requireNonNull(snapshots, "snapshots");
-    this.outbox = Objects.requireNonNull(outbox, "outbox");
-    this.objectMapper = Objects.requireNonNull(objectMapper, "objectMapper");
-    this.clock = Objects.requireNonNull(clock, "clock");
-    this.snapshotIds = Objects.requireNonNull(snapshotIds, "snapshotIds");
-    this.eventIds = Objects.requireNonNull(eventIds, "eventIds");
-  }
+  @NonNull private final Supplier<UUID> eventIds;
 
   /**
    * Publishes prepared content as the current immutable version for its trading day.
