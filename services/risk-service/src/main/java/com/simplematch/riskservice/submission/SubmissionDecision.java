@@ -1,6 +1,3 @@
 package com.simplematch.riskservice.submission;
 
-public record SubmissionDecision(
-        SubmissionResult submission,
-        ResolvedSubmissionCommand command) {
-}
+public record SubmissionDecision(SubmissionResult submission, ResolvedSubmissionCommand command) {}

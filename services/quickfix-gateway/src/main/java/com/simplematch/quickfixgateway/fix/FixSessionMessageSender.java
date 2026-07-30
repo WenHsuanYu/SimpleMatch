@@ -4,5 +4,5 @@ import quickfix.Message;
 import quickfix.SessionID;
 
 public interface FixSessionMessageSender {
-    void send(SessionID sessionId, Message message);
+  void send(SessionID sessionId, Message message);
 }

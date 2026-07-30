@@ -7,11 +7,11 @@ package com.simplematch.riskservice.outbox;
  */
 @FunctionalInterface
 public interface OutboxEventFactory<T> {
-    /**
-     * Creates a new outbox record for the provided source input.
-     *
-     * @param source the source input
-     * @return the outbox record
-     */
-    OutboxRecord create(T source);
+  /**
+   * Creates a new outbox record for the provided source input.
+   *
+   * @param source the source input
+   * @return the outbox record
+   */
+  OutboxRecord create(T source);
 }

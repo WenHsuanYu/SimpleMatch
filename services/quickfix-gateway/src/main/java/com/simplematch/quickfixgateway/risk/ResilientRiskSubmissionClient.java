@@ -2,112 +2,110 @@ package com.simplematch.quickfixgateway.risk;
 
 import com.simplematch.contracts.orders.v1.OrderCommand;
 import io.grpc.Status;
-
 import java.time.Clock;
 import java.util.EnumSet;
 import java.util.Set;
 import java.util.function.Supplier;
 
 public final class ResilientRiskSubmissionClient implements RiskSubmissionClient {
-    @FunctionalInterface
-    interface Sleeper {
-        void sleep(long delayMillis);
-    }
+  @FunctionalInterface
+  interface Sleeper {
+    void sleep(long delayMillis);
+  }
 
-    private static final Set<Status.Code> RETRYABLE_CODES =
-            EnumSet.of(
-                    Status.Code.UNAVAILABLE,
-                    Status.Code.DEADLINE_EXCEEDED,
-                    Status.Code.RESOURCE_EXHAUSTED);
+  private static final Set<Status.Code> RETRYABLE_CODES =
+      EnumSet.of(
+          Status.Code.UNAVAILABLE, Status.Code.DEADLINE_EXCEEDED, Status.Code.RESOURCE_EXHAUSTED);
 
-    private final RiskSubmissionClient delegate;
-    private final int maxAttempts;
-    private final long backoffMillis;
-    private final RiskSubmissionCircuitBreaker circuitBreaker;
-    private final Sleeper sleeper;
+  private final RiskSubmissionClient delegate;
+  private final int maxAttempts;
+  private final long backoffMillis;
+  private final RiskSubmissionCircuitBreaker circuitBreaker;
+  private final Sleeper sleeper;
 
-    public ResilientRiskSubmissionClient(
-            RiskSubmissionClient delegate,
-            int maxAttempts,
-            long backoffMillis,
-            int consecutiveFailureThreshold,
-            long breakerOpenDurationMillis,
-            Clock clock) {
-        this(
-                delegate,
-                maxAttempts,
-                backoffMillis,
-                new RiskSubmissionCircuitBreaker(clock, consecutiveFailureThreshold, breakerOpenDurationMillis),
-                delayMillis -> {
-                    try {
-                        Thread.sleep(delayMillis);
-                    } catch (InterruptedException interruptedException) {
-                        Thread.currentThread().interrupt();
-                        throw RiskSubmissionFailure.interrupted(interruptedException);
-                    }
-                });
-    }
+  public ResilientRiskSubmissionClient(
+      RiskSubmissionClient delegate,
+      int maxAttempts,
+      long backoffMillis,
+      int consecutiveFailureThreshold,
+      long breakerOpenDurationMillis,
+      Clock clock) {
+    this(
+        delegate,
+        maxAttempts,
+        backoffMillis,
+        new RiskSubmissionCircuitBreaker(
+            clock, consecutiveFailureThreshold, breakerOpenDurationMillis),
+        delayMillis -> {
+          try {
+            Thread.sleep(delayMillis);
+          } catch (InterruptedException interruptedException) {
+            Thread.currentThread().interrupt();
+            throw RiskSubmissionFailure.interrupted(interruptedException);
+          }
+        });
+  }
 
-    ResilientRiskSubmissionClient(
-            RiskSubmissionClient delegate,
-            int maxAttempts,
-            long backoffMillis,
-            RiskSubmissionCircuitBreaker circuitBreaker,
-            Sleeper sleeper) {
-        this.delegate = delegate;
-        this.maxAttempts = maxAttempts;
-        this.backoffMillis = backoffMillis;
-        this.circuitBreaker = circuitBreaker;
-        this.sleeper = sleeper;
-    }
+  ResilientRiskSubmissionClient(
+      RiskSubmissionClient delegate,
+      int maxAttempts,
+      long backoffMillis,
+      RiskSubmissionCircuitBreaker circuitBreaker,
+      Sleeper sleeper) {
+    this.delegate = delegate;
+    this.maxAttempts = maxAttempts;
+    this.backoffMillis = backoffMillis;
+    this.circuitBreaker = circuitBreaker;
+    this.sleeper = sleeper;
+  }
 
-    @Override
-    public RiskSubmissionResult submitNewOrder(OrderCommand command) {
-        return execute(command, "submit", () -> delegate.submitNewOrder(command));
-    }
+  @Override
+  public RiskSubmissionResult submitNewOrder(OrderCommand command) {
+    return execute(command, "submit", () -> delegate.submitNewOrder(command));
+  }
 
-    @Override
-    public RiskSubmissionResult submitCancel(OrderCommand command) {
-        return execute(command, "cancel", () -> delegate.submitCancel(command));
-    }
+  @Override
+  public RiskSubmissionResult submitCancel(OrderCommand command) {
+    return execute(command, "cancel", () -> delegate.submitCancel(command));
+  }
 
-    private RiskSubmissionResult execute(
-            OrderCommand command,
-            String operation,
-            Supplier<RiskSubmissionResult> call) {
-        RuntimeException lastFailure = null;
-        for (int attempt = 1; attempt <= maxAttempts; attempt += 1) {
-            circuitBreaker.acquirePermission();
-            try {
-                final RiskSubmissionResult result = call.get();
-                circuitBreaker.recordSuccess();
-                return result;
-            } catch (RuntimeException exception) {
-                circuitBreaker.recordFailure();
-                lastFailure = exception;
-                if (!isRetryable(exception) || attempt >= maxAttempts) {
-                    throw RiskSubmissionFailure.unavailable(operationFor(command, operation), attempt, exception);
-                }
-                if (backoffMillis > 0) {
-                    sleeper.sleep(backoffMillis);
-                }
-            }
+  private RiskSubmissionResult execute(
+      OrderCommand command, String operation, Supplier<RiskSubmissionResult> call) {
+    RuntimeException lastFailure = null;
+    for (int attempt = 1; attempt <= maxAttempts; attempt += 1) {
+      circuitBreaker.acquirePermission();
+      try {
+        final RiskSubmissionResult result = call.get();
+        circuitBreaker.recordSuccess();
+        return result;
+      } catch (RuntimeException exception) {
+        circuitBreaker.recordFailure();
+        lastFailure = exception;
+        if (!isRetryable(exception) || attempt >= maxAttempts) {
+          throw RiskSubmissionFailure.unavailable(
+              operationFor(command, operation), attempt, exception);
         }
-        throw RiskSubmissionFailure.unavailable(operationFor(command, operation), maxAttempts, lastFailure);
-    }
-
-    private boolean isRetryable(RuntimeException exception) {
-        return RETRYABLE_CODES.contains(Status.fromThrowable(exception).getCode());
-    }
-
-    private String operationFor(OrderCommand command, String fallback) {
-        if (command == null) {
-            return fallback;
+        if (backoffMillis > 0) {
+          sleeper.sleep(backoffMillis);
         }
-        return switch (command.getCommandType()) {
-            case COMMAND_TYPE_CANCEL -> "cancel";
-            case COMMAND_TYPE_NEW -> "submit";
-            default -> fallback;
-        };
+      }
     }
+    throw RiskSubmissionFailure.unavailable(
+        operationFor(command, operation), maxAttempts, lastFailure);
+  }
+
+  private boolean isRetryable(RuntimeException exception) {
+    return RETRYABLE_CODES.contains(Status.fromThrowable(exception).getCode());
+  }
+
+  private String operationFor(OrderCommand command, String fallback) {
+    if (command == null) {
+      return fallback;
+    }
+    return switch (command.getCommandType()) {
+      case COMMAND_TYPE_CANCEL -> "cancel";
+      case COMMAND_TYPE_NEW -> "submit";
+      default -> fallback;
+    };
+  }
 }

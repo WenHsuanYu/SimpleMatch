@@ -22,75 +22,83 @@ import org.springframework.stereotype.Service;
  */
 @Service
 public class RiskGrpcService extends RiskServiceGrpc.RiskServiceImplBase {
-    private static final GrpcSubmissionCommandMapper COMMAND_MAPPER = new GrpcSubmissionCommandMapper();
+  private static final GrpcSubmissionCommandMapper COMMAND_MAPPER =
+      new GrpcSubmissionCommandMapper();
 
-    private final SubmissionService submissionService;
+  private final SubmissionService submissionService;
 
-    /**
-     * Creates a risk gRPC service that delegates submissions to the provided persistence service.
-     *
-     * @param submissionService the service responsible for persisting order submissions
-     */
-    public RiskGrpcService(SubmissionService submissionService) {
-        this.submissionService = submissionService;
-    }
+  /**
+   * Creates a risk gRPC service that delegates submissions to the provided persistence service.
+   *
+   * @param submissionService the service responsible for persisting order submissions
+   */
+  public RiskGrpcService(SubmissionService submissionService) {
+    this.submissionService = submissionService;
+  }
 
-    /**
-     * Accepts a new-order request, normalizes the command payload, persists the submission, and
-     * returns the resulting acknowledgement to the caller.
-     *
-     * @param request          the inbound gRPC request
-     * @param responseObserver the gRPC observer used to stream the response
-     */
-    @Override
-    public void submitOrder(SubmitOrderRequest request, StreamObserver<SubmitOrderResponse> responseObserver) {
-        final SubmissionResult submission = submissionService.persist(
-                toResolvedSubmissionCommand(request.getCommand(), CommandType.COMMAND_TYPE_NEW));
-        responseObserver.onNext(SubmitOrderResponse.newBuilder()
-                .setRequestId(submission.requestId())
-                .setOrderId(submission.orderId())
-                .setClOrdId(submission.clOrdId())
-                .setAccepted(submission.accepted())
-                .setReasonCode(submission.reasonCode())
-                .setReasonText(submission.reasonText())
-                .build());
-        responseObserver.onCompleted();
-    }
+  /**
+   * Accepts a new-order request, normalizes the command payload, persists the submission, and
+   * returns the resulting acknowledgement to the caller.
+   *
+   * @param request the inbound gRPC request
+   * @param responseObserver the gRPC observer used to stream the response
+   */
+  @Override
+  public void submitOrder(
+      SubmitOrderRequest request, StreamObserver<SubmitOrderResponse> responseObserver) {
+    final SubmissionResult submission =
+        submissionService.persist(
+            toResolvedSubmissionCommand(request.getCommand(), CommandType.COMMAND_TYPE_NEW));
+    responseObserver.onNext(
+        SubmitOrderResponse.newBuilder()
+            .setRequestId(submission.requestId())
+            .setOrderId(submission.orderId())
+            .setClOrdId(submission.clOrdId())
+            .setAccepted(submission.accepted())
+            .setReasonCode(submission.reasonCode())
+            .setReasonText(submission.reasonText())
+            .build());
+    responseObserver.onCompleted();
+  }
 
-    /**
-     * Accepts a cancel-order request, normalizes the command payload, persists the submission, and
-     * returns the resulting acknowledgement to the caller.
-     *
-     * @param request          the inbound gRPC request
-     * @param responseObserver the gRPC observer used to stream the response
-     */
-    @Override
-    public void cancelOrder(CancelOrderRequest request, StreamObserver<CancelOrderResponse> responseObserver) {
-        final SubmissionResult submission = submissionService.persist(
-                toResolvedSubmissionCommand(request.getCommand(), CommandType.COMMAND_TYPE_CANCEL));
-        responseObserver.onNext(CancelOrderResponse.newBuilder()
-                .setRequestId(submission.requestId())
-                .setOrderId(submission.orderId())
-                .setClOrdId(submission.clOrdId())
-                .setOrigClOrdId(submission.origClOrdId())
-                .setAccepted(submission.accepted())
-                .setReasonCode(submission.reasonCode())
-                .setReasonText(submission.reasonText())
-                .build());
-        responseObserver.onCompleted();
-    }
+  /**
+   * Accepts a cancel-order request, normalizes the command payload, persists the submission, and
+   * returns the resulting acknowledgement to the caller.
+   *
+   * @param request the inbound gRPC request
+   * @param responseObserver the gRPC observer used to stream the response
+   */
+  @Override
+  public void cancelOrder(
+      CancelOrderRequest request, StreamObserver<CancelOrderResponse> responseObserver) {
+    final SubmissionResult submission =
+        submissionService.persist(
+            toResolvedSubmissionCommand(request.getCommand(), CommandType.COMMAND_TYPE_CANCEL));
+    responseObserver.onNext(
+        CancelOrderResponse.newBuilder()
+            .setRequestId(submission.requestId())
+            .setOrderId(submission.orderId())
+            .setClOrdId(submission.clOrdId())
+            .setOrigClOrdId(submission.origClOrdId())
+            .setAccepted(submission.accepted())
+            .setReasonCode(submission.reasonCode())
+            .setReasonText(submission.reasonText())
+            .build());
+    responseObserver.onCompleted();
+  }
 
-    /**
-     * Ensures the command has the expected type before it is persisted.
-     *
-     * <p>The protobuf default instance and missing payloads are both treated as empty commands, and
-     * any mismatched command type is rewritten to the type required by the current RPC.
-     *
-     * @param command      the incoming protobuf command, which may be absent or use the wrong type
-     * @param expectedType the command type required by the RPC being handled
-     * @return a command whose type matches the request being processed
-     */
-    private ResolvedSubmissionCommand toResolvedSubmissionCommand(OrderCommand command, CommandType expectedType) {
-        return COMMAND_MAPPER.map(command, expectedType);
-    }
+  /**
+   * Ensures the command has the expected type before it is persisted.
+   *
+   * <p>The protobuf default instance and missing payloads are both treated as empty commands, and
+   * any mismatched command type is rewritten to the type required by the current RPC.
+   *
+   * @param command the incoming protobuf command, which may be absent or use the wrong type
+   * @param expectedType the command type required by the RPC being handled
+   * @return a command whose type matches the request being processed
+   */
+  private ResolvedSubmissionCommand toResolvedSubmissionCommand(
+      OrderCommand command, CommandType expectedType) {
+    return COMMAND_MAPPER.map(command, expectedType);
+  }
 }

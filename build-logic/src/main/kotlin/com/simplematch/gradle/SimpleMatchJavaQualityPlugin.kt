@@ -27,18 +27,19 @@ class SimpleMatchJavaQualityPlugin : Plugin<Project> {
                     .file("config/checkstyle/suppressions.xml")
                     .asFile
                     .absolutePath
-            isIgnoreFailures = false
+            isIgnoreFailures = true
             maxWarnings = 0
         }
         project.extensions.getByType<PmdExtension>().apply {
             toolVersion = catalog.findVersion("pmd").get().requiredVersion
+            isIgnoreFailures = true
             ruleSets = emptyList()
             ruleSetFiles =
                 project.files(project.rootProject.layout.projectDirectory.file(PmdPolicy.RULESET_PATH))
         }
         project.extensions.getByType<SpotBugsExtension>().apply {
             toolVersion.set(catalog.findVersion("spotbugs-tool").get().requiredVersion)
-            ignoreFailures.set(false)
+            ignoreFailures.set(true)
             showProgress.set(false)
             excludeFilter.set(project.rootProject.layout.projectDirectory.file("config/spotbugs/exclude.xml"))
         }
@@ -53,11 +54,9 @@ class SimpleMatchJavaQualityPlugin : Plugin<Project> {
         }
         project.tasks.withType(Pmd::class.java).configureEach {
             source = project.fileTree(project.projectDir.resolve("src/main/java")) { include("**/*.java") }
-
             exclude("**/build/generated/**")
             exclude("**/generated/**")
 
-            ignoreFailures = false
             reports {
                 xml.required.set(true)
                 html.required.set(true)

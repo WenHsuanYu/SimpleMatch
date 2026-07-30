@@ -95,7 +95,7 @@ class SimpleMatchFlywayServicePlugin : Plugin<Project> {
     private fun resolveServiceId(extension: SimpleMatchFlywayExtension): String {
         val configuredServiceId =
             extension.serviceId.orNull
-                ?: extension.serviceName.orNull?.let(FlywayServiceIdentity::legacyServiceNameToId)
+                ?: extension.serviceId.orNull?.let(FlywayServiceIdentity::legacyServiceNameToId)
                 ?: throw IllegalStateException("simpleMatchFlyway.serviceId must be configured.")
         return FlywayServiceIdentity.validate(configuredServiceId)
     }

@@ -6,8 +6,8 @@ import org.springframework.context.annotation.Configuration;
 
 @Configuration
 public class RuntimeConfigConfiguration {
-    @Bean
-    AccountServiceRuntime accountServiceRuntime(PlatformProperties properties) {
-        return AccountServiceRuntime.from(properties);
-    }
+  @Bean
+  AccountServiceRuntime accountServiceRuntime(PlatformProperties properties) {
+    return AccountServiceRuntime.from(properties);
+  }
 }

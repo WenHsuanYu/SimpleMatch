@@ -27,7 +27,17 @@ class SimpleMatchJavaConventionsPlugin : Plugin<Project> {
             lockAllConfigurations()
         }
 
-        val mockitoAgent = project.configurations.maybeCreate("mockitoAgent")
+        val mockitoAgent = project.configurations.maybeCreate("mockitoAgent").apply {
+            isCanBeConsumed = false
+            isCanBeResolved = true
+            description = "Resolves the Mockito JAR used as a JVM test agent."
+        }
+
+        project.dependencies.add(
+            mockitoAgent.name,
+            project.dependencies.platform(catalog.coordinate("spring-boot-bom"))
+        )
+
         val mockitoDependency = project.dependencies.create(catalog.coordinate("mockito-core"))
         (mockitoDependency as ExternalModuleDependency).isTransitive = false
         project.dependencies.add("mockitoAgent", mockitoDependency)

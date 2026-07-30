@@ -30,6 +30,14 @@ spring:
       value-serializer: org.apache.kafka.common.serialization.ByteArraySerializer
       acks: all
 
+simplematch:
+  risk-service:
+    admission:
+      cdc-metric-name: orders.validated
+      maximum-cdc-lag-events: 10000
+      maximum-metric-age: 30s
+
+
 management:
   endpoints:
     web:

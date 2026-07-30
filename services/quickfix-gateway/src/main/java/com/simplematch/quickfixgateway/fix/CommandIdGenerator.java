@@ -4,7 +4,7 @@ import com.simplematch.config.SimpleMatchUuids;
 
 final class CommandIdGenerator {
 
-    String nextCommandId() {
-        return SimpleMatchUuids.uuidV7().toString();
-    }
+  String nextCommandId() {
+    return SimpleMatchUuids.uuidV7().toString();
+  }
 }

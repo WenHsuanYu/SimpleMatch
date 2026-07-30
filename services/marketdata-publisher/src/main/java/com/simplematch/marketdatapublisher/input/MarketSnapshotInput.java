@@ -7,8 +7,6 @@ import com.simplematch.marketdatapublisher.snapshot.PreparedMarketSnapshot;
  */
 @FunctionalInterface
 public interface MarketSnapshotInput {
-    /**
-     * Returns the next normalized immutable snapshot available to the publisher.
-     */
-    PreparedMarketSnapshot nextSnapshot();
+  /** Returns the next normalized immutable snapshot available to the publisher. */
+  PreparedMarketSnapshot nextSnapshot();
 }

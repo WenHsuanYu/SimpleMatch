@@ -18,23 +18,71 @@ class SimpleMatchSpringServicePlugin : Plugin<Project> {
         project.pluginManager.apply("org.springframework.boot")
 
         val catalog = project.extensions.getByType<VersionCatalogsExtension>().named("libs")
+        val springBootBom = catalog.findLibrary("spring-boot-bom").get()
+        val springCloudBom = catalog.findLibrary("spring-cloud-bom").get()
+        val lombok = catalog.findLibrary("lombok").get()
 
         project.dependencies.apply {
-            add("implementation", platform(catalog.findLibrary("spring-boot-bom").get()))
-            add("implementation", platform(catalog.findLibrary("spring-cloud-bom").get()))
-            add("implementation", project.project(":shared-java:simplematch-config"))
-            add("implementation", project.project(":shared-java:simplematch-contracts"))
-            add("implementation", "org.springframework.boot:spring-boot-starter")
-            add("implementation", "org.springframework.boot:spring-boot-starter-actuator")
-            add("implementation", "org.springframework.boot:spring-boot-starter-validation")
-            add("implementation", "org.springframework.cloud:spring-cloud-starter-kubernetes-client-config")
+            add("implementation", platform(springBootBom))
+            add("implementation", platform(springCloudBom))
+
+            add(
+                "implementation",
+                project.project(":shared-java:simplematch-config")
+            )
+            add(
+                "implementation",
+                project.project(":shared-java:simplematch-contracts")
+            )
+
+            add(
+                "implementation",
+                "org.springframework.boot:spring-boot-starter"
+            )
+            add(
+                "implementation",
+                "org.springframework.boot:spring-boot-starter-actuator"
+            )
+            add(
+                "implementation",
+                "org.springframework.boot:spring-boot-starter-validation"
+            )
+            add(
+                "implementation",
+                "org.springframework.cloud:spring-cloud-starter-kubernetes-client-config"
+            )
+
             add("runtimeOnly", "org.postgresql:postgresql")
-            add("compileOnly", catalog.findLibrary("jakarta-annotation-api").get())
-            add("annotationProcessor", catalog.findLibrary("lombok").get())
-            add("compileOnly", catalog.findLibrary("lombok").get())
-            add("testCompileOnly", catalog.findLibrary("lombok").get())
-            add("testAnnotationProcessor", catalog.findLibrary("lombok").get())
-            add("testImplementation", "org.springframework.boot:spring-boot-starter-test")
+
+            add(
+                "compileOnly",
+                catalog.findLibrary("jakarta-annotation-api").get()
+            )
+
+            add("compileOnly", lombok)
+
+            /*
+             * annotationProcessor is an independent dependency graph.
+             * It must receive the Boot BOM explicitly so versionless
+             * processors such as Lombok and the Spring Boot configuration
+             * processor can be resolved.
+             */
+            add("annotationProcessor", platform(springBootBom))
+            add("annotationProcessor", lombok)
+
+            add("testCompileOnly", lombok)
+
+            /*
+             * testAnnotationProcessor is also independent from both
+             * implementation and annotationProcessor.
+             */
+            add("testAnnotationProcessor", platform(springBootBom))
+            add("testAnnotationProcessor", lombok)
+
+            add(
+                "testImplementation",
+                "org.springframework.boot:spring-boot-starter-test"
+            )
         }
     }
 }
