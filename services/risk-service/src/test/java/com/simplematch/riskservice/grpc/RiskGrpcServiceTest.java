@@ -23,7 +23,6 @@ import com.simplematch.riskservice.submission.SubmissionValidator;
 import com.simplematch.riskservice.submission.TransactionalSubmissionService;
 import java.time.Clock;
 import java.time.LocalDate;
-import java.util.UUID;
 import org.flywaydb.core.Flyway;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;

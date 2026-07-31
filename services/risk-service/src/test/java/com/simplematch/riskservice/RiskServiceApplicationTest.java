@@ -39,8 +39,6 @@ class RiskServiceApplicationTest {
   void contextLoadsWithSharedConfig() {
     assertThat(platformProperties.environment()).isEqualTo("test");
     assertThat(runtime.grpcPort()).isEqualTo(50052);
-    assertThat(platformProperties.postgres().dsn())
-        .isEqualTo(
-            riskServiceUrl("riskcontext"));
+    assertThat(platformProperties.postgres().dsn()).isEqualTo(riskServiceUrl("riskcontext"));
   }
 }

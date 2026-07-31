@@ -56,11 +56,17 @@ class SimpleMatchFlywayServicePlugin : Plugin<Project> {
                 extension.migrationLocations.orNull
                     ?.takeIf { it.isNotEmpty() }
                     ?.toTypedArray()
-                    ?: arrayOf(FlywayServiceIdentity.defaultMigrationLocation(project.projectDir, serviceId))
+                    ?: arrayOf(
+                        FlywayServiceIdentity.defaultMigrationLocation(
+                            project.projectDir,
+                            serviceId
+                        )
+                    )
             val baselineVersion = extension.baselineVersion.orNull ?: "1"
             val fallbackSchemaName = extension.schemaName.orNull?.takeIf { it.isNotBlank() }
             val defaultCleanDisabled = extension.cleanDisabled.get()
-            val schemaName = resolveSchema(providers, serviceTaskPrefix, serviceId, fallbackSchemaName)
+            val schemaName =
+                resolveSchema(providers, serviceTaskPrefix, serviceId, fallbackSchemaName)
             val cleanDisabled =
                 resolveCleanDisabled(providers, serviceTaskPrefix, serviceId, defaultCleanDisabled)
 
@@ -123,7 +129,11 @@ class SimpleMatchFlywayServicePlugin : Plugin<Project> {
         fallbackSchemaName: String?
     ): String? {
         val envPrefix = serviceIdToEnvPrefix(serviceId)
-        return propertyOrEnv(providers, "${serviceTaskPrefix}FlywaySchema", "${envPrefix}_FLYWAY_SCHEMA")
+        return propertyOrEnv(
+            providers,
+            "${serviceTaskPrefix}FlywaySchema",
+            "${envPrefix}_FLYWAY_SCHEMA"
+        )
             ?: fallbackSchemaName
     }
 
@@ -131,9 +141,21 @@ class SimpleMatchFlywayServicePlugin : Plugin<Project> {
         val rootProject = project.rootProject
         val taskMappings =
             listOf(
-                TaskMapping("flywayInfo", serviceTaskPrefix + "FlywayInfo", "Lists Flyway migration state."),
-                TaskMapping("flywayMigrate", serviceTaskPrefix + "FlywayMigrate", "Applies Flyway migrations."),
-                TaskMapping("flywayValidate", serviceTaskPrefix + "FlywayValidate", "Validates Flyway migrations."),
+                TaskMapping(
+                    "flywayInfo",
+                    serviceTaskPrefix + "FlywayInfo",
+                    "Lists Flyway migration state."
+                ),
+                TaskMapping(
+                    "flywayMigrate",
+                    serviceTaskPrefix + "FlywayMigrate",
+                    "Applies Flyway migrations."
+                ),
+                TaskMapping(
+                    "flywayValidate",
+                    serviceTaskPrefix + "FlywayValidate",
+                    "Validates Flyway migrations."
+                ),
                 TaskMapping(
                     "flywayRepair",
                     serviceTaskPrefix + "FlywayRepair",
@@ -144,7 +166,11 @@ class SimpleMatchFlywayServicePlugin : Plugin<Project> {
                     serviceTaskPrefix + "FlywayBaseline",
                     "Baselines an existing schema for Flyway."
                 ),
-                TaskMapping("flywayClean", serviceTaskPrefix + "FlywayClean", "Drops the Flyway-managed schema.")
+                TaskMapping(
+                    "flywayClean",
+                    serviceTaskPrefix + "FlywayClean",
+                    "Drops the Flyway-managed schema."
+                )
             )
 
         taskMappings.forEach { mapping ->
@@ -186,7 +212,11 @@ class SimpleMatchFlywayServicePlugin : Plugin<Project> {
         }
 
         val jdbcUrl =
-            propertyOrEnv(providers, "${serviceTaskPrefix}FlywayJdbcUrl", "${envPrefix}_FLYWAY_JDBC_URL")
+            propertyOrEnv(
+                providers,
+                "${serviceTaskPrefix}FlywayJdbcUrl",
+                "${envPrefix}_FLYWAY_JDBC_URL"
+            )
                 ?: propertyOrEnv(providers, "flywayJdbcUrl", "FLYWAY_JDBC_URL")
                 ?: propertyOrEnv(providers, "flywayUrl", "FLYWAY_URL")
                 ?: throw IllegalStateException(
@@ -196,10 +226,18 @@ class SimpleMatchFlywayServicePlugin : Plugin<Project> {
 
         return FlywayConnection(
             jdbcUrl,
-            propertyOrEnv(providers, "${serviceTaskPrefix}FlywayUsername", "${envPrefix}_FLYWAY_USERNAME")
+            propertyOrEnv(
+                providers,
+                "${serviceTaskPrefix}FlywayUsername",
+                "${envPrefix}_FLYWAY_USERNAME"
+            )
                 ?: propertyOrEnv(providers, "flywayUsername", "FLYWAY_USERNAME")
                 ?: propertyOrEnv(providers, "flywayUser", "FLYWAY_USER"),
-            propertyOrEnv(providers, "${serviceTaskPrefix}FlywayPassword", "${envPrefix}_FLYWAY_PASSWORD")
+            propertyOrEnv(
+                providers,
+                "${serviceTaskPrefix}FlywayPassword",
+                "${envPrefix}_FLYWAY_PASSWORD"
+            )
                 ?: propertyOrEnv(providers, "flywayPassword", "FLYWAY_PASSWORD")
         )
     }
@@ -212,7 +250,11 @@ class SimpleMatchFlywayServicePlugin : Plugin<Project> {
     ): Boolean {
         val envPrefix = serviceIdToEnvPrefix(serviceId)
         val allowClean =
-            propertyOrEnv(providers, "${serviceTaskPrefix}FlywayAllowClean", "${envPrefix}_FLYWAY_ALLOW_CLEAN")
+            propertyOrEnv(
+                providers,
+                "${serviceTaskPrefix}FlywayAllowClean",
+                "${envPrefix}_FLYWAY_ALLOW_CLEAN"
+            )
                 ?.lowercase(Locale.ROOT)
                 ?.let { value ->
                     when (value) {
@@ -232,7 +274,8 @@ class SimpleMatchFlywayServicePlugin : Plugin<Project> {
         propertyName: String,
         envName: String
     ): String? =
-        providers.gradleProperty(propertyName).orNull ?: providers.environmentVariable(envName).orNull
+        providers.gradleProperty(propertyName).orNull
+            ?: providers.environmentVariable(envName).orNull
 
     private fun parseDsn(rawValue: String): FlywayConnection {
         if (rawValue.startsWith("jdbc:")) {
@@ -250,14 +293,17 @@ class SimpleMatchFlywayServicePlugin : Plugin<Project> {
             val userParts = userInfo.split(":", limit = 2)
             val username = userParts.firstOrNull()?.takeIf { it.isNotBlank() }
             val password = userParts.getOrNull(1)?.takeIf { it.isNotBlank() }
-            val host = uri.host ?: throw IllegalStateException("Flyway DSN host is missing: $rawValue")
+            val host =
+                uri.host ?: throw IllegalStateException("Flyway DSN host is missing: $rawValue")
             val port = if (uri.port > 0) uri.port else 5432
             val path =
                 uri.path?.takeIf { it.isNotBlank() }
                     ?: throw IllegalStateException("Flyway DSN database is missing: $rawValue")
 
             return FlywayConnection(
-                jdbcUrl = "jdbc:postgresql://$host:$port$path", username = username, password = password
+                jdbcUrl = "jdbc:postgresql://$host:$port$path",
+                username = username,
+                password = password
             )
         } catch (syntaxException: URISyntaxException) {
             throw IllegalStateException("Failed to parse Flyway DSN: $rawValue", syntaxException)

@@ -27,7 +27,7 @@ flyway-gradle-plugin = { module = "org.flywaydb:flyway-gradle-plugin", version.r
 grpc-netty-shaded = { module = "io.grpc:grpc-netty-shaded" }
 grpc-protobuf = { module = "io.grpc:grpc-protobuf" }
 grpc-stub = { module = "io.grpc:grpc-stub" }
-grpc-protoc-gen-java = { module = "io.grpc:protoc-gen-grpc-java", version.ref = "grpc"}
+grpc-protoc-gen-java = { module = "io.grpc:protoc-gen-grpc-java", version.ref = "grpc" }
 jakarta-annotation-api = { module = "jakarta.annotation:jakarta.annotation-api" }
 jackson-databind = { module = "com.fasterxml.jackson.core:jackson-databind" }
 junit-jupiter = { module = "org.junit.jupiter:junit-jupiter" }

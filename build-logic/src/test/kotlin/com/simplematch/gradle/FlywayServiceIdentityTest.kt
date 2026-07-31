@@ -22,6 +22,9 @@ class FlywayServiceIdentityTest {
 
     @Test
     fun `maps legacy service names to kebab-case identifiers`() {
-        assertEquals("account-service", FlywayServiceIdentity.legacyServiceNameToId("accountService"))
+        assertEquals(
+            "account-service",
+            FlywayServiceIdentity.legacyServiceNameToId("accountService")
+        )
     }
 }

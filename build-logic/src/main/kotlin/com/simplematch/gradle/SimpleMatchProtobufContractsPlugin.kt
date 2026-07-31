@@ -86,6 +86,7 @@ class SimpleMatchProtobufContractsPlugin : Plugin<Project> {
     private fun VersionCatalog.coordinate(alias: String): String {
         val dependency = findLibrary(alias).get().get()
         val module = "${dependency.module.group}:${dependency.module.name}"
-        return dependency.versionConstraint.requiredVersion.takeIf(String::isNotBlank)?.let { "$module:$it" } ?: module
+        return dependency.versionConstraint.requiredVersion.takeIf(String::isNotBlank)
+            ?.let { "$module:$it" } ?: module
     }
 }
