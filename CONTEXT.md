@@ -81,6 +81,8 @@ authoritative lifecycle events and must not become a second command path.
 | Submission             | One normalized request evaluated and persisted as accepted or rejected.                               | Risk Admission                               |
 | Admission business key | FIX sender, target, trading day, command category, and client-order identity used for idempotency.    | Risk Admission                               |
 | Reservation            | Account-owned authority held for an admitted order.                                                   | Account Authority                            |
+| Account limit          | Daily notional authority for one account and trading day, including its reserved and utilized amounts. | Account Authority                            |
+| Account position       | Symbol-level inventory authority for one account, including long, short, and reserved quantities.    | Account Authority                            |
 | Execution fill         | One idempotent matched quantity at one execution price.                                               | Matching produces; Account Authority applies |
 | Release                | Terminal removal of remaining reserved authority.                                                     | Account Authority                            |
 | Market snapshot        | Versioned set of instrument eligibility and trading rules.                                            | Market Reference                             |
@@ -112,7 +114,15 @@ authoritative lifecycle events and must not become a second command path.
 
 ## Aggregate and consistency boundaries
 
-`AccountReservation` is changed only through account-service transaction-owning application methods.
+Account Authority has three separate aggregate roots: Reservation, Account limit, and Account
+position. Reservation owns one reservation's lifecycle and quantities; Account limit owns the
+daily notional invariant for one account; Account position owns the quantity bounds for one account
+and symbol. Reservation lifecycle operations may coordinate a reservation root with the relevant
+limit or position root in one local transaction; no single Account root owns every position and
+reservation.
+
+Each aggregate root owns its state-dependent invariants. `AccountReservation` is changed only
+through account-service transaction-owning application methods.
 The admission journal and outbox are changed atomically inside risk-service-owned transactions.
 Cross-service calls never extend a database transaction across service boundaries; retry requires an
 idempotency identity, and asynchronous consumers own inbox/deduplication state. These boundaries
