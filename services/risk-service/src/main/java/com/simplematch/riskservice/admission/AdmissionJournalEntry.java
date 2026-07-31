@@ -32,17 +32,6 @@ public record AdmissionJournalEntry(
   }
 
   /**
-   * Creates a pending entry without an explicit route for legacy ingress callers.
-   *
-   * @param command validated admission command
-   * @param now creation timestamp in Unix milliseconds
-   * @return a pending journal entry with an unassigned route
-   */
-  public static AdmissionJournalEntry pending(AdmissionCommand command, long now) {
-    return pending(command, AdmissionDeliveryRoute.unassigned(), now);
-  }
-
-  /**
    * Returns whether a retry carries the same persisted command content.
    *
    * @param candidate command supplied by the retry

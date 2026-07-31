@@ -326,6 +326,53 @@ class AccountReservationApplicationServiceTransactionTest {
     assertThat(service.getLimits("acc-1").availableNotional()).isEqualByComparingTo("9004");
   }
 
+  @DisplayName("release after partial fill returns only the remaining authority")
+  @Test
+  void releasesOnlyRemainingAuthorityAfterPartialFill() {
+    final ReservationRecord reservation = service.reserve(operation(Side.SIDE_BUY, "10", "100"));
+    final ReservationIdentity identity =
+        new ReservationIdentity(
+            new ReservationIdentity.RequestId(reservation.requestId()),
+            new ReservationIdentity.ReservationId(reservation.reservationId()),
+            new ReservationIdentity.OrderId(reservation.orderId()));
+    service.applyFill(
+        new ApplyFillOperation(
+            identity,
+            new ExecutionFill(
+                new ExecutionFill.ExecutionId(UUID.randomUUID().toString()),
+                ExecutionFill.AggregateSequence.absent(),
+                new ExecutionFill.FillQuantity(new BigDecimal("4")),
+                new ExecutionFill.FillPrice(new BigDecimal("99")))));
+
+    final ReservationRecord released =
+        service.release(
+            new ReleaseReservationOperation(
+                identity, new ReleaseReservationOperation.ReleaseReason("IOC_REMAINDER")));
+
+    assertThat(released.status()).isEqualTo(ReservationStatus.RESERVATION_STATUS_RELEASED);
+    assertThat(
+            jdbcTemplate.queryForObject(
+                "SELECT remaining_quantity FROM account_service.account_reservations",
+                BigDecimal.class))
+        .isEqualByComparingTo("0");
+    assertThat(
+            jdbcTemplate.queryForObject(
+                "SELECT filled_quantity FROM account_service.account_reservations", BigDecimal.class))
+        .isEqualByComparingTo("4");
+    assertThat(
+            jdbcTemplate.queryForObject(
+                "SELECT reserved_notional FROM account_service.account_reservations",
+                BigDecimal.class))
+        .isEqualByComparingTo("0");
+    assertThat(service.getLimits("acc-1").reservedNotional()).isEqualByComparingTo("0");
+    assertThat(service.getLimits("acc-1").utilizedNotional()).isEqualByComparingTo("396");
+    assertThat(service.getLimits("acc-1").availableNotional()).isEqualByComparingTo("9604");
+    assertThat(
+            jdbcTemplate.queryForObject(
+                "SELECT COUNT(*) FROM account_service.outbox", Integer.class))
+        .isEqualTo(3);
+  }
+
   @DisplayName("release returns remaining authority and is idempotent")
   @Test
   void releasesRemainingCashOnce() {

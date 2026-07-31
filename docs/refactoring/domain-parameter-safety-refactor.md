@@ -44,10 +44,11 @@ specification:
   and transaction/outbox tests.
 - Risk Admission `admission` production code, its journal/outbox adapters, and route-reuse tests.
 
-The legacy Risk Submission package, QuickFIX ingress/WAL/configuration, Market Reference snapshots,
-and shared platform configuration are separate parameter-safety surfaces. Any remaining wide member
-there is follow-up work; it is not an exception that weakens the seven-parameter policy and is not a
-reason to keep Issues #39 or #44 open.
+The completed `SubmissionResult` predecessor slice is tracked by Issues #33–#37. Remaining Risk
+Submission members, QuickFIX ingress/WAL/configuration, Market Reference snapshots, and shared
+platform configuration are separate parameter-safety surfaces. Any remaining wide member there is
+follow-up work; it is not an exception that weakens the seven-parameter policy and is not a reason to
+keep Issues #39 or #44 open.
 
 ## Slice 1: durable submission outcomes
 
@@ -135,6 +136,8 @@ The Account Authority and Risk Admission slices were verified on 2026-07-31:
 - `./gradlew -q test --rerun-tasks` passed for the repository test suite.
 - `./gradlew -q certificationTest --rerun-tasks` passed for the QuickFIX certification smoke gate.
 - `./gradlew -q staticAnalysis` passed.
+- `./gradlew -q :services:account-service:parameterSafetyMain :services:risk-service:parameterSafetyMain`
+  passed as the reproducible completed-slice parameter gate.
 - `bash scripts/test-check-markdown-links.sh` passed after the canonical-document and forwarding-page
   update.
 

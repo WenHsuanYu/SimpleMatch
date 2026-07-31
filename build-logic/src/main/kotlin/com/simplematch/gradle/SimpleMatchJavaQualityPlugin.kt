@@ -87,5 +87,41 @@ class SimpleMatchJavaQualityPlugin : Plugin<Project> {
                 "${project.path}:spotbugsMain"
             )
         }
+
+        registerCompletedParameterSafetyGate(project)
+    }
+
+    private fun registerCompletedParameterSafetyGate(project: Project) {
+        val sourceDirectories = PmdPolicy.completedParameterSafetySourceDirectories(project.path)
+        if (sourceDirectories.isEmpty()) {
+            return
+        }
+
+        val task = project.tasks.register("parameterSafetyMain", Pmd::class.java) {
+            description =
+                "Checks the completed Account Authority or Risk Admission slice for Java members over seven parameters."
+            group = "verification"
+            ruleSets = emptyList()
+            ruleSetFiles =
+                project.files(
+                    project.rootProject.layout.projectDirectory.file(
+                        PmdPolicy.COMPLETED_PARAMETER_SAFETY_RULESET_PATH
+                    )
+                )
+            source = project.fileTree(project.projectDir) {
+                sourceDirectories.forEach { include("$it/**/*.java") }
+            }
+            reports {
+                xml.required.set(true)
+                html.required.set(true)
+            }
+        }
+
+        project.tasks.named("check") {
+            dependsOn(task)
+        }
+        project.rootProject.tasks.named("staticAnalysis") {
+            dependsOn(task)
+        }
     }
 }
