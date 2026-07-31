@@ -78,6 +78,7 @@ authoritative lifecycle events and must not become a second command path.
 | Term                   | Meaning                                                                                               | Owner                                        |
 |------------------------|-------------------------------------------------------------------------------------------------------|----------------------------------------------|
 | Admission              | Durable decision that a normalized order may enter the ordered matching path.                         | Risk Admission                               |
+| Admission aggregate root | One Risk Admission lifecycle for a command identity, from pending intent to accepted or rejected outcome. | Risk Admission                               |
 | Submission             | One normalized request evaluated and persisted as accepted or rejected.                               | Risk Admission                               |
 | Admission business key | FIX sender, target, trading day, command category, and client-order identity used for idempotency.    | Risk Admission                               |
 | Reservation            | Account-owned authority held for an admitted order.                                                   | Account Authority                            |
@@ -120,6 +121,12 @@ daily notional invariant for one account; Account position owns the quantity bou
 and symbol. Reservation lifecycle operations may coordinate a reservation root with the relevant
 limit or position root in one local transaction; no single Account root owns every position and
 reservation.
+
+Risk Admission has one Admission aggregate root per command identity. It owns the normalized order
+facts needed for the decision, the alternate admission business key, and the lifecycle from pending
+intent to an accepted or rejected outcome. Account reservations and matching orders are separate
+context-owned roots; an admission may reference their outcome or publish an accepted decision, but it
+does not own their state.
 
 Each aggregate root owns its state-dependent invariants. `AccountReservation` is changed only
 through account-service transaction-owning application methods.

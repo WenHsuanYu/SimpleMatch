@@ -2,6 +2,12 @@
 
 Phase 7 is implemented as a recoverable local saga in `risk-service`.
 
+The domain boundary is one Admission aggregate root per command identity. It owns the normalized
+decision facts, FIX business-key idempotency, and the `PENDING` to `ACCEPTED` or `REJECTED`
+lifecycle. Account reservations and matching orders remain separate context-owned roots; the
+pending saga coordinates the account outcome without extending a database transaction across the
+service boundary.
+
 - `OrderAdmissionValidator` converts v2 commands into typed, transport-neutral admission data and
   applies Taiwan session, identity, and fixed-point rules.
 - `admission_journal` records `PENDING`, `ACCEPTED`, or `REJECTED` before any account RPC. The RPC

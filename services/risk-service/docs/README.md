@@ -32,6 +32,11 @@ their cross-cutting canonical documents.
 
 ## Domain model
 
+Risk Admission uses one `Admission` aggregate root per command identity. The root owns the
+normalized decision facts, the FIX business-key idempotency identity, and the `PENDING` to
+`ACCEPTED` or `REJECTED` lifecycle. Account reservations and matching orders are referenced through
+their owning contexts rather than embedded in this root.
+
 `AdmissionCommand` is composed from typed identity, order facts, FIX identity, and an optional
 routing reference. Its canonical constructor cannot exchange command/order/account UUIDs or
 sender/target/client-order strings. A durable submission result is likewise composed instead of
