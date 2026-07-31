@@ -1,20 +1,23 @@
 # System Boundaries
 
-This is the canonical target specification for SimpleMatch system topology, service ownership, and the end-to-end
-trading flow. It describes intended architecture; repository contents may be delivered incrementally.
+This is the canonical target specification for SimpleMatch system topology, service ownership, and
+the end-to-end trading flow. It describes intended architecture; repository contents may be
+delivered incrementally.
 
 ## Planes and ownership
 
-- The **business data plane** carries orders, risk decisions, matching results, market data, and queries. Its
-  synchronous ingress and query dependencies use gRPC; its ordered, replayable commands and results use Apache Kafka.
-- The **operational control plane** carries configuration, scheduling, trading pair lifecycle, routing snapshots, and
-  breaker or rate-limit policy. It is deliberately outside the trading hot path.
-- The **market-reference publisher** owns versioned daily XTAI and ROCO reference snapshots. It validates and activates
-  offline source inputs, then publishes the durable snapshot event through its outbox; trading modules use the active
-  snapshot rather than making exchange-website calls.
-- `matching-engine` remains the C++ owner of matching order, fairness, and the latency-sensitive deterministic loop.
-  Peripheral services use Java and Spring Cloud. The repository remains a polyglot monorepo: Gradle builds Java services
-  and CMake builds native services.
+- The **business data plane** carries orders, risk decisions, matching results, market data, and
+  queries. Its synchronous ingress and query dependencies use gRPC; its ordered, replayable commands
+  and results use Apache Kafka.
+- The **operational control plane** carries configuration, scheduling, trading pair lifecycle,
+  routing snapshots, and breaker or rate-limit policy. It is deliberately outside the trading hot
+  path.
+- The **market-reference publisher** owns versioned daily XTAI and ROCO reference snapshots. It
+  validates and activates offline source inputs, then publishes the durable snapshot event through
+  its outbox; trading modules use the active snapshot rather than making exchange-website calls.
+- `matching-engine` remains the C++ owner of matching order, fairness, and the latency-sensitive
+  deterministic loop. Peripheral services use Java and Spring Cloud. The repository remains a
+  polyglot monorepo: Gradle builds Java services and CMake builds native services.
 
 ## End-to-end data flow
 
@@ -32,14 +35,16 @@ flowchart LR
   Executions -. execution reports .-> Gateway
 ```
 
-`quickfix-gateway` performs FIX session and message normalization, then submits orders and cancels to `risk-service`
+`quickfix-gateway` performs FIX session and message normalization, then submits orders and cancels
+to `risk-service`
 through a synchronous gRPC boundary.
-`risk-service` is the first durable business boundary: only after its local persistence succeeds may the gateway send
-the first successful FIX response. After that admission boundary, Kafka carries ordered commands and results to matching
-and downstream consumers.
+`risk-service` is the first durable business boundary: only after its local persistence succeeds may
+the gateway send the first successful FIX response. After that admission boundary, Kafka carries
+ordered commands and results to matching and downstream consumers.
 
-`account-service` is an internal dependency for limits, positions, and optional reservations. It is not a second ingress
-path. `query-service`, when present, reads PostgreSQL or Redis projections rather than Kafka directly.
+`account-service` is an internal dependency for limits, positions, and optional reservations. It is
+not a second ingress path. `query-service`, when present, reads PostgreSQL or Redis projections
+rather than Kafka directly.
 
 ## Service landscape
 
@@ -64,5 +69,6 @@ path. `query-service`, when present, reads PostgreSQL or Redis projections rathe
 | `risk-service` ↔ `account-service`  | gRPC unary            | Use deadlines; writes require an idempotency identity.                                       |
 | `marketdata-streamer` → clients     | gRPC server streaming | Clients reconnect and resume according to the stream contract.                               |
 
-The detailed protocol fields, compatibility rules, and topic catalog belong in the cross-cutting contracts area. This
-document owns the architectural reason for each boundary, not those wire-level definitions.
+The detailed protocol fields, compatibility rules, and topic catalog belong in the cross-cutting
+contracts area. This document owns the architectural reason for each boundary, not those wire-level
+definitions.
