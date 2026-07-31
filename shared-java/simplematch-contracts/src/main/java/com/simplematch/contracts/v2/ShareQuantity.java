@@ -2,6 +2,7 @@ package com.simplematch.contracts.v2;
 
 /** A positive whole-share quantity. */
 public record ShareQuantity(long shares) {
+  /** Creates a validated positive share quantity. */
   public ShareQuantity {
     if (shares <= 0) {
       throw new DomainValidationException("share quantity must be positive");

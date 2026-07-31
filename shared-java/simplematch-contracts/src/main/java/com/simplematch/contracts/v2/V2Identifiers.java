@@ -8,10 +8,12 @@ public final class V2Identifiers {
 
   /** Identifies one emitted event. */
   public record EventId(UUID value) {
+    /** Creates a validated event identifier. */
     public EventId {
       value = required(value, "event_id");
     }
 
+    /** Parses a UUID event identifier. */
     public static EventId parse(String raw) {
       return new EventId(parseUuid(raw, "event_id"));
     }
@@ -19,10 +21,12 @@ public final class V2Identifiers {
 
   /** Identifies one command operation. */
   public record CommandId(UUID value) {
+    /** Creates a validated command identifier. */
     public CommandId {
       value = required(value, "command_id");
     }
 
+    /** Parses a UUID command identifier. */
     public static CommandId parse(String raw) {
       return new CommandId(parseUuid(raw, "command_id"));
     }
@@ -30,10 +34,12 @@ public final class V2Identifiers {
 
   /** Identifies an order. */
   public record OrderId(UUID value) {
+    /** Creates a validated order identifier. */
     public OrderId {
       value = required(value, "order_id");
     }
 
+    /** Parses a UUID order identifier. */
     public static OrderId parse(String raw) {
       return new OrderId(parseUuid(raw, "order_id"));
     }
@@ -41,10 +47,12 @@ public final class V2Identifiers {
 
   /** Identifies an account. */
   public record AccountId(UUID value) {
+    /** Creates a validated account identifier. */
     public AccountId {
       value = required(value, "account_id");
     }
 
+    /** Parses a UUID account identifier. */
     public static AccountId parse(String raw) {
       return new AccountId(parseUuid(raw, "account_id"));
     }
@@ -52,10 +60,12 @@ public final class V2Identifiers {
 
   /** Identifies a reservation. */
   public record ReservationId(UUID value) {
+    /** Creates a validated reservation identifier. */
     public ReservationId {
       value = required(value, "reservation_id");
     }
 
+    /** Parses a UUID reservation identifier. */
     public static ReservationId parse(String raw) {
       return new ReservationId(parseUuid(raw, "reservation_id"));
     }
@@ -63,10 +73,12 @@ public final class V2Identifiers {
 
   /** Identifies an execution. */
   public record ExecutionId(UUID value) {
+    /** Creates a validated execution identifier. */
     public ExecutionId {
       value = required(value, "execution_id");
     }
 
+    /** Parses a UUID execution identifier. */
     public static ExecutionId parse(String raw) {
       return new ExecutionId(parseUuid(raw, "execution_id"));
     }
@@ -74,10 +86,12 @@ public final class V2Identifiers {
 
   /** Identifies an immutable routing or market snapshot. */
   public record SnapshotId(UUID value) {
+    /** Creates a validated snapshot identifier. */
     public SnapshotId {
       value = required(value, "snapshot_id");
     }
 
+    /** Parses a UUID snapshot identifier. */
     public static SnapshotId parse(String raw) {
       return new SnapshotId(parseUuid(raw, "snapshot_id"));
     }

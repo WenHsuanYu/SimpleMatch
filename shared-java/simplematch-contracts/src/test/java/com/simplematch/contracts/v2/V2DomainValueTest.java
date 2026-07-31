@@ -25,6 +25,12 @@ class V2DomainValueTest {
     assertThrows(DomainValidationException.class, () -> TwdPrice.ofDecimal(null));
   }
 
+  @DisplayName("trading days reject missing values with a domain validation error")
+  @Test
+  void rejectsMissingTradingDay() {
+    assertThrows(DomainValidationException.class, () -> TradingDay.parse(null));
+  }
+
   @DisplayName("share quantity and venue values enforce the phase-one market model")
   @Test
   void rejectsNonPositiveQuantityAndUnsupportedVenue() {

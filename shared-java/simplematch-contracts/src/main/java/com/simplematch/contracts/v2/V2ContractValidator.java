@@ -37,14 +37,6 @@ public final class V2ContractValidator {
         command.getSenderCompId(), command.getTargetCompId(), command.getClOrdId(), "");
   }
 
-  private void validateNewOrderIdentity(NewOrderCommand command) {
-    validate(command.getMetadata());
-    V2Identifiers.CommandId.parse(command.getCommandId());
-    V2Identifiers.OrderId.parse(command.getOrderId());
-    V2Identifiers.AccountId.parse(command.getAccountId());
-    validateInstrument(command.getInstrument().getSymbol(), command.getInstrument().getVenueMic());
-  }
-
   /** Validates a cancel-order command before durable admission. */
   public void validate(CancelOrderCommand command) {
     if (command == null) {
@@ -64,6 +56,14 @@ public final class V2ContractValidator {
         command.getTargetCompId(),
         command.getClOrdId(),
         command.getOrigClOrdId());
+  }
+
+  private void validateNewOrderIdentity(NewOrderCommand command) {
+    validate(command.getMetadata());
+    V2Identifiers.CommandId.parse(command.getCommandId());
+    V2Identifiers.OrderId.parse(command.getOrderId());
+    V2Identifiers.AccountId.parse(command.getAccountId());
+    validateInstrument(command.getInstrument().getSymbol(), command.getInstrument().getVenueMic());
   }
 
   private void validateInstrument(String symbol, String venueMic) {

@@ -7,6 +7,7 @@ import java.math.RoundingMode;
 public record TwdPrice(long units) {
   public static final int SCALE = 4;
 
+  /** Creates a validated positive price. */
   public TwdPrice {
     if (units <= 0) {
       throw new DomainValidationException("price units must be positive");
@@ -15,10 +16,13 @@ public record TwdPrice(long units) {
 
   /** Parses a decimal price without rounding it. */
   public static TwdPrice ofDecimal(String value) {
+    if (value == null) {
+      throw new DomainValidationException("price must use at most " + SCALE + " decimal places");
+    }
     try {
       final BigDecimal decimal = new BigDecimal(value).setScale(SCALE, RoundingMode.UNNECESSARY);
       return new TwdPrice(decimal.movePointRight(SCALE).longValueExact());
-    } catch (ArithmeticException | NumberFormatException | NullPointerException exception) {
+    } catch (ArithmeticException | NumberFormatException exception) {
       throw new DomainValidationException("price must use at most " + SCALE + " decimal places");
     }
   }
