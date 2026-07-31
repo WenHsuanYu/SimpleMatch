@@ -18,6 +18,14 @@ model or moving Spring, QuickFIX/J, protobuf, JDBC, or Kafka types into core bus
 also must not move transaction ownership out of the application services or alter existing wire,
 schema, idempotency, and event contracts.
 
+The previous policy allowed a handwritten Java persistence snapshot, protocol envelope,
+configuration record, or deprecated compatibility overload to remain wide when it mirrored an
+external shape. That exception kept positional Java interfaces in the model and made the threshold
+optional. The repository now requires every handwritten production Java constructor and method with
+more than seven parameters to use a shorter semantic interface, including record canonical
+constructors and configuration, persistence, WAL, and event representations. Generated sources are
+outside this rule; tests must use the same semantic construction vocabulary as production code.
+
 ## Decision
 
 Use a deliberately small tactical DDD model at boundaries that have stable language and invariants.
@@ -29,6 +37,8 @@ The design uses three complementary techniques:
    merely to reduce a numeric parameter count.
 3. **Anti-corruption-layer values** translate external FIX and protobuf representations before
    business behavior is invoked.
+4. **Semantic representation groups** compose handwritten persistence, WAL, event, and
+   configuration models. Their adapters alone flatten and rehydrate the unchanged external shape.
 
 The implemented model is:
 
@@ -51,11 +61,79 @@ The implemented model is:
   explicit at the compatibility boundary instead of flattening the command into an eight-argument
   helper.
 
-Public positional constructors and methods that could already be used by tests or neighboring
-modules remain as
-`@Deprecated(forRemoval = false)` compatibility adapters and immediately delegate to the typed API.
-New production callers use only the typed API. These overloads may suppress
-`PMD.ExcessiveParameterList` only while an explicit removal issue exists.
+Public positional constructors and methods with more than seven parameters are not retained as
+compatibility adapters. Migrate every in-repository caller to the semantic interface, then remove
+the positional Java member. This is an intentional Java source and binary compatibility break; SQL,
+protobuf, FIX, WAL, Kafka, and configuration contracts remain compatible through their adapters.
+No suppression or deprecated overload is an exception to the parameter limit.
+
+## SubmissionResult slice
+
+The first migration slice deepens the durable submission outcome module. `SubmissionResult` owns the
+complete semantic result assembled from `SubmissionReference`, `FixSubmissionIdentity`,
+`PersistedFixIdentity`, `SubmissionOutcome`, and its creation timestamp. It does not normalize
+identifiers or decide acceptance; `SubmissionDecisionFactory` owns those decisions. The JDBC adapter
+only flattens these values into the existing row and rehydrates them when reading it.
+
+Test fixtures use a test-only semantic factory with complete named scenarios such as accepted and
+rejected outcomes. The factory does not expose a generic builder, a parameter bag, or arbitrary
+primitive overrides that could create invalid combinations. Accepted outcomes have no rejection;
+rejected outcomes require stable nonblank code and detail; persisted FIX identity and its surrogate
+flag are inseparable.
+
+The slice is complete only when the flat constructors and their suppressions are removed, all
+production callers, fixtures, and tests use semantic construction, accepted and rejected JDBC
+round-trips pass, persisted FIX identity and surrogate state round-trip, and the outbox payload and
+database schema remain unchanged.
+
+## Account Authority lifecycle slice
+
+Account Authority keeps Reservation, Account limit, and Account position as separate aggregate
+roots. `AccountReservation` composes its stable identity, account ownership, immutable reservation
+terms, and a `ReservationLifecycle`. That lifecycle owns the fields that change together: remaining
+and filled quantity, held authority, outcome, and revision history. It rejects state combinations
+that cannot occur in the lifecycle: rejected reservations hold no authority and have a stable
+reason; released reservations have no remaining authority; and applied reservations are fully
+filled. Release ends unused authority only; it neither reverses a fill nor cancels the matching
+order.
+
+`AccountLimit` and `AccountPosition` retain separate identity, state, and revision values. A daily
+notional ledger is not a symbol-level inventory even though both use optimistic versions. The
+transaction-owning `AccountReservationApplicationService` is the only supported reservation write
+path. The older direct-row reservation path is removed rather than refactored into a second,
+weaker lifecycle.
+
+`AccountLifecycleOutbox` remains account-service infrastructure. It composes event identity,
+destination, serialized payload, aggregate reference, and creation time; its JDBC adapter alone
+flattens those values. The slice is complete only when the reservation, limit, position, legacy
+response, and outbox Java interfaces are semantic; the legacy direct writer is gone; account
+transaction tests cover reserve, partial fill, release, rejection, and duplicate replay; and the
+existing SQL and account lifecycle event shapes remain compatible.
+
+## Risk Admission journal slice
+
+`AdmissionJournalEntry` composes a validated `AdmissionCommand`, an `AdmissionDeliveryRoute`, and
+an `AdmissionLifecycle`. The command retains order facts, FIX business identity, and the opaque
+routing-policy reference supplied at ingress. The delivery route owns the partition resolved for
+the validated-order topic. The lifecycle uses state-specific decisions rather than a state enum plus
+unrelated nullable fields: pending has no decision, accepted new orders have a reservation
+reference, accepted cancellations explicitly require none, and rejection has a stable nonblank code
+and detail. Revision and timestamps belong to that lifecycle.
+
+`AdmissionResult` is a separate projection of Admission identity, decision, routing-policy
+provenance, and delivery route; it does not copy journal revision history or full order facts. The
+JDBC adapter alone flattens and rehydrates the journal row. When an admission begins, risk-service
+uses its configured symbol-to-partition policy, records the resolved partition with the pending
+journal entry, and publishes with the symbol as message key and that explicit outbox partition.
+Finalization and pending recovery reuse the recorded route rather than re-resolving it.
+
+The ingress `routingSnapshotId` remains optional and opaque in this slice. Its UUID cannot be
+treated as the version of the current local routing JSON, whose identifier is a separate string and
+is not exposed by the resolver. Persisting the resolved partition preserves retry consistency;
+making routing policy a versioned Market Reference contract is deferred work. The slice is complete
+only when journal and result positional constructors are removed, pending/accepted/rejected JDBC
+round-trips and recovery retain the exact partition, accepted outbox records use the symbol key and
+explicit partition, and the SQL and protobuf field shapes remain compatible.
 
 ## Domain invariants and ownership
 
@@ -81,9 +159,10 @@ Application services continue to own transactions and state-dependent checks aft
 locking authoritative state. Context-free validation such as nonblank IDs, positive quantity, and
 positive price occurs before transaction work.
 
-A flat SQL row, protobuf message, WAL record, or event envelope may remain wide when its shape
-mirrors an external contract. Such a representation must not become the business method signature.
-The adapter translates it to domain values before invoking behavior.
+An SQL row, protobuf message, WAL record, event envelope, or configuration namespace may remain
+wide only as an external shape. A handwritten Java representation must instead compose semantic
+groups, and its adapter is the sole place that flattens or rehydrates that shape. No business,
+persistence, protocol, event, or configuration Java interface may exceed seven parameters.
 
 ## Rejected alternatives
 
@@ -93,17 +172,19 @@ The adapter translates it to domain values before invoking behavior.
   unexchangeable and can permit partially initialized invalid states.
 - **One shared order model for every service:** this would couple bounded contexts and allow FIX,
   persistence, and matching concerns to leak across service ownership.
-- **Mechanical extraction of every wide record:** persistence snapshots and protocol envelopes have
-  different reasons to be wide. Refactoring them without a business concept would add indirection
-  and migration risk.
+- **Wide-carrier exception:** mirroring an external shape is not a reason to retain a handwritten
+  Java interface with more than seven parameters.
+- **Mechanical wrapping:** a wrapper that does not express a semantic group, lifecycle, or invariant
+  merely hides a wide interface and is rejected.
 
 ## Consequences
 
 Call sites express intent through domain terms, and the compiler rejects the most dangerous
-positional mistakes. Tests can create one complete command and vary only the domain value under
-examination. Persistence and wire compatibility remain intact because legacy overloads delegate and
-schemas are unchanged. The cost is a larger number of small types and explicit adapter mapping; this
-is accepted only for values with stable meaning or realistic substitution risk.
+positional mistakes. Tests create one complete semantic value and vary only the fact under
+examination. Persistence and wire compatibility remain intact because adapters preserve the external
+shape and schemas are unchanged. The cost is a larger number of small types and explicit adapter
+mapping; this is accepted because every field group must have stable meaning, a shared lifecycle, or
+an invariant.
 
 The root [`CONTEXT.md`](../../CONTEXT.md) is the canonical context map and ubiquitous-language
 reference. Service READMEs own service-local terminology, while cross-service contracts remain under
@@ -117,6 +198,9 @@ golden-message tests, v1/v2 adapter tests, and `./gradlew staticAnalysis`. The r
 change SQL schema, protobuf schema, event payload, transaction boundary, idempotency key, or FIX
 field output.
 
-Migration proceeds by converting production call sites first, then test fixtures and supporting
-tools. Deprecated positional overloads are removed only after repository search proves no callers
-remain and the relevant integration and compatibility tests pass.
+Migration proceeds in five independently verifiable slices: durable submission outcomes, Account
+Authority lifecycle state, Risk Admission journal state, QuickFIX ingress and WAL state, then
+QuickFIX configuration and runtime policy. In each slice, convert production callers, tests, and
+supporting tools before removing every positional Java member with more than seven parameters.
+Repository search and the relevant integration and compatibility tests must prove that the external
+contract is unchanged before the slice closes.

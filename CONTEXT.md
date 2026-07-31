@@ -45,8 +45,9 @@ Owns command validation, the admission business key, durable accepted or rejecte
 admission journal, and the admission outbox. `AdmissionCommand` is composed from `Identity`,
 `Order`, `FixIdentity`, and `RoutingReference`.
 `SubmissionResult` is composed from submission reference, FIX identity, storage-safe identity, and
-outcome. Persistence rows may remain flat, but adapters must reconstruct these domain values before
-invoking business behavior.
+outcome. An accepted outcome has no rejection; a rejected outcome has a stable code and detail.
+Persisted FIX identity and its surrogate state travel together. Persistence rows may remain flat
+externally, but adapters must reconstruct these domain values before invoking business behavior.
 
 ### Account Authority
 
@@ -67,6 +68,13 @@ persistence after an order has been admitted.
 
 Owns validated, versioned instrument and tick-rule snapshots. Its published snapshot is an external
 fact consumed by risk and matching, not mutable state jointly owned by those services.
+
+Risk Admission currently owns the configured symbol-to-partition policy for `orders.validated`.
+It resolves and durably records a partition before publication so retries retain the same delivery
+route; the incoming routing-snapshot reference remains opaque routing-policy provenance, not the
+source of that assignment. Moving routing assignment into Market Reference requires a separate
+versioned contract, schema migration, and consumer rollout; it is deferred rather than implied by an
+admission refactor.
 
 ### Projection and Audit
 
@@ -122,23 +130,56 @@ and symbol. Reservation lifecycle operations may coordinate a reservation root w
 limit or position root in one local transaction; no single Account root owns every position and
 reservation.
 
+`ReservationLifecycle` is the mutable state of one Reservation: remaining and filled quantities,
+held authority, outcome, and revision history change together in an account-service transaction.
+`Release` ends only unused authority; it never reverses an applied fill or cancels the matching
+order that owns the reservation. The lifecycle rejects combinations that conflict with its state:
+accepted authority remains allocated, rejection has no fill or held authority and has a stable
+reason, release has no remaining or held authority, and an applied reservation is fully filled.
+
+Account limit and Account position retain separate identity, state, and revision values. A daily
+notional ledger is not interchangeable with symbol-level inventory, even where their persistence
+rows both use an optimistic version and update timestamp.
+
 Risk Admission has one Admission aggregate root per command identity. It owns the normalized order
 facts needed for the decision, the alternate admission business key, and the lifecycle from pending
 intent to an accepted or rejected outcome. Account reservations and matching orders are separate
 context-owned roots; an admission may reference their outcome or publish an accepted decision, but it
 does not own their state.
 
+An Admission journal entry composes the validated Admission command, its fixed delivery route, and
+its lifecycle. The command retains order and routing-policy provenance; the delivery route retains
+the resolved Kafka partition; the lifecycle owns state, reservation or rejection outcome, and
+optimistic revision history. JDBC alone flattens and rehydrates the journal row, while an admission
+response remains a separate projection.
+Admission lifecycle outcomes are state-specific: pending has no decision, an accepted new order has
+a reservation reference, an accepted cancellation explicitly requires none, and rejection has a
+stable nonblank code and detail.
+An Admission result is a projection of Admission identity, decision, routing-policy provenance,
+and delivery route. It does not duplicate journal revision history or complete order facts.
+
 Each aggregate root owns its state-dependent invariants. `AccountReservation` is changed only
 through account-service transaction-owning application methods.
+`AccountReservationApplicationService` is the only supported reservation write path; a legacy
+direct row writer must not bypass account-limit, position, and outbox coordination.
+`AccountLifecycleOutbox` is account-service infrastructure rather than Reservation state. Its event
+identity, destination, serialized payload, aggregate reference, and creation time are flattened
+only by the outbox JDBC adapter.
 The admission journal and outbox are changed atomically inside risk-service-owned transactions.
 Cross-service calls never extend a database transaction across service boundaries; retry requires an
 idempotency identity, and asynchronous consumers own inbox/deduplication state. These boundaries
 take precedence over convenience abstractions that would hide transaction ownership.
 
-## Design review trigger for long parameter lists
+## Parameter-interface policy
 
-More than seven parameters triggers review rather than automatic wrapping. Review asks whether the
-values form a named business concept, have different life cycles, can be exchanged because of
-identical Java types, or expose multiple class responsibilities. A parameter object is accepted only
-when it adds domain language or owns invariants. Generic
-`Parameters`, `Context`, or dependency-bag types that merely hide coupling are rejected.
+A semantic parameter group is a named value in its owning context whose fields share a lifecycle or
+invariant. Every handwritten production Java constructor and method with more than seven parameters,
+including record, configuration, persistence, WAL, and event representations, must be replaced by a
+shorter interface of semantic parameter groups. Generated sources are excluded; tests use the same
+semantic construction vocabulary even when they are not the blocking analysis scope.
+
+An external SQL, protobuf, FIX, WAL, Kafka, or configuration shape may remain wide only outside the
+Java interface: its adapter flattens semantic values for output and rehydrates them for input. A
+parameter group is accepted only when it adds domain language or owns invariants. Generic
+`Parameters`, `Context`, dependency-bag types, builders alone, and deprecated positional Java
+compatibility overloads are rejected.
