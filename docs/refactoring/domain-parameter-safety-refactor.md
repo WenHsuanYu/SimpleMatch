@@ -1,10 +1,11 @@
 # Domain parameter-safety refactor
 
-This document records the implementation scope after ADR 0002. Every handwritten production Java
-constructor and method with more than seven parameters must be replaced with a shorter semantic
-interface. This includes records, configuration, persistence, WAL, and event representations. An
-external shape may remain wide only at its adapter; generated sources are excluded, and tests use the
-same semantic construction vocabulary.
+This document records the implementation scope after ADR 0002. Within a completed slice, every
+handwritten production Java constructor and method with more than seven parameters must be replaced
+with a shorter semantic interface. The repository-wide policy has the same target, but later slices
+must be verified separately rather than hidden behind a broad exception. An external shape may remain
+wide only at its flatten/rehydrate adapter; generated sources are excluded, and tests use the same
+semantic construction vocabulary.
 
 ## Completed production migrations
 
@@ -18,9 +19,11 @@ same semantic construction vocabulary.
 | `buildPendingNew` / `buildRejected` positional FIX values                        | `FixOrderSnapshot` plus `FixExecutionIdentity`                                                         | order ID, ClOrdID, symbol, quantity, and ExecID cannot be exchanged                |
 | eight-value v2-to-v1 helper                                                      | adapter receives the source protobuf command                                                           | compatibility mapping is explicit and source-oriented                              |
 
-No positional overload with more than seven parameters remains as a compatibility adapter. Migrate
-all in-repository production callers, fixtures, and neighboring callers, then remove the member while
-preserving its external SQL, protobuf, FIX, WAL, Kafka, or configuration contract through adapters.
+No positional overload with more than seven parameters remains inside the completed slices as a
+compatibility adapter. Migrate all in-repository production callers, fixtures, and neighboring
+callers, then remove the member while preserving its external SQL, protobuf, FIX, WAL, Kafka, or
+configuration contract through adapters. Findings in later slices remain migration work, not
+intentional exceptions to the policy.
 
 ## Wide external shapes under migration
 
@@ -31,6 +34,20 @@ preserving its external SQL, protobuf, FIX, WAL, Kafka, or configuration contrac
 | 3. Risk Admission journal state | admission journal row and result payload | identity, order facts, FIX identity, routing, decision, and audit groups compose the Java model; JDBC flattens and rehydrates them. |
 | 4. QuickFIX ingress and WAL state | raw FIX message, WAL row, and session correlation | the adapter contains protocol fields; durable intent is composed from session/command identity, order terms, and audit groups. |
 | 5. QuickFIX configuration and runtime policy | configuration namespace and runtime values | capability and resilience policy groups compose the Java model; configuration binding maps the unchanged namespace. |
+
+## Verification boundary for Issues #39 and #44
+
+The completed verification boundary is deliberately limited to the two slices named by the parent
+specification:
+
+- Account Authority `authority` and `reservation` production code, its JDBC adapters, gRPC adapter,
+  and transaction/outbox tests.
+- Risk Admission `admission` production code, its journal/outbox adapters, and route-reuse tests.
+
+The legacy Risk Submission package, QuickFIX ingress/WAL/configuration, Market Reference snapshots,
+and shared platform configuration are separate parameter-safety surfaces. Any remaining wide member
+there is follow-up work; it is not an exception that weakens the seven-parameter policy and is not a
+reason to keep Issues #39 or #44 open.
 
 ## Slice 1: durable submission outcomes
 
@@ -106,3 +123,22 @@ refactored before merge. Review must answer these questions:
 The accepted solution is the smallest deep module that answers the business problem. Builders and
 generic parameter bags are not accepted as the sole repair because they do not create type safety,
 domain meaning, leverage, or locality.
+
+## Completion evidence for Issues #39 and #44
+
+The Account Authority and Risk Admission slices were verified on 2026-07-31:
+
+- A source inventory over Account Authority `authority`/`reservation` and Risk Admission `admission`
+  production Java reported `completed-slice-wide-members=0` for handwritten constructors and
+  methods over seven parameters.
+- `./gradlew -q :services:account-service:test :services:risk-service:test --rerun-tasks` passed.
+- `./gradlew -q test --rerun-tasks` passed for the repository test suite.
+- `./gradlew -q certificationTest --rerun-tasks` passed for the QuickFIX certification smoke gate.
+- `./gradlew -q staticAnalysis` passed.
+- `bash scripts/test-check-markdown-links.sh` passed after the canonical-document and forwarding-page
+  update.
+
+The build still emits existing compiler and runtime warnings, including Error Prone
+`SelfAssignment` warnings in semantic record constructors; they are warnings, not failed gates.
+The verification does not claim that later QuickFIX, Market Reference, shared configuration, or
+legacy Risk Submission slices are complete.

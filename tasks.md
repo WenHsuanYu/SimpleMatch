@@ -914,6 +914,23 @@ Kafka**。
 - [x] [Taiwan event-driven refactor plan](docs/taiwan-event-driven-refactor-plan.md) Phase 3: add
   additive v2 Protobuf domain contracts, checked-in field-number inventories, typed Taiwan-market
   values, and lossless v1 command adapters without rerouting existing services.
+- [x] [Parameter-safe Account Authority and Risk Admission lifecycle](docs/refactoring/domain-parameter-safety-refactor.md)
+  （GitHub issues [#39](https://github.com/WenHsuanYu/SimpleMatch/issues/39) and
+  [#44](https://github.com/WenHsuanYu/SimpleMatch/issues/44)）：完成 semantic lifecycle values,
+  single-path Account transactions, persisted Risk Admission delivery routes, compatibility checks,
+  and the completed-slice verification gate。
+    - [x] [#40](https://github.com/WenHsuanYu/SimpleMatch/issues/40) Account Authority reservation
+      lifecycle state
+    - [x] [#41](https://github.com/WenHsuanYu/SimpleMatch/issues/41) legacy reservation writer,
+      response projection, and account outbox
+    - [x] [#42](https://github.com/WenHsuanYu/SimpleMatch/issues/42) Risk Admission journal/result
+      semantic state values
+    - [x] [#43](https://github.com/WenHsuanYu/SimpleMatch/issues/43) deterministic symbol-keyed
+      delivery route persistence and recovery reuse
+    - [x] [#44](https://github.com/WenHsuanYu/SimpleMatch/issues/44) cross-service verification and
+      documentation alignment
+- [ ] [Market Reference routing ownership](https://github.com/WenHsuanYu/SimpleMatch/issues/38)：
+  deferred follow-up for versioned policy ownership, schema migration, and consumer rollout。
 - [x] [README and technical documentation refactor](docs/readme-documentation-refactor-spec.md)
   （GitHub issue [#1](https://github.com/WenHsuanYu/SimpleMatch/issues/1)）：將目標技術規格收斂至
   `services/docs/`，並保留穩定索引與 forwarding pages

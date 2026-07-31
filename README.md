@@ -55,4 +55,4 @@ detailed architecture, contract, platform, and service specifications. Domain-va
 parameter-safe APIs are recorded in
 [ADR 0002](docs/adr/0002-domain-values-for-wide-call-boundaries.md). The concrete migration and
 intentional exceptions are listed in
-the [domain parameter-safety refactor](docs/domain-parameter-safety-refactor.md).
+the [domain parameter-safety refactor](docs/refactoring/domain-parameter-safety-refactor.md).
