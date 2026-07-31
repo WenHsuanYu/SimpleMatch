@@ -758,6 +758,13 @@
   SpotBugs 報告 artifacts
 - [x] GitHub Actions 已依變更路徑做 job-level filtering：docs-only 變更不再觸發 Java / Native 全量建置
 - [x] GitHub Actions Java job 已執行 repo-wide `test` 與 `:services:quickfix-gateway:certificationTest`
+- [x] #31 mutable-exposure ratchet：移除 class-wide `EI_EXPOSE_REP` / `EI_EXPOSE_REP2`
+  exclusions；`config/spotbugs/exclude.xml` 僅保留六個具 owner、理由與 retirement condition
+  的 private-final infrastructure fields，並由 account outbox、risk outbox 與 WAL ownership
+  tests 保護 payload / collection 邊界
+- [x] #32 validation evidence（2026-07-31）：ordinary root `./gradlew -q staticAnalysis`、
+  repo-wide `./gradlew test` 與 `:services:quickfix-gateway:certificationTest` 均通過於目前
+  working tree；清潔 review commit 的同一組 root gate 仍須由 owner 重新驗證後才可關閉 #32
 - [x] GitHub Actions 已執行 Flyway / PostgreSQL smoke checks（`bash scripts/run-flyway-ci-checks.sh`）
 - [x] GitHub Actions 已執行 native configure/build/test（CMake preset + `ctest --preset vcpkg`）
 - [ ] workflow：起 kind cluster
