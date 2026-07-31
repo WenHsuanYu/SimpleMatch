@@ -70,7 +70,7 @@ class FixMessageMapperGoldenTest {
             "AAPL",
             Side.SIDE_BUY,
             "10",
-            'A');
+            new OrderSessionLifecycle('A'));
 
     final ExecutionEvent event =
         ExecutionEvent.newBuilder()

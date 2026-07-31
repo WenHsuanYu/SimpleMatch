@@ -140,8 +140,8 @@ class InboundFixMessageHandlerTest {
     assertThat(sessionState.symbol()).isEqualTo("AAPL");
     assertThat(sessionState.side()).isEqualTo(Side.SIDE_BUY);
     assertThat(sessionState.quantity()).isEqualTo("10");
-    assertThat(sessionState.currentOrdStatus()).isEqualTo('A');
-    assertThat(sessionState.lastCancelRequest()).isNull();
+    assertThat(sessionState.lifecycle().currentOrdStatus()).isEqualTo('A');
+    assertThat(sessionState.lifecycle().lastCancelRequest()).isNull();
 
     final ArgumentCaptor<SessionID> sessionCaptor = ArgumentCaptor.forClass(SessionID.class);
     final ArgumentCaptor<Message> messageCaptor = ArgumentCaptor.forClass(Message.class);
@@ -215,9 +215,9 @@ class InboundFixMessageHandlerTest {
     assertThat(walRecords.get(2).side()).isEqualTo(Side.SIDE_SELL);
 
     final OrderSessionState firstOrderState = registry.find("O-C1").orElseThrow();
-    assertThat(firstOrderState.lastCancelRequest()).isNotNull();
-    assertThat(firstOrderState.lastCancelRequest().cancelClOrdId()).isEqualTo("CXL-1");
-    assertThat(firstOrderState.lastCancelRequest().origClOrdId()).isEqualTo("C1");
+    assertThat(firstOrderState.lifecycle().lastCancelRequest()).isNotNull();
+    assertThat(firstOrderState.lifecycle().lastCancelRequest().cancelClOrdId()).isEqualTo("CXL-1");
+    assertThat(firstOrderState.lifecycle().lastCancelRequest().origClOrdId()).isEqualTo("C1");
 
     final OrderSessionState secondOrderState = registry.find("O-C2").orElseThrow();
     assertThat(secondOrderState.accountId()).isEqualTo("ACC-2");
@@ -225,8 +225,8 @@ class InboundFixMessageHandlerTest {
     assertThat(secondOrderState.symbol()).isEqualTo("MSFT");
     assertThat(secondOrderState.side()).isEqualTo(Side.SIDE_SELL);
     assertThat(secondOrderState.quantity()).isEqualTo("20");
-    assertThat(secondOrderState.currentOrdStatus()).isEqualTo('A');
-    assertThat(secondOrderState.lastCancelRequest()).isNull();
+    assertThat(secondOrderState.lifecycle().currentOrdStatus()).isEqualTo('A');
+    assertThat(secondOrderState.lifecycle().lastCancelRequest()).isNull();
 
     final ArgumentCaptor<Message> messageCaptor = ArgumentCaptor.forClass(Message.class);
     verify(sender, times(2)).send(any(SessionID.class), messageCaptor.capture());

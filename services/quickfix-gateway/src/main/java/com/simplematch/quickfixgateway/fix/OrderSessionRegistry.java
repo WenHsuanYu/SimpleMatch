@@ -25,7 +25,7 @@ public final class OrderSessionRegistry implements ExecutionSessionResolver {
             walRecord.symbol(),
             walRecord.side(),
             walRecord.quantity(),
-            ordStatus));
+            new OrderSessionLifecycle(ordStatus)));
   }
 
   /** Registers a cancel request and retains its client correlation identifiers. */
@@ -43,9 +43,9 @@ public final class OrderSessionRegistry implements ExecutionSessionResolver {
                       walRecord.symbol(),
                       walRecord.side(),
                       walRecord.quantity(),
-                      'A')
+                      new OrderSessionLifecycle('A'))
                   : existing;
-          state.lastCancelRequest(
+          state.lifecycle().lastCancelRequest(
               new OrderSessionState.CancelRequestState(
                   walRecord.clOrdId(), walRecord.origClOrdId()));
           return state;
@@ -74,11 +74,11 @@ public final class OrderSessionRegistry implements ExecutionSessionResolver {
       return;
     }
 
-    state.currentOrdStatus(
-        mapOrdStatus(executionEvent.getExecutionType(), state.currentOrdStatus()));
+    state.lifecycle().currentOrdStatus(
+        mapOrdStatus(executionEvent.getExecutionType(), state.lifecycle().currentOrdStatus()));
     if (executionEvent.getExecutionType() == ExecutionType.EXECUTION_TYPE_CANCELED
         || executionEvent.getExecutionType() == ExecutionType.EXECUTION_TYPE_CANCEL_REJECTED) {
-      state.lastCancelRequest(null);
+      state.lifecycle().lastCancelRequest(null);
     }
   }
 

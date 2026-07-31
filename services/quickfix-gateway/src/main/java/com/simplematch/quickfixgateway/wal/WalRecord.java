@@ -1,6 +1,5 @@
 package com.simplematch.quickfixgateway.wal;
 
-import com.simplematch.contracts.common.v1.EventMetadata;
 import com.simplematch.contracts.common.v1.OrderType;
 import com.simplematch.contracts.common.v1.Side;
 import com.simplematch.contracts.common.v1.TimeInForce;
@@ -30,32 +29,7 @@ public record WalRecord(
     String rawFix) {
 
   /** Converts this durable record to the compatibility order-command contract. */
-  @SuppressWarnings(
-      "PMD.CyclomaticComplexity") // Null normalization defines the durable WAL compatibility
-  // contract.
   public OrderCommand toOrderCommand() {
-    return OrderCommand.newBuilder()
-        .setMetadata(
-            EventMetadata.newBuilder()
-                .setSchemaVersion(schemaVersion)
-                .setEventId(recordId)
-                .setCreatedAtUnixMs(createdAtUnixMs)
-                .setSourceService(sourceService)
-                .build())
-        .setCommandId(recordId)
-        .setOrderId(orderId)
-        .setAccountId(accountId == null ? "" : accountId)
-        .setSenderCompId(senderCompId == null ? "" : senderCompId)
-        .setTargetCompId(targetCompId == null ? "" : targetCompId)
-        .setClOrdId(clOrdId == null ? "" : clOrdId)
-        .setSymbol(symbol == null ? "" : symbol)
-        .setSide(side == null ? Side.SIDE_UNSPECIFIED : side)
-        .setQuantity(quantity == null ? "" : quantity)
-        .setPrice(price == null ? "" : price)
-        .setOrderType(orderType == null ? OrderType.ORDER_TYPE_UNSPECIFIED : orderType)
-        .setTif(tif == null ? TimeInForce.TIME_IN_FORCE_UNSPECIFIED : tif)
-        .setCommandType(commandType == null ? CommandType.COMMAND_TYPE_UNSPECIFIED : commandType)
-        .setOrigClOrdId(origClOrdId == null ? "" : origClOrdId)
-        .build();
+    return WalOrderCommandMapper.toOrderCommand(this);
   }
 }
