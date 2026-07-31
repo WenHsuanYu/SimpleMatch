@@ -164,6 +164,35 @@ class AccountReservationApplicationServiceTransactionTest {
         .isEqualTo(1);
   }
 
+  @DisplayName("partial buy fill returns price improvement and keeps remaining authority")
+  @Test
+  void partialBuyFillReturnsPriceImprovement() {
+    final ReservationRecord reservation = service.reserve(operation(Side.SIDE_BUY, "10", "100"));
+    final ApplyFillOperation fill =
+        new ApplyFillOperation(
+            new ReservationIdentity(
+                new ReservationIdentity.RequestId(reservation.requestId()),
+                new ReservationIdentity.ReservationId(reservation.reservationId()),
+                new ReservationIdentity.OrderId(reservation.orderId())),
+            new ExecutionFill(
+                new ExecutionFill.ExecutionId(UUID.randomUUID().toString()),
+                ExecutionFill.AggregateSequence.absent(),
+                new ExecutionFill.FillQuantity(new BigDecimal("4")),
+                new ExecutionFill.FillPrice(new BigDecimal("99"))));
+
+    final ReservationRecord applied = service.applyFill(fill);
+    final AccountLimit limitAfterFill = service.getLimits("acc-1");
+    final ReservationRecord duplicate = service.applyFill(fill);
+
+    assertThat(applied.status()).isEqualTo(ReservationStatus.RESERVATION_STATUS_ACCEPTED);
+    assertThat(applied.reservedNotional()).isEqualByComparingTo("600");
+    assertThat(limitAfterFill.reservedNotional()).isEqualByComparingTo("600");
+    assertThat(limitAfterFill.utilizedNotional()).isEqualByComparingTo("396");
+    assertThat(limitAfterFill.availableNotional()).isEqualByComparingTo("9004");
+    assertThat(duplicate.reservedNotional()).isEqualByComparingTo("600");
+    assertThat(service.getLimits("acc-1").availableNotional()).isEqualByComparingTo("9004");
+  }
+
   @DisplayName("release returns remaining authority and is idempotent")
   @Test
   void releasesRemainingCashOnce() {

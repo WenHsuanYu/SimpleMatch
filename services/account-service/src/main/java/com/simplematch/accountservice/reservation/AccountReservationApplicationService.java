@@ -221,12 +221,11 @@ public class AccountReservationApplicationService implements ReservationService 
             .orElseThrow(() -> new IllegalArgumentException("reservation not found"));
     AccountAuthorityTransitions.validateFill(reservation, identity, fill);
     final long now = clock.millis();
-    final BigDecimal fillNotional = fill.notional();
     final BigDecimal remaining = reservation.remainingQuantity().subtract(fill.quantity().value());
     final BigDecimal releasedNotional =
         remaining.signum() == 0
             ? reservation.reservedNotional()
-            : reservation.reservedNotional().min(fillNotional);
+            : reservation.reservedNotionalReleasedBy(fill.quantity().value());
     AccountAuthorityTransitions.applyFilledAuthority(
         authorityReader, authorityWriter, clock, reservation, fill, releasedNotional, now);
     final ReservationStatus status =

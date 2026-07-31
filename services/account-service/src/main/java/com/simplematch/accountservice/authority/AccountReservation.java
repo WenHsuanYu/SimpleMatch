@@ -110,6 +110,17 @@ public record AccountReservation(
         now);
   }
 
+  /** Returns the reserved limit-price notional released by a partial fill. */
+  public BigDecimal reservedNotionalReleasedBy(BigDecimal filledQuantity) {
+    if (filledQuantity == null || filledQuantity.signum() <= 0) {
+      throw new IllegalArgumentException("filled_quantity must be positive");
+    }
+    if (limitPrice == null) {
+      return BigDecimal.ZERO;
+    }
+    return reservedNotional.min(limitPrice.multiply(filledQuantity));
+  }
+
   /** Compact validated operation view used by the authority without coupling to gRPC. */
   public record ReserveOperationSnapshot(
       String requestId,
