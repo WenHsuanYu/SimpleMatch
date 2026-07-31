@@ -22,4 +22,17 @@ public record AdmissionDeliveryRoute(Integer routingPartition) {
   public static AdmissionDeliveryRoute assigned(int routingPartition) {
     return new AdmissionDeliveryRoute(routingPartition);
   }
+
+  /**
+   * Returns the persisted partition required for an accepted delivery.
+   *
+   * @return assigned non-negative Kafka partition
+   * @throws IllegalStateException when the route has no persisted partition
+   */
+  public int requireAssignedPartition() {
+    if (routingPartition == null) {
+      throw new IllegalStateException("accepted admission requires a persisted routing partition");
+    }
+    return routingPartition;
+  }
 }

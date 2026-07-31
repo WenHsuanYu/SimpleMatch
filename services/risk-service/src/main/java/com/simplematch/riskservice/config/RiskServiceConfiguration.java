@@ -115,9 +115,11 @@ public class RiskServiceConfiguration {
 
   @Bean
   AdmissionOutboxFactory admissionOutboxFactory(
-      PlatformProperties properties, Clock riskServiceClock) {
+      PlatformProperties properties,
+      Clock riskServiceClock,
+      RoutingPartitionResolver routingPartitionResolver) {
     return new AdmissionOutboxFactory(
-        properties.kafka().topics().ordersValidated(), riskServiceClock);
+        properties.kafka().topics().ordersValidated(), riskServiceClock, routingPartitionResolver);
   }
 
   @Bean

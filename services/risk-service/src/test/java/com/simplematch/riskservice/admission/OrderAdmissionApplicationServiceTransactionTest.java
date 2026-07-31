@@ -11,7 +11,9 @@ import com.simplematch.contracts.common.v2.TimeInForce;
 import com.simplematch.contracts.common.v2.VenueInstrument;
 import com.simplematch.contracts.orders.v2.CancelOrderCommand;
 import com.simplematch.contracts.orders.v2.NewOrderCommand;
+import com.simplematch.contracts.orders.v2.OrderAdmissionAccepted;
 import com.simplematch.riskservice.outbox.OutboxRepository;
+import com.simplematch.riskservice.outbox.RoutingPartitionResolver;
 import com.simplematch.riskservice.store.JdbcAdmissionJournalRepository;
 import com.simplematch.riskservice.store.JdbcOutboxRepository;
 import java.time.Clock;
@@ -45,18 +47,21 @@ class OrderAdmissionApplicationServiceTransactionTest {
   private final TestAccountReservationClient account;
   private final Clock clock;
   private final AdmissionJournalRepository journal;
+  private final TestRoutingPartitionResolver routingResolver;
 
   OrderAdmissionApplicationServiceTransactionTest(
       JdbcTemplate jdbcTemplate,
       OrderAdmissionApplicationService admissions,
       TestAccountReservationClient account,
       Clock clock,
-      AdmissionJournalRepository journal) {
+      AdmissionJournalRepository journal,
+      TestRoutingPartitionResolver routingResolver) {
     this.jdbcTemplate = jdbcTemplate;
     this.admissions = admissions;
     this.account = account;
     this.clock = clock;
     this.journal = journal;
+    this.routingResolver = routingResolver;
   }
 
   @BeforeEach
@@ -64,11 +69,12 @@ class OrderAdmissionApplicationServiceTransactionTest {
     jdbcTemplate.update("DELETE FROM risk_service.outbox");
     jdbcTemplate.update("DELETE FROM risk_service.admission_journal");
     account.fail = false;
+    routingResolver.reset();
   }
 
   @DisplayName("begin and finalize commit journal state and one v2 admission outbox event")
   @Test
-  void commitsAcceptedAdmissionAtomically() {
+  void commitsAcceptedAdmissionAtomically() throws Exception {
     final NewOrderCommand command = command();
     final AdmissionResult pending = admissions.beginAdmission(command);
     final AdmissionResult accepted =
@@ -77,14 +83,35 @@ class OrderAdmissionApplicationServiceTransactionTest {
             ReservationOutcome.accepted(UUID.randomUUID()));
 
     assertThat(pending.decision()).isInstanceOf(AdmissionDecision.Pending.class);
+    assertThat(pending.route()).isEqualTo(AdmissionDeliveryRoute.assigned(7));
     assertThat(accepted.decision()).isInstanceOf(AdmissionDecision.AcceptedNew.class);
+    assertThat(accepted.route()).isEqualTo(AdmissionDeliveryRoute.assigned(7));
+    assertThat(routingResolver.calls).isEqualTo(1);
+    assertThat(routingResolver.lastSymbol).isEqualTo("2330");
     assertThat(
             jdbcTemplate.queryForObject(
                 "SELECT state FROM risk_service.admission_journal", String.class))
         .isEqualTo("ACCEPTED");
     assertThat(
+            jdbcTemplate.queryForObject(
+                "SELECT routing_partition FROM risk_service.admission_journal", Integer.class))
+        .isEqualTo(7);
+    assertThat(
             jdbcTemplate.queryForObject("SELECT COUNT(*) FROM risk_service.outbox", Integer.class))
         .isEqualTo(1);
+    assertThat(
+            jdbcTemplate.queryForObject(
+                "SELECT message_key FROM risk_service.outbox", String.class))
+        .isEqualTo("2330");
+    assertThat(
+            jdbcTemplate.queryForObject(
+                "SELECT kafka_partition_id FROM risk_service.outbox", Integer.class))
+        .isEqualTo(7);
+    final byte[] payload =
+        jdbcTemplate.queryForObject(
+            "SELECT payload FROM risk_service.outbox",
+            (resultSet, rowNum) -> resultSet.getBytes("payload"));
+    assertThat(OrderAdmissionAccepted.parseFrom(payload).getRoutingPartition()).isEqualTo(7);
   }
 
   @DisplayName("equivalent replay returns the original pending result without a second journal row")
@@ -100,6 +127,54 @@ class OrderAdmissionApplicationServiceTransactionTest {
             jdbcTemplate.queryForObject(
                 "SELECT COUNT(*) FROM risk_service.admission_journal", Integer.class))
         .isEqualTo(1);
+  }
+
+  @DisplayName("duplicate replay keeps the journaled route after resolver configuration changes")
+  @Test
+  void duplicateReplayReusesPersistedRoute() {
+    final NewOrderCommand command = command();
+
+    final AdmissionResult first = admissions.beginAdmission(command);
+    routingResolver.partition = 11;
+    final AdmissionResult replay = admissions.beginAdmission(command);
+
+    assertThat(first.route()).isEqualTo(AdmissionDeliveryRoute.assigned(7));
+    assertThat(replay.route()).isEqualTo(AdmissionDeliveryRoute.assigned(7));
+    assertThat(routingResolver.calls).isEqualTo(1);
+    assertThat(
+            jdbcTemplate.queryForObject(
+                "SELECT routing_partition FROM risk_service.admission_journal", Integer.class))
+        .isEqualTo(7);
+  }
+
+  @DisplayName("orders for the same symbol share one deterministic delivery route")
+  @Test
+  void sameSymbolOrdersUseTheSameDeliveryRoute() {
+    final NewOrderCommand firstCommand = command();
+    final NewOrderCommand secondCommand =
+        command().toBuilder()
+            .setCommandId(UUID.randomUUID().toString())
+            .setOrderId(UUID.randomUUID().toString())
+            .setClOrdId("CL-2")
+            .build();
+
+    final AdmissionResult first = admissions.beginAdmission(firstCommand);
+    final AdmissionResult second = admissions.beginAdmission(secondCommand);
+    admissions.finalizeAdmission(
+        UUID.fromString(firstCommand.getCommandId()), ReservationOutcome.accepted(UUID.randomUUID()));
+    admissions.finalizeAdmission(
+        UUID.fromString(secondCommand.getCommandId()),
+        ReservationOutcome.accepted(UUID.randomUUID()));
+
+    assertThat(first.route()).isEqualTo(AdmissionDeliveryRoute.assigned(7));
+    assertThat(second.route()).isEqualTo(AdmissionDeliveryRoute.assigned(7));
+    assertThat(
+            jdbcTemplate.queryForObject(
+                "SELECT COUNT(*) FROM risk_service.outbox "
+                    + "WHERE message_key = '2330' AND kafka_partition_id = 7",
+                Integer.class))
+        .isEqualTo(2);
+    assertThat(routingResolver.calls).isEqualTo(2);
   }
 
   @DisplayName("JDBC round trip preserves assigned route and terminal decision")
@@ -189,14 +264,24 @@ class OrderAdmissionApplicationServiceTransactionTest {
         "UPDATE risk_service.admission_journal SET created_at_unix_ms = 0, updated_at_unix_ms = 0");
 
     account.fail = false;
+    routingResolver.partition = 11;
     assertThat(admissions.recoverPending()).isEqualTo(1);
     assertThat(
             jdbcTemplate.queryForObject(
                 "SELECT state FROM risk_service.admission_journal", String.class))
         .isEqualTo("ACCEPTED");
     assertThat(
+            jdbcTemplate.queryForObject(
+                "SELECT routing_partition FROM risk_service.admission_journal", Integer.class))
+        .isEqualTo(7);
+    assertThat(
             jdbcTemplate.queryForObject("SELECT COUNT(*) FROM risk_service.outbox", Integer.class))
         .isEqualTo(1);
+    assertThat(
+            jdbcTemplate.queryForObject(
+                "SELECT kafka_partition_id FROM risk_service.outbox", Integer.class))
+        .isEqualTo(7);
+    assertThat(routingResolver.calls).isEqualTo(1);
     assertThat(admissions.recoverPending()).isZero();
   }
 
@@ -398,8 +483,14 @@ class OrderAdmissionApplicationServiceTransactionTest {
     }
 
     @Bean
-    AdmissionOutboxFactory admissionOutboxFactory(Clock clock) {
-      return new AdmissionOutboxFactory("orders.validated", clock);
+    TestRoutingPartitionResolver routingPartitionResolver() {
+      return new TestRoutingPartitionResolver();
+    }
+
+    @Bean
+    AdmissionOutboxFactory admissionOutboxFactory(
+        Clock clock, TestRoutingPartitionResolver routingPartitionResolver) {
+      return new AdmissionOutboxFactory("orders.validated", clock, routingPartitionResolver);
     }
 
     @Bean
@@ -437,6 +528,25 @@ class OrderAdmissionApplicationServiceTransactionTest {
         throw new IllegalStateException("simulated account outage");
       }
       return ReservationOutcome.accepted(UUID.randomUUID());
+    }
+  }
+
+  static final class TestRoutingPartitionResolver implements RoutingPartitionResolver {
+    private int partition = 7;
+    private int calls;
+    private String lastSymbol;
+
+    @Override
+    public int resolve(String symbol) {
+      calls++;
+      lastSymbol = symbol;
+      return partition;
+    }
+
+    private void reset() {
+      partition = 7;
+      calls = 0;
+      lastSymbol = null;
     }
   }
 }

@@ -2,13 +2,13 @@ package com.simplematch.accountservice.grpc;
 
 import com.simplematch.accountservice.authority.AccountLimit;
 import com.simplematch.accountservice.authority.AccountPosition;
+import com.simplematch.accountservice.reservation.AccountReservationApplicationService;
 import com.simplematch.accountservice.reservation.ApplyFillOperation;
 import com.simplematch.accountservice.reservation.ExecutionFill;
 import com.simplematch.accountservice.reservation.ReleaseReservationOperation;
 import com.simplematch.accountservice.reservation.ReservationIdentity;
 import com.simplematch.accountservice.reservation.ReservationRecord;
 import com.simplematch.accountservice.reservation.ReservationRequestIdentity;
-import com.simplematch.accountservice.reservation.ReservationService;
 import com.simplematch.accountservice.reservation.ReservationTerms;
 import com.simplematch.accountservice.reservation.ReserveOperation;
 import com.simplematch.contracts.account.v1.AccountServiceGrpc;
@@ -36,15 +36,14 @@ import org.springframework.stereotype.Service;
  *
  * <p>Write RPCs in this service intentionally use {@code request_id} as the synchronous name
  * for the same operation identifier that enters the trading flow as {@code command_id} on {@code
- * OrderCommand}. All reservation lifecycle paths delegate to the account authority service; the
- * unsupported-operation response remains only for compatibility test doubles.
+ * OrderCommand}. All reservation lifecycle paths delegate to the account authority application
+ * service.
  */
 @Service
 @RequiredArgsConstructor
 public class AccountGrpcService extends AccountServiceGrpc.AccountServiceImplBase {
-  private static final String MESSAGE = "account-service logic is not implemented yet";
   private static final int MAX_PERSISTED_IDENTIFIER_LENGTH = 255;
-  @NonNull private final ReservationService reservationService;
+  @NonNull private final AccountReservationApplicationService reservationService;
 
   @Override
   public void getLimits(
@@ -60,8 +59,6 @@ public class AccountGrpcService extends AccountServiceGrpc.AccountServiceImplBas
               .setUtilizedNotional(limit.utilizedNotional().toPlainString())
               .build());
       responseObserver.onCompleted();
-    } catch (UnsupportedOperationException unsupported) {
-      responseObserver.onError(Status.UNIMPLEMENTED.withDescription(MESSAGE).asRuntimeException());
     } catch (RuntimeException failure) {
       responseObserver.onError(
           Status.INTERNAL.withDescription("failed to read account limits").asRuntimeException());
@@ -84,8 +81,6 @@ public class AccountGrpcService extends AccountServiceGrpc.AccountServiceImplBas
       }
       responseObserver.onNext(response.build());
       responseObserver.onCompleted();
-    } catch (UnsupportedOperationException unsupported) {
-      responseObserver.onError(Status.UNIMPLEMENTED.withDescription(MESSAGE).asRuntimeException());
     } catch (RuntimeException failure) {
       responseObserver.onError(
           Status.INTERNAL.withDescription("failed to read account positions").asRuntimeException());
@@ -144,8 +139,6 @@ public class AccountGrpcService extends AccountServiceGrpc.AccountServiceImplBas
               .setStatus(reservation.status())
               .build());
       responseObserver.onCompleted();
-    } catch (UnsupportedOperationException unsupported) {
-      responseObserver.onError(Status.UNIMPLEMENTED.withDescription(MESSAGE).asRuntimeException());
     } catch (IllegalArgumentException invalid) {
       responseObserver.onError(
           Status.INVALID_ARGUMENT.withDescription(invalid.getMessage()).asRuntimeException());
@@ -181,8 +174,6 @@ public class AccountGrpcService extends AccountServiceGrpc.AccountServiceImplBas
               .setStatus(reservation.status())
               .build());
       responseObserver.onCompleted();
-    } catch (UnsupportedOperationException unsupported) {
-      responseObserver.onError(Status.UNIMPLEMENTED.withDescription(MESSAGE).asRuntimeException());
     } catch (IllegalArgumentException invalid) {
       responseObserver.onError(
           Status.INVALID_ARGUMENT.withDescription(invalid.getMessage()).asRuntimeException());

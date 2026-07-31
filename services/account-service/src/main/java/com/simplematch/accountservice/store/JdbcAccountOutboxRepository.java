@@ -22,14 +22,14 @@ public class JdbcAccountOutboxRepository implements AccountOutboxRepository {
                           aggregate_type, aggregate_id, created_at_unix_ms)
                         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
         """,
-        event.eventId(),
-        event.topic(),
-        event.messageKey(),
-        event.payload(),
-        event.payloadType(),
-        event.headersJson(),
-        event.aggregateType(),
-        event.aggregateId(),
+        event.eventIdentity().eventId(),
+        event.destination().topic(),
+        event.destination().messageKey(),
+        event.payload().bytes(),
+        event.payload().payloadType(),
+        event.payload().headersJson(),
+        event.aggregateReference().aggregateType(),
+        event.aggregateReference().aggregateId(),
         event.createdAtUnixMs());
   }
 }

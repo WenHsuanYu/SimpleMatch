@@ -3,6 +3,7 @@ package com.simplematch.accountservice.authority;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
+import com.google.protobuf.InvalidProtocolBufferException;
 import com.simplematch.accountservice.reservation.AccountReservationApplicationService;
 import com.simplematch.accountservice.reservation.ApplyFillOperation;
 import com.simplematch.accountservice.reservation.ExecutionFill;
@@ -14,6 +15,9 @@ import com.simplematch.accountservice.reservation.ReservationTerms;
 import com.simplematch.accountservice.reservation.ReserveOperation;
 import com.simplematch.accountservice.store.JdbcAccountAuthorityLifecycleWriter;
 import com.simplematch.accountservice.store.JdbcAccountAuthorityReader;
+import com.simplematch.accountservice.store.JdbcAccountOutboxRepository;
+import com.simplematch.contracts.account.v2.AccountLifecycleEvent;
+import com.simplematch.contracts.account.v2.AccountLifecycleState;
 import com.simplematch.contracts.common.v1.ReservationStatus;
 import com.simplematch.contracts.common.v1.Side;
 import java.math.BigDecimal;
@@ -51,15 +55,20 @@ class AccountReservationApplicationServiceTransactionTest {
   private static final LocalDate TRADING_DAY = LocalDate.of(2026, 7, 28);
   private final JdbcTemplate jdbcTemplate;
   private final AccountReservationApplicationService service;
+  private final FailingOutboxRepository outboxRepository;
 
   AccountReservationApplicationServiceTransactionTest(
-      JdbcTemplate jdbcTemplate, AccountReservationApplicationService service) {
+      JdbcTemplate jdbcTemplate,
+      AccountReservationApplicationService service,
+      FailingOutboxRepository outboxRepository) {
     this.jdbcTemplate = jdbcTemplate;
     this.service = service;
+    this.outboxRepository = outboxRepository;
   }
 
   @BeforeEach
   void reset() {
+    outboxRepository.clearFailure();
     jdbcTemplate.update("DELETE FROM account_service.inbox");
     jdbcTemplate.update("DELETE FROM account_service.reservation_request_locks");
     jdbcTemplate.update("DELETE FROM account_service.outbox");
@@ -72,9 +81,28 @@ class AccountReservationApplicationServiceTransactionTest {
         "UPDATE account_service.account_positions SET long_qty = 100 WHERE account_id = 'acc-1'");
   }
 
+  @DisplayName("outbox failure rolls back reservation and account-authority mutations")
+  @Test
+  void rollsBackReserveWhenOutboxFails() {
+    outboxRepository.failInserts();
+
+    assertThatThrownBy(() -> service.reserve(operation(Side.SIDE_BUY, "10", "100")))
+        .isInstanceOf(IllegalStateException.class)
+        .hasMessage("account lifecycle outbox is unavailable");
+    assertThat(
+            jdbcTemplate.queryForObject(
+                "SELECT COUNT(*) FROM account_service.account_reservations", Integer.class))
+        .isZero();
+    assertThat(
+            jdbcTemplate.queryForObject(
+                "SELECT COUNT(*) FROM account_service.outbox", Integer.class))
+        .isZero();
+    assertThat(service.getLimits("acc-1").availableNotional()).isEqualByComparingTo("10000");
+  }
+
   @DisplayName("buy reserve atomically consumes available cash and emits lifecycle outbox")
   @Test
-  void reservesCashAndEmitsEvent() {
+  void reservesCashAndEmitsEvent() throws InvalidProtocolBufferException {
     final ReservationRecord reservation = service.reserve(operation(Side.SIDE_BUY, "10", "100"));
 
     assertThat(reservation.status()).isEqualTo(ReservationStatus.RESERVATION_STATUS_ACCEPTED);
@@ -87,6 +115,28 @@ class AccountReservationApplicationServiceTransactionTest {
             jdbcTemplate.queryForObject(
                 "SELECT COUNT(*) FROM account_service.outbox", Integer.class))
         .isEqualTo(1);
+    assertThat(
+            jdbcTemplate.queryForObject(
+                "SELECT topic FROM account_service.outbox", String.class))
+        .isEqualTo("account.lifecycle");
+    assertThat(
+            jdbcTemplate.queryForObject(
+                "SELECT message_key FROM account_service.outbox", String.class))
+        .isEqualTo(reservation.orderId());
+    assertThat(
+            jdbcTemplate.queryForObject(
+                "SELECT payload_type FROM account_service.outbox", String.class))
+        .isEqualTo(AccountLifecycleEvent.getDescriptor().getFullName());
+    final AccountLifecycleEvent event =
+        AccountLifecycleEvent.parseFrom(
+            jdbcTemplate.queryForObject(
+                "SELECT payload FROM account_service.outbox", byte[].class));
+    assertThat(event.getMetadata().getSchemaVersion()).isEqualTo("v2");
+    assertThat(event.getReservationId()).isEqualTo(reservation.reservationId());
+    assertThat(event.getOrderId()).isEqualTo(reservation.orderId());
+    assertThat(event.getAccountId()).isEqualTo(reservation.accountId());
+    assertThat(event.getState())
+        .isEqualTo(AccountLifecycleState.ACCOUNT_LIFECYCLE_STATE_RESERVED);
   }
 
   @DisplayName("insufficient cash persists a stable rejection without consuming account authority")
@@ -385,8 +435,8 @@ class AccountReservationApplicationServiceTransactionTest {
     }
 
     @Bean
-    AccountOutboxRepository outboxRepository(JdbcTemplate jdbcTemplate) {
-      return new com.simplematch.accountservice.store.JdbcAccountOutboxRepository(jdbcTemplate);
+    FailingOutboxRepository outboxRepository(JdbcTemplate jdbcTemplate) {
+      return new FailingOutboxRepository(jdbcTemplate);
     }
 
     @Bean
@@ -397,6 +447,31 @@ class AccountReservationApplicationServiceTransactionTest {
         Clock clock) {
       return new AccountReservationApplicationService(
           authorityReader, authorityLifecycleWriter, outboxRepository, clock);
+    }
+  }
+
+  static final class FailingOutboxRepository implements AccountOutboxRepository {
+    private final JdbcAccountOutboxRepository delegate;
+    private boolean failInserts;
+
+    FailingOutboxRepository(JdbcTemplate jdbcTemplate) {
+      delegate = new JdbcAccountOutboxRepository(jdbcTemplate);
+    }
+
+    @Override
+    public void insert(AccountLifecycleOutbox event) {
+      if (failInserts) {
+        throw new IllegalStateException("account lifecycle outbox is unavailable");
+      }
+      delegate.insert(event);
+    }
+
+    void failInserts() {
+      failInserts = true;
+    }
+
+    void clearFailure() {
+      failInserts = false;
     }
   }
 }

@@ -2,16 +2,27 @@ package com.simplematch.accountservice.grpc;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
-import com.simplematch.accountservice.reservation.IdempotentReservationService;
-import com.simplematch.accountservice.reservation.ReservationService;
-import com.simplematch.accountservice.store.JdbcReservationRepository;
+import com.simplematch.accountservice.reservation.AccountReservationApplicationService;
+import com.simplematch.accountservice.store.JdbcAccountAuthorityLifecycleWriter;
+import com.simplematch.accountservice.store.JdbcAccountAuthorityReader;
+import com.simplematch.accountservice.store.JdbcAccountOutboxRepository;
+import com.simplematch.contracts.account.v1.ApplyFillRequest;
+import com.simplematch.contracts.account.v1.ApplyFillResponse;
+import com.simplematch.contracts.account.v1.GetLimitsRequest;
+import com.simplematch.contracts.account.v1.GetLimitsResponse;
+import com.simplematch.contracts.account.v1.GetPositionsRequest;
+import com.simplematch.contracts.account.v1.GetPositionsResponse;
+import com.simplematch.contracts.account.v1.ReleaseReservationRequest;
+import com.simplematch.contracts.account.v1.ReleaseReservationResponse;
 import com.simplematch.contracts.account.v1.ReserveRequest;
 import com.simplematch.contracts.account.v1.ReserveResponse;
 import com.simplematch.contracts.common.v1.ReservationStatus;
 import com.simplematch.contracts.common.v1.Side;
 import io.grpc.Status;
+import java.math.BigDecimal;
 import java.time.Clock;
 import java.time.Instant;
+import java.time.LocalDate;
 import java.time.ZoneOffset;
 import java.util.UUID;
 import org.flywaydb.core.Flyway;
@@ -26,7 +37,7 @@ class AccountGrpcServiceTest {
   private static final String REQUEST_ID = "01971cbe-0f5a-7c69-9d6c-8e7f6a5b4c3d";
 
   private JdbcTemplate jdbcTemplate;
-  private ReservationService reservationService;
+  private AccountReservationApplicationService reservationService;
 
   @BeforeEach
   void setUp() {
@@ -42,8 +53,14 @@ class AccountGrpcServiceTest {
         .locations("classpath:db/migration/account-service")
         .load()
         .migrate();
-    reservationService =
-        new IdempotentReservationService(new JdbcReservationRepository(jdbcTemplate), FIXED_CLOCK);
+    final AccountReservationApplicationService accountService =
+        new AccountReservationApplicationService(
+            new JdbcAccountAuthorityReader(jdbcTemplate),
+            new JdbcAccountAuthorityLifecycleWriter(jdbcTemplate),
+            new JdbcAccountOutboxRepository(jdbcTemplate),
+            FIXED_CLOCK);
+    accountService.provisionLimit("ACC-1", LocalDate.of(1970, 1, 1), new BigDecimal("10000"));
+    reservationService = accountService;
   }
 
   @DisplayName("reserve returns the same persisted result when request id repeats")
@@ -77,7 +94,7 @@ class AccountGrpcServiceTest {
         .isEqualTo(ReservationStatus.RESERVATION_STATUS_ACCEPTED);
     assertThat(
             jdbcTemplate.queryForObject(
-                "SELECT COUNT(*) FROM account_reservations WHERE request_id = ?",
+                "SELECT COUNT(*) FROM account_service.account_reservations WHERE request_id = ?",
                 Integer.class,
                 REQUEST_ID))
         .isEqualTo(1);
@@ -98,7 +115,8 @@ class AccountGrpcServiceTest {
     assertThat(Status.fromThrowable(observer.error()).getDescription())
         .isEqualTo("request_id must be a UUID");
     assertThat(
-            jdbcTemplate.queryForObject("SELECT COUNT(*) FROM account_reservations", Integer.class))
+            jdbcTemplate.queryForObject(
+                "SELECT COUNT(*) FROM account_service.account_reservations", Integer.class))
         .isEqualTo(0);
   }
 
@@ -117,7 +135,8 @@ class AccountGrpcServiceTest {
     assertThat(Status.fromThrowable(observer.error()).getDescription())
         .isEqualTo("request_id must be <= 255 characters");
     assertThat(
-            jdbcTemplate.queryForObject("SELECT COUNT(*) FROM account_reservations", Integer.class))
+            jdbcTemplate.queryForObject(
+                "SELECT COUNT(*) FROM account_service.account_reservations", Integer.class))
         .isEqualTo(0);
   }
 
@@ -138,6 +157,99 @@ class AccountGrpcServiceTest {
     assertThat(
             jdbcTemplate.queryForObject("SELECT COUNT(*) FROM account_reservations", Integer.class))
         .isEqualTo(0);
+  }
+
+  @DisplayName("read RPCs project authoritative limits and positions")
+  @Test
+  void readRpcsProjectAuthoritativeState() {
+    reservationService.provisionPosition("ACC-1", "AAPL");
+    final AccountGrpcService service = new AccountGrpcService(reservationService);
+    final TestStreamObserver<GetLimitsResponse> limitsObserver = new TestStreamObserver<>();
+    final TestStreamObserver<GetPositionsResponse> positionsObserver = new TestStreamObserver<>();
+
+    service.getLimits(
+        GetLimitsRequest.newBuilder().setAccountId("ACC-1").build(), limitsObserver);
+    service.getPositions(
+        GetPositionsRequest.newBuilder().setAccountId("ACC-1").build(), positionsObserver);
+
+    assertThat(limitsObserver.error()).isNull();
+    assertThat(limitsObserver.completed()).isTrue();
+    assertThat(limitsObserver.value().getAccountId()).isEqualTo("ACC-1");
+    assertThat(limitsObserver.value().getCurrency()).isEqualTo("TWD");
+    assertThat(new BigDecimal(limitsObserver.value().getAvailableNotional()))
+        .isEqualByComparingTo("10000");
+    assertThat(new BigDecimal(limitsObserver.value().getReservedNotional()))
+        .isEqualByComparingTo("0");
+    assertThat(new BigDecimal(limitsObserver.value().getUtilizedNotional()))
+        .isEqualByComparingTo("0");
+    assertThat(positionsObserver.error()).isNull();
+    assertThat(positionsObserver.completed()).isTrue();
+    assertThat(positionsObserver.value().getPositionsCount()).isEqualTo(1);
+    assertThat(positionsObserver.value().getPositions(0).getAccountId()).isEqualTo("ACC-1");
+    assertThat(positionsObserver.value().getPositions(0).getSymbol()).isEqualTo("AAPL");
+    assertThat(new BigDecimal(positionsObserver.value().getPositions(0).getLongQty()))
+        .isEqualByComparingTo("0");
+    assertThat(new BigDecimal(positionsObserver.value().getPositions(0).getShortQty()))
+        .isEqualByComparingTo("0");
+  }
+
+  @DisplayName("release RPC maps the request identity and terminal reservation state")
+  @Test
+  void releaseReservationProjectsReleasedState() {
+    final AccountGrpcService service = new AccountGrpcService(reservationService);
+    final ReserveResponse reserved = reserveAccepted(service);
+    final TestStreamObserver<ReleaseReservationResponse> observer = new TestStreamObserver<>();
+
+    service.releaseReservation(
+        ReleaseReservationRequest.newBuilder()
+            .setRequestId(REQUEST_ID)
+            .setReservationId(reserved.getReservationId())
+            .setOrderId("O-1")
+            .setReasonCode("USER_CANCELLED")
+            .build(),
+        observer);
+
+    assertThat(observer.error()).isNull();
+    assertThat(observer.completed()).isTrue();
+    assertThat(observer.value().getRequestId()).isEqualTo(REQUEST_ID);
+    assertThat(observer.value().getReservationId()).isEqualTo(reserved.getReservationId());
+    assertThat(observer.value().getStatus())
+        .isEqualTo(ReservationStatus.RESERVATION_STATUS_RELEASED);
+  }
+
+  @DisplayName("fill RPC maps the execution identity and applied reservation state")
+  @Test
+  void applyFillProjectsAppliedState() {
+    reservationService.provisionPosition("ACC-1", "AAPL");
+    final AccountGrpcService service = new AccountGrpcService(reservationService);
+    final ReserveResponse reserved = reserveAccepted(service);
+    final TestStreamObserver<ApplyFillResponse> observer = new TestStreamObserver<>();
+
+    service.applyFill(
+        ApplyFillRequest.newBuilder()
+            .setRequestId(REQUEST_ID)
+            .setReservationId(reserved.getReservationId())
+            .setOrderId("O-1")
+            .setExecId(UUID.randomUUID().toString())
+            .setFillQty("10")
+            .setFillPx("101.25")
+            .build(),
+        observer);
+
+    assertThat(observer.error()).isNull();
+    assertThat(observer.completed()).isTrue();
+    assertThat(observer.value().getRequestId()).isEqualTo(REQUEST_ID);
+    assertThat(observer.value().getReservationId()).isEqualTo(reserved.getReservationId());
+    assertThat(observer.value().getStatus())
+        .isEqualTo(ReservationStatus.RESERVATION_STATUS_APPLIED);
+  }
+
+  private ReserveResponse reserveAccepted(AccountGrpcService service) {
+    final TestStreamObserver<ReserveResponse> observer = new TestStreamObserver<>();
+    service.reserve(validReserveRequest().build(), observer);
+    assertThat(observer.error()).isNull();
+    assertThat(observer.completed()).isTrue();
+    return observer.value();
   }
 
   private ReserveRequest.Builder validReserveRequest() {

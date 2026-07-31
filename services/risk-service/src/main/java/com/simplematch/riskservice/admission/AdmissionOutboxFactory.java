@@ -5,6 +5,7 @@ import com.simplematch.contracts.common.v2.VenueInstrument;
 import com.simplematch.contracts.orders.v2.OrderAdmissionAccepted;
 import com.simplematch.contracts.orders.v2.OrderAdmissionRejected;
 import com.simplematch.riskservice.outbox.OutboxRecord;
+import com.simplematch.riskservice.outbox.RoutingPartitionResolver;
 import java.time.Clock;
 import java.util.Objects;
 
@@ -12,11 +13,33 @@ import java.util.Objects;
 public final class AdmissionOutboxFactory {
   private final String topic;
   private final Clock clock;
+  private final RoutingPartitionResolver routingPartitionResolver;
 
-  /** Creates an outbox factory with the configured orders-validated topic. */
-  public AdmissionOutboxFactory(String topic, Clock clock) {
+  /**
+   * Creates an outbox factory with the configured orders-validated topic and routing policy.
+   *
+   * @param topic configured orders-validated topic
+   * @param clock clock used for terminal event metadata
+   * @param routingPartitionResolver risk-owned symbol-to-partition policy
+   */
+  public AdmissionOutboxFactory(
+      String topic, Clock clock, RoutingPartitionResolver routingPartitionResolver) {
     this.topic = Objects.requireNonNull(topic, "topic");
     this.clock = Objects.requireNonNull(clock, "clock");
+    this.routingPartitionResolver =
+        Objects.requireNonNull(routingPartitionResolver, "routingPartitionResolver");
+  }
+
+  /**
+   * Resolves and assigns the route that must be persisted before admission begins.
+   *
+   * @param command validated admission command whose symbol determines the route
+   * @return assigned delivery route for the command
+   */
+  public AdmissionDeliveryRoute resolveRoute(AdmissionCommand command) {
+    Objects.requireNonNull(command, "command");
+    final String symbol = command.order().instrument().symbol().value();
+    return AdmissionDeliveryRoute.assigned(routingPartitionResolver.resolve(symbol));
   }
 
   /** Builds the terminal event matching a journal outcome. */
@@ -42,6 +65,7 @@ public final class AdmissionOutboxFactory {
     final byte[] payload;
     final String payloadType;
     if (entry.lifecycle().state() == AdmissionState.ACCEPTED) {
+      final int routingPartition = entry.route().requireAssignedPartition();
       payload =
           OrderAdmissionAccepted.newBuilder()
               .setMetadata(metadata)
@@ -53,10 +77,7 @@ public final class AdmissionOutboxFactory {
                   command.routing().snapshotId().value() == null
                       ? ""
                       : command.routing().snapshotId().value().toString())
-              .setRoutingPartition(
-                  entry.route().routingPartition() == null
-                      ? 0
-                      : entry.route().routingPartition())
+              .setRoutingPartition(routingPartition)
               .build()
               .toByteArray();
       payloadType = OrderAdmissionAccepted.getDescriptor().getFullName();
@@ -77,10 +98,20 @@ public final class AdmissionOutboxFactory {
     }
     return OutboxRecord.create(
         new OutboxRecord.EventInfo(eventId, now),
-        OutboxRecord.Routing.withoutPartition(
-            topic, identity.orderId().value().toString()),
+        deliveryRouting(entry, order.instrument().symbol().value()),
         new OutboxRecord.PayloadEnvelope(payload, payloadType, "{\"schema_version\":\"v2\"}"),
         new OutboxRecord.AggregateRef("order_admission", identity.orderId().value().toString()));
+  }
+
+  private OutboxRecord.Routing deliveryRouting(AdmissionJournalEntry entry, String symbol) {
+    final Integer routingPartition = entry.route().routingPartition();
+    if (routingPartition == null) {
+      if (entry.lifecycle().state() == AdmissionState.ACCEPTED) {
+        entry.route().requireAssignedPartition();
+      }
+      return OutboxRecord.Routing.withoutPartition(topic, symbol);
+    }
+    return OutboxRecord.Routing.withPartition(topic, symbol, routingPartition);
   }
 
   private static AdmissionFailure rejection(AdmissionJournalEntry entry) {

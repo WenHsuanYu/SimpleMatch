@@ -1,123 +1,122 @@
 package com.simplematch.accountservice.reservation;
 
+import com.simplematch.accountservice.authority.AccountReservation;
+import com.simplematch.accountservice.authority.ReservationOwnership;
 import com.simplematch.contracts.common.v1.ReservationStatus;
 import com.simplematch.contracts.common.v1.Side;
 import java.math.BigDecimal;
 import java.util.Objects;
 
 /**
- * Persisted reservation snapshot stored in {@code account_reservations}.
+ * Read-only response projection of an authoritative account reservation.
  *
- * @param reservationId the persisted reservation identifier; currently aligned with {@code
- *     order_id}
- * @param requestId the synchronous request identifier used for idempotent replay
- * @param orderId the order that owns the reservation
- * @param accountId the account that owns the reservation
- * @param symbol the instrument symbol the reservation applies to
- * @param side the side associated with the reservation request
- * @param quantity the requested quantity to reserve
- * @param limitPrice the optional limit price carried with the request
- * @param reservedNotional the notional amount reserved for this request
- * @param status the persisted reservation status
- * @param reasonCode the machine-readable decision code
- * @param reasonText the human-readable decision text
- * @param createdAtUnixMs the first persisted timestamp for the reservation
- * @param updatedAtUnixMs the last updated timestamp for the reservation
+ * <p>This type is created from {@link AccountReservation} for gRPC responses. It is not a second
+ * aggregate and is never used as a persistence row or write command.
+ *
+ * @param identity reservation, request, and order identity
+ * @param ownership account ownership
+ * @param terms immutable reservation terms
+ * @param state response state and timestamps
  */
 public record ReservationRecord(
-    String reservationId,
-    String requestId,
-    String orderId,
-    String accountId,
-    String symbol,
-    Side side,
-    BigDecimal quantity,
-    BigDecimal limitPrice,
-    BigDecimal reservedNotional,
-    ReservationStatus status,
-    String reasonCode,
-    String reasonText,
-    long createdAtUnixMs,
-    long updatedAtUnixMs) {
-  /** Validates persisted reservation values. */
+    ReservationIdentity identity,
+    ReservationOwnership ownership,
+    ReservationTerms terms,
+    ReservationResponseState state) {
+  /** Requires complete semantic response values. */
   public ReservationRecord {
-    reservationId = requireNonBlank(reservationId, "reservation_id");
-    requestId = requireNonBlank(requestId, "request_id");
-    orderId = requireNonBlank(orderId, "order_id");
-    accountId = requireNonBlank(accountId, "account_id");
-    symbol = requireNonBlank(symbol, "symbol");
-    side = requireNonNullValue(side, "side");
-    quantity = requireNonNull(quantity, "quantity");
-    reservedNotional = requireNonNull(reservedNotional, "reserved_notional");
-    status = requireNonNullValue(status, "status");
-    reasonCode = Objects.requireNonNullElse(reasonCode, "");
-    reasonText = Objects.requireNonNullElse(reasonText, "");
+    Objects.requireNonNull(identity, "identity");
+    Objects.requireNonNull(ownership, "ownership");
+    Objects.requireNonNull(terms, "terms");
+    Objects.requireNonNull(state, "state");
   }
 
   /**
-   * Creates the first persisted accepted reservation snapshot for a reserve operation.
+   * Projects an authoritative reservation without introducing a persistence-shaped carrier.
    *
-   * @param operation the validated reservation operation
-   * @param createdAtUnixMs the timestamp for the created and updated columns
-   * @return the accepted reservation snapshot
+   * @param reservation authoritative reservation returned by the account application service
+   * @return semantic response projection
    */
-  public static ReservationRecord accepted(ReserveOperation operation, long createdAtUnixMs) {
-    final BigDecimal reservedNotional =
-        operation.limitPrice() == null
-            ? BigDecimal.ZERO
-            : operation.limitPrice().multiply(operation.quantity());
+  public static ReservationRecord from(AccountReservation reservation) {
+    Objects.requireNonNull(reservation, "reservation");
     return new ReservationRecord(
-        operation.orderId(),
-        operation.requestId(),
-        operation.orderId(),
-        operation.accountId(),
-        operation.symbol(),
-        operation.side(),
-        operation.quantity(),
-        operation.limitPrice(),
-        reservedNotional,
-        ReservationStatus.RESERVATION_STATUS_ACCEPTED,
-        "",
-        "",
-        createdAtUnixMs,
-        createdAtUnixMs);
+        reservation.identity(),
+        reservation.ownership(),
+        reservation.terms(),
+        new ReservationResponseState(
+            reservation.reservedNotional(),
+            reservation.lifecycle().outcome(),
+            new ReservationResponseTiming(
+                reservation.createdAtUnixMs(), reservation.updatedAtUnixMs())));
   }
 
-  /** Creates a stable rejected reservation result without changing account balances. */
-  public static ReservationRecord rejected(
-      ReserveOperation operation, String reasonCode, String reasonText, long createdAtUnixMs) {
-    return new ReservationRecord(
-        operation.orderId(),
-        operation.requestId(),
-        operation.orderId(),
-        operation.accountId(),
-        operation.symbol(),
-        operation.side(),
-        operation.quantity(),
-        operation.limitPrice(),
-        BigDecimal.ZERO,
-        ReservationStatus.RESERVATION_STATUS_REJECTED,
-        reasonCode,
-        reasonText,
-        createdAtUnixMs,
-        createdAtUnixMs);
+  /** Returns the reservation identifier for the response boundary. */
+  public String reservationId() {
+    return identity.reservationId().value();
   }
 
-  private static String requireNonBlank(String value, String fieldName) {
-    if (value == null || value.isBlank()) {
-      throw new IllegalArgumentException(fieldName + " must not be blank");
-    }
-    return value;
+  /** Returns the idempotent request identifier for the response boundary. */
+  public String requestId() {
+    return identity.requestId().value();
   }
 
-  private static BigDecimal requireNonNull(BigDecimal value, String fieldName) {
-    if (value == null) {
-      throw new IllegalArgumentException(fieldName + " must not be null");
-    }
-    return value;
+  /** Returns the owning order identifier. */
+  public String orderId() {
+    return identity.orderId().value();
   }
 
-  private static <T> T requireNonNullValue(T value, String fieldName) {
-    return Objects.requireNonNull(value, fieldName + " must not be null");
+  /** Returns the owning account identifier. */
+  public String accountId() {
+    return ownership.accountId();
+  }
+
+  /** Returns the reserved instrument symbol. */
+  public String symbol() {
+    return terms.symbol().value();
+  }
+
+  /** Returns the requested order side. */
+  public Side side() {
+    return terms.side();
+  }
+
+  /** Returns the original requested quantity. */
+  public BigDecimal quantity() {
+    return terms.quantity().value();
+  }
+
+  /** Returns the optional limit price. */
+  public BigDecimal limitPrice() {
+    return terms.limitPrice().value();
+  }
+
+  /** Returns the notional currently reported by the reservation lifecycle. */
+  public BigDecimal reservedNotional() {
+    return state.reservedNotional();
+  }
+
+  /** Returns the current reservation status. */
+  public ReservationStatus status() {
+    return state.outcome().status();
+  }
+
+  /** Returns the machine-readable lifecycle reason. */
+  public String reasonCode() {
+    return state.outcome().reasonCode();
+  }
+
+  /** Returns the human-readable lifecycle reason. */
+  public String reasonText() {
+    return state.outcome().reasonText();
+  }
+
+  /** Returns the first timestamp associated with the response. */
+  public long createdAtUnixMs() {
+    return state.timing().createdAtUnixMs();
+  }
+
+  /** Returns the latest timestamp associated with the response. */
+  public long updatedAtUnixMs() {
+    return state.timing().updatedAtUnixMs();
   }
 }

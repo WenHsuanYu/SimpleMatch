@@ -123,8 +123,9 @@ public class OrderAdmissionApplicationService {
       }
       return result(existingByBusiness);
     }
+    final AdmissionDeliveryRoute route = events.resolveRoute(command);
     final AdmissionJournalEntry pending =
-        AdmissionJournalEntry.pending(command, AdmissionDeliveryRoute.unassigned(), clock.millis());
+        AdmissionJournalEntry.pending(command, route, clock.millis());
     try {
       if (journal.insert(pending)) {
         return result(pending);

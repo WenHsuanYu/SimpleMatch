@@ -57,6 +57,17 @@ class FileRoutingPartitionResolverTest {
     assertThat(resolver.resolve("MSFT")).isEqualTo(Math.floorMod("MSFT".hashCode(), 15));
   }
 
+  @DisplayName("repeated resolution of one symbol keeps the same partition")
+  @Test
+  void resolvesTheSameSymbolDeterministically() throws IOException {
+    final Path snapshot = writeSnapshot("{\"entries\": []}");
+
+    final RoutingPartitionResolver resolver =
+        FileRoutingPartitionResolver.load(objectMapper, snapshot, 15);
+
+    assertThat(resolver.resolve("MSFT")).isEqualTo(resolver.resolve("MSFT"));
+  }
+
   @DisplayName("partitions outside the configured range fail during loading")
   @Test
   void rejectsPartitionOutsideConfiguredRange() throws IOException {

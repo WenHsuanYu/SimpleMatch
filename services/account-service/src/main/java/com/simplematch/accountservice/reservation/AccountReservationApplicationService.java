@@ -33,7 +33,7 @@ import org.springframework.transaction.annotation.Transactional;
 /** Owns account reservation, release, fill, and authoritative balance transactions. */
 @Service
 @RequiredArgsConstructor
-public class AccountReservationApplicationService implements ReservationService {
+public class AccountReservationApplicationService {
   private static final ZoneId TAIPEI = ZoneId.of("Asia/Taipei");
   private static final int TRANSACTION_TIMEOUT_SECONDS = 8;
   private static final String OUTBOX_TOPIC = "account.lifecycle";
@@ -45,7 +45,6 @@ public class AccountReservationApplicationService implements ReservationService 
   @NonNull private final Clock clock;
 
   /** Reserves cash or available long position and emits a durable lifecycle event. */
-  @Override
   @Transactional(timeout = TRANSACTION_TIMEOUT_SECONDS)
   public ReservationRecord reserve(ReserveOperation operation) {
     Objects.requireNonNull(operation, "operation");
@@ -53,7 +52,7 @@ public class AccountReservationApplicationService implements ReservationService 
     final AccountReservation existing =
         authorityReader.findReservationByRequestId(operation.requestId()).orElse(null);
     if (existing != null) {
-      return toLegacy(existing);
+      return toResponse(existing);
     }
 
     final long now = clock.millis();
@@ -126,11 +125,10 @@ public class AccountReservationApplicationService implements ReservationService 
             now);
     authorityWriter.insertReservation(reservation);
     emit(reservation, AccountLifecycleState.ACCOUNT_LIFECYCLE_STATE_RESERVED, "", now);
-    return toLegacy(reservation);
+    return toResponse(reservation);
   }
 
   /** Returns the current Taiwan-trading-day account limit. */
-  @Override
   @Transactional(readOnly = true)
   public AccountLimit getLimits(String accountId) {
     return authorityReader
@@ -139,14 +137,12 @@ public class AccountReservationApplicationService implements ReservationService 
   }
 
   /** Returns authoritative positions for one account. */
-  @Override
   @Transactional(readOnly = true)
   public List<AccountPosition> getPositions(String accountId) {
     return authorityReader.findPositions(accountId);
   }
 
   /** Releases all remaining cash or position authority for a reservation. */
-  @Override
   @Transactional(timeout = TRANSACTION_TIMEOUT_SECONDS)
   public ReservationRecord release(ReleaseReservationOperation operation) {
     Objects.requireNonNull(operation, "operation");
@@ -162,7 +158,7 @@ public class AccountReservationApplicationService implements ReservationService 
     if (reservation.status() == ReservationStatus.RESERVATION_STATUS_RELEASED
         || reservation.status() == ReservationStatus.RESERVATION_STATUS_REJECTED
         || reservation.remainingQuantity().signum() == 0) {
-      return toLegacy(reservation);
+      return toResponse(reservation);
     }
     final long now = clock.millis();
     AccountAuthorityTransitions.releaseCancelledAuthority(
@@ -171,11 +167,10 @@ public class AccountReservationApplicationService implements ReservationService 
     authorityWriter.updateReservation(changed, reservation.version());
     emit(
         changed, AccountLifecycleState.ACCOUNT_LIFECYCLE_STATE_RELEASED, changed.reasonCode(), now);
-    return toLegacy(changed);
+    return toResponse(changed);
   }
 
   /** Applies one execution fill once, using the account inbox as the deduplication boundary. */
-  @Override
   @Transactional(timeout = TRANSACTION_TIMEOUT_SECONDS)
   public ReservationRecord applyFill(ApplyFillOperation operation) {
     Objects.requireNonNull(operation, "operation");
@@ -189,7 +184,7 @@ public class AccountReservationApplicationService implements ReservationService 
         clock.millis())) {
       return authorityReader
           .findReservationForUpdate(identity.reservationId().value())
-          .map(this::toLegacy)
+          .map(this::toResponse)
           .orElseThrow(() -> new IllegalArgumentException("reservation not found"));
     }
     final AccountReservation reservation =
@@ -214,7 +209,7 @@ public class AccountReservationApplicationService implements ReservationService 
             : AccountLifecycleState.ACCOUNT_LIFECYCLE_STATE_RESERVED,
         "",
         now);
-    return toLegacy(changed);
+    return toResponse(changed);
   }
 
   /** Provisions an account-wide daily cash limit for controlled administration. */
@@ -245,7 +240,7 @@ public class AccountReservationApplicationService implements ReservationService 
             now);
     authorityWriter.insertReservation(rejected);
     emit(rejected, AccountLifecycleState.ACCOUNT_LIFECYCLE_STATE_REJECTED, reasonCode, now);
-    return toLegacy(rejected);
+    return toResponse(rejected);
   }
 
   private ReservationIdentity reservationIdentity(ReserveOperation operation) {
@@ -289,32 +284,18 @@ public class AccountReservationApplicationService implements ReservationService 
             .build();
     outbox.insert(
         new AccountLifecycleOutbox(
-            java.util.UUID.fromString(eventId),
-            OUTBOX_TOPIC,
-            reservation.orderId(),
-            event.toByteArray(),
-            AccountLifecycleEvent.getDescriptor().getFullName(),
-            "{\"schema_version\":\"v2\"}",
-            "account_reservation",
-            reservation.reservationId(),
+            new AccountLifecycleOutbox.EventIdentity(java.util.UUID.fromString(eventId)),
+            new AccountLifecycleOutbox.Destination(OUTBOX_TOPIC, reservation.orderId()),
+            new AccountLifecycleOutbox.Payload(
+                event.toByteArray(),
+                AccountLifecycleEvent.getDescriptor().getFullName(),
+                "{\"schema_version\":\"v2\"}"),
+            new AccountLifecycleOutbox.AggregateReference(
+                "account_reservation", reservation.reservationId()),
             now));
   }
 
-  private ReservationRecord toLegacy(AccountReservation reservation) {
-    return new ReservationRecord(
-        reservation.reservationId(),
-        reservation.requestId(),
-        reservation.orderId(),
-        reservation.accountId(),
-        reservation.symbol(),
-        reservation.side(),
-        reservation.quantity(),
-        reservation.limitPrice(),
-        reservation.reservedNotional(),
-        reservation.status(),
-        reservation.reasonCode(),
-        reservation.reasonText(),
-        reservation.createdAtUnixMs(),
-        reservation.updatedAtUnixMs());
+  private ReservationRecord toResponse(AccountReservation reservation) {
+    return ReservationRecord.from(reservation);
   }
 }
