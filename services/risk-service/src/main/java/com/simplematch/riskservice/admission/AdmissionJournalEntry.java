@@ -109,4 +109,45 @@ public record AdmissionJournalEntry(
         && clOrdId.equals(fixIdentity.clOrdId().value())
         && Objects.equals(routingSnapshotId, command.routing().snapshotId().value());
   }
+
+  /**
+   * Applies one account outcome to this admission aggregate.
+   *
+   * <p>Terminal admissions are immutable under replay, so a repeated outcome returns the existing
+   * terminal snapshot rather than creating another transition.
+   *
+   * @param outcome the accepted or rejected account reservation outcome
+   * @param now the transition timestamp in Unix milliseconds
+   * @return the transitioned admission, or this instance when already terminal
+   */
+  public AdmissionJournalEntry finalizeWith(ReservationOutcome outcome, long now) {
+    Objects.requireNonNull(outcome, "outcome");
+    if (state != AdmissionState.PENDING) {
+      return this;
+    }
+    return new AdmissionJournalEntry(
+        commandId,
+        orderId,
+        accountId,
+        symbol,
+        venueMic,
+        side,
+        quantity,
+        limitPriceUnits,
+        orderType,
+        tif,
+        tradingDay,
+        senderCompId,
+        targetCompId,
+        clOrdId,
+        routingSnapshotId,
+        routingPartition,
+        outcome.accepted() ? AdmissionState.ACCEPTED : AdmissionState.REJECTED,
+        outcome.reservationId(),
+        outcome.reasonCode(),
+        outcome.reasonDetail(),
+        version + 1,
+        createdAtUnixMs,
+        now);
+  }
 }

@@ -88,7 +88,7 @@ authoritative lifecycle events and must not become a second command path.
 | Release                | Terminal removal of remaining reserved authority.                                                     | Account Authority                            |
 | Market snapshot        | Versioned set of instrument eligibility and trading rules.                                            | Market Reference                             |
 | WAL record             | Gateway persistence representation of inbound FIX intent; not an aggregate.                           | FIX Gateway                                  |
-| Journal row            | Risk persistence representation of admission state; not the public domain API.                        | Risk Admission                               |
+| Journal row            | Persistence representation of the Admission aggregate; not a transport-facing contract.              | Risk Admission                               |
 | Outbox record          | Infrastructure representation used to publish a domain/integration event atomically with local state. | Producing context                            |
 
 ## Modeling rules

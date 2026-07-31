@@ -163,33 +163,7 @@ public class OrderAdmissionApplicationService {
       return result(current);
     }
     final long now = clock.millis();
-    final AdmissionState state =
-        reservation.accepted() ? AdmissionState.ACCEPTED : AdmissionState.REJECTED;
-    final AdmissionJournalEntry terminal =
-        new AdmissionJournalEntry(
-            current.commandId(),
-            current.orderId(),
-            current.accountId(),
-            current.symbol(),
-            current.venueMic(),
-            current.side(),
-            current.quantity(),
-            current.limitPriceUnits(),
-            current.orderType(),
-            current.tif(),
-            current.tradingDay(),
-            current.senderCompId(),
-            current.targetCompId(),
-            current.clOrdId(),
-            current.routingSnapshotId(),
-            current.routingPartition(),
-            state,
-            reservation.reservationId(),
-            reservation.reasonCode(),
-            reservation.reasonDetail(),
-            current.version() + 1,
-            current.createdAtUnixMs(),
-            now);
+    final AdmissionJournalEntry terminal = current.finalizeWith(reservation, now);
     journal.update(terminal, current.version());
     final OutboxRecord event = events.create(terminal);
     outbox.insert(event);
