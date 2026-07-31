@@ -37,7 +37,7 @@ import org.springframework.transaction.support.TransactionTemplate;
 @Configuration
 @EnableConfigurationProperties(RiskServiceProperties.class)
 @SuppressWarnings("PMD.TooManyMethods")
-// Spring wiring seam keeps service-owned dependencies explicit.
+// Remove when independent deployment wiring splits Admission and Submission configuration.
 public class RiskServiceConfiguration {
   private static final String RISK_SERVICE_SCHEMA = "risk_service";
 

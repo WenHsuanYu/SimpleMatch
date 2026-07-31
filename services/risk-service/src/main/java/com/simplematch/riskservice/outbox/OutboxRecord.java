@@ -5,7 +5,7 @@ import java.util.Objects;
 
 /** Immutable outbox row value object used by the risk-service submission flow. */
 @SuppressWarnings(
-    "PMD.TooManyMethods") // Immutable outbox value exposes defensive-copy persistence accessors.
+    "PMD.TooManyMethods") // Remove after repository adapters consume its grouped values directly.
 public final class OutboxRecord {
   private final String eventId;
   private final String topic;

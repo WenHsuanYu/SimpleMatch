@@ -33,7 +33,7 @@ public record AdmissionCommand(
    * Creates a compatibility command from the former flat parameter list.
    *
    * @deprecated Use the composed domain constructor; retained for journal-recovery compatibility
-   *     while positional callers migrate.
+   *     while positional callers migrate. Remove with {@code V1AdmissionCompatibilityAdapter}.
    */
   @Deprecated(forRemoval = false)
   @SuppressWarnings({"PMD.ExcessiveParameterList", "checkstyle:ParameterNumber"})

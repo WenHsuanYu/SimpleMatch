@@ -93,6 +93,28 @@ class SubmissionValidatorTest {
     assertThat(decision.command().commandType()).isEqualTo(CommandType.COMMAND_TYPE_NEW);
   }
 
+  @Test
+  void preservesSessionIdentityRejectionPrecedenceOverNewOrderFields() {
+    final ResolvedSubmissionCommand command =
+        new ResolvedSubmissionCommand(
+            SubmissionCommand.create(
+                new SubmissionCommand.RequestMetadata(
+                    normalize("cmd-1"), "O-C1", "", "CLIENT", "SIMPLEMATCH", "", ""),
+                new SubmissionCommand.OrderDetails(
+                    "",
+                    Side.SIDE_UNSPECIFIED,
+                    "",
+                    "",
+                    OrderType.ORDER_TYPE_LIMIT,
+                    TimeInForce.TIME_IN_FORCE_ROD)),
+            CommandType.COMMAND_TYPE_NEW);
+
+    final SubmissionDecision decision = validator.evaluate(command);
+
+    assertThat(decision.submission().accepted()).isFalse();
+    assertThat(decision.submission().reasonCode()).isEqualTo("MISSING_CL_ORD_ID");
+  }
+
   @ParameterizedTest(name = "{0}")
   @MethodSource("missingSessionIdentityCases")
   void rejectsMissingSessionIdentity(

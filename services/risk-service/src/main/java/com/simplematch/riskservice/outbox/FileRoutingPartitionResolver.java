@@ -56,9 +56,6 @@ public final class FileRoutingPartitionResolver implements RoutingPartitionResol
     return Math.floorMod(symbol.hashCode(), partitionCount);
   }
 
-  @SuppressWarnings(
-      "PMD.CyclomaticComplexity") // Snapshot validation reports each invalid routing shape
-  // precisely.
   private static Map<String, Integer> partitionsBySymbol(
       List<RoutingEntry> entries, int partitionCount, Path snapshotPath) {
     final Map<String, Integer> partitionsBySymbol = new HashMap<>();
@@ -67,28 +64,8 @@ public final class FileRoutingPartitionResolver implements RoutingPartitionResol
     }
 
     for (RoutingEntry entry : entries) {
-      if (entry == null || entry.symbol == null || entry.symbol.isBlank()) {
-        throw new IllegalStateException(
-            "routing snapshot entry is missing symbol: " + snapshotPath);
-      }
-      if (entry.kafkaPartitionId == null) {
-        throw new IllegalStateException(
-            "routing snapshot entry is missing kafkaPartitionId for symbol " + entry.symbol);
-      }
-      if (entry.kafkaPartitionId < 0 || entry.kafkaPartitionId >= partitionCount) {
-        throw new IllegalStateException(
-            "routing snapshot entry has kafkaPartitionId outside range for symbol "
-                + entry.symbol
-                + ": "
-                + entry.kafkaPartitionId);
-      }
-
-      final String normalizedSymbol = normalizeSymbol(entry.symbol);
-      final Integer previous = partitionsBySymbol.put(normalizedSymbol, entry.kafkaPartitionId);
-      if (previous != null) {
-        throw new IllegalStateException(
-            "routing snapshot contains duplicate symbol " + normalizedSymbol);
-      }
+      RoutingSnapshotEntryValidator.validate(entry, partitionCount, snapshotPath);
+      RoutingSnapshotEntryValidator.addPartition(partitionsBySymbol, entry);
     }
     return partitionsBySymbol;
   }
@@ -150,8 +127,8 @@ public final class FileRoutingPartitionResolver implements RoutingPartitionResol
 
   @JsonIgnoreProperties(ignoreUnknown = true)
   static final class RoutingEntry {
-    private String symbol;
-    private Integer kafkaPartitionId;
+    String symbol;
+    Integer kafkaPartitionId;
 
     public void setSymbol(String symbol) {
       this.symbol = symbol;

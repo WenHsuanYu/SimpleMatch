@@ -38,7 +38,8 @@ public record SubmissionResult(
    * Creates a compatibility result from the former flat parameter list.
    *
    * @deprecated Use the domain-value canonical constructor; retained for compatibility with
-   *     existing fixtures while callers migrate.
+   *     existing fixtures while callers migrate. Remove with
+   *     {@code V1AdmissionCompatibilityAdapter}.
    */
   @Deprecated(forRemoval = false)
   @SuppressWarnings({"PMD.ExcessiveParameterList", "checkstyle:ParameterNumber"})
@@ -77,7 +78,8 @@ public record SubmissionResult(
    * Creates a compatibility result with persisted FIX identifiers.
    *
    * @deprecated Use the domain-value canonical constructor; retained for compatibility with
-   *     existing fixtures while callers migrate.
+   *     existing fixtures while callers migrate. Remove with
+   *     {@code V1AdmissionCompatibilityAdapter}.
    */
   @Deprecated(forRemoval = false)
   @SuppressWarnings({"PMD.ExcessiveParameterList", "checkstyle:ParameterNumber"})
@@ -118,7 +120,7 @@ public record SubmissionResult(
    * Creates a compatibility result including business-key surrogate state.
    *
    * @deprecated Use the domain-value canonical constructor; retained for compatibility with JDBC
-   *     and test callers while they migrate.
+   *     and test callers while they migrate. Remove with {@code V1AdmissionCompatibilityAdapter}.
    */
   @Deprecated(forRemoval = false)
   @SuppressWarnings({"PMD.ExcessiveParameterList", "checkstyle:ParameterNumber"})

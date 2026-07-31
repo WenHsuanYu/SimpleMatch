@@ -9,6 +9,7 @@ import com.simplematch.contracts.common.v2.SessionState;
 import com.simplematch.contracts.common.v2.Side;
 import com.simplematch.contracts.common.v2.TimeInForce;
 import com.simplematch.contracts.common.v2.VenueInstrument;
+import com.simplematch.contracts.orders.v2.CancelOrderCommand;
 import com.simplematch.contracts.orders.v2.NewOrderCommand;
 import com.simplematch.riskservice.outbox.OutboxRepository;
 import com.simplematch.riskservice.store.JdbcAdmissionJournalRepository;
@@ -147,6 +148,30 @@ class OrderAdmissionApplicationServiceTransactionTest {
             error ->
                 assertThat(((AdmissionValidationException) error).reasonCode())
                     .isEqualTo(reasonCode));
+  }
+
+  @Test
+  void preservesCancelTradingDayFailureDetail() {
+    final CancelOrderCommand invalid =
+        CancelOrderCommand.newBuilder()
+            .setCommandId("01971cbe-0f5a-7c69-9d6c-8e7f6a5b4c3d")
+            .setOrderId("01971cbe-0f5a-7c69-9d6c-8e7f6a5b4c3e")
+            .setAccountId("01971cbe-0f5a-7c69-9d6c-8e7f6a5b4c3f")
+            .setInstrument(
+                VenueInstrument.newBuilder().setVenueMic("XTAI").setSymbol("2330").build())
+            .setSide(Side.SIDE_BUY)
+            .setOrigClOrdId("ORIG-1")
+            .setClOrdId("CL-1")
+            .setSenderCompId("SENDER")
+            .setTargetCompId("TARGET")
+            .setTradingDay(
+                com.simplematch.contracts.common.v2.TradingDay.newBuilder().setIsoDate("").build())
+            .setSessionState(SessionState.SESSION_STATE_CONTINUOUS)
+            .build();
+
+    assertThatThrownBy(() -> new OrderAdmissionValidator().validateCancel(invalid))
+        .isInstanceOf(AdmissionValidationException.class)
+        .hasMessage("INVALID_COMMAND: trading_day must be ISO-8601");
   }
 
   private static java.util.stream.Stream<Arguments> invalidCommands() {
