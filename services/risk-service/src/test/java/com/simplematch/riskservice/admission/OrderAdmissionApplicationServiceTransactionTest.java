@@ -138,6 +138,29 @@ class OrderAdmissionApplicationServiceTransactionTest {
         .isZero();
   }
 
+  @DisplayName("pending admission recovery retries the account call and finalizes once")
+  @Test
+  void recoversPendingAdmissionAfterAccountOutage() {
+    account.fail = true;
+    final NewOrderCommand command = command();
+
+    assertThatThrownBy(() -> admissions.admit(command))
+        .isInstanceOf(AdmissionUnavailableException.class);
+    jdbcTemplate.update(
+        "UPDATE risk_service.admission_journal SET created_at_unix_ms = 0, updated_at_unix_ms = 0");
+
+    account.fail = false;
+    assertThat(admissions.recoverPending()).isEqualTo(1);
+    assertThat(
+            jdbcTemplate.queryForObject(
+                "SELECT state FROM risk_service.admission_journal", String.class))
+        .isEqualTo("ACCEPTED");
+    assertThat(
+            jdbcTemplate.queryForObject("SELECT COUNT(*) FROM risk_service.outbox", Integer.class))
+        .isEqualTo(1);
+    assertThat(admissions.recoverPending()).isZero();
+  }
+
   @DisplayName("transport-independent validation rejects each invalid command shape")
   @ParameterizedTest(name = "{0}")
   @MethodSource("invalidCommands")
