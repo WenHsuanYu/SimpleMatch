@@ -3,48 +3,40 @@
     <Match>
         <Class name="~.*\.generated\..*"/>
     </Match>
-    <Match>
-        <Bug pattern="EI_EXPOSE_REP,EI_EXPOSE_REP2"/>
-        <Class name="com.simplematch.riskservice.grpc.RiskGrpcService"/>
-    </Match>
-    <Match>
-        <Bug pattern="EI_EXPOSE_REP,EI_EXPOSE_REP2"/>
-        <Class name="com.simplematch.riskservice.store.PostgresSubmissionStore"/>
-    </Match>
+    <!-- Owner: risk persistence. Private Spring collaborator, not a domain payload. Retire when an immutable JDBC executor exists. -->
     <Match>
         <Bug pattern="EI_EXPOSE_REP2"/>
         <Class name="com.simplematch.riskservice.store.JdbcOutboxRepository"/>
+        <Field name="jdbcTemplate"/>
     </Match>
-    <Match>
-        <Bug pattern="EI_EXPOSE_REP2"/>
-        <Class name="com.simplematch.riskservice.store.JdbcSubmissionRepository"/>
-    </Match>
-    <Match>
-        <Bug pattern="EI_EXPOSE_REP2"/>
-        <Class name="com.simplematch.riskservice.outbox.SubmissionOutboxFactory"/>
-    </Match>
+    <!-- Owner: risk submission. Private repository port has no accessor. Retire when immutable persistence execution exists. -->
     <Match>
         <Bug pattern="EI_EXPOSE_REP2"/>
         <Class name="com.simplematch.riskservice.submission.TransactionalSubmissionService"/>
+        <Field name="submissionRepository"/>
     </Match>
+    <!-- Owner: risk submission. Private outbox port has no accessor. Retire when immutable persistence execution exists. -->
     <Match>
         <Bug pattern="EI_EXPOSE_REP2"/>
-        <Class name="com.simplematch.accountservice.store.JdbcReservationRepository"/>
+        <Class name="com.simplematch.riskservice.submission.TransactionalSubmissionService"/>
+        <Field name="outboxRepository"/>
     </Match>
+    <!-- Owner: risk submission. Private transaction template has no accessor. Retire when immutable transaction execution exists. -->
     <Match>
         <Bug pattern="EI_EXPOSE_REP2"/>
-        <Class name="com.simplematch.accountservice.reservation.IdempotentReservationService"/>
+        <Class name="com.simplematch.riskservice.submission.TransactionalSubmissionService"/>
+        <Field name="transactionTemplate"/>
     </Match>
-    <Match>
-        <Bug pattern="EI_EXPOSE_REP,EI_EXPOSE_REP2"/>
-        <Class name="com.simplematch.quickfixgateway.fix.InboundFixMessageHandler"/>
-    </Match>
+    <!-- Owner: gateway publication. Private Spring Kafka collaborator has no accessor. Retire when Kafka is hidden behind an immutable port. -->
     <Match>
         <Bug pattern="EI_EXPOSE_REP2"/>
         <Class name="com.simplematch.quickfixgateway.kafka.KafkaOrdersCommandPublisher"/>
+        <Field name="kafkaTemplate"/>
     </Match>
+    <!-- Owner: gateway recovery. Private WAL file-handle collaborator has no accessor. Retire when WAL reads use an immutable port. -->
     <Match>
         <Bug pattern="EI_EXPOSE_REP2"/>
         <Class name="com.simplematch.quickfixgateway.wal.WalReplayService"/>
+        <Field name="walAppender"/>
     </Match>
 </FindBugsFilter>

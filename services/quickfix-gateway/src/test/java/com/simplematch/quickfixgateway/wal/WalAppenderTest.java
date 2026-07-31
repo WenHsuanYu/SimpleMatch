@@ -77,6 +77,10 @@ class WalAppenderTest {
 
       final List<String> lines = Files.readAllLines(walPath, StandardCharsets.UTF_8);
       assertThat(lines).hasSize(2);
+      final List<WalRecord> replayed = walAppender.readAll();
+      assertThat(replayed).containsExactly(first, second);
+
+      replayed.clear();
       assertThat(walAppender.readAll()).containsExactly(first, second);
     }
   }
