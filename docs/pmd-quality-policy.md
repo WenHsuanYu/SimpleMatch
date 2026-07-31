@@ -22,11 +22,22 @@ dependency resolution.
 
 The initial inventory was resolved by centralizing PostgreSQL URI parsing in
 `PostgresJdbcUrl`, extracting platform and v2 new-order validation modules, and enabling the policy
-for handwritten protobuf contracts. Remaining per-symbol `@SuppressWarnings` entries are narrow
-compatibility, wire, transaction, or defensive-copy seams tracked by issue #21; they are not a
-baseline and must be removed when their owning migration or adapter retirement lands. New
-production code must not copy an existing exception merely to satisfy a rule.
+for handwritten protobuf contracts. PMD's remaining per-symbol `@SuppressWarnings` entries are
+narrow compatibility, wire, transaction, or defensive-copy seams tracked separately by issue #21;
+they are not a baseline and must be removed when their owning migration or adapter retirement lands.
+New production code must not copy an existing exception merely to satisfy a rule.
+
+SpotBugs mutable-exposure review is tracked by issue #31. The former class-wide
+`EI_EXPOSE_REP`/`EI_EXPOSE_REP2` exclusions were removed. The only retained entries in
+`config/spotbugs/exclude.xml` are six field-scoped `EI_EXPOSE_REP2` matches for private-final
+infrastructure collaborators: the JDBC template, repository/transaction ports, Kafka template,
+and WAL appender. These references are required Spring/JDBC/Kafka/WAL protocol collaborators,
+have no accessors or payload-returning boundary, and therefore cannot expose mutable domain data.
+Each entry records its owning area, the no-external-exposure rationale, and the retirement
+condition (an immutable executor/port). Focused ownership tests cover account lifecycle payload
+copies, risk outbox payload copies, and fresh WAL replay collections.
 
 Do not add a package-wide suppression, a broad baseline, or a category-wide PMD ruleset. A new
 exception must be attached to the smallest class or method that owns the behavior and include a
-reason plus its retirement condition. Follow-up removal work remains tracked in issue #21.
+reason plus its retirement condition. SpotBugs exclusions follow the same owner-and-retirement
+rule and must remain field- or symbol-scoped.
