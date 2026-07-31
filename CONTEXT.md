@@ -1,9 +1,10 @@
 # SimpleMatch domain context
 
-SimpleMatch models a cash-equity order flow in which an external FIX request is normalized, checked for account and
-market eligibility, durably admitted, matched deterministically, and projected to downstream views. The codebase is a
-single repository, but each service owns a distinct business capability and language. Spring, QuickFIX/J, protobuf,
-Kafka, and JDBC are implementation mechanisms around those capabilities; they are not the domain model.
+SimpleMatch models a cash-equity order flow in which an external FIX request is normalized, checked
+for account and market eligibility, durably admitted, matched deterministically, and projected to
+downstream views. The codebase is a single repository, but each service owns a distinct business
+capability and language. Spring, QuickFIX/J, protobuf, Kafka, and JDBC are implementation mechanisms
+around those capabilities; they are not the domain model.
 
 ## Context map
 
@@ -20,96 +21,107 @@ flowchart LR
     Matching -->|market-data deltas| Streaming[Market-data Streaming context]
 ```
 
-| Upstream context | Downstream context | Relationship and translation rule |
-|---|---|---|
-| FIX client | FIX Gateway | Anti-corruption layer. FIX tags are parsed into gateway-local values before business submission. |
-| FIX Gateway | Risk Admission | Customer/supplier synchronous boundary. The gateway supplies stable command and FIX identities; risk owns the decision. |
-| Risk Admission | Account Authority | Risk requests idempotent reservation work; account-service owns balances, positions, reservations, and their transaction. |
-| Market Reference | Risk Admission / Matching | Published language based on a versioned market snapshot. Consumers do not reinterpret source fixtures independently. |
-| Risk Admission | Matching | Published language over ordered Kafka events. Admission success precedes asynchronous matching. |
-| Matching | Account Authority / Projection | Published lifecycle events. Each consumer owns idempotency and its local state transition. |
+| Upstream context | Downstream context             | Relationship and translation rule                                                                                         |
+|------------------|--------------------------------|---------------------------------------------------------------------------------------------------------------------------|
+| FIX client       | FIX Gateway                    | Anti-corruption layer. FIX tags are parsed into gateway-local values before business submission.                          |
+| FIX Gateway      | Risk Admission                 | Customer/supplier synchronous boundary. The gateway supplies stable command and FIX identities; risk owns the decision.   |
+| Risk Admission   | Account Authority              | Risk requests idempotent reservation work; account-service owns balances, positions, reservations, and their transaction. |
+| Market Reference | Risk Admission / Matching      | Published language based on a versioned market snapshot. Consumers do not reinterpret source fixtures independently.      |
+| Risk Admission   | Matching                       | Published language over ordered Kafka events. Admission success precedes asynchronous matching.                           |
+| Matching         | Account Authority / Projection | Published lifecycle events. Each consumer owns idempotency and its local state transition.                                |
 
 ## Bounded contexts and ownership
 
 ### FIX Gateway
 
-Owns FIX sessions, inbound normalization, the local WAL, and outbound FIX rendering. `FixOrderSnapshot` and
-`FixExecutionIdentity` are gateway anti-corruption-layer values, not shared order-domain objects. A FIX field may be
-preserved for audit without being promoted into the internal ubiquitous language.
+Owns FIX sessions, inbound normalization, the local WAL, and outbound FIX rendering.
+`FixOrderSnapshot` and
+`FixExecutionIdentity` are gateway anti-corruption-layer values, not shared order-domain objects. A
+FIX field may be preserved for audit without being promoted into the internal ubiquitous language.
 
 ### Risk Admission
 
-Owns command validation, the admission business key, durable accepted or rejected outcomes, the admission journal, and
-the admission outbox. `AdmissionCommand` is composed from `Identity`, `Order`, `FixIdentity`, and `RoutingReference`.
-`SubmissionResult` is composed from submission reference, FIX identity, storage-safe identity, and outcome. Persistence
-rows may remain flat, but adapters must reconstruct these domain values before invoking business behavior.
+Owns command validation, the admission business key, durable accepted or rejected outcomes, the
+admission journal, and the admission outbox. `AdmissionCommand` is composed from `Identity`,
+`Order`, `FixIdentity`, and `RoutingReference`.
+`SubmissionResult` is composed from submission reference, FIX identity, storage-safe identity, and
+outcome. Persistence rows may remain flat, but adapters must reconstruct these domain values before
+invoking business behavior.
 
 ### Account Authority
 
 Owns account limits, positions, reservations, releases, and fill application. `ReserveOperation`,
-`ReleaseReservationOperation`, and `ApplyFillOperation` are application commands. `ReservationIdentity`,
-`ReservationRequestIdentity`, `ReservationTerms`, and `ExecutionFill` make identity and monetary/quantity roles explicit
-before the transaction starts. The application service owns the transaction and state-dependent invariants.
+`ReleaseReservationOperation`, and `ApplyFillOperation` are application commands.
+`ReservationIdentity`,
+`ReservationRequestIdentity`, `ReservationTerms`, and `ExecutionFill` make identity and
+monetary/quantity roles explicit before the transaction starts. The application service owns the
+transaction and state-dependent invariants.
 
 ### Matching
 
-Owns deterministic per-instrument order books, time/price priority, fill generation, cancellation, and expiry. It does
-not synchronously depend on projections, market-data clients, or account persistence after an order has been admitted.
+Owns deterministic per-instrument order books, time/price priority, fill generation, cancellation,
+and expiry. It does not synchronously depend on projections, market-data clients, or account
+persistence after an order has been admitted.
 
 ### Market Reference
 
-Owns validated, versioned instrument and tick-rule snapshots. Its published snapshot is an external fact consumed by
-risk and matching, not mutable state jointly owned by those services.
+Owns validated, versioned instrument and tick-rule snapshots. Its published snapshot is an external
+fact consumed by risk and matching, not mutable state jointly owned by those services.
 
 ### Projection and Audit
 
-Owns rebuildable query projections and audit integration. Projection state is downstream of authoritative lifecycle
-events and must not become a second command path.
+Owns rebuildable query projections and audit integration. Projection state is downstream of
+authoritative lifecycle events and must not become a second command path.
 
 ## Ubiquitous language
 
-| Term | Meaning | Owner |
-|---|---|---|
-| Admission | Durable decision that a normalized order may enter the ordered matching path. | Risk Admission |
-| Submission | One normalized request evaluated and persisted as accepted or rejected. | Risk Admission |
-| Admission business key | FIX sender, target, trading day, command category, and client-order identity used for idempotency. | Risk Admission |
-| Reservation | Account-owned authority held for an admitted order. | Account Authority |
-| Execution fill | One idempotent matched quantity at one execution price. | Matching produces; Account Authority applies |
-| Release | Terminal removal of remaining reserved authority. | Account Authority |
-| Market snapshot | Versioned set of instrument eligibility and trading rules. | Market Reference |
-| WAL record | Gateway persistence representation of inbound FIX intent; not an aggregate. | FIX Gateway |
-| Journal row | Risk persistence representation of admission state; not the public domain API. | Risk Admission |
-| Outbox record | Infrastructure representation used to publish a domain/integration event atomically with local state. | Producing context |
+| Term                   | Meaning                                                                                               | Owner                                        |
+|------------------------|-------------------------------------------------------------------------------------------------------|----------------------------------------------|
+| Admission              | Durable decision that a normalized order may enter the ordered matching path.                         | Risk Admission                               |
+| Submission             | One normalized request evaluated and persisted as accepted or rejected.                               | Risk Admission                               |
+| Admission business key | FIX sender, target, trading day, command category, and client-order identity used for idempotency.    | Risk Admission                               |
+| Reservation            | Account-owned authority held for an admitted order.                                                   | Account Authority                            |
+| Execution fill         | One idempotent matched quantity at one execution price.                                               | Matching produces; Account Authority applies |
+| Release                | Terminal removal of remaining reserved authority.                                                     | Account Authority                            |
+| Market snapshot        | Versioned set of instrument eligibility and trading rules.                                            | Market Reference                             |
+| WAL record             | Gateway persistence representation of inbound FIX intent; not an aggregate.                           | FIX Gateway                                  |
+| Journal row            | Risk persistence representation of admission state; not the public domain API.                        | Risk Admission                               |
+| Outbox record          | Infrastructure representation used to publish a domain/integration event atomically with local state. | Producing context                            |
 
 ## Modeling rules
 
-1. Use a value object when a value has an invariant, a stable domain name, or the same Java representation as another
-   value that must never be substituted for it. `OrderId`, `AccountId`, `FillQuantity`, and `FillPrice` therefore use
-   different types even when their wire forms are `String` or `BigDecimal`.
-2. Use an application command when a caller is asking one context to perform one use case. The command groups values by
-   meaning, not merely to satisfy a parameter-count rule.
-3. Keep domain values free of Spring, JDBC, protobuf, QuickFIX/J, and Kafka types. Adapters perform explicit mapping at
-   context boundaries.
-4. A wide protobuf message, SQL row, WAL record, or event envelope is not automatically a domain smell. It becomes a
-   design problem when positional fields cross into business behavior without translation.
-5. Do not introduce a repository-wide enterprise domain model. Share only stable cross-context contracts and primitive
-   value semantics; each bounded context owns its own aggregate and language.
-6. Application services own business transactions. Domain values validate context-free invariants before a transaction;
-   locked aggregates and application services validate state-dependent invariants inside the transaction.
-7. Compatibility overloads may delegate to typed commands temporarily, but new production callers must use the typed
-   API. Deprecated positional overloads must have an explicit removal plan.
+1. Use a value object when a value has an invariant, a stable domain name, or the same Java
+   representation as another value that must never be substituted for it. `OrderId`, `AccountId`,
+   `FillQuantity`, and `FillPrice` therefore use different types even when their wire forms are
+   `String` or `BigDecimal`.
+2. Use an application command when a caller is asking one context to perform one use case. The
+   command groups values by meaning, not merely to satisfy a parameter-count rule.
+3. Keep domain values free of Spring, JDBC, protobuf, QuickFIX/J, and Kafka types. Adapters perform
+   explicit mapping at context boundaries.
+4. A wide protobuf message, SQL row, WAL record, or event envelope is not automatically a domain
+   smell. It becomes a design problem when positional fields cross into business behavior without
+   translation.
+5. Do not introduce a repository-wide enterprise domain model. Share only stable cross-context
+   contracts and primitive value semantics; each bounded context owns its own aggregate and
+   language.
+6. Application services own business transactions. Domain values validate context-free invariants
+   before a transaction; locked aggregates and application services validate state-dependent
+   invariants inside the transaction.
+7. Compatibility overloads may delegate to typed commands temporarily, but new production callers
+   must use the typed API. Deprecated positional overloads must have an explicit removal plan.
 
 ## Aggregate and consistency boundaries
 
-`AccountReservation` is changed only through account-service transaction-owning application methods. The admission
-journal and outbox are changed atomically inside risk-service-owned transactions. Cross-service calls never extend a
-database transaction across service boundaries; retry requires an idempotency identity, and asynchronous consumers own
-inbox/deduplication state. These boundaries take precedence over convenience abstractions that would hide transaction
-ownership.
+`AccountReservation` is changed only through account-service transaction-owning application methods.
+The admission journal and outbox are changed atomically inside risk-service-owned transactions.
+Cross-service calls never extend a database transaction across service boundaries; retry requires an
+idempotency identity, and asynchronous consumers own inbox/deduplication state. These boundaries
+take precedence over convenience abstractions that would hide transaction ownership.
 
 ## Design review trigger for long parameter lists
 
-More than seven parameters triggers review rather than automatic wrapping. Review asks whether the values form a named
-business concept, have different life cycles, can be exchanged because of identical Java types, or expose multiple class
-responsibilities. A parameter object is accepted only when it adds domain language or owns invariants. Generic
+More than seven parameters triggers review rather than automatic wrapping. Review asks whether the
+values form a named business concept, have different life cycles, can be exchanged because of
+identical Java types, or expose multiple class responsibilities. A parameter object is accepted only
+when it adds domain language or owns invariants. Generic
 `Parameters`, `Context`, or dependency-bag types that merely hide coupling are rejected.

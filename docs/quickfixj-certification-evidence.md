@@ -2,11 +2,11 @@
 
 ## Scope
 
-This document records the current automated FIX simulator evidence for the Java `services/quickfix-gateway` baseline
-path.
+This document records the current automated FIX simulator evidence for the Java
+`services/quickfix-gateway` baseline path.
 
-It is not a counterparty certification report. It is a repo-local, repeatable QuickFIX/J integration proof that the Java
-gateway can:
+It is not a counterparty certification report. It is a repo-local, repeatable QuickFIX/J integration
+proof that the Java gateway can:
 
 - start a real FIX 4.4 acceptor
 - create a session and complete logon
@@ -51,7 +51,8 @@ The automated simulator currently verifies all of the following in one run:
 - FIX logon is completed and logged
 - inbound application traffic reaches `fromApp(...)`
 - baseline `35=D -> WAL -> PendingNew` path executes end-to-end
-- the simulator does not depend on the old vendored QuickFIX dictionary path from the removed C++ baseline
+- the simulator does not depend on the old vendored QuickFIX dictionary path from the removed C++
+  baseline
 - outbound acknowledgement fields include:
     - `35=8`
     - `37=O-C1`
@@ -82,15 +83,15 @@ Equivalent direct test filter:
 
 ## Interpretation
 
-This evidence closes the previous gap where the Java gateway had unit-level parity checks but no automated FIX-simulator
-proof for session lifecycle and the supported baseline order flow.
+This evidence closes the previous gap where the Java gateway had unit-level parity checks but no
+automated FIX-simulator proof for session lifecycle and the supported baseline order flow.
 
 Repository baseline note:
 
 - the current repo does not contain an equivalent C++ FIX simulator artifact
 - the current repo does not contain a recorded C++ broker or venue certification report
-- the current repo does contain C++ unit-level evidence for config precedence and `ExecutionReport(PendingNew)` field
-  mapping
+- the current repo does contain C++ unit-level evidence for config precedence and
+  `ExecutionReport(PendingNew)` field mapping
 
 The remaining certification gap is external, not internal:
 

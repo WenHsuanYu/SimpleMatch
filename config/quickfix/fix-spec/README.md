@@ -12,16 +12,18 @@ The default acceptor config points to it:
 
 - `../acceptor.cfg` → `DataDictionary=fix-spec/FIX44.xml`
 
-This path is intentionally independent of the old vendored C++ QuickFIX layout so the Java gateway can keep running even
-after the C++ service and vendored shared library assets are removed.
+This path is intentionally independent of the old vendored C++ QuickFIX layout so the Java gateway
+can keep running even after the C++ service and vendored shared library assets are removed.
 
 ## Custom tags / counterparty dictionaries
 
 If your counterparty requires custom tags or a modified dictionary, you have two common options:
 
-1) Create a new dictionary file under `` (e.g. `/FIX44-custom.xml`) and update `DataDictionary=...` in
+1) Create a new dictionary file under `` (e.g. `/FIX44-custom.xml`) and update `DataDictionary=...`
+   in
    `../acceptor.cfg`.
 
-2) Keep your custom dictionary outside the repo and set `DataDictionary` via an environment-specific config.
+2) Keep your custom dictionary outside the repo and set `DataDictionary` via an environment-specific
+   config.
 
 Keep the runtime dictionary path stable per environment to avoid validation mismatches.

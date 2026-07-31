@@ -1,7 +1,7 @@
 # Phase 4 Data Dictionary and Index Review
 
-This execution record defines the clean-install V1 schemas delivered by Phase 4. The target topology and ownership rules
-remain in the
+This execution record defines the clean-install V1 schemas delivered by Phase 4. The target topology
+and ownership rules remain in the
 [platform database architecture](../services/docs/platform/database-architecture.md).
 
 ## Ownership and representation
@@ -12,11 +12,12 @@ remain in the
 | `risk_service`    | `risk_submissions`, `outbox`                                  | Durable risk decisions and transactional event publication.                |
 | `persistence`     | `orders`, `executions`, `inbox`                               | Rebuildable projections and consumer-side event deduplication.             |
 
-Money and quantity columns use `NUMERIC(38,8)`: decimal TWD notionals, prices, and quantities are stored exactly, have
-no implicit unit conversion, and are never nullable when a business value is required. Epoch timestamps are non-null
-`BIGINT` milliseconds and reject negative values. PostgreSQL `UUID` is used for durable event identities. Bounded text
-fields reject only values whose domain is already stable in the current runtime; ingress validation remains responsible
-for forming rejection records from malformed input.
+Money and quantity columns use `NUMERIC(38,8)`: decimal TWD notionals, prices, and quantities are
+stored exactly, have no implicit unit conversion, and are never nullable when a business value is
+required. Epoch timestamps are non-null
+`BIGINT` milliseconds and reject negative values. PostgreSQL `UUID` is used for durable event
+identities. Bounded text fields reject only values whose domain is already stable in the current
+runtime; ingress validation remains responsible for forming rejection records from malformed input.
 
 ## Field catalog
 
@@ -56,16 +57,18 @@ for forming rejection records from malformed input.
 
 ## Phase-gate verification
 
-- Each service has exactly one active versioned V1 migration and a focused H2 clean-install test that also proves a
-  second `migrate` does not add a versioned history row.
-- The tests insert invalid reservation, risk, outbox, and projection values and assert constraint rejection.
-- `scripts/run-flyway-ci-checks.sh` provisions an empty PostgreSQL database per owner, invokes migrate twice, and
-  asserts the owner tables and successful history entry.
-- `scripts/check-flyway-query-plans.sh` uses `EXPLAIN (COSTS OFF)` with sequential scans disabled to verify the actual
-  PostgreSQL index plan for each named repository or CDC query. The reset deliberately removes speculative account and
-  projection indexes.
+- Each service has exactly one active versioned V1 migration and a focused H2 clean-install test
+  that also proves a second `migrate` does not add a versioned history row.
+- The tests insert invalid reservation, risk, outbox, and projection values and assert constraint
+  rejection.
+- `scripts/run-flyway-ci-checks.sh` provisions an empty PostgreSQL database per owner, invokes
+  migrate twice, and asserts the owner tables and successful history entry.
+- `scripts/check-flyway-query-plans.sh` uses `EXPLAIN (COSTS OFF)` with sequential scans disabled to
+  verify the actual PostgreSQL index plan for each named repository or CDC query. The reset
+  deliberately removes speculative account and projection indexes.
 
 ## Rollback
 
-`phase-4-pre-flyway-reset` is the immutable Git checkpoint for the former migration chains. Restore that tag's migration
-directories and recreate only disposable development schemas; never baseline an unexpectedly nonempty schema.
+`phase-4-pre-flyway-reset` is the immutable Git checkpoint for the former migration chains. Restore
+that tag's migration directories and recreate only disposable development schemas; never baseline an
+unexpectedly nonempty schema.

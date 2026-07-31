@@ -2,8 +2,8 @@
 
 ## 目標
 
-本計畫的目標是為 `quickfix-gateway` 建立可水平擴展的 session-aware 架構，先實現「同一 FIX session 永遠回到同一 logical
-gateway owner」，再逐步補上 standby failover。
+本計畫的目標是為 `quickfix-gateway` 建立可水平擴展的 session-aware 架構，先實現「同一 FIX session
+永遠回到同一 logical gateway owner」，再逐步補上 standby failover。
 
 短期目標是 correctness 與 recoverability，不是先追求任意 replica 接手。
 

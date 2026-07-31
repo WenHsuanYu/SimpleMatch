@@ -1,20 +1,21 @@
 # SimpleMatch
 
-SimpleMatch is a target design for an event-driven matching system: a C++ matching core with Java and Spring Cloud
-services around it. The repository is a single polyglot monorepo; Java services use Gradle and native components use
-CMake.
+SimpleMatch is a target design for an event-driven matching system: a C++ matching core with Java
+and Spring Cloud services around it. The repository is a single polyglot monorepo; Java services use
+Gradle and native components use CMake.
 
-This README describes the intended architecture only. It does not claim that every service, integration, or operational
-mechanism is already implemented.
+This README describes the intended architecture only. It does not claim that every service,
+integration, or operational mechanism is already implemented.
 
 ## Goals and non-goals
 
-SimpleMatch aims to separate order admission, risk checks, matching, durable projections, and market-data distribution
-while retaining a narrow, deterministic matching boundary. It combines synchronous gRPC admission with ordered,
-replayable Kafka event flows and exposes FIX 4.4 through QuickFix/J.
+SimpleMatch aims to separate order admission, risk checks, matching, durable projections, and
+market-data distribution while retaining a narrow, deterministic matching boundary. It combines
+synchronous gRPC admission with ordered, replayable Kafka event flows and exposes FIX 4.4 through
+QuickFix/J.
 
-It is not intended to split into separate repositories or to make the matching path depend on downstream persistence,
-market-data delivery, or query traffic.
+It is not intended to split into separate repositories or to make the matching path depend on
+downstream persistence, market-data delivery, or query traffic.
 
 ## Intended data flow
 
@@ -29,8 +30,8 @@ flowchart LR
 ```
 
 The first successful client acknowledgement follows durable admission at
-`risk-service`; matching and downstream work continue asynchronously. The detailed topology, ordering, eventing, and
-reliability decisions are in the
+`risk-service`; matching and downstream work continue asynchronously. The detailed topology,
+ordering, eventing, and reliability decisions are in the
 [target documentation index](services/docs/README.md).
 
 ## Service landscape
@@ -48,8 +49,10 @@ reliability decisions are in the
 
 ## Documentation
 
-Start with the [domain context and context map](CONTEXT.md) for bounded-context ownership and ubiquitous language. Use
-then the [target documentation index](services/docs/README.md) to navigate detailed architecture, contract, platform,
-and service specifications. Domain-value decisions for parameter-safe APIs are recorded in
-[ADR 0002](docs/adr/0002-domain-values-for-wide-call-boundaries.md). The concrete migration and intentional
-exceptions are listed in the [domain parameter-safety refactor](docs/domain-parameter-safety-refactor.md).
+Start with the [domain context and context map](CONTEXT.md) for bounded-context ownership and
+ubiquitous language. Use then the [target documentation index](services/docs/README.md) to navigate
+detailed architecture, contract, platform, and service specifications. Domain-value decisions for
+parameter-safe APIs are recorded in
+[ADR 0002](docs/adr/0002-domain-values-for-wide-call-boundaries.md). The concrete migration and
+intentional exceptions are listed in
+the [domain parameter-safety refactor](docs/domain-parameter-safety-refactor.md).

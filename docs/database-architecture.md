@@ -1,9 +1,9 @@
 # Database Architecture Implementation Guide
 
 The canonical target database topology and ownership rules are in
-[the target platform specification](../services/docs/platform/database-architecture.md). This guide preserves rollout,
-migration, connector, and verification evidence for the existing repository; it is not a second target-architecture
-source.
+[the target platform specification](../services/docs/platform/database-architecture.md). This guide
+preserves rollout, migration, connector, and verification evidence for the existing repository; it
+is not a second target-architecture source.
 
 ## Implementation touchpoints
 
@@ -26,10 +26,12 @@ source.
 | [marketdata-publisher V1](../services/marketdata-publisher/src/main/resources/db/migration/marketdata-publisher/V1__create_marketdata_publisher_tables.sql) | Creates immutable market snapshots, one active snapshot per trading day, and the transactional publication outbox. |
 
 The reset's field meaning, range, nullability, constraints, and index review are recorded in
-the [Phase 4 data dictionary](phase-4-data-dictionary.md). The previous chains remain recoverable at the
+the [Phase 4 data dictionary](phase-4-data-dictionary.md). The previous chains remain recoverable at
+the
 `phase-4-pre-flyway-reset` tag; ordinary migration tasks use `baselineOnMigrate = false`.
 
-Migrations must either use schema-qualified object names or set an explicit search path. They must not rely on implicit
+Migrations must either use schema-qualified object names or set an explicit search path. They must
+not rely on implicit
 `public`.
 
 ### Runtime, connectors, and verification
@@ -47,5 +49,5 @@ Migrations must either use schema-qualified object names or set an explicit sear
 - Apply versioned migrations through the owning service task.
 - Verify runtime datasource selection and connector table inclusion are schema-qualified.
 - Run the owning service's migration and integration checks before deployment.
-- Keep implementation status, command output, and phase evidence in repository execution material rather than the
-  target-specification tree.
+- Keep implementation status, command output, and phase evidence in repository execution material
+  rather than the target-specification tree.

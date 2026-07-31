@@ -98,46 +98,67 @@
 
 ## 第一批已完成的檔案
 
-- ~~`services/risk-service/src/main/java/com/simplematch/riskservice/submission/SubmissionResult.java`~~
-- ~~`services/risk-service/src/main/java/com/simplematch/riskservice/submission/SubmissionDecision.java`~~
-- ~~`services/risk-service/src/main/java/com/simplematch/riskservice/submission/SubmissionValidator.java`~~
-- ~~`services/risk-service/src/test/java/com/simplematch/riskservice/submission/SubmissionValidatorTest.java`~~
+- ~~
+  `services/risk-service/src/main/java/com/simplematch/riskservice/submission/SubmissionResult.java`~~
+- ~~
+  `services/risk-service/src/main/java/com/simplematch/riskservice/submission/SubmissionDecision.java`~~
+- ~~
+  `services/risk-service/src/main/java/com/simplematch/riskservice/submission/SubmissionValidator.java`~~
+- ~~
+  `services/risk-service/src/test/java/com/simplematch/riskservice/submission/SubmissionValidatorTest.java`~~
 
 ## 第二批已完成的檔案
 
 - ~~`services/risk-service/src/main/java/com/simplematch/riskservice/outbox/OutboxRecord.java`~~
-- ~~`services/risk-service/src/main/java/com/simplematch/riskservice/outbox/SubmissionOutboxFactory.java`~~
-- ~~`services/risk-service/src/test/java/com/simplematch/riskservice/outbox/SubmissionOutboxFactoryTest.java`~~
+- ~~
+  `services/risk-service/src/main/java/com/simplematch/riskservice/outbox/SubmissionOutboxFactory.java`~~
+- ~~
+  `services/risk-service/src/test/java/com/simplematch/riskservice/outbox/SubmissionOutboxFactoryTest.java`~~
 
 ## 第三批已完成的檔案
 
-- ~~`services/risk-service/src/main/java/com/simplematch/riskservice/submission/SubmissionRepository.java`~~
-- ~~`services/risk-service/src/main/java/com/simplematch/riskservice/submission/OutboxRepository.java`~~
-- ~~`services/risk-service/src/main/java/com/simplematch/riskservice/store/JdbcSubmissionRepository.java`~~
-- ~~`services/risk-service/src/main/java/com/simplematch/riskservice/store/JdbcOutboxRepository.java`~~
-- ~~`services/risk-service/src/test/java/com/simplematch/riskservice/store/JdbcSubmissionRepositoryTest.java`~~
-- ~~`services/risk-service/src/test/java/com/simplematch/riskservice/store/JdbcOutboxRepositoryTest.java`~~
+- ~~
+  `services/risk-service/src/main/java/com/simplematch/riskservice/submission/SubmissionRepository.java`~~
+- ~~
+  `services/risk-service/src/main/java/com/simplematch/riskservice/submission/OutboxRepository.java`~~
+- ~~
+  `services/risk-service/src/main/java/com/simplematch/riskservice/store/JdbcSubmissionRepository.java`~~
+- ~~
+  `services/risk-service/src/main/java/com/simplematch/riskservice/store/JdbcOutboxRepository.java`~~
+- ~~
+  `services/risk-service/src/test/java/com/simplematch/riskservice/store/JdbcSubmissionRepositoryTest.java`~~
+- ~~
+  `services/risk-service/src/test/java/com/simplematch/riskservice/store/JdbcOutboxRepositoryTest.java`~~
 
 ## 第四批已完成的檔案
 
-- ~~`services/risk-service/src/main/java/com/simplematch/riskservice/submission/SubmissionService.java`~~
-- ~~`services/risk-service/src/main/java/com/simplematch/riskservice/submission/TransactionalSubmissionService.java`~~
+- ~~
+  `services/risk-service/src/main/java/com/simplematch/riskservice/submission/SubmissionService.java`~~
+- ~~
+  `services/risk-service/src/main/java/com/simplematch/riskservice/submission/TransactionalSubmissionService.java`~~
 - ~~
   `services/risk-service/src/test/java/com/simplematch/riskservice/submission/TransactionalSubmissionServiceTest.java`~~
-- ~~`services/risk-service/src/main/java/com/simplematch/riskservice/store/PostgresSubmissionStore.java`~~
+- ~~
+  `services/risk-service/src/main/java/com/simplematch/riskservice/store/PostgresSubmissionStore.java`~~
 
 ## 第五批已完成的檔案
 
 - ~~`services/risk-service/src/main/java/com/simplematch/riskservice/grpc/RiskGrpcService.java`~~
-- ~~`services/risk-service/src/main/java/com/simplematch/riskservice/config/RiskServiceConfiguration.java`~~
-- ~~`services/risk-service/src/test/java/com/simplematch/riskservice/grpc/RiskGrpcServiceTest.java`~~
+- ~~
+  `services/risk-service/src/main/java/com/simplematch/riskservice/config/RiskServiceConfiguration.java`~~
+- ~~
+  `services/risk-service/src/test/java/com/simplematch/riskservice/grpc/RiskGrpcServiceTest.java`~~
 
 ## 第六批已完成的檔案
 
-- ~~`services/risk-service/src/test/java/com/simplematch/riskservice/submission/SubmissionServiceIntegrationTest.java`~~
-- ~~已刪除 `services/risk-service/src/main/java/com/simplematch/riskservice/store/SubmissionStore.java`~~
-- ~~已刪除 `services/risk-service/src/main/java/com/simplematch/riskservice/store/PostgresSubmissionStore.java`~~
-- ~~已刪除 `services/risk-service/src/main/java/com/simplematch/riskservice/store/StoredSubmission.java`~~
+- ~~
+  `services/risk-service/src/test/java/com/simplematch/riskservice/submission/SubmissionServiceIntegrationTest.java`~~
+- ~~已刪除
+  `services/risk-service/src/main/java/com/simplematch/riskservice/store/SubmissionStore.java`~~
+- ~~已刪除
+  `services/risk-service/src/main/java/com/simplematch/riskservice/store/PostgresSubmissionStore.java`~~
+- ~~已刪除
+  `services/risk-service/src/main/java/com/simplematch/riskservice/store/StoredSubmission.java`~~
 
 ## 可執行 Checklist
 
@@ -210,12 +231,15 @@
 - 第一批已完成的是「新增規則類別與測試」，不是「已完成重構」。
 - 第一批刻意不碰 runtime wiring，不改既有 `PostgresSubmissionStore` 的對外行為。
 - 第二批已完成的是「新增 outbox 轉換模型與測試」，同樣尚未把 runtime 實作改接到新 factory。
-- 第三批已完成的是「新增 repository abstraction / JDBC implementation / repository tests」，同樣尚未把既有交易協調流程改接到這些
-  repositories。
-- 第四批已完成的是「新增 orchestration service 並讓 `PostgresSubmissionStore` 轉成 thin adapter delegation」，尚未把
+- 第三批已完成的是「新增 repository abstraction / JDBC implementation / repository
+  tests」，同樣尚未把既有交易協調流程改接到這些 repositories。
+- 第四批已完成的是「新增 orchestration service 並讓 `PostgresSubmissionStore` 轉成 thin adapter
+  delegation」，尚未把
   `RiskGrpcService` 與 Spring bean 組裝直接切到 `SubmissionService`。
-- 第五批已完成的是「讓 `RiskGrpcService` 與 Spring bean 組裝直接改接 `SubmissionService`」，但 `SubmissionStore` /
+- 第五批已完成的是「讓 `RiskGrpcService` 與 Spring bean 組裝直接改接 `SubmissionService`」，但
+  `SubmissionStore` /
   `PostgresSubmissionStore` / `StoredSubmission` 的移除仍留到第六批。
-- 第六批已完成的是「移除 `SubmissionStore` / `PostgresSubmissionStore` / `StoredSubmission` 並把整合測試命名收斂到
+- 第六批已完成的是「移除 `SubmissionStore` / `PostgresSubmissionStore` / `StoredSubmission`
+  並把整合測試命名收斂到
   `SubmissionServiceIntegrationTest`」，目前 submission refactor 主線已收尾。
 - `~~刪節線~~` 表示目前已完成；未劃線項目表示尚未開始或尚未收尾。

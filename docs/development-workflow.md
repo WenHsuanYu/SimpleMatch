@@ -1,8 +1,8 @@
 # SimpleMatch Development Workflow
 
-This document defines the default development workflow for changes in this repository. It is intended to guide feature
-work, refactoring, debugging, and cross-service changes so that implementation, documentation, and verification stay
-aligned.
+This document defines the default development workflow for changes in this repository. It is
+intended to guide feature work, refactoring, debugging, and cross-service changes so that
+implementation, documentation, and verification stay aligned.
 
 ## 1. Start With The Request
 
@@ -12,8 +12,8 @@ Before writing code, identify the smallest concrete change that satisfies the re
 - Identify the exact services, modules, and files affected.
 - Write down acceptance criteria in plain language.
 - Separate must-have behavior from nice-to-have follow-ups.
-- If the change crosses service boundaries, data flow boundaries, or failure domains, treat it as a distributed-systems
-  design problem, not just a code change.
+- If the change crosses service boundaries, data flow boundaries, or failure domains, treat it as a
+  distributed-systems design problem, not just a code change.
 
 ## 2. Design The Smallest Safe Slice
 
@@ -23,10 +23,10 @@ Design the solution before implementation, but keep it small enough to deliver i
 - Keep dependencies pointed inward and responsibilities narrow.
 - Choose the simplest design that can satisfy the acceptance criteria.
 - Document key decisions: ownership, idempotency, retries, consistency, and failure handling.
-- For PostgreSQL changes, design the versioned Flyway migration, compatibility expectations, and verification plan
-  before editing.
-- If the change involves a distributed system concern, evaluate the relevant cloud design patterns explicitly, not
-  implicitly.
+- For PostgreSQL changes, design the versioned Flyway migration, compatibility expectations, and
+  verification plan before editing.
+- If the change involves a distributed system concern, evaluate the relevant cloud design patterns
+  explicitly, not implicitly.
 
 ### Required design principles
 
@@ -89,18 +89,20 @@ Implement the smallest production change that makes the tests pass.
 - Use constructor injection for required dependencies.
 - Keep dependency fields `private final`.
 - Prefer Java `record` for simple immutable carriers before reaching for Lombok.
-- In `services/*`, Lombok may be used narrowly for Spring boilerplate such as required-args constructors or logging.
-  Avoid broad annotations such as `@Data`, and keep domain, configuration, mutable, validation-heavy,
-  normalization-heavy, custom-equality, or defensive-copy types handwritten.
+- In `services/*`, Lombok may be used narrowly for Spring boilerplate such as required-args
+  constructors or logging. Avoid broad annotations such as `@Data`, and keep domain, configuration,
+  mutable, validation-heavy, normalization-heavy, custom-equality, or defensive-copy types
+  handwritten.
 - Use `@ConfigurationProperties` for type-safe configuration binding.
 - Use profiles for environment-specific behavior.
 - Use DTOs for boundary contracts instead of exposing persistence entities.
 - Use Bean Validation for request validation.
-- Prefer `@Transactional` on public concrete application or service methods that own a business transaction.
+- Prefer `@Transactional` on public concrete application or service methods that own a business
+  transaction.
 - Keep `JdbcTemplate` confined to thin repository adapters.
-- If only a smaller section of a method should hold the transaction, keep expensive pre-work and external calls outside
-  the transaction and use `TransactionTemplate` or another narrow programmatic boundary for the minimal transactional
-  region.
+- If only a smaller section of a method should hold the transaction, keep expensive pre-work and
+  external calls outside the transaction and use `TransactionTemplate` or another narrow
+  programmatic boundary for the minimal transactional region.
 - Use SLF4J with parameterized logging.
 
 ### PostgreSQL migration conventions
@@ -109,16 +111,18 @@ Implement the smallest production change that makes the tests pass.
 - Use versioned Flyway migrations for PostgreSQL schema evolution.
 - Follow the shared `simplematch.flyway-service` convention where the service already uses it.
 - Keep migration SQL, repository code, service code, tests, and docs in the same change set.
-- Do not reintroduce runtime migration code paths or one-off schema initialization logic when Flyway is the intended
-  owner.
+- Do not reintroduce runtime migration code paths or one-off schema initialization logic when Flyway
+  is the intended owner.
 - Review SQL safety, compatibility, and maintainability before merging.
-- Review query plans, indexing, and write/read amplification when a change affects performance-sensitive SQL.
+- Review query plans, indexing, and write/read amplification when a change affects
+  performance-sensitive SQL.
 
 ### PostgreSQL skill routing
 
-- Use `postgresql-code-review` for schema design, migration review, SQL safety, and PostgreSQL-specific maintainability.
-- Use `postgresql-optimization` for indexing strategy, query structure, execution-plan-sensitive work, and PostgreSQL
-  performance tuning.
+- Use `postgresql-code-review` for schema design, migration review, SQL safety, and
+  PostgreSQL-specific maintainability.
+- Use `postgresql-optimization` for indexing strategy, query structure, execution-plan-sensitive
+  work, and PostgreSQL performance tuning.
 
 ### Java documentation conventions
 
@@ -154,7 +158,8 @@ Run validation in the order that gives the fastest useful feedback.
 2. Run the relevant Flyway info, validate, or migrate task for the touched service.
 3. Review the final SQL for PostgreSQL safety, compatibility, and maintainability.
 4. Review indexing and execution-plan implications for performance-sensitive changes.
-5. Run the relevant service verification when the schema change affects startup or integration behavior.
+5. Run the relevant service verification when the schema change affects startup or integration
+   behavior.
 
 ### Native changes
 
@@ -172,21 +177,23 @@ Run validation in the order that gives the fastest useful feedback.
     - `./gradlew :services:quickfix-gateway:certificationTest`
 - Static analysis:
     - `./gradlew -q staticAnalysis`
-    - This compiles every Java module with Error Prone checks reported as warnings; Checkstyle, PMD, and SpotBugs remain
-      blocking for the curated service/module set configured in Gradle.
+    - This compiles every Java module with Error Prone checks reported as warnings; Checkstyle, PMD,
+      and SpotBugs remain blocking for the curated service/module set configured in Gradle.
 - Flyway examples:
     - `./gradlew riskServiceFlywayInfo`
     - `./gradlew riskServiceFlywayMigrate`
     - `./gradlew riskServiceFlywayValidate`
 - Local automation:
     - `bash scripts/install-git-hooks.sh`
-    - Installed pre-commit hooks run targeted Gradle compile/checkstyle checks for staged Java or Gradle changes.
+    - Installed pre-commit hooks run targeted Gradle compile/checkstyle checks for staged Java or
+      Gradle changes.
     - Installed pre-commit hooks also validate Flyway migration naming and directory placement.
 - CI automation:
-    - GitHub Actions enforces `./gradlew staticAnalysis` for repo-wide Java compilation and blocking quality checks,
-      plus the Java test suite for Java-related changes. Local runs may add `-q` to reduce lifecycle noise while
-      retaining actionable diagnostics.
-    - GitHub Actions runs Flyway info and migrate tasks plus PostgreSQL smoke checks for Flyway-managed services.
+    - GitHub Actions enforces `./gradlew staticAnalysis` for repo-wide Java compilation and blocking
+      quality checks, plus the Java test suite for Java-related changes. Local runs may add `-q` to
+      reduce lifecycle noise while retaining actionable diagnostics.
+    - GitHub Actions runs Flyway info and migrate tasks plus PostgreSQL smoke checks for
+      Flyway-managed services.
 - Native build:
     - `cmake --preset vcpkg`
     - `cmake --build --preset vcpkg -j`
