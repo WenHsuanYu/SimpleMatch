@@ -110,7 +110,13 @@ public record AccountReservation(
         now);
   }
 
-  /** Returns the reserved limit-price notional released by a partial fill. */
+  /**
+   * Returns the reserved limit-price notional released by a partial fill.
+   *
+   * @param filledQuantity the positive quantity filled by the execution
+   * @return the notional released from this reservation
+   * @throws IllegalArgumentException if {@code filledQuantity} is null or not positive
+   */
   public BigDecimal reservedNotionalReleasedBy(BigDecimal filledQuantity) {
     if (filledQuantity == null || filledQuantity.signum() <= 0) {
       throw new IllegalArgumentException("filled_quantity must be positive");
