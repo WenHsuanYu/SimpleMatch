@@ -118,8 +118,10 @@ authoritative lifecycle events and must not become a second command path.
 6. Application services own business transactions. Domain values validate context-free invariants
    before a transaction; locked aggregates and application services validate state-dependent
    invariants inside the transaction.
-7. Compatibility overloads may delegate to typed commands temporarily, but new production callers
-   must use the typed API. Deprecated positional overloads must have an explicit removal plan.
+7. A compatibility adapter may delegate to a typed command temporarily only when its handwritten
+   Java signature itself stays within seven parameters. Pre-existing wider positional members are
+   migration debt for a separately verified slice; new production callers must not use them, and a
+   deprecated positional overload is never an accepted exception.
 
 ## Aggregate and consistency boundaries
 
