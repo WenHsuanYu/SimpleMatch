@@ -1,5 +1,6 @@
 package com.simplematch.riskservice.submission;
 
+import static com.simplematch.riskservice.testsupport.SubmissionResultFixtures.acceptedNewOrder;
 import static com.simplematch.riskservice.testsupport.TestCommandIds.normalize;
 import static org.assertj.core.api.Assertions.assertThat;
 
@@ -9,20 +10,7 @@ import org.junit.jupiter.api.Test;
 class SubmissionResultTest {
   @Test
   void exposesCommandIdAliasForPersistedRequestId() {
-    final SubmissionResult submission =
-        new SubmissionResult(
-            normalize("cmd-1"),
-            "CLIENT",
-            "SIMPLEMATCH",
-            LocalDate.of(2024, 3, 27),
-            "O-C1",
-            "C1",
-            "",
-            CommandType.COMMAND_TYPE_NEW,
-            true,
-            "",
-            "",
-            100L);
+    final SubmissionResult submission = acceptedNewOrder();
 
     assertThat(submission.commandId()).isEqualTo(normalize("cmd-1"));
     assertThat(submission.senderCompId()).isEqualTo("CLIENT");

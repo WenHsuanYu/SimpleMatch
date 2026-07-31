@@ -1,7 +1,11 @@
 package com.simplematch.riskservice.store;
 
 import static com.simplematch.riskservice.testsupport.H2TestDatabaseUrl.uniqueRiskServiceUrl;
-import static com.simplematch.riskservice.testsupport.TestCommandIds.normalize;
+import static com.simplematch.riskservice.testsupport.SubmissionResultFixtures.acceptedCancelOrder;
+import static com.simplematch.riskservice.testsupport.SubmissionResultFixtures.acceptedPlainPersistedBusinessKey;
+import static com.simplematch.riskservice.testsupport.SubmissionResultFixtures.acceptedSecondSession;
+import static com.simplematch.riskservice.testsupport.SubmissionResultFixtures.rejectedOversizedClientOrderId;
+import static com.simplematch.riskservice.testsupport.SubmissionResultFixtures.rejectedSurrogatedBusinessKey;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
@@ -101,20 +105,7 @@ class JdbcSubmissionRepositoryTest {
   @Test
   void allowsSameClientOrderIdAcrossSessions() {
     final SubmissionResult first = acceptedSubmission();
-    final SubmissionResult second =
-        new SubmissionResult(
-            normalize("cmd-2"),
-            "CLIENT2",
-            "SIMPLEMATCH",
-            first.tradingDay(),
-            "O-C2",
-            first.clOrdId(),
-            first.origClOrdId(),
-            first.commandType(),
-            first.accepted(),
-            first.reasonCode(),
-            first.reasonText(),
-            101L);
+    final SubmissionResult second = acceptedSecondSession();
 
     repository.insert(first, OUTBOX_EVENT_ID_ONE);
     repository.insert(second, OUTBOX_EVENT_ID_TWO);
@@ -131,25 +122,7 @@ class JdbcSubmissionRepositoryTest {
 
   @Test
   void storesSeparateRawAndPersistedFixIdentityValues() {
-    final String rawClOrdId = "X".repeat(300);
-    final String rawOrigClOrdId = "Y".repeat(300);
-    final SubmissionResult rejectedSubmission =
-        new SubmissionResult(
-            normalize("cmd-3"),
-            "CLIENT",
-            "SIMPLEMATCH",
-            LocalDate.of(2024, 3, 27),
-            "O-C3",
-            rawClOrdId,
-            rawOrigClOrdId,
-            CommandType.COMMAND_TYPE_CANCEL,
-            false,
-            "OVERSIZED_CL_ORD_ID",
-            "cl_ord_id must be <= 64 characters",
-            102L,
-            "a".repeat(64),
-            "b".repeat(64),
-            true);
+    final SubmissionResult rejectedSubmission = rejectedOversizedClientOrderId();
 
     repository.insert(rejectedSubmission, OUTBOX_EVENT_ID_ONE);
 
@@ -160,7 +133,7 @@ class JdbcSubmissionRepositoryTest {
                 "SELECT raw_cl_ord_id FROM risk_submissions WHERE request_id = ?",
                 String.class,
                 rejectedSubmission.requestId()))
-        .isEqualTo(rawClOrdId);
+        .isEqualTo(rejectedSubmission.clOrdId());
     assertThat(
             jdbcTemplate.queryForObject(
                 "SELECT cl_ord_id FROM risk_submissions WHERE request_id = ?",
@@ -177,38 +150,8 @@ class JdbcSubmissionRepositoryTest {
 
   @Test
   void allowsSamePersistedBusinessKeyWhenSurrogateFlagDiffers() {
-    final String persistedKey = "a".repeat(64);
-    final SubmissionResult plainSubmission =
-        new SubmissionResult(
-            normalize("cmd-plain"),
-            "CLIENT",
-            "SIMPLEMATCH",
-            LocalDate.of(2024, 3, 27),
-            "O-C-plain",
-            persistedKey,
-            "",
-            CommandType.COMMAND_TYPE_NEW,
-            true,
-            "",
-            "",
-            103L);
-    final SubmissionResult surrogatedSubmission =
-        new SubmissionResult(
-            normalize("cmd-surrogate"),
-            "CLIENT",
-            "SIMPLEMATCH",
-            LocalDate.of(2024, 3, 27),
-            "O-C-surrogate",
-            "X".repeat(300),
-            "",
-            CommandType.COMMAND_TYPE_NEW,
-            false,
-            "OVERSIZED_CL_ORD_ID",
-            "cl_ord_id must be <= 64 characters",
-            104L,
-            persistedKey,
-            "",
-            true);
+    final SubmissionResult plainSubmission = acceptedPlainPersistedBusinessKey();
+    final SubmissionResult surrogatedSubmission = rejectedSurrogatedBusinessKey();
 
     repository.insert(plainSubmission, OUTBOX_EVENT_ID_ONE);
     repository.insert(surrogatedSubmission, OUTBOX_EVENT_ID_TWO);
@@ -220,19 +163,7 @@ class JdbcSubmissionRepositoryTest {
   }
 
   private SubmissionResult acceptedSubmission() {
-    return new SubmissionResult(
-        normalize("cmd-1"),
-        "CLIENT",
-        "SIMPLEMATCH",
-        LocalDate.of(2024, 3, 27),
-        "O-C1",
-        "CXL-1",
-        "C1",
-        CommandType.COMMAND_TYPE_CANCEL,
-        true,
-        "",
-        "",
-        100L);
+    return acceptedCancelOrder();
   }
 
   private int countRows(String tableName) {

@@ -1,7 +1,7 @@
 package com.simplematch.riskservice.submission;
 
 import static com.simplematch.riskservice.submission.SubmissionCommandFixtures.resolvedNewOrder;
-import static com.simplematch.riskservice.testsupport.TestCommandIds.normalize;
+import static com.simplematch.riskservice.testsupport.SubmissionResultFixtures.acceptedNewOrder;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
@@ -12,7 +12,6 @@ import com.simplematch.riskservice.outbox.OutboxRepository;
 import com.simplematch.riskservice.outbox.SubmissionOutboxFactory;
 import java.time.Clock;
 import java.time.Instant;
-import java.time.LocalDate;
 import java.time.ZoneOffset;
 import java.util.ArrayDeque;
 import java.util.ArrayList;
@@ -57,20 +56,7 @@ class TransactionalSubmissionServiceTest {
   @Test
   void returnsExistingSubmissionWithoutBuildingOutbox() {
     final RecordingSubmissionRepository submissionRepository = new RecordingSubmissionRepository();
-    final SubmissionResult existing =
-        new SubmissionResult(
-            normalize("cmd-existing"),
-            "CLIENT",
-            "SIMPLEMATCH",
-            LocalDate.of(2024, 3, 27),
-            "O-C1",
-            "C1",
-            "",
-            CommandType.COMMAND_TYPE_NEW,
-            true,
-            "",
-            "",
-            99L);
+    final SubmissionResult existing = acceptedNewOrder();
     submissionRepository.queueFindResult(Optional.of(existing));
     final TransactionalSubmissionService service =
         new TransactionalSubmissionService(
@@ -89,20 +75,7 @@ class TransactionalSubmissionServiceTest {
   @Test
   void returnsExistingSubmissionWhenInsertHitsDuplicateKey() {
     final RecordingSubmissionRepository submissionRepository = new RecordingSubmissionRepository();
-    final SubmissionResult existing =
-        new SubmissionResult(
-            normalize("cmd-winner"),
-            "CLIENT",
-            "SIMPLEMATCH",
-            LocalDate.of(2024, 3, 27),
-            "O-C1",
-            "C1",
-            "",
-            CommandType.COMMAND_TYPE_NEW,
-            true,
-            "",
-            "",
-            100L);
+    final SubmissionResult existing = acceptedNewOrder();
     submissionRepository.queueFindResult(Optional.empty());
     submissionRepository.queueFindResult(Optional.of(existing));
     submissionRepository.failWithDuplicateKey = true;

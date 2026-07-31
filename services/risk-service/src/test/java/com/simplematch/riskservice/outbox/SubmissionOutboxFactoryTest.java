@@ -1,6 +1,10 @@
 package com.simplematch.riskservice.outbox;
 
 import static com.simplematch.riskservice.testsupport.TestCommandIds.normalize;
+import static com.simplematch.riskservice.testsupport.SubmissionResultFixtures.acceptedCancelOrder;
+import static com.simplematch.riskservice.testsupport.SubmissionResultFixtures.acceptedNewOrder;
+import static com.simplematch.riskservice.testsupport.SubmissionResultFixtures.rejectedEmptyCommand;
+import static com.simplematch.riskservice.testsupport.SubmissionResultFixtures.rejectedMissingPrice;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
@@ -15,7 +19,6 @@ import com.simplematch.riskservice.submission.ResolvedSubmissionCommand;
 import com.simplematch.riskservice.submission.Side;
 import com.simplematch.riskservice.submission.SubmissionCommand;
 import com.simplematch.riskservice.submission.SubmissionDecision;
-import com.simplematch.riskservice.submission.SubmissionResult;
 import com.simplematch.riskservice.submission.TimeInForce;
 import java.util.UUID;
 import org.junit.jupiter.api.Test;
@@ -81,19 +84,7 @@ class SubmissionOutboxFactoryTest {
     final SubmissionCommand command = cancelOrderPayload("cmd-2", "O-C1", "CXL-1", "C1");
     final SubmissionDecision decision =
         new SubmissionDecision(
-            new SubmissionResult(
-                normalize("cmd-2"),
-                command.senderCompId(),
-                command.targetCompId(),
-                java.time.LocalDate.of(2024, 3, 27),
-                "O-C1",
-                "CXL-1",
-                "C1",
-                CommandType.COMMAND_TYPE_CANCEL,
-                true,
-                "",
-                "",
-                101L),
+            acceptedCancelOrder(),
             new ResolvedSubmissionCommand(command, CommandType.COMMAND_TYPE_CANCEL));
 
     final OutboxRecord record = factory.create(decision);
@@ -105,19 +96,7 @@ class SubmissionOutboxFactoryTest {
   void fallsBackToUnknownWhenSymbolAndOrderIdAreMissing() {
     final SubmissionDecision decision =
         new SubmissionDecision(
-            new SubmissionResult(
-                "",
-                "",
-                "",
-                java.time.LocalDate.of(1970, 1, 1),
-                "",
-                "",
-                "",
-                CommandType.COMMAND_TYPE_UNSPECIFIED,
-                false,
-                "EMPTY_COMMAND",
-                "risk command payload is required",
-                102L),
+            rejectedEmptyCommand(),
             ResolvedSubmissionCommand.unspecified());
 
     final OutboxRecord record = factory.create(decision);
@@ -149,19 +128,7 @@ class SubmissionOutboxFactoryTest {
 
   private SubmissionDecision acceptedDecision() {
     return new SubmissionDecision(
-        new SubmissionResult(
-            normalize("cmd-1"),
-            "CLIENT",
-            "SIMPLEMATCH",
-            java.time.LocalDate.of(2024, 3, 27),
-            "O-C1",
-            "C1",
-            "",
-            CommandType.COMMAND_TYPE_NEW,
-            true,
-            "",
-            "",
-            100L),
+        acceptedNewOrder(),
         resolvedNewOrder("cmd-1", "O-C1", "C1"));
   }
 
@@ -169,19 +136,7 @@ class SubmissionOutboxFactoryTest {
     final SubmissionCommand command =
         newOrderPayload("cmd-1", "O-C1", "C1", "", OrderType.ORDER_TYPE_LIMIT);
     return new SubmissionDecision(
-        new SubmissionResult(
-            normalize("cmd-1"),
-            command.senderCompId(),
-            command.targetCompId(),
-            java.time.LocalDate.of(2024, 3, 27),
-            "O-C1",
-            "C1",
-            "",
-            CommandType.COMMAND_TYPE_NEW,
-            false,
-            "MISSING_PRICE",
-            "price is required for limit orders",
-            100L),
+        rejectedMissingPrice(),
         new ResolvedSubmissionCommand(command, CommandType.COMMAND_TYPE_NEW));
   }
 
