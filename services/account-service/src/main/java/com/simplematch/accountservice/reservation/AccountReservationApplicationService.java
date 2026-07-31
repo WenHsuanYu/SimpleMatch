@@ -1,6 +1,7 @@
 package com.simplematch.accountservice.reservation;
 
-import com.simplematch.accountservice.authority.AccountAuthorityRepository;
+import com.simplematch.accountservice.authority.AccountAuthorityLifecycleWriter;
+import com.simplematch.accountservice.authority.AccountAuthorityReader;
 import com.simplematch.accountservice.authority.AccountLifecycleOutbox;
 import com.simplematch.accountservice.authority.AccountLimit;
 import com.simplematch.accountservice.authority.AccountOutboxRepository;
@@ -35,7 +36,8 @@ public class AccountReservationApplicationService implements ReservationService 
   private static final String OUTBOX_TOPIC = "account.lifecycle";
   private static final String CONSUMER_NAME = "account-service-execution";
 
-  @NonNull private final AccountAuthorityRepository accounts;
+  @NonNull private final AccountAuthorityReader authorityReader;
+  @NonNull private final AccountAuthorityLifecycleWriter authorityWriter;
   @NonNull private final AccountOutboxRepository outbox;
   @NonNull private final Clock clock;
 
@@ -44,9 +46,9 @@ public class AccountReservationApplicationService implements ReservationService 
   @Transactional(timeout = TRANSACTION_TIMEOUT_SECONDS)
   public ReservationRecord reserve(ReserveOperation operation) {
     Objects.requireNonNull(operation, "operation");
-    accounts.claimReservationRequest(operation.requestId(), clock.millis());
+    authorityWriter.claimReservationRequest(operation.requestId(), clock.millis());
     final AccountReservation existing =
-        accounts.findReservationByRequestId(operation.requestId()).orElse(null);
+        authorityReader.findReservationByRequestId(operation.requestId()).orElse(null);
     if (existing != null) {
       return toLegacy(existing);
     }
@@ -77,7 +79,7 @@ public class AccountReservationApplicationService implements ReservationService 
 
     if (operation.side() == Side.SIDE_BUY) {
       final AccountLimit limit =
-          accounts.findLimitForUpdate(operation.accountId(), tradingDay).orElse(null);
+          authorityReader.findLimitForUpdate(operation.accountId(), tradingDay).orElse(null);
       if (limit == null || limit.availableNotional().compareTo(notional) < 0) {
         return persistRejected(
             operation,
@@ -93,10 +95,12 @@ public class AccountReservationApplicationService implements ReservationService 
               limit.availableNotional().subtract(notional),
               limit.version() + 1,
               now);
-      accounts.updateLimit(changed, limit.version());
+      authorityWriter.updateLimit(changed, limit.version());
     } else {
       final AccountPosition position =
-          accounts.findPositionForUpdate(operation.accountId(), operation.symbol()).orElse(null);
+          authorityReader
+              .findPositionForUpdate(operation.accountId(), operation.symbol())
+              .orElse(null);
       if (position == null
           || position
                   .longQuantity()
@@ -120,12 +124,12 @@ public class AccountReservationApplicationService implements ReservationService 
               position.reservedShortQuantity(),
               position.version() + 1,
               now);
-      accounts.updatePosition(changed, position.version());
+      authorityWriter.updatePosition(changed, position.version());
     }
 
     final AccountReservation reservation =
         AccountReservation.accepted(operation.orderId(), snapshot, notional, now);
-    accounts.insertReservation(reservation);
+    authorityWriter.insertReservation(reservation);
     emit(reservation, AccountLifecycleState.ACCOUNT_LIFECYCLE_STATE_RESERVED, "", now);
     return toLegacy(reservation);
   }
@@ -134,7 +138,7 @@ public class AccountReservationApplicationService implements ReservationService 
   @Override
   @Transactional(readOnly = true)
   public AccountLimit getLimits(String accountId) {
-    return accounts
+    return authorityReader
         .findLimit(accountId, clock.instant().atZone(TAIPEI).toLocalDate())
         .orElseThrow(() -> new IllegalArgumentException("account limit is not provisioned"));
   }
@@ -143,7 +147,7 @@ public class AccountReservationApplicationService implements ReservationService 
   @Override
   @Transactional(readOnly = true)
   public List<AccountPosition> getPositions(String accountId) {
-    return accounts.findPositions(accountId);
+    return authorityReader.findPositions(accountId);
   }
 
   /** Releases all remaining cash or position authority for a reservation. */
@@ -153,7 +157,7 @@ public class AccountReservationApplicationService implements ReservationService 
     Objects.requireNonNull(operation, "operation");
     final ReservationIdentity identity = operation.reservation();
     final AccountReservation reservation =
-        accounts
+        authorityReader
             .findReservationForUpdate(identity.reservationId().value())
             .orElseThrow(() -> new IllegalArgumentException("reservation not found"));
     if (!reservation.requestId().equals(identity.requestId().value())
@@ -166,7 +170,8 @@ public class AccountReservationApplicationService implements ReservationService 
       return toLegacy(reservation);
     }
     final long now = clock.millis();
-    AccountAuthorityTransitions.releaseCancelledAuthority(accounts, clock, reservation, now);
+    AccountAuthorityTransitions.releaseCancelledAuthority(
+        authorityReader, authorityWriter, clock, reservation, now);
     final AccountReservation changed =
         new AccountReservation(
             reservation.reservationId(),
@@ -186,7 +191,7 @@ public class AccountReservationApplicationService implements ReservationService 
             reservation.version() + 1,
             reservation.createdAtUnixMs(),
             now);
-    accounts.updateReservation(changed, reservation.version());
+    authorityWriter.updateReservation(changed, reservation.version());
     emit(
         changed, AccountLifecycleState.ACCOUNT_LIFECYCLE_STATE_RELEASED, changed.reasonCode(), now);
     return toLegacy(changed);
@@ -199,19 +204,19 @@ public class AccountReservationApplicationService implements ReservationService 
     Objects.requireNonNull(operation, "operation");
     final ReservationIdentity identity = operation.reservation();
     final ExecutionFill fill = operation.fill();
-    if (!accounts.claimInbox(
+    if (!authorityWriter.claimInbox(
         CONSUMER_NAME,
         fill.executionId().value(),
         identity.orderId().value(),
         fill.aggregateSequence().value(),
         clock.millis())) {
-      return accounts
+      return authorityReader
           .findReservationForUpdate(identity.reservationId().value())
           .map(this::toLegacy)
           .orElseThrow(() -> new IllegalArgumentException("reservation not found"));
     }
     final AccountReservation reservation =
-        accounts
+        authorityReader
             .findReservationForUpdate(identity.reservationId().value())
             .orElseThrow(() -> new IllegalArgumentException("reservation not found"));
     AccountAuthorityTransitions.validateFill(reservation, identity, fill);
@@ -223,7 +228,7 @@ public class AccountReservationApplicationService implements ReservationService 
             ? reservation.reservedNotional()
             : reservation.reservedNotional().min(fillNotional);
     AccountAuthorityTransitions.applyFilledAuthority(
-        accounts, clock, reservation, fill, releasedNotional, now);
+        authorityReader, authorityWriter, clock, reservation, fill, releasedNotional, now);
     final ReservationStatus status =
         remaining.signum() == 0
             ? ReservationStatus.RESERVATION_STATUS_APPLIED
@@ -247,7 +252,7 @@ public class AccountReservationApplicationService implements ReservationService 
             reservation.version() + 1,
             reservation.createdAtUnixMs(),
             now);
-    accounts.updateReservation(changed, reservation.version());
+    authorityWriter.updateReservation(changed, reservation.version());
     emit(
         changed,
         status == ReservationStatus.RESERVATION_STATUS_APPLIED
@@ -261,14 +266,14 @@ public class AccountReservationApplicationService implements ReservationService 
   /** Provisions an account-wide daily cash limit for controlled administration. */
   @Transactional
   public void provisionLimit(String accountId, LocalDate tradingDay, BigDecimal totalNotional) {
-    accounts.insertLimit(
+    authorityWriter.insertLimit(
         AccountLimit.provisioned(accountId, tradingDay, totalNotional, clock.millis()));
   }
 
   /** Provisions an empty position row for controlled administration. */
   @Transactional
   public void provisionPosition(String accountId, String symbol) {
-    accounts.insertPosition(AccountPosition.provisioned(accountId, symbol, clock.millis()));
+    authorityWriter.insertPosition(AccountPosition.provisioned(accountId, symbol, clock.millis()));
   }
 
   private ReservationRecord persistRejected(
@@ -279,7 +284,7 @@ public class AccountReservationApplicationService implements ReservationService 
       long now) {
     final AccountReservation rejected =
         AccountReservation.rejected(operation.orderId(), snapshot, reasonCode, reasonText, now);
-    accounts.insertReservation(rejected);
+    authorityWriter.insertReservation(rejected);
     emit(rejected, AccountLifecycleState.ACCOUNT_LIFECYCLE_STATE_REJECTED, reasonCode, now);
     return toLegacy(rejected);
   }

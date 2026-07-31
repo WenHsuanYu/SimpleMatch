@@ -11,6 +11,8 @@ import com.simplematch.accountservice.reservation.ReservationRecord;
 import com.simplematch.accountservice.reservation.ReservationRequestIdentity;
 import com.simplematch.accountservice.reservation.ReservationTerms;
 import com.simplematch.accountservice.reservation.ReserveOperation;
+import com.simplematch.accountservice.store.JdbcAccountAuthorityLifecycleWriter;
+import com.simplematch.accountservice.store.JdbcAccountAuthorityReader;
 import com.simplematch.contracts.common.v1.ReservationStatus;
 import com.simplematch.contracts.common.v1.Side;
 import java.math.BigDecimal;
@@ -261,8 +263,13 @@ class AccountReservationApplicationServiceTransactionTest {
     }
 
     @Bean
-    AccountAuthorityRepository authorityRepository(JdbcTemplate jdbcTemplate) {
-      return new com.simplematch.accountservice.store.JdbcAccountAuthorityRepository(jdbcTemplate);
+    AccountAuthorityReader authorityReader(JdbcTemplate jdbcTemplate) {
+      return new JdbcAccountAuthorityReader(jdbcTemplate);
+    }
+
+    @Bean
+    AccountAuthorityLifecycleWriter authorityLifecycleWriter(JdbcTemplate jdbcTemplate) {
+      return new JdbcAccountAuthorityLifecycleWriter(jdbcTemplate);
     }
 
     @Bean
@@ -272,10 +279,12 @@ class AccountReservationApplicationServiceTransactionTest {
 
     @Bean
     AccountReservationApplicationService reservationService(
-        AccountAuthorityRepository authorityRepository,
+        AccountAuthorityReader authorityReader,
+        AccountAuthorityLifecycleWriter authorityLifecycleWriter,
         AccountOutboxRepository outboxRepository,
         Clock clock) {
-      return new AccountReservationApplicationService(authorityRepository, outboxRepository, clock);
+      return new AccountReservationApplicationService(
+          authorityReader, authorityLifecycleWriter, outboxRepository, clock);
     }
   }
 }

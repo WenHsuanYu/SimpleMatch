@@ -1,6 +1,7 @@
 package com.simplematch.accountservice.reservation;
 
-import com.simplematch.accountservice.authority.AccountAuthorityRepository;
+import com.simplematch.accountservice.authority.AccountAuthorityLifecycleWriter;
+import com.simplematch.accountservice.authority.AccountAuthorityReader;
 import com.simplematch.accountservice.authority.AccountLimit;
 import com.simplematch.accountservice.authority.AccountPosition;
 import com.simplematch.accountservice.authority.AccountReservation;
@@ -17,11 +18,15 @@ final class AccountAuthorityTransitions {
   private AccountAuthorityTransitions() {}
 
   static void releaseCancelledAuthority(
-      AccountAuthorityRepository accounts, Clock clock, AccountReservation reservation, long now) {
+      AccountAuthorityReader authorityReader,
+      AccountAuthorityLifecycleWriter authorityWriter,
+      Clock clock,
+      AccountReservation reservation,
+      long now) {
     final LocalDate tradingDay = clock.instant().atZone(TAIPEI).toLocalDate();
     if (reservation.side() == Side.SIDE_BUY) {
       final AccountLimit limit =
-          accounts
+          authorityReader
               .findLimitForUpdate(reservation.accountId(), tradingDay)
               .orElseThrow(() -> new IllegalStateException("account limit is not provisioned"));
       final AccountLimit changed =
@@ -34,11 +39,11 @@ final class AccountAuthorityTransitions {
               limit.availableNotional().add(reservation.reservedNotional()),
               limit.version() + 1,
               now);
-      accounts.updateLimit(changed, limit.version());
+      authorityWriter.updateLimit(changed, limit.version());
       return;
     }
     final AccountPosition position =
-        accounts
+        authorityReader
             .findPositionForUpdate(reservation.accountId(), reservation.symbol())
             .orElseThrow(() -> new IllegalStateException("position is not provisioned"));
     final BigDecimal released =
@@ -53,11 +58,12 @@ final class AccountAuthorityTransitions {
             position.reservedShortQuantity(),
             position.version() + 1,
             now);
-    accounts.updatePosition(changed, position.version());
+    authorityWriter.updatePosition(changed, position.version());
   }
 
   static void applyFilledAuthority(
-      AccountAuthorityRepository accounts,
+      AccountAuthorityReader authorityReader,
+      AccountAuthorityLifecycleWriter authorityWriter,
       Clock clock,
       AccountReservation reservation,
       ExecutionFill fill,
@@ -66,7 +72,7 @@ final class AccountAuthorityTransitions {
     final LocalDate tradingDay = clock.instant().atZone(TAIPEI).toLocalDate();
     if (reservation.side() == Side.SIDE_BUY) {
       final AccountLimit limit =
-          accounts
+          authorityReader
               .findLimitForUpdate(reservation.accountId(), tradingDay)
               .orElseThrow(() -> new IllegalStateException("account limit is not provisioned"));
       final AccountLimit changed =
@@ -76,9 +82,9 @@ final class AccountAuthorityTransitions {
               limit.availableNotional().add(releasedNotional).subtract(fill.notional()),
               limit.version() + 1,
               now);
-      accounts.updateLimit(changed, limit.version());
+      authorityWriter.updateLimit(changed, limit.version());
       final AccountPosition position =
-          accounts
+          authorityReader
               .findPositionForUpdate(reservation.accountId(), reservation.symbol())
               .orElseThrow(() -> new IllegalStateException("position is not provisioned"));
       final AccountPosition changedPosition =
@@ -91,11 +97,11 @@ final class AccountAuthorityTransitions {
               position.reservedShortQuantity(),
               position.version() + 1,
               now);
-      accounts.updatePosition(changedPosition, position.version());
+      authorityWriter.updatePosition(changedPosition, position.version());
       return;
     }
     final AccountPosition position =
-        accounts
+        authorityReader
             .findPositionForUpdate(reservation.accountId(), reservation.symbol())
             .orElseThrow(() -> new IllegalStateException("position is not provisioned"));
     final BigDecimal released = position.reservedLongQuantity().min(fill.quantity().value());
@@ -104,7 +110,7 @@ final class AccountAuthorityTransitions {
             position.accountId(), position.symbol(), position.longQuantity().subtract(released),
             position.shortQuantity(), position.reservedLongQuantity().subtract(released),
             position.reservedShortQuantity(), position.version() + 1, now);
-    accounts.updatePosition(changed, position.version());
+    authorityWriter.updatePosition(changed, position.version());
   }
 
   static void validateFill(
