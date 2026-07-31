@@ -13,14 +13,14 @@ final class RoutingSnapshotEntryValidator {
     if (entry == null) {
       throw new IllegalStateException("routing snapshot entry is missing symbol: " + snapshotPath);
     }
-    validateSymbol(entry.symbol, snapshotPath);
+    validateSymbol(entry.symbol(), snapshotPath);
     validatePartition(entry, partitionCount);
   }
 
   static void addPartition(
       Map<String, Integer> partitionsBySymbol, FileRoutingPartitionResolver.RoutingEntry entry) {
-    final String normalizedSymbol = normalizeSymbol(entry.symbol);
-    final Integer previous = partitionsBySymbol.put(normalizedSymbol, entry.kafkaPartitionId);
+    final String normalizedSymbol = normalizeSymbol(entry.symbol());
+    final Integer previous = partitionsBySymbol.put(normalizedSymbol, entry.kafkaPartitionId());
     if (previous != null) {
       throw new IllegalStateException(
           "routing snapshot contains duplicate symbol " + normalizedSymbol);
@@ -35,16 +35,16 @@ final class RoutingSnapshotEntryValidator {
 
   private static void validatePartition(
       FileRoutingPartitionResolver.RoutingEntry entry, int partitionCount) {
-    if (entry.kafkaPartitionId == null) {
+    if (entry.kafkaPartitionId() == null) {
       throw new IllegalStateException(
-          "routing snapshot entry is missing kafkaPartitionId for symbol " + entry.symbol);
+          "routing snapshot entry is missing kafkaPartitionId for symbol " + entry.symbol());
     }
-    if (entry.kafkaPartitionId < 0 || entry.kafkaPartitionId >= partitionCount) {
+    if (entry.kafkaPartitionId() < 0 || entry.kafkaPartitionId() >= partitionCount) {
       throw new IllegalStateException(
           "routing snapshot entry has kafkaPartitionId outside range for symbol "
-              + entry.symbol
+              + entry.symbol()
               + ": "
-              + entry.kafkaPartitionId);
+              + entry.kafkaPartitionId());
     }
   }
 

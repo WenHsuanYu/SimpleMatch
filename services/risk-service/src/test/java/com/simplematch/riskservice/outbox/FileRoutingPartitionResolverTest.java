@@ -5,6 +5,7 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
 import java.io.IOException;
+import java.lang.reflect.Modifier;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import org.junit.jupiter.api.DisplayName;
@@ -72,6 +73,23 @@ class FileRoutingPartitionResolverTest {
     assertThatThrownBy(() -> FileRoutingPartitionResolver.load(objectMapper, snapshot, 15))
         .isInstanceOf(IllegalStateException.class)
         .hasMessageContaining("kafkaPartitionId outside range");
+  }
+
+  @DisplayName("routing entries keep deserialized fields private")
+  @Test
+  void keepsRoutingEntryFieldsPrivate() throws NoSuchFieldException {
+    assertThat(
+            Modifier.isPrivate(
+                FileRoutingPartitionResolver.RoutingEntry.class
+                    .getDeclaredField("symbol")
+                    .getModifiers()))
+        .isTrue();
+    assertThat(
+            Modifier.isPrivate(
+                FileRoutingPartitionResolver.RoutingEntry.class
+                    .getDeclaredField("kafkaPartitionId")
+                    .getModifiers()))
+        .isTrue();
   }
 
   private Path writeSnapshot(String content) throws IOException {

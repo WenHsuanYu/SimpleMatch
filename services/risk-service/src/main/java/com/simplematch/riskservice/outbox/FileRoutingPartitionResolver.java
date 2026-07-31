@@ -127,8 +127,18 @@ public final class FileRoutingPartitionResolver implements RoutingPartitionResol
 
   @JsonIgnoreProperties(ignoreUnknown = true)
   static final class RoutingEntry {
-    String symbol;
-    Integer kafkaPartitionId;
+    private String symbol;
+    private Integer kafkaPartitionId;
+
+    /** Returns the deserialized symbol before routing-snapshot validation. */
+    String symbol() {
+      return symbol;
+    }
+
+    /** Returns the deserialized partition identifier before routing-snapshot validation. */
+    Integer kafkaPartitionId() {
+      return kafkaPartitionId;
+    }
 
     public void setSymbol(String symbol) {
       this.symbol = symbol;

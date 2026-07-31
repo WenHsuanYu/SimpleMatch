@@ -39,6 +39,10 @@ final class SubmissionDecisionFactory {
         command);
   }
 
+  /**
+   * Builds a rejection that bounds durable identifiers while retaining raw client order identifiers
+   * for the gRPC response and the normalized command for outbox construction.
+   */
   SubmissionDecision rejected(
       ResolvedSubmissionCommand command, long createdAtUnixMs, SubmissionRejection rejection) {
     final SubmissionCommand payload = command.payload();

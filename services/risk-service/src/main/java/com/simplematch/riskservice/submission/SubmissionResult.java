@@ -35,11 +35,10 @@ public record SubmissionResult(
   }
 
   /**
-   * Creates a compatibility result from the former flat parameter list.
+   * Creates a flat compatibility result used by legacy in-repository test fixtures.
    *
-   * @deprecated Use the domain-value canonical constructor; retained for compatibility with
-   *     existing fixtures while callers migrate. Remove with
-   *     {@code V1AdmissionCompatibilityAdapter}.
+   * @deprecated Use the domain-value canonical constructor. Retire this constructor when the
+   *     remaining in-repository fixtures compose their domain values directly.
    */
   @Deprecated(forRemoval = false)
   @SuppressWarnings({"PMD.ExcessiveParameterList", "checkstyle:ParameterNumber"})
@@ -75,11 +74,10 @@ public record SubmissionResult(
   }
 
   /**
-   * Creates a compatibility result with persisted FIX identifiers.
+   * Creates a flat compatibility result with persisted FIX identifiers for legacy test fixtures.
    *
-   * @deprecated Use the domain-value canonical constructor; retained for compatibility with
-   *     existing fixtures while callers migrate. Remove with
-   *     {@code V1AdmissionCompatibilityAdapter}.
+   * @deprecated Use the domain-value canonical constructor. Retire this constructor when the
+   *     remaining in-repository fixtures compose their domain values directly.
    */
   @Deprecated(forRemoval = false)
   @SuppressWarnings({"PMD.ExcessiveParameterList", "checkstyle:ParameterNumber"})
@@ -117,10 +115,11 @@ public record SubmissionResult(
   }
 
   /**
-   * Creates a compatibility result including business-key surrogate state.
+   * Creates a flat compatibility result including business-key surrogate state for legacy test
+   * fixtures.
    *
-   * @deprecated Use the domain-value canonical constructor; retained for compatibility with JDBC
-   *     and test callers while they migrate. Remove with {@code V1AdmissionCompatibilityAdapter}.
+   * @deprecated Use the domain-value canonical constructor. Retire this constructor when the
+   *     remaining in-repository fixtures compose their domain values directly.
    */
   @Deprecated(forRemoval = false)
   @SuppressWarnings({"PMD.ExcessiveParameterList", "checkstyle:ParameterNumber"})
