@@ -5,6 +5,7 @@ import com.simplematch.accountservice.authority.AccountAuthorityReader;
 import com.simplematch.accountservice.authority.AccountLimit;
 import com.simplematch.accountservice.authority.AccountPosition;
 import com.simplematch.accountservice.authority.AccountReservation;
+import com.simplematch.contracts.common.v1.ReservationStatus;
 import com.simplematch.contracts.common.v1.Side;
 import java.math.BigDecimal;
 import java.time.Clock;
@@ -118,6 +119,9 @@ final class AccountAuthorityTransitions {
     if (!reservation.requestId().equals(identity.requestId().value())
         || !reservation.orderId().equals(identity.orderId().value())) {
       throw new IllegalArgumentException("reservation identity does not match fill");
+    }
+    if (reservation.status() != ReservationStatus.RESERVATION_STATUS_ACCEPTED) {
+      throw new IllegalArgumentException("reservation is not active");
     }
     if (fill.quantity().value().compareTo(reservation.remainingQuantity()) > 0) {
       throw new IllegalArgumentException("fill quantity exceeds remaining reservation quantity");

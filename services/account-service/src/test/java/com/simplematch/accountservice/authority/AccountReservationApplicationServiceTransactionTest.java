@@ -1,6 +1,7 @@
 package com.simplematch.accountservice.authority;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 import com.simplematch.accountservice.reservation.AccountReservationApplicationService;
 import com.simplematch.accountservice.reservation.ApplyFillOperation;
@@ -102,6 +103,36 @@ class AccountReservationApplicationServiceTransactionTest {
             jdbcTemplate.queryForObject(
                 "SELECT COUNT(*) FROM account_service.outbox", Integer.class))
         .isEqualTo(1);
+  }
+
+  @DisplayName("rejected reservations cannot accept execution fills")
+  @Test
+  void rejectsFillForRejectedReservation() {
+    final ReservationRecord reservation = service.reserve(operation(Side.SIDE_BUY, "101", "100"));
+    final ApplyFillOperation fill =
+        new ApplyFillOperation(
+            new ReservationIdentity(
+                new ReservationIdentity.RequestId(reservation.requestId()),
+                new ReservationIdentity.ReservationId(reservation.reservationId()),
+                new ReservationIdentity.OrderId(reservation.orderId())),
+            new ExecutionFill(
+                new ExecutionFill.ExecutionId(UUID.randomUUID().toString()),
+                ExecutionFill.AggregateSequence.absent(),
+                new ExecutionFill.FillQuantity(new BigDecimal("1")),
+                new ExecutionFill.FillPrice(new BigDecimal("99"))));
+
+    assertThatThrownBy(() -> service.applyFill(fill))
+        .isInstanceOf(IllegalArgumentException.class)
+        .hasMessage("reservation is not active");
+    assertThat(service.getLimits("acc-1").availableNotional()).isEqualByComparingTo("10000");
+    assertThat(
+            jdbcTemplate.queryForObject(
+                "SELECT status FROM account_service.account_reservations", String.class))
+        .isEqualTo(ReservationStatus.RESERVATION_STATUS_REJECTED.name());
+    assertThat(
+            jdbcTemplate.queryForObject(
+                "SELECT COUNT(*) FROM account_service.inbox", Integer.class))
+        .isEqualTo(0);
   }
 
   @DisplayName("sell reserve consumes available long position and replays duplicate request")
