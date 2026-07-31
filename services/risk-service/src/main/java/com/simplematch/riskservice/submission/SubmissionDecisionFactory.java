@@ -42,6 +42,13 @@ final class SubmissionDecisionFactory {
   /**
    * Builds a rejection that bounds durable identifiers while retaining raw client order identifiers
    * for the gRPC response and the normalized command for outbox construction.
+   *
+   * @param command the normalized command whose raw response identifiers and persistence-safe
+   *     values are retained in the decision
+   * @param createdAtUnixMs the decision creation time persisted with the submission result
+   * @param rejection the rejection outcome to expose to the client and persist
+   * @return a decision with persistence-safe durable identifiers and raw client response
+   *     identifiers
    */
   SubmissionDecision rejected(
       ResolvedSubmissionCommand command, long createdAtUnixMs, SubmissionRejection rejection) {

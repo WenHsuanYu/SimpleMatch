@@ -3,7 +3,9 @@ package com.simplematch.quickfixgateway.fix;
 import com.simplematch.contracts.common.v1.Side;
 import quickfix.SessionID;
 
-/** Holds immutable FIX session context and the mutable lifecycle for one gateway order. */
+/**
+ * Holds immutable FIX session context and an immutable lifecycle snapshot for one gateway order.
+ */
 public record OrderSessionState(
     SessionID sessionId,
     String orderId,
