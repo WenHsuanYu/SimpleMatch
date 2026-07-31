@@ -44,16 +44,19 @@ class OrderAdmissionApplicationServiceTransactionTest {
   private final OrderAdmissionApplicationService admissions;
   private final TestAccountReservationClient account;
   private final Clock clock;
+  private final AdmissionJournalRepository journal;
 
   OrderAdmissionApplicationServiceTransactionTest(
       JdbcTemplate jdbcTemplate,
       OrderAdmissionApplicationService admissions,
       TestAccountReservationClient account,
-      Clock clock) {
+      Clock clock,
+      AdmissionJournalRepository journal) {
     this.jdbcTemplate = jdbcTemplate;
     this.admissions = admissions;
     this.account = account;
     this.clock = clock;
+    this.journal = journal;
   }
 
   @BeforeEach
@@ -73,8 +76,8 @@ class OrderAdmissionApplicationServiceTransactionTest {
             UUID.fromString(command.getCommandId()),
             ReservationOutcome.accepted(UUID.randomUUID()));
 
-    assertThat(pending.state()).isEqualTo(AdmissionState.PENDING);
-    assertThat(accepted.state()).isEqualTo(AdmissionState.ACCEPTED);
+    assertThat(pending.decision()).isInstanceOf(AdmissionDecision.Pending.class);
+    assertThat(accepted.decision()).isInstanceOf(AdmissionDecision.AcceptedNew.class);
     assertThat(
             jdbcTemplate.queryForObject(
                 "SELECT state FROM risk_service.admission_journal", String.class))
@@ -97,6 +100,42 @@ class OrderAdmissionApplicationServiceTransactionTest {
             jdbcTemplate.queryForObject(
                 "SELECT COUNT(*) FROM risk_service.admission_journal", Integer.class))
         .isEqualTo(1);
+  }
+
+  @DisplayName("JDBC round trip preserves assigned route and terminal decision")
+  @Test
+  void jdbcRoundTripPreservesAssignedDeliveryRouteAndLifecycleDecision() {
+    final AdmissionCommand command = new OrderAdmissionValidator().validate(command());
+    final AdmissionDeliveryRoute route = AdmissionDeliveryRoute.assigned(3);
+    final AdmissionJournalEntry pending =
+        AdmissionJournalEntry.pending(command, route, 100L);
+
+    assertThat(journal.insert(pending)).isTrue();
+    final AdmissionJournalEntry loaded =
+        journal.findByCommandId(command.identity().commandId().value()).orElseThrow();
+    assertThat(loaded.command()).isEqualTo(command);
+    assertThat(loaded.route()).isEqualTo(route);
+
+    final AdmissionJournalEntry accepted =
+        loaded.finalizeWith(ReservationOutcome.accepted(UUID.randomUUID()), 200L);
+    journal.update(accepted, loaded.lifecycle().version());
+
+    final AdmissionJournalEntry terminal =
+        journal.findByCommandId(command.identity().commandId().value()).orElseThrow();
+    assertThat(terminal.route()).isEqualTo(route);
+    assertThat(terminal.lifecycle().decision()).isInstanceOf(AdmissionDecision.AcceptedNew.class);
+  }
+
+  @DisplayName("cancel admission returns an explicit accepted-cancel decision")
+  @Test
+  void cancelAdmissionUsesAcceptedCancelDecision() {
+    final AdmissionResult result = admissions.admitCancel(cancelCommand());
+
+    assertThat(result.decision()).isEqualTo(new AdmissionDecision.AcceptedCancel());
+    assertThat(
+            jdbcTemplate.queryForObject(
+                "SELECT reservation_id FROM risk_service.admission_journal", UUID.class))
+        .isNull();
   }
 
   @DisplayName("a different command cannot claim an existing FIX business identity")
@@ -284,6 +323,25 @@ class OrderAdmissionApplicationServiceTransactionTest {
         .setSenderCompId("SENDER")
         .setTargetCompId("TARGET")
         .setClOrdId("CL-1")
+        .build();
+  }
+
+  private CancelOrderCommand cancelCommand() {
+    return CancelOrderCommand.newBuilder()
+        .setCommandId("01971cbe-0f5a-7c69-9d6c-8e7f6a5b4c3d")
+        .setOrderId("01971cbe-0f5a-7c69-9d6c-8e7f6a5b4c3e")
+        .setAccountId("01971cbe-0f5a-7c69-9d6c-8e7f6a5b4c3f")
+        .setInstrument(VenueInstrument.newBuilder().setVenueMic("XTAI").setSymbol("2330").build())
+        .setSide(Side.SIDE_BUY)
+        .setOrigClOrdId("ORIG-1")
+        .setClOrdId("CXL-1")
+        .setSenderCompId("SENDER")
+        .setTargetCompId("TARGET")
+        .setTradingDay(
+            com.simplematch.contracts.common.v2.TradingDay.newBuilder()
+                .setIsoDate("2026-07-28")
+                .build())
+        .setSessionState(SessionState.SESSION_STATE_CONTINUOUS)
         .build();
   }
 

@@ -103,6 +103,20 @@ class AccountReservationApplicationServiceTransactionTest {
             jdbcTemplate.queryForObject(
                 "SELECT COUNT(*) FROM account_service.outbox", Integer.class))
         .isEqualTo(1);
+    assertThat(
+            jdbcTemplate.queryForObject(
+                "SELECT remaining_quantity FROM account_service.account_reservations",
+                BigDecimal.class))
+        .isEqualByComparingTo("101");
+    assertThat(
+            jdbcTemplate.queryForObject(
+                "SELECT reserved_notional FROM account_service.account_reservations",
+                BigDecimal.class))
+        .isEqualByComparingTo("0");
+    assertThat(
+            jdbcTemplate.queryForObject(
+                "SELECT filled_quantity FROM account_service.account_reservations", BigDecimal.class))
+        .isEqualByComparingTo("0");
   }
 
   @DisplayName("rejected reservations cannot accept execution fills")

@@ -1,145 +1,161 @@
 package com.simplematch.accountservice.authority;
 
+import com.simplematch.accountservice.reservation.ExecutionFill;
+import com.simplematch.accountservice.reservation.ReleaseReservationOperation;
+import com.simplematch.accountservice.reservation.ReservationIdentity;
+import com.simplematch.accountservice.reservation.ReservationTerms;
 import com.simplematch.contracts.common.v1.ReservationStatus;
 import com.simplematch.contracts.common.v1.Side;
 import java.math.BigDecimal;
+import java.util.Objects;
 
-/** Immutable authoritative reservation state used by lifecycle operations. */
+/**
+ * Immutable authoritative reservation composed from identity, ownership, terms, and lifecycle.
+ *
+ * @param identity reservation, request, and order identity
+ * @param ownership account ownership
+ * @param terms immutable order terms
+ * @param lifecycle mutable authority and execution state
+ */
 public record AccountReservation(
-    String reservationId,
-    String requestId,
-    String orderId,
-    String accountId,
-    String symbol,
-    Side side,
-    BigDecimal quantity,
-    BigDecimal remainingQuantity,
-    BigDecimal filledQuantity,
-    BigDecimal limitPrice,
-    BigDecimal reservedNotional,
-    ReservationStatus status,
-    String reasonCode,
-    String reasonText,
-    long version,
-    long createdAtUnixMs,
-    long updatedAtUnixMs) {
-  /** Validates lifecycle quantities and status fields. */
+    ReservationIdentity identity,
+    ReservationOwnership ownership,
+    ReservationTerms terms,
+    ReservationLifecycle lifecycle) {
+  /** Requires a complete reservation and validates its lifecycle against its immutable terms. */
   public AccountReservation {
-    text(reservationId, "reservation_id");
-    text(requestId, "request_id");
-    text(orderId, "order_id");
-    text(accountId, "account_id");
-    text(symbol, "symbol");
-    if (side == null || side == Side.SIDE_UNSPECIFIED) {
-      throw new IllegalArgumentException("side must be specified");
-    }
-    if (quantity == null
-        || quantity.signum() <= 0
-        || remainingQuantity == null
-        || remainingQuantity.signum() < 0
-        || filledQuantity == null
-        || filledQuantity.signum() < 0
-        || (status != ReservationStatus.RESERVATION_STATUS_RELEASED
-            && filledQuantity.add(remainingQuantity).compareTo(quantity) != 0)) {
-      throw new IllegalArgumentException("reservation quantities are invalid");
-    }
-    if (limitPrice != null && limitPrice.signum() <= 0) {
-      throw new IllegalArgumentException("limit_price must be positive when provided");
-    }
-    if (reservedNotional == null || reservedNotional.signum() < 0) {
-      throw new IllegalArgumentException("reserved_notional must be non-negative");
-    }
-    if (status == null || status == ReservationStatus.RESERVATION_STATUS_UNSPECIFIED) {
-      throw new IllegalArgumentException("status must be specified");
-    }
-    if (version < 0 || createdAtUnixMs < 0 || updatedAtUnixMs < createdAtUnixMs) {
-      throw new IllegalArgumentException("reservation version and timestamps are invalid");
-    }
+    Objects.requireNonNull(identity, "identity");
+    Objects.requireNonNull(ownership, "ownership");
+    Objects.requireNonNull(terms, "terms");
+    Objects.requireNonNull(lifecycle, "lifecycle");
+    lifecycle.validateAgainst(terms);
   }
 
-  /** Returns an accepted reservation with all requested quantity outstanding. */
+  /** Creates an accepted reservation with all requested authority held. */
   public static AccountReservation accepted(
-      String reservationId,
-      ReserveOperationSnapshot operation,
+      ReservationIdentity identity,
+      ReservationOwnership ownership,
+      ReservationTerms terms,
       BigDecimal reservedNotional,
       long now) {
     return new AccountReservation(
-        reservationId,
-        operation.requestId(),
-        operation.orderId(),
-        operation.accountId(),
-        operation.symbol(),
-        operation.side(),
-        operation.quantity(),
-        operation.quantity(),
-        BigDecimal.ZERO,
-        operation.limitPrice(),
-        reservedNotional,
-        ReservationStatus.RESERVATION_STATUS_ACCEPTED,
-        "",
-        "",
-        0,
-        now,
-        now);
+        identity, ownership, terms, ReservationLifecycle.accepted(terms, reservedNotional, now));
   }
 
-  /** Returns a stable rejected reservation without changing account balances. */
+  /** Creates a rejected reservation without changing account balances. */
   public static AccountReservation rejected(
-      String reservationId,
-      ReserveOperationSnapshot operation,
+      ReservationIdentity identity,
+      ReservationOwnership ownership,
+      ReservationTerms terms,
       String reasonCode,
       String reasonText,
       long now) {
     return new AccountReservation(
-        reservationId,
-        operation.requestId(),
-        operation.orderId(),
-        operation.accountId(),
-        operation.symbol(),
-        operation.side(),
-        operation.quantity(),
-        operation.quantity(),
-        BigDecimal.ZERO,
-        operation.limitPrice(),
-        BigDecimal.ZERO,
-        ReservationStatus.RESERVATION_STATUS_REJECTED,
-        reasonCode,
-        reasonText,
-        0,
-        now,
-        now);
+        identity,
+        ownership,
+        terms,
+        ReservationLifecycle.rejected(terms, reasonCode, reasonText, now));
   }
 
-  /**
-   * Returns the reserved limit-price notional released by a partial fill.
-   *
-   * @param filledQuantity the positive quantity filled by the execution
-   * @return the notional released from this reservation
-   * @throws IllegalArgumentException if {@code filledQuantity} is null or not positive
-   */
-  public BigDecimal reservedNotionalReleasedBy(BigDecimal filledQuantity) {
-    if (filledQuantity == null || filledQuantity.signum() <= 0) {
-      throw new IllegalArgumentException("filled_quantity must be positive");
-    }
-    if (limitPrice == null) {
-      return BigDecimal.ZERO;
-    }
-    return reservedNotional.min(limitPrice.multiply(filledQuantity));
+  /** Returns the reservation identifier for persistence and external responses. */
+  public String reservationId() {
+    return identity.reservationId().value();
   }
 
-  /** Compact validated operation view used by the authority without coupling to gRPC. */
-  public record ReserveOperationSnapshot(
-      String requestId,
-      String orderId,
-      String accountId,
-      String symbol,
-      Side side,
-      BigDecimal quantity,
-      BigDecimal limitPrice) {}
+  /** Returns the idempotent request identifier. */
+  public String requestId() {
+    return identity.requestId().value();
+  }
 
-  private static void text(String value, String field) {
-    if (value == null || value.isBlank()) {
-      throw new IllegalArgumentException(field + " must not be blank");
-    }
+  /** Returns the owning order identifier. */
+  public String orderId() {
+    return identity.orderId().value();
+  }
+
+  /** Returns the owning account identifier. */
+  public String accountId() {
+    return ownership.accountId();
+  }
+
+  /** Returns the reserved instrument symbol. */
+  public String symbol() {
+    return terms.symbol().value();
+  }
+
+  /** Returns the requested order side. */
+  public Side side() {
+    return terms.side();
+  }
+
+  /** Returns the original requested quantity. */
+  public BigDecimal quantity() {
+    return terms.quantity().value();
+  }
+
+  /** Returns the quantity not yet filled or released. */
+  public BigDecimal remainingQuantity() {
+    return lifecycle.allocation().remainingQuantity();
+  }
+
+  /** Returns the quantity already filled. */
+  public BigDecimal filledQuantity() {
+    return lifecycle.allocation().filledQuantity();
+  }
+
+  /** Returns the optional limit price. */
+  public BigDecimal limitPrice() {
+    return terms.limitPrice().value();
+  }
+
+  /** Returns the notional still held by the reservation. */
+  public BigDecimal reservedNotional() {
+    return lifecycle.allocation().reservedNotional();
+  }
+
+  /** Returns the current lifecycle status. */
+  public ReservationStatus status() {
+    return lifecycle.outcome().status();
+  }
+
+  /** Returns the machine-readable lifecycle reason. */
+  public String reasonCode() {
+    return lifecycle.outcome().reasonCode();
+  }
+
+  /** Returns the human-readable lifecycle reason. */
+  public String reasonText() {
+    return lifecycle.outcome().reasonText();
+  }
+
+  /** Returns the optimistic lifecycle version. */
+  public long version() {
+    return lifecycle.revision().version();
+  }
+
+  /** Returns the original persistence timestamp. */
+  public long createdAtUnixMs() {
+    return lifecycle.revision().createdAtUnixMs();
+  }
+
+  /** Returns the latest lifecycle update timestamp. */
+  public long updatedAtUnixMs() {
+    return lifecycle.revision().updatedAtUnixMs();
+  }
+
+  /** Returns the notional released by one execution fill. */
+  public BigDecimal reservedNotionalReleasedBy(ExecutionFill fill) {
+    return lifecycle.reservedNotionalReleasedBy(fill, terms);
+  }
+
+  /** Applies one execution fill to this reservation lifecycle. */
+  public AccountReservation applyFill(ExecutionFill fill, long now) {
+    Objects.requireNonNull(fill, "fill");
+    return new AccountReservation(
+        identity, ownership, terms, lifecycle.applyFill(fill, terms, now));
+  }
+
+  /** Releases only unused authority and preserves any quantity already filled. */
+  public AccountReservation release(ReleaseReservationOperation.ReleaseReason reason, long now) {
+    return new AccountReservation(identity, ownership, terms, lifecycle.release(reason, now));
   }
 }

@@ -1,58 +1,78 @@
 package com.simplematch.accountservice.authority;
 
 import java.math.BigDecimal;
+import java.util.Objects;
 
-/** Immutable account position and reserved quantity snapshot. */
+/**
+ * Immutable account inventory composed from identity, inventory, and revision state.
+ *
+ * @param identity account and instrument identity
+ * @param inventory long/short inventory state
+ * @param revision optimistic version and update timestamp
+ */
 public record AccountPosition(
-    String accountId,
-    String symbol,
-    BigDecimal longQuantity,
-    BigDecimal shortQuantity,
-    BigDecimal reservedLongQuantity,
-    BigDecimal reservedShortQuantity,
-    long version,
-    long updatedAtUnixMs) {
-  /** Validates non-negative quantities and reserved-quantity bounds. */
+    AccountPositionIdentity identity,
+    AccountPositionInventory inventory,
+    AccountPositionRevision revision) {
+  /** Requires the three independent semantic parts of an account position. */
   public AccountPosition {
-    accountId = text(accountId, "account_id");
-    symbol = text(symbol, "symbol");
-    longQuantity = nonNegative(longQuantity, "long_qty");
-    shortQuantity = nonNegative(shortQuantity, "short_qty");
-    reservedLongQuantity = nonNegative(reservedLongQuantity, "reserved_long_qty");
-    reservedShortQuantity = nonNegative(reservedShortQuantity, "reserved_short_qty");
-    if (reservedLongQuantity.compareTo(longQuantity) > 0
-        || reservedShortQuantity.compareTo(shortQuantity) > 0) {
-      throw new IllegalArgumentException("reserved quantity cannot exceed position quantity");
-    }
-    if (version < 0 || updatedAtUnixMs < 0) {
-      throw new IllegalArgumentException("version and timestamp must be non-negative");
-    }
+    Objects.requireNonNull(identity, "identity");
+    Objects.requireNonNull(inventory, "inventory");
+    Objects.requireNonNull(revision, "revision");
   }
 
-  /** Returns a provisioned empty position. */
+  /** Returns an empty position for controlled account administration. */
   public static AccountPosition provisioned(String accountId, String symbol, long now) {
     return new AccountPosition(
-        accountId,
-        symbol,
-        BigDecimal.ZERO,
-        BigDecimal.ZERO,
-        BigDecimal.ZERO,
-        BigDecimal.ZERO,
-        0,
-        now);
+        new AccountPositionIdentity(accountId, symbol),
+        new AccountPositionInventory(
+            BigDecimal.ZERO, BigDecimal.ZERO, BigDecimal.ZERO, BigDecimal.ZERO),
+        AccountPositionRevision.initial(now));
   }
 
-  private static String text(String value, String name) {
-    if (value == null || value.isBlank()) {
-      throw new IllegalArgumentException(name + " must not be blank");
-    }
-    return value;
+  /** Returns a copy with a new inventory and optimistic revision. */
+  public AccountPosition withInventory(
+      AccountPositionInventory nextInventory, AccountPositionRevision nextRevision) {
+    return new AccountPosition(identity, nextInventory, nextRevision);
   }
 
-  private static BigDecimal nonNegative(BigDecimal value, String name) {
-    if (value == null || value.signum() < 0) {
-      throw new IllegalArgumentException(name + " must be non-negative");
-    }
-    return value;
+  /** Returns the account identifier for boundary projections. */
+  public String accountId() {
+    return identity.accountId();
+  }
+
+  /** Returns the instrument symbol for boundary projections. */
+  public String symbol() {
+    return identity.symbol();
+  }
+
+  /** Returns long inventory. */
+  public BigDecimal longQuantity() {
+    return inventory.longQuantity();
+  }
+
+  /** Returns short inventory. */
+  public BigDecimal shortQuantity() {
+    return inventory.shortQuantity();
+  }
+
+  /** Returns reserved long inventory. */
+  public BigDecimal reservedLongQuantity() {
+    return inventory.reservedLongQuantity();
+  }
+
+  /** Returns reserved short inventory. */
+  public BigDecimal reservedShortQuantity() {
+    return inventory.reservedShortQuantity();
+  }
+
+  /** Returns the optimistic version. */
+  public long version() {
+    return revision.version();
+  }
+
+  /** Returns the last update timestamp. */
+  public long updatedAtUnixMs() {
+    return revision.updatedAtUnixMs();
   }
 }

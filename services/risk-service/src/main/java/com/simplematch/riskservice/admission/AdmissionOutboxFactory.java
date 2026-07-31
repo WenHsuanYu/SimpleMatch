@@ -21,7 +21,10 @@ public final class AdmissionOutboxFactory {
 
   /** Builds the terminal event matching a journal outcome. */
   public OutboxRecord create(AdmissionJournalEntry entry) {
-    final String eventId = entry.commandId().toString();
+    final AdmissionCommand command = entry.command();
+    final AdmissionIdentity identity = command.identity();
+    final AdmissionOrder order = command.order();
+    final String eventId = identity.commandId().value().toString();
     final long now = clock.millis();
     final EventMetadata metadata =
         EventMetadata.newBuilder()
@@ -29,48 +32,62 @@ public final class AdmissionOutboxFactory {
             .setEventId(eventId)
             .setCreatedAtUnixMs(now)
             .setSourceService("risk-service")
-            .setCorrelationId(entry.commandId().toString())
+            .setCorrelationId(eventId)
             .build();
     final VenueInstrument instrument =
         VenueInstrument.newBuilder()
-            .setSymbol(entry.symbol())
-            .setVenueMic(entry.venueMic())
+            .setSymbol(order.instrument().symbol().value())
+            .setVenueMic(order.instrument().venueMic().value())
             .build();
     final byte[] payload;
     final String payloadType;
-    if (entry.state() == AdmissionState.ACCEPTED) {
+    if (entry.lifecycle().state() == AdmissionState.ACCEPTED) {
       payload =
           OrderAdmissionAccepted.newBuilder()
               .setMetadata(metadata)
-              .setCommandId(entry.commandId().toString())
-              .setOrderId(entry.orderId().toString())
-              .setAccountId(entry.accountId().toString())
+              .setCommandId(identity.commandId().value().toString())
+              .setOrderId(identity.orderId().value().toString())
+              .setAccountId(identity.accountId().value().toString())
               .setInstrument(instrument)
               .setRoutingSnapshotId(
-                  entry.routingSnapshotId() == null ? "" : entry.routingSnapshotId().toString())
-              .setRoutingPartition(entry.routingPartition() == null ? 0 : entry.routingPartition())
+                  command.routing().snapshotId().value() == null
+                      ? ""
+                      : command.routing().snapshotId().value().toString())
+              .setRoutingPartition(
+                  entry.route().routingPartition() == null
+                      ? 0
+                      : entry.route().routingPartition())
               .build()
               .toByteArray();
       payloadType = OrderAdmissionAccepted.getDescriptor().getFullName();
     } else {
+      final AdmissionFailure failure = rejection(entry);
       payload =
           OrderAdmissionRejected.newBuilder()
               .setMetadata(metadata)
-              .setCommandId(entry.commandId().toString())
-              .setOrderId(entry.orderId().toString())
-              .setAccountId(entry.accountId().toString())
+              .setCommandId(identity.commandId().value().toString())
+              .setOrderId(identity.orderId().value().toString())
+              .setAccountId(identity.accountId().value().toString())
               .setInstrument(instrument)
-              .setReason(mapReason(entry.reasonCode()))
-              .setReasonDetail(entry.reasonDetail())
+              .setReason(mapReason(failure.reasonCode().value()))
+              .setReasonDetail(failure.detail().value())
               .build()
               .toByteArray();
       payloadType = OrderAdmissionRejected.getDescriptor().getFullName();
     }
     return OutboxRecord.create(
         new OutboxRecord.EventInfo(eventId, now),
-        OutboxRecord.Routing.withoutPartition(topic, entry.orderId().toString()),
+        OutboxRecord.Routing.withoutPartition(
+            topic, identity.orderId().value().toString()),
         new OutboxRecord.PayloadEnvelope(payload, payloadType, "{\"schema_version\":\"v2\"}"),
-        new OutboxRecord.AggregateRef("order_admission", entry.orderId().toString()));
+        new OutboxRecord.AggregateRef("order_admission", identity.orderId().value().toString()));
+  }
+
+  private static AdmissionFailure rejection(AdmissionJournalEntry entry) {
+    if (entry.lifecycle().decision() instanceof AdmissionDecision.Rejected rejected) {
+      return rejected.failure();
+    }
+    throw new IllegalArgumentException("only rejected admissions have a rejection event");
   }
 
   private com.simplematch.contracts.orders.v2.AdmissionRejectReason mapReason(String reason) {

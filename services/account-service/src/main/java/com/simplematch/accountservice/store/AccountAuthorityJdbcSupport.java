@@ -1,8 +1,21 @@
 package com.simplematch.accountservice.store;
 
 import com.simplematch.accountservice.authority.AccountLimit;
+import com.simplematch.accountservice.authority.AccountLimitIdentity;
+import com.simplematch.accountservice.authority.AccountLimitLedger;
+import com.simplematch.accountservice.authority.AccountLimitRevision;
 import com.simplematch.accountservice.authority.AccountPosition;
+import com.simplematch.accountservice.authority.AccountPositionIdentity;
+import com.simplematch.accountservice.authority.AccountPositionInventory;
+import com.simplematch.accountservice.authority.AccountPositionRevision;
 import com.simplematch.accountservice.authority.AccountReservation;
+import com.simplematch.accountservice.authority.ReservationAllocation;
+import com.simplematch.accountservice.authority.ReservationLifecycle;
+import com.simplematch.accountservice.authority.ReservationOutcome;
+import com.simplematch.accountservice.authority.ReservationOwnership;
+import com.simplematch.accountservice.authority.ReservationRevision;
+import com.simplematch.accountservice.reservation.ReservationIdentity;
+import com.simplematch.accountservice.reservation.ReservationTerms;
 import com.simplematch.contracts.common.v1.ReservationStatus;
 import com.simplematch.contracts.common.v1.Side;
 import java.sql.PreparedStatement;
@@ -21,46 +34,55 @@ final class AccountAuthorityJdbcSupport {
   static final RowMapper<AccountLimit> LIMIT_MAPPER =
       (rs, row) ->
           new AccountLimit(
-              rs.getString("account_id"),
-              rs.getObject("trading_day", LocalDate.class),
-              rs.getString("currency"),
-              rs.getBigDecimal("limit_total_notional"),
-              rs.getBigDecimal("reserved_notional"),
-              rs.getBigDecimal("utilized_notional"),
-              rs.getBigDecimal("available_notional"),
-              rs.getLong("version"),
-              rs.getLong("updated_at_unix_ms"));
+              new AccountLimitIdentity(
+                  rs.getString("account_id"),
+                  rs.getObject("trading_day", LocalDate.class),
+                  rs.getString("currency")),
+              new AccountLimitLedger(
+                  rs.getBigDecimal("limit_total_notional"),
+                  rs.getBigDecimal("reserved_notional"),
+                  rs.getBigDecimal("utilized_notional"),
+                  rs.getBigDecimal("available_notional")),
+              new AccountLimitRevision(rs.getLong("version"), rs.getLong("updated_at_unix_ms")));
   static final RowMapper<AccountPosition> POSITION_MAPPER =
       (rs, row) ->
           new AccountPosition(
-              rs.getString("account_id"),
-              rs.getString("symbol"),
-              rs.getBigDecimal("long_qty"),
-              rs.getBigDecimal("short_qty"),
-              rs.getBigDecimal("reserved_long_qty"),
-              rs.getBigDecimal("reserved_short_qty"),
-              rs.getLong("version"),
-              rs.getLong("updated_at_unix_ms"));
+              new AccountPositionIdentity(rs.getString("account_id"), rs.getString("symbol")),
+              new AccountPositionInventory(
+                  rs.getBigDecimal("long_qty"),
+                  rs.getBigDecimal("short_qty"),
+                  rs.getBigDecimal("reserved_long_qty"),
+                  rs.getBigDecimal("reserved_short_qty")),
+              new AccountPositionRevision(rs.getLong("version"), rs.getLong("updated_at_unix_ms")));
   static final RowMapper<AccountReservation> RESERVATION_MAPPER =
-      (rs, row) ->
-          new AccountReservation(
-              rs.getString("reservation_id"),
-              rs.getString("request_id"),
-              rs.getString("order_id"),
-              rs.getString("account_id"),
-              rs.getString("symbol"),
-              Side.valueOf(rs.getString("side")),
-              rs.getBigDecimal("quantity"),
-              rs.getBigDecimal("remaining_quantity"),
-              rs.getBigDecimal("filled_quantity"),
-              rs.getBigDecimal("limit_price"),
-              rs.getBigDecimal("reserved_notional"),
-              ReservationStatus.valueOf(rs.getString("status")),
-              rs.getString("reason_code"),
-              rs.getString("reason_text"),
-              rs.getLong("version"),
-              rs.getLong("created_at_unix_ms"),
-              rs.getLong("updated_at_unix_ms"));
+      (rs, row) -> reservation(rs);
+
+  private static AccountReservation reservation(ResultSet rs) throws java.sql.SQLException {
+    return new AccountReservation(
+        new ReservationIdentity(
+            new ReservationIdentity.RequestId(rs.getString("request_id")),
+            new ReservationIdentity.ReservationId(rs.getString("reservation_id")),
+            new ReservationIdentity.OrderId(rs.getString("order_id"))),
+        new ReservationOwnership(rs.getString("account_id")),
+        new ReservationTerms(
+            new ReservationTerms.InstrumentSymbol(rs.getString("symbol")),
+            Side.valueOf(rs.getString("side")),
+            new ReservationTerms.ReservationQuantity(rs.getBigDecimal("quantity")),
+            new ReservationTerms.LimitPrice(rs.getBigDecimal("limit_price"))),
+        new ReservationLifecycle(
+            new ReservationAllocation(
+                rs.getBigDecimal("remaining_quantity"),
+                rs.getBigDecimal("filled_quantity"),
+                rs.getBigDecimal("reserved_notional")),
+            new ReservationOutcome(
+                ReservationStatus.valueOf(rs.getString("status")),
+                rs.getString("reason_code"),
+                rs.getString("reason_text")),
+            new ReservationRevision(
+                rs.getLong("version"),
+                rs.getLong("created_at_unix_ms"),
+                rs.getLong("updated_at_unix_ms"))));
+  }
 
   private final JdbcTemplate jdbcTemplate;
 

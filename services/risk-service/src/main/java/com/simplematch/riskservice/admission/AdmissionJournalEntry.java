@@ -1,113 +1,55 @@
 package com.simplematch.riskservice.admission;
 
-import java.time.LocalDate;
 import java.util.Objects;
-import java.util.UUID;
 
-/** Immutable durable admission journal row. */
+/**
+ * Durable admission aggregate composed from command, delivery route, and lifecycle state.
+ *
+ * @param command validated order and ingress facts
+ * @param route persisted delivery route
+ * @param lifecycle state-specific decision and optimistic revision
+ */
 public record AdmissionJournalEntry(
-    UUID commandId,
-    UUID orderId,
-    UUID accountId,
-    String symbol,
-    String venueMic,
-    String side,
-    long quantity,
-    Long limitPriceUnits,
-    String orderType,
-    String tif,
-    LocalDate tradingDay,
-    String senderCompId,
-    String targetCompId,
-    String clOrdId,
-    UUID routingSnapshotId,
-    Integer routingPartition,
-    AdmissionState state,
-    UUID reservationId,
-    String reasonCode,
-    String reasonDetail,
-    long version,
-    long createdAtUnixMs,
-    long updatedAtUnixMs) {
-  /** Validates identity, state, and monotonic journal values. */
+    AdmissionCommand command, AdmissionDeliveryRoute route, AdmissionLifecycle lifecycle) {
+  /** Requires all semantic portions of the journal aggregate. */
   public AdmissionJournalEntry {
-    if (commandId == null
-        || orderId == null
-        || accountId == null
-        || symbol == null
-        || symbol.isBlank()
-        || venueMic == null
-        || venueMic.isBlank()
-        || quantity <= 0
-        || tradingDay == null
-        || senderCompId == null
-        || targetCompId == null
-        || clOrdId == null
-        || clOrdId.isBlank()
-        || state == null
-        || version < 0
-        || updatedAtUnixMs < createdAtUnixMs) {
-      throw new IllegalArgumentException("admission journal fields are invalid");
-    }
-    reasonCode = reasonCode == null ? "" : reasonCode;
-    reasonDetail = reasonDetail == null ? "" : reasonDetail;
+    Objects.requireNonNull(command, "command");
+    Objects.requireNonNull(route, "route");
+    Objects.requireNonNull(lifecycle, "lifecycle");
   }
 
-  /** Returns a pending journal entry from a validated command. */
+  /**
+   * Creates a pending journal entry from validated command facts and its persisted route.
+   *
+   * @param command validated admission command
+   * @param route route persisted with the journal row
+   * @param now creation timestamp in Unix milliseconds
+   * @return a pending journal entry
+   */
+  public static AdmissionJournalEntry pending(
+      AdmissionCommand command, AdmissionDeliveryRoute route, long now) {
+    return new AdmissionJournalEntry(command, route, AdmissionLifecycle.pending(now));
+  }
+
+  /**
+   * Creates a pending entry without an explicit route for legacy ingress callers.
+   *
+   * @param command validated admission command
+   * @param now creation timestamp in Unix milliseconds
+   * @return a pending journal entry with an unassigned route
+   */
   public static AdmissionJournalEntry pending(AdmissionCommand command, long now) {
-    final AdmissionIdentity identity = command.identity();
-    final AdmissionOrder order = command.order();
-    final AdmissionOrder.Instrument instrument = order.instrument();
-    final AdmissionOrder.Characteristics characteristics = order.characteristics();
-    final AdmissionFixIdentity fixIdentity = command.fixIdentity();
-    return new AdmissionJournalEntry(
-        identity.commandId().value(),
-        identity.orderId().value(),
-        identity.accountId().value(),
-        instrument.symbol().value(),
-        instrument.venueMic().value(),
-        characteristics.side().value(),
-        characteristics.quantity().value(),
-        characteristics.limitPrice().value(),
-        characteristics.orderType().value(),
-        characteristics.timeInForce().value(),
-        order.tradingDay(),
-        fixIdentity.senderCompId().value(),
-        fixIdentity.targetCompId().value(),
-        fixIdentity.clOrdId().value(),
-        command.routing().snapshotId().value(),
-        null,
-        AdmissionState.PENDING,
-        null,
-        "",
-        "",
-        0,
-        now,
-        now);
+    return pending(command, AdmissionDeliveryRoute.unassigned(), now);
   }
 
-  /** Returns whether a retry carries the same persisted command content. */
-  public boolean matches(AdmissionCommand command) {
-    final AdmissionIdentity identity = command.identity();
-    final AdmissionOrder order = command.order();
-    final AdmissionOrder.Instrument instrument = order.instrument();
-    final AdmissionOrder.Characteristics characteristics = order.characteristics();
-    final AdmissionFixIdentity fixIdentity = command.fixIdentity();
-    return commandId.equals(identity.commandId().value())
-        && orderId.equals(identity.orderId().value())
-        && accountId.equals(identity.accountId().value())
-        && symbol.equals(instrument.symbol().value())
-        && venueMic.equals(instrument.venueMic().value())
-        && side.equals(characteristics.side().value())
-        && quantity == characteristics.quantity().value()
-        && Objects.equals(limitPriceUnits, characteristics.limitPrice().value())
-        && orderType.equals(characteristics.orderType().value())
-        && tif.equals(characteristics.timeInForce().value())
-        && tradingDay.equals(order.tradingDay())
-        && senderCompId.equals(fixIdentity.senderCompId().value())
-        && targetCompId.equals(fixIdentity.targetCompId().value())
-        && clOrdId.equals(fixIdentity.clOrdId().value())
-        && Objects.equals(routingSnapshotId, command.routing().snapshotId().value());
+  /**
+   * Returns whether a retry carries the same persisted command content.
+   *
+   * @param candidate command supplied by the retry
+   * @return whether the candidate matches this journal command
+   */
+  public boolean matches(AdmissionCommand candidate) {
+    return command.equals(Objects.requireNonNull(candidate, "candidate"));
   }
 
   /**
@@ -121,33 +63,12 @@ public record AdmissionJournalEntry(
    * @return the transitioned admission, or this instance when already terminal
    */
   public AdmissionJournalEntry finalizeWith(ReservationOutcome outcome, long now) {
-    Objects.requireNonNull(outcome, "outcome");
-    if (state != AdmissionState.PENDING) {
+    if (!(lifecycle.decision() instanceof AdmissionDecision.Pending)) {
       return this;
     }
+    final AdmissionLifecycle nextLifecycle = lifecycle.finalizeWith(command.order(), outcome, now);
     return new AdmissionJournalEntry(
-        commandId,
-        orderId,
-        accountId,
-        symbol,
-        venueMic,
-        side,
-        quantity,
-        limitPriceUnits,
-        orderType,
-        tif,
-        tradingDay,
-        senderCompId,
-        targetCompId,
-        clOrdId,
-        routingSnapshotId,
-        routingPartition,
-        outcome.accepted() ? AdmissionState.ACCEPTED : AdmissionState.REJECTED,
-        outcome.reservationId(),
-        outcome.reasonCode(),
-        outcome.reasonDetail(),
-        version + 1,
-        createdAtUnixMs,
-        now);
+        command, route, nextLifecycle);
   }
+
 }

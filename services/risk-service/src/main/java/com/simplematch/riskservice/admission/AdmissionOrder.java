@@ -45,6 +45,11 @@ public record AdmissionOrder(
     }
   }
 
+  /** Returns whether this order represents a cancellation admission. */
+  public boolean isCancellation() {
+    return "CANCEL".equals(characteristics.orderType().value());
+  }
+
   /** Validated instrument symbol. */
   public record Symbol(String value) {
     /** Requires a nonblank symbol. */

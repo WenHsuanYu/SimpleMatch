@@ -1,11 +1,13 @@
 package com.simplematch.riskservice.store;
 
 import com.simplematch.riskservice.admission.AdmissionCommand;
+import com.simplematch.riskservice.admission.AdmissionDecision;
+import com.simplematch.riskservice.admission.AdmissionFixIdentity;
+import com.simplematch.riskservice.admission.AdmissionIdentity;
 import com.simplematch.riskservice.admission.AdmissionJournalEntry;
 import com.simplematch.riskservice.admission.AdmissionJournalRepository;
-import com.simplematch.riskservice.admission.AdmissionState;
+import com.simplematch.riskservice.admission.AdmissionOrder;
 import java.time.Instant;
-import java.time.LocalDate;
 import java.util.List;
 import java.util.Objects;
 import java.util.Optional;
@@ -21,32 +23,7 @@ import org.springframework.stereotype.Repository;
 @Repository
 @RequiredArgsConstructor
 public class JdbcAdmissionJournalRepository implements AdmissionJournalRepository {
-  private static final RowMapper<AdmissionJournalEntry> MAPPER =
-      (resultSet, row) ->
-          new AdmissionJournalEntry(
-              resultSet.getObject("command_id", UUID.class),
-              resultSet.getObject("order_id", UUID.class),
-              resultSet.getObject("account_id", UUID.class),
-              resultSet.getString("symbol"),
-              resultSet.getString("venue_mic"),
-              resultSet.getString("side"),
-              resultSet.getLong("quantity"),
-              resultSet.getObject("limit_price_units", Long.class),
-              resultSet.getString("order_type"),
-              resultSet.getString("tif"),
-              resultSet.getObject("trading_day", LocalDate.class),
-              resultSet.getString("sender_comp_id"),
-              resultSet.getString("target_comp_id"),
-              resultSet.getString("cl_ord_id"),
-              resultSet.getObject("routing_snapshot_id", UUID.class),
-              resultSet.getObject("routing_partition", Integer.class),
-              AdmissionState.valueOf(resultSet.getString("state")),
-              resultSet.getObject("reservation_id", UUID.class),
-              resultSet.getString("reason_code"),
-              resultSet.getString("reason_detail"),
-              resultSet.getLong("version"),
-              resultSet.getLong("created_at_unix_ms"),
-              resultSet.getLong("updated_at_unix_ms"));
+  private static final RowMapper<AdmissionJournalEntry> MAPPER = AdmissionJournalRowMapper.MAPPER;
 
   private final @NonNull JdbcTemplate jdbcTemplate;
 
@@ -75,6 +52,13 @@ public class JdbcAdmissionJournalRepository implements AdmissionJournalRepositor
   @Override
   public boolean insert(AdmissionJournalEntry entry) {
     final String suffix = isPostgres() ? " ON CONFLICT DO NOTHING" : "";
+    final AdmissionCommand command = entry.command();
+    final AdmissionIdentity identity = command.identity();
+    final AdmissionOrder order = command.order();
+    final AdmissionOrder.Instrument instrument = order.instrument();
+    final AdmissionOrder.Characteristics characteristics = order.characteristics();
+    final AdmissionFixIdentity fixIdentity = command.fixIdentity();
+    final AdmissionDecision decision = entry.lifecycle().decision();
     return jdbcTemplate.update(
             """
             INSERT INTO risk_service.admission_journal (
@@ -86,47 +70,48 @@ public class JdbcAdmissionJournalRepository implements AdmissionJournalRepositor
             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """
                 + suffix,
-            entry.commandId(),
-            entry.orderId(),
-            entry.accountId(),
-            entry.symbol(),
-            entry.venueMic(),
-            entry.side(),
-            entry.quantity(),
-            entry.limitPriceUnits(),
-            entry.orderType(),
-            entry.tif(),
-            entry.tradingDay(),
-            entry.senderCompId(),
-            entry.targetCompId(),
-            entry.clOrdId(),
-            entry.routingSnapshotId(),
-            entry.routingPartition(),
-            entry.state().name(),
-            entry.reservationId(),
-            entry.reasonCode(),
-            entry.reasonDetail(),
-            entry.version(),
-            entry.createdAtUnixMs(),
-            entry.updatedAtUnixMs())
+            identity.commandId().value(),
+            identity.orderId().value(),
+            identity.accountId().value(),
+            instrument.symbol().value(),
+            instrument.venueMic().value(),
+            characteristics.side().value(),
+            characteristics.quantity().value(),
+            characteristics.limitPrice().value(),
+            characteristics.orderType().value(),
+            characteristics.timeInForce().value(),
+            order.tradingDay(),
+            fixIdentity.senderCompId().value(),
+            fixIdentity.targetCompId().value(),
+            fixIdentity.clOrdId().value(),
+            command.routing().snapshotId().value(),
+            entry.route().routingPartition(),
+            decision.state().name(),
+            decision.reservationId(),
+            decision.reasonCode(),
+            decision.reasonDetail(),
+            entry.lifecycle().version(),
+            entry.lifecycle().createdAtUnixMs(),
+            entry.lifecycle().updatedAtUnixMs())
         == 1;
   }
 
   @Override
   public void update(AdmissionJournalEntry entry, long expectedVersion) {
+    final AdmissionDecision decision = entry.lifecycle().decision();
     final int updated =
         jdbcTemplate.update(
             "UPDATE risk_service.admission_journal SET state = ?, reservation_id = ?, "
                 + "routing_partition = ?, reason_code = ?, reason_detail = ?, version = ?, "
                 + "updated_at_unix_ms = ? WHERE command_id = ? AND version = ?",
-            entry.state().name(),
-            entry.reservationId(),
-            entry.routingPartition(),
-            entry.reasonCode(),
-            entry.reasonDetail(),
-            entry.version(),
-            entry.updatedAtUnixMs(),
-            entry.commandId(),
+            decision.state().name(),
+            decision.reservationId(),
+            entry.route().routingPartition(),
+            decision.reasonCode(),
+            decision.reasonDetail(),
+            entry.lifecycle().version(),
+            entry.lifecycle().updatedAtUnixMs(),
+            entry.command().identity().commandId().value(),
             expectedVersion);
     if (updated != 1) {
       throw new IllegalStateException("admission journal optimistic version conflict");

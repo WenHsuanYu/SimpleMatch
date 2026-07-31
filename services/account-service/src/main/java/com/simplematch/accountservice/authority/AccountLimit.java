@@ -4,80 +4,79 @@ import java.math.BigDecimal;
 import java.time.LocalDate;
 import java.util.Objects;
 
-/** Immutable account notional limit and its optimistic version. */
+/**
+ * Immutable daily account notional limit composed from identity, ledger, and revision state.
+ *
+ * @param identity daily account-limit identity
+ * @param ledger notional balance state
+ * @param revision optimistic version and update timestamp
+ */
 public record AccountLimit(
-    String accountId,
-    LocalDate tradingDay,
-    String currency,
-    BigDecimal limitTotalNotional,
-    BigDecimal reservedNotional,
-    BigDecimal utilizedNotional,
-    BigDecimal availableNotional,
-    long version,
-    long updatedAtUnixMs) {
-  /** Validates the persisted limit invariant. */
+    AccountLimitIdentity identity, AccountLimitLedger ledger, AccountLimitRevision revision) {
+  /** Requires the three independent semantic parts of an account limit. */
   public AccountLimit {
-    accountId = text(accountId, "account_id");
-    Objects.requireNonNull(tradingDay, "trading_day");
-    if (!"TWD".equals(currency)) {
-      throw new IllegalArgumentException("currency must be TWD");
-    }
-    limitTotalNotional = nonNegative(limitTotalNotional, "limit_total_notional");
-    reservedNotional = nonNegative(reservedNotional, "reserved_notional");
-    utilizedNotional = nonNegative(utilizedNotional, "utilized_notional");
-    availableNotional = nonNegative(availableNotional, "available_notional");
-    if (availableNotional.compareTo(
-            limitTotalNotional.subtract(reservedNotional).subtract(utilizedNotional))
-        != 0) {
-      throw new IllegalArgumentException(
-          "available_notional must equal limit minus reserved and utilized");
-    }
-    if (version < 0 || updatedAtUnixMs < 0) {
-      throw new IllegalArgumentException("version and timestamp must be non-negative");
-    }
+    Objects.requireNonNull(identity, "identity");
+    Objects.requireNonNull(ledger, "ledger");
+    Objects.requireNonNull(revision, "revision");
   }
 
-  /** Returns a provisioned limit with no reservations or utilization. */
+  /** Returns a provisioned TWD limit with no reservations or utilization. */
   public static AccountLimit provisioned(
       String accountId, LocalDate tradingDay, BigDecimal limitTotalNotional, long now) {
     return new AccountLimit(
-        accountId,
-        tradingDay,
-        "TWD",
-        limitTotalNotional,
-        BigDecimal.ZERO,
-        BigDecimal.ZERO,
-        limitTotalNotional,
-        0,
-        now);
+        new AccountLimitIdentity(accountId, tradingDay, "TWD"),
+        new AccountLimitLedger(
+            limitTotalNotional, BigDecimal.ZERO, BigDecimal.ZERO, limitTotalNotional),
+        AccountLimitRevision.initial(now));
   }
 
-  /** Returns a copy with a new authoritative balance. */
-  public AccountLimit withBalances(
-      BigDecimal reserved, BigDecimal utilized, BigDecimal available, long nextVersion, long now) {
-    return new AccountLimit(
-        accountId,
-        tradingDay,
-        currency,
-        limitTotalNotional,
-        reserved,
-        utilized,
-        available,
-        nextVersion,
-        now);
+  /** Returns a copy with a new ledger and optimistic revision. */
+  public AccountLimit withLedger(AccountLimitLedger nextLedger, AccountLimitRevision nextRevision) {
+    return new AccountLimit(identity, nextLedger, nextRevision);
   }
 
-  private static String text(String value, String name) {
-    if (value == null || value.isBlank()) {
-      throw new IllegalArgumentException(name + " must not be blank");
-    }
-    return value;
+  /** Returns the account identifier for boundary projections. */
+  public String accountId() {
+    return identity.accountId();
   }
 
-  private static BigDecimal nonNegative(BigDecimal value, String name) {
-    if (value == null || value.signum() < 0) {
-      throw new IllegalArgumentException(name + " must be non-negative");
-    }
-    return value;
+  /** Returns the trading day for boundary projections. */
+  public LocalDate tradingDay() {
+    return identity.tradingDay();
+  }
+
+  /** Returns the persisted currency code. */
+  public String currency() {
+    return identity.currency();
+  }
+
+  /** Returns the total daily notional authority. */
+  public BigDecimal limitTotalNotional() {
+    return ledger.limitTotalNotional();
+  }
+
+  /** Returns the notional currently held by reservations. */
+  public BigDecimal reservedNotional() {
+    return ledger.reservedNotional();
+  }
+
+  /** Returns the notional already consumed by fills. */
+  public BigDecimal utilizedNotional() {
+    return ledger.utilizedNotional();
+  }
+
+  /** Returns the remaining available notional. */
+  public BigDecimal availableNotional() {
+    return ledger.availableNotional();
+  }
+
+  /** Returns the optimistic version. */
+  public long version() {
+    return revision.version();
+  }
+
+  /** Returns the last update timestamp. */
+  public long updatedAtUnixMs() {
+    return revision.updatedAtUnixMs();
   }
 }

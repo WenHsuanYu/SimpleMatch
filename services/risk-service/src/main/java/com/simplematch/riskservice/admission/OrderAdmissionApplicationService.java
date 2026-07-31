@@ -113,12 +113,18 @@ public class OrderAdmissionApplicationService {
     final AdmissionJournalEntry existingByBusiness =
         journal.findByBusinessKey(command).orElse(null);
     if (existingByBusiness != null) {
-      if (!existingByBusiness.commandId().equals(command.identity().commandId().value())) {
+      if (!existingByBusiness
+          .command()
+          .identity()
+          .commandId()
+          .value()
+          .equals(command.identity().commandId().value())) {
         throw new AdmissionConflictException();
       }
       return result(existingByBusiness);
     }
-    final AdmissionJournalEntry pending = AdmissionJournalEntry.pending(command, clock.millis());
+    final AdmissionJournalEntry pending =
+        AdmissionJournalEntry.pending(command, AdmissionDeliveryRoute.unassigned(), clock.millis());
     try {
       if (journal.insert(pending)) {
         return result(pending);
@@ -159,12 +165,12 @@ public class OrderAdmissionApplicationService {
         journal
             .findByCommandId(commandId)
             .orElseThrow(() -> new IllegalArgumentException("pending admission not found"));
-    if (current.state() != AdmissionState.PENDING) {
+    if (current.lifecycle().state() != AdmissionState.PENDING) {
       return result(current);
     }
     final long now = clock.millis();
     final AdmissionJournalEntry terminal = current.finalizeWith(reservation, now);
-    journal.update(terminal, current.version());
+    journal.update(terminal, current.lifecycle().version());
     final OutboxRecord event = events.create(terminal);
     outbox.insert(event);
     return result(terminal);
@@ -178,35 +184,15 @@ public class OrderAdmissionApplicationService {
     int recovered = 0;
     for (AdmissionJournalEntry entry : pending) {
       try {
-        final AdmissionCommand command =
-            new AdmissionCommand(
-                new AdmissionIdentity(
-                    new AdmissionIdentity.CommandId(entry.commandId()),
-                    new AdmissionIdentity.OrderId(entry.orderId()),
-                    new AdmissionIdentity.AccountId(entry.accountId())),
-                new AdmissionOrder(
-                    new AdmissionOrder.Instrument(
-                        new AdmissionOrder.Symbol(entry.symbol()),
-                        new AdmissionOrder.VenueMic(entry.venueMic())),
-                    new AdmissionOrder.Characteristics(
-                        new AdmissionOrder.SideCode(entry.side()),
-                        new AdmissionOrder.Quantity(entry.quantity()),
-                        new AdmissionOrder.LimitPriceUnits(entry.limitPriceUnits()),
-                        new AdmissionOrder.OrderTypeCode(entry.orderType()),
-                        new AdmissionOrder.TimeInForceCode(entry.tif())),
-                    entry.tradingDay()),
-                new AdmissionFixIdentity(
-                    new AdmissionFixIdentity.SenderCompId(entry.senderCompId()),
-                    new AdmissionFixIdentity.TargetCompId(entry.targetCompId()),
-                    new AdmissionFixIdentity.ClOrdId(entry.clOrdId())),
-                new AdmissionRoutingReference(
-                    new AdmissionRoutingReference.RoutingSnapshotId(entry.routingSnapshotId())));
+        final AdmissionCommand command = entry.command();
         final ReservationOutcome outcome =
-            "CANCEL".equals(command.order().characteristics().orderType().value())
+            command.order().isCancellation()
                 ? ReservationOutcome.accepted(null)
                 : account.reserve(command);
         transactionTemplate.executeWithoutResult(
-            status -> finalizeAdmissionInTransaction(entry.commandId(), outcome));
+            status ->
+                finalizeAdmissionInTransaction(
+                    entry.command().identity().commandId().value(), outcome));
         recovered++;
       } catch (RuntimeException ignored) {
         // The pending journal remains durable and is eligible for the next bounded recovery pass.
@@ -216,15 +202,6 @@ public class OrderAdmissionApplicationService {
   }
 
   private AdmissionResult result(AdmissionJournalEntry entry) {
-    return new AdmissionResult(
-        entry.commandId(),
-        entry.orderId(),
-        entry.accountId(),
-        entry.state(),
-        entry.reservationId(),
-        entry.reasonCode(),
-        entry.reasonDetail(),
-        entry.routingSnapshotId() == null ? "" : entry.routingSnapshotId().toString(),
-        entry.routingPartition());
+    return AdmissionResult.from(entry);
   }
 }

@@ -4,9 +4,12 @@ import com.simplematch.accountservice.authority.AccountAuthorityLifecycleWriter;
 import com.simplematch.accountservice.authority.AccountAuthorityReader;
 import com.simplematch.accountservice.authority.AccountLifecycleOutbox;
 import com.simplematch.accountservice.authority.AccountLimit;
+import com.simplematch.accountservice.authority.AccountLimitLedger;
 import com.simplematch.accountservice.authority.AccountOutboxRepository;
 import com.simplematch.accountservice.authority.AccountPosition;
+import com.simplematch.accountservice.authority.AccountPositionInventory;
 import com.simplematch.accountservice.authority.AccountReservation;
+import com.simplematch.accountservice.authority.ReservationOwnership;
 import com.simplematch.config.SimpleMatchUuids;
 import com.simplematch.contracts.account.v2.AccountLifecycleEvent;
 import com.simplematch.contracts.account.v2.AccountLifecycleState;
@@ -55,15 +58,6 @@ public class AccountReservationApplicationService implements ReservationService 
 
     final long now = clock.millis();
     final LocalDate tradingDay = clock.instant().atZone(TAIPEI).toLocalDate();
-    final AccountReservation.ReserveOperationSnapshot snapshot =
-        new AccountReservation.ReserveOperationSnapshot(
-            operation.requestId(),
-            operation.orderId(),
-            operation.accountId(),
-            operation.symbol(),
-            operation.side(),
-            operation.quantity(),
-            operation.limitPrice());
     final BigDecimal notional =
         operation.limitPrice() == null
             ? BigDecimal.ZERO
@@ -71,7 +65,6 @@ public class AccountReservationApplicationService implements ReservationService 
     if (operation.limitPrice() == null) {
       return persistRejected(
           operation,
-          snapshot,
           "LIMIT_PRICE_REQUIRED",
           "a limit price is required for reservation",
           now);
@@ -83,18 +76,18 @@ public class AccountReservationApplicationService implements ReservationService 
       if (limit == null || limit.availableNotional().compareTo(notional) < 0) {
         return persistRejected(
             operation,
-            snapshot,
             "INSUFFICIENT_AVAILABLE_NOTIONAL",
             "available account notional is insufficient",
             now);
       }
       final AccountLimit changed =
-          limit.withBalances(
-              limit.reservedNotional().add(notional),
-              limit.utilizedNotional(),
-              limit.availableNotional().subtract(notional),
-              limit.version() + 1,
-              now);
+          limit.withLedger(
+              new AccountLimitLedger(
+                  limit.limitTotalNotional(),
+                  limit.reservedNotional().add(notional),
+                  limit.utilizedNotional(),
+                  limit.availableNotional().subtract(notional)),
+              limit.revision().next(now));
       authorityWriter.updateLimit(changed, limit.version());
     } else {
       final AccountPosition position =
@@ -109,26 +102,28 @@ public class AccountReservationApplicationService implements ReservationService 
               < 0) {
         return persistRejected(
             operation,
-            snapshot,
             "INSUFFICIENT_AVAILABLE_POSITION",
             "available long position is insufficient",
             now);
       }
       final AccountPosition changed =
-          new AccountPosition(
-              position.accountId(),
-              position.symbol(),
-              position.longQuantity(),
-              position.shortQuantity(),
-              position.reservedLongQuantity().add(operation.quantity()),
-              position.reservedShortQuantity(),
-              position.version() + 1,
-              now);
+          position.withInventory(
+              new AccountPositionInventory(
+                  position.longQuantity(),
+                  position.shortQuantity(),
+                  position.reservedLongQuantity().add(operation.quantity()),
+                  position.reservedShortQuantity()),
+              position.revision().next(now));
       authorityWriter.updatePosition(changed, position.version());
     }
 
     final AccountReservation reservation =
-        AccountReservation.accepted(operation.orderId(), snapshot, notional, now);
+        AccountReservation.accepted(
+            reservationIdentity(operation),
+            new ReservationOwnership(operation.accountId()),
+            operation.terms(),
+            notional,
+            now);
     authorityWriter.insertReservation(reservation);
     emit(reservation, AccountLifecycleState.ACCOUNT_LIFECYCLE_STATE_RESERVED, "", now);
     return toLegacy(reservation);
@@ -172,25 +167,7 @@ public class AccountReservationApplicationService implements ReservationService 
     final long now = clock.millis();
     AccountAuthorityTransitions.releaseCancelledAuthority(
         authorityReader, authorityWriter, clock, reservation, now);
-    final AccountReservation changed =
-        new AccountReservation(
-            reservation.reservationId(),
-            reservation.requestId(),
-            reservation.orderId(),
-            reservation.accountId(),
-            reservation.symbol(),
-            reservation.side(),
-            reservation.quantity(),
-            BigDecimal.ZERO,
-            reservation.filledQuantity(),
-            reservation.limitPrice(),
-            BigDecimal.ZERO,
-            ReservationStatus.RESERVATION_STATUS_RELEASED,
-            operation.reason().value(),
-            "",
-            reservation.version() + 1,
-            reservation.createdAtUnixMs(),
-            now);
+    final AccountReservation changed = reservation.release(operation.reason(), now);
     authorityWriter.updateReservation(changed, reservation.version());
     emit(
         changed, AccountLifecycleState.ACCOUNT_LIFECYCLE_STATE_RELEASED, changed.reasonCode(), now);
@@ -221,36 +198,14 @@ public class AccountReservationApplicationService implements ReservationService 
             .orElseThrow(() -> new IllegalArgumentException("reservation not found"));
     AccountAuthorityTransitions.validateFill(reservation, identity, fill);
     final long now = clock.millis();
-    final BigDecimal remaining = reservation.remainingQuantity().subtract(fill.quantity().value());
     final BigDecimal releasedNotional =
-        remaining.signum() == 0
+        fill.quantity().value().compareTo(reservation.remainingQuantity()) == 0
             ? reservation.reservedNotional()
-            : reservation.reservedNotionalReleasedBy(fill.quantity().value());
+            : reservation.reservedNotionalReleasedBy(fill);
     AccountAuthorityTransitions.applyFilledAuthority(
         authorityReader, authorityWriter, clock, reservation, fill, releasedNotional, now);
-    final ReservationStatus status =
-        remaining.signum() == 0
-            ? ReservationStatus.RESERVATION_STATUS_APPLIED
-            : ReservationStatus.RESERVATION_STATUS_ACCEPTED;
-    final AccountReservation changed =
-        new AccountReservation(
-            reservation.reservationId(),
-            reservation.requestId(),
-            reservation.orderId(),
-            reservation.accountId(),
-            reservation.symbol(),
-            reservation.side(),
-            reservation.quantity(),
-            remaining,
-            reservation.filledQuantity().add(fill.quantity().value()),
-            reservation.limitPrice(),
-            reservation.reservedNotional().subtract(releasedNotional),
-            status,
-            "",
-            "",
-            reservation.version() + 1,
-            reservation.createdAtUnixMs(),
-            now);
+    final AccountReservation changed = reservation.applyFill(fill, now);
+    final ReservationStatus status = changed.status();
     authorityWriter.updateReservation(changed, reservation.version());
     emit(
         changed,
@@ -277,15 +232,27 @@ public class AccountReservationApplicationService implements ReservationService 
 
   private ReservationRecord persistRejected(
       ReserveOperation operation,
-      AccountReservation.ReserveOperationSnapshot snapshot,
       String reasonCode,
       String reasonText,
       long now) {
     final AccountReservation rejected =
-        AccountReservation.rejected(operation.orderId(), snapshot, reasonCode, reasonText, now);
+        AccountReservation.rejected(
+            reservationIdentity(operation),
+            new ReservationOwnership(operation.accountId()),
+            operation.terms(),
+            reasonCode,
+            reasonText,
+            now);
     authorityWriter.insertReservation(rejected);
     emit(rejected, AccountLifecycleState.ACCOUNT_LIFECYCLE_STATE_REJECTED, reasonCode, now);
     return toLegacy(rejected);
+  }
+
+  private ReservationIdentity reservationIdentity(ReserveOperation operation) {
+    return new ReservationIdentity(
+        new ReservationIdentity.RequestId(operation.requestId()),
+        new ReservationIdentity.ReservationId(operation.orderId()),
+        new ReservationIdentity.OrderId(operation.orderId()));
   }
 
   private void emit(
