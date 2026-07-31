@@ -195,6 +195,44 @@ class AccountReservationApplicationServiceTransactionTest {
         .isEqualTo(1);
   }
 
+  @DisplayName("duplicate aggregate sequence delivery is a harmless no-op")
+  @Test
+  void deduplicatesAggregateSequenceDelivery() {
+    final ReservationRecord reservation = service.reserve(operation(Side.SIDE_BUY, "10", "100"));
+    final ReservationIdentity identity =
+        new ReservationIdentity(
+            new ReservationIdentity.RequestId(reservation.requestId()),
+            new ReservationIdentity.ReservationId(reservation.reservationId()),
+            new ReservationIdentity.OrderId(reservation.orderId()));
+    final ExecutionFill firstFill =
+        new ExecutionFill(
+            new ExecutionFill.ExecutionId(UUID.randomUUID().toString()),
+            new ExecutionFill.AggregateSequence(7L),
+            new ExecutionFill.FillQuantity(new BigDecimal("4")),
+            new ExecutionFill.FillPrice(new BigDecimal("99")));
+    final ApplyFillOperation first = new ApplyFillOperation(identity, firstFill);
+    final ApplyFillOperation duplicateSequence =
+        new ApplyFillOperation(
+            identity,
+            new ExecutionFill(
+                new ExecutionFill.ExecutionId(UUID.randomUUID().toString()),
+                new ExecutionFill.AggregateSequence(7L),
+                new ExecutionFill.FillQuantity(new BigDecimal("4")),
+                new ExecutionFill.FillPrice(new BigDecimal("99"))));
+
+    final ReservationRecord applied = service.applyFill(first);
+    final ReservationRecord duplicate = service.applyFill(duplicateSequence);
+
+    assertThat(applied.reservedNotional()).isEqualByComparingTo("600");
+    assertThat(duplicate.reservedNotional()).isEqualByComparingTo("600");
+    assertThat(service.getLimits("acc-1").utilizedNotional()).isEqualByComparingTo("396");
+    assertThat(service.getLimits("acc-1").availableNotional()).isEqualByComparingTo("9004");
+    assertThat(
+            jdbcTemplate.queryForObject(
+                "SELECT COUNT(*) FROM account_service.inbox", Integer.class))
+        .isEqualTo(1);
+  }
+
   @DisplayName("partial buy fill returns price improvement and keeps remaining authority")
   @Test
   void partialBuyFillReturnsPriceImprovement() {

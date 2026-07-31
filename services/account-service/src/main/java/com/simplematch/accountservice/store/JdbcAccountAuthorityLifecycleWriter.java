@@ -5,6 +5,7 @@ import com.simplematch.accountservice.authority.AccountLimit;
 import com.simplematch.accountservice.authority.AccountPosition;
 import com.simplematch.accountservice.authority.AccountReservation;
 import java.util.UUID;
+import org.springframework.dao.DuplicateKeyException;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Repository;
 
@@ -180,14 +181,20 @@ public class JdbcAccountAuthorityLifecycleWriter implements AccountAuthorityLife
             : "MERGE INTO account_service.inbox "
                 + "(consumer_name, event_id, aggregate_id, aggregate_sequence, "
                 + "received_at_unix_ms) KEY(consumer_name, event_id) VALUES (?, ?, ?, ?, ?)";
-    return jdbc.update(
-            insert,
-            consumerName,
-            UUID.fromString(eventId),
-            aggregateId,
-            aggregateSequence,
-            receivedAt)
-        == 1;
+    try {
+      return jdbc.update(
+              insert,
+              consumerName,
+              UUID.fromString(eventId),
+              aggregateId,
+              aggregateSequence,
+              receivedAt)
+          == 1;
+    } catch (DuplicateKeyException duplicate) {
+      // H2 does not support PostgreSQL's ON CONFLICT clause; treat its unique-sequence
+      // violation as the same explicit no-op outcome as a duplicate PostgreSQL delivery.
+      return false;
+    }
   }
 
   private void updateExactlyOne(String sql, Object... arguments) {
