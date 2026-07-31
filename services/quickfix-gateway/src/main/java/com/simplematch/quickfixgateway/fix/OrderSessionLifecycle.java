@@ -1,27 +1,22 @@
 package com.simplematch.quickfixgateway.fix;
 
-/** Owns mutable execution status and cancel correlation for a single order session. */
-final class OrderSessionLifecycle {
-  private volatile char currentOrdStatus;
-  private volatile OrderSessionState.CancelRequestState lastCancelRequest;
+/** Provides the immutable FIX lifecycle values associated with one order session. */
+public record OrderSessionLifecycle(
+    char currentOrdStatus, OrderSessionState.CancelRequestState lastCancelRequest) {
 
-  OrderSessionLifecycle(char currentOrdStatus) {
-    this.currentOrdStatus = currentOrdStatus;
+  /** Creates lifecycle values without an outstanding cancel request. */
+  public OrderSessionLifecycle(char currentOrdStatus) {
+    this(currentOrdStatus, null);
   }
 
-  char currentOrdStatus() {
-    return currentOrdStatus;
+  /** Returns this lifecycle with the supplied current FIX order status. */
+  OrderSessionLifecycle withCurrentOrdStatus(char updatedOrdStatus) {
+    return new OrderSessionLifecycle(updatedOrdStatus, lastCancelRequest);
   }
 
-  void currentOrdStatus(char currentOrdStatus) {
-    this.currentOrdStatus = currentOrdStatus;
-  }
-
-  OrderSessionState.CancelRequestState lastCancelRequest() {
-    return lastCancelRequest;
-  }
-
-  void lastCancelRequest(OrderSessionState.CancelRequestState lastCancelRequest) {
-    this.lastCancelRequest = lastCancelRequest;
+  /** Returns this lifecycle with the supplied cancel-request correlation values. */
+  OrderSessionLifecycle withLastCancelRequest(
+      OrderSessionState.CancelRequestState updatedCancelRequest) {
+    return new OrderSessionLifecycle(currentOrdStatus, updatedCancelRequest);
   }
 }

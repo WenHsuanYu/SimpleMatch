@@ -14,6 +14,19 @@ public record OrderSessionState(
     String quantity,
     OrderSessionLifecycle lifecycle) {
 
+  /** Returns this state with the supplied immutable lifecycle snapshot. */
+  OrderSessionState withLifecycle(OrderSessionLifecycle updatedLifecycle) {
+    return new OrderSessionState(
+        sessionId,
+        orderId,
+        accountId,
+        clOrdId,
+        symbol,
+        side,
+        quantity,
+        updatedLifecycle);
+  }
+
   /** Captures the client identifiers that correlate an outstanding cancel request. */
   public record CancelRequestState(String cancelClOrdId, String origClOrdId) {}
 }

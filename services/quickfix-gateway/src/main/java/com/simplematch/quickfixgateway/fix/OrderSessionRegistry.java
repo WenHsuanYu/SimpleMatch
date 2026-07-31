@@ -45,10 +45,12 @@ public final class OrderSessionRegistry implements ExecutionSessionResolver {
                       walRecord.quantity(),
                       new OrderSessionLifecycle('A'))
                   : existing;
-          state.lifecycle().lastCancelRequest(
-              new OrderSessionState.CancelRequestState(
-                  walRecord.clOrdId(), walRecord.origClOrdId()));
-          return state;
+          return state.withLifecycle(
+              state
+                  .lifecycle()
+                  .withLastCancelRequest(
+                      new OrderSessionState.CancelRequestState(
+                          walRecord.clOrdId(), walRecord.origClOrdId())));
         });
   }
 
@@ -69,17 +71,22 @@ public final class OrderSessionRegistry implements ExecutionSessionResolver {
 
   /** Applies an execution outcome to the locally tracked order session state. */
   public void applyExecution(ExecutionEvent executionEvent) {
-    final OrderSessionState state = states.get(executionEvent.getOrderId());
-    if (state == null) {
-      return;
-    }
-
-    state.lifecycle().currentOrdStatus(
-        mapOrdStatus(executionEvent.getExecutionType(), state.lifecycle().currentOrdStatus()));
-    if (executionEvent.getExecutionType() == ExecutionType.EXECUTION_TYPE_CANCELED
-        || executionEvent.getExecutionType() == ExecutionType.EXECUTION_TYPE_CANCEL_REJECTED) {
-      state.lifecycle().lastCancelRequest(null);
-    }
+    states.computeIfPresent(
+        executionEvent.getOrderId(),
+        (orderId, state) -> {
+          OrderSessionLifecycle updatedLifecycle =
+              state
+                  .lifecycle()
+                  .withCurrentOrdStatus(
+                      mapOrdStatus(
+                          executionEvent.getExecutionType(), state.lifecycle().currentOrdStatus()));
+          if (executionEvent.getExecutionType() == ExecutionType.EXECUTION_TYPE_CANCELED
+              || executionEvent.getExecutionType()
+                  == ExecutionType.EXECUTION_TYPE_CANCEL_REJECTED) {
+            updatedLifecycle = updatedLifecycle.withLastCancelRequest(null);
+          }
+          return state.withLifecycle(updatedLifecycle);
+        });
   }
 
   private char mapOrdStatus(ExecutionType executionType, char fallback) {
