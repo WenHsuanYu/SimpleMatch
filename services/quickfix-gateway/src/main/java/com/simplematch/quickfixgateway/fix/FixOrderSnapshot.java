@@ -21,11 +21,11 @@ public record FixOrderSnapshot(
     OrderId orderId, ClientOrderId clientOrderId, Symbol symbol, Side side, Quantity quantity) {
   /** Requires a complete FIX report context. */
   public FixOrderSnapshot {
-    orderId = Objects.requireNonNull(orderId, "orderId");
-    clientOrderId = Objects.requireNonNull(clientOrderId, "clientOrderId");
-    symbol = Objects.requireNonNull(symbol, "symbol");
-    side = Objects.requireNonNull(side, "side");
-    quantity = Objects.requireNonNull(quantity, "quantity");
+    Objects.requireNonNull(orderId, "orderId");
+    Objects.requireNonNull(clientOrderId, "clientOrderId");
+    Objects.requireNonNull(symbol, "symbol");
+    Objects.requireNonNull(side, "side");
+    Objects.requireNonNull(quantity, "quantity");
   }
 
   /** Creates the report context from the durable gateway WAL record. */

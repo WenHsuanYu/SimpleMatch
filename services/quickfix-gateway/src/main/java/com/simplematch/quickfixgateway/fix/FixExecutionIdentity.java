@@ -12,8 +12,8 @@ import java.util.Objects;
 public record FixExecutionIdentity(ExecutionId executionId, Instant transactTime) {
   /** Requires a complete execution identity. */
   public FixExecutionIdentity {
-    executionId = Objects.requireNonNull(executionId, "executionId");
-    transactTime = Objects.requireNonNull(transactTime, "transactTime");
+    Objects.requireNonNull(executionId, "executionId");
+    Objects.requireNonNull(transactTime, "transactTime");
   }
 
   /** Execution identity rendered in FIX tag 17. */
