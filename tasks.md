@@ -845,6 +845,11 @@ Kafka**。
   blocking 編譯，並對既定模組執行 blocking `Checkstyle` / `PMD` / `SpotBugs`
 - [x] #55 Error Prone blocking ratchet：移除 warning-only 設定，以 TestKit 負向驗證確認
   handwritten finding 會使 `compileJava` 失敗，並保留 generated-source exclusion 邊界
+- [x] #56 complete quality-ratchet verification（2026-08-03）：ordinary root static analysis 在
+  Checkstyle / PMD / SpotBugs / Error Prone 全部 blocking 的情況下通過，完整 Java suite 與
+  QuickFIX certification 通過；47-rule PMD single source 與七參數邊界已記錄於
+  [quality-ratchet-verification](docs/quality-ratchet-verification.md)。該文件也記錄 #21/#22
+  的目前 closure evidence，但不替兩個 parent issue 修改內容或狀態
 - [x] SpotBugs false-positive filter 已先收斂到已確認的 Spring config / runtime holder 類別，避免干擾實際問題
 - [x] 現有 GitHub Actions Java job 已接入同一個 `./gradlew staticAnalysis` blocking gate，並上傳
   Checkstyle / PMD / SpotBugs 報告 artifacts

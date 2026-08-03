@@ -31,10 +31,10 @@ available solely for dependency resolution.
 
 The initial inventory was resolved by centralizing PostgreSQL URI parsing in
 `PostgresJdbcUrl`, extracting platform and v2 new-order validation modules, and enabling the policy
-for handwritten protobuf contracts. PMD's remaining per-symbol `@SuppressWarnings` entries are
-narrow compatibility, wire, transaction, or defensive-copy seams tracked separately by issue #21;
-they are not a baseline and must be removed when their owning migration or adapter retirement lands.
-New production code must not copy an existing exception merely to satisfy a rule.
+for handwritten protobuf contracts. As of the 2026-08-03 quality-ratchet verification, production
+source contains no PMD `@SuppressWarnings` or `//NOPMD` entries. The only source suppression is
+Error Prone's `FutureReturnValueIgnored`, which is a separate compiler-policy seam tracked by
+issue #55. New production code must not copy an existing exception merely to satisfy a rule.
 
 SpotBugs mutable-exposure review is tracked by issue #31. The former class-wide
 `EI_EXPOSE_REP`/`EI_EXPOSE_REP2` exclusions were removed. The only retained entries in
