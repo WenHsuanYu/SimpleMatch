@@ -19,10 +19,10 @@ public record ReservationTerms(
     InstrumentSymbol symbol, Side side, ReservationQuantity quantity, LimitPrice limitPrice) {
   /** Requires valid reservation terms. */
   public ReservationTerms {
-    symbol = Objects.requireNonNull(symbol, "symbol");
-    side = Objects.requireNonNull(side, "side");
-    quantity = Objects.requireNonNull(quantity, "quantity");
-    limitPrice = Objects.requireNonNull(limitPrice, "limitPrice");
+    Objects.requireNonNull(symbol, "symbol");
+    Objects.requireNonNull(side, "side");
+    Objects.requireNonNull(quantity, "quantity");
+    Objects.requireNonNull(limitPrice, "limitPrice");
     if (side == Side.SIDE_UNSPECIFIED) {
       throw new IllegalArgumentException("side must be specified");
     }

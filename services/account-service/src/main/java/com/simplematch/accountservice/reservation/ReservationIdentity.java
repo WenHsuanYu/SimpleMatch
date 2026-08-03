@@ -17,9 +17,9 @@ public record ReservationIdentity(
     RequestId requestId, ReservationId reservationId, OrderId orderId) {
   /** Requires every typed identity component. */
   public ReservationIdentity {
-    requestId = Objects.requireNonNull(requestId, "requestId");
-    reservationId = Objects.requireNonNull(reservationId, "reservationId");
-    orderId = Objects.requireNonNull(orderId, "orderId");
+    Objects.requireNonNull(requestId, "requestId");
+    Objects.requireNonNull(reservationId, "reservationId");
+    Objects.requireNonNull(orderId, "orderId");
   }
 
   /** Idempotent operation identity used by the synchronous reservation boundary. */

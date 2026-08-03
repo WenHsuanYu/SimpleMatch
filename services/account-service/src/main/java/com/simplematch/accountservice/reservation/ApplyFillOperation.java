@@ -11,7 +11,7 @@ import java.util.Objects;
 public record ApplyFillOperation(ReservationIdentity reservation, ExecutionFill fill) {
   /** Requires both domain values so an incomplete command cannot enter the application service. */
   public ApplyFillOperation {
-    reservation = Objects.requireNonNull(reservation, "reservation");
-    fill = Objects.requireNonNull(fill, "fill");
+    Objects.requireNonNull(reservation, "reservation");
+    Objects.requireNonNull(fill, "fill");
   }
 }

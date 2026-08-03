@@ -17,9 +17,9 @@ public record ReservationRequestIdentity(
     RequestId requestId, OrderId orderId, AccountId accountId) {
   /** Requires all three typed identifiers. */
   public ReservationRequestIdentity {
-    requestId = Objects.requireNonNull(requestId, "requestId");
-    orderId = Objects.requireNonNull(orderId, "orderId");
-    accountId = Objects.requireNonNull(accountId, "accountId");
+    Objects.requireNonNull(requestId, "requestId");
+    Objects.requireNonNull(orderId, "orderId");
+    Objects.requireNonNull(accountId, "accountId");
   }
 
   /** Idempotency identity of one reserve operation. */

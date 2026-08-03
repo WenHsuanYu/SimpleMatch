@@ -17,8 +17,8 @@ import java.util.Objects;
 public record ReserveOperation(ReservationRequestIdentity identity, ReservationTerms terms) {
   /** Requires a complete reserve operation. */
   public ReserveOperation {
-    identity = Objects.requireNonNull(identity, "identity");
-    terms = Objects.requireNonNull(terms, "terms");
+    Objects.requireNonNull(identity, "identity");
+    Objects.requireNonNull(terms, "terms");
   }
 
   /** Returns the wire-compatible request identifier. */

@@ -11,8 +11,8 @@ import java.util.Objects;
 public record ReleaseReservationOperation(ReservationIdentity reservation, ReleaseReason reason) {
   /** Requires the identity and an explicit release reason value. */
   public ReleaseReservationOperation {
-    reservation = Objects.requireNonNull(reservation, "reservation");
-    reason = Objects.requireNonNull(reason, "reason");
+    Objects.requireNonNull(reservation, "reservation");
+    Objects.requireNonNull(reason, "reason");
   }
 
   /** Stable machine-readable release reason. */

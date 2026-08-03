@@ -22,10 +22,10 @@ public record ExecutionFill(
     FillPrice price) {
   /** Requires a complete, validated execution fill. */
   public ExecutionFill {
-    executionId = Objects.requireNonNull(executionId, "executionId");
-    aggregateSequence = Objects.requireNonNull(aggregateSequence, "aggregateSequence");
-    quantity = Objects.requireNonNull(quantity, "quantity");
-    price = Objects.requireNonNull(price, "price");
+    Objects.requireNonNull(executionId, "executionId");
+    Objects.requireNonNull(aggregateSequence, "aggregateSequence");
+    Objects.requireNonNull(quantity, "quantity");
+    Objects.requireNonNull(price, "price");
   }
 
   /** Returns the execution notional represented by this fill. */
