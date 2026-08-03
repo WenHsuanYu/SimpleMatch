@@ -16,7 +16,11 @@ final class WalRecordJsonDecoder {
 
   WalRecordJsonDecoder(ObjectMapper objectMapper) {
     this.strictJsonReader =
-        objectMapper.reader().with(DeserializationFeature.FAIL_ON_TRAILING_TOKENS);
+        objectMapper
+            .reader()
+            .with(
+                DeserializationFeature.FAIL_ON_TRAILING_TOKENS,
+                DeserializationFeature.FAIL_ON_READING_DUP_TREE_KEY);
   }
 
   WalRecord decode(String line) {

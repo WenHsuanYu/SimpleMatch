@@ -26,20 +26,7 @@ class WalAppenderTest {
   @Test
   void semanticNewOrderRecordPersistsAsFlatV1Json() throws Exception {
     final Path walPath = tempDir.resolve("semantic-new-order.wal");
-    final WalRecord record =
-        new WalRecord(
-            new WalMetadata("v1", "cmd-1", 1L, "quickfix-gateway"),
-            new FixSessionIdentity("CLIENT", "GW"),
-            new WalOrderReference("O-C1", "C1", "", "ACC-1"),
-            new WalCommand.NewOrder(
-                new WalOrderTerms(
-                    "AAPL",
-                    Side.SIDE_BUY,
-                    "10",
-                    "101.25",
-                    OrderType.ORDER_TYPE_LIMIT,
-                    TimeInForce.TIME_IN_FORCE_ROD)),
-            new RawFixMessage("8=FIX.4.4|35=D"));
+    final WalRecord record = validNewOrderRecord();
 
     try (final WalAppender walAppender = new WalAppender(walPath, StandardCharsets.UTF_8)) {
       walAppender.appendAndFlush(record);
@@ -147,20 +134,7 @@ class WalAppenderTest {
   void replayFailsAtInvalidPhysicalLineAndPreservesWalBytes() throws Exception {
     final Path walPath = tempDir.resolve("invalid-replay.wal");
     try (final WalAppender walAppender = new WalAppender(walPath, StandardCharsets.UTF_8)) {
-      walAppender.appendAndFlush(
-          new WalRecord(
-              new WalMetadata("v1", "cmd-1", 1L, "quickfix-gateway"),
-              new FixSessionIdentity("CLIENT", "GW"),
-              new WalOrderReference("O-C1", "C1", "", "ACC-1"),
-              new WalCommand.NewOrder(
-                  new WalOrderTerms(
-                      "AAPL",
-                      Side.SIDE_BUY,
-                      "10",
-                      "101.25",
-                      OrderType.ORDER_TYPE_LIMIT,
-                      TimeInForce.TIME_IN_FORCE_ROD)),
-              new RawFixMessage("8=FIX.4.4|35=D")));
+      walAppender.appendAndFlush(validNewOrderRecord());
       Files.writeString(
           walPath,
           System.lineSeparator() + "{\"schemaVersion\":\"v1\"}" + System.lineSeparator(),
@@ -168,7 +142,8 @@ class WalAppenderTest {
           StandardOpenOption.APPEND);
       final byte[] bytesBeforeReplay = Files.readAllBytes(walPath);
 
-      final WalReplayException failure = assertThrows(WalReplayException.class, walAppender::readAll);
+      final WalReplayException failure =
+          assertThrows(WalReplayException.class, walAppender::readAll);
 
       assertThat(failure.lineNumber()).isEqualTo(3);
       assertThat(failure).hasMessageContaining("line 3");
@@ -191,7 +166,8 @@ class WalAppenderTest {
           StandardOpenOption.APPEND);
       final byte[] bytesBeforeReplay = Files.readAllBytes(walPath);
 
-      final WalReplayException failure = assertThrows(WalReplayException.class, walAppender::readAll);
+      final WalReplayException failure =
+          assertThrows(WalReplayException.class, walAppender::readAll);
 
       assertThat(failure.lineNumber()).isEqualTo(2);
       assertThat(failure).hasMessageContaining("message_type and command_type");
@@ -212,10 +188,57 @@ class WalAppenderTest {
           StandardCharsets.UTF_8,
           StandardOpenOption.APPEND);
 
-      final WalReplayException failure = assertThrows(WalReplayException.class, walAppender::readAll);
+      final WalReplayException failure =
+          assertThrows(WalReplayException.class, walAppender::readAll);
 
       assertThat(failure.lineNumber()).isEqualTo(2);
       assertThat(failure).hasMessageContaining("line 2");
+    }
+  }
+
+  @DisplayName("replay rejects duplicate JSON fields")
+  @Test
+  void replayRejectsDuplicateJsonFields() throws Exception {
+    final Path walPath = tempDir.resolve("duplicate-json-field.wal");
+    try (final WalAppender walAppender = new WalAppender(walPath, StandardCharsets.UTF_8)) {
+      walAppender.appendAndFlush(validNewOrderRecord());
+      final String validJson = Files.readString(walPath).trim();
+      final String invalidLine =
+          validJson.substring(0, validJson.length() - 1)
+              + ",\"commandType\":\"COMMAND_TYPE_NEW\"}";
+      Files.writeString(
+          walPath,
+          invalidLine,
+          StandardCharsets.UTF_8,
+          StandardOpenOption.APPEND);
+      final byte[] bytesBeforeReplay = Files.readAllBytes(walPath);
+
+      final WalReplayException failure =
+          assertThrows(WalReplayException.class, walAppender::readAll);
+
+      assertThat(failure.lineNumber()).isEqualTo(2);
+      assertThat(Files.readAllBytes(walPath)).isEqualTo(bytesBeforeReplay);
+    }
+  }
+
+  @DisplayName("replay reports the line containing malformed UTF-8")
+  @Test
+  void replayReportsMalformedUtf8Line() throws Exception {
+    final Path walPath = tempDir.resolve("malformed-utf8.wal");
+    try (final WalAppender walAppender = new WalAppender(walPath, StandardCharsets.UTF_8)) {
+      walAppender.appendAndFlush(validNewOrderRecord());
+      Files.write(
+          walPath,
+          new byte[] {(byte) 0xC3, (byte) 0x28, (byte) '\n'},
+          StandardOpenOption.APPEND);
+      final byte[] bytesBeforeReplay = Files.readAllBytes(walPath);
+
+      final WalReplayException failure =
+          assertThrows(WalReplayException.class, walAppender::readAll);
+
+      assertThat(failure.lineNumber()).isEqualTo(2);
+      assertThat(failure).hasMessageContaining("line 2");
+      assertThat(Files.readAllBytes(walPath)).isEqualTo(bytesBeforeReplay);
     }
   }
 
@@ -233,7 +256,8 @@ class WalAppenderTest {
           StandardCharsets.UTF_8,
           StandardOpenOption.APPEND);
 
-      final WalReplayException failure = assertThrows(WalReplayException.class, walAppender::readAll);
+      final WalReplayException failure =
+          assertThrows(WalReplayException.class, walAppender::readAll);
 
       assertThat(failure.lineNumber()).isEqualTo(2);
       assertThat(failure).hasMessageContaining("symbol must be");

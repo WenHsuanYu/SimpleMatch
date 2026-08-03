@@ -9,7 +9,11 @@ public final class WalReplayException extends IllegalStateException {
     this.lineNumber = lineNumber;
   }
 
-  /** Returns the one-based physical line that failed replay. */
+  /**
+   * Returns the one-based physical line that failed replay.
+   *
+   * @return the physical WAL line number
+   */
   public int lineNumber() {
     return lineNumber;
   }
