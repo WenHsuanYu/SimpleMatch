@@ -19,10 +19,11 @@ logic. It must not change `simplematch-design.xml`, modify the main Checkstyle c
 introduce a new checked-in ruleset. The gate currently covers the completed Account Authority and
 Risk Admission/outbox slices; extending that scope requires its own refactoring slice.
 
-PMD, Checkstyle, and SpotBugs are blocking for every intended handwritten production Java module.
-Error Prone currently reports configured checks as warnings. Its ratchet is separate: first reach
-zero Error Prone warnings, then make findings blocking and add executable policy coverage. PMD
-dependencies are version-locked in every Java module. For the protobuf-contracts module, SpotBugs
+PMD, Checkstyle, SpotBugs, and Error Prone are blocking for every intended handwritten production
+Java module. Error Prone's warning backlog was cleared before `allErrorsAsWarnings` was removed;
+`build-logic/src/test/kotlin/com/simplematch/gradle/ErrorPronePolicyTest.kt` now proves that a
+handwritten `MissingOverride` finding fails the `staticAnalysis` lifecycle through `compileJava`
+while generated-source boundaries remain outside the gate. PMD dependencies are version-locked in every Java module. For the protobuf-contracts module, SpotBugs
 analyses only its handwritten `contracts.v2` classes; generated protobuf and gRPC classes remain
 available solely for dependency resolution.
 

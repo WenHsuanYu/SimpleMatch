@@ -9,7 +9,7 @@ This repo's Java dependencies use an explicit ownership model.
   Spring Cloud use versionless catalog aliases; their version is resolved only through the applied
   BOM.
 - `simplematch.java-conventions` supplies the Java 25 toolchain, JUnit platform, Mockito agent,
-  Error Prone warnings, and dependency locking to every Java module. Error Prone ignores generated
+  blocking Error Prone checks, and dependency locking to every Java module. Error Prone ignores generated
   sources and is disabled for any
   `compileGeneratedJava` task.
 - `simplematch.java-quality` adds blocking Checkstyle, PMD 7.24.0, and SpotBugs where the module has

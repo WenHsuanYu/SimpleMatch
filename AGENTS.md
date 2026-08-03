@@ -100,6 +100,16 @@ the smallest order that covers the task.
 
 Issues and PRDs are tracked in this repository's GitHub Issues. See `docs/agents/issue-tracker.md`.
 
+### Commit message conventions
+
+- Separate the subject from the body with a blank line.
+- Limit the subject line to 50 characters.
+- Capitalize the subject line.
+- Do not end the subject line with a period.
+- Use the imperative mood in the subject line.
+- Wrap the body at 72 characters.
+- Use the body to explain what and why rather than how.
+
 ### Triage labels
 
 This repository uses the default five triage labels. See `docs/agents/triage-labels.md`.

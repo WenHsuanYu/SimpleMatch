@@ -106,8 +106,9 @@ Keep responsibilities distinct:
 
 - **Checkstyle:** formatting, naming, imports, and documentation conventions already owned by the
   repository.
-- **Error Prone:** compiler-integrated correctness checks; keep the configured warning-only adoption
-  phase while Checkstyle, PMD, and SpotBugs remain blocking.
+- **Error Prone:** compiler-integrated correctness checks. This research records the warning-only
+  adoption phase that preceded issue #55; the current policy makes Error Prone blocking alongside
+  Checkstyle, PMD, and SpotBugs.
 - **SpotBugs:** bytecode/dataflow bug patterns; retain its existing curated coverage and exclusions.
 - **PMD:** source-level maintainability and design signals, especially parameter-object, complexity,
   and API-size candidates.

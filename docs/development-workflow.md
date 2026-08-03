@@ -177,8 +177,8 @@ Run validation in the order that gives the fastest useful feedback.
     - `./gradlew :services:quickfix-gateway:certificationTest`
 - Static analysis:
     - `./gradlew -q staticAnalysis`
-    - This compiles every Java module with Error Prone checks reported as warnings; Checkstyle, PMD,
-      and SpotBugs remain blocking for the curated service/module set configured in Gradle.
+    - This compiles every Java module with blocking Error Prone checks; Checkstyle, PMD, and SpotBugs
+      remain blocking for the curated service/module set configured in Gradle.
 - Flyway examples:
     - `./gradlew riskServiceFlywayInfo`
     - `./gradlew riskServiceFlywayMigrate`

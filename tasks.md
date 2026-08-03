@@ -842,7 +842,9 @@ Kafka**。
 
 - [x] Java 靜態分析已接入 Gradle build：`./gradlew -q staticAnalysis` 會對所有 Java 模組執行
   `Error Prone`
-  warning 編譯，並對既定模組執行 blocking `Checkstyle` / `PMD` / `SpotBugs`
+  blocking 編譯，並對既定模組執行 blocking `Checkstyle` / `PMD` / `SpotBugs`
+- [x] #55 Error Prone blocking ratchet：移除 warning-only 設定，以 TestKit 負向驗證確認
+  handwritten finding 會使 `compileJava` 失敗，並保留 generated-source exclusion 邊界
 - [x] SpotBugs false-positive filter 已先收斂到已確認的 Spring config / runtime holder 類別，避免干擾實際問題
 - [x] 現有 GitHub Actions Java job 已接入同一個 `./gradlew staticAnalysis` blocking gate，並上傳
   Checkstyle / PMD / SpotBugs 報告 artifacts

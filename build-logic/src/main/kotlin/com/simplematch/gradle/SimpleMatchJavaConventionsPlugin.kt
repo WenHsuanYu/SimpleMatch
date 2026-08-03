@@ -51,15 +51,15 @@ class SimpleMatchJavaConventionsPlugin : Plugin<Project> {
         project.tasks.withType(JavaCompile::class.java).configureEach {
             options.encoding = "UTF-8"
             options.errorprone {
-                allErrorsAsWarnings.set(true)
+                allErrorsAsWarnings.set(false)
                 disableWarningsInGeneratedCode.set(true)
                 excludedPaths.set(".*/(?:build/)?generated(?:/.*)?")
                 enabled.set(name != "compileGeneratedJava")
                 errorproneArgs.addAll(
                     listOf(
-                        "-Xep:MissingOverride:WARN",
-                        "-Xep:EqualsGetClass:WARN",
-                        "-Xep:FutureReturnValueIgnored:WARN"
+                        "-Xep:MissingOverride:ERROR",
+                        "-Xep:EqualsGetClass:ERROR",
+                        "-Xep:FutureReturnValueIgnored:ERROR"
                     )
                 )
             }
@@ -74,7 +74,7 @@ class SimpleMatchJavaConventionsPlugin : Plugin<Project> {
             rootProject.tasks.register("staticAnalysis") {
                 group = "verification"
                 description =
-                    "Runs Error Prone warning compilation for every Java module, plus blocking configured quality checks."
+                    "Runs blocking Error Prone compilation for every Java module, plus blocking configured quality checks."
             }
         }
         rootProject.tasks.named("staticAnalysis") {

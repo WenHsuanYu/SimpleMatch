@@ -25,9 +25,10 @@ the blocking `parameterSafetyMain` Gradle task backed by Checkstyle's `Parameter
 defines the maximum in build logic without modifying the repository's main Checkstyle configuration
 or introducing another checked-in ruleset.
 
-Checkstyle, PMD, and SpotBugs remain blocking. Error Prone moves from warning-only adoption to a
-blocking analyzer in two stages: first remove the existing warnings, then remove
-`allErrorsAsWarnings` and prove that a finding fails the ordinary build lifecycle. Issue #22 owns
+Checkstyle, PMD, SpotBugs, and Error Prone are blocking. Error Prone completed its two-stage ratchet:
+the existing warnings were removed, then `allErrorsAsWarnings` was removed and
+`ErrorPronePolicyTest` proved that a finding fails the ordinary build lifecycle while generated
+source handling remains unchanged. Issue #22 owns
 single-ruleset consolidation, the seven-parameter replacement gate, and review of remaining
 Checkstyle suppressions. Issue #21 remains open until PMD suppressions are removed or limited to
 explicitly tracked v1 compatibility exceptions. Error Prone cleanup and blocking adoption belong to
