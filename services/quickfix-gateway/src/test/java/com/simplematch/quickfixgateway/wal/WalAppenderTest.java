@@ -8,6 +8,7 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import com.simplematch.contracts.common.v1.OrderType;
 import com.simplematch.contracts.common.v1.Side;
 import com.simplematch.contracts.common.v1.TimeInForce;
+import java.nio.ByteBuffer;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
@@ -231,6 +232,36 @@ class WalAppenderTest {
           walPath,
           new byte[] {(byte) 0xC3, (byte) 0x28, (byte) '\n'},
           StandardOpenOption.APPEND);
+      final byte[] bytesBeforeReplay = Files.readAllBytes(walPath);
+
+      final WalReplayException failure =
+          assertThrows(WalReplayException.class, walAppender::readAll);
+
+      assertThat(failure.lineNumber()).isEqualTo(2);
+      assertThat(failure).hasMessageContaining("line 2");
+      assertThat(Files.readAllBytes(walPath)).isEqualTo(bytesBeforeReplay);
+    }
+  }
+
+  @DisplayName("replay rejects malformed UTF-8 inside a JSON string")
+  @Test
+  void replayRejectsMalformedUtf8InsideJsonString() throws Exception {
+    final Path walPath = tempDir.resolve("malformed-utf8-string.wal");
+    try (final WalAppender walAppender = new WalAppender(walPath, StandardCharsets.UTF_8)) {
+      walAppender.appendAndFlush(validNewOrderRecord());
+      final String validJson = Files.readString(walPath).trim();
+      final String rawFix = "8=FIX.4.4|35=D";
+      final int rawFixStart = validJson.indexOf(rawFix);
+      final String prefix = validJson.substring(0, rawFixStart + "8=FIX.4.4".length());
+      final String suffix =
+          validJson.substring(rawFixStart + "8=FIX.4.4".length())
+              + System.lineSeparator();
+      final byte[] prefixBytes = prefix.getBytes(StandardCharsets.UTF_8);
+      final byte[] suffixBytes = suffix.getBytes(StandardCharsets.UTF_8);
+      final ByteBuffer malformedLine =
+          ByteBuffer.allocate(prefixBytes.length + 2 + suffixBytes.length);
+      malformedLine.put(prefixBytes).put((byte) 0xC3).put((byte) 0x28).put(suffixBytes);
+      Files.write(walPath, malformedLine.array(), StandardOpenOption.APPEND);
       final byte[] bytesBeforeReplay = Files.readAllBytes(walPath);
 
       final WalReplayException failure =

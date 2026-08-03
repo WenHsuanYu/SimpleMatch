@@ -176,6 +176,8 @@ an explicit migration or multi-version-read decision; grouping Java fields alone
 change. Because no historical WAL data needs permissive recovery, the codec validates every
 decoded record as strictly as a newly appended record, including the permitted FIX-message-type and
 command-type pairs.
+The strict reader also rejects unknown or duplicate fields, trailing JSON tokens, and malformed or
+unmappable character sequences before semantic rehydration.
 
 The canonical Java representation is `WalRecord(WalMetadata, FixSessionIdentity,
 WalOrderReference, WalCommand, RawFixMessage)`. `WalCommand` retains the FIX message type and

@@ -1,12 +1,14 @@
 package com.simplematch.quickfixgateway.wal;
 
+import java.io.ByteArrayOutputStream;
 import java.io.IOException;
-import java.io.InputStreamReader;
-import java.io.Reader;
+import java.io.InputStream;
 import java.nio.ByteBuffer;
 import java.nio.channels.FileChannel;
 import java.nio.charset.CharacterCodingException;
 import java.nio.charset.Charset;
+import java.nio.charset.CharsetDecoder;
+import java.nio.charset.CodingErrorAction;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.StandardOpenOption;
@@ -67,45 +69,65 @@ public final class WalAppender implements AutoCloseable {
       return records;
     }
 
-    try (Reader reader = new InputStreamReader(Files.newInputStream(walPath), charset)) {
-      return readRecords(reader);
+    try (InputStream inputStream = Files.newInputStream(walPath)) {
+      return readRecords(inputStream);
     } catch (IOException exception) {
       throw new IllegalStateException("failed to replay WAL records", exception);
     }
   }
 
-  private List<WalRecord> readRecords(Reader reader) throws IOException {
+  private List<WalRecord> readRecords(InputStream inputStream) throws IOException {
     final List<WalRecord> records = new ArrayList<>();
+    final byte[] lineSeparator = System.lineSeparator().getBytes(charset);
+    final ByteArrayOutputStream lineBytes = new ByteArrayOutputStream();
     int lineNumber = 1;
-    final StringBuilder line = new StringBuilder();
-    try {
-      int value;
-      while ((value = reader.read()) != -1) {
-        if (value == '\n') {
-          appendLine(records, line.toString(), lineNumber);
-          line.setLength(0);
-          lineNumber += 1;
-        } else {
-          line.append((char) value);
-        }
+    int separatorBytesRead = 0;
+    int value;
+    while ((value = inputStream.read()) != -1) {
+      lineBytes.write(value);
+      if (value == lineSeparator[separatorBytesRead]) {
+        separatorBytesRead += 1;
+      } else {
+        separatorBytesRead = value == lineSeparator[0] ? 1 : 0;
       }
-      appendLine(records, line.toString(), lineNumber);
-    } catch (CharacterCodingException exception) {
-      throw new WalReplayException(lineNumber, exception);
+      if (separatorBytesRead == lineSeparator.length) {
+        appendLineBytes(records, lineBytes, lineSeparator.length, lineNumber);
+        lineBytes.reset();
+        separatorBytesRead = 0;
+        lineNumber += 1;
+      }
+    }
+    if (lineBytes.size() > 0) {
+      appendLineBytes(records, lineBytes, 0, lineNumber);
     }
     return records;
   }
 
-  private void appendLine(List<WalRecord> records, String line, int lineNumber) {
+  private void appendLineBytes(
+      List<WalRecord> records,
+      ByteArrayOutputStream lineBytes,
+      int separatorLength,
+      int lineNumber) {
+    final byte[] bytes = lineBytes.toByteArray();
+    final String line = decodeLine(bytes, bytes.length - separatorLength, lineNumber);
     if (!line.isBlank()) {
-      records.add(decodeLine(line, lineNumber));
+      try {
+        records.add(codec.decode(line));
+      } catch (WalRecordCodecException exception) {
+        throw new WalReplayException(lineNumber, exception);
+      }
     }
   }
 
-  private WalRecord decodeLine(String line, int lineNumber) {
+  private String decodeLine(byte[] bytes, int length, int lineNumber) {
     try {
-      return codec.decode(line);
-    } catch (WalRecordCodecException exception) {
+      final CharsetDecoder decoder =
+          charset
+              .newDecoder()
+              .onMalformedInput(CodingErrorAction.REPORT)
+              .onUnmappableCharacter(CodingErrorAction.REPORT);
+      return decoder.decode(ByteBuffer.wrap(bytes, 0, length)).toString();
+    } catch (CharacterCodingException exception) {
       throw new WalReplayException(lineNumber, exception);
     }
   }
