@@ -23,15 +23,17 @@ public abstract class AbstractOutboxEventFactory<T> implements OutboxEventFactor
   public final OutboxRecord create(T source) {
     final T resolvedSource = Objects.requireNonNull(source, "source");
     final OutboxEvent event = Objects.requireNonNull(buildEvent(resolvedSource), "event");
+    final OutboxRecord.EventInfo eventInfo = event.eventInfo();
+    final SerializedPayload payload = event.payload();
 
     return OutboxRecord.create(
-        new OutboxRecord.EventInfo(event.eventId(), event.createdAtUnixMs()),
-        OutboxRecord.Routing.of(event.topic(), event.messageKey(), event.kafkaPartitionId()),
+        eventInfo,
+        event.routing(),
         new OutboxRecord.PayloadEnvelope(
-            event.payload(),
-            event.payloadType(),
-            headersJson(event.eventId(), event.payloadType())),
-        new OutboxRecord.AggregateRef(event.aggregateType(), event.aggregateId()));
+            payload.bytes(),
+            payload.payloadType(),
+            headersJson(eventInfo.eventId(), payload.payloadType())),
+        event.aggregateReference());
   }
 
   /**
@@ -55,73 +57,75 @@ public abstract class AbstractOutboxEventFactory<T> implements OutboxEventFactor
     }
   }
 
-  /** Value object that captures all fields required to construct an outbox row. */
+  /**
+   * Prepared outbox event composed from semantic infrastructure values before headers are added.
+   */
   protected static final class OutboxEvent {
-    private final String eventId;
-    private final long createdAtUnixMs;
-    private final String topic;
-    private final String messageKey;
-    private final Integer kafkaPartitionId;
-    private final byte[] payload;
-    private final String payloadType;
-    private final String aggregateType;
-    private final String aggregateId;
+    private final OutboxRecord.EventInfo eventInfo;
+    private final OutboxRecord.Routing routing;
+    private final SerializedPayload payload;
+    private final OutboxRecord.AggregateRef aggregateReference;
 
+    /**
+     * Creates a prepared event from its identity, route, serialized content, and aggregate owner.
+     *
+     * @param eventInfo event identity and creation timestamp
+     * @param routing destination topic, key, and optional partition
+     * @param payload serialized event content before transport headers are added
+     * @param aggregateReference aggregate associated with the event
+     */
     OutboxEvent(
-        String eventId,
-        long createdAtUnixMs,
-        String topic,
-        String messageKey,
-        Integer kafkaPartitionId,
-        byte[] payload,
-        String payloadType,
-        String aggregateType,
-        String aggregateId) {
-      this.eventId = eventId;
-      this.createdAtUnixMs = createdAtUnixMs;
-      this.topic = topic;
-      this.messageKey = messageKey;
-      this.kafkaPartitionId = kafkaPartitionId;
-      this.payload = Arrays.copyOf(Objects.requireNonNull(payload, "payload"), payload.length);
-      this.payloadType = payloadType;
-      this.aggregateType = aggregateType;
-      this.aggregateId = aggregateId;
+        OutboxRecord.EventInfo eventInfo,
+        OutboxRecord.Routing routing,
+        SerializedPayload payload,
+        OutboxRecord.AggregateRef aggregateReference) {
+      this.eventInfo = Objects.requireNonNull(eventInfo, "eventInfo");
+      this.routing = Objects.requireNonNull(routing, "routing");
+      this.payload = Objects.requireNonNull(payload, "payload");
+      this.aggregateReference = Objects.requireNonNull(aggregateReference, "aggregateReference");
     }
 
-    String eventId() {
-      return eventId;
+    OutboxRecord.EventInfo eventInfo() {
+      return eventInfo;
     }
 
-    long createdAtUnixMs() {
-      return createdAtUnixMs;
+    OutboxRecord.Routing routing() {
+      return routing;
     }
 
-    String topic() {
-      return topic;
+    SerializedPayload payload() {
+      return payload;
     }
 
-    String messageKey() {
-      return messageKey;
+    OutboxRecord.AggregateRef aggregateReference() {
+      return aggregateReference;
+    }
+  }
+
+  /** Serialized event bytes and their protobuf type before transport headers are added. */
+  protected static final class SerializedPayload {
+    private final byte[] bytes;
+    private final String payloadType;
+
+    /**
+     * Creates serialized event content and takes ownership of a defensive byte copy.
+     *
+     * @param bytes serialized protobuf bytes
+     * @param payloadType protobuf message type
+     */
+    SerializedPayload(byte[] bytes, String payloadType) {
+      this.bytes = Arrays.copyOf(Objects.requireNonNull(bytes, "bytes"), bytes.length);
+      this.payloadType = Objects.requireNonNull(payloadType, "payloadType");
     }
 
-    Integer kafkaPartitionId() {
-      return kafkaPartitionId;
+    /** Returns a defensive copy of the serialized protobuf bytes. */
+    byte[] bytes() {
+      return Arrays.copyOf(bytes, bytes.length);
     }
 
-    byte[] payload() {
-      return Arrays.copyOf(payload, payload.length);
-    }
-
+    /** Returns the protobuf message type. */
     String payloadType() {
       return payloadType;
-    }
-
-    String aggregateType() {
-      return aggregateType;
-    }
-
-    String aggregateId() {
-      return aggregateId;
     }
   }
 }

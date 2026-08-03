@@ -47,15 +47,11 @@ public final class SubmissionOutboxFactory extends AbstractOutboxEventFactory<Su
     final Integer kafkaPartitionId = kafkaPartitionId(command);
 
     return new OutboxEvent(
-        eventId,
-        submission.createdAtUnixMs(),
-        ordersValidatedTopic,
-        messageKey(command),
-        kafkaPartitionId,
-        payloadBytes(submission, command, eventId, kafkaPartitionId),
-        payloadType,
-        AGGREGATE_TYPE,
-        submission.orderId());
+        new OutboxRecord.EventInfo(eventId, submission.createdAtUnixMs()),
+        OutboxRecord.Routing.of(ordersValidatedTopic, messageKey(command), kafkaPartitionId),
+        new SerializedPayload(
+            payloadBytes(submission, command, eventId, kafkaPartitionId), payloadType),
+        new OutboxRecord.AggregateRef(AGGREGATE_TYPE, submission.orderId()));
   }
 
   private byte[] payloadBytes(

@@ -20,7 +20,7 @@ class PmdPolicyTest {
     }
 
     @Test
-    fun `maps only the completed account and admission slices to the seven parameter gate`() {
+    fun `maps completed account and risk slices to the seven parameter gate`() {
         assertEquals(
             listOf(
                 "src/main/java/com/simplematch/accountservice/authority",
@@ -29,7 +29,10 @@ class PmdPolicyTest {
             PmdPolicy.completedParameterSafetySourceDirectories(":services:account-service")
         )
         assertEquals(
-            listOf("src/main/java/com/simplematch/riskservice/admission"),
+            listOf(
+                "src/main/java/com/simplematch/riskservice/admission",
+                "src/main/java/com/simplematch/riskservice/outbox"
+            ),
             PmdPolicy.completedParameterSafetySourceDirectories(":services:risk-service")
         )
         assertTrue(PmdPolicy.completedParameterSafetySourceDirectories(":services:quickfix-gateway").isEmpty())

@@ -99,7 +99,8 @@ class SimpleMatchJavaQualityPlugin : Plugin<Project> {
 
         val task = project.tasks.register("parameterSafetyMain", Pmd::class.java) {
             description =
-                "Checks the completed Account Authority or Risk Admission slice for Java members over seven parameters."
+                "Checks completed Account Authority, Risk Admission, and Risk Submission outbox slices " +
+                    "for Java members over seven parameters."
             group = "verification"
             ruleSets = emptyList()
             ruleSetFiles =

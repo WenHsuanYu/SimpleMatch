@@ -16,6 +16,7 @@ semantic construction vocabulary.
 | `applyFill(... seven values ...)`                                                | `applyFill(ApplyFillOperation)`                                                                        | reservation identity, execution ID, sequence, quantity, and price are named values |
 | flat 15-field `AdmissionCommand` construction                                    | `AdmissionCommand(AdmissionIdentity, AdmissionOrder, AdmissionFixIdentity, AdmissionRoutingReference)` | command/order/account UUIDs and FIX identities are distinct types                  |
 | flat 12–15-field `SubmissionResult` construction                                 | composed `SubmissionResult` domain values                                                              | accepted/rejected outcome and storage-safe identity own their invariants           |
+| flat nine-field Risk Submission outbox event descriptor                          | `OutboxEvent(EventInfo, Routing, SerializedPayload, AggregateRef)`                                   | event identity, delivery route, payload type, and aggregate provenance are named   |
 | `buildPendingNew` / `buildRejected` positional FIX values                        | `FixOrderSnapshot` plus `FixExecutionIdentity`                                                         | order ID, ClOrdID, symbol, quantity, and ExecID cannot be exchanged                |
 | eight-value v2-to-v1 helper                                                      | adapter receives the source protobuf command                                                           | compatibility mapping is explicit and source-oriented                              |
 
@@ -32,6 +33,7 @@ intentional exceptions to the policy.
 | 1. Durable submission outcomes | submission journal row and result payload | `SubmissionReference`, FIX identities, persisted identity, and outcome remain the only Java construction vocabulary; adapters flatten them. |
 | 2. Account Authority lifecycle state | reservation, limit, position, and legacy result rows | identity, terms, quantities, outcome, and audit/version groups compose the Java model; the transaction-owning application module remains the seam. |
 | 3. Risk Admission journal state | admission journal row and result payload | identity, order facts, FIX identity, routing, decision, and audit groups compose the Java model; JDBC flattens and rehydrates them. |
+| Risk Submission outbox event descriptor | append-only outbox event before header enrichment | event information, delivery routing, serialized payload, and aggregate reference compose the Java construction vocabulary; the abstract factory adds transport headers. |
 | 4. QuickFIX ingress and WAL state | raw FIX message, WAL row, and session correlation | the adapter contains protocol fields; durable intent is composed from session/command identity, order terms, and audit groups. |
 | 5. QuickFIX configuration and runtime policy | configuration namespace and runtime values | capability and resilience policy groups compose the Java model; configuration binding maps the unchanged namespace. |
 
@@ -44,11 +46,12 @@ specification:
   and transaction/outbox tests.
 - Risk Admission `admission` production code, its journal/outbox adapters, and route-reuse tests.
 
-The completed `SubmissionResult` predecessor slice is tracked by Issues #33–#37. Remaining Risk
-Submission members, QuickFIX ingress/WAL/configuration, Market Reference snapshots, and shared
-platform configuration are separate parameter-safety surfaces. Any remaining wide member there is
-follow-up work; it is not an exception that weakens the seven-parameter policy and is not a reason to
-keep Issues #39 or #44 open.
+The completed `SubmissionResult` predecessor slice is tracked by Issues #33–#37, and the completed
+Risk Submission outbox event descriptor slice is tracked by Issue #46. Remaining Risk Submission
+members, QuickFIX ingress/WAL/configuration, Market Reference snapshots, and shared platform
+configuration are separate parameter-safety surfaces. Any remaining wide member there is follow-up
+work; it is not an exception that weakens the seven-parameter policy and is not a reason to keep
+Issues #39, #44, or #46 open.
 
 ## Slice 1: durable submission outcomes
 
@@ -106,6 +109,20 @@ opaque. Moving symbol-to-partition assignment into Market Reference is a deferre
 change; it needs its own versioned contract, schema migration, and consumer rollout. Completion
 requires semantic journal/result constructors, journal and recovery route round-trips, symbol-keyed
 explicit-partition outbox tests, and unchanged SQL/protobuf shapes.
+
+## Risk Submission outbox event descriptor
+
+`OutboxEvent` remains Risk Submission infrastructure rather than a domain aggregate. It composes
+event information, delivery routing, serialized payload, and aggregate reference before the abstract
+factory enriches the event with common transport headers and produces `OutboxRecord`. The existing
+factory creation seam remains the sole construction and test surface; JDBC continues to flatten the
+resulting `OutboxRecord` into the unchanged append-only outbox row.
+
+`SerializedPayload` owns its byte array defensively and carries the protobuf message type with the
+bytes. `OutboxRecord` remains the owner of persisted-row validation and header envelope validation.
+The accepted and rejected message payloads, message key, explicit Kafka partition, headers, SQL
+binding, and CDC behavior remain unchanged. The completed-slice `parameterSafetyMain` gate covers
+the Risk Submission outbox source directory so a later wide constructor or method fails verification.
 
 ## Review checklist
 

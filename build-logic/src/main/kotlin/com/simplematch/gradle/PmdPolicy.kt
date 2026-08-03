@@ -36,7 +36,10 @@ internal object PmdPolicy {
                     "src/main/java/com/simplematch/accountservice/reservation"
                 )
             ":services:risk-service" ->
-                listOf("src/main/java/com/simplematch/riskservice/admission")
+                listOf(
+                    "src/main/java/com/simplematch/riskservice/admission",
+                    "src/main/java/com/simplematch/riskservice/outbox"
+                )
             else -> emptyList()
         }
 }

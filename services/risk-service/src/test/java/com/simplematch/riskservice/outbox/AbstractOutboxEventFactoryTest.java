@@ -31,6 +31,19 @@ class AbstractOutboxEventFactoryTest {
     assertThat(reservationRecord.payloadType()).isEqualTo("test.ReservationPayload");
   }
 
+  @Test
+  void keepsSerializedPayloadBytesOwnedByTheEventDescriptor() {
+    final byte[] sourceBytes = new byte[] {1, 2, 3};
+    final AbstractOutboxEventFactory.SerializedPayload payload =
+        new AbstractOutboxEventFactory.SerializedPayload(sourceBytes, "test.Payload");
+
+    sourceBytes[0] = 9;
+    final byte[] accessedBytes = payload.bytes();
+    accessedBytes[1] = 8;
+
+    assertThat(payload.bytes()).containsExactly(1, 2, 3);
+  }
+
   private record OrderAggregate(String orderId, long createdAtUnixMs) {}
 
   private record ReservationAggregate(String reservationId, long createdAtUnixMs) {}
@@ -44,15 +57,12 @@ class AbstractOutboxEventFactoryTest {
     @Override
     protected OutboxEvent buildEvent(OrderAggregate source) {
       return new OutboxEvent(
-          "evt-order-1",
-          source.createdAtUnixMs(),
-          "orders.validated",
-          source.orderId(),
-          0,
-          ("order:" + source.orderId()).getBytes(StandardCharsets.UTF_8),
-          "test.OrderPayload",
-          "order",
-          source.orderId());
+          new OutboxRecord.EventInfo("evt-order-1", source.createdAtUnixMs()),
+          OutboxRecord.Routing.withPartition("orders.validated", source.orderId(), 0),
+          new SerializedPayload(
+              ("order:" + source.orderId()).getBytes(StandardCharsets.UTF_8),
+              "test.OrderPayload"),
+          new OutboxRecord.AggregateRef("order", source.orderId()));
     }
   }
 
@@ -65,15 +75,13 @@ class AbstractOutboxEventFactoryTest {
     @Override
     protected OutboxEvent buildEvent(ReservationAggregate source) {
       return new OutboxEvent(
-          "evt-reservation-1",
-          source.createdAtUnixMs(),
-          "reservations.created",
-          source.reservationId(),
-          1,
-          ("reservation:" + source.reservationId()).getBytes(StandardCharsets.UTF_8),
-          "test.ReservationPayload",
-          "reservation",
-          source.reservationId());
+          new OutboxRecord.EventInfo("evt-reservation-1", source.createdAtUnixMs()),
+          OutboxRecord.Routing.withPartition(
+              "reservations.created", source.reservationId(), 1),
+          new SerializedPayload(
+              ("reservation:" + source.reservationId()).getBytes(StandardCharsets.UTF_8),
+              "test.ReservationPayload"),
+          new OutboxRecord.AggregateRef("reservation", source.reservationId()));
     }
   }
 }

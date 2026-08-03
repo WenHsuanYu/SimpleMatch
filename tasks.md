@@ -929,6 +929,13 @@ Kafka**。
       delivery route persistence and recovery reuse
     - [x] [#44](https://github.com/WenHsuanYu/SimpleMatch/issues/44) cross-service verification and
       documentation alignment
+- [x] [Risk Submission outbox event descriptor](docs/refactoring/domain-parameter-safety-refactor.md)
+  （GitHub spec [#45](https://github.com/WenHsuanYu/SimpleMatch/issues/45) and issue
+  [#46](https://github.com/WenHsuanYu/SimpleMatch/issues/46)）：以 event information、delivery
+  routing、serialized payload 與 aggregate reference 取代 positional outbox construction，並保留
+  headers、Protobuf、Kafka routing、JDBC 與 CDC contract。
+    - [x] [#46](https://github.com/WenHsuanYu/SimpleMatch/issues/46) Deepen Risk Submission outbox
+      event descriptor
 - [ ] [Market Reference routing ownership](https://github.com/WenHsuanYu/SimpleMatch/issues/38)：
   deferred follow-up for versioned policy ownership, schema migration, and consumer rollout。
 - [x] [README and technical documentation refactor](docs/readme-documentation-refactor-spec.md)
