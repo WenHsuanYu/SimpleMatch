@@ -12,8 +12,8 @@ matching core.
 
 - accepting FIX 4.4 sessions through QuickFix/J
 - converting inbound FIX order flow into domain commands
-- appending inbound traffic to the local WAL before attempting the first business-level FIX
-  acknowledgement
+- validating normalized inbound commands, then appending valid commands to the local WAL before
+  attempting the first business-level FIX acknowledgement
 - synchronously submitting new and cancel commands to `risk-service` over gRPC
 - returning `ExecutionReport (PendingNew)` only after `risk-service` accepts and persists the
   submission
@@ -43,7 +43,8 @@ Current repo state is no longer a bootstrap-only scaffold. The Java gateway alre
 - QuickFix/J acceptor lifecycle wiring and session logging
 - config binding through `PlatformProperties` and `QuickFixGatewayProperties`
 - `NewOrderSingle (35=D)` ingestion
-- local WAL append-and-flush before the first accept/reject decision is emitted
+- gateway-local validation before WAL append; valid commands are append-and-flushed before the first
+  business-level accept/reject decision is emitted
 - synchronous gRPC submission to `risk-service`
 - bounded retry and breaker protection around `risk-service` submission
 - `ExecutionReport (PendingNew)` only after `risk-service` persistence succeeds

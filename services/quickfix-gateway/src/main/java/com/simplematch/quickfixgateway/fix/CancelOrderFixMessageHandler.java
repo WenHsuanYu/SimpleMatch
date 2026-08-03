@@ -36,12 +36,12 @@ final class CancelOrderFixMessageHandler {
   }
 
   void handle(Message message, SessionID sessionId) throws FieldNotFound {
-    final String origClOrdId = message.getString(OrigClOrdID.FIELD);
-    final String cancelClOrdId = message.getString(ClOrdID.FIELD);
+    final String origClOrdId = FixInboundFieldValues.optionalString(message, OrigClOrdID.FIELD);
+    final String cancelClOrdId = FixInboundFieldValues.optionalString(message, ClOrdID.FIELD);
     final FixInboundIdentity identity =
-        FixInboundIdentityValidator.validate(sessionId, cancelClOrdId, origClOrdId);
+        FixInboundIdentityValidator.validateCancel(sessionId, cancelClOrdId, origClOrdId);
     if (!identity.valid()) {
-      riskSubmissionResponder.rejectIdentity(
+      riskSubmissionResponder.rejectInbound(
           identity.failure(),
           sessionId,
           FixInboundCommandFactory.orderIdFor(origClOrdId),
@@ -51,9 +51,20 @@ final class CancelOrderFixMessageHandler {
     }
     final OrderSessionState existing =
         orderSessionRegistry.find(FixInboundCommandFactory.orderIdFor(origClOrdId)).orElse(null);
-    final WalRecord walRecord =
-        FixInboundCommandFactory.cancelOrder(
-            message, identity, existing, commandIdGenerator.nextCommandId(), Instant.now(clock));
+    final WalRecord walRecord;
+    try {
+      walRecord =
+          FixInboundCommandFactory.cancelOrder(
+              message, identity, existing, commandIdGenerator.nextCommandId(), Instant.now(clock));
+    } catch (FieldNotFound | IllegalArgumentException failure) {
+      riskSubmissionResponder.rejectInbound(
+          FixInboundValidationFailure.fromException("INVALID_CANCEL", failure),
+          sessionId,
+          FixInboundCommandFactory.orderIdFor(origClOrdId),
+          cancelClOrdId,
+          origClOrdId);
+      return;
+    }
     walAppender.appendAndFlush(walRecord);
     final OrderCommand command = walRecord.toOrderCommand();
     if (!riskSubmissionResponder

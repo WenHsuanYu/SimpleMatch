@@ -11,7 +11,11 @@ final class FixInboundFieldValues {
   private FixInboundFieldValues() {}
 
   static Side mapSide(char value) {
-    return value == '2' ? Side.SIDE_SELL : Side.SIDE_BUY;
+    return switch (value) {
+      case '1' -> Side.SIDE_BUY;
+      case '2' -> Side.SIDE_SELL;
+      default -> Side.SIDE_UNSPECIFIED;
+    };
   }
 
   static OrderType mapOrderType(Character value) {

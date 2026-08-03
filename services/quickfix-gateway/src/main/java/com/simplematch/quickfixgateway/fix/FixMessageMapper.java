@@ -2,6 +2,7 @@ package com.simplematch.quickfixgateway.fix;
 
 import com.simplematch.contracts.matching.v1.ExecutionEvent;
 import java.time.Clock;
+import quickfix.FieldNotFound;
 import quickfix.Message;
 import quickfix.fix44.ExecutionReport;
 import quickfix.fix44.OrderCancelReject;
@@ -26,6 +27,13 @@ public final class FixMessageMapper {
   public ExecutionReport buildRejected(
       FixOrderSnapshot order, FixExecutionIdentity execution, String text) {
     return executionReportMapper.buildRejected(order, execution, text);
+  }
+
+  /** Builds a rejection from whatever order facts are available in malformed inbound FIX. */
+  ExecutionReport buildRejectedInboundOrder(
+      Message message, FixExecutionIdentity execution, String text) throws FieldNotFound {
+    return executionReportMapper.buildRejected(
+        FixInboundOrderRejection.from(message), execution, text);
   }
 
   /** Renders an execution report from matching's execution event and session state. */

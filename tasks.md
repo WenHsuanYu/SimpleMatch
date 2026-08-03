@@ -383,10 +383,13 @@
       `docs/field-typing-phase2-gates.md`
     - [x] follow-up gate：重建 schema 不含 pre-reset legacy rows；任何保留舊資料的環境必須在切換前完成
       live DB profile/backfill，詳見 `docs/field-typing-phase2-gates.md`
-- [x] `quickfix-gateway` ingress precheck 已在 WAL 前攔截 oversized FIX identity：
+- [x] `quickfix-gateway` ingress precheck 已在 WAL 前攔截 gateway-local invalid FIX：
   `InboundFixMessageHandler` 先檢查
-  `sender_comp_id` / `target_comp_id` / `cl_ord_id` / `orig_cl_ord_id` 的 64 字元上限，直接回 FIX
-  reject，不再把 oversized 請求送進 WAL、`risk-service` 或 compatibility publish
+  `sender_comp_id` / `target_comp_id` / `cl_ord_id` / `orig_cl_ord_id` 的缺失與 64 字元上限，並
+  在 semantic command 建構時拒絕缺少欄位、非法 side、非正數 quantity、非法 order type / TIF
+  與不合法 price；直接回 FIX reject，不再把 invalid 請求送進 WAL、`risk-service` 或
+  compatibility publish。Risk Admission 的 account、market、routing、idempotency 與 reservation
+  policy 仍由下游負責。
 - [ ] `order_id` canonical identity 決策與收斂（目前 gateway 以 `O-<ClOrdID>` 派生並對外回報；若要演進成
   opaque internal id，需同步調整 FIX `OrderID(37)` 映射與 cross-service 契約）
     - [x] Phase 2 repo-local gate finding：現行 `O-<ClOrdID>` derivation 代表 `order_id` 既不是

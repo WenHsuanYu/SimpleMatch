@@ -68,8 +68,8 @@ final class RiskSubmissionResponder {
     }
   }
 
-  void rejectIdentity(
-      FixIdentityValidationFailure failure,
+  void rejectInbound(
+      FixInboundValidationFailure failure,
       SessionID sessionId,
       String orderId,
       String cancelClOrdId,

@@ -69,16 +69,6 @@ final class FixInboundCommandFactory {
         new RawFixMessage(message.toString()));
   }
 
-  static FixOrderSnapshot newOrderSnapshot(Message message) throws FieldNotFound {
-    final String clOrdId = message.getString(ClOrdID.FIELD);
-    return new FixOrderSnapshot(
-        new FixOrderSnapshot.OrderId(orderIdFor(clOrdId)),
-        new FixOrderSnapshot.ClientOrderId(clOrdId),
-        new FixOrderSnapshot.Symbol(message.getString(Symbol.FIELD)),
-        FixInboundFieldValues.mapSide(message.getChar(quickfix.field.Side.FIELD)),
-        new FixOrderSnapshot.Quantity(message.getString(OrderQty.FIELD)));
-  }
-
   static String orderIdFor(String clientOrderId) {
     return "O-" + clientOrderId;
   }

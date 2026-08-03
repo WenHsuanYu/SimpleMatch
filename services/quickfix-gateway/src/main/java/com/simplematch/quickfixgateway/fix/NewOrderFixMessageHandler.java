@@ -42,16 +42,22 @@ final class NewOrderFixMessageHandler {
 
   void handle(Message message, SessionID sessionId) throws FieldNotFound {
     final Instant now = Instant.now(clock);
-    final String clOrdId = message.getString(ClOrdID.FIELD);
+    final String clOrdId = FixInboundFieldValues.optionalString(message, ClOrdID.FIELD);
     final FixInboundIdentity identity =
-        FixInboundIdentityValidator.validate(sessionId, clOrdId, "");
+        FixInboundIdentityValidator.validateNewOrder(sessionId, clOrdId);
     if (!identity.valid()) {
       rejectIdentity(identity.failure(), sessionId, message, now);
       return;
     }
-    final WalRecord walRecord =
-        FixInboundCommandFactory.newOrder(
-            message, identity, commandIdGenerator.nextCommandId(), now);
+    final WalRecord walRecord;
+    try {
+      walRecord =
+          FixInboundCommandFactory.newOrder(
+              message, identity, commandIdGenerator.nextCommandId(), now);
+    } catch (FieldNotFound | IllegalArgumentException failure) {
+      rejectMalformed(failure, sessionId, message, now);
+      return;
+    }
     walAppender.appendAndFlush(walRecord);
     final OrderCommand command = walRecord.toOrderCommand();
     if (!riskSubmissionResponder.submitNewOrder(command, sessionId, walRecord, now).accepted()) {
@@ -68,12 +74,27 @@ final class NewOrderFixMessageHandler {
   }
 
   private void rejectIdentity(
-      FixIdentityValidationFailure failure, SessionID sessionId, Message message, Instant now)
+      FixInboundValidationFailure failure, SessionID sessionId, Message message, Instant now)
+      throws FieldNotFound {
+    reject(failure, sessionId, message, now);
+  }
+
+  private void rejectMalformed(
+      Exception failure, SessionID sessionId, Message message, Instant now) throws FieldNotFound {
+    reject(
+        FixInboundValidationFailure.fromException("INVALID_NEW_ORDER", failure),
+        sessionId,
+        message,
+        now);
+  }
+
+  private void reject(
+      FixInboundValidationFailure failure, SessionID sessionId, Message message, Instant now)
       throws FieldNotFound {
     fixSessionMessageSender.send(
         sessionId,
-        fixMessageMapper.buildRejected(
-            FixInboundCommandFactory.newOrderSnapshot(message),
+        fixMessageMapper.buildRejectedInboundOrder(
+            message,
             new FixExecutionIdentity(
                 new FixExecutionIdentity.ExecutionId(
                     "RJ-" + commandIdGenerator.nextCommandId()),

@@ -1,5 +1,6 @@
 package com.simplematch.quickfixgateway.fix;
 
+import com.simplematch.contracts.common.v1.Side;
 import com.simplematch.contracts.matching.v1.ExecutionEvent;
 import com.simplematch.contracts.matching.v1.ExecutionType;
 import java.time.Clock;
@@ -48,6 +49,32 @@ final class FixExecutionReportMapper {
       report.setString(
           OrderQty.FIELD, FixWireValues.normalizeDecimal(order.quantity().value()));
     }
+    if (text != null && !text.isBlank()) {
+      report.setString(Text.FIELD, text);
+    }
+    return report;
+  }
+
+  ExecutionReport buildRejected(
+      FixInboundOrderRejection order, FixExecutionIdentity execution, String text) {
+    final ExecutionReport report = new ExecutionReport();
+    report.setString(OrderID.FIELD, order.orderId());
+    report.setString(ExecID.FIELD, execution.executionId().value());
+    report.setChar(ExecType.FIELD, '8');
+    report.setChar(OrdStatus.FIELD, '8');
+    if (!order.clOrdId().isBlank()) {
+      report.setString(ClOrdID.FIELD, order.clOrdId());
+    }
+    if (!order.symbol().isBlank()) {
+      report.setString(Symbol.FIELD, order.symbol());
+    }
+    if (order.side() != Side.SIDE_UNSPECIFIED) {
+      report.setChar(quickfix.field.Side.FIELD, FixWireValues.mapSide(order.side()));
+    }
+    if (!order.quantity().isBlank()) {
+      report.setString(OrderQty.FIELD, order.quantity());
+    }
+    report.setString(TransactTime.FIELD, FixWireValues.format(execution.transactTime()));
     if (text != null && !text.isBlank()) {
       report.setString(Text.FIELD, text);
     }

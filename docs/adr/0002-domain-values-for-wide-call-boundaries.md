@@ -191,6 +191,13 @@ message-type/command-type consistency, and command-specific required fields must
 append. It does not duplicate Risk Admission's account-authority, market-eligibility, trading-day,
 routing, idempotency, or reservation decisions.
 
+FIX ingress constructs the semantic command before calling `WalAppender`. Missing or oversized FIX
+identities, missing required fields, and invalid normalized command values become explicit protocol
+rejections before WAL append and before Risk Admission submission. The rejection renderer uses only
+the wire values that are available, so an incomplete message is never forced into a valid order
+snapshot. This is gateway-local completeness and basic value validation; account authority, market
+eligibility, trading-day, routing, idempotency, and reservation policy remain Risk Admission rules.
+
 `WalCommand` is command-specific: a new-order command requires `WalOrderTerms`; a cancellation
 requires its cancellation identity and original client-order identity but has no order terms. The
 codec writes the existing blank or unspecified `v1` fields for a cancellation, rather than making

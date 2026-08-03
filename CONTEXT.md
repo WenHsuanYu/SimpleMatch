@@ -34,7 +34,10 @@ flowchart LR
 
 ### FIX Gateway
 
-Owns FIX sessions, inbound normalization, the local WAL, and outbound FIX rendering.
+Owns FIX sessions, inbound normalization and gateway-local validation, the local WAL, and outbound
+FIX rendering. Missing or malformed normalized command values receive a protocol-level rejection
+before WAL append and before Risk Admission; valid normalized commands are appended before
+downstream submission.
 `FixOrderSnapshot` and
 `FixExecutionIdentity` are gateway anti-corruption-layer values, not shared order-domain objects. A
 FIX field may be preserved for audit without being promoted into the internal ubiquitous language.

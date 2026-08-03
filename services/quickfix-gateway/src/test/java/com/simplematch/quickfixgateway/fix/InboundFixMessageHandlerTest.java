@@ -311,6 +311,130 @@ class InboundFixMessageHandlerTest {
         .isEqualTo("RISK_CIRCUIT_OPEN: risk-service circuit breaker is open");
   }
 
+  @DisplayName("an invalid new order is rejected before WAL append")
+  @Test
+  void invalidNewOrderIsRejectedBeforeWalAppend() throws Exception {
+    final WalAppender walAppender =
+        new WalAppender(tempDir.resolve("inbound.wal"), StandardCharsets.UTF_8);
+    final OrdersCommandPublisher publisher = mock(OrdersCommandPublisher.class);
+    final RiskSubmissionClient riskSubmissionClient = mock(RiskSubmissionClient.class);
+    final FixSessionMessageSender sender = mock(FixSessionMessageSender.class);
+    final InboundFixMessageHandler handler =
+        new InboundFixMessageHandler(
+            walAppender,
+            publisher,
+            riskSubmissionClient,
+            sender,
+            new OrderSessionRegistry(),
+            new FixMessageMapper(FIXED_CLOCK),
+            FIXED_CLOCK);
+
+    handler.handle(
+        newNewOrder("C1", "AAPL", '1', "-1", "101.25", "ACC-1"),
+        new SessionID("FIX.4.4", "SIMPLEMATCH", "CLIENT1"));
+
+    assertThat(walAppender.readAll()).isEmpty();
+    verifyNoInteractions(riskSubmissionClient, publisher);
+
+    final ArgumentCaptor<Message> messageCaptor = ArgumentCaptor.forClass(Message.class);
+    verify(sender).send(any(SessionID.class), messageCaptor.capture());
+    assertThat(messageCaptor.getValue().getString(58))
+        .isEqualTo("INVALID_NEW_ORDER: quantity must be positive");
+  }
+
+  @DisplayName("a missing new-order field is rejected before WAL append")
+  @Test
+  void missingNewOrderFieldIsRejectedBeforeWalAppend() throws Exception {
+    final WalAppender walAppender =
+        new WalAppender(tempDir.resolve("inbound.wal"), StandardCharsets.UTF_8);
+    final OrdersCommandPublisher publisher = mock(OrdersCommandPublisher.class);
+    final RiskSubmissionClient riskSubmissionClient = mock(RiskSubmissionClient.class);
+    final FixSessionMessageSender sender = mock(FixSessionMessageSender.class);
+    final InboundFixMessageHandler handler =
+        new InboundFixMessageHandler(
+            walAppender,
+            publisher,
+            riskSubmissionClient,
+            sender,
+            new OrderSessionRegistry(),
+            new FixMessageMapper(FIXED_CLOCK),
+            FIXED_CLOCK);
+    final NewOrderSingle order = newNewOrder("C1", "AAPL", '1', "10", "101.25", "ACC-1");
+    order.removeField(Symbol.FIELD);
+
+    handler.handle(order, new SessionID("FIX.4.4", "SIMPLEMATCH", "CLIENT1"));
+
+    assertThat(walAppender.readAll()).isEmpty();
+    verifyNoInteractions(riskSubmissionClient, publisher);
+
+    final ArgumentCaptor<Message> messageCaptor = ArgumentCaptor.forClass(Message.class);
+    verify(sender).send(any(SessionID.class), messageCaptor.capture());
+    assertThat(messageCaptor.getValue().getString(58))
+        .isEqualTo("INVALID_NEW_ORDER: required FIX field is missing");
+  }
+
+  @DisplayName("an invalid new-order side is rejected before WAL append")
+  @Test
+  void invalidNewOrderSideIsRejectedBeforeWalAppend() throws Exception {
+    final WalAppender walAppender =
+        new WalAppender(tempDir.resolve("inbound.wal"), StandardCharsets.UTF_8);
+    final OrdersCommandPublisher publisher = mock(OrdersCommandPublisher.class);
+    final RiskSubmissionClient riskSubmissionClient = mock(RiskSubmissionClient.class);
+    final FixSessionMessageSender sender = mock(FixSessionMessageSender.class);
+    final InboundFixMessageHandler handler =
+        new InboundFixMessageHandler(
+            walAppender,
+            publisher,
+            riskSubmissionClient,
+            sender,
+            new OrderSessionRegistry(),
+            new FixMessageMapper(FIXED_CLOCK),
+            FIXED_CLOCK);
+
+    handler.handle(
+        newNewOrder("C1", "AAPL", 'X', "10", "101.25", "ACC-1"),
+        new SessionID("FIX.4.4", "SIMPLEMATCH", "CLIENT1"));
+
+    assertThat(walAppender.readAll()).isEmpty();
+    verifyNoInteractions(riskSubmissionClient, publisher);
+
+    final ArgumentCaptor<Message> messageCaptor = ArgumentCaptor.forClass(Message.class);
+    verify(sender).send(any(SessionID.class), messageCaptor.capture());
+    assertThat(messageCaptor.getValue().getString(58))
+        .isEqualTo("INVALID_NEW_ORDER: side must be specified");
+  }
+
+  @DisplayName("a cancel without an original client order id is rejected before WAL append")
+  @Test
+  void cancelWithoutOriginalClientOrderIdIsRejectedBeforeWalAppend() throws Exception {
+    final WalAppender walAppender =
+        new WalAppender(tempDir.resolve("inbound.wal"), StandardCharsets.UTF_8);
+    final OrdersCommandPublisher publisher = mock(OrdersCommandPublisher.class);
+    final RiskSubmissionClient riskSubmissionClient = mock(RiskSubmissionClient.class);
+    final FixSessionMessageSender sender = mock(FixSessionMessageSender.class);
+    final InboundFixMessageHandler handler =
+        new InboundFixMessageHandler(
+            walAppender,
+            publisher,
+            riskSubmissionClient,
+            sender,
+            new OrderSessionRegistry(),
+            new FixMessageMapper(FIXED_CLOCK),
+            FIXED_CLOCK);
+
+    final OrderCancelRequest cancel = newCancelRequest("C1", "CXL-1", "ACC-1");
+    cancel.removeField(OrigClOrdID.FIELD);
+    handler.handle(cancel, new SessionID("FIX.4.4", "SIMPLEMATCH", "CLIENT1"));
+
+    assertThat(walAppender.readAll()).isEmpty();
+    verifyNoInteractions(riskSubmissionClient, publisher);
+
+    final ArgumentCaptor<Message> messageCaptor = ArgumentCaptor.forClass(Message.class);
+    verify(sender).send(any(SessionID.class), messageCaptor.capture());
+    assertThat(messageCaptor.getValue().getString(58))
+        .isEqualTo("MISSING_ORIG_CL_ORD_ID: orig_cl_ord_id must not be blank");
+  }
+
   @DisplayName("oversized new-order client identity is rejected before WAL append")
   @Test
   void oversizedNewOrderIdentityIsRejectedBeforeWalAppend() throws Exception {
