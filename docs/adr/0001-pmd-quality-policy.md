@@ -1,6 +1,6 @@
 # PMD quality-policy rollout
 
-Status: accepted; amended 2026-07-31. Adopt PMD 7.24.0 because it is the highest version officially
+Status: accepted; amended 2026-08-03. Adopt PMD 7.24.0 because it is the highest version officially
 supported by the current Gradle 9.6.1 wrapper. Analyse production Java only, using the explicitly
 enumerated repository ruleset in `config/pmd/simplematch-design.xml`; PMD defaults are disabled.
 Every `<rule ref>` in that XML is blocking through each module's `pmdMain` task and the repository
@@ -14,3 +14,21 @@ The initial rollout began with five design rules. The policy now adopts the comp
 inventory rather than maintaining a second abbreviated list in Kotlin or Markdown. The XML is the
 single source of truth; its rule references and expected count are verified by `PmdPolicy` tests,
 while Gradle passes the same file directly to PMD.
+
+## Single-ruleset consolidation amendment
+
+`config/pmd/simplematch-design.xml` retains its existing 47 rules and their existing configuration,
+including PMD's default `ExcessiveParameterList` threshold. Agents must not create, modify, rename,
+or delete PMD ruleset files. The only approved consolidation mutation was removal of the temporary
+`config/pmd/completed-parameter-safety.xml` file after its stricter seven-parameter policy moved to
+the blocking `parameterSafetyMain` Gradle task backed by Checkstyle's `ParameterNumber`. That task
+defines the maximum in build logic without modifying the repository's main Checkstyle configuration
+or introducing another checked-in ruleset.
+
+Checkstyle, PMD, and SpotBugs remain blocking. Error Prone moves from warning-only adoption to a
+blocking analyzer in two stages: first remove the existing warnings, then remove
+`allErrorsAsWarnings` and prove that a finding fails the ordinary build lifecycle. Issue #22 owns
+single-ruleset consolidation, the seven-parameter replacement gate, and review of remaining
+Checkstyle suppressions. Issue #21 remains open until PMD suppressions are removed or limited to
+explicitly tracked v1 compatibility exceptions. Error Prone cleanup and blocking adoption belong to
+a separate specification rather than expanding either existing issue retroactively.

@@ -19,31 +19,4 @@ class PmdPolicyTest {
         assertTrue(references.all { it.startsWith("category/java/") })
     }
 
-    @Test
-    fun `maps completed account and risk slices to the seven parameter gate`() {
-        assertEquals(
-            listOf(
-                "src/main/java/com/simplematch/accountservice/authority",
-                "src/main/java/com/simplematch/accountservice/reservation"
-            ),
-            PmdPolicy.completedParameterSafetySourceDirectories(":services:account-service")
-        )
-        assertEquals(
-            listOf(
-                "src/main/java/com/simplematch/riskservice/admission",
-                "src/main/java/com/simplematch/riskservice/outbox"
-            ),
-            PmdPolicy.completedParameterSafetySourceDirectories(":services:risk-service")
-        )
-        assertTrue(PmdPolicy.completedParameterSafetySourceDirectories(":services:quickfix-gateway").isEmpty())
-    }
-
-    @Test
-    fun `completed parameter safety ruleset fails at eight parameters`() {
-        val ruleset = Path.of("../config/pmd/completed-parameter-safety.xml")
-        val contents = Files.readString(ruleset)
-
-        assertTrue(contents.contains("ExcessiveParameterList"))
-        assertTrue(contents.contains("name=\"minimum\" value=\"8\""))
-    }
 }

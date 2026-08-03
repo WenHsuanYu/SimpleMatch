@@ -88,27 +88,25 @@ class SimpleMatchJavaQualityPlugin : Plugin<Project> {
             )
         }
 
-        registerCompletedParameterSafetyGate(project)
+        registerParameterCountGate(project)
     }
 
-    private fun registerCompletedParameterSafetyGate(project: Project) {
-        val sourceDirectories = PmdPolicy.completedParameterSafetySourceDirectories(project.path)
+    private fun registerParameterCountGate(project: Project) {
+        val sourceDirectories = ParameterCountPolicy.sourceDirectories(project.path)
         if (sourceDirectories.isEmpty()) {
             return
         }
 
-        val task = project.tasks.register("parameterSafetyMain", Pmd::class.java) {
+        val task = project.tasks.register("parameterSafetyMain", Checkstyle::class.java) {
             description =
                 "Checks completed Account Authority, Risk Admission, and Risk Submission outbox slices " +
                     "for Java members over seven parameters."
             group = "verification"
-            ruleSets = emptyList()
-            ruleSetFiles =
-                project.files(
-                    project.rootProject.layout.projectDirectory.file(
-                        PmdPolicy.COMPLETED_PARAMETER_SAFETY_RULESET_PATH
-                    )
-                )
+            ignoreFailures = false
+            maxErrors = 0
+            maxWarnings = 0
+            config = project.resources.text.fromString(ParameterCountPolicy.checkstyleConfiguration())
+            classpath = project.files()
             source = project.fileTree(project.projectDir) {
                 sourceDirectories.forEach { include("$it/**/*.java") }
             }

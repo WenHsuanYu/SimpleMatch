@@ -24,6 +24,11 @@ These instructions apply to the whole repository.
   part of a method should be transactional, use `TransactionTemplate` or another narrow programmatic
   boundary instead of widening the full method or moving transaction ownership into repositories.
 - If the task matches a workflow skill, treat that skill as required guidance, not optional reading.
+- Treat `config/pmd/simplematch-design.xml` as the immutable PMD ruleset and single source of truth.
+  Agents must not create, modify, rename, or delete PMD ruleset files. The sole pre-approved
+  consolidation exception is removal of `config/pmd/completed-parameter-safety.xml` while replacing
+  its seven-parameter gate with the documented Checkstyle-backed Gradle task; that work must not
+  change any rule or threshold in `simplematch-design.xml`.
 - After completing any code task, run a concise bad-smell avoidance checklist
   against [badCodeSmell.md](badCodeSmell.md)
   and call out any remaining risks.

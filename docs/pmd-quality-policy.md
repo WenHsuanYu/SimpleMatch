@@ -8,15 +8,23 @@ sources are intentionally outside this policy. The generated XML and HTML report
 `config/pmd/simplematch-design.xml` is the canonical 47-rule PMD policy. `pmdMain` loads every
 `<rule ref>` declared in that file; Gradle defaults are disabled so no abbreviated or implicit
 ruleset is added. The policy currently spans PMD design, best-practices, code-style, error-prone,
-multithreading, and performance categories. Do not duplicate the complete rule inventory in prose:
-add, remove, or configure a rule in the XML, then update `PmdPolicy`'s expected count and verify
-that the declared references are unique.
+multithreading, and performance categories. Its rules and thresholds are frozen: agents must not
+create, modify, rename, or delete PMD ruleset files. A desired policy change requires a separately
+approved architectural decision rather than an implementation edit.
+
+The former `config/pmd/completed-parameter-safety.xml` was temporary migration debt, not a second
+policy source, and has been removed. The replacement `parameterSafetyMain` gate uses Checkstyle's
+`ParameterNumber` from an in-memory blocking Gradle task, with a maximum of seven defined in build
+logic. It must not change `simplematch-design.xml`, modify the main Checkstyle configuration, or
+introduce a new checked-in ruleset. The gate currently covers the completed Account Authority and
+Risk Admission/outbox slices; extending that scope requires its own refactoring slice.
 
 PMD, Checkstyle, and SpotBugs are blocking for every intended handwritten production Java module.
-Error Prone reports configured checks as warnings during this adoption phase. PMD dependencies are
-version-locked in every Java module. For the protobuf-contracts module, SpotBugs analyses only its
-handwritten `contracts.v2` classes; generated protobuf and gRPC classes remain available solely for
-dependency resolution.
+Error Prone currently reports configured checks as warnings. Its ratchet is separate: first reach
+zero Error Prone warnings, then make findings blocking and add executable policy coverage. PMD
+dependencies are version-locked in every Java module. For the protobuf-contracts module, SpotBugs
+analyses only its handwritten `contracts.v2` classes; generated protobuf and gRPC classes remain
+available solely for dependency resolution.
 
 ## Finding disposition
 
