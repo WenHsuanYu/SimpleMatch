@@ -64,20 +64,7 @@ class WalAppenderTest {
   void appendAndReadAllPreservesWalRecords() throws Exception {
     final Path walPath = tempDir.resolve("inbound.wal");
     try (final WalAppender walAppender = new WalAppender(walPath, StandardCharsets.UTF_8)) {
-      final WalRecord first =
-          new WalRecord(
-              new WalMetadata("v1", "cmd-1", 1L, "quickfix-gateway"),
-              new FixSessionIdentity("CLIENT", "GW"),
-              new WalOrderReference("O-C1", "C1", "", "ACC-1"),
-              new WalCommand.NewOrder(
-                  new WalOrderTerms(
-                      "AAPL",
-                      Side.SIDE_BUY,
-                      "10",
-                      "101.25",
-                      OrderType.ORDER_TYPE_LIMIT,
-                      TimeInForce.TIME_IN_FORCE_ROD)),
-              new RawFixMessage("8=FIX.4.4|35=D"));
+      final WalRecord first = validNewOrderRecord();
       final WalRecord second =
           new WalRecord(
               new WalMetadata("v1", "cmd-2", 2L, "quickfix-gateway"),
@@ -107,20 +94,7 @@ class WalAppenderTest {
   void walContractIntentionallyPersistsStructuredJsonPerLine() throws Exception {
     final Path walPath = tempDir.resolve("inbound.wal");
     try (final WalAppender walAppender = new WalAppender(walPath, StandardCharsets.UTF_8)) {
-      final WalRecord record =
-          new WalRecord(
-              new WalMetadata("v1", "cmd-1", 1L, "quickfix-gateway"),
-              new FixSessionIdentity("CLIENT", "GW"),
-              new WalOrderReference("O-C1", "C1", "", "ACC-1"),
-              new WalCommand.NewOrder(
-                  new WalOrderTerms(
-                      "AAPL",
-                      Side.SIDE_BUY,
-                      "10",
-                      "101.25",
-                      OrderType.ORDER_TYPE_LIMIT,
-                      TimeInForce.TIME_IN_FORCE_ROD)),
-              new RawFixMessage("8=FIX.4.4|35=D"));
+      final WalRecord record = validNewOrderRecord();
 
       walAppender.appendAndFlush(record);
 
@@ -163,16 +137,22 @@ class WalAppenderTest {
     }
   }
 
-  @DisplayName("replay counts CR-only physical lines")
+  @DisplayName("replay counts CR and CRLF physical lines")
   @Test
-  void replayCountsCrOnlyPhysicalLines() throws Exception {
-    final Path walPath = tempDir.resolve("cr-only-replay.wal");
+  void replayCountsAlternativePhysicalLines() throws Exception {
+    assertPhysicalLineNumberForLineEnding("\r", "cr-only");
+    assertPhysicalLineNumberForLineEnding("\r\n", "crlf");
+  }
+
+  private void assertPhysicalLineNumberForLineEnding(String lineEnding, String fileName)
+      throws Exception {
+    final Path walPath = tempDir.resolve(fileName + "-replay.wal");
     try (final WalAppender walAppender = new WalAppender(walPath, StandardCharsets.UTF_8)) {
       walAppender.appendAndFlush(validNewOrderRecord());
       final String validJson = Files.readString(walPath).trim();
       Files.writeString(
           walPath,
-          validJson + "\r{\"schemaVersion\":\"v1\"}\r",
+          validJson + lineEnding + "{\"schemaVersion\":\"v1\"}" + lineEnding,
           StandardCharsets.UTF_8,
           StandardOpenOption.TRUNCATE_EXISTING);
       final byte[] bytesBeforeReplay = Files.readAllBytes(walPath);
