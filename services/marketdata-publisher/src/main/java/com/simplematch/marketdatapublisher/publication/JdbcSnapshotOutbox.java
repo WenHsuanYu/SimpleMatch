@@ -14,6 +14,10 @@ public final class JdbcSnapshotOutbox implements SnapshotOutbox {
 
   @Override
   public void insert(SnapshotOutboxRecord record) {
+    final SnapshotOutboxRecord.EventIdentity event = record.eventIdentity();
+    final SnapshotOutboxRecord.Destination destination = record.destination();
+    final SnapshotOutboxRecord.Payload payload = record.payload();
+    final SnapshotOutboxRecord.AggregateReference aggregate = record.aggregateReference();
     jdbcTemplate.update(
         """
         INSERT INTO marketdata_publisher.outbox (
@@ -21,14 +25,14 @@ public final class JdbcSnapshotOutbox implements SnapshotOutbox {
           created_at_unix_ms
         ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
         """,
-        record.eventId(),
-        record.topic(),
-        record.messageKey(),
-        record.payload(),
-        record.payloadType(),
-        record.headersJson(),
-        record.aggregateType(),
-        record.aggregateId(),
+        event.eventId(),
+        destination.topic(),
+        destination.messageKey(),
+        payload.bytes(),
+        payload.payloadType(),
+        payload.headersJson(),
+        aggregate.aggregateType(),
+        aggregate.aggregateId(),
         record.createdAtUnixMs());
   }
 }

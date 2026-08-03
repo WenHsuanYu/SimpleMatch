@@ -19,35 +19,31 @@ import org.springframework.transaction.annotation.Transactional;
  * Owns the local transaction that activates one immutable daily market snapshot and its outbox
  * event.
  */
-@SuppressWarnings("checkstyle:LineLength")
 @RequiredArgsConstructor
 public class MarketSnapshotApplicationService {
-  @SuppressWarnings("checkstyle:Indentation")
   static final String SNAPSHOT_PUBLISHED_TOPIC = "market-reference.snapshots";
 
-  @SuppressWarnings("checkstyle:Indentation")
   static final String SNAPSHOT_PUBLISHED_PAYLOAD_TYPE = "market_snapshot_published.v1";
 
-  @SuppressWarnings("checkstyle:Indentation")
   private static final int TRANSACTION_TIMEOUT_SECONDS = 10;
 
-  @SuppressWarnings("checkstyle:Indentation")
-  @NonNull private final MarketSnapshotRepository snapshots;
+  @NonNull
+  private final MarketSnapshotRepository snapshots;
 
-  @SuppressWarnings("checkstyle:Indentation")
-  @NonNull private final SnapshotOutbox outbox;
+  @NonNull
+  private final SnapshotOutbox outbox;
 
-  @SuppressWarnings("checkstyle:Indentation")
-  @NonNull private final ObjectMapper objectMapper;
+  @NonNull
+  private final ObjectMapper objectMapper;
 
-  @SuppressWarnings("checkstyle:Indentation")
-  @NonNull private final Clock clock;
+  @NonNull
+  private final Clock clock;
 
-  @SuppressWarnings("checkstyle:Indentation")
-  @NonNull private final Supplier<UUID> snapshotIds;
+  @NonNull
+  private final Supplier<UUID> snapshotIds;
 
-  @SuppressWarnings("checkstyle:Indentation")
-  @NonNull private final Supplier<UUID> eventIds;
+  @NonNull
+  private final Supplier<UUID> eventIds;
 
   /**
    * Publishes prepared content as the current immutable version for its trading day.
@@ -60,7 +56,6 @@ public class MarketSnapshotApplicationService {
    * @return the existing duplicate result or the newly committed snapshot publication
    * @throws SnapshotPublicationFailure if publication cannot create its durable outcome
    */
-  @SuppressWarnings({"checkstyle:Indentation", "checkstyle:LineLength"})
   @Transactional(
       timeout = TRANSACTION_TIMEOUT_SECONDS,
       rollbackFor = SnapshotPublicationFailure.class)
@@ -86,31 +81,28 @@ public class MarketSnapshotApplicationService {
     return result(snapshot, false);
   }
 
-  @SuppressWarnings("checkstyle:Indentation")
   private SnapshotPublicationResult result(PublishedMarketSnapshot snapshot, boolean duplicate) {
     return new SnapshotPublicationResult(
         snapshot.snapshotId(), snapshot.tradingDay(), snapshot.version(), duplicate);
   }
 
-  @SuppressWarnings("checkstyle:Indentation")
   private SnapshotOutboxRecord outboxRecord(PublishedMarketSnapshot snapshot)
       throws SnapshotPublicationFailure {
     final UUID eventId = eventIds.get();
     final String payload = serialize(eventId, snapshot);
-    return SnapshotOutboxRecord.builder()
-        .eventId(eventId)
-        .topic(SNAPSHOT_PUBLISHED_TOPIC)
-        .messageKey(snapshot.tradingDay().toString())
-        .payload(payload.getBytes(StandardCharsets.UTF_8))
-        .payloadType(SNAPSHOT_PUBLISHED_PAYLOAD_TYPE)
-        .headersJson(serializeHeaders(eventId))
-        .aggregateType("market_snapshot")
-        .aggregateId(snapshot.snapshotId().toString())
-        .createdAtUnixMs(snapshot.publishedAt().toEpochMilli())
-        .build();
+    return new SnapshotOutboxRecord(
+        new SnapshotOutboxRecord.EventIdentity(eventId),
+        new SnapshotOutboxRecord.Destination(
+            SNAPSHOT_PUBLISHED_TOPIC, snapshot.tradingDay().toString()),
+        new SnapshotOutboxRecord.Payload(
+            payload.getBytes(StandardCharsets.UTF_8),
+            SNAPSHOT_PUBLISHED_PAYLOAD_TYPE,
+            serializeHeaders(eventId)),
+        new SnapshotOutboxRecord.AggregateReference(
+            "market_snapshot", snapshot.snapshotId().toString()),
+        snapshot.publishedAt().toEpochMilli());
   }
 
-  @SuppressWarnings("checkstyle:Indentation")
   private String serialize(UUID eventId, PublishedMarketSnapshot snapshot)
       throws SnapshotPublicationFailure {
     final Map<String, Object> envelope = new LinkedHashMap<>();
@@ -124,7 +116,6 @@ public class MarketSnapshotApplicationService {
     return write(envelope);
   }
 
-  @SuppressWarnings("checkstyle:Indentation")
   private String serializeHeaders(UUID eventId) throws SnapshotPublicationFailure {
     return write(
         Map.of(
@@ -136,7 +127,6 @@ public class MarketSnapshotApplicationService {
             SNAPSHOT_PUBLISHED_PAYLOAD_TYPE));
   }
 
-  @SuppressWarnings("checkstyle:Indentation")
   private String write(Object value) throws SnapshotPublicationFailure {
     try {
       return objectMapper.writeValueAsString(value);
