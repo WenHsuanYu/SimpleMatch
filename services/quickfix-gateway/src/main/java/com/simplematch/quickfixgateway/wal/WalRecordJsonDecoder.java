@@ -1,8 +1,10 @@
 package com.simplematch.quickfixgateway.wal;
 
 import com.fasterxml.jackson.core.JsonProcessingException;
+import com.fasterxml.jackson.databind.DeserializationFeature;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.fasterxml.jackson.databind.ObjectReader;
 import com.simplematch.contracts.common.v1.OrderType;
 import com.simplematch.contracts.common.v1.Side;
 import com.simplematch.contracts.common.v1.TimeInForce;
@@ -10,15 +12,16 @@ import com.simplematch.contracts.orders.v1.CommandType;
 
 /** Rehydrates and validates semantic records from the flat v1 JSON shape. */
 final class WalRecordJsonDecoder {
-  private final ObjectMapper objectMapper;
+  private final ObjectReader strictJsonReader;
 
   WalRecordJsonDecoder(ObjectMapper objectMapper) {
-    this.objectMapper = objectMapper;
+    this.strictJsonReader =
+        objectMapper.reader().with(DeserializationFeature.FAIL_ON_TRAILING_TOKENS);
   }
 
   WalRecord decode(String line) {
     try {
-      final JsonNode json = objectMapper.readTree(line);
+      final JsonNode json = strictJsonReader.readTree(line);
       final WalJsonDocument document = new WalJsonDocument(json);
       final WalMetadata metadata =
           new WalMetadata(

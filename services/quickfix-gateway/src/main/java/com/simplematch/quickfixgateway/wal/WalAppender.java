@@ -61,16 +61,30 @@ public final class WalAppender implements AutoCloseable {
     }
 
     try (BufferedReader reader = Files.newBufferedReader(walPath, charset)) {
-      String line;
-      while ((line = reader.readLine()) != null) {
-        if (line.isBlank()) {
-          continue;
-        }
-        records.add(codec.decode(line));
-      }
-      return records;
+      return readRecords(reader);
     } catch (IOException exception) {
       throw new IllegalStateException("failed to replay WAL records", exception);
+    }
+  }
+
+  private List<WalRecord> readRecords(BufferedReader reader) throws IOException {
+    final List<WalRecord> records = new ArrayList<>();
+    int lineNumber = 0;
+    String line;
+    while ((line = reader.readLine()) != null) {
+      lineNumber += 1;
+      if (!line.isBlank()) {
+        records.add(decodeLine(line, lineNumber));
+      }
+    }
+    return records;
+  }
+
+  private WalRecord decodeLine(String line, int lineNumber) {
+    try {
+      return codec.decode(line);
+    } catch (WalRecordCodecException exception) {
+      throw new WalReplayException(lineNumber, exception);
     }
   }
 
