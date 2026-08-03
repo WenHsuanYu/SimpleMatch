@@ -98,6 +98,8 @@ authoritative lifecycle events and must not become a second command path.
 | Execution fill         | One idempotent matched quantity at one execution price.                                               | Matching produces; Account Authority applies |
 | Release                | Terminal removal of remaining reserved authority.                                                     | Account Authority                            |
 | Market snapshot        | Versioned set of instrument eligibility and trading rules.                                            | Market Reference                             |
+| Market instrument      | Instrument known to a market snapshot, with complete trading rules and explicit eligibility. It may be known but ineligible. | Market Reference                             |
+| Eligibility reason     | Market Reference explanation of whether a known instrument is tradable. Unsupported is valid snapshot data; malformed is not. | Market Reference                             |
 | WAL record             | Replay-safe gateway persistence representation of inbound FIX intent; not an aggregate.                | FIX Gateway                                  |
 | Journal row            | Persistence representation of the Admission aggregate; not a transport-facing contract.              | Risk Admission                               |
 | Outbox record          | Infrastructure representation used to publish a domain/integration event atomically with local state. | Producing context                            |

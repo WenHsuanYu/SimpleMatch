@@ -23,9 +23,19 @@ configuration record, or deprecated compatibility overload to remain wide when i
 external shape. That exception kept positional Java interfaces in the model and made the threshold
 optional. The repository now uses PMD's existing `ExcessiveParameterList` rule as the sole
 automated parameter-count gate, with its default threshold of ten. Independently, handwritten
-production Java interfaces should use a shorter semantic interface when their values form a stable
-use case, lifecycle, or invariant. Generated sources are outside this rule; tests must use the same
-semantic construction vocabulary as production code.
+production Java interfaces targeted by parameter-safety work should have no more than six
+parameters. A seven-to-ten-parameter member is acceptable only when semantic composition or module
+deepening would create an artificial wrapper, and the review must record that reason. This is a
+design-review exception, not a wide-carrier exception or an authorization to suppress or weaken the
+PMD rule. Generated sources are outside this rule; tests must use the same semantic construction
+vocabulary as production code.
+
+The remaining parameter-safety refactoring changes only handwritten Java interfaces. Market
+snapshot source JSON fields, PostgreSQL schemas and column semantics, Spring configuration keys and
+defaults, FIX messages, WAL v1 JSON, protobuf contracts, and Kafka payloads remain unchanged.
+Adapters and codecs flatten and rehydrate the semantic Java values. Any change to one of those
+external shapes requires a separate compatibility decision and, where applicable, a versioned
+migration.
 
 ## Decision
 
@@ -68,6 +78,24 @@ to the semantic interface before removing the positional Java member. This is an
 source and binary compatibility break; SQL, protobuf, FIX, WAL, Kafka, and configuration contracts
 remain compatible through their adapters. PMD is the only automated parameter-count gate; a
 deprecated overload is never a semantic-boundary exception.
+
+## Market Reference publication representation
+
+`PublishedMarketSnapshot` remains a durable publication representation rather than a domain
+aggregate. It composes snapshot identity, source provenance, canonical content, and publication
+state. Canonical content remains a scalar because a one-field payload wrapper would be artificial.
+The JDBC repository alone flattens and rehydrates the unchanged snapshot row.
+
+The market snapshot source remains flat JSON. A source codec owns that external shape and
+rehydrates a semantically grouped `SourceInstrument` before normalization produces a
+`MarketInstrument`. JSON field names and nesting do not dictate the handwritten Java interface.
+
+`MarketInstrument` composes instrument identity, trading rules, and an eligibility reason. Trading
+rules compose board lot, tick table, and a reference-price band, which owns the lower-reference-upper
+bracketing invariant. A well-formed source instrument from an unsupported venue or security type
+remains in the snapshot with an explicit ineligibility reason; it is not filtered out or treated as
+malformed. Instrument identity therefore retains a normalized venue value without requiring that
+the venue be supported for trading.
 
 ## SubmissionResult slice
 
@@ -137,6 +165,36 @@ only when journal and result positional constructors are removed, pending/accept
 round-trips and recovery retain the exact partition, accepted outbox records use the symbol key and
 explicit partition, and the SQL and protobuf field shapes remain compatible.
 
+## Risk Admission application modules
+
+`OrderAdmissionApplicationService` owns synchronous new-order and cancel orchestration: validation,
+backpressure, and account reservation outside a database transaction. It delegates pending and
+terminal local work to `AdmissionLifecycleTransactions`, an application module that owns the
+transaction template, journal, outbox, event factory, and clock. Beginning an admission is one local
+transaction; final journal state and its outbox record are another atomic local transaction.
+
+`PendingAdmissionRecovery` owns scheduled recovery. It retains the bounded age and batch, performs
+remote reservation work outside a transaction, delegates terminal persistence to
+`AdmissionLifecycleTransactions`, and leaves failures eligible for a later retry. Aggregate state
+transitions remain in `AdmissionJournalEntry`; repositories remain thin adapters.
+
+## Configuration capability slices
+
+QuickFIX Gateway configuration is split into independently injectable file settings, runtime
+identity and capability settings, and risk-client resilience settings. Shared platform configuration
+is split into environment, Kafka, PostgreSQL, Redis, gRPC, routing, observability, and market
+property modules. Consumers receive only the capabilities they use, and validation follows the same
+capability seams.
+
+Existing Spring property keys and defaults remain unchanged; multiple property records may bind
+different subsets of an existing prefix. `QuickFixGatewayProperties` and `PlatformProperties` may
+exist only as migration scaffolding and are removed after their final consumers migrate. They are
+not replaced by another arbitrary root configuration group.
+
+Migration first completes the gateway-local QuickFIX split. Shared property modules are then
+introduced and consumers migrate one service at a time with their context and configuration tests.
+The shared `PlatformProperties` facade is removed only after the final consumer has migrated.
+
 ## Domain invariants and ownership
 
 | Term                         | Owner            | Invariant                                                                                        |
@@ -197,6 +255,18 @@ rejections before WAL append and before Risk Admission submission. The rejection
 the wire values that are available, so an incomplete message is never forced into a valid order
 snapshot. This is gateway-local completeness and basic value validation; account authority, market
 eligibility, trading-day, routing, idempotency, and reservation policy remain Risk Admission rules.
+
+`InboundFixMessageHandler` is only the public message-type dispatcher and depends on the new-order
+and cancel handlers. Those handlers remain separate because their required data and failure behavior
+differ. `NewOrderFixMessageHandler` owns validation, WAL append, risk submission, session
+registration and response, and compatibility publication in that order. Its collaborators expose
+those behaviors as deep modules rather than appearing in a generic dependency or context bag.
+
+`OrderSessionState` remains a gateway-local correlation snapshot rather than an aggregate. It
+composes the owning FIX session, account identity used for cancellation fallback, the existing
+`FixOrderSnapshot`, and `OrderSessionLifecycle`. The lifecycle continues to own current order status
+and outstanding cancel correlation. Eviction and distributed session ownership are outside this
+parameter-safety slice.
 
 `WalCommand` is command-specific: a new-order command requires `WalOrderTerms`; a cancellation
 requires its cancellation identity and original client-order identity but has no order terms. The
