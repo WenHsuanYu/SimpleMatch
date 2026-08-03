@@ -3,8 +3,6 @@ package com.simplematch.marketdatapublisher.snapshot;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.simplematch.contracts.v2.TwdPrice;
 import com.simplematch.contracts.v2.VenueMic;
-import java.io.IOException;
-import java.time.DayOfWeek;
 import java.time.LocalDate;
 import java.time.format.DateTimeParseException;
 import java.util.Comparator;
@@ -14,11 +12,14 @@ import java.util.Set;
 
 /** Parses, validates, and normalizes an external daily source before publication begins. */
 public final class MarketSnapshotImportService {
-  private final ObjectMapper objectMapper;
+  private final MarketSnapshotSourceCodec sourceCodec;
+  private final MarketSnapshotCanonicalCodec canonicalCodec;
 
   /** Creates an importer whose JSON mapper is used only before the transactional seam. */
   public MarketSnapshotImportService(ObjectMapper objectMapper) {
-    this.objectMapper = Objects.requireNonNull(objectMapper, "objectMapper");
+    final ObjectMapper mapper = Objects.requireNonNull(objectMapper, "objectMapper");
+    this.sourceCodec = new MarketSnapshotSourceCodec(mapper);
+    this.canonicalCodec = new MarketSnapshotCanonicalCodec(mapper);
   }
 
   /** Converts source bytes to deterministic immutable market-reference content. */
@@ -28,12 +29,12 @@ public final class MarketSnapshotImportService {
     }
     final SourceDocument source = read(sourceBytes);
     final LocalDate tradingDay = parseDate(source.tradingDay(), "trading day");
-    final TaiwanTradingCalendar calendar = new TaiwanTradingCalendar(safeList(source.holidays()));
+    final TaiwanTradingCalendar calendar = new TaiwanTradingCalendar(source.holidays());
     if (!calendar.isTradingDay(tradingDay)) {
       throw new MarketSnapshotValidationException("trading day is not a Taiwan trading day");
     }
     final List<MarketInstrument> instruments =
-        safeList(source.instruments()).stream()
+        source.instruments().stream()
             .map(this::normalizeInstrument)
             .sorted(
                 Comparator.comparing(MarketInstrument::symbol)
@@ -46,7 +47,7 @@ public final class MarketSnapshotImportService {
             source.sourceTimestampUnixMs(),
             tradingDay.toString(),
             instruments);
-    final String canonicalContent = write(canonical);
+    final String canonicalContent = canonicalCodec.write(canonical);
     return new PreparedMarketSnapshot(
         source.sourceIdentity(),
         source.sourceTimestampUnixMs(),
@@ -57,16 +58,7 @@ public final class MarketSnapshotImportService {
   }
 
   private SourceDocument read(byte[] sourceBytes) {
-    try {
-      final SourceDocument source = objectMapper.readValue(sourceBytes, SourceDocument.class);
-      if (source == null) {
-        throw new MarketSnapshotValidationException("market snapshot source is required");
-      }
-      return source;
-    } catch (IOException exception) {
-      throw new MarketSnapshotValidationException(
-          "market snapshot source must be valid JSON", exception);
-    }
+    return sourceCodec.read(sourceBytes);
   }
 
   private MarketInstrument normalizeInstrument(SourceInstrument source) {
@@ -75,25 +67,33 @@ public final class MarketSnapshotImportService {
     }
     final TickTable tickTable =
         new TickTable(
-            safeList(source.tickBands()).stream()
+            source.tickBands().stream()
                 .map(
-                    band ->
-                        new TickBand(
-                            band.upperExclusive() == null
-                                ? null
-                                : parsePrice(band.upperExclusive(), "tick band upper boundary"),
-                            parsePrice(band.tickSize(), "tick size")))
+                    band -> {
+                      if (band == null) {
+                        throw new MarketSnapshotValidationException("tick band is required");
+                      }
+                      return new TickBand(
+                          band.upperExclusive() == null
+                              ? null
+                              : parsePrice(band.upperExclusive(), "tick band upper boundary"),
+                          parsePrice(band.tickSize(), "tick size"));
+                    })
                 .toList());
+    final SourceInstrumentIdentity identity = source.identity();
+    final SourceInstrumentClassification classification = source.classification();
+    final SourceTradingTerms tradingTerms = source.tradingTerms();
     final EligibilityReason eligibilityReason =
-        eligibility(source.venueMic(), source.securityType());
+        eligibility(identity.venueMic(), classification.securityType());
     return new MarketInstrument(
-        source.symbol(),
-        normalizedVenue(source.venueMic()),
-        source.boardLotShares(),
-        tickTable,
-        parsePrice(source.referencePrice(), "reference price"),
-        parsePrice(source.lowerPriceLimit(), "lower price limit"),
-        parsePrice(source.upperPriceLimit(), "upper price limit"),
+        new InstrumentIdentity(identity.symbol(), identity.venueMic()),
+        new InstrumentTradingRules(
+            tradingTerms.boardLotShares(),
+            tickTable,
+            new ReferencePriceBand(
+                parsePrice(tradingTerms.referencePrice(), "reference price"),
+                parsePrice(tradingTerms.lowerPriceLimit(), "lower price limit"),
+                parsePrice(tradingTerms.upperPriceLimit(), "upper price limit"))),
         eligibilityReason);
   }
 
@@ -106,10 +106,6 @@ public final class MarketSnapshotImportService {
     return "COMMON_STOCK".equals(securityType)
         ? EligibilityReason.ELIGIBLE
         : EligibilityReason.UNSUPPORTED_SECURITY_TYPE;
-  }
-
-  private String normalizedVenue(String rawVenue) {
-    return rawVenue == null ? "UNKNOWN" : rawVenue.trim().toUpperCase(java.util.Locale.ROOT);
   }
 
   private long parsePrice(String value, String fieldName) {
@@ -133,19 +129,6 @@ public final class MarketSnapshotImportService {
     }
   }
 
-  private String write(CanonicalSnapshot canonical) {
-    try {
-      return objectMapper.writeValueAsString(canonical);
-    } catch (IOException exception) {
-      throw new MarketSnapshotValidationException(
-          "failed to serialize normalized snapshot", exception);
-    }
-  }
-
-  private <T> List<T> safeList(List<T> values) {
-    return values == null ? List.of() : List.copyOf(values);
-  }
-
   private void requireDistinctInstrumentIdentities(List<MarketInstrument> instruments) {
     final Set<String> identities = new java.util.HashSet<>();
     for (MarketInstrument instrument : instruments) {
@@ -155,53 +138,4 @@ public final class MarketSnapshotImportService {
     }
   }
 
-  private record SourceDocument(
-      String sourceIdentity,
-      long sourceTimestampUnixMs,
-      String tradingDay,
-      List<String> holidays,
-      List<SourceInstrument> instruments) {}
-
-  private record SourceInstrument(
-      String symbol,
-      String venueMic,
-      String securityType,
-      int boardLotShares,
-      String referencePrice,
-      String lowerPriceLimit,
-      String upperPriceLimit,
-      List<SourceTickBand> tickBands) {}
-
-  private record SourceTickBand(String upperExclusive, String tickSize) {}
-
-  private record CanonicalSnapshot(
-      String sourceIdentity,
-      long sourceTimestampUnixMs,
-      String tradingDay,
-      List<MarketInstrument> instruments) {}
-
-  private static final class TaiwanTradingCalendar {
-    private final List<LocalDate> holidays;
-
-    private TaiwanTradingCalendar(List<String> rawHolidays) {
-      this.holidays = rawHolidays.stream().map(value -> parseHoliday(value)).toList();
-    }
-
-    private static LocalDate parseHoliday(String value) {
-      if (value == null || value.isBlank()) {
-        throw new MarketSnapshotValidationException("holiday must be an ISO-8601 date");
-      }
-      try {
-        return LocalDate.parse(value);
-      } catch (DateTimeParseException exception) {
-        throw new MarketSnapshotValidationException("holiday must be an ISO-8601 date", exception);
-      }
-    }
-
-    private boolean isTradingDay(LocalDate day) {
-      return day.getDayOfWeek() != DayOfWeek.SATURDAY
-          && day.getDayOfWeek() != DayOfWeek.SUNDAY
-          && !holidays.contains(day);
-    }
-  }
 }

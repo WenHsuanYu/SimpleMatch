@@ -86,6 +86,34 @@ class MarketSnapshotPublicationTransactionIT {
         .isEqualTo("2026-07-27");
   }
 
+  @DisplayName("JDBC round-trip rehydrates the semantic publication groups")
+  @Test
+  void roundTripsSemanticPublicationGroups() throws IOException, SnapshotPublicationFailure {
+    final PreparedMarketSnapshot prepared = fixture();
+    final SnapshotPublicationResult publication = publicationService.publishSnapshot(prepared);
+
+    final PublishedMarketSnapshot stored =
+        snapshots
+            .findBySourceIdentityAndChecksum(prepared.sourceIdentity(), prepared.checksum())
+            .orElseThrow();
+
+    assertThat(stored.identity())
+        .isEqualTo(
+            new SnapshotIdentity(
+                publication.snapshotId(), prepared.tradingDay(), publication.version()));
+    assertThat(stored.provenance())
+        .isEqualTo(
+            new SnapshotProvenance(
+                prepared.sourceIdentity(),
+                prepared.sourceTimestampUnixMs(),
+                prepared.checksum()));
+    assertThat(stored.canonicalContent()).isEqualTo(prepared.canonicalContent());
+    assertThat(stored.publication())
+        .isEqualTo(
+            new SnapshotPublicationState(
+                true, Instant.parse("2026-07-27T00:00:00Z")));
+  }
+
   @DisplayName(
       "an identical source checksum returns the original durable publication without a second outbox event")
   @Test

@@ -18,15 +18,18 @@ public final class JdbcMarketSnapshotRepository implements MarketSnapshotReposit
   private static final RowMapper<PublishedMarketSnapshot> ROW_MAPPER =
       (resultSet, rowNumber) ->
           new PublishedMarketSnapshot(
-              resultSet.getObject("snapshot_id", UUID.class),
-              resultSet.getObject("trading_day", LocalDate.class),
-              resultSet.getLong("version"),
-              resultSet.getString("source_identity"),
-              resultSet.getLong("source_timestamp_unix_ms"),
-              resultSet.getString("checksum"),
+              new SnapshotIdentity(
+                  resultSet.getObject("snapshot_id", UUID.class),
+                  resultSet.getObject("trading_day", LocalDate.class),
+                  resultSet.getLong("version")),
+              new SnapshotProvenance(
+                  resultSet.getString("source_identity"),
+                  resultSet.getLong("source_timestamp_unix_ms"),
+                  resultSet.getString("checksum")),
               new String(resultSet.getBytes("snapshot_payload"), StandardCharsets.UTF_8),
-              resultSet.getBoolean("active"),
-              Instant.ofEpochMilli(resultSet.getLong("published_at_unix_ms")));
+              new SnapshotPublicationState(
+                  resultSet.getBoolean("active"),
+                  Instant.ofEpochMilli(resultSet.getLong("published_at_unix_ms"))));
 
   private final JdbcTemplate jdbcTemplate;
 
@@ -133,6 +136,9 @@ public final class JdbcMarketSnapshotRepository implements MarketSnapshotReposit
 
   @Override
   public void insert(PublishedMarketSnapshot snapshot) {
+    final SnapshotIdentity identity = snapshot.identity();
+    final SnapshotProvenance provenance = snapshot.provenance();
+    final SnapshotPublicationState publication = snapshot.publication();
     jdbcTemplate.update(
         """
         INSERT INTO marketdata_publisher.market_snapshots (
@@ -140,15 +146,15 @@ public final class JdbcMarketSnapshotRepository implements MarketSnapshotReposit
           snapshot_payload, active, active_trading_day, published_at_unix_ms
         ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         """,
-        snapshot.snapshotId(),
-        snapshot.tradingDay(),
-        snapshot.version(),
-        snapshot.sourceIdentity(),
-        snapshot.sourceTimestampUnixMs(),
-        snapshot.checksum(),
+        identity.snapshotId(),
+        identity.tradingDay(),
+        identity.version(),
+        provenance.sourceIdentity(),
+        provenance.sourceTimestampUnixMs(),
+        provenance.checksum(),
         snapshot.canonicalContent().getBytes(StandardCharsets.UTF_8),
-        snapshot.active(),
-        snapshot.active() ? snapshot.tradingDay() : null,
-        snapshot.publishedAt().toEpochMilli());
+        publication.active(),
+        publication.active() ? identity.tradingDay() : null,
+        publication.publishedAt().toEpochMilli());
   }
 }

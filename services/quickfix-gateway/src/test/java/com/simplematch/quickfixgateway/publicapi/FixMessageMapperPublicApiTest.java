@@ -7,6 +7,7 @@ import com.simplematch.contracts.common.v1.Side;
 import com.simplematch.contracts.matching.v1.ExecutionEvent;
 import com.simplematch.contracts.matching.v1.ExecutionType;
 import com.simplematch.quickfixgateway.fix.FixMessageMapper;
+import com.simplematch.quickfixgateway.fix.FixOrderSnapshot;
 import com.simplematch.quickfixgateway.fix.OrderSessionLifecycle;
 import com.simplematch.quickfixgateway.fix.OrderSessionState;
 import java.time.Clock;
@@ -21,12 +22,13 @@ class FixMessageMapperPublicApiTest {
     final OrderSessionState state =
         new OrderSessionState(
             new SessionID("FIX.4.4", "CLIENT1", "SIMPLEMATCH"),
-            "O-C1",
             "ACC-1",
-            "C1",
-            "AAPL",
-            Side.SIDE_BUY,
-            "10",
+            new FixOrderSnapshot(
+                new FixOrderSnapshot.OrderId("O-C1"),
+                new FixOrderSnapshot.ClientOrderId("C1"),
+                new FixOrderSnapshot.Symbol("AAPL"),
+                Side.SIDE_BUY,
+                new FixOrderSnapshot.Quantity("10")),
             new OrderSessionLifecycle('A'));
     final ExecutionEvent event =
         ExecutionEvent.newBuilder()

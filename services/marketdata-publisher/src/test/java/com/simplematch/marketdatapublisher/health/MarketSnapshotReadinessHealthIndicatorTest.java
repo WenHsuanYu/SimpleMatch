@@ -4,6 +4,9 @@ import static org.assertj.core.api.Assertions.assertThat;
 
 import com.simplematch.marketdatapublisher.publication.MarketSnapshotRepository;
 import com.simplematch.marketdatapublisher.publication.PublishedMarketSnapshot;
+import com.simplematch.marketdatapublisher.publication.SnapshotIdentity;
+import com.simplematch.marketdatapublisher.publication.SnapshotProvenance;
+import com.simplematch.marketdatapublisher.publication.SnapshotPublicationState;
 import com.simplematch.marketdatapublisher.publication.SnapshotPublicationFailure;
 import com.simplematch.marketdatapublisher.snapshot.PreparedMarketSnapshot;
 import java.time.Clock;
@@ -60,15 +63,10 @@ class MarketSnapshotReadinessHealthIndicatorTest {
   void isOutOfServiceForInvalidCurrentSnapshot() {
     final PublishedMarketSnapshot snapshot =
         new PublishedMarketSnapshot(
-            UUID.randomUUID(),
-            LocalDate.of(2026, 7, 27),
-            1,
-            "source",
-            1,
-            "a".repeat(64),
+            new SnapshotIdentity(UUID.randomUUID(), LocalDate.of(2026, 7, 27), 1),
+            new SnapshotProvenance("source", 1, "a".repeat(64)),
             "{}",
-            true,
-            CLOCK.instant());
+            new SnapshotPublicationState(true, CLOCK.instant()));
     final MarketSnapshotReadinessHealthIndicator indicator =
         new MarketSnapshotReadinessHealthIndicator(
             new StubRepository(Optional.of(snapshot)), CLOCK);
@@ -79,15 +77,10 @@ class MarketSnapshotReadinessHealthIndicatorTest {
 
   private PublishedMarketSnapshot snapshot(LocalDate tradingDay) {
     return new PublishedMarketSnapshot(
-        UUID.randomUUID(),
-        tradingDay,
-        1,
-        "source",
-        1,
-        PreparedMarketSnapshot.checksumFor("{}"),
+        new SnapshotIdentity(UUID.randomUUID(), tradingDay, 1),
+        new SnapshotProvenance("source", 1, PreparedMarketSnapshot.checksumFor("{}")),
         "{}",
-        true,
-        CLOCK.instant());
+        new SnapshotPublicationState(true, CLOCK.instant()));
   }
 
   private static final class StubRepository implements MarketSnapshotRepository {

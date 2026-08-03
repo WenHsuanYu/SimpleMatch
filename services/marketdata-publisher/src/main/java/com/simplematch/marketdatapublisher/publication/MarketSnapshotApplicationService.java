@@ -82,37 +82,42 @@ public class MarketSnapshotApplicationService {
   }
 
   private SnapshotPublicationResult result(PublishedMarketSnapshot snapshot, boolean duplicate) {
+    final SnapshotIdentity identity = snapshot.identity();
     return new SnapshotPublicationResult(
-        snapshot.snapshotId(), snapshot.tradingDay(), snapshot.version(), duplicate);
+        identity.snapshotId(), identity.tradingDay(), identity.version(), duplicate);
   }
 
   private SnapshotOutboxRecord outboxRecord(PublishedMarketSnapshot snapshot)
       throws SnapshotPublicationFailure {
     final UUID eventId = eventIds.get();
+    final SnapshotIdentity identity = snapshot.identity();
+    final SnapshotPublicationState publication = snapshot.publication();
     final String payload = serialize(eventId, snapshot);
     return new SnapshotOutboxRecord(
         new SnapshotOutboxRecord.EventIdentity(eventId),
         new SnapshotOutboxRecord.Destination(
-            SNAPSHOT_PUBLISHED_TOPIC, snapshot.tradingDay().toString()),
+            SNAPSHOT_PUBLISHED_TOPIC, identity.tradingDay().toString()),
         new SnapshotOutboxRecord.Payload(
             payload.getBytes(StandardCharsets.UTF_8),
             SNAPSHOT_PUBLISHED_PAYLOAD_TYPE,
             serializeHeaders(eventId)),
         new SnapshotOutboxRecord.AggregateReference(
-            "market_snapshot", snapshot.snapshotId().toString()),
-        snapshot.publishedAt().toEpochMilli());
+            "market_snapshot", identity.snapshotId().toString()),
+        publication.publishedAt().toEpochMilli());
   }
 
   private String serialize(UUID eventId, PublishedMarketSnapshot snapshot)
       throws SnapshotPublicationFailure {
+    final SnapshotIdentity identity = snapshot.identity();
+    final SnapshotProvenance provenance = snapshot.provenance();
     final Map<String, Object> envelope = new LinkedHashMap<>();
     envelope.put("schema_version", "v1");
     envelope.put("event_id", eventId.toString());
-    envelope.put("snapshot_id", snapshot.snapshotId().toString());
-    envelope.put("trading_day", snapshot.tradingDay().toString());
-    envelope.put("version", snapshot.version());
-    envelope.put("checksum", snapshot.checksum());
-    envelope.put("source_timestamp_unix_ms", snapshot.sourceTimestampUnixMs());
+    envelope.put("snapshot_id", identity.snapshotId().toString());
+    envelope.put("trading_day", identity.tradingDay().toString());
+    envelope.put("version", identity.version());
+    envelope.put("checksum", provenance.checksum());
+    envelope.put("source_timestamp_unix_ms", provenance.sourceTimestampUnixMs());
     return write(envelope);
   }
 

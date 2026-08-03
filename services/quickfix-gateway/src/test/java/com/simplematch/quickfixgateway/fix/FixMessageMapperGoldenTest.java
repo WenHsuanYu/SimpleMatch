@@ -64,12 +64,13 @@ class FixMessageMapperGoldenTest {
     final OrderSessionState state =
         new OrderSessionState(
             new SessionID("FIX.4.4", "CLIENT1", "SIMPLEMATCH"),
-            "O-C1",
             "ACC-1",
-            "C1",
-            "AAPL",
-            Side.SIDE_BUY,
-            "10",
+            new FixOrderSnapshot(
+                new FixOrderSnapshot.OrderId("O-C1"),
+                new FixOrderSnapshot.ClientOrderId("C1"),
+                new FixOrderSnapshot.Symbol("AAPL"),
+                Side.SIDE_BUY,
+                new FixOrderSnapshot.Quantity("10")),
             new OrderSessionLifecycle('A'));
 
     final ExecutionEvent event =

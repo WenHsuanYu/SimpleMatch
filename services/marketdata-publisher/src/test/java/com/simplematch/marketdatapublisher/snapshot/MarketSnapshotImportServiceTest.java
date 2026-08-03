@@ -53,6 +53,75 @@ class MarketSnapshotImportServiceTest {
         .isEqualTo(EligibilityReason.UNSUPPORTED_SECURITY_TYPE);
   }
 
+  @DisplayName("normalized instruments expose semantic identity, rules, and price-band values")
+  @Test
+  void exposesSemanticInstrumentValues() throws IOException {
+    final PreparedMarketSnapshot snapshot =
+        importService.prepare(fixture("fixtures/xtai-and-roco-snapshot.json"));
+
+    final MarketInstrument instrument =
+        snapshot.instruments().stream()
+            .filter(candidate -> candidate.symbol().equals("2330"))
+            .findFirst()
+            .orElseThrow();
+
+    assertThat(instrument.identity())
+        .isEqualTo(new InstrumentIdentity("2330", "XTAI"));
+    assertThat(instrument.tradingRules().boardLotShares()).isEqualTo(1000);
+    assertThat(instrument.tradingRules().referencePriceBand())
+        .isEqualTo(new ReferencePriceBand(10_000_000, 9_000_000, 11_000_000));
+  }
+
+  @DisplayName("canonical content retains the flat normalized instrument shape")
+  @Test
+  void retainsFlatCanonicalInstrumentContent() throws IOException {
+    final PreparedMarketSnapshot snapshot =
+        importService.prepare(fixture("fixtures/xtai-and-roco-snapshot.json"));
+
+    final var instrument =
+        new ObjectMapper().readTree(snapshot.canonicalContent()).path("instruments").get(0);
+
+    assertThat(instrument.has("symbol")).isTrue();
+    assertThat(instrument.has("venueMic")).isTrue();
+    assertThat(instrument.has("boardLotShares")).isTrue();
+    assertThat(instrument.has("referencePriceUnits")).isTrue();
+    assertThat(instrument.has("identity")).isFalse();
+    assertThat(instrument.has("tradingRules")).isFalse();
+  }
+
+  @DisplayName("unsupported venues remain present with explicit ineligibility")
+  @Test
+  void preservesUnsupportedVenueAsIneligibleInstrument() {
+    final String source =
+        sourceForTradingDay("2026-07-27").replace("\"venueMic\": \"XTAI\"", "\"venueMic\": \"UNKNOWN\"");
+
+    final MarketInstrument instrument =
+        importService
+            .prepare(source.getBytes(StandardCharsets.UTF_8))
+            .instruments()
+            .getFirst();
+
+    assertThat(instrument.venueMic()).isEqualTo("UNKNOWN");
+    assertThat(instrument.eligible()).isFalse();
+    assertThat(instrument.eligibilityReason()).isEqualTo(EligibilityReason.UNSUPPORTED_VENUE);
+  }
+
+  @DisplayName("malformed board lots and tick sizes still reject source import")
+  @Test
+  void rejectsMalformedTradingRules() {
+    final String invalidBoardLot =
+        sourceForTradingDay("2026-07-27").replace("\"boardLotShares\": 1000", "\"boardLotShares\": 0");
+    final String invalidTickSize =
+        sourceForTradingDay("2026-07-27").replace("\"tickSize\": \"0.01\"", "\"tickSize\": \"0\"");
+
+    assertThatThrownBy(() -> importService.prepare(invalidBoardLot.getBytes(StandardCharsets.UTF_8)))
+        .isInstanceOf(MarketSnapshotValidationException.class)
+        .hasMessageContaining("board lot must be positive");
+    assertThatThrownBy(() -> importService.prepare(invalidTickSize.getBytes(StandardCharsets.UTF_8)))
+        .isInstanceOf(MarketSnapshotValidationException.class)
+        .hasMessageContaining("tick size must be a positive TWD price");
+  }
+
   @DisplayName("holidays and weekends cannot be published as Taiwan trading days")
   @Test
   void rejectsHolidayAndWeekendTradingDays() {

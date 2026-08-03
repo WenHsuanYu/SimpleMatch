@@ -4,38 +4,47 @@ import com.simplematch.contracts.common.v1.Side;
 import quickfix.SessionID;
 
 /**
- * Holds immutable FIX session context and an immutable lifecycle snapshot for one gateway order.
+ * Holds immutable FIX session context, order facts, and lifecycle for one gateway order.
  *
  * @param sessionId FIX session identifier that owns the order.
- * @param orderId Internal order identifier.
  * @param accountId Account that submitted the order.
- * @param clOrdId Current client order identifier.
- * @param symbol Instrument symbol.
- * @param side FIX order side value.
- * @param quantity Original order quantity text.
+ * @param order Existing gateway-local FIX order snapshot.
  * @param lifecycle Immutable status and cancel-correlation snapshot.
  */
 public record OrderSessionState(
     SessionID sessionId,
-    String orderId,
     String accountId,
-    String clOrdId,
-    String symbol,
-    Side side,
-    String quantity,
+    FixOrderSnapshot order,
     OrderSessionLifecycle lifecycle) {
+
+  /** Returns the durable order identity retained in the FIX order snapshot. */
+  public String orderId() {
+    return order.orderId().value();
+  }
+
+  /** Returns the current client order identity retained in the FIX order snapshot. */
+  public String clOrdId() {
+    return order.clientOrderId().value();
+  }
+
+  /** Returns the instrument symbol retained in the FIX order snapshot. */
+  public String symbol() {
+    return order.symbol().value();
+  }
+
+  /** Returns the FIX order side retained in the FIX order snapshot. */
+  public Side side() {
+    return order.side();
+  }
+
+  /** Returns the original order quantity text retained in the FIX order snapshot. */
+  public String quantity() {
+    return order.quantity().value();
+  }
 
   /** Returns this state with the supplied immutable lifecycle snapshot. */
   OrderSessionState withLifecycle(OrderSessionLifecycle updatedLifecycle) {
-    return new OrderSessionState(
-        sessionId,
-        orderId,
-        accountId,
-        clOrdId,
-        symbol,
-        side,
-        quantity,
-        updatedLifecycle);
+    return new OrderSessionState(sessionId, accountId, order, updatedLifecycle);
   }
 
   /**

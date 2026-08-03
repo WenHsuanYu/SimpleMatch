@@ -1,48 +1,54 @@
 package com.simplematch.marketdatapublisher.snapshot;
 
-import java.util.Objects;
-
 /** Immutable daily reference data and phase-one eligibility for one venue instrument. */
 public record MarketInstrument(
-    String symbol,
-    String venueMic,
-    int boardLotShares,
-    TickTable tickTable,
-    long referencePriceUnits,
-    long lowerPriceLimitUnits,
-    long upperPriceLimitUnits,
+    InstrumentIdentity identity,
+    InstrumentTradingRules tradingRules,
     EligibilityReason eligibilityReason) {
   /** Validates fully normalized instrument data. */
   public MarketInstrument {
-    if (symbol == null || symbol.isBlank()) {
-      throw new MarketSnapshotValidationException("instrument symbol is required");
-    }
-    if (venueMic == null || venueMic.isBlank()) {
-      throw new MarketSnapshotValidationException("instrument venue is required");
-    }
-    if (boardLotShares <= 0) {
-      throw new MarketSnapshotValidationException("board lot must be positive");
-    }
-    Objects.requireNonNull(tickTable, "tick table is required");
-    if (referencePriceUnits <= 0 || lowerPriceLimitUnits <= 0 || upperPriceLimitUnits <= 0) {
-      throw new MarketSnapshotValidationException(
-          "reference price and price limits must be positive");
-    }
-    if (lowerPriceLimitUnits >= referencePriceUnits
-        || upperPriceLimitUnits <= referencePriceUnits) {
-      throw new MarketSnapshotValidationException("price limits must bracket the reference price");
-    }
-    if (!tickTable.accepts(referencePriceUnits)
-        || !tickTable.accepts(lowerPriceLimitUnits)
-        || !tickTable.accepts(upperPriceLimitUnits)) {
-      throw new MarketSnapshotValidationException(
-          "reference price and price limits must align to the tick table");
-    }
-    Objects.requireNonNull(eligibilityReason, "eligibility reason is required");
+    java.util.Objects.requireNonNull(identity, "instrument identity is required");
+    java.util.Objects.requireNonNull(tradingRules, "instrument trading rules are required");
+    java.util.Objects.requireNonNull(eligibilityReason, "eligibility reason is required");
   }
 
   /** Returns whether phase-one order admission may trade this instrument. */
   public boolean eligible() {
     return eligibilityReason == EligibilityReason.ELIGIBLE;
+  }
+
+  /** Returns the source symbol for callers that do not need the complete identity. */
+  public String symbol() {
+    return identity.symbol();
+  }
+
+  /** Returns the normalized venue MIC for callers that do not need the complete identity. */
+  public String venueMic() {
+    return identity.venueMic();
+  }
+
+  /** Returns the board-lot size from the instrument trading rules. */
+  public int boardLotShares() {
+    return tradingRules.boardLotShares();
+  }
+
+  /** Returns the validated tick table from the instrument trading rules. */
+  public TickTable tickTable() {
+    return tradingRules.tickTable();
+  }
+
+  /** Returns the reference price in fixed-point units. */
+  public long referencePriceUnits() {
+    return tradingRules.referencePriceBand().referencePriceUnits();
+  }
+
+  /** Returns the lower price limit in fixed-point units. */
+  public long lowerPriceLimitUnits() {
+    return tradingRules.referencePriceBand().lowerPriceLimitUnits();
+  }
+
+  /** Returns the upper price limit in fixed-point units. */
+  public long upperPriceLimitUnits() {
+    return tradingRules.referencePriceBand().upperPriceLimitUnits();
   }
 }

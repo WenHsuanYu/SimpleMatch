@@ -19,12 +19,8 @@ public final class OrderSessionRegistry implements ExecutionSessionResolver {
         walRecord.orderId(),
         new OrderSessionState(
             sessionId,
-            walRecord.orderId(),
             walRecord.accountId(),
-            walRecord.clOrdId(),
-            walRecord.symbol(),
-            walRecord.side(),
-            walRecord.quantity(),
+            FixOrderSnapshot.from(walRecord),
             new OrderSessionLifecycle(ordStatus)));
   }
 
@@ -37,12 +33,8 @@ public final class OrderSessionRegistry implements ExecutionSessionResolver {
               existing == null
                   ? new OrderSessionState(
                       sessionId,
-                      walRecord.orderId(),
                       walRecord.accountId(),
-                      walRecord.origClOrdId(),
-                      walRecord.symbol(),
-                      walRecord.side(),
-                      walRecord.quantity(),
+                      FixOrderSnapshot.cancelFallback(walRecord),
                       new OrderSessionLifecycle('A'))
                   : existing;
           return state.withLifecycle(
