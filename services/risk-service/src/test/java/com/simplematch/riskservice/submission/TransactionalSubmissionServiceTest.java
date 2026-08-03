@@ -47,10 +47,12 @@ class TransactionalSubmissionServiceTest {
     assertThat(submission.accepted()).isTrue();
     assertThat(submissionRepository.insertedSubmission).isEqualTo(submission);
     assertThat(submissionRepository.insertedOutboxEventId)
-        .isEqualTo(outboxRepository.inserted.getFirst().eventId());
+        .isEqualTo(outboxRepository.inserted.getFirst().eventInfo().eventId());
     assertThat(outboxRepository.inserted).hasSize(1);
-    assertThat(outboxRepository.inserted.getFirst().aggregateId()).isEqualTo("O-C1");
-    assertThat(outboxRepository.inserted.getFirst().topic()).isEqualTo("orders.validated");
+    assertThat(outboxRepository.inserted.getFirst().aggregateReference().aggregateId())
+        .isEqualTo("O-C1");
+    assertThat(outboxRepository.inserted.getFirst().routing().topic())
+        .isEqualTo("orders.validated");
   }
 
   @Test

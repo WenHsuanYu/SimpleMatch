@@ -34,21 +34,24 @@ class SubmissionOutboxFactoryTest {
     final SubmissionDecision decision = acceptedDecision();
 
     final OutboxRecord record = factory.create(decision);
-    final OrderValidated payload = OrderValidated.parseFrom(record.payload());
-    final JsonNode headers = objectMapper.readTree(record.headersJson());
+    final OrderValidated payload =
+        OrderValidated.parseFrom(record.payloadEnvelope().payload());
+    final JsonNode headers = objectMapper.readTree(record.payloadEnvelope().headersJson());
 
-    assertThat(record.topic()).isEqualTo("orders.validated");
-    assertThat(record.messageKey()).isEqualTo("AAPL");
-    assertThat(record.kafkaPartitionId()).isEqualTo(7);
-    assertThat(record.payloadType()).isEqualTo(OrderValidated.getDescriptor().getFullName());
-    assertThat(record.aggregateType()).isEqualTo("risk_submission");
-    assertThat(record.aggregateId()).isEqualTo("O-C1");
-    assertThat(record.createdAtUnixMs()).isEqualTo(100L);
-    assertUuidVersionSeven(record.eventId());
-    assertThat(headers.get("event_id").asText()).isEqualTo(record.eventId());
+    assertThat(record.routing().topic()).isEqualTo("orders.validated");
+    assertThat(record.routing().messageKey()).isEqualTo("AAPL");
+    assertThat(record.routing().kafkaPartitionId()).isEqualTo(7);
+    assertThat(record.payloadEnvelope().payloadType())
+        .isEqualTo(OrderValidated.getDescriptor().getFullName());
+    assertThat(record.aggregateReference().aggregateType()).isEqualTo("risk_submission");
+    assertThat(record.aggregateReference().aggregateId()).isEqualTo("O-C1");
+    assertThat(record.eventInfo().createdAtUnixMs()).isEqualTo(100L);
+    assertUuidVersionSeven(record.eventInfo().eventId());
+    assertThat(headers.get("event_id").asText()).isEqualTo(record.eventInfo().eventId());
     assertThat(headers.get("content_type").asText()).isEqualTo("application/x-protobuf");
-    assertThat(headers.get("payload_type").asText()).isEqualTo(record.payloadType());
-    assertThat(payload.getMetadata().getEventId()).isEqualTo(record.eventId());
+    assertThat(headers.get("payload_type").asText())
+        .isEqualTo(record.payloadEnvelope().payloadType());
+    assertThat(payload.getMetadata().getEventId()).isEqualTo(record.eventInfo().eventId());
     assertThat(payload.getMetadata().getCreatedAtUnixMs()).isEqualTo(100L);
     assertThat(payload.getMetadata().getSourceService()).isEqualTo("risk-service");
     assertThat(payload.getCommandId()).isEqualTo(normalize("cmd-1"));
@@ -63,14 +66,17 @@ class SubmissionOutboxFactoryTest {
     final SubmissionDecision decision = rejectedDecision();
 
     final OutboxRecord record = factory.create(decision);
-    final OrderRejected payload = OrderRejected.parseFrom(record.payload());
-    final JsonNode headers = objectMapper.readTree(record.headersJson());
+    final OrderRejected payload =
+        OrderRejected.parseFrom(record.payloadEnvelope().payload());
+    final JsonNode headers = objectMapper.readTree(record.payloadEnvelope().headersJson());
 
-    assertThat(record.messageKey()).isEqualTo("AAPL");
-    assertThat(record.payloadType()).isEqualTo(OrderRejected.getDescriptor().getFullName());
-    assertUuidVersionSeven(record.eventId());
-    assertThat(headers.get("event_id").asText()).isEqualTo(record.eventId());
-    assertThat(headers.get("payload_type").asText()).isEqualTo(record.payloadType());
+    assertThat(record.routing().messageKey()).isEqualTo("AAPL");
+    assertThat(record.payloadEnvelope().payloadType())
+        .isEqualTo(OrderRejected.getDescriptor().getFullName());
+    assertUuidVersionSeven(record.eventInfo().eventId());
+    assertThat(headers.get("event_id").asText()).isEqualTo(record.eventInfo().eventId());
+    assertThat(headers.get("payload_type").asText())
+        .isEqualTo(record.payloadEnvelope().payloadType());
     assertThat(payload.getCommandId()).isEqualTo(normalize("cmd-1"));
     assertThat(payload.getOrderId()).isEqualTo("O-C1");
     assertThat(payload.getAccountId()).isEqualTo("ACC-1");
@@ -89,7 +95,7 @@ class SubmissionOutboxFactoryTest {
 
     final OutboxRecord record = factory.create(decision);
 
-    assertThat(record.messageKey()).isEqualTo("O-C1");
+    assertThat(record.routing().messageKey()).isEqualTo("O-C1");
   }
 
   @Test
@@ -101,7 +107,7 @@ class SubmissionOutboxFactoryTest {
 
     final OutboxRecord record = factory.create(decision);
 
-    assertThat(record.messageKey()).isEqualTo("UNKNOWN");
+    assertThat(record.routing().messageKey()).isEqualTo("UNKNOWN");
   }
 
   @Test
@@ -111,9 +117,9 @@ class SubmissionOutboxFactoryTest {
     final OutboxRecord first = factory.create(decision);
     final OutboxRecord second = factory.create(decision);
 
-    assertThat(first.eventId()).isNotEqualTo(second.eventId());
-    assertUuidVersionSeven(first.eventId());
-    assertUuidVersionSeven(second.eventId());
+    assertThat(first.eventInfo().eventId()).isNotEqualTo(second.eventInfo().eventId());
+    assertUuidVersionSeven(first.eventInfo().eventId());
+    assertUuidVersionSeven(second.eventInfo().eventId());
   }
 
   @Test

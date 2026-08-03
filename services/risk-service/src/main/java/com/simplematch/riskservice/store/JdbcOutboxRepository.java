@@ -17,6 +17,11 @@ public final class JdbcOutboxRepository implements OutboxRepository {
 
   @Override
   public void insert(OutboxRecord record) {
+    final OutboxRecord.EventInfo eventInfo = record.eventInfo();
+    final OutboxRecord.Routing routing = record.routing();
+    final OutboxRecord.PayloadEnvelope payloadEnvelope = record.payloadEnvelope();
+    final OutboxRecord.AggregateRef aggregateReference = record.aggregateReference();
+
     jdbcTemplate.update(
         """
         INSERT INTO risk_service.outbox (
@@ -32,15 +37,15 @@ public final class JdbcOutboxRepository implements OutboxRepository {
             created_at_unix_ms
         ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         """,
-        UUID.fromString(record.eventId()),
-        record.topic(),
-        record.messageKey(),
-        record.kafkaPartitionId(),
-        record.payload(),
-        record.payloadType(),
-        record.headersJson(),
-        record.aggregateType(),
-        record.aggregateId(),
-        record.createdAtUnixMs());
+        UUID.fromString(eventInfo.eventId()),
+        routing.topic(),
+        routing.messageKey(),
+        routing.kafkaPartitionId(),
+        payloadEnvelope.payload(),
+        payloadEnvelope.payloadType(),
+        payloadEnvelope.headersJson(),
+        aggregateReference.aggregateType(),
+        aggregateReference.aggregateId(),
+        eventInfo.createdAtUnixMs());
   }
 }

@@ -4,32 +4,18 @@ import java.util.Arrays;
 import java.util.Objects;
 
 /** Immutable outbox row value object used by the risk-service submission flow. */
-@SuppressWarnings(
-    "PMD.TooManyMethods") // Remove after repository adapters consume its grouped values directly.
 public final class OutboxRecord {
-  private final String eventId;
-  private final String topic;
-  private final String messageKey;
-  private final Integer kafkaPartitionId;
-  private final byte[] payload;
-  private final String payloadType;
-  private final String headersJson;
-  private final String aggregateType;
-  private final String aggregateId;
-  private final long createdAtUnixMs;
+  private final EventInfo eventInfo;
+  private final Routing routing;
+  private final PayloadEnvelope payloadEnvelope;
+  private final AggregateRef aggregateReference;
 
   private OutboxRecord(
       EventInfo event, Routing routing, PayloadEnvelope payloadEnvelope, AggregateRef aggregate) {
-    this.eventId = event.eventId();
-    this.topic = routing.topic();
-    this.messageKey = routing.messageKey();
-    this.kafkaPartitionId = routing.kafkaPartitionId();
-    this.payload = payloadEnvelope.payload();
-    this.payloadType = payloadEnvelope.payloadType();
-    this.headersJson = payloadEnvelope.headersJson();
-    this.aggregateType = aggregate.aggregateType();
-    this.aggregateId = aggregate.aggregateId();
-    this.createdAtUnixMs = event.createdAtUnixMs();
+    this.eventInfo = Objects.requireNonNull(event, "event");
+    this.routing = Objects.requireNonNull(routing, "routing");
+    this.payloadEnvelope = Objects.requireNonNull(payloadEnvelope, "payloadEnvelope");
+    this.aggregateReference = Objects.requireNonNull(aggregate, "aggregate");
   }
 
   /**
@@ -44,6 +30,26 @@ public final class OutboxRecord {
   public static OutboxRecord create(
       EventInfo event, Routing routing, PayloadEnvelope payloadEnvelope, AggregateRef aggregate) {
     return new OutboxRecord(event, routing, payloadEnvelope, aggregate);
+  }
+
+  /** Returns the event identity and creation timestamp persisted with this row. */
+  public EventInfo eventInfo() {
+    return eventInfo;
+  }
+
+  /** Returns the destination and partition metadata persisted with this row. */
+  public Routing routing() {
+    return routing;
+  }
+
+  /** Returns the serialized payload and transport headers persisted with this row. */
+  public PayloadEnvelope payloadEnvelope() {
+    return payloadEnvelope;
+  }
+
+  /** Returns the aggregate reference persisted with this row. */
+  public AggregateRef aggregateReference() {
+    return aggregateReference;
   }
 
   /**
@@ -150,6 +156,27 @@ public final class OutboxRecord {
     public String headersJson() {
       return headersJson;
     }
+
+    @Override
+    public boolean equals(Object other) {
+      if (this == other) {
+        return true;
+      }
+      if (!(other instanceof PayloadEnvelope that)) {
+        return false;
+      }
+      return Arrays.equals(payload, that.payload)
+          && payloadType.equals(that.payloadType)
+          && headersJson.equals(that.headersJson);
+    }
+
+    @Override
+    public int hashCode() {
+      int result = Arrays.hashCode(payload);
+      result = 31 * result + payloadType.hashCode();
+      result = 31 * result + headersJson.hashCode();
+      return result;
+    }
   }
 
   /**
@@ -164,56 +191,6 @@ public final class OutboxRecord {
       aggregateType = requireNonBlank(aggregateType, "aggregateType");
       Objects.requireNonNull(aggregateId, "aggregateId");
     }
-  }
-
-  /** Returns the unique outbox event identifier. */
-  public String eventId() {
-    return eventId;
-  }
-
-  /** Returns the destination topic. */
-  public String topic() {
-    return topic;
-  }
-
-  /** Returns the routing message key. */
-  public String messageKey() {
-    return messageKey;
-  }
-
-  /** Returns the optional Kafka partition override. */
-  public Integer kafkaPartitionId() {
-    return kafkaPartitionId;
-  }
-
-  /** Returns a defensive copy of the serialized payload. */
-  public byte[] payload() {
-    return Arrays.copyOf(payload, payload.length);
-  }
-
-  /** Returns the payload schema or type identifier. */
-  public String payloadType() {
-    return payloadType;
-  }
-
-  /** Returns the serialized transport headers. */
-  public String headersJson() {
-    return headersJson;
-  }
-
-  /** Returns the aggregate type associated with the event. */
-  public String aggregateType() {
-    return aggregateType;
-  }
-
-  /** Returns the aggregate identifier associated with the event. */
-  public String aggregateId() {
-    return aggregateId;
-  }
-
-  /** Returns the event creation timestamp in epoch milliseconds. */
-  public long createdAtUnixMs() {
-    return createdAtUnixMs;
   }
 
   private static String requireNonBlank(String value, String fieldName) {
@@ -232,32 +209,14 @@ public final class OutboxRecord {
     if (!(other instanceof OutboxRecord that)) {
       return false;
     }
-    return createdAtUnixMs == that.createdAtUnixMs
-        && eventId.equals(that.eventId)
-        && topic.equals(that.topic)
-        && messageKey.equals(that.messageKey)
-        && Objects.equals(kafkaPartitionId, that.kafkaPartitionId)
-        && Arrays.equals(payload, that.payload)
-        && payloadType.equals(that.payloadType)
-        && headersJson.equals(that.headersJson)
-        && aggregateType.equals(that.aggregateType)
-        && aggregateId.equals(that.aggregateId);
+    return eventInfo.equals(that.eventInfo)
+        && routing.equals(that.routing)
+        && payloadEnvelope.equals(that.payloadEnvelope)
+        && aggregateReference.equals(that.aggregateReference);
   }
 
   @Override
   public int hashCode() {
-    int result =
-        Objects.hash(
-            eventId,
-            topic,
-            messageKey,
-            kafkaPartitionId,
-            payloadType,
-            headersJson,
-            aggregateType,
-            aggregateId,
-            createdAtUnixMs);
-    result = 31 * result + Arrays.hashCode(payload);
-    return result;
+    return Objects.hash(eventInfo, routing, payloadEnvelope, aggregateReference);
   }
 }

@@ -64,18 +64,12 @@ class JdbcOutboxRepositoryTest {
                     new OutboxRecord.AggregateRef(
                         resultSet.getString("aggregate_type"),
                         resultSet.getString("aggregate_id"))),
-            UUID.fromString(record.eventId()));
+            UUID.fromString(record.eventInfo().eventId()));
 
-    assertThat(stored.eventId()).isEqualTo(record.eventId());
-    assertThat(stored.topic()).isEqualTo(record.topic());
-    assertThat(stored.messageKey()).isEqualTo(record.messageKey());
-    assertThat(stored.kafkaPartitionId()).isEqualTo(record.kafkaPartitionId());
-    assertThat(stored.payload()).containsExactly(record.payload());
-    assertThat(stored.payloadType()).isEqualTo(record.payloadType());
-    assertThat(stored.headersJson()).isEqualTo(record.headersJson());
-    assertThat(stored.aggregateType()).isEqualTo(record.aggregateType());
-    assertThat(stored.aggregateId()).isEqualTo(record.aggregateId());
-    assertThat(stored.createdAtUnixMs()).isEqualTo(record.createdAtUnixMs());
+    assertThat(stored.eventInfo()).isEqualTo(record.eventInfo());
+    assertThat(stored.routing()).isEqualTo(record.routing());
+    assertThat(stored.payloadEnvelope()).isEqualTo(record.payloadEnvelope());
+    assertThat(stored.aggregateReference()).isEqualTo(record.aggregateReference());
   }
 
   @Test

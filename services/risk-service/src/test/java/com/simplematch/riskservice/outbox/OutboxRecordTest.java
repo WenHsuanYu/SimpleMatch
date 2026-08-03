@@ -7,6 +7,24 @@ import org.junit.jupiter.api.Test;
 
 class OutboxRecordTest {
   @Test
+  void exposesSemanticGroupsForPersistenceAdapters() {
+    final OutboxRecord.EventInfo eventInfo = new OutboxRecord.EventInfo("event-1", 100L);
+    final OutboxRecord.Routing routing =
+        OutboxRecord.Routing.withPartition("orders.validated", "AAPL", 7);
+    final OutboxRecord.PayloadEnvelope payloadEnvelope =
+        new OutboxRecord.PayloadEnvelope(new byte[] {1, 2, 3}, "type", "{}");
+    final OutboxRecord.AggregateRef aggregateReference =
+        new OutboxRecord.AggregateRef("risk_submission", "O-C1");
+    final OutboxRecord record =
+        OutboxRecord.create(eventInfo, routing, payloadEnvelope, aggregateReference);
+
+    assertThat(record.eventInfo()).isSameAs(eventInfo);
+    assertThat(record.routing()).isSameAs(routing);
+    assertThat(record.payloadEnvelope()).isSameAs(payloadEnvelope);
+    assertThat(record.aggregateReference()).isSameAs(aggregateReference);
+  }
+
+  @Test
   void eventInfoRejectsBlankEventId() {
     assertThatThrownBy(() -> new OutboxRecord.EventInfo("   ", 100L))
         .isInstanceOf(IllegalArgumentException.class)

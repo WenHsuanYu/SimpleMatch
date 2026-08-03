@@ -38,7 +38,7 @@ not rely on implicit
 
 | Area                        | Implementation evidence                                                                                                                                                                                             |
 |-----------------------------|---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
-| Runtime datasource          | [RiskServiceConfiguration.java](../services/risk-service/src/main/java/com/simplematch/riskservice/config/RiskServiceConfiguration.java) selects the `risk_service` schema.                                         |
+| Runtime datasource          | [RiskServicePersistenceConfiguration.java](../services/risk-service/src/main/java/com/simplematch/riskservice/config/RiskServicePersistenceConfiguration.java) selects the `risk_service` schema. |
 | Market-reference datasource | [MarketdataPublisherConfiguration.java](../services/marketdata-publisher/src/main/java/com/simplematch/marketdatapublisher/config/MarketdataPublisherConfiguration.java) selects the `marketdata_publisher` schema. |
 | Outbox connector            | [Compose connector](../deploy/compose/risk-service-outbox-connector.json) and [Kubernetes connector](../deploy/k8s/risk-service-outbox-connector-configmap.yaml) use the schema-qualified outbox table.             |
 | Migration tests             | The risk, account, and persistence service migration tests validate their owner schemas.                                                                                                                            |

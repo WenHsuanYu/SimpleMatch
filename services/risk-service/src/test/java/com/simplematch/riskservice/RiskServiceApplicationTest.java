@@ -4,14 +4,19 @@ import static com.simplematch.riskservice.testsupport.H2TestDatabaseUrl.riskServ
 import static org.assertj.core.api.Assertions.assertThat;
 
 import com.simplematch.config.PlatformProperties;
+import com.simplematch.riskservice.admission.AdmissionOutboxFactory;
 import com.simplematch.riskservice.bootstrap.RiskServiceRuntime;
+import com.simplematch.riskservice.outbox.OutboxRepository;
+import com.simplematch.riskservice.submission.SubmissionService;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
+import org.springframework.context.ApplicationContext;
 import org.springframework.test.context.ActiveProfiles;
 import org.springframework.test.context.DynamicPropertyRegistry;
 import org.springframework.test.context.DynamicPropertySource;
+import org.springframework.transaction.support.TransactionTemplate;
 
 @SpringBootTest(
     properties = {
@@ -21,6 +26,8 @@ import org.springframework.test.context.DynamicPropertySource;
     })
 @ActiveProfiles("test")
 class RiskServiceApplicationTest {
+  @Autowired private ApplicationContext applicationContext;
+
   @Autowired private PlatformProperties platformProperties;
 
   @Autowired private RiskServiceRuntime runtime;
@@ -40,5 +47,14 @@ class RiskServiceApplicationTest {
     assertThat(platformProperties.environment()).isEqualTo("test");
     assertThat(runtime.grpcPort()).isEqualTo(50052);
     assertThat(platformProperties.postgres().dsn()).isEqualTo(riskServiceUrl("riskcontext"));
+  }
+
+  @DisplayName("risk-service keeps admission and submission wiring on shared local infrastructure")
+  @Test
+  void contextWiresAdmissionAndSubmissionCollaborators() {
+    assertThat(applicationContext.getBean(AdmissionOutboxFactory.class)).isNotNull();
+    assertThat(applicationContext.getBean(SubmissionService.class)).isNotNull();
+    assertThat(applicationContext.getBean(OutboxRepository.class)).isNotNull();
+    assertThat(applicationContext.getBean(TransactionTemplate.class)).isNotNull();
   }
 }

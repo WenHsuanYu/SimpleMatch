@@ -28,11 +28,12 @@ class AdmissionOutboxFactoryTest {
     final AdmissionJournalEntry entry = accepted(AdmissionDeliveryRoute.assigned(7));
 
     final OutboxRecord record = factory.create(entry);
-    final OrderAdmissionAccepted payload = OrderAdmissionAccepted.parseFrom(record.payload());
+    final OrderAdmissionAccepted payload =
+        OrderAdmissionAccepted.parseFrom(record.payloadEnvelope().payload());
 
-    assertThat(record.topic()).isEqualTo("orders.validated");
-    assertThat(record.messageKey()).isEqualTo("2330");
-    assertThat(record.kafkaPartitionId()).isEqualTo(7);
+    assertThat(record.routing().topic()).isEqualTo("orders.validated");
+    assertThat(record.routing().messageKey()).isEqualTo("2330");
+    assertThat(record.routing().kafkaPartitionId()).isEqualTo(7);
     assertThat(payload.getRoutingPartition()).isEqualTo(7);
     assertThat(payload.getRoutingSnapshotId()).isEqualTo(SNAPSHOT_ID.toString());
   }

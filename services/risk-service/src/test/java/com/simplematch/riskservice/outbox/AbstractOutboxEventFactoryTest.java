@@ -20,15 +20,16 @@ class AbstractOutboxEventFactoryTest {
     final OutboxRecord reservationRecord =
         reservationFactory.create(new ReservationAggregate("RSV-1", 200L));
 
-    assertThat(orderRecord.aggregateType()).isEqualTo("order");
-    assertThat(orderRecord.aggregateId()).isEqualTo("ORD-1");
-    assertThat(orderRecord.topic()).isEqualTo("orders.validated");
-    assertThat(orderRecord.payloadType()).isEqualTo("test.OrderPayload");
+    assertThat(orderRecord.aggregateReference().aggregateType()).isEqualTo("order");
+    assertThat(orderRecord.aggregateReference().aggregateId()).isEqualTo("ORD-1");
+    assertThat(orderRecord.routing().topic()).isEqualTo("orders.validated");
+    assertThat(orderRecord.payloadEnvelope().payloadType()).isEqualTo("test.OrderPayload");
 
-    assertThat(reservationRecord.aggregateType()).isEqualTo("reservation");
-    assertThat(reservationRecord.aggregateId()).isEqualTo("RSV-1");
-    assertThat(reservationRecord.topic()).isEqualTo("reservations.created");
-    assertThat(reservationRecord.payloadType()).isEqualTo("test.ReservationPayload");
+    assertThat(reservationRecord.aggregateReference().aggregateType()).isEqualTo("reservation");
+    assertThat(reservationRecord.aggregateReference().aggregateId()).isEqualTo("RSV-1");
+    assertThat(reservationRecord.routing().topic()).isEqualTo("reservations.created");
+    assertThat(reservationRecord.payloadEnvelope().payloadType())
+        .isEqualTo("test.ReservationPayload");
   }
 
   @Test
