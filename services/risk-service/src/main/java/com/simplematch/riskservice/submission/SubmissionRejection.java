@@ -14,8 +14,8 @@ import java.util.Objects;
 public record SubmissionRejection(Code code, Detail detail) {
   /** Requires a complete typed rejection reason. */
   public SubmissionRejection {
-    code = Objects.requireNonNull(code, "code");
-    detail = Objects.requireNonNull(detail, "detail");
+    Objects.requireNonNull(code, "code");
+    Objects.requireNonNull(detail, "detail");
   }
 
   /** Stable machine-readable rejection code. */

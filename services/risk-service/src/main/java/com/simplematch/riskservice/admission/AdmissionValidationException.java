@@ -1,5 +1,6 @@
 package com.simplematch.riskservice.admission;
 
+import com.google.errorprone.annotations.InlineMe;
 import java.util.Objects;
 
 /** Rejection raised for transport-independent v2 admission validation. */
@@ -13,6 +14,11 @@ public final class AdmissionValidationException extends IllegalArgumentException
    *     detail cannot be exchanged positionally.
    */
   @Deprecated(forRemoval = false)
+  @InlineMe(
+      replacement =
+          "this(new AdmissionFailure(new AdmissionFailure.ReasonCode(reasonCode), "
+              + "new AdmissionFailure.Detail(detail)))",
+      imports = "com.simplematch.riskservice.admission.AdmissionFailure")
   public AdmissionValidationException(String reasonCode, String detail) {
     this(
         new AdmissionFailure(

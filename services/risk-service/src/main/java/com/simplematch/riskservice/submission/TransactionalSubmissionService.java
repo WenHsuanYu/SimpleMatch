@@ -56,7 +56,7 @@ public final class TransactionalSubmissionService implements SubmissionService {
     final OutboxRecord outboxRecord = outboxEventFactory.create(decision);
 
     try {
-      submissionRepository.insert(decision.submission(), outboxRecord.eventId());
+      submissionRepository.insert(decision.submission(), outboxRecord.eventInfo().eventId());
       outboxRepository.insert(outboxRecord);
       return decision.submission();
     } catch (DuplicateKeyException duplicateKeyException) {

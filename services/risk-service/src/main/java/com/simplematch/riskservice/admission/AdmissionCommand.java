@@ -21,9 +21,9 @@ public record AdmissionCommand(
     AdmissionRoutingReference routing) {
   /** Requires all four domain components. */
   public AdmissionCommand {
-    identity = Objects.requireNonNull(identity, "identity");
-    order = Objects.requireNonNull(order, "order");
-    fixIdentity = Objects.requireNonNull(fixIdentity, "fixIdentity");
-    routing = Objects.requireNonNull(routing, "routing");
+    Objects.requireNonNull(identity, "identity");
+    Objects.requireNonNull(order, "order");
+    Objects.requireNonNull(fixIdentity, "fixIdentity");
+    Objects.requireNonNull(routing, "routing");
   }
 }

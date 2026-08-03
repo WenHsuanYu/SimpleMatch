@@ -15,6 +15,10 @@ The publication transaction is limited to 10 seconds. Its active-snapshot lock q
 2-second JDBC timeout, so lock contention fails rather than holding a broad market-data transaction
 open.
 
+`SnapshotOutboxRecord` is an internal marketdata-publisher carrier, not a cross-service Java API.
+`JdbcSnapshotOutbox` is its only flattening adapter; the externally compatible boundary is the
+transactional outbox row and emitted event, so the carrier may use semantic groups.
+
 Each snapshot stores its source identity and timestamp, checksum, complete normalized content,
 immutable version, and active state. The schema permits one active snapshot per trading day and one
 result for a source-identity/checksum pair. A duplicate returns the stored publication; changed

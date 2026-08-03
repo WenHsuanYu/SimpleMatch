@@ -9,6 +9,7 @@ dependencies {
     implementation(libs.grpc.netty.shaded)
     implementation(libs.grpc.protobuf)
     implementation(libs.grpc.stub)
+    compileOnly("com.google.errorprone:error_prone_annotations")
 
     testImplementation(libs.h2)
     testImplementation(libs.flyway.core)

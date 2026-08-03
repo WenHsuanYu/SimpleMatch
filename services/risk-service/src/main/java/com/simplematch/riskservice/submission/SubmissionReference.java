@@ -19,8 +19,8 @@ public record SubmissionReference(
     CommandType commandType) {
   /** Requires explicit typed identifiers and a command type. */
   public SubmissionReference {
-    requestId = Objects.requireNonNull(requestId, "requestId");
-    orderId = Objects.requireNonNull(orderId, "orderId");
-    commandType = Objects.requireNonNull(commandType, "commandType");
+    Objects.requireNonNull(requestId, "requestId");
+    Objects.requireNonNull(orderId, "orderId");
+    Objects.requireNonNull(commandType, "commandType");
   }
 }

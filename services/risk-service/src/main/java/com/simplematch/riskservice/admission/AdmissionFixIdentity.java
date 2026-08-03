@@ -13,9 +13,9 @@ public record AdmissionFixIdentity(
     SenderCompId senderCompId, TargetCompId targetCompId, ClOrdId clOrdId) {
   /** Requires all three typed FIX values. */
   public AdmissionFixIdentity {
-    senderCompId = Objects.requireNonNull(senderCompId, "senderCompId");
-    targetCompId = Objects.requireNonNull(targetCompId, "targetCompId");
-    clOrdId = Objects.requireNonNull(clOrdId, "clOrdId");
+    Objects.requireNonNull(senderCompId, "senderCompId");
+    Objects.requireNonNull(targetCompId, "targetCompId");
+    Objects.requireNonNull(clOrdId, "clOrdId");
   }
 
   /** Validated FIX SenderCompID. */

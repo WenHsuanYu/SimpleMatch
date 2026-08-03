@@ -15,8 +15,8 @@ import java.util.Objects;
 public record AdmissionFailure(ReasonCode reasonCode, Detail detail) {
   /** Requires a complete typed failure description. */
   public AdmissionFailure {
-    reasonCode = Objects.requireNonNull(reasonCode, "reasonCode");
-    detail = Objects.requireNonNull(detail, "detail");
+    Objects.requireNonNull(reasonCode, "reasonCode");
+    Objects.requireNonNull(detail, "detail");
   }
 
   /** Creates a general invalid-command failure. */

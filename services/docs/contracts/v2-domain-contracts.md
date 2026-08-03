@@ -37,4 +37,6 @@ modifying an existing field.
 `V1OrderCommandAdapter` is an explicit ingress seam for representable v1 commands. It validates
 values while converting and round-trips the v1 command without changing the existing services' v1
 routing. The deployment boundary supplies the legacy venue because v1 carries no MIC. This adapter
-remains until the later v2 admission migration is complete.
+remains until the later v2 admission migration is complete. Its v1-to-v2 and v2-to-v1 field-family
+mapping collaborators are package-private implementation details; they keep the public adapter
+focused on the compatibility boundary without changing the wire contract.

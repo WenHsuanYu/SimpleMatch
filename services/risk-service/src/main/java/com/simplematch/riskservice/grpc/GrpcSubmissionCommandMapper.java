@@ -24,19 +24,21 @@ final class GrpcSubmissionCommandMapper {
     final SubmissionCommand mappedCommand =
         SubmissionCommand.create(
             new SubmissionCommand.RequestMetadata(
-                command.getCommandId(),
-                command.getOrderId(),
-                command.getAccountId(),
-                command.getSenderCompId(),
-                command.getTargetCompId(),
-                command.getClOrdId(),
-                command.getOrigClOrdId(),
+                new SubmissionCommand.RequestIdentity(
+                    new SubmissionCommand.CommandId(command.getCommandId()),
+                    new SubmissionCommand.OrderId(command.getOrderId()),
+                    new SubmissionCommand.AccountId(command.getAccountId())),
+                new SubmissionCommand.FixIdentity(
+                    new SubmissionCommand.SenderCompId(command.getSenderCompId()),
+                    new SubmissionCommand.TargetCompId(command.getTargetCompId()),
+                    new SubmissionCommand.ClOrdId(command.getClOrdId()),
+                    new SubmissionCommand.OrigClOrdId(command.getOrigClOrdId())),
                 tradingDayFor(command)),
             new SubmissionCommand.OrderDetails(
                 command.getSymbol(),
                 toSide(command.getSide()),
-                command.getQuantity(),
-                command.getPrice(),
+                new SubmissionCommand.Quantity(command.getQuantity()),
+                new SubmissionCommand.Price(command.getPrice()),
                 toOrderType(command.getOrderType()),
                 toTimeInForce(command.getTif())));
     return new ResolvedSubmissionCommand(mappedCommand, toCommandType(command.getCommandType()))

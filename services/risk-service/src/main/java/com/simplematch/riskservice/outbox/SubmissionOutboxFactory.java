@@ -59,14 +59,17 @@ public final class SubmissionOutboxFactory extends AbstractOutboxEventFactory<Su
       SubmissionCommand command,
       String eventId,
       int kafkaPartitionId) {
+    final SubmissionCommand.RequestIdentity identity = command.requestMetadata().identity();
+    final String accountId = identity.accountId().value();
+    final String symbol = command.orderDetails().symbol();
 
     if (submission.accepted()) {
       return OrderValidated.newBuilder()
           .setMetadata(eventMetadata(eventId, submission.createdAtUnixMs()))
           .setCommandId(submission.commandId())
           .setOrderId(submission.orderId())
-          .setAccountId(command.accountId())
-          .setSymbol(command.symbol())
+          .setAccountId(accountId)
+          .setSymbol(symbol)
           .setRoutingPartition(Integer.toString(kafkaPartitionId))
           .build()
           .toByteArray();
@@ -76,8 +79,8 @@ public final class SubmissionOutboxFactory extends AbstractOutboxEventFactory<Su
         .setMetadata(eventMetadata(eventId, submission.createdAtUnixMs()))
         .setCommandId(submission.commandId())
         .setOrderId(submission.orderId())
-        .setAccountId(command.accountId())
-        .setSymbol(command.symbol())
+        .setAccountId(accountId)
+        .setSymbol(symbol)
         .setRejectReasonCode(submission.reasonCode())
         .setRejectReasonText(submission.reasonText())
         .build()
@@ -100,20 +103,20 @@ public final class SubmissionOutboxFactory extends AbstractOutboxEventFactory<Su
   }
 
   private String messageKey(SubmissionCommand command) {
-    if (command != null && isPersistableMessageKey(command.symbol())) {
-      return command.symbol();
+    if (command != null && isPersistableMessageKey(command.orderDetails().symbol())) {
+      return command.orderDetails().symbol();
     }
-    if (command != null && !command.orderIdValue().isBlank()) {
-      return command.orderIdValue().value();
+    if (command != null && !command.requestMetadata().identity().orderId().isBlank()) {
+      return command.requestMetadata().identity().orderId().value();
     }
     return "UNKNOWN";
   }
 
   private int kafkaPartitionId(SubmissionCommand command) {
-    if (command == null || !isPersistableMessageKey(command.symbol())) {
+    if (command == null || !isPersistableMessageKey(command.orderDetails().symbol())) {
       return DEFAULT_PARTITION_ID;
     }
-    return routingPartitionResolver.resolve(command.symbol());
+    return routingPartitionResolver.resolve(command.orderDetails().symbol());
   }
 
   private boolean isPersistableMessageKey(String value) {

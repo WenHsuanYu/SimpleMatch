@@ -24,10 +24,10 @@ public record FixSubmissionIdentity(
     SubmissionCommand.OrigClOrdId origClOrdId) {
   /** Requires a complete typed FIX identity. */
   public FixSubmissionIdentity {
-    senderCompId = Objects.requireNonNull(senderCompId, "senderCompId");
-    targetCompId = Objects.requireNonNull(targetCompId, "targetCompId");
-    tradingDay = Objects.requireNonNull(tradingDay, "tradingDay");
-    clOrdId = Objects.requireNonNull(clOrdId, "clOrdId");
-    origClOrdId = Objects.requireNonNull(origClOrdId, "origClOrdId");
+    Objects.requireNonNull(senderCompId, "senderCompId");
+    Objects.requireNonNull(targetCompId, "targetCompId");
+    Objects.requireNonNull(tradingDay, "tradingDay");
+    Objects.requireNonNull(clOrdId, "clOrdId");
+    Objects.requireNonNull(origClOrdId, "origClOrdId");
   }
 }

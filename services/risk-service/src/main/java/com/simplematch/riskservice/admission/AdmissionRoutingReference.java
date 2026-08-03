@@ -11,7 +11,7 @@ import java.util.UUID;
 public record AdmissionRoutingReference(RoutingSnapshotId snapshotId) {
   /** Requires an explicit routing-snapshot value object. */
   public AdmissionRoutingReference {
-    snapshotId = Objects.requireNonNull(snapshotId, "snapshotId");
+    Objects.requireNonNull(snapshotId, "snapshotId");
   }
 
   /** Optional routing snapshot identity. */

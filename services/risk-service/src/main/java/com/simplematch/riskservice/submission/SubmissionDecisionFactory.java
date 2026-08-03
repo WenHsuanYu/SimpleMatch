@@ -23,17 +23,19 @@ final class SubmissionDecisionFactory {
 
   SubmissionDecision accepted(ResolvedSubmissionCommand command, long createdAtUnixMs) {
     final SubmissionCommand payload = command.payload();
+    final SubmissionCommand.RequestIdentity identity = payload.requestMetadata().identity();
+    final SubmissionCommand.FixIdentity fixIdentity = payload.requestMetadata().fixIdentity();
     return new SubmissionDecision(
         new SubmissionResult(
             new SubmissionReference(
-                payload.commandIdValue(), payload.orderIdValue(), command.commandType()),
+                identity.commandId(), identity.orderId(), command.commandType()),
             new FixSubmissionIdentity(
-                payload.senderCompIdValue(),
-                payload.targetCompIdValue(),
+                fixIdentity.senderCompId(),
+                fixIdentity.targetCompId(),
                 resolveTradingDay(payload),
-                payload.clOrdIdValue(),
-                payload.origClOrdIdValue()),
-            new PersistedFixIdentity(payload.clOrdIdValue(), payload.origClOrdIdValue(), false),
+                fixIdentity.clOrdId(),
+                fixIdentity.origClOrdId()),
+            new PersistedFixIdentity(fixIdentity.clOrdId(), fixIdentity.origClOrdId(), false),
             SubmissionOutcome.acceptedOutcome(),
             createdAtUnixMs),
         command);
@@ -53,23 +55,27 @@ final class SubmissionDecisionFactory {
   SubmissionDecision rejected(
       ResolvedSubmissionCommand command, long createdAtUnixMs, SubmissionRejection rejection) {
     final SubmissionCommand payload = command.payload();
+    final SubmissionCommand.RequestIdentity identity = payload.requestMetadata().identity();
+    final SubmissionCommand.FixIdentity fixIdentity = payload.requestMetadata().fixIdentity();
     return new SubmissionDecision(
         new SubmissionResult(
             new SubmissionReference(
-                new SubmissionCommand.CommandId(persistedIdentifier(payload.commandId())),
-                new SubmissionCommand.OrderId(persistedIdentifier(payload.orderId())),
+                new SubmissionCommand.CommandId(persistedIdentifier(identity.commandId().value())),
+                new SubmissionCommand.OrderId(persistedIdentifier(identity.orderId().value())),
                 command.commandType()),
             new FixSubmissionIdentity(
                 new SubmissionCommand.SenderCompId(
-                    persistedBusinessKeyIdentifier(payload.senderCompId())),
+                    persistedBusinessKeyIdentifier(fixIdentity.senderCompId().value())),
                 new SubmissionCommand.TargetCompId(
-                    persistedBusinessKeyIdentifier(payload.targetCompId())),
+                    persistedBusinessKeyIdentifier(fixIdentity.targetCompId().value())),
                 resolveTradingDay(payload),
-                payload.clOrdIdValue(),
-                payload.origClOrdIdValue()),
+                fixIdentity.clOrdId(),
+                fixIdentity.origClOrdId()),
             new PersistedFixIdentity(
-                new SubmissionCommand.ClOrdId(persistedBusinessKeyIdentifier(payload.clOrdId())),
-                new SubmissionCommand.OrigClOrdId(persistedFixIdentity(payload.origClOrdId())),
+                new SubmissionCommand.ClOrdId(
+                    persistedBusinessKeyIdentifier(fixIdentity.clOrdId().value())),
+                new SubmissionCommand.OrigClOrdId(
+                    persistedFixIdentity(fixIdentity.origClOrdId().value())),
                 businessKeySurrogated(payload)),
             SubmissionOutcome.rejectedOutcome(rejection),
             createdAtUnixMs),
@@ -97,9 +103,10 @@ final class SubmissionDecisionFactory {
   }
 
   private static boolean businessKeySurrogated(SubmissionCommand payload) {
-    return exceedsPersistedFixIdentityLength(payload.senderCompId())
-        || exceedsPersistedFixIdentityLength(payload.targetCompId())
-        || exceedsPersistedFixIdentityLength(payload.clOrdId());
+    final SubmissionCommand.FixIdentity fixIdentity = payload.requestMetadata().fixIdentity();
+    return exceedsPersistedFixIdentityLength(fixIdentity.senderCompId().value())
+        || exceedsPersistedFixIdentityLength(fixIdentity.targetCompId().value())
+        || exceedsPersistedFixIdentityLength(fixIdentity.clOrdId().value());
   }
 
   private static boolean exceedsPersistedFixIdentityLength(String value) {
@@ -116,7 +123,7 @@ final class SubmissionDecisionFactory {
   }
 
   private LocalDate resolveTradingDay(SubmissionCommand payload) {
-    final LocalDate payloadTradingDay = payload.tradingDay();
+    final LocalDate payloadTradingDay = payload.requestMetadata().tradingDay();
     if (payloadTradingDay != null) {
       return payloadTradingDay;
     }

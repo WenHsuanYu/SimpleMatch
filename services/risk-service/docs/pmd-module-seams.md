@@ -11,13 +11,19 @@ the application-owned transaction template remain unchanged. `OutboxRecord` expo
 payload, and aggregate groups directly to the JDBC adapter; only that adapter flattens them into the
 unchanged outbox row.
 
-The remaining PMD suppressions are compatibility seams, not validation or outbox policy. They are
-intentionally narrow and must be removed when their named retirement condition is met.
+The remaining compatibility seams are not validation or outbox policy. They are intentionally narrow
+and must be removed when their named retirement condition is met. `SubmissionResult` already uses
+its five-value semantic record constructor and has no flat-constructor PMD suppression. The
+`SubmissionCommand`, `RequestMetadata`, and `OrderDetails` compatibility model no longer needs a
+`TooManyMethods` suppression: request identity, FIX identity, and order details are grouped into
+typed records, while the legacy v1 wire constructors only normalize their external string shape.
+The v1 submission-ingress owner is responsible for retiring those constructors when all v1 callers
+compose the grouped values directly and repository search confirms that no wire or fixture caller
+remains.
 
 | Type | Rule | Reason | Retirement condition |
 | --- | --- | --- | --- |
-| `SubmissionResult` flat constructors | `ExcessiveParameterList` | In-repository test fixtures still construct durable outcomes from positional values; production JDBC adapters use the canonical constructor. | Remove the constructors when the remaining fixtures compose result values directly. |
-| `SubmissionCommand`, `RequestMetadata`, `OrderDetails` | `TooManyMethods` | v1 ingress requires both typed domain accessors and wire-compatible accessors while migration is in progress. | Remove the compatibility accessors when ingress consumes the grouped values directly. |
+| Grouped `SubmissionCommand` compatibility model | None | Typed request identity, FIX identity, and order-detail records keep the submission model cohesive. The seven-field `RequestMetadata` and six-field `OrderDetails` constructors are bounded legacy v1 wire-normalization factories. | The v1 submission-ingress owner removes those factories after every v1 caller composes grouped values directly and round-trip tests remain green. |
 
 `@Transactional` remains owned by the public application services. The JDBC repositories,
 validation policy, and outbox factories participate in those transactions rather than opening

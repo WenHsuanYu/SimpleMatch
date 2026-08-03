@@ -15,7 +15,7 @@ public record PersistedFixIdentity(
     boolean surrogated) {
   /** Requires explicit typed storage values. */
   public PersistedFixIdentity {
-    clOrdId = Objects.requireNonNull(clOrdId, "clOrdId");
-    origClOrdId = Objects.requireNonNull(origClOrdId, "origClOrdId");
+    Objects.requireNonNull(clOrdId, "clOrdId");
+    Objects.requireNonNull(origClOrdId, "origClOrdId");
   }
 }

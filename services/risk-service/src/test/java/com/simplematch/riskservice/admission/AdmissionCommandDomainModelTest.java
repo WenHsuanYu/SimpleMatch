@@ -56,6 +56,28 @@ class AdmissionCommandDomainModelTest {
     assertThat(exception.reasonCode()).isEqualTo("INVALID_INSTRUMENT");
   }
 
+  @DisplayName("deprecated failure constructor preserves its typed failure values")
+  @Test
+  void preservesDeprecatedFailureConstructorSemantics() {
+    final AdmissionValidationException exception = legacyFailure("LEGACY_REASON", "legacy detail");
+
+    assertThat(exception.failure())
+        .isEqualTo(
+            new AdmissionFailure(
+                new AdmissionFailure.ReasonCode("LEGACY_REASON"),
+                new AdmissionFailure.Detail("legacy detail")));
+  }
+
+  private static AdmissionValidationException legacyFailure(String reasonCode, String detail) {
+    try {
+      return AdmissionValidationException.class
+          .getConstructor(String.class, String.class)
+          .newInstance(reasonCode, detail);
+    } catch (ReflectiveOperationException exception) {
+      throw new LinkageError("deprecated constructor must remain callable", exception);
+    }
+  }
+
   @DisplayName("Admission quantities reject invalid state before persistence")
   @Test
   void rejectsInvalidQuantity() {

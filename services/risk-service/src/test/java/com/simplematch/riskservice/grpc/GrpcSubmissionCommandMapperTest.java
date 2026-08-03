@@ -23,25 +23,30 @@ class GrpcSubmissionCommandMapperTest {
     final ResolvedSubmissionCommand mapped =
         mapper.map(newNewOrder(), CommandType.COMMAND_TYPE_NEW);
 
-    assertThat(mapped.payload().commandId()).isEqualTo(normalize("cmd-1"));
-    assertThat(mapped.payload().orderId()).isEqualTo("O-C1");
-    assertThat(mapped.payload().accountId()).isEqualTo("ACC-1");
-    assertThat(mapped.payload().senderCompId()).isEqualTo("CLIENT");
-    assertThat(mapped.payload().targetCompId()).isEqualTo("SIMPLEMATCH");
-    assertThat(mapped.payload().tradingDay()).isEqualTo(LocalDate.of(2024, 3, 27));
-    assertThat(mapped.payload().clOrdId()).isEqualTo("C1");
-    assertThat(mapped.payload().symbol()).isEqualTo("AAPL");
-    assertThat(mapped.payload().side())
+    final var identity = mapped.payload().requestMetadata().identity();
+    final var fixIdentity = mapped.payload().requestMetadata().fixIdentity();
+    final var order = mapped.payload().orderDetails();
+
+    assertThat(identity.commandId().value()).isEqualTo(normalize("cmd-1"));
+    assertThat(identity.orderId().value()).isEqualTo("O-C1");
+    assertThat(identity.accountId().value()).isEqualTo("ACC-1");
+    assertThat(fixIdentity.senderCompId().value()).isEqualTo("CLIENT");
+    assertThat(fixIdentity.targetCompId().value()).isEqualTo("SIMPLEMATCH");
+    assertThat(mapped.payload().requestMetadata().tradingDay())
+        .isEqualTo(LocalDate.of(2024, 3, 27));
+    assertThat(fixIdentity.clOrdId().value()).isEqualTo("C1");
+    assertThat(order.symbol()).isEqualTo("AAPL");
+    assertThat(order.side())
         .isEqualTo(com.simplematch.riskservice.submission.Side.SIDE_BUY);
-    assertThat(mapped.payload().quantity()).isEqualTo("10");
-    assertThat(mapped.payload().price()).isEqualTo("101.25");
-    assertThat(mapped.payload().orderType())
+    assertThat(order.quantity().value()).isEqualTo("10");
+    assertThat(order.price().value()).isEqualTo("101.25");
+    assertThat(order.orderType())
         .isEqualTo(com.simplematch.riskservice.submission.OrderType.ORDER_TYPE_LIMIT);
-    assertThat(mapped.payload().tif())
+    assertThat(order.tif())
         .isEqualTo(com.simplematch.riskservice.submission.TimeInForce.TIME_IN_FORCE_ROD);
     assertThat(mapped.commandType())
         .isEqualTo(com.simplematch.riskservice.submission.CommandType.COMMAND_TYPE_NEW);
-    assertThat(mapped.payload().origClOrdId()).isEqualTo("");
+    assertThat(fixIdentity.origClOrdId().value()).isEqualTo("");
   }
 
   @DisplayName("default instance preserves the expected command type")

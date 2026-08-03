@@ -14,17 +14,17 @@ public record AdmissionOrder(
     Instrument instrument, Characteristics characteristics, LocalDate tradingDay) {
   /** Requires complete order facts. */
   public AdmissionOrder {
-    instrument = Objects.requireNonNull(instrument, "instrument");
-    characteristics = Objects.requireNonNull(characteristics, "characteristics");
-    tradingDay = Objects.requireNonNull(tradingDay, "tradingDay");
+    Objects.requireNonNull(instrument, "instrument");
+    Objects.requireNonNull(characteristics, "characteristics");
+    Objects.requireNonNull(tradingDay, "tradingDay");
   }
 
   /** Instrument identity used for validation and routing. */
   public record Instrument(Symbol symbol, VenueMic venueMic) {
     /** Requires both symbol and venue. */
     public Instrument {
-      symbol = Objects.requireNonNull(symbol, "symbol");
-      venueMic = Objects.requireNonNull(venueMic, "venueMic");
+      Objects.requireNonNull(symbol, "symbol");
+      Objects.requireNonNull(venueMic, "venueMic");
     }
   }
 
@@ -37,11 +37,11 @@ public record AdmissionOrder(
       TimeInForceCode timeInForce) {
     /** Requires every validated characteristic. */
     public Characteristics {
-      side = Objects.requireNonNull(side, "side");
-      quantity = Objects.requireNonNull(quantity, "quantity");
-      limitPrice = Objects.requireNonNull(limitPrice, "limitPrice");
-      orderType = Objects.requireNonNull(orderType, "orderType");
-      timeInForce = Objects.requireNonNull(timeInForce, "timeInForce");
+      Objects.requireNonNull(side, "side");
+      Objects.requireNonNull(quantity, "quantity");
+      Objects.requireNonNull(limitPrice, "limitPrice");
+      Objects.requireNonNull(orderType, "orderType");
+      Objects.requireNonNull(timeInForce, "timeInForce");
     }
   }
 

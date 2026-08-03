@@ -15,7 +15,7 @@ public record SubmissionOutcome(boolean accepted, SubmissionRejection rejection)
       throw new IllegalArgumentException("accepted submission must not carry a rejection");
     }
     if (!accepted) {
-      rejection = Objects.requireNonNull(rejection, "rejection");
+      Objects.requireNonNull(rejection, "rejection");
     }
   }
 

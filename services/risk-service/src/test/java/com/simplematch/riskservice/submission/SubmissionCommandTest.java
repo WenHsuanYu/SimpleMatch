@@ -34,21 +34,25 @@ class SubmissionCommandTest {
                 OrderType.ORDER_TYPE_LIMIT,
                 TimeInForce.TIME_IN_FORCE_ROD));
 
-    assertThat(command.commandId()).isEqualTo(normalize("cmd-1"));
-    assertThat(command.commandIdValue())
+    final SubmissionCommand.RequestIdentity identity = command.requestMetadata().identity();
+    final SubmissionCommand.FixIdentity fixIdentity = command.requestMetadata().fixIdentity();
+    final SubmissionCommand.OrderDetails order = command.orderDetails();
+
+    assertThat(identity.commandId().value()).isEqualTo(normalize("cmd-1"));
+    assertThat(identity.commandId())
         .isEqualTo(new SubmissionCommand.CommandId(normalize("cmd-1")));
-    assertThat(command.orderIdValue()).isEqualTo(new SubmissionCommand.OrderId("O-C1"));
-    assertThat(command.accountIdValue()).isEqualTo(new SubmissionCommand.AccountId("ACC-1"));
-    assertThat(command.senderCompIdValue()).isEqualTo(new SubmissionCommand.SenderCompId("CLIENT"));
-    assertThat(command.targetCompIdValue())
+    assertThat(identity.orderId()).isEqualTo(new SubmissionCommand.OrderId("O-C1"));
+    assertThat(identity.accountId()).isEqualTo(new SubmissionCommand.AccountId("ACC-1"));
+    assertThat(fixIdentity.senderCompId()).isEqualTo(new SubmissionCommand.SenderCompId("CLIENT"));
+    assertThat(fixIdentity.targetCompId())
         .isEqualTo(new SubmissionCommand.TargetCompId("SIMPLEMATCH"));
-    assertThat(command.clOrdIdValue()).isEqualTo(new SubmissionCommand.ClOrdId("C1"));
-    assertThat(command.clOrdId()).isEqualTo("C1");
-    assertThat(command.symbol()).isEqualTo("AAPL");
-    assertThat(command.quantityValue()).isEqualTo(new SubmissionCommand.Quantity("10"));
-    assertThat(command.priceValue()).isEqualTo(new SubmissionCommand.Price("101.25"));
-    assertThat(command.orderType()).isEqualTo(OrderType.ORDER_TYPE_LIMIT);
-    assertThat(command.origClOrdId()).isEqualTo("OC1");
+    assertThat(fixIdentity.clOrdId()).isEqualTo(new SubmissionCommand.ClOrdId("C1"));
+    assertThat(fixIdentity.clOrdId().value()).isEqualTo("C1");
+    assertThat(order.symbol()).isEqualTo("AAPL");
+    assertThat(order.quantity()).isEqualTo(new SubmissionCommand.Quantity("10"));
+    assertThat(order.price()).isEqualTo(new SubmissionCommand.Price("101.25"));
+    assertThat(order.orderType()).isEqualTo(OrderType.ORDER_TYPE_LIMIT);
+    assertThat(fixIdentity.origClOrdId().value()).isEqualTo("OC1");
   }
 
   @Test
@@ -56,17 +60,13 @@ class SubmissionCommandTest {
     final SubmissionCommand command =
         SubmissionCommand.create(
             new SubmissionCommand.RequestMetadata(null, null, null, null, null, null, null),
-            new SubmissionCommand.OrderDetails(null, null, null, null, null, null));
+            new SubmissionCommand.OrderDetails(
+                null, null, (String) null, (String) null, null, null));
 
     assertThat(command.hasNoPayloadFields()).isTrue();
-    assertThat(command.commandIdValue().isBlank()).isTrue();
-    assertThat(command.orderIdValue().isBlank()).isTrue();
-    assertThat(command.accountIdValue().isBlank()).isTrue();
-    assertThat(command.senderCompIdValue().isBlank()).isTrue();
-    assertThat(command.targetCompIdValue().isBlank()).isTrue();
-    assertThat(command.clOrdIdValue().isBlank()).isTrue();
-    assertThat(command.quantityValue().isBlank()).isTrue();
-    assertThat(command.priceValue().isBlank()).isTrue();
+    assertThat(command.requestMetadata().identity().hasNoPayloadFields()).isTrue();
+    assertThat(command.requestMetadata().fixIdentity().hasNoPayloadFields()).isTrue();
+    assertThat(command.orderDetails().hasNoPayloadFields()).isTrue();
   }
 
   @Test

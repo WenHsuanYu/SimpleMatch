@@ -35,47 +35,52 @@ final class SubmissionRejectionPolicy {
   }
 
   private SubmissionRejection identityRejection(SubmissionCommand payload) {
-    if (payload.clOrdIdValue().isBlank()) {
+    final SubmissionCommand.RequestIdentity identity = payload.requestMetadata().identity();
+    final SubmissionCommand.FixIdentity fixIdentity = payload.requestMetadata().fixIdentity();
+    if (fixIdentity.clOrdId().isBlank()) {
       return rejection("MISSING_CL_ORD_ID", "cl_ord_id is required");
     }
-    if (payload.orderIdValue().isBlank()) {
+    if (identity.orderId().isBlank()) {
       return rejection("MISSING_ORDER_ID", "order_id is required");
     }
-    if (payload.senderCompIdValue().isBlank()) {
+    if (fixIdentity.senderCompId().isBlank()) {
       return rejection("MISSING_SENDER_COMP_ID", "sender_comp_id is required");
     }
-    if (payload.targetCompIdValue().isBlank()) {
+    if (fixIdentity.targetCompId().isBlank()) {
       return rejection("MISSING_TARGET_COMP_ID", "target_comp_id is required");
     }
     return null;
   }
 
   private SubmissionRejection storageRejection(SubmissionCommand payload) {
-    if (exceedsPersistedIdentifierLength(payload.commandId())) {
+    final SubmissionCommand.RequestIdentity identity = payload.requestMetadata().identity();
+    final SubmissionCommand.FixIdentity fixIdentity = payload.requestMetadata().fixIdentity();
+    final SubmissionCommand.OrderDetails order = payload.orderDetails();
+    if (exceedsPersistedIdentifierLength(identity.commandId().value())) {
       return oversized("OVERSIZED_REQUEST_ID", "request_id", MAX_PERSISTED_IDENTIFIER_LENGTH);
     }
-    if (!isUuid(payload.commandId())) {
+    if (!isUuid(identity.commandId().value())) {
       return rejection("INVALID_REQUEST_ID", "request_id must be a UUID");
     }
-    if (exceedsPersistedIdentifierLength(payload.orderId())) {
+    if (exceedsPersistedIdentifierLength(identity.orderId().value())) {
       return oversized("OVERSIZED_ORDER_ID", "order_id", MAX_PERSISTED_IDENTIFIER_LENGTH);
     }
-    if (exceedsPersistedFixIdentityLength(payload.senderCompId())) {
+    if (exceedsPersistedFixIdentityLength(fixIdentity.senderCompId().value())) {
       return oversized(
           "OVERSIZED_SENDER_COMP_ID", "sender_comp_id", MAX_PERSISTED_FIX_IDENTITY_LENGTH);
     }
-    if (exceedsPersistedFixIdentityLength(payload.targetCompId())) {
+    if (exceedsPersistedFixIdentityLength(fixIdentity.targetCompId().value())) {
       return oversized(
           "OVERSIZED_TARGET_COMP_ID", "target_comp_id", MAX_PERSISTED_FIX_IDENTITY_LENGTH);
     }
-    if (exceedsPersistedFixIdentityLength(payload.clOrdId())) {
+    if (exceedsPersistedFixIdentityLength(fixIdentity.clOrdId().value())) {
       return oversized("OVERSIZED_CL_ORD_ID", "cl_ord_id", MAX_PERSISTED_FIX_IDENTITY_LENGTH);
     }
-    if (exceedsPersistedFixIdentityLength(payload.origClOrdId())) {
+    if (exceedsPersistedFixIdentityLength(fixIdentity.origClOrdId().value())) {
       return oversized(
           "OVERSIZED_ORIG_CL_ORD_ID", "orig_cl_ord_id", MAX_PERSISTED_FIX_IDENTITY_LENGTH);
     }
-    if (exceedsPersistedIdentifierLength(payload.symbol())) {
+    if (exceedsPersistedIdentifierLength(order.symbol())) {
       return oversized("OVERSIZED_SYMBOL", "symbol", MAX_PERSISTED_IDENTIFIER_LENGTH);
     }
     return null;
@@ -85,27 +90,33 @@ final class SubmissionRejectionPolicy {
     if (command.commandType() == CommandType.COMMAND_TYPE_NEW) {
       return newOrderRejection(command.payload());
     }
-    if (command.commandType() == CommandType.COMMAND_TYPE_CANCEL
-        && command.payload().origClOrdIdValue().isBlank()) {
-      return rejection("MISSING_ORIG_CL_ORD_ID", "orig_cl_ord_id is required for cancel requests");
+    if (command.commandType() == CommandType.COMMAND_TYPE_CANCEL) {
+      final SubmissionCommand.FixIdentity fixIdentity =
+          command.payload().requestMetadata().fixIdentity();
+      if (fixIdentity.origClOrdId().isBlank()) {
+        return rejection(
+            "MISSING_ORIG_CL_ORD_ID", "orig_cl_ord_id is required for cancel requests");
+      }
     }
     return null;
   }
 
   private SubmissionRejection newOrderRejection(SubmissionCommand payload) {
-    if (payload.accountIdValue().isBlank()) {
+    final SubmissionCommand.RequestIdentity identity = payload.requestMetadata().identity();
+    final SubmissionCommand.OrderDetails order = payload.orderDetails();
+    if (identity.accountId().isBlank()) {
       return rejection("MISSING_ACCOUNT_ID", "account_id is required");
     }
-    if (payload.symbol().isBlank()) {
+    if (order.symbol().isBlank()) {
       return rejection("MISSING_SYMBOL", "symbol is required");
     }
-    if (payload.quantityValue().isBlank()) {
+    if (order.quantity().isBlank()) {
       return rejection("MISSING_QUANTITY", "quantity is required");
     }
-    if (payload.side() == Side.SIDE_UNSPECIFIED) {
+    if (order.side() == Side.SIDE_UNSPECIFIED) {
       return rejection("MISSING_SIDE", "side is required");
     }
-    if (payload.orderType() == OrderType.ORDER_TYPE_LIMIT && payload.priceValue().isBlank()) {
+    if (order.orderType() == OrderType.ORDER_TYPE_LIMIT && order.price().isBlank()) {
       return rejection("MISSING_PRICE", "price is required for limit orders");
     }
     return null;

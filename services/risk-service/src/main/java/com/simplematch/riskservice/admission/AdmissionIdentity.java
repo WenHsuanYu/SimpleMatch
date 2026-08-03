@@ -13,16 +13,16 @@ import java.util.UUID;
 public record AdmissionIdentity(CommandId commandId, OrderId orderId, AccountId accountId) {
   /** Requires all typed identities. */
   public AdmissionIdentity {
-    commandId = Objects.requireNonNull(commandId, "commandId");
-    orderId = Objects.requireNonNull(orderId, "orderId");
-    accountId = Objects.requireNonNull(accountId, "accountId");
+    Objects.requireNonNull(commandId, "commandId");
+    Objects.requireNonNull(orderId, "orderId");
+    Objects.requireNonNull(accountId, "accountId");
   }
 
   /** Unique identity of one admission command. */
   public record CommandId(UUID value) {
     /** Requires a command identifier. */
     public CommandId {
-      value = Objects.requireNonNull(value, "command_id");
+      Objects.requireNonNull(value, "command_id");
     }
   }
 
@@ -30,7 +30,7 @@ public record AdmissionIdentity(CommandId commandId, OrderId orderId, AccountId 
   public record OrderId(UUID value) {
     /** Requires an order identifier. */
     public OrderId {
-      value = Objects.requireNonNull(value, "order_id");
+      Objects.requireNonNull(value, "order_id");
     }
   }
 
@@ -38,7 +38,7 @@ public record AdmissionIdentity(CommandId commandId, OrderId orderId, AccountId 
   public record AccountId(UUID value) {
     /** Requires an account identifier. */
     public AccountId {
-      value = Objects.requireNonNull(value, "account_id");
+      Objects.requireNonNull(value, "account_id");
     }
   }
 }
