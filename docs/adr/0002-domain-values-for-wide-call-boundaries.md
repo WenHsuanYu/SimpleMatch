@@ -177,7 +177,8 @@ change. Because no historical WAL data needs permissive recovery, the codec vali
 decoded record as strictly as a newly appended record, including the permitted FIX-message-type and
 command-type pairs.
 The strict reader also rejects unknown or duplicate fields, trailing JSON tokens, and malformed or
-unmappable character sequences before semantic rehydration.
+unmappable character sequences before semantic rehydration. v1 writes LF-delimited records and
+accepts LF, CRLF, or CR while reporting physical line numbers consistently across platforms.
 
 The canonical Java representation is `WalRecord(WalMetadata, FixSessionIdentity,
 WalOrderReference, WalCommand, RawFixMessage)`. `WalCommand` retains the FIX message type and

@@ -152,6 +152,29 @@ class WalAppenderTest {
     }
   }
 
+  @DisplayName("replay counts CR-only physical lines")
+  @Test
+  void replayCountsCrOnlyPhysicalLines() throws Exception {
+    final Path walPath = tempDir.resolve("cr-only-replay.wal");
+    try (final WalAppender walAppender = new WalAppender(walPath, StandardCharsets.UTF_8)) {
+      walAppender.appendAndFlush(validNewOrderRecord());
+      final String validJson = Files.readString(walPath).trim();
+      Files.writeString(
+          walPath,
+          validJson + "\r{\"schemaVersion\":\"v1\"}\r",
+          StandardCharsets.UTF_8,
+          StandardOpenOption.TRUNCATE_EXISTING);
+      final byte[] bytesBeforeReplay = Files.readAllBytes(walPath);
+
+      final WalReplayException failure =
+          assertThrows(WalReplayException.class, walAppender::readAll);
+
+      assertThat(failure.lineNumber()).isEqualTo(2);
+      assertThat(failure).hasMessageContaining("line 2");
+      assertThat(Files.readAllBytes(walPath)).isEqualTo(bytesBeforeReplay);
+    }
+  }
+
   @DisplayName("replay rejects a contradictory FIX and command type")
   @Test
   void replayRejectsContradictoryFixAndCommandType() throws Exception {

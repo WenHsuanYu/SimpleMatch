@@ -9,6 +9,7 @@ import static org.mockito.Mockito.when;
 import com.simplematch.contracts.common.v1.OrderType;
 import com.simplematch.contracts.common.v1.Side;
 import com.simplematch.contracts.common.v1.TimeInForce;
+import com.simplematch.contracts.orders.v1.CommandType;
 import com.simplematch.contracts.orders.v1.OrderCommand;
 import com.simplematch.quickfixgateway.kafka.OrdersCommandPublisher;
 import java.nio.charset.StandardCharsets;
@@ -59,5 +60,34 @@ class WalReplayServiceTest {
     assertThat(captor.getValue().getTargetCompId()).isEqualTo("GW");
     assertThat(captor.getValue().getClOrdId()).isEqualTo("C1");
     assertThat(captor.getValue().getSymbol()).isEqualTo("AAPL");
+  }
+
+  @DisplayName("the replay service republishes cancellation without order terms")
+  @Test
+  void replayAllPublishesCancellationWithoutOrderTerms() throws Exception {
+    try (final WalAppender walAppender =
+        new WalAppender(tempDir.resolve("cancel-replay.wal"), StandardCharsets.UTF_8)) {
+      walAppender.appendAndFlush(
+          new WalRecord(
+              new WalMetadata("v1", "cmd-cancel", 1L, "quickfix-gateway"),
+              new FixSessionIdentity("CLIENT", "GW"),
+              new WalOrderReference("O-C1", "CXL-1", "C1", "ACC-1"),
+              new WalCommand.Cancel(),
+              new RawFixMessage("8=FIX.4.4|35=F")));
+
+      final OrdersCommandPublisher publisher = mock(OrdersCommandPublisher.class);
+      when(publisher.publish(any(OrderCommand.class)))
+          .thenReturn(CompletableFuture.completedFuture(null));
+
+      final WalReplayService replayService = new WalReplayService(walAppender, publisher);
+      assertThat(replayService.replayAll()).isEqualTo(1);
+
+      final ArgumentCaptor<OrderCommand> captor = ArgumentCaptor.forClass(OrderCommand.class);
+      verify(publisher).publish(captor.capture());
+      assertThat(captor.getValue().getCommandType()).isEqualTo(CommandType.COMMAND_TYPE_CANCEL);
+      assertThat(captor.getValue().getOrigClOrdId()).isEqualTo("C1");
+      assertThat(captor.getValue().getSymbol()).isEmpty();
+      assertThat(captor.getValue().getSide()).isEqualTo(Side.SIDE_UNSPECIFIED);
+    }
   }
 }

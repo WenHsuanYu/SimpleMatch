@@ -1,6 +1,5 @@
 package com.simplematch.quickfixgateway.wal;
 
-import java.io.ByteArrayOutputStream;
 import java.io.IOException;
 import java.io.InputStream;
 import java.nio.ByteBuffer;
@@ -47,7 +46,7 @@ public final class WalAppender implements AutoCloseable {
   /** Appends a record and forces its bytes to the operating-system file channel. */
   public void appendAndFlush(WalRecord walRecord) {
     try {
-      final byte[] payload = (codec.encode(walRecord) + System.lineSeparator()).getBytes(charset);
+      final byte[] payload = (codec.encode(walRecord) + "\n").getBytes(charset);
       synchronized (monitor) {
         fileChannel.write(ByteBuffer.wrap(payload));
         fileChannel.force(false);
@@ -78,38 +77,66 @@ public final class WalAppender implements AutoCloseable {
 
   private List<WalRecord> readRecords(InputStream inputStream) throws IOException {
     final List<WalRecord> records = new ArrayList<>();
-    final byte[] lineSeparator = System.lineSeparator().getBytes(charset);
-    final ByteArrayOutputStream lineBytes = new ByteArrayOutputStream();
+    final byte[] content = inputStream.readAllBytes();
+    final byte[] lineFeed = "\n".getBytes(charset);
+    final byte[] carriageReturn = "\r".getBytes(charset);
+    int lineStart = 0;
     int lineNumber = 1;
-    int separatorBytesRead = 0;
-    int value;
-    while ((value = inputStream.read()) != -1) {
-      lineBytes.write(value);
-      if (value == lineSeparator[separatorBytesRead]) {
-        separatorBytesRead += 1;
-      } else {
-        separatorBytesRead = value == lineSeparator[0] ? 1 : 0;
+    while (lineStart < content.length) {
+      final int terminatorStart =
+          findNextLineTerminator(content, lineStart, lineFeed, carriageReturn);
+      if (terminatorStart < 0) {
+        appendLineBytes(records, content, lineStart, content.length - lineStart, lineNumber);
+        return records;
       }
-      if (separatorBytesRead == lineSeparator.length) {
-        appendLineBytes(records, lineBytes, lineSeparator.length, lineNumber);
-        lineBytes.reset();
-        separatorBytesRead = 0;
-        lineNumber += 1;
-      }
-    }
-    if (lineBytes.size() > 0) {
-      appendLineBytes(records, lineBytes, 0, lineNumber);
+      appendLineBytes(records, content, lineStart, terminatorStart - lineStart, lineNumber);
+      lineStart =
+          terminatorStart
+              + lineTerminatorLength(content, terminatorStart, lineFeed, carriageReturn);
+      lineNumber += 1;
     }
     return records;
   }
 
+  private int findNextLineTerminator(
+      byte[] content, int start, byte[] lineFeed, byte[] carriageReturn) {
+    for (int index = start; index < content.length; index += 1) {
+      if (matches(content, index, lineFeed) || matches(content, index, carriageReturn)) {
+        return index;
+      }
+    }
+    return -1;
+  }
+
+  private int lineTerminatorLength(
+      byte[] content, int start, byte[] lineFeed, byte[] carriageReturn) {
+    if (matches(content, start, carriageReturn)) {
+      final int carriageReturnEnd = start + carriageReturn.length;
+      return matches(content, carriageReturnEnd, lineFeed)
+          ? carriageReturn.length + lineFeed.length
+          : carriageReturn.length;
+    }
+    return lineFeed.length;
+  }
+
+  private boolean matches(byte[] content, int start, byte[] candidate) {
+    if (start + candidate.length > content.length) {
+      return false;
+    }
+    for (int offset = 0; offset < candidate.length; offset += 1) {
+      if (content[start + offset] != candidate[offset]) {
+        return false;
+      }
+    }
+    return true;
+  }
+
   private void appendLineBytes(
-      List<WalRecord> records,
-      ByteArrayOutputStream lineBytes,
-      int separatorLength,
-      int lineNumber) {
-    final byte[] bytes = lineBytes.toByteArray();
-    final String line = decodeLine(bytes, bytes.length - separatorLength, lineNumber);
+      List<WalRecord> records, byte[] content, int start, int length, int lineNumber) {
+    if (length == 0) {
+      return;
+    }
+    final String line = decodeLine(content, start, length, lineNumber);
     if (!line.isBlank()) {
       try {
         records.add(codec.decode(line));
@@ -119,14 +146,14 @@ public final class WalAppender implements AutoCloseable {
     }
   }
 
-  private String decodeLine(byte[] bytes, int length, int lineNumber) {
+  private String decodeLine(byte[] content, int start, int length, int lineNumber) {
     try {
       final CharsetDecoder decoder =
           charset
               .newDecoder()
               .onMalformedInput(CodingErrorAction.REPORT)
               .onUnmappableCharacter(CodingErrorAction.REPORT);
-      return decoder.decode(ByteBuffer.wrap(bytes, 0, length)).toString();
+      return decoder.decode(ByteBuffer.wrap(content, start, length)).toString();
     } catch (CharacterCodingException exception) {
       throw new WalReplayException(lineNumber, exception);
     }
