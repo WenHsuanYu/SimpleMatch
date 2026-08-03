@@ -13,11 +13,16 @@ import com.simplematch.contracts.common.v1.Side;
 import com.simplematch.contracts.common.v1.TimeInForce;
 import com.simplematch.contracts.matching.v1.ExecutionEvent;
 import com.simplematch.contracts.matching.v1.ExecutionType;
-import com.simplematch.contracts.orders.v1.CommandType;
 import com.simplematch.quickfixgateway.fix.FixMessageMapper;
 import com.simplematch.quickfixgateway.fix.FixSessionMessageSender;
 import com.simplematch.quickfixgateway.fix.OrderSessionRegistry;
 import com.simplematch.quickfixgateway.test.FixMessageSnapshot;
+import com.simplematch.quickfixgateway.wal.FixSessionIdentity;
+import com.simplematch.quickfixgateway.wal.RawFixMessage;
+import com.simplematch.quickfixgateway.wal.WalCommand;
+import com.simplematch.quickfixgateway.wal.WalMetadata;
+import com.simplematch.quickfixgateway.wal.WalOrderReference;
+import com.simplematch.quickfixgateway.wal.WalOrderTerms;
 import com.simplematch.quickfixgateway.wal.WalRecord;
 import java.time.Clock;
 import java.time.Instant;
@@ -40,25 +45,18 @@ class MatchingExecutionConsumerTest {
     registry.registerAcceptedOrder(
         new SessionID("FIX.4.4", "CLIENT1", "SIMPLEMATCH"),
         new WalRecord(
-            "v1",
-            "cmd-1",
-            1L,
-            "quickfix-gateway",
-            "CLIENT1",
-            "SIMPLEMATCH",
-            "D",
-            "O-C1",
-            "C1",
-            "",
-            "ACC-1",
-            "AAPL",
-            Side.SIDE_BUY,
-            "10",
-            "100",
-            OrderType.ORDER_TYPE_LIMIT,
-            TimeInForce.TIME_IN_FORCE_ROD,
-            CommandType.COMMAND_TYPE_NEW,
-            "raw"),
+            new WalMetadata("v1", "cmd-1", 1L, "quickfix-gateway"),
+            new FixSessionIdentity("CLIENT1", "SIMPLEMATCH"),
+            new WalOrderReference("O-C1", "C1", "", "ACC-1"),
+            new WalCommand.NewOrder(
+                new WalOrderTerms(
+                    "AAPL",
+                    Side.SIDE_BUY,
+                    "10",
+                    "100",
+                    OrderType.ORDER_TYPE_LIMIT,
+                    TimeInForce.TIME_IN_FORCE_ROD)),
+            new RawFixMessage("raw")),
         'A');
 
     final FixSessionMessageSender sender = mock(FixSessionMessageSender.class);
@@ -112,25 +110,18 @@ class MatchingExecutionConsumerTest {
     registry.registerAcceptedOrder(
         sessionId,
         new WalRecord(
-            "v1",
-            "cmd-1",
-            1L,
-            "quickfix-gateway",
-            "CLIENT1",
-            "SIMPLEMATCH",
-            "D",
-            "O-C1",
-            "C1",
-            "",
-            "ACC-1",
-            "AAPL",
-            Side.SIDE_BUY,
-            "10",
-            "100",
-            OrderType.ORDER_TYPE_LIMIT,
-            TimeInForce.TIME_IN_FORCE_ROD,
-            CommandType.COMMAND_TYPE_NEW,
-            "raw"),
+            new WalMetadata("v1", "cmd-1", 1L, "quickfix-gateway"),
+            new FixSessionIdentity("CLIENT1", "SIMPLEMATCH"),
+            new WalOrderReference("O-C1", "C1", "", "ACC-1"),
+            new WalCommand.NewOrder(
+                new WalOrderTerms(
+                    "AAPL",
+                    Side.SIDE_BUY,
+                    "10",
+                    "100",
+                    OrderType.ORDER_TYPE_LIMIT,
+                    TimeInForce.TIME_IN_FORCE_ROD)),
+            new RawFixMessage("raw")),
         'A');
 
     final FixSessionMessageSender sender = mock(FixSessionMessageSender.class);
@@ -182,25 +173,18 @@ class MatchingExecutionConsumerTest {
     registry.registerAcceptedOrder(
         new SessionID("FIX.4.4", "CLIENT1", "SIMPLEMATCH"),
         new WalRecord(
-            "v1",
-            "cmd-1",
-            1L,
-            "quickfix-gateway",
-            "CLIENT1",
-            "SIMPLEMATCH",
-            "D",
-            "O-C1",
-            "C1",
-            "",
-            "ACC-1",
-            "AAPL",
-            Side.SIDE_BUY,
-            "10",
-            "100",
-            OrderType.ORDER_TYPE_LIMIT,
-            TimeInForce.TIME_IN_FORCE_ROD,
-            CommandType.COMMAND_TYPE_NEW,
-            "raw"),
+            new WalMetadata("v1", "cmd-1", 1L, "quickfix-gateway"),
+            new FixSessionIdentity("CLIENT1", "SIMPLEMATCH"),
+            new WalOrderReference("O-C1", "C1", "", "ACC-1"),
+            new WalCommand.NewOrder(
+                new WalOrderTerms(
+                    "AAPL",
+                    Side.SIDE_BUY,
+                    "10",
+                    "100",
+                    OrderType.ORDER_TYPE_LIMIT,
+                    TimeInForce.TIME_IN_FORCE_ROD)),
+            new RawFixMessage("raw")),
         'A');
 
     final FixSessionMessageSender sender = mock(FixSessionMessageSender.class);

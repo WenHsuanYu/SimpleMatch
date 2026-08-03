@@ -9,7 +9,6 @@ import static org.mockito.Mockito.when;
 import com.simplematch.contracts.common.v1.OrderType;
 import com.simplematch.contracts.common.v1.Side;
 import com.simplematch.contracts.common.v1.TimeInForce;
-import com.simplematch.contracts.orders.v1.CommandType;
 import com.simplematch.contracts.orders.v1.OrderCommand;
 import com.simplematch.quickfixgateway.kafka.OrdersCommandPublisher;
 import java.nio.charset.StandardCharsets;
@@ -32,25 +31,18 @@ class WalReplayServiceTest {
         new WalAppender(tempDir.resolve("replay.wal"), StandardCharsets.UTF_8);
     walAppender.appendAndFlush(
         new WalRecord(
-            "v1",
-            "cmd-1",
-            1L,
-            "quickfix-gateway",
-            "CLIENT",
-            "GW",
-            "D",
-            "O-C1",
-            "C1",
-            "",
-            "ACC-1",
-            "AAPL",
-            Side.SIDE_BUY,
-            "10",
-            "100",
-            OrderType.ORDER_TYPE_LIMIT,
-            TimeInForce.TIME_IN_FORCE_ROD,
-            CommandType.COMMAND_TYPE_NEW,
-            "raw"));
+            new WalMetadata("v1", "cmd-1", 1L, "quickfix-gateway"),
+            new FixSessionIdentity("CLIENT", "GW"),
+            new WalOrderReference("O-C1", "C1", "", "ACC-1"),
+            new WalCommand.NewOrder(
+                new WalOrderTerms(
+                    "AAPL",
+                    Side.SIDE_BUY,
+                    "10",
+                    "100",
+                    OrderType.ORDER_TYPE_LIMIT,
+                    TimeInForce.TIME_IN_FORCE_ROD)),
+            new RawFixMessage("raw")));
 
     final OrdersCommandPublisher publisher = mock(OrdersCommandPublisher.class);
     when(publisher.publish(any(OrderCommand.class)))

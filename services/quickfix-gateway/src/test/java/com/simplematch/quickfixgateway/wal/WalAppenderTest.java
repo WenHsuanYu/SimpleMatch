@@ -7,7 +7,6 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import com.simplematch.contracts.common.v1.OrderType;
 import com.simplematch.contracts.common.v1.Side;
 import com.simplematch.contracts.common.v1.TimeInForce;
-import com.simplematch.contracts.orders.v1.CommandType;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
@@ -21,6 +20,41 @@ class WalAppenderTest {
 
   private final ObjectMapper objectMapper = new ObjectMapper();
 
+  @DisplayName("semantic new-order records persist as flat v1 JSON")
+  @Test
+  void semanticNewOrderRecordPersistsAsFlatV1Json() throws Exception {
+    final Path walPath = tempDir.resolve("semantic-new-order.wal");
+    final WalRecord record =
+        new WalRecord(
+            new WalMetadata("v1", "cmd-1", 1L, "quickfix-gateway"),
+            new FixSessionIdentity("CLIENT", "GW"),
+            new WalOrderReference("O-C1", "C1", "", "ACC-1"),
+            new WalCommand.NewOrder(
+                new WalOrderTerms(
+                    "AAPL",
+                    Side.SIDE_BUY,
+                    "10",
+                    "101.25",
+                    OrderType.ORDER_TYPE_LIMIT,
+                    TimeInForce.TIME_IN_FORCE_ROD)),
+            new RawFixMessage("8=FIX.4.4|35=D"));
+
+    try (final WalAppender walAppender = new WalAppender(walPath, StandardCharsets.UTF_8)) {
+      walAppender.appendAndFlush(record);
+
+      final JsonNode json = objectMapper.readTree(Files.readString(walPath));
+      assertThat(json.path("schemaVersion").asText()).isEqualTo("v1");
+      assertThat(json.path("recordId").asText()).isEqualTo("cmd-1");
+      assertThat(json.path("senderCompId").asText()).isEqualTo("CLIENT");
+      assertThat(json.path("targetCompId").asText()).isEqualTo("GW");
+      assertThat(json.path("messageType").asText()).isEqualTo("D");
+      assertThat(json.path("orderId").asText()).isEqualTo("O-C1");
+      assertThat(json.path("symbol").asText()).isEqualTo("AAPL");
+      assertThat(json.path("commandType").asText()).isEqualTo("COMMAND_TYPE_NEW");
+      assertThat(json.path("rawFix").asText()).isEqualTo("8=FIX.4.4|35=D");
+    }
+  }
+
   // Verify that append followed by readAll preserves both the WAL record contents and their order.
   // Scenario: write a new order and a cancel record in sequence, then verify the replay results
   // from both the file and the API.
@@ -31,46 +65,25 @@ class WalAppenderTest {
     try (final WalAppender walAppender = new WalAppender(walPath, StandardCharsets.UTF_8)) {
       final WalRecord first =
           new WalRecord(
-              "v1",
-              "cmd-1",
-              1L,
-              "quickfix-gateway",
-              "CLIENT",
-              "GW",
-              "D",
-              "O-C1",
-              "C1",
-              "",
-              "ACC-1",
-              "AAPL",
-              Side.SIDE_BUY,
-              "10",
-              "101.25",
-              OrderType.ORDER_TYPE_LIMIT,
-              TimeInForce.TIME_IN_FORCE_ROD,
-              CommandType.COMMAND_TYPE_NEW,
-              "8=FIX.4.4|35=D");
+              new WalMetadata("v1", "cmd-1", 1L, "quickfix-gateway"),
+              new FixSessionIdentity("CLIENT", "GW"),
+              new WalOrderReference("O-C1", "C1", "", "ACC-1"),
+              new WalCommand.NewOrder(
+                  new WalOrderTerms(
+                      "AAPL",
+                      Side.SIDE_BUY,
+                      "10",
+                      "101.25",
+                      OrderType.ORDER_TYPE_LIMIT,
+                      TimeInForce.TIME_IN_FORCE_ROD)),
+              new RawFixMessage("8=FIX.4.4|35=D"));
       final WalRecord second =
           new WalRecord(
-              "v1",
-              "cmd-2",
-              2L,
-              "quickfix-gateway",
-              "CLIENT",
-              "GW",
-              "F",
-              "O-C1",
-              "CXL-1",
-              "C1",
-              "ACC-1",
-              "AAPL",
-              Side.SIDE_BUY,
-              "10",
-              "",
-              OrderType.ORDER_TYPE_UNSPECIFIED,
-              TimeInForce.TIME_IN_FORCE_UNSPECIFIED,
-              CommandType.COMMAND_TYPE_CANCEL,
-              "8=FIX.4.4|35=F");
+              new WalMetadata("v1", "cmd-2", 2L, "quickfix-gateway"),
+              new FixSessionIdentity("CLIENT", "GW"),
+              new WalOrderReference("O-C1", "CXL-1", "C1", "ACC-1"),
+              new WalCommand.Cancel(),
+              new RawFixMessage("8=FIX.4.4|35=F"));
 
       walAppender.appendAndFlush(first);
       walAppender.appendAndFlush(second);
@@ -95,25 +108,18 @@ class WalAppenderTest {
     try (final WalAppender walAppender = new WalAppender(walPath, StandardCharsets.UTF_8)) {
       final WalRecord record =
           new WalRecord(
-              "v1",
-              "cmd-1",
-              1L,
-              "quickfix-gateway",
-              "CLIENT",
-              "GW",
-              "D",
-              "O-C1",
-              "C1",
-              "",
-              "ACC-1",
-              "AAPL",
-              Side.SIDE_BUY,
-              "10",
-              "101.25",
-              OrderType.ORDER_TYPE_LIMIT,
-              TimeInForce.TIME_IN_FORCE_ROD,
-              CommandType.COMMAND_TYPE_NEW,
-              "8=FIX.4.4|35=D");
+              new WalMetadata("v1", "cmd-1", 1L, "quickfix-gateway"),
+              new FixSessionIdentity("CLIENT", "GW"),
+              new WalOrderReference("O-C1", "C1", "", "ACC-1"),
+              new WalCommand.NewOrder(
+                  new WalOrderTerms(
+                      "AAPL",
+                      Side.SIDE_BUY,
+                      "10",
+                      "101.25",
+                      OrderType.ORDER_TYPE_LIMIT,
+                      TimeInForce.TIME_IN_FORCE_ROD)),
+              new RawFixMessage("8=FIX.4.4|35=D"));
 
       walAppender.appendAndFlush(record);
 

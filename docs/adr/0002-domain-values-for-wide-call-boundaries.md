@@ -166,6 +166,45 @@ wide only as an external shape. A handwritten Java representation should instead
 groups, and its adapter is the sole place that flattens or rehydrates that shape. PMD is the only
 automated parameter-count enforcement; Checkstyle does not set a parameter limit.
 
+## WAL persistence slice
+
+`WalRecord` is a FIX Gateway persistence representation rather than an aggregate. Its Java model
+may compose semantic representation groups, but its codec must continue to read existing `v1`
+line-delimited JSON and write the same flat `v1` field names and enum values. This protects WAL
+replay after an application upgrade. Any persisted-shape change requires a new schema version and
+an explicit migration or multi-version-read decision; grouping Java fields alone is not a version
+change. Because no historical WAL data needs permissive recovery, the codec validates every
+decoded record as strictly as a newly appended record, including the permitted FIX-message-type and
+command-type pairs.
+
+The canonical Java representation is `WalRecord(WalMetadata, FixSessionIdentity,
+WalOrderReference, WalCommand, RawFixMessage)`. `WalCommand` retains the FIX message type and
+command type; its new-order variant composes `WalOrderTerms`. These gateway-local values express
+persistence roles without becoming a shared order-domain model.
+
+The WAL accepts only gateway-locally complete normalized commands: durable identity, raw FIX,
+message-type/command-type consistency, and command-specific required fields must be valid before
+append. It does not duplicate Risk Admission's account-authority, market-eligibility, trading-day,
+routing, idempotency, or reservation decisions.
+
+`WalCommand` is command-specific: a new-order command requires `WalOrderTerms`; a cancellation
+requires its cancellation identity and original client-order identity but has no order terms. The
+codec writes the existing blank or unspecified `v1` fields for a cancellation, rather than making
+those placeholders part of the Java model.
+
+Replay is fail-fast. If a nonblank WAL line cannot be decoded or violates these invariants, replay
+stops with its line number and leaves the WAL bytes unchanged for operator investigation. The
+gateway never skips, silently repairs, or continues past a durable inbound command.
+
+`WalRecordJsonCodec` is a package-private FIX Gateway adapter. It alone flattens and rehydrates
+the `v1` JSON shape and applies WAL invariants. `WalAppender` owns line-oriented file I/O,
+serialization durability, and synchronization; it does not know JSON field names. The codec does
+not know files, channels, locking, or replay orchestration.
+
+The public nineteen-argument `WalRecord` construction is removed in the same slice. Every
+in-repository factory, test, and caller migrates to semantic construction; no deprecated positional
+constructor or compatibility overload remains. JSON compatibility belongs solely to the codec.
+
 ## Rejected alternatives
 
 - **Generic parameter bags:** names such as `Parameters`, `Arguments`, `Context`, or `Dependencies`

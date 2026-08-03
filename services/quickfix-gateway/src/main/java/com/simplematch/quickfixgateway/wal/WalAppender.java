@@ -1,6 +1,5 @@
 package com.simplematch.quickfixgateway.wal;
 
-import com.fasterxml.jackson.databind.ObjectMapper;
 import java.io.BufferedReader;
 import java.io.IOException;
 import java.nio.ByteBuffer;
@@ -16,7 +15,7 @@ import java.util.List;
 public final class WalAppender implements AutoCloseable {
   private final Path walPath;
   private final Charset charset;
-  private final ObjectMapper objectMapper;
+  private final WalRecordJsonCodec codec;
   private final FileChannel fileChannel;
   private final Object monitor = new Object();
 
@@ -25,7 +24,7 @@ public final class WalAppender implements AutoCloseable {
     try {
       this.walPath = walPath;
       this.charset = charset;
-      this.objectMapper = new ObjectMapper();
+      this.codec = new WalRecordJsonCodec(new com.fasterxml.jackson.databind.ObjectMapper());
       final Path parent = walPath.getParent();
       if (parent != null) {
         Files.createDirectories(parent);
@@ -44,8 +43,7 @@ public final class WalAppender implements AutoCloseable {
   /** Appends a record and forces its bytes to the operating-system file channel. */
   public void appendAndFlush(WalRecord walRecord) {
     try {
-      final byte[] payload =
-          (objectMapper.writeValueAsString(walRecord) + System.lineSeparator()).getBytes(charset);
+      final byte[] payload = (codec.encode(walRecord) + System.lineSeparator()).getBytes(charset);
       synchronized (monitor) {
         fileChannel.write(ByteBuffer.wrap(payload));
         fileChannel.force(false);
@@ -68,7 +66,7 @@ public final class WalAppender implements AutoCloseable {
         if (line.isBlank()) {
           continue;
         }
-        records.add(objectMapper.readValue(line, WalRecord.class));
+        records.add(codec.decode(line));
       }
       return records;
     } catch (IOException exception) {
