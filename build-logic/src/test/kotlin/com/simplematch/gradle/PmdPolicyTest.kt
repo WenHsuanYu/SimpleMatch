@@ -17,6 +17,7 @@ class PmdPolicyTest {
         assertEquals(PmdPolicy.EXPECTED_RULE_COUNT, references.size)
         assertEquals(references.size, references.toSet().size)
         assertTrue(references.all { it.startsWith("category/java/") })
+        assertTrue(references.contains("category/java/design.xml/ExcessiveParameterList"))
     }
 
 }

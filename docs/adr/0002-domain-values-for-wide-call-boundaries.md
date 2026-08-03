@@ -21,10 +21,11 @@ schema, idempotency, and event contracts.
 The previous policy allowed a handwritten Java persistence snapshot, protocol envelope,
 configuration record, or deprecated compatibility overload to remain wide when it mirrored an
 external shape. That exception kept positional Java interfaces in the model and made the threshold
-optional. The repository now requires every handwritten production Java constructor and method with
-more than seven parameters to use a shorter semantic interface, including record canonical
-constructors and configuration, persistence, WAL, and event representations. Generated sources are
-outside this rule; tests must use the same semantic construction vocabulary as production code.
+optional. The repository now uses PMD's existing `ExcessiveParameterList` rule as the sole
+automated parameter-count gate, with its default threshold of ten. Independently, handwritten
+production Java interfaces should use a shorter semantic interface when their values form a stable
+use case, lifecycle, or invariant. Generated sources are outside this rule; tests must use the same
+semantic construction vocabulary as production code.
 
 ## Decision
 
@@ -61,11 +62,12 @@ The implemented model is:
   explicit at the compatibility boundary instead of flattening the command into an eight-argument
   helper.
 
-Public positional constructors and methods with more than seven parameters are not retained as
-compatibility adapters. Migrate every in-repository caller to the semantic interface, then remove
-the positional Java member. This is an intentional Java source and binary compatibility break; SQL,
-protobuf, FIX, WAL, Kafka, and configuration contracts remain compatible through their adapters.
-No suppression or deprecated overload is an exception to the parameter limit.
+The completed slices removed public positional constructors and methods with more than seven
+parameters from their compatibility adapters. For future work, migrate every in-repository caller
+to the semantic interface before removing the positional Java member. This is an intentional Java
+source and binary compatibility break; SQL, protobuf, FIX, WAL, Kafka, and configuration contracts
+remain compatible through their adapters. PMD is the only automated parameter-count gate; a
+deprecated overload is never a semantic-boundary exception.
 
 ## SubmissionResult slice
 
@@ -160,9 +162,9 @@ locking authoritative state. Context-free validation such as nonblank IDs, posit
 positive price occurs before transaction work.
 
 An SQL row, protobuf message, WAL record, event envelope, or configuration namespace may remain
-wide only as an external shape. A handwritten Java representation must instead compose semantic
-groups, and its adapter is the sole place that flattens or rehydrates that shape. No business,
-persistence, protocol, event, or configuration Java interface may exceed seven parameters.
+wide only as an external shape. A handwritten Java representation should instead compose semantic
+groups, and its adapter is the sole place that flattens or rehydrates that shape. PMD is the only
+automated parameter-count enforcement; Checkstyle does not set a parameter limit.
 
 ## Rejected alternatives
 
@@ -173,7 +175,7 @@ persistence, protocol, event, or configuration Java interface may exceed seven p
 - **One shared order model for every service:** this would couple bounded contexts and allow FIX,
   persistence, and matching concerns to leak across service ownership.
 - **Wide-carrier exception:** mirroring an external shape is not a reason to retain a handwritten
-  Java interface with more than seven parameters.
+  Java interface that fails to express a semantic boundary.
 - **Mechanical wrapping:** a wrapper that does not express a semantic group, lifecycle, or invariant
   merely hides a wide interface and is rejected.
 
@@ -201,6 +203,6 @@ field output.
 Migration proceeds in five independently verifiable slices: durable submission outcomes, Account
 Authority lifecycle state, Risk Admission journal state, QuickFIX ingress and WAL state, then
 QuickFIX configuration and runtime policy. In each slice, convert production callers, tests, and
-supporting tools before removing every positional Java member with more than seven parameters.
-Repository search and the relevant integration and compatibility tests must prove that the external
-contract is unchanged before the slice closes.
+supporting tools before removing positional Java members that do not express a semantic boundary.
+Repository search, PMD, and the relevant integration and compatibility tests must prove that the
+external contract is unchanged before the slice closes.

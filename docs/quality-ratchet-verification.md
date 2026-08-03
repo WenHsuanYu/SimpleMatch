@@ -19,8 +19,9 @@ A fresh execution regenerated every analyzer report and also passed without
 ```
 
 The fresh run executed 60 actionable tasks and included the blocking
-`compileJava`, `checkstyleMain`, `pmdMain`, `spotbugsMain`, and
-`parameterSafetyMain` tasks for their configured production modules.
+`compileJava`, `checkstyleMain`, `pmdMain`, and `spotbugsMain` tasks for their
+configured production modules. Subsequent runs no longer register the retired
+Checkstyle parameter-safety task.
 
 The analyzer report inventory after the fresh run was:
 
@@ -56,10 +57,9 @@ The full Java suite and QuickFIX certification also passed:
 
 - `config/pmd/simplematch-design.xml` contains 47 explicit rule references
   and remains the single PMD ruleset source of truth.
-- The completed parameter-safety ratchet uses the in-memory Checkstyle
-  `ParameterNumber` configuration in `ParameterCountPolicy` with a maximum
-  of seven parameters. It does not create or modify a checked-in PMD or
-  Checkstyle ruleset.
+- PMD's existing `ExcessiveParameterList` rule is the sole automated
+  parameter-count gate and retains its default threshold of ten. Checkstyle
+  has no parameter-count configuration.
 - Checkstyle, PMD, and SpotBugs inspect handwritten `src/main/java`; test
   and generated protobuf sources remain outside the production policy.
 - Error Prone is blocking for handwritten `compileJava` and remains excluded

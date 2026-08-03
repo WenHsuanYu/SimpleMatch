@@ -13,11 +13,10 @@ create, modify, rename, or delete PMD ruleset files. A desired policy change req
 approved architectural decision rather than an implementation edit.
 
 The former `config/pmd/completed-parameter-safety.xml` was temporary migration debt, not a second
-policy source, and has been removed. The replacement `parameterSafetyMain` gate uses Checkstyle's
-`ParameterNumber` from an in-memory blocking Gradle task, with a maximum of seven defined in build
-logic. It must not change `simplematch-design.xml`, modify the main Checkstyle configuration, or
-introduce a new checked-in ruleset. The gate currently covers the completed Account Authority and
-Risk Admission/outbox slices; extending that scope requires its own refactoring slice.
+policy source, and has been removed. PMD's existing `ExcessiveParameterList` rule is the sole
+automated parameter-count gate and retains PMD's default threshold of ten. Checkstyle has no
+parameter-count configuration or dedicated parameter-safety task. This keeps the immutable PMD XML
+as the single source of truth and does not introduce a second checked-in or in-memory ruleset.
 
 PMD, Checkstyle, SpotBugs, and Error Prone are blocking for every intended handwritten production
 Java module. Error Prone's warning backlog was cleared before `allErrorsAsWarnings` was removed;

@@ -19,11 +19,10 @@ while Gradle passes the same file directly to PMD.
 
 `config/pmd/simplematch-design.xml` retains its existing 47 rules and their existing configuration,
 including PMD's default `ExcessiveParameterList` threshold. Agents must not create, modify, rename,
-or delete PMD ruleset files. The only approved consolidation mutation was removal of the temporary
-`config/pmd/completed-parameter-safety.xml` file after its stricter seven-parameter policy moved to
-the blocking `parameterSafetyMain` Gradle task backed by Checkstyle's `ParameterNumber`. That task
-defines the maximum in build logic without modifying the repository's main Checkstyle configuration
-or introducing another checked-in ruleset.
+or delete PMD ruleset files. The temporary `config/pmd/completed-parameter-safety.xml` file and the
+later Checkstyle-backed `parameterSafetyMain` task were retired. PMD is now the sole automated
+parameter-count gate; Checkstyle has no `ParameterNumber` configuration or dedicated
+parameter-safety task.
 
 Checkstyle, PMD, SpotBugs, and Error Prone are blocking. Error Prone completed its two-stage ratchet:
 the existing warnings were removed, then `allErrorsAsWarnings` was removed and

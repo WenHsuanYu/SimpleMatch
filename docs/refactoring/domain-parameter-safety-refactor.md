@@ -1,11 +1,11 @@
 # Domain parameter-safety refactor
 
-This document records the implementation scope after ADR 0002. Within a completed slice, every
-handwritten production Java constructor and method with more than seven parameters must be replaced
-with a shorter semantic interface. The repository-wide policy has the same target, but later slices
-must be verified separately rather than hidden behind a broad exception. An external shape may remain
-wide only at its flatten/rehydrate adapter; generated sources are excluded, and tests use the same
-semantic construction vocabulary.
+This document records the implementation scope after ADR 0002. The completed slices refactored every
+handwritten production Java constructor and method with more than seven parameters to a shorter
+semantic interface. PMD's `ExcessiveParameterList` rule, with its existing default threshold of ten,
+is now the repository's sole automated parameter-count gate. Later slices must still preserve the
+same semantic construction vocabulary rather than hide a wide boundary behind a broad exception. An
+external shape may remain wide only at its flatten/rehydrate adapter; generated sources are excluded.
 
 ## Completed production migrations
 
@@ -50,8 +50,8 @@ The completed `SubmissionResult` predecessor slice is tracked by Issues #33–#3
 Risk Submission outbox event descriptor slice is tracked by Issue #46. Remaining Risk Submission
 members, QuickFIX ingress/WAL/configuration, Market Reference snapshots, and shared platform
 configuration are separate parameter-safety surfaces. Any remaining wide member there is follow-up
-work; it is not an exception that weakens the seven-parameter policy and is not a reason to keep
-Issues #39, #44, or #46 open.
+work; it is not an exception to the PMD gate and is not a reason to keep Issues #39, #44, or #46
+open.
 
 ## Slice 1: durable submission outcomes
 
@@ -121,13 +121,14 @@ resulting `OutboxRecord` into the unchanged append-only outbox row.
 `SerializedPayload` owns its byte array defensively and carries the protobuf message type with the
 bytes. `OutboxRecord` remains the owner of persisted-row validation and header envelope validation.
 The accepted and rejected message payloads, message key, explicit Kafka partition, headers, SQL
-binding, and CDC behavior remain unchanged. The completed-slice `parameterSafetyMain` gate covers
-the Risk Submission outbox source directory so a later wide constructor or method fails verification.
+binding, and CDC behavior remain unchanged. The PMD gate is the only automated parameter-count
+verification for this source directory.
 
 ## Review checklist
 
-A new handwritten production Java method or constructor with more than seven parameters must be
-refactored before merge. Review must answer these questions:
+A new handwritten production Java method or constructor should be reviewed for a shorter semantic
+interface before merge; PMD blocks members that exceed its existing default threshold. Review must
+answer these questions:
 
 1. Which external shape, if any, must its adapter preserve?
 2. Do multiple values form a stable use-case command or value object in the owning bounded context?
@@ -153,8 +154,8 @@ The Account Authority and Risk Admission slices were verified on 2026-07-31:
 - `./gradlew -q test --rerun-tasks` passed for the repository test suite.
 - `./gradlew -q certificationTest --rerun-tasks` passed for the QuickFIX certification smoke gate.
 - `./gradlew -q staticAnalysis` passed.
-- `./gradlew -q :services:account-service:parameterSafetyMain :services:risk-service:parameterSafetyMain`
-  passed as the reproducible completed-slice parameter gate.
+- The completed-slice source inventory recorded no handwritten constructors or methods over seven
+  parameters; this is historical refactoring evidence, not a current Checkstyle gate.
 - `bash scripts/test-check-markdown-links.sh` passed after the canonical-document and forwarding-page
   update.
 

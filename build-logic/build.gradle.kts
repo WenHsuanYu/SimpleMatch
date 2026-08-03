@@ -36,7 +36,6 @@ dependencies {
     implementation(libs.spotbugs.gradle.plugin)
     compileOnly("javax.inject:javax.inject:1")
     testImplementation(gradleTestKit())
-    testImplementation("com.puppycrawl.tools:checkstyle:${libs.versions.checkstyle.get()}")
     testImplementation(kotlin("test"))
 }
 

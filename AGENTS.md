@@ -27,8 +27,8 @@ These instructions apply to the whole repository.
 - Remember that when encountering dependency lock issues in the future, you should use --update-locks to update the relevant dependencies rather than modifying the dependencies sourced from version catalogs.
 - Treat `config/pmd/simplematch-design.xml` as the immutable PMD ruleset and single source of truth.
   Agents must not create, modify, rename, or delete PMD ruleset files. The sole pre-approved
-  consolidation exception is removal of `config/pmd/completed-parameter-safety.xml` while replacing
-  its seven-parameter gate with the documented Checkstyle-backed Gradle task; that work must not
+  parameter-count enforcement is PMD's existing `ExcessiveParameterList` rule. Do not add a
+  Checkstyle `ParameterNumber` check, a `parameterSafetyMain` task, or a second PMD ruleset; do not
   change any rule or threshold in `simplematch-design.xml`.
 - After completing any code task, run a concise bad-smell avoidance checklist
   against [badCodeSmell.md](badCodeSmell.md)

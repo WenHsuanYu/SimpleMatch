@@ -118,10 +118,11 @@ authoritative lifecycle events and must not become a second command path.
 6. Application services own business transactions. Domain values validate context-free invariants
    before a transaction; locked aggregates and application services validate state-dependent
    invariants inside the transaction.
-7. A compatibility adapter may delegate to a typed command temporarily only when its handwritten
-   Java signature itself stays within seven parameters. Pre-existing wider positional members are
-   migration debt for a separately verified slice; new production callers must not use them, and a
-   deprecated positional overload is never an accepted exception.
+7. A compatibility adapter may delegate to a typed command temporarily only when it preserves a
+   semantic Java interface. Pre-existing wider positional members are migration debt for a
+   separately verified slice; new production callers must not use them, and a deprecated positional
+   overload is never an accepted exception. PMD's `ExcessiveParameterList` rule is the sole
+   automated parameter-count gate.
 
 ## Aggregate and consistency boundaries
 
@@ -175,9 +176,10 @@ take precedence over convenience abstractions that would hide transaction owners
 ## Parameter-interface policy
 
 A semantic parameter group is a named value in its owning context whose fields share a lifecycle or
-invariant. Every handwritten production Java constructor and method with more than seven parameters,
-including record, configuration, persistence, WAL, and event representations, must be replaced by a
-shorter interface of semantic parameter groups. Generated sources are excluded; tests use the same
+invariant. PMD's `ExcessiveParameterList` rule is the repository's sole automated parameter-count
+gate and retains its existing default threshold of ten. Independently of that numeric gate,
+handwritten production Java interfaces should use semantic parameter groups when several values
+share one use case, lifecycle, or invariant. Generated sources are excluded; tests use the same
 semantic construction vocabulary even when they are not the blocking analysis scope.
 
 An external SQL, protobuf, FIX, WAL, Kafka, or configuration shape may remain wide only outside the
