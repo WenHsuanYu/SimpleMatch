@@ -6,6 +6,8 @@ import org.springframework.boot.autoconfigure.SpringBootApplication;
 /** Starts the market-reference publisher without consuming runtime trading events. */
 @SpringBootApplication
 public class MarketdataPublisherApplication {
+  private MarketdataPublisherApplication() {}
+
   /** Starts the Spring Boot market-reference publisher process. */
   public static void main(String[] args) {
     SpringApplication.run(MarketdataPublisherApplication.class, args);

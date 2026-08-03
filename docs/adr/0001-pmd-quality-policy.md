@@ -28,9 +28,11 @@ or introducing another checked-in ruleset.
 Checkstyle, PMD, SpotBugs, and Error Prone are blocking. Error Prone completed its two-stage ratchet:
 the existing warnings were removed, then `allErrorsAsWarnings` was removed and
 `ErrorPronePolicyTest` proved that a finding fails the ordinary build lifecycle while generated
-source handling remains unchanged. Issue #22 owns single-ruleset consolidation, the seven-parameter
-replacement gate, and review of remaining Checkstyle suppressions. The 2026-08-03 verification
-found no PMD suppressions in production source, so the PMD-suppression criterion in #21 has current
-technical evidence; #21's GitHub status remains an issue-owner decision. Error Prone cleanup and
-blocking adoption belong to a separate specification rather than expanding either existing issue
-retroactively.
+source handling remains unchanged. The 2026-08-03 closure slice completed Issue #22's Checkstyle
+suppression review by adding private constructors to the five Spring Boot entry points; the
+suppression file now retains only the generated-source boundary. It also removed the
+`FutureReturnValueIgnored` source suppression by making the compatibility publisher's
+fire-and-forget return contract explicit with `@CanIgnoreReturnValue`. The technical criteria for
+Issues #21 and #22 are now satisfied; their GitHub statuses are updated after the implementation
+commit. Error Prone cleanup and blocking adoption belong to this specification rather than
+expanding either existing issue retroactively.

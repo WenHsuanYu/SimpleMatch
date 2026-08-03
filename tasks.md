@@ -850,6 +850,12 @@ Kafka**。
   QuickFIX certification 通過；47-rule PMD single source 與七參數邊界已記錄於
   [quality-ratchet-verification](docs/quality-ratchet-verification.md)。該文件也記錄 #21/#22
   的目前 closure evidence，但不替兩個 parent issue 修改內容或狀態
+- [x] #21 PMD suppression closure（2026-08-03）：production Java 已無 PMD suppression 或
+  `//NOPMD`，且四 analyzer gate、完整 Java suite 與 policy locks/docs/CI evidence 均通過；未
+  使用 `FutureReturnValueIgnored` suppression
+- [x] #22 Checkstyle suppression review（2026-08-03）：五個 Spring Boot application entry
+  point 改由 private constructor 通過 `HideUtilityClassConstructor`，`config/checkstyle/suppressions.xml`
+  僅保留 generated-source boundary，且不修改 `config/checkstyle/checkstyle.xml`
 - [x] SpotBugs false-positive filter 已先收斂到已確認的 Spring config / runtime holder 類別，避免干擾實際問題
 - [x] 現有 GitHub Actions Java job 已接入同一個 `./gradlew staticAnalysis` blocking gate，並上傳
   Checkstyle / PMD / SpotBugs 報告 artifacts

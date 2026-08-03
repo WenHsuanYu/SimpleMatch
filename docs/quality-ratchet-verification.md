@@ -1,7 +1,7 @@
 # Four-analyzer quality-ratchet verification
 
-Verified on 2026-08-03 against the source and configuration tree at
-`683a886decae5f59ed3187098fc029169675e2d4`.
+Verified on 2026-08-03 after the #21/#22 closure slice. The preceding
+four-analyzer baseline was recorded in commit `94fdaa356d4ea28e6492c82f336717f1d206c214`.
 
 ## Reproducible evidence
 
@@ -67,8 +67,8 @@ The full Java suite and QuickFIX certification also passed:
 
 ## Parent issue closure assessment
 
-This verification intentionally does not change the GitHub state or body of
-#21 or #22.
+This record separates technical evidence from GitHub state; the issue status
+updates follow the implementation commit.
 
 ### #21 — PMD ratchet
 
@@ -76,16 +76,16 @@ The current evidence satisfies the technical criteria described in #21:
 
 - The five originally selected PMD rules are included in the blocking
   47-rule policy for all seven intended modules.
-- No production-source `@SuppressWarnings("PMD...")` or `//NOPMD` entry was
-  found. The sole source suppression is Error Prone's
-  `FutureReturnValueIgnored`, so it is not a PMD exception.
+- No production-source `@SuppressWarnings` or `//NOPMD` entry was found. The
+  compatibility publisher uses `@CanIgnoreReturnValue` to document its
+  intentional fire-and-forget observation contract; it does not suppress
+  `FutureReturnValueIgnored`.
 - PMD reports, dependency locks, policy documentation, and the CI blocking
   lifecycle are present.
 - The ordinary static-analysis gate and Java test suite pass.
 
-Conclusion: the current evidence supports #21 closure review, but it is not a
-GitHub status change. The #21 owner must reconcile the evidence with the issue
-and make the separate status decision.
+Conclusion: #21's technical closure criteria are satisfied. Its GitHub status
+is updated separately after this implementation commit.
 
 ### #22 — blocking static-analysis quality gate
 
@@ -96,11 +96,9 @@ The documented #22 closure conditions have this evidence status:
 | One blocking root lifecycle with the canonical 47-rule PMD policy | Satisfied | Root gate passed; `PmdPolicyTest` passed in the build-logic test suite. |
 | Active Checkstyle, PMD, and SpotBugs findings repaired without a baseline | Satisfied | Seven Checkstyle, seven PMD, and seven SpotBugs XML reports contain zero active findings. |
 | PMD suppressions and broad analyzer exclusions governed | Satisfied | No production PMD suppression remains; SpotBugs has six field-scoped entries with owner, rationale, and retirement condition. |
-| Remaining Checkstyle suppressions reviewed and dispositioned | Unverified | Five narrow Spring Boot entry-point suppressions and one generated-source boundary remain; this verification does not assign their #22 owner disposition. |
+| Remaining Checkstyle suppressions reviewed and dispositioned | Satisfied | The five Spring Boot entry-point suppressions were removed by private constructors; only the generated-source boundary remains. |
 | Generated/test source boundaries preserved | Satisfied | Quality plugin scope and Error Prone policy test preserve those boundaries. |
 | Full Java suite, QuickFIX certification, and graph refresh | Satisfied | Both test commands passed; `graphify update .` rebuilt the repository graph. |
 
-Conclusion: #22 is not fully closure-ready from this evidence because the
-remaining Checkstyle suppression review is unverified. #22 remains open and
-unchanged so its owner can reconcile the historical inventory and decide its
-status explicitly.
+Conclusion: #22's technical closure criteria are satisfied. Its GitHub status
+is updated separately after this implementation commit.

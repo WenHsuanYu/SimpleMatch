@@ -4,16 +4,4 @@
   "https://checkstyle.org/dtds/suppressions_1_2.dtd">
 <suppressions>
   <suppress files=".*/build/generated/.*" checks=".*"/>
-  <suppress checks="HideUtilityClassConstructor"
-    files="PersistenceApplication\.java"/>
-  <suppress checks="HideUtilityClassConstructor"
-    files="MarketdataPublisherApplication\.java"/>
-  <suppress checks="HideUtilityClassConstructor"
-    files="AccountServiceApplication\.java"/>
-  <suppress checks="HideUtilityClassConstructor"
-    files="QuickFixGatewayApplication\.java"/>
-  <suppress checks="HideUtilityClassConstructor"
-    files="RiskServiceApplication\.java"/>
-
 </suppressions>
-
