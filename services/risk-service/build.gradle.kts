@@ -9,6 +9,7 @@ dependencies {
     implementation(libs.grpc.netty.shaded)
     implementation(libs.grpc.protobuf)
     implementation(libs.grpc.stub)
+    compileOnly(libs.errorprone.annotations)
 
     testImplementation(libs.h2)
     testImplementation(libs.flyway.core)
