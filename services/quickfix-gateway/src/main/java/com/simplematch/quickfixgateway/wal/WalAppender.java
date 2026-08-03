@@ -8,6 +8,7 @@ import java.nio.charset.CharacterCodingException;
 import java.nio.charset.Charset;
 import java.nio.charset.CharsetDecoder;
 import java.nio.charset.CodingErrorAction;
+import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.StandardOpenOption;
@@ -22,8 +23,11 @@ public final class WalAppender implements AutoCloseable {
   private final FileChannel fileChannel;
   private final Object monitor = new Object();
 
-  /** Opens the durable WAL at the supplied path with the supplied character encoding. */
+  /** Opens the durable UTF-8 WAL at the supplied path. */
   public WalAppender(Path walPath, Charset charset) {
+    if (!StandardCharsets.UTF_8.equals(charset)) {
+      throw new IllegalArgumentException("WAL v1 requires UTF-8");
+    }
     try {
       this.walPath = walPath;
       this.charset = charset;

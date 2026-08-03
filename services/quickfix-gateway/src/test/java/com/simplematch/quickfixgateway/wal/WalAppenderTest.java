@@ -45,6 +45,17 @@ class WalAppenderTest {
     }
   }
 
+  @DisplayName("the v1 WAL requires UTF-8 encoding")
+  @Test
+  void walRequiresUtf8Encoding() {
+    final IllegalArgumentException failure =
+        assertThrows(
+            IllegalArgumentException.class,
+            () -> new WalAppender(tempDir.resolve("utf16.wal"), StandardCharsets.UTF_16));
+
+    assertThat(failure).hasMessage("WAL v1 requires UTF-8");
+  }
+
   // Verify that append followed by readAll preserves both the WAL record contents and their order.
   // Scenario: write a new order and a cancel record in sequence, then verify the replay results
   // from both the file and the API.
