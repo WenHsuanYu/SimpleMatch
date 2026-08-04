@@ -139,7 +139,6 @@ class CapabilityPropertiesPrecedenceTest {
     PostgresProperties.class,
     RedisProperties.class,
     GrpcProperties.class,
-    RoutingProperties.class,
     ObservabilityProperties.class,
     MarketProperties.class
   })

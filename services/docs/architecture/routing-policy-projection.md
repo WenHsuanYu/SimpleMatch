@@ -23,8 +23,14 @@ absent rather than inventing one.
 
 Risk readiness is out of service until a complete active policy applies to the current
 Asia/Taipei trading date and matches the configured partition topology. An expired, future,
-missing, invalid, or incomplete local policy never becomes an implicit current policy. The legacy
-JSON resolver remains migration scaffolding until the consumer-first cutover issue retires it.
+missing, invalid, or incomplete local policy never becomes an implicit current policy. The former
+Risk-local JSON resolver and hash fallback are retired; no production admission path uses them.
+
+The v1 submission adapter remains source-compatible for controlled migration tests but is not a
+Spring production bean because its wire contract lacks venue and authoritative policy identity.
+Production ingress is v2 policy-aware Admission. Legacy pending Admissions created during the
+additive migration remain readable: recovery uses their persisted partition and leaves the nullable
+policy identity absent rather than recomputing or inventing a route.
 
 Market Reference publication enforces continuity for the whole trading date. Its effective
 intervals are half-open, ordered, and non-overlapping, so a policy ending at `06:00` may be followed

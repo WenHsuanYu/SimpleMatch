@@ -1,9 +1,7 @@
 package com.simplematch.riskservice.config;
 
-import com.fasterxml.jackson.databind.ObjectMapper;
 import com.simplematch.config.GrpcProperties;
 import com.simplematch.config.KafkaProperties;
-import com.simplematch.config.RoutingProperties;
 import com.simplematch.riskservice.admission.AccountReservationClient;
 import com.simplematch.riskservice.admission.AdmissionBackpressurePolicy;
 import com.simplematch.riskservice.admission.AdmissionJournalRepository;
@@ -13,17 +11,8 @@ import com.simplematch.riskservice.admission.AdmissionRoutingPolicyResolver;
 import com.simplematch.riskservice.admission.CdcLagBackpressurePolicy;
 import com.simplematch.riskservice.admission.CdcLagReader;
 import com.simplematch.riskservice.admission.GrpcAccountReservationClient;
-import com.simplematch.riskservice.outbox.FileRoutingPartitionResolver;
 import com.simplematch.riskservice.outbox.OutboxRepository;
-import com.simplematch.riskservice.outbox.RoutingPartitionResolver;
-import com.simplematch.riskservice.outbox.SubmissionOutboxFactory;
 import com.simplematch.riskservice.store.JdbcOutboxRepository;
-import com.simplematch.riskservice.store.JdbcSubmissionRepository;
-import com.simplematch.riskservice.submission.SubmissionService;
-import com.simplematch.riskservice.submission.SubmissionValidator;
-import com.simplematch.riskservice.submission.TransactionalSubmissionService;
-import com.simplematch.riskservice.submission.V1AdmissionCompatibilityAdapter;
-import java.nio.file.Path;
 import java.time.Clock;
 import org.springframework.boot.context.properties.EnableConfigurationProperties;
 import org.springframework.context.annotation.Bean;
@@ -84,33 +73,4 @@ public class RiskServiceConfiguration {
         riskTransactionTemplate);
   }
 
-  @Bean
-  RoutingPartitionResolver routingPartitionResolver(
-      ObjectMapper objectMapper, RoutingProperties routing, KafkaProperties kafka) {
-    return FileRoutingPartitionResolver.load(
-        objectMapper,
-        Path.of(routing.snapshotPath()),
-        kafka.partitions().ordersValidated());
-  }
-
-  @Bean
-  SubmissionService submissionService(
-      JdbcTemplate riskJdbcTemplate,
-      TransactionTemplate riskTransactionTemplate,
-      Clock riskServiceClock,
-      ObjectMapper objectMapper,
-      RoutingPartitionResolver routingPartitionResolver,
-      KafkaProperties kafka) {
-    final SubmissionService legacy =
-        new TransactionalSubmissionService(
-            new SubmissionValidator(riskServiceClock),
-            new SubmissionOutboxFactory(
-                objectMapper,
-                kafka.topics().ordersValidated(),
-                routingPartitionResolver),
-            new JdbcSubmissionRepository(riskJdbcTemplate),
-            new JdbcOutboxRepository(riskJdbcTemplate),
-            riskTransactionTemplate);
-    return new V1AdmissionCompatibilityAdapter(legacy);
-  }
 }

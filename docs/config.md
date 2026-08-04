@@ -34,7 +34,7 @@ Secret keys.
 ## Typed Ownership
 
 `EnvironmentProperties`, `KafkaProperties`, `PostgresProperties`, `RedisProperties`,
-`GrpcProperties`, `RoutingProperties`, `ObservabilityProperties`, and `MarketProperties` are the
+`GrpcProperties`, `ObservabilityProperties`, and `MarketProperties` are the
 independently bindable capability owners under the existing `simplematch.*` namespace. The former
 shared root facade has been removed; these modules preserve the existing property keys and
 defaults.
@@ -43,9 +43,9 @@ identity and feature flags, and `QuickFixGatewayRiskClientProperties` owns risk-
 the unchanged `simplematch.quickfix-gateway.*` namespace.
 Account Authority consumes `GrpcProperties` for its account-service target and `PostgresProperties`
 for its datasource, so its runtime and persistence wiring depends only on the required capabilities.
-Risk Admission consumes `GrpcProperties`, `KafkaProperties`, `RoutingProperties`, and
-`PostgresProperties` for its account client, outbox/routing policy, runtime, and datasource; its
-persisted partition behavior remains unchanged.
+Risk Admission consumes `GrpcProperties`, `KafkaProperties`, and `PostgresProperties` for its
+account client, policy-aware outbox, runtime, and datasource. Its routing identity and explicit
+partition come from the durable local Market Reference projection, not a service-local file.
 QuickFIX Gateway consumes `EnvironmentProperties` for its runtime identity, `GrpcProperties` for the
 risk-service channel, and `KafkaProperties` for the compatibility topic; gateway-local paths,
 features, and retry policy remain owned by its service-specific property modules.
@@ -59,7 +59,6 @@ Useful canonical keys include:
 - `simplematch.kafka.topics.*`
 - `simplematch.postgres.dsn`
 - `simplematch.grpc.targets.*`
-- `simplematch.routing.snapshot-path`
 - `simplematch.market.currency` (`TWD`)
 - `simplematch.market.time-zone` (`Asia/Taipei`)
 - `simplematch.quickfix-gateway.owner-id`
@@ -96,15 +95,15 @@ Configuration is startup-only in staging and production. Apply a validated Confi
 change, then perform a controlled rolling restart. Do not enable automatic refresh for admission,
 routing, session, or transport policy. Local and test changes take effect on process restart.
 
-## Routing Snapshot
+## Routing Policy
 
-`simplematch.routing.snapshot-path` identifies the published routing input. Risk-service loads it at
-startup and derives a stable fallback partition from
-`simplematch.kafka.partitions.orders-validated` for symbols absent from the snapshot. Debezium/Kafka
-Connect remains external infrastructure; the connector manifests are deployment templates rather
-than application configuration.
+Market Reference publishes the versioned routing-policy artifact and its declared Kafka topology.
+Risk consumes it into a durable local projection and fails readiness until a complete applicable
+policy is active. There is no Risk-owned routing JSON, startup loader, hash fallback, or
+`simplematch.routing.snapshot-path` setting. Debezium/Kafka Connect remains external infrastructure;
+the connector manifests are deployment templates rather than application configuration.
 
-This legacy Risk setting is migration scaffolding only. The Market Reference source of truth is the
-versioned routing-policy publication; its complete assignment set and declared partition count are
-validated before readiness becomes available. Risk's consumer cutover and retirement of this local
-file are tracked separately in the routing-policy migration issues.
+The source-compatible v1 submission adapter is not registered as a production Spring service while
+its wire contract lacks the venue and authoritative policy identity. v2 policy-aware Admission is
+the production ingress; legacy pending v2 Admissions still recover from their persisted partition
+and nullable policy identity during the compatibility window.

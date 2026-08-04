@@ -37,7 +37,7 @@ class TransactionalSubmissionServiceTest {
     final TransactionalSubmissionService service =
         new TransactionalSubmissionService(
             new SubmissionValidator(FIXED_CLOCK),
-            new SubmissionOutboxFactory(new ObjectMapper(), "orders.validated"),
+            new SubmissionOutboxFactory(new ObjectMapper(), "orders.validated", symbol -> 7),
             submissionRepository,
             outboxRepository,
             newTransactionTemplate());
@@ -63,7 +63,7 @@ class TransactionalSubmissionServiceTest {
     final TransactionalSubmissionService service =
         new TransactionalSubmissionService(
             new SubmissionValidator(FIXED_CLOCK),
-            new SubmissionOutboxFactory(failingObjectMapper(), "orders.validated"),
+            new SubmissionOutboxFactory(failingObjectMapper(), "orders.validated", symbol -> 7),
             submissionRepository,
             new RecordingOutboxRepository(),
             newTransactionTemplate());
@@ -85,7 +85,7 @@ class TransactionalSubmissionServiceTest {
     final TransactionalSubmissionService service =
         new TransactionalSubmissionService(
             new SubmissionValidator(FIXED_CLOCK),
-            new SubmissionOutboxFactory(new ObjectMapper(), "orders.validated"),
+            new SubmissionOutboxFactory(new ObjectMapper(), "orders.validated", symbol -> 7),
             submissionRepository,
             outboxRepository,
             newTransactionTemplate());
@@ -106,7 +106,7 @@ class TransactionalSubmissionServiceTest {
     final TransactionalSubmissionService service =
         new TransactionalSubmissionService(
             new SubmissionValidator(FIXED_CLOCK),
-            new SubmissionOutboxFactory(new ObjectMapper(), "orders.validated"),
+            new SubmissionOutboxFactory(new ObjectMapper(), "orders.validated", symbol -> 7),
             submissionRepository,
             new RecordingOutboxRepository(),
             newTransactionTemplate());

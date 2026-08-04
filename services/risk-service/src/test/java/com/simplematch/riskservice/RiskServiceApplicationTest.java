@@ -7,6 +7,7 @@ import com.simplematch.config.EnvironmentProperties;
 import com.simplematch.config.GrpcProperties;
 import com.simplematch.config.PostgresProperties;
 import com.simplematch.riskservice.admission.AdmissionOutboxFactory;
+import com.simplematch.riskservice.admission.OrderAdmissionApplicationService;
 import com.simplematch.riskservice.bootstrap.RiskServiceRuntime;
 import com.simplematch.riskservice.outbox.OutboxRepository;
 import com.simplematch.riskservice.submission.SubmissionService;
@@ -60,11 +61,12 @@ class RiskServiceApplicationTest {
         .isEqualTo(51052);
   }
 
-  @DisplayName("risk-service keeps admission and submission wiring on shared local infrastructure")
+  @DisplayName("risk-service keeps policy-aware admission on shared local infrastructure")
   @Test
-  void contextWiresAdmissionAndSubmissionCollaborators() {
+  void contextWiresPolicyAwareAdmissionCollaborators() {
     assertThat(applicationContext.getBean(AdmissionOutboxFactory.class)).isNotNull();
-    assertThat(applicationContext.getBean(SubmissionService.class)).isNotNull();
+    assertThat(applicationContext.getBean(OrderAdmissionApplicationService.class)).isNotNull();
+    assertThat(applicationContext.getBeansOfType(SubmissionService.class)).isEmpty();
     assertThat(applicationContext.getBean(OutboxRepository.class)).isNotNull();
     assertThat(applicationContext.getBean(TransactionTemplate.class)).isNotNull();
   }

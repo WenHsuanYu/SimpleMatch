@@ -52,7 +52,7 @@ class RiskGrpcServiceTest {
     submissionService =
         new TransactionalSubmissionService(
             new SubmissionValidator(Clock.systemUTC()),
-            new SubmissionOutboxFactory(new ObjectMapper(), "orders.validated"),
+            new SubmissionOutboxFactory(new ObjectMapper(), "orders.validated", symbol -> 7),
             new JdbcSubmissionRepository(jdbcTemplate),
             new JdbcOutboxRepository(jdbcTemplate),
             new TransactionTemplate(new DataSourceTransactionManager(dataSource)));

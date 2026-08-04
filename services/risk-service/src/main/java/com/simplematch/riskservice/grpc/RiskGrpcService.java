@@ -11,16 +11,15 @@ import com.simplematch.riskservice.submission.ResolvedSubmissionCommand;
 import com.simplematch.riskservice.submission.SubmissionResult;
 import com.simplematch.riskservice.submission.SubmissionService;
 import io.grpc.stub.StreamObserver;
-import org.springframework.stereotype.Service;
 
 /**
  * Bridges legacy risk protobuf requests to submission outcomes.
  *
- * <p>It keeps the transport-layer responsibilities small: it normalizes incoming order
- * commands, delegates persistence to {@link SubmissionService}, and translates the stored result
- * back into the protobuf response expected by clients.
+ * <p>It remains available for controlled migration tests. It is not registered as a production
+ * Spring service because v1 commands do not carry the venue and authoritative policy identity
+ * required for deterministic routing. Production ingress is the v2
+ * {@link OrderAdmissionGrpcService}; callers must migrate before v1 admission is re-enabled.
  */
-@Service
 public class RiskGrpcService extends RiskServiceGrpc.RiskServiceImplBase {
   private static final GrpcSubmissionCommandMapper COMMAND_MAPPER =
       new GrpcSubmissionCommandMapper();

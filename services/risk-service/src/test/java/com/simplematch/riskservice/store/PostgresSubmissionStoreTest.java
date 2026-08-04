@@ -341,7 +341,7 @@ class SubmissionServiceIntegrationTest {
     assertThat(submission.accepted()).isFalse();
     assertThat(outboxRow.topic()).isEqualTo("orders.validated");
     assertThat(outboxRow.messageKey()).isEqualTo(command.getSymbol());
-    assertThat(outboxRow.kafkaPartitionId()).isEqualTo(7);
+    assertThat(outboxRow.kafkaPartitionId()).isNull();
     assertThat(outboxRow.payloadType()).isEqualTo(OrderRejected.getDescriptor().getFullName());
     assertThat(outboxRow.aggregateType()).isEqualTo("risk_submission");
     assertThat(outboxRow.aggregateId()).isEqualTo(submission.orderId());

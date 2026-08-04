@@ -14,7 +14,6 @@ import org.springframework.core.env.ConfigurableEnvironment;
   PostgresProperties.class,
   RedisProperties.class,
   GrpcProperties.class,
-  RoutingProperties.class,
   ObservabilityProperties.class,
   MarketProperties.class
 })
