@@ -11,5 +11,7 @@ a claim that every component is already implemented.
   posture.
 - [Routing Policy projections](routing-policy-projection.md) — Market Reference publication and
   Risk's strict local projection/readiness boundary.
+- [Matching policy-aware ingress](matching-ingress.md) — the small native contract-verification
+  seam; this is not the complete order book or Matching Engine.
 - [Reliability and consistency](reliability-and-consistency.md) — durable acknowledgement,
   idempotency, retry, and compensation rules.

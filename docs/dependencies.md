@@ -73,7 +73,8 @@ This repo is primarily a Gradle/Java workspace today.
 - The active FIX runtime dependency is **QuickFix/J** in `services/quickfix-gateway`.
 - `services/quickfix-gateway` now also carries Spring Boot web + actuator runtime dependencies so
   Kubernetes probes can terminate on `/healthz` and `/readyz`.
-- Native dependency guidance is retained only for future native modules such as `matching-engine`.
+- The root CMake project now builds the policy-aware `matching-engine` ingress seam; the order book,
+  matching algorithm, and execution publisher remain future capabilities.
 - Most native dependencies are expected to be installed via **vcpkg** using the manifest at
   `vcpkg.json`.
 
@@ -103,7 +104,8 @@ cmake --build --preset vcpkg -j
 #   -DCMAKE_BUILD_TYPE=Release \
 #   -DCMAKE_TOOLCHAIN_FILE=$VCPKG_ROOT/scripts/buildsystems/vcpkg.cmake \
 #   -DVCPKG_INSTALLED_DIR=$PWD/third_party/vcpkg_installed
-# cmake --build build-vcpkg -j
+# cmake --build build-vcpkg --parallel
+# ctest --test-dir build-vcpkg --output-on-failure
 ```
 
 ## Notes
@@ -111,5 +113,6 @@ cmake --build --preset vcpkg -j
 - `nlohmann-json` is used for loading the app JSON config (Task 0).
 - If you are building without vcpkg, you must provide `nlohmann_json` to CMake via your
   environment/toolchain.
-- When a real native `matching-engine` target lands in the repo, revisit this document together with
-  the root CMake/vcpkg setup.
+- The native ingress target uses the shared Protobuf sources from `proto/` and GoogleTest fixtures;
+  it must not introduce a second wire contract. A release-only local vcpkg installation may use the
+  generated Protobuf pkg-config metadata to resolve static Abseil dependencies.
