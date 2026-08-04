@@ -24,7 +24,7 @@ public class QuickFixGatewayLifecycleConfiguration {
   @Bean
   QuickFixGatewayStartupRecovery quickFixGatewayStartupRecovery(
       WalReplayService walReplayService, QuickFixGatewayRuntimeProperties runtimeProperties) {
-    if (runtimeProperties.compatibilityPublishEnabled() && runtimeProperties.replayEnabled()) {
+    if (runtimeProperties.replayEnabled()) {
       return walReplayService::replayAll;
     }
     return () -> 0;

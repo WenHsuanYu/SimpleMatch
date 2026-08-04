@@ -71,7 +71,7 @@ public class QuickFixGatewayIntegrationConfiguration {
 
   @Bean
   WalReplayService walReplayService(
-      WalAppender walAppender, OrdersCommandPublisher ordersCommandPublisher) {
-    return new WalReplayService(walAppender, ordersCommandPublisher);
+      WalAppender walAppender, RiskSubmissionClient riskSubmissionClient) {
+    return new WalReplayService(walAppender, riskSubmissionClient);
   }
 }
