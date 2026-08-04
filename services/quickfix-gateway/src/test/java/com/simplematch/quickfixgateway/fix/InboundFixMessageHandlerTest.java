@@ -1,6 +1,7 @@
 package com.simplematch.quickfixgateway.fix;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.times;
@@ -34,6 +35,7 @@ import org.junit.jupiter.api.io.TempDir;
 import org.mockito.ArgumentCaptor;
 import quickfix.Message;
 import quickfix.SessionID;
+import quickfix.UnsupportedMessageType;
 import quickfix.field.Account;
 import quickfix.field.ClOrdID;
 import quickfix.field.HandlInst;
@@ -66,15 +68,20 @@ class InboundFixMessageHandlerTest {
         new WalAppender(tempDir.resolve("inbound.wal"), StandardCharsets.UTF_8);
     final OrdersCommandPublisher publisher = mock(OrdersCommandPublisher.class);
     final RiskSubmissionClient riskSubmissionClient = mock(RiskSubmissionClient.class);
+    final OrderSessionRegistry registry = new OrderSessionRegistry();
     when(publisher.publish(any(OrderCommand.class)))
         .thenReturn(CompletableFuture.completedFuture(null));
     when(riskSubmissionClient.submitNewOrder(any(OrderCommand.class)))
-        .thenReturn(new RiskSubmissionResult("O-C1", true, "", ""));
+        .thenAnswer(
+            invocation -> {
+              assertThat(walAppender.readAll()).hasSize(1);
+              assertThat(registry.find("O-C1")).isEmpty();
+              return new RiskSubmissionResult("O-C1", true, "", "");
+            });
     final FixSessionMessageSender sender = mock(FixSessionMessageSender.class);
     final FixMessageMapper mapper = new FixMessageMapper(FIXED_CLOCK);
-    final OrderSessionRegistry registry = new OrderSessionRegistry();
     final InboundFixMessageHandler handler =
-        new InboundFixMessageHandler(
+        QuickFixIngressTestFixture.compose(
             walAppender, publisher, riskSubmissionClient, sender, registry, mapper, FIXED_CLOCK);
 
     final NewOrderSingle order = newNewOrder("C1", "AAPL", '1', "10", "101.25", "ACC-1");
@@ -189,7 +196,7 @@ class InboundFixMessageHandlerTest {
     final FixSessionMessageSender sender = mock(FixSessionMessageSender.class);
     final OrderSessionRegistry registry = new OrderSessionRegistry();
     final InboundFixMessageHandler handler =
-        new InboundFixMessageHandler(
+        QuickFixIngressTestFixture.compose(
             walAppender,
             publisher,
             riskSubmissionClient,
@@ -255,7 +262,7 @@ class InboundFixMessageHandlerTest {
         .thenReturn(new RiskSubmissionResult("O-C1", true, "", ""));
     final FixSessionMessageSender sender = mock(FixSessionMessageSender.class);
     final InboundFixMessageHandler handler =
-        new InboundFixMessageHandler(
+        QuickFixIngressTestFixture.compose(
             walAppender,
             publisher,
             riskSubmissionClient,
@@ -292,7 +299,7 @@ class InboundFixMessageHandlerTest {
         .thenThrow(RiskSubmissionFailure.circuitOpen());
     final FixSessionMessageSender sender = mock(FixSessionMessageSender.class);
     final InboundFixMessageHandler handler =
-        new InboundFixMessageHandler(
+        QuickFixIngressTestFixture.compose(
             walAppender,
             publisher,
             riskSubmissionClient,
@@ -320,7 +327,7 @@ class InboundFixMessageHandlerTest {
     final RiskSubmissionClient riskSubmissionClient = mock(RiskSubmissionClient.class);
     final FixSessionMessageSender sender = mock(FixSessionMessageSender.class);
     final InboundFixMessageHandler handler =
-        new InboundFixMessageHandler(
+        QuickFixIngressTestFixture.compose(
             walAppender,
             publisher,
             riskSubmissionClient,
@@ -351,7 +358,7 @@ class InboundFixMessageHandlerTest {
     final RiskSubmissionClient riskSubmissionClient = mock(RiskSubmissionClient.class);
     final FixSessionMessageSender sender = mock(FixSessionMessageSender.class);
     final InboundFixMessageHandler handler =
-        new InboundFixMessageHandler(
+        QuickFixIngressTestFixture.compose(
             walAppender,
             publisher,
             riskSubmissionClient,
@@ -382,7 +389,7 @@ class InboundFixMessageHandlerTest {
     final RiskSubmissionClient riskSubmissionClient = mock(RiskSubmissionClient.class);
     final FixSessionMessageSender sender = mock(FixSessionMessageSender.class);
     final InboundFixMessageHandler handler =
-        new InboundFixMessageHandler(
+        QuickFixIngressTestFixture.compose(
             walAppender,
             publisher,
             riskSubmissionClient,
@@ -413,7 +420,7 @@ class InboundFixMessageHandlerTest {
     final RiskSubmissionClient riskSubmissionClient = mock(RiskSubmissionClient.class);
     final FixSessionMessageSender sender = mock(FixSessionMessageSender.class);
     final InboundFixMessageHandler handler =
-        new InboundFixMessageHandler(
+        QuickFixIngressTestFixture.compose(
             walAppender,
             publisher,
             riskSubmissionClient,
@@ -444,7 +451,7 @@ class InboundFixMessageHandlerTest {
     final RiskSubmissionClient riskSubmissionClient = mock(RiskSubmissionClient.class);
     final FixSessionMessageSender sender = mock(FixSessionMessageSender.class);
     final InboundFixMessageHandler handler =
-        new InboundFixMessageHandler(
+        QuickFixIngressTestFixture.compose(
             walAppender,
             publisher,
             riskSubmissionClient,
@@ -475,7 +482,7 @@ class InboundFixMessageHandlerTest {
     final RiskSubmissionClient riskSubmissionClient = mock(RiskSubmissionClient.class);
     final FixSessionMessageSender sender = mock(FixSessionMessageSender.class);
     final InboundFixMessageHandler handler =
-        new InboundFixMessageHandler(
+        QuickFixIngressTestFixture.compose(
             walAppender,
             publisher,
             riskSubmissionClient,
@@ -506,7 +513,7 @@ class InboundFixMessageHandlerTest {
     final RiskSubmissionClient riskSubmissionClient = mock(RiskSubmissionClient.class);
     final FixSessionMessageSender sender = mock(FixSessionMessageSender.class);
     final InboundFixMessageHandler handler =
-        new InboundFixMessageHandler(
+        QuickFixIngressTestFixture.compose(
             walAppender,
             publisher,
             riskSubmissionClient,
@@ -526,6 +533,33 @@ class InboundFixMessageHandlerTest {
     verify(sender).send(any(SessionID.class), messageCaptor.capture());
     assertThat(messageCaptor.getValue().getString(58))
         .isEqualTo("OVERSIZED_SENDER_COMP_ID: sender_comp_id must be <= 64 characters");
+  }
+
+  @DisplayName("unsupported application messages are rejected by the inbound dispatcher")
+  @Test
+  void unsupportedApplicationMessageDoesNotEnterEitherDurablePath() {
+    final WalAppender walAppender =
+        new WalAppender(tempDir.resolve("inbound.wal"), StandardCharsets.UTF_8);
+    final OrdersCommandPublisher publisher = mock(OrdersCommandPublisher.class);
+    final RiskSubmissionClient riskSubmissionClient = mock(RiskSubmissionClient.class);
+    final FixSessionMessageSender sender = mock(FixSessionMessageSender.class);
+    final InboundFixMessageHandler handler =
+        QuickFixIngressTestFixture.compose(
+            walAppender,
+            publisher,
+            riskSubmissionClient,
+            sender,
+            new OrderSessionRegistry(),
+            new FixMessageMapper(FIXED_CLOCK),
+            FIXED_CLOCK);
+    final Message unsupported = new Message();
+    unsupported.getHeader().setString(MsgType.FIELD, "X");
+
+    assertThatThrownBy(
+            () -> handler.handle(unsupported, new SessionID("FIX.4.4", "SIMPLEMATCH", "CLIENT1")))
+        .isInstanceOf(UnsupportedMessageType.class);
+    assertThat(walAppender.readAll()).isEmpty();
+    verifyNoInteractions(riskSubmissionClient, publisher, sender);
   }
 
   private NewOrderSingle newNewOrder(

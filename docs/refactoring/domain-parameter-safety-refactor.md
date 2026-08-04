@@ -19,6 +19,7 @@ external shape may remain wide only at its flatten/rehydrate adapter; generated 
 | flat nine-field Risk Submission outbox event descriptor                          | `OutboxEvent(EventInfo, Routing, SerializedPayload, AggregateRef)`                                   | event identity, delivery route, payload type, and aggregate provenance are named   |
 | `buildPendingNew` / `buildRejected` positional FIX values                        | `FixOrderSnapshot` plus `FixExecutionIdentity`                                                         | order ID, ClOrdID, symbol, quantity, and ExecID cannot be exchanged                |
 | eight-value v2-to-v1 helper                                                      | adapter receives the source protobuf command                                                           | compatibility mapping is explicit and source-oriented                              |
+| eight-parameter new-order handler and seven/eight-parameter inbound composition  | deep new-order path modules plus a two-handler inbound dispatcher                                     | ingress owns path behavior while Spring owns concrete composition                  |
 
 No positional overload with more than seven parameters remains inside the completed slices as a
 compatibility adapter. Migrate all in-repository production callers, fixtures, and neighboring
@@ -123,6 +124,22 @@ bytes. `OutboxRecord` remains the owner of persisted-row validation and header e
 The accepted and rejected message payloads, message key, explicit Kafka partition, headers, SQL
 binding, and CDC behavior remain unchanged. The PMD gate is the only automated parameter-count
 verification for this source directory.
+
+## Slice 4: QuickFIX ingress durable path
+
+The QuickFIX ingress slice keeps the public application seam at `InboundFixMessageHandler`, which
+dispatches only by FIX message type to `NewOrderFixMessageHandler` or
+`CancelOrderFixMessageHandler`. `NewOrderFixMessageHandler` now receives four behavior-rich
+modules: `NewOrderCommandPreparer` validates and normalizes the message,
+`NewOrderDurableAdmission` appends the WAL before invoking Risk Admission,
+`AcceptedNewOrderResponder` registers the session and performs the accepted FIX and compatibility
+responses, and `NewOrderRejectionResponder` renders malformed-input rejection reports.
+
+`QuickFixGatewayIngressConfiguration` composes those concrete modules and the cancel path. The
+dispatcher no longer knows about WAL, risk, session registry, compatibility publication, mapper, or
+clock dependencies. Existing FIX fields, v1 WAL JSON, risk response text, session correlation, and
+compatibility publication remain unchanged; tests continue to exercise them through the ingress and
+QuickFIX certification seams.
 
 ## Review checklist
 

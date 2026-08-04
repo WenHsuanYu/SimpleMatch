@@ -259,8 +259,12 @@ eligibility, trading-day, routing, idempotency, and reservation policy remain Ri
 `InboundFixMessageHandler` is only the public message-type dispatcher and depends on the new-order
 and cancel handlers. Those handlers remain separate because their required data and failure behavior
 differ. `NewOrderFixMessageHandler` owns validation, WAL append, risk submission, session
-registration and response, and compatibility publication in that order. Its collaborators expose
-those behaviors as deep modules rather than appearing in a generic dependency or context bag.
+registration and response, and compatibility publication in that order. Its
+`NewOrderCommandPreparer`, `NewOrderDurableAdmission`, `AcceptedNewOrderResponder`, and
+`NewOrderRejectionResponder` collaborators expose those behaviors as deep modules rather than
+appearing in a generic dependency or context bag. Spring composes these concrete modules in
+`QuickFixGatewayIngressConfiguration`; the public inbound dispatcher receives only the two path
+handlers.
 
 `OrderSessionState` remains a gateway-local correlation snapshot rather than an aggregate. It
 composes the owning FIX session, account identity used for cancellation fallback, the existing

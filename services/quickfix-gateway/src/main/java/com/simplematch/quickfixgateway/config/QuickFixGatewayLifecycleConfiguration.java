@@ -12,11 +12,7 @@ import com.simplematch.quickfixgateway.health.QuickFixGatewayStartupLifecycle;
 import com.simplematch.quickfixgateway.health.QuickFixGatewayStartupRecovery;
 import com.simplematch.quickfixgateway.health.QuickFixGatewayStartupState;
 import com.simplematch.quickfixgateway.kafka.MatchingExecutionConsumer;
-import com.simplematch.quickfixgateway.kafka.OrdersCommandPublisher;
-import com.simplematch.quickfixgateway.risk.RiskSubmissionClient;
-import com.simplematch.quickfixgateway.wal.WalAppender;
 import com.simplematch.quickfixgateway.wal.WalReplayService;
-import java.time.Clock;
 import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.context.annotation.Bean;
@@ -59,25 +55,6 @@ public class QuickFixGatewayLifecycleConfiguration {
           final QuickFixAcceptorLifecycle lifecycle = acceptorLifecycleProvider.getIfAvailable();
           return lifecycle != null && lifecycle.isRunning();
         });
-  }
-
-  @Bean
-  InboundFixMessageHandler inboundFixMessageHandler(
-      WalAppender walAppender,
-      OrdersCommandPublisher ordersCommandPublisher,
-      RiskSubmissionClient riskSubmissionClient,
-      FixSessionMessageSender fixSessionMessageSender,
-      OrderSessionRegistry orderSessionRegistry,
-      FixMessageMapper fixMessageMapper,
-      Clock quickFixGatewayClock) {
-    return new InboundFixMessageHandler(
-        walAppender,
-        ordersCommandPublisher,
-        riskSubmissionClient,
-        fixSessionMessageSender,
-        orderSessionRegistry,
-        fixMessageMapper,
-        quickFixGatewayClock);
   }
 
   @Bean

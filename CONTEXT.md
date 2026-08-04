@@ -37,7 +37,10 @@ flowchart LR
 Owns FIX sessions, inbound normalization and gateway-local validation, the local WAL, and outbound
 FIX rendering. Missing or malformed normalized command values receive a protocol-level rejection
 before WAL append and before Risk Admission; valid normalized commands are appended before
-downstream submission.
+downstream submission. `InboundFixMessageHandler` is the public message-type dispatcher and
+depends only on the new-order and cancel path handlers. The new-order handler delegates preparation,
+WAL-before-risk admission, accepted response, and rejection rendering to named gateway-local
+modules; Spring composes those concrete modules at the ingress seam.
 `FixOrderSnapshot` and
 `FixExecutionIdentity` are gateway anti-corruption-layer values, not shared order-domain objects. A
 FIX field may be preserved for audit without being promoted into the internal ubiquitous language.

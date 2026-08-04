@@ -82,7 +82,7 @@ class QuickFixCertificationEvidenceTest {
     final QuickFixAcceptorLifecycle acceptorLifecycle =
         new QuickFixAcceptorLifecycle(
             new QuickFixApplicationAdapter(
-                new InboundFixMessageHandler(
+                QuickFixIngressTestFixture.compose(
                     walAppender,
                     ordersCommandPublisher,
                     new AcceptingRiskSubmissionClient(),
@@ -168,7 +168,7 @@ class QuickFixCertificationEvidenceTest {
     final QuickFixAcceptorLifecycle acceptorLifecycle =
         new QuickFixAcceptorLifecycle(
             new QuickFixApplicationAdapter(
-                new InboundFixMessageHandler(
+                QuickFixIngressTestFixture.compose(
                     walAppender,
                     ordersCommandPublisher,
                     new RejectingRiskSubmissionClient(),

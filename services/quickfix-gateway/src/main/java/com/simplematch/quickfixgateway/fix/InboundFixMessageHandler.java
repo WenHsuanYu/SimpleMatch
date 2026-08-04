@@ -1,9 +1,5 @@
 package com.simplematch.quickfixgateway.fix;
 
-import com.simplematch.quickfixgateway.kafka.OrdersCommandPublisher;
-import com.simplematch.quickfixgateway.risk.RiskSubmissionClient;
-import com.simplematch.quickfixgateway.wal.WalAppender;
-import java.time.Clock;
 import quickfix.FieldNotFound;
 import quickfix.Message;
 import quickfix.SessionID;
@@ -16,58 +12,11 @@ public final class InboundFixMessageHandler {
   private final NewOrderFixMessageHandler newOrderHandler;
   private final CancelOrderFixMessageHandler cancelOrderHandler;
 
-  /** Creates the inbound handler with its durable, risk, and FIX-session collaborators. */
-  public InboundFixMessageHandler(
-      WalAppender walAppender,
-      OrdersCommandPublisher ordersCommandPublisher,
-      RiskSubmissionClient riskSubmissionClient,
-      FixSessionMessageSender fixSessionMessageSender,
-      OrderSessionRegistry orderSessionRegistry,
-      FixMessageMapper fixMessageMapper,
-      Clock clock) {
-    this(
-        walAppender,
-        ordersCommandPublisher,
-        riskSubmissionClient,
-        fixSessionMessageSender,
-        orderSessionRegistry,
-        fixMessageMapper,
-        new CommandIdGenerator(),
-        clock);
-  }
-
   InboundFixMessageHandler(
-      WalAppender walAppender,
-      OrdersCommandPublisher ordersCommandPublisher,
-      RiskSubmissionClient riskSubmissionClient,
-      FixSessionMessageSender fixSessionMessageSender,
-      OrderSessionRegistry orderSessionRegistry,
-      FixMessageMapper fixMessageMapper,
-      CommandIdGenerator commandIdGenerator,
-      Clock clock) {
-    final RiskSubmissionResponder riskSubmissionResponder =
-        new RiskSubmissionResponder(
-            riskSubmissionClient, fixSessionMessageSender, fixMessageMapper);
-    final FixCompatibilityCommandPublisher compatibilityPublisher =
-        new FixCompatibilityCommandPublisher(ordersCommandPublisher);
-    newOrderHandler =
-        new NewOrderFixMessageHandler(
-            walAppender,
-            orderSessionRegistry,
-            fixSessionMessageSender,
-            fixMessageMapper,
-            riskSubmissionResponder,
-            compatibilityPublisher,
-            commandIdGenerator,
-            clock);
-    cancelOrderHandler =
-        new CancelOrderFixMessageHandler(
-            walAppender,
-            orderSessionRegistry,
-            riskSubmissionResponder,
-            compatibilityPublisher,
-            commandIdGenerator,
-            clock);
+      NewOrderFixMessageHandler newOrderHandler,
+      CancelOrderFixMessageHandler cancelOrderHandler) {
+    this.newOrderHandler = newOrderHandler;
+    this.cancelOrderHandler = cancelOrderHandler;
   }
 
   /** Handles one inbound application message for its QuickFIX session. */
