@@ -43,7 +43,7 @@ public final class MatchingExecutionConsumer {
     final ExecutionEvent executionEvent = ExecutionEvent.parseFrom(payload);
     ExecutionEventRequirements.validate(executionEvent);
 
-    if (!orderSessionRegistry.markExecutionSeen(executionEvent.getExecId())) {
+    if (orderSessionRegistry.hasExecutionBeenSeen(executionEvent.getExecId())) {
       logger.debug("skip duplicate execution event exec_id={}", executionEvent.getExecId());
       return;
     }
@@ -59,6 +59,14 @@ public final class MatchingExecutionConsumer {
           executionEvent.getExecId());
       return;
     }
+    if (!orderSessionRegistry.acceptsExecution(executionEvent)) {
+      logger.warn(
+          "skip out-of-order execution event order_id={} exec_id={} type={}",
+          executionEvent.getOrderId(),
+          executionEvent.getExecId(),
+          executionEvent.getExecutionType());
+      return;
+    }
 
     final Message outbound =
         executionEvent.getExecutionType() == ExecutionType.EXECUTION_TYPE_CANCEL_REJECTED
@@ -66,5 +74,6 @@ public final class MatchingExecutionConsumer {
             : fixMessageMapper.buildExecutionReport(executionEvent, state);
     fixSessionMessageSender.send(sessionId, outbound);
     orderSessionRegistry.applyExecution(executionEvent);
+    orderSessionRegistry.markExecutionSeen(executionEvent.getExecId());
   }
 }

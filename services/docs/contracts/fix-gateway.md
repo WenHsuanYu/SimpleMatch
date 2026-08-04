@@ -26,6 +26,19 @@ The first successful `PendingNew` acknowledgement is sent only after durable adm
 local gateway WAL may assist recovery and audit, but it is not the authoritative
 successful-admission boundary.
 
+## Session ownership and admission availability
+
+Each gateway process claims a FIX `SessionID` for its configured `ownerId` when the session logs on.
+The claim is idempotent for the same owner and conflicting owners fail closed: the conflicting
+adapter does not consume inbound application messages or project execution outcomes. Deployment
+routing remains owner-aware; distributed lease/fencing is a separate scale-out concern documented
+in [`docs/quickfix-gateway-session-scale-plan.md`](../../../docs/quickfix-gateway-session-scale-plan.md).
+
+New orders and cancellations enter the same explicit admission gate. While admission is paused,
+the gateway returns `ADMISSION_PAUSED`; while a market interruption is active, it returns
+`MARKET_INTERRUPTED`. Neither operation writes the gateway WAL or calls Risk in either state, so a
+client receives one deterministic FIX rejection and operators can reopen the gate explicitly.
+
 ## Execution-report mapping
 
 | Internal outcome                       | FIX response        | Required semantics                                                                               |

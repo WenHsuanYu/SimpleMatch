@@ -3,6 +3,7 @@ package com.simplematch.quickfixgateway.config;
 import com.simplematch.quickfixgateway.fix.ExecutionSessionResolver;
 import com.simplematch.quickfixgateway.fix.FixMessageMapper;
 import com.simplematch.quickfixgateway.fix.FixSessionMessageSender;
+import com.simplematch.quickfixgateway.fix.FixSessionOwnership;
 import com.simplematch.quickfixgateway.fix.InboundFixMessageHandler;
 import com.simplematch.quickfixgateway.fix.OrderSessionRegistry;
 import com.simplematch.quickfixgateway.fix.QuickFixAcceptorLifecycle;
@@ -36,6 +37,11 @@ public class QuickFixGatewayLifecycleConfiguration {
   }
 
   @Bean
+  FixSessionOwnership fixSessionOwnership() {
+    return new FixSessionOwnership();
+  }
+
+  @Bean
   QuickFixGatewayStartupLifecycle quickFixGatewayStartupLifecycle(
       QuickFixGatewayRuntime runtime,
       QuickFixGatewayStartupRecovery startupRecovery,
@@ -59,8 +65,11 @@ public class QuickFixGatewayLifecycleConfiguration {
 
   @Bean
   QuickFixApplicationAdapter quickFixApplicationAdapter(
-      InboundFixMessageHandler inboundFixMessageHandler) {
-    return new QuickFixApplicationAdapter(inboundFixMessageHandler);
+      InboundFixMessageHandler inboundFixMessageHandler,
+      FixSessionOwnership sessionOwnership,
+      QuickFixGatewayRuntime runtime) {
+    return new QuickFixApplicationAdapter(
+        inboundFixMessageHandler, sessionOwnership, runtime.ownerId());
   }
 
   @Bean

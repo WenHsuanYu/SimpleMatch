@@ -400,6 +400,37 @@ class InboundFixMessageHandlerTest {
         Arguments.of("unsupported-time-in-force", '2', '1'));
   }
 
+  @Test
+  void pausedCancellationIsRejectedBeforeWalAndRisk() throws Exception {
+    final GatewayAdmissionGate admissionGate = new GatewayAdmissionGate();
+    admissionGate.pauseAdmission();
+    try (WalAppender walAppender =
+        new WalAppender(tempDir.resolve("paused-cancel.wal"), StandardCharsets.UTF_8)) {
+      final OrdersCommandPublisher publisher = mock(OrdersCommandPublisher.class);
+      final RiskSubmissionClient riskSubmissionClient = mock(RiskSubmissionClient.class);
+      final FixSessionMessageSender sender = mock(FixSessionMessageSender.class);
+      final InboundFixMessageHandler handler =
+          QuickFixIngressTestFixture.compose(
+              walAppender,
+              publisher,
+              riskSubmissionClient,
+              sender,
+              new OrderSessionRegistry(),
+              new FixMessageMapper(FIXED_CLOCK),
+              FIXED_CLOCK,
+              admissionGate);
+
+      handler.handle(
+          newCancelRequest("C1", "CXL-1", "ACC-1"),
+          new SessionID("FIX.4.4", "SIMPLEMATCH", "CLIENT1"));
+
+      verify(sender).send(any(SessionID.class), any(Message.class));
+      verifyNoInteractions(riskSubmissionClient);
+      verifyNoInteractions(publisher);
+      assertThat(walAppender.readAll()).isEmpty();
+    }
+  }
+
   // Verify that when risk submission fails, the reject message text includes the specific reason
   // code and explanation.
   // Scenario: simulate a circuit-open failure and confirm the FIX reject text contains

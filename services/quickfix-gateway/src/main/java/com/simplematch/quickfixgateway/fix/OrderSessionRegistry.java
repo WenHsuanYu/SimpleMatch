@@ -61,11 +61,28 @@ public final class OrderSessionRegistry implements ExecutionSessionResolver {
     return seenExecIds.add(execId);
   }
 
+  /** Returns whether an execution identifier has already produced a client-facing effect. */
+  public boolean hasExecutionBeenSeen(String execId) {
+    return seenExecIds.contains(execId);
+  }
+
+  /** Returns whether an execution can advance the tracked order lifecycle. */
+  public boolean acceptsExecution(ExecutionEvent executionEvent) {
+    return find(executionEvent.getOrderId())
+        .map(state -> state.lifecycle().accepts(executionEvent.getExecutionType()))
+        .orElse(false);
+  }
+
   /** Applies an execution outcome to the locally tracked order session state. */
-  public void applyExecution(ExecutionEvent executionEvent) {
+  public boolean applyExecution(ExecutionEvent executionEvent) {
+    final boolean[] applied = {false};
     states.computeIfPresent(
         executionEvent.getOrderId(),
         (orderId, state) -> {
+          if (!state.lifecycle().accepts(executionEvent.getExecutionType())) {
+            return state;
+          }
+          applied[0] = true;
           OrderSessionLifecycle updatedLifecycle =
               state
                   .lifecycle()
@@ -79,6 +96,7 @@ public final class OrderSessionRegistry implements ExecutionSessionResolver {
           }
           return state.withLifecycle(updatedLifecycle);
         });
+    return applied[0];
   }
 
   private char mapOrdStatus(ExecutionType executionType, char fallback) {

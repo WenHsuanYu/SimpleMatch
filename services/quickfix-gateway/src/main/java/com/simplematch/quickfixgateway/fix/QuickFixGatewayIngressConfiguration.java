@@ -69,9 +69,16 @@ public class QuickFixGatewayIngressConfiguration {
       NewOrderCommandPreparer commandPreparer,
       NewOrderDurableAdmission durableAdmission,
       AcceptedNewOrderResponder acceptedResponder,
-      NewOrderRejectionResponder rejectionResponder) {
+      NewOrderRejectionResponder rejectionResponder,
+      GatewayAdmissionGate admissionGate,
+      Clock quickFixGatewayClock) {
     return new NewOrderFixMessageHandler(
-        commandPreparer, durableAdmission, acceptedResponder, rejectionResponder);
+        commandPreparer,
+        durableAdmission,
+        acceptedResponder,
+        rejectionResponder,
+        admissionGate,
+        quickFixGatewayClock);
   }
 
   @Bean
@@ -81,14 +88,16 @@ public class QuickFixGatewayIngressConfiguration {
       RiskSubmissionResponder riskSubmissionResponder,
       FixCompatibilityCommandPublisher compatibilityPublisher,
       CommandIdGenerator commandIdGenerator,
-      Clock quickFixGatewayClock) {
+      Clock quickFixGatewayClock,
+      GatewayAdmissionGate admissionGate) {
     return new CancelOrderFixMessageHandler(
         walAppender,
         orderSessionRegistry,
         riskSubmissionResponder,
         compatibilityPublisher,
         commandIdGenerator,
-        quickFixGatewayClock);
+        quickFixGatewayClock,
+        admissionGate);
   }
 
   @Bean

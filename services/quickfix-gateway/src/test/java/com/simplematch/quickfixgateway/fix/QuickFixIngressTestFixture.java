@@ -29,6 +29,26 @@ final class QuickFixIngressTestFixture {
       OrderSessionRegistry registry,
       FixMessageMapper mapper,
       Clock clock) {
+    return compose(
+        walAppender,
+        ordersCommandPublisher,
+        riskSubmissionClient,
+        sender,
+        registry,
+        mapper,
+        clock,
+        new GatewayAdmissionGate());
+  }
+
+  static InboundFixMessageHandler compose(
+      WalAppender walAppender,
+      OrdersCommandPublisher ordersCommandPublisher,
+      RiskSubmissionClient riskSubmissionClient,
+      FixSessionMessageSender sender,
+      OrderSessionRegistry registry,
+      FixMessageMapper mapper,
+      Clock clock,
+      GatewayAdmissionGate admissionGate) {
     final CommandIdGenerator commandIdGenerator = new CommandIdGenerator();
     final RiskSubmissionResponder riskSubmissionResponder =
         new RiskSubmissionResponder(riskSubmissionClient, sender, mapper);
@@ -40,13 +60,16 @@ final class QuickFixIngressTestFixture {
             new NewOrderDurableAdmission(walAppender, riskSubmissionResponder),
             new AcceptedNewOrderResponder(
                 registry, sender, mapper, compatibilityPublisher),
-            new NewOrderRejectionResponder(sender, mapper, commandIdGenerator)),
+            new NewOrderRejectionResponder(sender, mapper, commandIdGenerator),
+            admissionGate,
+            clock),
         new CancelOrderFixMessageHandler(
             walAppender,
             registry,
             riskSubmissionResponder,
             compatibilityPublisher,
             commandIdGenerator,
-            clock));
+            clock,
+            admissionGate));
   }
 }

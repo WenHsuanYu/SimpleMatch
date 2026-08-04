@@ -19,6 +19,7 @@ final class CancelOrderFixMessageHandler {
   private final FixCompatibilityCommandPublisher compatibilityPublisher;
   private final CommandIdGenerator commandIdGenerator;
   private final Clock clock;
+  private final GatewayAdmissionGate admissionGate;
 
   CancelOrderFixMessageHandler(
       WalAppender walAppender,
@@ -26,18 +27,29 @@ final class CancelOrderFixMessageHandler {
       RiskSubmissionResponder riskSubmissionResponder,
       FixCompatibilityCommandPublisher compatibilityPublisher,
       CommandIdGenerator commandIdGenerator,
-      Clock clock) {
+      Clock clock,
+      GatewayAdmissionGate admissionGate) {
     this.walAppender = walAppender;
     this.orderSessionRegistry = orderSessionRegistry;
     this.riskSubmissionResponder = riskSubmissionResponder;
     this.compatibilityPublisher = compatibilityPublisher;
     this.commandIdGenerator = commandIdGenerator;
     this.clock = clock;
+    this.admissionGate = admissionGate;
   }
 
   void handle(Message message, SessionID sessionId) throws FieldNotFound {
     final String origClOrdId = FixInboundFieldValues.optionalString(message, OrigClOrdID.FIELD);
     final String cancelClOrdId = FixInboundFieldValues.optionalString(message, ClOrdID.FIELD);
+    if (!admissionGate.allowsAdmission()) {
+      riskSubmissionResponder.rejectInbound(
+          admissionGate.cancelFailure(),
+          sessionId,
+          FixInboundCommandFactory.orderIdFor(origClOrdId),
+          cancelClOrdId,
+          origClOrdId);
+      return;
+    }
     final FixInboundIdentity identity =
         FixInboundIdentityValidator.validateCancel(sessionId, cancelClOrdId, origClOrdId);
     if (!identity.valid()) {

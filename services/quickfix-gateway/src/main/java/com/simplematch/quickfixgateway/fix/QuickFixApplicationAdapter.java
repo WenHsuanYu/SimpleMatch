@@ -17,10 +17,22 @@ public final class QuickFixApplicationAdapter implements Application {
   private static final Logger logger = LoggerFactory.getLogger(QuickFixApplicationAdapter.class);
 
   private final InboundFixMessageHandler inboundFixMessageHandler;
+  private final FixSessionOwnership sessionOwnership;
+  private final String ownerId;
 
   /** Creates an adapter that delegates inbound application messages to the supplied handler. */
   public QuickFixApplicationAdapter(InboundFixMessageHandler inboundFixMessageHandler) {
+    this(inboundFixMessageHandler, new FixSessionOwnership(), "quickfix-gateway-test");
+  }
+
+  /** Creates an adapter with an explicit process-local session ownership boundary. */
+  public QuickFixApplicationAdapter(
+      InboundFixMessageHandler inboundFixMessageHandler,
+      FixSessionOwnership sessionOwnership,
+      String ownerId) {
     this.inboundFixMessageHandler = inboundFixMessageHandler;
+    this.sessionOwnership = sessionOwnership;
+    this.ownerId = ownerId;
   }
 
   @Override
@@ -30,11 +42,16 @@ public final class QuickFixApplicationAdapter implements Application {
 
   @Override
   public void onLogon(SessionID sessionId) {
-    logger.info("quickfix-gateway logon: {}", sessionId);
+    if (!sessionOwnership.tryClaim(sessionId, ownerId)) {
+      logger.error("quickfix-gateway rejected conflicting session owner: {}", sessionId);
+      return;
+    }
+    logger.info("quickfix-gateway logon: {} owner={}", sessionId, ownerId);
   }
 
   @Override
   public void onLogout(SessionID sessionId) {
+    sessionOwnership.release(sessionId, ownerId);
     logger.info("quickfix-gateway logout: {}", sessionId);
   }
 
@@ -57,6 +74,10 @@ public final class QuickFixApplicationAdapter implements Application {
   @Override
   public void fromApp(Message message, SessionID sessionId)
       throws FieldNotFound, IncorrectDataFormat, IncorrectTagValue, UnsupportedMessageType {
+    if (!sessionOwnership.tryClaim(sessionId, ownerId)) {
+      logger.warn("ignored application message from conflicting session owner: {}", sessionId);
+      return;
+    }
     logger.info("fromApp session={} msg={}", sessionId, message);
     inboundFixMessageHandler.handle(message, sessionId);
   }
