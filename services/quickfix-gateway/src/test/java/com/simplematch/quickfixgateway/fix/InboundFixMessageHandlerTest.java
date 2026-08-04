@@ -29,9 +29,13 @@ import java.time.ZoneOffset;
 import java.util.List;
 import java.util.UUID;
 import java.util.concurrent.CompletableFuture;
+import java.util.stream.Stream;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.Arguments;
+import org.junit.jupiter.params.provider.MethodSource;
 import org.mockito.ArgumentCaptor;
 import quickfix.Message;
 import quickfix.SessionID;
@@ -282,6 +286,118 @@ class InboundFixMessageHandlerTest {
 
     assertThat(messageCaptor.getValue().getString(17)).isEqualTo("E-" + walRecord.recordId());
     assertThat(messageCaptor.getValue().getString(17)).doesNotMatch("E\\d+");
+  }
+
+  @DisplayName("all supported FIX order forms preserve typed intent at the Risk seam")
+  @ParameterizedTest(name = "{0}")
+  @MethodSource("supportedOrderForms")
+  void supportedOrderFormsReachRiskWithUnchangedMeaning(
+      String scenario,
+      char orderType,
+      char timeInForce,
+      String price,
+      OrderType expectedOrderType,
+      TimeInForce expectedTimeInForce)
+      throws Exception {
+    try (WalAppender walAppender =
+        new WalAppender(tempDir.resolve(scenario + ".wal"), StandardCharsets.UTF_8)) {
+      final OrdersCommandPublisher publisher = mock(OrdersCommandPublisher.class);
+      final RiskSubmissionClient riskSubmissionClient = mock(RiskSubmissionClient.class);
+      when(publisher.publish(any(OrderCommand.class)))
+          .thenReturn(CompletableFuture.completedFuture(null));
+      when(riskSubmissionClient.submitNewOrder(any(OrderCommand.class)))
+          .thenReturn(new RiskSubmissionResult("O-" + scenario, true, "", ""));
+      final FixSessionMessageSender sender = mock(FixSessionMessageSender.class);
+      final InboundFixMessageHandler handler =
+          QuickFixIngressTestFixture.compose(
+              walAppender,
+              publisher,
+              riskSubmissionClient,
+              sender,
+              new OrderSessionRegistry(),
+              new FixMessageMapper(FIXED_CLOCK),
+              FIXED_CLOCK);
+
+      handler.handle(
+          newNewOrder(
+              scenario,
+              "2330",
+              '1',
+              "100",
+              orderType,
+              timeInForce,
+              price,
+              "ACC-1"),
+          new SessionID("FIX.4.4", "SIMPLEMATCH", "CLIENT1"));
+
+      final ArgumentCaptor<OrderCommand> commandCaptor =
+          ArgumentCaptor.forClass(OrderCommand.class);
+      verify(riskSubmissionClient).submitNewOrder(commandCaptor.capture());
+      final OrderCommand command = commandCaptor.getValue();
+      assertThat(command.getSymbol()).isEqualTo("2330");
+      assertThat(command.getQuantity()).isEqualTo("100");
+      assertThat(command.getPrice()).isEqualTo(price);
+      assertThat(command.getOrderType()).isEqualTo(expectedOrderType);
+      assertThat(command.getTif()).isEqualTo(expectedTimeInForce);
+      assertThat(walAppender.readAll()).singleElement().satisfies(record -> {
+        assertThat(record.orderType()).isEqualTo(expectedOrderType);
+        assertThat(record.tif()).isEqualTo(expectedTimeInForce);
+        assertThat(record.price()).isEqualTo(price);
+      });
+    }
+  }
+
+  private static Stream<Arguments> supportedOrderForms() {
+    return Stream.of(
+        Arguments.of(
+            "limit-rod", '2', '0', "101.25", OrderType.ORDER_TYPE_LIMIT, TimeInForce.TIME_IN_FORCE_ROD),
+        Arguments.of(
+            "limit-ioc", '2', '3', "101.25", OrderType.ORDER_TYPE_LIMIT, TimeInForce.TIME_IN_FORCE_IOC),
+        Arguments.of(
+            "limit-fok", '2', '4', "101.25", OrderType.ORDER_TYPE_LIMIT, TimeInForce.TIME_IN_FORCE_FOK),
+        Arguments.of(
+            "market-rod", '1', '0', "", OrderType.ORDER_TYPE_MARKET, TimeInForce.TIME_IN_FORCE_ROD),
+        Arguments.of(
+            "market-ioc", '1', '3', "", OrderType.ORDER_TYPE_MARKET, TimeInForce.TIME_IN_FORCE_IOC),
+        Arguments.of(
+            "market-fok", '1', '4', "", OrderType.ORDER_TYPE_MARKET, TimeInForce.TIME_IN_FORCE_FOK));
+  }
+
+  @DisplayName("unsupported order type or time in force is rejected before WAL and Risk")
+  @ParameterizedTest(name = "{0}")
+  @MethodSource("unsupportedOrderForms")
+  void unsupportedOrderFormsDoNotEnterDurableAdmission(
+      String scenario, char orderType, char timeInForce) throws Exception {
+    try (WalAppender walAppender =
+        new WalAppender(tempDir.resolve(scenario + ".wal"), StandardCharsets.UTF_8)) {
+      final OrdersCommandPublisher publisher = mock(OrdersCommandPublisher.class);
+      final RiskSubmissionClient riskSubmissionClient = mock(RiskSubmissionClient.class);
+      final FixSessionMessageSender sender = mock(FixSessionMessageSender.class);
+      final InboundFixMessageHandler handler =
+          QuickFixIngressTestFixture.compose(
+              walAppender,
+              publisher,
+              riskSubmissionClient,
+              sender,
+              new OrderSessionRegistry(),
+              new FixMessageMapper(FIXED_CLOCK),
+              FIXED_CLOCK);
+
+      final NewOrderSingle order =
+          newNewOrder(scenario, "2330", '1', "100", orderType, timeInForce, "101.25", "ACC-1");
+
+      handler.handle(order, new SessionID("FIX.4.4", "SIMPLEMATCH", "CLIENT1"));
+      verify(sender).send(any(SessionID.class), any(Message.class));
+      verifyNoInteractions(riskSubmissionClient);
+      verifyNoInteractions(publisher);
+      assertThat(walAppender.readAll()).isEmpty();
+    }
+  }
+
+  private static Stream<Arguments> unsupportedOrderForms() {
+    return Stream.of(
+        Arguments.of("unsupported-order-type", '3', '0'),
+        Arguments.of("unsupported-time-in-force", '2', '1'));
   }
 
   // Verify that when risk submission fails, the reject message text includes the specific reason
@@ -569,13 +685,28 @@ class InboundFixMessageHandlerTest {
       String quantity,
       String price,
       String account) {
+    return newNewOrder(clientOrderId, symbol, side, quantity, '2', '0', price, account);
+  }
+
+  private NewOrderSingle newNewOrder(
+      String clientOrderId,
+      String symbol,
+      char side,
+      String quantity,
+      char orderType,
+      char timeInForce,
+      String price,
+      String account) {
     final NewOrderSingle order = new NewOrderSingle();
     order.setString(ClOrdID.FIELD, clientOrderId);
     order.setString(Symbol.FIELD, symbol);
     order.setChar(quickfix.field.Side.FIELD, side);
     order.setString(OrderQty.FIELD, quantity);
-    order.setChar(OrdType.FIELD, '2');
-    order.setString(Price.FIELD, price);
+    order.setChar(OrdType.FIELD, orderType);
+    if (!price.isEmpty()) {
+      order.setString(Price.FIELD, price);
+    }
+    order.setChar(quickfix.field.TimeInForce.FIELD, timeInForce);
     order.setChar(HandlInst.FIELD, '1');
     order.setString(TransactTime.FIELD, "20240327-08:09:10.123");
     order.setString(Account.FIELD, account);
