@@ -49,8 +49,9 @@ persisted partition behavior remains unchanged.
 QuickFIX Gateway consumes `EnvironmentProperties` for its runtime identity, `GrpcProperties` for the
 risk-service channel, and `KafkaProperties` for the compatibility topic; gateway-local paths,
 features, and retry policy remain owned by its service-specific property modules.
-Market Reference consumes `PostgresProperties` for its publication datasource; snapshot import and
-publication behavior remain owned by the marketdata-publisher context.
+Market Reference consumes `PostgresProperties` for its publication datasource and
+`KafkaProperties.partitions.orders-validated` to validate routing-policy topology; snapshot and
+routing-policy publication behavior remain owned by the marketdata-publisher context.
 
 Useful canonical keys include:
 
@@ -102,3 +103,8 @@ startup and derives a stable fallback partition from
 `simplematch.kafka.partitions.orders-validated` for symbols absent from the snapshot. Debezium/Kafka
 Connect remains external infrastructure; the connector manifests are deployment templates rather
 than application configuration.
+
+This legacy Risk setting is migration scaffolding only. The Market Reference source of truth is the
+versioned routing-policy publication; its complete assignment set and declared partition count are
+validated before readiness becomes available. Risk's consumer cutover and retirement of this local
+file are tracked separately in the routing-policy migration issues.

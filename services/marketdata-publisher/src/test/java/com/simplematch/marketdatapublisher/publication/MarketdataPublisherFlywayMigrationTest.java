@@ -12,7 +12,7 @@ import org.springframework.jdbc.datasource.DriverManagerDataSource;
 
 class MarketdataPublisherFlywayMigrationTest {
   @DisplayName(
-      "an empty database receives snapshot and outbox tables from one marketdata-publisher V1 migration")
+      "an empty database receives snapshot and routing-policy tables from marketdata-publisher migrations")
   @Test
   void migratesEmptyDatabase() {
     final JdbcTemplate jdbcTemplate = new JdbcTemplate(dataSource());
@@ -21,7 +21,9 @@ class MarketdataPublisherFlywayMigrationTest {
 
     assertThat(tableExists(jdbcTemplate, "MARKET_SNAPSHOTS")).isTrue();
     assertThat(tableExists(jdbcTemplate, "OUTBOX")).isTrue();
-    assertThat(appliedMigrationCount(jdbcTemplate)).isEqualTo(1);
+    assertThat(tableExists(jdbcTemplate, "ROUTING_POLICIES")).isTrue();
+    assertThat(tableExists(jdbcTemplate, "ROUTING_POLICY_ASSIGNMENTS")).isTrue();
+    assertThat(appliedMigrationCount(jdbcTemplate)).isEqualTo(2);
   }
 
   @DisplayName(
@@ -33,7 +35,7 @@ class MarketdataPublisherFlywayMigrationTest {
     migrate(jdbcTemplate);
     migrate(jdbcTemplate);
 
-    assertThat(appliedMigrationCount(jdbcTemplate)).isEqualTo(1);
+    assertThat(appliedMigrationCount(jdbcTemplate)).isEqualTo(2);
     insertActiveSnapshot(jdbcTemplate, "018a1f7d-1a55-7000-8000-000000000001", "source-a", "a");
     assertThatThrownBy(
             () ->

@@ -24,6 +24,21 @@ immutable version, and active state. The schema permits one active snapshot per 
 result for a source-identity/checksum pair. A duplicate returns the stored publication; changed
 source content creates the next version and atomically replaces the active version.
 
+## Routing Policy publication
+
+`RoutingPolicyApplicationService` publishes a separate immutable policy that references a committed
+Market Snapshot by UUID. `RoutingPolicy` owns normalized instrument uniqueness, explicit partition
+bounds, deterministic assignment ordering, and a half-open effective interval. Its policy row,
+assignment rows, and binary protobuf outbox event commit in one local transaction; duplicate content
+is idempotent and an overlapping interval is rejected.
+
+The policy event is published on `market-reference.routing-policies` with the trading day as its
+message key. Consumers receive the generated `simplematch.routing.v2.RoutingPolicy` payload and
+must stage the complete assignment set before activation. Market Reference readiness remains out of
+service when no policy applies to the current Asia/Taipei date, the interval is stale or not yet
+effective, the policy is incomplete or invalid, or its declared `orders.validated` partition count
+does not match the configured Kafka topology.
+
 ## Scope and fail-closed behavior
 
 Fixtures cover XTAI and ROCO regular-board common stocks, Taiwan holiday and weekend rejection,
