@@ -40,6 +40,15 @@ that must be visible outside its owner is paired with an outbox record in the sa
 Kafka consumers may receive a record more than once, so each projection records enough identity or
 checkpoint state to make application idempotent.
 
+### Outbound integration-event rule
+
+A new service requires a service-local transactional outbox only when it both owns authoritative
+state and has a committed state transition that must be delivered reliably to another bounded
+context. Its outbox record belongs to the same owner schema and local transaction; Debezium or an
+approved connector publishes that record. A service does not require an outbox or connector merely
+because it consumes Kafka, reads a projection, or streams an already published event. If it later
+owns such a state transition and outbound integration event, this rule applies to that new boundary.
+
 Projections may be rebuilt from an agreed checkpoint and are allowed to be eventually consistent.
 They must not decide admission, risk, matching fairness, or another authoritative write outcome. A
 later move to event-authoritative aggregates requires an explicit append-only event history,

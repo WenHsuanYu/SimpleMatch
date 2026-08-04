@@ -153,17 +153,21 @@ and detail. Revision and timestamps belong to that lifecycle.
 `AdmissionResult` is a separate projection of Admission identity, decision, routing-policy
 provenance, and delivery route; it does not copy journal revision history or full order facts. The
 JDBC adapter alone flattens and rehydrates the journal row. When an admission begins, risk-service
-uses its configured symbol-to-partition policy, records the resolved partition with the pending
-journal entry, and publishes with the symbol as message key and that explicit outbox partition.
-Finalization and pending recovery reuse the recorded route rather than re-resolving it.
+selects the active local Routing Policy exactly once, records its authoritative policy identity and
+resolved partition with the pending journal entry, and publishes with the normalized
+venue-qualified instrument key and that explicit outbox partition. Finalization and pending
+recovery reuse the recorded route rather than re-resolving it. The route may have a null policy
+identity only for a legacy pending row created before the additive migration; that row's persisted
+partition is still authoritative during recovery.
 
-The ingress `routingSnapshotId` remains optional and opaque in this slice. Its UUID cannot be
-treated as the version of the current local routing JSON, whose identifier is a separate string and
-is not exposed by the resolver. Persisting the resolved partition preserves retry consistency;
-making routing policy a versioned Market Reference contract is deferred work. The slice is complete
-only when journal and result positional constructors are removed, pending/accepted/rejected JDBC
-round-trips and recovery retain the exact partition, accepted outbox records use the symbol key and
-explicit partition, and the SQL and protobuf field shapes remain compatible.
+The ingress `routingSnapshotId` remains optional and opaque. Its UUID cannot be treated as the
+authoritative Routing Policy identity. The additive journal `routing_policy_id` column is nullable
+only for compatibility with legacy pending rows; new Admissions require a complete active local
+policy and persist the policy identity before Account Authority work. This slice is complete only
+when journal and result positional constructors are removed, pending/accepted/rejected JDBC
+round-trips and recovery retain policy identity and partition, accepted outbox records use the
+normalized venue-qualified key and explicit partition, and the SQL and protobuf field shapes
+remain compatible.
 
 ## Risk Admission application modules
 

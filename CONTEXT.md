@@ -14,8 +14,8 @@ flowchart LR
     Gateway -->|normalized synchronous command| Risk[Risk Admission context]
     Risk -->|reserve or release authority| Account[Account Authority context]
     Risk -->|validated order event| Matching[Matching context]
-    Market[Market Reference context] -->|versioned snapshot| Risk
-    Market -->|versioned snapshot| Matching
+    Market[Market Reference context] -->|versioned snapshot and routing policy| Risk
+    Market -->|versioned snapshot and routing policy| Matching
     Matching -->|execution lifecycle events| Account
     Matching -->|execution lifecycle events| Projection[Projection and Audit context]
     Matching -->|market-data deltas| Streaming[Market-data Streaming context]
@@ -26,7 +26,7 @@ flowchart LR
 | FIX client       | FIX Gateway                    | Anti-corruption layer. FIX tags are parsed into gateway-local values before business submission.                          |
 | FIX Gateway      | Risk Admission                 | Customer/supplier synchronous boundary. The gateway supplies stable command and FIX identities; risk owns the decision.   |
 | Risk Admission   | Account Authority              | Risk requests idempotent reservation work; account-service owns balances, positions, reservations, and their transaction. |
-| Market Reference | Risk Admission / Matching      | Published language based on a versioned market snapshot. Consumers do not reinterpret source fixtures independently.      |
+| Market Reference | Risk Admission / Matching      | Published language based on versioned market snapshots and routing policies. Consumers do not reinterpret source fixtures independently. |
 | Risk Admission   | Matching                       | Published language over ordered Kafka events. Admission success precedes asynchronous matching.                           |
 | Matching         | Account Authority / Projection | Published lifecycle events. Each consumer owns idempotency and its local state transition.                                |
 
@@ -72,15 +72,10 @@ persistence after an order has been admitted.
 
 ### Market Reference
 
-Owns validated, versioned instrument and tick-rule snapshots. Its published snapshot is an external
-fact consumed by risk and matching, not mutable state jointly owned by those services.
-
-Risk Admission currently owns the configured symbol-to-partition policy for `orders.validated`.
-It resolves and durably records a partition before publication so retries retain the same delivery
-route; the incoming routing-snapshot reference remains opaque routing-policy provenance, not the
-source of that assignment. Moving routing assignment into Market Reference requires a separate
-versioned contract, schema migration, and consumer rollout; it is deferred rather than implied by an
-admission refactor.
+Owns validated, versioned instrument and tick-rule snapshots and separate immutable routing
+policies. Market snapshots and routing policies are external facts consumed by Risk Admission and
+Matching, not mutable state jointly owned by those services. Successive routing-policy intervals may
+add instruments, but an instrument's route remains stable throughout its trading day.
 
 ### Shared platform configuration
 
@@ -110,6 +105,10 @@ authoritative lifecycle events and must not become a second command path.
 | Execution fill         | One idempotent matched quantity at one execution price.                                               | Matching produces; Account Authority applies |
 | Release                | Terminal removal of remaining reserved authority.                                                     | Account Authority                            |
 | Market snapshot        | Versioned set of instrument eligibility and trading rules.                                            | Market Reference                             |
+| Routing policy         | Immutable, versioned assignment of market instruments to stable matching routes for an effective interval; it is distinct from a market snapshot. | Market Reference                             |
+| Routing policy identity | Opaque identity of exactly one immutable routing policy; it is distinct from both a market snapshot identity and an ingress routing reference. | Market Reference                             |
+| Routing policy interval | Non-overlapping period during a trading day for which one routing policy is active. A later interval may add instruments but cannot change an instrument's route within that trading day. | Market Reference                             |
+| Regular trading session | Single continuous cash-equity trading period from market open to market close; it is not divided into morning and afternoon sessions. | Market Reference                             |
 | Market instrument      | Instrument known to a market snapshot, with complete trading rules and explicit eligibility. It may be known but ineligible. | Market Reference                             |
 | Eligibility reason     | Market Reference explanation of whether a known instrument is tradable. Unsupported is valid snapshot data; malformed is not. | Market Reference                             |
 | WAL record             | Replay-safe gateway persistence representation of inbound FIX intent; not an aggregate.                | FIX Gateway                                  |
@@ -168,10 +167,12 @@ context-owned roots; an admission may reference their outcome or publish an acce
 does not own their state.
 
 An Admission journal entry composes the validated Admission command, its fixed delivery route, and
-its lifecycle. The command retains order and routing-policy provenance; the delivery route retains
-the resolved Kafka partition; the lifecycle owns state, reservation or rejection outcome, and
-optimistic revision history. JDBC alone flattens and rehydrates the journal row, while an admission
-response remains a separate projection.
+its lifecycle. The command retains the ingress routing reference; the delivery route retains the
+authoritative Routing Policy identity and resolved Kafka partition as one persisted pair. A new
+Admission resolves that pair exactly once before Account Authority work. Legacy pending rows may
+retain only their persisted partition and must not invent a policy identity during recovery. The
+lifecycle owns state, reservation or rejection outcome, and optimistic revision history. JDBC alone
+flattens and rehydrates the journal row, while an admission response remains a separate projection.
 Admission lifecycle outcomes are state-specific: pending has no decision, an accepted new order has
 a reservation reference, an accepted cancellation explicitly requires none, and rejection has a
 stable nonblank code and detail.
