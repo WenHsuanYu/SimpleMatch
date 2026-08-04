@@ -25,6 +25,9 @@ remains.
 | --- | --- | --- | --- |
 | Grouped `SubmissionCommand` compatibility model | None | Typed request identity, FIX identity, and order-detail records keep the submission model cohesive. The seven-field `RequestMetadata` and six-field `OrderDetails` constructors are bounded legacy v1 wire-normalization factories. | The v1 submission-ingress owner removes those factories after every v1 caller composes grouped values directly and round-trip tests remain green. |
 
-`@Transactional` remains owned by the public application services. The JDBC repositories,
-validation policy, and outbox factories participate in those transactions rather than opening
-their own boundaries.
+`OrderAdmissionApplicationService` owns synchronous validation, backpressure, and remote account
+reservation orchestration. `AdmissionLifecycleTransactions` is the deep application module for
+the two local transaction seams: it commits pending journal state, and it commits terminal journal
+state with its outbox record atomically. The module receives the bounded `TransactionTemplate`,
+while JDBC repositories, validation policy, and outbox factories remain adapters and policies that
+do not open their own business transactions.

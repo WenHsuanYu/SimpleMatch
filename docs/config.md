@@ -35,9 +35,9 @@ Secret keys.
 
 `PlatformProperties` owns shared Kafka, PostgreSQL, Redis, gRPC, routing, observability, currency,
 and time-zone settings under `simplematch.*`.
-`QuickFixGatewayProperties` owns gateway paths, owner identity, feature flags, and risk-client
-policy under
-`simplematch.quickfix-gateway.*`.
+`QuickFixGatewayFileProperties` owns gateway paths, `QuickFixGatewayRuntimeProperties` owns owner
+identity and feature flags, and `QuickFixGatewayRiskClientProperties` owns risk-client policy under
+the unchanged `simplematch.quickfix-gateway.*` namespace.
 
 Useful canonical keys include:
 

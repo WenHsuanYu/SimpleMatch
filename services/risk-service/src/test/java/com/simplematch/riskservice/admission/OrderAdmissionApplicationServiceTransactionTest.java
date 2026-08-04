@@ -48,6 +48,7 @@ class OrderAdmissionApplicationServiceTransactionTest {
   private final Clock clock;
   private final AdmissionJournalRepository journal;
   private final TestRoutingPartitionResolver routingResolver;
+  private final TransactionTemplate transactionTemplate;
 
   OrderAdmissionApplicationServiceTransactionTest(
       JdbcTemplate jdbcTemplate,
@@ -55,13 +56,15 @@ class OrderAdmissionApplicationServiceTransactionTest {
       TestAccountReservationClient account,
       Clock clock,
       AdmissionJournalRepository journal,
-      TestRoutingPartitionResolver routingResolver) {
+      TestRoutingPartitionResolver routingResolver,
+      TransactionTemplate transactionTemplate) {
     this.jdbcTemplate = jdbcTemplate;
     this.admissions = admissions;
     this.account = account;
     this.clock = clock;
     this.journal = journal;
     this.routingResolver = routingResolver;
+    this.transactionTemplate = transactionTemplate;
   }
 
   @BeforeEach
@@ -145,6 +148,65 @@ class OrderAdmissionApplicationServiceTransactionTest {
             jdbcTemplate.queryForObject(
                 "SELECT routing_partition FROM risk_service.admission_journal", Integer.class))
         .isEqualTo(7);
+  }
+
+  @Test
+  void keepsTheAdmissionTransactionModuleDeepAndSmall() {
+    assertThat(AdmissionLifecycleTransactions.class.getDeclaredConstructors())
+        .hasSize(1)
+        .allSatisfy(
+            constructor ->
+                assertThat(constructor.getParameterCount()).isLessThanOrEqualTo(6));
+  }
+
+  @DisplayName("terminal journal and outbox changes roll back together")
+  @Test
+  void terminalFailureRollsBackJournalUpdate() {
+    final NewOrderCommand command = command();
+    admissions.beginAdmission(command);
+    final AdmissionOutboxFactory events =
+        new AdmissionOutboxFactory("orders.validated", clock, routingResolver);
+    final OutboxRepository failingOutbox =
+        record -> {
+          throw new IllegalStateException("simulated outbox outage");
+        };
+    final AdmissionLifecycleTransactions failingTransactions =
+        new AdmissionLifecycleTransactions(
+            journal, failingOutbox, events, clock, transactionTemplate);
+
+    assertThatThrownBy(
+            () ->
+                failingTransactions.finalizeAdmission(
+                    UUID.fromString(command.getCommandId()),
+                    ReservationOutcome.accepted(UUID.randomUUID())))
+        .isInstanceOf(IllegalStateException.class)
+        .hasMessage("simulated outbox outage");
+    assertThat(
+            jdbcTemplate.queryForObject(
+                "SELECT state FROM risk_service.admission_journal", String.class))
+        .isEqualTo("PENDING");
+    assertThat(
+            jdbcTemplate.queryForObject("SELECT COUNT(*) FROM risk_service.outbox", Integer.class))
+        .isZero();
+  }
+
+  @DisplayName("terminal replay returns the stored result before reading a new outcome")
+  @Test
+  void terminalReplayRemainsIdempotentWhenOutcomeIsAbsent() {
+    final NewOrderCommand command = command();
+    admissions.beginAdmission(command);
+    final AdmissionResult terminal =
+        admissions.finalizeAdmission(
+            UUID.fromString(command.getCommandId()),
+            ReservationOutcome.accepted(UUID.randomUUID()));
+
+    assertThat(
+            admissions.finalizeAdmission(
+                UUID.fromString(command.getCommandId()), null))
+        .isEqualTo(terminal);
+    assertThat(
+            jdbcTemplate.queryForObject("SELECT COUNT(*) FROM risk_service.outbox", Integer.class))
+        .isEqualTo(1);
   }
 
   @DisplayName("orders for the same symbol share one deterministic delivery route")
@@ -459,7 +521,9 @@ class OrderAdmissionApplicationServiceTransactionTest {
 
     @Bean
     TransactionTemplate transactionTemplate(PlatformTransactionManager manager) {
-      return new TransactionTemplate(manager);
+      final TransactionTemplate template = new TransactionTemplate(manager);
+      template.setTimeout(8);
+      return template;
     }
 
     @Bean
@@ -499,23 +563,30 @@ class OrderAdmissionApplicationServiceTransactionTest {
     }
 
     @Bean
-    OrderAdmissionApplicationService admissions(
+    AdmissionLifecycleTransactions admissionLifecycleTransactions(
         AdmissionJournalRepository journal,
         OutboxRepository outbox,
-        TestAccountReservationClient account,
         AdmissionOutboxFactory events,
-        AdmissionBackpressurePolicy backpressure,
         Clock clock,
         TransactionTemplate transactionTemplate) {
+      return new AdmissionLifecycleTransactions(
+          journal, outbox, events, clock, transactionTemplate);
+    }
+
+    @Bean
+    OrderAdmissionApplicationService admissions(
+        AdmissionLifecycleTransactions lifecycleTransactions,
+        AdmissionJournalRepository journal,
+        TestAccountReservationClient account,
+        AdmissionBackpressurePolicy backpressure,
+        Clock clock) {
       return new OrderAdmissionApplicationService(
           new OrderAdmissionValidator(),
+          lifecycleTransactions,
           journal,
-          outbox,
           account,
-          events,
           backpressure,
-          clock,
-          transactionTemplate);
+          clock);
     }
   }
 

@@ -4,6 +4,8 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import com.simplematch.config.PlatformProperties;
 import com.simplematch.riskservice.admission.AccountReservationClient;
 import com.simplematch.riskservice.admission.AdmissionBackpressurePolicy;
+import com.simplematch.riskservice.admission.AdmissionJournalRepository;
+import com.simplematch.riskservice.admission.AdmissionLifecycleTransactions;
 import com.simplematch.riskservice.admission.AdmissionOutboxFactory;
 import com.simplematch.riskservice.admission.CdcLagBackpressurePolicy;
 import com.simplematch.riskservice.admission.CdcLagReader;
@@ -62,6 +64,17 @@ public class RiskServiceConfiguration {
   @Bean
   OutboxRepository admissionOutboxRepository(JdbcTemplate riskJdbcTemplate) {
     return new JdbcOutboxRepository(riskJdbcTemplate);
+  }
+
+  @Bean
+  AdmissionLifecycleTransactions admissionLifecycleTransactions(
+      AdmissionJournalRepository journal,
+      OutboxRepository outbox,
+      AdmissionOutboxFactory events,
+      Clock riskServiceClock,
+      TransactionTemplate riskTransactionTemplate) {
+    return new AdmissionLifecycleTransactions(
+        journal, outbox, events, riskServiceClock, riskTransactionTemplate);
   }
 
   @Bean

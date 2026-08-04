@@ -20,6 +20,8 @@ external shape may remain wide only at its flatten/rehydrate adapter; generated 
 | `buildPendingNew` / `buildRejected` positional FIX values                        | `FixOrderSnapshot` plus `FixExecutionIdentity`                                                         | order ID, ClOrdID, symbol, quantity, and ExecID cannot be exchanged                |
 | eight-value v2-to-v1 helper                                                      | adapter receives the source protobuf command                                                           | compatibility mapping is explicit and source-oriented                              |
 | eight-parameter new-order handler and seven/eight-parameter inbound composition  | deep new-order path modules plus a two-handler inbound dispatcher                                     | ingress owns path behavior while Spring owns concrete composition                  |
+| eight-field `QuickFixGatewayProperties` configuration root                       | file, runtime-capability, and risk-client property modules                                             | each capability binds the unchanged namespace independently                        |
+| eight-collaborator `OrderAdmissionApplicationService`                            | six-value coordinator plus `AdmissionLifecycleTransactions`                                            | local transaction ownership and journal/outbox atomicity have a named seam        |
 
 No positional overload with more than seven parameters remains inside the completed slices as a
 compatibility adapter. Migrate all in-repository production callers, fixtures, and neighboring
@@ -49,7 +51,7 @@ specification:
 
 The completed `SubmissionResult` predecessor slice is tracked by Issues #33–#37, and the completed
 Risk Submission outbox event descriptor slice is tracked by Issue #46. Remaining Risk Submission
-members, QuickFIX ingress/WAL/configuration, Market Reference snapshots, and shared platform
+members, QuickFIX WAL, Market Reference snapshots, and shared platform
 configuration are separate parameter-safety surfaces. Any remaining wide member there is follow-up
 work; it is not an exception to the PMD gate and is not a reason to keep Issues #39, #44, or #46
 open.
@@ -140,6 +142,22 @@ dispatcher no longer knows about WAL, risk, session registry, compatibility publ
 clock dependencies. Existing FIX fields, v1 WAL JSON, risk response text, session correlation, and
 compatibility publication remain unchanged; tests continue to exercise them through the ingress and
 QuickFIX certification seams.
+
+## QuickFIX configuration and Admission transaction slices
+
+QuickFIX gateway configuration keeps the existing `simplematch.quickfix-gateway` namespace while
+binding it into three independently injectable records: `QuickFixGatewayFileProperties` owns the
+two file paths, `QuickFixGatewayRuntimeProperties` owns identity and capability switches, and
+`QuickFixGatewayRiskClientProperties` owns deadline, retry, and breaker settings. Their constructors
+have two, five, and three parameters respectively. Consumers and validation receive only the
+capability they use; the former `QuickFixGatewayProperties` facade is removed.
+
+`OrderAdmissionApplicationService` owns validation, backpressure, remote account reservation, and
+bounded recovery orchestration. `AdmissionLifecycleTransactions` owns the five-value transaction
+seam: journal, outbox, event factory, clock, and the bounded `TransactionTemplate`. Its pending
+operation and terminal operation each execute inside one local transaction; terminal journal state
+and its outbox record commit together. Recovery performs account RPC outside that transaction and
+delegates only terminal local work to the module. JDBC repositories remain thin adapters.
 
 ## Review checklist
 

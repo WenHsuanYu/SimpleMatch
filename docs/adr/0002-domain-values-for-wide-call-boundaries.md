@@ -187,9 +187,9 @@ property modules. Consumers receive only the capabilities they use, and validati
 capability seams.
 
 Existing Spring property keys and defaults remain unchanged; multiple property records may bind
-different subsets of an existing prefix. `QuickFixGatewayProperties` and `PlatformProperties` may
-exist only as migration scaffolding and are removed after their final consumers migrate. They are
-not replaced by another arbitrary root configuration group.
+different subsets of an existing prefix. The former `QuickFixGatewayProperties` migration facade
+was removed by Issue #67. `PlatformProperties` may remain only as migration scaffolding until its
+final consumers migrate; it is not replaced by another arbitrary root configuration group.
 
 Migration first completes the gateway-local QuickFIX split. Shared property modules are then
 introduced and consumers migrate one service at a time with their context and configuration tests.
