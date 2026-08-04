@@ -52,17 +52,17 @@
     - [ ] logger 初始化（level、sink、格式）
     - [ ] request/trace context 注入 helper
 - [x] `shared-java/simplematch-config`：Spring configuration authority
-    - [x] `PlatformProperties` 由 Spring Environment 綁定 Kafka / Postgres / Redis / gRPC /
-      routing / observability / Taiwan market defaults
+    - [x] `EnvironmentProperties`、`KafkaProperties`、`PostgresProperties`、`RedisProperties`、
+      `GrpcProperties`、`RoutingProperties`、`ObservabilityProperties` 與 `MarketProperties` 由
+      Spring Environment 綁定平台 capability settings
     - [x] `QuickFixGatewayFileProperties`、`QuickFixGatewayRuntimeProperties` 與
       `QuickFixGatewayRiskClientProperties` 擁有 gateway-local settings；JSON loader、legacy alias
       與 custom post-processor 已移除
     - [x] profile exclusivity、ConfigMap/Secret key ownership、以及 staging/production required
       Kubernetes inputs 在啟動時 fail-fast 驗證
 - [x] [#70](https://github.com/WenHsuanYu/SimpleMatch/issues/70) shared capability property modules
-  在保留 `PlatformProperties` migration root 的同時，獨立綁定 environment、Kafka、PostgreSQL、
-  Redis、gRPC、routing、observability 與 market settings，並重用既有 defaults、profile precedence
-  與 startup validation。
+  獨立綁定 environment、Kafka、PostgreSQL、Redis、gRPC、routing、observability 與 market
+  settings，並重用既有 defaults、profile precedence 與 startup validation。
 - [x] [#71](https://github.com/WenHsuanYu/SimpleMatch/issues/71) migrate Account Authority runtime and
   persistence wiring to `GrpcProperties` and `PostgresProperties` while preserving profile,
   datasource, and startup behavior。
@@ -985,7 +985,8 @@ Kafka**。
     - [x] [#71](https://github.com/WenHsuanYu/SimpleMatch/issues/71) Migrate Account Authority config
     - [x] [#72](https://github.com/WenHsuanYu/SimpleMatch/issues/72) Migrate Risk Admission config
     - [x] [#73](https://github.com/WenHsuanYu/SimpleMatch/issues/73) Migrate Market Reference config
-    - [ ] [#74](https://github.com/WenHsuanYu/SimpleMatch/issues/74) Migrate FIX Gateway config
+    - [x] [#74](https://github.com/WenHsuanYu/SimpleMatch/issues/74) Migrate FIX Gateway config
+    - [ ] [#75](https://github.com/WenHsuanYu/SimpleMatch/issues/75) Remove the shared platform facade
 - [ ] [Market Reference routing ownership](https://github.com/WenHsuanYu/SimpleMatch/issues/38)：
   deferred follow-up for versioned policy ownership, schema migration, and consumer rollout。
 - [x] [README and technical documentation refactor](docs/readme-documentation-refactor-spec.md)

@@ -115,26 +115,6 @@ class EnvironmentConfigurationValidatorTest {
   void rejectsInvalidTaiwanMarketDefaults() {
     final MockEnvironment environment = new MockEnvironment();
     environment.setActiveProfiles("local");
-    final PlatformProperties properties =
-        new PlatformProperties(
-            "local",
-            null,
-            null,
-            null,
-            null,
-            null,
-            null,
-            new PlatformProperties.MarketProperties("USD", "America/New_York"));
-
-    assertThatThrownBy(() -> validator.validate(environment, properties))
-        .isInstanceOf(IllegalStateException.class)
-        .hasMessageContaining("TWD");
-  }
-
-  @Test
-  void capabilityValidationUsesTheSameMarketRulesBesideTheRoot() {
-    final MockEnvironment environment = new MockEnvironment();
-    environment.setActiveProfiles("local");
     final PlatformCapabilityValidator capabilityValidator =
         new PlatformCapabilityValidator(
             environment,

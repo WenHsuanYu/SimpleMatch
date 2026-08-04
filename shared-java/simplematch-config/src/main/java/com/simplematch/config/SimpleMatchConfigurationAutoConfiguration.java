@@ -9,7 +9,6 @@ import org.springframework.core.env.ConfigurableEnvironment;
 /** Installs shared typed configuration and validates the resolved Spring Environment. */
 @AutoConfiguration
 @EnableConfigurationProperties({
-  PlatformProperties.class,
   EnvironmentProperties.class,
   KafkaProperties.class,
   PostgresProperties.class,
@@ -44,13 +43,7 @@ public final class SimpleMatchConfigurationAutoConfiguration {
 
   @Bean
   SmartInitializingSingleton simpleMatchConfigurationStartupValidation(
-      EnvironmentConfigurationValidator validator,
-      ConfigurableEnvironment environment,
-      PlatformProperties properties,
       PlatformCapabilityValidator capabilityValidator) {
-    return () -> {
-      validator.validate(environment, properties);
-      capabilityValidator.validate();
-    };
+    return capabilityValidator::validate;
   }
 }

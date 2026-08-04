@@ -11,12 +11,12 @@ import org.springframework.context.annotation.Configuration;
 import org.springframework.core.env.MapPropertySource;
 import org.springframework.core.env.StandardEnvironment;
 
-class PlatformPropertiesPrecedenceTest {
+class CapabilityPropertiesPrecedenceTest {
   @Test
   void profileYamlOverridesBaseYaml() {
     try (ConfigurableApplicationContext context = start(Map.of())) {
-      assertThat(context.getBean(PlatformProperties.class).environment()).isEqualTo("test");
-      assertThat(context.getBean(PlatformProperties.class).kafka().brokers())
+      assertThat(context.getBean(EnvironmentProperties.class).environment()).isEqualTo("test");
+      assertThat(context.getBean(KafkaProperties.class).brokers())
           .isEqualTo("profile-broker:9092");
     }
   }
@@ -25,7 +25,7 @@ class PlatformPropertiesPrecedenceTest {
   void environmentVariablesOverrideProfileYaml() {
     try (ConfigurableApplicationContext context =
         start(Map.of("SIMPLEMATCH_KAFKA_BROKERS", "environment-broker:9092"))) {
-      assertThat(context.getBean(PlatformProperties.class).kafka().brokers())
+      assertThat(context.getBean(KafkaProperties.class).brokers())
           .isEqualTo("environment-broker:9092");
     }
   }
@@ -36,13 +36,13 @@ class PlatformPropertiesPrecedenceTest {
         start(
             Map.of("SIMPLEMATCH_KAFKA_BROKERS", "environment-broker:9092"),
             "--simplematch.kafka.brokers=test-override-broker:9092")) {
-      assertThat(context.getBean(PlatformProperties.class).kafka().brokers())
+      assertThat(context.getBean(KafkaProperties.class).brokers())
           .isEqualTo("test-override-broker:9092");
     }
   }
 
   @Test
-  void capabilityPropertiesBindBesideTheLegacyRoot() {
+  void capabilityPropertiesBindIndependently() {
     try (ConfigurableApplicationContext context =
         start(Map.of("SIMPLEMATCH_KAFKA_BROKERS", "environment-broker:9092"))) {
       assertThat(context.getBean(EnvironmentProperties.class).environment()).isEqualTo("test");
@@ -60,7 +60,7 @@ class PlatformPropertiesPrecedenceTest {
   void legacyJsonDiscoveryDoesNotParticipateInSpringConfiguration() {
     try (ConfigurableApplicationContext context =
         start(Map.of("SIMPLEMATCH_CONFIG", "/does-not-exist/simplematch.json"))) {
-      assertThat(context.getBean(PlatformProperties.class).environment()).isEqualTo("test");
+      assertThat(context.getBean(EnvironmentProperties.class).environment()).isEqualTo("test");
     }
   }
 
@@ -80,10 +80,11 @@ class PlatformPropertiesPrecedenceTest {
                 "production",
                 Map.of("simplematch.kafka.brokers", "production-kafka:9092"),
                 Map.of("simplematch.postgres.dsn", "jdbc:postgresql://production/simplematch"))) {
-      assertThat(local.getBean(PlatformProperties.class).environment()).isEqualTo("local");
-      assertThat(test.getBean(PlatformProperties.class).environment()).isEqualTo("test");
-      assertThat(staging.getBean(PlatformProperties.class).environment()).isEqualTo("staging");
-      assertThat(production.getBean(PlatformProperties.class).environment())
+      assertThat(local.getBean(EnvironmentProperties.class).environment()).isEqualTo("local");
+      assertThat(test.getBean(EnvironmentProperties.class).environment()).isEqualTo("test");
+      assertThat(staging.getBean(EnvironmentProperties.class).environment())
+          .isEqualTo("staging");
+      assertThat(production.getBean(EnvironmentProperties.class).environment())
           .isEqualTo("production");
     }
   }
@@ -133,7 +134,6 @@ class PlatformPropertiesPrecedenceTest {
 
   @Configuration(proxyBeanMethods = false)
   @EnableConfigurationProperties({
-    PlatformProperties.class,
     EnvironmentProperties.class,
     KafkaProperties.class,
     PostgresProperties.class,

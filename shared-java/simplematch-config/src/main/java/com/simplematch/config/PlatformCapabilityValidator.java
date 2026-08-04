@@ -3,7 +3,7 @@ package com.simplematch.config;
 import java.util.Objects;
 import org.springframework.core.env.ConfigurableEnvironment;
 
-/** Validates independently bound shared capabilities beside the temporary root facade. */
+/** Validates independently bound shared capabilities at startup. */
 public final class PlatformCapabilityValidator {
   private final ConfigurableEnvironment environment;
   private final EnvironmentConfigurationValidator environmentValidator;
@@ -40,7 +40,7 @@ public final class PlatformCapabilityValidator {
     this.marketProperties = Objects.requireNonNull(marketProperties, "marketProperties");
   }
 
-  /** Runs the capability-level rules without replacing root-facade validation. */
+  /** Runs the environment and capability-level rules. */
   public void validate() {
     environmentValidator.validate(environment, environmentProperties);
     PlatformSettingsValidator.validate(kafkaProperties);

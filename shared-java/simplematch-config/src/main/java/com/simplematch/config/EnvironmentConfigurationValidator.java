@@ -39,19 +39,9 @@ public final class EnvironmentConfigurationValidator {
     }
   }
 
-  /** Validates all bound platform settings before service-owned beans are created. */
-  public void validate(ConfigurableEnvironment environment, PlatformProperties properties) {
-    validatePlatformProperties(properties);
-    validate(environment, properties.environment());
-  }
-
-  /** Validates the independently bound environment capability during migration. */
+  /** Validates the independently bound environment capability. */
   public void validate(ConfigurableEnvironment environment, EnvironmentProperties properties) {
     validate(environment, properties.environment());
-  }
-
-  private void validatePlatformProperties(PlatformProperties properties) {
-    PlatformSettingsValidator.validate(properties);
   }
 
   private Set<String> activeEnvironmentProfiles(ConfigurableEnvironment environment) {

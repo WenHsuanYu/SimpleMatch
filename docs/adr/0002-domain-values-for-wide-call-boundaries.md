@@ -188,12 +188,13 @@ capability seams.
 
 Existing Spring property keys and defaults remain unchanged; multiple property records may bind
 different subsets of an existing prefix. The former `QuickFixGatewayProperties` migration facade
-was removed by Issue #67. `PlatformProperties` may remain only as migration scaffolding until its
-final consumers migrate; it is not replaced by another arbitrary root configuration group.
+was removed by Issue #67. Issue #75 subsequently removed the shared `PlatformProperties` facade
+after its final production consumers migrated; it is not replaced by another arbitrary root
+configuration group.
 
-Migration first completes the gateway-local QuickFIX split. Shared property modules are then
-introduced and consumers migrate one service at a time with their context and configuration tests.
-The shared `PlatformProperties` facade is removed only after the final consumer has migrated.
+The gateway-local QuickFIX split and shared capability migration were completed one service at a
+time with context and configuration tests. Shared startup validation now operates directly on the
+capability modules, and persistence tests assert the environment capability without a root facade.
 
 ## Domain invariants and ownership
 

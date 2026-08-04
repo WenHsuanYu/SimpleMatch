@@ -35,14 +35,14 @@ Secret keys.
 
 `EnvironmentProperties`, `KafkaProperties`, `PostgresProperties`, `RedisProperties`,
 `GrpcProperties`, `RoutingProperties`, `ObservabilityProperties`, and `MarketProperties` are the
-independently bindable capability owners under the existing `simplematch.*` namespace.
-`PlatformProperties` remains a temporary compatibility root while service consumers migrate; it
-does not change the property keys or defaults.
+independently bindable capability owners under the existing `simplematch.*` namespace. The former
+shared root facade has been removed; these modules preserve the existing property keys and
+defaults.
 `QuickFixGatewayFileProperties` owns gateway paths, `QuickFixGatewayRuntimeProperties` owns owner
 identity and feature flags, and `QuickFixGatewayRiskClientProperties` owns risk-client policy under
 the unchanged `simplematch.quickfix-gateway.*` namespace.
 Account Authority consumes `GrpcProperties` for its account-service target and `PostgresProperties`
-for its datasource, so its runtime and persistence wiring no longer depends on the shared root.
+for its datasource, so its runtime and persistence wiring depends only on the required capabilities.
 Risk Admission consumes `GrpcProperties`, `KafkaProperties`, `RoutingProperties`, and
 `PostgresProperties` for its account client, outbox/routing policy, runtime, and datasource; its
 persisted partition behavior remains unchanged.

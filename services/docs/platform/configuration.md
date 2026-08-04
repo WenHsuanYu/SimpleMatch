@@ -47,7 +47,7 @@ a controlled rolling restart; no runtime refresh may partially apply a multi-set
 ## Target versus execution state
 
 This page is the target authority for configuration ownership and safety. Capability property
-modules bind subsets of the unchanged `simplematch.*` namespace beside the temporary
-`PlatformProperties` migration root; the root is removed only after all consumers migrate. The
+modules bind subsets of the unchanged `simplematch.*` namespace, and the former shared root facade
+is no longer part of the runtime configuration contract. The
 [configuration runbook](../../../docs/config.md) lists current key names, precedence, secret
 ownership, connector templates, and operational endpoints.
