@@ -2,6 +2,8 @@ package com.simplematch.quickfixgateway;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
+import com.simplematch.config.GrpcProperties;
+import com.simplematch.config.KafkaProperties;
 import com.simplematch.quickfixgateway.config.QuickFixGatewayFileProperties;
 import com.simplematch.quickfixgateway.config.QuickFixGatewayRuntime;
 import com.simplematch.quickfixgateway.config.QuickFixGatewayRuntimeProperties;
@@ -28,6 +30,10 @@ class QuickFixGatewayApplicationTest {
 
   @Autowired private QuickFixGatewayRuntime runtime;
 
+  @Autowired private GrpcProperties grpcProperties;
+
+  @Autowired private KafkaProperties kafkaProperties;
+
   @Autowired private Environment environment;
 
   // Verify that quickfix-gateway loads its runtime and required path settings on startup.
@@ -41,6 +47,8 @@ class QuickFixGatewayApplicationTest {
     assertThat(runtime.walPath().toString()).endsWith("data/quickfix/wal/inbound.wal");
     assertThat(runtimeProperties.ownerId()).isEqualTo("quickfix-gateway-0");
     assertThat(runtime.ownerId()).isEqualTo("quickfix-gateway-0");
+    assertThat(grpcProperties.targets().riskService()).isEqualTo("dns:///risk-service:50052");
+    assertThat(kafkaProperties.topics().ordersCommands()).isEqualTo("orders.commands");
     assertThat(environment.getProperty("spring.kafka.consumer.group-id"))
         .isEqualTo("quickfix-gateway-0");
   }

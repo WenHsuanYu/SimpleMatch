@@ -1,6 +1,7 @@
 package com.simplematch.quickfixgateway.config;
 
-import com.simplematch.config.PlatformProperties;
+import com.simplematch.config.GrpcProperties;
+import com.simplematch.config.KafkaProperties;
 import com.simplematch.quickfixgateway.fix.FixMessageMapper;
 import com.simplematch.quickfixgateway.kafka.KafkaOrdersCommandPublisher;
 import com.simplematch.quickfixgateway.kafka.NoopOrdersCommandPublisher;
@@ -27,8 +28,8 @@ public class QuickFixGatewayIntegrationConfiguration {
   }
 
   @Bean(destroyMethod = "shutdownNow")
-  ManagedChannel riskServiceChannel(PlatformProperties platformProperties) {
-    return ManagedChannelBuilder.forTarget(platformProperties.grpc().targets().riskService())
+  ManagedChannel riskServiceChannel(GrpcProperties grpcProperties) {
+    return ManagedChannelBuilder.forTarget(grpcProperties.targets().riskService())
         .usePlaintext()
         .build();
   }
@@ -54,9 +55,9 @@ public class QuickFixGatewayIntegrationConfiguration {
       name = "simplematch.quickfix-gateway.compatibility-publish-enabled",
       havingValue = "true")
   OrdersCommandPublisher ordersCommandPublisher(
-      KafkaTemplate<String, byte[]> kafkaTemplate, PlatformProperties platformProperties) {
+      KafkaTemplate<String, byte[]> kafkaTemplate, KafkaProperties kafkaProperties) {
     return new KafkaOrdersCommandPublisher(
-        kafkaTemplate, platformProperties.kafka().topics().ordersCommands());
+        kafkaTemplate, kafkaProperties.topics().ordersCommands());
   }
 
   @Bean

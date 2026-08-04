@@ -46,6 +46,9 @@ for its datasource, so its runtime and persistence wiring no longer depends on t
 Risk Admission consumes `GrpcProperties`, `KafkaProperties`, `RoutingProperties`, and
 `PostgresProperties` for its account client, outbox/routing policy, runtime, and datasource; its
 persisted partition behavior remains unchanged.
+QuickFIX Gateway consumes `EnvironmentProperties` for its runtime identity, `GrpcProperties` for the
+risk-service channel, and `KafkaProperties` for the compatibility topic; gateway-local paths,
+features, and retry policy remain owned by its service-specific property modules.
 Market Reference consumes `PostgresProperties` for its publication datasource; snapshot import and
 publication behavior remain owned by the marketdata-publisher context.
 

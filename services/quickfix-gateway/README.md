@@ -41,8 +41,9 @@ Session-aware deployment baseline:
 Current repo state is no longer a bootstrap-only scaffold. The Java gateway already includes:
 
 - QuickFix/J acceptor lifecycle wiring and session logging
-- config binding through `PlatformProperties` and independently injectable gateway file, runtime,
-  and risk-client property modules
+- capability config binding through `EnvironmentProperties`, `GrpcProperties`, and
+  `KafkaProperties`, with independently injectable gateway file, runtime, and risk-client property
+  modules
 - `NewOrderSingle (35=D)` ingestion
 - gateway-local validation before WAL append; valid commands are append-and-flushed before the first
   business-level accept/reject decision is emitted

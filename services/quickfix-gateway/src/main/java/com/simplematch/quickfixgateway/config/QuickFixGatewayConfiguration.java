@@ -1,6 +1,6 @@
 package com.simplematch.quickfixgateway.config;
 
-import com.simplematch.config.PlatformProperties;
+import com.simplematch.config.EnvironmentProperties;
 import com.simplematch.quickfixgateway.fix.FixSessionMessageSender;
 import com.simplematch.quickfixgateway.fix.OrderSessionRegistry;
 import com.simplematch.quickfixgateway.fix.QuickFixSessionMessageSender;
@@ -33,7 +33,7 @@ public class QuickFixGatewayConfiguration {
 
   @Bean
   QuickFixGatewayRuntime quickFixGatewayRuntime(
-      PlatformProperties platformProperties,
+      EnvironmentProperties environmentProperties,
       QuickFixGatewayFileProperties fileProperties,
       QuickFixGatewayRuntimeProperties runtimeProperties)
       throws IOException {
@@ -49,7 +49,10 @@ public class QuickFixGatewayConfiguration {
     }
 
     return new QuickFixGatewayRuntime(
-        platformProperties.environment(), quickfixConfigPath, walPath, runtimeProperties.ownerId());
+        environmentProperties.environment(),
+        quickfixConfigPath,
+        walPath,
+        runtimeProperties.ownerId());
   }
 
   @Bean

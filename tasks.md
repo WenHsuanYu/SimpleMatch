@@ -981,6 +981,11 @@ Kafka**。
     - [x] [#67](https://github.com/WenHsuanYu/SimpleMatch/issues/67) Split QuickFIX gateway properties
     - [x] [#68](https://github.com/WenHsuanYu/SimpleMatch/issues/68) Extract Admission lifecycle transactions
     - [x] [#69](https://github.com/WenHsuanYu/SimpleMatch/issues/69) Separate pending Admission recovery
+    - [x] [#70](https://github.com/WenHsuanYu/SimpleMatch/issues/70) Expand shared capability properties
+    - [x] [#71](https://github.com/WenHsuanYu/SimpleMatch/issues/71) Migrate Account Authority config
+    - [x] [#72](https://github.com/WenHsuanYu/SimpleMatch/issues/72) Migrate Risk Admission config
+    - [x] [#73](https://github.com/WenHsuanYu/SimpleMatch/issues/73) Migrate Market Reference config
+    - [ ] [#74](https://github.com/WenHsuanYu/SimpleMatch/issues/74) Migrate FIX Gateway config
 - [ ] [Market Reference routing ownership](https://github.com/WenHsuanYu/SimpleMatch/issues/38)：
   deferred follow-up for versioned policy ownership, schema migration, and consumer rollout。
 - [x] [README and technical documentation refactor](docs/readme-documentation-refactor-spec.md)
