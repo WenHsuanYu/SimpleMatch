@@ -1,7 +1,9 @@
 package com.simplematch.riskservice.config;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
-import com.simplematch.config.PlatformProperties;
+import com.simplematch.config.GrpcProperties;
+import com.simplematch.config.KafkaProperties;
+import com.simplematch.config.RoutingProperties;
 import com.simplematch.riskservice.admission.AccountReservationClient;
 import com.simplematch.riskservice.admission.AdmissionBackpressurePolicy;
 import com.simplematch.riskservice.admission.AdmissionJournalRepository;
@@ -35,7 +37,7 @@ import org.springframework.transaction.support.TransactionTemplate;
 @Import(RiskServicePersistenceConfiguration.class)
 public class RiskServiceConfiguration {
   @Bean
-  AccountReservationClient accountReservationClient(PlatformProperties properties) {
+  AccountReservationClient accountReservationClient(GrpcProperties properties) {
     return new GrpcAccountReservationClient(properties);
   }
 
@@ -54,11 +56,11 @@ public class RiskServiceConfiguration {
 
   @Bean
   AdmissionOutboxFactory admissionOutboxFactory(
-      PlatformProperties properties,
+      KafkaProperties properties,
       Clock riskServiceClock,
       RoutingPartitionResolver routingPartitionResolver) {
     return new AdmissionOutboxFactory(
-        properties.kafka().topics().ordersValidated(), riskServiceClock, routingPartitionResolver);
+        properties.topics().ordersValidated(), riskServiceClock, routingPartitionResolver);
   }
 
   @Bean
@@ -79,11 +81,11 @@ public class RiskServiceConfiguration {
 
   @Bean
   RoutingPartitionResolver routingPartitionResolver(
-      ObjectMapper objectMapper, PlatformProperties properties) {
+      ObjectMapper objectMapper, RoutingProperties routing, KafkaProperties kafka) {
     return FileRoutingPartitionResolver.load(
         objectMapper,
-        Path.of(properties.routing().snapshotPath()),
-        properties.kafka().partitions().ordersValidated());
+        Path.of(routing.snapshotPath()),
+        kafka.partitions().ordersValidated());
   }
 
   @Bean
@@ -93,13 +95,13 @@ public class RiskServiceConfiguration {
       Clock riskServiceClock,
       ObjectMapper objectMapper,
       RoutingPartitionResolver routingPartitionResolver,
-      PlatformProperties properties) {
+      KafkaProperties kafka) {
     final SubmissionService legacy =
         new TransactionalSubmissionService(
             new SubmissionValidator(riskServiceClock),
             new SubmissionOutboxFactory(
                 objectMapper,
-                properties.kafka().topics().ordersValidated(),
+                kafka.topics().ordersValidated(),
                 routingPartitionResolver),
             new JdbcSubmissionRepository(riskJdbcTemplate),
             new JdbcOutboxRepository(riskJdbcTemplate),

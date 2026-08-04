@@ -3,7 +3,9 @@ package com.simplematch.riskservice;
 import static com.simplematch.riskservice.testsupport.H2TestDatabaseUrl.riskServiceUrl;
 import static org.assertj.core.api.Assertions.assertThat;
 
-import com.simplematch.config.PlatformProperties;
+import com.simplematch.config.EnvironmentProperties;
+import com.simplematch.config.GrpcProperties;
+import com.simplematch.config.PostgresProperties;
 import com.simplematch.riskservice.admission.AdmissionOutboxFactory;
 import com.simplematch.riskservice.bootstrap.RiskServiceRuntime;
 import com.simplematch.riskservice.outbox.OutboxRepository;
@@ -28,7 +30,9 @@ import org.springframework.transaction.support.TransactionTemplate;
 class RiskServiceApplicationTest {
   @Autowired private ApplicationContext applicationContext;
 
-  @Autowired private PlatformProperties platformProperties;
+  @Autowired private EnvironmentProperties environmentProperties;
+
+  @Autowired private PostgresProperties postgresProperties;
 
   @Autowired private RiskServiceRuntime runtime;
 
@@ -44,9 +48,16 @@ class RiskServiceApplicationTest {
   @DisplayName("risk-service loads shared config and runtime on startup")
   @Test
   void contextLoadsWithSharedConfig() {
-    assertThat(platformProperties.environment()).isEqualTo("test");
+    assertThat(environmentProperties.environment()).isEqualTo("test");
     assertThat(runtime.grpcPort()).isEqualTo(50052);
-    assertThat(platformProperties.postgres().dsn()).isEqualTo(riskServiceUrl("riskcontext"));
+    assertThat(postgresProperties.dsn()).isEqualTo(riskServiceUrl("riskcontext"));
+    assertThat(
+            RiskServiceRuntime.from(
+                    new GrpcProperties(
+                        new GrpcProperties.GrpcTargetsProperties(
+                            "dns:///account-service:50051", "dns:///risk-service:51052")))
+                .grpcPort())
+        .isEqualTo(51052);
   }
 
   @DisplayName("risk-service keeps admission and submission wiring on shared local infrastructure")

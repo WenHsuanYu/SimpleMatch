@@ -43,6 +43,9 @@ identity and feature flags, and `QuickFixGatewayRiskClientProperties` owns risk-
 the unchanged `simplematch.quickfix-gateway.*` namespace.
 Account Authority consumes `GrpcProperties` for its account-service target and `PostgresProperties`
 for its datasource, so its runtime and persistence wiring no longer depends on the shared root.
+Risk Admission consumes `GrpcProperties`, `KafkaProperties`, `RoutingProperties`, and
+`PostgresProperties` for its account client, outbox/routing policy, runtime, and datasource; its
+persisted partition behavior remains unchanged.
 
 Useful canonical keys include:
 

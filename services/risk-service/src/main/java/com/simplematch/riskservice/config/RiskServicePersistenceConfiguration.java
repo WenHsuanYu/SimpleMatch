@@ -1,8 +1,9 @@
 package com.simplematch.riskservice.config;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
-import com.simplematch.config.PlatformProperties;
+import com.simplematch.config.GrpcProperties;
 import com.simplematch.config.PostgresJdbcUrl;
+import com.simplematch.config.PostgresProperties;
 import com.simplematch.riskservice.admission.CdcLagReader;
 import com.simplematch.riskservice.bootstrap.RiskServiceRuntime;
 import com.simplematch.riskservice.store.JdbcCdcLagReader;
@@ -32,13 +33,13 @@ class RiskServicePersistenceConfiguration {
   }
 
   @Bean
-  RiskServiceRuntime riskServiceRuntime(PlatformProperties properties) {
+  RiskServiceRuntime riskServiceRuntime(GrpcProperties properties) {
     return RiskServiceRuntime.from(properties);
   }
 
   @Bean
-  DataSource riskServiceDataSource(PlatformProperties properties) {
-    final PostgresJdbcUrl parsedJdbcDsn = PostgresJdbcUrl.parse(properties.postgres().dsn());
+  DataSource riskServiceDataSource(PostgresProperties properties) {
+    final PostgresJdbcUrl parsedJdbcDsn = PostgresJdbcUrl.parse(properties.dsn());
     final HikariDataSource dataSource = new HikariDataSource();
     dataSource.setJdbcUrl(parsedJdbcDsn.jdbcUrl());
     if (parsedJdbcDsn.username() != null) {

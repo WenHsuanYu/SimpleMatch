@@ -1,6 +1,6 @@
 package com.simplematch.riskservice.bootstrap;
 
-import com.simplematch.config.PlatformProperties;
+import com.simplematch.config.GrpcProperties;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
@@ -8,9 +8,14 @@ import java.util.regex.Pattern;
 public record RiskServiceRuntime(int grpcPort) {
   private static final Pattern PORT_PATTERN = Pattern.compile(":(\\d+)$");
 
-  /** Resolves the runtime settings from shared platform properties. */
-  public static RiskServiceRuntime from(PlatformProperties properties) {
-    final String target = properties.grpc().targets().riskService();
+  /**
+   * Resolves the runtime settings from the gRPC capability configuration.
+   *
+   * @param properties independently bound gRPC capability
+   * @return risk-service runtime values
+   */
+  public static RiskServiceRuntime from(GrpcProperties properties) {
+    final String target = properties.targets().riskService();
     final Matcher matcher = PORT_PATTERN.matcher(target);
     final int grpcPort = matcher.find() ? Integer.parseInt(matcher.group(1)) : 50052;
     return new RiskServiceRuntime(grpcPort);

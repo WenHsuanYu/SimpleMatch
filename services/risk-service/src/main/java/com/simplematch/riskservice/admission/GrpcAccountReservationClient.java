@@ -1,6 +1,6 @@
 package com.simplematch.riskservice.admission;
 
-import com.simplematch.config.PlatformProperties;
+import com.simplematch.config.GrpcProperties;
 import com.simplematch.contracts.account.v1.AccountServiceGrpc;
 import com.simplematch.contracts.account.v1.ReserveRequest;
 import com.simplematch.contracts.common.v1.ReservationStatus;
@@ -22,9 +22,9 @@ public final class GrpcAccountReservationClient implements AccountReservationCli
   private final AccountServiceGrpc.AccountServiceBlockingStub account;
 
   /** Creates a plaintext channel using the configured account-service target. */
-  public GrpcAccountReservationClient(PlatformProperties properties) {
+  public GrpcAccountReservationClient(GrpcProperties properties) {
     this.channel =
-        ManagedChannelBuilder.forTarget(properties.grpc().targets().accountService())
+        ManagedChannelBuilder.forTarget(properties.targets().accountService())
             .usePlaintext()
             .build();
     this.account = AccountServiceGrpc.newBlockingStub(channel);
