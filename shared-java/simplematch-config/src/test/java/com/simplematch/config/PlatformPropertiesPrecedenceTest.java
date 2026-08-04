@@ -42,6 +42,21 @@ class PlatformPropertiesPrecedenceTest {
   }
 
   @Test
+  void capabilityPropertiesBindBesideTheLegacyRoot() {
+    try (ConfigurableApplicationContext context =
+        start(Map.of("SIMPLEMATCH_KAFKA_BROKERS", "environment-broker:9092"))) {
+      assertThat(context.getBean(EnvironmentProperties.class).environment()).isEqualTo("test");
+      assertThat(context.getBean(KafkaProperties.class).brokers())
+          .isEqualTo("environment-broker:9092");
+      assertThat(context.getBean(KafkaProperties.class).topics().ordersValidated())
+          .isEqualTo("orders.validated");
+      assertThat(context.getBean(PostgresProperties.class).dsn())
+          .isEqualTo("jdbc:postgresql://localhost:5432/simplematch");
+      assertThat(context.getBean(MarketProperties.class).currency()).isEqualTo("TWD");
+    }
+  }
+
+  @Test
   void legacyJsonDiscoveryDoesNotParticipateInSpringConfiguration() {
     try (ConfigurableApplicationContext context =
         start(Map.of("SIMPLEMATCH_CONFIG", "/does-not-exist/simplematch.json"))) {
@@ -117,6 +132,16 @@ class PlatformPropertiesPrecedenceTest {
   }
 
   @Configuration(proxyBeanMethods = false)
-  @EnableConfigurationProperties(PlatformProperties.class)
+  @EnableConfigurationProperties({
+    PlatformProperties.class,
+    EnvironmentProperties.class,
+    KafkaProperties.class,
+    PostgresProperties.class,
+    RedisProperties.class,
+    GrpcProperties.class,
+    RoutingProperties.class,
+    ObservabilityProperties.class,
+    MarketProperties.class
+  })
   static class ConfigurationFixture {}
 }

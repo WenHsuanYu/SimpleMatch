@@ -45,6 +45,11 @@ public final class EnvironmentConfigurationValidator {
     validate(environment, properties.environment());
   }
 
+  /** Validates the independently bound environment capability during migration. */
+  public void validate(ConfigurableEnvironment environment, EnvironmentProperties properties) {
+    validate(environment, properties.environment());
+  }
+
   private void validatePlatformProperties(PlatformProperties properties) {
     PlatformSettingsValidator.validate(properties);
   }

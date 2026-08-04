@@ -59,6 +59,10 @@
       與 custom post-processor 已移除
     - [x] profile exclusivity、ConfigMap/Secret key ownership、以及 staging/production required
       Kubernetes inputs 在啟動時 fail-fast 驗證
+- [x] [#70](https://github.com/WenHsuanYu/SimpleMatch/issues/70) shared capability property modules
+  在保留 `PlatformProperties` migration root 的同時，獨立綁定 environment、Kafka、PostgreSQL、
+  Redis、gRPC、routing、observability 與 market settings，並重用既有 defaults、profile precedence
+  與 startup validation。
 - [ ] `libs/common`：時間/ID 工具
     - [ ] 現況：workspace 仍未找到 shared `NowUnixMs()` helper；`UuidV7()` 已由
       `shared-java/simplematch-config` 提供

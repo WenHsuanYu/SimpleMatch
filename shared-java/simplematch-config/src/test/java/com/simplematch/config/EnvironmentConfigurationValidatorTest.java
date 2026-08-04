@@ -131,6 +131,24 @@ class EnvironmentConfigurationValidatorTest {
         .hasMessageContaining("TWD");
   }
 
+  @Test
+  void capabilityValidationUsesTheSameMarketRulesBesideTheRoot() {
+    final MockEnvironment environment = new MockEnvironment();
+    environment.setActiveProfiles("local");
+    final PlatformCapabilityValidator capabilityValidator =
+        new PlatformCapabilityValidator(
+            environment,
+            validator,
+            new EnvironmentProperties("local"),
+            new KafkaProperties(null, null, null),
+            new ObservabilityProperties(null, null),
+            new MarketProperties("USD", "America/New_York"));
+
+    assertThatThrownBy(capabilityValidator::validate)
+        .isInstanceOf(IllegalStateException.class)
+        .hasMessageContaining("TWD");
+  }
+
   private static final class KubernetesConfigMapSource extends MapPropertySource {
     private KubernetesConfigMapSource(String name, Map<String, Object> source) {
       super(name, source);

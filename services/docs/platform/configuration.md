@@ -15,7 +15,7 @@ The system has three configuration scopes:
 
 | Scope                   | Owner                                           | Examples                                                                                 |
 |-------------------------|-------------------------------------------------|------------------------------------------------------------------------------------------|
-| Shared platform         | `PlatformProperties` and deployment environment | Kafka, PostgreSQL, Redis, gRPC, routing, observability, currency, and time-zone settings |
+| Shared platform         | Capability property modules and deployment environment | Kafka, PostgreSQL, Redis, gRPC, routing, observability, currency, and time-zone settings |
 | Service-owned runtime   | The owning service                              | Listener addresses, dependency deadlines, concurrency, and feature policy                |
 | External infrastructure | Deployment and platform tooling                 | Kafka Connect, database credentials, Kubernetes resources, and secrets                   |
 
@@ -46,6 +46,8 @@ a controlled rolling restart; no runtime refresh may partially apply a multi-set
 
 ## Target versus execution state
 
-This page is the target authority for configuration ownership and safety. The
+This page is the target authority for configuration ownership and safety. Capability property
+modules bind subsets of the unchanged `simplematch.*` namespace beside the temporary
+`PlatformProperties` migration root; the root is removed only after all consumers migrate. The
 [configuration runbook](../../../docs/config.md) lists current key names, precedence, secret
 ownership, connector templates, and operational endpoints.

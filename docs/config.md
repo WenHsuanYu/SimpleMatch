@@ -33,8 +33,11 @@ Secret keys.
 
 ## Typed Ownership
 
-`PlatformProperties` owns shared Kafka, PostgreSQL, Redis, gRPC, routing, observability, currency,
-and time-zone settings under `simplematch.*`.
+`EnvironmentProperties`, `KafkaProperties`, `PostgresProperties`, `RedisProperties`,
+`GrpcProperties`, `RoutingProperties`, `ObservabilityProperties`, and `MarketProperties` are the
+independently bindable capability owners under the existing `simplematch.*` namespace.
+`PlatformProperties` remains a temporary compatibility root while service consumers migrate; it
+does not change the property keys or defaults.
 `QuickFixGatewayFileProperties` owns gateway paths, `QuickFixGatewayRuntimeProperties` owns owner
 identity and feature flags, and `QuickFixGatewayRiskClientProperties` owns risk-client policy under
 the unchanged `simplematch.quickfix-gateway.*` namespace.
