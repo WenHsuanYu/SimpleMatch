@@ -44,6 +44,7 @@ class SimpleMatchProtobufContractsPlugin : Plugin<Project> {
                     include("common_v2.proto")
                     include("orders.proto")
                     include("orders_v2.proto")
+                    include("routing_policy_v2.proto")
                     include("matching.proto")
                     include("matching_v2.proto")
                     include("marketdata.proto")

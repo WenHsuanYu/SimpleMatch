@@ -46,6 +46,7 @@ message OrderValidated {
   string account_id = 4;
   string symbol = 5;
   string routing_partition = 6;
+  string routing_policy_id = 7;
 }
 
 message OrderRejected {
