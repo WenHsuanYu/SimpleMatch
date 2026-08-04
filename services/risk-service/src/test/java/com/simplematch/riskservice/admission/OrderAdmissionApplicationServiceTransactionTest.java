@@ -44,6 +44,7 @@ import org.springframework.transaction.support.TransactionTemplate;
 class OrderAdmissionApplicationServiceTransactionTest {
   private final JdbcTemplate jdbcTemplate;
   private final OrderAdmissionApplicationService admissions;
+  private final PendingAdmissionRecovery recovery;
   private final TestAccountReservationClient account;
   private final Clock clock;
   private final AdmissionJournalRepository journal;
@@ -53,6 +54,7 @@ class OrderAdmissionApplicationServiceTransactionTest {
   OrderAdmissionApplicationServiceTransactionTest(
       JdbcTemplate jdbcTemplate,
       OrderAdmissionApplicationService admissions,
+      PendingAdmissionRecovery recovery,
       TestAccountReservationClient account,
       Clock clock,
       AdmissionJournalRepository journal,
@@ -60,6 +62,7 @@ class OrderAdmissionApplicationServiceTransactionTest {
       TransactionTemplate transactionTemplate) {
     this.jdbcTemplate = jdbcTemplate;
     this.admissions = admissions;
+    this.recovery = recovery;
     this.account = account;
     this.clock = clock;
     this.journal = journal;
@@ -72,6 +75,7 @@ class OrderAdmissionApplicationServiceTransactionTest {
     jdbcTemplate.update("DELETE FROM risk_service.outbox");
     jdbcTemplate.update("DELETE FROM risk_service.admission_journal");
     account.fail = false;
+    account.failuresRemaining = 0;
     routingResolver.reset();
   }
 
@@ -327,7 +331,7 @@ class OrderAdmissionApplicationServiceTransactionTest {
 
     account.fail = false;
     routingResolver.partition = 11;
-    assertThat(admissions.recoverPending()).isEqualTo(1);
+    assertThat(recovery.recover()).isEqualTo(1);
     assertThat(
             jdbcTemplate.queryForObject(
                 "SELECT state FROM risk_service.admission_journal", String.class))
@@ -344,7 +348,43 @@ class OrderAdmissionApplicationServiceTransactionTest {
                 "SELECT kafka_partition_id FROM risk_service.outbox", Integer.class))
         .isEqualTo(7);
     assertThat(routingResolver.calls).isEqualTo(1);
-    assertThat(admissions.recoverPending()).isZero();
+    assertThat(recovery.recover()).isZero();
+  }
+
+  @DisplayName("recovery isolates one failed row and retries it on a later pass")
+  @Test
+  void recoveryFailureDoesNotBlockOtherPendingAdmissions() {
+    final NewOrderCommand first = command();
+    final NewOrderCommand second =
+        first.toBuilder()
+            .setCommandId("01971cbe-0f5a-7c69-9d6c-8e7f6a5b4c40")
+            .setOrderId("01971cbe-0f5a-7c69-9d6c-8e7f6a5b4c41")
+            .setClOrdId("CL-2")
+            .build();
+    admissions.beginAdmission(first);
+    admissions.beginAdmission(second);
+    jdbcTemplate.update(
+        "UPDATE risk_service.admission_journal SET created_at_unix_ms = 0, updated_at_unix_ms = 0");
+
+    account.failuresRemaining = 1;
+    assertThat(recovery.recover()).isEqualTo(1);
+    assertThat(
+            jdbcTemplate.queryForObject(
+                "SELECT COUNT(*) FROM risk_service.admission_journal WHERE state = 'ACCEPTED'",
+                Integer.class))
+        .isEqualTo(1);
+    assertThat(
+            jdbcTemplate.queryForObject(
+                "SELECT COUNT(*) FROM risk_service.admission_journal WHERE state = 'PENDING'",
+                Integer.class))
+        .isEqualTo(1);
+
+    assertThat(recovery.recover()).isEqualTo(1);
+    assertThat(
+            jdbcTemplate.queryForObject(
+                "SELECT COUNT(*) FROM risk_service.admission_journal WHERE state = 'PENDING'",
+                Integer.class))
+        .isZero();
   }
 
   @DisplayName("transport-independent validation rejects each invalid command shape")
@@ -576,26 +616,33 @@ class OrderAdmissionApplicationServiceTransactionTest {
     @Bean
     OrderAdmissionApplicationService admissions(
         AdmissionLifecycleTransactions lifecycleTransactions,
-        AdmissionJournalRepository journal,
         TestAccountReservationClient account,
-        AdmissionBackpressurePolicy backpressure,
-        Clock clock) {
+        AdmissionBackpressurePolicy backpressure) {
       return new OrderAdmissionApplicationService(
           new OrderAdmissionValidator(),
           lifecycleTransactions,
-          journal,
           account,
-          backpressure,
-          clock);
+          backpressure);
+    }
+
+    @Bean
+    PendingAdmissionRecovery pendingAdmissionRecovery(
+        AdmissionJournalRepository journal,
+        TestAccountReservationClient account,
+        AdmissionLifecycleTransactions lifecycleTransactions,
+        Clock clock) {
+      return new PendingAdmissionRecovery(journal, account, lifecycleTransactions, clock);
     }
   }
 
   static final class TestAccountReservationClient implements AccountReservationClient {
     private boolean fail;
+    private int failuresRemaining;
 
     @Override
     public ReservationOutcome reserve(AdmissionCommand command) {
-      if (fail) {
+      if (fail || failuresRemaining > 0) {
+        failuresRemaining--;
         throw new IllegalStateException("simulated account outage");
       }
       return ReservationOutcome.accepted(UUID.randomUUID());

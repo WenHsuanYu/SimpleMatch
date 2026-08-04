@@ -177,9 +177,13 @@ direct row writer must not bypass account-limit, position, and outbox coordinati
 identity, destination, serialized payload, aggregate reference, and creation time are flattened
 only by the outbox JDBC adapter.
 The admission journal and outbox are changed atomically inside risk-service-owned transactions.
-Cross-service calls never extend a database transaction across service boundaries; retry requires an
-idempotency identity, and asynchronous consumers own inbox/deduplication state. These boundaries
-take precedence over convenience abstractions that would hide transaction ownership.
+`OrderAdmissionApplicationService` owns synchronous validation, backpressure, and remote account
+reservation orchestration. `PendingAdmissionRecovery` owns scheduled retry orchestration and keeps
+remote reservation work outside local transactions; failed pending rows remain eligible for a later
+bounded pass. Cross-service calls never extend a database transaction across service boundaries;
+retry requires an idempotency identity, and asynchronous consumers own inbox/deduplication state.
+These boundaries take precedence over convenience abstractions that would hide transaction
+ownership.
 
 ## Parameter-interface policy
 

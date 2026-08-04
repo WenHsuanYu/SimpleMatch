@@ -21,7 +21,7 @@ external shape may remain wide only at its flatten/rehydrate adapter; generated 
 | eight-value v2-to-v1 helper                                                      | adapter receives the source protobuf command                                                           | compatibility mapping is explicit and source-oriented                              |
 | eight-parameter new-order handler and seven/eight-parameter inbound composition  | deep new-order path modules plus a two-handler inbound dispatcher                                     | ingress owns path behavior while Spring owns concrete composition                  |
 | eight-field `QuickFixGatewayProperties` configuration root                       | file, runtime-capability, and risk-client property modules                                             | each capability binds the unchanged namespace independently                        |
-| eight-collaborator `OrderAdmissionApplicationService`                            | six-value coordinator plus `AdmissionLifecycleTransactions`                                            | local transaction ownership and journal/outbox atomicity have a named seam        |
+| eight-collaborator `OrderAdmissionApplicationService`                            | four-value coordinator plus `AdmissionLifecycleTransactions`                                             | local transaction ownership and journal/outbox atomicity have a named seam        |
 
 No positional overload with more than seven parameters remains inside the completed slices as a
 compatibility adapter. Migrate all in-repository production callers, fixtures, and neighboring
@@ -152,12 +152,13 @@ two file paths, `QuickFixGatewayRuntimeProperties` owns identity and capability 
 have two, five, and three parameters respectively. Consumers and validation receive only the
 capability they use; the former `QuickFixGatewayProperties` facade is removed.
 
-`OrderAdmissionApplicationService` owns validation, backpressure, remote account reservation, and
-bounded recovery orchestration. `AdmissionLifecycleTransactions` owns the five-value transaction
+`OrderAdmissionApplicationService` owns synchronous validation, backpressure, and remote account
+reservation. `PendingAdmissionRecovery` owns the scheduled, bounded retry pass and keeps account RPC
+outside the local transaction. `AdmissionLifecycleTransactions` owns the five-value transaction
 seam: journal, outbox, event factory, clock, and the bounded `TransactionTemplate`. Its pending
 operation and terminal operation each execute inside one local transaction; terminal journal state
-and its outbox record commit together. Recovery performs account RPC outside that transaction and
-delegates only terminal local work to the module. JDBC repositories remain thin adapters.
+and its outbox record commit together. Recovery delegates only terminal local work to the module
+and leaves failures retryable. JDBC repositories remain thin adapters.
 
 ## Review checklist
 
