@@ -34,6 +34,18 @@ public record AdmissionFailure(ReasonCode reasonCode, Detail detail) {
     return new AdmissionFailure(new ReasonCode("UNSUPPORTED_SESSION"), new Detail(detail));
   }
 
+  /** Creates a fail-closed failure for a missing or inactive routing policy. */
+  public static AdmissionFailure routingPolicyUnavailable(String detail) {
+    return new AdmissionFailure(
+        new ReasonCode("ROUTING_POLICY_UNAVAILABLE"), new Detail(detail));
+  }
+
+  /** Creates a fail-closed failure for an instrument absent from the active policy. */
+  public static AdmissionFailure routingInstrumentNotAssigned(String detail) {
+    return new AdmissionFailure(
+        new ReasonCode("ROUTING_INSTRUMENT_NOT_ASSIGNED"), new Detail(detail));
+  }
+
   /** Stable machine-readable admission failure code. */
   public record ReasonCode(String value) {
     /** Requires a nonblank reason code. */

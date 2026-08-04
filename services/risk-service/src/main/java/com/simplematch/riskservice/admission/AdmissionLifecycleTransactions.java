@@ -13,6 +13,7 @@ public final class AdmissionLifecycleTransactions {
   private final AdmissionJournalRepository journal;
   private final OutboxRepository outbox;
   private final AdmissionOutboxFactory events;
+  private final AdmissionRoutingPolicyResolver routingPolicyResolver;
   private final Clock clock;
   private final TransactionTemplate transactionTemplate;
 
@@ -22,6 +23,7 @@ public final class AdmissionLifecycleTransactions {
    * @param journal durable Admission journal adapter
    * @param outbox durable Admission outbox adapter
    * @param events terminal Admission event factory
+   * @param routingPolicyResolver local authoritative Routing Policy selector
    * @param clock source of journal and event timestamps
    * @param transactionTemplate bounded local transaction template
    */
@@ -29,11 +31,14 @@ public final class AdmissionLifecycleTransactions {
       AdmissionJournalRepository journal,
       OutboxRepository outbox,
       AdmissionOutboxFactory events,
+      AdmissionRoutingPolicyResolver routingPolicyResolver,
       Clock clock,
       TransactionTemplate transactionTemplate) {
     this.journal = Objects.requireNonNull(journal, "journal");
     this.outbox = Objects.requireNonNull(outbox, "outbox");
     this.events = Objects.requireNonNull(events, "events");
+    this.routingPolicyResolver =
+        Objects.requireNonNull(routingPolicyResolver, "routingPolicyResolver");
     this.clock = Objects.requireNonNull(clock, "clock");
     this.transactionTemplate = Objects.requireNonNull(transactionTemplate, "transactionTemplate");
   }
@@ -78,7 +83,8 @@ public final class AdmissionLifecycleTransactions {
       }
       return result(existingByBusiness);
     }
-    final AdmissionDeliveryRoute route = events.resolveRoute(command);
+    final AdmissionDeliveryRoute route =
+        routingPolicyResolver.resolve(command, clock.instant());
     final AdmissionJournalEntry pending =
         AdmissionJournalEntry.pending(command, route, clock.millis());
     try {

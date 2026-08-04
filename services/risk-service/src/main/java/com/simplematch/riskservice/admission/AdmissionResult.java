@@ -69,6 +69,11 @@ public record AdmissionResult(
     return snapshotId == null ? "" : snapshotId.toString();
   }
 
+  /** Returns the authoritative policy identity selected for this delivery route, when present. */
+  public UUID routingPolicyId() {
+    return route.routingPolicyId();
+  }
+
   /** Returns the persisted delivery partition, when assigned. */
   public Integer routingPartition() {
     return route.routingPartition();

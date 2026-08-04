@@ -1,6 +1,7 @@
 package com.simplematch.riskservice.admission;
 
 import java.time.LocalDate;
+import java.util.Locale;
 import java.util.Objects;
 
 /**
@@ -25,6 +26,13 @@ public record AdmissionOrder(
     public Instrument {
       Objects.requireNonNull(symbol, "symbol");
       Objects.requireNonNull(venueMic, "venueMic");
+    }
+
+    /** Returns the normalized venue-qualified key used for Kafka ordering. */
+    public String canonicalKey() {
+      return venueMic.value().trim().toUpperCase(Locale.ROOT)
+          + ":"
+          + symbol.value().trim().toUpperCase(Locale.ROOT);
     }
   }
 

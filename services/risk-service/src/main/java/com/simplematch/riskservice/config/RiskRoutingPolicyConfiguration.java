@@ -1,6 +1,8 @@
 package com.simplematch.riskservice.config;
 
 import com.simplematch.config.KafkaProperties;
+import com.simplematch.riskservice.admission.AdmissionRoutingPolicyResolver;
+import com.simplematch.riskservice.admission.LocalAdmissionRoutingPolicyResolver;
 import com.simplematch.riskservice.routing.JdbcRoutingPolicyProjectionRepository;
 import com.simplematch.riskservice.routing.RiskRoutingPolicyReadinessHealthIndicator;
 import com.simplematch.riskservice.routing.RoutingPolicyProjectionRepository;
@@ -19,6 +21,13 @@ public class RiskRoutingPolicyConfiguration {
   RoutingPolicyProjectionRepository routingPolicyProjectionRepository(
       JdbcTemplate riskJdbcTemplate) {
     return new JdbcRoutingPolicyProjectionRepository(riskJdbcTemplate);
+  }
+
+  /** Creates the fail-closed Admission route selector over the local projection. */
+  @Bean
+  AdmissionRoutingPolicyResolver admissionRoutingPolicyResolver(
+      RoutingPolicyProjectionRepository repository) {
+    return new LocalAdmissionRoutingPolicyResolver(repository);
   }
 
   /** Creates the strict decoder and atomic activation service. */

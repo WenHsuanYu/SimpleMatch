@@ -29,7 +29,9 @@ final class AdmissionJournalRowMapper {
     final AdmissionDecision decision = decision(resultSet, command);
     return new AdmissionJournalEntry(
         command,
-        new AdmissionDeliveryRoute(resultSet.getObject("routing_partition", Integer.class)),
+        new AdmissionDeliveryRoute(
+            resultSet.getObject("routing_partition", Integer.class),
+            resultSet.getObject("routing_policy_id", UUID.class)),
         new AdmissionLifecycle(
             decision,
             resultSet.getLong("version"),

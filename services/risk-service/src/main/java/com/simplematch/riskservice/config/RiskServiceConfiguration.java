@@ -9,6 +9,7 @@ import com.simplematch.riskservice.admission.AdmissionBackpressurePolicy;
 import com.simplematch.riskservice.admission.AdmissionJournalRepository;
 import com.simplematch.riskservice.admission.AdmissionLifecycleTransactions;
 import com.simplematch.riskservice.admission.AdmissionOutboxFactory;
+import com.simplematch.riskservice.admission.AdmissionRoutingPolicyResolver;
 import com.simplematch.riskservice.admission.CdcLagBackpressurePolicy;
 import com.simplematch.riskservice.admission.CdcLagReader;
 import com.simplematch.riskservice.admission.GrpcAccountReservationClient;
@@ -57,10 +58,8 @@ public class RiskServiceConfiguration {
   @Bean
   AdmissionOutboxFactory admissionOutboxFactory(
       KafkaProperties properties,
-      Clock riskServiceClock,
-      RoutingPartitionResolver routingPartitionResolver) {
-    return new AdmissionOutboxFactory(
-        properties.topics().ordersValidated(), riskServiceClock, routingPartitionResolver);
+      Clock riskServiceClock) {
+    return new AdmissionOutboxFactory(properties.topics().ordersValidated(), riskServiceClock);
   }
 
   @Bean
@@ -73,10 +72,16 @@ public class RiskServiceConfiguration {
       AdmissionJournalRepository journal,
       OutboxRepository outbox,
       AdmissionOutboxFactory events,
+      AdmissionRoutingPolicyResolver routingPolicyResolver,
       Clock riskServiceClock,
       TransactionTemplate riskTransactionTemplate) {
     return new AdmissionLifecycleTransactions(
-        journal, outbox, events, riskServiceClock, riskTransactionTemplate);
+        journal,
+        outbox,
+        events,
+        routingPolicyResolver,
+        riskServiceClock,
+        riskTransactionTemplate);
   }
 
   @Bean

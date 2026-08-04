@@ -13,7 +13,6 @@ import com.simplematch.contracts.orders.v2.CancelOrderCommand;
 import com.simplematch.contracts.orders.v2.NewOrderCommand;
 import com.simplematch.contracts.orders.v2.OrderAdmissionAccepted;
 import com.simplematch.riskservice.outbox.OutboxRepository;
-import com.simplematch.riskservice.outbox.RoutingPartitionResolver;
 import com.simplematch.riskservice.store.JdbcAdmissionJournalRepository;
 import com.simplematch.riskservice.store.JdbcOutboxRepository;
 import java.time.Clock;
@@ -42,13 +41,14 @@ import org.springframework.transaction.support.TransactionTemplate;
 @SpringJUnitConfig(OrderAdmissionApplicationServiceTransactionTest.TestConfiguration.class)
 @TestConstructor(autowireMode = TestConstructor.AutowireMode.ALL)
 class OrderAdmissionApplicationServiceTransactionTest {
+  private static final UUID POLICY_ID = UUID.fromString("0194a8f0-7c77-7b38-9e2d-2a5fdd0f7c01");
   private final JdbcTemplate jdbcTemplate;
   private final OrderAdmissionApplicationService admissions;
   private final PendingAdmissionRecovery recovery;
   private final TestAccountReservationClient account;
   private final Clock clock;
   private final AdmissionJournalRepository journal;
-  private final TestRoutingPartitionResolver routingResolver;
+  private final TestAdmissionRoutingPolicyResolver routingResolver;
   private final TransactionTemplate transactionTemplate;
 
   OrderAdmissionApplicationServiceTransactionTest(
@@ -58,7 +58,7 @@ class OrderAdmissionApplicationServiceTransactionTest {
       TestAccountReservationClient account,
       Clock clock,
       AdmissionJournalRepository journal,
-      TestRoutingPartitionResolver routingResolver,
+      TestAdmissionRoutingPolicyResolver routingResolver,
       TransactionTemplate transactionTemplate) {
     this.jdbcTemplate = jdbcTemplate;
     this.admissions = admissions;
@@ -76,6 +76,7 @@ class OrderAdmissionApplicationServiceTransactionTest {
     jdbcTemplate.update("DELETE FROM risk_service.admission_journal");
     account.fail = false;
     account.failuresRemaining = 0;
+    account.calls = 0;
     routingResolver.reset();
   }
 
@@ -90,9 +91,9 @@ class OrderAdmissionApplicationServiceTransactionTest {
             ReservationOutcome.accepted(UUID.randomUUID()));
 
     assertThat(pending.decision()).isInstanceOf(AdmissionDecision.Pending.class);
-    assertThat(pending.route()).isEqualTo(AdmissionDeliveryRoute.assigned(7));
+    assertThat(pending.route()).isEqualTo(AdmissionDeliveryRoute.assigned(POLICY_ID, 7));
     assertThat(accepted.decision()).isInstanceOf(AdmissionDecision.AcceptedNew.class);
-    assertThat(accepted.route()).isEqualTo(AdmissionDeliveryRoute.assigned(7));
+    assertThat(accepted.route()).isEqualTo(AdmissionDeliveryRoute.assigned(POLICY_ID, 7));
     assertThat(routingResolver.calls).isEqualTo(1);
     assertThat(routingResolver.lastSymbol).isEqualTo("2330");
     assertThat(
@@ -104,12 +105,16 @@ class OrderAdmissionApplicationServiceTransactionTest {
                 "SELECT routing_partition FROM risk_service.admission_journal", Integer.class))
         .isEqualTo(7);
     assertThat(
+            jdbcTemplate.queryForObject(
+                "SELECT routing_policy_id FROM risk_service.admission_journal", UUID.class))
+        .isEqualTo(POLICY_ID);
+    assertThat(
             jdbcTemplate.queryForObject("SELECT COUNT(*) FROM risk_service.outbox", Integer.class))
         .isEqualTo(1);
     assertThat(
-            jdbcTemplate.queryForObject(
+        jdbcTemplate.queryForObject(
                 "SELECT message_key FROM risk_service.outbox", String.class))
-        .isEqualTo("2330");
+        .isEqualTo("XTAI:2330");
     assertThat(
             jdbcTemplate.queryForObject(
                 "SELECT kafka_partition_id FROM risk_service.outbox", Integer.class))
@@ -118,7 +123,9 @@ class OrderAdmissionApplicationServiceTransactionTest {
         jdbcTemplate.queryForObject(
             "SELECT payload FROM risk_service.outbox",
             (resultSet, rowNum) -> resultSet.getBytes("payload"));
-    assertThat(OrderAdmissionAccepted.parseFrom(payload).getRoutingPartition()).isEqualTo(7);
+    final OrderAdmissionAccepted acceptedPayload = OrderAdmissionAccepted.parseFrom(payload);
+    assertThat(acceptedPayload.getRoutingPartition()).isEqualTo(7);
+    assertThat(acceptedPayload.getRoutingPolicyId()).isEqualTo(POLICY_ID.toString());
   }
 
   @DisplayName("equivalent replay returns the original pending result without a second journal row")
@@ -145,13 +152,29 @@ class OrderAdmissionApplicationServiceTransactionTest {
     routingResolver.partition = 11;
     final AdmissionResult replay = admissions.beginAdmission(command);
 
-    assertThat(first.route()).isEqualTo(AdmissionDeliveryRoute.assigned(7));
-    assertThat(replay.route()).isEqualTo(AdmissionDeliveryRoute.assigned(7));
+    assertThat(first.route()).isEqualTo(AdmissionDeliveryRoute.assigned(POLICY_ID, 7));
+    assertThat(replay.route()).isEqualTo(AdmissionDeliveryRoute.assigned(POLICY_ID, 7));
     assertThat(routingResolver.calls).isEqualTo(1);
     assertThat(
             jdbcTemplate.queryForObject(
                 "SELECT routing_partition FROM risk_service.admission_journal", Integer.class))
         .isEqualTo(7);
+  }
+
+  @DisplayName("missing routing policy fails before Account Authority is called")
+  @Test
+  void missingRoutingPolicyFailsClosedBeforeAccountReservation() {
+    routingResolver.fail = true;
+
+    assertThatThrownBy(() -> admissions.admit(command()))
+        .isInstanceOf(AdmissionValidationException.class)
+        .extracting(error -> ((AdmissionValidationException) error).reasonCode())
+        .isEqualTo("ROUTING_POLICY_UNAVAILABLE");
+    assertThat(account.calls).isZero();
+    assertThat(
+            jdbcTemplate.queryForObject(
+                "SELECT COUNT(*) FROM risk_service.admission_journal", Integer.class))
+        .isZero();
   }
 
   @Test
@@ -169,14 +192,14 @@ class OrderAdmissionApplicationServiceTransactionTest {
     final NewOrderCommand command = command();
     admissions.beginAdmission(command);
     final AdmissionOutboxFactory events =
-        new AdmissionOutboxFactory("orders.validated", clock, routingResolver);
+        new AdmissionOutboxFactory("orders.validated", clock);
     final OutboxRepository failingOutbox =
         record -> {
           throw new IllegalStateException("simulated outbox outage");
         };
     final AdmissionLifecycleTransactions failingTransactions =
         new AdmissionLifecycleTransactions(
-            journal, failingOutbox, events, clock, transactionTemplate);
+            journal, failingOutbox, events, routingResolver, clock, transactionTemplate);
 
     assertThatThrownBy(
             () ->
@@ -232,12 +255,12 @@ class OrderAdmissionApplicationServiceTransactionTest {
         UUID.fromString(secondCommand.getCommandId()),
         ReservationOutcome.accepted(UUID.randomUUID()));
 
-    assertThat(first.route()).isEqualTo(AdmissionDeliveryRoute.assigned(7));
-    assertThat(second.route()).isEqualTo(AdmissionDeliveryRoute.assigned(7));
+    assertThat(first.route()).isEqualTo(AdmissionDeliveryRoute.assigned(POLICY_ID, 7));
+    assertThat(second.route()).isEqualTo(AdmissionDeliveryRoute.assigned(POLICY_ID, 7));
     assertThat(
             jdbcTemplate.queryForObject(
                 "SELECT COUNT(*) FROM risk_service.outbox "
-                    + "WHERE message_key = '2330' AND kafka_partition_id = 7",
+                    + "WHERE message_key = 'XTAI:2330' AND kafka_partition_id = 7",
                 Integer.class))
         .isEqualTo(2);
     assertThat(routingResolver.calls).isEqualTo(2);
@@ -349,6 +372,30 @@ class OrderAdmissionApplicationServiceTransactionTest {
         .isEqualTo(7);
     assertThat(routingResolver.calls).isEqualTo(1);
     assertThat(recovery.recover()).isZero();
+  }
+
+  @DisplayName("legacy pending rows recover their partition without inventing policy identity")
+  @Test
+  void legacyPendingRecoveryPreservesPartitionWithoutPolicyIdentity() {
+    final AdmissionCommand legacyCommand = new OrderAdmissionValidator().validate(command());
+    final AdmissionJournalEntry legacyPending =
+        AdmissionJournalEntry.pending(legacyCommand, AdmissionDeliveryRoute.assigned(7), 100L);
+    assertThat(journal.insert(legacyPending)).isTrue();
+    jdbcTemplate.update(
+        "UPDATE risk_service.admission_journal SET created_at_unix_ms = 0, updated_at_unix_ms = 0");
+
+    routingResolver.fail = true;
+    assertThat(recovery.recover()).isEqualTo(1);
+    final AdmissionJournalEntry recovered =
+        journal.findByCommandId(legacyCommand.identity().commandId().value()).orElseThrow();
+
+    assertThat(recovered.route()).isEqualTo(AdmissionDeliveryRoute.assigned(7));
+    assertThat(recovered.route().routingPolicyId()).isNull();
+    assertThat(
+            jdbcTemplate.queryForObject(
+                "SELECT routing_policy_id FROM risk_service.admission_journal", UUID.class))
+        .isNull();
+    assertThat(routingResolver.calls).isZero();
   }
 
   @DisplayName("recovery isolates one failed row and retries it on a later pass")
@@ -587,14 +634,13 @@ class OrderAdmissionApplicationServiceTransactionTest {
     }
 
     @Bean
-    TestRoutingPartitionResolver routingPartitionResolver() {
-      return new TestRoutingPartitionResolver();
+    TestAdmissionRoutingPolicyResolver routingPolicyResolver() {
+      return new TestAdmissionRoutingPolicyResolver();
     }
 
     @Bean
-    AdmissionOutboxFactory admissionOutboxFactory(
-        Clock clock, TestRoutingPartitionResolver routingPartitionResolver) {
-      return new AdmissionOutboxFactory("orders.validated", clock, routingPartitionResolver);
+    AdmissionOutboxFactory admissionOutboxFactory(Clock clock) {
+      return new AdmissionOutboxFactory("orders.validated", clock);
     }
 
     @Bean
@@ -607,10 +653,11 @@ class OrderAdmissionApplicationServiceTransactionTest {
         AdmissionJournalRepository journal,
         OutboxRepository outbox,
         AdmissionOutboxFactory events,
+        TestAdmissionRoutingPolicyResolver routingResolver,
         Clock clock,
         TransactionTemplate transactionTemplate) {
       return new AdmissionLifecycleTransactions(
-          journal, outbox, events, clock, transactionTemplate);
+          journal, outbox, events, routingResolver, clock, transactionTemplate);
     }
 
     @Bean
@@ -638,9 +685,11 @@ class OrderAdmissionApplicationServiceTransactionTest {
   static final class TestAccountReservationClient implements AccountReservationClient {
     private boolean fail;
     private int failuresRemaining;
+    private int calls;
 
     @Override
     public ReservationOutcome reserve(AdmissionCommand command) {
+      calls++;
       if (fail || failuresRemaining > 0) {
         failuresRemaining--;
         throw new IllegalStateException("simulated account outage");
@@ -649,22 +698,29 @@ class OrderAdmissionApplicationServiceTransactionTest {
     }
   }
 
-  static final class TestRoutingPartitionResolver implements RoutingPartitionResolver {
+  static final class TestAdmissionRoutingPolicyResolver
+      implements AdmissionRoutingPolicyResolver {
     private int partition = 7;
     private int calls;
     private String lastSymbol;
+    private boolean fail;
 
     @Override
-    public int resolve(String symbol) {
+    public AdmissionDeliveryRoute resolve(AdmissionCommand command, Instant at) {
+      if (fail) {
+        throw new AdmissionValidationException(
+            AdmissionFailure.routingPolicyUnavailable("test policy is unavailable"));
+      }
       calls++;
-      lastSymbol = symbol;
-      return partition;
+      lastSymbol = command.order().instrument().symbol().value();
+      return AdmissionDeliveryRoute.assigned(POLICY_ID, partition);
     }
 
     private void reset() {
       partition = 7;
       calls = 0;
       lastSymbol = null;
+      fail = false;
     }
   }
 }

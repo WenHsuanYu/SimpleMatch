@@ -16,26 +16,29 @@ import org.junit.jupiter.api.Test;
 /** Tests v2 admission event routing at the outbox boundary. */
 class AdmissionOutboxFactoryTest {
   private static final UUID SNAPSHOT_ID = UUID.randomUUID();
+  private static final UUID POLICY_ID = UUID.randomUUID();
   private final AdmissionOutboxFactory factory =
       new AdmissionOutboxFactory(
           "orders.validated",
-          Clock.fixed(Instant.ofEpochMilli(300L), ZoneOffset.UTC),
-          symbol -> 7);
+          Clock.fixed(Instant.ofEpochMilli(300L), ZoneOffset.UTC));
 
-  @DisplayName("accepted events use the symbol key and agree on explicit partition metadata")
+  @DisplayName(
+      "accepted events use a normalized instrument key and agree on route provenance metadata")
   @Test
   void acceptedEventUsesPersistedSymbolRoute() throws Exception {
-    final AdmissionJournalEntry entry = accepted(AdmissionDeliveryRoute.assigned(7));
+    final AdmissionJournalEntry entry =
+        accepted(AdmissionDeliveryRoute.assigned(POLICY_ID, 7));
 
     final OutboxRecord record = factory.create(entry);
     final OrderAdmissionAccepted payload =
         OrderAdmissionAccepted.parseFrom(record.payloadEnvelope().payload());
 
     assertThat(record.routing().topic()).isEqualTo("orders.validated");
-    assertThat(record.routing().messageKey()).isEqualTo("2330");
+    assertThat(record.routing().messageKey()).isEqualTo("XTAI:2330");
     assertThat(record.routing().kafkaPartitionId()).isEqualTo(7);
     assertThat(payload.getRoutingPartition()).isEqualTo(7);
     assertThat(payload.getRoutingSnapshotId()).isEqualTo(SNAPSHOT_ID.toString());
+    assertThat(payload.getRoutingPolicyId()).isEqualTo(POLICY_ID.toString());
   }
 
   @DisplayName("accepted events reject a missing persisted partition instead of encoding zero")
