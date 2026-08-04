@@ -37,9 +37,7 @@ public class QuickFixGatewayIntegrationConfiguration {
   RiskSubmissionClient riskSubmissionClient(
       ManagedChannel riskServiceChannel,
       Clock quickFixGatewayClock,
-      QuickFixGatewayProperties gatewayProperties) {
-    final QuickFixGatewayProperties.RiskClientProperties riskClient =
-        gatewayProperties.riskClient();
+      QuickFixGatewayRiskClientProperties riskClient) {
     final RiskSubmissionClient delegate =
         new GrpcRiskSubmissionClient(riskServiceChannel, riskClient.deadlineMillis());
     return new ResilientRiskSubmissionClient(

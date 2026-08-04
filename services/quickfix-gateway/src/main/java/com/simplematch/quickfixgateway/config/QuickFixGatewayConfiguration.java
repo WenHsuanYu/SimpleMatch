@@ -19,31 +19,37 @@ import org.springframework.kafka.annotation.EnableKafka;
 /** Wires the QuickFIX gateway's runtime, messaging, and recovery components. */
 @Configuration
 @EnableKafka
-@EnableConfigurationProperties(QuickFixGatewayProperties.class)
+@EnableConfigurationProperties({
+  QuickFixGatewayFileProperties.class,
+  QuickFixGatewayRuntimeProperties.class,
+  QuickFixGatewayRiskClientProperties.class
+})
 public class QuickFixGatewayConfiguration {
   @Bean
-  SmartInitializingSingleton quickFixGatewayPropertiesValidation(
-      QuickFixGatewayProperties gatewayProperties) {
-    return () -> QuickFixGatewayPropertiesValidator.validate(gatewayProperties);
+  SmartInitializingSingleton quickFixGatewayRiskClientValidation(
+      QuickFixGatewayRiskClientProperties riskClientProperties) {
+    return () -> QuickFixGatewayRiskClientPropertiesValidator.validate(riskClientProperties);
   }
 
   @Bean
   QuickFixGatewayRuntime quickFixGatewayRuntime(
-      PlatformProperties platformProperties, QuickFixGatewayProperties gatewayProperties)
+      PlatformProperties platformProperties,
+      QuickFixGatewayFileProperties fileProperties,
+      QuickFixGatewayRuntimeProperties runtimeProperties)
       throws IOException {
-    final Path quickfixConfigPath = resolve(gatewayProperties.quickfixConfigPath());
+    final Path quickfixConfigPath = resolve(fileProperties.quickfixConfigPath());
     if (!Files.exists(quickfixConfigPath)) {
       throw new IllegalStateException("QuickFIX/J config not found: " + quickfixConfigPath);
     }
 
-    final Path walPath = resolve(gatewayProperties.walPath());
+    final Path walPath = resolve(fileProperties.walPath());
     final Path walParent = walPath.getParent();
     if (walParent != null) {
       Files.createDirectories(walParent);
     }
 
     return new QuickFixGatewayRuntime(
-        platformProperties.environment(), quickfixConfigPath, walPath, gatewayProperties.ownerId());
+        platformProperties.environment(), quickfixConfigPath, walPath, runtimeProperties.ownerId());
   }
 
   @Bean

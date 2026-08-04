@@ -23,8 +23,8 @@ import org.springframework.context.annotation.Configuration;
 public class QuickFixGatewayLifecycleConfiguration {
   @Bean
   QuickFixGatewayStartupRecovery quickFixGatewayStartupRecovery(
-      WalReplayService walReplayService, QuickFixGatewayProperties gatewayProperties) {
-    if (gatewayProperties.compatibilityPublishEnabled() && gatewayProperties.replayEnabled()) {
+      WalReplayService walReplayService, QuickFixGatewayRuntimeProperties runtimeProperties) {
+    if (runtimeProperties.compatibilityPublishEnabled() && runtimeProperties.replayEnabled()) {
       return walReplayService::replayAll;
     }
     return () -> 0;
@@ -47,10 +47,10 @@ public class QuickFixGatewayLifecycleConfiguration {
   QuickFixGatewayReadinessHealthIndicator quickfixGatewayReadyHealthIndicator(
       QuickFixGatewayStartupState startupState,
       ObjectProvider<QuickFixAcceptorLifecycle> acceptorLifecycleProvider,
-      QuickFixGatewayProperties gatewayProperties) {
+      QuickFixGatewayRuntimeProperties runtimeProperties) {
     return new QuickFixGatewayReadinessHealthIndicator(
         startupState,
-        gatewayProperties.acceptorEnabled(),
+        runtimeProperties.acceptorEnabled(),
         () -> {
           final QuickFixAcceptorLifecycle lifecycle = acceptorLifecycleProvider.getIfAvailable();
           return lifecycle != null && lifecycle.isRunning();

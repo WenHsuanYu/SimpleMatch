@@ -959,6 +959,13 @@ Kafka**。
   只負責 message-type dispatch；保留 FIX、WAL、risk、session 與 compatibility 行為。
     - [x] [#65](https://github.com/WenHsuanYu/SimpleMatch/issues/65) Deepen the new-order FIX path
     - [x] [#66](https://github.com/WenHsuanYu/SimpleMatch/issues/66) Reduce FIX ingress to message dispatch
+- [ ] [Remaining parameter-safe application and configuration modules](docs/refactoring/domain-parameter-safety-refactor.md)
+  （GitHub issues [#67](https://github.com/WenHsuanYu/SimpleMatch/issues/67) and
+  [#68](https://github.com/WenHsuanYu/SimpleMatch/issues/68)）：沿既有 capability seam 與
+  application-owned transaction seam 深化實作，保留 Spring property、SQL、outbox 與 admission
+  行為。
+    - [x] [#67](https://github.com/WenHsuanYu/SimpleMatch/issues/67) Split QuickFIX gateway properties
+    - [ ] [#68](https://github.com/WenHsuanYu/SimpleMatch/issues/68) Extract Admission lifecycle transactions
 - [ ] [Market Reference routing ownership](https://github.com/WenHsuanYu/SimpleMatch/issues/38)：
   deferred follow-up for versioned policy ownership, schema migration, and consumer rollout。
 - [x] [README and technical documentation refactor](docs/readme-documentation-refactor-spec.md)
