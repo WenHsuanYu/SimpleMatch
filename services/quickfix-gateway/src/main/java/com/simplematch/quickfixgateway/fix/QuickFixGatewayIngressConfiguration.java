@@ -71,14 +71,16 @@ public class QuickFixGatewayIngressConfiguration {
       AcceptedNewOrderResponder acceptedResponder,
       NewOrderRejectionResponder rejectionResponder,
       GatewayAdmissionGate admissionGate,
-      Clock quickFixGatewayClock) {
+      Clock quickFixGatewayClock,
+      OrderSessionRegistry orderSessionRegistry) {
     return new NewOrderFixMessageHandler(
         commandPreparer,
         durableAdmission,
         acceptedResponder,
         rejectionResponder,
         admissionGate,
-        quickFixGatewayClock);
+        quickFixGatewayClock,
+        orderSessionRegistry);
   }
 
   @Bean

@@ -2,13 +2,19 @@ package com.simplematch.quickfixgateway.fix;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
+import com.simplematch.contracts.common.v1.EventMetadata;
+import com.simplematch.contracts.common.v1.Side;
+import com.simplematch.contracts.matching.v1.ExecutionEvent;
+import com.simplematch.contracts.matching.v1.ExecutionType;
 import com.simplematch.contracts.orders.v1.OrderCommand;
 import com.simplematch.quickfixgateway.config.QuickFixGatewayRuntime;
+import com.simplematch.quickfixgateway.kafka.MatchingExecutionConsumer;
 import com.simplematch.quickfixgateway.risk.RiskSubmissionClient;
 import com.simplematch.quickfixgateway.risk.RiskSubmissionResult;
 import com.simplematch.quickfixgateway.test.FixMessageSnapshot;
 import com.simplematch.quickfixgateway.wal.WalAppender;
 import com.simplematch.quickfixgateway.wal.WalRecord;
+import com.simplematch.quickfixgateway.wal.WalReplayService;
 import java.io.IOException;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
@@ -16,7 +22,9 @@ import java.nio.file.Path;
 import java.time.Clock;
 import java.time.Instant;
 import java.time.ZoneOffset;
+import java.util.ArrayList;
 import java.util.List;
+import java.util.Map;
 import java.util.UUID;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.CountDownLatch;
@@ -53,6 +61,7 @@ import quickfix.field.Price;
 import quickfix.field.Symbol;
 import quickfix.field.TransactTime;
 import quickfix.fix44.NewOrderSingle;
+import quickfix.fix44.OrderCancelRequest;
 
 @ExtendWith(OutputCaptureExtension.class)
 class QuickFixCertificationEvidenceTest {
@@ -216,6 +225,84 @@ class QuickFixCertificationEvidenceTest {
     }
   }
 
+  @DisplayName("the public gateway certifies duplicate new, cancel, lifecycle, and WAL recovery")
+  @Test
+  void publicGatewayCertifiesDuplicateCancelLifecycleAndRecovery() throws Exception {
+    final Path walPath = tempDir.resolve("certification").resolve("inbound.wal");
+    final IdempotentRiskSubmissionClient risk = new IdempotentRiskSubmissionClient();
+    final RecordingFixSessionMessageSender sender = new RecordingFixSessionMessageSender();
+    final OrderSessionRegistry registry = new OrderSessionRegistry();
+    final OrdersCommandPublisher publisher = new OrdersCommandPublisher();
+    final SessionID sessionId = new SessionID("FIX.4.4", "SIMPLEMATCH", "CLIENT1");
+
+    try (WalAppender walAppender = new WalAppender(walPath, StandardCharsets.UTF_8)) {
+      final QuickFixApplicationAdapter adapter =
+          new QuickFixApplicationAdapter(
+              QuickFixIngressTestFixture.compose(
+                  walAppender,
+                  publisher,
+                  risk,
+                  sender,
+                  registry,
+                  new FixMessageMapper(FIXED_CLOCK),
+                  FIXED_CLOCK));
+      adapter.onLogon(sessionId);
+      adapter.fromApp(newOrder("C1", "AAPL", "10", "101.25", "ACC-1"), sessionId);
+      adapter.fromApp(newOrder("C1", "AAPL", "10", "101.25", "ACC-1"), sessionId);
+      adapter.fromApp(newCancelRequest("C1", "CXL-1", "ACC-1"), sessionId);
+
+      assertThat(risk.newDecisionCount()).isEqualTo(1);
+      assertThat(risk.cancelDecisionCount()).isEqualTo(1);
+      assertThat(walAppender.readAll()).hasSize(2);
+      assertThat(sender.messages()).hasSize(1);
+
+      final MatchingExecutionConsumer executionConsumer =
+          new MatchingExecutionConsumer(
+              registry, registry, new FixMessageMapper(FIXED_CLOCK), sender);
+      executionConsumer.onExecution(cancelledExecution().toByteArray());
+      assertThat(sender.messages()).hasSize(2);
+      assertThat(
+              FixMessageSnapshot.snapshot(
+                  sender.messages().getLast(), 35, 37, 17, 150, 39, 54, 151, 14, 6, 11, 41, 55))
+          .isEqualTo("35=8|37=O-C1|17=E-CXL-1|150=4|39=4|54=1|151=10|14=0|6=0|11=CXL-1|41=C1|55=AAPL");
+
+      final WalReplayService replayService = new WalReplayService(walAppender, risk);
+      assertThat(replayService.replayAll()).isEqualTo(2);
+      assertThat(risk.newDecisionCount()).isEqualTo(1);
+      assertThat(risk.cancelDecisionCount()).isEqualTo(1);
+    }
+  }
+
+  private OrderCancelRequest newCancelRequest(
+      String originalClientOrderId, String cancelClientOrderId, String account) {
+    final OrderCancelRequest cancel = new OrderCancelRequest();
+    cancel.setString(quickfix.field.OrigClOrdID.FIELD, originalClientOrderId);
+    cancel.setString(ClOrdID.FIELD, cancelClientOrderId);
+    cancel.setString(Account.FIELD, account);
+    cancel.setString(TransactTime.FIELD, "20240327-08:09:10.123");
+    return cancel;
+  }
+
+  private ExecutionEvent cancelledExecution() {
+    return ExecutionEvent.newBuilder()
+        .setMetadata(
+            EventMetadata.newBuilder()
+                .setSchemaVersion("v1")
+                .setEventId("evt-cancelled")
+                .setCreatedAtUnixMs(1711526950123L)
+                .setSourceService("matching-engine")
+                .build())
+        .setExecId("E-CXL-1")
+        .setOrderId("O-C1")
+        .setSymbol("AAPL")
+        .setExecutionType(ExecutionType.EXECUTION_TYPE_CANCELED)
+        .setClOrdId("C1")
+        .setOrigClOrdId("C1")
+        .setCancelClOrdId("CXL-1")
+        .setSide(Side.SIDE_BUY)
+        .build();
+  }
+
   private Path writeAcceptorConfig(int port, Path dictionaryPath) throws IOException {
     final Path configPath = tempDir.resolve("acceptor.cfg");
     Files.writeString(
@@ -355,6 +442,62 @@ class QuickFixCertificationEvidenceTest {
 
     private OrderCommand lastPublishedCommand() {
       return lastPublishedCommand.get();
+    }
+  }
+
+  private static final class RecordingFixSessionMessageSender
+      implements FixSessionMessageSender {
+    private final List<Message> messages = new ArrayList<>();
+
+    @Override
+    public void send(SessionID sessionId, Message message) {
+      messages.add(message);
+    }
+
+    private List<Message> messages() {
+      return messages;
+    }
+  }
+
+  private static final class IdempotentRiskSubmissionClient implements RiskSubmissionClient {
+    private final Map<String, RiskSubmissionResult> outcomes = new java.util.HashMap<>();
+    private int newDecisions;
+    private int cancelDecisions;
+
+    @Override
+    public RiskSubmissionResult submitNewOrder(OrderCommand command) {
+      return submit(command, false);
+    }
+
+    @Override
+    public RiskSubmissionResult submitCancel(OrderCommand command) {
+      return submit(command, true);
+    }
+
+    private RiskSubmissionResult submit(OrderCommand command, boolean cancel) {
+      final String key = command.getCommandType() + ":" + command.getSenderCompId() + ":"
+          + command.getTargetCompId() + ":" + command.getClOrdId();
+      final RiskSubmissionResult existing = outcomes.get(key);
+      if (existing != null) {
+        return existing;
+      }
+      if (cancel) {
+        cancelDecisions += 1;
+      } else {
+        newDecisions += 1;
+      }
+      final RiskSubmissionResult result =
+          new RiskSubmissionResult(command.getOrderId(), true, "", "");
+      outcomes.put(key, result);
+      return result;
+    }
+
+    private int newDecisionCount() {
+      return newDecisions;
+    }
+
+    private int cancelDecisionCount() {
+      return cancelDecisions;
     }
   }
 

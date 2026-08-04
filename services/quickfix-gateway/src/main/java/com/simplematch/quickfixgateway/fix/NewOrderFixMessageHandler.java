@@ -1,7 +1,9 @@
 package com.simplematch.quickfixgateway.fix;
 
+import com.simplematch.quickfixgateway.wal.WalRecord;
 import java.time.Clock;
 import java.time.Instant;
+import java.util.Optional;
 import quickfix.FieldNotFound;
 import quickfix.Message;
 import quickfix.SessionID;
@@ -14,6 +16,7 @@ final class NewOrderFixMessageHandler {
   private final NewOrderRejectionResponder rejectionResponder;
   private final GatewayAdmissionGate admissionGate;
   private final Clock clock;
+  private final OrderSessionRegistry orderSessionRegistry;
 
   NewOrderFixMessageHandler(
       NewOrderCommandPreparer commandPreparer,
@@ -21,13 +24,15 @@ final class NewOrderFixMessageHandler {
       AcceptedNewOrderResponder acceptedResponder,
       NewOrderRejectionResponder rejectionResponder,
       GatewayAdmissionGate admissionGate,
-      Clock clock) {
+      Clock clock,
+      OrderSessionRegistry orderSessionRegistry) {
     this.commandPreparer = commandPreparer;
     this.durableAdmission = durableAdmission;
     this.acceptedResponder = acceptedResponder;
     this.rejectionResponder = rejectionResponder;
     this.admissionGate = admissionGate;
     this.clock = clock;
+    this.orderSessionRegistry = orderSessionRegistry;
   }
 
   /**
@@ -47,6 +52,23 @@ final class NewOrderFixMessageHandler {
     }
     try {
       final PreparedNewOrder preparedOrder = commandPreparer.prepare(message, sessionId);
+      final Optional<WalRecord> previous =
+          orderSessionRegistry.findAdmittedOrder(preparedOrder.walRecord().orderId());
+      if (previous.isPresent()) {
+        final WalRecord previousRecord = previous.orElseThrow();
+        if (previousRecord.hasSameBusinessIntent(preparedOrder.walRecord())) {
+          return;
+        }
+        rejectionResponder.reject(
+            new NewOrderPreparationFailure(
+                new FixInboundValidationFailure(
+                    "DUPLICATE_CL_ORD_ID_CONFLICT",
+                    "cl_ord_id already identifies a different order"),
+                preparedOrder.preparedAt()),
+            message,
+            sessionId);
+        return;
+      }
       if (!durableAdmission.admit(preparedOrder, sessionId).accepted()) {
         return;
       }

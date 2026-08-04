@@ -401,6 +401,38 @@ class InboundFixMessageHandlerTest {
   }
 
   @Test
+  void equivalentDuplicateNewOrderHasOneDurableRiskOutcomeAndOnePendingResponse() throws Exception {
+    try (WalAppender walAppender =
+        new WalAppender(tempDir.resolve("duplicate-new.wal"), StandardCharsets.UTF_8)) {
+      final OrdersCommandPublisher publisher = mock(OrdersCommandPublisher.class);
+      final RiskSubmissionClient riskSubmissionClient = mock(RiskSubmissionClient.class);
+      when(riskSubmissionClient.submitNewOrder(any(OrderCommand.class)))
+          .thenReturn(new RiskSubmissionResult("O-C1", true, "", ""));
+      final FixSessionMessageSender sender = mock(FixSessionMessageSender.class);
+      final InboundFixMessageHandler handler =
+          QuickFixIngressTestFixture.compose(
+              walAppender,
+              publisher,
+              riskSubmissionClient,
+              sender,
+              new OrderSessionRegistry(),
+              new FixMessageMapper(FIXED_CLOCK),
+              FIXED_CLOCK);
+      final SessionID sessionId = new SessionID("FIX.4.4", "SIMPLEMATCH", "CLIENT1");
+      final NewOrderSingle order =
+          newNewOrder("C1", "2330", '1', "100", '2', '0', "101.25", "ACC-1");
+
+      handler.handle(order, sessionId);
+      handler.handle(order, sessionId);
+
+      verify(riskSubmissionClient, times(1)).submitNewOrder(any(OrderCommand.class));
+      verify(sender, times(1)).send(any(SessionID.class), any(Message.class));
+      verify(publisher, times(1)).publish(any(OrderCommand.class));
+      assertThat(walAppender.readAll()).hasSize(1);
+    }
+  }
+
+  @Test
   void pausedCancellationIsRejectedBeforeWalAndRisk() throws Exception {
     final GatewayAdmissionGate admissionGate = new GatewayAdmissionGate();
     admissionGate.pauseAdmission();

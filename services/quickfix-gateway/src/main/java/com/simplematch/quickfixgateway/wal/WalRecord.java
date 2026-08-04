@@ -142,4 +142,12 @@ public record WalRecord(
   public CommandType commandType() {
     return command.commandType();
   }
+
+  /** Returns whether two records describe the same client intent and normalized command content. */
+  public boolean hasSameBusinessIntent(WalRecord other) {
+    Objects.requireNonNull(other, "other");
+    return session.equals(other.session)
+        && orderReference.equals(other.orderReference)
+        && command.equals(other.command);
+  }
 }

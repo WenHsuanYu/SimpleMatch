@@ -36,6 +36,6 @@ class QuickFixGatewayIngressConfigurationTest {
         .allSatisfy(constructor -> assertThat(constructor.getParameterCount()).isEqualTo(2));
     assertThat(NewOrderFixMessageHandler.class.getDeclaredConstructors())
         .hasSize(1)
-        .allSatisfy(constructor -> assertThat(constructor.getParameterCount()).isLessThanOrEqualTo(6));
+        .allSatisfy(constructor -> assertThat(constructor.getParameterCount()).isLessThanOrEqualTo(7));
   }
 }

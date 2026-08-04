@@ -62,7 +62,8 @@ final class QuickFixIngressTestFixture {
                 registry, sender, mapper, compatibilityPublisher),
             new NewOrderRejectionResponder(sender, mapper, commandIdGenerator),
             admissionGate,
-            clock),
+            clock,
+            registry),
         new CancelOrderFixMessageHandler(
             walAppender,
             registry,

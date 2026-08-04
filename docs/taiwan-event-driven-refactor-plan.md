@@ -649,26 +649,26 @@ Rollback:
 ### Phase 8: Deepen the QuickFIX admission and session modules
 
 - [ ] Commit 8.1: Add FIX mapping tests for all v2 identifiers and fixed-point values.
-- [ ] Commit 8.2: Add mapping tests for all six price and time-in-force combinations.
+- [x] Commit 8.2: Add mapping tests for all six price and time-in-force combinations.
 - [ ] Commit 8.3: Introduce a deep FIX-admission module around normalization, risk submission, WAL
   recovery, and FIX outcome projection.
-- [ ] Commit 8.4: Make gateway WAL replay resubmit unresolved work through the idempotent risk
+- [x] Commit 8.4: Make gateway WAL replay resubmit unresolved work through the idempotent risk
   interface.
-- [ ] Commit 8.5: Prevent WAL replay from publishing matching commands directly.
-- [ ] Commit 8.6: Deepen the session directory around route, cancel context, lifecycle status, and
+- [x] Commit 8.5: Prevent WAL replay from publishing matching commands directly.
+- [x] Commit 8.6: Deepen the session directory around route, cancel context, lifecycle status, and
   execution deduplication.
-- [ ] Commit 8.7: Preserve explicit single-owner session assignment and reject conflicting
+- [x] Commit 8.7: Preserve explicit single-owner session assignment and reject conflicting
   ownership.
-- [ ] Commit 8.8: Add cancellation behavior during admission pauses and market interruptions.
+- [x] Commit 8.8: Add cancellation behavior during admission pauses and market interruptions.
 - [ ] Commit 8.9: Update outbound execution and cancellation projection to v2 lifecycle events.
-- [ ] Commit 8.10: Extend QuickFIX certification for v1 compatibility and v2 internal behavior.
+- [x] Commit 8.10: Extend QuickFIX certification for v1 compatibility and v2 internal behavior.
 
 Phase gate:
 
-- [ ] Raw FIX remains adapter-level audit data.
-- [ ] Gateway replay cannot create duplicate admitted orders.
-- [ ] One active owner exists per FIX session.
-- [ ] Certification covers new, cancel, duplicate, and recovery paths.
+- [x] Raw FIX remains adapter-level audit data.
+- [x] Gateway replay cannot create duplicate admitted orders.
+- [x] One active owner exists per FIX session.
+- [x] Certification covers new, cancel, duplicate, and recovery paths.
 
 Rollback:
 

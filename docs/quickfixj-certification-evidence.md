@@ -11,6 +11,7 @@ proof that the Java gateway can:
 - start a real FIX 4.4 acceptor
 - create a session and complete logon
 - accept `NewOrderSingle (35=D)` from a FIX initiator
+- accept `OrderCancelRequest (35=F)` through the public gateway boundary
 - persist the inbound order to WAL before sending the baseline `ExecutionReport(PendingNew)`
 - send the acknowledgement back on the same live FIX session
 - complete logout and acceptor shutdown cleanly
@@ -43,6 +44,12 @@ It then:
 8. stops initiator and acceptor
 9. asserts lifecycle logs and baseline message behavior
 
+The same certification test class also drives the public `QuickFixApplicationAdapter` directly for
+the deterministic boundary scenarios that do not require a socket: equivalent duplicate new-order
+submission, cancellation, canceled lifecycle projection, and WAL recovery. The idempotent Risk
+fixture proves that duplicate and replayed records produce one admission decision per business
+identity.
+
 ## Verified Outcomes
 
 The automated simulator currently verifies all of the following in one run:
@@ -51,6 +58,11 @@ The automated simulator currently verifies all of the following in one run:
 - FIX logon is completed and logged
 - inbound application traffic reaches `fromApp(...)`
 - baseline `35=D -> WAL -> PendingNew` path executes end-to-end
+- public gateway new-order, duplicate, and cancel paths preserve one Risk decision per business
+  identity
+- a canceled matching lifecycle event projects as one compatible FIX `ExecutionReport`
+- WAL replay routes both durable records back through the idempotent Risk boundary without a second
+  business decision
 - the simulator does not depend on the old vendored QuickFIX dictionary path from the removed C++
   baseline
 - outbound acknowledgement fields include:

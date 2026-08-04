@@ -11,10 +11,12 @@ import quickfix.SessionID;
 /** Tracks the session context needed to render asynchronous matching executions. */
 public final class OrderSessionRegistry implements ExecutionSessionResolver {
   private final ConcurrentHashMap<String, OrderSessionState> states = new ConcurrentHashMap<>();
+  private final ConcurrentHashMap<String, WalRecord> admittedOrders = new ConcurrentHashMap<>();
   private final Set<String> seenExecIds = ConcurrentHashMap.newKeySet();
 
   /** Registers a newly admitted order with the originating FIX session. */
   public void registerAcceptedOrder(SessionID sessionId, WalRecord walRecord, char ordStatus) {
+    admittedOrders.putIfAbsent(walRecord.orderId(), walRecord);
     states.put(
         walRecord.orderId(),
         new OrderSessionState(
@@ -22,6 +24,11 @@ public final class OrderSessionRegistry implements ExecutionSessionResolver {
             walRecord.accountId(),
             FixOrderSnapshot.from(walRecord),
             new OrderSessionLifecycle(ordStatus)));
+  }
+
+  /** Returns the first accepted command for an order identity, when this owner still has it. */
+  public Optional<WalRecord> findAdmittedOrder(String orderId) {
+    return Optional.ofNullable(admittedOrders.get(orderId));
   }
 
   /** Registers a cancel request and retains its client correlation identifiers. */
