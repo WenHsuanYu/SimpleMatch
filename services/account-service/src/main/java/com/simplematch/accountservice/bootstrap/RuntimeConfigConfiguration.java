@@ -1,6 +1,6 @@
 package com.simplematch.accountservice.bootstrap;
 
-import com.simplematch.config.PlatformProperties;
+import com.simplematch.config.GrpcProperties;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 
@@ -8,7 +8,7 @@ import org.springframework.context.annotation.Configuration;
 @Configuration
 public class RuntimeConfigConfiguration {
   @Bean
-  AccountServiceRuntime accountServiceRuntime(PlatformProperties properties) {
+  AccountServiceRuntime accountServiceRuntime(GrpcProperties properties) {
     return AccountServiceRuntime.from(properties);
   }
 }

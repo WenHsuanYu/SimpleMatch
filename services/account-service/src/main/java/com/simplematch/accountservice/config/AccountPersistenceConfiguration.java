@@ -1,7 +1,7 @@
 package com.simplematch.accountservice.config;
 
-import com.simplematch.config.PlatformProperties;
 import com.simplematch.config.PostgresJdbcUrl;
+import com.simplematch.config.PostgresProperties;
 import com.zaxxer.hikari.HikariDataSource;
 import java.time.Clock;
 import javax.sql.DataSource;
@@ -20,8 +20,8 @@ public class AccountPersistenceConfiguration {
 
   // TODO: Refactor it to use auto-configuration
   @Bean
-  DataSource accountServiceDataSource(PlatformProperties properties) {
-    final PostgresJdbcUrl parsedJdbcDsn = PostgresJdbcUrl.parse(properties.postgres().dsn());
+  DataSource accountServiceDataSource(PostgresProperties properties) {
+    final PostgresJdbcUrl parsedJdbcDsn = PostgresJdbcUrl.parse(properties.dsn());
     final HikariDataSource dataSource = new HikariDataSource();
     dataSource.setJdbcUrl(parsedJdbcDsn.jdbcUrl());
     if (parsedJdbcDsn.username() != null) {

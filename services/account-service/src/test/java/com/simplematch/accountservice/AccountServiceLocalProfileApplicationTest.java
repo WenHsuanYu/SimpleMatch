@@ -2,7 +2,7 @@ package com.simplematch.accountservice;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
-import com.simplematch.config.PlatformProperties;
+import com.simplematch.config.EnvironmentProperties;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
@@ -17,10 +17,10 @@ import org.springframework.test.context.ActiveProfiles;
     })
 @ActiveProfiles("local")
 class AccountServiceLocalProfileApplicationTest {
-  @Autowired private PlatformProperties platformProperties;
+  @Autowired private EnvironmentProperties environmentProperties;
 
   @Test
   void startsWithTheLocalProfile() {
-    assertThat(platformProperties.environment()).isEqualTo("local");
+    assertThat(environmentProperties.environment()).isEqualTo("local");
   }
 }

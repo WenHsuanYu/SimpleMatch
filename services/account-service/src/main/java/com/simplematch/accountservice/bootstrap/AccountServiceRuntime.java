@@ -1,6 +1,6 @@
 package com.simplematch.accountservice.bootstrap;
 
-import com.simplematch.config.PlatformProperties;
+import com.simplematch.config.GrpcProperties;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
@@ -8,9 +8,14 @@ import java.util.regex.Pattern;
 public record AccountServiceRuntime(int grpcPort) {
   private static final Pattern PORT_PATTERN = Pattern.compile(":(\\d+)$");
 
-  /** Derives runtime values from the platform configuration. */
-  public static AccountServiceRuntime from(PlatformProperties properties) {
-    final String target = properties.grpc().targets().accountService();
+  /**
+   * Derives runtime values from the gRPC capability configuration.
+   *
+   * @param properties independently bound gRPC capability
+   * @return account-service runtime values
+   */
+  public static AccountServiceRuntime from(GrpcProperties properties) {
+    final String target = properties.targets().accountService();
     final Matcher matcher = PORT_PATTERN.matcher(target);
     if (matcher.find()) {
       return new AccountServiceRuntime(Integer.parseInt(matcher.group(1)));

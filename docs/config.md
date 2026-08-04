@@ -41,6 +41,8 @@ does not change the property keys or defaults.
 `QuickFixGatewayFileProperties` owns gateway paths, `QuickFixGatewayRuntimeProperties` owns owner
 identity and feature flags, and `QuickFixGatewayRiskClientProperties` owns risk-client policy under
 the unchanged `simplematch.quickfix-gateway.*` namespace.
+Account Authority consumes `GrpcProperties` for its account-service target and `PostgresProperties`
+for its datasource, so its runtime and persistence wiring no longer depends on the shared root.
 
 Useful canonical keys include:
 

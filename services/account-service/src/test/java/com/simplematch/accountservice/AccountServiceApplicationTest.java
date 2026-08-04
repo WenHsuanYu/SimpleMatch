@@ -3,7 +3,9 @@ package com.simplematch.accountservice;
 import static org.assertj.core.api.Assertions.assertThat;
 
 import com.simplematch.accountservice.bootstrap.AccountServiceRuntime;
-import com.simplematch.config.PlatformProperties;
+import com.simplematch.config.EnvironmentProperties;
+import com.simplematch.config.GrpcProperties;
+import com.simplematch.config.PostgresProperties;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -19,7 +21,9 @@ import org.springframework.test.context.ActiveProfiles;
     })
 @ActiveProfiles("test")
 class AccountServiceApplicationTest {
-  @Autowired private PlatformProperties platformProperties;
+  @Autowired private EnvironmentProperties environmentProperties;
+
+  @Autowired private PostgresProperties postgresProperties;
 
   @Autowired private AccountServiceRuntime runtime;
 
@@ -29,10 +33,17 @@ class AccountServiceApplicationTest {
   @DisplayName("account-service loads shared config and runtime on startup")
   @Test
   void contextLoadsWithSharedConfig() {
-    assertThat(platformProperties.environment()).isEqualTo("test");
+    assertThat(environmentProperties.environment()).isEqualTo("test");
     assertThat(runtime.grpcPort()).isEqualTo(50051);
-    assertThat(platformProperties.postgres().dsn())
+    assertThat(postgresProperties.dsn())
         .isEqualTo(
             "jdbc:h2:mem:account-context;MODE=PostgreSQL;DB_CLOSE_DELAY=-1;INIT=CREATE SCHEMA IF NOT EXISTS account_service;SET SCHEMA account_service");
+    assertThat(
+            AccountServiceRuntime.from(
+                    new GrpcProperties(
+                        new GrpcProperties.GrpcTargetsProperties(
+                            "dns:///account-service:51051", "dns:///risk-service:50052")))
+                .grpcPort())
+        .isEqualTo(51051);
   }
 }
