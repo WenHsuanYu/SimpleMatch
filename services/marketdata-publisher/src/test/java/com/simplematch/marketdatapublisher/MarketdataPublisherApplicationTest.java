@@ -2,6 +2,7 @@ package com.simplematch.marketdatapublisher;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
+import com.simplematch.config.PostgresProperties;
 import com.simplematch.marketdatapublisher.publication.MarketSnapshotApplicationService;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -14,8 +15,13 @@ import org.springframework.boot.test.context.SpringBootTest;
 class MarketdataPublisherApplicationTest {
   @Autowired private MarketSnapshotApplicationService publicationService;
 
+  @Autowired private PostgresProperties postgresProperties;
+
   @Test
   void startsWithoutRuntimeConsumers() {
     assertThat(publicationService).isNotNull();
+    assertThat(postgresProperties.dsn())
+        .isEqualTo(
+            "jdbc:h2:mem:marketdata-publisher-context;MODE=PostgreSQL;DB_CLOSE_DELAY=-1;INIT=CREATE SCHEMA IF NOT EXISTS marketdata_publisher;SET SCHEMA marketdata_publisher");
   }
 }

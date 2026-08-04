@@ -69,6 +69,8 @@
 - [x] [#72](https://github.com/WenHsuanYu/SimpleMatch/issues/72) migrate Risk Admission runtime,
   persistence, routing, Kafka outbox, and account-client wiring to the required capability modules
   while preserving partition, profile, datasource, and startup behavior。
+- [x] [#73](https://github.com/WenHsuanYu/SimpleMatch/issues/73) migrate Market Reference datasource
+  wiring to `PostgresProperties` while preserving publication startup and local configuration。
 - [ ] `libs/common`：時間/ID 工具
     - [ ] 現況：workspace 仍未找到 shared `NowUnixMs()` helper；`UuidV7()` 已由
       `shared-java/simplematch-config` 提供
