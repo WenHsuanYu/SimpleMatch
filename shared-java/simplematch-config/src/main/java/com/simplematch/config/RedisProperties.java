@@ -2,7 +2,11 @@ package com.simplematch.config;
 
 import org.springframework.boot.context.properties.ConfigurationProperties;
 
-/** Independently bindable Redis endpoint capability for projections and caches. */
+/**
+ * Independently bindable Redis endpoint capability for projections and caches.
+ *
+ * @param endpoints comma-separated Redis endpoints
+ */
 @ConfigurationProperties("simplematch.redis")
 public record RedisProperties(String endpoints) {
   /** Normalizes absent Redis endpoints to the local Redis instance. */

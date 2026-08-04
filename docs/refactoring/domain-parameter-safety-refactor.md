@@ -52,9 +52,10 @@ specification:
 The completed `SubmissionResult` predecessor slice is tracked by Issues #33–#37, and the completed
 Risk Submission outbox event descriptor slice is tracked by Issue #46. Remaining Risk Submission
 members, QuickFIX WAL, Market Reference snapshots, and shared platform
-configuration are separate parameter-safety surfaces. Any remaining wide member there is follow-up
-work; it is not an exception to the PMD gate and is not a reason to keep Issues #39, #44, or #46
-open.
+configuration are separate parameter-safety surfaces. QuickFIX configuration and shared platform
+configuration are complete in Issues #69–#76; remaining Risk Submission members, QuickFIX WAL, and
+Market Reference snapshot work must still be evaluated as migration work rather than exceptions to
+the PMD gate. None of these follow-up surfaces is a reason to keep Issues #39, #44, or #46 open.
 
 ## Slice 1: durable submission outcomes
 
@@ -197,5 +198,22 @@ The Account Authority and Risk Admission slices were verified on 2026-07-31:
 
 The build still emits existing compiler and runtime warnings, including Error Prone
 `SelfAssignment` warnings in semantic record constructors; they are warnings, not failed gates.
-The verification does not claim that later QuickFIX, Market Reference, shared configuration, or
-legacy Risk Submission slices are complete.
+That historical verification did not claim that later QuickFIX, Market Reference, shared
+configuration, or legacy Risk Submission slices were complete; the selected QuickFIX, Market
+Reference, and shared-configuration work is recorded separately below.
+
+## Final migration verification for Issues #69–#76
+
+The final source inventory reviewed the selected handwritten production boundaries and found no
+member above six parameters. Representative maximums are `PreparedMarketSnapshot` (6),
+`PlatformCapabilityValidator` (6), `WalRecord` (5), `PendingAdmissionRecovery` (4),
+`PublishedMarketSnapshot` (4), `SourceInstrument` (4), `OrderSessionState` (4), and
+`AdmissionResult` (4). The shared capability records and QuickFIX gateway-local property records
+are smaller still. The former `PlatformProperties` facade and all in-repository consumers were
+removed; no seven-to-ten parameter exception was needed.
+
+The external JSON, SQL, FIX, WAL v1, protobuf, Kafka, transaction, idempotency, routing, and
+recovery contracts remain unchanged. Codecs and JDBC adapters continue to flatten and rehydrate
+those external shapes at their boundaries. The final verification passed the complete Java test
+suite, `staticAnalysis`, QuickFIX `certificationTest`, Markdown link checks, graph refresh, diff
+checks, and the bad-smell checklist.

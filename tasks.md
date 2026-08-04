@@ -986,7 +986,8 @@ Kafka**。
     - [x] [#72](https://github.com/WenHsuanYu/SimpleMatch/issues/72) Migrate Risk Admission config
     - [x] [#73](https://github.com/WenHsuanYu/SimpleMatch/issues/73) Migrate Market Reference config
     - [x] [#74](https://github.com/WenHsuanYu/SimpleMatch/issues/74) Migrate FIX Gateway config
-    - [ ] [#75](https://github.com/WenHsuanYu/SimpleMatch/issues/75) Remove the shared platform facade
+    - [x] [#75](https://github.com/WenHsuanYu/SimpleMatch/issues/75) Remove the shared platform facade
+    - [x] [#76](https://github.com/WenHsuanYu/SimpleMatch/issues/76) Verify parameter-safe module migration
 - [ ] [Market Reference routing ownership](https://github.com/WenHsuanYu/SimpleMatch/issues/38)：
   deferred follow-up for versioned policy ownership, schema migration, and consumer rollout。
 - [x] [README and technical documentation refactor](docs/readme-documentation-refactor-spec.md)

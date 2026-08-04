@@ -2,7 +2,11 @@ package com.simplematch.config;
 
 import org.springframework.boot.context.properties.ConfigurationProperties;
 
-/** Independently bindable gRPC target capability for synchronous service calls. */
+/**
+ * Independently bindable gRPC target capability for synchronous service calls.
+ *
+ * @param targets targets for synchronously invoked platform services
+ */
 @ConfigurationProperties("simplematch.grpc")
 public record GrpcProperties(GrpcTargetsProperties targets) {
   /** Normalizes an absent target group to the canonical local service targets. */
@@ -14,7 +18,12 @@ public record GrpcProperties(GrpcTargetsProperties targets) {
     return new GrpcProperties(null);
   }
 
-  /** Defines canonical gRPC targets for synchronously invoked platform services. */
+  /**
+   * Defines canonical gRPC targets for synchronously invoked platform services.
+   *
+   * @param accountService account-service target
+   * @param riskService risk-service target
+   */
   public record GrpcTargetsProperties(String accountService, String riskService) {
     /** Normalizes absent gRPC targets to local Kubernetes-compatible DNS targets. */
     public GrpcTargetsProperties {

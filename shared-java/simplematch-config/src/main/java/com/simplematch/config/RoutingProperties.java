@@ -2,7 +2,11 @@ package com.simplematch.config;
 
 import org.springframework.boot.context.properties.ConfigurationProperties;
 
-/** Independently bindable routing-policy snapshot capability. */
+/**
+ * Independently bindable routing-policy snapshot capability.
+ *
+ * @param snapshotPath classpath or filesystem path to the routing snapshot
+ */
 @ConfigurationProperties("simplematch.routing")
 public record RoutingProperties(String snapshotPath) {
   /** Normalizes an absent routing snapshot path to the bundled classpath resource. */

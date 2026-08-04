@@ -2,7 +2,12 @@ package com.simplematch.config;
 
 import org.springframework.boot.context.properties.ConfigurationProperties;
 
-/** Independently bindable stable market-wide default capability. */
+/**
+ * Independently bindable stable market-wide default capability.
+ *
+ * @param currency phase-one market currency
+ * @param timeZone phase-one market time zone
+ */
 @ConfigurationProperties("simplematch.market")
 public record MarketProperties(String currency, String timeZone) {
   /** Normalizes absent market settings to Taiwan market defaults. */

@@ -5,38 +5,38 @@ final class PlatformSettingsValidator {
   private PlatformSettingsValidator() {}
 
   static void validate(KafkaProperties properties) {
-    validateKafkaPartitions(
-        properties.partitions().ordersCommands(),
-        properties.partitions().ordersValidated(),
-        properties.partitions().matchingExecutions());
+    validateKafkaPartitions(properties.partitions());
   }
 
   static void validate(ObservabilityProperties properties) {
-    validatePrometheusPort(properties.prometheus().port());
+    validatePrometheusPort(properties.prometheus());
   }
 
   static void validate(MarketProperties properties) {
-    validateMarketDefaults(properties.currency(), properties.timeZone());
+    validateMarketDefaults(properties);
   }
 
-  private static void validateKafkaPartitions(
-      int ordersCommands, int ordersValidated, int matchingExecutions) {
-    if (ordersCommands <= 0 || ordersValidated <= 0 || matchingExecutions <= 0) {
+  private static void validateKafkaPartitions(KafkaProperties.PartitionsProperties partitions) {
+    if (partitions.ordersCommands() <= 0
+        || partitions.ordersValidated() <= 0
+        || partitions.matchingExecutions() <= 0) {
       throw new IllegalStateException("Kafka partition counts must be positive.");
     }
   }
 
-  private static void validatePrometheusPort(int port) {
+  private static void validatePrometheusPort(
+      ObservabilityProperties.PrometheusProperties prometheus) {
+    final int port = prometheus.port();
     if (port < 1 || port > 65_535) {
       throw new IllegalStateException("Prometheus port must be between 1 and 65535.");
     }
   }
 
-  private static void validateMarketDefaults(String currency, String timeZone) {
-    if (!"TWD".equals(currency)) {
+  private static void validateMarketDefaults(MarketProperties properties) {
+    if (!"TWD".equals(properties.currency())) {
       throw new IllegalStateException("Phase-one market currency must be TWD.");
     }
-    if (!"Asia/Taipei".equals(timeZone)) {
+    if (!"Asia/Taipei".equals(properties.timeZone())) {
       throw new IllegalStateException("Phase-one market time zone must be Asia/Taipei.");
     }
   }

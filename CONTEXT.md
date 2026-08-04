@@ -82,6 +82,15 @@ source of that assignment. Moving routing assignment into Market Reference requi
 versioned contract, schema migration, and consumer rollout; it is deferred rather than implied by an
 admission refactor.
 
+### Shared platform configuration
+
+`shared-java/simplematch-config` owns independently bindable environment, Kafka, PostgreSQL, Redis,
+gRPC, routing, observability, and market capability records under the existing `simplematch.*`
+namespace. Services consume only the capabilities they need; gateway-local paths, feature flags,
+and resilience policy remain owned by QuickFIX Gateway. The former wide `PlatformProperties` root
+facade has been removed, so shared startup validation and persistence context tests use the final
+capability interfaces directly.
+
 ### Projection and Audit
 
 Owns rebuildable query projections and audit integration. Projection state is downstream of

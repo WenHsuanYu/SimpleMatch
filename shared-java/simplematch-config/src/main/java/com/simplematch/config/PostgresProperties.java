@@ -2,7 +2,11 @@ package com.simplematch.config;
 
 import org.springframework.boot.context.properties.ConfigurationProperties;
 
-/** Independently bindable PostgreSQL connection capability. */
+/**
+ * Independently bindable PostgreSQL connection capability.
+ *
+ * @param dsn JDBC URL or supported PostgreSQL DSN
+ */
 @ConfigurationProperties("simplematch.postgres")
 public record PostgresProperties(String dsn) {
   /** Normalizes an absent DSN to the local SimpleMatch PostgreSQL database. */

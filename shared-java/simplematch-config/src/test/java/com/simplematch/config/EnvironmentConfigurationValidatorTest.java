@@ -129,6 +129,30 @@ class EnvironmentConfigurationValidatorTest {
         .hasMessageContaining("TWD");
   }
 
+  @Test
+  void rejectsNonPositiveKafkaPartitionCounts() {
+    final KafkaProperties.PartitionsProperties partitions =
+        new KafkaProperties.PartitionsProperties(0, 15, 15);
+
+    assertThatThrownBy(
+            () -> PlatformSettingsValidator.validate(new KafkaProperties(null, null, partitions)))
+        .isInstanceOf(IllegalStateException.class)
+        .hasMessageContaining("partition counts");
+  }
+
+  @Test
+  void rejectsPrometheusPortsOutsideTheValidRange() {
+    final ObservabilityProperties.PrometheusProperties prometheus =
+        new ObservabilityProperties.PrometheusProperties(65_536);
+
+    assertThatThrownBy(
+            () ->
+                PlatformSettingsValidator.validate(
+                    new ObservabilityProperties(null, prometheus)))
+        .isInstanceOf(IllegalStateException.class)
+        .hasMessageContaining("Prometheus port");
+  }
+
   private static final class KubernetesConfigMapSource extends MapPropertySource {
     private KubernetesConfigMapSource(String name, Map<String, Object> source) {
       super(name, source);

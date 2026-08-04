@@ -10,7 +10,7 @@ final class PlatformPropertyDefaults {
   }
 
   /** Returns a configured integer or its fallback when the property is absent. */
-  static Integer positive(Integer value, int fallback) {
+  static Integer integerOrDefault(Integer value, int fallback) {
     return value == null ? Integer.valueOf(fallback) : value;
   }
 }
