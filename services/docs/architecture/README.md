@@ -9,5 +9,7 @@ a claim that every component is already implemented.
   trade-offs around the hot path.
 - [Eventing and CQRS](eventing-and-cqrs.md) — command, event, projection, and event-sourcing
   posture.
+- [Routing Policy projections](routing-policy-projection.md) — Market Reference publication and
+  Risk's strict local projection/readiness boundary.
 - [Reliability and consistency](reliability-and-consistency.md) — durable acknowledgement,
   idempotency, retry, and compensation rules.
