@@ -43,7 +43,8 @@ remaining issue graph:
 ### Active Implementation Frontier
 
 - [#77](https://github.com/WenHsuanYu/SimpleMatch/issues/77) defines the accepted, versioned
-  Market Reference Routing Policy contract.
+  Market Reference Routing Policy contract and is complete with the certified implementation
+  slices below.
 - [#78](https://github.com/WenHsuanYu/SimpleMatch/issues/78) through
   [#86](https://github.com/WenHsuanYu/SimpleMatch/issues/86) implement and certify contract
   expansion, publication, Risk projection and provenance, native Matching ingress, continuity

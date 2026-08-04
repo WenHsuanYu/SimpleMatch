@@ -988,8 +988,9 @@ Kafka**。
     - [x] [#74](https://github.com/WenHsuanYu/SimpleMatch/issues/74) Migrate FIX Gateway config
     - [x] [#75](https://github.com/WenHsuanYu/SimpleMatch/issues/75) Remove the shared platform facade
     - [x] [#76](https://github.com/WenHsuanYu/SimpleMatch/issues/76) Verify parameter-safe module migration
-- [ ] [Market Reference routing ownership](https://github.com/WenHsuanYu/SimpleMatch/issues/38)：
-  deferred follow-up for versioned policy ownership, schema migration, and consumer rollout。
+- [x] [Market Reference routing ownership](https://github.com/WenHsuanYu/SimpleMatch/issues/38)：
+  design accepted in [ADR 0005](docs/adr/0005-market-reference-routing-policy.md)；#78–#86
+  implementation and certification establish Market Reference as the sole routing-policy authority。
 - [x] [README and technical documentation refactor](docs/readme-documentation-refactor-spec.md)
   （GitHub issue [#1](https://github.com/WenHsuanYu/SimpleMatch/issues/1)）：將目標技術規格收斂至
   `services/docs/`，並保留穩定索引與 forwarding pages
