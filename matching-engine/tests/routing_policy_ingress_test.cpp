@@ -1,85 +1,135 @@
 #include "simplematch/matching/ingress/routing_policy_ingress.hpp"
 
+#include <cctype>
+#include <cstdint>
+#include <fstream>
+#include <iterator>
 #include <string>
+#include <string_view>
 
 #include <gtest/gtest.h>
-
-#include "common_v2.pb.h"
-#include "orders_v2.pb.h"
-#include "routing_policy_v2.pb.h"
 
 namespace simplematch::matching {
 namespace {
 
 constexpr char kPolicyId[] = "0194a8f0-7c77-7b38-9e2d-2a5fdd0f7c01";
+constexpr std::int64_t kInsidePolicyInterval = 1'753'180'000'000;
 
-simplematch::routing::v2::RoutingPolicy policy_fixture() {
-  simplematch::routing::v2::RoutingPolicy policy;
-  policy.mutable_metadata()->set_schema_version("v2");
-  policy.mutable_metadata()->set_event_id(
-      "0194a8f0-7c77-7b38-9e2d-2a5fdd0f7c02");
-  policy.mutable_metadata()->set_created_at_unix_ms(1'753'176'000'000);
-  policy.mutable_metadata()->set_source_service("marketdata-publisher");
-  policy.mutable_metadata()->set_correlation_id(kPolicyId);
-  policy.set_routing_policy_id(kPolicyId);
-  policy.set_source_market_snapshot_id("0194a8ef-3b42-7e6c-8e19-7f3c2d0a1001");
-  policy.mutable_trading_day()->set_iso_date("2026-07-27");
-  policy.set_effective_from_unix_ms(1'753'171'200'000);
-  policy.set_effective_until_unix_ms(1'753'192'800'000);
-  policy.set_orders_validated_partition_count(16);
-  auto *assignment = policy.add_assignments();
-  assignment->mutable_instrument()->set_symbol("AAPL");
-  assignment->mutable_instrument()->set_venue_mic("XTAI");
-  assignment->set_routing_partition(7);
-  return policy;
+int hex_value(char character) {
+  if (character >= '0' && character <= '9') {
+    return character - '0';
+  }
+  if (character >= 'a' && character <= 'f') {
+    return character - 'a' + 10;
+  }
+  if (character >= 'A' && character <= 'F') {
+    return character - 'A' + 10;
+  }
+  return -1;
 }
 
-simplematch::orders::v2::OrderAdmissionAccepted accepted_order_fixture() {
-  simplematch::orders::v2::OrderAdmissionAccepted order;
-  order.set_command_id("0194a8f0-7c77-7b38-9e2d-2a5fdd0f7c03");
-  order.set_order_id("0194a8f0-7c77-7b38-9e2d-2a5fdd0f7c04");
-  order.set_account_id("0194a8f0-7c77-7b38-9e2d-2a5fdd0f7c05");
-  order.mutable_instrument()->set_symbol("aapl");
-  order.mutable_instrument()->set_venue_mic("xtai");
-  order.set_routing_policy_id(kPolicyId);
-  order.set_routing_partition(7);
-  return order;
+std::string load_hex_fixture(std::string_view name) {
+  std::ifstream fixture(std::string(SIMPLEMATCH_TEST_FIXTURE_DIR) + "/" +
+                        std::string(name));
+  if (!fixture) {
+    return {};
+  }
+  const std::string encoded((std::istreambuf_iterator<char>(fixture)), {});
+  std::string compact;
+  for (const char character : encoded) {
+    if (!std::isspace(static_cast<unsigned char>(character))) {
+      compact.push_back(character);
+    }
+  }
+  if (compact.empty() || compact.size() % 2 != 0) {
+    return {};
+  }
+  std::string decoded;
+  decoded.reserve(compact.size() / 2);
+  for (std::size_t index = 0; index < compact.size(); index += 2) {
+    const int high = hex_value(compact[index]);
+    const int low = hex_value(compact[index + 1]);
+    if (high < 0 || low < 0) {
+      return {};
+    }
+    decoded.push_back(static_cast<char>((high << 4) | low));
+  }
+  return decoded;
 }
 
-TEST(RoutingPolicyIngressTest, DecodesSharedPolicyAndAcceptedOrderFixture) {
+std::string policy_fixture() {
+  return load_hex_fixture("java-routing-policy-v2.hex");
+}
+
+std::string accepted_order_fixture() {
+  return load_hex_fixture("java-order-admission-accepted-v2.hex");
+}
+
+TEST(RoutingPolicyIngressTest,
+     StagesJavaContractFixtureBeforeAtomicActivation) {
   RoutingPolicyIngress ingress(16);
+  const auto policy = policy_fixture();
+  const auto order = accepted_order_fixture();
+  ASSERT_FALSE(policy.empty());
+  ASSERT_FALSE(order.empty());
 
-  EXPECT_EQ(ingress.ingest_routing_policy(policy_fixture().SerializeAsString())
-                .action,
-            IngressAction::kProceed);
-  EXPECT_EQ(ingress
-                .evaluate_accepted_order(
-                    accepted_order_fixture().SerializeAsString(), 7)
-                .action,
-            IngressAction::kProceed);
+  EXPECT_EQ(
+      ingress.stage_routing_policy(policy),
+      (IngressDecision{IngressAction::kProceed, "ROUTING_POLICY_STAGED"}));
+  EXPECT_EQ(
+      ingress.evaluate_accepted_order(order, 7),
+      (IngressDecision{IngressAction::kPause, "ROUTING_POLICY_NOT_PROJECTED"}));
+  EXPECT_EQ(
+      ingress.evaluate_routing_policy_readiness(kPolicyId,
+                                                kInsidePolicyInterval),
+      (IngressDecision{IngressAction::kPause, "ROUTING_POLICY_NOT_PROJECTED"}));
+
+  EXPECT_EQ(
+      ingress.activate_staged_routing_policy(kPolicyId),
+      (IngressDecision{IngressAction::kProceed, "ROUTING_INGRESS_ACCEPTED"}));
+  EXPECT_EQ(ingress.evaluate_routing_policy_readiness(kPolicyId,
+                                                      kInsidePolicyInterval),
+            (IngressDecision{IngressAction::kProceed, "ROUTING_POLICY_READY"}));
+  EXPECT_EQ(
+      ingress.evaluate_accepted_order(order, 7),
+      (IngressDecision{IngressAction::kProceed, "ROUTING_INGRESS_ACCEPTED"}));
 }
 
 TEST(RoutingPolicyIngressTest, PausesOrderUntilReferencedPolicyIsProjected) {
   RoutingPolicyIngress ingress(16);
 
-  const auto decision = ingress.evaluate_accepted_order(
-      accepted_order_fixture().SerializeAsString(), 7);
+  EXPECT_EQ(
+      ingress.evaluate_accepted_order(accepted_order_fixture(), 7),
+      (IngressDecision{IngressAction::kPause, "ROUTING_POLICY_NOT_PROJECTED"}));
+}
 
-  EXPECT_EQ(decision, (IngressDecision{IngressAction::kPause,
-                                       "ROUTING_POLICY_NOT_PROJECTED"}));
+TEST(RoutingPolicyIngressTest, ReplaysPolicyAfterRestartBeforeProcessingOrder) {
+  RoutingPolicyIngress ingress(16);
+  ASSERT_EQ(ingress.ingest_routing_policy(policy_fixture()).action,
+            IngressAction::kProceed);
+
+  RoutingPolicyIngress restarted(16);
+  EXPECT_EQ(
+      restarted.evaluate_accepted_order(accepted_order_fixture(), 7),
+      (IngressDecision{IngressAction::kPause, "ROUTING_POLICY_NOT_PROJECTED"}));
+  EXPECT_EQ(
+      restarted.ingest_routing_policy(policy_fixture()),
+      (IngressDecision{IngressAction::kProceed, "ROUTING_INGRESS_ACCEPTED"}));
+  EXPECT_EQ(
+      restarted.evaluate_accepted_order(accepted_order_fixture(), 7),
+      (IngressDecision{IngressAction::kProceed, "ROUTING_INGRESS_ACCEPTED"}));
 }
 
 TEST(RoutingPolicyIngressTest, StopsMalformedOrPartitionMismatchedInput) {
   RoutingPolicyIngress ingress(16);
-  ingress.ingest_routing_policy(policy_fixture().SerializeAsString());
+  ASSERT_EQ(ingress.ingest_routing_policy(policy_fixture()).action,
+            IngressAction::kProceed);
 
-  EXPECT_EQ(ingress.ingest_routing_policy("not-protobuf").action,
-            IngressAction::kStop);
-  EXPECT_EQ(ingress
-                .evaluate_accepted_order(
-                    accepted_order_fixture().SerializeAsString(), 8)
-                .action,
-            IngressAction::kStop);
+  EXPECT_EQ(ingress.ingest_routing_policy("not-protobuf"),
+            (IngressDecision{IngressAction::kStop, "INVALID_ROUTING_POLICY"}));
+  EXPECT_EQ(
+      ingress.evaluate_accepted_order(accepted_order_fixture(), 8),
+      (IngressDecision{IngressAction::kStop, "ROUTING_PARTITION_MISMATCH"}));
 }
 
 } // namespace

@@ -115,6 +115,8 @@ target_link_libraries(simplematch_matching_ingress_tests
 target_include_directories(simplematch_matching_ingress_tests
     PRIVATE ${SIMPLEMATCH_GTEST_INCLUDE_DIR}
             ${CMAKE_CURRENT_BINARY_DIR})
+target_compile_definitions(simplematch_matching_ingress_tests
+    PRIVATE SIMPLEMATCH_TEST_FIXTURE_DIR="${CMAKE_CURRENT_SOURCE_DIR}/shared-java/simplematch-contracts/src/test/resources/native-routing-fixtures")
 simplematch_enable_warnings(simplematch_matching_ingress_tests)
 simplematch_enable_sanitizers(simplematch_matching_ingress_tests)
 

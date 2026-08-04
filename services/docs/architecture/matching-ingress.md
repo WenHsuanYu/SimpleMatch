@@ -16,9 +16,14 @@ Matching Engine, not the Matching Engine itself.
 
 The public C++ interface keeps the decision surface small:
 
-1. `ingest_routing_policy(payload)` decodes and validates a policy before
-   replacing the in-memory policy view for that identity.
-2. `evaluate_accepted_order(payload, consumed_partition)` verifies that the
+1. `stage_routing_policy(payload)` decodes and validates the complete policy
+   into an invisible staging view.
+2. `activate_staged_routing_policy(routing_policy_id)` publishes the complete
+   staged view atomically. `ingest_routing_policy(payload)` remains a
+   compatibility convenience that performs both operations.
+3. `evaluate_routing_policy_readiness(routing_policy_id, now_unix_ms)` reports
+   whether the activated policy is applicable at the supplied instant.
+4. `evaluate_accepted_order(payload, consumed_partition)` verifies that the
    order's policy, instrument assignment, declared partition, and consumed
    Kafka partition agree.
 
@@ -33,6 +38,13 @@ Each call returns an explicit `IngressDecision`:
 The current module deliberately has no order book, matching algorithm,
 execution event, Kafka client, or durable policy store. Those concerns belong
 to later issues after the contract and recovery semantics are proven.
+
+Policy staging validates metadata, identity, interval, partition topology, and
+every normalized instrument assignment before it can affect active state. An
+unknown policy pauses its consumed partition; a known-policy instrument or
+partition mismatch stops that partition. A restarted native process begins
+unprojected and must replay the serialized policy before processing accepted
+orders.
 
 ## Build and test
 
@@ -49,3 +61,9 @@ The test target generates the same shared Protobuf sources used by the Java
 contract module; it does not introduce a second wire format. The local CMake
 fallback also understands a release-only vcpkg installation whose static
 Protobuf archive is accompanied by its generated pkg-config dependency graph.
+
+The C++ tests consume the hex-encoded fixtures under
+`shared-java/simplematch-contracts/src/test/resources/native-routing-fixtures`.
+`NativeRoutingPolicyFixtureCompatibilityTest` proves those bytes are produced
+by the generated Java contracts, while the native tests cover staging,
+activation, readiness, pause, restart replay, and invariant-stop outcomes.
