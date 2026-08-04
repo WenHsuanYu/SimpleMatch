@@ -125,9 +125,10 @@ class RoutingPolicyReadinessHealthIndicatorTest {
     }
 
     @Override
-    public boolean existsOverlappingForUpdate(
-        LocalDate tradingDay, RoutingPolicyInterval interval) {
-      throw new UnsupportedOperationException();
+    public List<RoutingPolicy> findAllForTradingDayForUpdate(LocalDate tradingDay) {
+      return policy.filter(candidate -> candidate.identity().tradingDay().equals(tradingDay))
+          .stream()
+          .toList();
     }
 
     @Override

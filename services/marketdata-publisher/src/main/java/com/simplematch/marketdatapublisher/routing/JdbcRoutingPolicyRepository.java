@@ -141,35 +141,22 @@ public final class JdbcRoutingPolicyRepository implements RoutingPolicyRepositor
   }
 
   @Override
-  public boolean existsOverlappingForUpdate(
-      LocalDate tradingDay, RoutingPolicyInterval interval) {
-    final List<RoutingPolicyInterval> existingIntervals =
-        jdbcTemplate.execute(
-            (ConnectionCallback<List<RoutingPolicyInterval>>)
-                connection -> {
-                  try (PreparedStatement statement =
-                      connection.prepareStatement(
-                          """
-                          SELECT effective_from_unix_ms, effective_until_unix_ms
-                          FROM marketdata_publisher.routing_policies
-                          WHERE trading_day = ? AND active
-                          FOR UPDATE
-                          """)) {
-                    statement.setObject(1, tradingDay);
-                    try (ResultSet rows = statement.executeQuery()) {
-                      final List<RoutingPolicyInterval> intervals = new java.util.ArrayList<>();
-                      while (rows.next()) {
-                        intervals.add(
-                            new RoutingPolicyInterval(
-                                Instant.ofEpochMilli(rows.getLong("effective_from_unix_ms")),
-                                Instant.ofEpochMilli(rows.getLong("effective_until_unix_ms"))));
-                      }
-                      return intervals;
-                    }
-                  }
-                });
-    return existingIntervals != null
-        && existingIntervals.stream().anyMatch(interval::overlaps);
+  public List<RoutingPolicy> findAllForTradingDayForUpdate(LocalDate tradingDay) {
+    final List<UUID> policyIds =
+        jdbcTemplate.query(
+            """
+            SELECT routing_policy_id
+            FROM marketdata_publisher.routing_policies
+            WHERE trading_day = ? AND active
+            ORDER BY effective_from_unix_ms
+            FOR UPDATE
+            """,
+            (resultSet, rowNumber) -> resultSet.getObject("routing_policy_id", UUID.class),
+            tradingDay);
+    return policyIds.stream()
+        .map(this::findById)
+        .flatMap(Optional::stream)
+        .toList();
   }
 
   @Override

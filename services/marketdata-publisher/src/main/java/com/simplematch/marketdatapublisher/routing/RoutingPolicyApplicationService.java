@@ -5,9 +5,12 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import com.simplematch.contracts.common.v2.EventMetadata;
 import com.simplematch.contracts.common.v2.TradingDay;
 import com.simplematch.contracts.common.v2.VenueInstrument;
+import com.simplematch.marketdatapublisher.snapshot.InstrumentIdentity;
 import java.time.Clock;
 import java.time.Instant;
+import java.util.Comparator;
 import java.util.LinkedHashMap;
+import java.util.List;
 import java.util.Map;
 import java.util.Objects;
 import java.util.UUID;
@@ -54,11 +57,7 @@ public class RoutingPolicyApplicationService {
     }
     policies.lockSourceSnapshot(
         policy.identity().sourceMarketSnapshotId(), policy.identity().tradingDay());
-    if (policies.existsOverlappingForUpdate(
-        policy.identity().tradingDay(), policy.effectiveInterval())) {
-      throw new RoutingPolicyPublicationConflictException(
-          "routing policy effective interval overlaps an existing policy");
-    }
+    validateIntradayContinuity(policy);
     final Instant publishedAt = clock.instant();
     try {
       policies.insert(policy, publishedAt);
@@ -68,6 +67,66 @@ public class RoutingPolicyApplicationService {
     }
     outbox.insert(outboxRecord(policy, publishedAt));
     return result(policy, false);
+  }
+
+  private void validateIntradayContinuity(RoutingPolicy policy) {
+    final List<RoutingPolicy> existingPolicies =
+        policies.findAllForTradingDayForUpdate(policy.identity().tradingDay());
+    if (existingPolicies.isEmpty()) {
+      return;
+    }
+    final RoutingPolicy latestPolicy =
+        existingPolicies.stream()
+            .max(
+                Comparator.comparing(existing -> existing.effectiveInterval().effectiveFrom()))
+            .orElseThrow();
+    if (policy
+        .effectiveInterval()
+        .effectiveFrom()
+        .isBefore(latestPolicy.effectiveInterval().effectiveFrom())) {
+      throw new RoutingPolicyPublicationConflictException(
+          "routing policy effective intervals must be published in effective order");
+    }
+    if (existingPolicies.stream()
+        .anyMatch(existing -> existing.effectiveInterval().overlaps(policy.effectiveInterval()))) {
+      throw new RoutingPolicyPublicationConflictException(
+          "routing policy effective interval overlaps an existing policy");
+    }
+
+    final Map<InstrumentIdentity, Integer> historicalAssignments = new LinkedHashMap<>();
+    for (RoutingPolicy existing : existingPolicies) {
+      existing
+          .assignments()
+          .forEach(
+              assignment -> {
+                final Integer previousPartition =
+                    historicalAssignments.putIfAbsent(
+                        assignment.instrument(), assignment.routingPartition());
+                if (previousPartition != null
+                    && previousPartition.intValue() != assignment.routingPartition()) {
+                  throw new RoutingPolicyPublicationConflictException(
+                      "existing routing policy history contains an instrument reassignment");
+                }
+              });
+    }
+    final Map<InstrumentIdentity, Integer> candidateAssignments = new LinkedHashMap<>();
+    policy
+        .assignments()
+        .forEach(
+            assignment ->
+                candidateAssignments.put(assignment.instrument(), assignment.routingPartition()));
+    historicalAssignments.forEach(
+        (instrument, historicalPartition) -> {
+          final Integer candidatePartition = candidateAssignments.get(instrument);
+          if (candidatePartition == null) {
+            throw new RoutingPolicyPublicationConflictException(
+                "routing policy does not carry forward instrument: " + instrument);
+          }
+          if (candidatePartition.intValue() != historicalPartition.intValue()) {
+            throw new RoutingPolicyPublicationConflictException(
+                "routing policy reassigns instrument: " + instrument);
+          }
+        });
   }
 
   private RoutingPolicyPublicationResult result(RoutingPolicy policy, boolean duplicate) {

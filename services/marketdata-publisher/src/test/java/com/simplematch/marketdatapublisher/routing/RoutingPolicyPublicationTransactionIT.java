@@ -35,6 +35,7 @@ class RoutingPolicyPublicationTransactionIT {
   private static final Instant PUBLISHED_AT = Instant.parse("2026-07-27T00:00:00Z");
   private static final InstrumentIdentity AAPL = new InstrumentIdentity("AAPL", "XTAI");
   private static final InstrumentIdentity TSLA = new InstrumentIdentity("TSLA", "ROCO");
+  private static final InstrumentIdentity MSFT = new InstrumentIdentity("MSFT", "XTAI");
 
   private final JdbcTemplate jdbcTemplate;
   private final RoutingPolicyApplicationService publicationService;
@@ -123,6 +124,67 @@ class RoutingPolicyPublicationTransactionIT {
     assertThat(count("marketdata_publisher.outbox")).isEqualTo(1);
   }
 
+  @DisplayName("an adjacent policy may add an instrument without changing existing routes")
+  @Test
+  void publishesAdjacentPolicyWithAdditionalInstrument() throws RoutingPolicyPublicationFailure {
+    publicationService.publishRoutingPolicy(policy());
+    final RoutingPolicy expanded =
+        policy(
+            UUID.fromString("0194a8f1-7c77-7b38-9e2d-2a5fdd0f7c03"),
+            Instant.parse("2026-07-27T06:00:00Z"),
+            Instant.parse("2026-07-27T12:00:00Z"),
+            List.of(
+                new RoutingAssignment(TSLA, 11),
+                new RoutingAssignment(AAPL, 7),
+                new RoutingAssignment(MSFT, 5)));
+
+    publicationService.publishRoutingPolicy(expanded);
+
+    assertThat(count("marketdata_publisher.routing_policies")).isEqualTo(2);
+    assertThat(count("marketdata_publisher.routing_policy_assignments")).isEqualTo(5);
+    assertThat(count("marketdata_publisher.outbox")).isEqualTo(2);
+  }
+
+  @DisplayName("a later policy cannot move an instrument after its earlier interval ends")
+  @Test
+  void rejectsIntradayReassignmentAndKeepsPublicationAtomic() throws RoutingPolicyPublicationFailure {
+    publicationService.publishRoutingPolicy(policy());
+    final RoutingPolicy reassigned =
+        policy(
+            UUID.fromString("0194a8f1-7c77-7b38-9e2d-2a5fdd0f7c04"),
+            Instant.parse("2026-07-27T06:00:00Z"),
+            Instant.parse("2026-07-27T12:00:00Z"),
+            List.of(new RoutingAssignment(TSLA, 11), new RoutingAssignment(AAPL, 8)));
+
+    assertThatThrownBy(() -> publicationService.publishRoutingPolicy(reassigned))
+        .isInstanceOf(RoutingPolicyPublicationConflictException.class)
+        .hasMessageContaining("reassigns");
+    assertThat(count("marketdata_publisher.routing_policies")).isEqualTo(1);
+    assertThat(count("marketdata_publisher.routing_policy_assignments")).isEqualTo(2);
+    assertThat(count("marketdata_publisher.outbox")).isEqualTo(1);
+  }
+
+  @DisplayName("a policy published out of effective order is rejected")
+  @Test
+  void rejectsOutOfOrderPolicyPublication() throws RoutingPolicyPublicationFailure {
+    publicationService.publishRoutingPolicy(
+        policy(
+            UUID.fromString("0194a8f1-7c77-7b38-9e2d-2a5fdd0f7c05"),
+            Instant.parse("2026-07-27T06:00:00Z"),
+            Instant.parse("2026-07-27T12:00:00Z")));
+    final RoutingPolicy earlier =
+        policy(
+            UUID.fromString("0194a8f1-7c77-7b38-9e2d-2a5fdd0f7c06"),
+            Instant.parse("2026-07-27T00:30:00Z"),
+            Instant.parse("2026-07-27T05:30:00Z"));
+
+    assertThatThrownBy(() -> publicationService.publishRoutingPolicy(earlier))
+        .isInstanceOf(RoutingPolicyPublicationConflictException.class)
+        .hasMessageContaining("effective order");
+    assertThat(count("marketdata_publisher.routing_policies")).isEqualTo(1);
+    assertThat(count("marketdata_publisher.outbox")).isEqualTo(1);
+  }
+
   @DisplayName("an unknown source snapshot cannot become a routing policy")
   @Test
   void rejectsUnknownSourceSnapshot() {
@@ -164,11 +226,20 @@ class RoutingPolicyPublicationTransactionIT {
   }
 
   private RoutingPolicy policy(UUID policyId, Instant from, Instant until) {
+    return policy(
+        policyId,
+        from,
+        until,
+        List.of(new RoutingAssignment(TSLA, 11), new RoutingAssignment(AAPL, 7)));
+  }
+
+  private RoutingPolicy policy(
+      UUID policyId, Instant from, Instant until, List<RoutingAssignment> assignments) {
     return new RoutingPolicy(
         new RoutingPolicyIdentity(policyId, SOURCE_SNAPSHOT_ID, TRADING_DAY),
         new RoutingPolicyInterval(from, until),
         16,
-        List.of(new RoutingAssignment(TSLA, 11), new RoutingAssignment(AAPL, 7)));
+        assignments);
   }
 
   private int count(String table) {

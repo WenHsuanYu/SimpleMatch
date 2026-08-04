@@ -2,6 +2,7 @@ package com.simplematch.marketdatapublisher.routing;
 
 import java.time.Instant;
 import java.time.LocalDate;
+import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
 
@@ -22,8 +23,8 @@ public interface RoutingPolicyRepository {
   /** Locks the source market snapshot and verifies that it belongs to the policy trading day. */
   void lockSourceSnapshot(UUID sourceMarketSnapshotId, LocalDate tradingDay);
 
-  /** Locks existing policies for the day and reports whether the interval overlaps one. */
-  boolean existsOverlappingForUpdate(LocalDate tradingDay, RoutingPolicyInterval interval);
+  /** Locks and rehydrates every active policy for the day for continuity validation. */
+  List<RoutingPolicy> findAllForTradingDayForUpdate(LocalDate tradingDay);
 
   /** Inserts the policy and its complete instrument assignment set. */
   void insert(RoutingPolicy policy, Instant publishedAt);

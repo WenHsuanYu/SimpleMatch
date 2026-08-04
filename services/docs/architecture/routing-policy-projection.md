@@ -25,3 +25,12 @@ Risk readiness is out of service until a complete active policy applies to the c
 Asia/Taipei trading date and matches the configured partition topology. An expired, future,
 missing, invalid, or incomplete local policy never becomes an implicit current policy. The legacy
 JSON resolver remains migration scaffolding until the consumer-first cutover issue retires it.
+
+Market Reference publication enforces continuity for the whole trading date. Its effective
+intervals are half-open, ordered, and non-overlapping, so a policy ending at `06:00` may be followed
+by one beginning at `06:00` without an ambiguous boundary. A later policy must carry forward every
+instrument already assigned that day with the same partition; it may add an instrument that has not
+appeared before. The publisher locks the existing day policy history and validates this rule before
+inserting either the new active policy or its outbox record. A reassignment, omission, or overlap
+therefore leaves both the active policy set and publication outbox unchanged. Taiwan cash-equity
+trading is modeled as one continuous session, not morning and afternoon batches.
