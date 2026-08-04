@@ -4,34 +4,78 @@
 
 - Design interview: complete
 - Shared implementation brief: confirmed
-- Production implementation: not started
+- Production implementation: in progress; phases 0 through 7 are complete; routing-policy migration
+  issues #78 through #86 are certified
 - Delivery model: incremental, test-first, and documentation-aligned
 
 This plan describes both refactoring of existing modules and creation of target capabilities that
 are documented but not yet present in the repository. New capabilities are labeled explicitly so
 they are not mistaken for behavior that already exists.
 
+The acceptance-criteria checklists below are final-program gates. The dated progress snapshot is
+the current implementation record; an unchecked later-phase commit must not be read as evidence
+that no supporting foundation exists.
+
+## Current Implementation Status
+
+Status as of 2026-08-04, reconciled against the source tree, completed GitHub issues, and the
+remaining issue graph:
+
+| Phase | Status | Current evidence and remaining boundary |
+| --- | --- | --- |
+| 0. Trustworthy baseline | Complete | Characterization, compatibility inventory, and baseline evidence are present. |
+| 1. Build and dependency policy | Complete | Convention plugins, dependency policy, locking, and blocking quality gates are in place. |
+| 2. Spring configuration | Complete | Services bind capability-scoped Spring properties; the shared platform facade and custom loader have been removed. |
+| 3. v2 domain contracts | Complete | Typed v2 contracts and strict v1 compatibility adapters exist; live v1 seams remain intentionally transitional. |
+| 4. Typed V1 schemas | Complete | Account, risk, and persistence use reset typed V1 Flyway schemas with migration verification. |
+| 5. Market Reference publisher | Complete | The publisher imports, validates, persists, activates, and publishes immutable daily snapshots and versioned routing policies. |
+| 6. Account reservation authority | Complete | Reservation, rejection, fill, release, idempotency, concurrency, and lifecycle outbox behavior are implemented. |
+| 7. Durable Risk Admission | Complete | Pending-before-remote-call admission, terminal transactions, recovery, backpressure, v2 gRPC, and v1 compatibility are implemented. |
+| 8. QuickFIX admission and sessions | Partial | Strict semantic WAL replay, pre-WAL validation, deep new-order and dispatch seams, composed session state, and split properties are implemented; the complete v2 order-condition, interruption, and certification scope remains. |
+| 9. Binary outbox CDC and Kafka | Partial | Binary service outboxes and the Risk Debezium connector template exist; cross-service CDC tests, retry and quarantine policy, metrics, and cleanup remain. |
+| 10. C++ matching engine | Not started | No native matching-engine module exists. Issue #81 plans only the minimum policy-aware ingress seam, not the complete engine. |
+| 11. Account lifecycle integration | Partial | Idempotent account lifecycle transitions and outbox persistence exist; the Kafka consumer, sequence-gap quarantine, and acknowledgement-recovery gate remain. |
+| 12. Durable and Redis projections | Foundation only | Persistence has its V1 projection and inbox schema baseline; Redis read models and the query service do not exist. |
+| 13. Market-data streaming | Not started | Neither the runtime projection pipeline nor the market-data streamer exists. |
+| 14. Kubernetes and security | Partial | QuickFIX deployment and Risk connector scaffolding exist; reusable overlays, migration jobs, complete service manifests, and production security and observability gates remain. |
+| 15. Transition cleanup | Partial | The custom configuration facade and several wide transitional interfaces are gone; v1 adapters, legacy representations, and final documentation and validation cleanup remain. |
+
+### Active Implementation Frontier
+
+- [#77](https://github.com/WenHsuanYu/SimpleMatch/issues/77) defines the accepted, versioned
+  Market Reference Routing Policy contract.
+- [#78](https://github.com/WenHsuanYu/SimpleMatch/issues/78) through
+  [#86](https://github.com/WenHsuanYu/SimpleMatch/issues/86) implement and certify contract
+  expansion, publication, Risk projection and provenance, native Matching ingress, continuity
+  enforcement, and retirement of Risk-local routing authority.
+- [#38](https://github.com/WenHsuanYu/SimpleMatch/issues/38) was the original ownership issue and
+  is superseded for execution planning by the more detailed #77 through #86 issue graph. The
+  certified migration establishes Market Reference as the sole routing-policy authority.
+- The final evidence is recorded in
+  [Routing Policy migration certification](../services/docs/architecture/routing-policy-certification.md).
+- Matching, Redis/query, market-data streaming, and complete deployment work remain later slices of
+  this plan. Completing the Routing Policy issue graph does not complete those phases.
+
 ## Problem Statement
 
-SimpleMatch has an intended polyglot, event-driven architecture, but the current implementation is
-incomplete and several concerns are shallow or spread across callers:
+SimpleMatch has an intended polyglot, event-driven architecture. Phases 0 through 7 have corrected
+several original gaps, but the end-to-end trading path remains incomplete:
 
-- Configuration is represented by a shared object and custom loading behavior instead of one
-  validated Spring property-source mechanism.
-- Database migrations preserve development history that can now be replaced by clean, business-typed
-  V1 schemas because no shared or production data exists.
+- Configuration now uses capability-scoped Spring property binding; deployment-level Secret,
+  overlay, and restart policy still requires completion.
+- Account, risk, and persistence now use clean business-typed V1 schemas; future schema changes must
+  continue through service-owned Flyway migrations.
 - Order fields cross boundaries as strings and are later stored in broad numeric or text columns.
-- Risk admission, idempotency, persistence, outbox construction, and duplicate recovery expose more
-  implementation detail than callers should need.
-- Account reservation is a cross-service consistency concern without a complete durable recovery
-  process.
+- Typed v2 contracts exist, while active v1 compatibility seams still carry some string values.
+- Risk Admission and Account Authority now own durable, idempotent local outcomes, while later
+  matching and consumer integrations remain incomplete.
 - Kafka, Debezium, outbox, retry, ordering, duplicate handling, and recovery policies need one
-  consistent contract.
+  complete cross-service contract and operational proof.
 - Taiwan market rules, market-reference authority, and session behavior are not implemented end to
   end.
 - Redis is planned but not implemented as a read model.
-- The documented C++ matching engine, market-data services, and query service are not present in the
-  current source tree.
+- The Market Reference publisher now exists, but the documented C++ matching engine, market-data
+  streamer, and query service are not present in the current source tree.
 
 The refactor must preserve current behavior while replacing shallow interfaces with deep modules,
 adding missing target capabilities in controlled later phases, and avoiding a repository-wide
@@ -203,8 +247,9 @@ Deep modules concentrate policy:
 - A matching module owns deterministic book state and Taiwan execution rules.
 - Projection modules own idempotent PostgreSQL and Redis read models.
 
-New deployable capabilities are added only after their upstream interfaces are stable. They include
-the C++ matching engine, market-data publisher, market-data streamer, and query service.
+New deployable capabilities are added only after their upstream interfaces are stable. The Market
+Reference publisher has been added; the remaining new capabilities include the C++ matching engine,
+market-data streamer, and query service.
 
 ## Commit Plan
 
