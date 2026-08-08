@@ -86,9 +86,16 @@ This repo is primarily a Gradle/Java workspace today.
 - CMake presets select only the capability features required by each configuration policy. The
   `ci-fast` preset enables only the current native test closure, while `full-native-dev` enables the
   complete planned native dependency set.
+- `ci-fast` and `ci-sanitize` use the repository-owned `x64-linux-ci` overlay triplet. SimpleMatch
+  remains a Debug build for CI correctness checks, while vcpkg builds third-party target and host
+  dependencies as Release-only packages to reduce cold-cache work. Local `dev-debug` and
+  `full-native-dev` continue to use vcpkg's standard `x64-linux` triplet semantics.
 - Each preset uses its own build tree and default manifest-mode `vcpkg_installed` directory. Binary
   packages may still be shared through the external vcpkg binary cache, so installation isolation
   does not require recompiling an unchanged package ABI.
+- GitHub Actions includes `vcpkg.json`, `CMakePresets.json`, and repository triplet files in the
+  binary-cache key. A triplet policy change therefore creates a new outer cache generation; vcpkg's
+  own package ABI checking remains the finer-grained validation inside that restored cache.
 
 ## Prerequisites
 
@@ -112,11 +119,14 @@ ctest --preset dev-debug
 
 The main configuration policies are:
 
-- `dev-debug`: current active native development dependencies plus tests.
-- `ci-fast`: minimal current dependency closure used by pull-request CI.
-- `ci-sanitize`: the `ci-fast` policy with ASan/UBSan enabled.
+- `dev-debug`: current active native development dependencies plus tests, using the standard vcpkg
+  Linux triplet.
+- `ci-fast`: minimal current dependency closure used by pull-request CI; SimpleMatch is Debug while
+  vcpkg dependencies use the release-only `x64-linux-ci` triplet.
+- `ci-sanitize`: the `ci-fast` policy with ASan/UBSan enabled and the same release-only dependency
+  triplet.
 - `full-native-dev`: all currently declared native capability features for broader future
-  development work.
+  development work, using the standard vcpkg Linux triplet.
 
 All presets inherit the common Ninja and vcpkg toolchain configuration from the hidden
 `vcpkg-base` preset. `VCPKG_ROOT` must point to the vcpkg checkout before configuring locally.
