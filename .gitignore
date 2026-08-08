@@ -81,3 +81,8 @@ Concept/*.md
 graphify-out/
 .gitattributes
 .codex/
+
+
+# Ignore all matched build directories recursively
+**/build/
+
