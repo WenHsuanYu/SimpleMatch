@@ -23,6 +23,12 @@ tasks.withType<Test>().configureEach {
     )
 }
 
+tasks.named<Test>("test") {
+    filter {
+        excludeTestsMatching("com.simplematch.quickfixgateway.fix.QuickFixCertificationEvidenceTest")
+    }
+}
+
 tasks.register<Test>("certificationTest") {
     group = "verification"
     description = "Runs QuickFIX/J certification-style simulator evidence tests."
