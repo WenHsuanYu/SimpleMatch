@@ -138,7 +138,7 @@ class QuickFixCertificationEvidenceTest {
       assertUuidVersionSeven(walRecord.recordId());
       assertThat(executionReport.getString(17)).isEqualTo("E-" + walRecord.recordId());
 
-      final OrderCommand publishedCommand = ordersCommandPublisher.lastPublishedCommand();
+      final OrderCommand publishedCommand = ordersCommandPublisher.awaitPublishedCommand();
       assertThat(publishedCommand.getCommandId()).isEqualTo(walRecord.recordId());
       assertThat(publishedCommand.getMetadata().getEventId()).isEqualTo(walRecord.recordId());
       assertThat(publishedCommand.getSenderCompId()).isEqualTo("CLIENT");
@@ -433,11 +433,20 @@ class QuickFixCertificationEvidenceTest {
   private static final class OrdersCommandPublisher
       implements com.simplematch.quickfixgateway.kafka.OrdersCommandPublisher {
     private final AtomicReference<OrderCommand> lastPublishedCommand = new AtomicReference<>();
+    private final CountDownLatch publishedCommandLatch = new CountDownLatch(1);
 
     @Override
     public CompletableFuture<Void> publish(OrderCommand command) {
       lastPublishedCommand.set(command);
+      publishedCommandLatch.countDown();
       return CompletableFuture.completedFuture(null);
+    }
+
+    private OrderCommand awaitPublishedCommand() throws InterruptedException {
+      assertThat(publishedCommandLatch.await(10, TimeUnit.SECONDS))
+          .as("expected compatibility order command to be published")
+          .isTrue();
+      return lastPublishedCommand.get();
     }
 
     private OrderCommand lastPublishedCommand() {
