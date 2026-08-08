@@ -1,16 +1,53 @@
 {
   "name": "simplematch",
   "version-string": "0.1.0",
-  "description": "SimpleMatch monorepo (C++20) - dependencies managed via vcpkg (except vendored QuickFIX)",
+  "description": "SimpleMatch native dependencies organized by capability",
   "dependencies": [
-    "grpc",
-    "gtest",
-    "protobuf",
-    "nlohmann-json",
-    "librdkafka",
-    "libpqxx",
-    "hiredis",
-    "opentelemetry-cpp",
-    "prometheus-cpp"
-  ]
+    "protobuf"
+  ],
+  "features": {
+    "tests": {
+      "description": "Native unit and integration test dependencies",
+      "dependencies": [
+        "gtest"
+      ]
+    },
+    "rpc": {
+      "description": "Native RPC capabilities",
+      "dependencies": [
+        "grpc"
+      ]
+    },
+    "messaging": {
+      "description": "Native Kafka messaging capabilities",
+      "dependencies": [
+        "librdkafka"
+      ]
+    },
+    "postgres": {
+      "description": "Native PostgreSQL persistence capabilities",
+      "dependencies": [
+        "libpqxx"
+      ]
+    },
+    "redis": {
+      "description": "Native Redis projection and cache capabilities",
+      "dependencies": [
+        "hiredis"
+      ]
+    },
+    "json-config": {
+      "description": "Native JSON configuration support",
+      "dependencies": [
+        "nlohmann-json"
+      ]
+    },
+    "observability": {
+      "description": "Native tracing and metrics capabilities",
+      "dependencies": [
+        "opentelemetry-cpp",
+        "prometheus-cpp"
+      ]
+    }
+  }
 }
