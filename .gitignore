@@ -45,6 +45,7 @@ build/
 build-vcpkg/
 build-sanitize/
 build-vcpkg-sanitize/
+out/
 .gradle/
 
 # Local runtime config (do not commit secrets)
@@ -59,9 +60,6 @@ data/quickfix/log/*
 
 data/quickfix/wal/*
 !data/quickfix/wal/.gitkeep
-
-# vcpkg installed packages (configured via VCPKG_INSTALLED_DIR)
-third_party/vcpkg_installed/
 
 # clangd cache
 .cache/
