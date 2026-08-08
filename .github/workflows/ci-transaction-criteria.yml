@@ -1,0 +1,43 @@
+name: Transaction Criteria CI
+
+on:
+  push:
+    branches:
+      - master
+      - main
+    paths:
+      - '.github/workflows/ci-transaction-criteria.yml'
+      - 'scripts/check-transaction-acceptance-criteria.sh'
+      - 'scripts/test-check-transaction-acceptance-criteria.sh'
+      - 'docs/cross-cutting-transaction-and-consistency-policy.md'
+      - 'docs/taiwan-event-driven-refactor-plan.md'
+  pull_request:
+    paths:
+      - '.github/workflows/ci-transaction-criteria.yml'
+      - 'scripts/check-transaction-acceptance-criteria.sh'
+      - 'scripts/test-check-transaction-acceptance-criteria.sh'
+      - 'docs/cross-cutting-transaction-and-consistency-policy.md'
+      - 'docs/taiwan-event-driven-refactor-plan.md'
+  workflow_dispatch:
+
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  transaction-criteria:
+    name: Transaction criteria documentation
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 1
+          persist-credentials: false
+      - name: Verify transaction criteria structure
+        run: |
+          bash scripts/test-check-transaction-acceptance-criteria.sh
+          bash scripts/check-transaction-acceptance-criteria.sh

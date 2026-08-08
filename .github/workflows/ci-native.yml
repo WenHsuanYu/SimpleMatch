@@ -1,0 +1,99 @@
+name: Native CI
+
+on:
+  push:
+    branches:
+      - master
+      - main
+    paths:
+      - '.github/workflows/ci-native.yml'
+      - 'CMakeLists.txt'
+      - 'CMakePresets.json'
+      - 'vcpkg.json'
+      - 'triplets/**'
+      - 'third_party/**'
+      - 'matching-engine/**'
+      - 'src/**'
+      - 'include/**'
+      - 'tests/**'
+      - 'proto/**'
+      - 'shared-java/simplematch-contracts/src/test/resources/native-routing-fixtures/**'
+  pull_request:
+    paths:
+      - '.github/workflows/ci-native.yml'
+      - 'CMakeLists.txt'
+      - 'CMakePresets.json'
+      - 'vcpkg.json'
+      - 'triplets/**'
+      - 'third_party/**'
+      - 'matching-engine/**'
+      - 'src/**'
+      - 'include/**'
+      - 'tests/**'
+      - 'proto/**'
+      - 'shared-java/simplematch-contracts/src/test/resources/native-routing-fixtures/**'
+  workflow_dispatch:
+
+env:
+  VCPKG_COMMIT: b5d1a94fb7f88fd835e360fd23a45a09ceedbf48
+
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  native:
+    name: Native / CMake
+    runs-on: ubuntu-24.04
+    timeout-minutes: 60
+    env:
+      VCPKG_ROOT: ${{ github.workspace }}/.vcpkg
+      VCPKG_DEFAULT_BINARY_CACHE: ${{ github.workspace }}/.cache/vcpkg/binaries
+      VCPKG_DOWNLOADS: ${{ github.workspace }}/.cache/vcpkg/downloads
+      NATIVE_PRESET: ci-fast
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Prepare vcpkg caches
+        run: mkdir -p "$VCPKG_DEFAULT_BINARY_CACHE" "$VCPKG_DOWNLOADS"
+      - name: Cache vcpkg binary packages
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: ${{ env.VCPKG_DEFAULT_BINARY_CACHE }}
+          key: ${{ runner.os }}-${{ runner.arch }}-vcpkg-binary-${{ env.VCPKG_COMMIT }}-${{ hashFiles('vcpkg.json', 'CMakePresets.json', 'triplets/**/*.cmake') }}
+          restore-keys: |
+            ${{ runner.os }}-${{ runner.arch }}-vcpkg-binary-${{ env.VCPKG_COMMIT }}-
+      - name: Cache vcpkg source downloads
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: ${{ env.VCPKG_DOWNLOADS }}
+          key: ${{ runner.os }}-${{ runner.arch }}-vcpkg-downloads-${{ env.VCPKG_COMMIT }}-${{ hashFiles('vcpkg.json') }}
+          restore-keys: |
+            ${{ runner.os }}-${{ runner.arch }}-vcpkg-downloads-${{ env.VCPKG_COMMIT }}-
+      - name: Bootstrap pinned vcpkg
+        run: |
+          git clone --filter=blob:none https://github.com/microsoft/vcpkg.git "$VCPKG_ROOT"
+          git -C "$VCPKG_ROOT" checkout --detach "$VCPKG_COMMIT"
+          test "$(git -C "$VCPKG_ROOT" rev-parse HEAD)" = "$VCPKG_COMMIT"
+          "$VCPKG_ROOT/bootstrap-vcpkg.sh" -disableMetrics
+      - name: Configure native preset
+        run: cmake --preset "$NATIVE_PRESET"
+      - name: Build native preset
+        run: cmake --build --preset "$NATIVE_PRESET" --parallel 2
+      - name: Run native tests
+        run: ctest --preset "$NATIVE_PRESET"
+      - name: Upload native logs
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: native-build-logs
+          if-no-files-found: ignore
+          path: |
+            out/build/**/CMakeCache.txt
+            out/build/**/Testing/**
+            out/build/**/*.log

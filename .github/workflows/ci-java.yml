@@ -1,0 +1,93 @@
+name: Java CI
+
+on:
+  push:
+    branches:
+      - master
+      - main
+    paths:
+      - '.github/workflows/ci-java.yml'
+      - '.github/actions/setup-java-gradle/**'
+      - 'build.gradle.kts'
+      - 'settings.gradle.kts'
+      - 'gradle.properties'
+      - 'gradlew'
+      - 'gradlew.bat'
+      - 'gradle/**'
+      - 'build-logic/**'
+      - 'shared-java/**'
+      - 'proto/**'
+      - 'services/account-service/**'
+      - 'services/marketdata-publisher/**'
+      - 'services/persistence/**'
+      - 'services/quickfix-gateway/**'
+      - 'services/risk-service/**'
+      - 'config/checkstyle/**'
+      - 'config/pmd/**'
+      - 'config/spotbugs/**'
+      - 'config/quickfix/**'
+      - 'config/simplematch.example.json'
+  pull_request:
+    paths:
+      - '.github/workflows/ci-java.yml'
+      - '.github/actions/setup-java-gradle/**'
+      - 'build.gradle.kts'
+      - 'settings.gradle.kts'
+      - 'gradle.properties'
+      - 'gradlew'
+      - 'gradlew.bat'
+      - 'gradle/**'
+      - 'build-logic/**'
+      - 'shared-java/**'
+      - 'proto/**'
+      - 'services/account-service/**'
+      - 'services/marketdata-publisher/**'
+      - 'services/persistence/**'
+      - 'services/quickfix-gateway/**'
+      - 'services/risk-service/**'
+      - 'config/checkstyle/**'
+      - 'config/pmd/**'
+      - 'config/spotbugs/**'
+      - 'config/quickfix/**'
+      - 'config/simplematch.example.json'
+  workflow_dispatch:
+
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  java:
+    name: Java / Gradle
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 1
+          persist-credentials: false
+      - name: Set up Java and Gradle
+        id: java-gradle
+        uses: ./.github/actions/setup-java-gradle
+      - name: Run repo-wide Java static analysis
+        run: ./gradlew --no-daemon --stacktrace staticAnalysis
+      - name: Run Java test suite
+        run: ./gradlew --no-daemon --stacktrace test :services:quickfix-gateway:certificationTest
+      - name: Upload Java reports
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: java-build-reports
+          if-no-files-found: ignore
+          path: |
+            **/build/reports/checkstyle/**
+            **/build/reports/pmd/**
+            **/build/reports/spotbugs/**
+            **/build/reports/tests/**
+            **/build/test-results/**
+            **/build/reports/problems/**
+            ${{ steps.java-gradle.outputs.build-results-json }}

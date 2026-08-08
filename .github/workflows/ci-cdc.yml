@@ -1,0 +1,52 @@
+name: CDC CI
+
+on:
+  push:
+    branches:
+      - master
+      - main
+    paths:
+      - '.github/workflows/ci-cdc.yml'
+      - 'deploy/compose/**'
+      - 'scripts/run-outbox-cdc-contract-check.sh'
+      - 'scripts/verify-outbox-connector-contracts.sh'
+      - 'shared-java/**'
+      - 'proto/**'
+      - 'services/account-service/**'
+      - 'services/marketdata-publisher/**'
+      - 'services/risk-service/**'
+  pull_request:
+    paths:
+      - '.github/workflows/ci-cdc.yml'
+      - 'deploy/compose/**'
+      - 'scripts/run-outbox-cdc-contract-check.sh'
+      - 'scripts/verify-outbox-connector-contracts.sh'
+      - 'shared-java/**'
+      - 'proto/**'
+      - 'services/account-service/**'
+      - 'services/marketdata-publisher/**'
+      - 'services/risk-service/**'
+  workflow_dispatch:
+
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  cdc:
+    name: Outbox CDC / Kafka Connect
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 1
+          persist-credentials: false
+      - name: Verify connector contracts
+        run: bash scripts/verify-outbox-connector-contracts.sh
+      - name: Run live CDC contract check
+        run: bash scripts/run-outbox-cdc-contract-check.sh
