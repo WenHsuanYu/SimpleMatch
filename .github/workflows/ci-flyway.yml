@@ -1,0 +1,90 @@
+name: Flyway CI
+
+on:
+  push:
+    branches:
+      - master
+      - main
+    paths:
+      - '.github/workflows/ci-flyway.yml'
+      - '.github/actions/setup-java-gradle/**'
+      - 'build.gradle.kts'
+      - 'settings.gradle.kts'
+      - 'gradle.properties'
+      - 'gradlew'
+      - 'gradlew.bat'
+      - 'gradle/**'
+      - 'build-logic/**'
+      - 'scripts/run-flyway-ci-checks.sh'
+      - 'scripts/lib/flyway-services.sh'
+      - 'scripts/check-flyway-query-plans.sh'
+      - 'services/account-service/**'
+      - 'services/marketdata-publisher/**'
+      - 'services/persistence/**'
+      - 'services/risk-service/**'
+  pull_request:
+    paths:
+      - '.github/workflows/ci-flyway.yml'
+      - '.github/actions/setup-java-gradle/**'
+      - 'build.gradle.kts'
+      - 'settings.gradle.kts'
+      - 'gradle.properties'
+      - 'gradlew'
+      - 'gradlew.bat'
+      - 'gradle/**'
+      - 'build-logic/**'
+      - 'scripts/run-flyway-ci-checks.sh'
+      - 'scripts/lib/flyway-services.sh'
+      - 'scripts/check-flyway-query-plans.sh'
+      - 'services/account-service/**'
+      - 'services/marketdata-publisher/**'
+      - 'services/persistence/**'
+      - 'services/risk-service/**'
+  workflow_dispatch:
+
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  flyway:
+    name: Flyway / PostgreSQL
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: simplematch
+          POSTGRES_PASSWORD: simplematch
+          POSTGRES_DB: postgres
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U simplematch -d postgres"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 1
+          persist-credentials: false
+      - name: Set up Java and Gradle
+        uses: ./.github/actions/setup-java-gradle
+      - name: Install PostgreSQL client
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y postgresql-client
+      - name: Run Flyway and PostgreSQL smoke checks
+        env:
+          CI_POSTGRES_HOST: 127.0.0.1
+          CI_POSTGRES_PORT: '5432'
+          CI_POSTGRES_USER: simplematch
+          CI_POSTGRES_PASSWORD: simplematch
+          CI_POSTGRES_ADMIN_DB: postgres
+        run: bash scripts/run-flyway-ci-checks.sh
