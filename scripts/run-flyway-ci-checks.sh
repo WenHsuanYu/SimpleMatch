@@ -52,7 +52,7 @@ set_service_flyway_env() {
   printf -v "$user_var" '%s' "$postgres_user"
   printf -v "$password_var" '%s' "$postgres_password"
 
-  export "$jdbc_var" "$user_var" "$password_var"
+  export "${jdbc_var?}" "${user_var?}" "${password_var?}"
 }
 
 assert_service_tables() {
