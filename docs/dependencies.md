@@ -78,6 +78,11 @@ This repo is primarily a Gradle/Java workspace today.
 - Native dependencies are installed through **vcpkg** using the manifest at `vcpkg.json`.
 - The manifest keeps Protobuf as the native core dependency and groups optional capabilities into
   `tests`, `rpc`, `messaging`, `postgres`, `redis`, `json-config`, and `observability` features.
+- CMake consumes vcpkg-provided package configuration directly: Protobuf uses
+  `find_package(protobuf CONFIG REQUIRED)`, `protobuf::libprotobuf`, and `protobuf_generate()`, while
+  GoogleTest uses `find_package(GTest CONFIG REQUIRED)` and the `GTest::` imported targets. Avoid
+  mixing vcpkg Config mode with CMake's legacy `FindProtobuf` Module mode or manually rediscovering
+  headers and archives that the package targets already describe.
 - CMake presets select only the capability features required by each configuration policy. The
   `ci-fast` preset enables only the current native test closure, while `full-native-dev` enables the
   complete planned native dependency set.
@@ -124,5 +129,5 @@ All presets inherit the common Ninja and vcpkg toolchain configuration from the 
   it must not introduce a second wire contract.
 - Native tests are controlled by `BUILD_TESTING`; presets that enable tests also select the `tests`
   manifest feature so GoogleTest is present when the test targets are configured.
-- A release-only local vcpkg installation may use the generated Protobuf pkg-config metadata to
-  resolve static Abseil dependencies.
+- Protobuf transitive dependencies such as Abseil and utf8-range are carried by the vcpkg-provided
+  `protobuf::libprotobuf` target instead of a repository-owned pkg-config fallback.
