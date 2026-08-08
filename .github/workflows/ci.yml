@@ -5,17 +5,8 @@ on:
     branches:
       - master
       - main
-  # Keep untrusted contributions on pull_request with a read-only token.
-  # Do not switch this workflow to pull_request_target unless it is split so
-  # that no repository-controlled build code runs before an explicit trust gate.
   pull_request:
   workflow_dispatch:
-
-# Security posture:
-# - This workflow is intended for GitHub-hosted runners only.
-# - Do not run untrusted PRs from forks on self-hosted runners.
-# - If self-hosted runners are needed later, use a separate workflow limited to
-#   trusted branches, trusted actors, or manual dispatch after review.
 
 env:
   VCPKG_COMMIT: b5d1a94fb7f88fd835e360fd23a45a09ceedbf48
@@ -31,14 +22,12 @@ jobs:
   transaction-criteria:
     name: Transaction criteria documentation
     runs-on: ubuntu-latest
-
     steps:
       - name: Checkout
-        uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           fetch-depth: 1
           persist-credentials: false
-
       - name: Verify transaction criteria structure
         run: |
           bash scripts/test-check-transaction-acceptance-criteria.sh
@@ -51,14 +40,13 @@ jobs:
       java: ${{ steps.filter.outputs.java }}
       flyway: ${{ steps.filter.outputs.flyway }}
       native: ${{ steps.filter.outputs.native }}
-
+      cdc: ${{ steps.filter.outputs.cdc }}
     steps:
       - name: Checkout
-        uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           fetch-depth: 0
           persist-credentials: false
-
       - name: Classify changed files
         id: filter
         shell: bash
@@ -69,6 +57,7 @@ jobs:
             echo "java=true" >> "$GITHUB_OUTPUT"
             echo "flyway=true" >> "$GITHUB_OUTPUT"
             echo "native=true" >> "$GITHUB_OUTPUT"
+            echo "cdc=true" >> "$GITHUB_OUTPUT"
             exit 0
           fi
 
@@ -89,25 +78,32 @@ jobs:
           java=false
           flyway=false
           native=false
+          cdc=false
 
           while IFS= read -r file; do
             [[ -z "$file" ]] && continue
 
             case "$file" in
-              .github/workflows/ci.yml|build.gradle.kts|settings.gradle.kts|gradlew|gradlew.bat|gradle/*|build-logic/*|shared-java/*|proto/*|services/account-service/*|services/marketdata-publisher/*|services/persistence/*|services/quickfix-gateway/*|services/risk-service/*|config/checkstyle/*|config/pmd/*|config/spotbugs/*|config/simplematch.example.json)
+              .github/workflows/*|.github/actions/*|build.gradle.kts|settings.gradle.kts|gradlew|gradlew.bat|gradle/*|build-logic/*|shared-java/*|proto/*|services/account-service/*|services/marketdata-publisher/*|services/persistence/*|services/quickfix-gateway/*|services/risk-service/*|config/checkstyle/*|config/pmd/*|config/spotbugs/*|config/simplematch.example.json)
                 java=true
                 ;;
             esac
 
             case "$file" in
-              .github/workflows/ci.yml|build.gradle.kts|settings.gradle.kts|gradlew|gradlew.bat|gradle/*|build-logic/*|services/account-service/*|services/persistence/*|services/risk-service/*)
+              .github/workflows/*|.github/actions/*|build.gradle.kts|settings.gradle.kts|gradlew|gradlew.bat|gradle/*|build-logic/*|services/account-service/*|services/marketdata-publisher/*|services/persistence/*|services/risk-service/*)
                 flyway=true
                 ;;
             esac
 
             case "$file" in
-              .github/workflows/ci.yml|CMakeLists.txt|CMakePresets.json|vcpkg.json|third_party/*|matching-engine/*|src/*|include/*|tests/*)
+              .github/workflows/*|CMakeLists.txt|CMakePresets.json|vcpkg.json|third_party/*|matching-engine/*|src/*|include/*|tests/*)
                 native=true
+                ;;
+            esac
+
+            case "$file" in
+              .github/workflows/*|deploy/compose/*|scripts/run-outbox-cdc-contract-check.sh|scripts/verify-outbox-connector-contracts.sh|shared-java/*|proto/*|services/account-service/*|services/marketdata-publisher/*|services/risk-service/*)
+                cdc=true
                 ;;
             esac
           done <<< "$changed_files"
@@ -115,9 +111,8 @@ jobs:
           echo "java=$java" >> "$GITHUB_OUTPUT"
           echo "flyway=$flyway" >> "$GITHUB_OUTPUT"
           echo "native=$native" >> "$GITHUB_OUTPUT"
-
-          echo "Changed files detected by CI:"
-          printf '%s\n' "$changed_files"
+          echo "cdc=$cdc" >> "$GITHUB_OUTPUT"
+          printf 'Changed files detected by CI:\n%s\n' "$changed_files"
 
   java:
     name: Java / Gradle
@@ -125,45 +120,22 @@ jobs:
     if: needs.changes.outputs.java == 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 30
-
-    permissions:
-      contents: read
-      actions: write
-
     steps:
       - name: Checkout
-        uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           fetch-depth: 1
           persist-credentials: false
-
-      - name: Validate Gradle Wrapper
-        uses: gradle/actions/wrapper-validation@ed408507eac070d1f99cc633dbcf757c94c7933a # v4.4.4
-
-      - name: Set up Temurin JDK 25
-        uses: actions/setup-java@c1e323688fd81a25caa38c78aa6df2d33d3e20d9 # v4.8.0
-        with:
-          distribution: temurin
-          java-version: '25'
-
-      - name: Set up Gradle cache & Dependency Graph
-        id: gradle-setup
-        uses: gradle/actions/setup-gradle@v6
-        with:
-          dependency-graph: generate-and-submit
-
-      - name: Ensure wrapper is executable
-        run: chmod +x ./gradlew
-
+      - name: Set up Java and Gradle
+        id: java-gradle
+        uses: ./.github/actions/setup-java-gradle
       - name: Run repo-wide Java static analysis
         run: ./gradlew --no-daemon --stacktrace staticAnalysis
-
       - name: Run Java test suite
         run: ./gradlew --no-daemon --stacktrace test :services:quickfix-gateway:certificationTest
-
       - name: Upload Java reports
         if: always()
-        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: java-build-reports
           if-no-files-found: ignore
@@ -174,7 +146,7 @@ jobs:
             **/build/reports/tests/**
             **/build/test-results/**
             **/build/reports/problems/**
-            ${{ steps.gradle-setup.outputs.build-results-json }} 
+            ${{ steps.java-gradle.outputs.build-results-json }}
 
   flyway:
     name: Flyway / PostgreSQL
@@ -182,7 +154,6 @@ jobs:
     if: needs.changes.outputs.flyway == 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 30
-
     services:
       postgres:
         image: postgres:16
@@ -197,34 +168,18 @@ jobs:
           --health-interval 10s
           --health-timeout 5s
           --health-retries 5
-
     steps:
       - name: Checkout
-        uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           fetch-depth: 1
           persist-credentials: false
-
-      - name: Validate Gradle Wrapper
-        uses: gradle/actions/wrapper-validation@ed408507eac070d1f99cc633dbcf757c94c7933a # v4.4.4
-
-      - name: Set up Temurin JDK 25
-        uses: actions/setup-java@c1e323688fd81a25caa38c78aa6df2d33d3e20d9 # v4.8.0
-        with:
-          distribution: temurin
-          java-version: '25'
-
-      - name: Set up Gradle cache
-        uses: gradle/actions/setup-gradle@ed408507eac070d1f99cc633dbcf757c94c7933a # v4.4.4
-
+      - name: Set up Java and Gradle
+        uses: ./.github/actions/setup-java-gradle
       - name: Install PostgreSQL client
         run: |
           sudo apt-get update
           sudo apt-get install -y postgresql-client
-
-      - name: Ensure wrapper is executable
-        run: chmod +x ./gradlew
-
       - name: Run Flyway and PostgreSQL smoke checks
         env:
           CI_POSTGRES_HOST: 127.0.0.1
@@ -234,6 +189,23 @@ jobs:
           CI_POSTGRES_ADMIN_DB: postgres
         run: bash scripts/run-flyway-ci-checks.sh
 
+  cdc:
+    name: Outbox CDC / Kafka Connect
+    needs: changes
+    if: needs.changes.outputs.cdc == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 1
+          persist-credentials: false
+      - name: Verify connector contracts
+        run: bash scripts/verify-outbox-connector-contracts.sh
+      - name: Run live CDC contract check
+        run: bash scripts/run-outbox-cdc-contract-check.sh
+
   native:
     name: Native / CMake
     needs: changes
@@ -242,51 +214,40 @@ jobs:
     timeout-minutes: 60
     env:
       VCPKG_ROOT: ${{ github.workspace }}/.vcpkg
-
     steps:
       - name: Checkout
-        uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           fetch-depth: 1
           persist-credentials: false
-
       - name: Install native build prerequisites
         run: |
           sudo apt-get update
           sudo apt-get install -y build-essential pkg-config zip unzip tar
-
       - name: Cache vcpkg downloads and archives
-        # Include the pinned vcpkg commit in the key so cached archives are not
-        # silently reused across toolchain or port-definition changes.
-        uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4.3.0
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: |
             ${{ env.VCPKG_ROOT }}/downloads
             ~/.cache/vcpkg/archives
           key: ${{ runner.os }}-vcpkg-${{ env.VCPKG_COMMIT }}-${{ hashFiles('vcpkg.json', 'CMakePresets.json') }}
-
       - name: Bootstrap vcpkg
         run: |
           git clone --filter=blob:none https://github.com/microsoft/vcpkg.git "$VCPKG_ROOT"
           git -C "$VCPKG_ROOT" checkout --detach "$VCPKG_COMMIT"
           test "$(git -C "$VCPKG_ROOT" rev-parse HEAD)" = "$VCPKG_COMMIT"
           "$VCPKG_ROOT/bootstrap-vcpkg.sh" -disableMetrics
-
       - name: Show CMake version
         run: cmake --version
-
       - name: Configure native preset
         run: cmake --preset vcpkg
-
       - name: Build native preset
         run: cmake --build --preset vcpkg --parallel 2
-
       - name: Run native tests
         run: ctest --preset vcpkg
-
       - name: Upload native logs
         if: always()
-        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: native-build-logs
           if-no-files-found: ignore

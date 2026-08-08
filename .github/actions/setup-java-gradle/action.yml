@@ -1,0 +1,30 @@
+name: Setup Java and Gradle
+description: Configure Temurin Java and Gradle consistently for repository CI jobs.
+
+inputs:
+  java-version:
+    description: Temurin Java version to install.
+    required: false
+    default: '25'
+
+outputs:
+  build-results-json:
+    description: Path to Gradle's build results JSON, when produced.
+    value: ${{ steps.gradle-setup.outputs.build-results-json }}
+
+runs:
+  using: composite
+  steps:
+    - name: Set up Temurin JDK
+      uses: actions/setup-java@b6effb05e454b25005698d916606bdc6ffcbf961 # v5.7.0
+      with:
+        distribution: temurin
+        java-version: ${{ inputs.java-version }}
+
+    - name: Set up Gradle
+      id: gradle-setup
+      uses: gradle/actions/setup-gradle@9c971963bec38e04b3d30dcc455b5382be2fdbfb # v6.3.0
+
+    - name: Ensure wrapper is executable
+      shell: bash
+      run: chmod +x ./gradlew
