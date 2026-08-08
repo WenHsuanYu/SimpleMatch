@@ -75,44 +75,54 @@ This repo is primarily a Gradle/Java workspace today.
   Kubernetes probes can terminate on `/healthz` and `/readyz`.
 - The root CMake project now builds the policy-aware `matching-engine` ingress seam; the order book,
   matching algorithm, and execution publisher remain future capabilities.
-- Most native dependencies are expected to be installed via **vcpkg** using the manifest at
-  `vcpkg.json`.
+- Native dependencies are installed through **vcpkg** using the manifest at `vcpkg.json`.
+- The manifest keeps Protobuf as the native core dependency and groups optional capabilities into
+  `tests`, `rpc`, `messaging`, `postgres`, `redis`, `json-config`, and `observability` features.
+- CMake presets select only the capability features required by each configuration policy. The
+  `ci-fast` preset enables only the current native test closure, while `full-native-dev` enables the
+  complete planned native dependency set.
+- Each preset uses its own build tree and default manifest-mode `vcpkg_installed` directory. Binary
+  packages may still be shared through the external vcpkg binary cache, so installation isolation
+  does not require recompiling an unchanged package ABI.
 
 ## Prerequisites
 
-- CMake >= 3.21
+- CMake >= 3.28
+- Ninja
 - GCC or Clang with C++20 support
 - vcpkg ([microsoft/vcpkg](https://github.com/microsoft/vcpkg))
 
-On Linux you may also need system packages (varies by distro/toolchain), e.g.:
+On Linux you may also need system packages required by the selected vcpkg ports or toolchain, such
+as `pkg-config`.
 
-- `pkg-config`, `ninja-build` (optional but recommended)
-- `openssl` dev headers
-- `zlib` dev headers
+## Configure & build
 
-## Configure & build (example)
+For normal native development, use the `dev-debug` policy:
 
 ```bash
-# Recommended: use CMake Presets.
-# This repo's `vcpkg` preset also sets VCPKG_INSTALLED_DIR to `third_party/vcpkg_installed/`.
-cmake --preset vcpkg
-cmake --build --preset vcpkg -j
-
-# (Equivalent CLI form)
-# assuming VCPKG_ROOT points to your vcpkg clone
-# cmake -S . -B build-vcpkg \
-#   -DCMAKE_BUILD_TYPE=Release \
-#   -DCMAKE_TOOLCHAIN_FILE=$VCPKG_ROOT/scripts/buildsystems/vcpkg.cmake \
-#   -DVCPKG_INSTALLED_DIR=$PWD/third_party/vcpkg_installed
-# cmake --build build-vcpkg --parallel
-# ctest --test-dir build-vcpkg --output-on-failure
+cmake --preset dev-debug
+cmake --build --preset dev-debug --parallel
+ctest --preset dev-debug
 ```
+
+The main configuration policies are:
+
+- `dev-debug`: current active native development dependencies plus tests.
+- `ci-fast`: minimal current dependency closure used by pull-request CI.
+- `ci-sanitize`: the `ci-fast` policy with ASan/UBSan enabled.
+- `full-native-dev`: all currently declared native capability features for broader future
+  development work.
+
+All presets inherit the common Ninja and vcpkg toolchain configuration from the hidden
+`vcpkg-base` preset. `VCPKG_ROOT` must point to the vcpkg checkout before configuring locally.
 
 ## Notes
 
-- `nlohmann-json` is used for loading the app JSON config (Task 0).
-- If you are building without vcpkg, you must provide `nlohmann_json` to CMake via your
-  environment/toolchain.
+- `nlohmann-json` is retained under the optional `json-config` feature for planned native JSON
+  configuration support; the active native ingress target does not currently require that feature.
 - The native ingress target uses the shared Protobuf sources from `proto/` and GoogleTest fixtures;
-  it must not introduce a second wire contract. A release-only local vcpkg installation may use the
-  generated Protobuf pkg-config metadata to resolve static Abseil dependencies.
+  it must not introduce a second wire contract.
+- Native tests are controlled by `BUILD_TESTING`; presets that enable tests also select the `tests`
+  manifest feature so GoogleTest is present when the test targets are configured.
+- A release-only local vcpkg installation may use the generated Protobuf pkg-config metadata to
+  resolve static Abseil dependencies.
