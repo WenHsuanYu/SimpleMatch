@@ -45,6 +45,12 @@ case "$service_name" in
       "uq_account_reservations_request_id" \
       "SELECT reservation_id FROM account_service.account_reservations WHERE request_id = 'plan-check'"
     ;;
+  marketdata-publisher)
+    assert_index_plan \
+      "routing policy source snapshot lookup" \
+      "routing_policies_source_snapshot_idx" \
+      "SELECT routing_policy_id FROM marketdata_publisher.routing_policies WHERE source_market_snapshot_id = '00000000-0000-0000-0000-000000000000'"
+    ;;
   risk-service)
     assert_index_plan \
       "risk submission business-key lookup" \

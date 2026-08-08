@@ -87,4 +87,5 @@ jobs:
           CI_POSTGRES_USER: simplematch
           CI_POSTGRES_PASSWORD: simplematch
           CI_POSTGRES_ADMIN_DB: postgres
+          CI_POSTGRES_DATABASE: simplematch_ci
         run: bash scripts/run-flyway-ci-checks.sh
