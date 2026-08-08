@@ -1,7 +1,6 @@
 cmake_minimum_required(VERSION 3.28)
 project(SimpleMatch LANGUAGES CXX)
 
-# Testing (default ON via CTest). If GTest isn't available, tests/ will gracefully skip.
 include(CTest)
 
 option(SIMPLEMATCH_ENABLE_WARNINGS "Enable compiler warnings" ON)
@@ -41,7 +40,6 @@ set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_CXX_EXTENSIONS OFF)
 
 find_package(Protobuf MODULE REQUIRED)
-find_package(Threads REQUIRED)
 
 # vcpkg's Linux triplet supplies Protobuf as a static archive.  The module
 # package exposes the archive but not its Abseil dependency graph, so prefer
@@ -66,17 +64,6 @@ if(PkgConfig_FOUND AND Protobuf_LIBRARY_RELEASE MATCHES "\\.a$")
     unset(ENV{PKG_CONFIG_PATH})
   endif()
 endif()
-
-find_path(SIMPLEMATCH_GTEST_INCLUDE_DIR
-    NAMES gtest/gtest.h
-    REQUIRED)
-find_library(SIMPLEMATCH_GTEST_LIBRARY
-    NAMES gtest
-    REQUIRED)
-find_library(SIMPLEMATCH_GTEST_MAIN_LIBRARY
-    NAMES gtest_main
-    HINTS ${CMAKE_PREFIX_PATH}/lib/manual-link
-    REQUIRED)
 
 set(SIMPLEMATCH_ROUTING_PROTO_FILES
     ${CMAKE_CURRENT_SOURCE_DIR}/proto/common_v2.proto
@@ -106,21 +93,35 @@ target_sources(simplematch_matching_ingress
 simplematch_enable_warnings(simplematch_matching_ingress)
 simplematch_enable_sanitizers(simplematch_matching_ingress)
 
-add_executable(simplematch_matching_ingress_tests
-    matching-engine/tests/critical_order_ingress_test.cpp
-    matching-engine/tests/routing_policy_ingress_test.cpp)
-target_link_libraries(simplematch_matching_ingress_tests
-    PRIVATE simplematch_matching_ingress
-            ${SIMPLEMATCH_GTEST_MAIN_LIBRARY}
-            ${SIMPLEMATCH_GTEST_LIBRARY}
-            Threads::Threads)
-target_include_directories(simplematch_matching_ingress_tests
-    PRIVATE ${SIMPLEMATCH_GTEST_INCLUDE_DIR}
-            ${CMAKE_CURRENT_BINARY_DIR})
-target_compile_definitions(simplematch_matching_ingress_tests
-    PRIVATE SIMPLEMATCH_TEST_FIXTURE_DIR="${CMAKE_CURRENT_SOURCE_DIR}/shared-java/simplematch-contracts/src/test/resources/native-routing-fixtures")
-simplematch_enable_warnings(simplematch_matching_ingress_tests)
-simplematch_enable_sanitizers(simplematch_matching_ingress_tests)
+if(BUILD_TESTING)
+  find_package(Threads REQUIRED)
+  find_path(SIMPLEMATCH_GTEST_INCLUDE_DIR
+      NAMES gtest/gtest.h
+      REQUIRED)
+  find_library(SIMPLEMATCH_GTEST_LIBRARY
+      NAMES gtest
+      REQUIRED)
+  find_library(SIMPLEMATCH_GTEST_MAIN_LIBRARY
+      NAMES gtest_main
+      HINTS ${CMAKE_PREFIX_PATH}/lib/manual-link
+      REQUIRED)
 
-include(GoogleTest)
-gtest_discover_tests(simplematch_matching_ingress_tests)
+  add_executable(simplematch_matching_ingress_tests
+      matching-engine/tests/critical_order_ingress_test.cpp
+      matching-engine/tests/routing_policy_ingress_test.cpp)
+  target_link_libraries(simplematch_matching_ingress_tests
+      PRIVATE simplematch_matching_ingress
+              ${SIMPLEMATCH_GTEST_MAIN_LIBRARY}
+              ${SIMPLEMATCH_GTEST_LIBRARY}
+              Threads::Threads)
+  target_include_directories(simplematch_matching_ingress_tests
+      PRIVATE ${SIMPLEMATCH_GTEST_INCLUDE_DIR}
+              ${CMAKE_CURRENT_BINARY_DIR})
+  target_compile_definitions(simplematch_matching_ingress_tests
+      PRIVATE SIMPLEMATCH_TEST_FIXTURE_DIR="${CMAKE_CURRENT_SOURCE_DIR}/shared-java/simplematch-contracts/src/test/resources/native-routing-fixtures")
+  simplematch_enable_warnings(simplematch_matching_ingress_tests)
+  simplematch_enable_sanitizers(simplematch_matching_ingress_tests)
+
+  include(GoogleTest)
+  gtest_discover_tests(simplematch_matching_ingress_tests)
+endif()

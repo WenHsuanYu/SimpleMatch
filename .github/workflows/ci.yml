@@ -215,21 +215,29 @@ jobs:
     env:
       VCPKG_ROOT: ${{ github.workspace }}/.vcpkg
       VCPKG_DEFAULT_BINARY_CACHE: ${{ github.workspace }}/.cache/vcpkg/binaries
-      NATIVE_PRESET: vcpkg
+      VCPKG_DOWNLOADS: ${{ github.workspace }}/.cache/vcpkg/downloads
+      NATIVE_PRESET: ci-fast
     steps:
       - name: Checkout
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
-      - name: Prepare vcpkg binary cache
-        run: mkdir -p "$VCPKG_DEFAULT_BINARY_CACHE"
+      - name: Prepare vcpkg caches
+        run: mkdir -p "$VCPKG_DEFAULT_BINARY_CACHE" "$VCPKG_DOWNLOADS"
       - name: Cache vcpkg binary packages
         uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: ${{ env.VCPKG_DEFAULT_BINARY_CACHE }}
-          key: ${{ runner.os }}-${{ runner.arch }}-vcpkg-binary-${{ env.VCPKG_COMMIT }}-${{ hashFiles('vcpkg.json') }}
+          key: ${{ runner.os }}-${{ runner.arch }}-vcpkg-binary-${{ env.VCPKG_COMMIT }}-${{ hashFiles('vcpkg.json', 'CMakePresets.json') }}
           restore-keys: |
             ${{ runner.os }}-${{ runner.arch }}-vcpkg-binary-${{ env.VCPKG_COMMIT }}-
+      - name: Cache vcpkg source downloads
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: ${{ env.VCPKG_DOWNLOADS }}
+          key: ${{ runner.os }}-${{ runner.arch }}-vcpkg-downloads-${{ env.VCPKG_COMMIT }}-${{ hashFiles('vcpkg.json', 'CMakePresets.json') }}
+          restore-keys: |
+            ${{ runner.os }}-${{ runner.arch }}-vcpkg-downloads-${{ env.VCPKG_COMMIT }}-
       - name: Bootstrap pinned vcpkg
         run: |
           git clone --filter=blob:none https://github.com/microsoft/vcpkg.git "$VCPKG_ROOT"
