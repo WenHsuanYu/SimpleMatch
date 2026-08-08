@@ -7,10 +7,10 @@
   },
   "configurePresets": [
     {
-      "name": "vcpkg",
-      "displayName": "Dev (vcpkg, install to third_party/)",
+      "name": "vcpkg-base",
+      "hidden": true,
       "generator": "Unix Makefiles",
-      "binaryDir": "${sourceDir}/build-vcpkg",
+      "binaryDir": "${sourceDir}/out/build/${presetName}",
       "cacheVariables": {
         "CMAKE_BUILD_TYPE": "Debug",
         "CMAKE_TOOLCHAIN_FILE": "$env{VCPKG_ROOT}/scripts/buildsystems/vcpkg.cmake",
@@ -18,10 +18,14 @@
       }
     },
     {
+      "name": "vcpkg",
+      "displayName": "Dev (vcpkg, install to third_party/)",
+      "inherits": "vcpkg-base"
+    },
+    {
       "name": "vcpkg-sanitize",
       "displayName": "Debug + Warnings + ASan/UBSan (vcpkg, install to third_party/)",
-      "inherits": "vcpkg",
-      "binaryDir": "${sourceDir}/build-vcpkg-sanitize",
+      "inherits": "vcpkg-base",
       "cacheVariables": {
         "SIMPLEMATCH_ENABLE_SANITIZERS": "ON"
       }
@@ -42,6 +46,7 @@
       "name": "vcpkg",
       "configurePreset": "vcpkg",
       "output": {
+        "verbosity": "verbose",
         "outputOnFailure": true
       }
     },
@@ -49,6 +54,7 @@
       "name": "vcpkg-sanitize",
       "configurePreset": "vcpkg-sanitize",
       "output": {
+        "verbosity": "verbose",
         "outputOnFailure": true
       }
     }
