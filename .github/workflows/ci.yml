@@ -96,7 +96,7 @@ jobs:
             esac
 
             case "$file" in
-              .github/workflows/*|CMakeLists.txt|CMakePresets.json|vcpkg.json|third_party/*|matching-engine/*|src/*|include/*|tests/*)
+              .github/workflows/*|CMakeLists.txt|CMakePresets.json|vcpkg.json|third_party/*|matching-engine/*|src/*|include/*|tests/*|proto/*|shared-java/simplematch-contracts/src/test/resources/native-routing-fixtures/*)
                 native=true
                 ;;
             esac
@@ -210,46 +210,36 @@ jobs:
     name: Native / CMake
     needs: changes
     if: needs.changes.outputs.native == 'true'
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 60
     env:
       VCPKG_ROOT: ${{ github.workspace }}/.vcpkg
-      VCPKG_BINARY_SOURCES: clear;files,${{ github.workspace }}/.cache/vcpkg/binaries,readwrite
+      VCPKG_DEFAULT_BINARY_CACHE: ${{ github.workspace }}/.cache/vcpkg/binaries
       NATIVE_PRESET: vcpkg
     steps:
       - name: Checkout
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
-          fetch-depth: 1
           persist-credentials: false
-      - name: Install native build prerequisites
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y build-essential pkg-config zip unzip tar
       - name: Cache vcpkg binary packages
         uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
-          path: ${{ github.workspace }}/.cache/vcpkg/binaries
-          key: ${{ runner.os }}-vcpkg-binary-${{ env.VCPKG_COMMIT }}-${{ hashFiles('vcpkg.json') }}
-      - name: Cache vcpkg source downloads
-        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
-        with:
-          path: ${{ env.VCPKG_ROOT }}/downloads
-          key: ${{ runner.os }}-vcpkg-downloads-${{ env.VCPKG_COMMIT }}-${{ hashFiles('vcpkg.json') }}
-      - name: Bootstrap vcpkg
+          path: ${{ env.VCPKG_DEFAULT_BINARY_CACHE }}
+          key: ${{ runner.os }}-${{ runner.arch }}-vcpkg-binary-${{ env.VCPKG_COMMIT }}-${{ hashFiles('vcpkg.json') }}
+          restore-keys: |
+            ${{ runner.os }}-${{ runner.arch }}-vcpkg-binary-${{ env.VCPKG_COMMIT }}-
+      - name: Bootstrap pinned vcpkg
         run: |
           git clone --filter=blob:none https://github.com/microsoft/vcpkg.git "$VCPKG_ROOT"
           git -C "$VCPKG_ROOT" checkout --detach "$VCPKG_COMMIT"
           test "$(git -C "$VCPKG_ROOT" rev-parse HEAD)" = "$VCPKG_COMMIT"
           "$VCPKG_ROOT/bootstrap-vcpkg.sh" -disableMetrics
-      - name: Show CMake version
-        run: cmake --version
       - name: Configure native preset
         run: cmake --preset "$NATIVE_PRESET"
       - name: Build native preset
         run: cmake --build --preset "$NATIVE_PRESET" --parallel 2
-      - name: Run native tests with console output
-        run: ctest --preset "$NATIVE_PRESET" --verbose
+      - name: Run native tests
+        run: ctest --preset "$NATIVE_PRESET"
       - name: Upload native logs
         if: always()
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
