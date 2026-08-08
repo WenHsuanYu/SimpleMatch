@@ -3,13 +3,14 @@
 flyway_known_services() {
   printf '%s\n' \
     'account-service' \
+    'marketdata-publisher' \
     'persistence' \
     'risk-service'
 }
 
 flyway_service_exists() {
   case "$1" in
-    account-service|persistence|risk-service)
+    account-service|marketdata-publisher|persistence|risk-service)
       return 0
       ;;
     *)
@@ -22,6 +23,9 @@ flyway_service_project_path() {
   case "$1" in
     account-service)
       printf '%s\n' ':services:account-service'
+      ;;
+    marketdata-publisher)
+      printf '%s\n' ':services:marketdata-publisher'
       ;;
     persistence)
       printf '%s\n' ':services:persistence'
@@ -40,6 +44,9 @@ flyway_service_task_prefix() {
     account-service)
       printf '%s\n' 'accountService'
       ;;
+    marketdata-publisher)
+      printf '%s\n' 'marketdataPublisher'
+      ;;
     persistence)
       printf '%s\n' 'persistence'
       ;;
@@ -56,6 +63,9 @@ flyway_service_env_prefix() {
   case "$1" in
     account-service)
       printf '%s\n' 'ACCOUNT_SERVICE'
+      ;;
+    marketdata-publisher)
+      printf '%s\n' 'MARKETDATA_PUBLISHER'
       ;;
     persistence)
       printf '%s\n' 'PERSISTENCE'
@@ -74,6 +84,9 @@ flyway_service_schema() {
     account-service)
       printf '%s\n' 'account_service'
       ;;
+    marketdata-publisher)
+      printf '%s\n' 'marketdata_publisher'
+      ;;
     persistence)
       printf '%s\n' 'persistence'
       ;;
@@ -88,7 +101,7 @@ flyway_service_schema() {
 
 flyway_service_migration_dir() {
   case "$1" in
-    account-service|persistence|risk-service)
+    account-service|marketdata-publisher|persistence|risk-service)
       printf '%s\n' "services/$1/src/main/resources/db/migration/$1"
       ;;
     *)
@@ -101,6 +114,9 @@ flyway_service_smoke_tables() {
   case "$1" in
     account-service)
       printf '%s\n' account_limits account_positions account_reservations
+      ;;
+    marketdata-publisher)
+      printf '%s\n' market_snapshots outbox routing_policies routing_policy_assignments
       ;;
     persistence)
       printf '%s\n' orders executions inbox
