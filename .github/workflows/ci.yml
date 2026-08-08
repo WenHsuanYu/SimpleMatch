@@ -96,7 +96,7 @@ jobs:
             esac
 
             case "$file" in
-              .github/workflows/*|CMakeLists.txt|CMakePresets.json|vcpkg.json|third_party/*|matching-engine/*|src/*|include/*|tests/*|proto/*|shared-java/simplematch-contracts/src/test/resources/native-routing-fixtures/*)
+              .github/workflows/*|CMakeLists.txt|CMakePresets.json|vcpkg.json|triplets/*|third_party/*|matching-engine/*|src/*|include/*|tests/*|proto/*|shared-java/simplematch-contracts/src/test/resources/native-routing-fixtures/*)
                 native=true
                 ;;
             esac
@@ -228,14 +228,14 @@ jobs:
         uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: ${{ env.VCPKG_DEFAULT_BINARY_CACHE }}
-          key: ${{ runner.os }}-${{ runner.arch }}-vcpkg-binary-${{ env.VCPKG_COMMIT }}-${{ hashFiles('vcpkg.json', 'CMakePresets.json') }}
+          key: ${{ runner.os }}-${{ runner.arch }}-vcpkg-binary-${{ env.VCPKG_COMMIT }}-${{ hashFiles('vcpkg.json', 'CMakePresets.json', 'triplets/**/*.cmake') }}
           restore-keys: |
             ${{ runner.os }}-${{ runner.arch }}-vcpkg-binary-${{ env.VCPKG_COMMIT }}-
       - name: Cache vcpkg source downloads
         uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: ${{ env.VCPKG_DOWNLOADS }}
-          key: ${{ runner.os }}-${{ runner.arch }}-vcpkg-downloads-${{ env.VCPKG_COMMIT }}-${{ hashFiles('vcpkg.json', 'CMakePresets.json') }}
+          key: ${{ runner.os }}-${{ runner.arch }}-vcpkg-downloads-${{ env.VCPKG_COMMIT }}-${{ hashFiles('vcpkg.json') }}
           restore-keys: |
             ${{ runner.os }}-${{ runner.arch }}-vcpkg-downloads-${{ env.VCPKG_COMMIT }}-
       - name: Bootstrap pinned vcpkg
