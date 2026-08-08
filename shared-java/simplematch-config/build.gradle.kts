@@ -8,6 +8,7 @@ dependencies {
     api(platform(libs.spring.boot.bom))
     api("org.springframework.boot:spring-boot")
     api("org.springframework.boot:spring-boot-autoconfigure")
+    api("io.micrometer:micrometer-core")
     implementation(libs.uuid.creator)
     compileOnly(libs.errorprone.annotations)
     //testImplementation("org.springframework.boot:spring-boot")

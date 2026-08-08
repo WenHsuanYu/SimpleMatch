@@ -84,6 +84,7 @@ set(SIMPLEMATCH_ROUTING_PROTO_FILES
     ${CMAKE_CURRENT_SOURCE_DIR}/proto/routing_policy_v2.proto)
 
 add_library(simplematch_matching_ingress STATIC
+    matching-engine/src/critical_order_ingress.cpp
     matching-engine/src/routing_policy_ingress.cpp)
 target_include_directories(simplematch_matching_ingress
     PUBLIC matching-engine/include
@@ -106,6 +107,7 @@ simplematch_enable_warnings(simplematch_matching_ingress)
 simplematch_enable_sanitizers(simplematch_matching_ingress)
 
 add_executable(simplematch_matching_ingress_tests
+    matching-engine/tests/critical_order_ingress_test.cpp
     matching-engine/tests/routing_policy_ingress_test.cpp)
 target_link_libraries(simplematch_matching_ingress_tests
     PRIVATE simplematch_matching_ingress

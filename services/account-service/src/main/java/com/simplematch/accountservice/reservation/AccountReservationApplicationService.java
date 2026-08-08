@@ -147,6 +147,18 @@ public class AccountReservationApplicationService {
   public ReservationRecord release(ReleaseReservationOperation operation) {
     Objects.requireNonNull(operation, "operation");
     final ReservationIdentity identity = operation.reservation();
+    if (operation.sourceEventId() != null
+        && !authorityWriter.claimInbox(
+            CONSUMER_NAME,
+            operation.sourceEventId(),
+            identity.orderId().value(),
+            null,
+            clock.millis())) {
+      return authorityReader
+          .findReservationForUpdate(identity.reservationId().value())
+          .map(this::toResponse)
+          .orElseThrow(() -> new IllegalArgumentException("reservation not found"));
+    }
     final AccountReservation reservation =
         authorityReader
             .findReservationForUpdate(identity.reservationId().value())
@@ -285,7 +297,7 @@ public class AccountReservationApplicationService {
     outbox.insert(
         new AccountLifecycleOutbox(
             new AccountLifecycleOutbox.EventIdentity(java.util.UUID.fromString(eventId)),
-            new AccountLifecycleOutbox.Destination(OUTBOX_TOPIC, reservation.orderId()),
+            new AccountLifecycleOutbox.Destination(OUTBOX_TOPIC, reservation.accountId()),
             new AccountLifecycleOutbox.Payload(
                 event.toByteArray(),
                 AccountLifecycleEvent.getDescriptor().getFullName(),
@@ -298,4 +310,5 @@ public class AccountReservationApplicationService {
   private ReservationRecord toResponse(AccountReservation reservation) {
     return ReservationRecord.from(reservation);
   }
+
 }

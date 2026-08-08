@@ -1,5 +1,6 @@
 package com.simplematch.marketdatapublisher.routing;
 
+import java.sql.Timestamp;
 import java.util.Objects;
 import org.springframework.jdbc.core.JdbcTemplate;
 
@@ -21,18 +22,20 @@ public final class JdbcRoutingPolicyOutbox implements RoutingPolicyOutbox {
     jdbcTemplate.update(
         """
         INSERT INTO marketdata_publisher.outbox (
-          event_id, topic, message_key, payload, payload_type, headers_json, aggregate_type, aggregate_id,
-          created_at_unix_ms
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+          event_id, topic, message_key, kafka_partition_id, payload, payload_type, headers_json,
+          aggregate_type, aggregate_id, created_at_unix_ms, created_at
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         """,
         event.eventId(),
         destination.topic(),
         destination.messageKey(),
+        destination.kafkaPartitionId(),
         payload.bytes(),
         payload.payloadType(),
         payload.headersJson(),
         aggregate.aggregateType(),
         aggregate.aggregateId(),
-        record.createdAtUnixMs());
+        record.createdAtUnixMs(),
+        Timestamp.from(java.time.Instant.ofEpochMilli(record.createdAtUnixMs())));
   }
 }

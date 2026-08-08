@@ -26,6 +26,9 @@ public class RoutingPolicyApplicationService {
   /** Stable Kafka topic for versioned Market Reference routing policies. */
   public static final String ROUTING_POLICY_PUBLISHED_TOPIC = "market-reference.routing-policies";
 
+  /** Keeps the ordered policy stream on one explicit partition. */
+  public static final int ROUTING_POLICY_PARTITION = 0;
+
   private static final int TRANSACTION_TIMEOUT_SECONDS = 10;
 
   @NonNull private final RoutingPolicyRepository policies;
@@ -143,7 +146,9 @@ public class RoutingPolicyApplicationService {
     return new RoutingPolicyOutboxRecord(
         new RoutingPolicyOutboxRecord.EventIdentity(eventId),
         new RoutingPolicyOutboxRecord.Destination(
-            ROUTING_POLICY_PUBLISHED_TOPIC, policy.identity().tradingDay().toString()),
+            ROUTING_POLICY_PUBLISHED_TOPIC,
+            policy.identity().tradingDay().toString(),
+            ROUTING_POLICY_PARTITION),
         new RoutingPolicyOutboxRecord.Payload(
             payload, payloadType, serializeHeaders(eventId, payloadType)),
         new RoutingPolicyOutboxRecord.AggregateReference(

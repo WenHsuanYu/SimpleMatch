@@ -21,6 +21,21 @@ spring:
         enable-api: ${SIMPLEMATCH_KUBERNETES_ENABLED:false}
         sources:
           - name: ${spring.application.name}-secrets
+  kafka:
+    bootstrap-servers: ${simplematch.kafka.brokers:localhost:9092}
+    consumer:
+      group-id: account-lifecycle
+      auto-offset-reset: earliest
+      enable-auto-commit: false
+      key-deserializer: org.apache.kafka.common.serialization.StringDeserializer
+      value-deserializer: org.apache.kafka.common.serialization.ByteArrayDeserializer
+
+simplematch:
+  account-service:
+    execution-topic: matching.executions
+    lifecycle-consumer:
+      enabled: false
+      maximum-attempts: 3
 
 management:
   endpoints:

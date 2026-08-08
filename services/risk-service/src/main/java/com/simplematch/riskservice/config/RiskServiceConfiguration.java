@@ -19,10 +19,12 @@ import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.context.annotation.Import;
 import org.springframework.jdbc.core.JdbcTemplate;
+import org.springframework.kafka.annotation.EnableKafka;
 import org.springframework.transaction.support.TransactionTemplate;
 
 /** Composes Risk Admission and submission collaborators over shared local infrastructure. */
 @Configuration
+@EnableKafka
 @EnableConfigurationProperties(RiskServiceProperties.class)
 @Import(RiskServicePersistenceConfiguration.class)
 public class RiskServiceConfiguration {

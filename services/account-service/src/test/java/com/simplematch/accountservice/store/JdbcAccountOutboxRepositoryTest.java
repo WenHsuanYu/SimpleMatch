@@ -20,7 +20,7 @@ class JdbcAccountOutboxRepositoryTest {
     final AccountLifecycleOutbox event =
         new AccountLifecycleOutbox(
             new AccountLifecycleOutbox.EventIdentity(eventId),
-            new AccountLifecycleOutbox.Destination("account.lifecycle", "order-1"),
+            new AccountLifecycleOutbox.Destination("account.lifecycle", "account-1"),
             new AccountLifecycleOutbox.Payload(new byte[] {1, 2}, "event.v1", "{}"),
             new AccountLifecycleOutbox.AggregateReference("reservation", "reservation-1"),
             100L);
@@ -29,12 +29,13 @@ class JdbcAccountOutboxRepositoryTest {
 
     assertThat(
             jdbcTemplate.queryForMap(
-                "SELECT event_id, topic, message_key, payload, payload_type, headers_json, "
+                "SELECT event_id, topic, message_key, kafka_partition_id, payload, payload_type, headers_json, "
                     + "aggregate_type, aggregate_id, created_at_unix_ms "
                     + "FROM account_service.outbox"))
         .containsEntry("EVENT_ID", eventId)
         .containsEntry("TOPIC", "account.lifecycle")
-        .containsEntry("MESSAGE_KEY", "order-1")
+        .containsEntry("MESSAGE_KEY", "account-1")
+        .containsEntry("KAFKA_PARTITION_ID", null)
         .containsEntry("PAYLOAD_TYPE", "event.v1")
         .containsEntry("HEADERS_JSON", "{}")
         .containsEntry("AGGREGATE_TYPE", "reservation")
@@ -44,6 +45,25 @@ class JdbcAccountOutboxRepositoryTest {
             jdbcTemplate.queryForObject(
                 "SELECT payload FROM account_service.outbox", byte[].class))
         .containsExactly(1, 2);
+  }
+
+  @Test
+  void preservesAnExplicitKafkaPartition() {
+    final DriverManagerDataSource dataSource = dataSource();
+    final JdbcTemplate jdbcTemplate = new JdbcTemplate(dataSource);
+    final AccountLifecycleOutbox event =
+        new AccountLifecycleOutbox(
+            new AccountLifecycleOutbox.EventIdentity(UUID.randomUUID()),
+            new AccountLifecycleOutbox.Destination("account.lifecycle", "account-1", 7),
+            new AccountLifecycleOutbox.Payload(new byte[] {3, 4}, "event.v1", "{}"),
+            new AccountLifecycleOutbox.AggregateReference("reservation", "reservation-1"),
+            100L);
+
+    new JdbcAccountOutboxRepository(jdbcTemplate).insert(event);
+
+    assertThat(jdbcTemplate.queryForObject(
+            "SELECT kafka_partition_id FROM account_service.outbox", Integer.class))
+        .isEqualTo(7);
   }
 
   private DriverManagerDataSource dataSource() {

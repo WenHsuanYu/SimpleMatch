@@ -23,7 +23,10 @@ class AccountServiceFlywayMigrationTest {
     assertThat(hasTable(jdbcTemplate, "ACCOUNT_LIMITS")).isTrue();
     assertThat(hasTable(jdbcTemplate, "ACCOUNT_POSITIONS")).isTrue();
     assertThat(hasTable(jdbcTemplate, "ACCOUNT_RESERVATIONS")).isTrue();
-    assertThat(appliedMigrationCount(jdbcTemplate)).isEqualTo(3);
+    assertThat(hasTable(jdbcTemplate, "OUTBOX")).isTrue();
+    assertThat(hasTable(jdbcTemplate, "CONSUMER_QUARANTINES")).isTrue();
+    assertThat(hasColumn(jdbcTemplate, "OUTBOX", "CREATED_AT")).isTrue();
+    assertThat(appliedMigrationCount(jdbcTemplate)).isEqualTo(5);
   }
 
   @DisplayName("a second account-service migration is a no-op")
@@ -132,6 +135,22 @@ class AccountServiceFlywayMigrationTest {
             Integer.class,
             SCHEMA_NAME,
             tableName)
+        > 0;
+  }
+
+  private boolean hasColumn(JdbcTemplate jdbcTemplate, String tableName, String columnName) {
+    return jdbcTemplate.queryForObject(
+            """
+                        SELECT COUNT(*)
+                        FROM INFORMATION_SCHEMA.COLUMNS
+                        WHERE UPPER(TABLE_SCHEMA) = ?
+                          AND UPPER(TABLE_NAME) = ?
+                          AND UPPER(COLUMN_NAME) = ?
+                        """,
+            Integer.class,
+            SCHEMA_NAME,
+            tableName,
+            columnName)
         > 0;
   }
 }

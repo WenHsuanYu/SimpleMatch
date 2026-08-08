@@ -22,7 +22,8 @@ import org.springframework.kafka.annotation.EnableKafka;
 @EnableConfigurationProperties({
   QuickFixGatewayFileProperties.class,
   QuickFixGatewayRuntimeProperties.class,
-  QuickFixGatewayRiskClientProperties.class
+  QuickFixGatewayRiskClientProperties.class,
+  QuickFixGatewayExecutionProjectionProperties.class
 })
 public class QuickFixGatewayConfiguration {
   @Bean

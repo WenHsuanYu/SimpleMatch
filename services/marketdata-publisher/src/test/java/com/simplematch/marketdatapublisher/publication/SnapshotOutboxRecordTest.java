@@ -37,6 +37,7 @@ class SnapshotOutboxRecordTest {
     assertThat(record.eventIdentity().eventId()).isEqualTo(eventId);
     assertThat(record.destination().topic()).isEqualTo("market-reference.snapshots");
     assertThat(record.destination().messageKey()).isEqualTo("2026-07-27");
+    assertThat(record.destination().kafkaPartitionId()).isNull();
     assertThat(record.payload().payloadType()).isEqualTo("snapshot.v1");
     assertThat(record.payload().headersJson()).isEqualTo("{}");
     assertThat(record.aggregateReference().aggregateType()).isEqualTo("market_snapshot");
@@ -50,6 +51,10 @@ class SnapshotOutboxRecordTest {
     assertThatThrownBy(() -> new SnapshotOutboxRecord.Destination(" ", "2026-07-27"))
         .isInstanceOf(IllegalArgumentException.class)
         .hasMessage("topic is required");
+    assertThatThrownBy(
+            () -> new SnapshotOutboxRecord.Destination("market-reference.snapshots", "2026-07-27", -1))
+        .isInstanceOf(IllegalArgumentException.class)
+        .hasMessage("kafka partition must be non-negative");
     assertThatThrownBy(
             () ->
                 new SnapshotOutboxRecord(

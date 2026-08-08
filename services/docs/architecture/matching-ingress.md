@@ -46,6 +46,13 @@ partition mismatch stops that partition. A restarted native process begins
 unprojected and must replay the serialized policy before processing accepted
 orders.
 
+The `CriticalOrderIngress` adapter applies the same delivery boundary to accepted
+orders: transient failures retry the exact `DeliveryPosition`, exhausted retries
+retain event identity and retry history as quarantine evidence, and the affected
+partition pauses without rerouting. Restart recovery restores the same position;
+known policy or partition mismatches return `kStop` for investigation rather than
+silently selecting a different partition.
+
 ## Build and test
 
 The root CMake project registers the library and its deterministic test target.
@@ -67,3 +74,5 @@ The C++ tests consume the hex-encoded fixtures under
 `NativeRoutingPolicyFixtureCompatibilityTest` proves those bytes are produced
 by the generated Java contracts, while the native tests cover staging,
 activation, readiness, pause, restart replay, and invariant-stop outcomes.
+The critical-delivery tests additionally cover proceed, retry, quarantine, restart,
+and same-position recovery.

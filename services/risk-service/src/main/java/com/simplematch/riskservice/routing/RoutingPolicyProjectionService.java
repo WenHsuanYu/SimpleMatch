@@ -7,7 +7,7 @@ import org.springframework.dao.DuplicateKeyException;
 import org.springframework.transaction.support.TransactionTemplate;
 
 /** Owns strict decoding and atomic activation of Risk's local Routing Policy projection. */
-public final class RoutingPolicyProjectionService {
+public final class RoutingPolicyProjectionService implements RoutingPolicyProjector {
   private final RoutingPolicyProjectionRepository repository;
   private final TransactionTemplate transactionTemplate;
   private final Clock clock;
@@ -28,6 +28,7 @@ public final class RoutingPolicyProjectionService {
    * @param payload serialized shared Routing Policy protobuf
    * @return durable projection identity and duplicate indication
    */
+  @Override
   public RoutingPolicyProjectionResult project(byte[] payload) {
     final RoutingPolicyProjection projection = RoutingPolicyProjectionDecoder.decode(payload);
     final RoutingPolicyProjectionResult result =

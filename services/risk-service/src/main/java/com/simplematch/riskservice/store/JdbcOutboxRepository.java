@@ -2,6 +2,7 @@ package com.simplematch.riskservice.store;
 
 import com.simplematch.riskservice.outbox.OutboxRecord;
 import com.simplematch.riskservice.outbox.OutboxRepository;
+import java.sql.Timestamp;
 import java.util.Objects;
 import java.util.UUID;
 import org.springframework.jdbc.core.JdbcTemplate;
@@ -34,8 +35,9 @@ public final class JdbcOutboxRepository implements OutboxRepository {
             headers_json,
             aggregate_type,
             aggregate_id,
-            created_at_unix_ms
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            created_at_unix_ms,
+            created_at
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         """,
         UUID.fromString(eventInfo.eventId()),
         routing.topic(),
@@ -46,6 +48,7 @@ public final class JdbcOutboxRepository implements OutboxRepository {
         payloadEnvelope.headersJson(),
         aggregateReference.aggregateType(),
         aggregateReference.aggregateId(),
-        eventInfo.createdAtUnixMs());
+        eventInfo.createdAtUnixMs(),
+        Timestamp.from(java.time.Instant.ofEpochMilli(eventInfo.createdAtUnixMs())));
   }
 }

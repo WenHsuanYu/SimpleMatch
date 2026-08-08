@@ -5,6 +5,7 @@ plugins {
 
 dependencies {
     implementation("org.springframework.boot:spring-boot-starter-jdbc")
+    implementation("org.springframework.boot:spring-boot-starter-kafka")
     implementation("com.fasterxml.jackson.core:jackson-databind")
     implementation(libs.grpc.netty.shaded)
     implementation(libs.grpc.protobuf)

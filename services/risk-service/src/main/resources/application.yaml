@@ -29,6 +29,12 @@ spring:
       key-serializer: org.apache.kafka.common.serialization.StringSerializer
       value-serializer: org.apache.kafka.common.serialization.ByteArraySerializer
       acks: all
+    consumer:
+      group-id: risk-routing-policy
+      auto-offset-reset: earliest
+      enable-auto-commit: false
+      key-deserializer: org.apache.kafka.common.serialization.StringDeserializer
+      value-deserializer: org.apache.kafka.common.serialization.ByteArrayDeserializer
 
 simplematch:
   risk-service:
@@ -37,6 +43,10 @@ simplematch:
       cdc-metric-name: orders.validated
       maximum-cdc-lag-events: 10000
       maximum-metric-age: 30s
+    routing-policy-topic: market-reference.routing-policies
+    routing-policy-consumer:
+      enabled: false
+      maximum-attempts: 3
 
 
 management:

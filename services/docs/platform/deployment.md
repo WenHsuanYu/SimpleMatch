@@ -14,6 +14,12 @@ Kafka Connect and Debezium are optional local dependencies when validating the o
 path. Their configuration belongs with deployment assets; the reliability guarantee they support is
 specified in the architecture area.
 
+The local CDC contract check is
+`bash scripts/run-outbox-cdc-contract-check.sh`. It starts isolated PostgreSQL, Kafka, and Kafka
+Connect containers, applies one connector per owning outbox schema, and verifies binary payload
+bytes, keys, headers, timestamps, explicit partitions, and outbox retention across pause/resume.
+Set `SIMPLEMATCH_POSTGRES_PORT` when the host's default PostgreSQL port is occupied.
+
 ## Kubernetes target
 
 Kubernetes is the default target deployment environment. Each service exposes readiness and liveness
@@ -30,3 +36,9 @@ clients must reconnect or re-resolve endpoints after connection failure or rollo
 Introduce Consul or a service mesh only when a concrete cross-platform, cross-cluster, or
 policy-governance need exceeds Kubernetes Service DNS. Those tools are not a default dependency of
 the target architecture.
+
+Each connector is scoped to one service-owned outbox table. A future service receives an outbox
+connector only after it owns authoritative state and durable outbound events; merely consuming an
+existing topic does not justify a connector. Connector lag, source outbox age, consumer lag,
+duplicates, retries, quarantine, and dead-letter counts are operational metrics rather than domain
+state.

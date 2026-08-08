@@ -23,7 +23,9 @@ class MarketdataPublisherFlywayMigrationTest {
     assertThat(tableExists(jdbcTemplate, "OUTBOX")).isTrue();
     assertThat(tableExists(jdbcTemplate, "ROUTING_POLICIES")).isTrue();
     assertThat(tableExists(jdbcTemplate, "ROUTING_POLICY_ASSIGNMENTS")).isTrue();
-    assertThat(appliedMigrationCount(jdbcTemplate)).isEqualTo(2);
+    assertThat(columnExists(jdbcTemplate, "OUTBOX", "KAFKA_PARTITION_ID")).isTrue();
+    assertThat(columnExists(jdbcTemplate, "OUTBOX", "CREATED_AT")).isTrue();
+    assertThat(appliedMigrationCount(jdbcTemplate)).isEqualTo(4);
   }
 
   @DisplayName(
@@ -35,7 +37,7 @@ class MarketdataPublisherFlywayMigrationTest {
     migrate(jdbcTemplate);
     migrate(jdbcTemplate);
 
-    assertThat(appliedMigrationCount(jdbcTemplate)).isEqualTo(2);
+    assertThat(appliedMigrationCount(jdbcTemplate)).isEqualTo(4);
     insertActiveSnapshot(jdbcTemplate, "018a1f7d-1a55-7000-8000-000000000001", "source-a", "a");
     assertThatThrownBy(
             () ->
@@ -73,6 +75,19 @@ class MarketdataPublisherFlywayMigrationTest {
                         """,
             Integer.class,
             tableName)
+        > 0;
+  }
+
+  private boolean columnExists(JdbcTemplate jdbcTemplate, String tableName, String columnName) {
+    return jdbcTemplate.queryForObject(
+            """
+                        SELECT COUNT(*) FROM INFORMATION_SCHEMA.COLUMNS
+                        WHERE UPPER(TABLE_SCHEMA) = 'MARKETDATA_PUBLISHER'
+                          AND UPPER(TABLE_NAME) = ? AND UPPER(COLUMN_NAME) = ?
+                        """,
+            Integer.class,
+            tableName,
+            columnName)
         > 0;
   }
 

@@ -46,12 +46,21 @@ public record AccountLifecycleOutbox(
    *
    * @param topic destination topic
    * @param messageKey downstream message key
+   * @param kafkaPartitionId optional explicit Kafka partition
    */
-  public record Destination(String topic, String messageKey) {
+  public record Destination(String topic, String messageKey, Integer kafkaPartitionId) {
+    /** Creates a destination that lets Kafka choose the partition from the message key. */
+    public Destination(String topic, String messageKey) {
+      this(topic, messageKey, null);
+    }
+
     /** Requires nonblank destination values. */
     public Destination {
       topic = requireNonBlank(topic, "topic");
       messageKey = requireNonBlank(messageKey, "message_key");
+      if (kafkaPartitionId != null && kafkaPartitionId < 0) {
+        throw new IllegalArgumentException("kafka_partition_id must be non-negative");
+      }
     }
   }
 

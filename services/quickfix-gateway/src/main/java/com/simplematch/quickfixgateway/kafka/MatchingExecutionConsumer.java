@@ -10,7 +10,6 @@ import com.simplematch.quickfixgateway.fix.OrderSessionRegistry;
 import com.simplematch.quickfixgateway.fix.OrderSessionState;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
-import org.springframework.kafka.annotation.KafkaListener;
 import quickfix.Message;
 import quickfix.SessionID;
 
@@ -38,7 +37,6 @@ public final class MatchingExecutionConsumer {
   }
 
   /** Renders and sends one deduplicated matching execution event. */
-  @KafkaListener(topics = "${simplematch.kafka.topics.matching-executions:matching.executions}")
   public void onExecution(byte[] payload) throws InvalidProtocolBufferException {
     final ExecutionEvent executionEvent = ExecutionEvent.parseFrom(payload);
     ExecutionEventRequirements.validate(executionEvent);

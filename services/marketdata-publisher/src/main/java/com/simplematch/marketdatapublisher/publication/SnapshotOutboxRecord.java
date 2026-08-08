@@ -30,12 +30,20 @@ public record SnapshotOutboxRecord(
     }
   }
 
-  /** Destination topic and business key for the snapshot publication. */
-  public record Destination(String topic, String messageKey) {
+  /** Destination topic, business key, and optional explicit Kafka partition. */
+  public record Destination(String topic, String messageKey, Integer kafkaPartitionId) {
+    /** Creates a destination that lets Kafka choose the partition from the message key. */
+    public Destination(String topic, String messageKey) {
+      this(topic, messageKey, null);
+    }
+
     /** Requires a destination topic and business key. */
     public Destination {
       requireText(topic, "topic");
       requireText(messageKey, "message key");
+      if (kafkaPartitionId != null && kafkaPartitionId < 0) {
+        throw new IllegalArgumentException("kafka partition must be non-negative");
+      }
     }
   }
 

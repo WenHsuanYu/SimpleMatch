@@ -63,3 +63,7 @@ simplematch:
   quickfix-gateway:
     data-plane-enabled: true
     replay-enabled: true
+    execution-projection:
+      maximum-attempts: 3
+      retry-delay-millis: 1000
+      dead-letter-topic: matching.executions.dlq

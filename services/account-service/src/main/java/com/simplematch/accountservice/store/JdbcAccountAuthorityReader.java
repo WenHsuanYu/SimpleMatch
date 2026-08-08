@@ -100,6 +100,14 @@ public class JdbcAccountAuthorityReader implements AccountAuthorityReader {
   }
 
   @Override
+  public Optional<AccountReservation> findReservationByOrderId(String orderId) {
+    return jdbc.queryFirst(
+        jdbc.reservationSelect() + " WHERE order_id = ?",
+        AccountAuthorityJdbcSupport.RESERVATION_MAPPER,
+        orderId);
+  }
+
+  @Override
   public Optional<AccountReservation> findReservationForUpdate(String reservationId) {
     return jdbc.queryForUpdate(
         jdbc.reservationSelect() + " WHERE reservation_id = ? FOR UPDATE",

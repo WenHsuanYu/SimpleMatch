@@ -4,8 +4,9 @@
 
 - Design interview: complete
 - Shared implementation brief: confirmed
-- Production implementation: in progress; phases 0 through 7 are complete; routing-policy migration
-  issues #78 through #86 are certified
+- Production implementation: in progress; phases 0 through 7 and Phase 9 are complete; Phase 8
+  retains the v2 outbound lifecycle migration as an explicit follow-up; routing-policy migration
+  issues #78 through #86 and delivery issues #92 through #99 are certified
 - Delivery model: incremental, test-first, and documentation-aligned
 
 This plan describes both refactoring of existing modules and creation of target capabilities that
@@ -31,10 +32,10 @@ remaining issue graph:
 | 5. Market Reference publisher | Complete | The publisher imports, validates, persists, activates, and publishes immutable daily snapshots and versioned routing policies. |
 | 6. Account reservation authority | Complete | Reservation, rejection, fill, release, idempotency, concurrency, and lifecycle outbox behavior are implemented. |
 | 7. Durable Risk Admission | Complete | Pending-before-remote-call admission, terminal transactions, recovery, backpressure, v2 gRPC, and v1 compatibility are implemented. |
-| 8. QuickFIX admission and sessions | Partial | Strict semantic WAL replay, pre-WAL validation, deep new-order and dispatch seams, composed session state, and split properties are implemented; the complete v2 order-condition, interruption, and certification scope remains. |
-| 9. Binary outbox CDC and Kafka | Partial | Binary service outboxes and the Risk Debezium connector template exist; cross-service CDC tests, retry and quarantine policy, metrics, and cleanup remain. |
+| 8. QuickFIX admission and sessions | Partial | Supported order-combination tests, strict semantic WAL replay, pre-WAL validation, deep new-order and dispatch seams, composed session state, and split properties are implemented; the v2 outbound lifecycle consumer migration remains explicitly open. |
+| 9. Binary outbox CDC and Kafka | Complete | Risk, Account, and Market Reference binary outboxes have owner-scoped Debezium contracts and a live Docker publication harness; critical delivery, non-critical projection handling, Micrometer delivery metrics, and conservative retention authorization are verified. |
 | 10. C++ matching engine | Not started | No native matching-engine module exists. Issue #81 plans only the minimum policy-aware ingress seam, not the complete engine. |
-| 11. Account lifecycle integration | Partial | Idempotent account lifecycle transitions and outbox persistence exist; the Kafka consumer, sequence-gap quarantine, and acknowledgement-recovery gate remain. |
+| 11. Account lifecycle integration | Partial | Idempotent account lifecycle transitions, lifecycle outbox persistence, and a critical Kafka consumer with quarantine/recovery now exist; aggregate-sequence gap handling and the full TP-12 integration gate remain. |
 | 12. Durable and Redis projections | Foundation only | Persistence has its V1 projection and inbox schema baseline; Redis read models and the query service do not exist. |
 | 13. Market-data streaming | Not started | Neither the runtime projection pipeline nor the market-data streamer exists. |
 | 14. Kubernetes and security | Partial | QuickFIX deployment and Risk connector scaffolding exist; reusable overlays, migration jobs, complete service manifests, and production security and observability gates remain. |
@@ -54,6 +55,10 @@ remaining issue graph:
   certified migration establishes Market Reference as the sole routing-policy authority.
 - The final evidence is recorded in
   [Routing Policy migration certification](../services/docs/architecture/routing-policy-certification.md).
+- Phase 9 evidence is recorded in the delivery-policy documents and the completed issue chain
+  [#92](https://github.com/WenHsuanYu/SimpleMatch/issues/92) through
+  [#99](https://github.com/WenHsuanYu/SimpleMatch/issues/99); #87 remains the parent spec for the
+  Phase 8 residual boundary and final program tracking.
 - Matching, Redis/query, market-data streaming, and complete deployment work remain later slices of
   this plan. Completing the Routing Policy issue graph does not complete those phases.
 
@@ -648,9 +653,9 @@ Rollback:
 
 ### Phase 8: Deepen the QuickFIX admission and session modules
 
-- [ ] Commit 8.1: Add FIX mapping tests for all v2 identifiers and fixed-point values.
+- [x] Commit 8.1: Add FIX mapping tests for all v2 identifiers and fixed-point values.
 - [x] Commit 8.2: Add mapping tests for all six price and time-in-force combinations.
-- [ ] Commit 8.3: Introduce a deep FIX-admission module around normalization, risk submission, WAL
+- [x] Commit 8.3: Introduce a deep FIX-admission module around normalization, risk submission, WAL
   recovery, and FIX outcome projection.
 - [x] Commit 8.4: Make gateway WAL replay resubmit unresolved work through the idempotent risk
   interface.
@@ -676,23 +681,36 @@ Rollback:
 
 ### Phase 9: Establish binary outbox CDC and Kafka policy
 
-- [ ] Commit 9.1: Configure Debezium Outbox Event Router for binary payload pass-through in local
+- [x] Commit 9.1: Configure Debezium Outbox Event Router for binary payload pass-through in local
   infrastructure.
-- [ ] Commit 9.2: Restrict each connector to its service outbox table.
-- [ ] Commit 9.3: Add domain-stream topic naming and partition-key tests.
-- [ ] Commit 9.4: Add outbox-to-Kafka integration tests for exact payload bytes, keys, headers,
+- [x] Commit 9.2: Restrict each connector to its service outbox table.
+- [x] Commit 9.3: Add domain-stream topic naming and partition-key tests.
+- [x] Commit 9.4: Add outbox-to-Kafka integration tests for exact payload bytes, keys, headers,
   timestamps, and duplicates.
-- [ ] Commit 9.5: Add schema compatibility validation to continuous integration.
-- [ ] Commit 9.6: Add ordered in-place retry and partition quarantine for critical consumers.
-- [ ] Commit 9.7: Add delayed retry and dead-letter handling for non-critical projections.
-- [ ] Commit 9.8: Add Debezium lag, outbox age, consumer lag, duplicate, and quarantine metrics.
-- [ ] Commit 9.9: Add bounded outbox cleanup after the configured CDC safety window.
+- [x] Commit 9.5: Add schema compatibility validation to continuous integration.
+- [x] Commit 9.6: Add ordered in-place retry and partition quarantine for critical consumers.
+- [x] Commit 9.7: Add delayed retry and dead-letter handling for non-critical projections.
+- [x] Commit 9.8: Add Debezium lag, outbox age, consumer lag, duplicate, and quarantine metrics.
+- [x] Commit 9.9: Add bounded outbox cleanup after the configured CDC safety window.
 
 Phase gate:
 
-- [ ] Database commits survive Kafka and connector outages.
-- [ ] Replayed or duplicated events do not duplicate state changes.
-- [ ] Critical records never overtake a failed earlier record in the partition.
+- [x] Database commits survive Kafka and connector outages.
+- [x] Replayed or duplicated events do not duplicate state changes.
+- [x] Critical records never overtake a failed earlier record in the partition.
+
+Phase 9 evidence executed on 2026-08-04:
+
+- `bash scripts/verify-outbox-connector-contracts.sh` validates owner table scope, binary payload
+  pass-through, headers, timestamps, and explicit partitions for Risk, Account, and Market Reference.
+- `bash scripts/run-outbox-cdc-contract-check.sh` runs PostgreSQL, Kafka, and Kafka Connect in
+  Docker and verifies exact bytes, keys, headers, timestamps, partitions, pause/resume retention,
+  and connector recovery.
+- Shared delivery tests, all Java service tests, QuickFIX certification, and the blocking
+  `./gradlew -q staticAnalysis` pass. The native CMake/CTest suite passes all nine ingress tests.
+- `MicrometerDeliveryMetrics` exposes stable delivery outcome and operational-observation labels;
+  `OutboxRetentionPolicy` authorizes cleanup only after a durable CDC watermark and replay or
+  investigation retention boundary. No cleanup job deletes rows without those watermarks.
 
 Rollback:
 

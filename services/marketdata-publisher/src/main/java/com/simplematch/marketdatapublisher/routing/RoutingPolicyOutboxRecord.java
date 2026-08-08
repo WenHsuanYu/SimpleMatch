@@ -29,12 +29,20 @@ public record RoutingPolicyOutboxRecord(
     }
   }
 
-  /** Destination topic and trading-day key for the routing policy publication. */
-  public record Destination(String topic, String messageKey) {
+  /** Destination topic, trading-day key, and explicit Kafka partition. */
+  public record Destination(String topic, String messageKey, Integer kafkaPartitionId) {
+    /** Creates a destination that lets Kafka choose the partition from the message key. */
+    public Destination(String topic, String messageKey) {
+      this(topic, messageKey, null);
+    }
+
     /** Requires a destination topic and message key. */
     public Destination {
       requireText(topic, "topic");
       requireText(messageKey, "message key");
+      if (kafkaPartitionId != null && kafkaPartitionId < 0) {
+        throw new IllegalArgumentException("kafka partition must be non-negative");
+      }
     }
   }
 

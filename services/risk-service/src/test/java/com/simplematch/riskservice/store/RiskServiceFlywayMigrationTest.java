@@ -24,7 +24,9 @@ class RiskServiceFlywayMigrationTest {
     assertThat(hasTable(jdbcTemplate, "OUTBOX")).isTrue();
     assertThat(hasTable(jdbcTemplate, "ROUTING_POLICIES")).isTrue();
     assertThat(hasTable(jdbcTemplate, "ROUTING_POLICY_ASSIGNMENTS")).isTrue();
-    assertThat(appliedMigrationCount(jdbcTemplate)).isEqualTo(6);
+    assertThat(hasTable(jdbcTemplate, "CONSUMER_QUARANTINES")).isTrue();
+    assertThat(hasColumn(jdbcTemplate, "OUTBOX", "CREATED_AT")).isTrue();
+    assertThat(appliedMigrationCount(jdbcTemplate)).isEqualTo(8);
   }
 
   @DisplayName("a second risk-service migration is a no-op")
@@ -115,6 +117,22 @@ class RiskServiceFlywayMigrationTest {
             Integer.class,
             SCHEMA_NAME,
             tableName)
+        > 0;
+  }
+
+  private boolean hasColumn(JdbcTemplate jdbcTemplate, String tableName, String columnName) {
+    return jdbcTemplate.queryForObject(
+            """
+                        SELECT COUNT(*)
+                        FROM INFORMATION_SCHEMA.COLUMNS
+                        WHERE UPPER(TABLE_SCHEMA) = ?
+                          AND UPPER(TABLE_NAME) = ?
+                          AND UPPER(COLUMN_NAME) = ?
+                        """,
+            Integer.class,
+            SCHEMA_NAME,
+            tableName,
+            columnName)
         > 0;
   }
 }

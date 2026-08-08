@@ -21,6 +21,9 @@ synchronous admission and begin the asynchronous path with
 | Topic                 | Key and ordering boundary                            | Producer               | Consumers                                               | Contract purpose                                 |
 |-----------------------|------------------------------------------------------|------------------------|---------------------------------------------------------|--------------------------------------------------|
 | `orders.validated`    | Stable partition for a symbol within a trading day   | `risk-service`         | `matching-engine`                                       | Accepted order command, or its rejection outcome |
+| `account.lifecycle`   | `account_id`                                         | `account-service`      | Account lifecycle and rebuildable projections            | Reservation authority outcome                    |
+| `market-reference.snapshots` | `trading_day`                                  | `marketdata-publisher` | Market Reference consumers                              | Immutable market snapshot                        |
+| `market-reference.routing-policies` | `trading_day`                           | `marketdata-publisher` | `risk-service`, `matching-engine`                       | Immutable instrument-to-partition policy         |
 | `matching.executions` | `symbol`                                             | `matching-engine`      | `persistence`, market-data services, `quickfix-gateway` | Executions and order-result events               |
 | `marketdata.events`   | `symbol`                                             | `marketdata-publisher` | `marketdata-streamer`                                   | Public market-data events                        |
 | `audit.events`        | `symbol` or `order_id`, selected for the audit query | Owning service         | Audit consumers                                         | Append-only audit and trace events               |
@@ -29,6 +32,28 @@ An event sequence that has a business ordering requirement must use the stated k
 not infer a total order across partitions. A routing snapshot may choose the numeric partition for
 `orders.validated`, but changing that choice must preserve the documented ordering boundary during a
 trading day.
+
+## Current routing assertions
+
+The Java outbox tests and native fixture tests enforce these decisions at the producer boundary:
+
+- Accepted v2 orders use the normalized `VENUE_MIC:SYMBOL` key (for example `XTAI:2330`), carry the
+  authoritative `routing_policy_id`, and persist the selected `orders.validated` partition. A
+  missing accepted partition is an error; it is never encoded as partition zero.
+- The transitional v1 order adapter uses its explicit resolver only for accepted legacy records.
+  It has no hash or default fallback for an accepted order without a route.
+- Account lifecycle events use `account_id` as their key. Their nullable partition column means the
+  Kafka producer's key partitioner selects the partition consistently for that account.
+- Market Reference snapshot and routing-policy publications use the trading day as their key.
+  Routing-policy publications are pinned to the configured policy publication partition, currently
+  partition `0`, while instrument assignments inside the policy select `orders.validated` routes.
+- Matching executions use the instrument symbol as their ordering key. Account and QuickFIX
+  consumers treat the execution stream as at-least-once and deduplicate at their own boundaries.
+
+`V1ProtobufCompatibilityInventoryTest` and `V2ProtobufCompatibilityInventoryTest` compare every
+generated descriptor field number with the checked-in inventories. `RoutingPolicyContractTest`, the
+Risk admission outbox tests, Account outbox tests, Market Reference publication tests, and the
+native routing-policy fixture tests are the executable routing contract for the current streams.
 
 ## Event identity and minimum envelope
 

@@ -92,6 +92,10 @@ class RoutingPolicyPublicationTransactionIT {
     assertThat(event.getAssignments(0).getRoutingPartition()).isEqualTo(7);
     assertThat(jdbcTemplate.queryForObject("SELECT topic FROM marketdata_publisher.outbox", String.class))
         .isEqualTo(RoutingPolicyApplicationService.ROUTING_POLICY_PUBLISHED_TOPIC);
+    assertThat(
+            jdbcTemplate.queryForObject(
+                "SELECT kafka_partition_id FROM marketdata_publisher.outbox", Integer.class))
+        .isEqualTo(RoutingPolicyApplicationService.ROUTING_POLICY_PARTITION);
   }
 
   @DisplayName("the same policy is idempotent and does not create a second outbox event")

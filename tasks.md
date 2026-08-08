@@ -795,25 +795,39 @@ Kafka**。
 
 ## 5) Debezium / CDC（主線 Outbox 發佈）
 
-> 現況：repo 已有 `risk-service` 的 Debezium / Kafka Connect compose + K8s connector 模板，以及手動套用腳本；
-> `matching-engine` / `persistence` connector 與 connector monitoring 尚未出現。
+> 現況：Risk、Account Authority、Market Reference 都有 service-owned binary outbox connector
+> contract、compose/K8s templates 與可執行的 Docker CDC harness。Matching Engine、persistence、
+> query-service、streamer 尚未成為 authoritative outbox owners，因此尚未建立 connector。
 
 - [x] `risk-service`：已提供 Debezium connector 範本，將 PostgreSQL outbox 變更發布到 Kafka，並以
   `kafka_partition_id` 指定 partition
     - [x] `deploy/compose/risk-service-outbox-connector.json`、
       `deploy/k8s/risk-service-outbox-connector-configmap.yaml`
       與 `deploy/compose/apply-risk-service-outbox-connector.sh` 已存在
+- [x] `account-service`：使用同一份 binary Outbox Event Router contract，且只讀
+  `account_service.outbox`
+- [x] `marketdata-publisher`：使用同一份 binary Outbox Event Router contract，且只讀
+  `marketdata_publisher.outbox`
+- [x] local CDC harness：驗證 payload bytes、key、headers、timestamp、explicit partition、pause/
+  resume retention 與 connector recovery（`scripts/run-outbox-cdc-contract-check.sh`）
 - [ ] `matching-engine`：配置 Debezium connector，將 PostgreSQL outbox 變更發布到 Kafka
-    - [ ] workspace 未找到 `matching-engine` connector config 或對應 K8s/compose scaffold
+    - [ ] 尚未成為 authoritative outbox owner；目前只完成 native ingress seam
 - [ ] 若 `persistence` 後續產生 `audit.events`，再為其 outbox DB 配置 Debezium connector
     - [ ] workspace 未找到 `persistence` outbox / `audit.events` connector config
 - [x] topic routing：outbox.topic 欄位 → Kafka topic
-- [ ] at-least-once 期望：consumer 冪等必做
+- [x] at-least-once 期望：consumer 冪等必做
     - [x] `quickfix-gateway` 消費 `matching.executions` 時已以 `exec_id` 做 in-memory 去重
     - [x] `persistence` schema 已有 `inbox` table
-    - [ ] `persistence` / `account-service` 的 consumer runtime 與 durable inbox DAO 尚未落地
-- [ ] 監控：connector lag、error rate
-    - [ ] repo 未見 connector status / lag / error-rate 指標、Prometheus rule 或 dashboard
+    - [x] `account-service` execution lifecycle 與 `risk-service` routing-policy projection 使用
+      critical retry/quarantine boundary
+    - [x] non-critical QuickFIX projection 使用 delayed retry/DLQ boundary
+- [x] delivery metrics contract：Micrometer bridge 暴露 connector lag、outbox age、consumer lag、
+  duplicate、retry、quarantine、dead-letter 的穩定 metric names/labels
+- [x] Phase 9 completion evidence：issues
+  [#92](https://github.com/WenHsuanYu/SimpleMatch/issues/92)–
+  [#99](https://github.com/WenHsuanYu/SimpleMatch/issues/99) 使用 focused tests、完整 Java tests、
+  QuickFIX certification、native CTest、blocking static analysis 與 Docker CDC harness 驗證；
+  cleanup 僅由 durable CDC watermark 與 replay/investigation retention boundary 授權。
 
 ---
 

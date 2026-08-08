@@ -47,3 +47,22 @@ the authoritative write history is not.
 
 Wire schemas, topic names, and compatibility policy are specified in the contracts area. This
 document owns the decision boundaries that give those contracts their meaning.
+
+## Delivery policy boundary
+
+Events that can change authoritative account, admission, or matching state use the critical
+consumer policy: retry the same topic-partition offset in place, persist quarantine evidence when
+the bounded retry budget is exhausted, pause only the affected partition, and resume only the same
+record after investigation. A known routing-policy or partition invariant violation stops the
+partition and is never rerouted.
+
+Rebuildable projections, including the current QuickFIX execution projection, use the non-critical
+policy: schedule a bounded delayed retry, record diagnostic dead-letter evidence after the retry
+budget, and commit the source offset so an unhealthy projection cannot block authoritative streams.
+The projection must not mutate account, admission, or matching authority. Delivery metrics expose
+connector lag, outbox age, consumer lag, duplicates, retries, quarantine, and dead-letter counts.
+
+Outbox cleanup is a separate operational action. It is authorized only after a durable CDC
+watermark has passed the configured safety window, and the deletion boundary is narrowed by the
+oldest row retained for replay or operator investigation. Without those watermarks, cleanup is
+disabled.

@@ -24,6 +24,9 @@ public interface AccountAuthorityReader {
   /** Finds an existing reservation by request id. */
   Optional<AccountReservation> findReservationByRequestId(String requestId);
 
+  /** Finds an existing reservation by its owning order id. */
+  Optional<AccountReservation> findReservationByOrderId(String orderId);
+
   /** Locks an existing reservation by its reservation id. */
   Optional<AccountReservation> findReservationForUpdate(String reservationId);
 }

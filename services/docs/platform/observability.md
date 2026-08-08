@@ -17,6 +17,13 @@ oldest-event age, matching throughput and latency per shard or symbol, and gRPC 
 latency, and breaker state. Labels should be consistent across services so operators can correlate
 an incident rather than join incompatible metric vocabularies.
 
+The shared delivery port exposes stable `simplematch.delivery.events` counters for
+duplicates, retries, quarantine, and dead letters, plus
+`simplematch.delivery.observations` gauges for connector lag, outbox age, and
+consumer lag. Component, topic, and partition labels identify the affected
+delivery boundary. Services without a registry use the no-op port; they do not
+change business delivery semantics when telemetry is unavailable.
+
 ## Dashboards and alerts
 
 Dashboards make the ordered execution path, outbox health, matching progress, and synchronous

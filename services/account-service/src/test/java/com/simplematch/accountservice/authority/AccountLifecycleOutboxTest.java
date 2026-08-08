@@ -15,7 +15,7 @@ class AccountLifecycleOutboxTest {
     final AccountLifecycleOutbox outbox =
         new AccountLifecycleOutbox(
             new AccountLifecycleOutbox.EventIdentity(UUID.randomUUID()),
-            new AccountLifecycleOutbox.Destination("account.lifecycle", "order-1"),
+            new AccountLifecycleOutbox.Destination("account.lifecycle", "account-1"),
             new AccountLifecycleOutbox.Payload(input, "event.v1", "{}"),
             new AccountLifecycleOutbox.AggregateReference("reservation", "reservation-1"),
             100L);
@@ -34,14 +34,14 @@ class AccountLifecycleOutboxTest {
     final AccountLifecycleOutbox outbox =
         new AccountLifecycleOutbox(
             new AccountLifecycleOutbox.EventIdentity(eventId),
-            new AccountLifecycleOutbox.Destination("account.lifecycle", "order-1"),
+            new AccountLifecycleOutbox.Destination("account.lifecycle", "account-1"),
             new AccountLifecycleOutbox.Payload(new byte[] {1}, "event.v1", "{}"),
             new AccountLifecycleOutbox.AggregateReference("reservation", "reservation-1"),
             100L);
 
     assertThat(outbox.eventIdentity().eventId()).isEqualTo(eventId);
     assertThat(outbox.destination().topic()).isEqualTo("account.lifecycle");
-    assertThat(outbox.destination().messageKey()).isEqualTo("order-1");
+    assertThat(outbox.destination().messageKey()).isEqualTo("account-1");
     assertThat(outbox.payload().payloadType()).isEqualTo("event.v1");
     assertThat(outbox.payload().headersJson()).isEqualTo("{}");
     assertThat(outbox.aggregateReference().aggregateType()).isEqualTo("reservation");
@@ -62,6 +62,10 @@ class AccountLifecycleOutboxTest {
             () -> new AccountLifecycleOutbox.Destination(" ", "order-1"))
         .isInstanceOf(IllegalArgumentException.class)
         .hasMessage("topic must not be blank");
+    assertThatThrownBy(
+            () -> new AccountLifecycleOutbox.Destination("account.lifecycle", "order-1", -1))
+        .isInstanceOf(IllegalArgumentException.class)
+        .hasMessage("kafka_partition_id must be non-negative");
     assertThatThrownBy(
             () -> new AccountLifecycleOutbox.AggregateReference("reservation", " "))
         .isInstanceOf(IllegalArgumentException.class)
