@@ -164,8 +164,8 @@ Run validation in the order that gives the fastest useful feedback.
 ### Native changes
 
 1. Run the narrowest native build or test target first.
-2. Run the CMake preset build used by the repo.
-3. Run the relevant native test preset or smoke check.
+2. Use `dev-debug` for normal local native validation.
+3. Use `ci-fast` when reproducing the pull-request native gate, or `ci-sanitize` for ASan/UBSan.
 
 ### Repository-wide validation commands
 
@@ -194,9 +194,12 @@ Run validation in the order that gives the fastest useful feedback.
       reduce lifecycle noise while retaining actionable diagnostics.
     - GitHub Actions runs Flyway info and migrate tasks plus PostgreSQL smoke checks for
       Flyway-managed services.
+    - GitHub Actions uses the `ci-fast` CMake preset for the current native dependency and test
+      closure.
 - Native build:
-    - `cmake --preset vcpkg`
-    - `cmake --build --preset vcpkg -j`
+    - `cmake --preset dev-debug`
+    - `cmake --build --preset dev-debug --parallel`
+    - `ctest --preset dev-debug`
 
 If the change spans both Java and native code, validate both sides before closing the task.
 
