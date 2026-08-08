@@ -32,7 +32,10 @@
       "cacheVariables": {
         "CMAKE_BUILD_TYPE": "Debug",
         "BUILD_TESTING": "ON",
-        "VCPKG_MANIFEST_FEATURES": "tests"
+        "VCPKG_MANIFEST_FEATURES": "tests",
+        "VCPKG_TARGET_TRIPLET": "x64-linux-ci",
+        "VCPKG_HOST_TRIPLET": "x64-linux-ci",
+        "VCPKG_OVERLAY_TRIPLETS": "${sourceDir}/triplets"
       }
     },
     {
