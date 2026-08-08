@@ -11,16 +11,17 @@ postgres_port="${CI_POSTGRES_PORT:-5432}"
 postgres_user="${CI_POSTGRES_USER:-simplematch}"
 postgres_password="${CI_POSTGRES_PASSWORD:-simplematch}"
 postgres_admin_db="${CI_POSTGRES_ADMIN_DB:-postgres}"
+database_name="${CI_POSTGRES_DATABASE:-simplematch_ci}"
 
 psql_exec() {
-  local database_name="$1"
+  local target_database="$1"
   local sql_statement="$2"
 
   PGPASSWORD="$postgres_password" psql \
     --host "$postgres_host" \
     --port "$postgres_port" \
     --username "$postgres_user" \
-    --dbname "$database_name" \
+    --dbname "$target_database" \
     --no-align \
     --tuples-only \
     --quiet \
@@ -28,16 +29,16 @@ psql_exec() {
     --command "$sql_statement"
 }
 
-reset_service_database() {
-  local database_name="$1"
+reset_database() {
+  local target_database="$1"
 
-  psql_exec "$postgres_admin_db" "DROP DATABASE IF EXISTS \"$database_name\";"
-  psql_exec "$postgres_admin_db" "CREATE DATABASE \"$database_name\";"
+  psql_exec "$postgres_admin_db" "DROP DATABASE IF EXISTS \"$target_database\";"
+  psql_exec "$postgres_admin_db" "CREATE DATABASE \"$target_database\";"
 }
 
 set_service_flyway_env() {
   local service_name="$1"
-  local database_name="$2"
+  local target_database="$2"
   local env_prefix
   local jdbc_var
   local user_var
@@ -48,7 +49,7 @@ set_service_flyway_env() {
   user_var="${env_prefix}_FLYWAY_USERNAME"
   password_var="${env_prefix}_FLYWAY_PASSWORD"
 
-  printf -v "$jdbc_var" 'jdbc:postgresql://%s:%s/%s' "$postgres_host" "$postgres_port" "$database_name"
+  printf -v "$jdbc_var" 'jdbc:postgresql://%s:%s/%s' "$postgres_host" "$postgres_port" "$target_database"
   printf -v "$user_var" '%s' "$postgres_user"
   printf -v "$password_var" '%s' "$postgres_password"
 
@@ -57,7 +58,7 @@ set_service_flyway_env() {
 
 assert_service_tables() {
   local service_name="$1"
-  local database_name="$2"
+  local target_database="$2"
   local schema_name
   local table_name
   local table_exists
@@ -67,34 +68,56 @@ assert_service_tables() {
 
   while IFS= read -r table_name; do
     [[ -z "$table_name" ]] && continue
-    table_exists="$(psql_exec "$database_name" "SELECT to_regclass('${schema_name}.${table_name}') IS NOT NULL;")"
+    table_exists="$(psql_exec "$target_database" "SELECT to_regclass('${schema_name}.${table_name}') IS NOT NULL;")"
 
     if [[ "$table_exists" != "t" ]]; then
-      echo "Expected table ${schema_name}.${table_name} was not created for $service_name in database $database_name." >&2
+      echo "Expected table ${schema_name}.${table_name} was not created for $service_name in database $target_database." >&2
       return 1
     fi
   done < <(flyway_service_smoke_tables "$service_name")
 
-  history_count="$(psql_exec "$database_name" "SELECT COUNT(*) FROM ${schema_name}.flyway_schema_history WHERE success;")"
+  history_count="$(psql_exec "$target_database" "SELECT COUNT(*) FROM ${schema_name}.flyway_schema_history WHERE success;")"
   if [[ "$history_count" -lt 1 ]]; then
     echo "Flyway schema history in ${schema_name}.flyway_schema_history did not record any successful migration for $service_name." >&2
     return 1
   fi
 }
 
+assert_schema_isolation() {
+  local public_history_exists
+  local service_name
+  local schema_name
+  local schema_exists
+
+  public_history_exists="$(psql_exec "$database_name" "SELECT to_regclass('public.flyway_schema_history') IS NOT NULL;")"
+  if [[ "$public_history_exists" != "f" ]]; then
+    echo "Flyway history must remain service-local; public.flyway_schema_history exists in $database_name." >&2
+    return 1
+  fi
+
+  while IFS= read -r service_name; do
+    [[ -z "$service_name" ]] && continue
+    schema_name="$(flyway_service_schema "$service_name")"
+    schema_exists="$(psql_exec "$database_name" "SELECT EXISTS (SELECT 1 FROM pg_namespace WHERE nspname = '${schema_name}');")"
+    if [[ "$schema_exists" != "t" ]]; then
+      echo "Expected service schema $schema_name for $service_name in shared database $database_name." >&2
+      return 1
+    fi
+  done < <(flyway_known_services)
+}
+
 cd "$repo_root"
+
+echo "Preparing shared PostgreSQL database $database_name..."
+reset_database "$database_name"
 
 while IFS= read -r service_name; do
   [[ -z "$service_name" ]] && continue
 
   task_prefix="$(flyway_service_task_prefix "$service_name")"
-  database_name="simplematch_${service_name//-/_}_ci"
-
-  echo "Preparing PostgreSQL database $database_name for $service_name..."
-  reset_service_database "$database_name"
   set_service_flyway_env "$service_name" "$database_name"
 
-  echo "Running Flyway info and migrate twice for $service_name..."
+  echo "Running Flyway info and migrate twice for $service_name in shared database $database_name..."
   ./gradlew -q --no-daemon --stacktrace \
     "${task_prefix}FlywayInfo" \
     "${task_prefix}FlywayMigrate"
@@ -106,3 +129,7 @@ while IFS= read -r service_name; do
   assert_service_tables "$service_name" "$database_name"
   bash "$repo_root/scripts/check-flyway-query-plans.sh" "$database_name" "$service_name"
 done < <(flyway_known_services)
+
+assert_schema_isolation
+
+echo "Verified shared database $database_name with service-local schemas and Flyway histories."
