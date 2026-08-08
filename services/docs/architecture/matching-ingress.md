@@ -56,13 +56,20 @@ silently selecting a different partition.
 ## Build and test
 
 The root CMake project registers the library and its deterministic test target.
-Use the repository's vcpkg preset in a complete development environment:
+For normal local development, use the `dev-debug` configuration policy:
 
 ```bash
-cmake --preset vcpkg
-cmake --build --preset vcpkg --parallel
-ctest --test-dir build-vcpkg --output-on-failure
+cmake --preset dev-debug
+cmake --build --preset dev-debug --parallel
+ctest --preset dev-debug
 ```
+
+Pull-request CI uses the narrower `ci-fast` policy. Both policies enable only the
+current Protobuf core dependency plus the `tests` vcpkg feature; future native
+capabilities remain declared in the manifest but are not installed into this
+critical validation path. `full-native-dev` is available when the complete
+planned native dependency set is needed, and `ci-sanitize` adds ASan/UBSan to the
+same current CI dependency closure.
 
 The test target generates the same shared Protobuf sources used by the Java
 contract module; it does not introduce a second wire format. The local CMake
