@@ -4,6 +4,7 @@ import com.simplematch.riskservice.outbox.OutboxRecord;
 import com.simplematch.riskservice.outbox.OutboxRepository;
 import java.time.Clock;
 import java.util.Objects;
+import java.util.Optional;
 import java.util.UUID;
 import org.springframework.dao.DuplicateKeyException;
 import org.springframework.transaction.support.TransactionTemplate;
@@ -58,6 +59,12 @@ public final class AdmissionLifecycleTransactions {
         transactionTemplate.execute(
             status -> finalizeAdmissionInTransaction(commandId, reservation)),
         "finalize admission");
+  }
+
+  /** Returns the durable Admission outcome currently visible for one command identity. */
+  public Optional<AdmissionResult> findAdmission(UUID commandId) {
+    Objects.requireNonNull(commandId, "commandId");
+    return journal.findByCommandId(commandId).map(AdmissionResult::from);
   }
 
   /** Applies pending idempotency and conflict rules inside the local transaction. */

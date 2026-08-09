@@ -6,8 +6,10 @@ import com.simplematch.quickfixgateway.fix.FixMessageMapper;
 import com.simplematch.quickfixgateway.kafka.KafkaOrdersCommandPublisher;
 import com.simplematch.quickfixgateway.kafka.NoopOrdersCommandPublisher;
 import com.simplematch.quickfixgateway.kafka.OrdersCommandPublisher;
+import com.simplematch.quickfixgateway.risk.GrpcRiskReconciliationClient;
 import com.simplematch.quickfixgateway.risk.GrpcRiskSubmissionClient;
 import com.simplematch.quickfixgateway.risk.ResilientRiskSubmissionClient;
+import com.simplematch.quickfixgateway.risk.RiskReconciliationClient;
 import com.simplematch.quickfixgateway.risk.RiskSubmissionClient;
 import com.simplematch.quickfixgateway.wal.WalAppender;
 import com.simplematch.quickfixgateway.wal.WalReplayService;
@@ -48,6 +50,12 @@ public class QuickFixGatewayIntegrationConfiguration {
         riskClient.breaker().consecutiveFailures(),
         riskClient.breaker().openDurationMillis(),
         quickFixGatewayClock);
+  }
+
+  @Bean
+  RiskReconciliationClient riskReconciliationClient(
+      ManagedChannel riskServiceChannel, QuickFixGatewayRiskClientProperties riskClient) {
+    return new GrpcRiskReconciliationClient(riskServiceChannel, riskClient.deadlineMillis());
   }
 
   @Bean

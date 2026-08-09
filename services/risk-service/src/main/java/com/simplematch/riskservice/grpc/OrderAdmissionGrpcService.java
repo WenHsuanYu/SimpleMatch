@@ -6,6 +6,8 @@ import com.simplematch.contracts.orders.v2.CancelOrderCommand;
 import com.simplematch.contracts.orders.v2.NewOrderCommand;
 import com.simplematch.contracts.orders.v2.OrderAdmissionAccepted;
 import com.simplematch.contracts.orders.v2.OrderAdmissionRejected;
+import com.simplematch.contracts.risk.v2.GetAdmissionOutcomeRequest;
+import com.simplematch.contracts.risk.v2.GetAdmissionOutcomeResponse;
 import com.simplematch.contracts.risk.v2.OrderAdmissionResponse;
 import com.simplematch.contracts.risk.v2.OrderAdmissionServiceGrpc;
 import com.simplematch.riskservice.admission.AdmissionConflictException;
@@ -24,17 +26,19 @@ import org.springframework.stereotype.Service;
 /**
  * Bridges the durable v2 order-admission seam to protobuf responses.
  *
- * <p>The adapter maps terminal admission outcomes to v2 protobuf responses.
+ * <p>The adapter maps admission outcomes and reconciliation snapshots to v2 protobuf responses.
  */
 @Service
 public final class OrderAdmissionGrpcService
     extends OrderAdmissionServiceGrpc.OrderAdmissionServiceImplBase {
   private final OrderAdmissionApplicationService admissions;
+  private final AdmissionOutcomeGrpcResponder outcomeResponder;
   private final Clock clock;
 
   /** Creates the v2 adapter with the durable admission application service. */
   public OrderAdmissionGrpcService(OrderAdmissionApplicationService admissions, Clock clock) {
     this.admissions = admissions;
+    this.outcomeResponder = new AdmissionOutcomeGrpcResponder(admissions);
     this.clock = clock;
   }
 
@@ -77,6 +81,14 @@ public final class OrderAdmissionGrpcService
       responseObserver.onError(
           Status.INTERNAL.withDescription("failed to admit cancel").asRuntimeException());
     }
+  }
+
+  /** Returns the durable admission state currently visible for one command identity. */
+  @Override
+  public void getAdmissionOutcome(
+      GetAdmissionOutcomeRequest request,
+      StreamObserver<GetAdmissionOutcomeResponse> responseObserver) {
+    outcomeResponder.respond(request, responseObserver);
   }
 
   private OrderAdmissionResponse toResponse(AdmissionResult result) {

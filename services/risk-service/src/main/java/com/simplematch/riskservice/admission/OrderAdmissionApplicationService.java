@@ -2,6 +2,7 @@ package com.simplematch.riskservice.admission;
 
 import com.simplematch.contracts.orders.v2.CancelOrderCommand;
 import com.simplematch.contracts.orders.v2.NewOrderCommand;
+import java.util.Optional;
 import java.util.UUID;
 import lombok.NonNull;
 import lombok.RequiredArgsConstructor;
@@ -34,7 +35,7 @@ public class OrderAdmissionApplicationService {
         validated.identity().commandId().value(), reservation);
   }
 
-  /** Durably admits a validated cancellation without a cash reservation RPC. */
+  /** Durably admits cancellation through the same durable journal and terminal outbox. */
   public AdmissionResult admitCancel(CancelOrderCommand command) {
     final AdmissionCommand validated = validator.validateCancel(command);
     backpressure.check();
@@ -60,5 +61,10 @@ public class OrderAdmissionApplicationService {
   /** Finalizes the journal and terminal event in one local transaction. */
   public AdmissionResult finalizeAdmission(UUID commandId, ReservationOutcome reservation) {
     return lifecycleTransactions.finalizeAdmission(commandId, reservation);
+  }
+
+  /** Returns the durable outcome currently visible for one admission command. */
+  public Optional<AdmissionResult> findOutcome(UUID commandId) {
+    return lifecycleTransactions.findAdmission(commandId);
   }
 }
