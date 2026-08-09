@@ -2,6 +2,7 @@ package com.simplematch.accountservice.reservation;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
+import com.simplematch.accountservice.authority.AccountId;
 import com.simplematch.accountservice.authority.AccountReservation;
 import com.simplematch.accountservice.authority.ReservationOutcome;
 import com.simplematch.accountservice.authority.ReservationOwnership;
@@ -12,6 +13,8 @@ import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 
 class ReservationRecordTest {
+  private static final String ACCOUNT_ID = "0194a8f0-7c77-7b38-9e2d-2a5fdd0f7c13";
+
   @DisplayName("response projection preserves authoritative semantic values and gRPC fields")
   @Test
   void projectsAuthoritativeReservation() {
@@ -21,7 +24,7 @@ class ReservationRecordTest {
                 new ReservationIdentity.RequestId("request-1"),
                 new ReservationIdentity.ReservationId("reservation-1"),
                 new ReservationIdentity.OrderId("order-1")),
-            new ReservationOwnership("account-1"),
+            new ReservationOwnership(AccountId.parse(ACCOUNT_ID)),
             new ReservationTerms(
                 new ReservationTerms.InstrumentSymbol("2330"),
                 Side.SIDE_BUY,
@@ -41,7 +44,7 @@ class ReservationRecordTest {
     assertThat(response.requestId()).isEqualTo("request-1");
     assertThat(response.reservationId()).isEqualTo("reservation-1");
     assertThat(response.orderId()).isEqualTo("order-1");
-    assertThat(response.accountId()).isEqualTo("account-1");
+    assertThat(response.accountId()).isEqualTo(ACCOUNT_ID);
     assertThat(response.symbol()).isEqualTo("2330");
     assertThat(response.side()).isEqualTo(Side.SIDE_BUY);
     assertThat(response.quantity()).isEqualByComparingTo("10");

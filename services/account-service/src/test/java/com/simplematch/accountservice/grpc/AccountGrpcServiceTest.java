@@ -35,6 +35,7 @@ import org.springframework.jdbc.datasource.DriverManagerDataSource;
 class AccountGrpcServiceTest {
   private static final Clock FIXED_CLOCK = Clock.fixed(Instant.ofEpochMilli(100L), ZoneOffset.UTC);
   private static final String REQUEST_ID = "01971cbe-0f5a-7c69-9d6c-8e7f6a5b4c3d";
+  private static final String ACCOUNT_ID = "0194a8f0-7c77-7b38-9e2d-2a5fdd0f7c13";
 
   private JdbcTemplate jdbcTemplate;
   private AccountReservationApplicationService reservationService;
@@ -59,7 +60,8 @@ class AccountGrpcServiceTest {
             new JdbcAccountAuthorityLifecycleWriter(jdbcTemplate),
             new JdbcAccountOutboxRepository(jdbcTemplate),
             FIXED_CLOCK);
-    accountService.provisionLimit("ACC-1", LocalDate.of(1970, 1, 1), new BigDecimal("10000"));
+    accountService.provisionLimit(
+        ACCOUNT_ID, LocalDate.of(1970, 1, 1), new BigDecimal("10000"));
     reservationService = accountService;
   }
 
@@ -71,7 +73,7 @@ class AccountGrpcServiceTest {
         ReserveRequest.newBuilder()
             .setRequestId(REQUEST_ID)
             .setOrderId("O-1")
-            .setAccountId("ACC-1")
+            .setAccountId(ACCOUNT_ID)
             .setSymbol("AAPL")
             .setSide(Side.SIDE_BUY)
             .setQuantity("10")
@@ -120,6 +122,26 @@ class AccountGrpcServiceTest {
         .isEqualTo(0);
   }
 
+  @DisplayName("reserve rejects non-UUID account ids at the gRPC ingress")
+  @Test
+  void reserveRejectsNonUuidAccountIdsAtGrpcIngress() {
+    final AccountGrpcService service = new AccountGrpcService(reservationService);
+    final TestStreamObserver<ReserveResponse> observer = new TestStreamObserver<>();
+
+    service.reserve(validReserveRequest().setAccountId("ACC-1").build(), observer);
+
+    assertThat(observer.completed()).isFalse();
+    assertThat(observer.value()).isNull();
+    assertThat(Status.fromThrowable(observer.error()).getCode())
+        .isEqualTo(Status.Code.INVALID_ARGUMENT);
+    assertThat(Status.fromThrowable(observer.error()).getDescription())
+        .isEqualTo("account_id must be a UUID");
+    assertThat(
+            jdbcTemplate.queryForObject(
+                "SELECT COUNT(*) FROM account_service.account_reservations", Integer.class))
+        .isEqualTo(0);
+  }
+
   @DisplayName("reserve rejects oversized request ids before persistence")
   @Test
   void reserveRejectsOversizedRequestIdsBeforePersistence() {
@@ -162,19 +184,19 @@ class AccountGrpcServiceTest {
   @DisplayName("read RPCs project authoritative limits and positions")
   @Test
   void readRpcsProjectAuthoritativeState() {
-    reservationService.provisionPosition("ACC-1", "AAPL");
+    reservationService.provisionPosition(ACCOUNT_ID, "AAPL");
     final AccountGrpcService service = new AccountGrpcService(reservationService);
     final TestStreamObserver<GetLimitsResponse> limitsObserver = new TestStreamObserver<>();
     final TestStreamObserver<GetPositionsResponse> positionsObserver = new TestStreamObserver<>();
 
     service.getLimits(
-        GetLimitsRequest.newBuilder().setAccountId("ACC-1").build(), limitsObserver);
+        GetLimitsRequest.newBuilder().setAccountId(ACCOUNT_ID).build(), limitsObserver);
     service.getPositions(
-        GetPositionsRequest.newBuilder().setAccountId("ACC-1").build(), positionsObserver);
+        GetPositionsRequest.newBuilder().setAccountId(ACCOUNT_ID).build(), positionsObserver);
 
     assertThat(limitsObserver.error()).isNull();
     assertThat(limitsObserver.completed()).isTrue();
-    assertThat(limitsObserver.value().getAccountId()).isEqualTo("ACC-1");
+    assertThat(limitsObserver.value().getAccountId()).isEqualTo(ACCOUNT_ID);
     assertThat(limitsObserver.value().getCurrency()).isEqualTo("TWD");
     assertThat(new BigDecimal(limitsObserver.value().getAvailableNotional()))
         .isEqualByComparingTo("10000");
@@ -185,7 +207,7 @@ class AccountGrpcServiceTest {
     assertThat(positionsObserver.error()).isNull();
     assertThat(positionsObserver.completed()).isTrue();
     assertThat(positionsObserver.value().getPositionsCount()).isEqualTo(1);
-    assertThat(positionsObserver.value().getPositions(0).getAccountId()).isEqualTo("ACC-1");
+    assertThat(positionsObserver.value().getPositions(0).getAccountId()).isEqualTo(ACCOUNT_ID);
     assertThat(positionsObserver.value().getPositions(0).getSymbol()).isEqualTo("AAPL");
     assertThat(new BigDecimal(positionsObserver.value().getPositions(0).getLongQty()))
         .isEqualByComparingTo("0");
@@ -220,7 +242,7 @@ class AccountGrpcServiceTest {
   @DisplayName("fill RPC maps the execution identity and applied reservation state")
   @Test
   void applyFillProjectsAppliedState() {
-    reservationService.provisionPosition("ACC-1", "AAPL");
+    reservationService.provisionPosition(ACCOUNT_ID, "AAPL");
     final AccountGrpcService service = new AccountGrpcService(reservationService);
     final ReserveResponse reserved = reserveAccepted(service);
     final TestStreamObserver<ApplyFillResponse> observer = new TestStreamObserver<>();
@@ -256,7 +278,7 @@ class AccountGrpcServiceTest {
     return ReserveRequest.newBuilder()
         .setRequestId(REQUEST_ID)
         .setOrderId("O-1")
-        .setAccountId("ACC-1")
+        .setAccountId(ACCOUNT_ID)
         .setSymbol("AAPL")
         .setSide(Side.SIDE_BUY)
         .setQuantity("10")

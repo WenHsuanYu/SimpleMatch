@@ -2,6 +2,7 @@ package com.simplematch.accountservice.reservation;
 
 import com.simplematch.accountservice.authority.AccountAuthorityLifecycleWriter;
 import com.simplematch.accountservice.authority.AccountAuthorityReader;
+import com.simplematch.accountservice.authority.AccountId;
 import com.simplematch.accountservice.authority.AccountLifecycleOutbox;
 import com.simplematch.accountservice.authority.AccountLimit;
 import com.simplematch.accountservice.authority.AccountLimitLedger;
@@ -71,7 +72,7 @@ public class AccountReservationApplicationService {
 
     if (operation.side() == Side.SIDE_BUY) {
       final AccountLimit limit =
-          authorityReader.findLimitForUpdate(operation.accountId(), tradingDay).orElse(null);
+          authorityReader.findLimitForUpdate(operation.accountIdentity(), tradingDay).orElse(null);
       if (limit == null || limit.availableNotional().compareTo(notional) < 0) {
         return persistRejected(
             operation,
@@ -91,7 +92,7 @@ public class AccountReservationApplicationService {
     } else {
       final AccountPosition position =
           authorityReader
-              .findPositionForUpdate(operation.accountId(), operation.symbol())
+              .findPositionForUpdate(operation.accountIdentity(), operation.symbol())
               .orElse(null);
       if (position == null
           || position
@@ -119,7 +120,7 @@ public class AccountReservationApplicationService {
     final AccountReservation reservation =
         AccountReservation.accepted(
             reservationIdentity(operation),
-            new ReservationOwnership(operation.accountId()),
+            new ReservationOwnership(operation.accountIdentity()),
             operation.terms(),
             notional,
             now);
@@ -132,14 +133,14 @@ public class AccountReservationApplicationService {
   @Transactional(readOnly = true)
   public AccountLimit getLimits(String accountId) {
     return authorityReader
-        .findLimit(accountId, clock.instant().atZone(TAIPEI).toLocalDate())
+        .findLimit(AccountId.parse(accountId), clock.instant().atZone(TAIPEI).toLocalDate())
         .orElseThrow(() -> new IllegalArgumentException("account limit is not provisioned"));
   }
 
   /** Returns authoritative positions for one account. */
   @Transactional(readOnly = true)
   public List<AccountPosition> getPositions(String accountId) {
-    return authorityReader.findPositions(accountId);
+    return authorityReader.findPositions(AccountId.parse(accountId));
   }
 
   /** Releases all remaining cash or position authority for a reservation. */
@@ -228,13 +229,15 @@ public class AccountReservationApplicationService {
   @Transactional
   public void provisionLimit(String accountId, LocalDate tradingDay, BigDecimal totalNotional) {
     authorityWriter.insertLimit(
-        AccountLimit.provisioned(accountId, tradingDay, totalNotional, clock.millis()));
+        AccountLimit.provisioned(
+            AccountId.parse(accountId), tradingDay, totalNotional, clock.millis()));
   }
 
   /** Provisions an empty position row for controlled administration. */
   @Transactional
   public void provisionPosition(String accountId, String symbol) {
-    authorityWriter.insertPosition(AccountPosition.provisioned(accountId, symbol, clock.millis()));
+    authorityWriter.insertPosition(
+        AccountPosition.provisioned(AccountId.parse(accountId), symbol, clock.millis()));
   }
 
   private ReservationRecord persistRejected(
@@ -245,7 +248,7 @@ public class AccountReservationApplicationService {
     final AccountReservation rejected =
         AccountReservation.rejected(
             reservationIdentity(operation),
-            new ReservationOwnership(operation.accountId()),
+            new ReservationOwnership(operation.accountIdentity()),
             operation.terms(),
             reasonCode,
             reasonText,
@@ -310,5 +313,4 @@ public class AccountReservationApplicationService {
   private ReservationRecord toResponse(AccountReservation reservation) {
     return ReservationRecord.from(reservation);
   }
-
 }

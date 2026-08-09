@@ -1,6 +1,7 @@
 package com.simplematch.quickfixgateway.fix;
 
 import com.simplematch.contracts.common.v1.Side;
+import com.simplematch.contracts.v2.V2Identifiers;
 import com.simplematch.quickfixgateway.wal.FixSessionIdentity;
 import com.simplematch.quickfixgateway.wal.RawFixMessage;
 import com.simplematch.quickfixgateway.wal.WalCommand;
@@ -13,12 +14,9 @@ import quickfix.FieldNotFound;
 import quickfix.Message;
 import quickfix.field.Account;
 import quickfix.field.ClOrdID;
-import quickfix.field.OrdType;
-import quickfix.field.OrderQty;
-import quickfix.field.Price;
 import quickfix.field.Symbol;
 
-/** Builds normalized WAL records and response snapshots from inbound FIX messages. */
+/** Builds semantic durable commands from validated inbound FIX messages. */
 final class FixInboundCommandFactory {
   private FixInboundCommandFactory() {}
 
@@ -26,6 +24,8 @@ final class FixInboundCommandFactory {
       Message message, FixInboundIdentity identity, String commandId, Instant now)
       throws FieldNotFound {
     final String clOrdId = message.getString(ClOrdID.FIELD);
+    final String accountId =
+        canonicalAccountId(FixInboundFieldValues.optionalString(message, Account.FIELD));
     return new WalRecord(
         new WalMetadata(
             WalMetadata.CURRENT_SCHEMA_VERSION,
@@ -33,19 +33,15 @@ final class FixInboundCommandFactory {
             now.toEpochMilli(),
             "quickfix-gateway"),
         new FixSessionIdentity(identity.senderCompId(), identity.targetCompId()),
-        new WalOrderReference(
-            orderIdFor(clOrdId),
-            clOrdId,
-            "",
-            FixInboundFieldValues.optionalString(message, Account.FIELD)),
+        new WalOrderReference(orderIdFor(clOrdId), clOrdId, "", accountId),
         new WalCommand.NewOrder(
             new WalOrderTerms(
                 message.getString(Symbol.FIELD),
                 FixInboundFieldValues.mapSide(message.getChar(quickfix.field.Side.FIELD)),
-                message.getString(OrderQty.FIELD),
-                FixInboundFieldValues.optionalString(message, Price.FIELD),
+                message.getString(quickfix.field.OrderQty.FIELD),
+                FixInboundFieldValues.optionalString(message, quickfix.field.Price.FIELD),
                 FixInboundFieldValues.mapOrderType(
-                    FixInboundFieldValues.optionalChar(message, OrdType.FIELD)),
+                    message.getChar(quickfix.field.OrdType.FIELD)),
                 FixInboundFieldValues.mapTimeInForce(
                     FixInboundFieldValues.optionalChar(
                         message, quickfix.field.TimeInForce.FIELD)))),
@@ -70,6 +66,10 @@ final class FixInboundCommandFactory {
         rawSide == null
             ? existing == null ? Side.SIDE_UNSPECIFIED : existing.side()
             : FixInboundFieldValues.mapSide(rawSide);
+    final String accountId =
+        canonicalAccountId(
+            FixInboundFieldValues.optionalString(
+                message, Account.FIELD, existing == null ? "" : existing.accountId()));
     return new WalRecord(
         new WalMetadata(
             WalMetadata.CURRENT_SCHEMA_VERSION,
@@ -77,17 +77,19 @@ final class FixInboundCommandFactory {
             now.toEpochMilli(),
             "quickfix-gateway"),
         new FixSessionIdentity(identity.senderCompId(), identity.targetCompId()),
-        new WalOrderReference(
-            orderIdFor(origClOrdId),
-            cancelClOrdId,
-            origClOrdId,
-            FixInboundFieldValues.optionalString(
-                message, Account.FIELD, existing == null ? "" : existing.accountId())),
+        new WalOrderReference(orderIdFor(origClOrdId), cancelClOrdId, origClOrdId, accountId),
         new WalCommand.Cancel(symbol, side),
         new RawFixMessage(message.toString()));
   }
 
   static String orderIdFor(String clientOrderId) {
+    if (clientOrderId == null || clientOrderId.isBlank()) {
+      throw new IllegalArgumentException("cl_ord_id must not be blank");
+    }
     return "O-" + clientOrderId;
+  }
+
+  private static String canonicalAccountId(String rawAccountId) {
+    return V2Identifiers.AccountId.parse(rawAccountId).value().toString();
   }
 }

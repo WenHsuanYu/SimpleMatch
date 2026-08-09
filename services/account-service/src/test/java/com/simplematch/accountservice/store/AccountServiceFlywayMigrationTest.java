@@ -12,6 +12,7 @@ import org.springframework.jdbc.datasource.DriverManagerDataSource;
 
 class AccountServiceFlywayMigrationTest {
   private static final String SCHEMA_NAME = "ACCOUNT_SERVICE";
+  private static final String ACCOUNT_ID = "0194a8f0-7c77-7b38-9e2d-2a5fdd0f7c13";
 
   @DisplayName("an empty database receives the complete account-service authority schema")
   @Test
@@ -26,7 +27,7 @@ class AccountServiceFlywayMigrationTest {
     assertThat(hasTable(jdbcTemplate, "OUTBOX")).isTrue();
     assertThat(hasTable(jdbcTemplate, "CONSUMER_QUARANTINES")).isTrue();
     assertThat(hasColumn(jdbcTemplate, "OUTBOX", "CREATED_AT")).isTrue();
-    assertThat(appliedMigrationCount(jdbcTemplate)).isEqualTo(5);
+    assertThat(appliedMigrationCount(jdbcTemplate)).isEqualTo(6);
   }
 
   @DisplayName("a second account-service migration is a no-op")
@@ -54,9 +55,10 @@ class AccountServiceFlywayMigrationTest {
                                   reservation_id, request_id, order_id, account_id, symbol, side, quantity,
                                   reserved_notional, status, created_at_unix_ms, updated_at_unix_ms,
                                   remaining_quantity, filled_quantity, version
-                                ) VALUES ('reservation-valid', 'request-valid', 'order-valid', 'account-1', '2330',
+                                ) VALUES ('reservation-valid', 'request-valid', 'order-valid', ?, '2330',
                                   'SIDE_BUY', 1, 0, 'RESERVATION_STATUS_ACCEPTED', 1, 1, 1, 0, 0)
-                                """);
+                                """,
+            UUID.fromString(ACCOUNT_ID));
 
     assertThat(insertedRows).isEqualTo(1);
   }
@@ -74,9 +76,10 @@ class AccountServiceFlywayMigrationTest {
                                         INSERT INTO account_service.account_reservations (
                                           reservation_id, request_id, order_id, account_id, symbol, side, quantity,
                                           reserved_notional, status, created_at_unix_ms, updated_at_unix_ms
-                                        ) VALUES ('reservation-1', 'request-1', 'order-1', 'account-1', '2330',
+                                        ) VALUES ('reservation-1', 'request-1', 'order-1', ?, '2330',
                                           'SIDE_UNSPECIFIED', 1, 0, 'RESERVATION_STATUS_ACCEPTED', 1, 1)
-                                        """))
+                                        """,
+                    UUID.fromString(ACCOUNT_ID)))
         .isInstanceOf(RuntimeException.class);
   }
 
@@ -93,9 +96,10 @@ class AccountServiceFlywayMigrationTest {
                                         INSERT INTO account_service.account_reservations (
                                           reservation_id, request_id, order_id, account_id, symbol, side, quantity,
                                           reserved_notional, status, created_at_unix_ms, updated_at_unix_ms
-                                        ) VALUES ('reservation-2', 'request-2', 'order-2', 'account-1', '2330',
+                                        ) VALUES ('reservation-2', 'request-2', 'order-2', ?, '2330',
                                           'SIDE_BUY', 0, 0, 'RESERVATION_STATUS_ACCEPTED', 1, 1)
-                                        """))
+                                        """,
+                    UUID.fromString(ACCOUNT_ID)))
         .isInstanceOf(RuntimeException.class);
   }
 

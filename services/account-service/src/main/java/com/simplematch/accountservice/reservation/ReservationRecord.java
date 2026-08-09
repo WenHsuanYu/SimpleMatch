@@ -67,7 +67,7 @@ public record ReservationRecord(
 
   /** Returns the owning account identifier. */
   public String accountId() {
-    return ownership.accountId();
+    return ownership.accountId().wireValue();
   }
 
   /** Returns the reserved instrument symbol. */

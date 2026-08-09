@@ -1,15 +1,17 @@
 package com.simplematch.accountservice.authority;
 
+import java.util.Objects;
+
 /**
  * Identity of one account's inventory for one instrument.
  *
  * @param accountId account owning the position
  * @param symbol instrument symbol
  */
-public record AccountPositionIdentity(String accountId, String symbol) {
-  /** Requires a nonblank account and instrument identity. */
+public record AccountPositionIdentity(AccountId accountId, String symbol) {
+  /** Requires a canonical account and nonblank instrument identity. */
   public AccountPositionIdentity {
-    accountId = requireText(accountId, "account_id");
+    Objects.requireNonNull(accountId, "account_id");
     symbol = requireText(symbol, "symbol");
   }
 

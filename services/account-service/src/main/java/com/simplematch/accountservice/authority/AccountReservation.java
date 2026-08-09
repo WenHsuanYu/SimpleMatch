@@ -72,9 +72,14 @@ public record AccountReservation(
     return identity.orderId().value();
   }
 
-  /** Returns the owning account identifier. */
-  public String accountId() {
+  /** Returns the canonical Account-domain identity. */
+  public AccountId accountIdentity() {
     return ownership.accountId();
+  }
+
+  /** Returns the owning account identifier for boundary projections. */
+  public String accountId() {
+    return accountIdentity().wireValue();
   }
 
   /** Returns the reserved instrument symbol. */

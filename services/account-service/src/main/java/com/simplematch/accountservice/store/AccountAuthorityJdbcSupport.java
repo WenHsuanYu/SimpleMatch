@@ -1,5 +1,6 @@
 package com.simplematch.accountservice.store;
 
+import com.simplematch.accountservice.authority.AccountId;
 import com.simplematch.accountservice.authority.AccountLimit;
 import com.simplematch.accountservice.authority.AccountLimitIdentity;
 import com.simplematch.accountservice.authority.AccountLimitLedger;
@@ -24,6 +25,7 @@ import java.time.LocalDate;
 import java.util.List;
 import java.util.Objects;
 import java.util.Optional;
+import java.util.UUID;
 import org.springframework.jdbc.core.ConnectionCallback;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.jdbc.core.RowMapper;
@@ -35,7 +37,7 @@ final class AccountAuthorityJdbcSupport {
       (rs, row) ->
           new AccountLimit(
               new AccountLimitIdentity(
-                  rs.getString("account_id"),
+                  accountId(rs),
                   rs.getObject("trading_day", LocalDate.class),
                   rs.getString("currency")),
               new AccountLimitLedger(
@@ -47,7 +49,7 @@ final class AccountAuthorityJdbcSupport {
   static final RowMapper<AccountPosition> POSITION_MAPPER =
       (rs, row) ->
           new AccountPosition(
-              new AccountPositionIdentity(rs.getString("account_id"), rs.getString("symbol")),
+              new AccountPositionIdentity(accountId(rs), rs.getString("symbol")),
               new AccountPositionInventory(
                   rs.getBigDecimal("long_qty"),
                   rs.getBigDecimal("short_qty"),
@@ -57,13 +59,17 @@ final class AccountAuthorityJdbcSupport {
   static final RowMapper<AccountReservation> RESERVATION_MAPPER =
       (rs, row) -> reservation(rs);
 
+  private static AccountId accountId(ResultSet rs) throws java.sql.SQLException {
+    return new AccountId(rs.getObject("account_id", UUID.class));
+  }
+
   private static AccountReservation reservation(ResultSet rs) throws java.sql.SQLException {
     return new AccountReservation(
         new ReservationIdentity(
             new ReservationIdentity.RequestId(rs.getString("request_id")),
             new ReservationIdentity.ReservationId(rs.getString("reservation_id")),
             new ReservationIdentity.OrderId(rs.getString("order_id"))),
-        new ReservationOwnership(rs.getString("account_id")),
+        new ReservationOwnership(accountId(rs)),
         new ReservationTerms(
             new ReservationTerms.InstrumentSymbol(rs.getString("symbol")),
             Side.valueOf(rs.getString("side")),
