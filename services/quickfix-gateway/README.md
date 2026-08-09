@@ -6,112 +6,171 @@ This service is the target external FIX entrypoint in the current SimpleMatch ar
 in front of the event-driven trading pipeline, while `matching-engine` remains the native C++
 matching core.
 
+The cross-service admission, recovery, identity, and error-message rules are defined by
+[Consistency, Recovery, Identity, and Error Boundaries](../docs/platform/consistency-recovery-identity-and-errors.md).
+This README describes the Gateway-specific implementation of that policy.
+
 ## Role In The System
 
 `quickfix-gateway` is responsible for:
 
-- accepting FIX 4.4 sessions through QuickFix/J
-- converting inbound FIX order flow into domain commands
-- validating normalized inbound commands, then appending valid commands to the local WAL before
-  attempting the first business-level FIX acknowledgement
-- synchronously submitting new and cancel commands to `risk-service` over gRPC
-- returning `ExecutionReport (PendingNew)` only after `risk-service` accepts and persists the
-  submission
-- optionally replaying WAL records through the legacy compatibility publish path when compatibility
-  publish is explicitly enabled
-- consuming `matching.executions` and mapping them back to outbound FIX responses
+- accepting FIX 4.4 sessions through QuickFix/J;
+- validating and normalizing inbound FIX order flow;
+- validating canonical UUID `Account(1)` before durable order admission;
+- appending valid commands to the local command WAL before Risk submission;
+- durably recording recovery state in a sidecar journal;
+- synchronously submitting new and cancel commands to the production Risk v2 admission service;
+- reconciling indeterminate Risk outcomes against Risk's durable admission journal;
+- returning terminal FIX acceptance or rejection only when the authoritative Risk outcome is known;
+- keeping unknown new-order outcomes non-terminal rather than fabricating a business rejection;
+- consuming `matching.executions` and mapping them back to outbound FIX responses; and
+- optionally publishing the legacy `orders.commands` compatibility stream without making it an
+  authoritative recovery dependency.
 
-The runtime QuickFIX session config defaults to `config/quickfix/acceptor.cfg`, which now uses
+The runtime QuickFIX session config defaults to `config/quickfix/acceptor.cfg`, which uses
 `../../config/quickfix/fix-spec/FIX44.xml` as the shared FIX dictionary.
 
 Session-aware deployment baseline:
 
-- Stateful deployments should use stable owner ids that match the pod identity, such as
-  `quickfix-gateway-0` and
-  `quickfix-gateway-1`
-- the repo now includes Kubernetes scaffolding for a headless StatefulSet plus owner-pinned Services
-  in `deploy/k8s/`
-- client session routing should target the owner service name, for example
-  `quickfix-gateway-owner-0:5001`
-- startup recovery completes before the QuickFIX acceptor starts, and readiness only flips up after
-  recovery succeeds
+- Stateful deployments should use stable owner ids that match pod identity, such as
+  `quickfix-gateway-0` and `quickfix-gateway-1`.
+- Client session routing should target the owner service name, for example
+  `quickfix-gateway-owner-0:5001`.
+- Startup recovery completes before the QuickFIX acceptor starts, and readiness becomes healthy only
+  after recovery succeeds.
+- The default QuickFIX acceptor configuration uses continuity defaults
+  (`ResetOnLogon/Logout/Disconnect=N`) for same-owner restart semantics.
+- Standby promotion, fencing, and route transfer remain follow-up work documented in
+  `docs/quickfix-gateway-session-scale-plan.md`.
+
+## Durable Admission And Recovery
+
+For a valid inbound command, the write-before-submit ordering is:
+
+```text
+1. force command WAL
+2. force recovery sidecar UNKNOWN
+3. start the Risk v2 RPC
+```
+
+The command WAL records what normalized command was received. The sidecar records what the Gateway
+knows about Risk ownership or outcome. Sidecar states are `UNKNOWN`, `PENDING`, `ACCEPTED`, and
+`REJECTED`.
+
+Startup recovery is state-aware rather than a blind WAL replay:
+
+- a WAL record with no sidecar state means the process stopped before Risk submission started;
+  startup writes `UNKNOWN` and performs the first submission;
+- `UNKNOWN` is reconciled with `GetAdmissionOutcome(command_id)` before any retry decision;
+- `PENDING` proves Risk durably owns the command and is never retry permission;
+- `ACCEPTED` and `REJECTED` are terminal and are not resubmitted;
+- authoritative `NOT_FOUND` permits resubmission only after local `UNKNOWN`, reusing the original
+  `command_id`;
+- local `PENDING` combined with authoritative `NOT_FOUND` is an ownership contradiction and prevents
+  successful startup.
+
+`simplematch.quickfix-gateway.replay-enabled` controls this startup recovery phase and defaults to
+`true`. It is independent of the optional compatibility publisher.
+
+## FIX Outcome Behavior
+
+The Gateway distinguishes authoritative business outcomes from transport uncertainty.
+
+- Risk `ACCEPTED`: the Gateway can emit the normal accepted/PendingNew FIX response and register the
+  accepted order context.
+- Risk `REJECTED`: the Gateway can emit the terminal business rejection with a stable client-facing
+  reason.
+- Transport timeout, connection loss, exhausted retry, or breaker-open conditions: the Gateway uses
+  internal `UNKNOWN`; these conditions do not prove Risk rejected the command.
+
+For a new order whose Risk outcome is unknown, the current FIX response remains non-terminal
+`ExecutionReport(PendingNew)` with:
+
+```text
+SYSTEM_ERROR: order outcome is pending confirmation; no client action is required
+```
+
+For a cancel whose outcome is unknown, the Gateway does not fabricate an `OrderCancelReject`.
+Background reconciliation does not currently guarantee a later FIX follow-up message after an
+unknown outcome becomes terminal.
+
+Operator logs retain the detailed transport or dependency reason needed for diagnosis; FIX client
+text intentionally does not expose internal RPC, service, breaker, retry, database, or stack-trace
+details.
+
+## Identity
+
+The external FIX/WAL order id remains deterministic `OrderID = O-<ClOrdID>`.
+
+At the Risk v2 boundary, the Gateway derives a separate opaque internal order UUID from FIX session
+identity, the Asia/Taipei trading day, and the original client `ClOrdID`. New and cancel commands
+for the same FIX order on the same trading day therefore map to the same internal Risk order
+identity without changing the FIX-facing `OrderID` contract.
+
+Canonical account identity is owned by Account Service. FIX `Account(1)` carries the canonical UUID;
+the Gateway validates and preserves it. The Gateway does not derive an account UUID from a human-
+readable alias such as `ACC-1`.
+
+## Compatibility Publication
+
+`simplematch.quickfix-gateway.compatibility-publish-enabled` controls the optional legacy Kafka
+`orders.commands` publisher and defaults to `false`.
+
+This path is transitional and best-effort. It is not the authoritative admission path and is not
+used to decide WAL recovery. Authoritative recovery asks Risk's durable v2 admission journal through
+reconciliation.
 
 ## Implemented Behavior
 
-Current repo state is no longer a bootstrap-only scaffold. The Java gateway already includes:
+The Java gateway includes:
 
-- QuickFix/J acceptor lifecycle wiring and session logging
-- capability config binding through `EnvironmentProperties`, `GrpcProperties`, and
-  `KafkaProperties`, with independently injectable gateway file, runtime, and risk-client property
-  modules
-- `NewOrderSingle (35=D)` ingestion
-- gateway-local validation before WAL append; valid commands are append-and-flushed before the first
-  business-level accept/reject decision is emitted
-- synchronous gRPC submission to `risk-service`
-- bounded retry and breaker protection around `risk-service` submission
-- `ExecutionReport (PendingNew)` only after `risk-service` persistence succeeds
-- `ExecutionReport (Rejected)` / `OrderCancelReject` when `risk-service` rejects or is unavailable
-- deterministic `OrderID = O-<ClOrdID>` generation
-- best-effort Kafka publish path kept only as transitional compatibility wiring and now disabled by
-  default
-- WAL replay through the same transitional compatibility path and now disabled by default unless
-  compatibility publish is explicitly enabled
-- consume path for `matching.executions` and outbound FIX mapping
-- cancel request ingestion support beyond the historical C++ baseline
+- QuickFix/J acceptor lifecycle wiring and session logging;
+- capability configuration through Spring Config Data;
+- `NewOrderSingle (35=D)` and cancel request ingestion;
+- gateway-local validation before WAL append;
+- command WAL plus append-only recovery sidecar;
+- v2 Risk submission with bounded retry and breaker protection;
+- Risk admission reconciliation during startup recovery;
+- canonical Account UUID validation before durable admission;
+- deterministic FIX `OrderID = O-<ClOrdID>` plus a separate internal Risk order UUID;
+- best-effort compatibility `orders.commands` publication, disabled by default;
+- `matching.executions` consumption and outbound FIX mapping; and
+- `/healthz`, `/healthz/liveness`, `/readyz`, and `/metrics` management endpoints.
 
 Two intentional Java-specific differences from the historical C++ gateway baseline are documented
 and tested:
 
-- WAL is stored as one-line JSON records rather than the older plain-text format
-- baseline `PendingNew` uses `ExecID = E-<recordId>` so outbound acknowledgements stay traceable to
-  persisted WAL state
+- WAL is stored as one-line JSON records rather than the older plain-text format.
+- Baseline `PendingNew` uses `ExecID = E-<recordId>` so outbound acknowledgements stay traceable to
+  persisted WAL state.
 
 ## Configuration
 
 Configuration is resolved only through Spring Config Data. Use canonical Spring properties or
-relaxed environment names such as
-`SIMPLEMATCH_QUICKFIX_GATEWAY_OWNER_ID`; JSON config discovery and legacy
-`SIMPLEMATCH_FIX_*` aliases are not supported.
+relaxed environment names such as `SIMPLEMATCH_QUICKFIX_GATEWAY_OWNER_ID`; JSON config discovery and
+legacy `SIMPLEMATCH_FIX_*` aliases are not supported.
 
 Important Spring properties:
 
-- `simplematch.quickfix-gateway.acceptor-enabled`: start or skip the QuickFix/J acceptor
+- `simplematch.quickfix-gateway.acceptor-enabled`: start or skip the QuickFix/J acceptor;
 - `simplematch.quickfix-gateway.data-plane-enabled`: enable or skip `matching.executions` consume
-  wiring
-- `simplematch.quickfix-gateway.compatibility-publish-enabled`: enable legacy Kafka
-  `orders.commands` publish and WAL replay compatibility path; default is off
-- `simplematch.quickfix-gateway.replay-enabled`: replay WAL records through the legacy compatibility
-  publish path on startup; only takes effect when compatibility publish is enabled
+  wiring;
+- `simplematch.quickfix-gateway.compatibility-publish-enabled`: enable the optional legacy Kafka
+  `orders.commands` publisher; default is off;
+- `simplematch.quickfix-gateway.replay-enabled`: run state-aware WAL recovery before readiness;
+  default is on;
 - `simplematch.quickfix-gateway.owner-id`: stable logical gateway owner identity; the default Kafka
-  consumer group for
-  `matching.executions` now follows this owner id instead of using one shared gateway-wide group
-- `simplematch.grpc.targets.risk-service`: gRPC target used for synchronous `risk-service`
-  submission
+  consumer group for `matching.executions` follows this owner id;
+- `simplematch.grpc.targets.risk-service`: gRPC target used for Risk submission and reconciliation;
+  and
 - `simplematch.quickfix-gateway.risk-client.*`: deadline, bounded retry, and breaker settings for
-  `risk-service` calls
+  Risk calls.
 
-Default paths from `QuickFixGatewayFileProperties`:
+Default paths from `QuickFixGatewayFileProperties` include:
 
-- QuickFIX config: `config/quickfix/acceptor.cfg`
-- WAL path: `data/quickfix/wal/inbound.wal`
-- owner id: `quickfix-gateway-0`
-
-Session-aware scale-out baseline:
-
-- the current implementation now exposes a stable `owner-id` config so deployments can pin a FIX
-  session to one logical gateway owner
-- the gateway's Kafka consumer group defaults to that owner id, which is the first step toward
-  owner-aware outbound execution routing
-- the service now exposes `/healthz`, `/healthz/liveness`, `/readyz`, and `/metrics` on the
-  management HTTP port for Kubernetes probing and diagnostics
-- startup recovery is now a dedicated lifecycle phase that runs before the QuickFIX acceptor starts;
-  with the current code, WAL replay is only executed in that phase when the compatibility publish
-  path and replay flag are both enabled
-- the default repo QuickFIX acceptor config now uses continuity defaults
-  (`ResetOnLogon/Logout/Disconnect=N`) for same-owner restart semantics
-- this does not yet implement standby promotion, fencing, or route transfer; those remain follow-up
-  work captured in
-  `docs/quickfix-gateway-session-scale-plan.md`
+- QuickFIX config: `config/quickfix/acceptor.cfg`;
+- WAL path: `data/quickfix/wal/inbound.wal`; and
+- the recovery sidecar is maintained beside the configured WAL by Gateway recovery wiring.
 
 ## Run
 
@@ -127,19 +186,21 @@ Start it without opening the FIX acceptor socket:
 ./gradlew :services:quickfix-gateway:bootRun --args='--spring.main.web-application-type=none --simplematch.quickfix-gateway.acceptor-enabled=false'
 ```
 
-Start it with the acceptor disabled and the `matching.executions` consume path also disabled for a
-dry run:
+Start it with the acceptor and matching-execution consume path disabled for a dry run:
 
 ```bash
-./gradlew :services:quickfix-gateway:bootRun --args='--spring.main.web-application-type=none --simplematch.quickfix-gateway.acceptor-enabled=false --simplematch.quickfix-gateway.data-plane-enabled=false --simplematch.quickfix-gateway.replay-enabled=false'
+./gradlew :services:quickfix-gateway:bootRun --args='--spring.main.web-application-type=none --simplematch.quickfix-gateway.acceptor-enabled=false --simplematch.quickfix-gateway.data-plane-enabled=false'
 ```
 
-If you need to re-enable the legacy compatibility publish/replay path for migration or diagnostics,
+If the transitional compatibility publisher is required for diagnostics or migration testing,
 enable it explicitly:
 
 ```bash
-./gradlew :services:quickfix-gateway:bootRun --args='--simplematch.quickfix-gateway.compatibility-publish-enabled=true --simplematch.quickfix-gateway.replay-enabled=true'
+./gradlew :services:quickfix-gateway:bootRun --args='--simplematch.quickfix-gateway.compatibility-publish-enabled=true'
 ```
+
+Disabling `replay-enabled` disables startup WAL recovery and should not be treated as a normal
+production recovery mode.
 
 ## Verification
 
@@ -155,21 +216,15 @@ Run the dedicated QuickFIX/J certification-style simulator evidence:
 ./gradlew :services:quickfix-gateway:certificationTest
 ```
 
-The certification-style test proves the repo-local baseline path end to end:
-
-- FIX logon succeeds
-- `35=D` is accepted
-- WAL is persisted
-- synchronous risk submission is accepted
-- `ExecutionReport (PendingNew)` is returned only after that acceptance
-- FIX logout completes cleanly
+The verification suite covers the normal FIX path together with durable WAL ordering, state-aware
+recovery, identity validation, and the separation between authoritative Risk outcomes and transport
+uncertainty. Current CI evidence belongs in execution/certification material rather than this README.
 
 ## Scope Boundary
 
 This README describes the current Java target gateway in this repository.
 
-- It is already beyond the original bootstrap/session baseline in several areas.
 - It does not claim venue-specific external certification.
+- It does not claim a post-reconciliation FIX follow-up protocol that is not implemented.
+- It does not treat compatibility publication as an admission or recovery guarantee.
 - It is the target runtime architecture for the FIX boundary in this repo.
-- The remaining Kafka publish/replay pieces in this module are transitional compatibility hooks,
-  disabled by default, and not the documented long-term ingress path.

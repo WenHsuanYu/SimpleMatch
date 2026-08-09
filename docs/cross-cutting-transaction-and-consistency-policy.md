@@ -1,7 +1,9 @@
 # Cross-Cutting Transaction and Consistency Policy
 
 This is the canonical execution and phase-gate policy for transaction ownership and consistency. It
-describes required future behavior, not current runtime behavior.
+describes required future behavior, not current runtime behavior. Cross-service outcome,
+reconciliation, identity, and client/operator error-boundary rules are defined separately in
+[Consistency, Recovery, Identity, and Error Boundaries](../services/docs/platform/consistency-recovery-identity-and-errors.md).
 
 ## TP-1 — Transaction Ownership and Atomicity
 
@@ -147,12 +149,17 @@ concurrency prevents duplicate mutation.
 
 ### Phase 7 — Order Admission and Outbox
 
-Each public order-admission operation owns the local atomic decision:
-idempotency state, order state and status, aggregate sequence, validated snapshot or rule reference,
-reason, and admitted or rejected outbox event. Remote checks occur before the local transaction and
-use a persisted intent/saga, idempotency, and recovery rather than a distributed transaction.
-Duplicate commands reproduce the original result and concurrent submissions resolve to one
-authoritative outcome.
+Order admission is a persisted-intent saga rather than one distributed transaction. The first local
+critical section claims `command_id` idempotency and records durable `PENDING` before the remote
+Account reservation call. The Account RPC executes outside a Risk database transaction and reuses
+the same command identity as the reservation request identity. A later local transaction commits the
+terminal `ACCEPTED` or `REJECTED` journal state together with the required outbox event.
+
+Duplicate commands reproduce the authoritative journal result, stale `PENDING` work is recovered by
+the owning Risk saga, and transport uncertainty is resolved through reconciliation rather than being
+converted into a business rejection. Gateway recovery must not treat Risk `PENDING` as retry
+permission. The exact cross-service recovery decisions are defined in the platform consistency and
+recovery policy linked at the top of this document.
 
 ### Phase 11 — Account Lifecycle Integration and Outbox
 
