@@ -10,7 +10,7 @@ import org.springframework.context.SmartLifecycle;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 
-/** Configures the gRPC lifecycle for both legacy submission and v2 admission APIs. */
+/** Configures the production gRPC lifecycle for the durable v2 admission API. */
 @Configuration
 public class GrpcServerConfiguration {
   @Bean
@@ -19,9 +19,7 @@ public class GrpcServerConfiguration {
       havingValue = "true",
       matchIfMissing = true)
   SmartLifecycle grpcServerLifecycle(
-      RiskServiceRuntime runtime,
-      RiskGrpcService legacyService,
-      OrderAdmissionGrpcService admissionService) {
+      RiskServiceRuntime runtime, OrderAdmissionGrpcService admissionService) {
     return new SmartLifecycle() {
       private Server server;
       private volatile boolean running;
@@ -34,7 +32,6 @@ public class GrpcServerConfiguration {
         try {
           server =
               ServerBuilder.forPort(runtime.grpcPort())
-                  .addService((BindableService) legacyService)
                   .addService((BindableService) admissionService)
                   .build()
                   .start();

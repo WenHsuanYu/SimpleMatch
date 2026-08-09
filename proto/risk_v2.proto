@@ -14,7 +14,29 @@ message OrderAdmissionResponse {
   }
 }
 
+message GetAdmissionOutcomeRequest {
+  string command_id = 1;
+}
+
+enum AdmissionOutcomeStatus {
+  ADMISSION_OUTCOME_STATUS_UNSPECIFIED = 0;
+  ADMISSION_OUTCOME_STATUS_NOT_FOUND = 1;
+  ADMISSION_OUTCOME_STATUS_PENDING = 2;
+  ADMISSION_OUTCOME_STATUS_ACCEPTED = 3;
+  ADMISSION_OUTCOME_STATUS_REJECTED = 4;
+}
+
+message GetAdmissionOutcomeResponse {
+  string command_id = 1;
+  AdmissionOutcomeStatus status = 2;
+  string order_id = 3;
+  string account_id = 4;
+  string reason_code = 5;
+  string reason_detail = 6;
+}
+
 service OrderAdmissionService {
   rpc SubmitNewOrder(simplematch.orders.v2.NewOrderCommand) returns (OrderAdmissionResponse);
   rpc SubmitCancel(simplematch.orders.v2.CancelOrderCommand) returns (OrderAdmissionResponse);
+  rpc GetAdmissionOutcome(GetAdmissionOutcomeRequest) returns (GetAdmissionOutcomeResponse);
 }
