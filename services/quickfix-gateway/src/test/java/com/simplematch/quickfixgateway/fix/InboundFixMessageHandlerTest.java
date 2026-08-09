@@ -463,13 +463,12 @@ class InboundFixMessageHandlerTest {
     }
   }
 
-  // Verify that when risk submission fails, the reject message text includes the specific reason
-  // code and explanation.
-  // Scenario: simulate a circuit-open failure and confirm the FIX reject text contains
-  // RISK_CIRCUIT_OPEN and the matching description.
-  @DisplayName("risk submission failures surface a specific reason code in the reject message")
+  // Verify that risk transport failures remain system-side and do not leak internal diagnostics.
+  // Scenario: simulate a circuit-open failure and confirm the client receives a stable generic
+  // system-error message while the outcome remains non-terminal.
+  @DisplayName("risk transport failures expose only a client-safe system error")
   @Test
-  void submitFailureUsesSpecificRiskReasonCodeInRejectText() throws Exception {
+  void submitFailureUsesClientSafeSystemErrorText() throws Exception {
     final WalAppender walAppender =
         new WalAppender(tempDir.resolve("inbound.wal"), StandardCharsets.UTF_8);
     final OrdersCommandPublisher publisher = mock(OrdersCommandPublisher.class);
@@ -493,8 +492,13 @@ class InboundFixMessageHandlerTest {
 
     final ArgumentCaptor<Message> messageCaptor = ArgumentCaptor.forClass(Message.class);
     verify(sender).send(any(SessionID.class), messageCaptor.capture());
-    assertThat(messageCaptor.getValue().getString(58))
-        .isEqualTo("RISK_CIRCUIT_OPEN: risk-service circuit breaker is open");
+    final Message response = messageCaptor.getValue();
+    assertThat(response.getChar(150)).isEqualTo('A');
+    assertThat(response.getChar(39)).isEqualTo('A');
+    assertThat(response.getString(58))
+        .isEqualTo("SYSTEM_ERROR: order outcome is pending confirmation; no client action is required");
+    assertThat(response.getString(58))
+        .doesNotContain("RISK_CIRCUIT_OPEN", "circuit breaker", "risk-service");
   }
 
   @DisplayName("an invalid new order is rejected before WAL append")

@@ -31,11 +31,19 @@ final class FixExecutionReportMapper {
   }
 
   ExecutionReport buildPendingNew(FixOrderSnapshot order, FixExecutionIdentity execution) {
+    return buildPendingNew(order, execution, "");
+  }
+
+  ExecutionReport buildPendingNew(
+      FixOrderSnapshot order, FixExecutionIdentity execution, String text) {
     final ExecutionReport report = baseReport(order, execution, 'A', 'A');
     report.setString(
         LeavesQty.FIELD, FixWireValues.normalizeDecimal(order.quantity().value()));
     report.setString(CumQty.FIELD, "0");
     report.setString(AvgPx.FIELD, "0");
+    if (text != null && !text.isBlank()) {
+      report.setString(Text.FIELD, text);
+    }
     return report;
   }
 

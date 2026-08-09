@@ -10,9 +10,11 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import quickfix.SessionID;
 
-/** Submits risk decisions and renders their protocol-level rejection responses. */
+/** Submits commands to Risk and renders only outcomes that the gateway can prove. */
 final class RiskSubmissionResponder {
   private static final Logger logger = LoggerFactory.getLogger(RiskSubmissionResponder.class);
+  private static final String UNKNOWN_OUTCOME_CLIENT_TEXT =
+      "SYSTEM_ERROR: order outcome is pending confirmation; no client action is required";
 
   private final RiskSubmissionClient riskSubmissionClient;
   private final FixSessionMessageSender fixSessionMessageSender;
@@ -31,18 +33,21 @@ final class RiskSubmissionResponder {
       OrderCommand command, SessionID sessionId, WalRecord walRecord, Instant now) {
     try {
       final RiskSubmissionResult submission = riskSubmissionClient.submitNewOrder(command);
-      if (!submission.accepted()) {
+      if (submission.rejected()) {
         fixSessionMessageSender.send(
             sessionId,
             fixMessageMapper.buildRejected(
                 FixOrderSnapshot.from(walRecord),
                 new FixExecutionIdentity(
                     new FixExecutionIdentity.ExecutionId("RJ-" + walRecord.recordId()), now),
-                rejectText(submission)));
+                businessOutcomeText(submission)));
+      } else if (submission.unknown()) {
+        logUnknownOutcome("submit", command, walRecord, submission, null);
+        sendUnknownNewOrder(sessionId, walRecord, now);
       }
       return submission;
     } catch (RuntimeException error) {
-      return unavailableNewOrder(command, sessionId, walRecord, now, error);
+      return unknownNewOrder(command, sessionId, walRecord, now, error);
     }
   }
 
@@ -50,21 +55,14 @@ final class RiskSubmissionResponder {
       OrderCommand command, SessionID sessionId, WalRecord walRecord, char ordStatus) {
     try {
       final RiskSubmissionResult submission = riskSubmissionClient.submitCancel(command);
-      if (!submission.accepted()) {
-        sendCancelRejection(sessionId, walRecord, ordStatus, rejectText(submission));
+      if (submission.rejected()) {
+        sendCancelRejection(sessionId, walRecord, ordStatus, businessOutcomeText(submission));
+      } else if (submission.unknown()) {
+        logUnknownOutcome("cancel", command, walRecord, submission, null);
       }
       return submission;
     } catch (RuntimeException error) {
-      final RiskSubmissionFailure failure = failure(error, "risk-service cancel failed");
-      logger.warn(
-          "risk-service cancel failed for command_id={} reason_code={}",
-          command.getCommandId(),
-          failure.reasonCode(),
-          error);
-      sendCancelRejection(
-          sessionId, walRecord, ordStatus, failure.reasonCode() + ": " + failure.reasonText());
-      return new RiskSubmissionResult(
-          walRecord.orderId(), false, failure.reasonCode(), failure.reasonText());
+      return unknownCancelOrder(command, walRecord, error);
     }
   }
 
@@ -84,27 +82,43 @@ final class RiskSubmissionResponder {
             failure.reasonCode() + ": " + failure.reasonText()));
   }
 
-  private RiskSubmissionResult unavailableNewOrder(
+  private RiskSubmissionResult unknownNewOrder(
       OrderCommand command,
       SessionID sessionId,
       WalRecord walRecord,
       Instant now,
       RuntimeException error) {
-    final RiskSubmissionFailure failure = failure(error, "risk-service submit failed");
-    logger.warn(
-        "risk-service submit failed for command_id={} reason_code={}",
-        command.getCommandId(),
-        failure.reasonCode(),
-        error);
+    final RiskSubmissionFailure failure =
+        failure(error, "submit", "risk-service submit failed");
+    final RiskSubmissionResult unknown =
+        RiskSubmissionResult.unknown(
+            walRecord.orderId(), failure.reasonCode(), failure.reasonText());
+    logUnknownOutcome("submit", command, walRecord, unknown, error);
+    sendUnknownNewOrder(sessionId, walRecord, now);
+    return unknown;
+  }
+
+  private RiskSubmissionResult unknownCancelOrder(
+      OrderCommand command, WalRecord walRecord, RuntimeException error) {
+    final RiskSubmissionFailure failure =
+        failure(error, "cancel", "risk-service cancel failed");
+    final RiskSubmissionResult unknown =
+        RiskSubmissionResult.unknown(
+            walRecord.orderId(), failure.reasonCode(), failure.reasonText());
+    logUnknownOutcome("cancel", command, walRecord, unknown, error);
+    // Do not emit OrderCancelReject: a missing RPC response does not prove
+    // that Risk rejected the cancel.
+    return unknown;
+  }
+
+  private void sendUnknownNewOrder(SessionID sessionId, WalRecord walRecord, Instant now) {
     fixSessionMessageSender.send(
         sessionId,
-        fixMessageMapper.buildRejected(
+        fixMessageMapper.buildPendingNew(
             FixOrderSnapshot.from(walRecord),
             new FixExecutionIdentity(
-                new FixExecutionIdentity.ExecutionId("RJ-" + walRecord.recordId()), now),
-            failure.reasonCode() + ": " + failure.reasonText()));
-    return new RiskSubmissionResult(
-        walRecord.orderId(), false, failure.reasonCode(), failure.reasonText());
+                new FixExecutionIdentity.ExecutionId("UN-" + walRecord.recordId()), now),
+            UNKNOWN_OUTCOME_CLIENT_TEXT));
   }
 
   private void sendCancelRejection(
@@ -119,15 +133,42 @@ final class RiskSubmissionResponder {
             text));
   }
 
-  private RiskSubmissionFailure failure(RuntimeException error, String fallbackReasonText) {
+  private void logUnknownOutcome(
+      String operation,
+      OrderCommand command,
+      WalRecord walRecord,
+      RiskSubmissionResult submission,
+      RuntimeException error) {
+    if (error == null) {
+      logger.warn(
+          "risk-service {} outcome unknown command_id={} order_id={} reason_code={} reason_text={}",
+          operation,
+          command.getCommandId(),
+          walRecord.orderId(),
+          submission.reasonCode(),
+          submission.reasonText());
+      return;
+    }
+    logger.warn(
+        "risk-service {} outcome unknown command_id={} order_id={} reason_code={} reason_text={}",
+        operation,
+        command.getCommandId(),
+        walRecord.orderId(),
+        submission.reasonCode(),
+        submission.reasonText(),
+        error);
+  }
+
+  private RiskSubmissionFailure failure(
+      RuntimeException error, String operation, String fallbackReasonText) {
     if (error instanceof RiskSubmissionFailure failure) {
       return failure;
     }
     return RiskSubmissionFailure.unavailable(
-        "submit", 1, new IllegalStateException(fallbackReasonText, error));
+        operation, 1, new IllegalStateException(fallbackReasonText, error));
   }
 
-  private String rejectText(RiskSubmissionResult submission) {
+  private String businessOutcomeText(RiskSubmissionResult submission) {
     final String reasonCode = submission.reasonCode();
     final String reasonText = submission.reasonText();
     if (reasonCode == null || reasonCode.isBlank()) {
