@@ -3,24 +3,15 @@ package com.simplematch.quickfixgateway.fix;
 import com.simplematch.quickfixgateway.kafka.OrdersCommandPublisher;
 import com.simplematch.quickfixgateway.risk.RiskSubmissionClient;
 import com.simplematch.quickfixgateway.wal.WalAppender;
+import com.simplematch.quickfixgateway.wal.WalDurableCommandWriter;
+import com.simplematch.quickfixgateway.wal.WalRecoveryJournal;
 import java.time.Clock;
 
 /** Composes the same concrete ingress modules used by the Spring configuration in tests. */
 final class QuickFixIngressTestFixture {
   private QuickFixIngressTestFixture() {}
 
-  /**
-   * Creates the inbound dispatcher with its new-order and cancel durable paths.
-   *
-   * @param walAppender test WAL adapter
-   * @param ordersCommandPublisher compatibility publisher
-   * @param riskSubmissionClient risk admission client
-   * @param sender outbound FIX sender
-   * @param registry session correlation registry
-   * @param mapper outbound FIX mapper
-   * @param clock test clock
-   * @return composed inbound dispatcher
-   */
+  /** Creates the inbound dispatcher with its new-order and cancel durable paths. */
   static InboundFixMessageHandler compose(
       WalAppender walAppender,
       OrdersCommandPublisher ordersCommandPublisher,
@@ -50,14 +41,18 @@ final class QuickFixIngressTestFixture {
       Clock clock,
       GatewayAdmissionGate admissionGate) {
     final CommandIdGenerator commandIdGenerator = new CommandIdGenerator();
+    final WalRecoveryJournal recoveryJournal =
+        new WalRecoveryJournal(WalRecoveryJournal.pathFor(walAppender.walPath()));
+    final WalDurableCommandWriter durableCommandWriter =
+        new WalDurableCommandWriter(walAppender, recoveryJournal);
     final RiskSubmissionResponder riskSubmissionResponder =
-        new RiskSubmissionResponder(riskSubmissionClient, sender, mapper);
+        new RiskSubmissionResponder(riskSubmissionClient, sender, mapper, recoveryJournal);
     final FixCompatibilityCommandPublisher compatibilityPublisher =
         new FixCompatibilityCommandPublisher(ordersCommandPublisher);
     return new InboundFixMessageHandler(
         new NewOrderFixMessageHandler(
             new NewOrderCommandPreparer(commandIdGenerator, clock),
-            new NewOrderDurableAdmission(walAppender, riskSubmissionResponder),
+            new NewOrderDurableAdmission(durableCommandWriter, riskSubmissionResponder),
             new AcceptedNewOrderResponder(
                 registry, sender, mapper, compatibilityPublisher),
             new NewOrderRejectionResponder(sender, mapper, commandIdGenerator),
@@ -65,7 +60,7 @@ final class QuickFixIngressTestFixture {
             clock,
             registry),
         new CancelOrderFixMessageHandler(
-            walAppender,
+            durableCommandWriter,
             registry,
             riskSubmissionResponder,
             compatibilityPublisher,

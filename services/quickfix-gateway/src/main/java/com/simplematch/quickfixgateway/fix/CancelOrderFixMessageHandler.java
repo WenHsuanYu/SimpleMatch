@@ -1,7 +1,7 @@
 package com.simplematch.quickfixgateway.fix;
 
 import com.simplematch.contracts.orders.v1.OrderCommand;
-import com.simplematch.quickfixgateway.wal.WalAppender;
+import com.simplematch.quickfixgateway.wal.WalDurableCommandWriter;
 import com.simplematch.quickfixgateway.wal.WalRecord;
 import java.time.Clock;
 import java.time.Instant;
@@ -13,7 +13,7 @@ import quickfix.field.OrigClOrdID;
 
 /** Owns the durable admission path for a FIX OrderCancelRequest message. */
 final class CancelOrderFixMessageHandler {
-  private final WalAppender walAppender;
+  private final WalDurableCommandWriter durableCommandWriter;
   private final OrderSessionRegistry orderSessionRegistry;
   private final RiskSubmissionResponder riskSubmissionResponder;
   private final FixCompatibilityCommandPublisher compatibilityPublisher;
@@ -22,14 +22,14 @@ final class CancelOrderFixMessageHandler {
   private final GatewayAdmissionGate admissionGate;
 
   CancelOrderFixMessageHandler(
-      WalAppender walAppender,
+      WalDurableCommandWriter durableCommandWriter,
       OrderSessionRegistry orderSessionRegistry,
       RiskSubmissionResponder riskSubmissionResponder,
       FixCompatibilityCommandPublisher compatibilityPublisher,
       CommandIdGenerator commandIdGenerator,
       Clock clock,
       GatewayAdmissionGate admissionGate) {
-    this.walAppender = walAppender;
+    this.durableCommandWriter = durableCommandWriter;
     this.orderSessionRegistry = orderSessionRegistry;
     this.riskSubmissionResponder = riskSubmissionResponder;
     this.compatibilityPublisher = compatibilityPublisher;
@@ -61,23 +61,27 @@ final class CancelOrderFixMessageHandler {
           origClOrdId);
       return;
     }
-    final OrderSessionState existing =
-        orderSessionRegistry.find(FixInboundCommandFactory.orderIdFor(origClOrdId)).orElse(null);
+    final String orderId = FixInboundCommandFactory.orderIdFor(origClOrdId);
+    final OrderSessionState existing = orderSessionRegistry.find(orderId).orElse(null);
     final WalRecord walRecord;
     try {
       walRecord =
           FixInboundCommandFactory.cancelOrder(
-              message, identity, existing, commandIdGenerator.nextCommandId(), Instant.now(clock));
+              message,
+              identity,
+              existing,
+              commandIdGenerator.nextCommandId(),
+              Instant.now(clock));
     } catch (FieldNotFound | IllegalArgumentException failure) {
       riskSubmissionResponder.rejectInbound(
           FixInboundValidationFailure.fromException("INVALID_CANCEL", failure),
           sessionId,
-          FixInboundCommandFactory.orderIdFor(origClOrdId),
+          orderId,
           cancelClOrdId,
           origClOrdId);
       return;
     }
-    walAppender.appendAndFlush(walRecord);
+    durableCommandWriter.appendForSubmission(walRecord);
     final OrderCommand command = walRecord.toOrderCommand();
     if (!riskSubmissionResponder
         .submitCancelOrder(

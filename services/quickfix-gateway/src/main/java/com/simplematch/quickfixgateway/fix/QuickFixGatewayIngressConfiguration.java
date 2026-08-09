@@ -2,7 +2,8 @@ package com.simplematch.quickfixgateway.fix;
 
 import com.simplematch.quickfixgateway.kafka.OrdersCommandPublisher;
 import com.simplematch.quickfixgateway.risk.RiskSubmissionClient;
-import com.simplematch.quickfixgateway.wal.WalAppender;
+import com.simplematch.quickfixgateway.wal.WalDurableCommandWriter;
+import com.simplematch.quickfixgateway.wal.WalRecoveryJournal;
 import java.time.Clock;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
@@ -19,9 +20,10 @@ public class QuickFixGatewayIngressConfiguration {
   RiskSubmissionResponder riskSubmissionResponder(
       RiskSubmissionClient riskSubmissionClient,
       FixSessionMessageSender fixSessionMessageSender,
-      FixMessageMapper fixMessageMapper) {
+      FixMessageMapper fixMessageMapper,
+      WalRecoveryJournal recoveryJournal) {
     return new RiskSubmissionResponder(
-        riskSubmissionClient, fixSessionMessageSender, fixMessageMapper);
+        riskSubmissionClient, fixSessionMessageSender, fixMessageMapper, recoveryJournal);
   }
 
   @Bean
@@ -38,8 +40,9 @@ public class QuickFixGatewayIngressConfiguration {
 
   @Bean
   NewOrderDurableAdmission newOrderDurableAdmission(
-      WalAppender walAppender, RiskSubmissionResponder riskSubmissionResponder) {
-    return new NewOrderDurableAdmission(walAppender, riskSubmissionResponder);
+      WalDurableCommandWriter durableCommandWriter,
+      RiskSubmissionResponder riskSubmissionResponder) {
+    return new NewOrderDurableAdmission(durableCommandWriter, riskSubmissionResponder);
   }
 
   @Bean
@@ -85,7 +88,7 @@ public class QuickFixGatewayIngressConfiguration {
 
   @Bean
   CancelOrderFixMessageHandler cancelOrderFixMessageHandler(
-      WalAppender walAppender,
+      WalDurableCommandWriter durableCommandWriter,
       OrderSessionRegistry orderSessionRegistry,
       RiskSubmissionResponder riskSubmissionResponder,
       FixCompatibilityCommandPublisher compatibilityPublisher,
@@ -93,7 +96,7 @@ public class QuickFixGatewayIngressConfiguration {
       Clock quickFixGatewayClock,
       GatewayAdmissionGate admissionGate) {
     return new CancelOrderFixMessageHandler(
-        walAppender,
+        durableCommandWriter,
         orderSessionRegistry,
         riskSubmissionResponder,
         compatibilityPublisher,

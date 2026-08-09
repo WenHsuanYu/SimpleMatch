@@ -10,7 +10,7 @@ import com.simplematch.contracts.common.v1.Side;
 import com.simplematch.contracts.common.v1.TimeInForce;
 import com.simplematch.contracts.orders.v1.CommandType;
 
-/** Rehydrates and validates semantic records from the flat v1 JSON shape. */
+/** Rehydrates and validates semantic records from the stable flat WAL JSON shape. */
 final class WalRecordJsonDecoder {
   private final ObjectReader strictJsonReader;
 
@@ -91,13 +91,18 @@ final class WalRecordJsonDecoder {
     if (reference.origClOrdId().isEmpty()) {
       throw new WalRecordCodecException("cancel must have orig_cl_ord_id");
     }
-    document.requirePlaceholder("symbol", "");
-    document.requirePlaceholder("side", Side.SIDE_UNSPECIFIED.name());
     document.requirePlaceholder("quantity", "");
     document.requirePlaceholder("price", "");
     document.requirePlaceholder("orderType", OrderType.ORDER_TYPE_UNSPECIFIED.name());
     document.requirePlaceholder("tif", TimeInForce.TIME_IN_FORCE_UNSPECIFIED.name());
-    return new WalCommand.Cancel();
+    final String symbol = document.optionalText("symbol");
+    final Side side = document.enumValue("side", Side.class);
+    final boolean hasSymbol = !symbol.isBlank();
+    final boolean hasSide = side != Side.SIDE_UNSPECIFIED;
+    if (hasSymbol != hasSide) {
+      throw new WalRecordCodecException("cancel WAL must contain both symbol and side or neither");
+    }
+    return hasSymbol ? new WalCommand.Cancel(symbol, side) : new WalCommand.Cancel();
   }
 
   private void requireMessageType(String actual, String expected) {

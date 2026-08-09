@@ -1,5 +1,6 @@
 package com.simplematch.quickfixgateway.wal;
 
+import com.simplematch.contracts.common.v1.Side;
 import com.simplematch.contracts.orders.v1.CommandType;
 
 /** Command-specific facts carried by one durable inbound FIX command. */
@@ -28,8 +29,24 @@ public sealed interface WalCommand permits WalCommand.NewOrder, WalCommand.Cance
     }
   }
 
-  /** A cancellation whose order terms are not part of the command model. */
-  record Cancel() implements WalCommand {
+  /** A cancellation with the durable order context required by v2 admission. */
+  record Cancel(String symbol, Side side) implements WalCommand {
+    /** Creates the legacy v1 placeholder form used when reading old WAL records. */
+    public Cancel() {
+      this("", Side.SIDE_UNSPECIFIED);
+    }
+
+    /** Normalizes nullable legacy context while preserving explicit v2 values. */
+    public Cancel {
+      symbol = symbol == null ? "" : symbol;
+      side = side == null ? Side.SIDE_UNSPECIFIED : side;
+    }
+
+    /** Returns whether this cancellation carries v2 admission context. */
+    public boolean hasOrderContext() {
+      return !symbol.isBlank() && side != Side.SIDE_UNSPECIFIED;
+    }
+
     @Override
     public String messageType() {
       return quickfix.fix44.OrderCancelRequest.MSGTYPE;

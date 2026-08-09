@@ -3,10 +3,10 @@ package com.simplematch.quickfixgateway.wal;
 /** Durable identity and provenance for one gateway-local WAL record. */
 public record WalMetadata(
     String schemaVersion, String recordId, long createdAtUnixMs, String sourceService) {
-  /** The only WAL schema written by the current gateway. */
+  /** Current stable command-WAL schema. Recovery state is versioned in its sidecar journal. */
   public static final String CURRENT_SCHEMA_VERSION = "v1";
 
-  /** Requires a supported schema version and complete durable provenance. */
+  /** Requires the stable schema version and complete durable provenance. */
   public WalMetadata {
     if (!CURRENT_SCHEMA_VERSION.equals(schemaVersion)) {
       throw new IllegalArgumentException("unsupported WAL schema version: " + schemaVersion);
