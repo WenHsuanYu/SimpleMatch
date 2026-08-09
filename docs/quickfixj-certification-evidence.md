@@ -8,13 +8,18 @@ This document records the current automated FIX simulator evidence for the Java
 It is not a counterparty certification report. It is a repo-local, repeatable QuickFIX/J integration
 proof that the Java gateway can:
 
-- start a real FIX 4.4 acceptor
-- create a session and complete logon
-- accept `NewOrderSingle (35=D)` from a FIX initiator
-- accept `OrderCancelRequest (35=F)` through the public gateway boundary
-- persist the inbound order to WAL before sending the baseline `ExecutionReport(PendingNew)`
-- send the acknowledgement back on the same live FIX session
-- complete logout and acceptor shutdown cleanly
+- start a real FIX 4.4 acceptor;
+- create a session and complete logon;
+- accept `NewOrderSingle (35=D)` from a FIX initiator;
+- accept `OrderCancelRequest (35=F)` through the public gateway boundary;
+- validate canonical UUID `Account(1)` at ingress;
+- persist the inbound command to WAL before Risk submission;
+- keep recovery state in the sidecar journal and reconcile unresolved Risk outcomes;
+- send the supported acknowledgement back on the same live FIX session; and
+- complete logout and acceptor shutdown cleanly.
+
+The architectural meaning of these states is defined by
+[Consistency, Recovery, Identity, and Error Boundaries](../services/docs/platform/consistency-recovery-identity-and-errors.md).
 
 ## Evidence Source
 
@@ -27,59 +32,38 @@ proof that the Java gateway can:
 
 The test dynamically creates:
 
-- a temporary acceptor QuickFIX config
-- a temporary initiator QuickFIX config
-- temporary FIX store and log directories
-- a temporary gateway WAL path
+- a temporary acceptor QuickFIX config;
+- a temporary initiator QuickFIX config;
+- temporary FIX store and log directories; and
+- temporary gateway WAL/recovery state.
 
-It then:
+It then exercises the supported baseline, including live new-order ingress, durable command state,
+Risk submission evidence, outbound FIX acknowledgement, lifecycle cleanup, duplicate behavior,
+cancellation, and startup recovery scenarios.
 
-1. starts `QuickFixAcceptorLifecycle`
-2. starts a QuickFIX/J `SocketInitiator` acting as the simulator
-3. loads the repository-local dictionary at `../config/quickfix/fix-spec/FIX44.xml`
-4. waits for FIX logon
-5. sends `NewOrderSingle (35=D)` with `ClOrdID=C1`
-6. waits for the `ExecutionReport(PendingNew)` reply
-7. reads the gateway WAL file
-8. stops initiator and acceptor
-9. asserts lifecycle logs and baseline message behavior
-
-The same certification test class also drives the public `QuickFixApplicationAdapter` directly for
-the deterministic boundary scenarios that do not require a socket: equivalent duplicate new-order
-submission, cancellation, canceled lifecycle projection, and WAL recovery. The idempotent Risk
-fixture proves that duplicate and replayed records produce one admission decision per business
-identity.
+The certification test intentionally verifies observable invariants rather than thread timing. Where
+FIX delivery and an internal asynchronous side effect are separate events, the test waits for the
+specific event it asserts instead of assuming one event proves the other completed.
 
 ## Verified Outcomes
 
-The automated simulator currently verifies all of the following in one run:
+The automated evidence covers:
 
-- session creation is logged by `QuickFixApplicationAdapter`
-- FIX logon is completed and logged
-- inbound application traffic reaches `fromApp(...)`
-- baseline `35=D -> WAL -> PendingNew` path executes end-to-end
-- public gateway new-order, duplicate, and cancel paths preserve one Risk decision per business
-  identity
-- a canceled matching lifecycle event projects as one compatible FIX `ExecutionReport`
-- WAL replay routes both durable records back through the idempotent Risk boundary without a second
-  business decision
-- the simulator does not depend on the old vendored QuickFIX dictionary path from the removed C++
-  baseline
-- outbound acknowledgement fields include:
-    - `35=8`
-    - `37=O-C1`
-    - `17=E-<recordId>`
-    - `150=A`
-    - `39=A`
-    - `54=1`
-    - `151=10`
-    - `14=0`
-    - `6=0`
-    - `11=C1`
-    - `55=AAPL`
-- WAL contains the inbound `35=D` order after the live FIX interaction
-- FIX logout is logged
-- acceptor shutdown is logged cleanly
+- session creation, FIX logon, inbound application traffic, logout, and clean acceptor shutdown;
+- `35=D` reaching the durable WAL path before the supported business acknowledgement;
+- canonical Account UUID validation at the FIX boundary;
+- stable external `OrderID(37)=O-<ClOrdID>` behavior;
+- duplicate and cancel behavior through the public Gateway boundary;
+- state-aware recovery rather than blind WAL resubmission;
+- terminal recovery state skipping;
+- reconciliation of unresolved commands before retry decisions;
+- preservation of the original `command_id` when recovery permits resubmission; and
+- the repository-local FIX dictionary rather than the removed C++ dictionary path.
+
+The live baseline acknowledgement continues to verify the expected FIX 4.4 field shape, including
+`ExecutionReport`, client `ClOrdID`, symbol, side, quantities, and traceable execution identity.
+Exact assertions remain authoritative in `QuickFixCertificationEvidenceTest` so this document does
+not duplicate every field literal and drift from the executable evidence.
 
 ## Rerun Command
 
@@ -87,27 +71,17 @@ The automated simulator currently verifies all of the following in one run:
 ./gradlew :services:quickfix-gateway:certificationTest
 ```
 
-Equivalent direct test filter:
-
-```bash
-./gradlew :services:quickfix-gateway:test --tests com.simplematch.quickfixgateway.fix.QuickFixCertificationEvidenceTest
-```
+The certification class is intentionally owned by the dedicated `certificationTest` task rather than
+being executed a second time by the ordinary module `test` task.
 
 ## Interpretation
 
-This evidence closes the previous gap where the Java gateway had unit-level parity checks but no
-automated FIX-simulator proof for session lifecycle and the supported baseline order flow.
+This evidence proves the repo-local Java Gateway baseline, including the current recovery and
+identity boundaries. It does not claim external venue or broker certification.
 
-Repository baseline note:
+The remaining certification gap is external:
 
-- the current repo does not contain an equivalent C++ FIX simulator artifact
-- the current repo does not contain a recorded C++ broker or venue certification report
-- the current repo does contain C++ unit-level evidence for config precedence and
-  `ExecutionReport(PendingNew)` field mapping
-
-The remaining certification gap is external, not internal:
-
-- no broker or venue-specific certification script is recorded yet
-- no counterparty interoperability evidence is recorded yet
+- no broker or venue-specific certification script is recorded yet; and
+- no counterparty interoperability evidence is recorded yet.
 
 Those are future operational validation steps beyond this repo-local certification-style check.

@@ -3,8 +3,11 @@
 These documents define the intended cross-cutting platform. They distinguish target operating rules
 from repository execution plans, phase gates, task tracking, and certification evidence.
 
-- [Data model](data-model.md) — target records, projections, and ownership.
+- [Data model](data-model.md) — target records, projections, identity ownership, and authority.
 - [Database architecture](database-architecture.md) — database topology and schema ownership.
+- [Consistency, recovery, identity, and error boundaries](consistency-recovery-identity-and-errors.md)
+  — synchronous admission semantics, WAL/sidecar recovery, reconciliation, canonical identity, and
+  operator-versus-client error-message rules.
 - [Configuration](configuration.md) — configuration ownership and boundaries.
 - [Development environment](development-environment.md) — local toolchain, repository layout, and
   build expectations.
