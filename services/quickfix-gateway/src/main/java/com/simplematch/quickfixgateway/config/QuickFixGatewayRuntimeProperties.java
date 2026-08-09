@@ -5,17 +5,12 @@ import org.springframework.boot.context.properties.ConfigurationProperties;
 /** Runtime identity and capability switches owned by the QuickFIX gateway. */
 @ConfigurationProperties("simplematch.quickfix-gateway")
 public record QuickFixGatewayRuntimeProperties(
-    String ownerId,
-    Boolean acceptorEnabled,
-    Boolean dataPlaneEnabled,
-    Boolean compatibilityPublishEnabled,
-    Boolean replayEnabled) {
-  /** Normalizes absent runtime settings to the gateway's compatibility defaults. */
+    String ownerId, Boolean acceptorEnabled, Boolean dataPlaneEnabled, Boolean replayEnabled) {
+  /** Normalizes absent runtime settings to the gateway's supported defaults. */
   public QuickFixGatewayRuntimeProperties {
     ownerId = defaultString(ownerId, "quickfix-gateway-0");
     acceptorEnabled = defaultBoolean(acceptorEnabled, true);
     dataPlaneEnabled = defaultBoolean(dataPlaneEnabled, true);
-    compatibilityPublishEnabled = defaultBoolean(compatibilityPublishEnabled, false);
     replayEnabled = defaultBoolean(replayEnabled, true);
   }
 

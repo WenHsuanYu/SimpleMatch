@@ -7,21 +7,22 @@ compatibility, not broker deployment settings or a service's implementation deta
 
 Kafka carries asynchronous integration events after durable local admission. The synchronous ingress
 path is described in [the gRPC contract](grpc-apis.md). Producers publish through a durable outbox
-and the event path is at-least-once:
-consumers must make repeated delivery harmless. A consumer may record an event identifier, enforce a
-state transition, or rely on an appropriate domain unique key; it must not make the same business
-effect twice.
+and the event path is at-least-once: consumers must make repeated delivery harmless. A consumer may
+record an event identifier, enforce a state transition, or rely on an appropriate domain unique key;
+it must not make the same business effect twice.
 
-`orders.commands` is a transitional compatibility topic only. New ingress integrations use
-synchronous admission and begin the asynchronous path with
-`orders.validated` or a rejection outcome.
+The former `orders.commands` QuickFIX compatibility publication is retired. New and current order
+ingress uses synchronous Risk admission; the authoritative asynchronous order path begins from the
+Risk transactional outbox on `orders.validated`. The v1 `OrderCommand` protobuf remains available as
+an internal compatibility carrier where existing WAL and adapter code still requires it, but that
+wire type no longer implies an `orders.commands` Kafka publication surface.
 
 ## Topic catalogue
 
 | Topic                 | Key and ordering boundary                            | Producer               | Consumers                                               | Contract purpose                                 |
 |-----------------------|------------------------------------------------------|------------------------|---------------------------------------------------------|--------------------------------------------------|
 | `orders.validated`    | Stable partition for a symbol within a trading day   | `risk-service`         | `matching-engine`                                       | Accepted order command, or its rejection outcome |
-| `account.lifecycle`   | `account_id`                                         | `account-service`      | Account lifecycle and rebuildable projections            | Reservation authority outcome                    |
+| `account.lifecycle`   | `account_id`                                         | `account-service`      | Account lifecycle and rebuildable projections           | Reservation authority outcome                    |
 | `market-reference.snapshots` | `trading_day`                                  | `marketdata-publisher` | Market Reference consumers                              | Immutable market snapshot                        |
 | `market-reference.routing-policies` | `trading_day`                           | `marketdata-publisher` | `risk-service`, `matching-engine`                       | Immutable instrument-to-partition policy         |
 | `matching.executions` | `symbol`                                             | `matching-engine`      | `persistence`, market-data services, `quickfix-gateway` | Executions and order-result events               |
@@ -76,9 +77,8 @@ UUID-backed event and command values, but consumers must treat the identifier as
 depend on a particular textual encoding.
 
 The v2 transition contract makes internal identifiers UUID-backed and uses signed 64-bit
-`0.0001 TWD` fixed-point price/notional values plus whole-share quantities.
-See [v2 domain contracts](v2-domain-contracts.md) for the additive wire types and v1 ingress
-adapter.
+`0.0001 TWD` fixed-point price/notional values plus whole-share quantities. See
+[v2 domain contracts](v2-domain-contracts.md) for the additive wire types and v1 ingress adapter.
 
 ## Evolution and compatibility
 

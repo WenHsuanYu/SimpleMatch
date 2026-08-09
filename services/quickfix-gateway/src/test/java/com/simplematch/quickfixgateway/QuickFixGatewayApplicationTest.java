@@ -48,7 +48,7 @@ class QuickFixGatewayApplicationTest {
     assertThat(runtimeProperties.ownerId()).isEqualTo("quickfix-gateway-0");
     assertThat(runtime.ownerId()).isEqualTo("quickfix-gateway-0");
     assertThat(grpcProperties.targets().riskService()).isEqualTo("dns:///risk-service:50052");
-    assertThat(kafkaProperties.topics().ordersCommands()).isEqualTo("orders.commands");
+    assertThat(kafkaProperties.topics().ordersValidated()).isEqualTo("orders.validated");
     assertThat(environment.getProperty("spring.kafka.consumer.group-id"))
         .isEqualTo("quickfix-gateway-0");
   }

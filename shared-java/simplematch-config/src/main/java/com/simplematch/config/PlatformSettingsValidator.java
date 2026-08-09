@@ -17,9 +17,7 @@ final class PlatformSettingsValidator {
   }
 
   private static void validateKafkaPartitions(KafkaProperties.PartitionsProperties partitions) {
-    if (partitions.ordersCommands() <= 0
-        || partitions.ordersValidated() <= 0
-        || partitions.matchingExecutions() <= 0) {
+    if (partitions.ordersValidated() <= 0 || partitions.matchingExecutions() <= 0) {
       throw new IllegalStateException("Kafka partition counts must be positive.");
     }
   }

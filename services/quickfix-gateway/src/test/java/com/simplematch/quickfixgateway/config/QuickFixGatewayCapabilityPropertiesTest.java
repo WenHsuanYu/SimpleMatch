@@ -49,7 +49,8 @@ class QuickFixGatewayCapabilityPropertiesTest {
     assertThat(fileProperties.quickfixConfigPath()).isEqualTo("custom/acceptor.cfg");
     assertThat(fileProperties.walPath()).isEqualTo("data/quickfix/wal/inbound.wal");
     assertThat(runtimeProperties.acceptorEnabled()).isTrue();
-    assertThat(runtimeProperties.compatibilityPublishEnabled()).isFalse();
+    assertThat(runtimeProperties.dataPlaneEnabled()).isTrue();
+    assertThat(runtimeProperties.replayEnabled()).isTrue();
   }
 
   @Test
