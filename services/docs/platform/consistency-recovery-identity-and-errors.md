@@ -19,7 +19,8 @@ mechanics remain governed by
 5. Client-facing messages and operator diagnostics are different contracts and must be produced
    separately.
 6. Durable state and required outbox events commit atomically inside the owning service.
-7. Transitional compatibility publication is not an authoritative recovery source.
+7. Retired compatibility publication must not be reintroduced as a second admission or recovery
+   path.
 
 ## Order ingress and admission
 
@@ -187,15 +188,20 @@ Risk must not translate the identifier. If a future product requires human-reada
 account codes, Account authority must own the explicit resolution from that external code to the
 canonical UUID.
 
-## Durable event path and compatibility publication
+## Durable event path and retired compatibility publication
 
 For accepted Risk admission, the durable cross-service publication path is the Risk journal and
-transactional outbox followed by the configured CDC/Kafka delivery path. The optional legacy
-`orders.commands` publication from QuickFIX Gateway is transitional compatibility wiring. It is
-best-effort, disabled by default, and is not the source of truth for admission or WAL recovery.
+transactional outbox followed by the configured CDC/Kafka delivery path on `orders.validated`.
+QuickFIX Gateway no longer exposes a runtime path or configuration switch that can publish the
+former `orders.commands` compatibility topic.
 
-Recovery therefore reconciles against Risk's durable admission journal rather than attempting to
-reconstruct truth from compatibility publication success.
+The v1 `OrderCommand` message may remain inside Gateway WAL/Risk adapter code while that internal
+carrier is still useful. Retaining a wire type is not permission to restore a second Kafka ingress
+path. If a future integration needs a new command stream, it requires an explicit architecture and
+delivery contract rather than re-enabling the retired compatibility publisher.
+
+Recovery always reconciles against Risk's durable admission journal; Kafka publication success is
+not an admission or recovery source of truth.
 
 ## Error-message audience policy
 

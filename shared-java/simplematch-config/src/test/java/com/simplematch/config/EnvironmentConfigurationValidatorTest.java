@@ -132,7 +132,7 @@ class EnvironmentConfigurationValidatorTest {
   @Test
   void rejectsNonPositiveKafkaPartitionCounts() {
     final KafkaProperties.PartitionsProperties partitions =
-        new KafkaProperties.PartitionsProperties(0, 15, 15);
+        new KafkaProperties.PartitionsProperties(0, 15);
 
     assertThatThrownBy(
             () -> PlatformSettingsValidator.validate(new KafkaProperties(null, null, partitions)))

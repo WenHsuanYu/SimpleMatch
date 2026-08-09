@@ -1,11 +1,9 @@
 package com.simplematch.quickfixgateway.config;
 
 import com.simplematch.config.GrpcProperties;
-import com.simplematch.config.KafkaProperties;
 import com.simplematch.contracts.v2.VenueMic;
 import com.simplematch.quickfixgateway.fix.FixMessageMapper;
 import com.simplematch.quickfixgateway.fix.OrderSessionRegistry;
-import com.simplematch.quickfixgateway.kafka.KafkaOrdersCommandPublisher;
 import com.simplematch.quickfixgateway.kafka.NoopOrdersCommandPublisher;
 import com.simplematch.quickfixgateway.kafka.OrdersCommandPublisher;
 import com.simplematch.quickfixgateway.risk.GrpcRiskReconciliationClient;
@@ -20,12 +18,10 @@ import com.simplematch.quickfixgateway.wal.WalReplayService;
 import io.grpc.ManagedChannel;
 import io.grpc.ManagedChannelBuilder;
 import java.time.Clock;
-import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
-import org.springframework.kafka.core.KafkaTemplate;
 
-/** Wires external risk and compatibility-publication adapters for the QuickFIX gateway. */
+/** Wires external Risk adapters and state-aware WAL recovery for the QuickFIX gateway. */
 @Configuration
 public class QuickFixGatewayIntegrationConfiguration {
   @Bean
@@ -69,22 +65,14 @@ public class QuickFixGatewayIntegrationConfiguration {
     return new GrpcRiskReconciliationClient(riskServiceChannel, riskClient.deadlineMillis());
   }
 
+  /**
+   * Keeps the internal compatibility seam inert while v1 OrderCommand remains a WAL/Risk carrier.
+   *
+   * <p>The legacy orders.commands Kafka publication path is retired and cannot be enabled at
+   * runtime.
+   */
   @Bean
-  @ConditionalOnProperty(
-      name = "simplematch.quickfix-gateway.compatibility-publish-enabled",
-      havingValue = "true")
-  OrdersCommandPublisher ordersCommandPublisher(
-      KafkaTemplate<String, byte[]> kafkaTemplate, KafkaProperties kafkaProperties) {
-    return new KafkaOrdersCommandPublisher(
-        kafkaTemplate, kafkaProperties.topics().ordersCommands());
-  }
-
-  @Bean
-  @ConditionalOnProperty(
-      name = "simplematch.quickfix-gateway.compatibility-publish-enabled",
-      havingValue = "false",
-      matchIfMissing = true)
-  OrdersCommandPublisher noopOrdersCommandPublisher() {
+  OrdersCommandPublisher ordersCommandPublisher() {
     return new NoopOrdersCommandPublisher();
   }
 

@@ -26,21 +26,18 @@ public record KafkaProperties(
   /**
    * Defines canonical Kafka topic names used by SimpleMatch event flows.
    *
-   * @param ordersCommands topic carrying order commands
    * @param ordersValidated topic carrying validated orders
    * @param matchingExecutions topic carrying matching execution results
    * @param marketdataEvents topic carrying market-data events
    * @param auditEvents topic carrying audit events
    */
   public record TopicsProperties(
-      String ordersCommands,
       String ordersValidated,
       String matchingExecutions,
       String marketdataEvents,
       String auditEvents) {
     /** Normalizes absent topic names to repository-wide defaults. */
     public TopicsProperties {
-      ordersCommands = PlatformPropertyDefaults.string(ordersCommands, "orders.commands");
       ordersValidated = PlatformPropertyDefaults.string(ordersValidated, "orders.validated");
       matchingExecutions =
           PlatformPropertyDefaults.string(matchingExecutions, "matching.executions");
@@ -49,28 +46,25 @@ public record KafkaProperties(
     }
 
     static TopicsProperties defaults() {
-      return new TopicsProperties(null, null, null, null, null);
+      return new TopicsProperties(null, null, null, null);
     }
   }
 
   /**
    * Defines desired Kafka partition counts for ordered event streams.
    *
-   * @param ordersCommands partition count for the order-command stream
    * @param ordersValidated partition count for the validated-order stream
    * @param matchingExecutions partition count for the matching-execution stream
    */
-  public record PartitionsProperties(
-      Integer ordersCommands, Integer ordersValidated, Integer matchingExecutions) {
+  public record PartitionsProperties(Integer ordersValidated, Integer matchingExecutions) {
     /** Normalizes absent partition counts to repository-wide defaults. */
     public PartitionsProperties {
-      ordersCommands = PlatformPropertyDefaults.integerOrDefault(ordersCommands, 15);
       ordersValidated = PlatformPropertyDefaults.integerOrDefault(ordersValidated, 15);
       matchingExecutions = PlatformPropertyDefaults.integerOrDefault(matchingExecutions, 15);
     }
 
     static PartitionsProperties defaults() {
-      return new PartitionsProperties(null, null, null);
+      return new PartitionsProperties(null, null);
     }
   }
 }
