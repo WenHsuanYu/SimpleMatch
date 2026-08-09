@@ -8,6 +8,8 @@ import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 
 class ReservationConstructorContractTest {
+  private static final String ACCOUNT_ID = "0194a8f0-7c77-7b38-9e2d-2a5fdd0f7c13";
+
   @Test
   @DisplayName("reserve operations require both typed components")
   void reserveOperationRequiresTypedComponents() {
@@ -27,7 +29,7 @@ class ReservationConstructorContractTest {
                 new ReservationRequestIdentity(
                     null,
                     new ReservationRequestIdentity.OrderId("order-1"),
-                    new ReservationRequestIdentity.AccountId("account-1")))
+                    new ReservationRequestIdentity.AccountId(ACCOUNT_ID)))
         .isInstanceOf(NullPointerException.class)
         .hasMessage("requestId");
     assertThatThrownBy(
@@ -35,7 +37,7 @@ class ReservationConstructorContractTest {
                 new ReservationRequestIdentity(
                     new ReservationRequestIdentity.RequestId("request-1"),
                     null,
-                    new ReservationRequestIdentity.AccountId("account-1")))
+                    new ReservationRequestIdentity.AccountId(ACCOUNT_ID)))
         .isInstanceOf(NullPointerException.class)
         .hasMessage("orderId");
     assertThatThrownBy(
@@ -164,7 +166,7 @@ class ReservationConstructorContractTest {
     return new ReservationRequestIdentity(
         new ReservationRequestIdentity.RequestId("request-1"),
         new ReservationRequestIdentity.OrderId("order-1"),
-        new ReservationRequestIdentity.AccountId("account-1"));
+        new ReservationRequestIdentity.AccountId(ACCOUNT_ID));
   }
 
   private ReservationTerms terms() {

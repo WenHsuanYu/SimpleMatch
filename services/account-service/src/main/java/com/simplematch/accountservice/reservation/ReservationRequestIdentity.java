@@ -5,9 +5,9 @@ import java.util.Objects;
 /**
  * Identity supplied when account authority is first reserved for an order.
  *
- * <p>The request, order, and account identifiers are distinct value types even though all three
- * arrive as strings on the wire. A caller therefore cannot accidentally exchange them while
- * constructing a reservation request.
+ * <p>The request, order, and account identifiers are distinct value types. Account identity wraps
+ * the UUID-backed value owned by the Account domain while preserving this command model's semantic
+ * component type.
  *
  * @param requestId the idempotent request identifier
  * @param orderId the order that owns the requested authority
@@ -39,10 +39,20 @@ public record ReservationRequestIdentity(
   }
 
   /** Account identity whose authority is reserved. */
-  public record AccountId(String value) {
-    /** Requires a nonblank account identifier. */
+  public record AccountId(com.simplematch.accountservice.authority.AccountId canonical) {
+    /** Parses the wire representation into the canonical Account-domain identity. */
+    public AccountId(String value) {
+      this(com.simplematch.accountservice.authority.AccountId.parse(value));
+    }
+
+    /** Requires the canonical account identity. */
     public AccountId {
-      value = requireNonBlank(value, "account_id");
+      Objects.requireNonNull(canonical, "canonical");
+    }
+
+    /** Returns the canonical wire representation. */
+    public String value() {
+      return canonical.wireValue();
     }
   }
 

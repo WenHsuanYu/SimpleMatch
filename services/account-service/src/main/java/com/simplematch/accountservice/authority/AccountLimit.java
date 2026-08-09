@@ -22,7 +22,7 @@ public record AccountLimit(
 
   /** Returns a provisioned TWD limit with no reservations or utilization. */
   public static AccountLimit provisioned(
-      String accountId, LocalDate tradingDay, BigDecimal limitTotalNotional, long now) {
+      AccountId accountId, LocalDate tradingDay, BigDecimal limitTotalNotional, long now) {
     return new AccountLimit(
         new AccountLimitIdentity(accountId, tradingDay, "TWD"),
         new AccountLimitLedger(
@@ -35,9 +35,14 @@ public record AccountLimit(
     return new AccountLimit(identity, nextLedger, nextRevision);
   }
 
+  /** Returns the canonical Account-domain identity. */
+  public AccountId accountIdentity() {
+    return identity.accountId();
+  }
+
   /** Returns the account identifier for boundary projections. */
   public String accountId() {
-    return identity.accountId();
+    return accountIdentity().wireValue();
   }
 
   /** Returns the trading day for boundary projections. */

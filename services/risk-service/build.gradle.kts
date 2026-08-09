@@ -12,6 +12,7 @@ dependencies {
     implementation(libs.grpc.stub)
     compileOnly(libs.errorprone.annotations)
 
+    testImplementation(project(":services:account-service"))
     testImplementation(libs.h2)
     testImplementation(libs.flyway.core)
 }

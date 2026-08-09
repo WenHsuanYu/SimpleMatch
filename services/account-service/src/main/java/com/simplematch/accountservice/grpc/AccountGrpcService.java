@@ -1,5 +1,6 @@
 package com.simplematch.accountservice.grpc;
 
+import com.simplematch.accountservice.authority.AccountId;
 import com.simplematch.accountservice.authority.AccountLimit;
 import com.simplematch.accountservice.authority.AccountPosition;
 import com.simplematch.accountservice.reservation.AccountReservationApplicationService;
@@ -31,14 +32,7 @@ import lombok.NonNull;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 
-/**
- * Handles account-service control-plane operations through gRPC.
- *
- * <p>Write RPCs in this service intentionally use {@code request_id} as the synchronous name
- * for the same operation identifier that enters the trading flow as {@code command_id} on {@code
- * OrderCommand}. All reservation lifecycle paths delegate to the account authority application
- * service.
- */
+/** Handles account-service control-plane operations through gRPC. */
 @Service
 @RequiredArgsConstructor
 public class AccountGrpcService extends AccountServiceGrpc.AccountServiceImplBase {
@@ -49,7 +43,8 @@ public class AccountGrpcService extends AccountServiceGrpc.AccountServiceImplBas
   public void getLimits(
       GetLimitsRequest request, StreamObserver<GetLimitsResponse> responseObserver) {
     try {
-      final AccountLimit limit = reservationService.getLimits(request.getAccountId());
+      final String accountId = AccountId.parse(request.getAccountId()).wireValue();
+      final AccountLimit limit = reservationService.getLimits(accountId);
       responseObserver.onNext(
           GetLimitsResponse.newBuilder()
               .setAccountId(limit.accountId())
@@ -59,6 +54,9 @@ public class AccountGrpcService extends AccountServiceGrpc.AccountServiceImplBas
               .setUtilizedNotional(limit.utilizedNotional().toPlainString())
               .build());
       responseObserver.onCompleted();
+    } catch (IllegalArgumentException invalid) {
+      responseObserver.onError(
+          Status.INVALID_ARGUMENT.withDescription(invalid.getMessage()).asRuntimeException());
     } catch (RuntimeException failure) {
       responseObserver.onError(
           Status.INTERNAL.withDescription("failed to read account limits").asRuntimeException());
@@ -69,8 +67,9 @@ public class AccountGrpcService extends AccountServiceGrpc.AccountServiceImplBas
   public void getPositions(
       GetPositionsRequest request, StreamObserver<GetPositionsResponse> responseObserver) {
     try {
+      final String accountId = AccountId.parse(request.getAccountId()).wireValue();
       final GetPositionsResponse.Builder response = GetPositionsResponse.newBuilder();
-      for (AccountPosition position : reservationService.getPositions(request.getAccountId())) {
+      for (AccountPosition position : reservationService.getPositions(accountId)) {
         response.addPositions(
             PositionSnapshot.newBuilder()
                 .setAccountId(position.accountId())
@@ -81,18 +80,16 @@ public class AccountGrpcService extends AccountServiceGrpc.AccountServiceImplBas
       }
       responseObserver.onNext(response.build());
       responseObserver.onCompleted();
+    } catch (IllegalArgumentException invalid) {
+      responseObserver.onError(
+          Status.INVALID_ARGUMENT.withDescription(invalid.getMessage()).asRuntimeException());
     } catch (RuntimeException failure) {
       responseObserver.onError(
           Status.INTERNAL.withDescription("failed to read account positions").asRuntimeException());
     }
   }
 
-  /**
-   * Persists or replays the reservation identified by {@code request_id}.
-   *
-   * <p>{@code request_id} is the control-plane name for the upstream operation identifier currently
-   * carried as {@code command_id} on order events.
-   */
+  /** Persists or replays the reservation identified by {@code request_id}. */
   @Override
   public void reserve(ReserveRequest request, StreamObserver<ReserveResponse> responseObserver) {
     try {
@@ -107,12 +104,10 @@ public class AccountGrpcService extends AccountServiceGrpc.AccountServiceImplBas
               .setReasonText(reservation.reasonText())
               .build());
       responseObserver.onCompleted();
-    } catch (IllegalArgumentException illegalArgumentException) {
+    } catch (IllegalArgumentException invalid) {
       responseObserver.onError(
-          Status.INVALID_ARGUMENT
-              .withDescription(illegalArgumentException.getMessage())
-              .asRuntimeException());
-    } catch (RuntimeException runtimeException) {
+          Status.INVALID_ARGUMENT.withDescription(invalid.getMessage()).asRuntimeException());
+    } catch (RuntimeException failure) {
       responseObserver.onError(
           Status.INTERNAL.withDescription("failed to persist reservation").asRuntimeException());
     }
@@ -210,8 +205,8 @@ public class AccountGrpcService extends AccountServiceGrpc.AccountServiceImplBas
   private void validateUuidIdentifier(String value, String fieldName) {
     try {
       UUID.fromString(value);
-    } catch (IllegalArgumentException illegalArgumentException) {
-      throw new IllegalArgumentException(fieldName + " must be a UUID", illegalArgumentException);
+    } catch (IllegalArgumentException invalid) {
+      throw new IllegalArgumentException(fieldName + " must be a UUID", invalid);
     }
   }
 
@@ -247,9 +242,8 @@ public class AccountGrpcService extends AccountServiceGrpc.AccountServiceImplBas
     }
     try {
       return new BigDecimal(rawValue);
-    } catch (NumberFormatException numberFormatException) {
-      throw new IllegalArgumentException(
-          fieldName + " must be a valid decimal", numberFormatException);
+    } catch (NumberFormatException invalid) {
+      throw new IllegalArgumentException(fieldName + " must be a valid decimal", invalid);
     }
   }
 }

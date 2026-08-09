@@ -22,7 +22,7 @@ public record AccountPosition(
   }
 
   /** Returns an empty position for controlled account administration. */
-  public static AccountPosition provisioned(String accountId, String symbol, long now) {
+  public static AccountPosition provisioned(AccountId accountId, String symbol, long now) {
     return new AccountPosition(
         new AccountPositionIdentity(accountId, symbol),
         new AccountPositionInventory(
@@ -36,9 +36,14 @@ public record AccountPosition(
     return new AccountPosition(identity, nextInventory, nextRevision);
   }
 
+  /** Returns the canonical Account-domain identity. */
+  public AccountId accountIdentity() {
+    return identity.accountId();
+  }
+
   /** Returns the account identifier for boundary projections. */
   public String accountId() {
-    return identity.accountId();
+    return accountIdentity().wireValue();
   }
 
   /** Returns the instrument symbol for boundary projections. */

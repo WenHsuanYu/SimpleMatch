@@ -1,5 +1,6 @@
 package com.simplematch.accountservice.reservation;
 
+import com.simplematch.accountservice.authority.AccountId;
 import com.simplematch.contracts.common.v1.Side;
 import java.math.BigDecimal;
 import java.util.Objects;
@@ -29,6 +30,11 @@ public record ReserveOperation(ReservationRequestIdentity identity, ReservationT
   /** Returns the wire-compatible order identifier. */
   public String orderId() {
     return identity.orderId().value();
+  }
+
+  /** Returns the canonical Account-domain identity. */
+  public AccountId accountIdentity() {
+    return identity.accountId().canonical();
   }
 
   /** Returns the wire-compatible account identifier. */
