@@ -1,6 +1,7 @@
 package com.simplematch.accountservice.store;
 
 import com.simplematch.accountservice.authority.AccountAuthorityReader;
+import com.simplematch.accountservice.authority.AccountId;
 import com.simplematch.accountservice.authority.AccountLimit;
 import com.simplematch.accountservice.authority.AccountPosition;
 import com.simplematch.accountservice.authority.AccountReservation;
@@ -21,7 +22,7 @@ public class JdbcAccountAuthorityReader implements AccountAuthorityReader {
   }
 
   @Override
-  public Optional<AccountLimit> findLimitForUpdate(String accountId, LocalDate tradingDay) {
+  public Optional<AccountLimit> findLimitForUpdate(AccountId accountId, LocalDate tradingDay) {
     return jdbc.queryForUpdate(
         """
                         SELECT account_id, trading_day, currency, limit_total_notional, reserved_notional,
@@ -31,12 +32,12 @@ public class JdbcAccountAuthorityReader implements AccountAuthorityReader {
                         FOR UPDATE
         """,
         AccountAuthorityJdbcSupport.LIMIT_MAPPER,
-        accountId,
+        accountId.value(),
         tradingDay);
   }
 
   @Override
-  public Optional<AccountLimit> findLimit(String accountId, LocalDate tradingDay) {
+  public Optional<AccountLimit> findLimit(AccountId accountId, LocalDate tradingDay) {
     return jdbc.queryFirst(
         """
                         SELECT account_id, trading_day, currency, limit_total_notional, reserved_notional,
@@ -45,12 +46,12 @@ public class JdbcAccountAuthorityReader implements AccountAuthorityReader {
                         WHERE account_id = ? AND scope_type = 'ACCOUNT' AND scope_key = '*' AND trading_day = ?
         """,
         AccountAuthorityJdbcSupport.LIMIT_MAPPER,
-        accountId,
+        accountId.value(),
         tradingDay);
   }
 
   @Override
-  public Optional<AccountPosition> findPositionForUpdate(String accountId, String symbol) {
+  public Optional<AccountPosition> findPositionForUpdate(AccountId accountId, String symbol) {
     return jdbc.queryForUpdate(
         """
                         SELECT account_id, symbol, long_qty, short_qty, reserved_long_qty, reserved_short_qty,
@@ -60,12 +61,12 @@ public class JdbcAccountAuthorityReader implements AccountAuthorityReader {
                         FOR UPDATE
         """,
         AccountAuthorityJdbcSupport.POSITION_MAPPER,
-        accountId,
+        accountId.value(),
         symbol);
   }
 
   @Override
-  public Optional<AccountPosition> findPosition(String accountId, String symbol) {
+  public Optional<AccountPosition> findPosition(AccountId accountId, String symbol) {
     return jdbc.queryFirst(
         """
                         SELECT account_id, symbol, long_qty, short_qty, reserved_long_qty, reserved_short_qty,
@@ -74,12 +75,12 @@ public class JdbcAccountAuthorityReader implements AccountAuthorityReader {
                         WHERE account_id = ? AND symbol = ?
         """,
         AccountAuthorityJdbcSupport.POSITION_MAPPER,
-        accountId,
+        accountId.value(),
         symbol);
   }
 
   @Override
-  public List<AccountPosition> findPositions(String accountId) {
+  public List<AccountPosition> findPositions(AccountId accountId) {
     return jdbc.query(
         """
                         SELECT account_id, symbol, long_qty, short_qty, reserved_long_qty, reserved_short_qty,
@@ -88,7 +89,7 @@ public class JdbcAccountAuthorityReader implements AccountAuthorityReader {
                         WHERE account_id = ? ORDER BY symbol
         """,
         AccountAuthorityJdbcSupport.POSITION_MAPPER,
-        accountId);
+        accountId.value());
   }
 
   @Override

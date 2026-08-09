@@ -7,19 +7,19 @@ import java.util.Optional;
 /** Reads authoritative account state, including rows that a caller has locked for mutation. */
 public interface AccountAuthorityReader {
   /** Locks the account limit row for one trading day. */
-  Optional<AccountLimit> findLimitForUpdate(String accountId, LocalDate tradingDay);
+  Optional<AccountLimit> findLimitForUpdate(AccountId accountId, LocalDate tradingDay);
 
   /** Reads the account limit without taking a mutation lock. */
-  Optional<AccountLimit> findLimit(String accountId, LocalDate tradingDay);
+  Optional<AccountLimit> findLimit(AccountId accountId, LocalDate tradingDay);
 
   /** Locks one position row for mutation. */
-  Optional<AccountPosition> findPositionForUpdate(String accountId, String symbol);
+  Optional<AccountPosition> findPositionForUpdate(AccountId accountId, String symbol);
 
   /** Finds a position without a lock for a read response. */
-  Optional<AccountPosition> findPosition(String accountId, String symbol);
+  Optional<AccountPosition> findPosition(AccountId accountId, String symbol);
 
   /** Lists positions for one account. */
-  List<AccountPosition> findPositions(String accountId);
+  List<AccountPosition> findPositions(AccountId accountId);
 
   /** Finds an existing reservation by request id. */
   Optional<AccountReservation> findReservationByRequestId(String requestId);

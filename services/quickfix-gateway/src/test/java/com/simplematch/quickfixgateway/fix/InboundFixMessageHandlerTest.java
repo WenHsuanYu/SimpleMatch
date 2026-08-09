@@ -58,11 +58,9 @@ class InboundFixMessageHandlerTest {
 
   private static final Instant FIXED_INSTANT = Instant.parse("2024-03-27T08:09:10.123Z");
   private static final Clock FIXED_CLOCK = Clock.fixed(FIXED_INSTANT, ZoneOffset.UTC);
+  private static final String ACCOUNT_ID = "0194a8f0-7c77-7b38-9e2d-2a5fdd0f7c13";
+  private static final String SECOND_ACCOUNT_ID = "0194a8f0-7c77-7b38-9e2d-2a5fdd0f7c14";
 
-  // Verify that the new-order baseline flow writes the WAL, publishes the OrderCommand, registers
-  // session state, and sends a Pending New response.
-  // Scenario: submit a valid limit order and check that the WAL, command contents, registry state,
-  // and FIX response all match.
   @DisplayName(
       "the new-order baseline flow writes WAL, publishes the command, and sends Pending New")
   @Test
@@ -88,7 +86,7 @@ class InboundFixMessageHandlerTest {
         QuickFixIngressTestFixture.compose(
             walAppender, publisher, riskSubmissionClient, sender, registry, mapper, FIXED_CLOCK);
 
-    final NewOrderSingle order = newNewOrder("C1", "AAPL", '1', "10", "101.25", "ACC-1");
+    final NewOrderSingle order = newNewOrder("C1", "AAPL", '1', "10", "101.25", ACCOUNT_ID);
     final SessionID sessionId = new SessionID("FIX.4.4", "SIMPLEMATCH", "CLIENT1");
     handler.handle(order, sessionId);
 
@@ -107,7 +105,7 @@ class InboundFixMessageHandlerTest {
     assertThat(walRecord.orderId()).isEqualTo("O-C1");
     assertThat(walRecord.clOrdId()).isEqualTo("C1");
     assertThat(walRecord.origClOrdId()).isEmpty();
-    assertThat(walRecord.accountId()).isEqualTo("ACC-1");
+    assertThat(walRecord.accountId()).isEqualTo(ACCOUNT_ID);
     assertThat(walRecord.symbol()).isEqualTo("AAPL");
     assertThat(walRecord.side()).isEqualTo(Side.SIDE_BUY);
     assertThat(walRecord.quantity()).isEqualTo("10");
@@ -131,7 +129,7 @@ class InboundFixMessageHandlerTest {
     assertThat(command.getCommandId()).isEqualTo(walRecord.recordId());
     assertThat(command.getCommandType()).isEqualTo(CommandType.COMMAND_TYPE_NEW);
     assertThat(command.getOrderId()).isEqualTo("O-C1");
-    assertThat(command.getAccountId()).isEqualTo("ACC-1");
+    assertThat(command.getAccountId()).isEqualTo(ACCOUNT_ID);
     assertThat(command.getSenderCompId()).isEqualTo("CLIENT1");
     assertThat(command.getTargetCompId()).isEqualTo("SIMPLEMATCH");
     assertThat(command.getClOrdId()).isEqualTo("C1");
@@ -146,7 +144,7 @@ class InboundFixMessageHandlerTest {
     final OrderSessionState sessionState = registry.find("O-C1").orElseThrow();
     assertThat(sessionState.sessionId()).isEqualTo(sessionId);
     assertThat(sessionState.orderId()).isEqualTo("O-C1");
-    assertThat(sessionState.accountId()).isEqualTo("ACC-1");
+    assertThat(sessionState.accountId()).isEqualTo(ACCOUNT_ID);
     assertThat(sessionState.clOrdId()).isEqualTo("C1");
     assertThat(sessionState.symbol()).isEqualTo("AAPL");
     assertThat(sessionState.side()).isEqualTo(Side.SIDE_BUY);
@@ -181,9 +179,6 @@ class InboundFixMessageHandlerTest {
                 + "|150=A|39=A|54=1|151=10|14=0|6=0|11=C1|55=AAPL|60=2024-03-27T08:09:10.123Z");
   }
 
-  // Verify that cancel support does not pollute the baseline behavior for subsequent new orders.
-  // Scenario: send a new order, then a cancel, then a second new order, and confirm the WAL order,
-  // registry state, and second Pending New response are all correct.
   @DisplayName("the cancel flow does not affect the subsequent new-order baseline flow")
   @Test
   void cancelSupportDoesNotAlterSubsequentNewOrderBaselinePath() throws Exception {
@@ -210,9 +205,10 @@ class InboundFixMessageHandlerTest {
             FIXED_CLOCK);
 
     final SessionID sessionId = new SessionID("FIX.4.4", "SIMPLEMATCH", "CLIENT1");
-    handler.handle(newNewOrder("C1", "AAPL", '1', "10", "101.25", "ACC-1"), sessionId);
-    handler.handle(newCancelRequest("C1", "CXL-1", "ACC-1"), sessionId);
-    handler.handle(newNewOrder("C2", "MSFT", '2', "20", "305.50", "ACC-2"), sessionId);
+    handler.handle(newNewOrder("C1", "AAPL", '1', "10", "101.25", ACCOUNT_ID), sessionId);
+    handler.handle(newCancelRequest("C1", "CXL-1", ACCOUNT_ID), sessionId);
+    handler.handle(
+        newNewOrder("C2", "MSFT", '2', "20", "305.50", SECOND_ACCOUNT_ID), sessionId);
 
     final List<WalRecord> walRecords = walAppender.readAll();
     assertThat(walRecords).hasSize(3);
@@ -231,7 +227,7 @@ class InboundFixMessageHandlerTest {
     assertThat(firstOrderState.lifecycle().lastCancelRequest().origClOrdId()).isEqualTo("C1");
 
     final OrderSessionState secondOrderState = registry.find("O-C2").orElseThrow();
-    assertThat(secondOrderState.accountId()).isEqualTo("ACC-2");
+    assertThat(secondOrderState.accountId()).isEqualTo(SECOND_ACCOUNT_ID);
     assertThat(secondOrderState.clOrdId()).isEqualTo("C2");
     assertThat(secondOrderState.symbol()).isEqualTo("MSFT");
     assertThat(secondOrderState.side()).isEqualTo(Side.SIDE_SELL);
@@ -249,10 +245,6 @@ class InboundFixMessageHandlerTest {
             "35=8|37=O-C2|150=A|39=A|54=2|151=20|14=0|6=0|11=C2|55=MSFT|60=2024-03-27T08:09:10.123Z");
   }
 
-  // Verify that the Pending New ExecID intentionally uses the WAL recordId so the event remains
-  // traceable.
-  // Scenario: send a new order and inspect the returned message to confirm tag 17 matches the WAL
-  // recordId.
   @DisplayName("Pending New ExecID uses the WAL recordId for traceability")
   @Test
   void pendingNewExecIdIntentionallyUsesWalRecordIdForTraceability() throws Exception {
@@ -276,7 +268,7 @@ class InboundFixMessageHandlerTest {
             FIXED_CLOCK);
 
     handler.handle(
-        newNewOrder("C1", "AAPL", '1', "10", "101.25", "ACC-1"),
+        newNewOrder("C1", "AAPL", '1', "10", "101.25", ACCOUNT_ID),
         new SessionID("FIX.4.4", "SIMPLEMATCH", "CLIENT1"));
 
     final WalRecord walRecord = walAppender.readAll().getFirst();
@@ -327,7 +319,7 @@ class InboundFixMessageHandlerTest {
               orderType,
               timeInForce,
               price,
-              "ACC-1"),
+              ACCOUNT_ID),
           new SessionID("FIX.4.4", "SIMPLEMATCH", "CLIENT1"));
 
       final ArgumentCaptor<OrderCommand> commandCaptor =
@@ -384,7 +376,8 @@ class InboundFixMessageHandlerTest {
               FIXED_CLOCK);
 
       final NewOrderSingle order =
-          newNewOrder(scenario, "2330", '1', "100", orderType, timeInForce, "101.25", "ACC-1");
+          newNewOrder(
+              scenario, "2330", '1', "100", orderType, timeInForce, "101.25", ACCOUNT_ID);
 
       handler.handle(order, new SessionID("FIX.4.4", "SIMPLEMATCH", "CLIENT1"));
       verify(sender).send(any(SessionID.class), any(Message.class));
@@ -420,7 +413,7 @@ class InboundFixMessageHandlerTest {
               FIXED_CLOCK);
       final SessionID sessionId = new SessionID("FIX.4.4", "SIMPLEMATCH", "CLIENT1");
       final NewOrderSingle order =
-          newNewOrder("C1", "2330", '1', "100", '2', '0', "101.25", "ACC-1");
+          newNewOrder("C1", "2330", '1', "100", '2', '0', "101.25", ACCOUNT_ID);
 
       handler.handle(order, sessionId);
       handler.handle(order, sessionId);
@@ -453,7 +446,7 @@ class InboundFixMessageHandlerTest {
               admissionGate);
 
       handler.handle(
-          newCancelRequest("C1", "CXL-1", "ACC-1"),
+          newCancelRequest("C1", "CXL-1", ACCOUNT_ID),
           new SessionID("FIX.4.4", "SIMPLEMATCH", "CLIENT1"));
 
       verify(sender).send(any(SessionID.class), any(Message.class));
@@ -463,9 +456,6 @@ class InboundFixMessageHandlerTest {
     }
   }
 
-  // Verify that risk transport failures remain system-side and do not leak internal diagnostics.
-  // Scenario: simulate a circuit-open failure and confirm the client receives a stable generic
-  // system-error message while the outcome remains non-terminal.
   @DisplayName("risk transport failures expose only a client-safe system error")
   @Test
   void submitFailureUsesClientSafeSystemErrorText() throws Exception {
@@ -487,7 +477,7 @@ class InboundFixMessageHandlerTest {
             FIXED_CLOCK);
 
     handler.handle(
-        newNewOrder("C1", "AAPL", '1', "10", "101.25", "ACC-1"),
+        newNewOrder("C1", "AAPL", '1', "10", "101.25", ACCOUNT_ID),
         new SessionID("FIX.4.4", "SIMPLEMATCH", "CLIENT1"));
 
     final ArgumentCaptor<Message> messageCaptor = ArgumentCaptor.forClass(Message.class);
@@ -520,7 +510,7 @@ class InboundFixMessageHandlerTest {
             FIXED_CLOCK);
 
     handler.handle(
-        newNewOrder("C1", "AAPL", '1', "-1", "101.25", "ACC-1"),
+        newNewOrder("C1", "AAPL", '1', "-1", "101.25", ACCOUNT_ID),
         new SessionID("FIX.4.4", "SIMPLEMATCH", "CLIENT1"));
 
     assertThat(walAppender.readAll()).isEmpty();
@@ -530,6 +520,36 @@ class InboundFixMessageHandlerTest {
     verify(sender).send(any(SessionID.class), messageCaptor.capture());
     assertThat(messageCaptor.getValue().getString(58))
         .isEqualTo("INVALID_NEW_ORDER: quantity must be positive");
+  }
+
+  @DisplayName("an invalid account id is rejected before WAL append")
+  @Test
+  void invalidAccountIdIsRejectedBeforeWalAppend() throws Exception {
+    final WalAppender walAppender =
+        new WalAppender(tempDir.resolve("invalid-account.wal"), StandardCharsets.UTF_8);
+    final OrdersCommandPublisher publisher = mock(OrdersCommandPublisher.class);
+    final RiskSubmissionClient riskSubmissionClient = mock(RiskSubmissionClient.class);
+    final FixSessionMessageSender sender = mock(FixSessionMessageSender.class);
+    final InboundFixMessageHandler handler =
+        QuickFixIngressTestFixture.compose(
+            walAppender,
+            publisher,
+            riskSubmissionClient,
+            sender,
+            new OrderSessionRegistry(),
+            new FixMessageMapper(FIXED_CLOCK),
+            FIXED_CLOCK);
+
+    handler.handle(
+        newNewOrder("C1", "AAPL", '1', "10", "101.25", "ACC-1"),
+        new SessionID("FIX.4.4", "SIMPLEMATCH", "CLIENT1"));
+
+    assertThat(walAppender.readAll()).isEmpty();
+    verifyNoInteractions(riskSubmissionClient, publisher);
+    final ArgumentCaptor<Message> messageCaptor = ArgumentCaptor.forClass(Message.class);
+    verify(sender).send(any(SessionID.class), messageCaptor.capture());
+    assertThat(messageCaptor.getValue().getString(58))
+        .isEqualTo("INVALID_NEW_ORDER: account_id must be a UUID");
   }
 
   @DisplayName("a missing new-order field is rejected before WAL append")
@@ -549,7 +569,7 @@ class InboundFixMessageHandlerTest {
             new OrderSessionRegistry(),
             new FixMessageMapper(FIXED_CLOCK),
             FIXED_CLOCK);
-    final NewOrderSingle order = newNewOrder("C1", "AAPL", '1', "10", "101.25", "ACC-1");
+    final NewOrderSingle order = newNewOrder("C1", "AAPL", '1', "10", "101.25", ACCOUNT_ID);
     order.removeField(Symbol.FIELD);
 
     handler.handle(order, new SessionID("FIX.4.4", "SIMPLEMATCH", "CLIENT1"));
@@ -582,7 +602,7 @@ class InboundFixMessageHandlerTest {
             FIXED_CLOCK);
 
     handler.handle(
-        newNewOrder("C1", "AAPL", 'X', "10", "101.25", "ACC-1"),
+        newNewOrder("C1", "AAPL", 'X', "10", "101.25", ACCOUNT_ID),
         new SessionID("FIX.4.4", "SIMPLEMATCH", "CLIENT1"));
 
     assertThat(walAppender.readAll()).isEmpty();
@@ -612,7 +632,7 @@ class InboundFixMessageHandlerTest {
             new FixMessageMapper(FIXED_CLOCK),
             FIXED_CLOCK);
 
-    final OrderCancelRequest cancel = newCancelRequest("C1", "CXL-1", "ACC-1");
+    final OrderCancelRequest cancel = newCancelRequest("C1", "CXL-1", ACCOUNT_ID);
     cancel.removeField(OrigClOrdID.FIELD);
     handler.handle(cancel, new SessionID("FIX.4.4", "SIMPLEMATCH", "CLIENT1"));
 
@@ -644,7 +664,7 @@ class InboundFixMessageHandlerTest {
             FIXED_CLOCK);
 
     handler.handle(
-        newNewOrder(oversizedIdentity("C"), "AAPL", '1', "10", "101.25", "ACC-1"),
+        newNewOrder(oversizedIdentity("C"), "AAPL", '1', "10", "101.25", ACCOUNT_ID),
         new SessionID("FIX.4.4", "SIMPLEMATCH", "CLIENT1"));
 
     assertThat(walAppender.readAll()).isEmpty();
@@ -675,7 +695,7 @@ class InboundFixMessageHandlerTest {
             FIXED_CLOCK);
 
     handler.handle(
-        newCancelRequest(oversizedIdentity("ORIG-"), "CXL-1", "ACC-1"),
+        newCancelRequest(oversizedIdentity("ORIG-"), "CXL-1", ACCOUNT_ID),
         new SessionID("FIX.4.4", "SIMPLEMATCH", "CLIENT1"));
 
     assertThat(walAppender.readAll()).isEmpty();
@@ -706,7 +726,7 @@ class InboundFixMessageHandlerTest {
             FIXED_CLOCK);
 
     handler.handle(
-        newNewOrder("C1", "AAPL", '1', "10", "101.25", "ACC-1"),
+        newNewOrder("C1", "AAPL", '1', "10", "101.25", ACCOUNT_ID),
         new SessionID("FIX.4.4", "SIMPLEMATCH", oversizedIdentity("CLIENT")));
 
     assertThat(walAppender.readAll()).isEmpty();

@@ -45,7 +45,7 @@ final class CancelOrderFixMessageHandler {
       riskSubmissionResponder.rejectInbound(
           admissionGate.cancelFailure(),
           sessionId,
-          FixInboundCommandFactory.orderIdFor(origClOrdId),
+          rejectionOrderIdFor(origClOrdId),
           cancelClOrdId,
           origClOrdId);
       return;
@@ -56,7 +56,7 @@ final class CancelOrderFixMessageHandler {
       riskSubmissionResponder.rejectInbound(
           identity.failure(),
           sessionId,
-          FixInboundCommandFactory.orderIdFor(origClOrdId),
+          rejectionOrderIdFor(origClOrdId),
           cancelClOrdId,
           origClOrdId);
       return;
@@ -94,5 +94,9 @@ final class CancelOrderFixMessageHandler {
     }
     orderSessionRegistry.registerCancelRequest(sessionId, walRecord);
     compatibilityPublisher.publish(command);
+  }
+
+  private String rejectionOrderIdFor(String origClOrdId) {
+    return origClOrdId.isBlank() ? "" : FixInboundCommandFactory.orderIdFor(origClOrdId);
   }
 }

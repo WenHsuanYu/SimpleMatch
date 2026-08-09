@@ -67,13 +67,10 @@ import quickfix.fix44.OrderCancelRequest;
 class QuickFixCertificationEvidenceTest {
   private static final Instant FIXED_INSTANT = Instant.parse("2024-03-27T08:09:10.123Z");
   private static final Clock FIXED_CLOCK = Clock.fixed(FIXED_INSTANT, ZoneOffset.UTC);
+  private static final String ACCOUNT_ID = "0194a8f0-7c77-7b38-9e2d-2a5fdd0f7c13";
 
   @TempDir Path tempDir;
 
-  // Verify that the QuickFIX simulator completes the baseline connection, order submission,
-  // execution report, and WAL trace flow end to end.
-  // Scenario: start the acceptor and initiator, send one new order, and check the execution report,
-  // WAL, and log evidence.
   @DisplayName("the QuickFIX simulator verifies the baseline connection and order flow")
   @Test
   void quickFixSimulatorVerifiesSessionLifecycleAndBaselinePath(CapturedOutput output)
@@ -116,7 +113,7 @@ class QuickFixCertificationEvidenceTest {
       assertThat(initiatorApplication.awaitLogon()).isTrue();
 
       final SessionID initiatorSessionId = initiatorApplication.sessionId();
-      final NewOrderSingle newOrder = newOrder("C1", "AAPL", "10", "101.25", "ACC-1");
+      final NewOrderSingle newOrder = newOrder("C1", "AAPL", "10", "101.25", ACCOUNT_ID);
       assertThat(Session.sendToTarget(newOrder, initiatorSessionId)).isTrue();
 
       final Message executionReport = initiatorApplication.awaitApplicationMessage();
@@ -133,6 +130,7 @@ class QuickFixCertificationEvidenceTest {
       assertThat(walRecord.senderCompId()).isEqualTo("CLIENT");
       assertThat(walRecord.targetCompId()).isEqualTo("SIMPLEMATCH");
       assertThat(walRecord.clOrdId()).isEqualTo("C1");
+      assertThat(walRecord.accountId()).isEqualTo(ACCOUNT_ID);
       assertThat(walRecord.messageType()).isEqualTo(NewOrderSingle.MSGTYPE);
       assertThat(walRecord.rawFix()).contains("35=D").contains("11=C1");
       assertUuidVersionSeven(walRecord.recordId());
@@ -144,6 +142,7 @@ class QuickFixCertificationEvidenceTest {
       assertThat(publishedCommand.getSenderCompId()).isEqualTo("CLIENT");
       assertThat(publishedCommand.getTargetCompId()).isEqualTo("SIMPLEMATCH");
       assertThat(publishedCommand.getClOrdId()).isEqualTo("C1");
+      assertThat(publishedCommand.getAccountId()).isEqualTo(ACCOUNT_ID);
       assertUuidVersionSeven(publishedCommand.getCommandId());
 
       initiator.stop();
@@ -201,7 +200,7 @@ class QuickFixCertificationEvidenceTest {
       assertThat(initiatorApplication.awaitLogon()).isTrue();
       assertThat(
               Session.sendToTarget(
-                  newOrder("C1", "AAPL", "10", "101.25", "ACC-1"),
+                  newOrder("C1", "AAPL", "10", "101.25", ACCOUNT_ID),
                   initiatorApplication.sessionId()))
           .isTrue();
 
@@ -216,6 +215,7 @@ class QuickFixCertificationEvidenceTest {
               walRecord -> {
                 assertThat(walRecord.orderId()).isEqualTo("O-C1");
                 assertThat(walRecord.clOrdId()).isEqualTo("C1");
+                assertThat(walRecord.accountId()).isEqualTo(ACCOUNT_ID);
               });
       assertThat(ordersCommandPublisher.lastPublishedCommand()).isNull();
     } finally {
@@ -247,9 +247,9 @@ class QuickFixCertificationEvidenceTest {
                   new FixMessageMapper(FIXED_CLOCK),
                   FIXED_CLOCK));
       adapter.onLogon(sessionId);
-      adapter.fromApp(newOrder("C1", "AAPL", "10", "101.25", "ACC-1"), sessionId);
-      adapter.fromApp(newOrder("C1", "AAPL", "10", "101.25", "ACC-1"), sessionId);
-      adapter.fromApp(newCancelRequest("C1", "CXL-1", "ACC-1"), sessionId);
+      adapter.fromApp(newOrder("C1", "AAPL", "10", "101.25", ACCOUNT_ID), sessionId);
+      adapter.fromApp(newOrder("C1", "AAPL", "10", "101.25", ACCOUNT_ID), sessionId);
+      adapter.fromApp(newCancelRequest("C1", "CXL-1", ACCOUNT_ID), sessionId);
 
       assertThat(risk.newDecisionCount()).isEqualTo(1);
       assertThat(risk.cancelDecisionCount()).isEqualTo(1);

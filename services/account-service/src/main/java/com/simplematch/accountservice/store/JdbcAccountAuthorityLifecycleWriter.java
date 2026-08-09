@@ -45,7 +45,7 @@ public class JdbcAccountAuthorityLifecycleWriter implements AccountAuthorityLife
                           reserved_notional, utilized_notional, available_notional, version, updated_at_unix_ms)
                         VALUES (?, 'ACCOUNT', '*', ?, ?, ?, ?, ?, ?, ?, ?)
         """,
-        limit.accountId(),
+        limit.accountIdentity().value(),
         limit.tradingDay(),
         limit.currency(),
         limit.limitTotalNotional(),
@@ -65,7 +65,7 @@ public class JdbcAccountAuthorityLifecycleWriter implements AccountAuthorityLife
                           version, updated_at_unix_ms)
                         VALUES (?, ?, ?, ?, ?, ?, ?, ?)
         """,
-        position.accountId(),
+        position.accountIdentity().value(),
         position.symbol(),
         position.longQuantity(),
         position.shortQuantity(),
@@ -88,7 +88,7 @@ public class JdbcAccountAuthorityLifecycleWriter implements AccountAuthorityLife
         reservation.reservationId(),
         reservation.requestId(),
         reservation.orderId(),
-        reservation.accountId(),
+        reservation.accountIdentity().value(),
         reservation.symbol(),
         reservation.side().name(),
         reservation.quantity(),
@@ -116,7 +116,7 @@ public class JdbcAccountAuthorityLifecycleWriter implements AccountAuthorityLife
         limit.availableNotional(),
         limit.version(),
         limit.updatedAtUnixMs(),
-        limit.accountId(),
+        limit.accountIdentity().value(),
         limit.tradingDay(),
         expectedVersion);
   }
@@ -133,7 +133,7 @@ public class JdbcAccountAuthorityLifecycleWriter implements AccountAuthorityLife
         position.reservedShortQuantity(),
         position.version(),
         position.updatedAtUnixMs(),
-        position.accountId(),
+        position.accountIdentity().value(),
         position.symbol(),
         expectedVersion);
   }
@@ -191,8 +191,6 @@ public class JdbcAccountAuthorityLifecycleWriter implements AccountAuthorityLife
               receivedAt)
           == 1;
     } catch (DuplicateKeyException duplicate) {
-      // H2 does not support PostgreSQL's ON CONFLICT clause; treat its unique-sequence
-      // violation as the same explicit no-op outcome as a duplicate PostgreSQL delivery.
       return false;
     }
   }

@@ -4,8 +4,8 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 import com.google.protobuf.InvalidProtocolBufferException;
-import com.simplematch.accountservice.reservation.AccountReservationApplicationService;
 import com.simplematch.accountservice.reservation.AccountMatchingExecutionApplicationService;
+import com.simplematch.accountservice.reservation.AccountReservationApplicationService;
 import com.simplematch.accountservice.reservation.ApplyFillOperation;
 import com.simplematch.accountservice.reservation.ExecutionFill;
 import com.simplematch.accountservice.reservation.ReleaseReservationOperation;
@@ -56,6 +56,7 @@ class AccountReservationApplicationServiceTransactionTest {
   private static final Clock CLOCK =
       Clock.fixed(Instant.parse("2026-07-28T01:00:00Z"), ZoneOffset.UTC);
   private static final LocalDate TRADING_DAY = LocalDate.of(2026, 7, 28);
+  private static final String ACCOUNT_ID = "0194a8f0-7c77-7b38-9e2d-2a5fdd0f7c13";
   private final JdbcTemplate jdbcTemplate;
   private final AccountReservationApplicationService service;
   private final AccountMatchingExecutionApplicationService matchingExecutionService;
@@ -81,10 +82,11 @@ class AccountReservationApplicationServiceTransactionTest {
     jdbcTemplate.update("DELETE FROM account_service.account_reservations");
     jdbcTemplate.update("DELETE FROM account_service.account_positions");
     jdbcTemplate.update("DELETE FROM account_service.account_limits");
-    service.provisionLimit("acc-1", TRADING_DAY, new BigDecimal("10000"));
-    service.provisionPosition("acc-1", "2330");
+    service.provisionLimit(ACCOUNT_ID, TRADING_DAY, new BigDecimal("10000"));
+    service.provisionPosition(ACCOUNT_ID, "2330");
     jdbcTemplate.update(
-        "UPDATE account_service.account_positions SET long_qty = 100 WHERE account_id = 'acc-1'");
+        "UPDATE account_service.account_positions SET long_qty = 100 WHERE account_id = ?",
+        UUID.fromString(ACCOUNT_ID));
   }
 
   @DisplayName("outbox failure rolls back reservation and account-authority mutations")
@@ -103,7 +105,7 @@ class AccountReservationApplicationServiceTransactionTest {
             jdbcTemplate.queryForObject(
                 "SELECT COUNT(*) FROM account_service.outbox", Integer.class))
         .isZero();
-    assertThat(service.getLimits("acc-1").availableNotional()).isEqualByComparingTo("10000");
+    assertThat(service.getLimits(ACCOUNT_ID).availableNotional()).isEqualByComparingTo("10000");
   }
 
   @DisplayName("buy reserve atomically consumes available cash and emits lifecycle outbox")
@@ -194,7 +196,7 @@ class AccountReservationApplicationServiceTransactionTest {
     assertThatThrownBy(() -> service.applyFill(fill))
         .isInstanceOf(IllegalArgumentException.class)
         .hasMessage("reservation is not active");
-    assertThat(service.getLimits("acc-1").availableNotional()).isEqualByComparingTo("10000");
+    assertThat(service.getLimits(ACCOUNT_ID).availableNotional()).isEqualByComparingTo("10000");
     assertThat(
             jdbcTemplate.queryForObject(
                 "SELECT status FROM account_service.account_reservations", String.class))
@@ -295,8 +297,8 @@ class AccountReservationApplicationServiceTransactionTest {
 
     assertThat(applied.reservedNotional()).isEqualByComparingTo("600");
     assertThat(duplicate.reservedNotional()).isEqualByComparingTo("600");
-    assertThat(service.getLimits("acc-1").utilizedNotional()).isEqualByComparingTo("396");
-    assertThat(service.getLimits("acc-1").availableNotional()).isEqualByComparingTo("9004");
+    assertThat(service.getLimits(ACCOUNT_ID).utilizedNotional()).isEqualByComparingTo("396");
+    assertThat(service.getLimits(ACCOUNT_ID).availableNotional()).isEqualByComparingTo("9004");
     assertThat(
             jdbcTemplate.queryForObject(
                 "SELECT COUNT(*) FROM account_service.inbox", Integer.class))
@@ -320,7 +322,7 @@ class AccountReservationApplicationServiceTransactionTest {
                 new ExecutionFill.FillPrice(new BigDecimal("99"))));
 
     final ReservationRecord applied = service.applyFill(fill);
-    final AccountLimit limitAfterFill = service.getLimits("acc-1");
+    final AccountLimit limitAfterFill = service.getLimits(ACCOUNT_ID);
     final ReservationRecord duplicate = service.applyFill(fill);
 
     assertThat(applied.status()).isEqualTo(ReservationStatus.RESERVATION_STATUS_ACCEPTED);
@@ -329,7 +331,7 @@ class AccountReservationApplicationServiceTransactionTest {
     assertThat(limitAfterFill.utilizedNotional()).isEqualByComparingTo("396");
     assertThat(limitAfterFill.availableNotional()).isEqualByComparingTo("9004");
     assertThat(duplicate.reservedNotional()).isEqualByComparingTo("600");
-    assertThat(service.getLimits("acc-1").availableNotional()).isEqualByComparingTo("9004");
+    assertThat(service.getLimits(ACCOUNT_ID).availableNotional()).isEqualByComparingTo("9004");
   }
 
   @DisplayName("matching execution fills use the public account boundary and inbox deduplication")
@@ -349,7 +351,7 @@ class AccountReservationApplicationServiceTransactionTest {
 
     assertThat(applied.reservedNotional()).isEqualByComparingTo("600");
     assertThat(duplicate.reservedNotional()).isEqualByComparingTo("600");
-    assertThat(service.getLimits("acc-1").utilizedNotional()).isEqualByComparingTo("396");
+    assertThat(service.getLimits(ACCOUNT_ID).utilizedNotional()).isEqualByComparingTo("396");
     assertThat(
             jdbcTemplate.queryForObject(
                 "SELECT COUNT(*) FROM account_service.inbox", Integer.class))
@@ -373,7 +375,7 @@ class AccountReservationApplicationServiceTransactionTest {
 
     assertThat(released.status()).isEqualTo(ReservationStatus.RESERVATION_STATUS_RELEASED);
     assertThat(duplicate.status()).isEqualTo(ReservationStatus.RESERVATION_STATUS_RELEASED);
-    assertThat(service.getLimits("acc-1").availableNotional()).isEqualByComparingTo("10000");
+    assertThat(service.getLimits(ACCOUNT_ID).availableNotional()).isEqualByComparingTo("10000");
     assertThat(
             jdbcTemplate.queryForObject(
                 "SELECT COUNT(*) FROM account_service.inbox", Integer.class))
@@ -418,9 +420,9 @@ class AccountReservationApplicationServiceTransactionTest {
                 "SELECT reserved_notional FROM account_service.account_reservations",
                 BigDecimal.class))
         .isEqualByComparingTo("0");
-    assertThat(service.getLimits("acc-1").reservedNotional()).isEqualByComparingTo("0");
-    assertThat(service.getLimits("acc-1").utilizedNotional()).isEqualByComparingTo("396");
-    assertThat(service.getLimits("acc-1").availableNotional()).isEqualByComparingTo("9604");
+    assertThat(service.getLimits(ACCOUNT_ID).reservedNotional()).isEqualByComparingTo("0");
+    assertThat(service.getLimits(ACCOUNT_ID).utilizedNotional()).isEqualByComparingTo("396");
+    assertThat(service.getLimits(ACCOUNT_ID).availableNotional()).isEqualByComparingTo("9604");
     assertThat(
             jdbcTemplate.queryForObject(
                 "SELECT COUNT(*) FROM account_service.outbox", Integer.class))
@@ -484,7 +486,7 @@ class AccountReservationApplicationServiceTransactionTest {
         new ReservationRequestIdentity(
             new ReservationRequestIdentity.RequestId(UUID.randomUUID().toString()),
             new ReservationRequestIdentity.OrderId(UUID.randomUUID().toString()),
-            new ReservationRequestIdentity.AccountId("acc-1")),
+            new ReservationRequestIdentity.AccountId(ACCOUNT_ID)),
         new ReservationTerms(
             new ReservationTerms.InstrumentSymbol("2330"),
             side,

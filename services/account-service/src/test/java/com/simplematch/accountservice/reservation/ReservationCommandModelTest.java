@@ -9,6 +9,8 @@ import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 
 class ReservationCommandModelTest {
+  private static final String ACCOUNT_ID = "0194a8f0-7c77-7b38-9e2d-2a5fdd0f7c13";
+
   @DisplayName("Reserve commands expose identity and terms through domain values")
   @Test
   void composesReserveOperation() {
@@ -17,7 +19,7 @@ class ReservationCommandModelTest {
             new ReservationRequestIdentity(
                 new ReservationRequestIdentity.RequestId("request-1"),
                 new ReservationRequestIdentity.OrderId("order-1"),
-                new ReservationRequestIdentity.AccountId("account-1")),
+                new ReservationRequestIdentity.AccountId(ACCOUNT_ID)),
             new ReservationTerms(
                 new ReservationTerms.InstrumentSymbol("2330"),
                 Side.SIDE_BUY,
@@ -26,7 +28,7 @@ class ReservationCommandModelTest {
 
     assertThat(operation.requestId()).isEqualTo("request-1");
     assertThat(operation.orderId()).isEqualTo("order-1");
-    assertThat(operation.accountId()).isEqualTo("account-1");
+    assertThat(operation.accountId()).isEqualTo(ACCOUNT_ID);
     assertThat(operation.quantity()).isEqualByComparingTo("1000");
     assertThat(operation.limitPrice()).isEqualByComparingTo("950.5");
   }
