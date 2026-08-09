@@ -102,36 +102,40 @@ public record WalRecord(
     throw new IllegalStateException("cancellation has no order terms");
   }
 
-  /** Returns the new-order symbol or the v1 cancellation placeholder. */
+  /** Returns the instrument symbol carried by this command. */
   public String symbol() {
-    return command instanceof WalCommand.NewOrder newOrder ? newOrder.terms().symbol() : "";
+    return switch (command) {
+      case WalCommand.NewOrder newOrder -> newOrder.terms().symbol();
+      case WalCommand.Cancel cancel -> cancel.symbol();
+    };
   }
 
-  /** Returns the new-order side or the v1 cancellation placeholder. */
+  /** Returns the side carried by this command. */
   public Side side() {
-    return command instanceof WalCommand.NewOrder newOrder
-        ? newOrder.terms().side()
-        : Side.SIDE_UNSPECIFIED;
+    return switch (command) {
+      case WalCommand.NewOrder newOrder -> newOrder.terms().side();
+      case WalCommand.Cancel cancel -> cancel.side();
+    };
   }
 
-  /** Returns the new-order quantity or the v1 cancellation placeholder. */
+  /** Returns the new-order quantity or the cancellation placeholder. */
   public String quantity() {
     return command instanceof WalCommand.NewOrder newOrder ? newOrder.terms().quantity() : "";
   }
 
-  /** Returns the new-order price or the v1 cancellation placeholder. */
+  /** Returns the new-order price or the cancellation placeholder. */
   public String price() {
     return command instanceof WalCommand.NewOrder newOrder ? newOrder.terms().price() : "";
   }
 
-  /** Returns the new-order type or the v1 cancellation placeholder. */
+  /** Returns the new-order type or the cancellation placeholder. */
   public OrderType orderType() {
     return command instanceof WalCommand.NewOrder newOrder
         ? newOrder.terms().orderType()
         : OrderType.ORDER_TYPE_UNSPECIFIED;
   }
 
-  /** Returns the new-order time-in-force or the v1 cancellation placeholder. */
+  /** Returns the new-order time-in-force or the cancellation placeholder. */
   public TimeInForce tif() {
     return command instanceof WalCommand.NewOrder newOrder
         ? newOrder.terms().tif()

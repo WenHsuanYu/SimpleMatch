@@ -2,43 +2,157 @@ package com.simplematch.quickfixgateway.wal;
 
 import com.simplematch.contracts.orders.v1.CommandType;
 import com.simplematch.contracts.orders.v1.OrderCommand;
+import com.simplematch.quickfixgateway.fix.OrderSessionRegistry;
+import com.simplematch.quickfixgateway.risk.RiskReconciliationClient;
+import com.simplematch.quickfixgateway.risk.RiskReconciliationResult;
 import com.simplematch.quickfixgateway.risk.RiskSubmissionClient;
+import com.simplematch.quickfixgateway.risk.RiskSubmissionResult;
+import java.nio.file.Path;
+import java.util.List;
+import java.util.Map;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import quickfix.SessionID;
 
-/** Re-admits locally durable gateway commands through Risk during owner startup recovery. */
+/** Reconciles locally durable gateway commands with authoritative Risk state at startup. */
 public final class WalReplayService {
   private static final Logger logger = LoggerFactory.getLogger(WalReplayService.class);
+  private static final String FIX_BEGIN_STRING = "FIX.4.4";
 
   private final WalAppender walAppender;
+  private final Path recoveryJournalPath;
   private final RiskSubmissionClient riskSubmissionClient;
+  private final RiskReconciliationClient reconciliationClient;
+  private final OrderSessionRegistry orderSessionRegistry;
 
-  /** Creates a replay service for the gateway's WAL and idempotent Risk boundary. */
-  public WalReplayService(WalAppender walAppender, RiskSubmissionClient riskSubmissionClient) {
+  /** Creates startup recovery over immutable commands, local state, and Risk authority. */
+  public WalReplayService(
+      WalAppender walAppender,
+      WalRecoveryJournal recoveryJournal,
+      RiskSubmissionClient riskSubmissionClient,
+      RiskReconciliationClient reconciliationClient,
+      OrderSessionRegistry orderSessionRegistry) {
     this.walAppender = walAppender;
+    this.recoveryJournalPath = recoveryJournal.path();
     this.riskSubmissionClient = riskSubmissionClient;
+    this.reconciliationClient = reconciliationClient;
+    this.orderSessionRegistry = orderSessionRegistry;
   }
 
-  /** Re-admits every durable WAL record and returns the number replayed. */
+  /**
+   * Creates recovery for callers that cannot reconcile already uncertain remote outcomes.
+   *
+   * <p>A WAL record without sidecar state can still be submitted because the write ordering proves
+   * that Risk submission had not started. Records already marked UNKNOWN or PENDING require the
+   * production reconciliation client.
+   */
+  public WalReplayService(WalAppender walAppender, RiskSubmissionClient riskSubmissionClient) {
+    this(
+        walAppender,
+        new WalRecoveryJournal(WalRecoveryJournal.pathFor(walAppender.walPath())),
+        riskSubmissionClient,
+        reconciliationRequired(),
+        new OrderSessionRegistry());
+  }
+
+  /** Reconciles non-terminal durable commands and returns the number of WAL records examined. */
   public int replayAll() {
-    int replayed = 0;
-    for (WalRecord walRecord : walAppender.readAll()) {
-      submitToRisk(walRecord.toOrderCommand());
-      replayed += 1;
+    final WalRecoveryJournal recoveryJournal = new WalRecoveryJournal(recoveryJournalPath);
+    final Map<String, WalRecoveryState> localStates = recoveryJournal.readLatest();
+    final List<WalRecord> records = walAppender.readAll();
+    int recovered = 0;
+    for (WalRecord walRecord : records) {
+      final WalRecoveryState localState = localStates.get(walRecord.recordId());
+      if (localState != null && localState.terminal()) {
+        restoreSessionContext(walRecord, localState);
+        continue;
+      }
+      if (localState == null) {
+        recoveryJournal.appendAndFlush(walRecord.recordId(), WalRecoveryState.UNKNOWN);
+        submitAndRecord(recoveryJournal, walRecord);
+      } else {
+        reconcile(recoveryJournal, walRecord, localState);
+      }
+      recovered += 1;
     }
-    logger.info("replayed {} WAL records from {}", replayed, walAppender.walPath());
-    return replayed;
+    logger.info(
+        "recovered {} non-terminal WAL records from {} using state journal {}",
+        recovered,
+        walAppender.walPath(),
+        recoveryJournalPath);
+    return records.size();
   }
 
-  private void submitToRisk(OrderCommand command) {
-    if (command.getCommandType() == CommandType.COMMAND_TYPE_CANCEL) {
-      riskSubmissionClient.submitCancel(command);
+  private void reconcile(
+      WalRecoveryJournal recoveryJournal, WalRecord walRecord, WalRecoveryState localState) {
+    final String commandId = walRecord.recordId();
+    final RiskReconciliationResult authoritative = reconciliationClient.lookup(commandId);
+    if (authoritative.notFound()) {
+      recoverNotFound(recoveryJournal, walRecord, localState);
       return;
+    }
+    final WalRecoveryState state = WalRecoveryState.fromReconciliation(authoritative);
+    recoveryJournal.appendAndFlush(commandId, state);
+    restoreSessionContext(walRecord, state);
+  }
+
+  private void recoverNotFound(
+      WalRecoveryJournal recoveryJournal, WalRecord walRecord, WalRecoveryState localState) {
+    requireSafeResubmission(walRecord, localState);
+    submitAndRecord(recoveryJournal, walRecord);
+  }
+
+  private void requireSafeResubmission(WalRecord walRecord, WalRecoveryState localState) {
+    if (localState == WalRecoveryState.PENDING) {
+      throw new IllegalStateException(
+          "Risk lost a locally pending admission: " + walRecord.recordId());
+    }
+    if (localState != WalRecoveryState.UNKNOWN) {
+      throw new IllegalStateException(
+          "unexpected local recovery state for missing Risk admission: "
+              + walRecord.recordId()
+              + " state="
+              + localState);
+    }
+  }
+
+  private void submitAndRecord(WalRecoveryJournal recoveryJournal, WalRecord walRecord) {
+    final RiskSubmissionResult submission = submitToRisk(walRecord.toOrderCommand());
+    final WalRecoveryState recoveredState = WalRecoveryState.fromSubmission(submission);
+    recoveryJournal.appendAndFlush(walRecord.recordId(), recoveredState);
+    if (recoveredState == WalRecoveryState.UNKNOWN) {
+      throw new IllegalStateException(
+          "Risk outcome remains unknown after WAL recovery: " + walRecord.recordId());
+    }
+    restoreSessionContext(walRecord, recoveredState);
+  }
+
+  private RiskSubmissionResult submitToRisk(OrderCommand command) {
+    if (command.getCommandType() == CommandType.COMMAND_TYPE_CANCEL) {
+      return riskSubmissionClient.submitCancel(command);
     }
     if (command.getCommandType() == CommandType.COMMAND_TYPE_NEW) {
-      riskSubmissionClient.submitNewOrder(command);
-      return;
+      return riskSubmissionClient.submitNewOrder(command);
     }
     throw new IllegalStateException("unsupported WAL command type: " + command.getCommandType());
+  }
+
+  private void restoreSessionContext(WalRecord walRecord, WalRecoveryState state) {
+    if (!(walRecord.command() instanceof WalCommand.NewOrder)
+        || state == WalRecoveryState.REJECTED
+        || state == WalRecoveryState.UNKNOWN) {
+      return;
+    }
+    final String senderCompId = walRecord.targetCompId();
+    final String targetCompId = walRecord.senderCompId();
+    final SessionID sessionId = new SessionID(FIX_BEGIN_STRING, senderCompId, targetCompId);
+    orderSessionRegistry.registerAcceptedOrder(sessionId, walRecord, 'A');
+  }
+
+  private static RiskReconciliationClient reconciliationRequired() {
+    return commandId -> {
+      throw new IllegalStateException(
+          "reconciliation client is required for uncertain WAL command: " + commandId);
+    };
   }
 }

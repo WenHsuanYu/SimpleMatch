@@ -2,7 +2,9 @@ package com.simplematch.quickfixgateway.config;
 
 import com.simplematch.config.GrpcProperties;
 import com.simplematch.config.KafkaProperties;
+import com.simplematch.contracts.v2.VenueMic;
 import com.simplematch.quickfixgateway.fix.FixMessageMapper;
+import com.simplematch.quickfixgateway.fix.OrderSessionRegistry;
 import com.simplematch.quickfixgateway.kafka.KafkaOrdersCommandPublisher;
 import com.simplematch.quickfixgateway.kafka.NoopOrdersCommandPublisher;
 import com.simplematch.quickfixgateway.kafka.OrdersCommandPublisher;
@@ -11,7 +13,9 @@ import com.simplematch.quickfixgateway.risk.GrpcRiskSubmissionClient;
 import com.simplematch.quickfixgateway.risk.ResilientRiskSubmissionClient;
 import com.simplematch.quickfixgateway.risk.RiskReconciliationClient;
 import com.simplematch.quickfixgateway.risk.RiskSubmissionClient;
+import com.simplematch.quickfixgateway.risk.RiskV2CommandAdapter;
 import com.simplematch.quickfixgateway.wal.WalAppender;
+import com.simplematch.quickfixgateway.wal.WalRecoveryJournal;
 import com.simplematch.quickfixgateway.wal.WalReplayService;
 import io.grpc.ManagedChannel;
 import io.grpc.ManagedChannelBuilder;
@@ -37,12 +41,19 @@ public class QuickFixGatewayIntegrationConfiguration {
   }
 
   @Bean
+  RiskV2CommandAdapter riskV2CommandAdapter(QuickFixGatewayIngressProperties ingressProperties) {
+    return new RiskV2CommandAdapter(VenueMic.parse(ingressProperties.venueMic()));
+  }
+
+  @Bean
   RiskSubmissionClient riskSubmissionClient(
       ManagedChannel riskServiceChannel,
       Clock quickFixGatewayClock,
-      QuickFixGatewayRiskClientProperties riskClient) {
+      QuickFixGatewayRiskClientProperties riskClient,
+      RiskV2CommandAdapter riskV2CommandAdapter) {
     final RiskSubmissionClient delegate =
-        new GrpcRiskSubmissionClient(riskServiceChannel, riskClient.deadlineMillis());
+        new GrpcRiskSubmissionClient(
+            riskServiceChannel, riskClient.deadlineMillis(), riskV2CommandAdapter);
     return new ResilientRiskSubmissionClient(
         delegate,
         riskClient.retry().maxAttempts(),
@@ -79,7 +90,16 @@ public class QuickFixGatewayIntegrationConfiguration {
 
   @Bean
   WalReplayService walReplayService(
-      WalAppender walAppender, RiskSubmissionClient riskSubmissionClient) {
-    return new WalReplayService(walAppender, riskSubmissionClient);
+      WalAppender walAppender,
+      WalRecoveryJournal recoveryJournal,
+      RiskSubmissionClient riskSubmissionClient,
+      RiskReconciliationClient reconciliationClient,
+      OrderSessionRegistry orderSessionRegistry) {
+    return new WalReplayService(
+        walAppender,
+        recoveryJournal,
+        riskSubmissionClient,
+        reconciliationClient,
+        orderSessionRegistry);
   }
 }

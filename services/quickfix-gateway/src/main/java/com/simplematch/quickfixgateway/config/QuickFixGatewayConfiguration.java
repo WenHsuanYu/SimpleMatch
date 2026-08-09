@@ -5,6 +5,8 @@ import com.simplematch.quickfixgateway.fix.FixSessionMessageSender;
 import com.simplematch.quickfixgateway.fix.OrderSessionRegistry;
 import com.simplematch.quickfixgateway.fix.QuickFixSessionMessageSender;
 import com.simplematch.quickfixgateway.wal.WalAppender;
+import com.simplematch.quickfixgateway.wal.WalDurableCommandWriter;
+import com.simplematch.quickfixgateway.wal.WalRecoveryJournal;
 import java.io.IOException;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
@@ -23,7 +25,8 @@ import org.springframework.kafka.annotation.EnableKafka;
   QuickFixGatewayFileProperties.class,
   QuickFixGatewayRuntimeProperties.class,
   QuickFixGatewayRiskClientProperties.class,
-  QuickFixGatewayExecutionProjectionProperties.class
+  QuickFixGatewayExecutionProjectionProperties.class,
+  QuickFixGatewayIngressProperties.class
 })
 public class QuickFixGatewayConfiguration {
   @Bean
@@ -64,6 +67,17 @@ public class QuickFixGatewayConfiguration {
   @Bean
   WalAppender walAppender(QuickFixGatewayRuntime runtime) {
     return new WalAppender(runtime.walPath(), StandardCharsets.UTF_8);
+  }
+
+  @Bean
+  WalRecoveryJournal walRecoveryJournal(QuickFixGatewayRuntime runtime) {
+    return new WalRecoveryJournal(WalRecoveryJournal.pathFor(runtime.walPath()));
+  }
+
+  @Bean
+  WalDurableCommandWriter walDurableCommandWriter(
+      WalAppender walAppender, WalRecoveryJournal recoveryJournal) {
+    return new WalDurableCommandWriter(walAppender, recoveryJournal);
   }
 
   @Bean

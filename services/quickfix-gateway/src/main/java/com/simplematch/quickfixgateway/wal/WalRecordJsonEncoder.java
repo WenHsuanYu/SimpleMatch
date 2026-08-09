@@ -4,10 +4,9 @@ import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.node.ObjectNode;
 import com.simplematch.contracts.common.v1.OrderType;
-import com.simplematch.contracts.common.v1.Side;
 import com.simplematch.contracts.common.v1.TimeInForce;
 
-/** Encodes semantic WAL records into the unchanged flat v1 JSON shape. */
+/** Encodes semantic WAL records into the stable flat JSON shape. */
 final class WalRecordJsonEncoder {
   private final ObjectMapper objectMapper;
 
@@ -52,12 +51,13 @@ final class WalRecordJsonEncoder {
       json.put("commandType", newOrder.commandType().name());
       return;
     }
-    json.put("symbol", "");
-    json.put("side", Side.SIDE_UNSPECIFIED.name());
+    final WalCommand.Cancel cancel = (WalCommand.Cancel) command;
+    json.put("symbol", cancel.symbol());
+    json.put("side", cancel.side().name());
     json.put("quantity", "");
     json.put("price", "");
     json.put("orderType", OrderType.ORDER_TYPE_UNSPECIFIED.name());
     json.put("tif", TimeInForce.TIME_IN_FORCE_UNSPECIFIED.name());
-    json.put("commandType", command.commandType().name());
+    json.put("commandType", cancel.commandType().name());
   }
 }

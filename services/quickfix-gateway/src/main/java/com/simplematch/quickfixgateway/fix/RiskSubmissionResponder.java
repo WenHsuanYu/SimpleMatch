@@ -5,6 +5,7 @@ import com.simplematch.quickfixgateway.risk.RiskSubmissionClient;
 import com.simplematch.quickfixgateway.risk.RiskSubmissionFailure;
 import com.simplematch.quickfixgateway.risk.RiskSubmissionResult;
 import com.simplematch.quickfixgateway.wal.WalRecord;
+import com.simplematch.quickfixgateway.wal.WalRecoveryJournal;
 import java.time.Instant;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -19,20 +20,24 @@ final class RiskSubmissionResponder {
   private final RiskSubmissionClient riskSubmissionClient;
   private final FixSessionMessageSender fixSessionMessageSender;
   private final FixMessageMapper fixMessageMapper;
+  private final RiskRecoveryStateRecorder recoveryStateRecorder;
 
   RiskSubmissionResponder(
       RiskSubmissionClient riskSubmissionClient,
       FixSessionMessageSender fixSessionMessageSender,
-      FixMessageMapper fixMessageMapper) {
+      FixMessageMapper fixMessageMapper,
+      WalRecoveryJournal recoveryJournal) {
     this.riskSubmissionClient = riskSubmissionClient;
     this.fixSessionMessageSender = fixSessionMessageSender;
     this.fixMessageMapper = fixMessageMapper;
+    this.recoveryStateRecorder = new RiskRecoveryStateRecorder(recoveryJournal);
   }
 
   RiskSubmissionResult submitNewOrder(
       OrderCommand command, SessionID sessionId, WalRecord walRecord, Instant now) {
     try {
       final RiskSubmissionResult submission = riskSubmissionClient.submitNewOrder(command);
+      recoveryStateRecorder.record(command, walRecord, submission);
       if (submission.rejected()) {
         fixSessionMessageSender.send(
             sessionId,
@@ -55,6 +60,7 @@ final class RiskSubmissionResponder {
       OrderCommand command, SessionID sessionId, WalRecord walRecord, char ordStatus) {
     try {
       final RiskSubmissionResult submission = riskSubmissionClient.submitCancel(command);
+      recoveryStateRecorder.record(command, walRecord, submission);
       if (submission.rejected()) {
         sendCancelRejection(sessionId, walRecord, ordStatus, businessOutcomeText(submission));
       } else if (submission.unknown()) {
@@ -93,6 +99,7 @@ final class RiskSubmissionResponder {
     final RiskSubmissionResult unknown =
         RiskSubmissionResult.unknown(
             walRecord.orderId(), failure.reasonCode(), failure.reasonText());
+    recoveryStateRecorder.record(command, walRecord, unknown);
     logUnknownOutcome("submit", command, walRecord, unknown, error);
     sendUnknownNewOrder(sessionId, walRecord, now);
     return unknown;
@@ -105,6 +112,7 @@ final class RiskSubmissionResponder {
     final RiskSubmissionResult unknown =
         RiskSubmissionResult.unknown(
             walRecord.orderId(), failure.reasonCode(), failure.reasonText());
+    recoveryStateRecorder.record(command, walRecord, unknown);
     logUnknownOutcome("cancel", command, walRecord, unknown, error);
     // Do not emit OrderCancelReject: a missing RPC response does not prove
     // that Risk rejected the cancel.

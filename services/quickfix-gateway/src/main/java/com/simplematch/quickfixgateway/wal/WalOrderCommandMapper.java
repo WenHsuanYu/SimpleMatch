@@ -12,7 +12,7 @@ final class WalOrderCommandMapper {
         OrderCommand.newBuilder()
             .setMetadata(
                 EventMetadata.newBuilder()
-                    .setSchemaVersion(record.schemaVersion())
+                    .setSchemaVersion("v1")
                     .setEventId(record.recordId())
                     .setCreatedAtUnixMs(record.createdAtUnixMs())
                     .setSourceService(record.sourceService())
@@ -24,12 +24,12 @@ final class WalOrderCommandMapper {
             .setTargetCompId(orEmpty(record.targetCompId()))
             .setClOrdId(orEmpty(record.clOrdId()))
             .setCommandType(record.commandType())
-            .setOrigClOrdId(orEmpty(record.origClOrdId()));
+            .setOrigClOrdId(orEmpty(record.origClOrdId()))
+            .setSymbol(record.symbol())
+            .setSide(record.side());
     if (record.command() instanceof WalCommand.NewOrder newOrder) {
       final WalOrderTerms terms = newOrder.terms();
       builder
-          .setSymbol(terms.symbol())
-          .setSide(terms.side())
           .setQuantity(terms.quantity())
           .setPrice(terms.price())
           .setOrderType(terms.orderType())
