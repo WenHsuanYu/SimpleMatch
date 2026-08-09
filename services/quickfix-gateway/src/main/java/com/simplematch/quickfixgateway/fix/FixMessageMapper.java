@@ -23,6 +23,12 @@ public final class FixMessageMapper {
     return executionReportMapper.buildPendingNew(order, execution);
   }
 
+  /** Builds a Pending New execution report with a client-safe explanation. */
+  public ExecutionReport buildPendingNew(
+      FixOrderSnapshot order, FixExecutionIdentity execution, String text) {
+    return executionReportMapper.buildPendingNew(order, execution, text);
+  }
+
   /** Builds a rejected execution report from explicit FIX adapter values. */
   public ExecutionReport buildRejected(
       FixOrderSnapshot order, FixExecutionIdentity execution, String text) {
