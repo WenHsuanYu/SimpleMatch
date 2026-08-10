@@ -83,8 +83,7 @@
 ### 1.2 Kafka wrapper（producer/consumer）
 
 > 現況：`shared-java/` 尚無共用 Kafka runtime module；workspace 只找到 service-local baseline，例如
-> `quickfix-gateway` 內的
-> `KafkaOrdersCommandPublisher`（producer）與 `MatchingExecutionConsumer`（consumer）。
+> `quickfix-gateway` 內的 `MatchingExecutionConsumer`（consumer）。
 
 - [ ] `libs/kafka`：producer wrapper
     - [ ] `KafkaProducer::Publish(topic, key, value, headers, partition_opt)`
@@ -357,7 +356,7 @@
 - [x] 主路徑：gateway 以同步 gRPC 將請求送到 `risk-service`
 - [x] 第一個成功 FIX ack 僅在 `risk-service` transaction commit 成功後回覆 `PendingNew/Accepted`
 - [x] 若 `risk-service` 同步判定失敗，gateway 直接回 `Rejected`
-- [x] `orders.commands` compatibility publish / WAL replay 不再視為主線；目前預設停用，僅保留遷移或診斷時顯式開啟
+- [x] `orders.commands` compatibility publish 已退休；WAL replay 直接走 typed v2 Risk command，且沒有 runtime 或診斷開關可重新啟用該 topic
 - [ ] 若保留 WAL：
     - [x] `WalAppender::Append(record)` 作為本地恢復 / 稽核輔助
     - [ ] 明確標記 WAL 不再是主 ack 錨點
