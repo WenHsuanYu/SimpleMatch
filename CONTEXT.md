@@ -29,6 +29,7 @@ flowchart LR
 | Market Reference | Risk Admission / Matching      | Published language based on versioned market snapshots and routing policies. Consumers do not reinterpret source fixtures independently. |
 | Risk Admission   | Matching                       | Published language over ordered Kafka events. Admission success precedes asynchronous matching.                           |
 | Matching         | Account Authority / Projection | Published lifecycle events. Each consumer owns idempotency and its local state transition.                                |
+| Matching         | Market-data Streaming          | Published execution and book-change facts become rebuildable per-instrument views; streaming never becomes a command path. |
 
 ## Bounded contexts and ownership
 
@@ -74,8 +75,36 @@ persistence after an order has been admitted.
 
 Owns validated, versioned instrument and tick-rule snapshots and separate immutable routing
 policies. Market snapshots and routing policies are external facts consumed by Risk Admission and
-Matching, not mutable state jointly owned by those services. Successive routing-policy intervals may
-add instruments, but an instrument's route remains stable throughout its trading day.
+Matching, not mutable state jointly owned by those services. Exactly one authoritative Routing
+Policy applies to each Asia/Taipei trading day. A future trading day's policy may assign an
+instrument to a different route, but the current trading day's topology and assignments remain
+immutable after its trading readiness barrier opens. Market Reference owns policy staging and the
+designation of the authoritative policy; it does not own consumer installation state or the global
+decision that the trading system is ready to admit orders. The current `marketdata-publisher`
+module implements this Market Reference capability despite its legacy service name; runtime
+market-data projection and client streaming are outside its boundary. A candidate policy may be
+staged before its declared transport and Matching capacity exists, but it cannot be designated
+authoritative until that capacity has been validated.
+
+### Operational Coordination
+
+Owns the trading readiness barrier by composing independently owned facts: the authoritative
+Routing Policy, Risk Admission and Matching installation acknowledgements for that exact policy,
+required transport topology, and operational health. It does not define market facts, modify the
+Routing Policy, or install a consumer's local projection on that consumer's behalf. Each service
+owns and reports its policy-specific local readiness. If a required dependency fails after the
+barrier opens, Operational Coordination closes new admission without replacing or mutating the
+authoritative policy; admitted work recovers through its durably recorded policy and partition.
+
+### Market-data Streaming
+
+Owns rebuildable runtime market views derived from Matching execution and book-change facts, the
+latest Redis snapshot with sequence metadata, and client stream delivery. Its planned baseline is
+the last trade and top-five book for each instrument, including snapshot-before-delta delivery,
+gap detection, resynchronization, and slow-consumer handling. Historical analytics and broader
+per-instrument metrics such as OHLCV, turnover, and VWAP require a separate specification and are
+not part of transition cleanup. Market-data Streaming does not own instrument reference facts,
+Routing Policies, order books, executions, or durable audit history.
 
 ### Shared platform configuration
 
@@ -105,12 +134,14 @@ authoritative lifecycle events and must not become a second command path.
 | Execution fill         | One idempotent matched quantity at one execution price.                                               | Matching produces; Account Authority applies |
 | Release                | Terminal removal of remaining reserved authority.                                                     | Account Authority                            |
 | Market snapshot        | Versioned set of instrument eligibility and trading rules.                                            | Market Reference                             |
-| Routing policy         | Immutable, versioned assignment of market instruments to stable matching routes for an effective interval; it is distinct from a market snapshot. | Market Reference                             |
+| Routing policy         | Immutable, versioned assignment of market instruments to stable matching routes for exactly one Asia/Taipei trading day; it is distinct from a market snapshot. | Market Reference                             |
 | Routing policy identity | Opaque identity of exactly one immutable routing policy; it is distinct from both a market snapshot identity and an ingress routing reference. | Market Reference                             |
-| Routing policy interval | Non-overlapping period during a trading day for which one routing policy is active. A later interval may add instruments but cannot change an instrument's route within that trading day. | Market Reference                             |
+| Trading readiness barrier | Operational boundary that opens only when the authoritative Routing Policy, required consumer installations, transport topology, and health checks agree for one trading day. | Operational Coordination                    |
 | Regular trading session | Single continuous cash-equity trading period from market open to market close; it is not divided into morning and afternoon sessions. | Market Reference                             |
 | Market instrument      | Instrument known to a market snapshot, with complete trading rules and explicit eligibility. It may be known but ineligible. | Market Reference                             |
 | Eligibility reason     | Market Reference explanation of whether a known instrument is tradable. Unsupported is valid snapshot data; malformed is not. | Market Reference                             |
+| Last-trade view        | Rebuildable per-instrument view of the latest published execution, with sequence metadata for consistent delivery. | Market-data Streaming                        |
+| Top-five book view     | Rebuildable per-instrument view of the five best price levels on each side, derived from Matching book-change facts. | Market-data Streaming                        |
 | WAL record             | Replay-safe gateway persistence representation of inbound FIX intent; not an aggregate.                | FIX Gateway                                  |
 | Journal row            | Persistence representation of the Admission aggregate; not a transport-facing contract.              | Risk Admission                               |
 | Outbox record          | Infrastructure representation used to publish a domain/integration event atomically with local state. | Producing context                            |
@@ -169,10 +200,11 @@ does not own their state.
 An Admission journal entry composes the validated Admission command, its fixed delivery route, and
 its lifecycle. The command retains the ingress routing reference; the delivery route retains the
 authoritative Routing Policy identity and resolved Kafka partition as one persisted pair. A new
-Admission resolves that pair exactly once before Account Authority work. Legacy pending rows may
-retain only their persisted partition and must not invent a policy identity during recovery. The
-lifecycle owns state, reservation or rejection outcome, and optimistic revision history. JDBC alone
-flattens and rehydrates the journal row, while an admission response remains a separate projection.
+Admission resolves that pair exactly once before Account Authority work. Every persisted Admission
+has both values, and recovery reuses the pair without reconstructing or recomputing either value.
+The lifecycle owns state, reservation or rejection outcome, and optimistic revision history. JDBC
+alone flattens and rehydrates the journal row, while an admission response remains a separate
+projection.
 Admission lifecycle outcomes are state-specific: pending has no decision, an accepted new order has
 a reservation reference, an accepted cancellation explicitly requires none, and rejection has a
 stable nonblank code and detail.

@@ -1,6 +1,6 @@
 # Market Reference owns routing policies
 
-Status: accepted
+Status: superseded by ADR 0006
 
 ## Context
 
