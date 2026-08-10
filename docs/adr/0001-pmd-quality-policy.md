@@ -30,8 +30,9 @@ the existing warnings were removed, then `allErrorsAsWarnings` was removed and
 source handling remains unchanged. The 2026-08-03 closure slice completed Issue #22's Checkstyle
 suppression review by adding private constructors to the five Spring Boot entry points; the
 suppression file now retains only the generated-source boundary. It also removed the
-`FutureReturnValueIgnored` source suppression by making the compatibility publisher's
-fire-and-forget return contract explicit with `@CanIgnoreReturnValue`. The technical criteria for
-Issues #21 and #22 are now satisfied; their GitHub statuses are updated after the implementation
-commit. Error Prone cleanup and blocking adoption belong to this specification rather than
-expanding either existing issue retroactively.
+`FutureReturnValueIgnored` source suppression by making the then-existing compatibility
+publisher's fire-and-forget return contract explicit with `@CanIgnoreReturnValue`. The retired
+publisher was subsequently deleted, so that exception is no longer part of the production source.
+The technical criteria for Issues #21 and #22 are now satisfied; their GitHub statuses are updated
+after the implementation commit. Error Prone cleanup and blocking adoption belong to this
+specification rather than expanding either existing issue retroactively.

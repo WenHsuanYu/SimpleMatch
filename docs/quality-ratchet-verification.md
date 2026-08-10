@@ -77,9 +77,8 @@ The current evidence satisfies the technical criteria described in #21:
 - The five originally selected PMD rules are included in the blocking
   47-rule policy for all seven intended modules.
 - No production-source `@SuppressWarnings` or `//NOPMD` entry was found. The
-  compatibility publisher uses `@CanIgnoreReturnValue` to document its
-  intentional fire-and-forget observation contract; it does not suppress
-  `FutureReturnValueIgnored`.
+  former compatibility publisher used `@CanIgnoreReturnValue` before the
+  retired Gateway publication path was deleted; no such exception remains.
 - PMD reports, dependency locks, policy documentation, and the CI blocking
   lifecycle are present.
 - The ordinary static-analysis gate and Java test suite pass.
