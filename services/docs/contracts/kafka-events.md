@@ -199,7 +199,9 @@ automatic topic creation=false
 
 Producers use `acks=all` and idempotence. Neither topic is compacted. Production readiness validates
 these values and certified disk headroom. A local one-broker profile may reduce replication for
-development but cannot pass production readiness.
+development but cannot pass production readiness. The executable provisioning, validation, sizing,
+and alert contract is in the
+[Matching Kafka durability profile](../../../docs/kafka-matching-durability-profile.md).
 
 ## Evolution and compatibility
 

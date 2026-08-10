@@ -1,0 +1,1 @@
+Effective broker configuration: auto.create.topics.enable=false,unclean.leader.election.enable=false

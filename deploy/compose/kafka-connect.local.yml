@@ -24,6 +24,9 @@ services:
       KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 1
       KAFKA_TRANSACTION_STATE_LOG_REPLICATION_FACTOR: 1
       KAFKA_TRANSACTION_STATE_LOG_MIN_ISR: 1
+      # Local only: the profile still disallows implicit Matching-topic creation.
+      KAFKA_AUTO_CREATE_TOPICS_ENABLE: "false"
+      KAFKA_UNCLEAN_LEADER_ELECTION_ENABLE: "false"
     ports:
       - "9092:9092"
 

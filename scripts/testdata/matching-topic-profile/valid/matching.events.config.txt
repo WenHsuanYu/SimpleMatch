@@ -1,0 +1,1 @@
+Dynamic configs for topic matching.events are cleanup.policy=delete,retention.ms=2592000000,min.insync.replicas=2

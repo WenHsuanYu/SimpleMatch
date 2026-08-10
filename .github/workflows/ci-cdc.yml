@@ -8,8 +8,13 @@ on:
     paths:
       - '.github/workflows/ci-cdc.yml'
       - 'deploy/compose/**'
+      - 'config/kafka/**'
       - 'scripts/run-outbox-cdc-contract-check.sh'
       - 'scripts/verify-outbox-connector-contracts.sh'
+      - 'scripts/lib/matching-topic-profile.sh'
+      - 'scripts/provision-matching-topics.sh'
+      - 'scripts/test-matching-topic-profile.sh'
+      - 'scripts/validate-matching-topic-profile.sh'
       - 'shared-java/**'
       - 'proto/**'
       - 'services/account-service/**'
@@ -19,8 +24,13 @@ on:
     paths:
       - '.github/workflows/ci-cdc.yml'
       - 'deploy/compose/**'
+      - 'config/kafka/**'
       - 'scripts/run-outbox-cdc-contract-check.sh'
       - 'scripts/verify-outbox-connector-contracts.sh'
+      - 'scripts/lib/matching-topic-profile.sh'
+      - 'scripts/provision-matching-topics.sh'
+      - 'scripts/test-matching-topic-profile.sh'
+      - 'scripts/validate-matching-topic-profile.sh'
       - 'shared-java/**'
       - 'proto/**'
       - 'services/account-service/**'
@@ -48,5 +58,7 @@ jobs:
           persist-credentials: false
       - name: Verify connector contracts
         run: bash scripts/verify-outbox-connector-contracts.sh
+      - name: Validate Matching Kafka durability profile
+        run: bash scripts/test-matching-topic-profile.sh
       - name: Run live CDC contract check
         run: bash scripts/run-outbox-cdc-contract-check.sh
