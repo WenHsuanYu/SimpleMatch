@@ -10,7 +10,6 @@ import com.simplematch.contracts.orders.v2.CancelOrderCommand;
 import com.simplematch.contracts.orders.v2.NewOrderCommand;
 import com.simplematch.quickfixgateway.config.QuickFixGatewayRuntime;
 import com.simplematch.quickfixgateway.kafka.MatchingExecutionConsumer;
-import com.simplematch.quickfixgateway.kafka.NoopOrdersCommandPublisher;
 import com.simplematch.quickfixgateway.risk.RiskSubmissionClient;
 import com.simplematch.quickfixgateway.risk.RiskSubmissionResult;
 import com.simplematch.quickfixgateway.risk.RiskTestSupport;
@@ -91,7 +90,6 @@ class QuickFixCertificationEvidenceTest {
             new QuickFixApplicationAdapter(
                 QuickFixIngressTestFixture.compose(
                     walAppender,
-                    new NoopOrdersCommandPublisher(),
                     new AcceptingRiskSubmissionClient(),
                     new QuickFixSessionMessageSender(),
                     new OrderSessionRegistry(),
@@ -170,7 +168,6 @@ class QuickFixCertificationEvidenceTest {
             new QuickFixApplicationAdapter(
                 QuickFixIngressTestFixture.compose(
                     walAppender,
-                    new NoopOrdersCommandPublisher(),
                     new RejectingRiskSubmissionClient(),
                     new QuickFixSessionMessageSender(),
                     new OrderSessionRegistry(),
@@ -232,7 +229,6 @@ class QuickFixCertificationEvidenceTest {
           new QuickFixApplicationAdapter(
               QuickFixIngressTestFixture.compose(
                   walAppender,
-                  new NoopOrdersCommandPublisher(),
                   risk,
                   sender,
                   registry,

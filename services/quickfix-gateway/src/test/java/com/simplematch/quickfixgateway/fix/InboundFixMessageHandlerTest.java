@@ -14,7 +14,6 @@ import com.simplematch.contracts.common.v2.Side;
 import com.simplematch.contracts.common.v2.TimeInForce;
 import com.simplematch.contracts.orders.v2.CancelOrderCommand;
 import com.simplematch.contracts.orders.v2.NewOrderCommand;
-import com.simplematch.quickfixgateway.kafka.OrdersCommandPublisher;
 import com.simplematch.quickfixgateway.risk.RiskSubmissionClient;
 import com.simplematch.quickfixgateway.risk.RiskSubmissionFailure;
 import com.simplematch.quickfixgateway.risk.RiskSubmissionResult;
@@ -66,7 +65,6 @@ class InboundFixMessageHandlerTest {
   void newOrderBaselineWritesWalSubmitsV2RegistersStateAndSendsPendingNew() throws Exception {
     final WalAppender walAppender =
         new WalAppender(tempDir.resolve("inbound.wal"), StandardCharsets.UTF_8);
-    final OrdersCommandPublisher publisher = mock(OrdersCommandPublisher.class);
     final RiskSubmissionClient riskSubmissionClient = mock(RiskSubmissionClient.class);
     final OrderSessionRegistry registry = new OrderSessionRegistry();
     when(riskSubmissionClient.submitNewOrder(any(NewOrderCommand.class)))
@@ -80,7 +78,7 @@ class InboundFixMessageHandlerTest {
     final FixMessageMapper mapper = new FixMessageMapper(FIXED_CLOCK);
     final InboundFixMessageHandler handler =
         QuickFixIngressTestFixture.compose(
-            walAppender, publisher, riskSubmissionClient, sender, registry, mapper, FIXED_CLOCK);
+            walAppender, riskSubmissionClient, sender, registry, mapper, FIXED_CLOCK);
 
     final NewOrderSingle order = newNewOrder("C1", "AAPL", '1', "10", "101.25", ACCOUNT_ID);
     final SessionID sessionId = new SessionID("FIX.4.4", "SIMPLEMATCH", "CLIENT1");
@@ -136,7 +134,6 @@ class InboundFixMessageHandlerTest {
     assertThat(command.getLimitPrice().getUnits()).isEqualTo(1_012_500L);
     assertThat(command.getOrderType()).isEqualTo(OrderType.ORDER_TYPE_LIMIT);
     assertThat(command.getTif()).isEqualTo(TimeInForce.TIME_IN_FORCE_ROD);
-    verifyNoInteractions(publisher);
 
     final OrderSessionState sessionState = registry.find("O-C1").orElseThrow();
     assertThat(sessionState.sessionId()).isEqualTo(sessionId);
@@ -181,7 +178,6 @@ class InboundFixMessageHandlerTest {
   void cancelSupportDoesNotAlterSubsequentNewOrderBaselinePath() throws Exception {
     final WalAppender walAppender =
         new WalAppender(tempDir.resolve("inbound.wal"), StandardCharsets.UTF_8);
-    final OrdersCommandPublisher publisher = mock(OrdersCommandPublisher.class);
     final RiskSubmissionClient riskSubmissionClient = mock(RiskSubmissionClient.class);
     when(riskSubmissionClient.submitNewOrder(any(NewOrderCommand.class)))
         .thenReturn(new RiskSubmissionResult("accepted", true, "", ""));
@@ -192,7 +188,6 @@ class InboundFixMessageHandlerTest {
     final InboundFixMessageHandler handler =
         QuickFixIngressTestFixture.compose(
             walAppender,
-            publisher,
             riskSubmissionClient,
             sender,
             registry,
@@ -245,7 +240,6 @@ class InboundFixMessageHandlerTest {
   void pendingNewExecIdIntentionallyUsesWalRecordIdForTraceability() throws Exception {
     final WalAppender walAppender =
         new WalAppender(tempDir.resolve("inbound.wal"), StandardCharsets.UTF_8);
-    final OrdersCommandPublisher publisher = mock(OrdersCommandPublisher.class);
     final RiskSubmissionClient riskSubmissionClient = mock(RiskSubmissionClient.class);
     when(riskSubmissionClient.submitNewOrder(any(NewOrderCommand.class)))
         .thenReturn(new RiskSubmissionResult("internal-order", true, "", ""));
@@ -253,7 +247,6 @@ class InboundFixMessageHandlerTest {
     final InboundFixMessageHandler handler =
         QuickFixIngressTestFixture.compose(
             walAppender,
-            publisher,
             riskSubmissionClient,
             sender,
             new OrderSessionRegistry(),
@@ -286,7 +279,6 @@ class InboundFixMessageHandlerTest {
       throws Exception {
     try (WalAppender walAppender =
         new WalAppender(tempDir.resolve(scenario + ".wal"), StandardCharsets.UTF_8)) {
-      final OrdersCommandPublisher publisher = mock(OrdersCommandPublisher.class);
       final RiskSubmissionClient riskSubmissionClient = mock(RiskSubmissionClient.class);
       when(riskSubmissionClient.submitNewOrder(any(NewOrderCommand.class)))
           .thenReturn(new RiskSubmissionResult("internal-order", true, "", ""));
@@ -294,7 +286,6 @@ class InboundFixMessageHandlerTest {
       final InboundFixMessageHandler handler =
           QuickFixIngressTestFixture.compose(
               walAppender,
-              publisher,
               riskSubmissionClient,
               sender,
               new OrderSessionRegistry(),
@@ -331,7 +322,6 @@ class InboundFixMessageHandlerTest {
         assertThat(record.tif()).isEqualTo(expectedTimeInForce);
         assertThat(record.price()).isEqualTo(price);
       });
-      verifyNoInteractions(publisher);
     }
   }
 
@@ -364,13 +354,11 @@ class InboundFixMessageHandlerTest {
       String scenario, char orderType, char timeInForce) throws Exception {
     try (WalAppender walAppender =
         new WalAppender(tempDir.resolve(scenario + ".wal"), StandardCharsets.UTF_8)) {
-      final OrdersCommandPublisher publisher = mock(OrdersCommandPublisher.class);
       final RiskSubmissionClient riskSubmissionClient = mock(RiskSubmissionClient.class);
       final FixSessionMessageSender sender = mock(FixSessionMessageSender.class);
       final InboundFixMessageHandler handler =
           QuickFixIngressTestFixture.compose(
               walAppender,
-              publisher,
               riskSubmissionClient,
               sender,
               new OrderSessionRegistry(),
@@ -383,7 +371,7 @@ class InboundFixMessageHandlerTest {
 
       handler.handle(order, new SessionID("FIX.4.4", "SIMPLEMATCH", "CLIENT1"));
       verify(sender).send(any(SessionID.class), any(Message.class));
-      verifyNoInteractions(riskSubmissionClient, publisher);
+      verifyNoInteractions(riskSubmissionClient);
       assertThat(walAppender.readAll()).isEmpty();
     }
   }
@@ -398,7 +386,6 @@ class InboundFixMessageHandlerTest {
   void equivalentDuplicateNewOrderHasOneDurableRiskOutcomeAndOnePendingResponse() throws Exception {
     try (WalAppender walAppender =
         new WalAppender(tempDir.resolve("duplicate-new.wal"), StandardCharsets.UTF_8)) {
-      final OrdersCommandPublisher publisher = mock(OrdersCommandPublisher.class);
       final RiskSubmissionClient riskSubmissionClient = mock(RiskSubmissionClient.class);
       when(riskSubmissionClient.submitNewOrder(any(NewOrderCommand.class)))
           .thenReturn(new RiskSubmissionResult("internal-order", true, "", ""));
@@ -406,7 +393,6 @@ class InboundFixMessageHandlerTest {
       final InboundFixMessageHandler handler =
           QuickFixIngressTestFixture.compose(
               walAppender,
-              publisher,
               riskSubmissionClient,
               sender,
               new OrderSessionRegistry(),
@@ -421,7 +407,6 @@ class InboundFixMessageHandlerTest {
 
       verify(riskSubmissionClient, times(1)).submitNewOrder(any(NewOrderCommand.class));
       verify(sender, times(1)).send(any(SessionID.class), any(Message.class));
-      verifyNoInteractions(publisher);
       assertThat(walAppender.readAll()).hasSize(1);
     }
   }
@@ -432,13 +417,11 @@ class InboundFixMessageHandlerTest {
     admissionGate.pauseAdmission();
     try (WalAppender walAppender =
         new WalAppender(tempDir.resolve("paused-cancel.wal"), StandardCharsets.UTF_8)) {
-      final OrdersCommandPublisher publisher = mock(OrdersCommandPublisher.class);
       final RiskSubmissionClient riskSubmissionClient = mock(RiskSubmissionClient.class);
       final FixSessionMessageSender sender = mock(FixSessionMessageSender.class);
       final InboundFixMessageHandler handler =
           QuickFixIngressTestFixture.compose(
               walAppender,
-              publisher,
               riskSubmissionClient,
               sender,
               new OrderSessionRegistry(),
@@ -451,7 +434,7 @@ class InboundFixMessageHandlerTest {
           new SessionID("FIX.4.4", "SIMPLEMATCH", "CLIENT1"));
 
       verify(sender).send(any(SessionID.class), any(Message.class));
-      verifyNoInteractions(riskSubmissionClient, publisher);
+      verifyNoInteractions(riskSubmissionClient);
       assertThat(walAppender.readAll()).isEmpty();
     }
   }
@@ -461,7 +444,6 @@ class InboundFixMessageHandlerTest {
   void submitFailureUsesClientSafeSystemErrorText() throws Exception {
     final WalAppender walAppender =
         new WalAppender(tempDir.resolve("inbound.wal"), StandardCharsets.UTF_8);
-    final OrdersCommandPublisher publisher = mock(OrdersCommandPublisher.class);
     final RiskSubmissionClient riskSubmissionClient = mock(RiskSubmissionClient.class);
     when(riskSubmissionClient.submitNewOrder(any(NewOrderCommand.class)))
         .thenThrow(RiskSubmissionFailure.circuitOpen());
@@ -469,7 +451,6 @@ class InboundFixMessageHandlerTest {
     final InboundFixMessageHandler handler =
         QuickFixIngressTestFixture.compose(
             walAppender,
-            publisher,
             riskSubmissionClient,
             sender,
             new OrderSessionRegistry(),
@@ -497,13 +478,11 @@ class InboundFixMessageHandlerTest {
   void invalidNewOrderIsRejectedBeforeWalAppend() throws Exception {
     final WalAppender walAppender =
         new WalAppender(tempDir.resolve("inbound.wal"), StandardCharsets.UTF_8);
-    final OrdersCommandPublisher publisher = mock(OrdersCommandPublisher.class);
     final RiskSubmissionClient riskSubmissionClient = mock(RiskSubmissionClient.class);
     final FixSessionMessageSender sender = mock(FixSessionMessageSender.class);
     final InboundFixMessageHandler handler =
         QuickFixIngressTestFixture.compose(
             walAppender,
-            publisher,
             riskSubmissionClient,
             sender,
             new OrderSessionRegistry(),
@@ -515,7 +494,7 @@ class InboundFixMessageHandlerTest {
         new SessionID("FIX.4.4", "SIMPLEMATCH", "CLIENT1"));
 
     assertThat(walAppender.readAll()).isEmpty();
-    verifyNoInteractions(riskSubmissionClient, publisher);
+    verifyNoInteractions(riskSubmissionClient);
 
     final ArgumentCaptor<Message> messageCaptor = ArgumentCaptor.forClass(Message.class);
     verify(sender).send(any(SessionID.class), messageCaptor.capture());
@@ -528,13 +507,11 @@ class InboundFixMessageHandlerTest {
   void invalidAccountIdIsRejectedBeforeWalAppend() throws Exception {
     final WalAppender walAppender =
         new WalAppender(tempDir.resolve("invalid-account.wal"), StandardCharsets.UTF_8);
-    final OrdersCommandPublisher publisher = mock(OrdersCommandPublisher.class);
     final RiskSubmissionClient riskSubmissionClient = mock(RiskSubmissionClient.class);
     final FixSessionMessageSender sender = mock(FixSessionMessageSender.class);
     final InboundFixMessageHandler handler =
         QuickFixIngressTestFixture.compose(
             walAppender,
-            publisher,
             riskSubmissionClient,
             sender,
             new OrderSessionRegistry(),
@@ -546,7 +523,7 @@ class InboundFixMessageHandlerTest {
         new SessionID("FIX.4.4", "SIMPLEMATCH", "CLIENT1"));
 
     assertThat(walAppender.readAll()).isEmpty();
-    verifyNoInteractions(riskSubmissionClient, publisher);
+    verifyNoInteractions(riskSubmissionClient);
     final ArgumentCaptor<Message> messageCaptor = ArgumentCaptor.forClass(Message.class);
     verify(sender).send(any(SessionID.class), messageCaptor.capture());
     assertThat(messageCaptor.getValue().getString(58))
@@ -558,13 +535,11 @@ class InboundFixMessageHandlerTest {
   void missingNewOrderFieldIsRejectedBeforeWalAppend() throws Exception {
     final WalAppender walAppender =
         new WalAppender(tempDir.resolve("inbound.wal"), StandardCharsets.UTF_8);
-    final OrdersCommandPublisher publisher = mock(OrdersCommandPublisher.class);
     final RiskSubmissionClient riskSubmissionClient = mock(RiskSubmissionClient.class);
     final FixSessionMessageSender sender = mock(FixSessionMessageSender.class);
     final InboundFixMessageHandler handler =
         QuickFixIngressTestFixture.compose(
             walAppender,
-            publisher,
             riskSubmissionClient,
             sender,
             new OrderSessionRegistry(),
@@ -576,7 +551,7 @@ class InboundFixMessageHandlerTest {
     handler.handle(order, new SessionID("FIX.4.4", "SIMPLEMATCH", "CLIENT1"));
 
     assertThat(walAppender.readAll()).isEmpty();
-    verifyNoInteractions(riskSubmissionClient, publisher);
+    verifyNoInteractions(riskSubmissionClient);
 
     final ArgumentCaptor<Message> messageCaptor = ArgumentCaptor.forClass(Message.class);
     verify(sender).send(any(SessionID.class), messageCaptor.capture());
@@ -589,13 +564,11 @@ class InboundFixMessageHandlerTest {
   void invalidNewOrderSideIsRejectedBeforeWalAppend() throws Exception {
     final WalAppender walAppender =
         new WalAppender(tempDir.resolve("inbound.wal"), StandardCharsets.UTF_8);
-    final OrdersCommandPublisher publisher = mock(OrdersCommandPublisher.class);
     final RiskSubmissionClient riskSubmissionClient = mock(RiskSubmissionClient.class);
     final FixSessionMessageSender sender = mock(FixSessionMessageSender.class);
     final InboundFixMessageHandler handler =
         QuickFixIngressTestFixture.compose(
             walAppender,
-            publisher,
             riskSubmissionClient,
             sender,
             new OrderSessionRegistry(),
@@ -607,7 +580,7 @@ class InboundFixMessageHandlerTest {
         new SessionID("FIX.4.4", "SIMPLEMATCH", "CLIENT1"));
 
     assertThat(walAppender.readAll()).isEmpty();
-    verifyNoInteractions(riskSubmissionClient, publisher);
+    verifyNoInteractions(riskSubmissionClient);
 
     final ArgumentCaptor<Message> messageCaptor = ArgumentCaptor.forClass(Message.class);
     verify(sender).send(any(SessionID.class), messageCaptor.capture());
@@ -620,13 +593,11 @@ class InboundFixMessageHandlerTest {
   void cancelWithoutOriginalClientOrderIdIsRejectedBeforeWalAppend() throws Exception {
     final WalAppender walAppender =
         new WalAppender(tempDir.resolve("inbound.wal"), StandardCharsets.UTF_8);
-    final OrdersCommandPublisher publisher = mock(OrdersCommandPublisher.class);
     final RiskSubmissionClient riskSubmissionClient = mock(RiskSubmissionClient.class);
     final FixSessionMessageSender sender = mock(FixSessionMessageSender.class);
     final InboundFixMessageHandler handler =
         QuickFixIngressTestFixture.compose(
             walAppender,
-            publisher,
             riskSubmissionClient,
             sender,
             new OrderSessionRegistry(),
@@ -638,7 +609,7 @@ class InboundFixMessageHandlerTest {
     handler.handle(cancel, new SessionID("FIX.4.4", "SIMPLEMATCH", "CLIENT1"));
 
     assertThat(walAppender.readAll()).isEmpty();
-    verifyNoInteractions(riskSubmissionClient, publisher);
+    verifyNoInteractions(riskSubmissionClient);
 
     final ArgumentCaptor<Message> messageCaptor = ArgumentCaptor.forClass(Message.class);
     verify(sender).send(any(SessionID.class), messageCaptor.capture());
@@ -651,13 +622,11 @@ class InboundFixMessageHandlerTest {
   void oversizedNewOrderIdentityIsRejectedBeforeWalAppend() throws Exception {
     final WalAppender walAppender =
         new WalAppender(tempDir.resolve("inbound.wal"), StandardCharsets.UTF_8);
-    final OrdersCommandPublisher publisher = mock(OrdersCommandPublisher.class);
     final RiskSubmissionClient riskSubmissionClient = mock(RiskSubmissionClient.class);
     final FixSessionMessageSender sender = mock(FixSessionMessageSender.class);
     final InboundFixMessageHandler handler =
         QuickFixIngressTestFixture.compose(
             walAppender,
-            publisher,
             riskSubmissionClient,
             sender,
             new OrderSessionRegistry(),
@@ -669,7 +638,7 @@ class InboundFixMessageHandlerTest {
         new SessionID("FIX.4.4", "SIMPLEMATCH", "CLIENT1"));
 
     assertThat(walAppender.readAll()).isEmpty();
-    verifyNoInteractions(riskSubmissionClient, publisher);
+    verifyNoInteractions(riskSubmissionClient);
 
     final ArgumentCaptor<Message> messageCaptor = ArgumentCaptor.forClass(Message.class);
     verify(sender).send(any(SessionID.class), messageCaptor.capture());
@@ -682,13 +651,11 @@ class InboundFixMessageHandlerTest {
   void oversizedCancelIdentityIsRejectedBeforeWalAppend() throws Exception {
     final WalAppender walAppender =
         new WalAppender(tempDir.resolve("inbound.wal"), StandardCharsets.UTF_8);
-    final OrdersCommandPublisher publisher = mock(OrdersCommandPublisher.class);
     final RiskSubmissionClient riskSubmissionClient = mock(RiskSubmissionClient.class);
     final FixSessionMessageSender sender = mock(FixSessionMessageSender.class);
     final InboundFixMessageHandler handler =
         QuickFixIngressTestFixture.compose(
             walAppender,
-            publisher,
             riskSubmissionClient,
             sender,
             new OrderSessionRegistry(),
@@ -700,7 +667,7 @@ class InboundFixMessageHandlerTest {
         new SessionID("FIX.4.4", "SIMPLEMATCH", "CLIENT1"));
 
     assertThat(walAppender.readAll()).isEmpty();
-    verifyNoInteractions(riskSubmissionClient, publisher);
+    verifyNoInteractions(riskSubmissionClient);
 
     final ArgumentCaptor<Message> messageCaptor = ArgumentCaptor.forClass(Message.class);
     verify(sender).send(any(SessionID.class), messageCaptor.capture());
@@ -713,13 +680,11 @@ class InboundFixMessageHandlerTest {
   void oversizedSessionIdentityIsRejectedBeforeWalAppend() throws Exception {
     final WalAppender walAppender =
         new WalAppender(tempDir.resolve("inbound.wal"), StandardCharsets.UTF_8);
-    final OrdersCommandPublisher publisher = mock(OrdersCommandPublisher.class);
     final RiskSubmissionClient riskSubmissionClient = mock(RiskSubmissionClient.class);
     final FixSessionMessageSender sender = mock(FixSessionMessageSender.class);
     final InboundFixMessageHandler handler =
         QuickFixIngressTestFixture.compose(
             walAppender,
-            publisher,
             riskSubmissionClient,
             sender,
             new OrderSessionRegistry(),
@@ -731,7 +696,7 @@ class InboundFixMessageHandlerTest {
         new SessionID("FIX.4.4", "SIMPLEMATCH", oversizedIdentity("CLIENT")));
 
     assertThat(walAppender.readAll()).isEmpty();
-    verifyNoInteractions(riskSubmissionClient, publisher);
+    verifyNoInteractions(riskSubmissionClient);
 
     final ArgumentCaptor<Message> messageCaptor = ArgumentCaptor.forClass(Message.class);
     verify(sender).send(any(SessionID.class), messageCaptor.capture());
@@ -744,13 +709,11 @@ class InboundFixMessageHandlerTest {
   void unsupportedApplicationMessageDoesNotEnterEitherDurablePath() {
     final WalAppender walAppender =
         new WalAppender(tempDir.resolve("inbound.wal"), StandardCharsets.UTF_8);
-    final OrdersCommandPublisher publisher = mock(OrdersCommandPublisher.class);
     final RiskSubmissionClient riskSubmissionClient = mock(RiskSubmissionClient.class);
     final FixSessionMessageSender sender = mock(FixSessionMessageSender.class);
     final InboundFixMessageHandler handler =
         QuickFixIngressTestFixture.compose(
             walAppender,
-            publisher,
             riskSubmissionClient,
             sender,
             new OrderSessionRegistry(),
@@ -764,7 +727,7 @@ class InboundFixMessageHandlerTest {
                 unsupported, new SessionID("FIX.4.4", "SIMPLEMATCH", "CLIENT1")))
         .isInstanceOf(UnsupportedMessageType.class);
     assertThat(walAppender.readAll()).isEmpty();
-    verifyNoInteractions(riskSubmissionClient, publisher, sender);
+    verifyNoInteractions(riskSubmissionClient, sender);
   }
 
   private NewOrderSingle newNewOrder(

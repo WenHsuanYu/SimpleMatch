@@ -1,13 +1,11 @@
 package com.simplematch.quickfixgateway.fix;
 
-import com.simplematch.quickfixgateway.kafka.OrdersCommandPublisher;
 import com.simplematch.quickfixgateway.risk.RiskSubmissionClient;
 import com.simplematch.quickfixgateway.risk.RiskTestSupport;
 import com.simplematch.quickfixgateway.wal.WalAppender;
 import com.simplematch.quickfixgateway.wal.WalDurableCommandWriter;
 import com.simplematch.quickfixgateway.wal.WalRecoveryJournal;
 import java.time.Clock;
-import java.util.Objects;
 
 /** Composes the same concrete ingress modules used by the Spring configuration in tests. */
 final class QuickFixIngressTestFixture {
@@ -16,7 +14,6 @@ final class QuickFixIngressTestFixture {
   /** Creates the inbound dispatcher with its new-order and cancel durable paths. */
   static InboundFixMessageHandler compose(
       WalAppender walAppender,
-      OrdersCommandPublisher ordersCommandPublisher,
       RiskSubmissionClient riskSubmissionClient,
       FixSessionMessageSender sender,
       OrderSessionRegistry registry,
@@ -24,7 +21,6 @@ final class QuickFixIngressTestFixture {
       Clock clock) {
     return compose(
         walAppender,
-        ordersCommandPublisher,
         riskSubmissionClient,
         sender,
         registry,
@@ -35,14 +31,12 @@ final class QuickFixIngressTestFixture {
 
   static InboundFixMessageHandler compose(
       WalAppender walAppender,
-      OrdersCommandPublisher ordersCommandPublisher,
       RiskSubmissionClient riskSubmissionClient,
       FixSessionMessageSender sender,
       OrderSessionRegistry registry,
       FixMessageMapper mapper,
       Clock clock,
       GatewayAdmissionGate admissionGate) {
-    Objects.requireNonNull(ordersCommandPublisher, "ordersCommandPublisher");
     final CommandIdGenerator commandIdGenerator = new CommandIdGenerator();
     final WalRecoveryJournal recoveryJournal =
         new WalRecoveryJournal(WalRecoveryJournal.pathFor(walAppender.walPath()));
