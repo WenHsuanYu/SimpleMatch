@@ -38,3 +38,9 @@ Market Reference therefore owns offline source acquisition and artifact construc
 runtime API, PostgreSQL schema, Kafka topic, outbox, activation service, or Risk projection table.
 Current implementation evidence and removal work are tracked in the
 [remaining-work inventory](../../../docs/routing-policy-remaining-work.md).
+
+The executable builder and delivery contracts are documented separately:
+
+- [Official-source contract](../../../docs/market-reference-official-source-contract.md)
+- [Canonical artifact contract](../../../docs/market-reference-artifact-contract.md)
+- [Daily approval workflow](../../../docs/market-reference-approval-workflow.md)

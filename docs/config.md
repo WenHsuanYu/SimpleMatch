@@ -44,14 +44,15 @@ the unchanged `simplematch.quickfix-gateway.*` namespace.
 Account Authority consumes `GrpcProperties` for its account-service target and `PostgresProperties`
 for its datasource, so its runtime and persistence wiring depends only on the required capabilities.
 Risk Admission consumes `GrpcProperties`, `KafkaProperties`, and `PostgresProperties` for its
-account client, policy-aware outbox, runtime, and datasource. Its routing identity and explicit
-partition come from the durable local Market Reference projection, not a service-local file.
+account client, policy-aware outbox, runtime, and datasource. The Phase 1 target takes its routing
+identity and explicit partition from the approved startup Market Reference Artifact; the current
+legacy projection remains a removal target until #126 installs that loader.
 QuickFIX Gateway consumes `EnvironmentProperties` for its runtime identity, `GrpcProperties` for the
 risk-service channel, and `KafkaProperties` for the compatibility topic; gateway-local paths,
 features, and retry policy remain owned by its service-specific property modules.
-Market Reference consumes `PostgresProperties` for its publication datasource and
-`KafkaProperties.partitions.orders-validated` to validate routing-policy topology; snapshot and
-routing-policy publication behavior remain owned by the marketdata-publisher context.
+The offline Market Reference builder is not a Spring runtime and has no `simplematch.*` runtime
+configuration namespace. Its source, artifact, and approval command contract is documented in
+[the Market Reference approval workflow](market-reference-approval-workflow.md).
 
 Useful canonical keys include:
 
@@ -97,11 +98,11 @@ routing, session, or transport policy. Local and test changes take effect on pro
 
 ## Routing Policy
 
-Market Reference publishes the versioned routing-policy artifact and its declared Kafka topology.
-Risk consumes it into a durable local projection and fails readiness until a complete applicable
-policy is active. There is no Risk-owned routing JSON, startup loader, hash fallback, or
-`simplematch.routing.snapshot-path` setting. Debezium/Kafka Connect remains external infrastructure;
-the connector manifests are deployment templates rather than application configuration.
+The Phase 1 target is one externally checksummed final `market_reference.json` for each trading day.
+The offline builder retains approved output under `config/market-reference/approved/YYYY-MM-DD/` and
+generates either an immutable ConfigMap or a digest-pinned OCI data-image delivery fragment. Risk
+and Matching will load the same mounted file at startup; #126 and #127 own that runtime integration.
+There is no target Market Reference Kafka topic, outbox, runtime API, or Spring configuration key.
 
 The source-compatible v1 submission adapter is not registered as a production Spring service while
 its wire contract lacks the venue and authoritative policy identity. v2 policy-aware Admission is

@@ -38,6 +38,8 @@ set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_CXX_EXTENSIONS OFF)
 
 find_package(protobuf CONFIG REQUIRED)
+find_package(nlohmann_json CONFIG REQUIRED)
+find_package(OpenSSL REQUIRED)
 
 set(SIMPLEMATCH_ROUTING_PROTO_FILES
     ${CMAKE_CURRENT_SOURCE_DIR}/proto/common_v2.proto
@@ -46,12 +48,15 @@ set(SIMPLEMATCH_ROUTING_PROTO_FILES
 
 add_library(simplematch_matching_ingress STATIC
     matching-engine/src/critical_order_ingress.cpp
-    matching-engine/src/routing_policy_ingress.cpp)
+    matching-engine/src/routing_policy_ingress.cpp
+    matching-engine/src/market_reference_artifact.cpp)
 target_include_directories(simplematch_matching_ingress
     PUBLIC matching-engine/include
     PRIVATE ${CMAKE_CURRENT_BINARY_DIR})
 target_link_libraries(simplematch_matching_ingress
-    PUBLIC protobuf::libprotobuf)
+    PUBLIC protobuf::libprotobuf
+           nlohmann_json::nlohmann_json
+           OpenSSL::Crypto)
 protobuf_generate(
     TARGET simplematch_matching_ingress
     LANGUAGE cpp
@@ -66,7 +71,8 @@ if(BUILD_TESTING)
 
   add_executable(simplematch_matching_ingress_tests
       matching-engine/tests/critical_order_ingress_test.cpp
-      matching-engine/tests/routing_policy_ingress_test.cpp)
+      matching-engine/tests/routing_policy_ingress_test.cpp
+      matching-engine/tests/market_reference_artifact_test.cpp)
   target_link_libraries(simplematch_matching_ingress_tests
       PRIVATE simplematch_matching_ingress
               GTest::gtest
@@ -75,7 +81,8 @@ if(BUILD_TESTING)
   target_include_directories(simplematch_matching_ingress_tests
       PRIVATE ${CMAKE_CURRENT_BINARY_DIR})
   target_compile_definitions(simplematch_matching_ingress_tests
-      PRIVATE SIMPLEMATCH_TEST_FIXTURE_DIR="${CMAKE_CURRENT_SOURCE_DIR}/shared-java/simplematch-contracts/src/test/resources/native-routing-fixtures")
+      PRIVATE SIMPLEMATCH_TEST_FIXTURE_DIR="${CMAKE_CURRENT_SOURCE_DIR}/shared-java/simplematch-contracts/src/test/resources/native-routing-fixtures"
+              SIMPLEMATCH_MARKET_REFERENCE_FIXTURE_DIR="${CMAKE_CURRENT_SOURCE_DIR}/shared-java/market-reference-contract/src/test/resources/market-reference-fixtures")
   simplematch_enable_warnings(simplematch_matching_ingress_tests)
   simplematch_enable_sanitizers(simplematch_matching_ingress_tests)
 

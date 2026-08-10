@@ -1,0 +1,18 @@
+[
+  {
+    "Date": "1150810",
+    "SecuritiesCompanyCode": "006201",
+    "CompanyName": "元大富櫃50",
+    "NextReferencePrice": "43.85",
+    "NextLimitUp": "48.23",
+    "NextLimitDown": "39.47"
+  },
+  {
+    "Date": "1150810",
+    "SecuritiesCompanyCode": "6488",
+    "CompanyName": "環球晶圓",
+    "NextReferencePrice": "854.00",
+    "NextLimitUp": "939.00",
+    "NextLimitDown": "769.00"
+  }
+]

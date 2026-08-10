@@ -3,7 +3,8 @@
   "version-string": "0.1.0",
   "description": "SimpleMatch native dependencies organized by capability",
   "dependencies": [
-    "protobuf"
+    "protobuf",
+    "openssl"
   ],
   "features": {
     "tests": {

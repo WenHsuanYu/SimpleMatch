@@ -1,0 +1,18 @@
+[
+  {
+    "Code": "0050",
+    "Name": "元大台灣50",
+    "TodayLimitUp": "113.10",
+    "TodayOpeningRefPrice": "102.85",
+    "TodayLimitDown": "92.60",
+    "LastTradingDay": "1150810"
+  },
+  {
+    "Code": "2330",
+    "Name": "台積電",
+    "TodayLimitUp": "2605.00",
+    "TodayOpeningRefPrice": "2370.00",
+    "TodayLimitDown": "2135.00",
+    "LastTradingDay": "1150810"
+  }
+]

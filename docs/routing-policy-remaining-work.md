@@ -53,10 +53,10 @@ Status was reconciled against the `master` worktree on 2026-08-11. An accepted d
 
 | Capability | Current status | Primary tracker |
 | --- | --- | --- |
-| Offline official-source acquisition and normalization | `PARTIAL` | [#121](https://github.com/WenHsuanYu/SimpleMatch/issues/121) |
-| Candidate/final artifact workflow and approval evidence | `NOT_STARTED` | [#124](https://github.com/WenHsuanYu/SimpleMatch/issues/124) |
-| Canonical artifact schema, identity, and packaging | `NOT_STARTED` | [#122](https://github.com/WenHsuanYu/SimpleMatch/issues/122) |
-| Stable 15-partition routing assignment | `PARTIAL` | [#123](https://github.com/WenHsuanYu/SimpleMatch/issues/123) |
+| Offline official-source acquisition and normalization | `COMPLETED` | [#121](https://github.com/WenHsuanYu/SimpleMatch/issues/121) |
+| Candidate/final artifact workflow and approval evidence | `COMPLETED` | [#124](https://github.com/WenHsuanYu/SimpleMatch/issues/124) |
+| Canonical artifact schema, identity, and packaging | `COMPLETED` | [#122](https://github.com/WenHsuanYu/SimpleMatch/issues/122) |
+| Stable 15-partition routing assignment | `COMPLETED` | [#123](https://github.com/WenHsuanYu/SimpleMatch/issues/123) |
 | Runtime Market Reference publication stack | `OBSOLETE_TO_REMOVE` | [#119](https://github.com/WenHsuanYu/SimpleMatch/issues/119) |
 | Risk artifact loading and `matching.commands` publication | `PARTIAL` | [#126](https://github.com/WenHsuanYu/SimpleMatch/issues/126) |
 | Native deterministic Matching runtime | `PARTIAL` | [#127](https://github.com/WenHsuanYu/SimpleMatch/issues/127) |
@@ -71,7 +71,7 @@ Status was reconciled against the `master` worktree on 2026-08-11. An accepted d
 | Gateway operational admission control | `PARTIAL` | [#135](https://github.com/WenHsuanYu/SimpleMatch/issues/135) |
 | Matching StatefulSet ownership and fencing | `NOT_STARTED` | [#134](https://github.com/WenHsuanYu/SimpleMatch/issues/134) |
 | Cross-service deployment, security, and observability | `PARTIAL` | [#138](https://github.com/WenHsuanYu/SimpleMatch/issues/138) |
-| Production Kafka topic profile | `NOT_STARTED` | [#125](https://github.com/WenHsuanYu/SimpleMatch/issues/125) |
+| Production Kafka topic profile | `PARTIAL` | [#125](https://github.com/WenHsuanYu/SimpleMatch/issues/125) |
 | Performance and recovery certification | `NOT_STARTED` | [#136](https://github.com/WenHsuanYu/SimpleMatch/issues/136) |
 | Pre-release compatibility and legacy cleanup | `PARTIAL` | [#119](https://github.com/WenHsuanYu/SimpleMatch/issues/119), [#120](https://github.com/WenHsuanYu/SimpleMatch/issues/120) |
 
@@ -79,77 +79,77 @@ Status was reconciled against the `master` worktree on 2026-08-11. An accepted d
 
 ### MR-1: Acquire and normalize official market facts
 
-- **Current status:** `PARTIAL`
+- **Current status:** `COMPLETED`
 - **Target behavior:** An offline repository tool fetches official TWSE and TPEx company,
   instrument, calendar, reference-price, and price-limit data. It selects all Phase 1 eligible XTAI
   and ROCO regular-board common stocks and records explicit reasons for known but unsupported
   instruments. Yahoo Finance is not an authoritative source.
-- **Current evidence:** `services/marketdata-publisher/.../snapshot` contains reusable instrument,
-  tick-table, calendar, eligibility, canonical-codec, fixture, and validation types. It does not
-  fetch or reconcile the accepted live official endpoints.
-- **Missing behavior:** Implement source clients, retrieval metadata, source checksums, trading-day
-  checks, cross-source reconciliation, and fail-closed handling for missing, stale, partial, or
-  inconsistent rows.
+- **Current evidence:** `tools:market-reference-builder` fetches or reads captured official source
+  documents, records source provenance/checksums, normalizes XTAI/ROCO facts, and fails closed on
+  malformed, duplicate, incomplete, stale, or inconsistent records. Deterministic fixtures and
+  endpoint contracts cover all five required official documents.
+- **Missing behavior:** None for this capability. Runtime use of the produced artifact belongs to
+  #126 and #127.
 - **Acceptance criteria:** Deterministic fixtures and live-source contract tests cover TWSE company
   data, TPEx company data, TWSE daily reference/limit prices, TPEx next-day reference/limit prices,
   and the official trading calendar. Every eligible instrument has complete identity, venue, lot,
   tick, reference, lower-limit, and upper-limit facts.
-- **Blocking dependencies:** Versioned static Phase 1 classification and tick/session rules.
+- **Blocking dependencies:** None.
 - **GitHub issue:** [#121](https://github.com/WenHsuanYu/SimpleMatch/issues/121).
 
 ### MR-2: Build preliminary and final daily artifacts
 
-- **Current status:** `NOT_STARTED`
+- **Current status:** `COMPLETED`
 - **Target behavior:** D-1 produces a preliminary candidate containing the instrument universe,
   eligibility, and stable routing. On trading-day morning the builder re-fetches every official
   source, re-reconciles the universe, adds the official reference and limit prices, and produces the
   only final artifact that may open the market.
-- **Current evidence:** The current runtime publication service can import fixture snapshots, but no
-  candidate/final CLI workflow or approval report exists.
-- **Missing behavior:** Candidate command, final command, anomaly/diff report, operator approval,
-  exact source-date reconciliation, and fail-closed release gate.
+- **Current evidence:** The builder has `candidate` and `final` CLI commands, captures bounded
+  review/diff evidence, requires `--approved-by` for finalization, verifies exact final bytes, and
+  refuses to overwrite an approved trading-day directory.
+- **Missing behavior:** None for this offline build/approval capability. Applying a final delivery
+  fragment and admitting orders remain #126, #127, #135, and #138 work.
 - **Acceptance criteria:** Approval reviews summary counts, additions/removals, eligibility changes,
   route changes, source checksums, validation results, artifact size, delivery form, and
   `contentSha256`; it does not require manual inspection of every instrument row.
-- **Blocking dependencies:** MR-1 and MR-3.
+- **Blocking dependencies:** None.
 - **GitHub issue:** [#124](https://github.com/WenHsuanYu/SimpleMatch/issues/124).
 
 ### MR-3: Define artifact schema, identity, retention, and delivery
 
-- **Current status:** `NOT_STARTED`
+- **Current status:** `COMPLETED`
 - **Target behavior:** One JSON envelope contains `metadata`, `marketRules`, `marketSnapshot`, and
   `routingPolicy`. Reusable tick tables are normalized at the top level. Instrument facts do not
   duplicate their routing partition.
-- **Current evidence:** Current snapshot and routing codecs are separate runtime publication
-  contracts and do not implement the accepted single envelope.
-- **Missing behavior:** JSON schema, deterministic writer, exact UTF-8 hash contract, approval
-  report, repository retention layout, ConfigMap/OCI packaging, startup mount path, and consumer
-  validators.
+- **Current evidence:** `shared-java:market-reference-contract` supplies the canonical envelope,
+  codec, external checksum, structural validator, and startup validator. The builder retains
+  approved output and emits an immutable ConfigMap or digest-pinned OCI data-image contract; the
+  shared fixture is verified by both Java and native C++ loaders.
+- **Missing behavior:** Runtime mounting and readiness wiring are #126/#127 integration work.
 - **Acceptance criteria:** Artifact identity is `tradingDay + contentSha256`. The checksum is not
   embedded in the JSON; it is supplied externally. Every eligible instrument has exactly one route,
   every unsupported instrument has none, and the declared partition count is 15. Approved output
   is retained under `config/market-reference/approved/YYYY-MM-DD/`. Artifacts up to 900 KiB use an
   immutable ConfigMap; larger artifacts use a digest-pinned OCI data image and init container. Both
   mount `/etc/simplematch/market-reference/market_reference.json`.
-- **Blocking dependencies:** MR-1.
+- **Blocking dependencies:** None.
 - **GitHub issue:** [#122](https://github.com/WenHsuanYu/SimpleMatch/issues/122).
 
 ### MR-4: Assign stable routes within fixed capacity
 
-- **Current status:** `PARTIAL`
+- **Current status:** `COMPLETED`
 - **Target behavior:** Exactly 15 partitions exist, each with capacity for 150 instrument order
   books. Existing eligible instruments keep their previous partition; removals disappear; new
   instruments go to the least-loaded partition with the lowest partition ID breaking ties. The
   initial baseline sorts by `(venueMic, symbol)` before applying the same least-loaded rule.
-- **Current evidence:** Runtime `RoutingPolicy` and `RoutingAssignment` types validate assignments,
-  but they model the superseded publication lifecycle and do not implement the accepted stable
-  allocator and fixed 15-by-150 capacity gate.
-- **Missing behavior:** Baseline allocator, previous-approved-artifact input, exact-set validation,
-  capacity diagnostics, deterministic fixtures, and operator diff output.
+- **Current evidence:** `StableRoutingAllocator` implements deterministic baseline allocation,
+  prior-route retention, capacity diagnostics, 15-by-150 enforcement, and bounded route diffs;
+  fixtures prove deterministic rebuild and incremental behavior.
+- **Missing behavior:** None.
 - **Acceptance criteria:** Rebuilding from identical inputs is byte-identical; adding one instrument
   does not move existing eligible instruments; no partition exceeds 150; more than 2,250 eligible
   instruments fails the build.
-- **Blocking dependencies:** MR-3.
+- **Blocking dependencies:** None.
 - **GitHub issue:** [#123](https://github.com/WenHsuanYu/SimpleMatch/issues/123).
 
 ### MR-5: Remove the runtime Market Reference stack
@@ -411,15 +411,19 @@ Status was reconciled against the `master` worktree on 2026-08-11. An accepted d
 
 ### KC-1: Provision durable Matching Kafka topics
 
-- **Current status:** `NOT_STARTED`
+- **Current status:** `PARTIAL`
 - **Target behavior:** Repository-managed infrastructure provisions `matching.commands` and
   `matching.events` with 15 partitions, replication factor 3, minimum ISR 2, delete-only cleanup,
   30-calendar-day retention, disabled unclean leader election, and disabled automatic topic
   creation. Producers use `acks=all` and idempotence.
-- **Current evidence:** Configuration and Debezium templates reference the legacy topics, but no
-  executable topic provisioning manifest defines the accepted production profile.
-- **Missing behavior:** Provisioning, validation script, capacity calculation, disk/retention
-  alerts, producer/consumer configuration, local single-broker override, and failure tests.
+- **Current evidence:** `config/kafka/matching-production.properties` and the non-certifying local
+  profile define the exact topology and producer policy. Repository scripts provision and
+  fail-closed validate both topics, including every partition ISR, broker safety settings, and
+  non-compaction. Fixture tests cover unsafe ISR/broker state and refusal to certify local mode;
+  the durability runbook documents sizing, headroom, and alerts.
+- **Missing behavior:** Run the validator against the owned three-broker production environment and
+  record real 30-day workload/disk measurements. #126 and #127 must consume the producer profile
+  when their actual producers are introduced.
 - **Acceptance criteria:** Production readiness fails if partition count or durability settings
   differ. Neither topic is compacted. Thirty days of the certified workload fit with operational
   headroom. Local replication factor 1 cannot pass production certification.
