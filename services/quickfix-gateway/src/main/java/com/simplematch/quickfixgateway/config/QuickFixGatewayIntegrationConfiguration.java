@@ -4,14 +4,14 @@ import com.simplematch.config.GrpcProperties;
 import com.simplematch.contracts.v2.VenueMic;
 import com.simplematch.quickfixgateway.fix.FixMessageMapper;
 import com.simplematch.quickfixgateway.fix.OrderSessionRegistry;
-import com.simplematch.quickfixgateway.kafka.NoopOrdersCommandPublisher;
-import com.simplematch.quickfixgateway.kafka.OrdersCommandPublisher;
 import com.simplematch.quickfixgateway.risk.GrpcRiskReconciliationClient;
 import com.simplematch.quickfixgateway.risk.GrpcRiskSubmissionClient;
 import com.simplematch.quickfixgateway.risk.ResilientRiskSubmissionClient;
+import com.simplematch.quickfixgateway.risk.RiskCommandMapper;
+import com.simplematch.quickfixgateway.risk.RiskCommandSubmitter;
+import com.simplematch.quickfixgateway.risk.RiskOrderIdentityDeriver;
 import com.simplematch.quickfixgateway.risk.RiskReconciliationClient;
 import com.simplematch.quickfixgateway.risk.RiskSubmissionClient;
-import com.simplematch.quickfixgateway.risk.RiskV2CommandAdapter;
 import com.simplematch.quickfixgateway.wal.WalAppender;
 import com.simplematch.quickfixgateway.wal.WalRecoveryJournal;
 import com.simplematch.quickfixgateway.wal.WalReplayService;
@@ -37,19 +37,25 @@ public class QuickFixGatewayIntegrationConfiguration {
   }
 
   @Bean
-  RiskV2CommandAdapter riskV2CommandAdapter(QuickFixGatewayIngressProperties ingressProperties) {
-    return new RiskV2CommandAdapter(VenueMic.parse(ingressProperties.venueMic()));
+  RiskOrderIdentityDeriver riskOrderIdentityDeriver() {
+    return new RiskOrderIdentityDeriver();
+  }
+
+  @Bean
+  RiskCommandMapper riskCommandMapper(
+      QuickFixGatewayIngressProperties ingressProperties,
+      RiskOrderIdentityDeriver orderIdentityDeriver) {
+    return new RiskCommandMapper(
+        VenueMic.parse(ingressProperties.venueMic()), orderIdentityDeriver);
   }
 
   @Bean
   RiskSubmissionClient riskSubmissionClient(
       ManagedChannel riskServiceChannel,
       Clock quickFixGatewayClock,
-      QuickFixGatewayRiskClientProperties riskClient,
-      RiskV2CommandAdapter riskV2CommandAdapter) {
+      QuickFixGatewayRiskClientProperties riskClient) {
     final RiskSubmissionClient delegate =
-        new GrpcRiskSubmissionClient(
-            riskServiceChannel, riskClient.deadlineMillis(), riskV2CommandAdapter);
+        new GrpcRiskSubmissionClient(riskServiceChannel, riskClient.deadlineMillis());
     return new ResilientRiskSubmissionClient(
         delegate,
         riskClient.retry().maxAttempts(),
@@ -60,33 +66,28 @@ public class QuickFixGatewayIntegrationConfiguration {
   }
 
   @Bean
+  RiskCommandSubmitter riskCommandSubmitter(
+      RiskCommandMapper commandMapper, RiskSubmissionClient submissionClient) {
+    return new RiskCommandSubmitter(commandMapper, submissionClient);
+  }
+
+  @Bean
   RiskReconciliationClient riskReconciliationClient(
       ManagedChannel riskServiceChannel, QuickFixGatewayRiskClientProperties riskClient) {
     return new GrpcRiskReconciliationClient(riskServiceChannel, riskClient.deadlineMillis());
-  }
-
-  /**
-   * Keeps the internal compatibility seam inert while v1 OrderCommand remains a WAL/Risk carrier.
-   *
-   * <p>The legacy orders.commands Kafka publication path is retired and cannot be enabled at
-   * runtime.
-   */
-  @Bean
-  OrdersCommandPublisher ordersCommandPublisher() {
-    return new NoopOrdersCommandPublisher();
   }
 
   @Bean
   WalReplayService walReplayService(
       WalAppender walAppender,
       WalRecoveryJournal recoveryJournal,
-      RiskSubmissionClient riskSubmissionClient,
+      RiskCommandSubmitter riskCommandSubmitter,
       RiskReconciliationClient reconciliationClient,
       OrderSessionRegistry orderSessionRegistry) {
     return new WalReplayService(
         walAppender,
         recoveryJournal,
-        riskSubmissionClient,
+        riskCommandSubmitter,
         reconciliationClient,
         orderSessionRegistry);
   }

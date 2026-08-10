@@ -12,10 +12,9 @@ record an event identifier, enforce a state transition, or rely on an appropriat
 it must not make the same business effect twice.
 
 The former `orders.commands` QuickFIX compatibility publication is retired. New and current order
-ingress uses synchronous Risk admission; the authoritative asynchronous order path begins from the
-Risk transactional outbox on `orders.validated`. The v1 `OrderCommand` protobuf remains available as
-an internal compatibility carrier where existing WAL and adapter code still requires it, but that
-wire type no longer implies an `orders.commands` Kafka publication surface.
+ingress uses synchronous Risk v2 admission; the authoritative asynchronous order path begins from
+the Risk transactional outbox on `orders.validated`. QuickFIX maps its durable WAL record directly
+to the typed v2 Risk command and does not construct a v1 `OrderCommand` for production admission.
 
 ## Topic catalogue
 
@@ -41,8 +40,8 @@ The Java outbox tests and native fixture tests enforce these decisions at the pr
 - Accepted v2 orders use the normalized `VENUE_MIC:SYMBOL` key (for example `XTAI:2330`), carry the
   authoritative `routing_policy_id`, and persist the selected `orders.validated` partition. A
   missing accepted partition is an error; it is never encoded as partition zero.
-- The transitional v1 order adapter uses its explicit resolver only for accepted legacy records.
-  It has no hash or default fallback for an accepted order without a route.
+- Any retained v1 compatibility adapter is outside the QuickFIX production admission path and does
+  not restore a legacy Kafka command route.
 - Account lifecycle events use `account_id` as their key. Their nullable partition column means the
   Kafka producer's key partitioner selects the partition consistently for that account.
 - Market Reference snapshot and routing-policy publications use the trading day as their key.
@@ -59,26 +58,29 @@ native routing-policy fixture tests are the executable routing contract for the 
 ## Event identity and minimum envelope
 
 Every v1 event uses the metadata in
-[`common.proto`](../../../proto/common.proto). Additive v2 events use
+[`common.proto`](../../../proto/common.proto). Additive v2 events and commands use
 [`common_v2.proto`](../../../proto/common_v2.proto), which adds correlation and optional causation
 identifiers to the stable schema version, event identity, timestamp, and source-service fields.
 `event_id` identifies one emitted event and is the preferred consumer-deduplication key when it is
 available.
 
-Order commands and decisions use the messages in
-[`orders.proto`](../../../proto/orders.proto). `command_id` identifies the operation on the
-command/event boundary. The current synchronous and service-local name, `request_id`, denotes the
-same underlying operation value; it is not a second identity axis. `order_id` identifies the order,
-while FIX business identity remains separate and is defined by the
-[FIX gateway contract](fix-gateway.md).
+Production synchronous order admission uses the v2 messages in
+[`orders_v2.proto`](../../../proto/orders_v2.proto). `command_id` identifies one admission operation
+and is reused by Gateway recovery and Risk reconciliation. `order_id` is the opaque internal order
+identity at the Risk boundary, while FIX `ClOrdID`/`OrderID(37)` remain a separate external business
+identity defined by the [FIX gateway contract](fix-gateway.md).
 
-Identifiers are wire strings to preserve protocol compatibility. Producers currently generate
-UUID-backed event and command values, but consumers must treat the identifier as opaque rather than
-depend on a particular textual encoding.
+Some other streams, including the currently consumed `matching.executions` contract, remain on their
+own v1 wire version until migrated independently. A v1 event in another domain does not imply that
+QuickFIX-to-Risk order admission still uses v1.
 
-The v2 transition contract makes internal identifiers UUID-backed and uses signed 64-bit
-`0.0001 TWD` fixed-point price/notional values plus whole-share quantities. See
-[v2 domain contracts](v2-domain-contracts.md) for the additive wire types and v1 ingress adapter.
+Identifiers are wire strings to preserve protocol compatibility. Producers generate UUID-backed
+internal event, command, order, and account identifiers where required by the v2 contract, and
+consumers treat those identifiers as opaque rather than depending on a particular textual encoding.
+
+The v2 order-admission contract uses signed 64-bit `0.0001 TWD` fixed-point price/notional values and
+whole-share quantities. See [v2 domain contracts](v2-domain-contracts.md) for the typed wire values
+and compatibility boundary.
 
 ## Evolution and compatibility
 

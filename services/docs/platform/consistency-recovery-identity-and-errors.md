@@ -31,6 +31,7 @@ FIX client
   -> QuickFIX Gateway validation
   -> force command WAL
   -> force recovery sidecar UNKNOWN
+  -> RiskCommandMapper
   -> Risk v2 SubmitNewOrder
   -> Risk admission journal PENDING
   -> Account reservation RPC
@@ -46,6 +47,11 @@ command enters durable admission. This includes required FIX fields and canonica
 The Gateway command WAL records what normalized command was durably received. The recovery sidecar
 records what the Gateway currently knows about Risk ownership or outcome. They have different
 responsibilities and neither replaces the Risk admission journal.
+
+The Gateway WAL is a Gateway-owned persistence model, not a serialized service contract. Its local
+`schemaVersion = v1` identifies the stable flat WAL encoding and does not mean that production Risk
+submission uses a v1 command. Live submission and restart resubmission both map the durable
+`WalRecord` directly into typed v2 `NewOrderCommand` or `CancelOrderCommand` messages.
 
 Risk writes `PENDING` before the remote Account call. The Account call remains outside the Risk
 database transaction. Risk later commits the terminal admission state and the required outbox event
@@ -96,7 +102,8 @@ The write-before-submit ordering is a recovery invariant:
 ```text
 1. force command WAL
 2. force sidecar UNKNOWN
-3. start the Risk RPC
+3. map the durable WAL command to the typed v2 Risk command
+4. start the Risk RPC
 ```
 
 The repository is operated as a clean-install system with no historical production WAL migration
@@ -132,6 +139,10 @@ After reconciliation:
   disagree.
 - An unresolved reconciliation failure prevents the Gateway from claiming readiness.
 
+Live submission and `NOT_FOUND` resubmission use the same `RiskCommandMapper` and
+`RiskCommandSubmitter`. Recovery therefore cannot manufacture a different internal order identity or
+field conversion from the original live path.
+
 This design turns restart recovery into state reconciliation rather than blind WAL replay.
 
 ## Crash windows
@@ -162,10 +173,11 @@ Retries and recovery reuse the original value; they do not manufacture a new com
 FIX-facing and WAL-facing `OrderID(37)` remains `O-<ClOrdID>`. The Gateway does not expose the Risk
 internal identifier as a replacement FIX order id.
 
-At the Risk v2 boundary, the Gateway derives a deterministic opaque UUID for internal order identity
-from FIX session identity, the Asia/Taipei trading day, and the original client `ClOrdID`. New and
-cancel commands for the same FIX order on the same trading day therefore map to the same Risk order
-identity, while a later trading day may reuse the client `ClOrdID` without collision.
+At the Risk v2 boundary, `RiskOrderIdentityDeriver` derives a deterministic opaque UUID for internal
+order identity from FIX session identity, the Asia/Taipei trading day, and the original client
+`ClOrdID`. New and cancel commands for the same FIX order on the same trading day therefore map to
+the same Risk order identity, while a later trading day may reuse the client `ClOrdID` without
+collision.
 
 ### Canonical Account identity
 
@@ -195,10 +207,10 @@ transactional outbox followed by the configured CDC/Kafka delivery path on `orde
 QuickFIX Gateway no longer exposes a runtime path or configuration switch that can publish the
 former `orders.commands` compatibility topic.
 
-The v1 `OrderCommand` message may remain inside Gateway WAL/Risk adapter code while that internal
-carrier is still useful. Retaining a wire type is not permission to restore a second Kafka ingress
-path. If a future integration needs a new command stream, it requires an explicit architecture and
-delivery contract rather than re-enabling the retired compatibility publisher.
+The QuickFIX production admission path also no longer constructs the v1 `OrderCommand` carrier.
+Durable Gateway state maps directly to typed v2 Risk commands. A shared v1 adapter may remain as an
+explicit compatibility utility elsewhere in the repository, but retaining that utility is not
+permission to restore a second Kafka ingress or a v1 production admission path.
 
 Recovery always reconciles against Risk's durable admission journal; Kafka publication success is
 not an admission or recovery source of truth.
@@ -249,6 +261,7 @@ Changes to these boundaries require tests that prove the relevant invariant rath
 happy path. Depending on the change, verification includes:
 
 - WAL is durable before sidecar `UNKNOWN`, and `UNKNOWN` is durable before Risk submission;
+- live submission and recovery map the same WAL intent to the same v2 command identity;
 - crash/restart recovery for each sidecar state;
 - `PENDING` is never treated as retry permission;
 - `UNKNOWN + NOT_FOUND` reuses the original `command_id`;

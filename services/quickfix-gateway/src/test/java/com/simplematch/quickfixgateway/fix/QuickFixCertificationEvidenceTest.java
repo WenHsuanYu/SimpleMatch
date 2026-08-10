@@ -6,11 +6,14 @@ import com.simplematch.contracts.common.v1.EventMetadata;
 import com.simplematch.contracts.common.v1.Side;
 import com.simplematch.contracts.matching.v1.ExecutionEvent;
 import com.simplematch.contracts.matching.v1.ExecutionType;
-import com.simplematch.contracts.orders.v1.OrderCommand;
+import com.simplematch.contracts.orders.v2.CancelOrderCommand;
+import com.simplematch.contracts.orders.v2.NewOrderCommand;
 import com.simplematch.quickfixgateway.config.QuickFixGatewayRuntime;
 import com.simplematch.quickfixgateway.kafka.MatchingExecutionConsumer;
+import com.simplematch.quickfixgateway.kafka.NoopOrdersCommandPublisher;
 import com.simplematch.quickfixgateway.risk.RiskSubmissionClient;
 import com.simplematch.quickfixgateway.risk.RiskSubmissionResult;
+import com.simplematch.quickfixgateway.risk.RiskTestSupport;
 import com.simplematch.quickfixgateway.test.FixMessageSnapshot;
 import com.simplematch.quickfixgateway.wal.WalAppender;
 import com.simplematch.quickfixgateway.wal.WalRecord;
@@ -26,7 +29,6 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;
-import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicReference;
@@ -84,13 +86,12 @@ class QuickFixCertificationEvidenceTest {
     final Path walPath = tempDir.resolve("wal").resolve("inbound.wal");
 
     final WalAppender walAppender = new WalAppender(walPath, StandardCharsets.UTF_8);
-    final OrdersCommandPublisher ordersCommandPublisher = new OrdersCommandPublisher();
     final QuickFixAcceptorLifecycle acceptorLifecycle =
         new QuickFixAcceptorLifecycle(
             new QuickFixApplicationAdapter(
                 QuickFixIngressTestFixture.compose(
                     walAppender,
-                    ordersCommandPublisher,
+                    new NoopOrdersCommandPublisher(),
                     new AcceptingRiskSubmissionClient(),
                     new QuickFixSessionMessageSender(),
                     new OrderSessionRegistry(),
@@ -121,7 +122,9 @@ class QuickFixCertificationEvidenceTest {
               FixMessageSnapshot.snapshot(
                   executionReport, MsgType.FIELD, 37, 17, 150, 39, 54, 151, 14, 6, 11, 55, 60))
           .startsWith("35=8|37=O-C1|17=E-")
-          .contains("|150=A|39=A|54=1|151=10|14=0|6=0|11=C1|55=AAPL|60=2024-03-27T08:09:10.123Z");
+          .contains(
+              "|150=A|39=A|54=1|151=10|14=0|6=0|11=C1|55=AAPL|"
+                  + "60=2024-03-27T08:09:10.123Z");
 
       final List<WalRecord> walRecords = walAppender.readAll();
       assertThat(walRecords).hasSize(1);
@@ -135,15 +138,6 @@ class QuickFixCertificationEvidenceTest {
       assertThat(walRecord.rawFix()).contains("35=D").contains("11=C1");
       assertUuidVersionSeven(walRecord.recordId());
       assertThat(executionReport.getString(17)).isEqualTo("E-" + walRecord.recordId());
-
-      final OrderCommand publishedCommand = ordersCommandPublisher.awaitPublishedCommand();
-      assertThat(publishedCommand.getCommandId()).isEqualTo(walRecord.recordId());
-      assertThat(publishedCommand.getMetadata().getEventId()).isEqualTo(walRecord.recordId());
-      assertThat(publishedCommand.getSenderCompId()).isEqualTo("CLIENT");
-      assertThat(publishedCommand.getTargetCompId()).isEqualTo("SIMPLEMATCH");
-      assertThat(publishedCommand.getClOrdId()).isEqualTo("C1");
-      assertThat(publishedCommand.getAccountId()).isEqualTo(ACCOUNT_ID);
-      assertUuidVersionSeven(publishedCommand.getCommandId());
 
       initiator.stop();
       assertThat(initiatorApplication.awaitLogout()).isTrue();
@@ -162,8 +156,7 @@ class QuickFixCertificationEvidenceTest {
     }
   }
 
-  @DisplayName(
-      "the QuickFIX simulator returns a rejected risk submission without publishing the order")
+  @DisplayName("the QuickFIX simulator returns a rejected risk submission")
   @Test
   void quickFixSimulatorPersistsRejectedRiskSubmissionAndReturnsFixReject() throws Exception {
     final int port = reservePort();
@@ -172,13 +165,12 @@ class QuickFixCertificationEvidenceTest {
     final Path initiatorConfigPath = writeInitiatorConfig(port, dictionaryPath);
     final Path walPath = tempDir.resolve("wal").resolve("inbound.wal");
     final WalAppender walAppender = new WalAppender(walPath, StandardCharsets.UTF_8);
-    final OrdersCommandPublisher ordersCommandPublisher = new OrdersCommandPublisher();
     final QuickFixAcceptorLifecycle acceptorLifecycle =
         new QuickFixAcceptorLifecycle(
             new QuickFixApplicationAdapter(
                 QuickFixIngressTestFixture.compose(
                     walAppender,
-                    ordersCommandPublisher,
+                    new NoopOrdersCommandPublisher(),
                     new RejectingRiskSubmissionClient(),
                     new QuickFixSessionMessageSender(),
                     new OrderSessionRegistry(),
@@ -206,9 +198,11 @@ class QuickFixCertificationEvidenceTest {
 
       final Message executionReport = initiatorApplication.awaitApplicationMessage();
       assertThat(
-              FixMessageSnapshot.snapshot(executionReport, MsgType.FIELD, 37, 150, 39, 11, 55, 58))
+              FixMessageSnapshot.snapshot(
+                  executionReport, MsgType.FIELD, 37, 150, 39, 11, 55, 58))
           .isEqualTo(
-              "35=8|37=O-C1|150=8|39=8|11=C1|55=AAPL|58=INSUFFICIENT_BUYING_POWER: available cash is insufficient");
+              "35=8|37=O-C1|150=8|39=8|11=C1|55=AAPL|"
+                  + "58=INSUFFICIENT_BUYING_POWER: available cash is insufficient");
       assertThat(walAppender.readAll())
           .singleElement()
           .satisfies(
@@ -217,7 +211,6 @@ class QuickFixCertificationEvidenceTest {
                 assertThat(walRecord.clOrdId()).isEqualTo("C1");
                 assertThat(walRecord.accountId()).isEqualTo(ACCOUNT_ID);
               });
-      assertThat(ordersCommandPublisher.lastPublishedCommand()).isNull();
     } finally {
       safeStop(initiator);
       acceptorLifecycle.stop();
@@ -232,7 +225,6 @@ class QuickFixCertificationEvidenceTest {
     final IdempotentRiskSubmissionClient risk = new IdempotentRiskSubmissionClient();
     final RecordingFixSessionMessageSender sender = new RecordingFixSessionMessageSender();
     final OrderSessionRegistry registry = new OrderSessionRegistry();
-    final OrdersCommandPublisher publisher = new OrdersCommandPublisher();
     final SessionID sessionId = new SessionID("FIX.4.4", "SIMPLEMATCH", "CLIENT1");
 
     try (WalAppender walAppender = new WalAppender(walPath, StandardCharsets.UTF_8)) {
@@ -240,7 +232,7 @@ class QuickFixCertificationEvidenceTest {
           new QuickFixApplicationAdapter(
               QuickFixIngressTestFixture.compose(
                   walAppender,
-                  publisher,
+                  new NoopOrdersCommandPublisher(),
                   risk,
                   sender,
                   registry,
@@ -264,9 +256,12 @@ class QuickFixCertificationEvidenceTest {
       assertThat(
               FixMessageSnapshot.snapshot(
                   sender.messages().getLast(), 35, 37, 17, 150, 39, 54, 151, 14, 6, 11, 41, 55))
-          .isEqualTo("35=8|37=O-C1|17=E-CXL-1|150=4|39=4|54=1|151=10|14=0|6=0|11=CXL-1|41=C1|55=AAPL");
+          .isEqualTo(
+              "35=8|37=O-C1|17=E-CXL-1|150=4|39=4|54=1|151=10|14=0|6=0|"
+                  + "11=CXL-1|41=C1|55=AAPL");
 
-      final WalReplayService replayService = new WalReplayService(walAppender, risk);
+      final WalReplayService replayService =
+          new WalReplayService(walAppender, RiskTestSupport.submitter(risk));
       assertThat(replayService.replayAll()).isEqualTo(2);
       assertThat(risk.newDecisionCount()).isEqualTo(1);
       assertThat(risk.cancelDecisionCount()).isEqualTo(1);
@@ -430,32 +425,7 @@ class QuickFixCertificationEvidenceTest {
     assertThat(UUID.fromString(rawUuid).version()).isEqualTo(7);
   }
 
-  private static final class OrdersCommandPublisher
-      implements com.simplematch.quickfixgateway.kafka.OrdersCommandPublisher {
-    private final AtomicReference<OrderCommand> lastPublishedCommand = new AtomicReference<>();
-    private final CountDownLatch publishedCommandLatch = new CountDownLatch(1);
-
-    @Override
-    public CompletableFuture<Void> publish(OrderCommand command) {
-      lastPublishedCommand.set(command);
-      publishedCommandLatch.countDown();
-      return CompletableFuture.completedFuture(null);
-    }
-
-    private OrderCommand awaitPublishedCommand() throws InterruptedException {
-      assertThat(publishedCommandLatch.await(10, TimeUnit.SECONDS))
-          .as("expected compatibility order command to be published")
-          .isTrue();
-      return lastPublishedCommand.get();
-    }
-
-    private OrderCommand lastPublishedCommand() {
-      return lastPublishedCommand.get();
-    }
-  }
-
-  private static final class RecordingFixSessionMessageSender
-      implements FixSessionMessageSender {
+  private static final class RecordingFixSessionMessageSender implements FixSessionMessageSender {
     private final List<Message> messages = new ArrayList<>();
 
     @Override
@@ -474,27 +444,39 @@ class QuickFixCertificationEvidenceTest {
     private int cancelDecisions;
 
     @Override
-    public RiskSubmissionResult submitNewOrder(OrderCommand command) {
-      return submit(command, false);
-    }
-
-    @Override
-    public RiskSubmissionResult submitCancel(OrderCommand command) {
-      return submit(command, true);
-    }
-
-    private RiskSubmissionResult submit(OrderCommand command, boolean cancel) {
-      final String key = command.getCommandType() + ":" + command.getSenderCompId() + ":"
-          + command.getTargetCompId() + ":" + command.getClOrdId();
+    public RiskSubmissionResult submitNewOrder(NewOrderCommand command) {
+      final String key =
+          "NEW:"
+              + command.getSenderCompId()
+              + ":"
+              + command.getTargetCompId()
+              + ":"
+              + command.getClOrdId();
       final RiskSubmissionResult existing = outcomes.get(key);
       if (existing != null) {
         return existing;
       }
-      if (cancel) {
-        cancelDecisions += 1;
-      } else {
-        newDecisions += 1;
+      newDecisions += 1;
+      final RiskSubmissionResult result =
+          new RiskSubmissionResult(command.getOrderId(), true, "", "");
+      outcomes.put(key, result);
+      return result;
+    }
+
+    @Override
+    public RiskSubmissionResult submitCancel(CancelOrderCommand command) {
+      final String key =
+          "CANCEL:"
+              + command.getSenderCompId()
+              + ":"
+              + command.getTargetCompId()
+              + ":"
+              + command.getClOrdId();
+      final RiskSubmissionResult existing = outcomes.get(key);
+      if (existing != null) {
+        return existing;
       }
+      cancelDecisions += 1;
       final RiskSubmissionResult result =
           new RiskSubmissionResult(command.getOrderId(), true, "", "");
       outcomes.put(key, result);
@@ -512,19 +494,19 @@ class QuickFixCertificationEvidenceTest {
 
   private static final class AcceptingRiskSubmissionClient implements RiskSubmissionClient {
     @Override
-    public RiskSubmissionResult submitNewOrder(OrderCommand command) {
+    public RiskSubmissionResult submitNewOrder(NewOrderCommand command) {
       return new RiskSubmissionResult(command.getOrderId(), true, "", "");
     }
 
     @Override
-    public RiskSubmissionResult submitCancel(OrderCommand command) {
+    public RiskSubmissionResult submitCancel(CancelOrderCommand command) {
       return new RiskSubmissionResult(command.getOrderId(), true, "", "");
     }
   }
 
   private static final class RejectingRiskSubmissionClient implements RiskSubmissionClient {
     @Override
-    public RiskSubmissionResult submitNewOrder(OrderCommand command) {
+    public RiskSubmissionResult submitNewOrder(NewOrderCommand command) {
       return new RiskSubmissionResult(
           command.getOrderId(),
           false,
@@ -533,7 +515,7 @@ class QuickFixCertificationEvidenceTest {
     }
 
     @Override
-    public RiskSubmissionResult submitCancel(OrderCommand command) {
+    public RiskSubmissionResult submitCancel(CancelOrderCommand command) {
       return new RiskSubmissionResult(command.getOrderId(), true, "", "");
     }
   }

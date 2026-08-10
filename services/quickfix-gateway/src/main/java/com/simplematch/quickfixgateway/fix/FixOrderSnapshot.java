@@ -1,6 +1,6 @@
 package com.simplematch.quickfixgateway.fix;
 
-import com.simplematch.contracts.common.v1.Side;
+import com.simplematch.contracts.common.v2.Side;
 import com.simplematch.quickfixgateway.wal.WalRecord;
 import java.util.Objects;
 

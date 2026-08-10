@@ -1,6 +1,6 @@
 package com.simplematch.quickfixgateway.fix;
 
-import com.simplematch.contracts.common.v1.Side;
+import com.simplematch.contracts.common.v2.Side;
 import com.simplematch.contracts.matching.v1.ExecutionEvent;
 import com.simplematch.contracts.matching.v1.ExecutionType;
 import java.time.Clock;
@@ -77,7 +77,8 @@ final class FixExecutionReportMapper {
       report.setString(Symbol.FIELD, order.symbol());
     }
     if (order.side() != Side.SIDE_UNSPECIFIED) {
-      report.setChar(quickfix.field.Side.FIELD, FixWireValues.mapSide(order.side()));
+      report.setChar(
+          quickfix.field.Side.FIELD, FixWireValues.mapOrderSide(order.side()));
     }
     if (!order.quantity().isBlank()) {
       report.setString(OrderQty.FIELD, order.quantity());
@@ -95,7 +96,8 @@ final class FixExecutionReportMapper {
     report.setString(ExecID.FIELD, executionEvent.getExecId());
     report.setChar(ExecType.FIELD, FixWireValues.mapExecType(executionEvent.getExecutionType()));
     report.setChar(OrdStatus.FIELD, FixWireValues.mapOrdStatus(executionEvent.getExecutionType()));
-    report.setChar(quickfix.field.Side.FIELD, FixWireValues.mapSide(executionEvent.getSide()));
+    report.setChar(
+        quickfix.field.Side.FIELD, FixWireValues.mapExecutionSide(executionEvent.getSide()));
     report.setString(
         LeavesQty.FIELD,
         FixWireValues.fallbackDecimal(executionEvent.getLeavesQty(), state.quantity()));
@@ -131,7 +133,8 @@ final class FixExecutionReportMapper {
     report.setString(ExecID.FIELD, execution.executionId().value());
     report.setChar(ExecType.FIELD, execType);
     report.setChar(OrdStatus.FIELD, orderStatus);
-    report.setChar(quickfix.field.Side.FIELD, FixWireValues.mapSide(order.side()));
+    report.setChar(
+        quickfix.field.Side.FIELD, FixWireValues.mapOrderSide(order.side()));
     report.setString(ClOrdID.FIELD, order.clientOrderId().value());
     report.setString(Symbol.FIELD, order.symbol().value());
     report.setString(TransactTime.FIELD, FixWireValues.format(execution.transactTime()));

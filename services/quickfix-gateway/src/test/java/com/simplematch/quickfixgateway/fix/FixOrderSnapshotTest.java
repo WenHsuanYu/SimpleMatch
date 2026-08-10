@@ -2,7 +2,7 @@ package com.simplematch.quickfixgateway.fix;
 
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
-import com.simplematch.contracts.common.v1.Side;
+import com.simplematch.contracts.common.v2.Side;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 

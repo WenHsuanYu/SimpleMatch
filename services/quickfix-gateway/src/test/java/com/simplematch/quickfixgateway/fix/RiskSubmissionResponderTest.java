@@ -8,12 +8,13 @@ import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.when;
 
-import com.simplematch.contracts.common.v1.OrderType;
-import com.simplematch.contracts.common.v1.Side;
-import com.simplematch.contracts.common.v1.TimeInForce;
+import com.simplematch.contracts.common.v2.OrderType;
+import com.simplematch.contracts.common.v2.Side;
+import com.simplematch.contracts.common.v2.TimeInForce;
 import com.simplematch.quickfixgateway.risk.RiskSubmissionClient;
 import com.simplematch.quickfixgateway.risk.RiskSubmissionFailure;
 import com.simplematch.quickfixgateway.risk.RiskSubmissionResult;
+import com.simplematch.quickfixgateway.risk.RiskTestSupport;
 import com.simplematch.quickfixgateway.wal.FixSessionIdentity;
 import com.simplematch.quickfixgateway.wal.RawFixMessage;
 import com.simplematch.quickfixgateway.wal.WalCommand;
@@ -42,6 +43,9 @@ class RiskSubmissionResponderTest {
   private static final Clock CLOCK = Clock.fixed(NOW, ZoneOffset.UTC);
   private static final SessionID SESSION_ID =
       new SessionID("FIX.4.4", "SIMPLEMATCH", "CLIENT1");
+  private static final String ACCOUNT_ID = "0194a8f0-7c77-7b38-9e2d-2a5fdd0f7c13";
+  private static final String NEW_COMMAND_ID = "0194a8f0-7c77-7b38-9e2d-2a5fdd0f7c11";
+  private static final String CANCEL_COMMAND_ID = "0194a8f0-7c77-7b38-9e2d-2a5fdd0f7c12";
   private static final String UNKNOWN_OUTCOME_CLIENT_TEXT =
       "SYSTEM_ERROR: order outcome is pending confirmation; no client action is required";
 
@@ -57,8 +61,7 @@ class RiskSubmissionResponderTest {
     final WalRecoveryJournal recoveryJournal = recoveryJournal();
     final RiskSubmissionResponder responder = responder(risk, sender, recoveryJournal);
 
-    final RiskSubmissionResult result =
-        responder.submitNewOrder(walRecord.toOrderCommand(), SESSION_ID, walRecord, NOW);
+    final RiskSubmissionResult result = responder.submitNewOrder(SESSION_ID, walRecord, NOW);
 
     assertThat(result.outcome()).isEqualTo(RiskSubmissionResult.Outcome.UNKNOWN);
     assertThat(result.accepted()).isFalse();
@@ -88,12 +91,11 @@ class RiskSubmissionResponderTest {
     when(risk.submitNewOrder(any()))
         .thenReturn(
             new RiskSubmissionResult(
-                walRecord.orderId(), false, "RISK_LIMIT", "available limit is insufficient"));
+                "internal-order", false, "RISK_LIMIT", "available limit is insufficient"));
     final WalRecoveryJournal recoveryJournal = recoveryJournal();
     final RiskSubmissionResponder responder = responder(risk, sender, recoveryJournal);
 
-    final RiskSubmissionResult result =
-        responder.submitNewOrder(walRecord.toOrderCommand(), SESSION_ID, walRecord, NOW);
+    final RiskSubmissionResult result = responder.submitNewOrder(SESSION_ID, walRecord, NOW);
 
     assertThat(result.outcome()).isEqualTo(RiskSubmissionResult.Outcome.REJECTED);
     assertThat(result.rejected()).isTrue();
@@ -120,8 +122,7 @@ class RiskSubmissionResponderTest {
     final WalRecoveryJournal recoveryJournal = recoveryJournal();
     final RiskSubmissionResponder responder = responder(risk, sender, recoveryJournal);
 
-    final RiskSubmissionResult result =
-        responder.submitCancelOrder(walRecord.toOrderCommand(), SESSION_ID, walRecord, 'A');
+    final RiskSubmissionResult result = responder.submitCancelOrder(SESSION_ID, walRecord, 'A');
 
     assertThat(result.outcome()).isEqualTo(RiskSubmissionResult.Outcome.UNKNOWN);
     assertThat(result.rejected()).isFalse();
@@ -136,7 +137,8 @@ class RiskSubmissionResponderTest {
       RiskSubmissionClient risk,
       FixSessionMessageSender sender,
       WalRecoveryJournal recoveryJournal) {
-    return new RiskSubmissionResponder(risk, sender, new FixMessageMapper(CLOCK), recoveryJournal);
+    return new RiskSubmissionResponder(
+        RiskTestSupport.submitter(risk), sender, new FixMessageMapper(CLOCK), recoveryJournal);
   }
 
   private WalRecoveryJournal recoveryJournal() {
@@ -145,9 +147,9 @@ class RiskSubmissionResponderTest {
 
   private WalRecord newOrderRecord() {
     return new WalRecord(
-        new WalMetadata("v1", "record-new-1", NOW.toEpochMilli(), "quickfix-gateway"),
+        new WalMetadata("v1", NEW_COMMAND_ID, NOW.toEpochMilli(), "quickfix-gateway"),
         new FixSessionIdentity("CLIENT1", "SIMPLEMATCH"),
-        new WalOrderReference("O-C1", "C1", "", "ACC-1"),
+        new WalOrderReference("O-C1", "C1", "", ACCOUNT_ID),
         new WalCommand.NewOrder(
             new WalOrderTerms(
                 "AAPL",
@@ -161,10 +163,10 @@ class RiskSubmissionResponderTest {
 
   private WalRecord cancelRecord() {
     return new WalRecord(
-        new WalMetadata("v1", "record-cancel-1", NOW.toEpochMilli(), "quickfix-gateway"),
+        new WalMetadata("v1", CANCEL_COMMAND_ID, NOW.toEpochMilli(), "quickfix-gateway"),
         new FixSessionIdentity("CLIENT1", "SIMPLEMATCH"),
-        new WalOrderReference("O-C1", "CXL-1", "C1", "ACC-1"),
-        new WalCommand.Cancel(),
+        new WalOrderReference("O-C1", "CXL-1", "C1", ACCOUNT_ID),
+        new WalCommand.Cancel("AAPL", Side.SIDE_BUY),
         new RawFixMessage("35=F"));
   }
 }

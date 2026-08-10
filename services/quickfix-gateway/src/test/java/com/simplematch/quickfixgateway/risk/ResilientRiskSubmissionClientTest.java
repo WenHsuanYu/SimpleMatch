@@ -3,8 +3,8 @@ package com.simplematch.quickfixgateway.risk;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
-import com.simplematch.contracts.orders.v1.CommandType;
-import com.simplematch.contracts.orders.v1.OrderCommand;
+import com.simplematch.contracts.orders.v2.CancelOrderCommand;
+import com.simplematch.contracts.orders.v2.NewOrderCommand;
 import io.grpc.Status;
 import io.grpc.StatusRuntimeException;
 import java.time.Clock;
@@ -15,17 +15,20 @@ import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 
 class ResilientRiskSubmissionClientTest {
-  private static final OrderCommand NEW_ORDER =
-      OrderCommand.newBuilder()
-          .setCommandType(CommandType.COMMAND_TYPE_NEW)
-          .setOrderId("O-1")
+  private static final NewOrderCommand NEW_ORDER =
+      NewOrderCommand.newBuilder()
+          .setCommandId("command-1")
+          .setOrderId("0194a8f0-7c77-7b38-9e2d-2a5fdd0f7c15")
           .setClOrdId("C-1")
           .build();
 
-  // Verify that the client retries the same command until success when the risk service fails
-  // temporarily.
-  // Scenario: the first call returns UNAVAILABLE and the second succeeds, so the retry count and
-  // sleep count should match expectations.
+  /**
+   * Verifies that transient Risk transport failures retry the same command until submission
+   * succeeds.
+   *
+   * <p>Scenario: the first call returns {@code UNAVAILABLE} and the second succeeds, so the retry
+   * attempt count and backoff sleep count should match expectations.
+   */
   @DisplayName("temporary failures are retried with the same command until success")
   @Test
   void retriesTransientFailureWithSameCommandUntilSuccess() {
@@ -34,7 +37,7 @@ class ResilientRiskSubmissionClientTest {
     final RiskSubmissionClient delegate =
         new RiskSubmissionClient() {
           @Override
-          public RiskSubmissionResult submitNewOrder(OrderCommand command) {
+          public RiskSubmissionResult submitNewOrder(NewOrderCommand command) {
             attempts.incrementAndGet();
             if (attempts.get() == 1) {
               throw new StatusRuntimeException(Status.UNAVAILABLE);
@@ -43,7 +46,7 @@ class ResilientRiskSubmissionClientTest {
           }
 
           @Override
-          public RiskSubmissionResult submitCancel(OrderCommand command) {
+          public RiskSubmissionResult submitCancel(CancelOrderCommand command) {
             throw new UnsupportedOperationException();
           }
         };
@@ -63,10 +66,13 @@ class ResilientRiskSubmissionClientTest {
     assertThat(sleepCalls.get()).isEqualTo(1);
   }
 
-  // Verify that the circuit breaker opens after repeated failures and then fails fast during the
-  // cooldown period.
-  // Scenario: repeatedly trigger UNAVAILABLE until the breaker opens, then advance the clock to
-  // confirm retries resume after cooldown.
+  /**
+   * Verifies that repeated transient failures open the circuit breaker and that submissions fail
+   * fast until the cooldown expires.
+   *
+   * <p>Scenario: repeatedly trigger {@code UNAVAILABLE} until the breaker opens, then advance the
+   * clock beyond the cooldown and confirm transport attempts resume.
+   */
   @DisplayName("after the threshold, the circuit breaker fails fast until cooldown ends")
   @Test
   void opensCircuitAfterThresholdAndFailsFastUntilCooldownExpires() {
@@ -75,13 +81,13 @@ class ResilientRiskSubmissionClientTest {
     final RiskSubmissionClient delegate =
         new RiskSubmissionClient() {
           @Override
-          public RiskSubmissionResult submitNewOrder(OrderCommand command) {
+          public RiskSubmissionResult submitNewOrder(NewOrderCommand command) {
             attempts.incrementAndGet();
             throw new StatusRuntimeException(Status.UNAVAILABLE);
           }
 
           @Override
-          public RiskSubmissionResult submitCancel(OrderCommand command) {
+          public RiskSubmissionResult submitCancel(CancelOrderCommand command) {
             throw new UnsupportedOperationException();
           }
         };

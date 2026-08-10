@@ -1,6 +1,5 @@
 package com.simplematch.quickfixgateway.fix;
 
-import com.simplematch.contracts.orders.v1.OrderCommand;
 import com.simplematch.quickfixgateway.risk.RiskSubmissionResult;
 import com.simplematch.quickfixgateway.wal.WalDurableCommandWriter;
 import quickfix.SessionID;
@@ -19,8 +18,7 @@ final class NewOrderDurableAdmission {
 
   RiskSubmissionResult admit(PreparedNewOrder preparedOrder, SessionID sessionId) {
     durableCommandWriter.appendForSubmission(preparedOrder.walRecord());
-    final OrderCommand command = preparedOrder.walRecord().toOrderCommand();
     return riskSubmissionResponder.submitNewOrder(
-        command, sessionId, preparedOrder.walRecord(), preparedOrder.preparedAt());
+        sessionId, preparedOrder.walRecord(), preparedOrder.preparedAt());
   }
 }

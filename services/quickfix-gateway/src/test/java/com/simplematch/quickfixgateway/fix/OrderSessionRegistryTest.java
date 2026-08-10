@@ -2,9 +2,9 @@ package com.simplematch.quickfixgateway.fix;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
-import com.simplematch.contracts.common.v1.OrderType;
-import com.simplematch.contracts.common.v1.Side;
-import com.simplematch.contracts.common.v1.TimeInForce;
+import com.simplematch.contracts.common.v2.OrderType;
+import com.simplematch.contracts.common.v2.Side;
+import com.simplematch.contracts.common.v2.TimeInForce;
 import com.simplematch.quickfixgateway.wal.FixSessionIdentity;
 import com.simplematch.quickfixgateway.wal.RawFixMessage;
 import com.simplematch.quickfixgateway.wal.WalCommand;

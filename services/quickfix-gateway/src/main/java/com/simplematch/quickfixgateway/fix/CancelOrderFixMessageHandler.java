@@ -1,6 +1,5 @@
 package com.simplematch.quickfixgateway.fix;
 
-import com.simplematch.contracts.orders.v1.OrderCommand;
 import com.simplematch.quickfixgateway.wal.WalDurableCommandWriter;
 import com.simplematch.quickfixgateway.wal.WalRecord;
 import java.time.Clock;
@@ -16,7 +15,6 @@ final class CancelOrderFixMessageHandler {
   private final WalDurableCommandWriter durableCommandWriter;
   private final OrderSessionRegistry orderSessionRegistry;
   private final RiskSubmissionResponder riskSubmissionResponder;
-  private final FixCompatibilityCommandPublisher compatibilityPublisher;
   private final CommandIdGenerator commandIdGenerator;
   private final Clock clock;
   private final GatewayAdmissionGate admissionGate;
@@ -25,14 +23,12 @@ final class CancelOrderFixMessageHandler {
       WalDurableCommandWriter durableCommandWriter,
       OrderSessionRegistry orderSessionRegistry,
       RiskSubmissionResponder riskSubmissionResponder,
-      FixCompatibilityCommandPublisher compatibilityPublisher,
       CommandIdGenerator commandIdGenerator,
       Clock clock,
       GatewayAdmissionGate admissionGate) {
     this.durableCommandWriter = durableCommandWriter;
     this.orderSessionRegistry = orderSessionRegistry;
     this.riskSubmissionResponder = riskSubmissionResponder;
-    this.compatibilityPublisher = compatibilityPublisher;
     this.commandIdGenerator = commandIdGenerator;
     this.clock = clock;
     this.admissionGate = admissionGate;
@@ -82,10 +78,8 @@ final class CancelOrderFixMessageHandler {
       return;
     }
     durableCommandWriter.appendForSubmission(walRecord);
-    final OrderCommand command = walRecord.toOrderCommand();
     if (!riskSubmissionResponder
         .submitCancelOrder(
-            command,
             sessionId,
             walRecord,
             existing == null ? '8' : existing.lifecycle().currentOrdStatus())
@@ -93,7 +87,6 @@ final class CancelOrderFixMessageHandler {
       return;
     }
     orderSessionRegistry.registerCancelRequest(sessionId, walRecord);
-    compatibilityPublisher.publish(command);
   }
 
   private String rejectionOrderIdFor(String origClOrdId) {

@@ -5,9 +5,9 @@ import static org.junit.jupiter.api.Assertions.assertThrows;
 
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
-import com.simplematch.contracts.common.v1.OrderType;
-import com.simplematch.contracts.common.v1.Side;
-import com.simplematch.contracts.common.v1.TimeInForce;
+import com.simplematch.contracts.common.v2.OrderType;
+import com.simplematch.contracts.common.v2.Side;
+import com.simplematch.contracts.common.v2.TimeInForce;
 import java.nio.ByteBuffer;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
@@ -56,9 +56,13 @@ class WalAppenderTest {
     assertThat(failure).hasMessage("WAL v1 requires UTF-8");
   }
 
-  // Verify that append followed by readAll preserves both the WAL record contents and their order.
-  // Scenario: write a new order and a cancel record in sequence, then verify the replay results
-  // from both the file and the API.
+  /**
+   * Verifies that append followed by {@code readAll} preserves both WAL record contents and their
+   * ordering.
+   *
+   * <p>Scenario: write a new-order record and a cancel record in sequence, then verify replay from
+   * the file and repeated API reads returns the same ordered records.
+   */
   @DisplayName("append and readAll preserve WAL record contents")
   @Test
   void appendAndReadAllPreservesWalRecords() throws Exception {
@@ -86,9 +90,13 @@ class WalAppenderTest {
     }
   }
 
-  // Verify that the WAL contract persists each record as one JSON object per line.
-  // Scenario: write a single record and read the file text directly to confirm the JSON fields and
-  // values are correct.
+  /**
+   * Verifies that the WAL persistence contract stores exactly one structured JSON object per
+   * physical line.
+   *
+   * <p>Scenario: write one record, read the file text directly, and confirm both the line-delimited
+   * shape and the stable serialized field values.
+   */
   @DisplayName("the WAL persists as line-delimited JSON")
   @Test
   void walContractIntentionallyPersistsStructuredJsonPerLine() throws Exception {
