@@ -1,10 +1,8 @@
 package com.simplematch.quickfixgateway.wal;
 
-import com.simplematch.contracts.common.v1.OrderType;
-import com.simplematch.contracts.common.v1.Side;
-import com.simplematch.contracts.common.v1.TimeInForce;
-import com.simplematch.contracts.orders.v1.CommandType;
-import com.simplematch.contracts.orders.v1.OrderCommand;
+import com.simplematch.contracts.common.v2.OrderType;
+import com.simplematch.contracts.common.v2.Side;
+import com.simplematch.contracts.common.v2.TimeInForce;
 import java.util.Objects;
 
 /** Represents one semantic, gateway-local durable inbound FIX command. */
@@ -27,11 +25,6 @@ public record WalRecord(
     if (command instanceof WalCommand.Cancel && orderReference.origClOrdId().isEmpty()) {
       throw new IllegalArgumentException("cancel must have orig_cl_ord_id");
     }
-  }
-
-  /** Converts this durable record to the compatibility order-command contract. */
-  public OrderCommand toOrderCommand() {
-    return WalOrderCommandMapper.toOrderCommand(this);
   }
 
   /** Returns the persisted schema version. */
@@ -74,7 +67,7 @@ public record WalRecord(
     return command.messageType();
   }
 
-  /** Returns the durable order identity. */
+  /** Returns the durable FIX-facing order identity. */
   public String orderId() {
     return orderReference.orderId();
   }
@@ -84,12 +77,12 @@ public record WalRecord(
     return orderReference.clOrdId();
   }
 
-  /** Returns the original client order identity, when this is a cancellation. */
+  /** Returns the original client order identity for a cancellation. */
   public String origClOrdId() {
     return orderReference.origClOrdId();
   }
 
-  /** Returns the optional account identity. */
+  /** Returns the canonical account identity. */
   public String accountId() {
     return orderReference.accountId();
   }
@@ -142,8 +135,8 @@ public record WalRecord(
         : TimeInForce.TIME_IN_FORCE_UNSPECIFIED;
   }
 
-  /** Returns the command classification. */
-  public CommandType commandType() {
+  /** Returns the local command classification. */
+  public WalCommand.Type commandType() {
     return command.commandType();
   }
 

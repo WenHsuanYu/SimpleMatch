@@ -1,11 +1,9 @@
 package com.simplematch.quickfixgateway.wal;
 
-import com.simplematch.contracts.orders.v1.CommandType;
-import com.simplematch.contracts.orders.v1.OrderCommand;
 import com.simplematch.quickfixgateway.fix.OrderSessionRegistry;
+import com.simplematch.quickfixgateway.risk.RiskCommandSubmitter;
 import com.simplematch.quickfixgateway.risk.RiskReconciliationClient;
 import com.simplematch.quickfixgateway.risk.RiskReconciliationResult;
-import com.simplematch.quickfixgateway.risk.RiskSubmissionClient;
 import com.simplematch.quickfixgateway.risk.RiskSubmissionResult;
 import java.nio.file.Path;
 import java.util.List;
@@ -21,7 +19,7 @@ public final class WalReplayService {
 
   private final WalAppender walAppender;
   private final Path recoveryJournalPath;
-  private final RiskSubmissionClient riskSubmissionClient;
+  private final RiskCommandSubmitter riskCommandSubmitter;
   private final RiskReconciliationClient reconciliationClient;
   private final OrderSessionRegistry orderSessionRegistry;
 
@@ -29,12 +27,12 @@ public final class WalReplayService {
   public WalReplayService(
       WalAppender walAppender,
       WalRecoveryJournal recoveryJournal,
-      RiskSubmissionClient riskSubmissionClient,
+      RiskCommandSubmitter riskCommandSubmitter,
       RiskReconciliationClient reconciliationClient,
       OrderSessionRegistry orderSessionRegistry) {
     this.walAppender = walAppender;
     this.recoveryJournalPath = recoveryJournal.path();
-    this.riskSubmissionClient = riskSubmissionClient;
+    this.riskCommandSubmitter = riskCommandSubmitter;
     this.reconciliationClient = reconciliationClient;
     this.orderSessionRegistry = orderSessionRegistry;
   }
@@ -46,11 +44,11 @@ public final class WalReplayService {
    * that Risk submission had not started. Records already marked UNKNOWN or PENDING require the
    * production reconciliation client.
    */
-  public WalReplayService(WalAppender walAppender, RiskSubmissionClient riskSubmissionClient) {
+  public WalReplayService(WalAppender walAppender, RiskCommandSubmitter riskCommandSubmitter) {
     this(
         walAppender,
         new WalRecoveryJournal(WalRecoveryJournal.pathFor(walAppender.walPath())),
-        riskSubmissionClient,
+        riskCommandSubmitter,
         reconciliationRequired(),
         new OrderSessionRegistry());
   }
@@ -117,7 +115,7 @@ public final class WalReplayService {
   }
 
   private void submitAndRecord(WalRecoveryJournal recoveryJournal, WalRecord walRecord) {
-    final RiskSubmissionResult submission = submitToRisk(walRecord.toOrderCommand());
+    final RiskSubmissionResult submission = submitToRisk(walRecord);
     final WalRecoveryState recoveredState = WalRecoveryState.fromSubmission(submission);
     recoveryJournal.appendAndFlush(walRecord.recordId(), recoveredState);
     if (recoveredState == WalRecoveryState.UNKNOWN) {
@@ -127,14 +125,11 @@ public final class WalReplayService {
     restoreSessionContext(walRecord, recoveredState);
   }
 
-  private RiskSubmissionResult submitToRisk(OrderCommand command) {
-    if (command.getCommandType() == CommandType.COMMAND_TYPE_CANCEL) {
-      return riskSubmissionClient.submitCancel(command);
-    }
-    if (command.getCommandType() == CommandType.COMMAND_TYPE_NEW) {
-      return riskSubmissionClient.submitNewOrder(command);
-    }
-    throw new IllegalStateException("unsupported WAL command type: " + command.getCommandType());
+  private RiskSubmissionResult submitToRisk(WalRecord walRecord) {
+    return switch (walRecord.command()) {
+      case WalCommand.NewOrder ignored -> riskCommandSubmitter.submitNewOrder(walRecord);
+      case WalCommand.Cancel ignored -> riskCommandSubmitter.submitCancel(walRecord);
+    };
   }
 
   private void restoreSessionContext(WalRecord walRecord, WalRecoveryState state) {

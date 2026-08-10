@@ -5,10 +5,9 @@ import com.fasterxml.jackson.databind.DeserializationFeature;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.ObjectReader;
-import com.simplematch.contracts.common.v1.OrderType;
-import com.simplematch.contracts.common.v1.Side;
-import com.simplematch.contracts.common.v1.TimeInForce;
-import com.simplematch.contracts.orders.v1.CommandType;
+import com.simplematch.contracts.common.v2.OrderType;
+import com.simplematch.contracts.common.v2.Side;
+import com.simplematch.contracts.common.v2.TimeInForce;
 
 /** Rehydrates and validates semantic records from the stable flat WAL JSON shape. */
 final class WalRecordJsonDecoder {
@@ -60,12 +59,9 @@ final class WalRecordJsonDecoder {
 
   private WalCommand decodeCommand(WalJsonDocument document, WalOrderReference reference) {
     final String messageType = document.requiredText("messageType");
-    return switch (document.enumValue("commandType", CommandType.class)) {
+    return switch (document.enumValue("commandType", WalCommand.Type.class)) {
       case COMMAND_TYPE_NEW -> decodeNewOrder(document, reference, messageType);
       case COMMAND_TYPE_CANCEL -> decodeCancel(document, reference, messageType);
-      default ->
-          throw new WalRecordCodecException(
-              "message_type and command_type do not form a permitted WAL command pair");
     };
   }
 

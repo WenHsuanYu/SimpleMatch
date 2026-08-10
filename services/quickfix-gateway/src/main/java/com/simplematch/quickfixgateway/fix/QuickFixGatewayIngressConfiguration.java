@@ -1,7 +1,6 @@
 package com.simplematch.quickfixgateway.fix;
 
-import com.simplematch.quickfixgateway.kafka.OrdersCommandPublisher;
-import com.simplematch.quickfixgateway.risk.RiskSubmissionClient;
+import com.simplematch.quickfixgateway.risk.RiskCommandSubmitter;
 import com.simplematch.quickfixgateway.wal.WalDurableCommandWriter;
 import com.simplematch.quickfixgateway.wal.WalRecoveryJournal;
 import java.time.Clock;
@@ -18,18 +17,12 @@ public class QuickFixGatewayIngressConfiguration {
 
   @Bean
   RiskSubmissionResponder riskSubmissionResponder(
-      RiskSubmissionClient riskSubmissionClient,
+      RiskCommandSubmitter riskCommandSubmitter,
       FixSessionMessageSender fixSessionMessageSender,
       FixMessageMapper fixMessageMapper,
       WalRecoveryJournal recoveryJournal) {
     return new RiskSubmissionResponder(
-        riskSubmissionClient, fixSessionMessageSender, fixMessageMapper, recoveryJournal);
-  }
-
-  @Bean
-  FixCompatibilityCommandPublisher compatibilityCommandPublisher(
-      OrdersCommandPublisher ordersCommandPublisher) {
-    return new FixCompatibilityCommandPublisher(ordersCommandPublisher);
+        riskCommandSubmitter, fixSessionMessageSender, fixMessageMapper, recoveryJournal);
   }
 
   @Bean
@@ -49,13 +42,9 @@ public class QuickFixGatewayIngressConfiguration {
   AcceptedNewOrderResponder acceptedNewOrderResponder(
       OrderSessionRegistry orderSessionRegistry,
       FixSessionMessageSender fixSessionMessageSender,
-      FixMessageMapper fixMessageMapper,
-      FixCompatibilityCommandPublisher compatibilityPublisher) {
+      FixMessageMapper fixMessageMapper) {
     return new AcceptedNewOrderResponder(
-        orderSessionRegistry,
-        fixSessionMessageSender,
-        fixMessageMapper,
-        compatibilityPublisher);
+        orderSessionRegistry, fixSessionMessageSender, fixMessageMapper);
   }
 
   @Bean
@@ -91,7 +80,6 @@ public class QuickFixGatewayIngressConfiguration {
       WalDurableCommandWriter durableCommandWriter,
       OrderSessionRegistry orderSessionRegistry,
       RiskSubmissionResponder riskSubmissionResponder,
-      FixCompatibilityCommandPublisher compatibilityPublisher,
       CommandIdGenerator commandIdGenerator,
       Clock quickFixGatewayClock,
       GatewayAdmissionGate admissionGate) {
@@ -99,7 +87,6 @@ public class QuickFixGatewayIngressConfiguration {
         durableCommandWriter,
         orderSessionRegistry,
         riskSubmissionResponder,
-        compatibilityPublisher,
         commandIdGenerator,
         quickFixGatewayClock,
         admissionGate);

@@ -2,9 +2,9 @@ package com.simplematch.quickfixgateway.wal;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
-import com.simplematch.contracts.common.v1.OrderType;
-import com.simplematch.contracts.common.v1.Side;
-import com.simplematch.contracts.common.v1.TimeInForce;
+import com.simplematch.contracts.common.v2.OrderType;
+import com.simplematch.contracts.common.v2.Side;
+import com.simplematch.contracts.common.v2.TimeInForce;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Path;
 import org.junit.jupiter.api.Test;

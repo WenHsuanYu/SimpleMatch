@@ -3,8 +3,8 @@ package com.simplematch.quickfixgateway.wal;
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.node.ObjectNode;
-import com.simplematch.contracts.common.v1.OrderType;
-import com.simplematch.contracts.common.v1.TimeInForce;
+import com.simplematch.contracts.common.v2.OrderType;
+import com.simplematch.contracts.common.v2.TimeInForce;
 
 /** Encodes semantic WAL records into the stable flat JSON shape. */
 final class WalRecordJsonEncoder {

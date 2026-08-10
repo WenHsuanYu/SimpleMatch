@@ -3,7 +3,7 @@ package com.simplematch.quickfixgateway.publicapi;
 import static org.assertj.core.api.Assertions.assertThat;
 
 import com.simplematch.contracts.common.v1.EventMetadata;
-import com.simplematch.contracts.common.v1.Side;
+import com.simplematch.contracts.common.v2.Side;
 import com.simplematch.contracts.matching.v1.ExecutionEvent;
 import com.simplematch.contracts.matching.v1.ExecutionType;
 import com.simplematch.quickfixgateway.fix.FixMessageMapper;
@@ -42,7 +42,7 @@ class FixMessageMapperPublicApiTest {
             .setExecId("E-CXL-1")
             .setOrderId("O-C1")
             .setExecutionType(ExecutionType.EXECUTION_TYPE_CANCEL_REJECTED)
-            .setSide(Side.SIDE_BUY)
+            .setSide(com.simplematch.contracts.common.v1.Side.SIDE_BUY)
             .setCancelClOrdId("CXL-1")
             .setOrigClOrdId("C1")
             .build();

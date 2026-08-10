@@ -1,12 +1,13 @@
 package com.simplematch.quickfixgateway.risk;
 
-import com.simplematch.contracts.orders.v1.OrderCommand;
+import com.simplematch.contracts.orders.v2.CancelOrderCommand;
+import com.simplematch.contracts.orders.v2.NewOrderCommand;
 
-/** Admits gateway commands through risk-service. */
+/** Admits typed v2 Gateway commands through risk-service. */
 public interface RiskSubmissionClient {
-  /** Submits a new-order command to risk admission. */
-  RiskSubmissionResult submitNewOrder(OrderCommand command);
+  /** Submits a typed new-order command to Risk admission. */
+  RiskSubmissionResult submitNewOrder(NewOrderCommand command);
 
-  /** Submits a cancel command to risk admission. */
-  RiskSubmissionResult submitCancel(OrderCommand command);
+  /** Submits a typed cancellation command to Risk admission. */
+  RiskSubmissionResult submitCancel(CancelOrderCommand command);
 }

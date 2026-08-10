@@ -1,13 +1,14 @@
 package com.simplematch.quickfixgateway.risk;
 
-import com.simplematch.contracts.orders.v1.OrderCommand;
+import com.simplematch.contracts.orders.v2.CancelOrderCommand;
+import com.simplematch.contracts.orders.v2.NewOrderCommand;
 import io.grpc.Status;
 import java.time.Clock;
 import java.util.EnumSet;
 import java.util.Set;
 import java.util.function.Supplier;
 
-/** Adds bounded retry and circuit-breaking behavior around synchronous risk admission. */
+/** Adds bounded retry and circuit-breaking behavior around synchronous Risk admission. */
 public final class ResilientRiskSubmissionClient implements RiskSubmissionClient {
   @FunctionalInterface
   interface Sleeper {
@@ -62,17 +63,17 @@ public final class ResilientRiskSubmissionClient implements RiskSubmissionClient
   }
 
   @Override
-  public RiskSubmissionResult submitNewOrder(OrderCommand command) {
-    return execute(command, "submit", () -> delegate.submitNewOrder(command));
+  public RiskSubmissionResult submitNewOrder(NewOrderCommand command) {
+    return execute("submit", () -> delegate.submitNewOrder(command));
   }
 
   @Override
-  public RiskSubmissionResult submitCancel(OrderCommand command) {
-    return execute(command, "cancel", () -> delegate.submitCancel(command));
+  public RiskSubmissionResult submitCancel(CancelOrderCommand command) {
+    return execute("cancel", () -> delegate.submitCancel(command));
   }
 
   private RiskSubmissionResult execute(
-      OrderCommand command, String operation, Supplier<RiskSubmissionResult> call) {
+      String operation, Supplier<RiskSubmissionResult> call) {
     RuntimeException lastFailure = null;
     for (int attempt = 1; attempt <= maxAttempts; attempt += 1) {
       circuitBreaker.acquirePermission();
@@ -84,30 +85,17 @@ public final class ResilientRiskSubmissionClient implements RiskSubmissionClient
         circuitBreaker.recordFailure();
         lastFailure = exception;
         if (!isRetryable(exception) || attempt >= maxAttempts) {
-          throw RiskSubmissionFailure.unavailable(
-              operationFor(command, operation), attempt, exception);
+          throw RiskSubmissionFailure.unavailable(operation, attempt, exception);
         }
         if (backoffMillis > 0) {
           sleeper.sleep(backoffMillis);
         }
       }
     }
-    throw RiskSubmissionFailure.unavailable(
-        operationFor(command, operation), maxAttempts, lastFailure);
+    throw RiskSubmissionFailure.unavailable(operation, maxAttempts, lastFailure);
   }
 
   private boolean isRetryable(RuntimeException exception) {
     return RETRYABLE_CODES.contains(Status.fromThrowable(exception).getCode());
-  }
-
-  private String operationFor(OrderCommand command, String fallback) {
-    if (command == null) {
-      return fallback;
-    }
-    return switch (command.getCommandType()) {
-      case COMMAND_TYPE_CANCEL -> "cancel";
-      case COMMAND_TYPE_NEW -> "submit";
-      default -> fallback;
-    };
   }
 }

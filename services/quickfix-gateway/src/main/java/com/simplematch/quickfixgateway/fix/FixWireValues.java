@@ -1,6 +1,5 @@
 package com.simplematch.quickfixgateway.fix;
 
-import com.simplematch.contracts.common.v1.Side;
 import com.simplematch.contracts.matching.v1.ExecutionEvent;
 import com.simplematch.contracts.matching.v1.ExecutionType;
 import java.math.BigDecimal;
@@ -17,7 +16,15 @@ final class FixWireValues {
 
   private FixWireValues() {}
 
-  static char mapSide(Side side) {
+  static char mapOrderSide(com.simplematch.contracts.common.v2.Side side) {
+    return switch (side) {
+      case SIDE_SELL -> '2';
+      case SIDE_BUY, SIDE_UNSPECIFIED -> '1';
+      default -> '1';
+    };
+  }
+
+  static char mapExecutionSide(com.simplematch.contracts.common.v1.Side side) {
     return switch (side) {
       case SIDE_SELL -> '2';
       case SIDE_BUY, SIDE_UNSPECIFIED -> '1';

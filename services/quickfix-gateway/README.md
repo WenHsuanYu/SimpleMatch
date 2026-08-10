@@ -19,7 +19,8 @@ This README describes the Gateway-specific implementation of that policy.
 - validating canonical UUID `Account(1)` before durable order admission;
 - appending valid commands to the local command WAL before Risk submission;
 - durably recording recovery state in a sidecar journal;
-- synchronously submitting new and cancel commands to the production Risk v2 admission service;
+- mapping durable WAL commands directly to typed Risk v2 new/cancel commands;
+- synchronously submitting those commands to the production Risk v2 admission service;
 - reconciling indeterminate Risk outcomes against Risk's durable admission journal;
 - returning terminal FIX acceptance or rejection only when the authoritative Risk outcome is known;
 - keeping unknown new-order outcomes non-terminal rather than fabricating a business rejection; and
@@ -51,12 +52,19 @@ For a valid inbound command, the write-before-submit ordering is:
 ```text
 1. force command WAL
 2. force recovery sidecar UNKNOWN
-3. start the Risk v2 RPC
+3. map the WAL record to the typed Risk v2 command
+4. start the Risk v2 RPC
 ```
 
 The command WAL records what normalized command was received. The sidecar records what the Gateway
 knows about Risk ownership or outcome. Sidecar states are `UNKNOWN`, `PENDING`, `ACCEPTED`, and
 `REJECTED`.
+
+The WAL is a Gateway-owned persistence model, not a serialized Risk protobuf. Its current local
+`schemaVersion = v1` identifies the stable flat WAL JSON format; it does **not** mean that the
+Gateway submits a v1 Risk contract. Live submission and restart resubmission both use the same
+`RiskCommandMapper` and `RiskCommandSubmitter` to produce typed v2 `NewOrderCommand` or
+`CancelOrderCommand` messages directly from the durable WAL record.
 
 Startup recovery is state-aware rather than a blind WAL replay:
 
@@ -103,10 +111,10 @@ details.
 
 The external FIX/WAL order id remains deterministic `OrderID = O-<ClOrdID>`.
 
-At the Risk v2 boundary, the Gateway derives a separate opaque internal order UUID from FIX session
-identity, the Asia/Taipei trading day, and the original client `ClOrdID`. New and cancel commands
-for the same FIX order on the same trading day therefore map to the same internal Risk order
-identity without changing the FIX-facing `OrderID` contract.
+At the Risk v2 boundary, `RiskOrderIdentityDeriver` derives a separate opaque internal order UUID
+from FIX session identity, the Asia/Taipei trading day, and the original client `ClOrdID`. New and
+cancel commands for the same FIX order on the same trading day therefore map to the same internal
+Risk order identity without changing the FIX-facing `OrderID` contract.
 
 Canonical account identity is owned by Account Service. FIX `Account(1)` carries the canonical UUID;
 the Gateway validates and preserves it. The Gateway does not derive an account UUID from a human-
@@ -119,15 +127,17 @@ asynchronous order path begins after Risk durable admission:
 
 ```text
 Gateway WAL
+  -> RiskCommandMapper
+  -> v2 NewOrderCommand / CancelOrderCommand
   -> Risk v2 admission journal
   -> Risk terminal journal + transactional outbox
   -> CDC / Kafka orders.validated
   -> matching-engine
 ```
 
-The v1 `OrderCommand` type is still used internally by current WAL and Risk adapter code. That
-internal carrier is separate from Kafka topic ownership and must not be interpreted as a supported
-`orders.commands` publication contract.
+The production Gateway-to-Risk admission path no longer constructs the v1 `OrderCommand` message.
+A shared v1 adapter may remain elsewhere as an explicit compatibility utility, but it is not part of
+QuickFIX live submission, WAL recovery, or Kafka routing.
 
 ## Implemented Behavior
 
@@ -138,6 +148,7 @@ The Java gateway includes:
 - `NewOrderSingle (35=D)` and cancel request ingestion;
 - gateway-local validation before WAL append;
 - command WAL plus append-only recovery sidecar;
+- direct WAL-to-v2 Risk command mapping;
 - v2 Risk submission with bounded retry and breaker protection;
 - Risk admission reconciliation during startup recovery;
 - canonical Account UUID validation before durable admission;
@@ -218,9 +229,10 @@ Run the dedicated QuickFIX/J certification-style simulator evidence:
 ./gradlew :services:quickfix-gateway:certificationTest
 ```
 
-The verification suite covers the normal FIX path together with durable WAL ordering, state-aware
-recovery, identity validation, and the separation between authoritative Risk outcomes and transport
-uncertainty. Current CI evidence belongs in execution/certification material rather than this README.
+The verification suite covers the normal FIX path together with durable WAL ordering, direct v2
+command mapping, state-aware recovery, identity validation, and the separation between authoritative
+Risk outcomes and transport uncertainty. Current CI evidence belongs in execution/certification
+material rather than this README.
 
 ## Scope Boundary
 

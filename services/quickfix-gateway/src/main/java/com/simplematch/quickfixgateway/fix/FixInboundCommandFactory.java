@@ -1,6 +1,6 @@
 package com.simplematch.quickfixgateway.fix;
 
-import com.simplematch.contracts.common.v1.Side;
+import com.simplematch.contracts.common.v2.Side;
 import com.simplematch.contracts.v2.V2Identifiers;
 import com.simplematch.quickfixgateway.wal.FixSessionIdentity;
 import com.simplematch.quickfixgateway.wal.RawFixMessage;

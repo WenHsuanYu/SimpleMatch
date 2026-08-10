@@ -1,7 +1,6 @@
 package com.simplematch.quickfixgateway.wal;
 
-import com.simplematch.contracts.common.v1.Side;
-import com.simplematch.contracts.orders.v1.CommandType;
+import com.simplematch.contracts.common.v2.Side;
 
 /** Command-specific facts carried by one durable inbound FIX command. */
 public sealed interface WalCommand permits WalCommand.NewOrder, WalCommand.Cancel {
@@ -9,7 +8,13 @@ public sealed interface WalCommand permits WalCommand.NewOrder, WalCommand.Cance
   String messageType();
 
   /** Gateway command classification represented by this command. */
-  CommandType commandType();
+  Type commandType();
+
+  /** Stable WAL command names retained independently of transport contract versions. */
+  enum Type {
+    COMMAND_TYPE_NEW,
+    COMMAND_TYPE_CANCEL
+  }
 
   /** A new order with complete order terms. */
   record NewOrder(WalOrderTerms terms) implements WalCommand {
@@ -24,25 +29,25 @@ public sealed interface WalCommand permits WalCommand.NewOrder, WalCommand.Cance
     }
 
     @Override
-    public CommandType commandType() {
-      return CommandType.COMMAND_TYPE_NEW;
+    public Type commandType() {
+      return Type.COMMAND_TYPE_NEW;
     }
   }
 
   /** A cancellation with the durable order context required by v2 admission. */
   record Cancel(String symbol, Side side) implements WalCommand {
-    /** Creates the legacy v1 placeholder form used when reading old WAL records. */
+    /** Creates an empty cancellation context for codec validation paths. */
     public Cancel() {
       this("", Side.SIDE_UNSPECIFIED);
     }
 
-    /** Normalizes nullable legacy context while preserving explicit v2 values. */
+    /** Normalizes nullable context while preserving explicit values. */
     public Cancel {
       symbol = symbol == null ? "" : symbol;
       side = side == null ? Side.SIDE_UNSPECIFIED : side;
     }
 
-    /** Returns whether this cancellation carries v2 admission context. */
+    /** Returns whether this cancellation carries complete v2 admission context. */
     public boolean hasOrderContext() {
       return !symbol.isBlank() && side != Side.SIDE_UNSPECIFIED;
     }
@@ -53,8 +58,8 @@ public sealed interface WalCommand permits WalCommand.NewOrder, WalCommand.Cance
     }
 
     @Override
-    public CommandType commandType() {
-      return CommandType.COMMAND_TYPE_CANCEL;
+    public Type commandType() {
+      return Type.COMMAND_TYPE_CANCEL;
     }
   }
 }

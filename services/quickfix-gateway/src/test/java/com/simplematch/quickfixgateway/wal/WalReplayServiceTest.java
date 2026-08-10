@@ -8,15 +8,17 @@ import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.when;
 
-import com.simplematch.contracts.common.v1.OrderType;
-import com.simplematch.contracts.common.v1.Side;
-import com.simplematch.contracts.common.v1.TimeInForce;
-import com.simplematch.contracts.orders.v1.OrderCommand;
+import com.simplematch.contracts.common.v2.OrderType;
+import com.simplematch.contracts.common.v2.Side;
+import com.simplematch.contracts.common.v2.TimeInForce;
+import com.simplematch.contracts.orders.v2.CancelOrderCommand;
+import com.simplematch.contracts.orders.v2.NewOrderCommand;
 import com.simplematch.quickfixgateway.fix.OrderSessionRegistry;
 import com.simplematch.quickfixgateway.risk.RiskReconciliationClient;
 import com.simplematch.quickfixgateway.risk.RiskReconciliationResult;
 import com.simplematch.quickfixgateway.risk.RiskSubmissionClient;
 import com.simplematch.quickfixgateway.risk.RiskSubmissionResult;
+import com.simplematch.quickfixgateway.risk.RiskTestSupport;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Path;
 import java.util.UUID;
@@ -96,22 +98,25 @@ class WalReplayServiceTest {
       wal.appendAndFlush(newOrder());
       final RiskSubmissionClient risk = mock(RiskSubmissionClient.class);
       final RiskReconciliationClient reconciliation = mock(RiskReconciliationClient.class);
-      when(risk.submitNewOrder(any(OrderCommand.class)))
+      when(risk.submitNewOrder(any(NewOrderCommand.class)))
           .thenAnswer(
               invocation -> {
                 assertThat(states.readLatest())
                     .containsEntry(COMMAND_ID, WalRecoveryState.UNKNOWN);
+                final NewOrderCommand command = invocation.getArgument(0);
                 return new RiskSubmissionResult(
-                    ORDER_ID, RiskSubmissionResult.Outcome.ACCEPTED, "", "");
+                    command.getOrderId(), RiskSubmissionResult.Outcome.ACCEPTED, "", "");
               });
       final OrderSessionRegistry registry = new OrderSessionRegistry();
 
       assertThat(replay(wal, states, risk, reconciliation, registry).replayAll()).isEqualTo(1);
 
-      final ArgumentCaptor<OrderCommand> command = ArgumentCaptor.forClass(OrderCommand.class);
+      final ArgumentCaptor<NewOrderCommand> command =
+          ArgumentCaptor.forClass(NewOrderCommand.class);
       verify(risk).submitNewOrder(command.capture());
       verifyNoInteractions(reconciliation);
       assertThat(command.getValue().getCommandId()).isEqualTo(COMMAND_ID);
+      assertThat(UUID.fromString(command.getValue().getOrderId())).isNotNull();
       assertThat(states.readLatest()).containsEntry(COMMAND_ID, WalRecoveryState.ACCEPTED);
       assertThat(registry.find(ORDER_ID)).isPresent();
     }
@@ -127,18 +132,22 @@ class WalReplayServiceTest {
       final RiskReconciliationClient reconciliation = mock(RiskReconciliationClient.class);
       when(reconciliation.lookup(COMMAND_ID))
           .thenReturn(reconciliation(RiskReconciliationResult.Outcome.NOT_FOUND));
-      when(risk.submitNewOrder(any(OrderCommand.class)))
-          .thenReturn(
-              new RiskSubmissionResult(
-                  ORDER_ID, RiskSubmissionResult.Outcome.ACCEPTED, "", ""));
+      when(risk.submitNewOrder(any(NewOrderCommand.class)))
+          .thenAnswer(
+              invocation -> {
+                final NewOrderCommand command = invocation.getArgument(0);
+                return new RiskSubmissionResult(
+                    command.getOrderId(), RiskSubmissionResult.Outcome.ACCEPTED, "", "");
+              });
       final OrderSessionRegistry registry = new OrderSessionRegistry();
 
       assertThat(replay(wal, states, risk, reconciliation, registry).replayAll()).isEqualTo(1);
 
-      final ArgumentCaptor<OrderCommand> command = ArgumentCaptor.forClass(OrderCommand.class);
+      final ArgumentCaptor<NewOrderCommand> command =
+          ArgumentCaptor.forClass(NewOrderCommand.class);
       verify(risk).submitNewOrder(command.capture());
       assertThat(command.getValue().getCommandId()).isEqualTo(COMMAND_ID);
-      assertThat(command.getValue().getOrderId()).isEqualTo(ORDER_ID);
+      assertThat(UUID.fromString(command.getValue().getOrderId())).isNotNull();
       assertThat(states.readLatest()).containsEntry(COMMAND_ID, WalRecoveryState.ACCEPTED);
     }
   }
@@ -187,17 +196,21 @@ class WalReplayServiceTest {
                   "",
                   "",
                   ""));
-      when(risk.submitCancel(any(OrderCommand.class)))
-          .thenReturn(
-              new RiskSubmissionResult(
-                  ORDER_ID, RiskSubmissionResult.Outcome.ACCEPTED, "", ""));
+      when(risk.submitCancel(any(CancelOrderCommand.class)))
+          .thenAnswer(
+              invocation -> {
+                final CancelOrderCommand command = invocation.getArgument(0);
+                return new RiskSubmissionResult(
+                    command.getOrderId(), RiskSubmissionResult.Outcome.ACCEPTED, "", "");
+              });
 
       replay(wal, states, risk, reconciliation, new OrderSessionRegistry()).replayAll();
 
-      final ArgumentCaptor<OrderCommand> command = ArgumentCaptor.forClass(OrderCommand.class);
+      final ArgumentCaptor<CancelOrderCommand> command =
+          ArgumentCaptor.forClass(CancelOrderCommand.class);
       verify(risk).submitCancel(command.capture());
-      assertThat(command.getValue().getOrderId()).isEqualTo(ORDER_ID);
-      assertThat(command.getValue().getSymbol()).isEqualTo("2330");
+      assertThat(UUID.fromString(command.getValue().getOrderId())).isNotNull();
+      assertThat(command.getValue().getInstrument().getSymbol()).isEqualTo("2330");
       assertThat(command.getValue().getSide()).isEqualTo(Side.SIDE_BUY);
     }
   }
@@ -216,7 +229,8 @@ class WalReplayServiceTest {
       RiskSubmissionClient risk,
       RiskReconciliationClient reconciliation,
       OrderSessionRegistry registry) {
-    return new WalReplayService(wal, states, risk, reconciliation, registry);
+    return new WalReplayService(
+        wal, states, RiskTestSupport.submitter(risk), reconciliation, registry);
   }
 
   private RiskReconciliationResult reconciliation(RiskReconciliationResult.Outcome outcome) {

@@ -3,7 +3,7 @@ package com.simplematch.quickfixgateway.fix;
 import static org.assertj.core.api.Assertions.assertThat;
 
 import com.simplematch.contracts.common.v1.EventMetadata;
-import com.simplematch.contracts.common.v1.Side;
+import com.simplematch.contracts.common.v2.Side;
 import com.simplematch.contracts.matching.v1.ExecutionEvent;
 import com.simplematch.contracts.matching.v1.ExecutionType;
 import com.simplematch.quickfixgateway.test.FixMessageSnapshot;
@@ -18,9 +18,6 @@ class FixMessageMapperGoldenTest {
   private final FixMessageMapper fixMessageMapper =
       new FixMessageMapper(Clock.fixed(Instant.parse("2024-03-27T08:09:10.123Z"), ZoneOffset.UTC));
 
-  // Verify that the Pending New Execution Report fields match the golden snapshot.
-  // Scenario: build the message with a fixed clock so the FIX field order and contents remain
-  // stable.
   @DisplayName("Pending New reports match the golden snapshot")
   @Test
   void pendingNewExecutionReportMatchesGoldenSnapshot() {
@@ -55,9 +52,6 @@ class FixMessageMapperGoldenTest {
                 + "11=C1|55=AAPL|60=2024-03-27T08:09:10.123Z");
   }
 
-  // Verify that the Cancel Reject message fields match the golden snapshot.
-  // Scenario: provide the full state and a CANCEL_REJECTED event, then confirm the mapper output
-  // remains stable.
   @DisplayName("Cancel Reject messages match the golden snapshot")
   @Test
   void orderCancelRejectMatchesGoldenSnapshot() {
@@ -88,7 +82,7 @@ class FixMessageMapperGoldenTest {
             .setExecutionType(ExecutionType.EXECUTION_TYPE_CANCEL_REJECTED)
             .setClOrdId("C1")
             .setOrigClOrdId("C1")
-            .setSide(Side.SIDE_BUY)
+            .setSide(com.simplematch.contracts.common.v1.Side.SIDE_BUY)
             .setCancelClOrdId("CXL-1")
             .setText("too late to cancel")
             .build();

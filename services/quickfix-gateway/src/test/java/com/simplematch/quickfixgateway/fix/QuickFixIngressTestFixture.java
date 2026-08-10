@@ -2,10 +2,12 @@ package com.simplematch.quickfixgateway.fix;
 
 import com.simplematch.quickfixgateway.kafka.OrdersCommandPublisher;
 import com.simplematch.quickfixgateway.risk.RiskSubmissionClient;
+import com.simplematch.quickfixgateway.risk.RiskTestSupport;
 import com.simplematch.quickfixgateway.wal.WalAppender;
 import com.simplematch.quickfixgateway.wal.WalDurableCommandWriter;
 import com.simplematch.quickfixgateway.wal.WalRecoveryJournal;
 import java.time.Clock;
+import java.util.Objects;
 
 /** Composes the same concrete ingress modules used by the Spring configuration in tests. */
 final class QuickFixIngressTestFixture {
@@ -40,21 +42,20 @@ final class QuickFixIngressTestFixture {
       FixMessageMapper mapper,
       Clock clock,
       GatewayAdmissionGate admissionGate) {
+    Objects.requireNonNull(ordersCommandPublisher, "ordersCommandPublisher");
     final CommandIdGenerator commandIdGenerator = new CommandIdGenerator();
     final WalRecoveryJournal recoveryJournal =
         new WalRecoveryJournal(WalRecoveryJournal.pathFor(walAppender.walPath()));
     final WalDurableCommandWriter durableCommandWriter =
         new WalDurableCommandWriter(walAppender, recoveryJournal);
     final RiskSubmissionResponder riskSubmissionResponder =
-        new RiskSubmissionResponder(riskSubmissionClient, sender, mapper, recoveryJournal);
-    final FixCompatibilityCommandPublisher compatibilityPublisher =
-        new FixCompatibilityCommandPublisher(ordersCommandPublisher);
+        new RiskSubmissionResponder(
+            RiskTestSupport.submitter(riskSubmissionClient), sender, mapper, recoveryJournal);
     return new InboundFixMessageHandler(
         new NewOrderFixMessageHandler(
             new NewOrderCommandPreparer(commandIdGenerator, clock),
             new NewOrderDurableAdmission(durableCommandWriter, riskSubmissionResponder),
-            new AcceptedNewOrderResponder(
-                registry, sender, mapper, compatibilityPublisher),
+            new AcceptedNewOrderResponder(registry, sender, mapper),
             new NewOrderRejectionResponder(sender, mapper, commandIdGenerator),
             admissionGate,
             clock,
@@ -63,7 +64,6 @@ final class QuickFixIngressTestFixture {
             durableCommandWriter,
             registry,
             riskSubmissionResponder,
-            compatibilityPublisher,
             commandIdGenerator,
             clock,
             admissionGate));

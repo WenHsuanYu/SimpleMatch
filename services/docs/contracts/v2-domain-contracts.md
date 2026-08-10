@@ -1,7 +1,9 @@
 # V2 Domain Contracts
 
-This page records the additive v2 Protobuf contracts that establish the transition vocabulary. It
-does not claim that live services have switched from v1; routing remains a later phase.
+This page records the additive v2 Protobuf contracts that define the current typed admission
+vocabulary. QuickFIX Gateway and Risk now use the v2 order-admission contracts on the production
+synchronous path; other domains may still have independently versioned v1 event contracts while
+their own migrations remain incomplete.
 
 ## Contract shape
 
@@ -24,8 +26,18 @@ A rejection is a domain fact, not a transport failure or dead-letter record.
 - The only v2 currency is `TWD`; phase-one venues are `XTAI` and `ROCO`.
 - Absolute times are UTC milliseconds. `TradingDay` is an ISO date interpreted in `Asia/Taipei`, and
   session state is explicit.
-- ROD, IOC, and FOK are all represented by the v2 time-in-force enum. Their execution rules are
-  implemented in later matching phases.
+- ROD, IOC, and FOK are all represented by the v2 time-in-force enum.
+
+## QuickFIX to Risk production boundary
+
+QuickFIX Gateway does not construct a v1 `OrderCommand` on the production admission path. It keeps a
+Gateway-owned durable `WalRecord`, then maps that record directly to a validated v2
+`NewOrderCommand` or `CancelOrderCommand` before calling Risk v2. Live submission and startup
+resubmission use the same mapper so command identity, typed values, and internal order identity
+cannot drift between paths.
+
+The Gateway WAL has its own local persistence schema. A WAL record whose JSON `schemaVersion` is
+`v1` therefore does not imply a v1 Risk service contract; it identifies the stable WAL encoding.
 
 ## Compatibility
 
@@ -34,9 +46,11 @@ fields are append-only: a field number must never be reused or assigned a differ
 change that needs incompatible semantics creates a new message or versioned contract rather than
 modifying an existing field.
 
-`V1OrderCommandAdapter` is an explicit ingress seam for representable v1 commands. It validates
-values while converting and round-trips the v1 command without changing the existing services' v1
-routing. The deployment boundary supplies the legacy venue because v1 carries no MIC. This adapter
-remains until the later v2 admission migration is complete. Its v1-to-v2 and v2-to-v1 field-family
-mapping collaborators are package-private implementation details; they keep the public adapter
-focused on the compatibility boundary without changing the wire contract.
+`V1OrderCommandAdapter` remains a shared compatibility utility for explicitly representable legacy
+commands and contract tests. It is not part of QuickFIX live submission, WAL recovery, or the
+production Risk v2 admission path. New production code must not route through it merely because a
+legacy message type remains available in the repository.
+
+Its v1-to-v2 and v2-to-v1 field-family mapping collaborators are package-private implementation
+details. Removing the utility itself is a separate shared-contract cleanup once no remaining
+compatibility or inventory use requires it.

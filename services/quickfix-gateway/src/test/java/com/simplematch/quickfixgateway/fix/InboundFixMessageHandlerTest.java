@@ -9,17 +9,18 @@ import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.when;
 
-import com.simplematch.contracts.common.v1.OrderType;
-import com.simplematch.contracts.common.v1.Side;
-import com.simplematch.contracts.common.v1.TimeInForce;
-import com.simplematch.contracts.orders.v1.CommandType;
-import com.simplematch.contracts.orders.v1.OrderCommand;
+import com.simplematch.contracts.common.v2.OrderType;
+import com.simplematch.contracts.common.v2.Side;
+import com.simplematch.contracts.common.v2.TimeInForce;
+import com.simplematch.contracts.orders.v2.CancelOrderCommand;
+import com.simplematch.contracts.orders.v2.NewOrderCommand;
 import com.simplematch.quickfixgateway.kafka.OrdersCommandPublisher;
 import com.simplematch.quickfixgateway.risk.RiskSubmissionClient;
 import com.simplematch.quickfixgateway.risk.RiskSubmissionFailure;
 import com.simplematch.quickfixgateway.risk.RiskSubmissionResult;
 import com.simplematch.quickfixgateway.test.FixMessageSnapshot;
 import com.simplematch.quickfixgateway.wal.WalAppender;
+import com.simplematch.quickfixgateway.wal.WalCommand;
 import com.simplematch.quickfixgateway.wal.WalRecord;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Path;
@@ -28,7 +29,6 @@ import java.time.Instant;
 import java.time.ZoneOffset;
 import java.util.List;
 import java.util.UUID;
-import java.util.concurrent.CompletableFuture;
 import java.util.stream.Stream;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
@@ -61,24 +61,20 @@ class InboundFixMessageHandlerTest {
   private static final String ACCOUNT_ID = "0194a8f0-7c77-7b38-9e2d-2a5fdd0f7c13";
   private static final String SECOND_ACCOUNT_ID = "0194a8f0-7c77-7b38-9e2d-2a5fdd0f7c14";
 
-  @DisplayName(
-      "the new-order baseline flow writes WAL, publishes the command, and sends Pending New")
+  @DisplayName("the new-order baseline writes WAL, submits v2 Risk, and sends Pending New")
   @Test
-  void newOrderBaselinePathWritesExactWalPublishesExactCommandRegistersStateAndSendsPendingNew()
-      throws Exception {
+  void newOrderBaselineWritesWalSubmitsV2RegistersStateAndSendsPendingNew() throws Exception {
     final WalAppender walAppender =
         new WalAppender(tempDir.resolve("inbound.wal"), StandardCharsets.UTF_8);
     final OrdersCommandPublisher publisher = mock(OrdersCommandPublisher.class);
     final RiskSubmissionClient riskSubmissionClient = mock(RiskSubmissionClient.class);
     final OrderSessionRegistry registry = new OrderSessionRegistry();
-    when(publisher.publish(any(OrderCommand.class)))
-        .thenReturn(CompletableFuture.completedFuture(null));
-    when(riskSubmissionClient.submitNewOrder(any(OrderCommand.class)))
+    when(riskSubmissionClient.submitNewOrder(any(NewOrderCommand.class)))
         .thenAnswer(
             invocation -> {
               assertThat(walAppender.readAll()).hasSize(1);
               assertThat(registry.find("O-C1")).isEmpty();
-              return new RiskSubmissionResult("O-C1", true, "", "");
+              return new RiskSubmissionResult("internal-order", true, "", "");
             });
     final FixSessionMessageSender sender = mock(FixSessionMessageSender.class);
     final FixMessageMapper mapper = new FixMessageMapper(FIXED_CLOCK);
@@ -112,34 +108,35 @@ class InboundFixMessageHandlerTest {
     assertThat(walRecord.price()).isEqualTo("101.25");
     assertThat(walRecord.orderType()).isEqualTo(OrderType.ORDER_TYPE_LIMIT);
     assertThat(walRecord.tif()).isEqualTo(TimeInForce.TIME_IN_FORCE_ROD);
-    assertThat(walRecord.commandType()).isEqualTo(CommandType.COMMAND_TYPE_NEW);
+    assertThat(walRecord.commandType()).isEqualTo(WalCommand.Type.COMMAND_TYPE_NEW);
     assertThat(walRecord.rawFix())
         .contains("35=D")
         .contains("11=C1")
         .contains("55=AAPL")
         .contains("38=10");
 
-    final ArgumentCaptor<OrderCommand> commandCaptor = ArgumentCaptor.forClass(OrderCommand.class);
-    verify(publisher).publish(commandCaptor.capture());
-    final OrderCommand command = commandCaptor.getValue();
-    assertThat(command.getMetadata().getSchemaVersion()).isEqualTo("v1");
+    final ArgumentCaptor<NewOrderCommand> commandCaptor =
+        ArgumentCaptor.forClass(NewOrderCommand.class);
+    verify(riskSubmissionClient).submitNewOrder(commandCaptor.capture());
+    final NewOrderCommand command = commandCaptor.getValue();
+    assertThat(command.getMetadata().getSchemaVersion()).isEqualTo("v2");
     assertThat(command.getMetadata().getEventId()).isEqualTo(walRecord.recordId());
     assertThat(command.getMetadata().getCreatedAtUnixMs()).isEqualTo(FIXED_INSTANT.toEpochMilli());
     assertThat(command.getMetadata().getSourceService()).isEqualTo("quickfix-gateway");
     assertThat(command.getCommandId()).isEqualTo(walRecord.recordId());
-    assertThat(command.getCommandType()).isEqualTo(CommandType.COMMAND_TYPE_NEW);
-    assertThat(command.getOrderId()).isEqualTo("O-C1");
+    assertThat(UUID.fromString(command.getOrderId())).isNotNull();
+    assertThat(command.getOrderId()).isNotEqualTo(walRecord.orderId());
     assertThat(command.getAccountId()).isEqualTo(ACCOUNT_ID);
     assertThat(command.getSenderCompId()).isEqualTo("CLIENT1");
     assertThat(command.getTargetCompId()).isEqualTo("SIMPLEMATCH");
     assertThat(command.getClOrdId()).isEqualTo("C1");
-    assertThat(command.getOrigClOrdId()).isEmpty();
-    assertThat(command.getSymbol()).isEqualTo("AAPL");
+    assertThat(command.getInstrument().getSymbol()).isEqualTo("AAPL");
     assertThat(command.getSide()).isEqualTo(Side.SIDE_BUY);
-    assertThat(command.getQuantity()).isEqualTo("10");
-    assertThat(command.getPrice()).isEqualTo("101.25");
+    assertThat(command.getQuantity().getShares()).isEqualTo(10L);
+    assertThat(command.getLimitPrice().getUnits()).isEqualTo(1_012_500L);
     assertThat(command.getOrderType()).isEqualTo(OrderType.ORDER_TYPE_LIMIT);
     assertThat(command.getTif()).isEqualTo(TimeInForce.TIME_IN_FORCE_ROD);
+    verifyNoInteractions(publisher);
 
     final OrderSessionState sessionState = registry.find("O-C1").orElseThrow();
     assertThat(sessionState.sessionId()).isEqualTo(sessionId);
@@ -186,11 +183,9 @@ class InboundFixMessageHandlerTest {
         new WalAppender(tempDir.resolve("inbound.wal"), StandardCharsets.UTF_8);
     final OrdersCommandPublisher publisher = mock(OrdersCommandPublisher.class);
     final RiskSubmissionClient riskSubmissionClient = mock(RiskSubmissionClient.class);
-    when(publisher.publish(any(OrderCommand.class)))
-        .thenReturn(CompletableFuture.completedFuture(null));
-    when(riskSubmissionClient.submitNewOrder(any(OrderCommand.class)))
+    when(riskSubmissionClient.submitNewOrder(any(NewOrderCommand.class)))
         .thenReturn(new RiskSubmissionResult("accepted", true, "", ""));
-    when(riskSubmissionClient.submitCancel(any(OrderCommand.class)))
+    when(riskSubmissionClient.submitCancel(any(CancelOrderCommand.class)))
         .thenReturn(new RiskSubmissionResult("accepted", true, "", ""));
     final FixSessionMessageSender sender = mock(FixSessionMessageSender.class);
     final OrderSessionRegistry registry = new OrderSessionRegistry();
@@ -252,10 +247,8 @@ class InboundFixMessageHandlerTest {
         new WalAppender(tempDir.resolve("inbound.wal"), StandardCharsets.UTF_8);
     final OrdersCommandPublisher publisher = mock(OrdersCommandPublisher.class);
     final RiskSubmissionClient riskSubmissionClient = mock(RiskSubmissionClient.class);
-    when(publisher.publish(any(OrderCommand.class)))
-        .thenReturn(CompletableFuture.completedFuture(null));
-    when(riskSubmissionClient.submitNewOrder(any(OrderCommand.class)))
-        .thenReturn(new RiskSubmissionResult("O-C1", true, "", ""));
+    when(riskSubmissionClient.submitNewOrder(any(NewOrderCommand.class)))
+        .thenReturn(new RiskSubmissionResult("internal-order", true, "", ""));
     final FixSessionMessageSender sender = mock(FixSessionMessageSender.class);
     final InboundFixMessageHandler handler =
         QuickFixIngressTestFixture.compose(
@@ -295,10 +288,8 @@ class InboundFixMessageHandlerTest {
         new WalAppender(tempDir.resolve(scenario + ".wal"), StandardCharsets.UTF_8)) {
       final OrdersCommandPublisher publisher = mock(OrdersCommandPublisher.class);
       final RiskSubmissionClient riskSubmissionClient = mock(RiskSubmissionClient.class);
-      when(publisher.publish(any(OrderCommand.class)))
-          .thenReturn(CompletableFuture.completedFuture(null));
-      when(riskSubmissionClient.submitNewOrder(any(OrderCommand.class)))
-          .thenReturn(new RiskSubmissionResult("O-" + scenario, true, "", ""));
+      when(riskSubmissionClient.submitNewOrder(any(NewOrderCommand.class)))
+          .thenReturn(new RiskSubmissionResult("internal-order", true, "", ""));
       final FixSessionMessageSender sender = mock(FixSessionMessageSender.class);
       final InboundFixMessageHandler handler =
           QuickFixIngressTestFixture.compose(
@@ -322,37 +313,48 @@ class InboundFixMessageHandlerTest {
               ACCOUNT_ID),
           new SessionID("FIX.4.4", "SIMPLEMATCH", "CLIENT1"));
 
-      final ArgumentCaptor<OrderCommand> commandCaptor =
-          ArgumentCaptor.forClass(OrderCommand.class);
+      final ArgumentCaptor<NewOrderCommand> commandCaptor =
+          ArgumentCaptor.forClass(NewOrderCommand.class);
       verify(riskSubmissionClient).submitNewOrder(commandCaptor.capture());
-      final OrderCommand command = commandCaptor.getValue();
-      assertThat(command.getSymbol()).isEqualTo("2330");
-      assertThat(command.getQuantity()).isEqualTo("100");
-      assertThat(command.getPrice()).isEqualTo(price);
+      final NewOrderCommand command = commandCaptor.getValue();
+      assertThat(command.getInstrument().getSymbol()).isEqualTo("2330");
+      assertThat(command.getQuantity().getShares()).isEqualTo(100L);
       assertThat(command.getOrderType()).isEqualTo(expectedOrderType);
       assertThat(command.getTif()).isEqualTo(expectedTimeInForce);
+      if (expectedOrderType == OrderType.ORDER_TYPE_LIMIT) {
+        assertThat(command.hasLimitPrice()).isTrue();
+      } else {
+        assertThat(command.hasLimitPrice()).isFalse();
+      }
       assertThat(walAppender.readAll()).singleElement().satisfies(record -> {
         assertThat(record.orderType()).isEqualTo(expectedOrderType);
         assertThat(record.tif()).isEqualTo(expectedTimeInForce);
         assertThat(record.price()).isEqualTo(price);
       });
+      verifyNoInteractions(publisher);
     }
   }
 
   private static Stream<Arguments> supportedOrderForms() {
     return Stream.of(
         Arguments.of(
-            "limit-rod", '2', '0', "101.25", OrderType.ORDER_TYPE_LIMIT, TimeInForce.TIME_IN_FORCE_ROD),
+            "limit-rod", '2', '0', "101.25", OrderType.ORDER_TYPE_LIMIT,
+            TimeInForce.TIME_IN_FORCE_ROD),
         Arguments.of(
-            "limit-ioc", '2', '3', "101.25", OrderType.ORDER_TYPE_LIMIT, TimeInForce.TIME_IN_FORCE_IOC),
+            "limit-ioc", '2', '3', "101.25", OrderType.ORDER_TYPE_LIMIT,
+            TimeInForce.TIME_IN_FORCE_IOC),
         Arguments.of(
-            "limit-fok", '2', '4', "101.25", OrderType.ORDER_TYPE_LIMIT, TimeInForce.TIME_IN_FORCE_FOK),
+            "limit-fok", '2', '4', "101.25", OrderType.ORDER_TYPE_LIMIT,
+            TimeInForce.TIME_IN_FORCE_FOK),
         Arguments.of(
-            "market-rod", '1', '0', "", OrderType.ORDER_TYPE_MARKET, TimeInForce.TIME_IN_FORCE_ROD),
+            "market-rod", '1', '0', "", OrderType.ORDER_TYPE_MARKET,
+            TimeInForce.TIME_IN_FORCE_ROD),
         Arguments.of(
-            "market-ioc", '1', '3', "", OrderType.ORDER_TYPE_MARKET, TimeInForce.TIME_IN_FORCE_IOC),
+            "market-ioc", '1', '3', "", OrderType.ORDER_TYPE_MARKET,
+            TimeInForce.TIME_IN_FORCE_IOC),
         Arguments.of(
-            "market-fok", '1', '4', "", OrderType.ORDER_TYPE_MARKET, TimeInForce.TIME_IN_FORCE_FOK));
+            "market-fok", '1', '4', "", OrderType.ORDER_TYPE_MARKET,
+            TimeInForce.TIME_IN_FORCE_FOK));
   }
 
   @DisplayName("unsupported order type or time in force is rejected before WAL and Risk")
@@ -381,8 +383,7 @@ class InboundFixMessageHandlerTest {
 
       handler.handle(order, new SessionID("FIX.4.4", "SIMPLEMATCH", "CLIENT1"));
       verify(sender).send(any(SessionID.class), any(Message.class));
-      verifyNoInteractions(riskSubmissionClient);
-      verifyNoInteractions(publisher);
+      verifyNoInteractions(riskSubmissionClient, publisher);
       assertThat(walAppender.readAll()).isEmpty();
     }
   }
@@ -399,8 +400,8 @@ class InboundFixMessageHandlerTest {
         new WalAppender(tempDir.resolve("duplicate-new.wal"), StandardCharsets.UTF_8)) {
       final OrdersCommandPublisher publisher = mock(OrdersCommandPublisher.class);
       final RiskSubmissionClient riskSubmissionClient = mock(RiskSubmissionClient.class);
-      when(riskSubmissionClient.submitNewOrder(any(OrderCommand.class)))
-          .thenReturn(new RiskSubmissionResult("O-C1", true, "", ""));
+      when(riskSubmissionClient.submitNewOrder(any(NewOrderCommand.class)))
+          .thenReturn(new RiskSubmissionResult("internal-order", true, "", ""));
       final FixSessionMessageSender sender = mock(FixSessionMessageSender.class);
       final InboundFixMessageHandler handler =
           QuickFixIngressTestFixture.compose(
@@ -418,9 +419,9 @@ class InboundFixMessageHandlerTest {
       handler.handle(order, sessionId);
       handler.handle(order, sessionId);
 
-      verify(riskSubmissionClient, times(1)).submitNewOrder(any(OrderCommand.class));
+      verify(riskSubmissionClient, times(1)).submitNewOrder(any(NewOrderCommand.class));
       verify(sender, times(1)).send(any(SessionID.class), any(Message.class));
-      verify(publisher, times(1)).publish(any(OrderCommand.class));
+      verifyNoInteractions(publisher);
       assertThat(walAppender.readAll()).hasSize(1);
     }
   }
@@ -450,8 +451,7 @@ class InboundFixMessageHandlerTest {
           new SessionID("FIX.4.4", "SIMPLEMATCH", "CLIENT1"));
 
       verify(sender).send(any(SessionID.class), any(Message.class));
-      verifyNoInteractions(riskSubmissionClient);
-      verifyNoInteractions(publisher);
+      verifyNoInteractions(riskSubmissionClient, publisher);
       assertThat(walAppender.readAll()).isEmpty();
     }
   }
@@ -463,7 +463,7 @@ class InboundFixMessageHandlerTest {
         new WalAppender(tempDir.resolve("inbound.wal"), StandardCharsets.UTF_8);
     final OrdersCommandPublisher publisher = mock(OrdersCommandPublisher.class);
     final RiskSubmissionClient riskSubmissionClient = mock(RiskSubmissionClient.class);
-    when(riskSubmissionClient.submitNewOrder(any(OrderCommand.class)))
+    when(riskSubmissionClient.submitNewOrder(any(NewOrderCommand.class)))
         .thenThrow(RiskSubmissionFailure.circuitOpen());
     final FixSessionMessageSender sender = mock(FixSessionMessageSender.class);
     final InboundFixMessageHandler handler =
@@ -486,7 +486,8 @@ class InboundFixMessageHandlerTest {
     assertThat(response.getChar(150)).isEqualTo('A');
     assertThat(response.getChar(39)).isEqualTo('A');
     assertThat(response.getString(58))
-        .isEqualTo("SYSTEM_ERROR: order outcome is pending confirmation; no client action is required");
+        .isEqualTo(
+            "SYSTEM_ERROR: order outcome is pending confirmation; no client action is required");
     assertThat(response.getString(58))
         .doesNotContain("RISK_CIRCUIT_OPEN", "circuit breaker", "risk-service");
   }
@@ -759,7 +760,8 @@ class InboundFixMessageHandlerTest {
     unsupported.getHeader().setString(MsgType.FIELD, "X");
 
     assertThatThrownBy(
-            () -> handler.handle(unsupported, new SessionID("FIX.4.4", "SIMPLEMATCH", "CLIENT1")))
+            () -> handler.handle(
+                unsupported, new SessionID("FIX.4.4", "SIMPLEMATCH", "CLIENT1")))
         .isInstanceOf(UnsupportedMessageType.class);
     assertThat(walAppender.readAll()).isEmpty();
     verifyNoInteractions(riskSubmissionClient, publisher, sender);

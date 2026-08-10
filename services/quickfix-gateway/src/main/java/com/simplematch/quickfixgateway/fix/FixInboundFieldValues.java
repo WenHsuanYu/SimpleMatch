@@ -1,8 +1,8 @@
 package com.simplematch.quickfixgateway.fix;
 
-import com.simplematch.contracts.common.v1.OrderType;
-import com.simplematch.contracts.common.v1.Side;
-import com.simplematch.contracts.common.v1.TimeInForce;
+import com.simplematch.contracts.common.v2.OrderType;
+import com.simplematch.contracts.common.v2.Side;
+import com.simplematch.contracts.common.v2.TimeInForce;
 import quickfix.FieldMap;
 import quickfix.FieldNotFound;
 

@@ -1,6 +1,5 @@
 package com.simplematch.quickfixgateway.fix;
 
-import com.simplematch.contracts.orders.v1.OrderCommand;
 import com.simplematch.quickfixgateway.risk.RiskSubmissionResult;
 import com.simplematch.quickfixgateway.wal.WalRecord;
 import com.simplematch.quickfixgateway.wal.WalRecoveryJournal;
@@ -18,14 +17,14 @@ final class RiskRecoveryStateRecorder {
     this.recoveryJournal = recoveryJournal;
   }
 
-  void record(OrderCommand command, WalRecord walRecord, RiskSubmissionResult submission) {
+  void record(WalRecord walRecord, RiskSubmissionResult submission) {
     try {
       recoveryJournal.appendAndFlush(
-          command.getCommandId(), WalRecoveryState.fromSubmission(submission));
+          walRecord.recordId(), WalRecoveryState.fromSubmission(submission));
     } catch (RuntimeException failure) {
       logger.error(
           "failed to persist WAL recovery state command_id={} order_id={} outcome={}",
-          command.getCommandId(),
+          walRecord.recordId(),
           walRecord.orderId(),
           submission.outcome(),
           failure);
