@@ -18,6 +18,10 @@ class FixMessageMapperGoldenTest {
   private final FixMessageMapper fixMessageMapper =
       new FixMessageMapper(Clock.fixed(Instant.parse("2024-03-27T08:09:10.123Z"), ZoneOffset.UTC));
 
+  /**
+   * Verifies that a Pending New Execution Report remains identical to the golden FIX snapshot.
+   * A fixed clock keeps time-dependent fields and the selected FIX field sequence deterministic.
+   */
   @DisplayName("Pending New reports match the golden snapshot")
   @Test
   void pendingNewExecutionReportMatchesGoldenSnapshot() {
@@ -52,6 +56,10 @@ class FixMessageMapperGoldenTest {
                 + "11=C1|55=AAPL|60=2024-03-27T08:09:10.123Z");
   }
 
+  /**
+   * Verifies that a cancel-rejected matching event maps to the stable FIX Order Cancel Reject
+   * snapshot when the original accepted-order session state is available.
+   */
   @DisplayName("Cancel Reject messages match the golden snapshot")
   @Test
   void orderCancelRejectMatchesGoldenSnapshot() {
