@@ -56,6 +56,13 @@ class WalAppenderTest {
     assertThat(failure).hasMessage("WAL v1 requires UTF-8");
   }
 
+  /**
+   * Verifies that append followed by {@code readAll} preserves both WAL record contents and their
+   * ordering.
+   *
+   * <p>Scenario: write a new-order record and a cancel record in sequence, then verify replay from
+   * the file and repeated API reads returns the same ordered records.
+   */
   @DisplayName("append and readAll preserve WAL record contents")
   @Test
   void appendAndReadAllPreservesWalRecords() throws Exception {
@@ -83,6 +90,13 @@ class WalAppenderTest {
     }
   }
 
+  /**
+   * Verifies that the WAL persistence contract stores exactly one structured JSON object per
+   * physical line.
+   *
+   * <p>Scenario: write one record, read the file text directly, and confirm both the line-delimited
+   * shape and the stable serialized field values.
+   */
   @DisplayName("the WAL persists as line-delimited JSON")
   @Test
   void walContractIntentionallyPersistsStructuredJsonPerLine() throws Exception {

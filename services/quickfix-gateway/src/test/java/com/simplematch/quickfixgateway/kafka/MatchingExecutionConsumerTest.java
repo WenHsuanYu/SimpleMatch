@@ -37,6 +37,13 @@ import quickfix.Message;
 import quickfix.SessionID;
 
 class MatchingExecutionConsumerTest {
+  /**
+   * Verifies that a tracked execution event is converted into the corresponding FIX Execution
+   * Report and sent back to the original session.
+   *
+   * <p>Scenario: the registry already contains an accepted new order; receiving
+   * {@code EXECUTION_TYPE_NEW} should generate the standard report.
+   */
   @DisplayName("tracked order executions are converted into Execution Reports")
   @Test
   void executionEventBuildsExecutionReportForTrackedOrder() throws Exception {
@@ -57,6 +64,12 @@ class MatchingExecutionConsumerTest {
             "35=8|37=O-C1|17=E2|150=0|39=0|54=1|151=10|14=0|6=0|11=C1|55=AAPL|60=2024-03-27T08:09:10.123Z");
   }
 
+  /**
+   * Verifies that a rejected cancel execution is converted into a FIX Order Cancel Reject.
+   *
+   * <p>Scenario: receive a {@code CANCEL_REJECTED} event and, when the registry can resolve the
+   * original order state, send a {@code 35=9} message.
+   */
   @DisplayName("cancel failure events are converted into Order Cancel Reject")
   @Test
   void cancelRejectedExecutionBuildsOrderCancelReject() throws Exception {
@@ -87,6 +100,13 @@ class MatchingExecutionConsumerTest {
         .isEqualTo("35=9|37=O-C1|11=CXL-1|41=C1|39=A|434=1|102=0|58=too late to cancel");
   }
 
+  /**
+   * Verifies that an execution event missing required enrichment fails immediately instead of
+   * sending an incomplete FIX message.
+   *
+   * <p>Scenario: build an execution event with only the base fields, then confirm the consumer
+   * throws and does not call the sender.
+   */
   @DisplayName("execution events missing required enrichment fail fast")
   @Test
   void executionEventWithoutRequiredEnrichmentFailsFast() throws Exception {

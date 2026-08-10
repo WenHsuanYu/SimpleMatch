@@ -22,6 +22,13 @@ class ResilientRiskSubmissionClientTest {
           .setClOrdId("C-1")
           .build();
 
+  /**
+   * Verifies that transient Risk transport failures retry the same command until submission
+   * succeeds.
+   *
+   * <p>Scenario: the first call returns {@code UNAVAILABLE} and the second succeeds, so the retry
+   * attempt count and backoff sleep count should match expectations.
+   */
   @DisplayName("temporary failures are retried with the same command until success")
   @Test
   void retriesTransientFailureWithSameCommandUntilSuccess() {
@@ -59,6 +66,13 @@ class ResilientRiskSubmissionClientTest {
     assertThat(sleepCalls.get()).isEqualTo(1);
   }
 
+  /**
+   * Verifies that repeated transient failures open the circuit breaker and that submissions fail
+   * fast until the cooldown expires.
+   *
+   * <p>Scenario: repeatedly trigger {@code UNAVAILABLE} until the breaker opens, then advance the
+   * clock beyond the cooldown and confirm transport attempts resume.
+   */
   @DisplayName("after the threshold, the circuit breaker fails fast until cooldown ends")
   @Test
   void opensCircuitAfterThresholdAndFailsFastUntilCooldownExpires() {
