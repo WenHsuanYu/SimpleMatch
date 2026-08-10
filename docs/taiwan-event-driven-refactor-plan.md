@@ -4,22 +4,41 @@
 
 - Design interview: complete
 - Shared implementation brief: confirmed
-- Production implementation: in progress; phases 0 through 7 and Phase 9 are complete; Phase 8
-  retains the v2 outbound lifecycle migration as an explicit follow-up; routing-policy migration
-  issues #78 through #86 and delivery issues #92 through #99 are certified
+- Production implementation: in progress; earlier phases provide reusable foundations, while the
+  accepted offline artifact, native Matching runtime, durable downstream path, and operational
+  admission remain incomplete
 - Delivery model: incremental, test-first, and documentation-aligned
 
 This plan describes both refactoring of existing modules and creation of target capabilities that
 are documented but not yet present in the repository. New capabilities are labeled explicitly so
 they are not mistaken for behavior that already exists.
 
-The acceptance-criteria checklists below are final-program gates. The dated progress snapshot is
-the current implementation record; an unchecked later-phase commit must not be read as evidence
-that no supporting foundation exists.
+The acceptance-criteria checklists below are final-program gates. The canonical detailed status for
+the complete release frontier is
+[Phase 1 Trading Release remaining work](routing-policy-remaining-work.md); older completed
+runtime-publication steps below are historical evidence, not the accepted target.
+
+## Phase 1 Trading Release Boundary
+
+The **Phase 1 Trading Release** is the first complete pre-release trading-system boundary. It is not
+the numbered refactor phase “Phase 1: Consolidate build and dependency policy.” Its canonical scope
+is defined in
+[`system-boundaries.md`](../services/docs/architecture/system-boundaries.md#phase-1-trading-release-boundary);
+this plan owns sequencing, transaction criteria, rollback, and phase gates.
+
+The release supports every eligible XTAI and ROCO regular-board common stock during continuous
+trading, TWD only, and all six limit/market plus ROD/IOC/FOK combinations. Completion requires the
+daily Market Reference Artifact, FIX/Risk/Account admission, deterministic Matching, permanent
+trades/fills, critical Account and QuickFIX delivery, market-data streaming, the read-only query
+service and Redis read models, operational admission, Kubernetes deployment/security, certification,
+and pre-release compatibility cleanup. A non-critical component may remain outside admission
+readiness without being optional for release completion.
+
+The exclusions in this document's [Out of Scope](#out-of-scope) section bound this release.
 
 ## Current Implementation Status
 
-Status as of 2026-08-04, reconciled against the source tree, completed GitHub issues, and the
+Status as of 2026-08-11, reconciled against the source tree, GitHub issues, and the
 remaining issue graph:
 
 | Phase | Status | Current evidence and remaining boundary |
@@ -29,38 +48,41 @@ remaining issue graph:
 | 2. Spring configuration | Complete | Services bind capability-scoped Spring properties; the shared platform facade and custom loader have been removed. |
 | 3. v2 domain contracts | Complete | Typed v2 contracts and strict v1 compatibility adapters exist; live v1 seams remain intentionally transitional. |
 | 4. Typed V1 schemas | Complete | Account, risk, and persistence use reset typed V1 Flyway schemas with migration verification. |
-| 5. Market Reference publisher | Complete | The publisher imports, validates, persists, activates, and publishes immutable daily snapshots and versioned routing policies. |
+| 5. Market Reference | Partial / superseded runtime | Pure snapshot, tick, calendar, eligibility, routing, and codec foundations exist. The runtime Spring/PostgreSQL/outbox/Kafka design is obsolete; the offline official-source artifact builder is not complete. |
 | 6. Account reservation authority | Complete | Reservation, rejection, fill, release, idempotency, concurrency, and lifecycle outbox behavior are implemented. |
 | 7. Durable Risk Admission | Complete | Pending-before-remote-call admission, terminal transactions, recovery, backpressure, v2 gRPC, and v1 compatibility are implemented. |
-| 8. QuickFIX admission and sessions | Partial | Supported order-combination tests, strict semantic WAL replay, pre-WAL validation, deep new-order and dispatch seams, composed session state, and split properties are implemented; the v2 outbound lifecycle consumer migration remains explicitly open. |
-| 9. Binary outbox CDC and Kafka | Complete | Risk, Account, and Market Reference binary outboxes have owner-scoped Debezium contracts and a live Docker publication harness; critical delivery, non-critical projection handling, Micrometer delivery metrics, and conservative retention authorization are verified. |
-| 10. C++ matching engine | Not started | No native matching-engine module exists. Issue #81 plans only the minimum policy-aware ingress seam, not the complete engine. |
-| 11. Account lifecycle integration | Partial | Idempotent account lifecycle transitions, lifecycle outbox persistence, and a critical Kafka consumer with quarantine/recovery now exist; aggregate-sequence gap handling and the full TP-12 integration gate remain. |
-| 12. Durable and Redis projections | Foundation only | Persistence has its V1 projection and inbox schema baseline; Redis read models and the query service do not exist. |
+| 8. QuickFIX admission and sessions | Partial | Durable ingress, typed Risk submission, FIX mapping, WAL recovery, and admission-gate foundations exist. Target remains one Gateway, explicit operator states, critical durable `matching.events` delivery, and JDBC MessageStore. |
+| 9. Binary outbox CDC and Kafka | Partial / reusable foundation | Risk and Account delivery foundations are reusable. Runtime Market Reference CDC is obsolete, Matching will publish directly, and the two accepted Matching topics are not provisioned. |
+| 10. C++ matching engine | Partial | CMake plus tested routing/quarantine ingress state machines exist. Kafka runtime, rings, order books, LMAX-style single-writer core, replay, barriers, and publisher do not. |
+| 11. Account lifecycle integration | Partial | Idempotent account transitions, inbox, quarantine, and a critical v1 consumer exist; the final maker/taker Matching Event contract and raw-payload hash cutover remain. |
+| 12. Durable and Redis projections | Foundation only | Persistence has only its application/Flyway baseline; #130 and #137 own the missing permanent trades/fills, query-owned PostgreSQL/Redis projections, and required query service. |
 | 13. Market-data streaming | Not started | Neither the runtime projection pipeline nor the market-data streamer exists. |
-| 14. Kubernetes and security | Partial | QuickFIX deployment and Risk connector scaffolding exist; reusable overlays, migration jobs, complete service manifests, and production security and observability gates remain. |
-| 15. Transition cleanup | Partial | The custom configuration facade and several wide transitional interfaces are gone; v1 adapters, legacy representations, and final documentation and validation cleanup remain. |
+| 14. Kubernetes and security | Partial | QuickFIX/Risk scaffolding exists. #134 owns Matching-specific deployment/fencing; #138 owns the missing cross-service overlays, transport/security, migration/CDC jobs, network policy, probes, telemetry, and smoke gates. |
+| 15. Transition cleanup | Partial | Local commits complete #120's dead QuickFIX publisher removal. #139 must replace the production Account v1 RPC before #119 removes it; runtime Market Reference, legacy topics/contracts, and other coordinated cutovers remain. |
 
 ### Active Implementation Frontier
 
-- [#77](https://github.com/WenHsuanYu/SimpleMatch/issues/77) defines the accepted, versioned
-  Market Reference Routing Policy contract and is complete with the certified implementation
-  slices below.
-- [#78](https://github.com/WenHsuanYu/SimpleMatch/issues/78) through
-  [#86](https://github.com/WenHsuanYu/SimpleMatch/issues/86) implement and certify contract
-  expansion, publication, Risk projection and provenance, native Matching ingress, continuity
-  enforcement, and retirement of Risk-local routing authority.
-- [#38](https://github.com/WenHsuanYu/SimpleMatch/issues/38) was the original ownership issue and
-  is superseded for execution planning by the more detailed #77 through #86 issue graph. The
-  certified migration establishes Market Reference as the sole routing-policy authority.
-- The final evidence is recorded in
-  [Routing Policy migration certification](../services/docs/architecture/routing-policy-certification.md).
-- Phase 9 evidence is recorded in the delivery-policy documents and the completed issue chain
-  [#92](https://github.com/WenHsuanYu/SimpleMatch/issues/92) through
-  [#99](https://github.com/WenHsuanYu/SimpleMatch/issues/99); #87 remains the parent spec for the
-  Phase 8 residual boundary and final program tracking.
-- Matching, Redis/query, market-data streaming, and complete deployment work remain later slices of
-  this plan. Completing the Routing Policy issue graph does not complete those phases.
+- GitHub Issue state, native sub-issue hierarchy, and dependency edges under
+  [#10](https://github.com/WenHsuanYu/SimpleMatch/issues/10) are the executable task source of
+  truth. This document owns phase/transaction/rollback gates, not assignment or closure state.
+- [The canonical remaining-work inventory](routing-policy-remaining-work.md) owns capability status,
+  repository evidence, and acceptance-gate mapping.
+- [#119](https://github.com/WenHsuanYu/SimpleMatch/issues/119) remains the pre-release cleanup
+  tracker. [#120](https://github.com/WenHsuanYu/SimpleMatch/issues/120) is locally implemented but
+  remains open remotely until delivery is completed.
+- [#121](https://github.com/WenHsuanYu/SimpleMatch/issues/121)-[#124](https://github.com/WenHsuanYu/SimpleMatch/issues/124)
+  own the offline artifact path; [#125](https://github.com/WenHsuanYu/SimpleMatch/issues/125)-[#129](https://github.com/WenHsuanYu/SimpleMatch/issues/129)
+  own Kafka/Risk/native Matching; [#130](https://github.com/WenHsuanYu/SimpleMatch/issues/130)-[#133](https://github.com/WenHsuanYu/SimpleMatch/issues/133)
+  own downstream consumers; [#134](https://github.com/WenHsuanYu/SimpleMatch/issues/134)-[#136](https://github.com/WenHsuanYu/SimpleMatch/issues/136)
+  own deployment, operations, and certification.
+- [#137](https://github.com/WenHsuanYu/SimpleMatch/issues/137) owns the required query service/read
+  models; [#138](https://github.com/WenHsuanYu/SimpleMatch/issues/138) owns cross-service
+  deployment/security; and [#139](https://github.com/WenHsuanYu/SimpleMatch/issues/139) owns the
+  Account reservation v2 RPC cutover required by #119.
+- The earlier #77-#86 Routing Policy chain and closed #87/#93-#99 delivery chain are historical
+  evidence. [#92](https://github.com/WenHsuanYu/SimpleMatch/issues/92) remains the retained
+  Risk/Account CDC foundation. Their runtime Market Reference publication model is superseded by
+  ADR 0008.
 
 ## Problem Statement
 
@@ -80,12 +102,15 @@ several original gaps, but the end-to-end trading path remains incomplete:
 - Taiwan market rules, market-reference authority, and session behavior are not implemented end to
   end.
 - Redis is planned but not implemented as a read model.
-- The Market Reference publisher now exists, but the documented C++ matching engine, market-data
-  streamer, and query service are not present in the current source tree.
+- A runtime Market Reference publisher exists but is now a removal target; only its pure
+  normalization and validation logic is reusable in the offline builder.
+- The native Matching module contains only routing/quarantine ingress foundations; the LMAX-style
+  order-book runtime, market-data streamer, and query service are not complete.
 
-The refactor must preserve current behavior while replacing shallow interfaces with deep modules,
-adding missing target capabilities in controlled later phases, and avoiding a repository-wide
-rewrite.
+Because SimpleMatch has no production release or external consumers, backward compatibility is not
+a target constraint. Temporary adapters may keep intermediate commits reviewable, but the final
+pre-release architecture removes superseded runtime paths, shallow interfaces, and legacy topics
+instead of preserving them indefinitely.
 
 ## Acceptance Criteria
 
@@ -93,9 +118,10 @@ rewrite.
 
 - [ ] The intended current worktree is reviewed and checkpointed before the refactor begins.
 - [ ] Every commit leaves the repository buildable and its affected module tests passing.
-- [ ] Existing FIX 4.4 behavior remains available throughout the transition.
-- [ ] Existing v1 gRPC and Protobuf consumers remain supported by temporary adapters until all
-  in-repository consumers use v2.
+- [ ] FIX 4.4 remains the client protocol while its internal routing and delivery implementation is
+  replaced.
+- [ ] Temporary v1 adapters may support safe intermediate commits, but no external backward-
+  compatibility promise blocks the coordinated in-repository cutover.
 - [ ] Compatibility adapters are removed before the first public release.
 - [ ] Target architecture documentation and implementation-progress tracking remain separate.
 
@@ -113,17 +139,20 @@ rewrite.
 
 ### Taiwan market model
 
-- [ ] Phase one supports XTAI and ROCO regular-board listed common stocks during continuous trading.
-- [ ] Phase one supports all six combinations of limit or market price with ROD, IOC, or FOK.
-- [ ] TWD is the only phase-one trading currency.
+- [ ] The Phase 1 Trading Release supports XTAI and ROCO regular-board listed common stocks during
+  continuous trading.
+- [ ] The Phase 1 Trading Release supports all six combinations of limit or market price with ROD,
+  IOC, or FOK.
+- [ ] TWD is the only Phase 1 Trading Release currency.
 - [ ] Absolute timestamps are UTC instants; trading dates and session rules use Asia/Taipei.
 - [ ] Market calendars, holidays, trading sessions, instruments, board-lot sizes, tick sizes, price
-  limits, and eligibility come from a versioned daily market snapshot.
+  limits, eligibility, and stable routing come from one approved daily Market Reference Artifact.
 - [ ] Order-critical modules load the same active snapshot before becoming ready.
 - [ ] Missing or stale market-reference data fails closed.
 - [ ] Exceptional securities and unsupported sessions are rejected with stable reason codes.
-- [ ] New orders are rejected outside continuous trading; cancellation remains available for open
-  orders.
+- [ ] New orders are rejected outside continuous trading. During an in-session
+  `NEW_ORDERS_PAUSED` state, cancellations remain accepted and durable; PRE_OPEN, interruption, and
+  final close follow their stricter state rules.
 - [ ] Remaining ROD orders expire at the supported session boundary.
 - [ ] IOC may partially fill and cancels its remainder.
 - [ ] FOK either fills completely or cancels without any fill.
@@ -155,14 +184,18 @@ rewrite.
 - [ ] PostgreSQL state remains authoritative for account, risk, idempotency, and durable
   projections.
 - [ ] Commands and events are distinct Protobuf contracts.
-- [ ] Every event has the agreed metadata envelope and stable schema version.
-- [ ] State changes and outbox inserts commit in one local transaction.
-- [ ] Debezium captures outbox tables only for business-event publication.
+- [ ] Every Matching Command/Event has the agreed metadata envelope, deterministic identity, and
+  session-pinned schema/identity version.
+- [ ] Where a Java business service uses an outbox, state changes and outbox inserts commit in one
+  local transaction.
+- [ ] Debezium captures only retained Java-service outbox tables; offline Market Reference and
+  Matching do not use outbox publication.
 - [ ] Outbox payloads contain complete serialized Protobuf envelopes as binary data.
 - [ ] Kafka delivery is treated as at least once.
 - [ ] Database-writing consumers record inbox deduplication and business changes in one transaction.
 - [ ] Ordering is guaranteed only within the relevant domain stream.
-- [ ] Matching commands partition by instrument; account-originated events partition by account.
+- [ ] Risk publishes each Matching Command to the explicit artifact-assigned partition; Matching
+  Events remain on the same numeric partition; account-originated events partition by account.
 - [ ] Critical consumers preserve partition order during retries and quarantine rather than skip
   poison events.
 - [ ] Non-critical projections may use delayed retry and dead-letter topics.
@@ -238,24 +271,27 @@ concrete platform value:
 Kubernetes configuration integration and compatible dependency management. Kubernetes Service DNS
 remains the discovery mechanism. Existing gRPC and FIX seams remain in place.
 
-The first behavioral slice makes the limit-ROD order path correct end to end. It introduces typed v2
-contracts, market-reference snapshots, account reservation, durable risk admission, binary
-transactional outbox publication, and matching integration. Later slices add IOC, FOK, market ROD,
-read models, and streaming through the same interfaces.
+The first complete behavioral slice makes the limit-ROD order path correct end to end. It combines
+typed contracts, the offline daily Market Reference Artifact, account reservation, durable Risk
+admission, `matching.commands`, native deterministic Matching, `matching.events`, permanent trade
+storage, Account/FIX critical consumption, and operational admission. Later slices add the remaining
+order conditions, read models, and streaming through the same interfaces.
 
 Deep modules concentrate policy:
 
 - A configuration-resolution module binds and validates Spring properties.
-- A market-reference module owns snapshot import, validation, and activation.
+- An offline market-reference builder owns official-source acquisition, normalization, stable
+  routing, artifact validation, and approval evidence.
 - An account-reservation module owns funds and position authority.
 - A durable-admission module owns idempotency, saga state, final outcome, and outbox atomicity.
 - A FIX-admission module owns protocol normalization, recovery, and response projection.
 - A matching module owns deterministic book state and Taiwan execution rules.
 - Projection modules own idempotent PostgreSQL and Redis read models.
 
-New deployable capabilities are added only after their upstream interfaces are stable. The Market
-Reference publisher has been added; the remaining new capabilities include the C++ matching engine,
-market-data streamer, and query service.
+New deployable capabilities are added only after their upstream interfaces are stable. The current
+runtime Market Reference publisher is migrated to an offline tool and removed; remaining deployable
+  capabilities include the complete C++ Matching runtime, durable consumers, market-data streamer,
+  and required query service.
 
 ## Commit Plan
 
@@ -402,6 +438,13 @@ Rollback:
 - Restore old migration directories from the checkpoint and recreate disposable development schemas.
 
 ### Phase 5: Create the market-reference publisher capability
+
+> Historical/superseded target: the checked commits in this phase are verified implementation
+> history, but ADR 0008
+> supersedes their runtime service, persistence, activation, outbox, and Kafka publication model.
+> Pure instrument/tick/calendar/eligibility/codec logic is migration input for the offline builder.
+> The target artifact work is tracked in the canonical remaining-work inventory and must not be
+> inferred complete from this phase gate.
 
 - [x] Commit 5.1: Scaffold the documented market-data publisher as a Spring Boot service without
   runtime consumers.
@@ -718,39 +761,55 @@ Rollback:
 
 ### Phase 10: Create the C++ matching engine capability
 
-- [ ] Commit 10.1: Scaffold the documented C++ matching engine with deterministic unit-test and
-  build targets.
+- [x] Commit 10.1: Scaffold native CMake targets and the initial deterministic routing/quarantine
+  ingress tests.
 - [ ] Commit 10.2: Add UUID, fixed-point price, share quantity, and instrument value types.
-- [ ] Commit 10.3: Add v2 command decoding and schema compatibility fixtures.
-- [ ] Commit 10.4: Add immutable market snapshot loading and version checks.
-- [ ] Commit 10.5: Implement price-time priority for limit-ROD orders through tests.
-- [ ] Commit 10.6: Emit deterministic partial and full execution events.
-- [ ] Commit 10.7: Add session-close commands and ROD expiration events.
-- [ ] Commit 10.8: Add IOC matching and remainder cancellation.
-- [ ] Commit 10.9: Add atomic FOK depth evaluation and all-or-none execution.
-- [ ] Commit 10.10: Add market-order priority and converted-reference price behavior.
-- [ ] Commit 10.11: Add market-ROD resting and terminal cancellation behavior.
-- [ ] Commit 10.12: Add volatility-interruption pause and cancellation behavior.
-- [ ] Commit 10.13: Add delayed-command expiration by trading day and session.
-- [ ] Commit 10.14: Add Kafka command consumption and execution publication.
+- [ ] Commit 10.3: Define `MatchingCommand` and `MatchingEvent` Protobuf contracts plus C++/Java
+  golden raw-record fixtures.
+- [ ] Commit 10.4: Add startup loading and exact identity validation for the mounted daily Market
+  Reference Artifact.
+- [ ] Commit 10.5: Add preallocated SPSC input/output rings and a no-I/O single-writer core harness.
+- [ ] Commit 10.6: Implement deterministic price-time priority and limit-ROD order books through
+  tests.
+- [ ] Commit 10.7: Add IOC/FOK, market-order, cancel, remainder, and expiry behavior.
+- [ ] Commit 10.8: Add stable command deduplication plus deterministic output/match indices and
+  event/trade identities.
+- [ ] Commit 10.9: Add direct Kafka `assign()` ingress for one configured partition and safe ring
+  backpressure.
+- [ ] Commit 10.10: Add direct idempotent `matching.events` publication and per-input output ACK
+  tracking.
+- [ ] Commit 10.11: Commit only the contiguous completed input watermark and cover every crash
+  window with replay tests.
+- [ ] Commit 10.12: Add Open/Close Barrier processing, PVC baseline metadata, Kafka fallback scan,
+  state-only replay, and deterministic ROD expiry.
+- [ ] Commit 10.13: Add partition ownership permits, Lease-loss self-fencing, readiness, quarantine,
+  ring, lag, and recovery status.
+- [ ] Commit 10.14: Add fixed-capacity and broker-outage tests, then the production benchmark and
+  recovery certification harness.
 
 Phase gate:
 
 - [ ] Replaying the same ordered command stream produces identical outcomes.
+- [ ] The same event identity always has the same exact Kafka record bytes.
 - [ ] FOK never partially fills.
 - [ ] IOC never rests.
 - [ ] Market ROD follows the confirmed Taiwan behavior.
-- [ ] Unknown snapshot versions pause processing.
+- [ ] Unknown artifact/schema/algorithm versions fail closed.
+- [ ] No ring or order-capacity exhaustion drops, overwrites, or dynamically expands hot-path state.
+- [ ] Full-day replay reaches lag zero within the accepted 60-second engine SLO or opens a separate
+  snapshot design issue.
 
 Rollback:
 
-- Keep the engine undeployed until deterministic tests and Kafka integration pass; admitted commands
-  remain durable in Kafka.
+- Keep the engine undeployed until deterministic tests, Kafka integration, fixed-ownership fencing,
+  and certification pass; admitted commands remain durable in Kafka.
 
 ### Phase 11: Complete account lifecycle integration
 
-- [ ] Commit 11.1: Consume execution and terminal order events in account service.
-- [ ] Commit 11.2: Enforce event ID deduplication in the same transaction as account mutation.
+- [ ] Commit 11.1: Cut the critical Account consumer over to final maker/taker events from
+  `matching.events`.
+- [ ] Commit 11.2: Persist event ID plus SHA-256 of the exact Kafka record value bytes in the same
+  transaction as account mutation.
 - [ ] Commit 11.3: Enforce aggregate-sequence gap detection and quarantine.
 - [ ] Commit 11.4: Add crash-recovery tests between database commit and Kafka acknowledgment.
 - [ ] Commit 11.5: Publish account lifecycle outcomes through the account outbox.
@@ -822,7 +881,12 @@ Rollback:
 
 ### Phase 12: Build durable projections and Redis read models
 
-- [ ] Commit 12.1: Add idempotent PostgreSQL order and execution projections.
+Executable ownership is split between
+[#130](https://github.com/WenHsuanYu/SimpleMatch/issues/130) for permanent critical Persistence and
+[#137](https://github.com/WenHsuanYu/SimpleMatch/issues/137) for the required Query capability.
+
+- [ ] Commit 12.1: Add the critical Persistence consumer and idempotent PostgreSQL inbox, immutable
+  `trades`, two `order_fills`, and order projections for `matching.events`.
 - [ ] Commit 12.2: Add projection rebuild tests from retained event fixtures.
 - [ ] Commit 12.3: Add a versioned Redis key schema for order and execution read models.
 - [ ] Commit 12.4: Add idempotent Redis projection updates after durable PostgreSQL projection
@@ -900,8 +964,8 @@ Rollback:
 
 ### Phase 13: Create market-data projection and streaming capabilities
 
-- [ ] Commit 13.1: Convert matching execution and book-change facts into versioned market-data
-  events.
+- [ ] Commit 13.1: Use an independent non-critical consumer group to convert `matching.events`
+  trade and book-change facts into versioned `marketdata.events`.
 - [ ] Commit 13.2: Build deterministic last-trade and top-five book projections.
 - [ ] Commit 13.3: Persist market-data snapshots in Redis with sequence metadata.
 - [ ] Commit 13.4: Scaffold the documented market-data streamer.
@@ -982,24 +1046,38 @@ Rollback:
 
 ### Phase 14: Add Kubernetes deployment and security policy
 
-- [ ] Commit 14.1: Convert one workload to a reusable Kubernetes base and environment overlays.
-- [ ] Commit 14.2: Convert remaining existing workloads one at a time.
-- [ ] Commit 14.3: Add overlays for newly created capabilities as they become deployable.
-- [ ] Commit 14.4: Add ConfigMap and Secret references without committed secret values.
-- [ ] Commit 14.5: Add checksum-driven rolling restart behavior.
-- [ ] Commit 14.6: Add service-scoped Flyway migration jobs.
-- [ ] Commit 14.7: Add Debezium connector deployment configuration and least-privilege access.
-- [ ] Commit 14.8: Add authenticated encrypted staging and production connectivity policy.
-- [ ] Commit 14.9: Add liveness, readiness, startup, and market-snapshot health semantics.
-- [ ] Commit 14.10: Add structured logging, OpenTelemetry propagation, metrics, and alert rules.
-- [ ] Commit 14.11: Validate manifests and run deployment smoke tests.
+Matching-specific ownership/fencing is tracked by
+[#134](https://github.com/WenHsuanYu/SimpleMatch/issues/134), Gateway operational admission by
+[#135](https://github.com/WenHsuanYu/SimpleMatch/issues/135), and the cross-service production
+baseline by [#138](https://github.com/WenHsuanYu/SimpleMatch/issues/138).
+
+- [ ] Commit 14.1: Add a 15-replica Matching StatefulSet whose ordinal `0..14` is the configured
+  Kafka partition.
+- [ ] Commit 14.2: Give each Matching ordinal a `ReadWriteOncePod` PVC and per-partition Kubernetes
+  Lease; expose only a valid `PartitionOwnershipPermit` to the domain boundary.
+- [ ] Commit 14.3: Self-fence ingress, core, and publisher within five seconds of uncertain Lease
+  renewal; disallow force deletion in the normal Matching restart runbook.
+- [ ] Commit 14.4: Mount the reviewed daily artifact from an immutable ConfigMap, or from a
+  digest-pinned OCI data image when it exceeds 900 KiB, at the same application path.
+- [ ] Commit 14.5: Set production Matching pods to Guaranteed QoS with three CPUs each and document
+  compatible CPU-manager and CSI prerequisites.
+- [ ] Commit 14.6: Add one QuickFIX Gateway workload and its PRE_OPEN/OPEN/NEW_ORDERS_PAUSED/
+  MARKET_INTERRUPTED/CLOSED operator configuration.
+- [ ] Commit 14.7: Convert remaining workloads to reusable bases/overlays and add service-scoped
+  Flyway jobs, retained Debezium connectors, Secrets, and least-privilege network policy.
+- [ ] Commit 14.8: Add component status endpoints/adapters, liveness/readiness/startup probes,
+  structured telemetry, metrics, and alerts.
+- [ ] Commit 14.9: Validate manifests and run replacement, Lease-loss, artifact-mismatch, broker-
+  outage, and deployment smoke tests.
 
 Phase gate:
 
 - [ ] Local, test, staging, and production overlays use the same property names.
 - [ ] Missing Secrets fail startup.
 - [ ] Applications do not run schema migrations at startup.
-- [ ] Redis, Kafka, PostgreSQL, and market-snapshot failures produce the agreed readiness behavior.
+- [ ] Redis, Kafka, PostgreSQL, artifact, Matching ownership, and critical-consumer failures produce
+  the agreed readiness behavior.
+- [ ] Exactly one Ready Matching pod owns each partition and no pod can process without its permit.
 
 Rollback:
 
@@ -1007,10 +1085,19 @@ Rollback:
 
 ### Phase 15: Remove transition scaffolding
 
-- [ ] Commit 15.1: Remove v1 adapters after every in-repository consumer uses v2.
-- [ ] Commit 15.2: Remove obsolete string price and quantity representations.
-- [ ] Commit 15.3: Remove obsolete custom configuration compatibility types.
-- [ ] Commit 15.4: Remove unused dependencies, aliases, and dead wiring.
+[#119](https://github.com/WenHsuanYu/SimpleMatch/issues/119) owns dependency-gated deletion,
+[#120](https://github.com/WenHsuanYu/SimpleMatch/issues/120) owns the already-implemented QuickFIX
+publication removal, and [#139](https://github.com/WenHsuanYu/SimpleMatch/issues/139) owns the Account
+reservation v2 RPC replacement required before Account v1 deletion.
+
+- [ ] Commit 15.1: Remove runtime Market Reference service/database/outbox/Kafka paths after the
+  offline builder and artifact loaders pass acceptance.
+- [ ] Commit 15.2: Cut all in-repository producers and consumers to `matching.commands` and
+  `matching.events`, then delete `orders.validated` and `matching.executions` contracts/config.
+- [ ] Commit 15.3: Remove v1 adapters, obsolete string price/quantity representations, and custom
+  configuration compatibility types after the coordinated cutover.
+- [ ] Commit 15.4: Remove unused dependencies, aliases, dead wiring, and non-critical QuickFIX
+  execution projection/DLQ paths.
 - [ ] Commit 15.5: Run the deletion test against new interfaces and remove pass-through modules.
 - [ ] Commit 15.6: Update the event catalog, data dictionary, configuration matrix, deployment
   guide, and recovery runbooks.
@@ -1039,7 +1126,8 @@ Rollback:
 - Spring Environment is the configuration authority.
 - ConfigMaps contain non-sensitive values; Secrets contain sensitive values.
 - Configuration changes activate through rolling restart, not live context refresh.
-- Phase-one market scope is XTAI and ROCO regular-board common stocks during continuous trading.
+- Phase 1 Trading Release market scope is XTAI and ROCO regular-board common stocks during
+  continuous trading.
 - Exceptional instruments, call-auction sessions, financing, short sales, amendments, fees, tax,
   clearing, settlement, and customer onboarding are excluded.
 - TWD is the canonical currency code.

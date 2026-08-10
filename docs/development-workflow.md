@@ -8,7 +8,7 @@ implementation, documentation, and verification stay aligned.
 
 Before writing code, identify the smallest concrete change that satisfies the request.
 
-- Read the relevant requirements in README, tasks, and service docs.
+- Read the owning GitHub Issue, relevant remaining-work inventory entry, README, and service docs.
 - Identify the exact services, modules, and files affected.
 - Write down acceptance criteria in plain language.
 - Separate must-have behavior from nice-to-have follow-ups.
@@ -208,7 +208,11 @@ If the change spans both Java and native code, validate both sides before closin
 Whenever paths, behavior, or boundaries change, update the documentation in the same change set.
 
 - Update README when the structure or build entry points change.
-- Update tasks.md when a milestone is completed or scope changes.
+- Update the owning GitHub Issue for executable status, blockers, and completion evidence.
+- Update `docs/routing-policy-remaining-work.md` only when a listed capability's repository status,
+  evidence, dependency, or acceptance mapping changes.
+- Keep `tasks.md` as historical navigation; add new work through a GitHub Issue rather than a live
+  checkbox.
 - Update docs/config.md when configuration keys or defaults change.
 - Update docs/dependencies.md when build or dependency expectations change.
 - Keep file and folder names consistent across docs and the actual repository layout.

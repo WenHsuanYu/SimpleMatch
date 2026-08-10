@@ -9,11 +9,11 @@ a claim that every component is already implemented.
   trade-offs around the hot path.
 - [Eventing and CQRS](eventing-and-cqrs.md) — command, event, projection, and event-sourcing
   posture.
-- [Routing Policy projections](routing-policy-projection.md) — Market Reference publication and
-  Risk's strict local projection/readiness boundary.
-- [Routing Policy migration certification](routing-policy-certification.md) — final cross-language,
-  database, static-analysis, and documentation evidence for the routing-policy rollout.
-- [Matching policy-aware ingress](matching-ingress.md) — the small native contract-verification
-  seam; this is not the complete order book or Matching Engine.
+- [Daily routing artifact loading](routing-policy-projection.md) — offline artifact authority,
+  validation, delivery, and Risk/Matching startup boundaries.
+- [Historical Routing Policy migration certification](routing-policy-certification.md) — evidence
+  for the superseded runtime publication/projection design, retained only as migration history.
+- [Matching ingress and recovery](matching-ingress.md) — fixed partition ownership, LMAX-style
+  runtime boundary, replay, publication, and the current partial seam.
 - [Reliability and consistency](reliability-and-consistency.md) — durable acknowledgement,
   idempotency, retry, and compensation rules.

@@ -9,7 +9,8 @@ These instructions apply to the whole repository.
   avoid-list for code smells during design, implementation, and refactoring.
 - Identify the affected files, services, and modules before editing.
 - Write acceptance criteria first, then choose the smallest safe slice.
-- Keep code, tests, documentation, tasks, and configuration aligned in the same change.
+- Keep code, tests, documentation, the owning GitHub Issue, and configuration aligned in the same
+  change. Use `tasks.md` only as historical navigation.
 - Do not widen scope without a concrete reason.
 - PostgreSQL schema changes must use versioned Flyway migrations via the shared
   `simplematch.flyway-service` convention; do not reintroduce runtime migration or ad hoc schema
@@ -47,7 +48,8 @@ These instructions apply to the whole repository.
 9. Run the relevant module, service, or certification smoke test when available.
 10. For PostgreSQL changes, run the relevant Flyway task or migration test and review
     SQL/index/query implications.
-11. Update README, tasks.md, and related docs.
+11. Update the owning GitHub Issue and relevant README/docs. Update the remaining-work inventory
+    only when capability status or evidence changes; do not add live task checkboxes to `tasks.md`.
 12. Review the diff for consistency.
 13. Finish with a bad-smell avoidance checklist against [badCodeSmell.md](badCodeSmell.md).
 
@@ -98,7 +100,9 @@ the smallest order that covers the task.
 
 ### Issue tracker
 
-Issues and PRDs are tracked in this repository's GitHub Issues. See `docs/agents/issue-tracker.md`.
+GitHub Issues are the executable task source of truth for open/blocked/assigned/completed state.
+`tasks.md` is historical navigation, the remaining-work inventory maps capability status/evidence,
+and the refactor plan owns phase/transaction/rollback gates. See `docs/agents/issue-tracker.md`.
 
 ### Commit message conventions
 

@@ -9,11 +9,13 @@ SimpleMatch uses lightweight CQRS: commands and business state transitions use t
 PostgreSQL and Redis projections serve reads. It does not require every domain to have separate
 databases or independently deployed read and write models.
 
-- The write path begins with a normalized FIX command submitted to
-  `risk-service`; durable admission produces an integration event for ordered matching.
-- `matching-engine` produces execution results.
-- `persistence`, an optional `query-service`, and `marketdata-streamer` build read-oriented views
-  from those events.
+- The write path begins with a normalized FIX command submitted to `risk-service`; durable
+  admission publishes a command to the artifact-assigned `matching.commands` partition.
+- `matching-engine` replays that authoritative command journal, owns in-memory order-book state,
+  and produces deterministic `matching.events`.
+- `persistence`, the required Phase 1 `query-service`, and the market-data projection build
+  read-oriented views from those events. `marketdata-streamer` serves the resulting market-data
+  views; it does not become a second Matching consumer.
 - Read models are rebuildable and may be eventually consistent. They do not decide whether an order
   is admitted or matched.
 
@@ -22,10 +24,11 @@ databases or independently deployed read and write models.
 The target architecture is event-driven. Services consume events, take their local next action, and
 publish later events. Consumers are designed for at-least-once delivery and replay.
 
-That does not by itself make the system fully event-sourced. At present, the intended authoritative
-state for many aggregates remains service-owned state tables, while outbox records carry integration
-events. An outbox provides reliable publication; it is not automatically an append-only domain event
-store capable of rebuilding every state transition.
+That does not make every service fully event-sourced. Account and Risk remain service-owned
+PostgreSQL state, while outbox records carry their integration events. Matching is the deliberate
+exception: retained `matching.commands`, beginning with the trading session's Open Barrier, is its
+authoritative recovery journal. Persistence stores permanent trades and fills but is never used to
+rebuild an order book.
 
 ## Event-authoritative aggregates
 
@@ -50,17 +53,15 @@ document owns the decision boundaries that give those contracts their meaning.
 
 ## Delivery policy boundary
 
-Events that can change authoritative account, admission, or matching state use the critical
-consumer policy: retry the same topic-partition offset in place, persist quarantine evidence when
-the bounded retry budget is exhausted, pause only the affected partition, and resume only the same
-record after investigation. A known routing-policy or partition invariant violation stops the
-partition and is never rerouted.
+Matching ingress and the Persistence, Account, and QuickFIX consumer groups are critical. They
+retry in partition order, persist inbox/quarantine evidence, and cannot skip an unparseable event or
+same-ID/different-payload violation. The affected component blocks until the exact record is
+resolved; an invariant violation can interrupt the market and is never rerouted.
 
-Rebuildable projections, including the current QuickFIX execution projection, use the non-critical
-policy: schedule a bounded delayed retry, record diagnostic dead-letter evidence after the retry
-budget, and commit the source offset so an unhealthy projection cannot block authoritative streams.
-The projection must not mutate account, admission, or matching authority. Delivery metrics expose
-connector lag, outbox age, consumer lag, duplicates, retries, quarantine, and dead-letter counts.
+The public Market Data projection is rebuildable and non-critical. It may use delayed retry and a
+dead-letter topic, and its failure does not block Persistence, Account, QuickFIX, or trading
+admission. Delivery metrics expose connector lag, outbox age, consumer lag, oldest unprocessed age,
+duplicates, retries, quarantine, and dead-letter counts.
 
 Outbox cleanup is a separate operational action. It is authorized only after a durable CDC
 watermark has passed the configured safety window, and the deletion boundary is narrowed by the

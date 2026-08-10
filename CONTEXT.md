@@ -13,12 +13,13 @@ flowchart LR
     Client[FIX client] -->|FIX 4.4| Gateway[FIX Gateway context]
     Gateway -->|normalized synchronous command| Risk[Risk Admission context]
     Risk -->|reserve or release authority| Account[Account Authority context]
-    Risk -->|validated order event| Matching[Matching context]
-    Market[Market Reference context] -->|versioned snapshot and routing policy| Risk
-    Market -->|versioned snapshot and routing policy| Matching
-    Matching -->|execution lifecycle events| Account
-    Matching -->|execution lifecycle events| Projection[Projection and Audit context]
-    Matching -->|market-data deltas| Streaming[Market-data Streaming context]
+    Artifact[Offline Market Reference builder] -->|immutable daily artifact| Risk
+    Artifact -->|same immutable daily artifact| Matching[Matching context]
+    Risk -->|partitioned Matching Commands| Matching
+    Matching -->|Matching Events| Account
+    Matching -->|Matching Events| Projection[Projection and Audit context]
+    Matching -->|Matching Events| Gateway
+    Projection -->|market-data deltas| Streaming[Market-data Streaming context]
 ```
 
 | Upstream context | Downstream context             | Relationship and translation rule                                                                                         |
@@ -26,10 +27,10 @@ flowchart LR
 | FIX client       | FIX Gateway                    | Anti-corruption layer. FIX tags are parsed into gateway-local values before business submission.                          |
 | FIX Gateway      | Risk Admission                 | Customer/supplier synchronous boundary. The gateway supplies stable command and FIX identities; risk owns the decision.   |
 | Risk Admission   | Account Authority              | Risk requests idempotent reservation work; account-service owns balances, positions, reservations, and their transaction. |
-| Market Reference | Risk Admission / Matching      | Published language based on versioned market snapshots and routing policies. Consumers do not reinterpret source fixtures independently. |
-| Risk Admission   | Matching                       | Published language over ordered Kafka events. Admission success precedes asynchronous matching.                           |
-| Matching         | Account Authority / Projection | Published lifecycle events. Each consumer owns idempotency and its local state transition.                                |
-| Matching         | Market-data Streaming          | Published execution and book-change facts become rebuildable per-instrument views; streaming never becomes a command path. |
+| Market Reference | Risk Admission / Matching      | Conformist startup boundary. Both consumers load the same approved daily artifact bytes and do not reinterpret official source rows independently. |
+| Risk Admission   | Matching                       | Published `MatchingCommand` language over one explicitly assigned Kafka partition. Admission success precedes asynchronous matching. |
+| Matching         | Account Authority / Projection / FIX Gateway | Published `MatchingEvent` language. Every critical consumer owns durable idempotency and its local state transition. |
+| Projection and Audit | Market-data Streaming       | Rebuildable per-instrument snapshots and deltas; streaming never becomes a command path.                                  |
 
 ## Bounded contexts and ownership
 
@@ -68,33 +69,34 @@ transaction and state-dependent invariants.
 ### Matching
 
 Owns deterministic per-instrument order books, time/price priority, fill generation, cancellation,
-and expiry. It does not synchronously depend on projections, market-data clients, or account
-persistence after an order has been admitted.
+and expiry. Fifteen fixed Matching owners map StatefulSet ordinal `N` to Kafka partition `N`; each
+owner holds at most 150 instrument order books. Kafka `matching.commands` is the authoritative
+ordered input journal. The native single-writer core receives commands through a preallocated input
+ring and emits results through a preallocated output ring; Kafka ingress, publication, storage, and
+operational status remain outside the core. Matching does not synchronously depend on projections,
+market-data clients, PostgreSQL, or account persistence after an order has been admitted.
 
 ### Market Reference
 
-Owns validated, versioned instrument and tick-rule snapshots and separate immutable routing
-policies. Market snapshots and routing policies are external facts consumed by Risk Admission and
-Matching, not mutable state jointly owned by those services. Exactly one authoritative Routing
-Policy applies to each Asia/Taipei trading day. A future trading day's policy may assign an
-instrument to a different route, but the current trading day's topology and assignments remain
-immutable after its trading readiness barrier opens. Market Reference owns policy staging and the
-designation of the authoritative policy; it does not own consumer installation state or the global
-decision that the trading system is ready to admit orders. The current `marketdata-publisher`
-module implements this Market Reference capability despite its legacy service name; runtime
-market-data projection and client streaming are outside its boundary. A candidate policy may be
-staged before its declared transport and Matching capacity exists, but it cannot be designated
-authoritative until that capacity has been validated.
+Owns the offline acquisition, normalization, validation, and construction of one immutable Market
+Reference Artifact for each Asia/Taipei trading day. The artifact contains reusable market rules,
+instrument facts and eligibility, and complete stable routing assignments for all Phase 1 eligible
+XTAI and ROCO regular-board common stocks. Risk Admission and all Matching owners load the same
+approved file bytes at startup. Market Reference is not a runtime service and owns no outbox, Kafka
+topic, consumer projection, or trading-path lookup. A future trading day's artifact may assign an
+instrument to a different route, but the current trading session's topology and assignments remain
+immutable after readiness opens. Runtime market-data projection and client streaming are outside
+this boundary.
 
 ### Operational Coordination
 
-Owns the trading readiness barrier by composing independently owned facts: the authoritative
-Routing Policy, Risk Admission and Matching installation acknowledgements for that exact policy,
-required transport topology, and operational health. It does not define market facts, modify the
-Routing Policy, or install a consumer's local projection on that consumer's behalf. Each service
-owns and reports its policy-specific local readiness. If a required dependency fails after the
-barrier opens, Operational Coordination closes new admission without replacing or mutating the
-authoritative policy; admitted work recovers through its durably recorded policy and partition.
+Owns the trading readiness and admission decision by composing independently owned facts: the
+approved artifact identity, Risk status, all 15 Matching ownership/recovery statuses, Kafka
+topology, and critical-consumer progress. In Phase 1 this capability lives inside the single FIX
+Gateway application boundary; it is not a standalone service. Kubernetes and Kafka adapters
+translate platform observations into domain status values. If a required dependency fails after
+open, the Gateway pauses new admission or interrupts the market according to severity without
+mutating the artifact or reassigning a partition. Recovery never reopens admission automatically.
 
 ### Market-data Streaming
 
@@ -105,6 +107,14 @@ gap detection, resynchronization, and slow-consumer handling. Historical analyti
 per-instrument metrics such as OHLCV, turnover, and VWAP require a separate specification and are
 not part of transition cleanup. Market-data Streaming does not own instrument reference facts,
 Routing Policies, order books, executions, or durable audit history.
+
+### Query
+
+Owns required Phase 1 read-only views for order state, executions, account summaries, and the active
+Market Reference Artifact. Its PostgreSQL and Redis projections are rebuildable downstream views,
+never command authority. Query does not read another service's database, join service-owned schemas,
+or make admission, reservation, Matching, or delivery decisions. A Query outage degrades reads but
+does not pause the trading path.
 
 ### Shared platform configuration
 
@@ -134,12 +144,33 @@ authoritative lifecycle events and must not become a second command path.
 | Execution fill         | One idempotent matched quantity at one execution price.                                               | Matching produces; Account Authority applies |
 | Release                | Terminal removal of remaining reserved authority.                                                     | Account Authority                            |
 | Market snapshot        | Versioned set of instrument eligibility and trading rules.                                            | Market Reference                             |
-| Routing policy         | Immutable, versioned assignment of market instruments to stable matching routes for exactly one Asia/Taipei trading day; it is distinct from a market snapshot. | Market Reference                             |
-| Routing policy identity | Opaque identity of exactly one immutable routing policy; it is distinct from both a market snapshot identity and an ingress routing reference. | Market Reference                             |
-| Trading readiness barrier | Operational boundary that opens only when the authoritative Routing Policy, required consumer installations, transport topology, and health checks agree for one trading day. | Operational Coordination                    |
+| Routing policy         | Complete stable assignment of every eligible instrument to one of 15 fixed Matching partitions for one trading day. | Market Reference                             |
+| Market Reference Artifact | Immutable canonical JSON containing metadata, market rules, instrument facts, eligibility, and the Routing Policy; Risk and Matching load the exact same bytes. | Market Reference                             |
+| Artifact identity      | One trading day plus the SHA-256 of the exact final artifact UTF-8 bytes; it is supplied outside the JSON. | Market Reference                             |
+| Phase 1 Trading Release | First complete pre-release trading-system boundary for the accepted XTAI/ROCO continuous-trading scope, including required trading, durability, read, deployment, security, certification, and cleanup capabilities. It is distinct from numbered refactor phases. | Cross-context                                |
+| Trading session        | One coordinated Phase 1 regular-board lifecycle from Open Barrier through Close Barrier for one Asia/Taipei trading day. | Operational Coordination                    |
+| Open Barrier           | Ordered command in every Matching partition that establishes the trading session, artifact, algorithm version, and replay baseline. | Risk Admission publishes; Matching applies  |
+| Close Barrier          | Ordered command in every Matching partition after admission drains; it expires remaining ROD orders and closes that partition deterministically. | Risk Admission publishes; Matching applies  |
+| Matching Command       | Stable-identity new-order, cancel, Open Barrier, or Close Barrier input carried by `matching.commands`. | Risk Admission                               |
+| Matching Event         | Deterministic Matching result carried by `matching.events`, including trade, rested, cancelled, and expired facts. | Matching                                    |
+| Command identity       | Stable identity of one requested Matching action; transport redelivery never creates a new command identity. | Ingress owner                                |
+| Order identity         | Stable identity of one order throughout creation, matching, cancellation, and expiry.                   | Risk Admission creates; contexts reference  |
+| Event identity         | SHA-256 identity of one command output slot within a trading session and partition.                     | Matching                                    |
+| Trade identity         | SHA-256 identity of one deterministic match slot within a command.                                      | Matching                                    |
+| Output index           | Zero-based order of all externally published events produced by one Matching Command.                   | Matching                                    |
+| Match index            | Zero-based order of only the trades produced by one new-order Matching Command.                          | Matching                                    |
+| Maker                  | For one trade, the order already resting in the order book and providing liquidity.                     | Matching                                    |
+| Taker                  | For one trade, the incoming order that removes resting liquidity; the role is per trade, not permanently buy or sell. | Matching                                    |
+| Critical consumer      | Consumer whose failed record cannot be skipped because it owns permanent trade, account, or FIX-delivery effects. | Consuming context                            |
+| Quarantine             | Durable evidence that a critical consumer stopped before a record whose identity, payload, sequence, or schema cannot be applied safely. | Consuming context                            |
+| Partition Ownership Permit | Infrastructure-derived permission that allows one `matching-N` runtime to process partition `N`; the core does not depend on Kubernetes types. | Matching infrastructure                     |
+| Matching Fleet Status  | Operational status of all 15 Matching owners, including identity, permit, artifact, recovery, lag, and quarantine. | Matching infrastructure                     |
+| Trading System Status  | Gateway-owned decision value combining Risk, Matching Fleet, Kafka, and critical-consumer readiness into open, pause, or interrupt eligibility. | Operational Coordination                    |
+| Trading readiness barrier | Operational boundary that opens only when the daily artifact identity, trading session, schemas, 15-partition topology, Matching ownership, and critical-consumer health all agree. | Operational Coordination                    |
 | Regular trading session | Single continuous cash-equity trading period from market open to market close; it is not divided into morning and afternoon sessions. | Market Reference                             |
 | Market instrument      | Instrument known to a market snapshot, with complete trading rules and explicit eligibility. It may be known but ineligible. | Market Reference                             |
 | Eligibility reason     | Market Reference explanation of whether a known instrument is tradable. Unsupported is valid snapshot data; malformed is not. | Market Reference                             |
+| Instrument order book capacity | Maximum number of eligible market instruments whose order books one Matching route may own.     | Matching                                    |
 | Last-trade view        | Rebuildable per-instrument view of the latest published execution, with sequence metadata for consistent delivery. | Market-data Streaming                        |
 | Top-five book view     | Rebuildable per-instrument view of the five best price levels on each side, derived from Matching book-change facts. | Market-data Streaming                        |
 | WAL record             | Replay-safe gateway persistence representation of inbound FIX intent; not an aggregate.                | FIX Gateway                                  |
@@ -199,7 +230,7 @@ does not own their state.
 
 An Admission journal entry composes the validated Admission command, its fixed delivery route, and
 its lifecycle. The command retains the ingress routing reference; the delivery route retains the
-authoritative Routing Policy identity and resolved Kafka partition as one persisted pair. A new
+authoritative Artifact identity and resolved Matching partition as one persisted pair. A new
 Admission resolves that pair exactly once before Account Authority work. Every persisted Admission
 has both values, and recovery reuses the pair without reconstructing or recomputing either value.
 The lifecycle owns state, reservation or rejection outcome, and optimistic revision history. JDBC

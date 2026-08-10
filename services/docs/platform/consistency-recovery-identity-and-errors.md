@@ -203,7 +203,8 @@ canonical UUID.
 ## Durable event path and retired compatibility publication
 
 For accepted Risk admission, the durable cross-service publication path is the Risk journal and
-transactional outbox followed by the configured CDC/Kafka delivery path on `orders.validated`.
+transactional outbox followed by the configured CDC/Kafka delivery path on `matching.commands`.
+The explicit partition comes from the loaded daily Market Reference Artifact.
 QuickFIX Gateway no longer exposes a runtime path or configuration switch that can publish the
 former `orders.commands` compatibility topic.
 

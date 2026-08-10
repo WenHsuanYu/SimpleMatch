@@ -1,4 +1,9 @@
-# Routing Policy migration certification
+# Historical Routing Policy migration certification
+
+> Superseded target: this records certification evidence for the former runtime
+> Market Reference publication/projection design. ADR 0008 replaces that target with an offline
+> daily artifact. Do not use this document as the current implementation plan; use the
+> [remaining-work inventory](../../../docs/routing-policy-remaining-work.md).
 
 ## Scope
 

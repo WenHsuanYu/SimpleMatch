@@ -23,10 +23,12 @@ downstream persistence, market-data delivery, or query traffic.
 flowchart LR
   Client[FIX client] --> Gateway[quickfix-gateway]
   Gateway -->|synchronous admission| Risk[risk-service]
-  Risk -->|validated orders| Engine[matching-engine]
-  Engine -->|execution results| Downstream[persistence and market-data services]
-  Downstream --> Streamer[marketdata-streamer]
-  Engine -->|execution reports| Gateway
+  Artifact[offline Market Reference builder] -->|daily artifact| Risk
+  Artifact -->|same daily artifact| Engine[matching-engine fleet]
+  Risk -->|partitioned Matching Commands| Engine
+  Engine -->|Matching Events| Critical[Persistence, Account, and Gateway]
+  Engine -->|Matching Events| Projection[market-data and query projections]
+  Projection --> Streamer[marketdata-streamer]
 ```
 
 The first successful client acknowledgement follows durable admission at
@@ -36,16 +38,21 @@ ordering, eventing, and reliability decisions are in the
 
 ## Service landscape
 
-| Service                | Runtime                  | Intended responsibility                                                  |
-|------------------------|--------------------------|--------------------------------------------------------------------------|
-| `quickfix-gateway`     | Java, Spring, QuickFix/J | FIX sessions and order admission                                         |
-| `account-service`      | Java, Spring Cloud       | Accounts, limits, positions, and reservations                            |
-| `risk-service`         | Java, Spring Cloud       | Validation, risk decisions, and durable admission                        |
-| `matching-engine`      | C++                      | Deterministic order-book matching                                        |
-| `persistence`          | Java, Spring Cloud       | Projections, replay, and audit integration                               |
-| `marketdata-publisher` | Java, Spring Cloud       | Versioned daily market-reference snapshots and transactional publication |
-| `marketdata-streamer`  | Java, Spring Cloud       | Public and private streaming views                                       |
-| `query-service`        | Java, Spring Cloud       | Optional internal projection queries                                     |
+| Capability | Runtime | Intended responsibility |
+| --- | --- | --- |
+| Offline Market Reference builder | Repository CLI/tool | Official-source validation, stable routing, and one approved daily artifact |
+| `quickfix-gateway` | Java, Spring, QuickFIX/J | FIX sessions, durable lifecycle delivery, and operational admission |
+| `account-service` | Java, Spring Cloud | Accounts, limits, positions, reservations, and Matching-event application |
+| `risk-service` | Java, Spring Cloud | Artifact validation, risk decisions, durable admission, and Matching-command publication |
+| `matching-engine` | Native C++; 15 fixed owners | Deterministic partition-owned order books, replay, and Matching-event publication |
+| `persistence` | Java, Spring Cloud | Permanent trades, fills, projections, and critical inbox |
+| Market-data projection | Java, Spring Cloud | Rebuildable last-trade and top-five order-book views |
+| `marketdata-streamer` | Java, Spring Cloud | Public and authorized private streaming views |
+| `query-service` | Java, Spring Cloud | Required Phase 1 PostgreSQL/Redis read API for order, execution, account-summary, and active-artifact views |
+
+`marketdata-publisher` is a legacy implementation name, not a target runtime service. Reusable pure
+Market Reference logic moves to the offline builder; its runtime database/outbox/Kafka stack is
+removed after the replacement path passes.
 
 ## Documentation
 
@@ -56,3 +63,9 @@ parameter-safe APIs are recorded in
 [ADR 0002](docs/adr/0002-domain-values-for-wide-call-boundaries.md). The concrete migration and
 intentional exceptions are listed in
 the [domain parameter-safety refactor](docs/refactoring/domain-parameter-safety-refactor.md).
+
+The exact release scope is defined by the
+[Phase 1 Trading Release system boundary](services/docs/architecture/system-boundaries.md#phase-1-trading-release-boundary).
+Its implementation status is tracked in the
+[remaining-work inventory](docs/routing-policy-remaining-work.md); GitHub Issues remain the
+executable task source of truth.

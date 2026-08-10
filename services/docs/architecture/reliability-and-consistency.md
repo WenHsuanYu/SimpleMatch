@@ -27,10 +27,16 @@ The intended publication pattern is:
 2. Debezium observes the committed outbox change and publishes the integration event.
 3. Consumers apply their own idempotent local transaction.
 
-For matching results, a local WAL or journal provides the first post-match durability anchor. A
-loader can write the results and outbox record in a later local transaction, then allow CDC to
-publish them. This keeps downstream I/O out of the matching loop while preserving a recoverable
-path.
+Matching uses a different durability path. `matching.commands` is its authoritative input journal.
+The single-writer core sends deterministic outputs through a preallocated ring to an idempotent
+Kafka producer using `acks=all`. An input offset is committed only after every output is
+acknowledged and every earlier input offset is also complete. A crash can therefore replay and
+republish the same event, which critical consumers deduplicate with `eventId` plus a hash of the
+exact Kafka record value bytes.
+
+Persistence consumes `matching.events` in its own group and permanently stores the inbox row,
+immutable trade, both maker/taker fills, and projections in one PostgreSQL transaction. That store
+serves audit and queries; Matching recovery never reads it.
 
 ## Synchronous dependency policy
 

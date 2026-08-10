@@ -1,98 +1,210 @@
 # Kafka Event Contracts
 
-This is the canonical target contract for cross-service Kafka events. It defines event meaning and
-compatibility, not broker deployment settings or a service's implementation details.
+This is the canonical target contract for cross-service Kafka records. Current implementation and
+legacy-removal status are tracked in the
+[Phase 1 Trading Release remaining-work inventory](../../../docs/routing-policy-remaining-work.md).
 
-## Scope and delivery model
+## Delivery model
 
-Kafka carries asynchronous integration events after durable local admission. The synchronous ingress
-path is described in [the gRPC contract](grpc-apis.md). Producers publish through a durable outbox
-and the event path is at-least-once: consumers must make repeated delivery harmless. A consumer may
-record an event identifier, enforce a state transition, or rely on an appropriate domain unique key;
-it must not make the same business effect twice.
+Risk publishes Matching Commands through its transactional outbox after durable admission.
+Matching consumes one explicitly assigned partition and publishes Matching Events directly from its
+output publisher. Kafka delivery is at least once: a crash may repeat a record, but deterministic
+identity and consumer-owned durable inboxes prevent duplicate local business effects.
 
-The former `orders.commands` QuickFIX compatibility publication is retired. New and current order
-ingress uses synchronous Risk v2 admission; the authoritative asynchronous order path begins from
-the Risk transactional outbox on `orders.validated`. QuickFIX maps its durable WAL record directly
-to the typed v2 Risk command and does not construct a v1 `OrderCommand` for production admission.
+The retired `orders.commands` Gateway publication is not a production path. The target also removes
+`market-reference.snapshots` and `market-reference.routing-policies`; Risk and Matching load the
+same approved file rather than consume runtime Market Reference topics.
 
 ## Topic catalogue
 
-| Topic                 | Key and ordering boundary                            | Producer               | Consumers                                               | Contract purpose                                 |
-|-----------------------|------------------------------------------------------|------------------------|---------------------------------------------------------|--------------------------------------------------|
-| `orders.validated`    | Stable partition for a symbol within a trading day   | `risk-service`         | `matching-engine`                                       | Accepted order command, or its rejection outcome |
-| `account.lifecycle`   | `account_id`                                         | `account-service`      | Account lifecycle and rebuildable projections           | Reservation authority outcome                    |
-| `market-reference.snapshots` | `trading_day`                                  | `marketdata-publisher` | Market Reference consumers                              | Immutable market snapshot                        |
-| `market-reference.routing-policies` | `trading_day`                           | `marketdata-publisher` | `risk-service`, `matching-engine`                       | Immutable instrument-to-partition policy         |
-| `matching.executions` | `symbol`                                             | `matching-engine`      | `persistence`, market-data services, `quickfix-gateway` | Executions and order-result events               |
-| `marketdata.events`   | `symbol`                                             | `marketdata-publisher` | `marketdata-streamer`                                   | Public market-data events                        |
-| `audit.events`        | `symbol` or `order_id`, selected for the audit query | Owning service         | Audit consumers                                         | Append-only audit and trace events               |
+| Topic | Partition/key rule | Producer | Consumers | Purpose |
+| --- | --- | --- | --- | --- |
+| `matching.commands` | 15 fixed partitions; explicit artifact route; key=`commandId` | `risk-service` outbox | exactly one `matching-N` per partition | New order, cancel, Open Barrier, and Close Barrier inputs |
+| `matching.events` | 15 fixed partitions aligned to input; key=`eventId` | `matching-N` | Persistence, Account, QuickFIX, market-data projection | Deterministic order and trade lifecycle facts |
+| `account.lifecycle` | key=`accountId` | `account-service` outbox | account/audit projections | Reservation authority outcomes |
+| `marketdata.events` | key=`venueMic:symbol` | market-data projection | `marketdata-streamer` | Rebuildable public market-data deltas |
+| `audit.events` | owner-defined aggregate identity | owning service outbox | audit consumers | Optional append-only audit integration |
 
-An event sequence that has a business ordering requirement must use the stated key. Consumers must
-not infer a total order across partitions. A routing snapshot may choose the numeric partition for
-`orders.validated`, but changing that choice must preserve the documented ordering boundary during a
-trading day.
+The record key supports tracing and producer behavior; it does not choose Matching ownership.
+`risk-service` and `matching-N` set the numeric partition explicitly from the approved artifact and
+pod ordinal. Consumers must not infer total order across partitions.
 
-## Current routing assertions
+## Matching Command envelope
 
-The Java outbox tests and native fixture tests enforce these decisions at the producer boundary:
+`MatchingCommand` has stable common metadata and one of these command types:
 
-- Accepted v2 orders use the normalized `VENUE_MIC:SYMBOL` key (for example `XTAI:2330`), carry the
-  authoritative `routing_policy_id`, and persist the selected `orders.validated` partition. A
-  missing accepted partition is an error; it is never encoded as partition zero.
-- Any retained v1 compatibility adapter is outside the QuickFIX production admission path and does
-  not restore a legacy Kafka command route.
-- Account lifecycle events use `account_id` as their key. Their nullable partition column means the
-  Kafka producer's key partitioner selects the partition consistently for that account.
-- Market Reference snapshot and routing-policy publications use the trading day as their key.
-  Routing-policy publications are pinned to the configured policy publication partition, currently
-  partition `0`, while instrument assignments inside the policy select `orders.validated` routes.
-- Matching executions use the instrument symbol as their ordering key. Account and QuickFIX
-  consumers treat the execution stream as at-least-once and deduplicate at their own boundaries.
+- `NEW_ORDER`
+- `CANCEL_ORDER`
+- `TRADING_DAY_OPEN_BARRIER`
+- `TRADING_DAY_CLOSE_BARRIER`
 
-`V1ProtobufCompatibilityInventoryTest` and `V2ProtobufCompatibilityInventoryTest` compare every
-generated descriptor field number with the checked-in inventories. `RoutingPolicyContractTest`, the
-Risk admission outbox tests, Account outbox tests, Market Reference publication tests, and the
-native routing-policy fixture tests are the executable routing contract for the current streams.
+Every command carries at least:
 
-## Event identity and minimum envelope
+```text
+schemaVersion
+commandId
+tradingDay
+tradingSessionId
+artifactId
+partitionId
+commandType
+```
 
-Every v1 event uses the metadata in
-[`common.proto`](../../../proto/common.proto). Additive v2 events and commands use
-[`common_v2.proto`](../../../proto/common_v2.proto), which adds correlation and optional causation
-identifiers to the stable schema version, event identity, timestamp, and source-service fields.
-`event_id` identifies one emitted event and is the preferred consumer-deduplication key when it is
-available.
+Order commands additionally carry the normalized order identity, account, instrument, side,
+quantity, price semantics, and time-in-force required by Matching. `commandId` is created from the
+durable ingress idempotency boundary and survives FIX, outbox, and Kafka redelivery. A repeated
+business command never receives a fresh identity.
 
-Production synchronous order admission uses the v2 messages in
-[`orders_v2.proto`](../../../proto/orders_v2.proto). `command_id` identifies one admission operation
-and is reused by Gateway recovery and Risk reconciliation. `order_id` is the opaque internal order
-identity at the Risk boundary, while FIX `ClOrdID`/`OrderID(37)` remain a separate external business
-identity defined by the [FIX gateway contract](fix-gateway.md).
+An Open Barrier appears after the final artifact is approved and loaded. It records the trading
+session, artifact, partition, Matching algorithm version, event-schema version, identity version,
+and pinned image digest. It defines the replay baseline. A Close Barrier is placed after Gateway
+admission closes and Risk has drained prior admitted commands; it expires remaining ROD orders and
+closes that partition deterministically.
 
-Some other streams, including the currently consumed `matching.executions` contract, remain on their
-own v1 wire version until migrated independently. A v1 event in another domain does not imply that
-QuickFIX-to-Risk order admission still uses v1.
+## Matching Event envelope
 
-Identifiers are wire strings to preserve protocol compatibility. Producers generate UUID-backed
-internal event, command, order, and account identifiers where required by the v2 contract, and
-consumers treat those identifiers as opaque rather than depending on a particular textual encoding.
+`MatchingEvent` has stable common metadata and one of these Phase 1 event types:
 
-The v2 order-admission contract uses signed 64-bit `0.0001 TWD` fixed-point price/notional values and
-whole-share quantities. See [v2 domain contracts](v2-domain-contracts.md) for the typed wire values
-and compatibility boundary.
+- `ORDER_RESTED`
+- `TRADE_EXECUTED`
+- `ORDER_CANCELLED`
+- `ORDER_EXPIRED`
+
+Every event carries at least:
+
+```text
+schemaVersion
+identityVersion
+eventId
+tradingDay
+tradingSessionId
+artifactId
+partitionId
+commandId
+sourceInputOffset
+outputIndex
+eventType
+```
+
+`TRADE_EXECUTED` additionally carries `tradeId`, `matchIndex`, venue, symbol, aggressor side,
+64-bit whole-share quantity, 64-bit price in 1/10,000 TWD units, and complete maker/taker legs. Each
+leg includes order/account identity, cumulative fill, remaining quantity, and resulting state. One
+trade event therefore creates one immutable trade and two order-fill legs downstream.
+
+Maker and taker are roles for one trade. The maker was already resting in the book; the taker is the
+incoming order that triggered the match. Either role may be buy or sell, and a partially matched
+incoming order may later rest and become a maker.
+
+## Deterministic identity and indices
+
+`outputIndex` starts at zero for every command and counts all externally published events in the
+exact order produced by the single Matching core. `matchIndex` separately counts only trades.
+Neither is a Kafka offset or physical ring slot.
+
+Conceptually:
+
+```text
+eventId = SHA-256(
+  "simplematch.event-id.v1",
+  tradingSessionId,
+  partitionId,
+  commandId,
+  outputIndex)
+
+tradeId = SHA-256(
+  "simplematch.trade-id.v1",
+  tradingSessionId,
+  partitionId,
+  commandId,
+  matchIndex)
+```
+
+The implementation uses a specified fixed-width or length-delimited byte encoding, not ambiguous
+string concatenation. The event type is deliberately absent from `eventId`: if replay assigns a
+different payload to the same output slot, consumers must detect a deterministic violation rather
+than accept a second identity.
+
+The 256-bit identities travel as 32-byte wire/database values and render as 64 lowercase hex
+characters in JSON and logs. Kafka source topic/partition/offset remains trace metadata, not
+business identity; the same business command can be delivered at another input offset without
+becoming a new command.
+
+## Raw-value fingerprint
+
+Every critical consumer computes:
+
+```text
+payloadSha256 = SHA-256(exact Kafka record value bytes)
+```
+
+The hash is not embedded in the record value. Consumers hash the raw bytes before parsing and store
+the result beside `eventId` in their inbox. They do not parse and reserialize to compute it.
+
+| Inbox observation | Result |
+| --- | --- |
+| New event ID | Apply the local transaction and save ID/hash. |
+| Same event ID and same hash | Safe duplicate; no second business effect. |
+| Same event ID and different hash | Deterministic violation; quarantine and interrupt. |
+
+The producer uses one pinned C++ binary, schema, and deterministic serializer for the complete
+trading session. The event value contains no wall-clock publication timestamp, random value, or
+self-checksum. Operational age uses Kafka record append metadata, not a nondeterministic business
+payload field. Protobuf maps are excluded from these records, and C++ golden record bytes must parse
+in every Java critical consumer. Protobuf deterministic serialization is not treated as a
+cross-version or cross-language canonical format.
+
+## Matching publication and input commit
+
+The Matching core writes events to the output ring followed by an internal
+`CommandOutputCompleted` marker containing the command, input offset, and output count. The marker
+is not published to Kafka and has no event identity.
+
+The publisher enables idempotence and `acks=all`, sends every event to the same numeric output
+partition, and tracks ACKs by input offset. An input becomes completed only after all its outputs
+are ACKed. The offset coordinator commits only the highest contiguous completed input offset; it
+never jumps across a missing ACK. Graceful shutdown drains rings, waits for ACKs, and performs a
+final synchronous commit.
+
+A crash before input commit may repeat events. Producer idempotence handles retry inside one
+producer session; deterministic event identity and downstream inboxes handle replay across process
+sessions. Phase 1 does not claim Kafka record-level exactly once and does not require Kafka
+transactions.
+
+## Consumer criticality
+
+| Consumer | Policy |
+| --- | --- |
+| Persistence | Critical. Inbox/hash, immutable trade, two fills, and projections commit in one PostgreSQL transaction before offset commit. |
+| Account | Critical. Inbox/hash, reservation/account transition, and lifecycle outbox commit atomically before offset commit. |
+| QuickFIX | Critical. Inbox/hash and per-order delivery intents are durable before offset commit; delivery uses stable FIX identity and retry/quarantine. |
+| Market-data projection | Non-critical and rebuildable. Delayed retry/DLQ is allowed without blocking critical consumers. |
+
+A critical consumer never skips a failed earlier record to process a later record in the same
+partition. Unknown schema, identity conflict, or same-ID/different-payload evidence is quarantined.
+Ordinary PostgreSQL or consumer lag produces backpressure rather than a business rejection or DLQ.
+
+## Production topic profile
+
+Both Matching topics use:
+
+```text
+partitions=15
+replication.factor=3
+min.insync.replicas=2
+cleanup.policy=delete
+retention.ms=30 calendar days
+unclean leader election=false
+automatic topic creation=false
+```
+
+Producers use `acks=all` and idempotence. Neither topic is compacted. Production readiness validates
+these values and certified disk headroom. A local one-broker profile may reduce replication for
+development but cannot pass production readiness.
 
 ## Evolution and compatibility
 
-- A published event type and field number are durable contract surface.
-- Add optional fields with a new or compatible `schema_version`; do not reuse a field number or
-  change the meaning of an existing field.
-- A consumer must ignore fields it does not understand and reject only an explicitly unsupported
-  major semantic version.
-- A breaking semantic change requires a new event type or parallel topic plus a documented migration
-  window; it must not silently repurpose an existing field or topic.
-- Producers retain the information needed for replay and consumers remain idempotent, so backfill
-  and replay do not create new business effects.
-
-Service configuration, connector deployment, and current partition counts are platform concerns;
-they are intentionally not repeated here.
+SimpleMatch has no external consumer or production history, so the coordinated repository cutover
+does not preserve the legacy Matching topics or v1 payloads. Within one trading session, however,
+schema, identity algorithm, Matching algorithm, and image digest are immutable. A new version starts
+only with a later Open Barrier after every producer and critical consumer supports it. Historical
+re-execution uses the original image; stored events remain the permanent integration facts.

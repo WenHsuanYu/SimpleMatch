@@ -2,6 +2,17 @@
 
 Issues and PRDs for this repo live as GitHub issues. Use the `gh` CLI for all operations.
 
+## Authority model
+
+- GitHub Issue state, assignee, native parent/sub-issue relationship, and dependency edges are the
+  executable source of truth.
+- `docs/routing-policy-remaining-work.md` maps repository capability status and evidence to issues;
+  it does not replace issue workflow state.
+- `docs/taiwan-event-driven-refactor-plan.md` owns phase, transaction, rollback, and final gates.
+- `tasks.md` is historical navigation. File or update an issue instead of adding a live checkbox.
+- The Taiwan architecture program is #10. Add accepted implementation slices as native sub-issues
+  and encode real prerequisites with GitHub `blocked by` dependencies.
+
 ## Conventions
 
 - **Create an issue**: `gh issue create --title "..." --body "..."`. Use a heredoc for multi-line

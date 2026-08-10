@@ -1,42 +1,40 @@
-# Routing Policy projections
+# Daily routing artifact loading
 
-Market Reference publishes a complete versioned `simplematch.routing.v2.RoutingPolicy` protobuf
-after its own policy and outbox transaction commits. Risk consumes the serialized event at its
-`RoutingPolicyProjectionService` boundary; it does not call Market Reference synchronously and it
-does not use the legacy local JSON resolver for this projection.
+Routing Policy is no longer a runtime projection published by Market Reference. The accepted
+Phase 1 authority is one reviewed, immutable `market_reference.json` for each Asia/Taipei trading
+day. An offline builder obtains official TWSE/TPEx facts, normalizes the eligible XTAI and ROCO
+regular-board common-stock universe, calculates stable assignments across 15 partitions, and adds
+the official reference and limit prices before finalization.
 
-The Risk consumer validates event metadata, UUID identity, trading day, effective interval,
-normalized unique instruments, explicit partition bounds, and the declared `orders.validated`
-partition topology. A valid policy is written to Risk-owned parent and assignment tables as
-inactive staging state, then activated only after the complete assignment set is durable. A
-duplicate identical policy is idempotent; the same policy identity with different content is
-rejected. Local lookups return the policy identity and partition together, and unknown instruments
-have no hash or default fallback.
+The file contains four sections: `metadata`, `marketRules`, `marketSnapshot`, and `routingPolicy`.
+Its identity is the trading day plus SHA-256 of the exact canonical UTF-8 bytes. The checksum is
+delivered separately so a corrupt file cannot certify itself. Routing uses a fixed algorithm
+version, an initial `(venueMic, symbol)` ordering, and least-loaded assignment with the lowest
+partition ID as the tie-breaker. A partition contains no more than 150 instruments.
 
-New Risk Admissions resolve the applicable projection exactly once at begin time. The pending
-journal stores the authoritative policy UUID and explicit partition together in its delivery route
-before Account Authority is called; the ingress `routingSnapshotId` remains a separate opaque
-field. Terminal outbox creation, equivalent replay, and pending recovery use that persisted route
-without consulting the currently active policy again. Rows created before the additive admission
-column existed remain readable: recovery preserves their partition and leaves policy identity
-absent rather than inventing one.
+## Runtime boundary
 
-Risk readiness is out of service until a complete active policy applies to the current
-Asia/Taipei trading date and matches the configured partition topology. An expired, future,
-missing, invalid, or incomplete local policy never becomes an implicit current policy. The former
-Risk-local JSON resolver and hash fallback are retired; no production admission path uses them.
+Risk and every Matching pod mount and load the same final artifact at startup. They validate:
 
-The v1 submission adapter remains source-compatible for controlled migration tests but is not a
-Spring production bean because its wire contract lacks venue and authoritative policy identity.
-Production ingress is v2 policy-aware Admission. Legacy pending Admissions created during the
-additive migration remain readable: recovery uses their persisted partition and leaves the nullable
-policy identity absent rather than recomputing or inventing a route.
+- trading day, schema, routing-algorithm version, and external content checksum;
+- the complete, normalized, unique eligible instrument set;
+- exactly 15 partition IDs and no assignment outside `0..14`;
+- no duplicate or omitted assignment and no partition above 150 instruments; and
+- supported market rules, reference prices, and price limits.
 
-Market Reference publication enforces continuity for the whole trading date. Its effective
-intervals are half-open, ordered, and non-overlapping, so a policy ending at `06:00` may be followed
-by one beginning at `06:00` without an ambiguous boundary. A later policy must carry forward every
-instrument already assigned that day with the same partition; it may add an instrument that has not
-appeared before. The publisher locks the existing day policy history and validates this rule before
-inserting either the new active policy or its outbox record. A reassignment, omission, or overlap
-therefore leaves both the active policy set and publication outbox unchanged. Taiwan cash-equity
-trading is modeled as one continuous session, not morning and afternoon batches.
+There is no hot reload. A missing, stale, malformed, incomplete, oversized-for-its-delivery-mode,
+or mismatched artifact keeps the component NotReady. Risk resolves each accepted command to the
+artifact-assigned `matching.commands` partition and persists that delivery route before remote work.
+Matching ordinal N verifies that the command belongs to partition N before processing it.
+
+## Delivery boundary
+
+The normal delivery is an immutable ConfigMap while the file remains at or below 900 KiB. If it is
+larger, the builder packages the same bytes in a digest-pinned OCI data image. Both modes expose the
+same application mount path and checksum contract. Kubernetes transports the reviewed artifact but
+does not decide whether its market contents are valid.
+
+Market Reference therefore owns offline source acquisition and artifact construction, not a
+runtime API, PostgreSQL schema, Kafka topic, outbox, activation service, or Risk projection table.
+Current implementation evidence and removal work are tracked in the
+[remaining-work inventory](../../../docs/routing-policy-remaining-work.md).

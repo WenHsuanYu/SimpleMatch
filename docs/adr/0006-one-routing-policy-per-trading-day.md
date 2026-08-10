@@ -1,6 +1,6 @@
 # Use one Routing Policy per trading day
 
-Status: accepted; supersedes ADR 0005.
+Status: superseded by ADR 0008; supersedes ADR 0005.
 
 Market Reference publishes exactly one authoritative, immutable Routing Policy for each
 Asia/Taipei trading day. Operators may stage and validate the next trading day's complete policy
