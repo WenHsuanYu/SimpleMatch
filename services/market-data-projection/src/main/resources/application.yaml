@@ -1,6 +1,6 @@
 spring:
   application:
-    name: persistence
+    name: market-data-projection
   profiles:
     default: local
   config:
@@ -21,26 +21,43 @@ spring:
         enable-api: ${SIMPLEMATCH_KUBERNETES_ENABLED:false}
         sources:
           - name: ${spring.application.name}-secrets
+  flyway:
+    enabled: false
   kafka:
     bootstrap-servers: ${simplematch.kafka.brokers:localhost:9092}
     consumer:
-      group-id: persistence-matching-events
+      group-id: market-data-projection
       auto-offset-reset: earliest
       enable-auto-commit: false
       key-deserializer: org.apache.kafka.common.serialization.StringDeserializer
       value-deserializer: org.apache.kafka.common.serialization.ByteArrayDeserializer
     listener:
       ack-mode: manual_immediate
+    producer:
+      properties:
+        enable.idempotence: true
+        acks: all
 
 simplematch:
-  persistence:
+  market-data-projection:
     matching-events:
       enabled: false
       topic: matching.events
       maximum-attempts: 3
+      retry-delay: 5s
+      dead-letter-topic: marketdata.events.dlq
+    marketdata-events:
+      enabled: false
+      topic: marketdata.events
+      dispatch-batch-size: 100
+      dispatch-interval: 1s
+    redis:
+      enabled: false
+      refresh-batch-size: 100
+      refresh-interval: 5s
 
 management:
   endpoints:
     web:
       exposure:
-        include: health,info
+        include: health,info,metrics

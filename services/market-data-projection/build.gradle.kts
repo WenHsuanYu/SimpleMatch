@@ -6,6 +6,7 @@ plugins {
 dependencies {
     implementation("org.springframework.boot:spring-boot-starter-jdbc")
     implementation("org.springframework.boot:spring-boot-starter-kafka")
+    implementation("org.springframework.boot:spring-boot-starter-data-redis")
 
     testImplementation(libs.h2)
     testImplementation(libs.flyway.core)
@@ -14,6 +15,6 @@ dependencies {
 }
 
 simpleMatchFlyway {
-    serviceId.set("persistence")
-    schemaName.set("persistence")
+    serviceId.set("market-data-projection")
+    schemaName.set("market_data_projection")
 }

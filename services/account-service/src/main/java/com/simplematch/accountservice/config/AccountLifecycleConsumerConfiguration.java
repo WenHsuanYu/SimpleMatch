@@ -10,6 +10,7 @@ import com.simplematch.config.delivery.QuarantineStore;
 import io.micrometer.core.instrument.MeterRegistry;
 import java.time.Clock;
 import org.springframework.beans.factory.ObjectProvider;
+import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.boot.context.properties.EnableConfigurationProperties;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
@@ -22,17 +23,17 @@ import org.springframework.kafka.annotation.EnableKafka;
 @EnableConfigurationProperties(AccountLifecycleConsumerProperties.class)
 public class AccountLifecycleConsumerConfiguration {
   /** Creates durable account quarantine evidence storage. */
-  @Bean
+  @Bean("accountLifecycleQuarantineStore")
   QuarantineStore accountQuarantineStore(JdbcTemplate jdbcTemplate) {
     return new JdbcAccountQuarantineStore(jdbcTemplate);
   }
 
   /** Creates the bounded same-offset retry policy for lifecycle events. */
-  @Bean
+  @Bean("accountLifecycleDeliveryController")
   CriticalDeliveryController accountLifecycleDeliveryController(
       AccountLifecycleConsumerProperties properties,
       Clock accountServiceClock,
-      QuarantineStore quarantineStore,
+      @Qualifier("accountLifecycleQuarantineStore") QuarantineStore quarantineStore,
       ObjectProvider<MeterRegistry> meterRegistryProvider) {
     final MeterRegistry meterRegistry = meterRegistryProvider.getIfAvailable();
     final DeliveryMetrics metrics =
@@ -52,7 +53,8 @@ public class AccountLifecycleConsumerConfiguration {
   @Bean
   AccountLifecycleConsumer accountLifecycleConsumer(
       AccountMatchingExecutionApplicationService accountService,
-      CriticalDeliveryController deliveryController) {
+      @Qualifier("accountLifecycleDeliveryController")
+          CriticalDeliveryController deliveryController) {
     return new AccountLifecycleConsumer(accountService, deliveryController);
   }
 }

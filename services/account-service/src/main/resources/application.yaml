@@ -29,12 +29,19 @@ spring:
       enable-auto-commit: false
       key-deserializer: org.apache.kafka.common.serialization.StringDeserializer
       value-deserializer: org.apache.kafka.common.serialization.ByteArrayDeserializer
+    listener:
+      ack-mode: manual_immediate
 
 simplematch:
   account-service:
     execution-topic: matching.executions
     lifecycle-consumer:
       enabled: false
+      maximum-attempts: 3
+    final-matching-events:
+      enabled: false
+      topic: matching.events
+      consumer-group: account-final-matching-events
       maximum-attempts: 3
 
 management:

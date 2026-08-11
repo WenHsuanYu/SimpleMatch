@@ -13,7 +13,7 @@ import org.springframework.jdbc.datasource.DriverManagerDataSource;
 class PersistenceFlywayMigrationTest {
   private static final String SCHEMA_NAME = "PERSISTENCE";
 
-  @DisplayName("an empty database receives the complete persistence V1 schema")
+  @DisplayName("an empty database receives the complete persistence projection and Matching-event schema")
   @Test
   void migrateEmptyDatabaseCreatesProjectionAndInboxTables() {
     final JdbcTemplate jdbcTemplate = new JdbcTemplate(newDataSource());
@@ -23,7 +23,11 @@ class PersistenceFlywayMigrationTest {
     assertThat(hasTable(jdbcTemplate, "ORDERS")).isTrue();
     assertThat(hasTable(jdbcTemplate, "EXECUTIONS")).isTrue();
     assertThat(hasTable(jdbcTemplate, "INBOX")).isTrue();
-    assertThat(appliedMigrationCount(jdbcTemplate)).isEqualTo(2);
+    assertThat(hasTable(jdbcTemplate, "MATCHING_EVENT_INBOX")).isTrue();
+    assertThat(hasTable(jdbcTemplate, "TRADES")).isTrue();
+    assertThat(hasTable(jdbcTemplate, "ORDER_FILLS")).isTrue();
+    assertThat(hasTable(jdbcTemplate, "MATCHING_ORDER_PROJECTIONS")).isTrue();
+    assertThat(appliedMigrationCount(jdbcTemplate)).isEqualTo(3);
   }
 
   @DisplayName("a second persistence migration is a no-op")
