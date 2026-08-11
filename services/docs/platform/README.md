@@ -12,6 +12,10 @@ from repository execution plans, phase gates, task tracking, and certification e
 - [Development environment](development-environment.md) — local toolchain, repository layout, and
   build expectations.
 - [Deployment](deployment.md) — local composition, Kubernetes deployment, and service discovery.
+- [Matching fleet recovery](matching-fleet-recovery.md) — partition ownership, Lease fencing, and
+  the normal no-force-delete recovery procedure.
+- [Gateway admission operations](gateway-admission-operations.md) — five-state admission control,
+  operator commands, audit records, and operational-status boundaries.
 - [Observability](observability.md) — traces, logs, metrics, dashboards, and alerts.
 - [Testing](testing.md) — layered verification and certification posture.
 - [Troubleshooting](troubleshooting.md) — first diagnostic checks for common operating failures.

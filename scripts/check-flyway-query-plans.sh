@@ -45,6 +45,16 @@ case "$service_name" in
       "uq_account_reservations_request_id" \
       "SELECT reservation_id FROM account_service.account_reservations WHERE request_id = 'plan-check'"
     ;;
+  market-data-projection)
+    assert_index_plan \
+      "market-data top-five bid lookup" \
+      "order_book_entries_top_five_idx" \
+      "SELECT price_units FROM market_data_projection.order_book_entries WHERE venue_mic = 'XTAI' AND symbol = '2330' AND side = 'B' ORDER BY price_units DESC LIMIT 5"
+    assert_index_plan \
+      "market-data pending outbox scan" \
+      "market_data_events_outbox_pending_idx" \
+      "SELECT event_id FROM market_data_projection.market_data_events_outbox WHERE published_at_unix_ms IS NULL ORDER BY created_at_unix_ms LIMIT 1"
+    ;;
   marketdata-publisher)
     assert_index_plan \
       "routing policy source snapshot lookup" \
@@ -66,6 +76,16 @@ case "$service_name" in
       "persistence inbox deduplication lookup" \
       "inbox_pkey" \
       "SELECT received_at_unix_ms FROM persistence.inbox WHERE consumer_name = 'persistence' AND event_id = '00000000-0000-0000-0000-000000000000'"
+    ;;
+  quickfix-gateway)
+    assert_index_plan \
+      "Gateway pending FIX delivery scan" \
+      "idx_qfg_delivery_pending" \
+      "SELECT delivery_id FROM quickfix_gateway.fix_delivery_intents WHERE status = 'PENDING' ORDER BY source_partition, source_offset, delivery_index LIMIT 1"
+    assert_index_plan \
+      "Gateway operation audit chronology scan" \
+      "idx_qfg_operation_audit_recorded_at" \
+      "SELECT audit_id FROM quickfix_gateway.gateway_operation_audit ORDER BY recorded_at_unix_ms, audit_id LIMIT 1"
     ;;
   *)
     echo "Unknown Flyway service: $service_name" >&2

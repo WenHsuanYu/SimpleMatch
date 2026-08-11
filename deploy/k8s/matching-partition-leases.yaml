@@ -1,0 +1,149 @@
+apiVersion: coordination.k8s.io/v1
+kind: Lease
+metadata:
+  name: matching-partition-00
+  labels:
+    app.kubernetes.io/name: matching
+    simplematch.io/partition: "00"
+spec:
+  leaseDurationSeconds: 15
+---
+apiVersion: coordination.k8s.io/v1
+kind: Lease
+metadata:
+  name: matching-partition-01
+  labels:
+    app.kubernetes.io/name: matching
+    simplematch.io/partition: "01"
+spec:
+  leaseDurationSeconds: 15
+---
+apiVersion: coordination.k8s.io/v1
+kind: Lease
+metadata:
+  name: matching-partition-02
+  labels:
+    app.kubernetes.io/name: matching
+    simplematch.io/partition: "02"
+spec:
+  leaseDurationSeconds: 15
+---
+apiVersion: coordination.k8s.io/v1
+kind: Lease
+metadata:
+  name: matching-partition-03
+  labels:
+    app.kubernetes.io/name: matching
+    simplematch.io/partition: "03"
+spec:
+  leaseDurationSeconds: 15
+---
+apiVersion: coordination.k8s.io/v1
+kind: Lease
+metadata:
+  name: matching-partition-04
+  labels:
+    app.kubernetes.io/name: matching
+    simplematch.io/partition: "04"
+spec:
+  leaseDurationSeconds: 15
+---
+apiVersion: coordination.k8s.io/v1
+kind: Lease
+metadata:
+  name: matching-partition-05
+  labels:
+    app.kubernetes.io/name: matching
+    simplematch.io/partition: "05"
+spec:
+  leaseDurationSeconds: 15
+---
+apiVersion: coordination.k8s.io/v1
+kind: Lease
+metadata:
+  name: matching-partition-06
+  labels:
+    app.kubernetes.io/name: matching
+    simplematch.io/partition: "06"
+spec:
+  leaseDurationSeconds: 15
+---
+apiVersion: coordination.k8s.io/v1
+kind: Lease
+metadata:
+  name: matching-partition-07
+  labels:
+    app.kubernetes.io/name: matching
+    simplematch.io/partition: "07"
+spec:
+  leaseDurationSeconds: 15
+---
+apiVersion: coordination.k8s.io/v1
+kind: Lease
+metadata:
+  name: matching-partition-08
+  labels:
+    app.kubernetes.io/name: matching
+    simplematch.io/partition: "08"
+spec:
+  leaseDurationSeconds: 15
+---
+apiVersion: coordination.k8s.io/v1
+kind: Lease
+metadata:
+  name: matching-partition-09
+  labels:
+    app.kubernetes.io/name: matching
+    simplematch.io/partition: "09"
+spec:
+  leaseDurationSeconds: 15
+---
+apiVersion: coordination.k8s.io/v1
+kind: Lease
+metadata:
+  name: matching-partition-10
+  labels:
+    app.kubernetes.io/name: matching
+    simplematch.io/partition: "10"
+spec:
+  leaseDurationSeconds: 15
+---
+apiVersion: coordination.k8s.io/v1
+kind: Lease
+metadata:
+  name: matching-partition-11
+  labels:
+    app.kubernetes.io/name: matching
+    simplematch.io/partition: "11"
+spec:
+  leaseDurationSeconds: 15
+---
+apiVersion: coordination.k8s.io/v1
+kind: Lease
+metadata:
+  name: matching-partition-12
+  labels:
+    app.kubernetes.io/name: matching
+    simplematch.io/partition: "12"
+spec:
+  leaseDurationSeconds: 15
+---
+apiVersion: coordination.k8s.io/v1
+kind: Lease
+metadata:
+  name: matching-partition-13
+  labels:
+    app.kubernetes.io/name: matching
+    simplematch.io/partition: "13"
+spec:
+  leaseDurationSeconds: 15
+---
+apiVersion: coordination.k8s.io/v1
+kind: Lease
+metadata:
+  name: matching-partition-14
+  labels:
+    app.kubernetes.io/name: matching
+    simplematch.io/partition: "14"
+spec:
+  leaseDurationSeconds: 15

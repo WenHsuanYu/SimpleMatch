@@ -32,8 +32,16 @@ identical events; downstream durable inboxes suppress the duplicate business eff
 
 ## Current implementation seam
 
-The repository currently has only tested routing/quarantine ingress state machines and CMake
-scaffolding. They are reusable characterization evidence, not the final runtime interface. The
-Kafka client, rings, order books, deterministic matching core, barriers, publisher, offset
-coordinator, ownership permit adapter, and recovery certification remain open work in the
+The native runtime now has tested preallocated rings, deterministic order-book processing, command
+decoding, event encoding, direct-partition replay coordination, and the ownership-permit seam.
+`LeaseFencedPartitionOwnershipPermit` contains only holder identity, partition, trading-session,
+and monotonic-time facts. An infrastructure adapter supplies those facts from Kubernetes Lease
+observations; the core remains unaware of Kubernetes API types. Once Lease renewal is uncertain for
+five seconds, the permit self-fences and the runtime leaves queued input and pending output intact
+for a replacement replay.
+
+The matching Kubernetes manifests declare the 15 ordinal/PVC/Lease deployment contract and the
+standard artifact mount. Production packaging still has to provide the native process's
+`readiness` and `liveness` commands, Kubernetes Lease client, and Kafka client adapters around this
+tested library seam. Their operational evidence remains tracked in the
 [remaining-work inventory](../../../docs/routing-policy-remaining-work.md).

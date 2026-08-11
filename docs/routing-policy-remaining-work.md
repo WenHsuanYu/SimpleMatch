@@ -60,16 +60,16 @@ Status was reconciled against the `master` worktree on 2026-08-11. An accepted d
 | Runtime Market Reference publication stack | `OBSOLETE_TO_REMOVE` | [#119](https://github.com/WenHsuanYu/SimpleMatch/issues/119) |
 | Risk artifact loading and `matching.commands` publication | `PARTIAL` | [#126](https://github.com/WenHsuanYu/SimpleMatch/issues/126) |
 | Native deterministic Matching runtime | `PARTIAL` | [#127](https://github.com/WenHsuanYu/SimpleMatch/issues/127) |
-| Kafka journal recovery and trading-day barriers | `NOT_STARTED` | [#128](https://github.com/WenHsuanYu/SimpleMatch/issues/128) |
+| Kafka journal recovery and trading-day barriers | `PARTIAL` | [#128](https://github.com/WenHsuanYu/SimpleMatch/issues/128) |
 | `matching.events` wire identity and publication | `PARTIAL` | [#129](https://github.com/WenHsuanYu/SimpleMatch/issues/129) |
 | Permanent PostgreSQL trades and fills | `PARTIAL` | [#130](https://github.com/WenHsuanYu/SimpleMatch/issues/130) |
 | Account critical Matching-event consumption | `PARTIAL` | [#131](https://github.com/WenHsuanYu/SimpleMatch/issues/131) |
 | Final Account reservation v2 RPC | `PARTIAL` | [#139](https://github.com/WenHsuanYu/SimpleMatch/issues/139) |
 | Durable QuickFIX execution delivery | `PARTIAL` | [#132](https://github.com/WenHsuanYu/SimpleMatch/issues/132) |
-| Runtime market-data projection | `NOT_STARTED` | [#133](https://github.com/WenHsuanYu/SimpleMatch/issues/133) |
+| Runtime market-data projection | `PARTIAL` | [#133](https://github.com/WenHsuanYu/SimpleMatch/issues/133) |
 | Required query service and Redis read models | `NOT_STARTED` | [#137](https://github.com/WenHsuanYu/SimpleMatch/issues/137) |
 | Gateway operational admission control | `PARTIAL` | [#135](https://github.com/WenHsuanYu/SimpleMatch/issues/135) |
-| Matching StatefulSet ownership and fencing | `NOT_STARTED` | [#134](https://github.com/WenHsuanYu/SimpleMatch/issues/134) |
+| Matching StatefulSet ownership and fencing | `PARTIAL` | [#134](https://github.com/WenHsuanYu/SimpleMatch/issues/134) |
 | Cross-service deployment, security, and observability | `PARTIAL` | [#138](https://github.com/WenHsuanYu/SimpleMatch/issues/138) |
 | Production Kafka topic profile | `PARTIAL` | [#125](https://github.com/WenHsuanYu/SimpleMatch/issues/125) |
 | Performance and recovery certification | `NOT_STARTED` | [#136](https://github.com/WenHsuanYu/SimpleMatch/issues/136) |
@@ -177,12 +177,13 @@ Status was reconciled against the `master` worktree on 2026-08-11. An accepted d
 - **Target behavior:** Risk loads and validates the final artifact once at startup, resolves each
   eligible instrument to its explicit partition, persists the artifact identity and partition with
   Admission, and publishes `MatchingCommand` records to `matching.commands` through its outbox.
-- **Current evidence:** Durable Admission, explicit routing provenance, partitioned outbox records,
-  and backpressure exist. Routing currently comes from a Kafka projection or legacy local resolver,
-  and the topic/contract remains `orders.validated`.
-- **Missing behavior:** Startup loader, exact artifact validation, removal of routing projection and
-  fallback resolver, `MatchingCommand` envelope, topic cutover, stable command identity, Open/Close
-  Barrier publication, and matching-command CDC contract.
+- **Current evidence:** `DailyMarketReferenceArtifactLoader` validates the mounted daily artifact at
+  Risk startup; `DailyArtifactAdmissionRoutingResolver` persists its identity and explicit route;
+  `MatchingBarrierOutboxFactory` writes Open/Close barriers to all 15 partitions; and focused
+  resolver, barrier, transaction, Flyway, and application-context tests pass.
+- **Missing behavior:** A deployed CDC connector and three-broker Kafka environment must prove the
+  outbox reaches the real `matching.commands` topic. The offline builder and production artifact
+  approval workflow remain MR-1 through MR-4 work rather than being supplied by Risk.
 - **Acceptance criteria:** New order, cancel, `TRADING_DAY_OPEN_BARRIER`, and
   `TRADING_DAY_CLOSE_BARRIER` records target explicit partitions 0-14. Recovery never recomputes an
   admitted route. No command is published for a stale or mismatched artifact.
@@ -196,12 +197,12 @@ Status was reconciled against the `master` worktree on 2026-08-11. An accepted d
   input ring, one CPU-pinned single-writer core owning at most 150 order books, preallocated SPSC
   output ring, and Kafka publisher/offset coordinator. The core performs no network or disk I/O,
   locks, or post-warmup allocation.
-- **Current evidence:** `matching-engine` has CMake wiring and tested critical-ingress and routing
-  state machines. It has no Kafka runtime, Disruptor-style rings, order book, matching algorithm, or
-  publisher.
-- **Missing behavior:** Native value types, ring implementation, deterministic order storage,
-  price-time priority, limit/market and ROD/IOC/FOK behavior, cancellation, expiry, backpressure,
-  event production, metrics, and lifecycle endpoints.
+- **Current evidence:** The native runtime has preallocated SPSC ingress/output rings, a
+  single-writer price-time order-book core capped at 150 instruments, command decoding, direct
+  partition assignment, output backpressure, and deterministic CTest coverage.
+- **Missing behavior:** The production native process still needs a Kafka client adapter, CPU pinning
+  verification, lifecycle executable/probes, allocation and throughput certification, and an actual
+  broker integration test. Those runtime adapters must not enter the Matching core hot path.
 - **Acceptance criteria:** The same ordered command stream and pinned binary produce identical state
   checksums and event bytes. Ring exhaustion never overwrites, drops, or expands heap storage.
   Output backpressure stalls safely and drives the accepted admission policy.
@@ -211,16 +212,16 @@ Status was reconciled against the `master` worktree on 2026-08-11. An accepted d
 
 ### ME-2: Recover from Kafka and enforce trading-day barriers
 
-- **Current status:** `NOT_STARTED`
+- **Current status:** `PARTIAL`
 - **Target behavior:** `matching.commands` is the authoritative replicated input journal. An Open
   Barrier defines the daily replay baseline; a Close Barrier expires ROD orders and closes the
   partition deterministically. PVC metadata is an acceleration index, not the authority.
-- **Current evidence:** Native ingress tests model retry/quarantine but no Kafka consumer, daily
-  baseline, replay, offset commit, or barrier behavior exists.
-- **Missing behavior:** Explicit `assign()`, Open/Close Barrier processing, baseline PVC metadata,
-  Kafka scan fallback, state-only replay through the committed boundary, normal replay after that
-  boundary, command deduplication, output-ACK tracking, contiguous offset watermark, and fail-closed
-  retention checks.
+- **Current evidence:** `PartitionReplayCoordinator` models explicit partition assignment,
+  Open/Close barriers, command de-duplication, retained-record replay, output ACK tracking, and a
+  contiguous commit watermark; CTests cover the crash/replay and barrier invariants.
+- **Missing behavior:** A real Kafka consumer/admin adapter must provide retained scans, end offsets,
+  and commit calls. PVC baseline metadata, retention certification, and a broker/PVC restart smoke
+  remain unproven in a cluster.
 - **Acceptance criteria:** Outputs are ACKed before the input offset becomes completed; commits
   never cross a gap. Crash windows may replay identical events but cannot lose an accepted command.
   A missing retained Open Barrier fails closed. No periodic order-book snapshot is added unless the
@@ -233,12 +234,12 @@ Status was reconciled against the `master` worktree on 2026-08-11. An accepted d
 - **Current status:** `PARTIAL`
 - **Target behavior:** `matching.events` carries `ORDER_RESTED`, `TRADE_EXECUTED`,
   `ORDER_CANCELLED`, and `ORDER_EXPIRED`. One trade event describes both maker and taker legs.
-- **Current evidence:** v1/v2 matching Protobuf types and Java v1 consumers exist, but there is no
-  Matching producer and the current `matching.executions` contract does not implement the accepted
-  identity or payload.
-- **Missing behavior:** Final Protobuf contract, native producer, 15-partition output routing,
-  deterministic `eventId`/`tradeId`, output/match indices, fixed-point fields, raw-record hash
-  fixtures, publisher ACK tracker, and schema/version gate.
+- **Current evidence:** `matching_runtime_v1.proto`, the native event encoder, deterministic
+  event/trade identity, output/match indices, raw-byte hash fixtures, and Java envelope parsing are
+  implemented and covered by native and shared-contract tests.
+- **Missing behavior:** A production Kafka producer must publish the encoded records with the
+  validated 15-partition profile and prove ACK/replay behavior against brokers. Schema/image
+  compatibility still needs deployment-time certification.
 - **Acceptance criteria:** `eventId` derives from identity version, trading session, partition,
   command, and output index; `tradeId` uses command and match index. Event type is not part of
   `eventId`. Consumers hash the exact Kafka record value bytes. Same ID/same hash is a duplicate;
@@ -252,12 +253,12 @@ Status was reconciled against the `master` worktree on 2026-08-11. An accepted d
 - **Current status:** `PARTIAL`
 - **Target behavior:** Persistence consumes every `matching.events` partition and atomically stores
   inbox identity/hash, one immutable trade, maker/taker order-fill legs, and order projections.
-- **Current evidence:** `services/persistence` has a Spring Boot entry point and Flyway `orders`,
-  `executions`, and `inbox` foundation. It has no Kafka runtime or projection writer, and the
-  current `executions` table cannot represent one trade with two legs.
-- **Missing behavior:** Replace the shallow execution model with `trades` and `order_fills`, add the
-  critical consumer, transactional application service, repositories, quarantine, offsets/status,
-  migration tests, and PostgreSQL integration tests.
+- **Current evidence:** Flyway V3 creates a raw-hash inbox, immutable `trades` and `order_fills`,
+  projections, progress, and quarantine. The critical consumer applies a final Matching Event in one
+  transaction and commits its Kafka acknowledgement only afterward; focused store, consumer, and
+  migration tests pass.
+- **Missing behavior:** A live PostgreSQL/Kafka failure-and-restart certification is still required,
+  as are the operational status endpoint consumed later by GO-1 and production deployment wiring.
 - **Acceptance criteria:** DB commit precedes Kafka offset commit. IDs use 32-byte binary columns
   with exact-length checks; quantities are `BIGINT` shares; prices are `BIGINT` in 1/10,000 TWD;
   trading day is `DATE`; partition is constrained to 0-14. PostgreSQL outage is buffered by Kafka
@@ -270,11 +271,11 @@ Status was reconciled against the `master` worktree on 2026-08-11. An accepted d
 - **Current status:** `PARTIAL`
 - **Target behavior:** Account consumes `matching.events` as a critical consumer and applies both
   sides' fills or terminal releases exactly once in local transactions.
-- **Current evidence:** Account has reservation/fill/release behavior, a critical v1 execution
-  consumer, inbox state, quarantine storage, and transactional tests. It does not consume the final
-  two-leg Matching Event contract or store the accepted payload hash.
-- **Missing behavior:** Contract cutover, maker/taker leg mapping, raw-record hash comparison,
-  partition progress reporting, schema/session validation, and full PostgreSQL restart/ACK tests.
+- **Current evidence:** Flyway V7, the final-event account application service, durable inbox,
+  payload hash validation, maker/taker fill mapping, quarantine, and manual acknowledgement are
+  implemented and covered by focused and application-context tests.
+- **Missing behavior:** Live PostgreSQL/Kafka restart certification and an operational status adapter
+  remain required; the independent Account reservation-RPC cutover is tracked separately by AR-1.
 - **Acceptance criteria:** Inbox claim, payload-hash validation, account/reservation mutation,
   lifecycle outbox, and inbox completion commit atomically. A failed record never lets a later
   record overtake it.
@@ -305,12 +306,13 @@ Status was reconciled against the `master` worktree on 2026-08-11. An accepted d
 - **Target behavior:** The single QuickFIX Gateway consumes `matching.events` critically, stores a
   durable event inbox and per-order delivery ledger, and emits stable trade, rest, cancel, expiry,
   IOC, and FOK lifecycle reports through a JDBC-backed QuickFIX message store.
-- **Current evidence:** FIX mapping, session state, WAL recovery, and v1 execution consumers exist.
-  The configured runtime uses `FileStoreFactory`; the delivery consumer is explicitly non-critical,
-  uses delayed retry/DLQ, and has only process-local deduplication.
-- **Missing behavior:** PostgreSQL gateway schema, durable inbox, payload hash, delivery ledger,
-  deterministic delivery/Exec identities, JDBC QuickFIX store, critical retry/quarantine, restart
-  reconciliation, and consumer progress status.
+- **Current evidence:** Gateway Flyway V1 now creates a durable inbox, exact raw hash evidence,
+  delivery ledger, progress, quarantine, and JDBC QuickFIX/J message-store tables. The final-event
+  consumer uses strict retry/quarantine, deterministic delivery/Exec identities, and commits only
+  after delivery intents persist; focused tests and QuickFIX certification tests pass.
+- **Missing behavior:** A deployed PostgreSQL/Kafka restart certification and the GO-1 status adapter
+  remain required. Socket delivery deliberately remains at-least-once and needs counterparty
+  interoperability evidence.
 - **Acceptance criteria:** Kafka offset commits only after all required delivery intents are
   durable. Socket delivery is at least once; retransmission preserves FIX session semantics and
   stable `ExecID`. Critical lifecycle reports cannot be skipped to an ordinary DLQ.
@@ -320,13 +322,17 @@ Status was reconciled against the `master` worktree on 2026-08-11. An accepted d
 
 ### MD-1: Build the non-critical market-data projection
 
-- **Current status:** `NOT_STARTED`
+- **Current status:** `PARTIAL`
 - **Target behavior:** A separate runtime projection consumes `matching.events` and builds
   rebuildable last-trade and top-five order-book views. It is not the offline Market Reference
   builder.
-- **Current evidence:** Only target documentation and dormant/legacy contracts exist.
-- **Missing behavior:** Projection service, event mapping, Redis/PostgreSQL projection strategy,
-  replay, gap handling, market-data topic/streaming contract, and tests.
+- **Current evidence:** `services/market-data-projection` owns a Flyway projection/inbox/outbox,
+  ordered final-event consumer, complete top-five/last-trade snapshot encoder, delayed retry/DLQ,
+  rebuild service, `marketdata.events` publisher, and Redis cache repair path. Its focused runtime,
+  Kafka-consumer, and application tests pass.
+- **Missing behavior:** A real Kafka/PostgreSQL/Redis integration, `marketdata-streamer` consumption,
+  topic provisioning, deployment manifests, and replay/rebuild operations still need production
+  certification. Projection failure remains isolated from trading admission by design.
 - **Acceptance criteria:** Projection failure does not affect Matching, permanent trade storage,
   Account, QuickFIX, or admission. Delayed retry/DLQ is allowed because the view can be rebuilt.
 - **Blocking dependencies:** ME-3.
@@ -356,12 +362,17 @@ Status was reconciled against the `master` worktree on 2026-08-11. An accepted d
 - **Target behavior:** One Gateway starts `PRE_OPEN` and exposes `status`, `open`,
   `pause-new-orders`, `interrupt-market`, and `close-day`. It automatically closes at session end
   and automatically pauses new orders when critical readiness becomes unsafe.
-- **Current evidence:** A process-local `GatewayAdmissionGate`, startup/readiness seams, and K8s
-  configuration adapter exist. The gate starts open, has no operator command surface, and has no
-  complete Matching/consumer monitor.
-- **Missing behavior:** State machine, CLI/operator boundary, automatic close, Matching Fleet
-  monitor, Risk/consumer/Kafka status adapters, unified `TradingSystemStatus`, exact open checks,
-  warning/pause/interrupt policy, and certification tests.
+- **Current evidence:** The Gateway now starts `PRE_OPEN` with the five accepted admission states;
+  it keeps cancellation available only during `NEW_ORDERS_PAUSED`. A pure
+  `TradingSystemStatusEvaluator` verifies 15 owners, identities, recovery/lag, quarantine, Kafka
+  topology, stale status, and critical-consumer age. The controller requires three fresh ready
+  observations to open, auto-pauses/interrupts, auto-closes in Asia/Taipei time, never auto-reopens,
+  records operations in Flyway V2, and exposes a fixed five-command application boundary. Focused
+  state-machine, controller, audit, ingress, migration, and application-context tests pass.
+- **Missing behavior:** Infrastructure adapters must still collect live Risk, Matching Lease/readiness,
+  Kafka end-offset, Persistence, Account, and QuickFIX facts into one observation. Until then a
+  deployed Gateway remains `PRE_OPEN`; authenticated CLI/HTTP exposure and an end-to-end cluster
+  certification belong with the deployment/security work in PD-1.
 - **Acceptance criteria:** `open` verifies Risk, 15 Matching owners, identical day/artifact/schema/
   algorithm versions, recovery lag zero for three checks, no quarantine, and critical-consumer
   readiness. Status silence over five seconds pauses new orders. Oldest unprocessed critical event
@@ -372,15 +383,18 @@ Status was reconciled against the `master` worktree on 2026-08-11. An accepted d
 
 ### KD-1: Deploy and fence the fixed Matching fleet
 
-- **Current status:** `NOT_STARTED`
+- **Current status:** `PARTIAL`
 - **Target behavior:** A 15-replica StatefulSet maps pod ordinal directly to partition. Each pod has
   a `ReadWriteOncePod` PVC and a per-partition Kubernetes Lease, and receives the artifact through
   the accepted ConfigMap or OCI path.
-- **Current evidence:** No Matching Kubernetes manifest exists. QuickFIX StatefulSet and
-  configuration RBAC are only reusable examples.
-- **Missing behavior:** StatefulSet, Services, ConfigMap/OCI mounting, PVC template, Lease RBAC and
-  adapter, `PartitionOwnershipPermit`, CPU requests/limits/affinity, probes, PodDisruptionBudget,
-  and no-force-delete runbook.
+- **Current evidence:** `LeaseFencedPartitionOwnershipPermit` blocks native assign, replay, match,
+  output, and commit without a confirmed permit, and self-fences after five seconds of lease
+  uncertainty. A 15-replica StatefulSet, headless Service, `ReadWriteOncePod` PVCs, per-partition
+  Lease RBAC/resources, OCI-data-image patch, PDB, CPU/affinity policy, manifest test, and recovery
+  runbook are present.
+- **Missing behavior:** The native process image needs the real Kubernetes Lease and Kafka adapters
+  plus executable readiness/liveness probes. A compatible CSI driver, CPU Manager static policy,
+  storage/lease handover, and a live cluster smoke test must certify the deployment profile.
 - **Acceptance criteria:** `matching-N` cannot poll, replay, match, publish, or become Ready without
   its partition permit. Lease uncertainty for five seconds self-fences the runtime. Replacement
   waits for storage and Lease ownership, replays, and reaches Ready before operator reopen. The

@@ -101,7 +101,7 @@ while IFS= read -r changed_file; do
     continue
   fi
 
-  if [[ ! "$migration_filename" =~ ^V[0-9]+(?:_[0-9]+)*__[a-z0-9][a-z0-9_]*\.sql$ ]]; then
+  if [[ ! "$migration_filename" =~ ^V[0-9]+(_[0-9]+)*__[a-z0-9][a-z0-9_]*\.sql$ ]]; then
     echo "Invalid Flyway migration filename: $migration_filename" >&2
     echo "Expected pattern: V<version>__lower_snake_case_description.sql" >&2
     status=1
@@ -121,7 +121,7 @@ for service_name in "${!touched_services[@]}"; do
 
   while IFS= read -r sql_file; do
     filename="${sql_file##*/}"
-    [[ "$filename" =~ ^V([0-9]+(?:_[0-9]+)*)__ ]] || continue
+    [[ "$filename" =~ ^V([0-9]+(_[0-9]+)*)__ ]] || continue
     version="${BASH_REMATCH[1]}"
 
     if [[ -n "${seen_versions[$version]:-}" ]]; then

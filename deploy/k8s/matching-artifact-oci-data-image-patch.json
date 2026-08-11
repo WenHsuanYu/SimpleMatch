@@ -1,0 +1,32 @@
+[
+  {
+    "op": "replace",
+    "path": "/spec/template/spec/volumes/0",
+    "value": {
+      "name": "market-reference",
+      "emptyDir": {}
+    }
+  },
+  {
+    "op": "add",
+    "path": "/spec/template/spec/initContainers",
+    "value": [
+      {
+        "name": "artifact-data-image",
+        "image": "simplematch-market-reference-data@sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "imagePullPolicy": "IfNotPresent",
+        "command": [
+          "/bin/sh",
+          "-ec",
+          "cp /artifact/market_reference.json /work/market_reference.json"
+        ],
+        "volumeMounts": [
+          {
+            "name": "market-reference",
+            "mountPath": "/work"
+          }
+        ]
+      }
+    ]
+  }
+]

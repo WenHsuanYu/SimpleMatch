@@ -1,0 +1,7 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: matching-session-config
+immutable: true
+data:
+  trading_session_id: REPLACE_WITH_APPROVED_TRADING_SESSION_ID

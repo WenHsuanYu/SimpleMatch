@@ -14,3 +14,42 @@ The Debezium connector ConfigMap contains only non-sensitive connector settings.
 `RISK_SERVICE_POSTGRES_USER` and
 `RISK_SERVICE_POSTGRES_PASSWORD` into the Kafka Connect worker from a Secret. After a configuration
 change, roll the relevant workload. Configuration reload is intentionally disabled.
+
+## Fixed Matching fleet
+
+`matching-statefulset.yaml` defines the Phase 1 fleet: fifteen StatefulSet ordinals map directly to
+Kafka partitions `0` through `14`. The workload obtains the ordinal from the StatefulSet
+`apps.kubernetes.io/pod-index` label, so the production cluster must support that label. The native
+runtime derives `matching-partition-%02d` from that ordinal and will process only after its own Lease
+observation produces a valid `PartitionOwnershipPermit`.
+
+Apply `matching-headless-service.yaml`, `matching-lease-rbac.yaml`, and
+`matching-partition-leases.yaml` before the StatefulSet. The Role intentionally has no `create`
+verb: all fifteen Lease objects are pre-created, and a pod may only get, patch, or update their known
+names. A holder identity contains the Pod UID, partition, and trading session. The workload renews
+every two seconds, treats a renewal as uncertain immediately, and self-fences after five seconds of
+unconfirmed renewal. A replacement waits for the old Lease to expire, acquires it, replays, and then
+passes readiness; it never takes another ordinal's partition.
+
+Each ordinal receives its own `matching-baseline` PVC using `ReadWriteOncePod`. The configured
+`simplematch-rwo-pod` StorageClass must be backed by a compatible CSI driver. The baseline holds
+only recovery coordinates; Kafka remains the authoritative command journal. The workload requests
+and limits three CPUs and the same memory value so it receives Guaranteed QoS. Nodes must carry the
+`simplematch.io/cpu-manager-static=true` label only after CPU Manager static-policy certification.
+
+The standard artifact source is the reviewed immutable `matching-daily-artifact` ConfigMap, whose
+`market_reference.json` is mounted at
+`/etc/simplematch/market-reference/market_reference.json`. Create the immutable session ConfigMap
+from `matching-session-config.example.yaml` only after replacing its placeholder with the approved
+session ID. The daily artifact ConfigMap itself is generated from approved canonical bytes and is
+never changed during an open session.
+
+When the final artifact exceeds 900 KiB, use the reviewed
+`matching-artifact-oci-data-image-patch.json` in the deployment renderer instead. It replaces the
+ConfigMap volume with an `emptyDir` populated by a digest-pinned data-image init container, while
+preserving the same runtime artifact path. Replace the placeholder digests in both manifests with
+approved image digests before deployment.
+
+`bash scripts/test-matching-kubernetes-manifests.sh` verifies the structural deployment contract
+without requiring a live cluster. The normal recovery procedure is in
+[Matching fleet recovery](../../services/docs/platform/matching-fleet-recovery.md).

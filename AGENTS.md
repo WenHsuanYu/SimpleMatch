@@ -31,6 +31,11 @@ These instructions apply to the whole repository.
   parameter-count enforcement is PMD's existing `ExcessiveParameterList` rule. Do not add a
   Checkstyle `ParameterNumber` check, a `parameterSafetyMain` task, or a second PMD ruleset; do not
   change any rule or threshold in `simplematch-design.xml`.
+- Treat every static-analysis warning as a design signal: first resolve it through ownership,
+  encapsulation, validation, or a narrower interface and prove the result with tests. An
+  `@SuppressWarnings` annotation is allowed only when no viable source-level remedy exists, the user
+  explicitly approves it, and the annotation is narrowly scoped with a local rationale; never use
+  one merely to satisfy a quality gate.
 - After completing any code task, run a concise bad-smell avoidance checklist
   against [badCodeSmell.md](badCodeSmell.md)
   and call out any remaining risks.

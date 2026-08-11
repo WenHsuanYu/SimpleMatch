@@ -22,12 +22,18 @@ same approved file rather than consume runtime Market Reference topics.
 | `matching.commands` | 15 fixed partitions; explicit artifact route; key=`commandId` | `risk-service` outbox | exactly one `matching-N` per partition | New order, cancel, Open Barrier, and Close Barrier inputs |
 | `matching.events` | 15 fixed partitions aligned to input; key=`eventId` | `matching-N` | Persistence, Account, QuickFIX, market-data projection | Deterministic order and trade lifecycle facts |
 | `account.lifecycle` | key=`accountId` | `account-service` outbox | account/audit projections | Reservation authority outcomes |
-| `marketdata.events` | key=`venueMic:symbol` | market-data projection | `marketdata-streamer` | Rebuildable public market-data deltas |
+| `marketdata.events` | key=`venueMic:symbol` | market-data projection | `marketdata-streamer` | Rebuildable complete last-trade and top-five snapshots |
 | `audit.events` | owner-defined aggregate identity | owning service outbox | audit consumers | Optional append-only audit integration |
 
 The record key supports tracing and producer behavior; it does not choose Matching ownership.
 `risk-service` and `matching-N` set the numeric partition explicitly from the approved artifact and
 pod ordinal. Consumers must not infer total order across partitions.
+
+`marketdata.events` contains an independently usable `MarketDataSnapshot` Protobuf value. Each value
+has the source Matching Event identity and Kafka provenance, the last trade when present, and the
+complete top five bid and ask levels. Phase 1 deliberately publishes complete snapshots rather than
+dependent deltas, so a slow downstream subscriber can replace its view without first fetching a
+missing earlier record.
 
 ## Matching Command envelope
 

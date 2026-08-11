@@ -1,0 +1,132 @@
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: matching
+  labels:
+    app.kubernetes.io/name: matching
+spec:
+  serviceName: matching-headless
+  replicas: 15
+  podManagementPolicy: OrderedReady
+  minReadySeconds: 10
+  persistentVolumeClaimRetentionPolicy:
+    whenDeleted: Retain
+    whenScaled: Retain
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: matching
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: matching
+    spec:
+      serviceAccountName: matching
+      terminationGracePeriodSeconds: 30
+      securityContext:
+        seccompProfile:
+          type: RuntimeDefault
+      nodeSelector:
+        simplematch.io/cpu-manager-static: "true"
+      affinity:
+        podAntiAffinity:
+          requiredDuringSchedulingIgnoredDuringExecution:
+            - labelSelector:
+                matchLabels:
+                  app.kubernetes.io/name: matching
+              topologyKey: kubernetes.io/hostname
+      containers:
+        - name: matching
+          image: simplematch-matching@sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
+          imagePullPolicy: IfNotPresent
+          command: ["/app/simplematch-matching"]
+          env:
+            - name: MATCHING_POD_NAME
+              valueFrom:
+                fieldRef:
+                  fieldPath: metadata.name
+            - name: MATCHING_POD_UID
+              valueFrom:
+                fieldRef:
+                  fieldPath: metadata.uid
+            - name: MATCHING_PARTITION_ID
+              valueFrom:
+                fieldRef:
+                  fieldPath: metadata.labels['apps.kubernetes.io/pod-index']
+            - name: MATCHING_TRADING_SESSION_ID
+              valueFrom:
+                configMapKeyRef:
+                  name: matching-session-config
+                  key: trading_session_id
+            - name: MATCHING_LEASE_NAME_PREFIX
+              value: matching-partition-
+            - name: MATCHING_LEASE_DURATION_SECONDS
+              value: "15"
+            - name: MATCHING_LEASE_RENEW_INTERVAL_SECONDS
+              value: "2"
+            - name: MATCHING_LEASE_UNCERTAINTY_FENCE_SECONDS
+              value: "5"
+            - name: MATCHING_ARTIFACT_PATH
+              value: /etc/simplematch/market-reference/market_reference.json
+            - name: MATCHING_BASELINE_PATH
+              value: /var/lib/simplematch/matching/partition-baseline.json
+            - name: MATCHING_COMMANDS_TOPIC
+              value: matching.commands
+            - name: MATCHING_EVENTS_TOPIC
+              value: matching.events
+          resources:
+            requests:
+              cpu: "3"
+              memory: 4Gi
+            limits:
+              cpu: "3"
+              memory: 4Gi
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop: ["ALL"]
+            readOnlyRootFilesystem: true
+            runAsNonRoot: true
+          startupProbe:
+            exec:
+              command: ["/app/simplematch-matching", "readiness"]
+            periodSeconds: 2
+            failureThreshold: 60
+            timeoutSeconds: 1
+          readinessProbe:
+            exec:
+              command: ["/app/simplematch-matching", "readiness"]
+            periodSeconds: 2
+            failureThreshold: 1
+            timeoutSeconds: 1
+          livenessProbe:
+            exec:
+              command: ["/app/simplematch-matching", "liveness"]
+            periodSeconds: 10
+            failureThreshold: 3
+            timeoutSeconds: 1
+          volumeMounts:
+            - name: market-reference
+              mountPath: /etc/simplematch/market-reference
+              readOnly: true
+            - name: matching-baseline
+              mountPath: /var/lib/simplematch/matching
+            - name: runtime-tmp
+              mountPath: /tmp
+      volumes:
+        - name: market-reference
+          configMap:
+            name: matching-daily-artifact
+            items:
+              - key: market_reference.json
+                path: market_reference.json
+        - name: runtime-tmp
+          emptyDir: {}
+  volumeClaimTemplates:
+    - metadata:
+        name: matching-baseline
+      spec:
+        accessModes: ["ReadWriteOncePod"]
+        storageClassName: simplematch-rwo-pod
+        resources:
+          requests:
+            storage: 1Gi

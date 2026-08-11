@@ -21,7 +21,7 @@ add_module_tasks() {
   task_set["$module_path:testClasses"]=1
 
   case "$module_path" in
-    :shared-java:simplematch-config|:services:account-service|:services:persistence|:services:quickfix-gateway|:services:risk-service)
+    :shared-java:simplematch-config|:services:account-service|:services:market-data-projection|:services:persistence|:services:quickfix-gateway|:services:risk-service)
       task_set["$module_path:checkstyleMain"]=1
       ;;
   esac
@@ -33,7 +33,7 @@ for staged_file in "${staged_files[@]}"; do
       has_java_relevant_change=1
       run_broad_check=1
       ;;
-    shared-java/simplematch-config/*.gradle.kts|shared-java/simplematch-config/src/*|shared-java/simplematch-contracts/*.gradle.kts|shared-java/simplematch-contracts/src/*|services/account-service/*.gradle.kts|services/account-service/src/*|services/persistence/*.gradle.kts|services/persistence/src/*|services/quickfix-gateway/*.gradle.kts|services/quickfix-gateway/src/*|services/risk-service/*.gradle.kts|services/risk-service/src/*)
+    shared-java/simplematch-config/*.gradle.kts|shared-java/simplematch-config/src/*|shared-java/simplematch-contracts/*.gradle.kts|shared-java/simplematch-contracts/src/*|services/account-service/*.gradle.kts|services/account-service/src/*|services/market-data-projection/*.gradle.kts|services/market-data-projection/src/*|services/persistence/*.gradle.kts|services/persistence/src/*|services/quickfix-gateway/*.gradle.kts|services/quickfix-gateway/src/*|services/risk-service/*.gradle.kts|services/risk-service/src/*)
       case "$staged_file" in
         *.java|*.kt|*.kts|*.proto)
           has_java_relevant_change=1
@@ -49,6 +49,9 @@ for staged_file in "${staged_files[@]}"; do
           ;;
         services/account-service/*)
           add_module_tasks ':services:account-service'
+          ;;
+        services/market-data-projection/*)
+          add_module_tasks ':services:market-data-projection'
           ;;
         services/persistence/*)
           add_module_tasks ':services:persistence'
@@ -77,6 +80,7 @@ if [[ $run_broad_check -eq 1 ]]; then
     :shared-java:simplematch-config:testClasses \
     :shared-java:simplematch-contracts:testClasses \
     :services:account-service:testClasses \
+    :services:market-data-projection:testClasses \
     :services:persistence:testClasses \
     :services:quickfix-gateway:testClasses \
     :services:risk-service:testClasses

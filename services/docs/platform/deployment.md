@@ -27,6 +27,31 @@ behavior so traffic reaches only ready instances. The matching engine's shard ow
 controlled by explicit routing and fencing rules; service discovery must not decide a shard owner
 implicitly.
 
+### Fixed Matching fleet
+
+The Matching deployment is a fifteen-replica StatefulSet. Its ordinal `N`, read from the
+StatefulSet pod-index label, is the only allowed owner of `matching.commands` and `matching.events`
+partition `N`. The `matching-partition-00` through `matching-partition-14` Lease objects are
+pre-created and renewed by their matching runtime. A Kubernetes adapter turns the observed Lease
+holder identity, partition, and trading session into a native `PartitionOwnershipPermit`; no
+Kubernetes type enters the single-writer core.
+
+The permit starts denied. It permits direct Kafka assignment, replay, matching, publication, and
+readiness only for the matching ordinal's current Lease holder. A missed renewal becomes uncertain
+immediately and self-fences after five seconds. The replacement waits for PVC attachment and Lease
+ownership, then replays from the Open Barrier before becoming Ready. The normal recovery procedure
+prohibits force deletion; see [Matching fleet recovery](matching-fleet-recovery.md).
+
+Each ordinal owns a `ReadWriteOncePod` PVC that contains bounded baseline metadata only. The
+StorageClass must use a compatible CSI driver. Production pods request and limit exactly three CPUs
+and equal memory request/limit values for Guaranteed QoS, and schedule only on nodes certified for
+CPU Manager static policy. The PodDisruptionBudget permits at most one unavailable Matching pod.
+
+The reviewed daily artifact normally mounts from an immutable ConfigMap. If its final canonical JSON
+exceeds 900 KiB, a digest-pinned OCI data image populates the same mount path through an init
+container. Both paths give Risk and Matching exact approved artifact bytes; neither changes while
+the market is open.
+
 ## Service discovery
 
 Use Kubernetes Service DNS as the baseline discovery mechanism when services run inside Kubernetes.
