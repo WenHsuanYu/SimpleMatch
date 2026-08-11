@@ -2,7 +2,7 @@ package com.simplematch.riskservice.admission;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
-import com.simplematch.accountservice.grpc.AccountGrpcService;
+import com.simplematch.accountservice.grpc.AccountReservationV2GrpcService;
 import com.simplematch.accountservice.reservation.AccountReservationApplicationService;
 import com.simplematch.accountservice.store.JdbcAccountAuthorityLifecycleWriter;
 import com.simplematch.accountservice.store.JdbcAccountAuthorityReader;
@@ -39,7 +39,10 @@ class GrpcAccountReservationClientAccountIdentityTest {
         accountId.toString(), LocalDate.of(2026, 7, 28), new BigDecimal("10000"));
 
     final Server server =
-        ServerBuilder.forPort(0).addService(new AccountGrpcService(accounts)).build().start();
+        ServerBuilder.forPort(0)
+            .addService(new AccountReservationV2GrpcService(accounts))
+            .build()
+            .start();
     try (GrpcAccountReservationClient client = reservationClient(server.getPort())) {
       final AdmissionCommand command = command(accountId);
 

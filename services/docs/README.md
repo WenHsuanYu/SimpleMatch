@@ -14,3 +14,4 @@ This index is the entry point for cross-cutting target specifications.
 - [Risk service](../risk-service/docs/README.md)
 - [QuickFIX gateway](../quickfix-gateway/docs/README.md)
 - [Persistence service](../persistence/docs/README.md)
+- [Query service](query-service/README.md)

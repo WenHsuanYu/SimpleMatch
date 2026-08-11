@@ -24,12 +24,16 @@ public record PostgresJdbcUrl(String jdbcUrl, String username, String password) 
   public static PostgresJdbcUrl parse(String rawDsn) {
     requireDsn(rawDsn);
     if (rawDsn.startsWith("jdbc:")) {
+      if (!isSupportedJdbcUrl(rawDsn)) {
+        throw new IllegalStateException("unsupported postgres.dsn JDBC scheme");
+      }
       return new PostgresJdbcUrl(rawDsn, null, null);
     }
     try {
-      return parseUri(new URI(rawDsn), rawDsn);
+      return parseUri(new URI(rawDsn));
     } catch (URISyntaxException exception) {
-      throw new IllegalStateException("failed to parse postgres.dsn: " + rawDsn, exception);
+      throw new IllegalStateException(
+          "failed to parse postgres.dsn as a PostgreSQL URI", exception);
     }
   }
 
@@ -39,9 +43,10 @@ public record PostgresJdbcUrl(String jdbcUrl, String username, String password) 
     }
   }
 
-  private static PostgresJdbcUrl parseUri(URI uri, String rawDsn) {
+  private static PostgresJdbcUrl parseUri(URI uri) {
     if (!isPostgresScheme(uri)) {
-      throw new IllegalStateException("unsupported postgres.dsn scheme: " + rawDsn);
+      throw new IllegalStateException(
+          "unsupported postgres.dsn scheme: " + String.valueOf(uri.getScheme()));
     }
     if (uri.getHost() == null || uri.getPath() == null || uri.getPath().isBlank()) {
       throw new IllegalStateException("postgres.dsn must identify a host and database");
@@ -52,6 +57,10 @@ public record PostgresJdbcUrl(String jdbcUrl, String username, String password) 
 
   private static boolean isPostgresScheme(URI uri) {
     return "postgresql".equals(uri.getScheme()) || "postgres".equals(uri.getScheme());
+  }
+
+  private static boolean isSupportedJdbcUrl(String rawDsn) {
+    return rawDsn.startsWith("jdbc:postgresql:") || rawDsn.startsWith("jdbc:h2:");
   }
 
   private static Credentials credentials(URI uri) {
@@ -68,7 +77,8 @@ public record PostgresJdbcUrl(String jdbcUrl, String username, String password) 
 
   private static String jdbcUrl(URI uri) {
     final int port = uri.getPort() > 0 ? uri.getPort() : 5432;
-    return "jdbc:postgresql://" + uri.getHost() + ":" + port + uri.getPath();
+    final String query = uri.getQuery() == null ? "" : "?" + uri.getQuery();
+    return "jdbc:postgresql://" + uri.getHost() + ":" + port + uri.getPath() + query;
   }
 
   private record Credentials(String username, String password) {}

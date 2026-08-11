@@ -27,10 +27,36 @@ class PostgresJdbcUrlTest {
   }
 
   @Test
+  void preservesPostgresTlsQueryParameters() {
+    final PostgresJdbcUrl settings =
+        PostgresJdbcUrl.parse(
+            "postgresql://alice:secret@db.example:5433/simplematch?sslmode=verify-full&sslrootcert=/etc/tls/ca.crt");
+
+    assertThat(settings.jdbcUrl())
+        .isEqualTo(
+            "jdbc:postgresql://db.example:5433/simplematch?sslmode=verify-full&sslrootcert=/etc/tls/ca.crt");
+  }
+
+  @Test
   void rejectsBlankAndUnsupportedDataSources() {
     assertThatIllegalStateException().isThrownBy(() -> PostgresJdbcUrl.parse(" "));
     assertThatIllegalStateException()
         .isThrownBy(() -> PostgresJdbcUrl.parse("mysql://localhost:3306/simplematch"));
+  }
+
+  @Test
+  void doesNotExposeCredentialsInInvalidDsnDiagnostics() {
+    assertThatIllegalStateException()
+        .isThrownBy(() -> PostgresJdbcUrl.parse("mysql://alice:secret@localhost:3306/simplematch"))
+        .withMessageContaining("unsupported postgres.dsn scheme")
+        .withMessageNotContaining("secret");
+  }
+
+  @Test
+  void rejectsUnsupportedJdbcDsnSchemes() {
+    assertThatIllegalStateException()
+        .isThrownBy(() -> PostgresJdbcUrl.parse("jdbc:mysql://localhost:3306/simplematch"))
+        .withMessage("unsupported postgres.dsn JDBC scheme");
   }
 
   @Test
@@ -40,4 +66,5 @@ class PostgresJdbcUrlTest {
     assertThatIllegalStateException()
         .isThrownBy(() -> PostgresJdbcUrl.parse("postgresql://localhost"));
   }
+
 }

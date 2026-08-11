@@ -6,13 +6,14 @@ flyway_known_services() {
     'market-data-projection' \
     'marketdata-publisher' \
     'persistence' \
+    'query-service' \
     'quickfix-gateway' \
     'risk-service'
 }
 
 flyway_service_exists() {
   case "$1" in
-    account-service|market-data-projection|marketdata-publisher|persistence|quickfix-gateway|risk-service)
+    account-service|market-data-projection|marketdata-publisher|persistence|query-service|quickfix-gateway|risk-service)
       return 0
       ;;
     *)
@@ -34,6 +35,9 @@ flyway_service_project_path() {
       ;;
     persistence)
       printf '%s\n' ':services:persistence'
+      ;;
+    query-service)
+      printf '%s\n' ':services:query-service'
       ;;
     quickfix-gateway)
       printf '%s\n' ':services:quickfix-gateway'
@@ -61,6 +65,9 @@ flyway_service_task_prefix() {
     persistence)
       printf '%s\n' 'persistence'
       ;;
+    query-service)
+      printf '%s\n' 'queryService'
+      ;;
     quickfix-gateway)
       printf '%s\n' 'quickFixGateway'
       ;;
@@ -86,6 +93,9 @@ flyway_service_env_prefix() {
       ;;
     persistence)
       printf '%s\n' 'PERSISTENCE'
+      ;;
+    query-service)
+      printf '%s\n' 'QUERY_SERVICE'
       ;;
     quickfix-gateway)
       printf '%s\n' 'QUICKFIX_GATEWAY'
@@ -113,6 +123,9 @@ flyway_service_schema() {
     persistence)
       printf '%s\n' 'persistence'
       ;;
+    query-service)
+      printf '%s\n' 'query_service'
+      ;;
     quickfix-gateway)
       printf '%s\n' 'quickfix_gateway'
       ;;
@@ -127,7 +140,7 @@ flyway_service_schema() {
 
 flyway_service_migration_dir() {
   case "$1" in
-    account-service|market-data-projection|marketdata-publisher|persistence|quickfix-gateway|risk-service)
+    account-service|market-data-projection|marketdata-publisher|persistence|query-service|quickfix-gateway|risk-service)
       printf '%s\n' "services/$1/src/main/resources/db/migration/$1"
       ;;
     *)
@@ -149,6 +162,9 @@ flyway_service_smoke_tables() {
       ;;
     persistence)
       printf '%s\n' orders executions inbox
+      ;;
+    query-service)
+      printf '%s\n' order_read_model execution_read_model account_summary_read_model active_market_reference
       ;;
     quickfix-gateway)
       printf '%s\n' matching_event_inbox fix_delivery_intents gateway_operation_audit

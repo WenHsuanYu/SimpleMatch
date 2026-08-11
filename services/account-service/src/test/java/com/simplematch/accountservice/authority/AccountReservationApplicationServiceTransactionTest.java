@@ -12,6 +12,7 @@ import com.simplematch.accountservice.reservation.ReleaseReservationOperation;
 import com.simplematch.accountservice.reservation.ReservationIdentity;
 import com.simplematch.accountservice.reservation.ReservationRecord;
 import com.simplematch.accountservice.reservation.ReservationRequestIdentity;
+import com.simplematch.accountservice.reservation.ReservationRequestConflictException;
 import com.simplematch.accountservice.reservation.ReservationTerms;
 import com.simplematch.accountservice.reservation.ReserveOperation;
 import com.simplematch.accountservice.store.JdbcAccountAuthorityLifecycleWriter;
@@ -227,6 +228,28 @@ class AccountReservationApplicationServiceTransactionTest {
             jdbcTemplate.queryForObject(
                 "SELECT COUNT(*) FROM account_service.account_reservations", Integer.class))
         .isEqualTo(1);
+  }
+
+  @DisplayName("reusing a request id with different facts is a conflict")
+  @Test
+  void rejectsConflictingRequestReplay() {
+    final ReserveOperation first = operation(Side.SIDE_BUY, "10", "100");
+    service.reserve(first);
+    final ReserveOperation conflicting =
+        new ReserveOperation(
+            new ReservationRequestIdentity(
+                first.identity().requestId(),
+                first.identity().orderId(),
+                first.identity().accountId()),
+            new ReservationTerms(
+                new ReservationTerms.InstrumentSymbol("2330"),
+                Side.SIDE_BUY,
+                new ReservationTerms.ReservationQuantity(new BigDecimal("11")),
+                new ReservationTerms.LimitPrice(new BigDecimal("100"))));
+
+    assertThatThrownBy(() -> service.reserve(conflicting))
+        .isInstanceOf(ReservationRequestConflictException.class)
+        .hasMessageContaining(first.requestId());
   }
 
   @DisplayName("duplicate execution events are harmless and only fill the reservation once")

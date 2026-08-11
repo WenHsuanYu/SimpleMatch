@@ -22,6 +22,11 @@ A rejection is a domain fact, not a transport failure or dead-letter record.
   UUID-backed. FIX sender/target, trading day, and client order identity remain a separate business
   key.
 - `TwdPrice` and `TwdNotional` use signed 64-bit units of `0.0001 TWD`.
+- Account reservation uses the typed `AccountReservationService.Reserve` RPC. Its command carries
+  UUID-backed request/order/account identity, a venue-qualified instrument, side, whole-share
+  quantity, fixed-point limit price, and fixed-point notional. The response is an authoritative
+  `AccountLifecycleEvent` projection; the durable event remains written by Account Authority in
+  the same transaction as the reservation.
   `ShareQuantity` uses signed 64-bit whole shares.
 - The only v2 currency is `TWD`; phase-one venues are `XTAI` and `ROCO`.
 - Absolute times are UTC milliseconds. `TradingDay` is an ISO date interpreted in `Asia/Taipei`, and

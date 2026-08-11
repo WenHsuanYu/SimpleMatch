@@ -28,6 +28,15 @@ public record ReservationTerms(
     }
   }
 
+  /** Returns whether two reservation requests carry the same trading facts. */
+  public boolean hasEquivalentFacts(ReservationTerms other) {
+    Objects.requireNonNull(other, "other");
+    return symbol.equals(other.symbol)
+        && side == other.side
+        && quantity.value.compareTo(other.quantity.value) == 0
+        && sameDecimal(limitPrice.value, other.limitPrice.value);
+  }
+
   /** Instrument symbol involved in the reservation. */
   public record InstrumentSymbol(String value) {
     /** Requires a nonblank instrument symbol. */
@@ -71,5 +80,9 @@ public record ReservationTerms(
       throw new IllegalArgumentException(fieldName + " must be positive");
     }
     return value;
+  }
+
+  private static boolean sameDecimal(BigDecimal left, BigDecimal right) {
+    return left == null ? right == null : right != null && left.compareTo(right) == 0;
   }
 }

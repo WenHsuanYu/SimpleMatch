@@ -41,8 +41,19 @@ defaults.
 `QuickFixGatewayFileProperties` owns gateway paths, `QuickFixGatewayRuntimeProperties` owns owner
 identity and feature flags, and `QuickFixGatewayRiskClientProperties` owns risk-client policy under
 the unchanged `simplematch.quickfix-gateway.*` namespace.
+Query Service owns the read-side PostgreSQL schema and consumes final Matching and Account lifecycle
+facts asynchronously; its versioned HTTP reads use Redis only as a rebuildable cache with durable
+PostgreSQL fallback.
 Account Authority consumes `GrpcProperties` for its account-service target and `PostgresProperties`
 for its datasource, so its runtime and persistence wiring depends only on the required capabilities.
+Account's datasource is created by the shared Boot auto-configuration from the canonical
+`simplematch.postgres.dsn`; Account supplies only its `account_service` schema and pool policy.
+The `spring.datasource.*` namespace is not a competing source for this service, and Flyway remains
+owned by the service's explicit migration configuration rather than datasource startup.
+The shared PostgreSQL URL adapter preserves TLS query parameters such as `sslmode=verify-full` and
+`sslrootcert` when a PostgreSQL URI is used. Account and Risk gRPC servers and the Risk v2 client
+default to local plaintext but require complete certificate, private-key, and trust-certificate
+paths before enabling mTLS in staging or production.
 Risk Admission consumes `GrpcProperties`, `KafkaProperties`, and `PostgresProperties` for its
 account client, policy-aware outbox, runtime, and datasource. The Phase 1 target takes its routing
 identity and explicit partition from the approved startup Market Reference Artifact; the current
@@ -85,6 +96,9 @@ provisioned; no Secret value, DSN credential, token, or password is committed to
 `deploy/k8s/quickfix-gateway-configuration-rbac.yaml` is the reference RBAC shape, and
 `deploy/k8s/simplematch-platform-configmap.yaml`
 contains only non-sensitive data.
+The complete cross-service base/overlay contract and external Secret keys are documented in
+[`deploy/k8s/README.md`](../deploy/k8s/README.md#cross-service-base-and-overlays), with a local
+rendering gate in `scripts/test-kubernetes-overlays.sh`.
 
 The risk-service Debezium connector template resolves its database username and password from Kafka
 Connect environment variables. Those environment variables must be injected from a Kubernetes

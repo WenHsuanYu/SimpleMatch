@@ -94,14 +94,15 @@ end-to-end admission claim follows from this check.
 | Permanent PostgreSQL trades and fills | `PARTIAL` | [#130](https://github.com/WenHsuanYu/SimpleMatch/issues/130) |
 | Account critical Matching-event consumption | `PARTIAL` | [#131](https://github.com/WenHsuanYu/SimpleMatch/issues/131) |
 | Final Account reservation v2 RPC | `PARTIAL` | [#139](https://github.com/WenHsuanYu/SimpleMatch/issues/139) |
+| Account DataSource Boot auto-configuration | `COMPLETED` | [#140](https://github.com/WenHsuanYu/SimpleMatch/issues/140) |
 | Durable QuickFIX execution delivery | `PARTIAL` | [#132](https://github.com/WenHsuanYu/SimpleMatch/issues/132) |
 | Runtime market-data projection | `PARTIAL` | [#133](https://github.com/WenHsuanYu/SimpleMatch/issues/133) |
-| Required query service and Redis read models | `NOT_STARTED` | [#137](https://github.com/WenHsuanYu/SimpleMatch/issues/137) |
+| Required query service and Redis read models | `PARTIAL` | [#137](https://github.com/WenHsuanYu/SimpleMatch/issues/137) |
 | Gateway operational admission control | `PARTIAL` | [#135](https://github.com/WenHsuanYu/SimpleMatch/issues/135) |
 | Matching StatefulSet ownership and fencing | `PARTIAL` | [#134](https://github.com/WenHsuanYu/SimpleMatch/issues/134) |
 | Cross-service deployment, security, and observability | `PARTIAL` | [#138](https://github.com/WenHsuanYu/SimpleMatch/issues/138) |
 | Production Kafka topic profile | `PARTIAL` | [#125](https://github.com/WenHsuanYu/SimpleMatch/issues/125) |
-| Performance and recovery certification | `NOT_STARTED` | [#136](https://github.com/WenHsuanYu/SimpleMatch/issues/136) |
+| Performance and recovery certification | `PARTIAL` | [#136](https://github.com/WenHsuanYu/SimpleMatch/issues/136) |
 | Pre-release compatibility and legacy cleanup | `PARTIAL` | [#119](https://github.com/WenHsuanYu/SimpleMatch/issues/119), [#120](https://github.com/WenHsuanYu/SimpleMatch/issues/120) |
 
 ## Detailed inventory
@@ -328,11 +329,14 @@ end-to-end admission claim follows from this check.
 - **Target behavior:** Risk and Account use one typed v2 reservation boundary for the durable
   Admission saga. The RPC carries accepted identities, whole-share quantity, fixed-point monetary
   values, reservation terms, and typed outcomes without legacy string parsing in domain behavior.
-- **Current evidence:** Account Authority and durable Risk Admission application boundaries exist,
-  but the production Account gRPC server and Risk reservation client still use `account.v1`.
-- **Missing behavior:** Final Account v2 Protobuf contract, Account server adapter, Risk client,
-  production wiring cutover, timeout/outcome mapping, saga recovery tests, and proof that no
-  production caller remains on Account v1.
+- **Current evidence:** The typed v2 Protobuf contract carries the reservation identity, venue-qualified
+  instrument, side, whole-share quantity, fixed-point price/notional, and lifecycle outcome. Account
+  exposes a v2 server adapter over the existing Account Authority; Risk's production reservation
+  client uses the v2 stub with a bounded deadline. Equivalent retries replay one outcome and
+  conflicting request reuse maps to a typed conflict. Focused contract, Account transaction, and
+  Risk identity tests pass.
+- **Missing behavior:** Live saga recovery against the deployed services and proof that every
+  production deployment has removed the v1 caller remain part of the integrated release gate.
 - **Acceptance criteria:** The Account transaction remains service-owned and no Risk transaction is
   held across the RPC. Equivalent retries preserve one reservation outcome; conflicting retries are
   typed conflicts; remote success followed by Risk failure recovers without reserving twice.
@@ -382,16 +386,17 @@ end-to-end admission claim follows from this check.
 
 ### QS-1: Build the required Query capability and Redis read models
 
-- **Current status:** `NOT_STARTED`
+- **Current status:** `PARTIAL`
 - **Target behavior:** A required Phase 1 `query-service` exposes read-only order, execution,
   account-summary, and active-market-reference views from query-owned PostgreSQL and Redis
   projections. It is non-critical to trading admission but not optional for release completion.
-- **Current evidence:** Target CQRS and transaction policies describe the read path, but no
-  query-service source, Flyway schema, Redis key contract, projection consumer, or API exists.
-- **Missing behavior:** Service scaffold, versioned APIs, query-owned PostgreSQL projections and
-  inbox/checkpoints, Redis schema, Redis-first reads with PostgreSQL fallback, Account lifecycle and
-  Matching Event projection inputs, active artifact view, freshness metadata, replay/rebuild, and
-  outage tests.
+- **Current evidence:** `services/query-service` now provides the separate Spring service, Flyway
+  inbox/checkpoint/read-model schema, asynchronous final Matching and Account lifecycle consumers,
+  versioned read APIs, active-artifact installation seam, freshness metadata, replay reset, and
+  optional Redis read-through fallback. Focused H2 projection tests pass.
+- **Missing behavior:** Live Kafka/PostgreSQL/Redis deployment and outage/replay certification remain
+  part of PD-1 and the release certification gate. The service-context test also proves the shared
+  canonical-DSN/pool adapter and no competing `spring.datasource.*` source.
 - **Acceptance criteria:** Query never reads another service's database or scans Kafka synchronously.
   Redis can be deleted and rebuilt; misses/outages fall back to PostgreSQL; responses disclose
   freshness; and Query failure cannot pause any critical trading component.
@@ -454,18 +459,37 @@ end-to-end admission claim follows from this check.
   bases/overlays, service-owned migration and CDC jobs, authenticated encrypted transport,
   least-privilege policy, business-role readiness, and auditable telemetry. Matching-specific
   ownership and fencing remain in KD-1.
-- **Current evidence:** QuickFIX and Risk have partial raw manifests and shared typed configuration;
-  the repository does not have one complete cross-service production overlay, security, Flyway Job,
-  connector, NetworkPolicy, probe, and telemetry contract.
-- **Missing behavior:** Complete service overlays, ConfigMap/Secret ownership, transport policy,
-  service-scoped Flyway Jobs, retained Debezium deployments, RBAC/NetworkPolicy, status/probes,
-  OpenTelemetry/log/metric policy, manifest validation, and dependency-outage smoke tests.
+- **Current evidence:** `deploy/k8s/base` and local/test/staging/production overlays now cover the
+  Java services, retained QuickFIX/Matching resources, service ConfigMaps/RBAC, one-shot service-
+  scoped Flyway Jobs, readiness/liveness probes, non-root/read-only containers, NetworkPolicy,
+  digest-pinned promotion templates, external Secret contracts, Kafka SASL/TLS, and Account/Risk
+  gRPC mTLS. `scripts/test-kubernetes-overlays.sh` renders and structurally validates all four
+  overlays. PostgreSQL URI TLS parameters are preserved by the shared adapter.
+- **Missing behavior:** The external Flyway runner, real registry digests/endpoints/CIDRs, retained
+  Debezium deployment object, live dependency-outage smoke, and environment-owned collector/agent
+  instrumentation still require staging/production certification. The committed overlay values are
+  deliberately placeholders and cannot be treated as a live security gate.
 - **Acceptance criteria:** Required secrets and staging/production security fail closed. Applications
   do not migrate at startup. Connectors can reach only their owning outboxes. Liveness represents
   process health; readiness represents business-role availability. Logs expose no secrets, complete
   account payload, or raw FIX payload by default.
 - **Blocking dependencies:** KC-1, RM-1, PS-1, AC-1, AR-1, FG-1, MD-1, QS-1, GO-1, and KD-1.
 - **GitHub issue:** [#138](https://github.com/WenHsuanYu/SimpleMatch/issues/138).
+
+### CF-1: Use the shared Boot-managed Account DataSource adapter
+
+- **Current status:** `COMPLETED`
+- **Target behavior:** Account persistence uses the canonical `simplematch.postgres.dsn` through
+  shared Boot DataSource auto-configuration; Account owns only schema and pool policy, Flyway does
+  not start through datasource creation, blank/malformed/unsupported DSNs fail closed, and H2
+  profiles remain usable for tests.
+- **Current evidence:** `SimpleMatchDataSourceAutoConfiguration` is registered through Boot's
+  auto-configuration imports and Account supplies `account_service`, pool size four, and a stable
+  pool name. The Account context test supplies a competing `spring.datasource.url` and verifies the
+  canonical H2 DSN wins; typed settings and malformed/unsupported DSN tests pass.
+- **Missing behavior:** None in the repository slice; production PostgreSQL TLS credentials remain
+  an environment Secret contract under PD-1.
+- **GitHub issue:** [#140](https://github.com/WenHsuanYu/SimpleMatch/issues/140).
 
 ### KC-1: Provision durable Matching Kafka topics
 
@@ -490,14 +514,17 @@ end-to-end admission claim follows from this check.
 
 ### PC-1: Certify capacity, latency, and recovery
 
-- **Current status:** `NOT_STARTED`
+- **Current status:** `PARTIAL`
 - **Target behavior:** A reproducible benchmark fixes hardware, CPU affinity, wait strategy,
   150-book distribution, workload mix/depth/rate, warmup, and measurement definitions.
-- **Current evidence:** Native CTest covers only current ingress behavior; no production workload or
-  recovery benchmark exists.
-- **Missing behavior:** Capacity model, input/output ring sizes, active-order limits, event fan-out
-  limits, throughput/latency harness, soak tests, broker-outage tests, deterministic replay checksum,
-  and 15-pod deployment certification.
+- **Current evidence:** `simplematch-matching-capacity-benchmark` runs a fixed 150-book distribution
+  with explicit warmup and measured iterations, records core p50/p99/p99.9/max latency, throughput,
+  peak RSS, and measured loss/duplicate counters, and the wrapper records the host, CPU shape, and
+  requested CPU set in a JSON report. It is a direct-core integrity/capacity gate, not a production
+  performance claim.
+- **Missing behavior:** Kafka end-to-end latency, ring occupancy, workload-depth/rate calibration,
+  soak tests, broker-outage tests, deterministic replay checksum, and 15-pod deployment recovery
+  certification still require the live environment.
 - **Acceptance criteria:** Report core and Kafka end-to-end p50/p99/p99.9/max, RSS, ring occupancy,
   commands/events per second, and zero-loss recovery. Engine replay reaches lag zero within 60
   seconds after Lease/baseline/Kafka availability; total replacement target is 120 seconds. If

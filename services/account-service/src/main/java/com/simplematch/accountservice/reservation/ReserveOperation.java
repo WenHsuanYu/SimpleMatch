@@ -27,6 +27,14 @@ public record ReserveOperation(ReservationRequestIdentity identity, ReservationT
     return identity.requestId().value();
   }
 
+  /** Returns the Account reservation identity represented by this reserve command. */
+  public ReservationIdentity reservationIdentity() {
+    return new ReservationIdentity(
+        new ReservationIdentity.RequestId(requestId()),
+        new ReservationIdentity.ReservationId(orderId()),
+        new ReservationIdentity.OrderId(orderId()));
+  }
+
   /** Returns the wire-compatible order identifier. */
   public String orderId() {
     return identity.orderId().value();

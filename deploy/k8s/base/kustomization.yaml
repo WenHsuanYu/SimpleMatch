@@ -1,0 +1,24 @@
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+resources:
+  - ../simplematch-platform-configmap.yaml
+  - ../risk-service-configmap.yaml
+  - ../risk-service-outbox-connector-configmap.yaml
+  - ../account-service-outbox-connector-configmap.yaml
+  - ../marketdata-publisher-outbox-connector-configmap.yaml
+  - ../matching-headless-service.yaml
+  - ../matching-lease-rbac.yaml
+  - ../matching-partition-leases.yaml
+  - ../matching-pod-disruption-budget.yaml
+  - ../matching-statefulset.yaml
+  - ../quickfix-gateway-configmap.yaml
+  - ../quickfix-gateway-configuration-rbac.yaml
+  - ../quickfix-gateway-headless-service.yaml
+  - ../quickfix-gateway-owner-0-service.yaml
+  - ../quickfix-gateway-quickfix-configmap.yaml
+  - ../quickfix-gateway-statefulset.yaml
+  - java-services.yaml
+  - java-services-configmaps.yaml
+  - java-services-rbac.yaml
+  - flyway-jobs.yaml
+  - network-policy.yaml

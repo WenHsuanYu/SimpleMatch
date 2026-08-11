@@ -18,6 +18,7 @@ repository; it is not a second target-architecture source.
 | [account-service build](../services/account-service/build.gradle.kts)                                                        | Declares the `account_service` owner schema.                               |
 | [persistence build](../services/persistence/build.gradle.kts)                                                                | Declares the `persistence` owner schema.                                   |
 | [marketdata-publisher build](../services/marketdata-publisher/build.gradle.kts)                                              | Declares the `marketdata_publisher` owner schema.                          |
+| [query-service build](../services/query-service/build.gradle.kts)                                                            | Declares the `query_service` rebuildable read-model schema.                |
 
 ### Migration SQL
 
@@ -28,6 +29,7 @@ repository; it is not a second target-architecture source.
 | [risk-service V2](../services/risk-service/src/main/resources/db/migration/risk-service/V2__add_durable_admission_journal.sql)                                       | Adds the durable Risk admission journal beside decision/outbox state.                                                |
 | [persistence V1](../services/persistence/src/main/resources/db/migration/persistence/V1__create_projection_tables.sql)                                               | Creates typed projection and inbox tables from an empty schema.                                                      |
 | [marketdata-publisher V1](../services/marketdata-publisher/src/main/resources/db/migration/marketdata-publisher/V1__create_marketdata_publisher_tables.sql)          | Creates immutable market snapshots and the transactional publication outbox.                                        |
+| [query-service V1](../services/query-service/src/main/resources/db/migration/query-service/V1__create_query_read_models.sql)                                         | Creates inbox/checkpoints and query-owned order, execution, account, and active-reference models.                    |
 
 The historical Phase 4 field catalog records the schema state delivered at that phase; later
 versioned migrations such as Account V6 intentionally supersede those historical column shapes.
@@ -41,12 +43,12 @@ not rely on implicit `public`.
 
 | Area                        | Implementation evidence                                                                                                                                                                             |
 |-----------------------------|-----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
-| Runtime datasource          | Risk and Account persistence select their owner schemas rather than `public`.                                                                                                                       |
+| Runtime datasource          | Risk and Account persistence select their owner schemas rather than `public`; Query uses the shared Boot adapter with `query_service` pool policy.                                                   |
 | Canonical Account identity  | Account JDBC readers/writers bind and rehydrate `java.util.UUID` values matching the Account-domain `AccountId`.                                                                                   |
 | Market-reference datasource | `MarketdataPublisherConfiguration` selects the `marketdata_publisher` schema.                                                                                                                      |
 | Outbox connector            | Compose/Kubernetes connector configuration uses schema-qualified owner outbox tables.                                                                                                               |
 | Migration tests             | Service migration tests validate owner schemas, versioned migrations, constraints, and clean-install/idempotent migration behavior.                                                                |
-| Flyway CI                   | All registered Flyway services migrate into one CI database while retaining independent owner schemas and independent `flyway_schema_history`.                                                      |
+| Flyway CI                   | All registered Flyway services, including Query Service, migrate into one CI database while retaining independent owner schemas and independent `flyway_schema_history`.                         |
 
 ## Identity and persistence rule
 

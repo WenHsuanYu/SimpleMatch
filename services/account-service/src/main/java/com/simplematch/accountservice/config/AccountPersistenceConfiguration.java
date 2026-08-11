@@ -1,10 +1,7 @@
 package com.simplematch.accountservice.config;
 
-import com.simplematch.config.PostgresJdbcUrl;
-import com.simplematch.config.PostgresProperties;
-import com.zaxxer.hikari.HikariDataSource;
+import com.simplematch.config.SimpleMatchDataSourceSettings;
 import java.time.Clock;
-import javax.sql.DataSource;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 
@@ -18,21 +15,8 @@ public class AccountPersistenceConfiguration {
     return Clock.systemUTC();
   }
 
-  // TODO: Refactor it to use auto-configuration
   @Bean
-  DataSource accountServiceDataSource(PostgresProperties properties) {
-    final PostgresJdbcUrl parsedJdbcDsn = PostgresJdbcUrl.parse(properties.dsn());
-    final HikariDataSource dataSource = new HikariDataSource();
-    dataSource.setJdbcUrl(parsedJdbcDsn.jdbcUrl());
-    if (parsedJdbcDsn.username() != null) {
-      dataSource.setUsername(parsedJdbcDsn.username());
-    }
-    if (parsedJdbcDsn.password() != null) {
-      dataSource.setPassword(parsedJdbcDsn.password());
-    }
-    dataSource.setSchema(ACCOUNT_SERVICE_SCHEMA);
-    dataSource.setMaximumPoolSize(4);
-    dataSource.setPoolName("account-service-hikari");
-    return dataSource;
+  SimpleMatchDataSourceSettings accountServiceDataSourceSettings() {
+    return new SimpleMatchDataSourceSettings(ACCOUNT_SERVICE_SCHEMA, 4, "account-service-hikari");
   }
 }

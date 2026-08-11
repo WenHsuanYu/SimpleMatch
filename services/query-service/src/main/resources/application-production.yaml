@@ -1,0 +1,11 @@
+simplematch:
+  environment: production
+  query-service:
+    matching-events:
+      enabled: true
+    account-lifecycle:
+      enabled: true
+    redis:
+      enabled: true
+    market-reference:
+      install-on-startup: true

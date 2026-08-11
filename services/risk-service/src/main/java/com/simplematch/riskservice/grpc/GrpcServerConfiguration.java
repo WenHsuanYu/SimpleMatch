@@ -1,9 +1,14 @@
 package com.simplematch.riskservice.grpc;
 
+import com.simplematch.config.GrpcProperties;
 import com.simplematch.riskservice.bootstrap.RiskServiceRuntime;
 import io.grpc.BindableService;
 import io.grpc.Server;
 import io.grpc.ServerBuilder;
+import io.grpc.netty.shaded.io.grpc.netty.GrpcSslContexts;
+import io.grpc.netty.shaded.io.grpc.netty.NettyServerBuilder;
+import io.grpc.netty.shaded.io.netty.handler.ssl.ClientAuth;
+import java.io.File;
 import java.io.IOException;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.context.SmartLifecycle;
@@ -19,7 +24,9 @@ public class GrpcServerConfiguration {
       havingValue = "true",
       matchIfMissing = true)
   SmartLifecycle grpcServerLifecycle(
-      RiskServiceRuntime runtime, OrderAdmissionGrpcService admissionService) {
+      RiskServiceRuntime runtime,
+      GrpcProperties grpcProperties,
+      OrderAdmissionGrpcService admissionService) {
     return new SmartLifecycle() {
       private Server server;
       private volatile boolean running;
@@ -30,8 +37,9 @@ public class GrpcServerConfiguration {
           return;
         }
         try {
+          final ServerBuilder<?> builder = serverBuilder(runtime.grpcPort(), grpcProperties);
           server =
-              ServerBuilder.forPort(runtime.grpcPort())
+              builder
                   .addService((BindableService) admissionService)
                   .build()
                   .start();
@@ -54,5 +62,19 @@ public class GrpcServerConfiguration {
         return running;
       }
     };
+  }
+
+  private ServerBuilder<?> serverBuilder(int port, GrpcProperties properties) throws IOException {
+    final GrpcProperties.SecurityProperties security = properties.security();
+    if (!security.tlsEnabled()) {
+      return ServerBuilder.forPort(port);
+    }
+    return NettyServerBuilder.forPort(port)
+        .sslContext(
+            GrpcSslContexts.forServer(
+                    new File(security.certificatePath()), new File(security.privateKeyPath()))
+                .trustManager(new File(security.trustCertificatePath()))
+                .clientAuth(ClientAuth.REQUIRE)
+                .build());
   }
 }

@@ -59,6 +59,7 @@ The following evidence was recorded on 2026-08-11.
 | Native build | cmake --build --preset full-native-dev --parallel | Passed |
 | Native full feature tests | ctest --preset full-native-dev --output-on-failure | 40/40 passed |
 | Native reduced feature tests | cmake --build --preset dev-debug --parallel; ctest --preset dev-debug --output-on-failure | 38/38 passed |
+| Native capacity harness | scripts/run-matching-capacity-certification.sh | Repository gate available; report is non-certifying until run on pinned production-shaped hardware |
 | Kubernetes manifest contract | bash scripts/test-matching-kubernetes-manifests.sh | Passed; static contract only |
 | Kafka profile fixtures | bash scripts/test-matching-topic-profile.sh | Passed; includes RF/ISR/safety and duplicate-replica rejection |
 | Outbox contracts | bash scripts/verify-outbox-connector-contracts.sh; bash scripts/run-outbox-cdc-contract-check.sh | Passed in the disposable CDC environment |
@@ -99,6 +100,25 @@ bash scripts/run-outbox-cdc-contract-check.sh
 In a restricted development environment, prefix the Gradle commands with
 GRADLE_USER_HOME=/tmp/simplematch-gradle-cache.
 
+The repository-side capacity gate is separate from the live dependency gates:
+
+~~~bash
+cmake --build --preset full-native-dev --target simplematch-matching-capacity-benchmark --parallel
+SIMPLEMATCH_BENCHMARK_CPUSET='0-2' \
+SIMPLEMATCH_REQUIRE_PINNED=true \
+SIMPLEMATCH_BENCHMARK_REPORT=/secure/certification/matching-capacity.json \
+bash scripts/run-matching-capacity-certification.sh \
+  --warmup 100 --iterations 1000 --maximum-resting-orders 256
+~~~
+
+The benchmark exercises 150 books and checks the measured command/event stream for loss and
+duplicate event identities. Its latency samples cover the direct native core call; the report does
+not include Kafka, ring wait, publication, or recovery time. The operator must record the actual
+CPU-manager policy, cgroup quota, governor, workload/depth/rate, and ring occupancy alongside the
+JSON report. A direct-core pass therefore does not satisfy the production gate by itself. The
+production gate still requires Kafka end-to-end percentiles, a soak, broker outage and replay
+checksum scenarios, and the 60-second lag/120-second replacement SLOs below.
+
 The local native Kafka fixture publisher is:
 
 ~~~bash
@@ -108,6 +128,10 @@ out/build/full-native-dev/simplematch-matching-kafka-fixture-publisher BROKERS M
 The fixture scenario must be interpreted with the exact artifact/session identity used by the
 Matching process: Open Barrier first, then the commands for its assigned partition. The expected
 result is a contiguous next input offset, acknowledged output publication, and READY.
+
+No microsecond-level production latency claim may be made from the repository benchmark or the
+disposable kind smoke. The claim requires the pinned production-shaped run and the end-to-end
+evidence described by #136.
 
 ## Production sequence
 
@@ -221,8 +245,8 @@ tasks pass, and the named query-plan checks use their expected indexes. It never
 clean, baseline, repair, reset, or database creation.
 
 This gate verifies the current Flyway owners exposed by scripts/lib/flyway-services.sh. It does
-not certify the future Query/Redis service, which is still a separate unfinished capability in the
-remaining-work inventory.
+not certify the Query/Redis deployment, replay, or outage behavior; those remain a separate live
+release gate even though the repository now contains the query-service implementation.
 
 ### 5. Run external QuickFIX certification
 

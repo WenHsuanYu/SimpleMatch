@@ -1,0 +1,24 @@
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+namespace: simplematch-test
+resources:
+  - ../../base
+images:
+  - name: simplematch/account-service
+    newTag: test
+  - name: simplematch/risk-service
+    newTag: test
+  - name: simplematch/persistence
+    newTag: test
+  - name: simplematch/market-data-projection
+    newTag: test
+  - name: simplematch/marketdata-publisher
+    newTag: test
+  - name: simplematch/query-service
+    newTag: test
+  - name: simplematch/flyway-runner
+    newTag: test
+  - name: simplematch-matching
+    newTag: test
+  - name: quickfix-gateway
+    newTag: test

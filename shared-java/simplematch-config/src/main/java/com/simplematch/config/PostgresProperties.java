@@ -11,7 +11,7 @@ import org.springframework.boot.context.properties.ConfigurationProperties;
 public record PostgresProperties(String dsn) {
   /** Normalizes an absent DSN to the local SimpleMatch PostgreSQL database. */
   public PostgresProperties {
-    dsn = PlatformPropertyDefaults.string(dsn, "jdbc:postgresql://localhost:5432/simplematch");
+    dsn = dsn == null ? "jdbc:postgresql://localhost:5432/simplematch" : dsn;
   }
 
   static PostgresProperties defaults() {

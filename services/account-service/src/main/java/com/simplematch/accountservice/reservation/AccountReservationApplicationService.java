@@ -53,7 +53,7 @@ public class AccountReservationApplicationService {
     final AccountReservation existing =
         authorityReader.findReservationByRequestId(operation.requestId()).orElse(null);
     if (existing != null) {
-      return toResponse(existing);
+      return replay(existing, operation);
     }
 
     final long now = clock.millis();
@@ -119,14 +119,14 @@ public class AccountReservationApplicationService {
 
     final AccountReservation reservation =
         AccountReservation.accepted(
-            reservationIdentity(operation),
+            operation.reservationIdentity(),
             new ReservationOwnership(operation.accountIdentity()),
             operation.terms(),
             notional,
             now);
     authorityWriter.insertReservation(reservation);
     emit(reservation, AccountLifecycleState.ACCOUNT_LIFECYCLE_STATE_RESERVED, "", now);
-    return toResponse(reservation);
+    return ReservationRecord.from(reservation);
   }
 
   /** Returns the current Taiwan-trading-day account limit. */
@@ -157,7 +157,7 @@ public class AccountReservationApplicationService {
             clock.millis())) {
       return authorityReader
           .findReservationForUpdate(identity.reservationId().value())
-          .map(this::toResponse)
+          .map(ReservationRecord::from)
           .orElseThrow(() -> new IllegalArgumentException("reservation not found"));
     }
     final AccountReservation reservation =
@@ -171,7 +171,7 @@ public class AccountReservationApplicationService {
     if (reservation.status() == ReservationStatus.RESERVATION_STATUS_RELEASED
         || reservation.status() == ReservationStatus.RESERVATION_STATUS_REJECTED
         || reservation.remainingQuantity().signum() == 0) {
-      return toResponse(reservation);
+      return ReservationRecord.from(reservation);
     }
     final long now = clock.millis();
     AccountAuthorityTransitions.releaseCancelledAuthority(
@@ -180,7 +180,7 @@ public class AccountReservationApplicationService {
     authorityWriter.updateReservation(changed, reservation.version());
     emit(
         changed, AccountLifecycleState.ACCOUNT_LIFECYCLE_STATE_RELEASED, changed.reasonCode(), now);
-    return toResponse(changed);
+    return ReservationRecord.from(changed);
   }
 
   /** Applies one execution fill once, using the account inbox as the deduplication boundary. */
@@ -197,7 +197,7 @@ public class AccountReservationApplicationService {
         clock.millis())) {
       return authorityReader
           .findReservationForUpdate(identity.reservationId().value())
-          .map(this::toResponse)
+          .map(ReservationRecord::from)
           .orElseThrow(() -> new IllegalArgumentException("reservation not found"));
     }
     final AccountReservation reservation =
@@ -222,7 +222,7 @@ public class AccountReservationApplicationService {
             : AccountLifecycleState.ACCOUNT_LIFECYCLE_STATE_RESERVED,
         "",
         now);
-    return toResponse(changed);
+    return ReservationRecord.from(changed);
   }
 
   /** Provisions an account-wide daily cash limit for controlled administration. */
@@ -247,7 +247,7 @@ public class AccountReservationApplicationService {
       long now) {
     final AccountReservation rejected =
         AccountReservation.rejected(
-            reservationIdentity(operation),
+        operation.reservationIdentity(),
             new ReservationOwnership(operation.accountIdentity()),
             operation.terms(),
             reasonCode,
@@ -255,14 +255,14 @@ public class AccountReservationApplicationService {
             now);
     authorityWriter.insertReservation(rejected);
     emit(rejected, AccountLifecycleState.ACCOUNT_LIFECYCLE_STATE_REJECTED, reasonCode, now);
-    return toResponse(rejected);
+    return ReservationRecord.from(rejected);
   }
 
-  private ReservationIdentity reservationIdentity(ReserveOperation operation) {
-    return new ReservationIdentity(
-        new ReservationIdentity.RequestId(operation.requestId()),
-        new ReservationIdentity.ReservationId(operation.orderId()),
-        new ReservationIdentity.OrderId(operation.orderId()));
+  private ReservationRecord replay(AccountReservation existing, ReserveOperation operation) {
+    if (!existing.hasEquivalentRequestFacts(operation)) {
+      throw new ReservationRequestConflictException(operation.requestId());
+    }
+    return ReservationRecord.from(existing);
   }
 
   private void emit(
@@ -310,7 +310,4 @@ public class AccountReservationApplicationService {
             now));
   }
 
-  private ReservationRecord toResponse(AccountReservation reservation) {
-    return ReservationRecord.from(reservation);
-  }
 }

@@ -1,0 +1,37 @@
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+namespace: simplematch-staging
+resources:
+  - ../../base
+  - ../network-policy-external.yaml
+patches:
+  - path: ../secure-java-services-patch.yaml
+  - path: platform-config-patch.yaml
+images:
+  - name: simplematch/account-service
+    newName: registry.example.invalid/simplematch/account-service
+    digest: sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
+  - name: simplematch/risk-service
+    newName: registry.example.invalid/simplematch/risk-service
+    digest: sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
+  - name: simplematch/persistence
+    newName: registry.example.invalid/simplematch/persistence
+    digest: sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
+  - name: simplematch/market-data-projection
+    newName: registry.example.invalid/simplematch/market-data-projection
+    digest: sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
+  - name: simplematch/marketdata-publisher
+    newName: registry.example.invalid/simplematch/marketdata-publisher
+    digest: sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
+  - name: simplematch/query-service
+    newName: registry.example.invalid/simplematch/query-service
+    digest: sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
+  - name: simplematch/flyway-runner
+    newName: registry.example.invalid/simplematch/flyway-runner
+    digest: sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
+  - name: simplematch-matching
+    newName: registry.example.invalid/simplematch/matching
+    digest: sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
+  - name: quickfix-gateway
+    newName: registry.example.invalid/simplematch/quickfix-gateway
+    digest: sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa

@@ -1,0 +1,349 @@
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: account-service-flyway
+  labels:
+    app.kubernetes.io/name: account-service-flyway
+    app.kubernetes.io/component: migration
+    app.kubernetes.io/part-of: simplematch
+spec:
+  backoffLimit: 2
+  ttlSecondsAfterFinished: 86400
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: account-service-flyway
+        app.kubernetes.io/component: migration
+    spec:
+      serviceAccountName: account-service
+      restartPolicy: Never
+      securityContext:
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+        - name: flyway
+          image: simplematch/flyway-runner:base
+          imagePullPolicy: IfNotPresent
+          command: ["/app/run-flyway"]
+          env:
+            - name: SIMPLEMATCH_FLYWAY_SERVICE_ID
+              value: account-service
+            - name: SIMPLEMATCH_FLYWAY_SCHEMA
+              value: account_service
+            - name: SIMPLEMATCH_POSTGRES_DSN
+              valueFrom:
+                secretKeyRef:
+                  name: simplematch-flyway-secrets
+                  key: postgres_dsn
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop: ["ALL"]
+            readOnlyRootFilesystem: true
+            runAsNonRoot: true
+          volumeMounts:
+            - name: runtime-tmp
+              mountPath: /tmp
+      volumes:
+        - name: runtime-tmp
+          emptyDir: {}
+---
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: risk-service-flyway
+  labels:
+    app.kubernetes.io/name: risk-service-flyway
+    app.kubernetes.io/component: migration
+    app.kubernetes.io/part-of: simplematch
+spec:
+  backoffLimit: 2
+  ttlSecondsAfterFinished: 86400
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: risk-service-flyway
+        app.kubernetes.io/component: migration
+    spec:
+      serviceAccountName: risk-service
+      restartPolicy: Never
+      securityContext:
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+        - name: flyway
+          image: simplematch/flyway-runner:base
+          imagePullPolicy: IfNotPresent
+          command: ["/app/run-flyway"]
+          env:
+            - name: SIMPLEMATCH_FLYWAY_SERVICE_ID
+              value: risk-service
+            - name: SIMPLEMATCH_FLYWAY_SCHEMA
+              value: risk_service
+            - name: SIMPLEMATCH_POSTGRES_DSN
+              valueFrom:
+                secretKeyRef:
+                  name: simplematch-flyway-secrets
+                  key: postgres_dsn
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop: ["ALL"]
+            readOnlyRootFilesystem: true
+            runAsNonRoot: true
+          volumeMounts:
+            - name: runtime-tmp
+              mountPath: /tmp
+      volumes:
+        - name: runtime-tmp
+          emptyDir: {}
+---
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: persistence-flyway
+  labels:
+    app.kubernetes.io/name: persistence-flyway
+    app.kubernetes.io/component: migration
+    app.kubernetes.io/part-of: simplematch
+spec:
+  backoffLimit: 2
+  ttlSecondsAfterFinished: 86400
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: persistence-flyway
+        app.kubernetes.io/component: migration
+    spec:
+      serviceAccountName: persistence
+      restartPolicy: Never
+      securityContext:
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+        - name: flyway
+          image: simplematch/flyway-runner:base
+          imagePullPolicy: IfNotPresent
+          command: ["/app/run-flyway"]
+          env:
+            - name: SIMPLEMATCH_FLYWAY_SERVICE_ID
+              value: persistence
+            - name: SIMPLEMATCH_FLYWAY_SCHEMA
+              value: persistence
+            - name: SIMPLEMATCH_POSTGRES_DSN
+              valueFrom:
+                secretKeyRef:
+                  name: simplematch-flyway-secrets
+                  key: postgres_dsn
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop: ["ALL"]
+            readOnlyRootFilesystem: true
+            runAsNonRoot: true
+          volumeMounts:
+            - name: runtime-tmp
+              mountPath: /tmp
+      volumes:
+        - name: runtime-tmp
+          emptyDir: {}
+---
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: market-data-projection-flyway
+  labels:
+    app.kubernetes.io/name: market-data-projection-flyway
+    app.kubernetes.io/component: migration
+    app.kubernetes.io/part-of: simplematch
+spec:
+  backoffLimit: 2
+  ttlSecondsAfterFinished: 86400
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: market-data-projection-flyway
+        app.kubernetes.io/component: migration
+    spec:
+      serviceAccountName: market-data-projection
+      restartPolicy: Never
+      securityContext:
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+        - name: flyway
+          image: simplematch/flyway-runner:base
+          imagePullPolicy: IfNotPresent
+          command: ["/app/run-flyway"]
+          env:
+            - name: SIMPLEMATCH_FLYWAY_SERVICE_ID
+              value: market-data-projection
+            - name: SIMPLEMATCH_FLYWAY_SCHEMA
+              value: market_data_projection
+            - name: SIMPLEMATCH_POSTGRES_DSN
+              valueFrom:
+                secretKeyRef:
+                  name: simplematch-flyway-secrets
+                  key: postgres_dsn
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop: ["ALL"]
+            readOnlyRootFilesystem: true
+            runAsNonRoot: true
+          volumeMounts:
+            - name: runtime-tmp
+              mountPath: /tmp
+      volumes:
+        - name: runtime-tmp
+          emptyDir: {}
+---
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: marketdata-publisher-flyway
+  labels:
+    app.kubernetes.io/name: marketdata-publisher-flyway
+    app.kubernetes.io/component: migration
+    app.kubernetes.io/part-of: simplematch
+spec:
+  backoffLimit: 2
+  ttlSecondsAfterFinished: 86400
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: marketdata-publisher-flyway
+        app.kubernetes.io/component: migration
+    spec:
+      serviceAccountName: marketdata-publisher
+      restartPolicy: Never
+      securityContext:
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+        - name: flyway
+          image: simplematch/flyway-runner:base
+          imagePullPolicy: IfNotPresent
+          command: ["/app/run-flyway"]
+          env:
+            - name: SIMPLEMATCH_FLYWAY_SERVICE_ID
+              value: marketdata-publisher
+            - name: SIMPLEMATCH_FLYWAY_SCHEMA
+              value: marketdata_publisher
+            - name: SIMPLEMATCH_POSTGRES_DSN
+              valueFrom:
+                secretKeyRef:
+                  name: simplematch-flyway-secrets
+                  key: postgres_dsn
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop: ["ALL"]
+            readOnlyRootFilesystem: true
+            runAsNonRoot: true
+          volumeMounts:
+            - name: runtime-tmp
+              mountPath: /tmp
+      volumes:
+        - name: runtime-tmp
+          emptyDir: {}
+---
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: query-service-flyway
+  labels:
+    app.kubernetes.io/name: query-service-flyway
+    app.kubernetes.io/component: migration
+    app.kubernetes.io/part-of: simplematch
+spec:
+  backoffLimit: 2
+  ttlSecondsAfterFinished: 86400
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: query-service-flyway
+        app.kubernetes.io/component: migration
+    spec:
+      serviceAccountName: query-service
+      restartPolicy: Never
+      securityContext:
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+        - name: flyway
+          image: simplematch/flyway-runner:base
+          imagePullPolicy: IfNotPresent
+          command: ["/app/run-flyway"]
+          env:
+            - name: SIMPLEMATCH_FLYWAY_SERVICE_ID
+              value: query-service
+            - name: SIMPLEMATCH_FLYWAY_SCHEMA
+              value: query_service
+            - name: SIMPLEMATCH_POSTGRES_DSN
+              valueFrom:
+                secretKeyRef:
+                  name: simplematch-flyway-secrets
+                  key: postgres_dsn
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop: ["ALL"]
+            readOnlyRootFilesystem: true
+            runAsNonRoot: true
+          volumeMounts:
+            - name: runtime-tmp
+              mountPath: /tmp
+      volumes:
+        - name: runtime-tmp
+          emptyDir: {}
+---
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: quickfix-gateway-flyway
+  labels:
+    app.kubernetes.io/name: quickfix-gateway-flyway
+    app.kubernetes.io/component: migration
+    app.kubernetes.io/part-of: simplematch
+spec:
+  backoffLimit: 2
+  ttlSecondsAfterFinished: 86400
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: quickfix-gateway-flyway
+        app.kubernetes.io/component: migration
+    spec:
+      serviceAccountName: quickfix-gateway
+      restartPolicy: Never
+      securityContext:
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+        - name: flyway
+          image: simplematch/flyway-runner:base
+          imagePullPolicy: IfNotPresent
+          command: ["/app/run-flyway"]
+          env:
+            - name: SIMPLEMATCH_FLYWAY_SERVICE_ID
+              value: quickfix-gateway
+            - name: SIMPLEMATCH_FLYWAY_SCHEMA
+              value: quickfix_gateway
+            - name: SIMPLEMATCH_POSTGRES_DSN
+              valueFrom:
+                secretKeyRef:
+                  name: simplematch-flyway-secrets
+                  key: postgres_dsn
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop: ["ALL"]
+            readOnlyRootFilesystem: true
+            runAsNonRoot: true
+          volumeMounts:
+            - name: runtime-tmp
+              mountPath: /tmp
+      volumes:
+        - name: runtime-tmp
+          emptyDir: {}

@@ -1,0 +1,64 @@
+spring:
+  application:
+    name: query-service
+  profiles:
+    default: local
+  config:
+    import: ${SIMPLEMATCH_KUBERNETES_CONFIG_IMPORT:optional:kubernetes:}
+  cloud:
+    kubernetes:
+      config:
+        enabled: ${SIMPLEMATCH_KUBERNETES_ENABLED:false}
+        fail-fast: true
+        retry:
+          enabled: false
+        read-type: SINGLE
+        sources:
+          - name: simplematch-platform-config
+          - name: ${spring.application.name}-config
+      secrets:
+        enabled: ${SIMPLEMATCH_KUBERNETES_ENABLED:false}
+        enable-api: ${SIMPLEMATCH_KUBERNETES_ENABLED:false}
+        sources:
+          - name: ${spring.application.name}-secrets
+  flyway:
+    enabled: false
+  kafka:
+    bootstrap-servers: ${simplematch.kafka.brokers:localhost:9092}
+    consumer:
+      auto-offset-reset: earliest
+      enable-auto-commit: false
+      key-deserializer: org.apache.kafka.common.serialization.StringDeserializer
+      value-deserializer: org.apache.kafka.common.serialization.ByteArrayDeserializer
+      properties:
+        isolation.level: read_committed
+    listener:
+      ack-mode: manual_immediate
+
+simplematch:
+  query-service:
+    matching-events:
+      enabled: false
+      topic: matching.events
+      consumer-group: query-service-matching-events
+    account-lifecycle:
+      enabled: false
+      topic: account.lifecycle
+      consumer-group: query-service-account-lifecycle
+    redis:
+      enabled: false
+      key-prefix: query:v1
+    market-reference:
+      artifact-location: /etc/simplematch/market-reference/market_reference.json
+      checksum-location: /etc/simplematch/market-reference/market_reference.sha256
+      trading-day: ${SIMPLEMATCH_TRADING_DAY:}
+      install-on-startup: false
+
+server:
+  port: ${SIMPLEMATCH_QUERY_SERVICE_HTTP_PORT:8086}
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info,metrics

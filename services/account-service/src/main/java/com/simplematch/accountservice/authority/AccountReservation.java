@@ -4,6 +4,7 @@ import com.simplematch.accountservice.reservation.ExecutionFill;
 import com.simplematch.accountservice.reservation.ReleaseReservationOperation;
 import com.simplematch.accountservice.reservation.ReservationIdentity;
 import com.simplematch.accountservice.reservation.ReservationTerms;
+import com.simplematch.accountservice.reservation.ReserveOperation;
 import com.simplematch.contracts.common.v1.ReservationStatus;
 import com.simplematch.contracts.common.v1.Side;
 import java.math.BigDecimal;
@@ -110,6 +111,14 @@ public record AccountReservation(
   /** Returns the optional limit price. */
   public BigDecimal limitPrice() {
     return terms.limitPrice().value();
+  }
+
+  /** Returns whether a repeated reserve request describes the same immutable request facts. */
+  public boolean hasEquivalentRequestFacts(ReserveOperation operation) {
+    Objects.requireNonNull(operation, "operation");
+    return orderId().equals(operation.orderId())
+        && accountId().equals(operation.accountId())
+        && terms.hasEquivalentFacts(operation.terms());
   }
 
   /** Returns the notional still held by the reservation. */

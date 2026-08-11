@@ -34,6 +34,7 @@ message ReservationCommand {
   simplematch.common.v2.Side side = 8;
   simplematch.orders.v2.ShareQuantity quantity = 9;
   simplematch.common.v2.TwdNotional notional = 10;
+  simplematch.common.v2.TwdPrice limit_price = 11;
 }
 
 message AccountLifecycleEvent {
@@ -46,4 +47,11 @@ message AccountLifecycleEvent {
   simplematch.orders.v2.ShareQuantity reserved_quantity = 7;
   string reason_code = 8;
   string reason_detail = 9;
+}
+
+// Typed account reservation boundary. The response is the authoritative
+// reservation outcome projection; the durable lifecycle event is emitted by
+// Account Authority in the same local transaction as the reservation.
+service AccountReservationService {
+  rpc Reserve(ReservationCommand) returns (AccountLifecycleEvent);
 }

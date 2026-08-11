@@ -15,6 +15,55 @@ The Debezium connector ConfigMap contains only non-sensitive connector settings.
 `RISK_SERVICE_POSTGRES_PASSWORD` into the Kafka Connect worker from a Secret. After a configuration
 change, roll the relevant workload. Configuration reload is intentionally disabled.
 
+## Cross-service base and overlays
+
+`base/` contains the Java service Deployments for Account, Risk, Persistence, Market Data
+Projection, Marketdata Publisher, and Query Service, plus the existing QuickFIX/Matching resources,
+service-local ConfigMaps, read-only configuration RBAC, migration Jobs, probes, and NetworkPolicy.
+The four overlays are `local`, `test`, `staging`, and `production`.
+
+Render and validate them with:
+
+```text
+bash scripts/test-kubernetes-overlays.sh
+```
+
+The base deliberately reuses the reviewed flat Matching and QuickFIX manifests. The renderer uses
+`--load-restrictor LoadRestrictionsNone` for those repository-local files; it does not permit
+arbitrary paths outside this repository. Staging and production replace every application and
+migration image with a digest-pinned reference, require SASL/TLS for Kafka, require mTLS for the
+Account/Risk gRPC pair, and add explicit external endpoint NetworkPolicy entries. The
+`registry.example.invalid` image names and `203.0.113.0/24` documentation CIDRs are release
+placeholders and must be replaced during environment promotion.
+
+### External Secret contract
+
+Secrets are provisioned outside Git. ConfigMaps contain endpoint names, topic names, pool policy,
+and certificate paths only; they never contain a DSN, password, SASL value, or private key.
+
+Each service Secret named `{service}-secrets` supplies `postgres_dsn` for its owner schema. Staging
+and production values must use PostgreSQL TLS, for example a JDBC DSN with
+`sslmode=verify-full` and `sslrootcert=/etc/simplematch/postgres-tls/ca.crt`. The canonical
+`simplematch.postgres.dsn` property is supplied through `SIMPLEMATCH_POSTGRES_DSN`; no
+`spring.datasource.*` key is used.
+
+`account-service-tls` and `risk-service-tls` contain `tls.crt`, `tls.key`, and `ca.crt`. The
+staging/production overlay enables mTLS and requires all three paths. `simplematch-kafka-tls`
+contains `ca.p12`; `simplematch-kafka-secrets` contains `sasl_jaas_config` and
+`truststore_password`. `risk-service-secrets` additionally supplies `trading_day` and
+`matching_image_digest`; `query-service-secrets` supplies `trading_day`.
+
+`simplematch-flyway-secrets` supplies the TLS-enabled `postgres_dsn` consumed by the external
+`simplematch/flyway-runner` image. Each Job passes one service ID and schema to that runner, so
+Flyway history remains service-local. Jobs are intentionally one-shot: delete and recreate the
+named Job for a later migration release, and apply migrations before rolling the Deployments.
+
+The service accounts can read only their named ConfigMaps and service Secret through the included
+Roles. NetworkPolicy permits same-namespace service traffic and DNS by default; staging and
+production must replace the external IP placeholders with the approved PostgreSQL, Kafka, Redis,
+and OpenTelemetry endpoint ranges before apply. The Deployment environment carries stable OTEL
+service/resource identity; collector/agent installation remains an environment-owned prerequisite.
+
 ## Fixed Matching fleet
 
 `matching-statefulset.yaml` defines the Phase 1 fleet: fifteen StatefulSet ordinals map directly to

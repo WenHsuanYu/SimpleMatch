@@ -115,6 +115,15 @@ if(BUILD_TESTING)
   find_package(Threads REQUIRED)
   find_package(GTest CONFIG REQUIRED)
 
+  add_executable(
+      simplematch-matching-capacity-benchmark
+      matching-engine/tests/matching_capacity_benchmark.cpp)
+  target_link_libraries(simplematch-matching-capacity-benchmark PRIVATE simplematch_matching_ingress)
+  target_include_directories(
+      simplematch-matching-capacity-benchmark PRIVATE ${CMAKE_CURRENT_BINARY_DIR})
+  simplematch_enable_warnings(simplematch-matching-capacity-benchmark)
+  simplematch_enable_sanitizers(simplematch-matching-capacity-benchmark)
+
   add_executable(simplematch_matching_ingress_tests
       matching-engine/tests/critical_order_ingress_test.cpp
       matching-engine/tests/routing_policy_ingress_test.cpp

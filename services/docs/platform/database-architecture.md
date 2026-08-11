@@ -16,6 +16,7 @@ data merely because both schemas are hosted by the same PostgreSQL deployment.
 | `risk-service`     | `risk_service`     | Durable admissions, risk decisions, and outbox records                 |
 | `account-service`  | `account_service`  | Limits, positions, and reservations                                    |
 | `persistence`      | `persistence`      | Execution, order, and audit projections                                |
+| `query-service`    | `query_service`    | Rebuildable order, execution, Account summary, and active-reference reads |
 | `matching-engine`  | `matching_engine`  | Reserved for a PostgreSQL-owned journal or outbox if one is introduced |
 | `quickfix-gateway` | `quickfix_gateway` | Reserved for PostgreSQL-owned FIX continuity metadata if introduced    |
 

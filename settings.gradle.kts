@@ -15,6 +15,7 @@ include(
     ":shared-java:market-reference-contract",
     ":services:account-service",
     ":services:market-data-projection",
+    ":services:query-service",
     ":services:marketdata-publisher",
     ":services:persistence",
     ":services:quickfix-gateway",
@@ -28,6 +29,7 @@ project(":shared-java:market-reference-contract").projectDir =
     file("shared-java/market-reference-contract")
 project(":services:account-service").projectDir = file("services/account-service")
 project(":services:market-data-projection").projectDir = file("services/market-data-projection")
+project(":services:query-service").projectDir = file("services/query-service")
 project(":services:marketdata-publisher").projectDir = file("services/marketdata-publisher")
 project(":services:persistence").projectDir = file("services/persistence")
 project(":services:quickfix-gateway").projectDir = file("services/quickfix-gateway")

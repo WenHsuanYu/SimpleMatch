@@ -1,0 +1,185 @@
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: account-service
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: risk-service
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: persistence
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: market-data-projection
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: marketdata-publisher
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: query-service
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: account-service-configuration-reader
+rules:
+  - apiGroups: [""]
+    resources: ["configmaps"]
+    resourceNames: ["simplematch-platform-config", "account-service-config"]
+    verbs: ["get"]
+  - apiGroups: [""]
+    resources: ["secrets"]
+    resourceNames: ["account-service-secrets"]
+    verbs: ["get"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: risk-service-configuration-reader
+rules:
+  - apiGroups: [""]
+    resources: ["configmaps"]
+    resourceNames: ["simplematch-platform-config", "risk-service-config"]
+    verbs: ["get"]
+  - apiGroups: [""]
+    resources: ["secrets"]
+    resourceNames: ["risk-service-secrets"]
+    verbs: ["get"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: persistence-configuration-reader
+rules:
+  - apiGroups: [""]
+    resources: ["configmaps"]
+    resourceNames: ["simplematch-platform-config", "persistence-config"]
+    verbs: ["get"]
+  - apiGroups: [""]
+    resources: ["secrets"]
+    resourceNames: ["persistence-secrets"]
+    verbs: ["get"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: market-data-projection-configuration-reader
+rules:
+  - apiGroups: [""]
+    resources: ["configmaps"]
+    resourceNames: ["simplematch-platform-config", "market-data-projection-config"]
+    verbs: ["get"]
+  - apiGroups: [""]
+    resources: ["secrets"]
+    resourceNames: ["market-data-projection-secrets"]
+    verbs: ["get"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: marketdata-publisher-configuration-reader
+rules:
+  - apiGroups: [""]
+    resources: ["configmaps"]
+    resourceNames: ["simplematch-platform-config", "marketdata-publisher-config"]
+    verbs: ["get"]
+  - apiGroups: [""]
+    resources: ["secrets"]
+    resourceNames: ["marketdata-publisher-secrets"]
+    verbs: ["get"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: query-service-configuration-reader
+rules:
+  - apiGroups: [""]
+    resources: ["configmaps"]
+    resourceNames: ["simplematch-platform-config", "query-service-config"]
+    verbs: ["get"]
+  - apiGroups: [""]
+    resources: ["secrets"]
+    resourceNames: ["query-service-secrets"]
+    verbs: ["get"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: account-service-configuration-reader
+subjects:
+  - kind: ServiceAccount
+    name: account-service
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: account-service-configuration-reader
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: risk-service-configuration-reader
+subjects:
+  - kind: ServiceAccount
+    name: risk-service
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: risk-service-configuration-reader
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: persistence-configuration-reader
+subjects:
+  - kind: ServiceAccount
+    name: persistence
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: persistence-configuration-reader
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: market-data-projection-configuration-reader
+subjects:
+  - kind: ServiceAccount
+    name: market-data-projection
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: market-data-projection-configuration-reader
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: marketdata-publisher-configuration-reader
+subjects:
+  - kind: ServiceAccount
+    name: marketdata-publisher
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: marketdata-publisher-configuration-reader
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: query-service-configuration-reader
+subjects:
+  - kind: ServiceAccount
+    name: query-service
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: query-service-configuration-reader
