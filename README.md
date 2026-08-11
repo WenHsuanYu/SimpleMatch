@@ -54,6 +54,12 @@ ordering, eventing, and reliability decisions are in the
 Market Reference logic moves to the offline builder; its runtime database/outbox/Kafka stack is
 removed after the replacement path passes.
 
+## Market Reference builder
+
+The repository CLI builds review-only candidates and approved daily Market Reference artifacts from
+official TWSE and TPEx source documents. See the [Market Reference builder guide](config/market-reference/README.md)
+for commands, source-file requirements, and the restricted Gradle-cache fallback.
+
 ## Documentation
 
 Start with the [domain context and context map](CONTEXT.md) for bounded-context ownership and
