@@ -5,12 +5,14 @@ import com.simplematch.accountservice.reservation.ReservationTerms;
 import com.simplematch.accountservice.reservation.ReserveOperation;
 import com.simplematch.contracts.account.v2.ReservationAction;
 import com.simplematch.contracts.account.v2.ReservationCommand;
+import com.simplematch.contracts.v2.V2ContractValidator;
 import java.math.BigDecimal;
 import java.util.UUID;
 
 /** Converts and validates the typed v2 reservation command at the RPC boundary. */
 final class AccountReservationV2CommandAdapter {
   private static final int TWD_SCALE = 4;
+  private static final V2ContractValidator CONTRACT_VALIDATOR = new V2ContractValidator();
 
   private AccountReservationV2CommandAdapter() {}
 
@@ -23,9 +25,7 @@ final class AccountReservationV2CommandAdapter {
     if (request == null) {
       throw new IllegalArgumentException("reservation command is required");
     }
-    if (!"v2".equals(request.getMetadata().getSchemaVersion())) {
-      throw new IllegalArgumentException("schema_version must be v2");
-    }
+    CONTRACT_VALIDATOR.validate(request.getMetadata());
     if (request.getAction() != ReservationAction.RESERVATION_ACTION_RESERVE) {
       throw new IllegalArgumentException("reservation action must be RESERVE");
     }

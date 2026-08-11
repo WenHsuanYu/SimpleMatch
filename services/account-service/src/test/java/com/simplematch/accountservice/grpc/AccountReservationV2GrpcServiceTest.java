@@ -149,6 +149,28 @@ class AccountReservationV2GrpcServiceTest {
         .isZero();
   }
 
+  @DisplayName("v2 reserve rejects malformed event metadata before persistence")
+  @Test
+  void reserveRejectsMalformedEventMetadata() {
+    final TestStreamObserver<AccountLifecycleEvent> observer = new TestStreamObserver<>();
+    final ReservationCommand malformed =
+        validRequest()
+            .toBuilder()
+            .setMetadata(
+                validRequest().getMetadata().toBuilder().setEventId("not-a-uuid").build())
+            .build();
+
+    service.reserve(malformed, observer);
+
+    assertThat(observer.error()).isNotNull();
+    assertThat(Status.fromThrowable(observer.error()).getCode())
+        .isEqualTo(Status.Code.INVALID_ARGUMENT);
+    assertThat(
+            jdbcTemplate.queryForObject(
+                "SELECT COUNT(*) FROM account_service.account_reservations", Integer.class))
+        .isZero();
+  }
+
   private ReservationCommand validRequest() {
     return ReservationCommand.newBuilder()
         .setMetadata(

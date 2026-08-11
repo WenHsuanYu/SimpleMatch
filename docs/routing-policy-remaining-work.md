@@ -334,8 +334,10 @@ end-to-end admission claim follows from this check.
   exposes a v2 server adapter over the existing Account Authority, persists the venue MIC, and
   includes it in retry equivalence. Risk's production reservation client uses the v2 stub with a
   bounded deadline and preserves validation, conflict, unavailable, and internal Account failures.
-  Equivalent retries replay one outcome and conflicting request reuse maps to a typed conflict.
-  Focused contract, Account transaction, and Risk identity tests pass.
+  Equivalent retries replay one outcome and conflicting request reuse maps to a typed conflict. The
+  Account adapter validates the shared v2 metadata envelope before persistence, and the repository
+  caller guard proves non-Account production services do not construct the v1 RPC client. Focused
+  contract, Account transaction, Risk gRPC-boundary, and Risk identity tests pass.
 - **Missing behavior:** Live saga recovery against the deployed services and proof that every
   production deployment has removed the v1 caller remain part of the integrated release gate.
 - **Acceptance criteria:** The Account transaction remains service-owned and no Risk transaction is
