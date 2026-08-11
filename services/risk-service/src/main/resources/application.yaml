@@ -39,14 +39,12 @@ spring:
 simplematch:
   risk-service:
     scheduling-enabled: true
+    market-reference:
+      matching-image-digest: ${SIMPLEMATCH_MATCHING_IMAGE_DIGEST:}
     admission:
-      cdc-metric-name: orders.validated
+      cdc-metric-name: matching.commands
       maximum-cdc-lag-events: 10000
       maximum-metric-age: 30s
-    routing-policy-topic: market-reference.routing-policies
-    routing-policy-consumer:
-      enabled: false
-      maximum-attempts: 3
 
 
 management:

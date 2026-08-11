@@ -1,6 +1,5 @@
 package com.simplematch.riskservice.admission;
 
-import com.simplematch.riskservice.outbox.OutboxRecord;
 import com.simplematch.riskservice.outbox.OutboxRepository;
 import java.time.Clock;
 import java.util.Objects;
@@ -90,8 +89,7 @@ public final class AdmissionLifecycleTransactions {
       }
       return result(existingByBusiness);
     }
-    final AdmissionDeliveryRoute route =
-        routingPolicyResolver.resolve(command, clock.instant());
+    final AdmissionDeliveryRoute route = routingPolicyResolver.resolve(command, clock.instant());
     final AdmissionJournalEntry pending =
         AdmissionJournalEntry.pending(command, route, clock.millis());
     try {
@@ -135,8 +133,7 @@ public final class AdmissionLifecycleTransactions {
     final long now = clock.millis();
     final AdmissionJournalEntry terminal = current.finalizeWith(reservation, now);
     journal.update(terminal, current.lifecycle().version());
-    final OutboxRecord event = events.create(terminal);
-    outbox.insert(event);
+    events.create(terminal).ifPresent(outbox::insert);
     return result(terminal);
   }
 

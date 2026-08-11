@@ -4,6 +4,7 @@ plugins {
 }
 
 dependencies {
+    implementation(project(":shared-java:market-reference-contract"))
     implementation("org.springframework.boot:spring-boot-starter-jdbc")
     implementation("org.springframework.boot:spring-boot-starter-kafka")
     implementation("com.fasterxml.jackson.core:jackson-databind")

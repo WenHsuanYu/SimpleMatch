@@ -11,6 +11,7 @@ import com.simplematch.riskservice.admission.OrderAdmissionApplicationService;
 import com.simplematch.riskservice.bootstrap.RiskServiceRuntime;
 import com.simplematch.riskservice.outbox.OutboxRepository;
 import com.simplematch.riskservice.submission.SubmissionService;
+import com.simplematch.marketreference.VerifiedMarketReferenceArtifact;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -25,6 +26,10 @@ import org.springframework.transaction.support.TransactionTemplate;
     properties = {
       "simplematch.risk-service.grpc.enabled=false",
       "simplematch.risk-service.scheduling-enabled=false",
+      "simplematch.risk-service.market-reference.artifact-location=classpath:/market-reference/market_reference.json",
+      "simplematch.risk-service.market-reference.checksum-location=classpath:/market-reference/market_reference.sha256",
+      "simplematch.risk-service.market-reference.trading-day=2026-08-11",
+      "simplematch.risk-service.market-reference.matching-image-digest=sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
       "spring.main.web-application-type=none"
     })
 @ActiveProfiles("test")
@@ -61,10 +66,11 @@ class RiskServiceApplicationTest {
         .isEqualTo(51052);
   }
 
-  @DisplayName("risk-service keeps policy-aware admission on shared local infrastructure")
+  @DisplayName("risk-service keeps artifact-aware admission on shared local infrastructure")
   @Test
   void contextWiresPolicyAwareAdmissionCollaborators() {
     assertThat(applicationContext.getBean(AdmissionOutboxFactory.class)).isNotNull();
+    assertThat(applicationContext.getBean(VerifiedMarketReferenceArtifact.class)).isNotNull();
     assertThat(applicationContext.getBean(OrderAdmissionApplicationService.class)).isNotNull();
     assertThat(applicationContext.getBeansOfType(SubmissionService.class)).isEmpty();
     assertThat(applicationContext.getBean(OutboxRepository.class)).isNotNull();

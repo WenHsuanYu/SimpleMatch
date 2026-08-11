@@ -3,7 +3,11 @@ package com.simplematch.riskservice.admission;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
-import com.simplematch.contracts.orders.v2.OrderAdmissionAccepted;
+import com.simplematch.contracts.common.v2.OrderType;
+import com.simplematch.contracts.common.v2.Side;
+import com.simplematch.contracts.common.v2.TimeInForce;
+import com.simplematch.contracts.matching.runtime.v1.MatchingCommand;
+import com.simplematch.marketreference.ArtifactIdentity;
 import com.simplematch.riskservice.outbox.OutboxRecord;
 import java.time.Clock;
 import java.time.Instant;
@@ -13,42 +17,61 @@ import java.util.UUID;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 
-/** Tests v2 admission event routing at the outbox boundary. */
+/** Tests final Matching command routing at the Risk outbox boundary. */
 class AdmissionOutboxFactoryTest {
   private static final UUID SNAPSHOT_ID = UUID.randomUUID();
-  private static final UUID POLICY_ID = UUID.randomUUID();
+  private static final ArtifactIdentity ARTIFACT_IDENTITY =
+      new ArtifactIdentity(
+          LocalDate.of(2026, 8, 11),
+          "7cd06c51691bcde248e606ed1adfaddc4bd10ece582a6803fd2f04155a032943");
   private final AdmissionOutboxFactory factory =
       new AdmissionOutboxFactory(
-          "orders.validated",
+          "matching.commands",
           Clock.fixed(Instant.ofEpochMilli(300L), ZoneOffset.UTC));
 
   @DisplayName(
-      "accepted events use a normalized instrument key and agree on route provenance metadata")
+      "accepted new orders use command identity and persist the complete artifact route")
   @Test
-  void acceptedEventUsesPersistedSymbolRoute() throws Exception {
+  void acceptedNewOrderUsesPersistedArtifactRoute() throws Exception {
     final AdmissionJournalEntry entry =
-        accepted(AdmissionDeliveryRoute.assigned(POLICY_ID, 7));
+        accepted(AdmissionDeliveryRoute.assigned(ARTIFACT_IDENTITY, "stable-least-loaded-v1", 7));
 
-    final OutboxRecord record = factory.create(entry);
-    final OrderAdmissionAccepted payload =
-        OrderAdmissionAccepted.parseFrom(record.payloadEnvelope().payload());
+    final OutboxRecord record = factory.create(entry).orElseThrow();
+    final MatchingCommand payload = MatchingCommand.parseFrom(record.payloadEnvelope().payload());
 
-    assertThat(record.routing().topic()).isEqualTo("orders.validated");
-    assertThat(record.routing().messageKey()).isEqualTo("XTAI:2330");
+    assertThat(record.routing().topic()).isEqualTo("matching.commands");
+    assertThat(record.routing().messageKey()).isEqualTo(entry.command().identity().commandId().value().toString());
     assertThat(record.routing().kafkaPartitionId()).isEqualTo(7);
-    assertThat(payload.getRoutingPartition()).isEqualTo(7);
-    assertThat(payload.getRoutingSnapshotId()).isEqualTo(SNAPSHOT_ID.toString());
-    assertThat(payload.getRoutingPolicyId()).isEqualTo(POLICY_ID.toString());
+    assertThat(payload.getHeader().getPartitionId()).isEqualTo(7);
+    assertThat(payload.getHeader().getArtifactIdentity().getTradingDay()).isEqualTo("2026-08-11");
+    assertThat(payload.getHeader().getArtifactIdentity().getContentSha256())
+        .isEqualTo(ARTIFACT_IDENTITY.contentSha256());
+    assertThat(payload.getNewOrder().getOrderType()).isEqualTo(OrderType.ORDER_TYPE_LIMIT);
+    assertThat(payload.getNewOrder().getTimeInForce()).isEqualTo(TimeInForce.TIME_IN_FORCE_ROD);
+    assertThat(payload.getNewOrder().getSide()).isEqualTo(Side.SIDE_BUY);
   }
 
-  @DisplayName("accepted events reject a missing persisted partition instead of encoding zero")
+  @DisplayName("accepted commands reject a missing persisted artifact identity")
   @Test
-  void acceptedEventRequiresPersistedPartition() {
-    final AdmissionJournalEntry entry = accepted(AdmissionDeliveryRoute.unassigned());
+  void acceptedCommandRequiresPersistedArtifactIdentity() {
+    final AdmissionJournalEntry entry = accepted(AdmissionDeliveryRoute.assigned(7));
 
     assertThatThrownBy(() -> factory.create(entry))
         .isInstanceOf(IllegalStateException.class)
-        .hasMessage("accepted admission requires a persisted routing partition");
+        .hasMessage("matching command requires a persisted artifact identity");
+  }
+
+  @DisplayName("rejected admissions do not create a command that could reach Matching")
+  @Test
+  void rejectedAdmissionDoesNotCreateMatchingCommand() {
+    final AdmissionJournalEntry rejected =
+        AdmissionJournalEntry.pending(
+                command(),
+                AdmissionDeliveryRoute.assigned(ARTIFACT_IDENTITY, "stable-least-loaded-v1", 7),
+                100L)
+            .finalizeWith(ReservationOutcome.rejected("INSUFFICIENT", "cash"), 200L);
+
+    assertThat(factory.create(rejected)).isEmpty();
   }
 
   private AdmissionJournalEntry accepted(AdmissionDeliveryRoute route) {
@@ -71,7 +94,7 @@ class AdmissionOutboxFactoryTest {
                 new AdmissionOrder.LimitPriceUnits(1_000_000L),
                 new AdmissionOrder.OrderTypeCode("LIMIT"),
                 new AdmissionOrder.TimeInForceCode("ROD")),
-            LocalDate.of(2026, 7, 28)),
+            ARTIFACT_IDENTITY.tradingDay()),
         new AdmissionFixIdentity(
             new AdmissionFixIdentity.SenderCompId("SENDER"),
             new AdmissionFixIdentity.TargetCompId("TARGET"),

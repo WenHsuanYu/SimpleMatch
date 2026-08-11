@@ -15,6 +15,10 @@ import org.springframework.test.context.DynamicPropertySource;
     properties = {
       "simplematch.risk-service.grpc.enabled=false",
       "simplematch.risk-service.scheduling-enabled=false",
+      "simplematch.risk-service.market-reference.artifact-location=classpath:/market-reference/market_reference.json",
+      "simplematch.risk-service.market-reference.checksum-location=classpath:/market-reference/market_reference.sha256",
+      "simplematch.risk-service.market-reference.trading-day=2026-08-11",
+      "simplematch.risk-service.market-reference.matching-image-digest=sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
       "spring.main.web-application-type=none"
     })
 @ActiveProfiles("local")

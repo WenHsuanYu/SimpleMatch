@@ -1,5 +1,6 @@
 package com.simplematch.riskservice.store;
 
+import com.simplematch.marketreference.ArtifactIdentity;
 import com.simplematch.riskservice.admission.AdmissionCommand;
 import com.simplematch.riskservice.admission.AdmissionDecision;
 import com.simplematch.riskservice.admission.AdmissionDeliveryRoute;
@@ -19,8 +20,7 @@ import org.springframework.jdbc.core.RowMapper;
 
 /** Rehydrates semantic admission values from the legacy wide journal row. */
 final class AdmissionJournalRowMapper {
-  static final RowMapper<AdmissionJournalEntry> MAPPER =
-      (resultSet, row) -> fromRow(resultSet);
+  static final RowMapper<AdmissionJournalEntry> MAPPER = (resultSet, row) -> fromRow(resultSet);
 
   private AdmissionJournalRowMapper() {}
 
@@ -31,12 +31,26 @@ final class AdmissionJournalRowMapper {
         command,
         new AdmissionDeliveryRoute(
             resultSet.getObject("routing_partition", Integer.class),
-            resultSet.getObject("routing_policy_id", UUID.class)),
+            resultSet.getObject("routing_policy_id", UUID.class),
+            artifactIdentity(resultSet),
+            resultSet.getString("routing_algorithm_version")),
         new AdmissionLifecycle(
             decision,
             resultSet.getLong("version"),
             resultSet.getLong("created_at_unix_ms"),
             resultSet.getLong("updated_at_unix_ms")));
+  }
+
+  private static ArtifactIdentity artifactIdentity(ResultSet resultSet) throws SQLException {
+    final LocalDate tradingDay = resultSet.getObject("artifact_trading_day", LocalDate.class);
+    final String checksum = resultSet.getString("artifact_content_sha256");
+    if (tradingDay == null && checksum == null) {
+      return null;
+    }
+    if (tradingDay == null || checksum == null) {
+      throw new IllegalArgumentException("admission artifact identity is incomplete");
+    }
+    return new ArtifactIdentity(tradingDay, checksum);
   }
 
   private static AdmissionCommand command(ResultSet resultSet) throws SQLException {
