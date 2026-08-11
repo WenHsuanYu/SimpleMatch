@@ -1,0 +1,33 @@
+syntax = "proto3";
+
+package simplematch.marketdata.runtime.v1;
+
+option java_multiple_files = true;
+option java_package = "com.simplematch.contracts.marketdata.runtime.v1";
+
+// One aggregate quantity at a price in the public five-level book view.
+message PriceLevel {
+  int64 price_units = 1;
+  int64 quantity_shares = 2;
+}
+
+// A complete, independently usable public view produced from one Matching event.
+// Phase 1 publishes snapshots only, so a slow subscriber never needs an earlier delta.
+message MarketDataSnapshot {
+  int32 schema_version = 1;
+  string event_id = 2;
+  string source_matching_event_id = 3;
+  string trading_session_id = 4;
+  string venue_mic = 5;
+  string symbol = 6;
+  int64 instrument_sequence = 7;
+  int32 source_partition_id = 8;
+  int64 source_kafka_offset = 9;
+  int64 generated_at_unix_ms = 10;
+  bool is_snapshot = 11;
+  bool has_last_trade = 12;
+  int64 last_trade_price_units = 13;
+  int64 last_trade_quantity_shares = 14;
+  repeated PriceLevel bids = 15;
+  repeated PriceLevel asks = 16;
+}

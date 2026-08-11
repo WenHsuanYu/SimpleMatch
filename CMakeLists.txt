@@ -44,12 +44,19 @@ find_package(OpenSSL REQUIRED)
 set(SIMPLEMATCH_ROUTING_PROTO_FILES
     ${CMAKE_CURRENT_SOURCE_DIR}/proto/common_v2.proto
     ${CMAKE_CURRENT_SOURCE_DIR}/proto/orders_v2.proto
-    ${CMAKE_CURRENT_SOURCE_DIR}/proto/routing_policy_v2.proto)
+    ${CMAKE_CURRENT_SOURCE_DIR}/proto/routing_policy_v2.proto
+    ${CMAKE_CURRENT_SOURCE_DIR}/proto/matching_runtime_v1.proto)
 
 add_library(simplematch_matching_ingress STATIC
     matching-engine/src/critical_order_ingress.cpp
     matching-engine/src/routing_policy_ingress.cpp
-    matching-engine/src/market_reference_artifact.cpp)
+    matching-engine/src/market_reference_artifact.cpp
+    matching-engine/src/deterministic_matching_core.cpp
+    matching-engine/src/matching_command_decoder.cpp
+    matching-engine/src/matching_event_encoder.cpp
+    matching-engine/src/partition_ownership_permit.cpp
+    matching-engine/src/partition_replay_coordinator.cpp
+    matching-engine/src/matching_runtime.cpp)
 target_include_directories(simplematch_matching_ingress
     PUBLIC matching-engine/include
     PRIVATE ${CMAKE_CURRENT_BINARY_DIR})
@@ -72,7 +79,13 @@ if(BUILD_TESTING)
   add_executable(simplematch_matching_ingress_tests
       matching-engine/tests/critical_order_ingress_test.cpp
       matching-engine/tests/routing_policy_ingress_test.cpp
-      matching-engine/tests/market_reference_artifact_test.cpp)
+      matching-engine/tests/market_reference_artifact_test.cpp
+      matching-engine/tests/deterministic_matching_core_test.cpp
+      matching-engine/tests/matching_command_decoder_test.cpp
+      matching-engine/tests/matching_event_encoder_test.cpp
+      matching-engine/tests/partition_ownership_permit_test.cpp
+      matching-engine/tests/partition_replay_coordinator_test.cpp
+      matching-engine/tests/matching_runtime_test.cpp)
   target_link_libraries(simplematch_matching_ingress_tests
       PRIVATE simplematch_matching_ingress
               GTest::gtest
