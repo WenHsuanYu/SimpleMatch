@@ -331,10 +331,11 @@ end-to-end admission claim follows from this check.
   values, reservation terms, and typed outcomes without legacy string parsing in domain behavior.
 - **Current evidence:** The typed v2 Protobuf contract carries the reservation identity, venue-qualified
   instrument, side, whole-share quantity, fixed-point price/notional, and lifecycle outcome. Account
-  exposes a v2 server adapter over the existing Account Authority; Risk's production reservation
-  client uses the v2 stub with a bounded deadline. Equivalent retries replay one outcome and
-  conflicting request reuse maps to a typed conflict. Focused contract, Account transaction, and
-  Risk identity tests pass.
+  exposes a v2 server adapter over the existing Account Authority, persists the venue MIC, and
+  includes it in retry equivalence. Risk's production reservation client uses the v2 stub with a
+  bounded deadline and preserves validation, conflict, unavailable, and internal Account failures.
+  Equivalent retries replay one outcome and conflicting request reuse maps to a typed conflict.
+  Focused contract, Account transaction, and Risk identity tests pass.
 - **Missing behavior:** Live saga recovery against the deployed services and proof that every
   production deployment has removed the v1 caller remain part of the integrated release gate.
 - **Acceptance criteria:** The Account transaction remains service-owned and no Risk transaction is
@@ -393,7 +394,8 @@ end-to-end admission claim follows from this check.
 - **Current evidence:** `services/query-service` now provides the separate Spring service, Flyway
   inbox/checkpoint/read-model schema, asynchronous final Matching and Account lifecycle consumers,
   versioned read APIs, active-artifact installation seam, freshness metadata, replay reset, and
-  optional Redis read-through fallback. Focused H2 projection tests pass.
+  optional Redis read-through fallback. Cache read and write failures fall back to the durable
+  PostgreSQL projection. Focused H2 projection and cache-fallback tests pass.
 - **Missing behavior:** Live Kafka/PostgreSQL/Redis deployment and outage/replay certification remain
   part of PD-1 and the release certification gate. The service-context test also proves the shared
   canonical-DSN/pool adapter and no competing `spring.datasource.*` source.
@@ -461,10 +463,11 @@ end-to-end admission claim follows from this check.
   ownership and fencing remain in KD-1.
 - **Current evidence:** `deploy/k8s/base` and local/test/staging/production overlays now cover the
   Java services, retained QuickFIX/Matching resources, service ConfigMaps/RBAC, one-shot service-
-  scoped Flyway Jobs, readiness/liveness probes, non-root/read-only containers, NetworkPolicy,
-  digest-pinned promotion templates, external Secret contracts, Kafka SASL/TLS, and Account/Risk
-  gRPC mTLS. `scripts/test-kubernetes-overlays.sh` renders and structurally validates all four
-  overlays. PostgreSQL URI TLS parameters are preserved by the shared adapter.
+  scoped Flyway Jobs, startup/readiness/liveness probes, non-root/read-only containers, scoped
+  NetworkPolicy, digest-pinned promotion templates, external Secret contracts, Kafka SASL/TLS,
+  PostgreSQL CA mounts/TLS parameters, and Account/Risk gRPC mTLS. `scripts/test-kubernetes-
+  overlays.sh` renders and structurally validates all four overlays. PostgreSQL URI TLS parameters
+  are preserved by the shared adapter.
 - **Missing behavior:** The external Flyway runner, real registry digests/endpoints/CIDRs, retained
   Debezium deployment object, live dependency-outage smoke, and environment-owned collector/agent
   instrumentation still require staging/production certification. The committed overlay values are

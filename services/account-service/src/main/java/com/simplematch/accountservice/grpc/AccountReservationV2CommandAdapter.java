@@ -53,6 +53,7 @@ final class AccountReservationV2CommandAdapter {
     final long priceUnits = request.getLimitPrice().getUnits();
     return new ReservationTerms(
         new ReservationTerms.InstrumentSymbol(request.getInstrument().getSymbol()),
+        new ReservationTerms.VenueMic(request.getInstrument().getVenueMic()),
         side,
         new ReservationTerms.ReservationQuantity(BigDecimal.valueOf(quantity)),
         priceUnits == 0

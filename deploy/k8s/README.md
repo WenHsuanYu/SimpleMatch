@@ -43,9 +43,10 @@ and certificate paths only; they never contain a DSN, password, SASL value, or p
 
 Each service Secret named `{service}-secrets` supplies `postgres_dsn` for its owner schema. Staging
 and production values must use PostgreSQL TLS, for example a JDBC DSN with
-`sslmode=verify-full` and `sslrootcert=/etc/simplematch/postgres-tls/ca.crt`. The canonical
-`simplematch.postgres.dsn` property is supplied through `SIMPLEMATCH_POSTGRES_DSN`; no
-`spring.datasource.*` key is used.
+`sslmode=verify-full` and `sslrootcert=/etc/simplematch/postgres-tls/ca.crt`. The secure overlay
+mounts `simplematch-postgres-tls` with a required `ca.crt` at that path, so a missing CA fails pod
+startup. The canonical `simplematch.postgres.dsn` property is supplied through
+`SIMPLEMATCH_POSTGRES_DSN`; no `spring.datasource.*` key is used.
 
 `account-service-tls` and `risk-service-tls` contain `tls.crt`, `tls.key`, and `ca.crt`. The
 staging/production overlay enables mTLS and requires all three paths. `simplematch-kafka-tls`

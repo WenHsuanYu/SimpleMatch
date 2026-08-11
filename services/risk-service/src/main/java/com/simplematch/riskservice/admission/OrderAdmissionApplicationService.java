@@ -28,6 +28,11 @@ public class OrderAdmissionApplicationService {
     final ReservationOutcome reservation;
     try {
       reservation = account.reserve(validated);
+    } catch (AdmissionValidationException
+        | AdmissionConflictException
+        | AdmissionUnavailableException
+        | AdmissionAccountFailureException knownFailure) {
+      throw knownFailure;
     } catch (RuntimeException failure) {
       throw new AdmissionUnavailableException(failure);
     }

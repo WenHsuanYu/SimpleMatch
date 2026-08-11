@@ -109,6 +109,27 @@ class AccountReservationV2GrpcServiceTest {
         .isEqualTo(Status.Code.ALREADY_EXISTS);
   }
 
+  @DisplayName("v2 reserve treats a changed venue as a request conflict")
+  @Test
+  void reserveRejectsChangedVenueForTheSameCommand() {
+    service.reserve(validRequest(), new TestStreamObserver<>());
+    final ReservationCommand conflicting =
+        validRequest()
+            .toBuilder()
+            .setInstrument(VenueInstrument.newBuilder().setSymbol("2330").setVenueMic("XTAI2"))
+            .build();
+    final TestStreamObserver<AccountLifecycleEvent> observer = new TestStreamObserver<>();
+
+    service.reserve(conflicting, observer);
+
+    assertThat(Status.fromThrowable(observer.error()).getCode())
+        .isEqualTo(Status.Code.ALREADY_EXISTS);
+    assertThat(
+            jdbcTemplate.queryForObject(
+                "SELECT venue_mic FROM account_service.account_reservations", String.class))
+        .isEqualTo("XTAI");
+  }
+
   @DisplayName("v2 reserve rejects non-reserve actions before persistence")
   @Test
   void reserveRejectsUnsupportedAction() {

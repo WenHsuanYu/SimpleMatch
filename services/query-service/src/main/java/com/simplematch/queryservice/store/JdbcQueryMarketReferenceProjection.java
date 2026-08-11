@@ -10,7 +10,7 @@ import java.sql.Date;
 import java.util.Map;
 import java.util.stream.Collectors;
 import org.springframework.jdbc.core.ConnectionCallback;
-import org.springframework.jdbc.core.JdbcTemplate;
+import org.springframework.jdbc.core.JdbcOperations;
 
 /** Replaces active market-reference rows from one verified final artifact. */
 final class JdbcQueryMarketReferenceProjection {
@@ -23,7 +23,7 @@ final class JdbcQueryMarketReferenceProjection {
   private JdbcQueryMarketReferenceProjection() {}
 
   static void install(
-      JdbcTemplate jdbcTemplate,
+      JdbcOperations jdbcTemplate,
       VerifiedMarketReferenceArtifact verifiedArtifact,
       long installedAtUnixMs) {
     final ArtifactIdentity identity = verifiedArtifact.identity();
@@ -54,7 +54,7 @@ final class JdbcQueryMarketReferenceProjection {
   }
 
   private static void insert(
-      JdbcTemplate jdbcTemplate,
+      JdbcOperations jdbcTemplate,
       ArtifactIdentity identity,
       ArtifactInstrument instrument,
       Integer routingPartition,
@@ -95,7 +95,7 @@ final class JdbcQueryMarketReferenceProjection {
     }
   }
 
-  private static boolean isPostgres(JdbcTemplate jdbcTemplate) {
+  private static boolean isPostgres(JdbcOperations jdbcTemplate) {
     return Boolean.TRUE.equals(
         jdbcTemplate.execute(
             (ConnectionCallback<Boolean>)

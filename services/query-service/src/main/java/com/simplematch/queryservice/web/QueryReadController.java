@@ -10,6 +10,8 @@ import java.time.LocalDate;
 import java.util.List;
 import java.util.Locale;
 import java.util.Optional;
+import java.util.function.Supplier;
+import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
@@ -21,14 +23,16 @@ import org.springframework.web.bind.annotation.RestController;
 @RequestMapping("/api/v1")
 public final class QueryReadController {
   private final QueryProjectionStore store;
-  private final QueryReadCache cache;
+  private final Supplier<QueryReadCache> cache;
   private final String cacheKeyPrefix;
 
   /** Creates the query API without a Kafka dependency or critical-path callback. */
   public QueryReadController(
-      QueryProjectionStore store, QueryReadCache cache, QueryServiceProperties properties) {
+      QueryProjectionStore store,
+      ObjectProvider<QueryReadCache> cacheProvider,
+      QueryServiceProperties properties) {
     this.store = store;
-    this.cache = cache;
+    this.cache = cacheProvider::getObject;
     this.cacheKeyPrefix = properties.redis().keyPrefix();
   }
 
@@ -82,15 +86,31 @@ public final class QueryReadController {
   }
 
   private ResponseEntity<?> read(String key, Optional<?> durableValue) {
-    final Optional<JsonNode> cached = cache.get(key);
+    final Optional<JsonNode> cached = readCache(key);
     if (cached.isPresent()) {
       return ResponseEntity.ok(cached.get());
     }
     if (durableValue.isEmpty()) {
       return ResponseEntity.notFound().build();
     }
-    cache.put(key, durableValue.get());
+    writeCache(key, durableValue.get());
     return ResponseEntity.ok(durableValue.get());
+  }
+
+  private Optional<JsonNode> readCache(String key) {
+    try {
+      return cache.get().get(key);
+    } catch (RuntimeException ignored) {
+      return Optional.empty();
+    }
+  }
+
+  private void writeCache(String key, Object value) {
+    try {
+      cache.get().put(key, value);
+    } catch (RuntimeException ignored) {
+      // Redis is an acceleration layer; a cache outage must not fail a durable read.
+    }
   }
 
   private String cacheKey(String type, String... values) {

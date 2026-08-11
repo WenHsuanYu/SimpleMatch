@@ -13,7 +13,9 @@ spec:
     - Egress
   ingress:
     - from:
-        - podSelector: {}
+        - podSelector:
+            matchLabels:
+              app.kubernetes.io/part-of: simplematch
       ports:
         - protocol: TCP
           port: 8080
@@ -25,7 +27,9 @@ spec:
           port: 50052
   egress:
     - to:
-        - podSelector: {}
+        - podSelector:
+            matchLabels:
+              app.kubernetes.io/part-of: simplematch
       ports:
         - protocol: TCP
           port: 8080

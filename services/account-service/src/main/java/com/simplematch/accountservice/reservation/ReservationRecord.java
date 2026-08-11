@@ -75,6 +75,11 @@ public record ReservationRecord(
     return terms.symbol().value();
   }
 
+  /** Returns the venue MIC that qualifies the reserved instrument. */
+  public String venueMic() {
+    return terms.venueMic().value();
+  }
+
   /** Returns the requested order side. */
   public Side side() {
     return terms.side();

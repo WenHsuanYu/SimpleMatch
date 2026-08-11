@@ -30,7 +30,7 @@ class AccountServiceFlywayMigrationTest {
     assertThat(hasTable(jdbcTemplate, "MATCHING_EVENT_CONSUMER_PROGRESS")).isTrue();
     assertThat(hasTable(jdbcTemplate, "MATCHING_EVENT_CONSUMER_QUARANTINES")).isTrue();
     assertThat(hasColumn(jdbcTemplate, "OUTBOX", "CREATED_AT")).isTrue();
-    assertThat(appliedMigrationCount(jdbcTemplate)).isEqualTo(7);
+    assertThat(appliedMigrationCount(jdbcTemplate)).isEqualTo(8);
   }
 
   @DisplayName("a second account-service migration is a no-op")
@@ -55,10 +55,10 @@ class AccountServiceFlywayMigrationTest {
         jdbcTemplate.update(
             """
                                 INSERT INTO account_service.account_reservations (
-                                  reservation_id, request_id, order_id, account_id, symbol, side, quantity,
+                                  reservation_id, request_id, order_id, account_id, symbol, venue_mic, side, quantity,
                                   reserved_notional, status, created_at_unix_ms, updated_at_unix_ms,
                                   remaining_quantity, filled_quantity, version
-                                ) VALUES ('reservation-valid', 'request-valid', 'order-valid', ?, '2330',
+                                ) VALUES ('reservation-valid', 'request-valid', 'order-valid', ?, '2330', 'XTAI',
                                   'SIDE_BUY', 1, 0, 'RESERVATION_STATUS_ACCEPTED', 1, 1, 1, 0, 0)
                                 """,
             UUID.fromString(ACCOUNT_ID));
@@ -77,9 +77,9 @@ class AccountServiceFlywayMigrationTest {
                 jdbcTemplate.update(
                     """
                                         INSERT INTO account_service.account_reservations (
-                                          reservation_id, request_id, order_id, account_id, symbol, side, quantity,
+                                          reservation_id, request_id, order_id, account_id, symbol, venue_mic, side, quantity,
                                           reserved_notional, status, created_at_unix_ms, updated_at_unix_ms
-                                        ) VALUES ('reservation-1', 'request-1', 'order-1', ?, '2330',
+                                        ) VALUES ('reservation-1', 'request-1', 'order-1', ?, '2330', 'XTAI',
                                           'SIDE_UNSPECIFIED', 1, 0, 'RESERVATION_STATUS_ACCEPTED', 1, 1)
                                         """,
                     UUID.fromString(ACCOUNT_ID)))
@@ -97,9 +97,9 @@ class AccountServiceFlywayMigrationTest {
                 jdbcTemplate.update(
                     """
                                         INSERT INTO account_service.account_reservations (
-                                          reservation_id, request_id, order_id, account_id, symbol, side, quantity,
+                                          reservation_id, request_id, order_id, account_id, symbol, venue_mic, side, quantity,
                                           reserved_notional, status, created_at_unix_ms, updated_at_unix_ms
-                                        ) VALUES ('reservation-2', 'request-2', 'order-2', ?, '2330',
+                                        ) VALUES ('reservation-2', 'request-2', 'order-2', ?, '2330', 'XTAI',
                                           'SIDE_BUY', 0, 0, 'RESERVATION_STATUS_ACCEPTED', 1, 1)
                                         """,
                     UUID.fromString(ACCOUNT_ID)))

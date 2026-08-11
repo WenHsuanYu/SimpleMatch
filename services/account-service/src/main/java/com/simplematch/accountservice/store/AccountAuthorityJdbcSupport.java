@@ -72,6 +72,7 @@ final class AccountAuthorityJdbcSupport {
         new ReservationOwnership(accountId(rs)),
         new ReservationTerms(
             new ReservationTerms.InstrumentSymbol(rs.getString("symbol")),
+            new ReservationTerms.VenueMic(rs.getString("venue_mic")),
             Side.valueOf(rs.getString("side")),
             new ReservationTerms.ReservationQuantity(rs.getBigDecimal("quantity")),
             new ReservationTerms.LimitPrice(rs.getBigDecimal("limit_price"))),
@@ -140,7 +141,7 @@ final class AccountAuthorityJdbcSupport {
   String reservationSelect() {
     return
         """
-                SELECT reservation_id, request_id, order_id, account_id, symbol, side, quantity, limit_price,
+                SELECT reservation_id, request_id, order_id, account_id, symbol, venue_mic, side, quantity, limit_price,
                   reserved_notional, status, reason_code, reason_text, created_at_unix_ms, updated_at_unix_ms,
                   remaining_quantity, filled_quantity, version
                 FROM account_service.account_reservations

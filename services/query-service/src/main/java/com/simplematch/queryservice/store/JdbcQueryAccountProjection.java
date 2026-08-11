@@ -2,7 +2,7 @@ package com.simplematch.queryservice.store;
 
 import com.simplematch.contracts.account.v2.AccountLifecycleEvent;
 import org.springframework.jdbc.core.ConnectionCallback;
-import org.springframework.jdbc.core.JdbcTemplate;
+import org.springframework.jdbc.core.JdbcOperations;
 
 /** Writes the latest Account lifecycle summary for the query read model. */
 final class JdbcQueryAccountProjection {
@@ -15,7 +15,7 @@ final class JdbcQueryAccountProjection {
   private JdbcQueryAccountProjection() {}
 
   static void project(
-      JdbcTemplate jdbcTemplate,
+      JdbcOperations jdbcTemplate,
       AccountLifecycleEvent event,
       String eventId,
       QueryProjectionPosition position) {
@@ -53,7 +53,7 @@ final class JdbcQueryAccountProjection {
     }
   }
 
-  private static boolean isPostgres(JdbcTemplate jdbcTemplate) {
+  private static boolean isPostgres(JdbcOperations jdbcTemplate) {
     return Boolean.TRUE.equals(
         jdbcTemplate.execute(
             (ConnectionCallback<Boolean>)

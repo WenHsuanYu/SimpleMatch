@@ -45,6 +45,7 @@ This repo's Java dependencies use an explicit ownership model.
     :services:account-service:dependencies \
     :services:persistence:dependencies \
     :services:quickfix-gateway:dependencies \
+    :services:query-service:dependencies \
     :services:risk-service:dependencies \
     --write-locks
   ./gradlew -q -p build-logic dependencies --write-locks
@@ -57,6 +58,10 @@ This repo's Java dependencies use an explicit ownership model.
   `--stacktrace` for failure diagnosis.
 - After changing dependency wiring, validate with a focused module compile or test before running
   broader static analysis.
+- `services/query-service` owns the CQRS read-side runtime dependencies: the shared market-reference
+  contract, Spring JDBC, Kafka, Redis, Web, and the service-owned Flyway plugin. Its PostgreSQL
+  datasource is supplied by the shared `simplematch-config` auto-configuration, not by a second
+  datasource implementation.
 - Flyway and H2 runtime/test dependencies are versionless catalog aliases and resolve exclusively
   through the Spring Boot BOM. `protoc` remains explicitly versioned because the protobuf BOM does
   not manage the compiler artifact. The Flyway Gradle plugin remains an explicit build-tool

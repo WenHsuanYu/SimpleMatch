@@ -83,6 +83,7 @@ class OrderAdmissionApplicationServiceTransactionTest {
     account.fail = false;
     account.failuresRemaining = 0;
     account.calls = 0;
+    account.failure = null;
     routingResolver.reset();
   }
 
@@ -356,6 +357,16 @@ class OrderAdmissionApplicationServiceTransactionTest {
     assertThat(
             jdbcTemplate.queryForObject("SELECT COUNT(*) FROM risk_service.outbox", Integer.class))
         .isZero();
+  }
+
+  @DisplayName("account validation is not mislabeled as an unavailable dependency")
+  @Test
+  void accountValidationRemainsValidation() {
+    account.failure =
+        new AdmissionValidationException(AdmissionFailure.invalidCommand("invalid account facts"));
+
+    assertThatThrownBy(() -> admissions.admit(command()))
+        .isInstanceOf(AdmissionValidationException.class);
   }
 
   @DisplayName("pending admission recovery retries the account call and finalizes once")
@@ -704,6 +715,7 @@ class OrderAdmissionApplicationServiceTransactionTest {
     private boolean fail;
     private int failuresRemaining;
     private int calls;
+    private RuntimeException failure;
 
     @Override
     public ReservationOutcome reserve(AdmissionCommand command) {
@@ -711,6 +723,9 @@ class OrderAdmissionApplicationServiceTransactionTest {
       if (fail || failuresRemaining > 0) {
         failuresRemaining--;
         throw new IllegalStateException("simulated account outage");
+      }
+      if (failure != null) {
+        throw failure;
       }
       return ReservationOutcome.accepted(UUID.randomUUID());
     }

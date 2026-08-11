@@ -55,6 +55,11 @@ public record ReserveOperation(ReservationRequestIdentity identity, ReservationT
     return terms.symbol().value();
   }
 
+  /** Returns the venue MIC that qualifies the reserved instrument. */
+  public String venueMic() {
+    return terms.venueMic().value();
+  }
+
   /** Returns the order side. */
   public Side side() {
     return terms.side();

@@ -80,16 +80,17 @@ public class JdbcAccountAuthorityLifecycleWriter implements AccountAuthorityLife
     jdbc.update(
         """
                         INSERT INTO account_service.account_reservations (
-                          reservation_id, request_id, order_id, account_id, symbol, side, quantity, limit_price,
+                          reservation_id, request_id, order_id, account_id, symbol, venue_mic, side, quantity, limit_price,
                           reserved_notional, status, reason_code, reason_text, created_at_unix_ms, updated_at_unix_ms,
                           remaining_quantity, filled_quantity, version)
-                        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         """,
         reservation.reservationId(),
         reservation.requestId(),
         reservation.orderId(),
         reservation.accountIdentity().value(),
         reservation.symbol(),
+        reservation.venueMic(),
         reservation.side().name(),
         reservation.quantity(),
         reservation.limitPrice(),

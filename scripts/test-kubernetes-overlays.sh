@@ -30,10 +30,23 @@ required_deployments.each do |name|
   container = pod.fetch("spec").fetch("containers").first
   abort "#{overlay}: #{name} has no service account" unless pod.fetch("spec").key?("serviceAccountName")
   abort "#{overlay}: #{name} has no readiness probe" unless container.key?("readinessProbe")
+  abort "#{overlay}: #{name} has no startup probe" unless container.key?("startupProbe")
   abort "#{overlay}: #{name} has no liveness probe" unless container.key?("livenessProbe")
   security = container.fetch("securityContext")
   abort "#{overlay}: #{name} is not non-root" unless security.fetch("runAsNonRoot")
   abort "#{overlay}: #{name} is not read-only root" unless security.fetch("readOnlyRootFilesystem")
+end
+
+network_policy = resources.fetch(["NetworkPolicy", "simplematch-java-services"])
+network_policy.fetch("spec").fetch("ingress").each do |rule|
+  rule.fetch("from", []).each do |source|
+    abort "#{overlay}: NetworkPolicy contains an unrestricted ingress pod selector" if source["podSelector"] == {}
+  end
+end
+network_policy.fetch("spec").fetch("egress").each do |rule|
+  rule.fetch("to", []).each do |destination|
+    abort "#{overlay}: NetworkPolicy contains an unrestricted egress pod selector" if destination["podSelector"] == {}
+  end
 end
 
 %w[account-service risk-service persistence market-data-projection marketdata-publisher query-service].each do |name|
@@ -48,6 +61,15 @@ if %w[staging production].include?(overlay)
   required_deployments.each do |name|
     image = resources.fetch(["Deployment", name]).fetch("spec").fetch("template").fetch("spec").fetch("containers").first.fetch("image")
     abort "#{overlay}: #{name} image is not digest pinned" unless image.match?(/@sha256:[0-9a-f]{64}\z/)
+    pod_spec = resources.fetch(["Deployment", name]).fetch("spec").fetch("template").fetch("spec")
+    container = pod_spec.fetch("containers").first
+    postgres_dsn = container.fetch("env").find { |entry| entry["name"] == "SIMPLEMATCH_POSTGRES_DSN" }
+    abort "#{overlay}: #{name} has no secret-backed PostgreSQL DSN" unless postgres_dsn&.dig("valueFrom", "secretKeyRef")
+    postgres_mount = container.fetch("volumeMounts").find { |entry| entry["name"] == "postgres-tls" }
+    abort "#{overlay}: #{name} has no PostgreSQL CA mount" unless postgres_mount&.fetch("mountPath") == "/etc/simplematch/postgres-tls"
+    postgres_volume = pod_spec.fetch("volumes").find { |entry| entry["name"] == "postgres-tls" }
+    postgres_secret = postgres_volume&.dig("secret")
+    abort "#{overlay}: #{name} does not require the PostgreSQL CA Secret" unless postgres_secret&.fetch("secretName") == "simplematch-postgres-tls" && postgres_secret.fetch("optional") == false
   end
   %w[account-service risk-service persistence market-data-projection query-service].each do |name|
     env = resources.fetch(["Deployment", name]).fetch("spec").fetch("template").fetch("spec").fetch("containers").first.fetch("env")

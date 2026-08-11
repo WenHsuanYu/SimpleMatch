@@ -33,16 +33,4 @@
     <Class name="com.simplematch.quickfixgateway.wal.WalReplayService"/>
     <Field name="walAppender"/>
   </Match>
-  <!-- Owner: query projection. Private Spring JDBC collaborator, not a domain payload. -->
-  <Match>
-    <Bug pattern="EI_EXPOSE_REP2"/>
-    <Class name="com.simplematch.queryservice.store.JdbcQueryProjectionStore"/>
-    <Field name="jdbcTemplate"/>
-  </Match>
-  <!-- Owner: query reads. Private cache port has no accessor and is not a response payload. -->
-  <Match>
-    <Bug pattern="EI_EXPOSE_REP2"/>
-    <Class name="com.simplematch.queryservice.web.QueryReadController"/>
-    <Field name="cache"/>
-  </Match>
 </FindBugsFilter>

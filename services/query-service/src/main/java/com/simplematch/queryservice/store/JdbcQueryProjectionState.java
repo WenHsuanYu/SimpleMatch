@@ -5,7 +5,7 @@ import java.util.List;
 import java.util.Optional;
 import org.springframework.dao.DuplicateKeyException;
 import org.springframework.jdbc.core.ConnectionCallback;
-import org.springframework.jdbc.core.JdbcTemplate;
+import org.springframework.jdbc.core.JdbcOperations;
 
 /** Owns inbox, contiguous checkpoint, and replay state for JDBC query projections. */
 final class JdbcQueryProjectionState {
@@ -15,7 +15,7 @@ final class JdbcQueryProjectionState {
   private JdbcQueryProjectionState() {}
 
   static boolean claimInbox(
-      JdbcTemplate jdbcTemplate,
+      JdbcOperations jdbcTemplate,
       String eventId,
       String sourceTopic,
       byte[] payloadSha256,
@@ -50,7 +50,7 @@ final class JdbcQueryProjectionState {
   }
 
   static void assertContiguous(
-      JdbcTemplate jdbcTemplate, String sourceTopic, QueryProjectionPosition position) {
+      JdbcOperations jdbcTemplate, String sourceTopic, QueryProjectionPosition position) {
     final List<Checkpoint> checkpoints =
         jdbcTemplate.query(
             "SELECT last_processed_offset, recovery_state "
@@ -75,12 +75,12 @@ final class JdbcQueryProjectionState {
   }
 
   static void advance(
-      JdbcTemplate jdbcTemplate, String sourceTopic, QueryProjectionPosition position) {
+      JdbcOperations jdbcTemplate, String sourceTopic, QueryProjectionPosition position) {
     upsertCheckpoint(jdbcTemplate, sourceTopic, position, READY);
   }
 
   static void markRecoveryRequired(
-      JdbcTemplate jdbcTemplate, String sourceTopic, QueryProjectionPosition position) {
+      JdbcOperations jdbcTemplate, String sourceTopic, QueryProjectionPosition position) {
     final Long lastOffset =
         jdbcTemplate
             .query(
@@ -101,7 +101,7 @@ final class JdbcQueryProjectionState {
         GAP_DETECTED);
   }
 
-  static void resetForReplay(JdbcTemplate jdbcTemplate) {
+  static void resetForReplay(JdbcOperations jdbcTemplate) {
     jdbcTemplate.update("DELETE FROM query_service.execution_read_model");
     jdbcTemplate.update("DELETE FROM query_service.order_read_model");
     jdbcTemplate.update("DELETE FROM query_service.account_summary_read_model");
@@ -110,7 +110,7 @@ final class JdbcQueryProjectionState {
     jdbcTemplate.update("DELETE FROM query_service.active_market_reference");
   }
 
-  private static Optional<byte[]> findInboxHash(JdbcTemplate jdbcTemplate, String eventId) {
+  private static Optional<byte[]> findInboxHash(JdbcOperations jdbcTemplate, String eventId) {
     return jdbcTemplate
         .query(
             "SELECT payload_sha256 FROM query_service.projection_inbox WHERE event_id = ?",
@@ -128,7 +128,7 @@ final class JdbcQueryProjectionState {
   }
 
   private static void upsertCheckpoint(
-      JdbcTemplate jdbcTemplate,
+      JdbcOperations jdbcTemplate,
       String sourceTopic,
       QueryProjectionPosition position,
       String state) {
@@ -175,7 +175,7 @@ final class JdbcQueryProjectionState {
     }
   }
 
-  private static boolean isPostgres(JdbcTemplate jdbcTemplate) {
+  private static boolean isPostgres(JdbcOperations jdbcTemplate) {
     return Boolean.TRUE.equals(
         jdbcTemplate.execute(
             (ConnectionCallback<Boolean>)

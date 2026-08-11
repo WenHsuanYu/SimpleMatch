@@ -8,13 +8,13 @@ import com.simplematch.queryservice.model.QueryOrderView;
 import java.sql.Date;
 import java.util.List;
 import java.util.Optional;
-import org.springframework.jdbc.core.JdbcTemplate;
+import org.springframework.jdbc.core.JdbcOperations;
 
 /** Reads durable query projections and source freshness from PostgreSQL or H2. */
 final class JdbcQueryProjectionReads {
   private JdbcQueryProjectionReads() {}
 
-  static Optional<QueryOrderView> findOrder(JdbcTemplate jdbcTemplate, String orderId) {
+  static Optional<QueryOrderView> findOrder(JdbcOperations jdbcTemplate, String orderId) {
     return jdbcTemplate
         .query(
             "SELECT order_id, account_id, venue_mic, symbol, side, state, "
@@ -26,7 +26,7 @@ final class JdbcQueryProjectionReads {
         .findFirst();
   }
 
-  static List<QueryExecutionView> findExecutions(JdbcTemplate jdbcTemplate, String orderId) {
+  static List<QueryExecutionView> findExecutions(JdbcOperations jdbcTemplate, String orderId) {
     return jdbcTemplate.query(
         "SELECT execution_id, order_id, account_id, venue_mic, symbol, side, "
             + "fill_quantity_shares, fill_price_units, cumulative_quantity_shares, "
@@ -38,7 +38,7 @@ final class JdbcQueryProjectionReads {
   }
 
   static Optional<QueryAccountSummaryView> findAccountSummary(
-      JdbcTemplate jdbcTemplate, String accountId) {
+      JdbcOperations jdbcTemplate, String accountId) {
     return jdbcTemplate
         .query(
             "SELECT account_id, lifecycle_state, reserved_notional_units, "
@@ -52,7 +52,7 @@ final class JdbcQueryProjectionReads {
   }
 
   static Optional<QueryMarketReferenceView> findMarketReference(
-      JdbcTemplate jdbcTemplate, String tradingDay, String venueMic, String symbol) {
+      JdbcOperations jdbcTemplate, String tradingDay, String venueMic, String symbol) {
     return jdbcTemplate
         .query(
             "SELECT trading_day, artifact_id, venue_mic, symbol, market_rule_id, "
@@ -68,7 +68,7 @@ final class JdbcQueryProjectionReads {
         .findFirst();
   }
 
-  static QueryFreshness freshness(JdbcTemplate jdbcTemplate) {
+  static QueryFreshness freshness(JdbcOperations jdbcTemplate) {
     return new QueryFreshness(
         jdbcTemplate
             .query(

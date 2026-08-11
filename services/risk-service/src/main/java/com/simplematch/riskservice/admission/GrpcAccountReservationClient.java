@@ -13,6 +13,8 @@ import com.simplematch.contracts.common.v2.VenueInstrument;
 import com.simplematch.contracts.orders.v2.ShareQuantity;
 import io.grpc.ManagedChannel;
 import io.grpc.ManagedChannelBuilder;
+import io.grpc.Status;
+import io.grpc.StatusRuntimeException;
 import io.grpc.netty.shaded.io.grpc.netty.GrpcSslContexts;
 import io.grpc.netty.shaded.io.grpc.netty.NettyChannelBuilder;
 import java.io.File;
@@ -76,12 +78,40 @@ public final class GrpcAccountReservationClient implements AccountReservationCli
                     .setUnits(notionalUnits(limitPriceUnits, characteristics.quantity().value()))
                     .build())
             .build();
-    final var response = account.withDeadlineAfter(2, TimeUnit.SECONDS).reserve(request);
+    final var response = reserve(request);
     if (response.getState() == AccountLifecycleState.ACCOUNT_LIFECYCLE_STATE_RESERVED
         || response.getState() == AccountLifecycleState.ACCOUNT_LIFECYCLE_STATE_FILLED) {
       return ReservationOutcome.accepted(UUID.fromString(response.getReservationId()));
     }
     return ReservationOutcome.rejected(response.getReasonCode(), response.getReasonDetail());
+  }
+
+  private com.simplematch.contracts.account.v2.AccountLifecycleEvent reserve(
+      ReservationCommand request) {
+    try {
+      return account.withDeadlineAfter(2, TimeUnit.SECONDS).reserve(request);
+    } catch (StatusRuntimeException failure) {
+      throw translate(failure);
+    }
+  }
+
+  private RuntimeException translate(StatusRuntimeException failure) {
+    return switch (Status.fromThrowable(failure).getCode()) {
+      case ALREADY_EXISTS -> new AdmissionConflictException();
+      case INVALID_ARGUMENT ->
+          new AdmissionValidationException(
+              AdmissionFailure.invalidCommand(accountDescription(failure)));
+      case DEADLINE_EXCEEDED, UNAVAILABLE, RESOURCE_EXHAUSTED ->
+          new AdmissionUnavailableException(failure);
+      default -> new AdmissionAccountFailureException(failure);
+    };
+  }
+
+  private String accountDescription(StatusRuntimeException failure) {
+    final String description = Status.fromThrowable(failure).getDescription();
+    return description == null || description.isBlank()
+        ? "account reservation command was invalid"
+        : "account reservation command was invalid: " + description;
   }
 
   /** Closes the account gRPC channel. */

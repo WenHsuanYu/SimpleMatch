@@ -10,17 +10,17 @@ import com.simplematch.queryservice.model.QueryMarketReferenceView;
 import com.simplematch.queryservice.model.QueryOrderView;
 import java.util.List;
 import java.util.Optional;
-import org.springframework.jdbc.core.JdbcTemplate;
+import org.springframework.jdbc.core.JdbcOperations;
 
 /** JDBC adapter that keeps PostgreSQL durable state ahead of the optional Redis read cache. */
 public final class JdbcQueryProjectionStore implements QueryProjectionStore {
   private static final String MATCHING_TOPIC = "matching.events";
   private static final String ACCOUNT_TOPIC = "account.lifecycle";
 
-  private final JdbcTemplate jdbcTemplate;
+  private final JdbcOperations jdbcTemplate;
 
   /** Creates the query-service JDBC adapter over the service-owned DataSource. */
-  public JdbcQueryProjectionStore(JdbcTemplate jdbcTemplate) {
+  public JdbcQueryProjectionStore(JdbcOperations jdbcTemplate) {
     this.jdbcTemplate = jdbcTemplate;
   }
 

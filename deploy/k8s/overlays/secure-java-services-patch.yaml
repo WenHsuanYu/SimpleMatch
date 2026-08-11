@@ -37,6 +37,15 @@ spec:
               value: HTTPS
             - name: SIMPLEMATCH_GRPC_SECURITY_TLS_ENABLED
               value: "true"
+          volumeMounts:
+            - name: postgres-tls
+              mountPath: /etc/simplematch/postgres-tls
+              readOnly: true
+      volumes:
+        - name: postgres-tls
+          secret:
+            secretName: simplematch-postgres-tls
+            optional: false
 ---
 apiVersion: apps/v1
 kind: Deployment
@@ -87,6 +96,15 @@ spec:
               value: HTTPS
             - name: SIMPLEMATCH_GRPC_SECURITY_TLS_ENABLED
               value: "true"
+          volumeMounts:
+            - name: postgres-tls
+              mountPath: /etc/simplematch/postgres-tls
+              readOnly: true
+      volumes:
+        - name: postgres-tls
+          secret:
+            secretName: simplematch-postgres-tls
+            optional: false
 ---
 apiVersion: apps/v1
 kind: Deployment
@@ -125,6 +143,15 @@ spec:
               value: PKCS12
             - name: SPRING_KAFKA_PROPERTIES_SSL_ENDPOINT_IDENTIFICATION_ALGORITHM
               value: HTTPS
+          volumeMounts:
+            - name: postgres-tls
+              mountPath: /etc/simplematch/postgres-tls
+              readOnly: true
+      volumes:
+        - name: postgres-tls
+          secret:
+            secretName: simplematch-postgres-tls
+            optional: false
 ---
 apiVersion: apps/v1
 kind: Deployment
@@ -163,6 +190,15 @@ spec:
               value: PKCS12
             - name: SPRING_KAFKA_PROPERTIES_SSL_ENDPOINT_IDENTIFICATION_ALGORITHM
               value: HTTPS
+          volumeMounts:
+            - name: postgres-tls
+              mountPath: /etc/simplematch/postgres-tls
+              readOnly: true
+      volumes:
+        - name: postgres-tls
+          secret:
+            secretName: simplematch-postgres-tls
+            optional: false
 ---
 apiVersion: apps/v1
 kind: Deployment
@@ -181,6 +217,15 @@ spec:
                 secretKeyRef:
                   name: marketdata-publisher-secrets
                   key: postgres_dsn
+          volumeMounts:
+            - name: postgres-tls
+              mountPath: /etc/simplematch/postgres-tls
+              readOnly: true
+      volumes:
+        - name: postgres-tls
+          secret:
+            secretName: simplematch-postgres-tls
+            optional: false
 ---
 apiVersion: apps/v1
 kind: Deployment
@@ -224,3 +269,12 @@ spec:
               value: PKCS12
             - name: SPRING_KAFKA_PROPERTIES_SSL_ENDPOINT_IDENTIFICATION_ALGORITHM
               value: HTTPS
+          volumeMounts:
+            - name: postgres-tls
+              mountPath: /etc/simplematch/postgres-tls
+              readOnly: true
+      volumes:
+        - name: postgres-tls
+          secret:
+            secretName: simplematch-postgres-tls
+            optional: false

@@ -67,6 +67,12 @@ spec:
               port: management
             periodSeconds: 5
             failureThreshold: 3
+          startupProbe:
+            httpGet:
+              path: /actuator/health/readiness
+              port: management
+            periodSeconds: 5
+            failureThreshold: 30
           livenessProbe:
             httpGet:
               path: /actuator/health/liveness
@@ -196,6 +202,12 @@ spec:
               port: management
             periodSeconds: 5
             failureThreshold: 3
+          startupProbe:
+            httpGet:
+              path: /actuator/health/readiness
+              port: management
+            periodSeconds: 5
+            failureThreshold: 30
           livenessProbe:
             httpGet:
               path: /actuator/health/liveness
@@ -321,6 +333,12 @@ spec:
               path: /actuator/health/readiness
               port: management
             periodSeconds: 5
+          startupProbe:
+            httpGet:
+              path: /actuator/health/readiness
+              port: management
+            periodSeconds: 5
+            failureThreshold: 30
           livenessProbe:
             httpGet:
               path: /actuator/health/liveness
@@ -428,6 +446,12 @@ spec:
               path: /actuator/health/readiness
               port: management
             periodSeconds: 5
+          startupProbe:
+            httpGet:
+              path: /actuator/health/readiness
+              port: management
+            periodSeconds: 5
+            failureThreshold: 30
           livenessProbe:
             httpGet:
               path: /actuator/health/liveness
@@ -533,6 +557,12 @@ spec:
               path: /actuator/health/readiness
               port: management
             periodSeconds: 5
+          startupProbe:
+            httpGet:
+              path: /actuator/health/readiness
+              port: management
+            periodSeconds: 5
+            failureThreshold: 30
           livenessProbe:
             httpGet:
               path: /actuator/health/liveness
@@ -635,6 +665,12 @@ spec:
               path: /actuator/health/readiness
               port: http
             periodSeconds: 5
+          startupProbe:
+            httpGet:
+              path: /actuator/health/readiness
+              port: http
+            periodSeconds: 5
+            failureThreshold: 30
           livenessProbe:
             httpGet:
               path: /actuator/health/liveness
