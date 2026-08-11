@@ -28,10 +28,7 @@ final class FixInboundCommandFactory {
         canonicalAccountId(FixInboundFieldValues.optionalString(message, Account.FIELD));
     return new WalRecord(
         new WalMetadata(
-            WalMetadata.CURRENT_SCHEMA_VERSION,
-            commandId,
-            now.toEpochMilli(),
-            "quickfix-gateway"),
+            WalMetadata.CURRENT_SCHEMA_VERSION, commandId, now.toEpochMilli(), "quickfix-gateway"),
         new FixSessionIdentity(identity.senderCompId(), identity.targetCompId()),
         new WalOrderReference(orderIdFor(clOrdId), clOrdId, "", accountId),
         new WalCommand.NewOrder(
@@ -40,8 +37,7 @@ final class FixInboundCommandFactory {
                 FixInboundFieldValues.mapSide(message.getChar(quickfix.field.Side.FIELD)),
                 message.getString(quickfix.field.OrderQty.FIELD),
                 FixInboundFieldValues.optionalString(message, quickfix.field.Price.FIELD),
-                FixInboundFieldValues.mapOrderType(
-                    message.getChar(quickfix.field.OrdType.FIELD)),
+                FixInboundFieldValues.mapOrderType(message.getChar(quickfix.field.OrdType.FIELD)),
                 FixInboundFieldValues.mapTimeInForce(
                     FixInboundFieldValues.optionalChar(
                         message, quickfix.field.TimeInForce.FIELD)))),
@@ -72,10 +68,7 @@ final class FixInboundCommandFactory {
                 message, Account.FIELD, existing == null ? "" : existing.accountId()));
     return new WalRecord(
         new WalMetadata(
-            WalMetadata.CURRENT_SCHEMA_VERSION,
-            commandId,
-            now.toEpochMilli(),
-            "quickfix-gateway"),
+            WalMetadata.CURRENT_SCHEMA_VERSION, commandId, now.toEpochMilli(), "quickfix-gateway"),
         new FixSessionIdentity(identity.senderCompId(), identity.targetCompId()),
         new WalOrderReference(orderIdFor(origClOrdId), cancelClOrdId, origClOrdId, accountId),
         new WalCommand.Cancel(symbol, side),

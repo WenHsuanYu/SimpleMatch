@@ -30,8 +30,11 @@ spring:
     consumer:
       group-id: ${simplematch.quickfix-gateway.owner-id:quickfix-gateway-0}
       auto-offset-reset: earliest
+      enable-auto-commit: false
       key-deserializer: org.apache.kafka.common.serialization.StringDeserializer
       value-deserializer: org.apache.kafka.common.serialization.ByteArrayDeserializer
+    listener:
+      ack-mode: manual_immediate
 
 management:
   endpoint:
@@ -63,7 +66,20 @@ simplematch:
   quickfix-gateway:
     data-plane-enabled: true
     replay-enabled: true
-    execution-projection:
+    operations:
+      required-consecutive-open-eligible-checks: 3
+      stale-status-after: 5s
+      warning-oldest-event-after: 30s
+      pause-oldest-event-after: 120s
+      session-zone: Asia/Taipei
+      session-close-time: "13:30"
+      automatic-close-enabled: true
+      monitor-interval-millis: 1000
+      monitor-enabled: true
+    final-matching-events:
+      enabled: false
+      topic: matching.events
+      consumer-group: quickfix-final-matching-events
       maximum-attempts: 3
-      retry-delay-millis: 1000
-      dead-letter-topic: matching.executions.dlq
+      delivery-batch-size: 100
+      delivery-retry-delay-millis: 1000

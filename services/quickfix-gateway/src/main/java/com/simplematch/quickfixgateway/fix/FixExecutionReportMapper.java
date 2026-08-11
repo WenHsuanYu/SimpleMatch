@@ -37,8 +37,7 @@ final class FixExecutionReportMapper {
   ExecutionReport buildPendingNew(
       FixOrderSnapshot order, FixExecutionIdentity execution, String text) {
     final ExecutionReport report = baseReport(order, execution, 'A', 'A');
-    report.setString(
-        LeavesQty.FIELD, FixWireValues.normalizeDecimal(order.quantity().value()));
+    report.setString(LeavesQty.FIELD, FixWireValues.normalizeDecimal(order.quantity().value()));
     report.setString(CumQty.FIELD, "0");
     report.setString(AvgPx.FIELD, "0");
     if (text != null && !text.isBlank()) {
@@ -54,8 +53,7 @@ final class FixExecutionReportMapper {
     report.setString(CumQty.FIELD, "0");
     report.setString(AvgPx.FIELD, "0");
     if (!order.quantity().value().isBlank()) {
-      report.setString(
-          OrderQty.FIELD, FixWireValues.normalizeDecimal(order.quantity().value()));
+      report.setString(OrderQty.FIELD, FixWireValues.normalizeDecimal(order.quantity().value()));
     }
     if (text != null && !text.isBlank()) {
       report.setString(Text.FIELD, text);
@@ -77,8 +75,7 @@ final class FixExecutionReportMapper {
       report.setString(Symbol.FIELD, order.symbol());
     }
     if (order.side() != Side.SIDE_UNSPECIFIED) {
-      report.setChar(
-          quickfix.field.Side.FIELD, FixWireValues.mapOrderSide(order.side()));
+      report.setChar(quickfix.field.Side.FIELD, FixWireValues.mapOrderSide(order.side()));
     }
     if (!order.quantity().isBlank()) {
       report.setString(OrderQty.FIELD, order.quantity());
@@ -133,8 +130,7 @@ final class FixExecutionReportMapper {
     report.setString(ExecID.FIELD, execution.executionId().value());
     report.setChar(ExecType.FIELD, execType);
     report.setChar(OrdStatus.FIELD, orderStatus);
-    report.setChar(
-        quickfix.field.Side.FIELD, FixWireValues.mapOrderSide(order.side()));
+    report.setChar(quickfix.field.Side.FIELD, FixWireValues.mapOrderSide(order.side()));
     report.setString(ClOrdID.FIELD, order.clientOrderId().value());
     report.setString(Symbol.FIELD, order.symbol().value());
     report.setString(TransactTime.FIELD, FixWireValues.format(execution.transactTime()));

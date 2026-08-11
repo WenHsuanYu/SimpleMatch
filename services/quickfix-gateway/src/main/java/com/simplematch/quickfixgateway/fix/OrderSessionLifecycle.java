@@ -59,6 +59,16 @@ public record OrderSessionLifecycle(
     return !isTerminal(currentOrdStatus) || targetRank >= currentRank;
   }
 
+  /** Returns the lifecycle after a previously accepted execution has been reported. */
+  OrderSessionLifecycle after(ExecutionType executionType) {
+    final OrderSessionLifecycle updated = withCurrentOrdStatus(targetStatus(executionType));
+    if (executionType == ExecutionType.EXECUTION_TYPE_CANCELED
+        || executionType == ExecutionType.EXECUTION_TYPE_CANCEL_REJECTED) {
+      return updated.withLastCancelRequest(null);
+    }
+    return updated;
+  }
+
   private char targetStatus(ExecutionType executionType) {
     return switch (executionType) {
       case EXECUTION_TYPE_PENDING_NEW -> 'A';
@@ -73,7 +83,7 @@ public record OrderSessionLifecycle(
   }
 
   private boolean isTerminal(char status) {
-    return status == '2' || status == '4' || status == '8';
+    return status == '2' || status == '4' || status == '8' || status == 'C';
   }
 
   private int rank(char status) {
@@ -81,7 +91,7 @@ public record OrderSessionLifecycle(
       case 'A' -> 0;
       case '0' -> 1;
       case '1' -> 2;
-      case '2', '4', '8' -> 3;
+      case '2', '4', '8', 'C' -> 3;
       default -> -1;
     };
   }

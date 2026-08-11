@@ -14,6 +14,7 @@ import org.springframework.test.context.ActiveProfiles;
       "simplematch.quickfix-gateway.acceptor-enabled=false",
       "simplematch.quickfix-gateway.data-plane-enabled=false",
       "simplematch.quickfix-gateway.replay-enabled=false",
+      "simplematch.quickfix-gateway.operations.monitor-enabled=false",
       "spring.kafka.listener.auto-startup=false",
       "spring.main.web-application-type=none"
     })

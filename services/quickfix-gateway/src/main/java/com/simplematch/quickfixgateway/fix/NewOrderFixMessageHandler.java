@@ -43,7 +43,7 @@ final class NewOrderFixMessageHandler {
    * @throws FieldNotFound when a rejection cannot inspect the available malformed-message fields
    */
   void handle(Message message, SessionID sessionId) throws FieldNotFound {
-    if (!admissionGate.allowsAdmission()) {
+    if (!admissionGate.allowsNewOrders()) {
       rejectionResponder.reject(
           new NewOrderPreparationFailure(admissionGate.newOrderFailure(), Instant.now(clock)),
           message,

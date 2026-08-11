@@ -94,8 +94,7 @@ public class QuickFixGatewayIngressConfiguration {
 
   @Bean
   InboundFixMessageHandler inboundFixMessageHandler(
-      NewOrderFixMessageHandler newOrderHandler,
-      CancelOrderFixMessageHandler cancelOrderHandler) {
+      NewOrderFixMessageHandler newOrderHandler, CancelOrderFixMessageHandler cancelOrderHandler) {
     return new InboundFixMessageHandler(newOrderHandler, cancelOrderHandler);
   }
 }

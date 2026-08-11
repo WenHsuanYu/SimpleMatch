@@ -26,8 +26,7 @@ final class NewOrderCommandPreparer {
    * @return the normalized record and timestamp used by the rest of the durable path
    * @throws NewOrderPreparationFailure when identity or normalized order fields are invalid
    */
-  PreparedNewOrder prepare(Message message, SessionID sessionId)
-      throws NewOrderPreparationFailure {
+  PreparedNewOrder prepare(Message message, SessionID sessionId) throws NewOrderPreparationFailure {
     final Instant now = Instant.now(clock);
     try {
       final String clOrdId = FixInboundFieldValues.optionalString(message, ClOrdID.FIELD);

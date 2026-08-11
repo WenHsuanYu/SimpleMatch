@@ -7,10 +7,6 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.context.SmartLifecycle;
 import org.springframework.lang.NonNull;
-import quickfix.DefaultMessageFactory;
-import quickfix.FileLogFactory;
-import quickfix.FileStoreFactory;
-import quickfix.MessageFactory;
 import quickfix.SessionSettings;
 import quickfix.SocketAcceptor;
 
@@ -20,15 +16,19 @@ public final class QuickFixAcceptorLifecycle implements SmartLifecycle {
 
   private final QuickFixApplicationAdapter application;
   private final QuickFixGatewayRuntime runtime;
+  private final QuickFixAcceptorFactory acceptorFactory;
 
   private volatile boolean running;
   private SocketAcceptor acceptor;
 
-  /** Creates an acceptor lifecycle using the supplied application callbacks and runtime paths. */
+  /** Creates an acceptor lifecycle using JDBC-backed QuickFIX state and runtime paths. */
   public QuickFixAcceptorLifecycle(
-      QuickFixApplicationAdapter application, QuickFixGatewayRuntime runtime) {
+      QuickFixApplicationAdapter application,
+      QuickFixGatewayRuntime runtime,
+      QuickFixAcceptorFactory acceptorFactory) {
     this.application = application;
     this.runtime = runtime;
+    this.acceptorFactory = acceptorFactory;
   }
 
   @Override
@@ -39,19 +39,13 @@ public final class QuickFixAcceptorLifecycle implements SmartLifecycle {
 
     try (InputStream inputStream = Files.newInputStream(runtime.quickfixConfigPath())) {
       final SessionSettings settings = new SessionSettings(inputStream);
-      final FileStoreFactory storeFactory = new FileStoreFactory(settings);
-      final FileLogFactory logFactory = new FileLogFactory(settings);
-      final MessageFactory messageFactory = new DefaultMessageFactory();
-
-      // debug
       logger.info("{} starting...", runtime.quickfixConfigPath());
 
-      acceptor =
-          new SocketAcceptor(application, storeFactory, settings, logFactory, messageFactory);
+      acceptor = acceptorFactory.create(application, settings);
       acceptor.start();
       running = true;
       logger.info(
-          "quickfix-gateway acceptor started env={} owner_id={} quickfix_cfg={} wal={}",
+          "quickfix-gateway acceptor started env={} owner_id={} quickfix_cfg={} wal={} store=jdbc",
           runtime.env(),
           runtime.ownerId(),
           runtime.quickfixConfigPath(),

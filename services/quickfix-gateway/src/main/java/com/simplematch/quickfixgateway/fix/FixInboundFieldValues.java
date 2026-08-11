@@ -44,8 +44,7 @@ final class FixInboundFieldValues {
     return optionalString(fieldMap, field, "");
   }
 
-  static String optionalString(FieldMap fieldMap, int field, String fallback)
-      throws FieldNotFound {
+  static String optionalString(FieldMap fieldMap, int field, String fallback) throws FieldNotFound {
     return fieldMap.isSetField(field) ? fieldMap.getString(field) : fallback;
   }
 

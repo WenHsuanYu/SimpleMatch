@@ -22,9 +22,7 @@ final class FixInboundIdentityValidator {
     final String senderCompId = sessionId.getTargetCompID();
     final String targetCompId = sessionId.getSenderCompID();
     return new FixInboundIdentity(
-        senderCompId,
-        targetCompId,
-        firstFailure(senderCompId, targetCompId, clOrdId, origClOrdId));
+        senderCompId, targetCompId, firstFailure(senderCompId, targetCompId, clOrdId, origClOrdId));
   }
 
   private static FixInboundValidationFailure firstFailure(
@@ -59,8 +57,7 @@ final class FixInboundIdentityValidator {
   private static FixInboundValidationFailure firstIdentityFailure(
       String value, String fieldName, String missingReasonCode, String oversizedReasonCode) {
     if (value == null || value.isBlank()) {
-      return new FixInboundValidationFailure(
-          missingReasonCode, fieldName + " must not be blank");
+      return new FixInboundValidationFailure(missingReasonCode, fieldName + " must not be blank");
     }
     return oversized(fieldName, value, oversizedReasonCode);
   }

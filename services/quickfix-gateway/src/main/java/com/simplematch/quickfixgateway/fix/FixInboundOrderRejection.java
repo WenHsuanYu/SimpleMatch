@@ -13,8 +13,7 @@ record FixInboundOrderRejection(
   /** Extracts only available wire values so malformed input can still receive a FIX reject. */
   static FixInboundOrderRejection from(Message message) throws FieldNotFound {
     final String clOrdId = FixInboundFieldValues.optionalString(message, ClOrdID.FIELD);
-    final Character side =
-        FixInboundFieldValues.optionalChar(message, quickfix.field.Side.FIELD);
+    final Character side = FixInboundFieldValues.optionalChar(message, quickfix.field.Side.FIELD);
     return new FixInboundOrderRejection(
         clOrdId.isBlank() ? "UNKNOWN" : FixInboundCommandFactory.orderIdFor(clOrdId),
         clOrdId,

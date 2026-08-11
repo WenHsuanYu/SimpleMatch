@@ -37,7 +37,7 @@ final class CancelOrderFixMessageHandler {
   void handle(Message message, SessionID sessionId) throws FieldNotFound {
     final String origClOrdId = FixInboundFieldValues.optionalString(message, OrigClOrdID.FIELD);
     final String cancelClOrdId = FixInboundFieldValues.optionalString(message, ClOrdID.FIELD);
-    if (!admissionGate.allowsAdmission()) {
+    if (!admissionGate.allowsCancellations()) {
       riskSubmissionResponder.rejectInbound(
           admissionGate.cancelFailure(),
           sessionId,
@@ -63,11 +63,7 @@ final class CancelOrderFixMessageHandler {
     try {
       walRecord =
           FixInboundCommandFactory.cancelOrder(
-              message,
-              identity,
-              existing,
-              commandIdGenerator.nextCommandId(),
-              Instant.now(clock));
+              message, identity, existing, commandIdGenerator.nextCommandId(), Instant.now(clock));
     } catch (FieldNotFound | IllegalArgumentException failure) {
       riskSubmissionResponder.rejectInbound(
           FixInboundValidationFailure.fromException("INVALID_CANCEL", failure),
@@ -80,9 +76,7 @@ final class CancelOrderFixMessageHandler {
     durableCommandWriter.appendForSubmission(walRecord);
     if (!riskSubmissionResponder
         .submitCancelOrder(
-            sessionId,
-            walRecord,
-            existing == null ? '8' : existing.lifecycle().currentOrdStatus())
+            sessionId, walRecord, existing == null ? '8' : existing.lifecycle().currentOrdStatus())
         .accepted()) {
       return;
     }

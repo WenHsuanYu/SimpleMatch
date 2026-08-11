@@ -13,8 +13,7 @@ public final class InboundFixMessageHandler {
   private final CancelOrderFixMessageHandler cancelOrderHandler;
 
   InboundFixMessageHandler(
-      NewOrderFixMessageHandler newOrderHandler,
-      CancelOrderFixMessageHandler cancelOrderHandler) {
+      NewOrderFixMessageHandler newOrderHandler, CancelOrderFixMessageHandler cancelOrderHandler) {
     this.newOrderHandler = newOrderHandler;
     this.cancelOrderHandler = cancelOrderHandler;
   }

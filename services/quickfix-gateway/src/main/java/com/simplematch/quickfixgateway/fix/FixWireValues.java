@@ -39,9 +39,8 @@ final class FixWireValues {
       case EXECUTION_TYPE_PARTIAL_FILL -> '1';
       case EXECUTION_TYPE_FILL -> '2';
       case EXECUTION_TYPE_CANCELED -> '4';
-      case EXECUTION_TYPE_REJECTED,
-          EXECUTION_TYPE_CANCEL_REJECTED,
-          EXECUTION_TYPE_UNSPECIFIED -> '8';
+      case EXECUTION_TYPE_REJECTED, EXECUTION_TYPE_CANCEL_REJECTED, EXECUTION_TYPE_UNSPECIFIED ->
+          '8';
       default -> '8';
     };
   }

@@ -27,8 +27,7 @@ final class NewOrderRejectionResponder {
    * @param sessionId originating FIX session
    * @throws FieldNotFound when the malformed message cannot be inspected for its available fields
    */
-  void reject(
-      NewOrderPreparationFailure failure, Message message, SessionID sessionId)
+  void reject(NewOrderPreparationFailure failure, Message message, SessionID sessionId)
       throws FieldNotFound {
     fixSessionMessageSender.send(
         sessionId,

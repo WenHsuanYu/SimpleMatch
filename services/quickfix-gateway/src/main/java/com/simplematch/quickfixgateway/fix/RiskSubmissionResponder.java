@@ -32,8 +32,7 @@ final class RiskSubmissionResponder {
     this.recoveryStateRecorder = new RiskRecoveryStateRecorder(recoveryJournal);
   }
 
-  RiskSubmissionResult submitNewOrder(
-      SessionID sessionId, WalRecord walRecord, Instant now) {
+  RiskSubmissionResult submitNewOrder(SessionID sessionId, WalRecord walRecord, Instant now) {
     try {
       final RiskSubmissionResult submission = riskCommandSubmitter.submitNewOrder(walRecord);
       recoveryStateRecorder.record(walRecord, submission);
@@ -55,8 +54,7 @@ final class RiskSubmissionResponder {
     }
   }
 
-  RiskSubmissionResult submitCancelOrder(
-      SessionID sessionId, WalRecord walRecord, char ordStatus) {
+  RiskSubmissionResult submitCancelOrder(SessionID sessionId, WalRecord walRecord, char ordStatus) {
     try {
       final RiskSubmissionResult submission = riskCommandSubmitter.submitCancel(walRecord);
       recoveryStateRecorder.record(walRecord, submission);
@@ -89,8 +87,7 @@ final class RiskSubmissionResponder {
 
   private RiskSubmissionResult unknownNewOrder(
       SessionID sessionId, WalRecord walRecord, Instant now, RuntimeException error) {
-    final RiskSubmissionFailure failure =
-        failure(error, "submit", "risk-service submit failed");
+    final RiskSubmissionFailure failure = failure(error, "submit", "risk-service submit failed");
     final RiskSubmissionResult unknown =
         RiskSubmissionResult.unknown(
             walRecord.orderId(), failure.reasonCode(), failure.reasonText());
@@ -101,8 +98,7 @@ final class RiskSubmissionResponder {
   }
 
   private RiskSubmissionResult unknownCancelOrder(WalRecord walRecord, RuntimeException error) {
-    final RiskSubmissionFailure failure =
-        failure(error, "cancel", "risk-service cancel failed");
+    final RiskSubmissionFailure failure = failure(error, "cancel", "risk-service cancel failed");
     final RiskSubmissionResult unknown =
         RiskSubmissionResult.unknown(
             walRecord.orderId(), failure.reasonCode(), failure.reasonText());
@@ -126,11 +122,7 @@ final class RiskSubmissionResponder {
     fixSessionMessageSender.send(
         sessionId,
         fixMessageMapper.buildOrderCancelReject(
-            walRecord.orderId(),
-            walRecord.clOrdId(),
-            walRecord.origClOrdId(),
-            ordStatus,
-            text));
+            walRecord.orderId(), walRecord.clOrdId(), walRecord.origClOrdId(), ordStatus, text));
   }
 
   private void logUnknownOutcome(

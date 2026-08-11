@@ -1,14 +1,19 @@
 package com.simplematch.quickfixgateway.fix;
 
 import com.simplematch.contracts.matching.v1.ExecutionEvent;
-import com.simplematch.contracts.matching.v1.ExecutionType;
 import com.simplematch.quickfixgateway.wal.WalRecord;
 import java.util.Optional;
 import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
 import quickfix.SessionID;
 
-/** Tracks the session context needed to render asynchronous matching executions. */
+/**
+ * Tracks the session context needed to render asynchronous matching executions.
+ *
+ * <p>Acceptance, cancellation, execution de-duplication, and lifecycle transitions must observe the
+ * same in-memory session state. The small named methods keep those distinct operations clear
+ * without exposing the concurrent maps as separate mutable collaborators.
+ */
 public final class OrderSessionRegistry implements ExecutionSessionResolver {
   private final ConcurrentHashMap<String, OrderSessionState> states = new ConcurrentHashMap<>();
   private final ConcurrentHashMap<String, WalRecord> admittedOrders = new ConcurrentHashMap<>();
@@ -90,32 +95,23 @@ public final class OrderSessionRegistry implements ExecutionSessionResolver {
             return state;
           }
           applied[0] = true;
-          OrderSessionLifecycle updatedLifecycle =
-              state
-                  .lifecycle()
-                  .withCurrentOrdStatus(
-                      mapOrdStatus(
-                          executionEvent.getExecutionType(), state.lifecycle().currentOrdStatus()));
-          if (executionEvent.getExecutionType() == ExecutionType.EXECUTION_TYPE_CANCELED
-              || executionEvent.getExecutionType()
-                  == ExecutionType.EXECUTION_TYPE_CANCEL_REJECTED) {
-            updatedLifecycle = updatedLifecycle.withLastCancelRequest(null);
-          }
-          return state.withLifecycle(updatedLifecycle);
+          return state.withLifecycle(state.lifecycle().after(executionEvent.getExecutionType()));
         });
     return applied[0];
   }
 
-  private char mapOrdStatus(ExecutionType executionType, char fallback) {
-    return switch (executionType) {
-      case EXECUTION_TYPE_PENDING_NEW -> 'A';
-      case EXECUTION_TYPE_NEW -> '0';
-      case EXECUTION_TYPE_PARTIAL_FILL -> '1';
-      case EXECUTION_TYPE_FILL -> '2';
-      case EXECUTION_TYPE_CANCELED -> '4';
-      case EXECUTION_TYPE_REJECTED -> '8';
-      case EXECUTION_TYPE_CANCEL_REJECTED, EXECUTION_TYPE_UNSPECIFIED -> fallback;
-      default -> fallback;
-    };
+  /**
+   * Records a final Matching Event lifecycle transition after its durable FIX intent was sent.
+   *
+   * <p>The registry is only an ingress-session cache; the delivery ledger remains the restart-safe
+   * authority. Updating the cache keeps later cancel acknowledgement status aligned with the last
+   * client-visible report.
+   */
+  public void recordFinalOrderStatus(String orderId, char orderStatus) {
+    states.computeIfPresent(
+        orderId,
+        (ignored, state) ->
+            state.withLifecycle(
+                state.lifecycle().withCurrentOrdStatus(orderStatus).withLastCancelRequest(null)));
   }
 }

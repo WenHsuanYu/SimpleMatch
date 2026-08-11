@@ -31,12 +31,14 @@ import java.util.UUID;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicReference;
+import org.flywaydb.core.Flyway;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.junit.jupiter.api.io.TempDir;
 import org.springframework.boot.test.system.CapturedOutput;
 import org.springframework.boot.test.system.OutputCaptureExtension;
+import org.springframework.jdbc.datasource.DriverManagerDataSource;
 import quickfix.Application;
 import quickfix.DefaultMessageFactory;
 import quickfix.DoNotSend;
@@ -85,6 +87,7 @@ class QuickFixCertificationEvidenceTest {
     final Path walPath = tempDir.resolve("wal").resolve("inbound.wal");
 
     final WalAppender walAppender = new WalAppender(walPath, StandardCharsets.UTF_8);
+    final DriverManagerDataSource quickFixDataSource = quickFixDataSource();
     final QuickFixAcceptorLifecycle acceptorLifecycle =
         new QuickFixAcceptorLifecycle(
             new QuickFixApplicationAdapter(
@@ -95,7 +98,8 @@ class QuickFixCertificationEvidenceTest {
                     new OrderSessionRegistry(),
                     new FixMessageMapper(FIXED_CLOCK),
                     FIXED_CLOCK)),
-            new QuickFixGatewayRuntime("test", acceptorConfigPath, walPath));
+            new QuickFixGatewayRuntime("test", acceptorConfigPath, walPath),
+            new QuickFixJdbcAcceptorFactory(() -> quickFixDataSource));
     final TestInitiatorApplication initiatorApplication = new TestInitiatorApplication();
     final SocketInitiator initiator =
         new SocketInitiator(
@@ -121,8 +125,7 @@ class QuickFixCertificationEvidenceTest {
                   executionReport, MsgType.FIELD, 37, 17, 150, 39, 54, 151, 14, 6, 11, 55, 60))
           .startsWith("35=8|37=O-C1|17=E-")
           .contains(
-              "|150=A|39=A|54=1|151=10|14=0|6=0|11=C1|55=AAPL|"
-                  + "60=2024-03-27T08:09:10.123Z");
+              "|150=A|39=A|54=1|151=10|14=0|6=0|11=C1|55=AAPL|" + "60=2024-03-27T08:09:10.123Z");
 
       final List<WalRecord> walRecords = walAppender.readAll();
       assertThat(walRecords).hasSize(1);
@@ -163,6 +166,7 @@ class QuickFixCertificationEvidenceTest {
     final Path initiatorConfigPath = writeInitiatorConfig(port, dictionaryPath);
     final Path walPath = tempDir.resolve("wal").resolve("inbound.wal");
     final WalAppender walAppender = new WalAppender(walPath, StandardCharsets.UTF_8);
+    final DriverManagerDataSource quickFixDataSource = quickFixDataSource();
     final QuickFixAcceptorLifecycle acceptorLifecycle =
         new QuickFixAcceptorLifecycle(
             new QuickFixApplicationAdapter(
@@ -173,7 +177,8 @@ class QuickFixCertificationEvidenceTest {
                     new OrderSessionRegistry(),
                     new FixMessageMapper(FIXED_CLOCK),
                     FIXED_CLOCK)),
-            new QuickFixGatewayRuntime("test", acceptorConfigPath, walPath));
+            new QuickFixGatewayRuntime("test", acceptorConfigPath, walPath),
+            new QuickFixJdbcAcceptorFactory(() -> quickFixDataSource));
     final TestInitiatorApplication initiatorApplication = new TestInitiatorApplication();
     final SocketInitiator initiator =
         new SocketInitiator(
@@ -195,8 +200,7 @@ class QuickFixCertificationEvidenceTest {
 
       final Message executionReport = initiatorApplication.awaitApplicationMessage();
       assertThat(
-              FixMessageSnapshot.snapshot(
-                  executionReport, MsgType.FIELD, 37, 150, 39, 11, 55, 58))
+              FixMessageSnapshot.snapshot(executionReport, MsgType.FIELD, 37, 150, 39, 11, 55, 58))
           .isEqualTo(
               "35=8|37=O-C1|150=8|39=8|11=C1|55=AAPL|"
                   + "58=INSUFFICIENT_BUYING_POWER: available cash is insufficient");
@@ -392,6 +396,22 @@ class QuickFixCertificationEvidenceTest {
       current = current.getParent();
     }
     throw new IllegalStateException("workspace root not found");
+  }
+
+  private DriverManagerDataSource quickFixDataSource() {
+    final DriverManagerDataSource dataSource = new DriverManagerDataSource();
+    dataSource.setDriverClassName("org.h2.Driver");
+    dataSource.setUrl(
+        "jdbc:h2:mem:quickfixcert"
+            + UUID.randomUUID().toString().replace("-", "")
+            + ";MODE=PostgreSQL;DB_CLOSE_DELAY=-1;INIT=CREATE SCHEMA IF NOT EXISTS"
+            + " quickfix_gateway\\;SET SCHEMA quickfix_gateway");
+    Flyway.configure()
+        .dataSource(dataSource)
+        .locations("classpath:db/migration/quickfix-gateway")
+        .load()
+        .migrate();
+    return dataSource;
   }
 
   private void safeStop(SocketInitiator initiator) {

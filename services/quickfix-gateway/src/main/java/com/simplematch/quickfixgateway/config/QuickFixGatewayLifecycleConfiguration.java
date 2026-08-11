@@ -2,13 +2,16 @@ package com.simplematch.quickfixgateway.config;
 
 import com.simplematch.quickfixgateway.fix.FixSessionOwnership;
 import com.simplematch.quickfixgateway.fix.InboundFixMessageHandler;
+import com.simplematch.quickfixgateway.fix.QuickFixAcceptorFactory;
 import com.simplematch.quickfixgateway.fix.QuickFixAcceptorLifecycle;
 import com.simplematch.quickfixgateway.fix.QuickFixApplicationAdapter;
+import com.simplematch.quickfixgateway.fix.QuickFixJdbcAcceptorFactory;
 import com.simplematch.quickfixgateway.health.QuickFixGatewayReadinessHealthIndicator;
 import com.simplematch.quickfixgateway.health.QuickFixGatewayStartupLifecycle;
 import com.simplematch.quickfixgateway.health.QuickFixGatewayStartupRecovery;
 import com.simplematch.quickfixgateway.health.QuickFixGatewayStartupState;
 import com.simplematch.quickfixgateway.wal.WalReplayService;
+import javax.sql.DataSource;
 import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.context.annotation.Bean;
@@ -67,13 +70,21 @@ public class QuickFixGatewayLifecycleConfiguration {
         inboundFixMessageHandler, sessionOwnership, runtime.ownerId());
   }
 
+  /** Creates the JDBC-backed persistence factory used only when the socket acceptor starts. */
+  @Bean
+  QuickFixAcceptorFactory quickFixAcceptorFactory(DataSource dataSource) {
+    return new QuickFixJdbcAcceptorFactory(() -> dataSource);
+  }
+
   @Bean
   @ConditionalOnProperty(
       name = "simplematch.quickfix-gateway.acceptor-enabled",
       havingValue = "true",
       matchIfMissing = true)
   QuickFixAcceptorLifecycle quickFixAcceptorLifecycle(
-      QuickFixApplicationAdapter application, QuickFixGatewayRuntime runtime) {
-    return new QuickFixAcceptorLifecycle(application, runtime);
+      QuickFixApplicationAdapter application,
+      QuickFixGatewayRuntime runtime,
+      QuickFixAcceptorFactory acceptorFactory) {
+    return new QuickFixAcceptorLifecycle(application, runtime, acceptorFactory);
   }
 }

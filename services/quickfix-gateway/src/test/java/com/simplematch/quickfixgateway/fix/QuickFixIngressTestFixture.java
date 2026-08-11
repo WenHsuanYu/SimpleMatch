@@ -19,6 +19,8 @@ final class QuickFixIngressTestFixture {
       OrderSessionRegistry registry,
       FixMessageMapper mapper,
       Clock clock) {
+    final GatewayAdmissionGate admissionGate = new GatewayAdmissionGate();
+    admissionGate.open();
     return compose(
         walAppender,
         riskSubmissionClient,
@@ -26,7 +28,7 @@ final class QuickFixIngressTestFixture {
         registry,
         mapper,
         clock,
-        new GatewayAdmissionGate());
+        admissionGate);
   }
 
   static InboundFixMessageHandler compose(

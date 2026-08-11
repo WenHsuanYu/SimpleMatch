@@ -412,11 +412,11 @@ class InboundFixMessageHandlerTest {
   }
 
   @Test
-  void pausedCancellationIsRejectedBeforeWalAndRisk() throws Exception {
+  void interruptedCancellationIsRejectedBeforeWalAndRisk() throws Exception {
     final GatewayAdmissionGate admissionGate = new GatewayAdmissionGate();
-    admissionGate.pauseAdmission();
+    admissionGate.interruptMarket();
     try (WalAppender walAppender =
-        new WalAppender(tempDir.resolve("paused-cancel.wal"), StandardCharsets.UTF_8)) {
+        new WalAppender(tempDir.resolve("interrupted-cancel.wal"), StandardCharsets.UTF_8)) {
       final RiskSubmissionClient riskSubmissionClient = mock(RiskSubmissionClient.class);
       final FixSessionMessageSender sender = mock(FixSessionMessageSender.class);
       final InboundFixMessageHandler handler =
@@ -436,6 +436,38 @@ class InboundFixMessageHandlerTest {
       verify(sender).send(any(SessionID.class), any(Message.class));
       verifyNoInteractions(riskSubmissionClient);
       assertThat(walAppender.readAll()).isEmpty();
+    }
+  }
+
+  @Test
+  void newOrderPauseStillAdmitsCancellationToWalAndRisk() throws Exception {
+    final GatewayAdmissionGate admissionGate = new GatewayAdmissionGate();
+    admissionGate.open();
+    try (WalAppender walAppender =
+        new WalAppender(tempDir.resolve("new-orders-paused-cancel.wal"), StandardCharsets.UTF_8)) {
+      final RiskSubmissionClient riskSubmissionClient = mock(RiskSubmissionClient.class);
+      when(riskSubmissionClient.submitNewOrder(any(NewOrderCommand.class)))
+          .thenReturn(new RiskSubmissionResult("accepted", true, "", ""));
+      when(riskSubmissionClient.submitCancel(any(CancelOrderCommand.class)))
+          .thenReturn(new RiskSubmissionResult("accepted", true, "", ""));
+      final FixSessionMessageSender sender = mock(FixSessionMessageSender.class);
+      final InboundFixMessageHandler handler =
+          QuickFixIngressTestFixture.compose(
+              walAppender,
+              riskSubmissionClient,
+              sender,
+              new OrderSessionRegistry(),
+              new FixMessageMapper(FIXED_CLOCK),
+              FIXED_CLOCK,
+              admissionGate);
+      final SessionID sessionId = new SessionID("FIX.4.4", "SIMPLEMATCH", "CLIENT1");
+
+      handler.handle(newNewOrder("C1", "2330", '1', "100", "101.25", ACCOUNT_ID), sessionId);
+      admissionGate.pauseNewOrders("MATCHING_PARTITION_RECOVERING");
+      handler.handle(newCancelRequest("C1", "CXL-1", ACCOUNT_ID), sessionId);
+
+      verify(riskSubmissionClient).submitCancel(any(CancelOrderCommand.class));
+      assertThat(walAppender.readAll()).hasSize(2);
     }
   }
 

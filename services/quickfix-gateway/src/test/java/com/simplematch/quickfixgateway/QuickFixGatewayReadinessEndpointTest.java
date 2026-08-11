@@ -11,6 +11,7 @@ import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.boot.test.web.server.LocalServerPort;
+import org.springframework.test.context.ActiveProfiles;
 
 @SpringBootTest(
     webEnvironment = SpringBootTest.WebEnvironment.RANDOM_PORT,
@@ -18,8 +19,12 @@ import org.springframework.boot.test.web.server.LocalServerPort;
       "simplematch.quickfix-gateway.acceptor-enabled=false",
       "simplematch.quickfix-gateway.data-plane-enabled=false",
       "simplematch.quickfix-gateway.replay-enabled=false",
-      "spring.kafka.listener.auto-startup=false"
+      "simplematch.quickfix-gateway.operations.monitor-enabled=false",
+      "spring.flyway.enabled=false",
+      "spring.kafka.listener.auto-startup=false",
+      "management.health.db.enabled=false"
     })
+@ActiveProfiles("test")
 class QuickFixGatewayReadinessEndpointTest {
   private final HttpClient httpClient = HttpClient.newHttpClient();
 
@@ -32,7 +37,9 @@ class QuickFixGatewayReadinessEndpointTest {
     final HttpResponse<String> readinessResponse = get("/readyz");
     final HttpResponse<String> metricsResponse = get("/metrics");
 
-    assertThat(healthResponse.statusCode()).isEqualTo(HttpURLConnection.HTTP_OK);
+    assertThat(healthResponse.statusCode())
+        .withFailMessage("health endpoint response: %s", healthResponse.body())
+        .isEqualTo(HttpURLConnection.HTTP_OK);
     assertThat(healthResponse.body()).contains("UP");
     assertThat(readinessResponse.statusCode()).isEqualTo(HttpURLConnection.HTTP_OK);
     assertThat(readinessResponse.body()).contains("UP");

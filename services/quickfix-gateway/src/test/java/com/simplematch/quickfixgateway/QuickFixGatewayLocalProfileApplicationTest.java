@@ -10,10 +10,14 @@ import org.springframework.test.context.ActiveProfiles;
 
 @SpringBootTest(
     properties = {
+      "simplematch.postgres.dsn=jdbc:h2:mem:quickfixlocal;MODE=PostgreSQL;DB_CLOSE_DELAY=-1;INIT=CREATE SCHEMA IF NOT EXISTS quickfix_gateway\\;SET SCHEMA quickfix_gateway",
       "simplematch.quickfix-gateway.acceptor-enabled=false",
       "simplematch.quickfix-gateway.data-plane-enabled=false",
       "simplematch.quickfix-gateway.replay-enabled=false",
+      "spring.flyway.enabled=false",
       "spring.kafka.listener.auto-startup=false",
+      "spring.task.scheduling.enabled=false",
+      "simplematch.quickfix-gateway.operations.monitor-enabled=false",
       "spring.main.web-application-type=none"
     })
 @ActiveProfiles("local")
