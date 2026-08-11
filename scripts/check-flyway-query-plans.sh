@@ -61,6 +61,20 @@ case "$service_name" in
       "routing_policies_source_snapshot_idx" \
       "SELECT routing_policy_id FROM marketdata_publisher.routing_policies WHERE source_market_snapshot_id = '00000000-0000-0000-0000-000000000000'"
     ;;
+  query-service)
+    assert_index_plan \
+      "query order history by account" \
+      "order_read_model_account_idx" \
+      "SELECT order_id FROM query_service.order_read_model WHERE account_id = 'account' ORDER BY updated_at_unix_ms"
+    assert_index_plan \
+      "query executions by order chronology" \
+      "execution_read_model_order_idx" \
+      "SELECT execution_id FROM query_service.execution_read_model WHERE order_id = 'order' ORDER BY executed_at_unix_ms, execution_id"
+    assert_index_plan \
+      "query active market reference artifact" \
+      "active_market_reference_artifact_idx" \
+      "SELECT symbol FROM query_service.active_market_reference WHERE trading_day = DATE '2026-07-28' AND artifact_id = 'artifact'"
+    ;;
   risk-service)
     assert_index_plan \
       "risk submission business-key lookup" \

@@ -17,10 +17,15 @@ on:
       - 'build-logic/**'
       - 'scripts/run-flyway-ci-checks.sh'
       - 'scripts/lib/flyway-services.sh'
+      - 'scripts/test-flyway-services.sh'
       - 'scripts/check-flyway-query-plans.sh'
+      - 'shared-java/**'
       - 'services/account-service/**'
+      - 'services/market-data-projection/**'
       - 'services/marketdata-publisher/**'
       - 'services/persistence/**'
+      - 'services/query-service/**'
+      - 'services/quickfix-gateway/**'
       - 'services/risk-service/**'
   pull_request:
     paths:
@@ -35,10 +40,15 @@ on:
       - 'build-logic/**'
       - 'scripts/run-flyway-ci-checks.sh'
       - 'scripts/lib/flyway-services.sh'
+      - 'scripts/test-flyway-services.sh'
       - 'scripts/check-flyway-query-plans.sh'
+      - 'shared-java/**'
       - 'services/account-service/**'
+      - 'services/market-data-projection/**'
       - 'services/marketdata-publisher/**'
       - 'services/persistence/**'
+      - 'services/query-service/**'
+      - 'services/quickfix-gateway/**'
       - 'services/risk-service/**'
   workflow_dispatch:
 
@@ -76,6 +86,8 @@ jobs:
           persist-credentials: false
       - name: Set up Java and Gradle
         uses: ./.github/actions/setup-java-gradle
+      - name: Validate Flyway service contracts
+        run: bash scripts/test-flyway-services.sh
       - name: Install PostgreSQL client
         run: |
           sudo apt-get update

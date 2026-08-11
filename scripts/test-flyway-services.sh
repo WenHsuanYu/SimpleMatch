@@ -25,6 +25,14 @@ for service in "${expected_services[@]}"; do
   flyway_service_exists "$service"
 done
 
+query_plan_checker="$repo_root/scripts/check-flyway-query-plans.sh"
+for service in "${expected_services[@]}"; do
+  if ! grep -Fq "  ${service})" "$query_plan_checker"; then
+    echo "Flyway query-plan checker has no branch for $service." >&2
+    exit 1
+  fi
+done
+
 if flyway_service_exists unknown-service; then
   echo "Unknown Flyway service was accepted." >&2
   exit 1
