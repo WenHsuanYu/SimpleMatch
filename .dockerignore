@@ -1,0 +1,16 @@
+.git
+.gradle
+.idea
+.vscode
+.cache
+.codex
+.code-review-graph
+all_code.txt
+build
+build-vcpkg*
+cmake-build-*
+graphify-out
+out
+third_party
+**/build
+**/.gradle

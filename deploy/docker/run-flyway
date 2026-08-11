@@ -1,0 +1,21 @@
+#!/usr/bin/env bash
+
+set -euo pipefail
+
+service_id="${SIMPLEMATCH_FLYWAY_SERVICE_ID:?SIMPLEMATCH_FLYWAY_SERVICE_ID is required}"
+
+case "$service_id" in
+  account-service) task="accountServiceFlywayMigrate" ;;
+  market-data-projection) task="marketDataProjectionFlywayMigrate" ;;
+  marketdata-publisher) task="marketdataPublisherFlywayMigrate" ;;
+  persistence) task="persistenceFlywayMigrate" ;;
+  query-service) task="queryServiceFlywayMigrate" ;;
+  quickfix-gateway) task="quickFixGatewayFlywayMigrate" ;;
+  risk-service) task="riskServiceFlywayMigrate" ;;
+  *)
+    printf 'Unknown Flyway service: %s\n' "$service_id" >&2
+    exit 2
+    ;;
+esac
+
+exec /workspace/gradlew --no-daemon --stacktrace "$task"

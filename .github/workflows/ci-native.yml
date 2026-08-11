@@ -35,7 +35,7 @@ on:
   workflow_dispatch:
 
 env:
-  VCPKG_COMMIT: b5d1a94fb7f88fd835e360fd23a45a09ceedbf48
+  VCPKG_VERSION: 2026.07.29
 
 concurrency:
   group: ci-${{ github.workflow }}-${{ github.ref }}
@@ -65,21 +65,21 @@ jobs:
         uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: ${{ env.VCPKG_DEFAULT_BINARY_CACHE }}
-          key: ${{ runner.os }}-${{ runner.arch }}-vcpkg-binary-${{ env.VCPKG_COMMIT }}-${{ hashFiles('vcpkg.json', 'CMakePresets.json', 'triplets/**/*.cmake') }}
+          key: ${{ runner.os }}-${{ runner.arch }}-vcpkg-binary-${{ env.VCPKG_VERSION }}-${{ hashFiles('vcpkg.json', 'CMakePresets.json', 'triplets/**/*.cmake') }}
           restore-keys: |
-            ${{ runner.os }}-${{ runner.arch }}-vcpkg-binary-${{ env.VCPKG_COMMIT }}-
+            ${{ runner.os }}-${{ runner.arch }}-vcpkg-binary-${{ env.VCPKG_VERSION }}-
       - name: Cache vcpkg source downloads
         uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: ${{ env.VCPKG_DOWNLOADS }}
-          key: ${{ runner.os }}-${{ runner.arch }}-vcpkg-downloads-${{ env.VCPKG_COMMIT }}-${{ hashFiles('vcpkg.json') }}
+          key: ${{ runner.os }}-${{ runner.arch }}-vcpkg-downloads-${{ env.VCPKG_VERSION }}-${{ hashFiles('vcpkg.json') }}
           restore-keys: |
-            ${{ runner.os }}-${{ runner.arch }}-vcpkg-downloads-${{ env.VCPKG_COMMIT }}-
+            ${{ runner.os }}-${{ runner.arch }}-vcpkg-downloads-${{ env.VCPKG_VERSION }}-
       - name: Bootstrap pinned vcpkg
         run: |
           git clone --filter=blob:none https://github.com/microsoft/vcpkg.git "$VCPKG_ROOT"
-          git -C "$VCPKG_ROOT" checkout --detach "$VCPKG_COMMIT"
-          test "$(git -C "$VCPKG_ROOT" rev-parse HEAD)" = "$VCPKG_COMMIT"
+          git -C "$VCPKG_ROOT" checkout --detach "$VCPKG_VERSION"
+          test "$(git -C "$VCPKG_ROOT" rev-parse HEAD)" = "$(git -C "$VCPKG_ROOT" rev-parse "$VCPKG_VERSION^{commit}")"
           "$VCPKG_ROOT/bootstrap-vcpkg.sh" -disableMetrics
       - name: Configure native preset
         run: cmake --preset "$NATIVE_PRESET"

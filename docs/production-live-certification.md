@@ -1,8 +1,9 @@
-# Production Live Certification Runbook
+# Local and Production Certification Runbook
 
-This document records the repeatable verification path for the Phase 1 Trading Release. It
-separates repository evidence, disposable integration smoke, and deployment-environment
-certification. A green local test is never reported as a green production gate.
+This document records the repeatable verification path for the Phase 1 Trading Release. The
+repository-owned local production-like gate is the current completion boundary; the staging and
+production sequence remains a separately rendered promotion template. A local pass is never
+reported as an external production certification.
 
 ## Target and hard boundaries
 
@@ -27,9 +28,37 @@ operator with access to those systems must supply the environment-specific value
 The following commands are read-only unless explicitly marked as provisioning. Do not run
 scripts/run-flyway-ci-checks.sh against production: it drops and recreates a database.
 
-## Acceptance criteria
+## Local production-like certification
 
-The live certification is complete only when all of these are evidenced for the same approved
+The local gate runs with repository-built images and disposable infrastructure. It does not push
+images to GHCR or Docker Hub and does not require real staging/production registry digests,
+endpoints, CIDRs, credentials, or an external FIX counterparty.
+
+The authoritative entrypoint is:
+
+~~~bash
+bash scripts/run-local-production-like-certification.sh
+~~~
+
+The local profile uses the current local deployment image set, a three-broker Kafka cluster with 15
+Matching partitions and replication factor 3, PostgreSQL, Redis, Debezium/Kafka Connect, and a
+disposable Kubernetes runtime for the 15 logical Matching owners. It verifies the Risk-to-Matching-
+to-consumer path, Flyway ownership, Lease/PVC behavior, restart/replay, and the relevant outage
+scenarios. It may run the dependency profile with Compose and the Kubernetes profile with kind; the
+runner owns only its named project, namespace, cluster, volumes, and evidence directory.
+
+The local image digest is recorded in the evidence report as a local image identity. It is not a
+promotion identity and must not replace the staging/production digest placeholders.
+
+The local dependency/build versions are checked in the deployment documentation and contract test:
+Gradle 9.7.0, Spring Boot 4.1.0, vcpkg 2026.07.29, Apache Kafka 4.3.1, PostgreSQL 18.4, Redis
+8.8.1-alpine, Debezium 3.6.0.Final, and Ubuntu 26.04 LTS for the native image builder/runtime.
+These are the latest stable versions verified on 2026-08-12 for this local compatibility profile;
+the contract intentionally avoids mutable `latest` and prerelease tags.
+
+## External template acceptance criteria
+
+The later external certification template is complete only when all of these are evidenced for the same approved
 trading day and trading session:
 
 1. The final Market Reference artifact has a reviewed contentSha256, exact source provenance,
@@ -133,7 +162,10 @@ No microsecond-level production latency claim may be made from the repository be
 disposable kind smoke. The claim requires the pinned production-shaped run and the end-to-end
 evidence described by #136.
 
-## Production sequence
+## Staging/production template sequence
+
+The following sequence is retained for a later environment promotion. It is not required to close
+the local production-like inventory and must not be run with the repository placeholders unchanged.
 
 ### 1. Build and approve the final artifact
 
@@ -296,10 +328,10 @@ Retain, outside the repository when sensitive:
 Do not place passwords, bearer tokens, private keys, FIX credentials, or raw production orders in
 Git, ConfigMaps, test logs, or this document.
 
-## Values the operator must provide
+## Values required for later promotion
 
-I can maintain the repository-side scripts and manifests, but the final live run needs your help
-with environment-specific authority and test data:
+The local gate does not require the following values. They are retained as the environment-owned
+inputs for a later staging or production promotion:
 
 1. The Kubernetes context/namespace and permission to inspect/apply; a cluster with 15 eligible
    nodes, CPU Manager static policy, and a RWOP-compatible CSI driver.
@@ -317,5 +349,5 @@ with environment-specific authority and test data:
 7. A decision on whether the live order may be admitted only, or whether an opposing order and
    final execution/fill must also be certified.
 
-Until those values and permissions are available, the correct status is “repository gates ready;
-production certification pending,” not “production certified.”
+Until those values and permissions are available, the correct status is “local production-like gate
+passed; promotion template pending,” not “externally certified.”

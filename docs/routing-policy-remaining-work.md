@@ -8,19 +8,42 @@ canonical release-scope definition lives in
 Architecture documents describe the accepted target. This document alone distinguishes that target
 from the repository's current implementation state.
 
-Status was reconciled against the `master` worktree on 2026-08-11. An accepted design is not
-`COMPLETED` until the repository contains its implementation and verification evidence.
+Status was reconciled against the `master` worktree on 2026-08-12. An accepted design is not
+`COMPLETED` until the repository contains its implementation and local production-like verification
+evidence. Staging and production promotion remain template work with placeholders and are not
+current completion blockers.
 
 ## Status vocabulary
 
 | Status | Meaning |
 | --- | --- |
-| `COMPLETED` | The current repository contains the required behavior and verification evidence. |
-| `PARTIAL` | A reusable foundation exists, but the accepted target behavior is incomplete. |
-| `NOT_STARTED` | No production implementation of the target capability exists. |
+| `COMPLETED` | The current repository contains the required behavior and the local production-like gate has passed. |
+| `PARTIAL` | Required local implementation, deployment resources, or the local production-like gate is incomplete. |
+| `NOT_STARTED` | No repository implementation of the target capability exists. |
 | `OBSOLETE_TO_REMOVE` | Current code implements a superseded design and must be removed or migrated. |
 
-## Latest verification evidence (2026-08-11)
+## Verification boundary
+
+The current completion target is the repository-owned local production-like gate. It uses local
+images and production-shaped dependency contracts, including the three-broker Matching Kafka
+profile, 15 logical Matching owners, PostgreSQL, Redis, Debezium/Kafka Connect, Kubernetes
+ownership, restart/replay, and end-to-end event evidence. A local pass is not a claim that the
+system has been promoted externally.
+
+`deploy/k8s/overlays/local` is executable local configuration. The `staging` and `production`
+overlays are deliberately separate templates: their registry names, image digests, external
+endpoints, CIDRs, and credentials remain placeholders until a later promotion. Those placeholders
+do not keep a locally verified capability in `PARTIAL`.
+
+## Interpreting `PARTIAL`
+
+| Class | Current entries | Meaning |
+| --- | --- | --- |
+| Local gate or operational verification pending | RM-1, ME-1, ME-2, ME-3, PS-1, AC-1, AR-1, FG-1, QS-1, KD-1, KC-1, PC-1 | The primary remaining work is to run the retained implementation through the local production-like dependency, restart, replay, and end-to-end scenarios. PS-1, AC-1, and FG-1 also retain their explicitly named status-adapter work. |
+| Implementation plus local gate pending | MD-1, GO-1, PD-1 | The repository still lacks named runtime consumers, infrastructure adapters, deployment resources, or other behavior before a local gate can be meaningful. |
+| Compatibility or legacy cleanup | MR-5, CL-1 | Superseded runtime paths and migration-only seams still require source/configuration removal; local certification alone cannot close them. |
+
+## Latest verification evidence (2026-08-12)
 
 - Native CTest now passes all 40 tests, including Kubernetes Lease timestamp formatting and a
   minimum one-second timeout for Kafka recovery metadata queries.
@@ -37,16 +60,20 @@ Status was reconciled against the `master` worktree on 2026-08-11. An accepted d
   Gateway image is not available, so its Pod remained `ErrImagePull`; no Gateway runtime or
 end-to-end admission claim follows from this check.
 
-- The production-live runbook now records the complete repository-to-environment sequence in
-  [Production Live Certification](production-live-certification.md). It includes the strict
-  15-pod/15-node/Lease/PVC gate, a read-only PostgreSQL gate, and an opt-in external QuickFIX
-  certification task.
+- The certification runbook now separates the repository-owned local production-like gate from the
+  later staging/production template sequence. The external sequence remains available as a
+  promotion template and is not a current local completion blocker.
 - The Kafka profile validator now accepts an external TLS/SASL command-properties file and rejects
   duplicate replica broker identities. These changes strengthen the gate but do not constitute a
   live three-broker certification.
-- The new live gates have not passed against production: no production Kubernetes context,
-  broker credentials, PostgreSQL endpoint, or external FIX session was supplied. Existing PARTIAL
-  statuses therefore remain unchanged.
+- The local production-like gate has not yet been run for the current worktree. Its required
+  evidence is therefore still pending. No external Kubernetes context, broker credentials,
+  PostgreSQL endpoint, or external FIX session is required for this local milestone.
+- On 2026-08-12, the local image/version contracts, all Kubernetes overlay and Matching manifest
+  checks, the Kafka profile and Flyway mapping checks, Markdown navigation, the complete Gradle
+  test suite, Gradle static analysis, and the CMake/Ninja Matching build passed. The Docker image
+  export/runtime phase remains pending because the local Docker daemon became unresponsive during
+  the native image build; no existing containers or images were removed.
 
 ## Frozen target boundaries
 

@@ -1,0 +1,47 @@
+FROM ubuntu:26.04 AS builder
+
+ARG VCPKG_VERSION=2026.07.29
+
+ENV DEBIAN_FRONTEND=noninteractive
+ENV VCPKG_ROOT=/opt/vcpkg
+
+RUN apt-get update \
+    && apt-get install --no-install-recommends --yes \
+       build-essential ca-certificates cmake curl git ninja-build pkg-config \
+       python3 unzip zip \
+    && rm -rf /var/lib/apt/lists/* \
+    && git clone --filter=blob:none https://github.com/microsoft/vcpkg.git "$VCPKG_ROOT" \
+    && git -C "$VCPKG_ROOT" checkout --detach "$VCPKG_VERSION" \
+    && "$VCPKG_ROOT/bootstrap-vcpkg.sh" -disableMetrics
+
+WORKDIR /src
+COPY . /src/
+
+RUN cmake -S . -B out/build/container-native -G Ninja \
+      -DCMAKE_BUILD_TYPE=Release \
+      -DCMAKE_TOOLCHAIN_FILE="$VCPKG_ROOT/scripts/buildsystems/vcpkg.cmake" \
+      -DVCPKG_MANIFEST_FEATURES='messaging;json-config' \
+      -DSIMPLEMATCH_ENABLE_MESSAGING=ON \
+      -DBUILD_TESTING=OFF \
+    && cmake --build out/build/container-native --target simplematch-matching --parallel
+
+FROM ubuntu:26.04
+
+ENV DEBIAN_FRONTEND=noninteractive
+
+RUN apt-get update \
+    && apt-get install --no-install-recommends --yes \
+       ca-certificates libcurl4t64 libgcc-s1 libssl3t64 libstdc++6 zlib1g \
+    && rm -rf /var/lib/apt/lists/* \
+    && useradd --system --uid 10001 --home-dir /nonexistent --shell /usr/sbin/nologin simplematch \
+    && mkdir -p /app /var/lib/simplematch/matching /tmp \
+    && chown -R 10001:10001 /app /var/lib/simplematch /tmp
+
+COPY --from=builder /src/out/build/container-native/simplematch-matching /app/simplematch-matching
+COPY --from=builder /src/out/build/container-native/vcpkg_installed/x64-linux/lib/ /usr/local/lib/
+
+RUN ldconfig
+
+USER 10001:10001
+WORKDIR /app
+ENTRYPOINT ["/app/simplematch-matching"]

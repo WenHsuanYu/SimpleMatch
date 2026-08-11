@@ -48,10 +48,13 @@ This repo's Java dependencies use an explicit ownership model.
     :services:query-service:dependencies \
     :services:risk-service:dependencies \
     --write-locks
-  ./gradlew -q -p build-logic dependencies --write-locks
+  ./gradlew -q -p build-logic dependencies --write-locks \
+    --update-locks 'org.jetbrains.kotlin:*'
   ```
 
-  Review every lockfile diff before committing.
+  When upgrading the Gradle wrapper, update Gradle's embedded Kotlin resolution with
+  `--update-locks` rather than editing the included-build lockfile by hand. Review every lockfile
+  diff before committing.
 - For local validation, prefer `./gradlew -q <task>` to keep routine Gradle lifecycle output out of
   the console. `-q`
   does not hide failures, compiler diagnostics, test failures, or tool warnings. CI retains

@@ -22,6 +22,39 @@ Projection, Marketdata Publisher, and Query Service, plus the existing QuickFIX/
 service-local ConfigMaps, read-only configuration RBAC, migration Jobs, probes, and NetworkPolicy.
 The four overlays are `local`, `test`, `staging`, and `production`.
 
+## Environment separation
+
+`local` is the executable repository-owned environment. It uses locally built images with the
+`local` tag and is the deployment surface used by the local production-like certification gate.
+The local image set currently includes Account, Risk, Persistence, Market Data Projection,
+Marketdata Publisher, Query Service, Flyway Runner, Matching, and QuickFIX Gateway.
+
+`staging` and `production` are promotion templates, not local verification environments. They use
+separate registry names and digest placeholders, and retain placeholders for external PostgreSQL,
+Kafka, Redis, OpenTelemetry, CIDR, and Secret values. Filling those values and publishing images is
+outside the current local completion boundary.
+
+### Local production-like version contract
+
+The executable local profile is checked against this stable version set as of 2026-08-12. The
+versions are explicit rather than `latest`; update them together with the upstream compatibility
+review and the local contract test.
+
+| Component | Version | Repository source |
+| --- | --- | --- |
+| Gradle wrapper | 9.7.0 | `gradle/wrapper/gradle-wrapper.properties` |
+| Spring Boot | 4.1.0 | `gradle/libs.versions.toml` |
+| vcpkg | 2026.07.29 | `ci-native.yml`, `Dockerfile.matching` |
+| Apache Kafka | 4.3.1 | local Compose profile |
+| PostgreSQL | 18.4 | local Compose and Flyway CI |
+| Redis | 8.8.1-alpine | local Compose profile |
+| Debezium Kafka Connect | 3.6.0.Final | local Compose profile |
+| Matching build base | Ubuntu 26.04 LTS | `Dockerfile.matching` |
+
+The local Kustomize patch intentionally removes physical-node anti-affinity and lowers Matching
+resource requests so fifteen logical owners can run on a disposable kind node. The base, staging,
+and production manifests retain the strict three-CPU, fifteen-node production contract.
+
 Render and validate them with:
 
 ```text
@@ -111,3 +144,8 @@ Ready with real digest-pinned images, current per-ordinal Lease holders, Bound
 ReadWriteOncePod PVCs, and 15 distinct nodes. The complete Kafka, PostgreSQL, and external
 QuickFIX sequence is recorded in
 [Production Live Certification](../../docs/production-live-certification.md).
+
+The local production-like gate is
+`bash scripts/run-local-production-like-certification.sh`. It verifies the same logical 15-owner,
+Lease, PVC, Kafka, and restart/replay contracts with local images and disposable infrastructure;
+it does not require 15 physical nodes or real registry digests.

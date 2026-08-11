@@ -1,0 +1,120 @@
+services:
+  postgres:
+    image: postgres:18.4
+    environment:
+      POSTGRES_DB: simplematch
+      POSTGRES_USER: simplematch
+      POSTGRES_PASSWORD: simplematch
+    command: ["postgres", "-c", "wal_level=logical"]
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U simplematch -d simplematch"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+    ports:
+      - "${SIMPLEMATCH_POSTGRES_PRODUCTION_LIKE_PORT:-15432}:5432"
+
+  redis:
+    image: redis:8.8.1-alpine
+    command: ["redis-server", "--appendonly", "yes"]
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+    ports:
+      - "${SIMPLEMATCH_REDIS_PRODUCTION_LIKE_PORT:-16379}:6379"
+
+  kafka-1:
+    image: apache/kafka:4.3.1
+    hostname: kafka-1
+    environment: &kafka-environment
+      CLUSTER_ID: 5L6g3nShT-eMCtK--X86sw
+      KAFKA_PROCESS_ROLES: broker,controller
+      KAFKA_CONTROLLER_QUORUM_VOTERS: 1@kafka-1:29093,2@kafka-2:29093,3@kafka-3:29093
+      KAFKA_LISTENERS: PLAINTEXT://0.0.0.0:29092,CONTROLLER://0.0.0.0:29093,PLAINTEXT_HOST://0.0.0.0:9092
+      KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: PLAINTEXT:PLAINTEXT,CONTROLLER:PLAINTEXT,PLAINTEXT_HOST:PLAINTEXT
+      KAFKA_INTER_BROKER_LISTENER_NAME: PLAINTEXT
+      KAFKA_CONTROLLER_LISTENER_NAMES: CONTROLLER
+      KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 3
+      KAFKA_TRANSACTION_STATE_LOG_REPLICATION_FACTOR: 3
+      KAFKA_TRANSACTION_STATE_LOG_MIN_ISR: 2
+      KAFKA_DEFAULT_REPLICATION_FACTOR: 3
+      KAFKA_MIN_INSYNC_REPLICAS: 2
+      KAFKA_AUTO_CREATE_TOPICS_ENABLE: "false"
+      KAFKA_UNCLEAN_LEADER_ELECTION_ENABLE: "false"
+      KAFKA_GROUP_INITIAL_REBALANCE_DELAY_MS: 0
+      KAFKA_NODE_ID: 1
+      KAFKA_ADVERTISED_LISTENERS: PLAINTEXT://kafka-1:29092,PLAINTEXT_HOST://localhost:${SIMPLEMATCH_KAFKA_1_PORT:-19092}
+    healthcheck:
+      test: ["CMD-SHELL", "/opt/kafka/bin/kafka-topics.sh --bootstrap-server kafka-1:29092 --list >/dev/null 2>&1"]
+      interval: 10s
+      timeout: 10s
+      retries: 20
+    ports:
+      - "${SIMPLEMATCH_KAFKA_1_PORT:-19092}:9092"
+
+  kafka-2:
+    image: apache/kafka:4.3.1
+    hostname: kafka-2
+    environment:
+      <<: *kafka-environment
+      KAFKA_NODE_ID: 2
+      KAFKA_ADVERTISED_LISTENERS: PLAINTEXT://kafka-2:29092,PLAINTEXT_HOST://localhost:${SIMPLEMATCH_KAFKA_2_PORT:-19093}
+    healthcheck:
+      test: ["CMD-SHELL", "/opt/kafka/bin/kafka-topics.sh --bootstrap-server kafka-2:29092 --list >/dev/null 2>&1"]
+      interval: 10s
+      timeout: 10s
+      retries: 20
+    ports:
+      - "${SIMPLEMATCH_KAFKA_2_PORT:-19093}:9092"
+
+  kafka-3:
+    image: apache/kafka:4.3.1
+    hostname: kafka-3
+    environment:
+      <<: *kafka-environment
+      KAFKA_NODE_ID: 3
+      KAFKA_ADVERTISED_LISTENERS: PLAINTEXT://kafka-3:29092,PLAINTEXT_HOST://localhost:${SIMPLEMATCH_KAFKA_3_PORT:-19094}
+    healthcheck:
+      test: ["CMD-SHELL", "/opt/kafka/bin/kafka-topics.sh --bootstrap-server kafka-3:29092 --list >/dev/null 2>&1"]
+      interval: 10s
+      timeout: 10s
+      retries: 20
+    ports:
+      - "${SIMPLEMATCH_KAFKA_3_PORT:-19094}:9092"
+
+  kafka-connect:
+    image: quay.io/debezium/connect:3.6.0.Final
+    depends_on:
+      postgres:
+        condition: service_healthy
+      kafka-1:
+        condition: service_healthy
+      kafka-2:
+        condition: service_healthy
+      kafka-3:
+        condition: service_healthy
+    environment:
+      BOOTSTRAP_SERVERS: kafka-1:29092,kafka-2:29092,kafka-3:29092
+      GROUP_ID: simplematch-connect-production-like
+      CONFIG_STORAGE_TOPIC: simplematch-connect-configs
+      OFFSET_STORAGE_TOPIC: simplematch-connect-offsets
+      STATUS_STORAGE_TOPIC: simplematch-connect-status
+      CONFIG_STORAGE_REPLICATION_FACTOR: 3
+      OFFSET_STORAGE_REPLICATION_FACTOR: 3
+      STATUS_STORAGE_REPLICATION_FACTOR: 3
+      CONFIG_STORAGE_MIN_ISR: 2
+      OFFSET_STORAGE_MIN_ISR: 2
+      STATUS_STORAGE_MIN_ISR: 2
+      KEY_CONVERTER: org.apache.kafka.connect.storage.StringConverter
+      VALUE_CONVERTER: org.apache.kafka.connect.json.JsonConverter
+      REST_ADVERTISED_HOST_NAME: localhost
+      REST_PORT: 8083
+    ports:
+      - "${SIMPLEMATCH_KAFKA_CONNECT_PRODUCTION_LIKE_PORT:-18083}:8083"
+
+networks:
+  default:
+    name: ${SIMPLEMATCH_PRODUCTION_LIKE_NETWORK:-simplematch-production-like}
+    external: ${SIMPLEMATCH_PRODUCTION_LIKE_NETWORK_EXTERNAL:-false}

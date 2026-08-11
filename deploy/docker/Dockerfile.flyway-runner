@@ -1,0 +1,22 @@
+FROM eclipse-temurin:25-jdk
+
+RUN apt-get update \
+    && apt-get install --no-install-recommends --yes bash ca-certificates \
+    && rm -rf /var/lib/apt/lists/*
+
+WORKDIR /workspace
+
+COPY . /workspace/
+COPY deploy/docker/run-flyway /app/run-flyway
+
+RUN chmod 0555 /app/run-flyway /workspace/gradlew \
+    && useradd --system --uid 10001 --home-dir /nonexistent --shell /usr/sbin/nologin simplematch \
+    && chown -R 10001:10001 /workspace /app \
+    && mkdir -p /tmp/gradle \
+    && chown 10001:10001 /tmp/gradle
+
+ENV HOME=/tmp
+ENV GRADLE_USER_HOME=/tmp/gradle
+
+USER 10001:10001
+ENTRYPOINT ["/app/run-flyway"]

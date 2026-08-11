@@ -3,6 +3,8 @@ kind: Kustomization
 namespace: simplematch-local
 resources:
   - ../../base
+patches:
+  - path: matching-scheduling-patch.yaml
 images:
   - name: simplematch/account-service
     newTag: local
