@@ -10,7 +10,8 @@ ruby -rjson -ryaml - "$manifest_dir" <<'RUBY'
 manifest_dir = ARGV.fetch(0)
 
 def load_documents(path)
-  YAML.load_stream(File.read(path, encoding: "UTF-8")).compact
+  visitor = Psych::Visitors::ToRuby.create
+  Psych.parse_stream(File.read(path, encoding: "UTF-8")).children.map { |document| visitor.accept(document) }.compact
 end
 
 def require_value(condition, message)

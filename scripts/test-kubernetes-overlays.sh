@@ -13,7 +13,8 @@ for overlay in local test staging production; do
 require "yaml"
 
 rendered_path, overlay = ARGV
-documents = YAML.load_stream(File.read(rendered_path, encoding: "UTF-8")).compact
+visitor = Psych::Visitors::ToRuby.create
+documents = Psych.parse_stream(File.read(rendered_path, encoding: "UTF-8")).children.map { |document| visitor.accept(document) }.compact
 resources = documents.to_h { |document| [[document.fetch("kind"), document.fetch("metadata").fetch("name")], document] }
 
 required_deployments = %w[

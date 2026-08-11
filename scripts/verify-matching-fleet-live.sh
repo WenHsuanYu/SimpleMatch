@@ -4,6 +4,7 @@ set -euo pipefail
 namespace="${SIMPLEMATCH_NAMESPACE:-production}"
 statefulset_name="${SIMPLEMATCH_MATCHING_STATEFULSET:-matching}"
 kubectl_bin="${KUBECTL:-kubectl}"
+allow_shared_node=false
 
 usage() {
   printf '%s\n' \
@@ -12,6 +13,7 @@ usage() {
     '  --namespace NAME       Kubernetes namespace (default: SIMPLEMATCH_NAMESPACE or production).' \
     '  --statefulset NAME     Matching StatefulSet (default: SIMPLEMATCH_MATCHING_STATEFULSET or matching).' \
     '  --kubectl PATH         kubectl executable (default: KUBECTL or kubectl).' \
+    '  --allow-shared-node    Local-only mode; permit 15 logical owners on one node.' \
     '' \
     'The gate is intentionally strict: it requires 15 Ready pods, 15 distinct nodes,' \
     '15 current Lease holders, 15 Bound ReadWriteOncePod PVCs, and real digest-pinned images.'
@@ -22,6 +24,7 @@ while [[ $# -gt 0 ]]; do
     --namespace) namespace="$2"; shift 2 ;;
     --statefulset) statefulset_name="$2"; shift 2 ;;
     --kubectl) kubectl_bin="$2"; shift 2 ;;
+    --allow-shared-node) allow_shared_node=true; shift ;;
     --help|-h) usage; exit 0 ;;
     *) usage >&2; printf 'Unknown option: %s\n' "$1" >&2; exit 2 ;;
   esac
@@ -50,7 +53,7 @@ trap 'rm -rf "$temporary_directory"' EXIT
 "$kubectl_bin" -n "$namespace" get pvc -o json \
   > "$temporary_directory/pvcs.json"
 
-NAMESPACE="$namespace" STATEFULSET_NAME="$statefulset_name" ruby -rjson -rtime - \
+ALLOW_SHARED_NODE="$allow_shared_node" NAMESPACE="$namespace" STATEFULSET_NAME="$statefulset_name" ruby -rjson -rtime - \
   "$temporary_directory/statefulset.json" \
   "$temporary_directory/pods.json" \
   "$temporary_directory/leases.json" \
@@ -99,10 +102,17 @@ require_gate(
   matching_pods.all? { |pod| ready?(pod) },
   "every Matching pod must have Ready=True"
 )
-require_gate(
-  matching_pods.map { |pod| pod.dig("spec", "nodeName") }.uniq.length == 15,
-  "the 15 Matching pods must be scheduled on 15 distinct nodes because pod anti-affinity is required"
-)
+if ENV.fetch("ALLOW_SHARED_NODE", "false") == "true"
+  require_gate(
+    matching_pods.all? { |pod| pod.dig("spec", "nodeName").is_a?(String) && !pod.dig("spec", "nodeName").empty? },
+    "every Matching pod must be scheduled on a named node"
+  )
+else
+  require_gate(
+    matching_pods.map { |pod| pod.dig("spec", "nodeName") }.uniq.length == 15,
+    "the 15 Matching pods must be scheduled on 15 distinct nodes because pod anti-affinity is required"
+  )
+end
 pod_partitions = matching_pods.map { |pod| pod.dig("metadata", "labels", "apps.kubernetes.io/pod-index") }
 require_gate(
   pod_partitions.sort == expected_partitions.map(&:to_s),
@@ -159,5 +169,10 @@ expected_partitions.each do |partition|
   )
 end
 
-puts "Matching fleet certification passed: 15 Ready pods, 15 Lease holders, 15 RWOP PVCs, and 15 distinct nodes in #{namespace}."
+node_summary = if ENV.fetch("ALLOW_SHARED_NODE", "false") == "true"
+  "logical owners may share nodes"
+else
+  "15 distinct nodes"
+end
+puts "Matching fleet certification passed: 15 Ready pods, 15 Lease holders, 15 RWOP PVCs, and #{node_summary} in #{namespace}."
 RUBY
