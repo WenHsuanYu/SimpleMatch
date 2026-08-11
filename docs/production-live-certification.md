@@ -1,0 +1,297 @@
+# Production Live Certification Runbook
+
+This document records the repeatable verification path for the Phase 1 Trading Release. It
+separates repository evidence, disposable integration smoke, and deployment-environment
+certification. A green local test is never reported as a green production gate.
+
+## Target and hard boundaries
+
+The production target is:
+
+- one externally managed Kafka cluster with three brokers;
+- matching.commands and matching.events with 15 partitions, replication factor 3, minimum
+  ISR 2, automatic topic creation disabled, and unclean leader election disabled;
+- one Matching StatefulSet with ordinals matching-0 through matching-14, where ordinal N owns
+  Kafka partition N;
+- 15 schedulable nodes for the required Matching pod anti-affinity, three dedicated CPUs per pod,
+  a compatible ReadWriteOncePod CSI driver, and pre-created Kubernetes Leases;
+- PostgreSQL with TLS, wal_level=logical, service-local Flyway schemas, and the durable tables
+  required by the current repository; and
+- one production QuickFIX Gateway owner with a real FIX 4.4 counterparty/session configuration.
+
+Kafka and PostgreSQL are external production dependencies in this repository. This runbook does
+not create a broker cluster, a PostgreSQL server, a Kubernetes cluster, or a FIX counterparty.
+The repository contains fail-closed provisioning/verification tools and deployment contracts; an
+operator with access to those systems must supply the environment-specific values.
+
+The following commands are read-only unless explicitly marked as provisioning. Do not run
+scripts/run-flyway-ci-checks.sh against production: it drops and recreates a database.
+
+## Acceptance criteria
+
+The live certification is complete only when all of these are evidenced for the same approved
+trading day and trading session:
+
+1. The final Market Reference artifact has a reviewed contentSha256, exact source provenance,
+   and a recorded operator approval.
+2. Kafka describes both Matching topics with 15 partitions, three distinct replica broker IDs
+   per partition, and at least two in-sync replicas for every partition.
+3. The broker effective configuration disables automatic topic creation and unclean leader
+   election; the Kafka client uses the production TLS/SASL command properties.
+4. All 15 Matching pods are Ready, use real digest-pinned images, hold the matching Lease for
+   their own ordinal, use Bound ReadWriteOncePod PVCs, and run on 15 distinct nodes.
+5. Matching consumes an Open Barrier for the approved artifact, replays its assigned partition,
+   and becomes Ready without an artifact/session/image-digest mismatch.
+6. PostgreSQL is a primary TLS connection with logical WAL, all current service-local schemas have
+   successful Flyway histories and required tables, and read-only Flyway/query-plan checks pass.
+7. The external QuickFIX initiator logs on to the Gateway and receives an ExecutionReport for a
+   designated test order. By default the order must be admitted rather than rejected.
+8. Evidence includes command output, artifact checksum, Kubernetes context/namespace, Kafka
+   cluster/topic description, PostgreSQL endpoint identity without the password, FIX session IDs,
+   test order identity, and rollback/cleanup decisions.
+
+## Verification already completed
+
+The following evidence was recorded on 2026-08-11.
+
+| Layer | Command or scenario | Result and boundary |
+| --- | --- | --- |
+| Native build | cmake --build --preset full-native-dev --parallel | Passed |
+| Native full feature tests | ctest --preset full-native-dev --output-on-failure | 40/40 passed |
+| Native reduced feature tests | cmake --build --preset dev-debug --parallel; ctest --preset dev-debug --output-on-failure | 38/38 passed |
+| Kubernetes manifest contract | bash scripts/test-matching-kubernetes-manifests.sh | Passed; static contract only |
+| Kafka profile fixtures | bash scripts/test-matching-topic-profile.sh | Passed; includes RF/ISR/safety and duplicate-replica rejection |
+| Outbox contracts | bash scripts/verify-outbox-connector-contracts.sh; bash scripts/run-outbox-cdc-contract-check.sh | Passed in the disposable CDC environment |
+| Java services | Persistence, Account, QuickFIX, and Market Data module tests | Passed in the controlled Gradle environment |
+| Java quality gate | GRADLE_USER_HOME=/tmp/simplematch-gradle-cache ./gradlew --no-daemon -q staticAnalysis | Passed at the recorded checkpoint; rerun after later Java changes |
+| Repo-local FIX certification | :services:quickfix-gateway:certificationTest | Passed; real in-process QuickFIX/J acceptor/initiator, H2, WAL, duplicate/cancel/recovery scenarios |
+| Disposable kind Matching smoke | One native matching-0 against one in-cluster broker | Lease/PVC/replay/Ready path passed; one node and RF1, therefore non-certifying |
+| Disposable kind restart | Delete/recreate one Matching pod normally | Old Lease blocked handover until expiry; new UID replayed baseline; no duplicate output |
+| Gateway kind inspection | Apply Gateway resources and inspect API objects | API-level checks passed, but placeholder image caused ErrImagePull; no runtime claim |
+
+The disposable kind scenario was intentionally small: an Open Barrier followed by one sell and one
+buy command produced two matching events, committed input offset 3, and reached READY. It proves
+the runtime wiring and recovery behavior, not three-broker durability, 15-pod scheduling,
+PostgreSQL production connectivity, or external FIX interoperability.
+
+## Reproducible repository gates
+
+Run these in order from the repository root. GRADLE_USER_HOME is only needed when the normal
+Gradle cache is read-only or unsuitable; it is not a production setting.
+
+~~~bash
+cmake --build --preset full-native-dev --parallel
+ctest --preset full-native-dev --output-on-failure
+
+cmake --build --preset dev-debug --parallel
+ctest --preset dev-debug --output-on-failure
+
+bash scripts/test-matching-kubernetes-manifests.sh
+bash scripts/test-matching-topic-profile.sh
+bash scripts/verify-outbox-connector-contracts.sh
+bash scripts/run-outbox-cdc-contract-check.sh
+
+./gradlew --no-daemon :services:persistence:test :services:account-service:test :services:quickfix-gateway:test :services:quickfix-gateway:certificationTest :services:market-data-projection:test
+
+./gradlew --no-daemon -q staticAnalysis
+~~~
+
+In a restricted development environment, prefix the Gradle commands with
+GRADLE_USER_HOME=/tmp/simplematch-gradle-cache.
+
+The local native Kafka fixture publisher is:
+
+~~~bash
+out/build/full-native-dev/simplematch-matching-kafka-fixture-publisher BROKERS MATCHING_COMMANDS_TOPIC
+~~~
+
+The fixture scenario must be interpreted with the exact artifact/session identity used by the
+Matching process: Open Barrier first, then the commands for its assigned partition. The expected
+result is a contiguous next input offset, acknowledged output publication, and READY.
+
+## Production sequence
+
+### 1. Build and approve the final artifact
+
+Build a D-1 candidate, review its bounded diff and partition loads, then build the final artifact
+from fresh official sources on the trading day. The final output must be immutable under the
+approved root:
+
+~~~bash
+./gradlew :tools:market-reference-builder:run --args='final --trading-day YYYY-MM-DD --fetch-live --previous-artifact /secure/market-reference/approved/PREVIOUS_DAY/market_reference.json --approved-root /secure/market-reference/approved --approved-by trading-operator'
+~~~
+
+Record market_reference.json, market_reference.sha256, approval-report.json, and the
+generated delivery manifest. At or below 900 KiB the delivery is an immutable ConfigMap; above
+that limit the operator must use the digest-pinned OCI data-image plan. Render the generated
+delivery fragment into the Risk and Matching workloads before applying it. The checked-in
+matching-statefulset.yaml uses a stable example volume name, while the generated artifact
+manifest owns the actual approved name; applying those fragments without rendering them together
+is not a valid release.
+
+### 2. Validate and provision Kafka
+
+First obtain the effective broker configuration and a TLS/SASL Kafka CLI properties file from the
+Kafka owner. The properties file is not committed and must not be printed in logs.
+
+~~~bash
+export KAFKA_BOOTSTRAP_SERVER='kafka-1.example:9093,kafka-2.example:9093,kafka-3.example:9093'
+export KAFKA_COMMAND_CONFIG='/secure/kafka/matching-client.properties'
+export KAFKA_BROKER_CONFIG='/secure/kafka/effective-broker.properties'
+
+bash scripts/validate-matching-topic-profile.sh --bootstrap-server "$KAFKA_BOOTSTRAP_SERVER" --command-config "$KAFKA_COMMAND_CONFIG" --broker-config-file "$KAFKA_BROKER_CONFIG" --profile production --certify-production
+~~~
+
+The validator queries both topics and rejects a partition whose three replica entries are not
+distinct, whose ISR is below 2, or whose effective broker safety settings drift. It does not
+accept the local RF1 Compose profile.
+
+Topic creation is a controlled mutation. Only the Kafka owner should run it after reviewing the
+planned change:
+
+~~~bash
+bash scripts/provision-matching-topics.sh --bootstrap-server "$KAFKA_BOOTSTRAP_SERVER" --command-config "$KAFKA_COMMAND_CONFIG" --broker-config-file "$KAFKA_BROKER_CONFIG" --profile production --certify-production
+~~~
+
+Run the validator again after provisioning. Record the two topic descriptions, effective broker
+settings, broker count, ISR state, retention/capacity calculation, and the identity of the
+operator who authorized topic mutation.
+
+### 3. Apply the 15-pod Matching fleet
+
+Do not apply matching-session-config.example.yaml unchanged. Replace its trading day, trading
+session ID, and real Matching image digest; use the approved artifact delivery output and real
+image digest. The deployment prerequisites are:
+
+- Kubernetes supports the StatefulSet pod-index label;
+- 15 nodes satisfy the required hostname anti-affinity and each is labelled only after CPU Manager
+  static-policy certification;
+- the simplematch-rwo-pod StorageClass is backed by a CSI driver supporting
+  ReadWriteOncePod;
+- all 15 fixed Lease objects and the scoped Lease Role/RoleBinding are applied;
+- the artifact, session ConfigMap, service ConfigMaps, Secrets, and service accounts are already
+  present; and
+- the container registry contains the referenced immutable image digests.
+
+Apply the fixed ownership resources before the workload:
+
+~~~bash
+kubectl -n "$SIMPLEMATCH_NAMESPACE" apply -f deploy/k8s/matching-headless-service.yaml -f deploy/k8s/matching-lease-rbac.yaml -f deploy/k8s/matching-partition-leases.yaml -f deploy/k8s/matching-pod-disruption-budget.yaml
+
+# Apply the rendered session/artifact resources and the rendered StatefulSet.
+kubectl -n "$SIMPLEMATCH_NAMESPACE" apply -f /secure/rendered/matching-production.yaml
+kubectl -n "$SIMPLEMATCH_NAMESPACE" rollout status statefulset/matching --timeout=10m
+~~~
+
+Then run the strict live gate:
+
+~~~bash
+SIMPLEMATCH_NAMESPACE="$SIMPLEMATCH_NAMESPACE" bash scripts/verify-matching-fleet-live.sh
+~~~
+
+It requires exactly matching-0 through matching-14, all Ready, all real digest-pinned, one
+current Lease holder per ordinal, one Bound RWOP PVC per ordinal, and 15 distinct nodes. A one-node
+kind cluster must fail this gate.
+
+For a normal restart, use a controlled deletion and wait for Lease expiry/handover. Do not use
+kubectl delete pod --force --grace-period=0 as a normal Matching operation. Validate that the
+replacement has the new Pod UID, acquires only its own Lease, replays its baseline, catches up to
+zero lag, and does not republish already acknowledged events.
+
+### 4. Validate PostgreSQL without mutating it
+
+The repository now has a read-only live gate:
+
+~~~bash
+export SIMPLEMATCH_LIVE_POSTGRES_HOST='postgres.example'
+export SIMPLEMATCH_LIVE_POSTGRES_PORT='5432'
+export SIMPLEMATCH_LIVE_POSTGRES_USER='simplematch_certifier'
+export SIMPLEMATCH_LIVE_POSTGRES_PASSWORD='provided-out-of-band'
+export SIMPLEMATCH_LIVE_POSTGRES_DATABASE='simplematch'
+export SIMPLEMATCH_LIVE_POSTGRES_SSLMODE='verify-full'
+export SIMPLEMATCH_LIVE_POSTGRES_SSLROOTCERT='/secure/postgres/ca.pem'
+
+bash scripts/verify-postgres-live-certification.sh
+~~~
+
+The script checks that PostgreSQL is a primary, the connection is TLS-protected, wal_level is
+logical, public.flyway_schema_history is absent, each current Flyway service schema has
+successful history and required smoke tables, each service's FlywayInfo and FlywayValidate
+tasks pass, and the named query-plan checks use their expected indexes. It never runs migrate,
+clean, baseline, repair, reset, or database creation.
+
+This gate verifies the current Flyway owners exposed by scripts/lib/flyway-services.sh. It does
+not certify the future Query/Redis service, which is still a separate unfinished capability in the
+remaining-work inventory.
+
+### 5. Run external QuickFIX certification
+
+The existing certificationTest remains repo-local. The new live task is opt-in and uses a
+temporary initiator FileStore/FileLog directory, so it does not persist test sequence state in the
+repository:
+
+~~~bash
+export SIMPLEMATCH_LIVE_FIX_HOST='gateway.example'
+export SIMPLEMATCH_LIVE_FIX_PORT='5001'
+export SIMPLEMATCH_LIVE_FIX_SENDER_COMP_ID='CERTIFIER'
+export SIMPLEMATCH_LIVE_FIX_TARGET_COMP_ID='SIMPLEMATCH'
+export SIMPLEMATCH_LIVE_FIX_ACCOUNT_ID='0194a8f0-7c77-7b38-9e2d-2a5fdd0f7c13'
+export SIMPLEMATCH_LIVE_FIX_SYMBOL='2330'
+export SIMPLEMATCH_LIVE_FIX_QUANTITY='1000'
+export SIMPLEMATCH_LIVE_FIX_PRICE='101.25'
+export SIMPLEMATCH_LIVE_FIX_CL_ORD_ID='CERT-20260811-001'
+export SIMPLEMATCH_LIVE_FIX_EXPECT_ACCEPTED='true'
+
+bash scripts/run-quickfix-live-certification.sh
+~~~
+
+The test performs Logon, sends one NewOrderSingle (35=D), waits for an ExecutionReport (35=8),
+checks the client order ID, symbol, execution identity, execution type, and order status, and
+then stops the initiator. It does not claim a final trade fill merely because an admission report
+was received. A final fill certification requires a funded/eligible test account, an opposing
+order or approved matching fixture, and evidence from the final matching.events path.
+
+The QuickFIX owner must confirm that the designated session, account, symbol, price, quantity, and
+ClOrdID are safe for a live test. If the intended test is rejection-path only, set
+SIMPLEMATCH_LIVE_FIX_EXPECT_ACCEPTED=false; the session and response still need to be
+operator-approved.
+
+### 6. Collect and retain evidence
+
+Retain, outside the repository when sensitive:
+
+- final artifact identity and approval report;
+- rendered image references and SHA-256 digests;
+- Kubernetes context, namespace, StatefulSet/PVC/Lease/pod JSON, and rollout output;
+- Kafka topic descriptions, effective broker properties, command-config identity, ISR and disk
+  capacity evidence;
+- PostgreSQL server identity, TLS/WAL results, Flyway/query-plan output, and migration ownership;
+- FIX session IDs, dictionary checksum, test ClOrdID, and sanitized ExecutionReport fields; and
+- any pause/reopen decision, rollback action, or outstanding quarantine.
+
+Do not place passwords, bearer tokens, private keys, FIX credentials, or raw production orders in
+Git, ConfigMaps, test logs, or this document.
+
+## Values the operator must provide
+
+I can maintain the repository-side scripts and manifests, but the final live run needs your help
+with environment-specific authority and test data:
+
+1. The Kubernetes context/namespace and permission to inspect/apply; a cluster with 15 eligible
+   nodes, CPU Manager static policy, and a RWOP-compatible CSI driver.
+2. Real Matching and Gateway container image references with immutable SHA-256 digests. The
+   repository currently contains no Dockerfiles and intentionally retains placeholder digests.
+3. Three Kafka broker bootstrap endpoints, TLS/SASL command properties, effective broker
+   configuration export, and authority to create/describe the two topics.
+4. PostgreSQL host/port/database, a least-privilege certification user, password delivered
+   out-of-band, TLS CA/hostname details, and confirmation that the target is not a disposable
+   database.
+5. QuickFIX host/port, sender/target CompIDs, session sequence policy, approved FIX dictionary,
+   a safe canonical Account UUID, eligible symbol, price/quantity, and a unique ClOrdID.
+6. The approved final artifact/session ID and the deployment renderer output that points both Risk
+   and Matching at the exact same artifact checksum.
+7. A decision on whether the live order may be admitted only, or whether an opposing order and
+   final execution/fill must also be certified.
+
+Until those values and permissions are available, the correct status is “repository gates ready;
+production certification pending,” not “production certified.”

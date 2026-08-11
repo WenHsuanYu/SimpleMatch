@@ -1,2 +1,5 @@
 simplematch:
   environment: production
+  account-service:
+    final-matching-events:
+      enabled: true

@@ -1,2 +1,5 @@
 simplematch:
   environment: production
+  persistence:
+    matching-events:
+      enabled: true

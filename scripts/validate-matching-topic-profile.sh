@@ -10,6 +10,7 @@ PROFILE="production"
 FIXTURE_DIR=""
 BROKER_CONFIG_FILE=""
 CERTIFY_PRODUCTION=false
+COMMAND_CONFIG_FILE="${MATCHING_KAFKA_COMMAND_CONFIG:-}"
 
 usage() {
   printf '%s\n' \
@@ -18,6 +19,7 @@ usage() {
     '  --bootstrap-server HOST:PORT  Query a Kafka cluster.' \
     '  --fixture-dir DIRECTORY       Validate saved Kafka CLI output instead.' \
     '  --broker-config-file FILE     Use the effective broker config instead of a live query.' \
+    '  --command-config FILE        Kafka CLI TLS/SASL client properties.' \
     '  --profile production|local    Select the profile (default: production).' \
     '  --certify-production          Reject any non-production profile.' \
     '  --kafka-bin-dir DIRECTORY     Directory containing Kafka CLI programs.'
@@ -28,6 +30,7 @@ while [[ $# -gt 0 ]]; do
     --bootstrap-server) BOOTSTRAP_SERVER="$2"; shift 2 ;;
     --fixture-dir) FIXTURE_DIR="$2"; shift 2 ;;
     --broker-config-file) BROKER_CONFIG_FILE="$2"; shift 2 ;;
+    --command-config) COMMAND_CONFIG_FILE="$2"; shift 2 ;;
     --profile) PROFILE="$2"; shift 2 ;;
     --certify-production) CERTIFY_PRODUCTION=true; shift ;;
     --kafka-bin-dir) MATCHING_KAFKA_BIN_DIR="$2"; shift 2 ;;
@@ -40,6 +43,15 @@ done
   'Specify --fixture-dir or --bootstrap-server'
 [[ -z "${FIXTURE_DIR}" || -z "${BOOTSTRAP_SERVER}" ]] || matching_die \
   'Use either --fixture-dir or --bootstrap-server, not both'
+if [[ -n "${COMMAND_CONFIG_FILE}" ]]; then
+  [[ -f "${COMMAND_CONFIG_FILE}" ]] || matching_die \
+    "Kafka command config does not exist: ${COMMAND_CONFIG_FILE}"
+fi
+
+KAFKA_COMMAND_ARGS=()
+if [[ -n "${COMMAND_CONFIG_FILE}" ]]; then
+  KAFKA_COMMAND_ARGS+=(--command-config "${COMMAND_CONFIG_FILE}")
+fi
 
 matching_load_profile "${PROFILE}"
 if [[ "${CERTIFY_PRODUCTION}" == true ]]; then
@@ -81,6 +93,8 @@ assert_topic_shape() {
   local expected_replication
   local partition_lines
   local under_replicated
+  local replica_ids
+  local replica_count
   expected_partitions="$(matching_profile_value topic.partition.count)"
   expected_replication="$(matching_profile_value topic.replication.factor)"
 
@@ -91,6 +105,19 @@ assert_topic_shape() {
   partition_lines="$(grep -Ec 'Partition:[[:space:]]*[0-9]+' "${topic_file}" || true)"
   [[ "${partition_lines}" == "${expected_partitions}" ]] || matching_die \
     "${topic}: expected ${expected_partitions} partition descriptions, got ${partition_lines}"
+
+  replica_ids="$(awk '
+    /Partition:/ {
+      replicas = $0
+      sub(/^.*Replicas:[[:space:]]*/, "", replicas)
+      sub(/[[:space:]]+Isr:.*$/, "", replicas)
+      gsub(/,/, "\n", replicas)
+      print replicas
+    }
+  ' "${topic_file}" | LC_ALL=C sort -u)"
+  replica_count="$(printf '%s\n' "${replica_ids}" | awk 'NF { count++ } END { print count + 0 }')"
+  [[ "${replica_count}" == "${expected_replication}" ]] || matching_die \
+    "${topic}: expected ${expected_replication} distinct replica broker IDs, got ${replica_count}"
 
   under_replicated="$(awk -v minimum="$(matching_profile_value topic.min.insync.replicas)" '
     /Partition:/ {
@@ -128,15 +155,15 @@ if [[ -z "${FIXTURE_DIR}" ]]; then
   KAFKA_TOPICS="$(matching_find_kafka_command kafka-topics)"
   KAFKA_CONFIGS="$(matching_find_kafka_command kafka-configs)"
   for topic in matching.commands matching.events; do
-    "${KAFKA_TOPICS}" --bootstrap-server "${BOOTSTRAP_SERVER}" --describe --topic "${topic}" \
+    "${KAFKA_TOPICS}" "${KAFKA_COMMAND_ARGS[@]}" --bootstrap-server "${BOOTSTRAP_SERVER}" --describe --topic "${topic}" \
       > "${OUTPUT_DIR}/${topic}.topic.txt"
-    "${KAFKA_CONFIGS}" --bootstrap-server "${BOOTSTRAP_SERVER}" --entity-type topics \
+    "${KAFKA_CONFIGS}" "${KAFKA_COMMAND_ARGS[@]}" --bootstrap-server "${BOOTSTRAP_SERVER}" --entity-type topics \
       --entity-name "${topic}" --describe > "${OUTPUT_DIR}/${topic}.config.txt"
   done
   if [[ -n "${BROKER_CONFIG_FILE}" ]]; then
     cp "${BROKER_CONFIG_FILE}" "${OUTPUT_DIR}/broker.config.txt"
   else
-    "${KAFKA_CONFIGS}" --bootstrap-server "${BOOTSTRAP_SERVER}" --entity-type brokers \
+    "${KAFKA_CONFIGS}" "${KAFKA_COMMAND_ARGS[@]}" --bootstrap-server "${BOOTSTRAP_SERVER}" --entity-type brokers \
       --entity-default --describe > "${OUTPUT_DIR}/broker.config.txt"
   fi
 fi

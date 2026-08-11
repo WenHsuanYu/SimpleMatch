@@ -76,6 +76,7 @@ private:
   PartitionOwnershipIdentity expected_identity_;
   std::chrono::steady_clock::duration self_fence_after_;
   std::optional<std::chrono::steady_clock::time_point> uncertainty_started_at_;
+  bool has_confirmed_renewal_{};
   PartitionOwnershipStatus status_{PartitionOwnershipState::kAwaitingLease,
                                    "LEASE_NOT_CONFIRMED"};
 };

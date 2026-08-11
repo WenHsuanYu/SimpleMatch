@@ -6,6 +6,11 @@ data:
   application.yaml: |
     simplematch:
       risk-service:
+        market-reference:
+          artifact-location: file:/etc/simplematch/market-reference/market_reference.json
+          checksum-location: file:/etc/simplematch/market-reference/market_reference.sha256
+          trading-day: ${SIMPLEMATCH_TRADING_DAY}
+          matching-image-digest: ${SIMPLEMATCH_MATCHING_IMAGE_DIGEST}
         admission:
           cdc-metric-name: orders.validated
           maximum-cdc-lag-events: 10000

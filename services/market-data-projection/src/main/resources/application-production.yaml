@@ -1,0 +1,9 @@
+simplematch:
+  environment: production
+  market-data-projection:
+    matching-events:
+      enabled: true
+    marketdata-events:
+      enabled: true
+    redis:
+      enabled: true

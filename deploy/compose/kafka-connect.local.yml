@@ -9,6 +9,12 @@ services:
     ports:
       - "${SIMPLEMATCH_POSTGRES_PORT:-5432}:5432"
 
+  redis:
+    image: redis:7.4-alpine
+    command: ["redis-server", "--appendonly", "yes"]
+    ports:
+      - "${SIMPLEMATCH_REDIS_PORT:-6379}:6379"
+
   kafka:
     image: apache/kafka:4.2.0
     environment:

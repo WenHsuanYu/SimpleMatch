@@ -57,8 +57,24 @@ spec:
                 configMapKeyRef:
                   name: matching-session-config
                   key: trading_session_id
+            - name: MATCHING_TRADING_DAY
+              valueFrom:
+                configMapKeyRef:
+                  name: matching-session-config
+                  key: trading_day
+            - name: MATCHING_MATCHING_IMAGE_DIGEST
+              valueFrom:
+                configMapKeyRef:
+                  name: matching-session-config
+                  key: matching_image_digest
+            - name: MATCHING_KAFKA_BROKERS
+              value: kafka:9092
+            - name: MATCHING_CONSUMER_GROUP
+              value: matching-partition-consumer
             - name: MATCHING_LEASE_NAME_PREFIX
               value: matching-partition-
+            - name: MATCHING_LEASE_MODE
+              value: kubernetes
             - name: MATCHING_LEASE_DURATION_SECONDS
               value: "15"
             - name: MATCHING_LEASE_RENEW_INTERVAL_SECONDS
@@ -67,12 +83,20 @@ spec:
               value: "5"
             - name: MATCHING_ARTIFACT_PATH
               value: /etc/simplematch/market-reference/market_reference.json
+            - name: MATCHING_ARTIFACT_CHECKSUM_PATH
+              value: /etc/simplematch/market-reference/market_reference.sha256
             - name: MATCHING_BASELINE_PATH
               value: /var/lib/simplematch/matching/partition-baseline.json
+            - name: MATCHING_STATUS_PATH
+              value: /var/lib/simplematch/matching/runtime-status
             - name: MATCHING_COMMANDS_TOPIC
               value: matching.commands
             - name: MATCHING_EVENTS_TOPIC
               value: matching.events
+            - name: MATCHING_MAX_RESTING_ORDERS_PER_INSTRUMENT
+              value: "4096"
+            - name: MATCHING_MAX_PENDING_PUBLICATIONS
+              value: "1000000"
           resources:
             requests:
               cpu: "3"
@@ -119,6 +143,8 @@ spec:
             items:
               - key: market_reference.json
                 path: market_reference.json
+              - key: market_reference.sha256
+                path: market_reference.sha256
         - name: runtime-tmp
           emptyDir: {}
   volumeClaimTemplates:

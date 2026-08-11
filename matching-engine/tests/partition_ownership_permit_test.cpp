@@ -31,6 +31,17 @@ TEST(LeaseFencedPartitionOwnershipPermitTest, SelfFencesAfterFiveSecondsOfUnconf
   EXPECT_EQ(permit.status().reason, "LEASE_RENEWAL_UNCONFIRMED");
 }
 
+TEST(LeaseFencedPartitionOwnershipPermitTest, InitialLeaseUncertaintyDoesNotPermitProcessing) {
+  LeaseFencedPartitionOwnershipPermit permit(expected_identity(), 5s);
+  const std::chrono::steady_clock::time_point started_at{};
+
+  permit.report_renewal_uncertainty(started_at);
+  permit.evaluate_at(started_at + 4s);
+
+  EXPECT_FALSE(permit.allows_processing());
+  EXPECT_EQ(permit.status().state, PartitionOwnershipState::kLeaseUncertain);
+}
+
 TEST(LeaseFencedPartitionOwnershipPermitTest, RefusesALeaseHeldByAnotherRuntimeIdentity) {
   LeaseFencedPartitionOwnershipPermit permit(expected_identity(), 5s);
   const PartitionOwnershipIdentity different_holder{

@@ -10,6 +10,7 @@ PROFILE="production"
 BROKER_CONFIG_FILE=""
 CERTIFY_PRODUCTION=false
 DRY_RUN=false
+COMMAND_CONFIG_FILE="${MATCHING_KAFKA_COMMAND_CONFIG:-}"
 
 usage() {
   printf '%s\n' \
@@ -17,6 +18,7 @@ usage() {
     '' \
     '  --profile production|local    Select the profile (default: production).' \
     '  --broker-config-file FILE     Effective broker configuration for validation.' \
+    '  --command-config FILE        Kafka CLI TLS/SASL client properties.' \
     '  --certify-production          Validate the production profile after provisioning.' \
     '  --dry-run                     Print Kafka CLI commands without changing a broker.' \
     '  --kafka-bin-dir DIRECTORY     Directory containing Kafka CLI programs.'
@@ -27,6 +29,7 @@ while [[ $# -gt 0 ]]; do
     --bootstrap-server) BOOTSTRAP_SERVER="$2"; shift 2 ;;
     --profile) PROFILE="$2"; shift 2 ;;
     --broker-config-file) BROKER_CONFIG_FILE="$2"; shift 2 ;;
+    --command-config) COMMAND_CONFIG_FILE="$2"; shift 2 ;;
     --certify-production) CERTIFY_PRODUCTION=true; shift ;;
     --dry-run) DRY_RUN=true; shift ;;
     --kafka-bin-dir) MATCHING_KAFKA_BIN_DIR="$2"; shift 2 ;;
@@ -39,6 +42,15 @@ done
 matching_load_profile "${PROFILE}"
 if [[ "${CERTIFY_PRODUCTION}" == true ]]; then
   matching_require_production_profile
+fi
+if [[ -n "${COMMAND_CONFIG_FILE}" ]]; then
+  [[ -f "${COMMAND_CONFIG_FILE}" ]] || matching_die \
+    "Kafka command config does not exist: ${COMMAND_CONFIG_FILE}"
+fi
+
+KAFKA_COMMAND_ARGS=()
+if [[ -n "${COMMAND_CONFIG_FILE}" ]]; then
+  KAFKA_COMMAND_ARGS+=(--command-config "${COMMAND_CONFIG_FILE}")
 fi
 
 run_command() {
@@ -58,7 +70,7 @@ else
 fi
 
 for topic in matching.commands matching.events; do
-  run_command "${KAFKA_TOPICS}" --bootstrap-server "${BOOTSTRAP_SERVER}" --create --if-not-exists \
+  run_command "${KAFKA_TOPICS}" "${KAFKA_COMMAND_ARGS[@]}" --bootstrap-server "${BOOTSTRAP_SERVER}" --create --if-not-exists \
     --topic "${topic}" --partitions "$(matching_profile_value topic.partition.count)" \
     --replication-factor "$(matching_profile_value topic.replication.factor)" \
     --config "cleanup.policy=$(matching_profile_value topic.cleanup.policy)" \
@@ -71,6 +83,9 @@ if [[ "${DRY_RUN}" == false ]]; then
     --bootstrap-server "${BOOTSTRAP_SERVER}" --profile "${PROFILE}")
   if [[ -n "${BROKER_CONFIG_FILE}" ]]; then
     validation_args+=(--broker-config-file "${BROKER_CONFIG_FILE}")
+  fi
+  if [[ -n "${COMMAND_CONFIG_FILE}" ]]; then
+    validation_args+=(--command-config "${COMMAND_CONFIG_FILE}")
   fi
   if [[ "${CERTIFY_PRODUCTION}" == true ]]; then
     validation_args+=(--certify-production)

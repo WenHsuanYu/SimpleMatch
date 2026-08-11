@@ -38,11 +38,13 @@ and limits three CPUs and the same memory value so it receives Guaranteed QoS. N
 `simplematch.io/cpu-manager-static=true` label only after CPU Manager static-policy certification.
 
 The standard artifact source is the reviewed immutable `matching-daily-artifact` ConfigMap, whose
-`market_reference.json` is mounted at
-`/etc/simplematch/market-reference/market_reference.json`. Create the immutable session ConfigMap
-from `matching-session-config.example.yaml` only after replacing its placeholder with the approved
-session ID. The daily artifact ConfigMap itself is generated from approved canonical bytes and is
-never changed during an open session.
+`market_reference.json` and external `market_reference.sha256` are mounted at
+`/etc/simplematch/market-reference/market_reference.json` and
+`/etc/simplematch/market-reference/market_reference.sha256`. Create the immutable session ConfigMap
+from `matching-session-config.example.yaml` only after replacing its trading-day, session-ID, and
+Matching image-digest placeholders. The daily artifact ConfigMap itself is generated from approved
+canonical bytes and is never changed during an open session. Risk and Matching must use the same
+artifact checksum, trading day, and image digest before the Gateway can open.
 
 When the final artifact exceeds 900 KiB, use the reviewed
 `matching-artifact-oci-data-image-patch.json` in the deployment renderer instead. It replaces the
@@ -53,3 +55,9 @@ approved image digests before deployment.
 `bash scripts/test-matching-kubernetes-manifests.sh` verifies the structural deployment contract
 without requiring a live cluster. The normal recovery procedure is in
 [Matching fleet recovery](../../services/docs/platform/matching-fleet-recovery.md).
+
+The strict live gate is bash scripts/verify-matching-fleet-live.sh. It requires all 15 pods to be
+Ready with real digest-pinned images, current per-ordinal Lease holders, Bound
+ReadWriteOncePod PVCs, and 15 distinct nodes. The complete Kafka, PostgreSQL, and external
+QuickFIX sequence is recorded in
+[Production Live Certification](../../docs/production-live-certification.md).

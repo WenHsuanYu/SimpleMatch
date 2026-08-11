@@ -14,7 +14,9 @@
 #include <optional>
 #include <set>
 #include <span>
+#include <stdexcept>
 #include <string>
+#include <vector>
 
 namespace simplematch::matching {
 
@@ -34,6 +36,13 @@ struct AssignedCommandRecord {
   std::string value;
 };
 
+/** Kafka offsets needed to decide whether a retained replay can complete safely. */
+struct DirectKafkaPartitionOffsets {
+  std::int64_t earliest_retained_offset;
+  std::int64_t end_offset;
+  std::optional<std::int64_t> committed_offset;
+};
+
 /** Infrastructure boundary implemented by a Kafka adapter with direct assign(), never subscribe(). */
 class DirectPartitionKafkaConsumer {
 public:
@@ -42,6 +51,25 @@ public:
   virtual void assign(const DirectKafkaPartitionAssignment &assignment) = 0;
   [[nodiscard]] virtual std::optional<AssignedCommandRecord> poll() = 0;
   virtual void commit_synchronously(std::int64_t next_offset) = 0;
+
+  /** Returns retained low/high offsets and the consumer group's committed next offset. */
+  [[nodiscard]] virtual DirectKafkaPartitionOffsets offsets() {
+    throw std::logic_error("Kafka consumer does not expose partition offsets");
+  }
+
+  /** Reads [first_offset, end_offset) without applying Matching effects to publications. */
+  [[nodiscard]] virtual std::vector<AssignedCommandRecord> read_retained(
+      std::int64_t first_offset, std::int64_t end_offset) {
+    static_cast<void>(first_offset);
+    static_cast<void>(end_offset);
+    throw std::logic_error("Kafka consumer does not expose retained replay");
+  }
+
+  /** Moves the assigned consumer to an absolute offset after recovery. */
+  virtual void seek(std::int64_t next_offset) {
+    static_cast<void>(next_offset);
+    throw std::logic_error("Kafka consumer does not expose seeking");
+  }
 };
 
 /** Session-pinned identities verified by the Open Barrier and every command. */

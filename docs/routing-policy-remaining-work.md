@@ -20,6 +20,34 @@ Status was reconciled against the `master` worktree on 2026-08-11. An accepted d
 | `NOT_STARTED` | No production implementation of the target capability exists. |
 | `OBSOLETE_TO_REMOVE` | Current code implements a superseded design and must be removed or migrated. |
 
+## Latest verification evidence (2026-08-11)
+
+- Native CTest now passes all 40 tests, including Kubernetes Lease timestamp formatting and a
+  minimum one-second timeout for Kafka recovery metadata queries.
+- A disposable single-node `simplematch-live` kind cluster ran one real `matching-0` process against
+  an in-cluster Kafka broker. The process acquired and renewed its partition Lease, mounted a
+  `ReadWriteOncePod` PVC, consumed the Open Barrier plus two order commands, reached `READY`,
+  committed input offset 3, and published two `matching.events` records.
+- A normal Pod restart demonstrated Lease handover from the old Pod UID to a new UID, PVC baseline
+  replay, recovery to `READY`, zero Kafka lag, and no additional output events. This is an
+  integration smoke only: the cluster had one node, one Kafka broker with replication factor 1,
+  local-path storage, and no production CPU Manager/CSI/three-broker certification.
+- Gateway Kubernetes resources were applied and inspected at API level: one replica, digest-pinned
+  image, Bound data PVC, owner-0 Service, and resource-scoped ConfigMap RBAC. The placeholder
+  Gateway image is not available, so its Pod remained `ErrImagePull`; no Gateway runtime or
+end-to-end admission claim follows from this check.
+
+- The production-live runbook now records the complete repository-to-environment sequence in
+  [Production Live Certification](production-live-certification.md). It includes the strict
+  15-pod/15-node/Lease/PVC gate, a read-only PostgreSQL gate, and an opt-in external QuickFIX
+  certification task.
+- The Kafka profile validator now accepts an external TLS/SASL command-properties file and rejects
+  duplicate replica broker identities. These changes strengthen the gate but do not constitute a
+  live three-broker certification.
+- The new live gates have not passed against production: no production Kubernetes context,
+  broker credentials, PostgreSQL endpoint, or external FIX session was supplied. Existing PARTIAL
+  statuses therefore remain unchanged.
+
 ## Frozen target boundaries
 
 - The Phase 1 Trading Release is the first complete pre-release trading-system boundary. It is not
@@ -33,8 +61,9 @@ Status was reconciled against the `master` worktree on 2026-08-11. An accepted d
   runtime topic, outbox, projection, or synchronous lookup.
 - `matching.commands` and `matching.events` each have 15 fixed partitions. `matching-N` owns
   partition `N`, and each partition owns at most 150 instrument order books.
-- Kafka `matching.commands` is the authoritative durable ordered input journal. A local per-command
-  Matching journal is not part of the target architecture.
+- Kafka `matching.commands` is the authoritative durable ordered input journal. A separate local
+  per-command fsync journal on a file or PVC is not part of the target architecture; the small PVC
+  baseline is only a recovery-coordinate acceleration index and Kafka remains authoritative.
 - Each native Matching process uses a Kafka ingress thread, a preallocated input ring, one
   single-writer Matching core, a preallocated output ring, and a Kafka publisher/coordinator.
 - PostgreSQL is the permanent trade and projection store, but it is not used to recover Matching
@@ -180,10 +209,14 @@ Status was reconciled against the `master` worktree on 2026-08-11. An accepted d
 - **Current evidence:** `DailyMarketReferenceArtifactLoader` validates the mounted daily artifact at
   Risk startup; `DailyArtifactAdmissionRoutingResolver` persists its identity and explicit route;
   `MatchingBarrierOutboxFactory` writes Open/Close barriers to all 15 partitions; and focused
-  resolver, barrier, transaction, Flyway, and application-context tests pass.
-- **Missing behavior:** A deployed CDC connector and three-broker Kafka environment must prove the
-  outbox reaches the real `matching.commands` topic. The offline builder and production artifact
-  approval workflow remain MR-1 through MR-4 work rather than being supplied by Risk.
+  resolver, barrier, transaction, Flyway, and application-context tests pass. The repository-local
+  PostgreSQL/Kafka Connect/Kafka CDC contract also passes, including connector pause/resume and
+  exact record delivery. A separate native fixture has verified the local `matching.commands` to
+  `matching.events` broker path.
+- **Missing behavior:** The Risk application's own outbox must still be certified through the
+  deployed connector against the owned three-broker Kafka environment. The offline builder and
+  production artifact approval workflow remain MR-1 through MR-4 work rather than being supplied by
+  Risk.
 - **Acceptance criteria:** New order, cancel, `TRADING_DAY_OPEN_BARRIER`, and
   `TRADING_DAY_CLOSE_BARRIER` records target explicit partitions 0-14. Recovery never recomputes an
   admitted route. No command is published for a stale or mismatched artifact.
@@ -199,10 +232,12 @@ Status was reconciled against the `master` worktree on 2026-08-11. An accepted d
   locks, or post-warmup allocation.
 - **Current evidence:** The native runtime has preallocated SPSC ingress/output rings, a
   single-writer price-time order-book core capped at 150 instruments, command decoding, direct
-  partition assignment, output backpressure, and deterministic CTest coverage.
-- **Missing behavior:** The production native process still needs a Kafka client adapter, CPU pinning
-  verification, lifecycle executable/probes, allocation and throughput certification, and an actual
-  broker integration test. Those runtime adapters must not enter the Matching core hot path.
+  partition assignment, output backpressure, a librdkafka adapter, lifecycle executable/probes, and
+  deterministic CTest coverage. A local broker smoke and a disposable kind smoke have consumed
+  real `matching.commands` records and published acknowledged `matching.events` records.
+- **Missing behavior:** Production CPU pinning verification, allocation and throughput
+  certification, and integration against the owned three-broker profile remain. Those runtime
+  adapters must not enter the Matching core hot path.
 - **Acceptance criteria:** The same ordered command stream and pinned binary produce identical state
   checksums and event bytes. Ring exhaustion never overwrites, drops, or expands heap storage.
   Output backpressure stalls safely and drives the accepted admission policy.
@@ -218,10 +253,13 @@ Status was reconciled against the `master` worktree on 2026-08-11. An accepted d
   partition deterministically. PVC metadata is an acceleration index, not the authority.
 - **Current evidence:** `PartitionReplayCoordinator` models explicit partition assignment,
   Open/Close barriers, command de-duplication, retained-record replay, output ACK tracking, and a
-  contiguous commit watermark; CTests cover the crash/replay and barrier invariants.
-- **Missing behavior:** A real Kafka consumer/admin adapter must provide retained scans, end offsets,
-  and commit calls. PVC baseline metadata, retention certification, and a broker/PVC restart smoke
-  remain unproven in a cluster.
+  contiguous commit watermark; CTests cover the crash/replay and barrier invariants. The native
+  librdkafka adapter now exposes retained-range reads, committed/end offsets, seeking, and
+  synchronous commits, while the runtime replays the PVC baseline before live polling.
+- **Missing behavior:** The disposable kind smoke covered PVC baseline persistence, Kafka replay,
+  Lease handover, and a normal Pod restart, but retention certification, broker/PVC failure
+  behavior, and the owned three-broker recovery gate remain outstanding. Unit tests and a
+  single-node smoke do not substitute for that operational recovery gate.
 - **Acceptance criteria:** Outputs are ACKed before the input offset becomes completed; commits
   never cross a gap. Crash windows may replay identical events but cannot lose an accepted command.
   A missing retained Open Barrier fails closed. No periodic order-book snapshot is added unless the
@@ -236,10 +274,12 @@ Status was reconciled against the `master` worktree on 2026-08-11. An accepted d
   `ORDER_CANCELLED`, and `ORDER_EXPIRED`. One trade event describes both maker and taker legs.
 - **Current evidence:** `matching_runtime_v1.proto`, the native event encoder, deterministic
   event/trade identity, output/match indices, raw-byte hash fixtures, and Java envelope parsing are
-  implemented and covered by native and shared-contract tests.
-- **Missing behavior:** A production Kafka producer must publish the encoded records with the
-  validated 15-partition profile and prove ACK/replay behavior against brokers. Schema/image
-  compatibility still needs deployment-time certification.
+  implemented and covered by native and shared-contract tests. The native idempotent producer now
+  checks delivery callbacks, and a local broker smoke has verified acknowledged event publication
+  and the deterministic record key; the disposable kind smoke observed two published event keys and
+  retained that count across a normal Matching restart.
+- **Missing behavior:** The producer must be certified against the production 15-partition,
+  three-broker profile, including ACK/replay and schema/image compatibility at deployment time.
 - **Acceptance criteria:** `eventId` derives from identity version, trading session, partition,
   command, and output index; `tradeId` uses command and match index. Event type is not part of
   `eventId`. Consumers hash the exact Kafka record value bytes. Same ID/same hash is a duplicate;
@@ -329,10 +369,12 @@ Status was reconciled against the `master` worktree on 2026-08-11. An accepted d
 - **Current evidence:** `services/market-data-projection` owns a Flyway projection/inbox/outbox,
   ordered final-event consumer, complete top-five/last-trade snapshot encoder, delayed retry/DLQ,
   rebuild service, `marketdata.events` publisher, and Redis cache repair path. Its focused runtime,
-  Kafka-consumer, and application tests pass.
-- **Missing behavior:** A real Kafka/PostgreSQL/Redis integration, `marketdata-streamer` consumption,
-  topic provisioning, deployment manifests, and replay/rebuild operations still need production
-  certification. Projection failure remains isolated from trading admission by design.
+  Kafka-consumer, and application tests pass. The repository-local Compose environment now includes
+  Redis with AOF persistence, and the production profile enables the projection and Redis settings.
+- **Missing behavior:** A real Kafka/PostgreSQL/Redis projection integration,
+  `marketdata-streamer` consumption, topic provisioning, deployment manifests, and replay/rebuild
+  operations still need production certification. Projection failure remains isolated from trading
+  admission by design.
 - **Acceptance criteria:** Projection failure does not affect Matching, permanent trade storage,
   Account, QuickFIX, or admission. Delayed retry/DLQ is allowed because the view can be rebuilt.
 - **Blocking dependencies:** ME-3.
@@ -390,11 +432,13 @@ Status was reconciled against the `master` worktree on 2026-08-11. An accepted d
 - **Current evidence:** `LeaseFencedPartitionOwnershipPermit` blocks native assign, replay, match,
   output, and commit without a confirmed permit, and self-fences after five seconds of lease
   uncertainty. A 15-replica StatefulSet, headless Service, `ReadWriteOncePod` PVCs, per-partition
-  Lease RBAC/resources, OCI-data-image patch, PDB, CPU/affinity policy, manifest test, and recovery
-  runbook are present.
-- **Missing behavior:** The native process image needs the real Kubernetes Lease and Kafka adapters
-  plus executable readiness/liveness probes. A compatible CSI driver, CPU Manager static policy,
-  storage/lease handover, and a live cluster smoke test must certify the deployment profile.
+  Lease RBAC/resources, OCI-data-image patch, PDB, CPU/affinity policy, native Kubernetes Lease and
+  Kafka adapters, executable readiness/liveness probes, manifest tests, and recovery runbook are
+  present.
+- **Missing behavior:** A disposable single-node kind smoke validated the native Lease adapter,
+  `ReadWriteOncePod` claim, storage/Lease handover, and Kafka recovery for one partition. Production
+  CSI behavior, CPU Manager static policy, all-15-pod scheduling, and the owned three-broker
+  recovery gate still need certification in the target cluster.
 - **Acceptance criteria:** `matching-N` cannot poll, replay, match, publish, or become Ready without
   its partition permit. Lease uncertainty for five seconds self-fences the runtime. Replacement
   waits for storage and Lease ownership, replays, and reaches Ready before operator reopen. The

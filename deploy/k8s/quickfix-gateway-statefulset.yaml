@@ -4,7 +4,7 @@ metadata:
   name: quickfix-gateway
 spec:
   serviceName: quickfix-gateway-headless
-  replicas: 2
+  replicas: 1
   selector:
     matchLabels:
       app.kubernetes.io/name: quickfix-gateway
@@ -17,7 +17,7 @@ spec:
       terminationGracePeriodSeconds: 30
       containers:
         - name: quickfix-gateway
-          image: quickfix-gateway:latest
+          image: quickfix-gateway@sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
           imagePullPolicy: IfNotPresent
           env:
             - name: SPRING_PROFILES_ACTIVE
@@ -25,8 +25,7 @@ spec:
             - name: SIMPLEMATCH_KUBERNETES_ENABLED
               value: "true"
             - name: SIMPLEMATCH_KUBERNETES_CONFIG_IMPORT
-              value:
-                kubernetes:
+              value: "kubernetes:"
             - name: SIMPLEMATCH_QUICKFIX_GATEWAY_OWNER_ID
               valueFrom:
                 fieldRef:

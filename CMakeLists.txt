@@ -5,6 +5,7 @@ include(CTest)
 
 option(SIMPLEMATCH_ENABLE_WARNINGS "Enable compiler warnings" ON)
 option(SIMPLEMATCH_ENABLE_SANITIZERS "Enable AddressSanitizer + UndefinedBehaviorSanitizer" OFF)
+option(SIMPLEMATCH_ENABLE_MESSAGING "Build native Kafka runtime adapters" OFF)
 
 function(simplematch_enable_warnings target_name)
   if(NOT SIMPLEMATCH_ENABLE_WARNINGS)
@@ -54,6 +55,7 @@ add_library(simplematch_matching_ingress STATIC
     matching-engine/src/deterministic_matching_core.cpp
     matching-engine/src/matching_command_decoder.cpp
     matching-engine/src/matching_event_encoder.cpp
+    matching-engine/src/matching_partition_runtime_driver.cpp
     matching-engine/src/partition_ownership_permit.cpp
     matching-engine/src/partition_replay_coordinator.cpp
     matching-engine/src/matching_runtime.cpp)
@@ -72,6 +74,43 @@ protobuf_generate(
 simplematch_enable_warnings(simplematch_matching_ingress)
 simplematch_enable_sanitizers(simplematch_matching_ingress)
 
+if(SIMPLEMATCH_ENABLE_MESSAGING)
+  find_package(RdKafka CONFIG REQUIRED)
+  find_package(CURL REQUIRED)
+
+  add_library(simplematch_matching_messaging STATIC
+      matching-engine/src/kubernetes_lease_ownership_adapter.cpp
+      matching-engine/src/rdkafka_runtime_adapter.cpp)
+  target_include_directories(simplematch_matching_messaging
+      PUBLIC matching-engine/include
+      PRIVATE ${CMAKE_CURRENT_BINARY_DIR})
+  target_link_libraries(simplematch_matching_messaging
+      PUBLIC simplematch_matching_ingress
+             RdKafka::rdkafka
+             CURL::libcurl)
+  simplematch_enable_warnings(simplematch_matching_messaging)
+  simplematch_enable_sanitizers(simplematch_matching_messaging)
+
+  add_executable(simplematch-matching matching-engine/src/matching_main.cpp)
+  target_include_directories(simplematch-matching PRIVATE ${CMAKE_CURRENT_BINARY_DIR})
+  target_link_libraries(simplematch-matching PRIVATE simplematch_matching_messaging)
+  simplematch_enable_warnings(simplematch-matching)
+  simplematch_enable_sanitizers(simplematch-matching)
+
+  if(BUILD_TESTING)
+    add_executable(
+        simplematch-matching-kafka-fixture-publisher
+        matching-engine/tests/matching_kafka_fixture_publisher.cpp)
+    target_include_directories(
+        simplematch-matching-kafka-fixture-publisher PRIVATE ${CMAKE_CURRENT_BINARY_DIR})
+    target_link_libraries(
+        simplematch-matching-kafka-fixture-publisher
+        PRIVATE simplematch_matching_ingress RdKafka::rdkafka)
+    simplematch_enable_warnings(simplematch-matching-kafka-fixture-publisher)
+    simplematch_enable_sanitizers(simplematch-matching-kafka-fixture-publisher)
+  endif()
+endif()
+
 if(BUILD_TESTING)
   find_package(Threads REQUIRED)
   find_package(GTest CONFIG REQUIRED)
@@ -85,12 +124,19 @@ if(BUILD_TESTING)
       matching-engine/tests/matching_event_encoder_test.cpp
       matching-engine/tests/partition_ownership_permit_test.cpp
       matching-engine/tests/partition_replay_coordinator_test.cpp
-      matching-engine/tests/matching_runtime_test.cpp)
+      matching-engine/tests/matching_runtime_test.cpp
+      matching-engine/tests/matching_partition_runtime_driver_test.cpp)
   target_link_libraries(simplematch_matching_ingress_tests
       PRIVATE simplematch_matching_ingress
               GTest::gtest
               GTest::gtest_main
               Threads::Threads)
+  if(SIMPLEMATCH_ENABLE_MESSAGING)
+    target_link_libraries(simplematch_matching_ingress_tests
+        PRIVATE simplematch_matching_messaging)
+    target_sources(simplematch_matching_ingress_tests
+        PRIVATE matching-engine/tests/matching_messaging_adapter_test.cpp)
+  endif()
   target_include_directories(simplematch_matching_ingress_tests
       PRIVATE ${CMAKE_CURRENT_BINARY_DIR})
   target_compile_definitions(simplematch_matching_ingress_tests

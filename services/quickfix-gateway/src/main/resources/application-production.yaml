@@ -1,2 +1,5 @@
 simplematch:
   environment: production
+  quickfix-gateway:
+    final-matching-events:
+      enabled: true

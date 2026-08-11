@@ -36,6 +36,7 @@ tasks.withType<Test>().configureEach {
 tasks.named<Test>("test") {
     filter {
         excludeTestsMatching("com.simplematch.quickfixgateway.fix.QuickFixCertificationEvidenceTest")
+        excludeTestsMatching("com.simplematch.quickfixgateway.fix.QuickFixLiveCertificationTest")
     }
 }
 
@@ -47,5 +48,16 @@ tasks.register<Test>("certificationTest") {
     useJUnitPlatform()
     filter {
         includeTestsMatching("com.simplematch.quickfixgateway.fix.QuickFixCertificationEvidenceTest")
+    }
+}
+
+tasks.register<Test>("liveCertificationTest") {
+    group = "verification"
+    description = "Runs the opt-in external QuickFIX gateway live certification."
+    testClassesDirs = testSourceSet.output.classesDirs
+    classpath = testSourceSet.runtimeClasspath
+    useJUnitPlatform()
+    filter {
+        includeTestsMatching("com.simplematch.quickfixgateway.fix.QuickFixLiveCertificationTest")
     }
 }

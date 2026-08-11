@@ -39,3 +39,8 @@ surfaces change; documentation-only work uses its Markdown navigation and format
 Current commands, CI execution records, phase gates, and certification evidence are execution-state
 material. They intentionally remain outside this target specification so the target verification
 model does not claim a particular run has happened.
+
+The execution-state runbook for the complete deployment-environment gate is
+[Production Live Certification](../../../docs/production-live-certification.md). It records the
+repository checks, the non-certifying kind smoke, and the required Kafka, Matching, PostgreSQL,
+and external QuickFIX inputs.

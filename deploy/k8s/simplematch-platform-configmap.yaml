@@ -7,6 +7,13 @@ data:
     simplematch:
       kafka:
         brokers: kafka:9092
+        topics:
+          matching-commands: matching.commands
+          matching-events: matching.events
+          marketdata-events: marketdata.events
+        partitions:
+          matching-commands: 15
+          matching-events: 15
       grpc:
         targets:
           account-service: dns:///account-service:50051
@@ -14,3 +21,5 @@ data:
       market:
         currency: TWD
         time-zone: Asia/Taipei
+      redis:
+        endpoints: redis:6379

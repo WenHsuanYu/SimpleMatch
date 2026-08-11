@@ -15,7 +15,9 @@ assert_fails() {
   fi
 }
 
-"${VALIDATOR}" --profile production --fixture-dir "${FIXTURE_DIR}" --certify-production
+"${VALIDATOR}" --profile production --fixture-dir "${FIXTURE_DIR}" \
+  --command-config "${SCRIPT_DIR}/../config/kafka/matching-production.properties" \
+  --certify-production
 assert_fails 'local profile production certification' "${VALIDATOR}" --profile local \
   --fixture-dir "${FIXTURE_DIR}" --certify-production
 
@@ -26,6 +28,12 @@ sed -i 's/Isr: 1,2,3$/Isr: 1/' "${TEMPORARY_FIXTURES}/bad-isr/matching.events.to
 assert_fails 'insufficient ISR' "${VALIDATOR}" --profile production \
   --fixture-dir "${TEMPORARY_FIXTURES}/bad-isr" --certify-production
 
+cp -R "${FIXTURE_DIR}" "${TEMPORARY_FIXTURES}/duplicate-replica"
+sed -i 's/Replicas: 1,2,3/Replicas: 1,2,1/' \
+  "${TEMPORARY_FIXTURES}/duplicate-replica/matching.commands.topic.txt"
+assert_fails 'duplicate replica broker identity' "${VALIDATOR}" --profile production \
+  --fixture-dir "${TEMPORARY_FIXTURES}/duplicate-replica" --certify-production
+
 cp -R "${FIXTURE_DIR}" "${TEMPORARY_FIXTURES}/unsafe-broker"
 sed -i 's/auto.create.topics.enable=false/auto.create.topics.enable=true/' \
   "${TEMPORARY_FIXTURES}/unsafe-broker/broker.config.txt"
@@ -33,6 +41,7 @@ assert_fails 'unsafe broker policy' "${VALIDATOR}" --profile production \
   --fixture-dir "${TEMPORARY_FIXTURES}/unsafe-broker" --certify-production
 
 provision_output="$("${PROVISIONER}" --bootstrap-server kafka:9092 --profile production \
+  --command-config "${SCRIPT_DIR}/../config/kafka/matching-production.properties" \
   --certify-production --dry-run)"
 [[ "${provision_output}" == *'--topic matching.commands --partitions 15 --replication-factor 3'* ]] || {
   printf '%s\n' 'Production provisioning command is incomplete' >&2
@@ -41,6 +50,10 @@ provision_output="$("${PROVISIONER}" --bootstrap-server kafka:9092 --profile pro
 [[ "${provision_output}" == *'cleanup.policy=delete'* && \
   "${provision_output}" == *'min.insync.replicas=2'* ]] || {
   printf '%s\n' 'Production topic configuration is incomplete' >&2
+  exit 1
+}
+[[ "${provision_output}" == *'--command-config'* ]] || {
+  printf '%s\n' 'Kafka command config was not forwarded to the provisioning command' >&2
   exit 1
 }
 

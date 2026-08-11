@@ -34,6 +34,7 @@ bool LeaseFencedPartitionOwnershipPermit::confirm_renewal(
     return false;
   }
   uncertainty_started_at_.reset();
+  has_confirmed_renewal_ = true;
   status_ = {PartitionOwnershipState::kPermitted, "LEASE_RENEWED"};
   return true;
 }
@@ -66,7 +67,8 @@ std::int32_t LeaseFencedPartitionOwnershipPermit::partition_id() const {
 
 bool LeaseFencedPartitionOwnershipPermit::allows_processing() const {
   return status_.state == PartitionOwnershipState::kPermitted ||
-         status_.state == PartitionOwnershipState::kLeaseUncertain;
+         (status_.state == PartitionOwnershipState::kLeaseUncertain &&
+          has_confirmed_renewal_);
 }
 
 PartitionOwnershipStatus LeaseFencedPartitionOwnershipPermit::status() const {

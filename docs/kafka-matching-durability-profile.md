@@ -1,6 +1,10 @@
 # Matching Kafka durability profile
 
-The repository owns two explicit profiles for the Matching journals: `config/kafka/matching-production.properties` and `config/kafka/matching-local.properties`. The production profile is the only one that can pass production certification.
+The repository owns two explicit profiles for the Kafka-backed Matching journals:
+`config/kafka/matching-production.properties` and `config/kafka/matching-local.properties`. The
+production profile is the only one that can pass production certification. Here, journal means the
+ordered Kafka topics `matching.commands` and `matching.events`; it does not mean a local file or
+PVC fsync journal inside the Matching hot path.
 
 | Setting | Production | Local single broker |
 | --- | ---: | ---: |
@@ -17,6 +21,21 @@ The repository owns two explicit profiles for the Matching journals: `config/kaf
 The profile applies independently and exactly to `matching.commands` and `matching.events`. Neither topic is compacted. The record key is not an ownership mechanism: the artifact declares the numeric partition explicitly, and Matching ordinal N owns partition N.
 
 ## Provision and verify
+
+For an authenticated production cluster, pass a Kafka CLI command-properties file containing the
+approved TLS/SASL settings:
+
+~~~bash
+bash scripts/validate-matching-topic-profile.sh \
+  --bootstrap-server kafka-1.example:9093,kafka-2.example:9093,kafka-3.example:9093 \
+  --command-config /secure/kafka/matching-client.properties \
+  --broker-config-file /secure/effective-kafka-broker.properties \
+  --profile production \
+  --certify-production
+~~~
+
+The command-properties file is an external secret and must never be committed. The same
+--command-config option is accepted by provision-matching-topics.sh.
 
 The deployment owner must first configure the broker safety properties. Then provision the topics and immediately verify their effective state:
 
@@ -69,4 +88,8 @@ Run the repository fixture checks with:
 bash scripts/test-matching-topic-profile.sh
 ```
 
-The tests cover valid production state, insufficient ISR, unsafe automatic topic creation, refusal to certify the local profile, and the generated provisioning commands. A live three-broker run and real workload measurement remain a deployment-environment gate.
+The tests cover valid production state, insufficient ISR, duplicate replica broker identities,
+unsafe automatic topic creation, refusal to certify the local profile, command-config forwarding,
+and the generated provisioning commands. A live three-broker run and real workload measurement
+remain a deployment-environment gate. See
+[Production Live Certification](production-live-certification.md) for the full sequence.

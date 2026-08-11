@@ -5,3 +5,5 @@ metadata:
 immutable: true
 data:
   trading_session_id: REPLACE_WITH_APPROVED_TRADING_SESSION_ID
+  trading_day: REPLACE_WITH_APPROVED_TRADING_DAY
+  matching_image_digest: REPLACE_WITH_APPROVED_MATCHING_IMAGE_DIGEST
