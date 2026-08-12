@@ -97,6 +97,11 @@ services:
         condition: service_healthy
     environment:
       BOOTSTRAP_SERVERS: kafka-1:29092,kafka-2:29092,kafka-3:29092
+      SIMPLEMATCH_POSTGRES_HOSTNAME: postgres
+      SIMPLEMATCH_POSTGRES_PORT: "5432"
+      SIMPLEMATCH_POSTGRES_DBNAME: simplematch
+      SIMPLEMATCH_POSTGRES_SSLMODE: disable
+      SIMPLEMATCH_POSTGRES_SSLROOTCERT: /dev/null
       GROUP_ID: simplematch-connect-production-like
       CONFIG_STORAGE_TOPIC: simplematch-connect-configs
       OFFSET_STORAGE_TOPIC: simplematch-connect-offsets

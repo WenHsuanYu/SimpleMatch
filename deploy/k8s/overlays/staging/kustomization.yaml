@@ -4,9 +4,11 @@ namespace: simplematch-staging
 resources:
   - ../../base
   - ../network-policy-external.yaml
+  - ../../debezium-kafka-connect.yaml
 patches:
   - path: ../secure-java-services-patch.yaml
   - path: platform-config-patch.yaml
+  - path: kafka-connect-config-patch.yaml
 images:
   - name: simplematch/account-service
     newName: registry.example.invalid/simplematch/account-service
@@ -23,6 +25,9 @@ images:
   - name: simplematch/marketdata-publisher
     newName: registry.example.invalid/simplematch/marketdata-publisher
     digest: sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
+  - name: simplematch/marketdata-streamer
+    newName: registry.example.invalid/simplematch/marketdata-streamer
+    digest: sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
   - name: simplematch/query-service
     newName: registry.example.invalid/simplematch/query-service
     digest: sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
@@ -34,4 +39,7 @@ images:
     digest: sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
   - name: quickfix-gateway
     newName: registry.example.invalid/simplematch/quickfix-gateway
+    digest: sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
+  - name: quay.io/debezium/connect
+    newName: registry.example.invalid/simplematch/debezium-connect
     digest: sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa

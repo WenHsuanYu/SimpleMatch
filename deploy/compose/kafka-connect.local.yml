@@ -45,6 +45,11 @@ services:
       - "host.docker.internal:host-gateway"
     environment:
       BOOTSTRAP_SERVERS: kafka:29092
+      SIMPLEMATCH_POSTGRES_HOSTNAME: postgres
+      SIMPLEMATCH_POSTGRES_PORT: "5432"
+      SIMPLEMATCH_POSTGRES_DBNAME: simplematch
+      SIMPLEMATCH_POSTGRES_SSLMODE: disable
+      SIMPLEMATCH_POSTGRES_SSLROOTCERT: /dev/null
       GROUP_ID: simplematch-connect-cluster
       CONFIG_STORAGE_TOPIC: simplematch-connect-configs
       OFFSET_STORAGE_TOPIC: simplematch-connect-offsets

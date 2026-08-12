@@ -1,0 +1,7 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: simplematch-kafka-connect-config
+data:
+  bootstrap_servers: kafka.production.example.invalid:9093
+  postgres_hostname: postgres.production.example.invalid

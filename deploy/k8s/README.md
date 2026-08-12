@@ -10,16 +10,18 @@ For `staging` and `production`, the Secret must contain
 the reference deployment: it enables the non-optional Kubernetes Config Data import, selects
 `production`, and uses the narrowly scoped RBAC manifest.
 
-The Debezium connector ConfigMap contains only non-sensitive connector settings. Inject
-`RISK_SERVICE_POSTGRES_USER` and
-`RISK_SERVICE_POSTGRES_PASSWORD` into the Kafka Connect worker from a Secret. After a configuration
-change, roll the relevant workload. Configuration reload is intentionally disabled.
+The staging/production overlays include a retained Debezium Kafka Connect worker. The worker's
+connector ConfigMaps contain only non-sensitive connector settings; the worker itself receives
+PostgreSQL endpoints from `simplematch-kafka-connect-config` and all connector credentials from the
+external `simplematch-kafka-connect-secrets` Secret. After a configuration change, roll the worker
+and re-apply the connector definitions. Configuration reload is intentionally disabled.
 
 ## Cross-service base and overlays
 
 `base/` contains the Java service Deployments for Account, Risk, Persistence, Market Data
-Projection, Marketdata Publisher, and Query Service, plus the existing QuickFIX/Matching resources,
-service-local ConfigMaps, read-only configuration RBAC, migration Jobs, probes, and NetworkPolicy.
+Projection, Marketdata Publisher, Marketdata Streamer, and Query Service, plus the existing
+QuickFIX/Matching resources, service-local ConfigMaps, read-only configuration RBAC, migration Jobs,
+probes, and NetworkPolicy.
 The four overlays are `local`, `test`, `staging`, and `production`.
 
 ## Environment separation
@@ -27,7 +29,8 @@ The four overlays are `local`, `test`, `staging`, and `production`.
 `local` is the executable repository-owned environment. It uses locally built images with the
 `local` tag and is the deployment surface used by the local production-like certification gate.
 The local image set currently includes Account, Risk, Persistence, Market Data Projection,
-Marketdata Publisher, Query Service, Flyway Runner, Matching, and QuickFIX Gateway.
+Marketdata Publisher, Marketdata Streamer, Query Service, Flyway Runner, Matching, and QuickFIX
+Gateway.
 
 `staging` and `production` are promotion templates, not local verification environments. They use
 separate registry names and digest placeholders, and retain placeholders for external PostgreSQL,
@@ -81,13 +84,24 @@ mounts `simplematch-postgres-tls` with a required `ca.crt` at that path, so a mi
 startup. The canonical `simplematch.postgres.dsn` property is supplied through
 `SIMPLEMATCH_POSTGRES_DSN`; no `spring.datasource.*` key is used.
 
-`account-service-tls` and `risk-service-tls` contain `tls.crt`, `tls.key`, and `ca.crt`. The
+`account-service-tls`, `risk-service-tls`, and `marketdata-streamer-tls` contain `tls.crt`,
+`tls.key`, and `ca.crt`. The
 staging/production overlay enables mTLS and requires all three paths. `simplematch-kafka-tls`
 contains `ca.p12`; `simplematch-kafka-secrets` contains `sasl_jaas_config` and
 `truststore_password`. `risk-service-secrets` additionally supplies `trading_day` and
 `matching_image_digest`; `query-service-secrets` supplies `trading_day`.
 
-`simplematch-flyway-secrets` supplies the TLS-enabled `postgres_dsn` consumed by the external
+`quickfix-gateway-http-tls` and `market-data-projection-http-tls` contain `tls.crt` and `tls.key`.
+The secure overlay enables HTTPS for the authenticated operator endpoints and changes their
+Kubernetes probes to HTTPS; the operator token remains required at the application boundary.
+`simplematch-gateway-operations-secrets` supplies `operator_token` to the Gateway, while
+`market-data-projection-secrets` supplies `rebuild_operator_token` to the projection reset
+endpoint.
+
+`simplematch-kafka-connect-secrets` supplies the three connector user/password pairs plus
+`kafka_sasl_jaas_config` and `kafka_truststore_password`, and is required by the retained Debezium
+worker. `simplematch-flyway-secrets` supplies the TLS-enabled
+`postgres_dsn` consumed by the external
 `simplematch/flyway-runner` image. Each Job passes one service ID and schema to that runner, so
 Flyway history remains service-local. Jobs are intentionally one-shot: delete and recreate the
 named Job for a later migration release, and apply migrations before rolling the Deployments.

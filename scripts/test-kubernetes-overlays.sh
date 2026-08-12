@@ -23,6 +23,7 @@ required_deployments = %w[
   persistence
   market-data-projection
   marketdata-publisher
+  marketdata-streamer
   query-service
 ]
 required_deployments.each do |name|
@@ -175,7 +176,7 @@ network_policy.fetch("spec").fetch("egress").each do |rule|
   end
 end
 
-%w[account-service risk-service persistence market-data-projection marketdata-publisher query-service].each do |name|
+%w[account-service risk-service persistence market-data-projection marketdata-publisher marketdata-streamer query-service].each do |name|
   config = resources.fetch(["ConfigMap", "#{name}-config"], nil)
   next unless config
   application = config.fetch("data").fetch("application.yaml")
@@ -187,6 +188,8 @@ if %w[staging production].include?(overlay)
   required_deployments.each do |name|
     image = resources.fetch(["Deployment", name]).fetch("spec").fetch("template").fetch("spec").fetch("containers").first.fetch("image")
     abort "#{overlay}: #{name} image is not digest pinned" unless image.match?(/@sha256:[0-9a-f]{64}\z/)
+  end
+  %w[account-service risk-service persistence market-data-projection query-service].each do |name|
     pod_spec = resources.fetch(["Deployment", name]).fetch("spec").fetch("template").fetch("spec")
     container = pod_spec.fetch("containers").first
     postgres_dsn = container.fetch("env").find { |entry| entry["name"] == "SIMPLEMATCH_POSTGRES_DSN" }
@@ -202,6 +205,42 @@ if %w[staging production].include?(overlay)
     protocol = env.find { |entry| entry["name"] == "SPRING_KAFKA_PROPERTIES_SECURITY_PROTOCOL" }
     abort "#{overlay}: #{name} does not require SASL_SSL" unless protocol.fetch("value") == "SASL_SSL"
   end
+  streamer_env = resources.fetch(["Deployment", "marketdata-streamer"]).fetch("spec").fetch("template").fetch("spec").fetch("containers").first.fetch("env")
+  streamer_protocol = streamer_env.find { |entry| entry["name"] == "SPRING_KAFKA_PROPERTIES_SECURITY_PROTOCOL" }
+  abort "#{overlay}: marketdata-streamer does not require SASL_SSL" unless streamer_protocol.fetch("value") == "SASL_SSL"
+  streamer_tls = streamer_env.find { |entry| entry["name"] == "SIMPLEMATCH_GRPC_SECURITY_TLS_ENABLED" }
+  abort "#{overlay}: marketdata-streamer does not require gRPC TLS" unless streamer_tls.fetch("value") == "true"
+  {
+    "quickfix-gateway" => "quickfix-gateway-http-tls",
+    "market-data-projection" => "market-data-projection-http-tls"
+  }.each do |name, secret_name|
+    workload = resources.fetch([name == "quickfix-gateway" ? "StatefulSet" : "Deployment", name])
+    pod = workload.fetch("spec").fetch("template")
+    container = pod.fetch("spec").fetch("containers").first
+    ssl = container.fetch("env").find { |entry| entry["name"] == "SERVER_SSL_ENABLED" }
+    abort "#{overlay}: #{name} operator endpoint is not HTTPS" unless ssl&.fetch("value") == "true"
+    tls_volume = pod.fetch("spec").fetch("volumes").find { |volume| volume["name"] == "http-tls" }
+    abort "#{overlay}: #{name} has no required operator HTTPS Secret" unless
+      tls_volume&.dig("secret", "secretName") == secret_name && tls_volume.dig("secret", "optional") == false
+    %w[startupProbe readinessProbe livenessProbe].each do |probe_name|
+      probe = container.fetch(probe_name)
+      abort "#{overlay}: #{name} #{probe_name} is not HTTPS" unless probe.dig("httpGet", "scheme") == "HTTPS"
+    end
+  end
+  connector = resources.fetch(["Deployment", "kafka-connect"])
+  connector_pod = connector.fetch("spec").fetch("template")
+  connector_container = connector_pod.fetch("spec").fetch("containers").first
+  abort "#{overlay}: Kafka Connect has no service account" unless connector_pod.fetch("spec").key?("serviceAccountName")
+  abort "#{overlay}: Kafka Connect has no readiness probe" unless connector_container.key?("readinessProbe")
+  abort "#{overlay}: Kafka Connect is not non-root" unless connector_container.fetch("securityContext").fetch("runAsNonRoot")
+  abort "#{overlay}: Kafka Connect is not read-only root" unless connector_container.fetch("securityContext").fetch("readOnlyRootFilesystem")
+  connector_env = connector_container.fetch("env").to_h { |entry| [entry.fetch("name"), entry] }
+  %w[CONNECT_SECURITY_PROTOCOL CONNECT_SASL_MECHANISM CONNECT_SASL_JAAS_CONFIG CONNECT_SSL_TRUSTSTORE_PASSWORD].each do |name|
+    abort "#{overlay}: Kafka Connect is missing #{name}" unless connector_env.key?(name)
+  end
+  abort "#{overlay}: Kafka Connect does not require the PostgreSQL CA" unless
+    connector_pod.fetch("spec").fetch("volumes").any? { |volume| volume.dig("name") == "postgres-tls" && volume.dig("secret", "optional") == false }
+  abort "#{overlay}: Kafka Connect NetworkPolicy missing" unless resources.key?(["NetworkPolicy", "simplematch-kafka-connect"])
   %w[account-service risk-service].each do |name|
     env = resources.fetch(["Deployment", name]).fetch("spec").fetch("template").fetch("spec").fetch("containers").first.fetch("env")
     tls = env.find { |entry| entry["name"] == "SIMPLEMATCH_GRPC_SECURITY_TLS_ENABLED" }

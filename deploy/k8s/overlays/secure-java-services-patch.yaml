@@ -48,6 +48,75 @@ spec:
             optional: false
 ---
 apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: quickfix-gateway
+spec:
+  template:
+    spec:
+      containers:
+        - name: quickfix-gateway
+          env:
+            - name: SIMPLEMATCH_QUICKFIX_GATEWAY_OPERATIONS_HTTP_ENABLED
+              value: "true"
+            - name: SIMPLEMATCH_QUICKFIX_GATEWAY_OPERATIONS_OPERATOR_TOKEN
+              valueFrom:
+                secretKeyRef:
+                  name: simplematch-gateway-operations-secrets
+                  key: operator_token
+            - name: SERVER_SSL_ENABLED
+              value: "true"
+            - name: SERVER_SSL_CERTIFICATE
+              value: /etc/simplematch/http-tls/tls.crt
+            - name: SERVER_SSL_CERTIFICATE_PRIVATE_KEY
+              value: /etc/simplematch/http-tls/tls.key
+            - name: SPRING_KAFKA_PROPERTIES_SECURITY_PROTOCOL
+              value: SASL_SSL
+            - name: SPRING_KAFKA_PROPERTIES_SASL_MECHANISM
+              value: SCRAM-SHA-512
+            - name: SPRING_KAFKA_PROPERTIES_SASL_JAAS_CONFIG
+              valueFrom:
+                secretKeyRef:
+                  name: simplematch-kafka-secrets
+                  key: sasl_jaas_config
+            - name: SPRING_KAFKA_PROPERTIES_SSL_TRUSTSTORE_LOCATION
+              value: /etc/simplematch/kafka-tls/ca.p12
+            - name: SPRING_KAFKA_PROPERTIES_SSL_TRUSTSTORE_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: simplematch-kafka-secrets
+                  key: truststore_password
+            - name: SPRING_KAFKA_PROPERTIES_SSL_TRUSTSTORE_TYPE
+              value: PKCS12
+            - name: SPRING_KAFKA_PROPERTIES_SSL_ENDPOINT_IDENTIFICATION_ALGORITHM
+              value: HTTPS
+          volumeMounts:
+            - name: kafka-tls
+              mountPath: /etc/simplematch/kafka-tls
+              readOnly: true
+            - name: http-tls
+              mountPath: /etc/simplematch/http-tls
+              readOnly: true
+          startupProbe:
+            httpGet:
+              scheme: HTTPS
+          readinessProbe:
+            httpGet:
+              scheme: HTTPS
+          livenessProbe:
+            httpGet:
+              scheme: HTTPS
+      volumes:
+        - name: kafka-tls
+          secret:
+            secretName: simplematch-kafka-tls
+            optional: false
+        - name: http-tls
+          secret:
+            secretName: quickfix-gateway-http-tls
+            optional: false
+---
+apiVersion: apps/v1
 kind: Deployment
 metadata:
   name: risk-service
@@ -170,6 +239,19 @@ spec:
                 secretKeyRef:
                   name: market-data-projection-secrets
                   key: postgres_dsn
+            - name: SIMPLEMATCH_MARKET_DATA_PROJECTION_REBUILD_HTTP_ENABLED
+              value: "true"
+            - name: SIMPLEMATCH_MARKET_DATA_PROJECTION_REBUILD_OPERATOR_TOKEN
+              valueFrom:
+                secretKeyRef:
+                  name: market-data-projection-secrets
+                  key: rebuild_operator_token
+            - name: SERVER_SSL_ENABLED
+              value: "true"
+            - name: SERVER_SSL_CERTIFICATE
+              value: /etc/simplematch/http-tls/tls.crt
+            - name: SERVER_SSL_CERTIFICATE_PRIVATE_KEY
+              value: /etc/simplematch/http-tls/tls.key
             - name: SPRING_KAFKA_PROPERTIES_SECURITY_PROTOCOL
               value: SASL_SSL
             - name: SPRING_KAFKA_PROPERTIES_SASL_MECHANISM
@@ -194,10 +276,26 @@ spec:
             - name: postgres-tls
               mountPath: /etc/simplematch/postgres-tls
               readOnly: true
+            - name: http-tls
+              mountPath: /etc/simplematch/http-tls
+              readOnly: true
+          startupProbe:
+            httpGet:
+              scheme: HTTPS
+          readinessProbe:
+            httpGet:
+              scheme: HTTPS
+          livenessProbe:
+            httpGet:
+              scheme: HTTPS
       volumes:
         - name: postgres-tls
           secret:
             secretName: simplematch-postgres-tls
+            optional: false
+        - name: http-tls
+          secret:
+            secretName: market-data-projection-http-tls
             optional: false
 ---
 apiVersion: apps/v1
@@ -225,6 +323,52 @@ spec:
         - name: postgres-tls
           secret:
             secretName: simplematch-postgres-tls
+            optional: false
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: marketdata-streamer
+spec:
+  template:
+    spec:
+      containers:
+        - name: marketdata-streamer
+          env:
+            - name: SPRING_PROFILES_ACTIVE
+              value: production
+            - name: SIMPLEMATCH_MARKETDATA_STREAMER_ENABLED
+              value: "true"
+            - name: SPRING_KAFKA_PROPERTIES_SECURITY_PROTOCOL
+              value: SASL_SSL
+            - name: SPRING_KAFKA_PROPERTIES_SASL_MECHANISM
+              value: SCRAM-SHA-512
+            - name: SPRING_KAFKA_PROPERTIES_SASL_JAAS_CONFIG
+              valueFrom:
+                secretKeyRef:
+                  name: simplematch-kafka-secrets
+                  key: sasl_jaas_config
+            - name: SPRING_KAFKA_PROPERTIES_SSL_TRUSTSTORE_LOCATION
+              value: /etc/simplematch/kafka-tls/ca.p12
+            - name: SPRING_KAFKA_PROPERTIES_SSL_TRUSTSTORE_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: simplematch-kafka-secrets
+                  key: truststore_password
+            - name: SPRING_KAFKA_PROPERTIES_SSL_TRUSTSTORE_TYPE
+              value: PKCS12
+            - name: SPRING_KAFKA_PROPERTIES_SSL_ENDPOINT_IDENTIFICATION_ALGORITHM
+              value: HTTPS
+            - name: SIMPLEMATCH_GRPC_SECURITY_TLS_ENABLED
+              value: "true"
+          volumeMounts:
+            - name: grpc-tls
+              mountPath: /etc/simplematch/grpc-tls
+              readOnly: true
+      volumes:
+        - name: grpc-tls
+          secret:
+            secretName: marketdata-streamer-tls
             optional: false
 ---
 apiVersion: apps/v1

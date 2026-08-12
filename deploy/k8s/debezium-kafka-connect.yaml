@@ -1,0 +1,291 @@
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: kafka-connect
+  labels:
+    app.kubernetes.io/name: kafka-connect
+    app.kubernetes.io/component: connector
+    app.kubernetes.io/part-of: simplematch
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: simplematch-kafka-connect-config
+  labels:
+    app.kubernetes.io/name: kafka-connect
+    app.kubernetes.io/component: connector
+    app.kubernetes.io/part-of: simplematch
+data:
+  bootstrap_servers: kafka.example.invalid:9093
+  postgres_hostname: postgres.example.invalid
+  postgres_port: "5432"
+  postgres_dbname: simplematch
+  postgres_sslmode: verify-full
+  postgres_sslrootcert: /etc/simplematch/postgres-tls/ca.crt
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: kafka-connect
+  labels:
+    app.kubernetes.io/name: kafka-connect
+    app.kubernetes.io/component: connector
+    app.kubernetes.io/part-of: simplematch
+spec:
+  replicas: 2
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxUnavailable: 0
+      maxSurge: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: kafka-connect
+      app.kubernetes.io/component: connector
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: kafka-connect
+        app.kubernetes.io/component: connector
+        app.kubernetes.io/part-of: simplematch
+    spec:
+      serviceAccountName: kafka-connect
+      securityContext:
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+        - name: kafka-connect
+          image: quay.io/debezium/connect:3.6.0.Final
+          imagePullPolicy: IfNotPresent
+          env:
+            - name: BOOTSTRAP_SERVERS
+              valueFrom:
+                configMapKeyRef:
+                  name: simplematch-kafka-connect-config
+                  key: bootstrap_servers
+            - name: GROUP_ID
+              value: simplematch-connect-production
+            - name: CONFIG_STORAGE_TOPIC
+              value: simplematch-connect-configs
+            - name: OFFSET_STORAGE_TOPIC
+              value: simplematch-connect-offsets
+            - name: STATUS_STORAGE_TOPIC
+              value: simplematch-connect-status
+            - name: CONFIG_STORAGE_REPLICATION_FACTOR
+              value: "3"
+            - name: OFFSET_STORAGE_REPLICATION_FACTOR
+              value: "3"
+            - name: STATUS_STORAGE_REPLICATION_FACTOR
+              value: "3"
+            - name: CONFIG_STORAGE_MIN_ISR
+              value: "2"
+            - name: OFFSET_STORAGE_MIN_ISR
+              value: "2"
+            - name: STATUS_STORAGE_MIN_ISR
+              value: "2"
+            - name: KEY_CONVERTER
+              value: org.apache.kafka.connect.storage.StringConverter
+            - name: VALUE_CONVERTER
+              value: org.apache.kafka.connect.json.JsonConverter
+            - name: CONNECT_SECURITY_PROTOCOL
+              value: SASL_SSL
+            - name: CONNECT_SASL_MECHANISM
+              value: SCRAM-SHA-512
+            - name: CONNECT_SASL_JAAS_CONFIG
+              valueFrom:
+                secretKeyRef:
+                  name: simplematch-kafka-connect-secrets
+                  key: kafka_sasl_jaas_config
+            - name: CONNECT_SSL_TRUSTSTORE_LOCATION
+              value: /etc/simplematch/kafka-tls/ca.p12
+            - name: CONNECT_SSL_TRUSTSTORE_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: simplematch-kafka-connect-secrets
+                  key: kafka_truststore_password
+            - name: CONNECT_SSL_TRUSTSTORE_TYPE
+              value: PKCS12
+            - name: CONNECT_SSL_ENDPOINT_IDENTIFICATION_ALGORITHM
+              value: HTTPS
+            - name: REST_ADVERTISED_HOST_NAME
+              value: kafka-connect
+            - name: REST_PORT
+              value: "8083"
+            - name: SIMPLEMATCH_POSTGRES_HOSTNAME
+              valueFrom:
+                configMapKeyRef:
+                  name: simplematch-kafka-connect-config
+                  key: postgres_hostname
+            - name: SIMPLEMATCH_POSTGRES_PORT
+              valueFrom:
+                configMapKeyRef:
+                  name: simplematch-kafka-connect-config
+                  key: postgres_port
+            - name: SIMPLEMATCH_POSTGRES_DBNAME
+              valueFrom:
+                configMapKeyRef:
+                  name: simplematch-kafka-connect-config
+                  key: postgres_dbname
+            - name: SIMPLEMATCH_POSTGRES_SSLMODE
+              valueFrom:
+                configMapKeyRef:
+                  name: simplematch-kafka-connect-config
+                  key: postgres_sslmode
+            - name: SIMPLEMATCH_POSTGRES_SSLROOTCERT
+              valueFrom:
+                configMapKeyRef:
+                  name: simplematch-kafka-connect-config
+                  key: postgres_sslrootcert
+            - name: ACCOUNT_SERVICE_POSTGRES_USER
+              valueFrom:
+                secretKeyRef:
+                  name: simplematch-kafka-connect-secrets
+                  key: account_service_postgres_user
+            - name: ACCOUNT_SERVICE_POSTGRES_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: simplematch-kafka-connect-secrets
+                  key: account_service_postgres_password
+            - name: RISK_SERVICE_POSTGRES_USER
+              valueFrom:
+                secretKeyRef:
+                  name: simplematch-kafka-connect-secrets
+                  key: risk_service_postgres_user
+            - name: RISK_SERVICE_POSTGRES_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: simplematch-kafka-connect-secrets
+                  key: risk_service_postgres_password
+            - name: MARKETDATA_PUBLISHER_POSTGRES_USER
+              valueFrom:
+                secretKeyRef:
+                  name: simplematch-kafka-connect-secrets
+                  key: marketdata_publisher_postgres_user
+            - name: MARKETDATA_PUBLISHER_POSTGRES_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: simplematch-kafka-connect-secrets
+                  key: marketdata_publisher_postgres_password
+            - name: KAFKA_HEAP_OPTS
+              value: -Xms512m -Xmx1g
+            - name: OTEL_SERVICE_NAME
+              value: kafka-connect
+            - name: OTEL_RESOURCE_ATTRIBUTES
+              value: service.namespace=simplematch,deployment.environment=production
+          ports:
+            - name: rest
+              containerPort: 8083
+          readinessProbe:
+            httpGet:
+              path: /
+              port: rest
+            periodSeconds: 10
+            failureThreshold: 3
+          startupProbe:
+            httpGet:
+              path: /
+              port: rest
+            periodSeconds: 10
+            failureThreshold: 30
+          livenessProbe:
+            httpGet:
+              path: /
+              port: rest
+            initialDelaySeconds: 30
+            periodSeconds: 20
+            failureThreshold: 3
+          resources:
+            requests:
+              cpu: 250m
+              memory: 1Gi
+            limits:
+              cpu: "2"
+              memory: 2Gi
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop: ["ALL"]
+            readOnlyRootFilesystem: true
+            runAsNonRoot: true
+          volumeMounts:
+            - name: runtime-tmp
+              mountPath: /tmp
+            - name: postgres-tls
+              mountPath: /etc/simplematch/postgres-tls
+              readOnly: true
+            - name: kafka-tls
+              mountPath: /etc/simplematch/kafka-tls
+              readOnly: true
+      volumes:
+        - name: runtime-tmp
+          emptyDir: {}
+        - name: postgres-tls
+          secret:
+            secretName: simplematch-postgres-tls
+            optional: false
+        - name: kafka-tls
+          secret:
+            secretName: simplematch-kafka-tls
+            optional: false
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: kafka-connect
+  labels:
+    app.kubernetes.io/name: kafka-connect
+    app.kubernetes.io/component: connector
+    app.kubernetes.io/part-of: simplematch
+spec:
+  selector:
+    app.kubernetes.io/name: kafka-connect
+    app.kubernetes.io/component: connector
+  ports:
+    - name: rest
+      port: 8083
+      targetPort: rest
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: simplematch-kafka-connect
+  labels:
+    app.kubernetes.io/part-of: simplematch
+spec:
+  podSelector:
+    matchLabels:
+      app.kubernetes.io/name: kafka-connect
+      app.kubernetes.io/component: connector
+  policyTypes:
+    - Ingress
+    - Egress
+  ingress:
+    - from:
+        - podSelector:
+            matchLabels:
+              app.kubernetes.io/part-of: simplematch
+      ports:
+        - protocol: TCP
+          port: 8083
+  egress:
+    - to:
+        - ipBlock:
+            cidr: 203.0.113.10/32
+      ports:
+        - protocol: TCP
+          port: 5432
+    - to:
+        - ipBlock:
+            cidr: 203.0.113.11/32
+      ports:
+        - protocol: TCP
+          port: 9093
+    - to:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: kube-system
+      ports:
+        - protocol: UDP
+          port: 53
+        - protocol: TCP
+          port: 53
