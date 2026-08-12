@@ -25,6 +25,8 @@ spec:
           port: 50051
         - protocol: TCP
           port: 50052
+        - protocol: TCP
+          port: 50053
   egress:
     - to:
         - podSelector:
@@ -39,6 +41,8 @@ spec:
           port: 50051
         - protocol: TCP
           port: 50052
+        - protocol: TCP
+          port: 50053
         - protocol: TCP
           port: 5432
         - protocol: TCP

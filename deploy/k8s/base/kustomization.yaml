@@ -17,6 +17,7 @@ resources:
   - ../quickfix-gateway-owner-0-service.yaml
   - ../quickfix-gateway-quickfix-configmap.yaml
   - ../quickfix-gateway-statefulset.yaml
+  - ../marketdata-streamer.yaml
   - java-services.yaml
   - java-services-configmaps.yaml
   - java-services-rbac.yaml

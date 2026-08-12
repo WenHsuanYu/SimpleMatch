@@ -19,6 +19,7 @@ spring_images=(
   "persistence|:services:persistence|simplematch/persistence"
   "market-data-projection|:services:market-data-projection|simplematch/market-data-projection"
   "marketdata-publisher|:services:marketdata-publisher|simplematch/marketdata-publisher"
+  "marketdata-streamer|:services:marketdata-streamer|simplematch/marketdata-streamer"
   "query-service|:services:query-service|simplematch/query-service"
   "quickfix-gateway|:services:quickfix-gateway|quickfix-gateway"
 )

@@ -14,6 +14,8 @@ images:
     newTag: test
   - name: simplematch/marketdata-publisher
     newTag: test
+  - name: simplematch/marketdata-streamer
+    newTag: test
   - name: simplematch/query-service
     newTag: test
   - name: simplematch/flyway-runner

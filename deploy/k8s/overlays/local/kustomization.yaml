@@ -24,6 +24,8 @@ images:
     newTag: local
   - name: simplematch/marketdata-publisher
     newTag: local
+  - name: simplematch/marketdata-streamer
+    newTag: local
   - name: simplematch/query-service
     newTag: local
   - name: simplematch/flyway-runner

@@ -28,6 +28,11 @@ kind: ServiceAccount
 metadata:
   name: query-service
 ---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: marketdata-streamer
+---
 apiVersion: rbac.authorization.k8s.io/v1
 kind: Role
 metadata:
@@ -113,6 +118,20 @@ rules:
     verbs: ["get"]
 ---
 apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: marketdata-streamer-configuration-reader
+rules:
+  - apiGroups: [""]
+    resources: ["configmaps"]
+    resourceNames: ["simplematch-platform-config", "marketdata-streamer-config"]
+    verbs: ["get"]
+  - apiGroups: [""]
+    resources: ["secrets"]
+    resourceNames: ["marketdata-streamer-secrets"]
+    verbs: ["get"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
 kind: RoleBinding
 metadata:
   name: account-service-configuration-reader
@@ -183,3 +202,15 @@ roleRef:
   apiGroup: rbac.authorization.k8s.io
   kind: Role
   name: query-service-configuration-reader
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: marketdata-streamer-configuration-reader
+subjects:
+  - kind: ServiceAccount
+    name: marketdata-streamer
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: marketdata-streamer-configuration-reader

@@ -38,6 +38,8 @@ data:
           enabled: true
         redis:
           enabled: true
+        rebuild:
+          http-enabled: false
 ---
 apiVersion: v1
 kind: ConfigMap
@@ -67,3 +69,18 @@ data:
           artifact-location: file:/etc/simplematch/market-reference/market_reference.json
           checksum-location: file:/etc/simplematch/market-reference/market_reference.sha256
           install-on-startup: true
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: marketdata-streamer-config
+data:
+  application.yaml: |
+    simplematch:
+      marketdata-streamer:
+        enabled: true
+        topic: marketdata.events
+        consumer-group: marketdata-streamer
+        grpc-port: 50053
+        subscriber-queue-capacity: 256
+        maximum-subscribers: 256

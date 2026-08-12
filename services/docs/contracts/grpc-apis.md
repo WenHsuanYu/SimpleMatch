@@ -45,5 +45,9 @@ preferred. Removed fields, changed field meanings, or a changed response outcome
 versioned RPC or a documented migration period; callers must not depend on unknown fields being
 present.
 
+The legacy `MarketDataService.SubscribeMarketData` stream remains the `MarketDataEvent` contract.
+The complete public snapshot stream is additive as
+`SubscribeMarketDataSnapshots`; it does not change the response type of the legacy RPC.
+
 The contract does not prescribe gRPC load-balancing or Kubernetes discovery configuration. Those are
 platform deployment decisions.
