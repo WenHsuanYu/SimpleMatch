@@ -76,6 +76,8 @@ simplematch:
       automatic-close-enabled: true
       monitor-interval-millis: 1000
       monitor-enabled: true
+      http-enabled: false
+      operator-token: ${SIMPLEMATCH_QUICKFIX_GATEWAY_OPERATIONS_OPERATOR_TOKEN:}
     final-matching-events:
       enabled: false
       topic: matching.events

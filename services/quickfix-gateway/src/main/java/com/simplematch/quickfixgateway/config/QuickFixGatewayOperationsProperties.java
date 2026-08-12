@@ -17,7 +17,9 @@ public record QuickFixGatewayOperationsProperties(
     @DefaultValue("13:30") String sessionCloseTime,
     @DefaultValue("true") boolean automaticCloseEnabled,
     @DefaultValue("1000") long monitorIntervalMillis,
-    @DefaultValue("true") boolean monitorEnabled) {
+    @DefaultValue("true") boolean monitorEnabled,
+    @DefaultValue("false") boolean httpEnabled,
+    String operatorToken) {
   /** Validates configuration before the single Gateway can accept operational commands. */
   public QuickFixGatewayOperationsProperties {
     if (requiredConsecutiveOpenEligibleChecks <= 0) {
@@ -42,6 +44,10 @@ public record QuickFixGatewayOperationsProperties(
     sessionCloseTime = requireText(sessionCloseTime, "sessionCloseTime");
     ZoneId.of(sessionZone);
     LocalTime.parse(sessionCloseTime);
+    if (httpEnabled && (operatorToken == null || operatorToken.isBlank())) {
+      throw new IllegalArgumentException(
+          "operatorToken is required when HTTP operations are enabled");
+    }
   }
 
   private static String requireText(String value, String name) {

@@ -19,6 +19,7 @@ import java.time.Clock;
 import java.time.Instant;
 import java.time.ZoneOffset;
 import java.util.HexFormat;
+import java.util.Optional;
 import java.util.UUID;
 import org.flywaydb.core.Flyway;
 import org.junit.jupiter.api.AfterEach;
@@ -160,7 +161,8 @@ class MarketDataProjectionApplicationServiceTest {
     final MarketDataProjectionRebuildService rebuildService =
         new MarketDataProjectionRebuildService(
             new JdbcMarketDataProjectionStore(jdbcTemplate),
-            new TransactionTemplate(new DataSourceTransactionManager(dataSource)));
+            new TransactionTemplate(new DataSourceTransactionManager(dataSource)),
+            Optional.empty());
 
     rebuildService.resetForReplay();
 

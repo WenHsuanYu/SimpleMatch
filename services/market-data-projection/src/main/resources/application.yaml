@@ -55,6 +55,9 @@ simplematch:
       enabled: false
       refresh-batch-size: 100
       refresh-interval: 5s
+    rebuild:
+      http-enabled: false
+      operator-token: ${SIMPLEMATCH_MARKET_DATA_PROJECTION_REBUILD_OPERATOR_TOKEN:}
 
 management:
   endpoints:

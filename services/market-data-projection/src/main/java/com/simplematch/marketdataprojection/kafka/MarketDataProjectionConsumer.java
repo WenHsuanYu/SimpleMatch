@@ -38,6 +38,7 @@ public final class MarketDataProjectionConsumer {
    * handoff.
    */
   @KafkaListener(
+      id = "market-data-projection",
       topics = "${simplematch.market-data-projection.matching-events.topic:matching.events}",
       autoStartup = "${simplematch.market-data-projection.matching-events.enabled:false}")
   public void onMatchingEvent(

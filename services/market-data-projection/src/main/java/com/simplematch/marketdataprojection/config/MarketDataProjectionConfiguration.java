@@ -2,6 +2,7 @@ package com.simplematch.marketdataprojection.config;
 
 import com.simplematch.config.PostgresJdbcUrl;
 import com.simplematch.config.PostgresProperties;
+import com.simplematch.marketdataprojection.cache.MarketDataSnapshotCache;
 import com.simplematch.marketdataprojection.runtime.MarketDataProjectionApplicationService;
 import com.simplematch.marketdataprojection.runtime.MarketDataProjectionHandler;
 import com.simplematch.marketdataprojection.runtime.MarketDataProjectionRebuildService;
@@ -9,6 +10,7 @@ import com.simplematch.marketdataprojection.store.JdbcMarketDataProjectionStore;
 import com.simplematch.marketdataprojection.store.MarketDataProjectionStore;
 import com.zaxxer.hikari.HikariDataSource;
 import java.time.Clock;
+import java.util.Optional;
 import javax.sql.DataSource;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
@@ -88,8 +90,11 @@ public class MarketDataProjectionConfiguration {
   @Bean
   MarketDataProjectionRebuildService marketDataProjectionRebuildService(
       MarketDataProjectionStore marketDataProjectionStore,
-      PlatformTransactionManager marketDataProjectionTransactionManager) {
+      PlatformTransactionManager marketDataProjectionTransactionManager,
+      Optional<MarketDataSnapshotCache> marketDataSnapshotCache) {
     return new MarketDataProjectionRebuildService(
-        marketDataProjectionStore, new TransactionTemplate(marketDataProjectionTransactionManager));
+        marketDataProjectionStore,
+        new TransactionTemplate(marketDataProjectionTransactionManager),
+        marketDataSnapshotCache);
   }
 }

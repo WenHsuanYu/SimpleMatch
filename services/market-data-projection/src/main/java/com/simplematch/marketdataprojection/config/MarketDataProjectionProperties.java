@@ -6,12 +6,16 @@ import org.springframework.boot.context.properties.ConfigurationProperties;
 /** Typed runtime configuration for rebuildable final-event market-data projection work. */
 @ConfigurationProperties("simplematch.market-data-projection")
 public record MarketDataProjectionProperties(
-    MatchingEvents matchingEvents, MarketdataEvents marketdataEvents, Redis redis) {
+    MatchingEvents matchingEvents,
+    MarketdataEvents marketdataEvents,
+    Redis redis,
+    Rebuild rebuild) {
   /** Normalizes independently deployable consumer, output, and cache configuration. */
   public MarketDataProjectionProperties {
     matchingEvents = matchingEvents == null ? MatchingEvents.defaults() : matchingEvents;
     marketdataEvents = marketdataEvents == null ? MarketdataEvents.defaults() : marketdataEvents;
     redis = redis == null ? Redis.defaults() : redis;
+    rebuild = rebuild == null ? Rebuild.defaults() : rebuild;
   }
 
   /** Defines non-critical Matching Event consumption and delayed retry policy. */
@@ -64,6 +68,21 @@ public record MarketDataProjectionProperties(
 
     private static Redis defaults() {
       return new Redis(false, 100, Duration.ofSeconds(5));
+    }
+  }
+
+  /** Defines the separately authenticated operator seam for a projection replay reset. */
+  public record Rebuild(boolean httpEnabled, String operatorToken) {
+    /** Rejects an enabled reset endpoint without an externally supplied token. */
+    public Rebuild {
+      if (httpEnabled && (operatorToken == null || operatorToken.isBlank())) {
+        throw new IllegalArgumentException(
+            "market-data projection operatorToken is required when rebuild HTTP is enabled");
+      }
+    }
+
+    private static Rebuild defaults() {
+      return new Rebuild(false, "");
     }
   }
 }

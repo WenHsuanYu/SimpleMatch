@@ -108,8 +108,14 @@ class RuntimeMarketDataPublicationTest {
   void retainsTheProjectionWhenRedisIsUnavailableAndRepairsTheCacheLater() throws Exception {
     service.project(rested("e".repeat(64)), 0, 10L);
     final MarketDataSnapshotCache failingCache =
-        entry -> {
-          throw new IllegalStateException("Redis is unavailable");
+        new MarketDataSnapshotCache() {
+          @Override
+          public void put(MarketDataSnapshotCacheEntry entry) {
+            throw new IllegalStateException("Redis is unavailable");
+          }
+
+          @Override
+          public void clear() {}
         };
     final MarketDataSnapshotCacheRefresher failingRefresher =
         new MarketDataSnapshotCacheRefresher(store, failingCache, 10);
@@ -119,7 +125,18 @@ class RuntimeMarketDataPublicationTest {
     assertThat(redisPending()).isTrue();
     final List<MarketDataSnapshotCacheEntry> cached = new ArrayList<>();
     final MarketDataSnapshotCacheRefresher successfulRefresher =
-        new MarketDataSnapshotCacheRefresher(store, cached::add, 10);
+        new MarketDataSnapshotCacheRefresher(
+            store,
+            new MarketDataSnapshotCache() {
+              @Override
+              public void put(MarketDataSnapshotCacheEntry entry) {
+                cached.add(entry);
+              }
+
+              @Override
+              public void clear() {}
+            },
+            10);
     successfulRefresher.refreshPending();
 
     assertThat(cached).singleElement().satisfies(entry -> assertThat(entry.redisKey()).isEqualTo("marketdata:snapshot:XTAI:2330"));
