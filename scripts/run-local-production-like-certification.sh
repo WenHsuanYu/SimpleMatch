@@ -9,12 +9,14 @@ compose_file="$repo_root/deploy/compose/kafka-connect.production-like.yml"
 compose_project="${SIMPLEMATCH_CERTIFICATION_COMPOSE_PROJECT:-simplematch-local-production-like}"
 image_tag="${SIMPLEMATCH_LOCAL_IMAGE_TAG:-local}"
 evidence_dir="${SIMPLEMATCH_CERTIFICATION_EVIDENCE_DIR:-$repo_root/out/certification/local-production-like}"
+certification_trading_day="${SIMPLEMATCH_CERTIFICATION_TRADING_DAY:-$(date -u +%F)}"
 namespace=""
 kind_cluster="${SIMPLEMATCH_KIND_CLUSTER_NAME:-simplematch-local}"
 dry_run=false
 skip_build=false
 skip_compose=false
 skip_kubernetes=false
+matching_fleet_only=false
 keep_resources=false
 compose_started=false
 kubernetes_namespace_created=false
@@ -35,6 +37,8 @@ Options:
   --skip-build            Reuse local images instead of running the image build workflow.
   --skip-compose          Skip PostgreSQL, Redis, Kafka, and Kafka Connect runtime checks.
   --skip-kubernetes        Skip the live Kubernetes deployment and Matching fleet checks.
+  --matching-fleet-only    Run a clean local Kafka plus Matching fleet gate; skip Flyway and other
+                           runtime workloads. The report is intentionally PARTIAL.
   --keep-resources         Keep only this run's Compose project and Kubernetes namespace.
   --dry-run                Print planned commands without changing external state.
   --help                   Show this help.
@@ -42,6 +46,10 @@ Options:
 The local gate owns only the Compose project named by
 SIMPLEMATCH_CERTIFICATION_COMPOSE_PROJECT and a generated Kubernetes namespace.
 It never pushes images and never touches staging or production resources.
+The Kubernetes gate uses the approved delivery manifest for
+SIMPLEMATCH_CERTIFICATION_TRADING_DAY (default: current UTC day) under
+tools/market-reference-builder/data, or the path supplied by
+SIMPLEMATCH_MARKET_REFERENCE_DELIVERY_MANIFEST.
 EOF
 }
 
@@ -71,7 +79,15 @@ run_logged() {
   printf '$' >"$log_path"
   printf ' %q' "$@" >>"$log_path"
   printf '\n' >>"$log_path"
-  if "$@" >>"$log_path" 2>&1; then
+  local command_status
+  set +e
+  (
+    set -e
+    "$@"
+  ) >>"$log_path" 2>&1
+  command_status=$?
+  set -e
+  if [[ "$command_status" -eq 0 ]]; then
     completed_phases+=("$phase")
     printf 'PASS %-32s (%s)\n' "$phase" "$log_path"
     return 0
@@ -80,7 +96,7 @@ run_logged() {
   failed_phase="$phase"
   failure_reason="Phase failed: $phase"
   cat "$log_path" >&2
-  return 1
+  return "$command_status"
 }
 
 run_capture() {
@@ -94,7 +110,15 @@ run_capture() {
   fi
 
   mkdir -p "$(dirname -- "$output_path")" "$evidence_dir"
-  if "$@" >"$output_path" 2>&1; then
+  local command_status
+  set +e
+  (
+    set -e
+    "$@"
+  ) >"$output_path" 2>&1
+  command_status=$?
+  set -e
+  if [[ "$command_status" -eq 0 ]]; then
     completed_phases+=("$phase")
     printf 'PASS %-32s (%s)\n' "$phase" "$output_path"
     return 0
@@ -103,7 +127,7 @@ run_capture() {
   failed_phase="$phase"
   failure_reason="Phase failed: $phase"
   cat "$output_path" >&2
-  return 1
+  return "$command_status"
 }
 
 write_report() {
@@ -113,7 +137,7 @@ write_report() {
   mkdir -p "$evidence_dir"
   if [[ "$exit_code" -ne 0 ]]; then
     completion_status="FAILED"
-  elif [[ "$skip_build" == true || "$skip_compose" == true || "$skip_kubernetes" == true ]]; then
+  elif [[ "$skip_build" == true || "$skip_compose" == true || "$skip_kubernetes" == true || "$matching_fleet_only" == true ]]; then
     completion_status="PARTIAL"
     failure_reason="One or more certification phases were explicitly skipped."
   else
@@ -128,6 +152,7 @@ write_report() {
     printf '%s\n' "- compose_project: $compose_project"
     printf '%s\n' "- compose_file: ${compose_file#$repo_root/}"
     printf '%s\n' "- kubernetes_namespace: ${namespace:-not-run}"
+    printf '%s\n' "- trading_day: $certification_trading_day"
     printf '%s\n' "- gradle: 9.7.0"
     printf '%s\n' "- spring_boot: 4.1.0"
     printf '%s\n' "- vcpkg: 2026.07.29"
@@ -187,6 +212,10 @@ while [[ $# -gt 0 ]]; do
       skip_kubernetes=true
       shift
       ;;
+    --matching-fleet-only)
+      matching_fleet_only=true
+      shift
+      ;;
     --keep-resources)
       keep_resources=true
       shift
@@ -207,6 +236,9 @@ while [[ $# -gt 0 ]]; do
   esac
 done
 
+[[ "$certification_trading_day" =~ ^[0-9]{4}-[0-9]{2}-[0-9]{2}$ ]] || die \
+  "SIMPLEMATCH_CERTIFICATION_TRADING_DAY must use YYYY-MM-DD: $certification_trading_day"
+
 [[ -f "$compose_file" ]] || die "Production-like Compose file does not exist: $compose_file"
 
 if [[ "$dry_run" == true ]]; then
@@ -220,7 +252,7 @@ else
 fi
 compose_command=("${compose_prefix[@]}" --project-name "$compose_project" --file "$compose_file")
 
-run_id="$(date -u +%Y%m%dT%H%M%SZ)-$$"
+run_id="$(date -u +%Y%m%d-%H%M%S)-$$"
 namespace="${SIMPLEMATCH_CERTIFICATION_NAMESPACE:-simplematch-local-cert-${run_id}}"
 
 if [[ "$skip_kubernetes" == false ]]; then
@@ -290,7 +322,7 @@ run_flyway_migrations() {
 
 create_kafka_topics() {
   local topic
-  for topic in matching.commands matching.events; do
+  for topic in matching.commands matching.events matching.executions account.lifecycle marketdata.events; do
     run_logged "kafka-create-${topic//./-}" "${compose_command[@]}" exec -T kafka-1 \
       /opt/kafka/bin/kafka-topics.sh --bootstrap-server kafka-1:29092 --create --if-not-exists \
       --topic "$topic" --partitions 15 --replication-factor 3 \
@@ -311,8 +343,7 @@ collect_kafka_fixture() {
       --bootstrap-server kafka-1:29092 --entity-type topics --entity-name "$topic" --describe
   done
   run_capture kafka-broker-config "$fixture_dir/broker.config.txt" \
-    "${compose_command[@]}" exec -T kafka-1 /opt/kafka/bin/kafka-configs.sh \
-    --bootstrap-server kafka-1:29092 --entity-type brokers --entity-default --describe
+    "${compose_command[@]}" exec -T kafka-1 cat /opt/kafka/config/server.properties
   run_logged kafka-profile-validation bash "$repo_root/scripts/validate-matching-topic-profile.sh" \
     --profile production --fixture-dir "$fixture_dir" --certify-production
 }
@@ -381,30 +412,109 @@ prepare_kubernetes_bridge() {
 
 render_local_kubernetes_manifest() {
   local rendered_manifest="$evidence_dir/local-kubernetes.yaml"
+  local network_cidr
   mkdir -p "$evidence_dir"
   if [[ "$dry_run" == true ]]; then
     print_command kubectl kustomize "$repo_root/deploy/k8s/overlays/local" --load-restrictor LoadRestrictionsNone
     return 0
   fi
+  network_cidr="$(docker network inspect "$SIMPLEMATCH_PRODUCTION_LIKE_NETWORK" \
+    --format '{{range .IPAM.Config}}{{println .Subnet}}{{end}}' | awk '/\./ {print; exit}')"
+  [[ "$network_cidr" =~ ^[0-9]{1,3}(\.[0-9]{1,3}){3}/[0-9]{1,2}$ ]] || die \
+    "Production-like Docker network has no usable IPv4 subnet: $network_cidr"
   kubectl kustomize "$repo_root/deploy/k8s/overlays/local" --load-restrictor LoadRestrictionsNone >"$rendered_manifest"
   sed -i \
     -e "s/namespace: simplematch-local$/namespace: ${namespace}/g" \
     -e 's/kafka:9092/kafka:29092/g' \
+    -e "s|cidr: 172.19.0.0/16|cidr: ${network_cidr}|g" \
     "$rendered_manifest"
   printf '%s\n' "$rendered_manifest"
 }
 
+split_kubernetes_manifest() {
+  local rendered_manifest="$1"
+  local platform_manifest="$2"
+  local migration_manifest="$3"
+  local workload_manifest="$4"
+  local input_manifest="$5"
+
+ruby - "$rendered_manifest" "$platform_manifest" "$migration_manifest" "$workload_manifest" "$input_manifest" <<'RUBY'
+require "yaml"
+require "psych"
+
+rendered_manifest, platform_manifest, migration_manifest, workload_manifest, input_manifest = ARGV
+visitor = Psych::Visitors::ToRuby.create
+documents = Psych.parse_stream(File.read(rendered_manifest)).children.map { |document| visitor.accept(document) }.compact
+
+buckets = {
+  platform_manifest => [],
+  migration_manifest => [],
+  workload_manifest => [],
+  input_manifest => []
+}
+
+documents.each do |document|
+  target = case document.fetch("kind")
+           when "ConfigMap"
+             document.fetch("metadata").fetch("name") == "quickfix-gateway-fix-spec" ? input_manifest : platform_manifest
+           when "Job"
+             migration_manifest
+           when "Deployment", "StatefulSet"
+             workload_manifest
+           else
+             platform_manifest
+           end
+  buckets.fetch(target) << document
+end
+
+buckets.each do |path, bucket|
+  File.write(path, YAML.dump_stream(*bucket))
+end
+RUBY
+}
+
 apply_local_kubernetes_inputs() {
   local matching_digest="$1"
-  local trading_day
+  local input_manifest="$2"
+  local trading_day="$certification_trading_day"
   local service
-  trading_day="$(date -u +%F)"
+  local delivery_manifest
+  local artifact_manifest
+  local manifest_name
+  delivery_manifest="${SIMPLEMATCH_MARKET_REFERENCE_DELIVERY_MANIFEST:-$repo_root/tools/market-reference-builder/data/${trading_day}/delivery/manifest.yaml}"
+  artifact_manifest="$evidence_dir/matching-daily-artifact.yaml"
 
+  [[ -f "$delivery_manifest" ]] || die \
+    "Approved Market Reference delivery manifest does not exist: $delivery_manifest"
+  manifest_name="$(awk '/^  name: market-reference-/ { print $2; exit }' "$delivery_manifest")"
+  [[ "$manifest_name" == "market-reference-${trading_day//-/}"-* ]] || die \
+    "Approved Market Reference delivery manifest is for ${manifest_name:-an unknown day}; expected $trading_day"
+  mkdir -p "$evidence_dir"
+  awk '
+    /^---$/ { exit }
+    /^  name: market-reference-/ {
+      sub(/^  name: market-reference-[^[:space:]]+$/, "  name: matching-daily-artifact")
+    }
+    { print }
+  ' "$delivery_manifest" >"$artifact_manifest"
+  grep -Fxq '  name: matching-daily-artifact' "$artifact_manifest" || die \
+    "Approved Market Reference delivery manifest has no ConfigMap name"
+  grep -Fxq 'immutable: true' "$artifact_manifest" || die \
+    "Approved Market Reference ConfigMap must be immutable"
   kubectl create namespace "$namespace" >/dev/null
   kubernetes_namespace_created=true
 
+  if ! kubectl -n "$namespace" create -f "$artifact_manifest" >/dev/null; then
+    printf 'Failed to create the immutable Market Reference artifact ConfigMap.\n' >&2
+    return 1
+  fi
+  if ! kubectl create -f "$input_manifest" >/dev/null; then
+    printf 'Failed to create the immutable QuickFIX FIX44 dictionary ConfigMap.\n' >&2
+    return 1
+  fi
+
   kubectl -n "$namespace" create configmap matching-session-config \
-    --from-literal="trading_session_id=${trading_day}-local" \
+    --from-literal="trading_session_id=${trading_day}-regular" \
     --from-literal="trading_day=${trading_day}" \
     --from-literal="matching_image_digest=${matching_digest}" \
     --dry-run=client -o yaml | kubectl apply -f - >/dev/null
@@ -415,9 +525,62 @@ apply_local_kubernetes_inputs() {
 
   for service in account-service risk-service persistence market-data-projection marketdata-publisher query-service quickfix-gateway; do
     kubectl -n "$namespace" create secret generic "${service}-secrets" \
-      --from-literal=simplematch.postgres.dsn='jdbc:postgresql://postgres:5432/simplematch' \
+      --from-literal=postgres_dsn='postgresql://simplematch:simplematch@postgres:5432/simplematch' \
       --dry-run=client -o yaml | kubectl apply -f - >/dev/null
   done
+}
+
+publish_local_matching_open_barriers() {
+  local matching_digest="$1"
+  local delivery_manifest
+  local artifact_root
+  local artifact_json
+  local artifact_sha256
+  local routing_version
+  local fixture_publisher="$repo_root/out/build/full-native-dev/simplematch-matching-kafka-fixture-publisher"
+
+  delivery_manifest="${SIMPLEMATCH_MARKET_REFERENCE_DELIVERY_MANIFEST:-$repo_root/tools/market-reference-builder/data/${certification_trading_day}/delivery/manifest.yaml}"
+  artifact_root="$(cd -- "$(dirname -- "$delivery_manifest")/.." && pwd)"
+  artifact_json="$artifact_root/market_reference.json"
+  [[ -f "$artifact_json" ]] || die "Approved Market Reference JSON does not exist: $artifact_json"
+  artifact_sha256="$(tr -d '[:space:]' <"$artifact_root/market_reference.sha256")"
+  [[ "$artifact_sha256" =~ ^[0-9a-f]{64}$ ]] || die \
+    "Approved Market Reference checksum is not a canonical sha256: $artifact_root/market_reference.sha256"
+  routing_version="$(ruby -rjson -e 'puts JSON.parse(File.read(ARGV.fetch(0))).fetch("metadata").fetch("routingAlgorithmVersion")' "$artifact_json")"
+  [[ -n "$routing_version" ]] || die 'Approved Market Reference routing algorithm version is missing.'
+
+  if [[ ! -x "$fixture_publisher" ]]; then
+    cmake --preset full-native-dev
+  fi
+  cmake --build --preset full-native-dev --target simplematch-matching-kafka-fixture-publisher --parallel
+  "$fixture_publisher" "localhost:${SIMPLEMATCH_KAFKA_1_PORT:-19092}" matching.commands \
+    "$certification_trading_day" "${certification_trading_day}-regular" "$artifact_sha256" \
+    "$routing_version" "$matching_digest"
+}
+
+apply_kubernetes_migrations() {
+  local migration_manifest="$1"
+  local workload
+  for workload in account-service risk-service persistence market-data-projection marketdata-publisher query-service quickfix-gateway; do
+    kubectl apply -f "$migration_manifest" \
+      --selector "app.kubernetes.io/name=${workload}-flyway"
+    kubectl -n "$namespace" wait --for=condition=complete \
+      "job/${workload}-flyway" --timeout=300s
+  done
+}
+
+select_matching_workload() {
+  local workload_manifest="$1"
+  local matching_manifest="$2"
+
+  ruby -ryaml -e '
+    documents = YAML.load_stream(File.read(ARGV.fetch(0))).compact
+    matching = documents.select do |document|
+      document.fetch("kind") == "StatefulSet" && document.dig("metadata", "name") == "matching"
+    end
+    abort "rendered local workload manifest must contain exactly one Matching StatefulSet" unless matching.length == 1
+    File.write(ARGV.fetch(1), YAML.dump_stream(*matching))
+  ' "$workload_manifest" "$matching_manifest"
 }
 
 wait_for_kubernetes_workloads() {
@@ -427,9 +590,10 @@ wait_for_kubernetes_workloads() {
   done
   kubectl -n "$namespace" rollout status statefulset/matching --timeout=600s
   kubectl -n "$namespace" rollout status statefulset/quickfix-gateway --timeout=300s
-  for workload in account-service risk-service persistence market-data-projection marketdata-publisher query-service quickfix-gateway; do
-    kubectl -n "$namespace" wait --for=condition=complete "job/${workload}-flyway" --timeout=300s
-  done
+}
+
+wait_for_local_matching_fleet() {
+  kubectl -n "$namespace" rollout status statefulset/matching --timeout=600s
 }
 
 if [[ "$skip_compose" == false ]]; then
@@ -439,31 +603,62 @@ if [[ "$skip_compose" == false ]]; then
   run_logged compose-status "${compose_command[@]}" ps
   create_kafka_topics
   collect_kafka_fixture
-  run_flyway_migrations
+  if [[ "$matching_fleet_only" == false ]]; then
+    run_flyway_migrations
+  else
+    printf '%s\n' 'Compose Flyway phases skipped for the Matching fleet-only gate.'
+  fi
 else
   printf '%s\n' 'Compose runtime phases skipped.'
 fi
 
 if [[ "$skip_kubernetes" == false ]]; then
   if [[ "$dry_run" == true ]]; then
+    print_command bash "$repo_root/scripts/normalize-local-images-for-kind.sh" --tag "$image_tag"
     print_command kind load docker-image --name "$kind_cluster" "simplematch-matching:${image_tag}"
     print_command kubectl create namespace "$namespace"
     print_command kubectl apply -f "$evidence_dir/compose-kubernetes-bridge.yaml"
-    print_command kubectl apply -f "$evidence_dir/local-kubernetes.yaml"
-    print_command bash "$repo_root/scripts/verify-matching-fleet-live.sh" --namespace "$namespace" --allow-shared-node
+    print_command kubectl create -f "$evidence_dir/local-kubernetes-inputs.yaml"
+    print_command kubectl apply -f "$evidence_dir/local-kubernetes-platform.yaml"
+    print_command kubectl apply -f "$evidence_dir/local-kubernetes-migrations.yaml"
+    print_command kubectl wait --for=condition=complete job/account-service-flyway --timeout=300s
+    print_command kubectl apply -f "$evidence_dir/local-kubernetes-workloads.yaml"
+    print_command bash "$repo_root/scripts/verify-matching-fleet-live.sh" --namespace "$namespace" --allow-shared-node --allow-local-image
   else
+    run_logged kubernetes-image-normalization bash \
+      "$repo_root/scripts/normalize-local-images-for-kind.sh" --tag "$image_tag"
     mapfile -t local_images < <(bash "$repo_root/scripts/build-local-images.sh" --tag "$image_tag" --list | awk -F'|' '{print $4}')
-    kind load docker-image --name "$kind_cluster" "${local_images[@]}"
+    run_logged kubernetes-image-load kind load docker-image --name "$kind_cluster" "${local_images[@]}"
     matching_digest="$(docker image inspect --format '{{.Id}}' "simplematch-matching:${image_tag}")"
     [[ "$matching_digest" =~ ^sha256:[0-9a-f]{64}$ ]] || die \
       "Matching local image does not expose an OCI image ID: $matching_digest"
-    apply_local_kubernetes_inputs "$matching_digest"
-    prepare_kubernetes_bridge
     rendered_manifest="$(render_local_kubernetes_manifest)"
-    run_logged kubernetes-apply kubectl apply -f "$rendered_manifest"
-    run_logged kubernetes-workloads wait_for_kubernetes_workloads
+    platform_manifest="$evidence_dir/local-kubernetes-platform.yaml"
+    migration_manifest="$evidence_dir/local-kubernetes-migrations.yaml"
+    workload_manifest="$evidence_dir/local-kubernetes-workloads.yaml"
+    input_manifest="$evidence_dir/local-kubernetes-inputs.yaml"
+    run_logged kubernetes-manifest-split split_kubernetes_manifest \
+      "$rendered_manifest" "$platform_manifest" "$migration_manifest" "$workload_manifest" "$input_manifest"
+    run_logged kubernetes-inputs apply_local_kubernetes_inputs "$matching_digest" "$input_manifest"
+    prepare_kubernetes_bridge
+    run_logged kubernetes-platform-apply kubectl apply -f "$platform_manifest"
+    if [[ "$matching_fleet_only" == true ]]; then
+      matching_workload_manifest="$evidence_dir/local-kubernetes-matching-workload.yaml"
+      run_logged kubernetes-matching-manifest select_matching_workload \
+        "$workload_manifest" "$matching_workload_manifest"
+      run_logged kubernetes-matching-apply kubectl apply -f "$matching_workload_manifest"
+    else
+      run_logged kubernetes-migrations apply_kubernetes_migrations "$migration_manifest"
+      run_logged kubernetes-workload-apply kubectl apply -f "$workload_manifest"
+    fi
+    run_logged kubernetes-open-barriers publish_local_matching_open_barriers "$matching_digest"
+    if [[ "$matching_fleet_only" == true ]]; then
+      run_logged kubernetes-matching-workloads wait_for_local_matching_fleet
+    else
+      run_logged kubernetes-workloads wait_for_kubernetes_workloads
+    fi
     run_logged kubernetes-fleet bash "$repo_root/scripts/verify-matching-fleet-live.sh" \
-      --namespace "$namespace" --allow-shared-node
+      --namespace "$namespace" --allow-shared-node --allow-local-image
   fi
 else
   printf '%s\n' 'Kubernetes runtime phases skipped.'

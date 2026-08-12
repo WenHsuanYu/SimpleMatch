@@ -36,6 +36,131 @@ required_deployments.each do |name|
   security = container.fetch("securityContext")
   abort "#{overlay}: #{name} is not non-root" unless security.fetch("runAsNonRoot")
   abort "#{overlay}: #{name} is not read-only root" unless security.fetch("readOnlyRootFilesystem")
+
+  env = container.fetch("env").to_h { |entry| [entry.fetch("name"), entry] }
+  %w[
+    SPRING_CLOUD_KUBERNETES_CONFIG_INCLUDE_PROFILE_SPECIFIC_SOURCES
+    SPRING_CLOUD_KUBERNETES_SECRETS_INCLUDE_PROFILE_SPECIFIC_SOURCES
+  ].each do |name|
+    abort "#{overlay}: #{name} does not disable implicit profile-specific Kubernetes sources" unless
+      env.dig(name, "value") == "false"
+  end
+end
+
+%w[
+  account-service
+  risk-service
+  persistence
+  market-data-projection
+  marketdata-publisher
+  query-service
+  quickfix-gateway
+].each do |name|
+  job = resources.fetch(["Job", "#{name}-flyway"])
+  container = job.fetch("spec").fetch("template").fetch("spec").fetch("containers").first
+  gradle_environment = container.fetch("env").to_h { |entry| [entry.fetch("name"), entry] }
+  abort "#{overlay}: #{name} Flyway Job does not use the writable temporary Gradle user home" unless
+    gradle_environment.fetch("GRADLE_USER_HOME") ==
+      { "name" => "GRADLE_USER_HOME", "value" => "/tmp/gradle" }
+  abort "#{overlay}: #{name} Flyway Job does not use the writable temporary Gradle project cache" unless
+    gradle_environment.fetch("SIMPLEMATCH_GRADLE_PROJECT_CACHE_DIR") ==
+      { "name" => "SIMPLEMATCH_GRADLE_PROJECT_CACHE_DIR", "value" => "/tmp/gradle-project" }
+  build_mount = container.fetch("volumeMounts").find { |mount| mount["mountPath"] == "/workspace/build" }
+  abort "#{overlay}: #{name} Flyway Job does not mount a writable build output directory" unless
+    build_mount == { "name" => "build-output", "mountPath" => "/workspace/build" }
+  abort "#{overlay}: #{name} Flyway Job does not define the build output volume" unless
+    job.fetch("spec").fetch("template").fetch("spec").fetch("volumes").include?("name" => "build-output", "emptyDir" => {})
+end
+
+if overlay == "local"
+  quickfix = resources.fetch(["StatefulSet", "quickfix-gateway"])
+  quickfix_container = quickfix.fetch("spec").fetch("template").fetch("spec").fetch("containers").first
+  quickfix_env = quickfix_container.fetch("env").to_h { |entry| [entry.fetch("name"), entry] }
+  abort "local: QuickFIX Gateway must use the local Spring profile" unless
+    quickfix_env.dig("SPRING_PROFILES_ACTIVE", "value") == "local"
+
+  {
+    "account-service" => ["SIMPLEMATCH_POSTGRES_DSN"],
+    "risk-service" => ["SIMPLEMATCH_POSTGRES_DSN", "SIMPLEMATCH_TRADING_DAY", "SIMPLEMATCH_MATCHING_IMAGE_DIGEST"],
+    "persistence" => ["SIMPLEMATCH_POSTGRES_DSN"],
+    "market-data-projection" => ["SIMPLEMATCH_POSTGRES_DSN"],
+    "marketdata-publisher" => ["SIMPLEMATCH_POSTGRES_DSN"],
+    "query-service" => ["SIMPLEMATCH_POSTGRES_DSN", "SIMPLEMATCH_TRADING_DAY"]
+  }.each do |deployment_name, environment_names|
+    deployment = resources.fetch(["Deployment", deployment_name])
+    env = deployment.fetch("spec").fetch("template").fetch("spec").fetch("containers").first.fetch("env")
+    environment = env.to_h { |entry| [entry.fetch("name"), entry] }
+    environment_names.each do |environment_name|
+      entry = environment.fetch(environment_name)
+      if environment_name == "SIMPLEMATCH_POSTGRES_DSN"
+        reference = entry.fetch("valueFrom").fetch("secretKeyRef")
+        expected = { "name" => "#{deployment_name}-secrets", "key" => "postgres_dsn" }
+        abort "local: #{deployment_name} is missing its secret-backed PostgreSQL DSN" unless reference == expected
+      else
+        reference = entry.fetch("valueFrom").fetch("configMapKeyRef")
+        expected_key = environment_name == "SIMPLEMATCH_TRADING_DAY" ? "trading_day" : "matching_image_digest"
+        abort "local: #{deployment_name} is missing #{environment_name} from matching-session-config" unless
+          reference == { "name" => "matching-session-config", "key" => expected_key }
+      end
+    end
+  end
+
+  matching = resources.fetch(["StatefulSet", "matching"])
+  matching_container = matching.fetch("spec").fetch("template").fetch("spec").fetch("containers").first
+  matching_env = matching_container.fetch("env").filter_map do |entry|
+    entry.key?("value") ? [entry.fetch("name"), entry.fetch("value")] : nil
+  end.to_h
+  abort "local: Matching native workload does not bound local preallocation" unless
+    matching_env.fetch("MATCHING_MAX_RESTING_ORDERS_PER_INSTRUMENT") == "1024" &&
+      matching_env.fetch("MATCHING_MAX_PENDING_PUBLICATIONS") == "250000"
+  abort "local: Matching native workload is under-provisioned for startup" unless
+    matching_container.fetch("resources") == {
+      "requests" => { "cpu" => "100m", "memory" => "2Gi" },
+      "limits" => { "cpu" => "1", "memory" => "2Gi" }
+    }
+
+  bridge_policy = resources.fetch(["NetworkPolicy", "simplematch-java-services-local-bridge"])
+  bridge_rule = bridge_policy.fetch("spec").fetch("egress").first
+  abort "local: Java workloads cannot reach the Compose bridge network" unless
+    bridge_rule.fetch("to") == [{ "ipBlock" => { "cidr" => "172.19.0.0/16" } }] &&
+      bridge_rule.fetch("ports").map { |port| port.fetch("port") }.sort == [5432, 6379, 29092]
+
+  %w[risk-service query-service].each do |deployment_name|
+    deployment = resources.fetch(["Deployment", deployment_name])
+    market_reference = deployment.fetch("spec").fetch("template").fetch("spec").fetch("volumes")
+      .find { |volume| volume["name"] == "market-reference" }
+    abort "local: #{deployment_name} must require the Market Reference artifact" unless
+      market_reference == {
+        "name" => "market-reference",
+        "configMap" => {
+          "name" => "matching-daily-artifact",
+          "optional" => false
+        }
+      }
+  end
+
+  fix_spec = resources.fetch(["ConfigMap", "quickfix-gateway-fix-spec"])
+  abort "local: QuickFIX FIX44 dictionary is missing" unless
+    fix_spec.fetch("data").fetch("FIX44.xml").include?("<fix")
+  quickfix_volumes = quickfix.fetch("spec").fetch("template").fetch("spec").fetch("volumes")
+  abort "local: QuickFIX FIX44 dictionary volume is missing" unless
+    quickfix_volumes.include?(
+      "name" => "quickfix-fix-spec",
+      "configMap" => {
+        "name" => "quickfix-gateway-fix-spec",
+        "items" => [{ "key" => "FIX44.xml", "path" => "FIX44.xml" }]
+      }
+    )
+  abort "local: QuickFIX FIX44 dictionary mount is missing" unless
+    quickfix_container.fetch("volumeMounts").include?(
+      "name" => "quickfix-fix-spec",
+      "mountPath" => "/workspace/fix-spec",
+      "readOnly" => true
+    )
+
+  publisher = resources.fetch(["Deployment", "marketdata-publisher"])
+  abort "local: superseded marketdata-publisher runtime must be disabled" unless
+    publisher.fetch("spec").fetch("replicas") == 0
 end
 
 network_policy = resources.fetch(["NetworkPolicy", "simplematch-java-services"])

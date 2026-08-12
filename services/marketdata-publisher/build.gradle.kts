@@ -5,6 +5,7 @@ plugins {
 
 dependencies {
     implementation("org.springframework.boot:spring-boot-starter-jdbc")
+    implementation("org.springframework.boot:spring-boot-starter-web")
     implementation(libs.jackson.databind)
 
     testImplementation(libs.h2)

@@ -64,4 +64,6 @@ data:
         redis:
           enabled: true
         market-reference:
+          artifact-location: file:/etc/simplematch/market-reference/market_reference.json
+          checksum-location: file:/etc/simplematch/market-reference/market_reference.sha256
           install-on-startup: true

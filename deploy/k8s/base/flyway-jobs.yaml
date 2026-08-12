@@ -30,6 +30,10 @@ spec:
               value: account-service
             - name: SIMPLEMATCH_FLYWAY_SCHEMA
               value: account_service
+            - name: GRADLE_USER_HOME
+              value: /tmp/gradle
+            - name: SIMPLEMATCH_GRADLE_PROJECT_CACHE_DIR
+              value: /tmp/gradle-project
             - name: SIMPLEMATCH_POSTGRES_DSN
               valueFrom:
                 secretKeyRef:
@@ -44,8 +48,12 @@ spec:
           volumeMounts:
             - name: runtime-tmp
               mountPath: /tmp
+            - name: build-output
+              mountPath: /workspace/build
       volumes:
         - name: runtime-tmp
+          emptyDir: {}
+        - name: build-output
           emptyDir: {}
 ---
 apiVersion: batch/v1
@@ -80,6 +88,10 @@ spec:
               value: risk-service
             - name: SIMPLEMATCH_FLYWAY_SCHEMA
               value: risk_service
+            - name: GRADLE_USER_HOME
+              value: /tmp/gradle
+            - name: SIMPLEMATCH_GRADLE_PROJECT_CACHE_DIR
+              value: /tmp/gradle-project
             - name: SIMPLEMATCH_POSTGRES_DSN
               valueFrom:
                 secretKeyRef:
@@ -94,8 +106,12 @@ spec:
           volumeMounts:
             - name: runtime-tmp
               mountPath: /tmp
+            - name: build-output
+              mountPath: /workspace/build
       volumes:
         - name: runtime-tmp
+          emptyDir: {}
+        - name: build-output
           emptyDir: {}
 ---
 apiVersion: batch/v1
@@ -130,6 +146,10 @@ spec:
               value: persistence
             - name: SIMPLEMATCH_FLYWAY_SCHEMA
               value: persistence
+            - name: GRADLE_USER_HOME
+              value: /tmp/gradle
+            - name: SIMPLEMATCH_GRADLE_PROJECT_CACHE_DIR
+              value: /tmp/gradle-project
             - name: SIMPLEMATCH_POSTGRES_DSN
               valueFrom:
                 secretKeyRef:
@@ -144,8 +164,12 @@ spec:
           volumeMounts:
             - name: runtime-tmp
               mountPath: /tmp
+            - name: build-output
+              mountPath: /workspace/build
       volumes:
         - name: runtime-tmp
+          emptyDir: {}
+        - name: build-output
           emptyDir: {}
 ---
 apiVersion: batch/v1
@@ -180,6 +204,10 @@ spec:
               value: market-data-projection
             - name: SIMPLEMATCH_FLYWAY_SCHEMA
               value: market_data_projection
+            - name: GRADLE_USER_HOME
+              value: /tmp/gradle
+            - name: SIMPLEMATCH_GRADLE_PROJECT_CACHE_DIR
+              value: /tmp/gradle-project
             - name: SIMPLEMATCH_POSTGRES_DSN
               valueFrom:
                 secretKeyRef:
@@ -194,8 +222,12 @@ spec:
           volumeMounts:
             - name: runtime-tmp
               mountPath: /tmp
+            - name: build-output
+              mountPath: /workspace/build
       volumes:
         - name: runtime-tmp
+          emptyDir: {}
+        - name: build-output
           emptyDir: {}
 ---
 apiVersion: batch/v1
@@ -230,6 +262,10 @@ spec:
               value: marketdata-publisher
             - name: SIMPLEMATCH_FLYWAY_SCHEMA
               value: marketdata_publisher
+            - name: GRADLE_USER_HOME
+              value: /tmp/gradle
+            - name: SIMPLEMATCH_GRADLE_PROJECT_CACHE_DIR
+              value: /tmp/gradle-project
             - name: SIMPLEMATCH_POSTGRES_DSN
               valueFrom:
                 secretKeyRef:
@@ -244,8 +280,12 @@ spec:
           volumeMounts:
             - name: runtime-tmp
               mountPath: /tmp
+            - name: build-output
+              mountPath: /workspace/build
       volumes:
         - name: runtime-tmp
+          emptyDir: {}
+        - name: build-output
           emptyDir: {}
 ---
 apiVersion: batch/v1
@@ -280,6 +320,10 @@ spec:
               value: query-service
             - name: SIMPLEMATCH_FLYWAY_SCHEMA
               value: query_service
+            - name: GRADLE_USER_HOME
+              value: /tmp/gradle
+            - name: SIMPLEMATCH_GRADLE_PROJECT_CACHE_DIR
+              value: /tmp/gradle-project
             - name: SIMPLEMATCH_POSTGRES_DSN
               valueFrom:
                 secretKeyRef:
@@ -294,8 +338,12 @@ spec:
           volumeMounts:
             - name: runtime-tmp
               mountPath: /tmp
+            - name: build-output
+              mountPath: /workspace/build
       volumes:
         - name: runtime-tmp
+          emptyDir: {}
+        - name: build-output
           emptyDir: {}
 ---
 apiVersion: batch/v1
@@ -330,6 +378,10 @@ spec:
               value: quickfix-gateway
             - name: SIMPLEMATCH_FLYWAY_SCHEMA
               value: quickfix_gateway
+            - name: GRADLE_USER_HOME
+              value: /tmp/gradle
+            - name: SIMPLEMATCH_GRADLE_PROJECT_CACHE_DIR
+              value: /tmp/gradle-project
             - name: SIMPLEMATCH_POSTGRES_DSN
               valueFrom:
                 secretKeyRef:
@@ -344,6 +396,10 @@ spec:
           volumeMounts:
             - name: runtime-tmp
               mountPath: /tmp
+            - name: build-output
+              mountPath: /workspace/build
       volumes:
         - name: runtime-tmp
+          emptyDir: {}
+        - name: build-output
           emptyDir: {}

@@ -33,6 +33,32 @@ for service in "${expected_services[@]}"; do
   fi
 done
 
+grep -Fq 'gradle_user_home="${GRADLE_USER_HOME:-/tmp/gradle}"' \
+  "$repo_root/deploy/docker/run-flyway" &&
+grep -Fq 'project_cache_dir="${SIMPLEMATCH_GRADLE_PROJECT_CACHE_DIR:-/tmp/gradle-project}"' \
+  "$repo_root/deploy/docker/run-flyway" &&
+grep -Fq 'exec "$work_dir/gradlew" --no-daemon \' \
+  "$repo_root/deploy/docker/run-flyway" &&
+grep -Fq '  --gradle-user-home "$gradle_user_home" \' \
+  "$repo_root/deploy/docker/run-flyway" &&
+grep -Fq '  --project-cache-dir "$project_cache_dir" \' \
+  "$repo_root/deploy/docker/run-flyway" || {
+  echo "Flyway runner does not explicitly select writable Gradle cache locations." >&2
+  exit 1
+}
+
+grep -Fq 'work_dir="${SIMPLEMATCH_FLYWAY_WORK_DIR:-/tmp/simplematch-workspace}"' \
+  "$repo_root/deploy/docker/run-flyway" &&
+grep -Fq 'cp -a /workspace/. "$work_dir/"' \
+  "$repo_root/deploy/docker/run-flyway" &&
+grep -Fq 'cd "$work_dir"' \
+  "$repo_root/deploy/docker/run-flyway" &&
+grep -Fq 'exec "$work_dir/gradlew"' \
+  "$repo_root/deploy/docker/run-flyway" || {
+  echo "Flyway runner does not relocate the Gradle project to a writable workspace." >&2
+  exit 1
+}
+
 if flyway_service_exists unknown-service; then
   echo "Unknown Flyway service was accepted." >&2
   exit 1

@@ -3,8 +3,16 @@ kind: Kustomization
 namespace: simplematch-local
 resources:
   - ../../base
+  - local-network-policy.yaml
+configMapGenerator:
+  - name: quickfix-gateway-fix-spec
+    files:
+      - FIX44.xml=../../../../config/quickfix/fix-spec/FIX44.xml
+    options:
+      disableNameSuffixHash: true
 patches:
   - path: matching-scheduling-patch.yaml
+  - path: local-runtime-patch.yaml
 images:
   - name: simplematch/account-service
     newTag: local

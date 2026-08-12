@@ -26,6 +26,10 @@ spec:
               value: "true"
             - name: SIMPLEMATCH_KUBERNETES_CONFIG_IMPORT
               value: "kubernetes:"
+            - name: SPRING_CLOUD_KUBERNETES_CONFIG_INCLUDE_PROFILE_SPECIFIC_SOURCES
+              value: "false"
+            - name: SPRING_CLOUD_KUBERNETES_SECRETS_INCLUDE_PROFILE_SPECIFIC_SOURCES
+              value: "false"
             - name: SIMPLEMATCH_QUICKFIX_GATEWAY_OWNER_ID
               valueFrom:
                 fieldRef:

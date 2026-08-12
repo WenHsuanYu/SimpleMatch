@@ -5,6 +5,7 @@ namespace="${SIMPLEMATCH_NAMESPACE:-production}"
 statefulset_name="${SIMPLEMATCH_MATCHING_STATEFULSET:-matching}"
 kubectl_bin="${KUBECTL:-kubectl}"
 allow_shared_node=false
+allow_local_image=false
 
 usage() {
   printf '%s\n' \
@@ -14,6 +15,7 @@ usage() {
     '  --statefulset NAME     Matching StatefulSet (default: SIMPLEMATCH_MATCHING_STATEFULSET or matching).' \
     '  --kubectl PATH         kubectl executable (default: KUBECTL or kubectl).' \
     '  --allow-shared-node    Local-only mode; permit 15 logical owners on one node.' \
+    '  --allow-local-image    Local-only mode; require the exact simplematch-matching:local image.' \
     '' \
     'The gate is intentionally strict: it requires 15 Ready pods, 15 distinct nodes,' \
     '15 current Lease holders, 15 Bound ReadWriteOncePod PVCs, and real digest-pinned images.'
@@ -25,6 +27,7 @@ while [[ $# -gt 0 ]]; do
     --statefulset) statefulset_name="$2"; shift 2 ;;
     --kubectl) kubectl_bin="$2"; shift 2 ;;
     --allow-shared-node) allow_shared_node=true; shift ;;
+    --allow-local-image) allow_local_image=true; shift ;;
     --help|-h) usage; exit 0 ;;
     *) usage >&2; printf 'Unknown option: %s\n' "$1" >&2; exit 2 ;;
   esac
@@ -53,7 +56,7 @@ trap 'rm -rf "$temporary_directory"' EXIT
 "$kubectl_bin" -n "$namespace" get pvc -o json \
   > "$temporary_directory/pvcs.json"
 
-ALLOW_SHARED_NODE="$allow_shared_node" NAMESPACE="$namespace" STATEFULSET_NAME="$statefulset_name" ruby -rjson -rtime - \
+ALLOW_SHARED_NODE="$allow_shared_node" ALLOW_LOCAL_IMAGE="$allow_local_image" NAMESPACE="$namespace" STATEFULSET_NAME="$statefulset_name" ruby -rjson -rtime - \
   "$temporary_directory/statefulset.json" \
   "$temporary_directory/pods.json" \
   "$temporary_directory/leases.json" \
@@ -95,7 +98,7 @@ matching_pods = items(pods).select do |pod|
 end
 require_gate(matching_pods.length == 15, "expected 15 Matching pods, got #{matching_pods.length}")
 require_gate(
-  matching_pods.map { |pod| pod.dig("metadata", "name") }.sort == expected_pod_names,
+  matching_pods.map { |pod| pod.dig("metadata", "name") }.sort == expected_pod_names.sort,
   "Matching pod names must be #{expected_pod_names.join(", ")}"
 )
 require_gate(
@@ -115,20 +118,27 @@ else
 end
 pod_partitions = matching_pods.map { |pod| pod.dig("metadata", "labels", "apps.kubernetes.io/pod-index") }
 require_gate(
-  pod_partitions.sort == expected_partitions.map(&:to_s),
+  pod_partitions.sort_by(&:to_i) == expected_partitions.map(&:to_s),
   "Matching pod-index labels must cover every partition from 0 through 14 exactly once"
 )
 
 matching_pods.each do |pod|
   image = pod.dig("spec", "containers", 0, "image").to_s
-  require_gate(
-    image.match?(/@sha256:[0-9a-f]{64}\z/i),
-    "#{pod.dig("metadata", "name")} image is not digest pinned: #{image}"
-  )
-  require_gate(
-    !image.match?(/@sha256:a{64}\z/i),
-    "#{pod.dig("metadata", "name")} still uses the repository placeholder image digest"
-  )
+  if ENV.fetch("ALLOW_LOCAL_IMAGE", "false") == "true"
+    require_gate(
+      image == "simplematch-matching:local",
+      "#{pod.dig("metadata", "name")} must use the local Matching image: #{image}"
+    )
+  else
+    require_gate(
+      image.match?(/@sha256:[0-9a-f]{64}\z/i),
+      "#{pod.dig("metadata", "name")} image is not digest pinned: #{image}"
+    )
+    require_gate(
+      !image.match?(/@sha256:a{64}\z/i),
+      "#{pod.dig("metadata", "name")} still uses the repository placeholder image digest"
+    )
+  end
 end
 
 lease_by_name = items(leases).to_h { |lease| [lease.dig("metadata", "name"), lease] }

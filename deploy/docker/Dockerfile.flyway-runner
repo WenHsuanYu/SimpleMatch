@@ -17,6 +17,7 @@ RUN chmod 0555 /app/run-flyway /workspace/gradlew \
 
 ENV HOME=/tmp
 ENV GRADLE_USER_HOME=/tmp/gradle
+ENV SIMPLEMATCH_GRADLE_PROJECT_CACHE_DIR=/tmp/gradle-project
 
 USER 10001:10001
 ENTRYPOINT ["/app/run-flyway"]

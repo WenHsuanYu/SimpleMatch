@@ -6,6 +6,7 @@ plugins {
 dependencies {
     implementation("org.springframework.boot:spring-boot-starter-jdbc")
     implementation("org.springframework.boot:spring-boot-starter-kafka")
+    implementation("org.springframework.boot:spring-boot-starter-web")
 
     testImplementation(libs.h2)
     testImplementation(libs.flyway.core)

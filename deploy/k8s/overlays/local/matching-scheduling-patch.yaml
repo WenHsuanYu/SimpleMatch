@@ -11,10 +11,15 @@ spec:
           requiredDuringSchedulingIgnoredDuringExecution: null
       containers:
         - name: matching
+          env:
+            - name: MATCHING_MAX_RESTING_ORDERS_PER_INSTRUMENT
+              value: "1024"
+            - name: MATCHING_MAX_PENDING_PUBLICATIONS
+              value: "250000"
           resources:
             requests:
               cpu: 100m
-              memory: 256Mi
+              memory: 2Gi
             limits:
-              cpu: 100m
-              memory: 256Mi
+              cpu: "1"
+              memory: 2Gi

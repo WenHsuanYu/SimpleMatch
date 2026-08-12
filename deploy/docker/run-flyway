@@ -3,6 +3,12 @@
 set -euo pipefail
 
 service_id="${SIMPLEMATCH_FLYWAY_SERVICE_ID:?SIMPLEMATCH_FLYWAY_SERVICE_ID is required}"
+gradle_user_home="${GRADLE_USER_HOME:-/tmp/gradle}"
+project_cache_dir="${SIMPLEMATCH_GRADLE_PROJECT_CACHE_DIR:-/tmp/gradle-project}"
+work_dir="${SIMPLEMATCH_FLYWAY_WORK_DIR:-/tmp/simplematch-workspace}"
+
+mkdir -p "$work_dir"
+cp -a /workspace/. "$work_dir/"
 
 case "$service_id" in
   account-service) task="accountServiceFlywayMigrate" ;;
@@ -18,4 +24,9 @@ case "$service_id" in
     ;;
 esac
 
-exec /workspace/gradlew --no-daemon --stacktrace "$task"
+cd "$work_dir"
+
+exec "$work_dir/gradlew" --no-daemon \
+  --gradle-user-home "$gradle_user_home" \
+  --project-cache-dir "$project_cache_dir" \
+  --stacktrace "$task"

@@ -6,6 +6,7 @@ plugins {
 dependencies {
     implementation("org.springframework.boot:spring-boot-starter-jdbc")
     implementation("org.springframework.boot:spring-boot-starter-kafka")
+    implementation("org.springframework.boot:spring-boot-starter-web")
     implementation("org.springframework.cloud:spring-cloud-starter")
     implementation(libs.grpc.netty.shaded)
     implementation(libs.grpc.protobuf)

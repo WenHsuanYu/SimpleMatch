@@ -40,6 +40,10 @@ spec:
               value: "true"
             - name: SIMPLEMATCH_KUBERNETES_CONFIG_IMPORT
               value: "kubernetes:"
+            - name: SPRING_CLOUD_KUBERNETES_CONFIG_INCLUDE_PROFILE_SPECIFIC_SOURCES
+              value: "false"
+            - name: SPRING_CLOUD_KUBERNETES_SECRETS_INCLUDE_PROFILE_SPECIFIC_SOURCES
+              value: "false"
             - name: SPRING_KAFKA_PROPERTIES_SECURITY_PROTOCOL
               value: PLAINTEXT
             - name: SIMPLEMATCH_GRPC_SECURITY_TLS_ENABLED
@@ -175,6 +179,10 @@ spec:
               value: "true"
             - name: SIMPLEMATCH_KUBERNETES_CONFIG_IMPORT
               value: "kubernetes:"
+            - name: SPRING_CLOUD_KUBERNETES_CONFIG_INCLUDE_PROFILE_SPECIFIC_SOURCES
+              value: "false"
+            - name: SPRING_CLOUD_KUBERNETES_SECRETS_INCLUDE_PROFILE_SPECIFIC_SOURCES
+              value: "false"
             - name: SPRING_KAFKA_PROPERTIES_SECURITY_PROTOCOL
               value: PLAINTEXT
             - name: SIMPLEMATCH_GRPC_SECURITY_TLS_ENABLED
@@ -317,6 +325,10 @@ spec:
               value: "true"
             - name: SIMPLEMATCH_KUBERNETES_CONFIG_IMPORT
               value: "kubernetes:"
+            - name: SPRING_CLOUD_KUBERNETES_CONFIG_INCLUDE_PROFILE_SPECIFIC_SOURCES
+              value: "false"
+            - name: SPRING_CLOUD_KUBERNETES_SECRETS_INCLUDE_PROFILE_SPECIFIC_SOURCES
+              value: "false"
             - name: SPRING_KAFKA_PROPERTIES_SECURITY_PROTOCOL
               value: PLAINTEXT
             - name: OTEL_SERVICE_NAME
@@ -430,6 +442,10 @@ spec:
               value: "true"
             - name: SIMPLEMATCH_KUBERNETES_CONFIG_IMPORT
               value: "kubernetes:"
+            - name: SPRING_CLOUD_KUBERNETES_CONFIG_INCLUDE_PROFILE_SPECIFIC_SOURCES
+              value: "false"
+            - name: SPRING_CLOUD_KUBERNETES_SECRETS_INCLUDE_PROFILE_SPECIFIC_SOURCES
+              value: "false"
             - name: SPRING_KAFKA_PROPERTIES_SECURITY_PROTOCOL
               value: PLAINTEXT
             - name: OTEL_SERVICE_NAME
@@ -543,6 +559,10 @@ spec:
               value: "true"
             - name: SIMPLEMATCH_KUBERNETES_CONFIG_IMPORT
               value: "kubernetes:"
+            - name: SPRING_CLOUD_KUBERNETES_CONFIG_INCLUDE_PROFILE_SPECIFIC_SOURCES
+              value: "false"
+            - name: SPRING_CLOUD_KUBERNETES_SECRETS_INCLUDE_PROFILE_SPECIFIC_SOURCES
+              value: "false"
             - name: OTEL_SERVICE_NAME
               value: marketdata-publisher
             - name: OTEL_RESOURCE_ATTRIBUTES
@@ -647,6 +667,10 @@ spec:
               value: "true"
             - name: SIMPLEMATCH_KUBERNETES_CONFIG_IMPORT
               value: "kubernetes:"
+            - name: SPRING_CLOUD_KUBERNETES_CONFIG_INCLUDE_PROFILE_SPECIFIC_SOURCES
+              value: "false"
+            - name: SPRING_CLOUD_KUBERNETES_SECRETS_INCLUDE_PROFILE_SPECIFIC_SOURCES
+              value: "false"
             - name: SPRING_KAFKA_PROPERTIES_SECURITY_PROTOCOL
               value: PLAINTEXT
             - name: SIMPLEMATCH_QUERY_SERVICE_HTTP_PORT
