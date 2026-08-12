@@ -1,8 +1,8 @@
 # Account Reservation v2 Live Verification
 
 This runbook is the operational evidence supplement for [#139](https://github.com/WenHsuanYu/SimpleMatch/issues/139).
-It proves the Risk-to-Account reservation seam without claiming that local tests are production
-certification.
+It proves the Risk-to-Account reservation seam through the repository-owned local production-like
+gate. It does not claim, and this project does not require, external production certification.
 
 ## What #139 must prove
 
@@ -29,6 +29,11 @@ Run these commands from the repository root:
 bash scripts/check-account-reservation-v2-cutover.sh
 
 GRADLE_USER_HOME=/tmp/simplematch-gradle-home ./gradlew --no-daemon \
+  :services:risk-service:test \
+  --tests 'com.simplematch.riskservice.admission.AccountReservationSagaRecoveryIntegrationTest' \
+  --tests 'com.simplematch.riskservice.admission.GrpcAccountReservationClientAccountIdentityTest'
+
+GRADLE_USER_HOME=/tmp/simplematch-gradle-home ./gradlew --no-daemon \
   :services:account-service:test \
   :services:risk-service:test
 
@@ -37,31 +42,45 @@ GRADLE_USER_HOME=/tmp/simplematch-gradle-home ./gradlew --no-daemon -q staticAna
 
 The caller guard intentionally permits the Account v1 server to remain until #119. It rejects v1
 client construction in every other production service, requires Risk's v2 stub and Account's v2
-server wiring, and checks the secure Kubernetes target contract.
+server wiring, and checks the secure Kubernetes target contract. The first focused test uses the
+real Account v2 gRPC adapter and independent Account/Risk database transactions; it forces Risk's
+local terminal transaction to fail after Account succeeds, then verifies pending recovery replays
+the same typed request without a second reservation.
 
-## What you need before a live run
+## Repository-local recovery scenario
 
-For the direct Risk-to-Account RPC proof, you need:
+The repository-local test is the #139 project-scope evidence. It needs no Kubernetes cluster,
+external endpoint, registry image, credential, Kafka broker, or Debezium installation. The test
+creates two disposable H2 databases, starts an ephemeral Account v2 gRPC server over the real
+Account Authority application service, and runs Risk's durable Admission journal/outbox with an
+independent local transaction manager.
 
-1. A disposable or staging Kubernetes namespace.
-2. TLS-enabled PostgreSQL with the Account and Risk schemas migrated by their service-owned Flyway
-   Jobs.
-3. `account-service` and `risk-service` Deployments reachable by the service DNS names in
-   `simplematch-platform-config`.
-4. A shared gRPC CA plus server/client certificates whose SANs cover `account-service` and
-   `risk-service`.
-5. A provisioned Account limit for the test UUID and a test trading day.
+Run the focused scenario from the repository root:
 
-Kafka and Debezium are not required to call the Account `Reserve` RPC directly. They are required
-for the full Risk outbox/CDC production path and for proving that a finalized admission reaches the
-Matching command topic. Do not treat a direct gRPC success as a complete Phase 1 release gate.
+```bash
+GRADLE_USER_HOME=/tmp/simplematch-gradle-home ./gradlew --no-daemon \
+  :services:risk-service:test \
+  --tests 'com.simplematch.riskservice.admission.AccountReservationSagaRecoveryIntegrationTest'
+```
 
-## Safe execution sequence
+The scenario asserts this sequence:
+
+1. Risk persists `PENDING` and calls the typed Account v2 RPC outside its database transaction.
+2. Account accepts and commits exactly one reservation and lifecycle outbox row.
+3. Risk's terminal journal/outbox transaction fails and rolls back, leaving `PENDING`.
+4. Pending recovery replays the same command identity; Account returns the existing outcome.
+5. Risk commits one terminal outcome and one Matching outbox row; a second recovery pass is a no-op.
+
+## Optional staging/production promotion template
+
+The following sequence is retained as a template for a later environment promotion. It is not
+required to complete #139 or this project, and placeholder registry names, image digests, external
+endpoints, CIDRs, credentials, and TLS material must not be treated as current blockers.
 
 ### 1. Validate before applying anything
 
-Replace only environment-owned placeholders in a disposable overlay. Do not commit credentials,
-private keys, DSNs, registry values, or real endpoint CIDRs.
+Replace only environment-owned placeholders in a disposable promotion overlay. Do not commit
+credentials, private keys, DSNs, registry values, or real endpoint CIDRs.
 
 ```bash
 bash scripts/test-kubernetes-overlays.sh
@@ -89,8 +108,9 @@ kubectl -n "$SIMPLEMATCH_NAMESPACE" rollout status deployment/account-service --
 kubectl -n "$SIMPLEMATCH_NAMESPACE" rollout status deployment/risk-service --timeout=10m
 ```
 
-The checked-in image names and external CIDRs are placeholders. A real promotion must replace them
-with approved immutable image digests and reachable endpoints before apply.
+The checked-in image names and external CIDRs are placeholders. A later promotion may replace them
+with approved immutable image digests and reachable endpoints; that work is outside this project's
+#139 acceptance target.
 
 ### 3. Run the functional scenarios
 
@@ -127,7 +147,7 @@ Capture command IDs, reservation IDs, Account journal/outbox identities, Risk st
 timestamps, pod image digests, Kubernetes context/namespace, and the operator’s rollback decision.
 Never place credentials or complete account payloads in the evidence bundle.
 
-## Kafka and Debezium extension
+## Optional Kafka and Debezium promotion extension
 
 After the direct seam passes, extend the run only if the environment has the production Kafka profile
 and a reviewed Kafka Connect/Debezium deployment:
@@ -140,8 +160,9 @@ and a reviewed Kafka Connect/Debezium deployment:
 5. Exercise connector restart and PostgreSQL outage while retaining the outbox and Risk journal.
 
 This repository currently contains connector configuration contracts, not a complete retained
-KafkaConnect/KafkaConnector deployment object. Treat that deployment as an environment/platform
-work item and do not mark #139 complete from a ConfigMap render alone.
+KafkaConnect/KafkaConnector deployment object. Treat that deployment as future environment/platform
+promotion work. It is not required to close the repository-local #139 scope, and a ConfigMap render
+alone is not external production certification evidence.
 
 ## Learning path
 
@@ -151,5 +172,6 @@ work item and do not mark #139 complete from a ConfigMap render alone.
 - [Debezium installation](https://debezium.io/documentation/reference/stable/install.html)
 - [Debezium on Kubernetes with Strimzi](https://debezium.io/documentation/reference/3.5/operations/kubernetes.html)
 
-The kind and single-broker Kafka paths are learning or integration environments. They cannot satisfy
-the production replication, node, TLS, outage, or recovery evidence required by the Phase 1 release.
+The kind and single-broker Kafka paths are learning or integration environments. Production
+replication, node, TLS, outage, and recovery certification remains a future promotion template and
+is not required by the repository-local #139 target.

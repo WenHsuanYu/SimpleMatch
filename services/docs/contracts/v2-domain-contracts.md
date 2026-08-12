@@ -35,6 +35,25 @@ A rejection is a domain fact, not a transport failure or dead-letter record.
   session state is explicit.
 - ROD, IOC, and FOK are all represented by the v2 time-in-force enum.
 
+## Account reservation saga boundary
+
+Risk owns the durable Admission intent, not the Account reservation transaction. It commits
+`PENDING` in one local transaction, calls `AccountReservationService.Reserve` with the typed v2
+command outside that transaction, and commits the terminal Risk journal/outbox state in a second
+local transaction. Account owns its own `@Transactional` reservation mutation and lifecycle outbox.
+
+If Account succeeds but Risk's terminal transaction fails, the pending row remains recoverable.
+Pending recovery sends the original command identity again; Account's request-identity lock and
+equivalent-fact check return the existing reservation outcome, so the recovery path cannot reserve
+the account twice. The repository-local proof is
+`AccountReservationSagaRecoveryIntegrationTest`, together with the Account v2 gRPC and source
+cutover tests.
+
+The retained Account v1 server is a compatibility surface owned by #119 until the later cleanup.
+No in-scope Risk production caller may construct that client after the v2 cutover. External
+production certification, live staging/production configuration, and external Kafka/Debezium
+certification are promotion-template concerns, not prerequisites for this repository-local scope.
+
 ## QuickFIX to Risk production boundary
 
 QuickFIX Gateway does not construct a v1 `OrderCommand` on the production admission path. It keeps a

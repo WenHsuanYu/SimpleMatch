@@ -28,6 +28,15 @@ fi
 if rg -n \
   --glob '*.java' \
   --glob '*.kt' \
+  'AccountServiceGrpc|com\.simplematch\.contracts\.account\.v1' \
+  services/risk-service/src/main; then
+  echo "Risk production source still references the retained Account v1 RPC." >&2
+  exit 1
+fi
+
+if rg -n \
+  --glob '*.java' \
+  --glob '*.kt' \
   --glob '*.yaml' \
   --glob '*.properties' \
   'AccountServiceGrpc\.new' \
@@ -59,4 +68,4 @@ if ! rg -q -U 'name: SIMPLEMATCH_GRPC_SECURITY_TLS_ENABLED\r?\n\s+value: "true"'
   exit 1
 fi
 
-echo "Account reservation v2 production-caller guard passed."
+echo "Account reservation v2 source and configuration cutover guard passed."
