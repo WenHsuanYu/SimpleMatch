@@ -42,11 +42,11 @@ and must not be interpreted as a requirement to push images or obtain external c
 
 | Class | Current entries | Meaning |
 | --- | --- | --- |
-| Local gate or operational verification pending | RM-1, ME-1, ME-2, ME-3, PS-1, AC-1, AR-1, FG-1, QS-1, KC-1, PC-1 | The primary remaining work is to run the retained implementation through the local production-like dependency, restart, replay, and end-to-end scenarios. PS-1, AC-1, and FG-1 also retain their explicitly named status-adapter work. |
+| Local gate or operational verification pending | RM-1, ME-1, ME-2, ME-3, PS-1, AC-1, FG-1, QS-1, PC-1 | The primary remaining work is to run the retained implementation through the local production-like dependency, restart, replay, and end-to-end scenarios. PS-1, AC-1, and FG-1 also retain their explicitly named status-adapter work. |
 | Implementation or capability-specific local verification pending | MD-1, GO-1, PD-1 | The repository implementation and structural gates now exist, and the complete local gate has passed; capability-specific subscriber, collector, connector, security, and outage evidence is still required. |
 | Compatibility or legacy cleanup | MR-5, CL-1 | Superseded runtime paths and migration-only seams still require source/configuration removal; local certification alone cannot close them. |
 
-## Latest verification evidence (2026-08-12)
+## Latest verification evidence (2026-08-13)
 
 - Native CTest now passes all 40 tests, including Kubernetes Lease timestamp formatting and a
   minimum one-second timeout for Kafka recovery metadata queries.
@@ -84,6 +84,14 @@ and must not be interpreted as a requirement to push images or obtain external c
 - The Kafka profile validator now accepts an external TLS/SASL command-properties file and rejects
   duplicate replica broker identities. These changes strengthen the repository gate; they do not
   claim certification of an externally operated production environment.
+- The Matching Kafka profile tests now fail closed for partition-level and topic-wide replica/ISR
+  drift, leader loss, unsafe broker policy, unsafe producer settings, insufficient 30-day capacity,
+  and the one-broker local profile. The local certification runner passes producer and capacity
+  evidence into the same validator.
+- The Account v2 source/configuration cutover guard and the repository-local
+  `AccountReservationSagaRecoveryIntegrationTest` pass. The test uses real Account v2 gRPC and
+  independent H2 transactions to prove remote success followed by Risk failure recovers the same
+  reservation without a second Account mutation.
 - The first same-day gate attempt failed closed at `kubernetes-inputs` because the default current
   day had no approved delivery manifest. That was an input-fixture blocker, not a Kubernetes
   workload failure; rerunning with the repository's approved historical fixture passed. No external
@@ -137,7 +145,7 @@ and must not be interpreted as a requirement to push images or obtain external c
 | `matching.events` wire identity and publication | `PARTIAL` | [#129](https://github.com/WenHsuanYu/SimpleMatch/issues/129) |
 | Permanent PostgreSQL trades and fills | `PARTIAL` | [#130](https://github.com/WenHsuanYu/SimpleMatch/issues/130) |
 | Account critical Matching-event consumption | `PARTIAL` | [#131](https://github.com/WenHsuanYu/SimpleMatch/issues/131) |
-| Final Account reservation v2 RPC | `PARTIAL` | [#139](https://github.com/WenHsuanYu/SimpleMatch/issues/139) |
+| Final Account reservation v2 RPC | `COMPLETED` | [#139](https://github.com/WenHsuanYu/SimpleMatch/issues/139) |
 | Account DataSource Boot auto-configuration | `COMPLETED` | [#140](https://github.com/WenHsuanYu/SimpleMatch/issues/140) |
 | Durable QuickFIX execution delivery | `PARTIAL` | [#132](https://github.com/WenHsuanYu/SimpleMatch/issues/132) |
 | Runtime market-data projection | `PARTIAL` | [#133](https://github.com/WenHsuanYu/SimpleMatch/issues/133) |
@@ -145,7 +153,7 @@ and must not be interpreted as a requirement to push images or obtain external c
 | Gateway operational admission control | `PARTIAL` | [#135](https://github.com/WenHsuanYu/SimpleMatch/issues/135) |
 | Matching StatefulSet ownership and fencing | `COMPLETED` | [#134](https://github.com/WenHsuanYu/SimpleMatch/issues/134) |
 | Cross-service deployment, security, and observability | `PARTIAL` | [#138](https://github.com/WenHsuanYu/SimpleMatch/issues/138) |
-| Production-shaped Kafka topic profile | `PARTIAL` | [#125](https://github.com/WenHsuanYu/SimpleMatch/issues/125) |
+| Production-shaped Kafka topic profile | `COMPLETED` | [#125](https://github.com/WenHsuanYu/SimpleMatch/issues/125) |
 | Performance and recovery certification | `PARTIAL` | [#136](https://github.com/WenHsuanYu/SimpleMatch/issues/136) |
 | Pre-release compatibility and legacy cleanup | `PARTIAL` | [#119](https://github.com/WenHsuanYu/SimpleMatch/issues/119), [#120](https://github.com/WenHsuanYu/SimpleMatch/issues/120) |
 
@@ -374,7 +382,7 @@ and must not be interpreted as a requirement to push images or obtain external c
 
 ### AR-1: Migrate Account reservation RPC to the final v2 contract
 
-- **Current status:** `PARTIAL`
+- **Current status:** `COMPLETED`
 - **Target behavior:** Risk and Account use one typed v2 reservation boundary for the durable
   Admission saga. The RPC carries accepted identities, whole-share quantity, fixed-point monetary
   values, reservation terms, and typed outcomes without legacy string parsing in domain behavior.
@@ -386,11 +394,11 @@ and must not be interpreted as a requirement to push images or obtain external c
   Equivalent retries replay one outcome and conflicting request reuse maps to a typed conflict. The
   Account adapter validates the shared v2 metadata envelope before persistence, and the repository
   caller guard proves non-Account production services do not construct the v1 RPC client. Focused
-  contract, Account transaction, Risk gRPC-boundary, and Risk identity tests pass.
-- **Missing behavior:** Local production-like saga recovery against the deployed services and proof
-  from repository source/configuration guards that every in-scope caller has removed the v1 client
-  remain part of the integrated release gate. Proof from an external production deployment is not
-  required; the retained v1 server deletion remains owned by #119.
+  contract, Account transaction, Risk gRPC-boundary, Risk identity, and repository-local saga
+  recovery tests pass.
+- **Missing behavior:** None for the repository-owned project target. The retained Account v1 server
+  remains intentionally available until #119 performs the later compatibility cleanup; external
+  production deployment proof and staging/production configuration are promotion-template work.
 - **Acceptance criteria:** The Account transaction remains service-owned and no Risk transaction is
   held across the RPC. Equivalent retries preserve one reservation outcome; conflicting retries are
   typed conflicts; remote success followed by Risk failure recovers without reserving twice.
@@ -564,26 +572,28 @@ and must not be interpreted as a requirement to push images or obtain external c
 
 ### KC-1: Provision durable Matching Kafka topics
 
-- **Current status:** `PARTIAL`
+- **Current status:** `COMPLETED`
 - **Target behavior:** Repository-managed infrastructure provisions `matching.commands` and
   `matching.events` with 15 partitions, replication factor 3, minimum ISR 2, delete-only cleanup,
   30-calendar-day retention, disabled unclean leader election, and disabled automatic topic
   creation. Producers use `acks=all` and idempotence.
 - **Current evidence:** `config/kafka/matching-production.properties` and the non-certifying local
   profile define the exact topology and producer policy. Repository scripts provision and
-  fail-closed validate both topics, including every partition ISR, broker safety settings, and
-  non-compaction. Fixture tests cover unsafe ISR/broker state and refusal to certify local mode;
-  the durability runbook documents sizing, headroom, and alerts.
-- **Missing behavior:** The local gate has validated the owned three-broker production-shaped
-  profile. Remaining project-local work is to record workload-based 30-day retention/disk sizing and
-  exercise broker/ISR failure behavior; #126 and #127 must consume the producer profile when their
-  actual producers are introduced. Validation against an externally operated production cluster is
-  future promotion work, not a project blocker.
+  fail-closed validate both topics, including every partition and topic-wide replica identity set,
+  leader/ISR membership, broker safety settings, non-compaction, producer `acks=all`/idempotence,
+  and workload-based 30-day capacity/headroom evidence. Fixture tests cover one- and two-broker
+  loss, leader loss, unsafe ISR/broker state, unsafe producer settings, insufficient capacity, and
+  refusal to use the RF1 local profile. The local certification runner passes the producer and
+  capacity evidence to this validator; the durability runbook documents sizing, headroom, alerts,
+  and the local failure matrix. Existing Risk and native Matching producers already enforce the
+  required producer settings.
+- **Missing behavior:** None for the repository-owned project target. External Kafka ownership,
+  external disk measurements, and external production certification remain promotion-template work.
 - **Acceptance criteria:** Local production-like readiness fails if partition count or durability
   settings differ. Neither topic is compacted. Thirty days of the certified workload fit with
   operational headroom. Local replication factor 1 cannot pass the production-shaped durability
   gate.
-- **Blocking dependencies:** Kafka deployment/environment ownership.
+- **Blocking dependencies:** None for the repository-owned project target.
 - **GitHub issue:** [#125](https://github.com/WenHsuanYu/SimpleMatch/issues/125).
 
 ### PC-1: Certify capacity, latency, and recovery
