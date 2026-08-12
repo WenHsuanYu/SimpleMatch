@@ -5,6 +5,8 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 FIXTURE_DIR="${SCRIPT_DIR}/testdata/matching-topic-profile/valid"
 VALIDATOR="${SCRIPT_DIR}/validate-matching-topic-profile.sh"
 PROVISIONER="${SCRIPT_DIR}/provision-matching-topics.sh"
+PRODUCER_CONFIG_FILE="${FIXTURE_DIR}/matching.producer.config.txt"
+CAPACITY_EVIDENCE_FILE="${FIXTURE_DIR}/capacity.properties"
 
 assert_fails() {
   local description="$1"
@@ -17,6 +19,8 @@ assert_fails() {
 
 "${VALIDATOR}" --profile production --fixture-dir "${FIXTURE_DIR}" \
   --command-config "${SCRIPT_DIR}/../config/kafka/matching-production.properties" \
+  --producer-config-file "${PRODUCER_CONFIG_FILE}" \
+  --capacity-evidence-file "${CAPACITY_EVIDENCE_FILE}" \
   --certify-production
 assert_fails 'local profile production certification' "${VALIDATOR}" --profile local \
   --fixture-dir "${FIXTURE_DIR}" --certify-production
@@ -26,22 +30,85 @@ trap 'rm -rf "${TEMPORARY_FIXTURES}"' EXIT
 cp -R "${FIXTURE_DIR}" "${TEMPORARY_FIXTURES}/bad-isr"
 sed -i 's/Isr: 1,2,3$/Isr: 1/' "${TEMPORARY_FIXTURES}/bad-isr/matching.events.topic.txt"
 assert_fails 'insufficient ISR' "${VALIDATOR}" --profile production \
-  --fixture-dir "${TEMPORARY_FIXTURES}/bad-isr" --certify-production
+  --fixture-dir "${TEMPORARY_FIXTURES}/bad-isr" \
+  --producer-config-file "${PRODUCER_CONFIG_FILE}" \
+  --capacity-evidence-file "${CAPACITY_EVIDENCE_FILE}" --certify-production
+
+cp -R "${FIXTURE_DIR}" "${TEMPORARY_FIXTURES}/single-broker-loss"
+for topic_file in "${TEMPORARY_FIXTURES}/single-broker-loss"/*.topic.txt; do
+  sed -i -e 's/Leader: 3/Leader: 1/g' -e 's/Isr: 1,2,3$/Isr: 1,2/' "${topic_file}"
+done
+"${VALIDATOR}" --profile production --fixture-dir "${TEMPORARY_FIXTURES}/single-broker-loss" \
+  --producer-config-file "${PRODUCER_CONFIG_FILE}" \
+  --capacity-evidence-file "${CAPACITY_EVIDENCE_FILE}" --certify-production
+
+cp -R "${FIXTURE_DIR}" "${TEMPORARY_FIXTURES}/two-broker-loss"
+for topic_file in "${TEMPORARY_FIXTURES}/two-broker-loss"/*.topic.txt; do
+  sed -i -e 's/Leader: [123]/Leader: 1/g' -e 's/Isr: 1,2,3$/Isr: 1/' "${topic_file}"
+done
+assert_fails 'two-broker loss' "${VALIDATOR}" --profile production \
+  --fixture-dir "${TEMPORARY_FIXTURES}/two-broker-loss" \
+  --producer-config-file "${PRODUCER_CONFIG_FILE}" \
+  --capacity-evidence-file "${CAPACITY_EVIDENCE_FILE}" --certify-production
+
+cp -R "${FIXTURE_DIR}" "${TEMPORARY_FIXTURES}/no-leader"
+sed -i 's/Leader: [123]/Leader: -1/' \
+  "${TEMPORARY_FIXTURES}/no-leader/matching.commands.topic.txt"
+assert_fails 'leader loss without an eligible leader' "${VALIDATOR}" --profile production \
+  --fixture-dir "${TEMPORARY_FIXTURES}/no-leader" \
+  --producer-config-file "${PRODUCER_CONFIG_FILE}" \
+  --capacity-evidence-file "${CAPACITY_EVIDENCE_FILE}" --certify-production
 
 cp -R "${FIXTURE_DIR}" "${TEMPORARY_FIXTURES}/duplicate-replica"
 sed -i 's/Replicas: 1,2,3/Replicas: 1,2,1/' \
   "${TEMPORARY_FIXTURES}/duplicate-replica/matching.commands.topic.txt"
 assert_fails 'duplicate replica broker identity' "${VALIDATOR}" --profile production \
-  --fixture-dir "${TEMPORARY_FIXTURES}/duplicate-replica" --certify-production
+  --fixture-dir "${TEMPORARY_FIXTURES}/duplicate-replica" \
+  --producer-config-file "${PRODUCER_CONFIG_FILE}" \
+  --capacity-evidence-file "${CAPACITY_EVIDENCE_FILE}" --certify-production
+
+cp -R "${FIXTURE_DIR}" "${TEMPORARY_FIXTURES}/isr-outside-replicas"
+sed -i 's/Isr: 1,2,3$/Isr: 1,2,4/' \
+  "${TEMPORARY_FIXTURES}/isr-outside-replicas/matching.commands.topic.txt"
+assert_fails 'ISR broker outside replica set' "${VALIDATOR}" --profile production \
+  --fixture-dir "${TEMPORARY_FIXTURES}/isr-outside-replicas" \
+  --producer-config-file "${PRODUCER_CONFIG_FILE}" \
+  --capacity-evidence-file "${CAPACITY_EVIDENCE_FILE}" --certify-production
+
+cp -R "${FIXTURE_DIR}" "${TEMPORARY_FIXTURES}/replica-set-drift"
+sed -i '/Partition: 1/s/Replicas: 1,2,3/Replicas: 1,2,4/; /Partition: 1/s/Isr: 1,2,3/Isr: 1,2,4/' \
+  "${TEMPORARY_FIXTURES}/replica-set-drift/matching.commands.topic.txt"
+assert_fails 'replica broker identity set drift' "${VALIDATOR}" --profile production \
+  --fixture-dir "${TEMPORARY_FIXTURES}/replica-set-drift" \
+  --producer-config-file "${PRODUCER_CONFIG_FILE}" \
+  --capacity-evidence-file "${CAPACITY_EVIDENCE_FILE}" --certify-production
 
 cp -R "${FIXTURE_DIR}" "${TEMPORARY_FIXTURES}/unsafe-broker"
 sed -i 's/auto.create.topics.enable=false/auto.create.topics.enable=true/' \
   "${TEMPORARY_FIXTURES}/unsafe-broker/broker.config.txt"
 assert_fails 'unsafe broker policy' "${VALIDATOR}" --profile production \
-  --fixture-dir "${TEMPORARY_FIXTURES}/unsafe-broker" --certify-production
+  --fixture-dir "${TEMPORARY_FIXTURES}/unsafe-broker" \
+  --producer-config-file "${PRODUCER_CONFIG_FILE}" \
+  --capacity-evidence-file "${CAPACITY_EVIDENCE_FILE}" --certify-production
+
+cp "${CAPACITY_EVIDENCE_FILE}" "${TEMPORARY_FIXTURES}/under-capacity.properties"
+sed -i 's/capacity.usable.cluster.bytes=200000000000/capacity.usable.cluster.bytes=100000000000/' \
+  "${TEMPORARY_FIXTURES}/under-capacity.properties"
+assert_fails 'insufficient 30-day capacity' "${VALIDATOR}" --profile production \
+  --fixture-dir "${FIXTURE_DIR}" --producer-config-file "${PRODUCER_CONFIG_FILE}" \
+  --capacity-evidence-file "${TEMPORARY_FIXTURES}/under-capacity.properties" --certify-production
+
+cp "${PRODUCER_CONFIG_FILE}" "${TEMPORARY_FIXTURES}/unsafe-producer.config.txt"
+sed -i 's/^acks=all$/acks=1/' "${TEMPORARY_FIXTURES}/unsafe-producer.config.txt"
+assert_fails 'unsafe producer acknowledgement' "${VALIDATOR}" --profile production \
+  --fixture-dir "${FIXTURE_DIR}" \
+  --producer-config-file "${TEMPORARY_FIXTURES}/unsafe-producer.config.txt" \
+  --capacity-evidence-file "${CAPACITY_EVIDENCE_FILE}" --certify-production
 
 provision_output="$("${PROVISIONER}" --bootstrap-server kafka:9092 --profile production \
   --command-config "${SCRIPT_DIR}/../config/kafka/matching-production.properties" \
+  --producer-config-file "${PRODUCER_CONFIG_FILE}" \
+  --capacity-evidence-file "${CAPACITY_EVIDENCE_FILE}" \
   --certify-production --dry-run)"
 [[ "${provision_output}" == *'--topic matching.commands --partitions 15 --replication-factor 3'* ]] || {
   printf '%s\n' 'Production provisioning command is incomplete' >&2

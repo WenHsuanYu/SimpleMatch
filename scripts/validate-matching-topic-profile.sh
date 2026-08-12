@@ -9,6 +9,8 @@ BOOTSTRAP_SERVER=""
 PROFILE="production"
 FIXTURE_DIR=""
 BROKER_CONFIG_FILE=""
+PRODUCER_CONFIG_FILE=""
+CAPACITY_EVIDENCE_FILE=""
 CERTIFY_PRODUCTION=false
 COMMAND_CONFIG_FILE="${MATCHING_KAFKA_COMMAND_CONFIG:-}"
 
@@ -20,6 +22,8 @@ usage() {
     '  --fixture-dir DIRECTORY       Validate saved Kafka CLI output instead.' \
     '  --broker-config-file FILE     Use the effective broker config instead of a live query.' \
     '  --command-config FILE        Kafka CLI TLS/SASL client properties.' \
+    '  --producer-config-file FILE  Effective Matching producer properties.' \
+    '  --capacity-evidence-file FILE Workload-based retention and disk evidence.' \
     '  --profile production|local    Select the profile (default: production).' \
     '  --certify-production          Reject any non-production profile.' \
     '  --kafka-bin-dir DIRECTORY     Directory containing Kafka CLI programs.'
@@ -31,6 +35,8 @@ while [[ $# -gt 0 ]]; do
     --fixture-dir) FIXTURE_DIR="$2"; shift 2 ;;
     --broker-config-file) BROKER_CONFIG_FILE="$2"; shift 2 ;;
     --command-config) COMMAND_CONFIG_FILE="$2"; shift 2 ;;
+    --producer-config-file) PRODUCER_CONFIG_FILE="$2"; shift 2 ;;
+    --capacity-evidence-file) CAPACITY_EVIDENCE_FILE="$2"; shift 2 ;;
     --profile) PROFILE="$2"; shift 2 ;;
     --certify-production) CERTIFY_PRODUCTION=true; shift ;;
     --kafka-bin-dir) MATCHING_KAFKA_BIN_DIR="$2"; shift 2 ;;
@@ -44,8 +50,7 @@ done
 [[ -z "${FIXTURE_DIR}" || -z "${BOOTSTRAP_SERVER}" ]] || matching_die \
   'Use either --fixture-dir or --bootstrap-server, not both'
 if [[ -n "${COMMAND_CONFIG_FILE}" ]]; then
-  [[ -f "${COMMAND_CONFIG_FILE}" ]] || matching_die \
-    "Kafka command config does not exist: ${COMMAND_CONFIG_FILE}"
+  matching_require_file "${COMMAND_CONFIG_FILE}" 'Kafka command config'
 fi
 
 KAFKA_COMMAND_ARGS=()
@@ -56,6 +61,12 @@ fi
 matching_load_profile "${PROFILE}"
 if [[ "${CERTIFY_PRODUCTION}" == true ]]; then
   matching_require_production_profile
+fi
+if [[ -n "${PRODUCER_CONFIG_FILE}" ]]; then
+  matching_validate_producer_config "${PRODUCER_CONFIG_FILE}"
+fi
+if [[ -n "${CAPACITY_EVIDENCE_FILE}" ]]; then
+  matching_validate_capacity_evidence "${CAPACITY_EVIDENCE_FILE}"
 fi
 
 config_value() {
@@ -92,9 +103,7 @@ assert_topic_shape() {
   local expected_partitions
   local expected_replication
   local partition_lines
-  local under_replicated
-  local replica_ids
-  local replica_count
+  local partition_failure
   expected_partitions="$(matching_profile_value topic.partition.count)"
   expected_replication="$(matching_profile_value topic.replication.factor)"
 
@@ -106,33 +115,106 @@ assert_topic_shape() {
   [[ "${partition_lines}" == "${expected_partitions}" ]] || matching_die \
     "${topic}: expected ${expected_partitions} partition descriptions, got ${partition_lines}"
 
-  replica_ids="$(awk '
-    /Partition:/ {
-      replicas = $0
-      sub(/^.*Replicas:[[:space:]]*/, "", replicas)
-      sub(/[[:space:]]+Isr:.*$/, "", replicas)
-      gsub(/,/, "\n", replicas)
-      print replicas
+  partition_failure="$(awk \
+    -v expected_partitions="${expected_partitions}" \
+    -v expected_replication="${expected_replication}" \
+    -v minimum_isr="$(matching_profile_value topic.min.insync.replicas)" \
+    '
+    function contains(value, values, count, idx) {
+      for (idx = 1; idx <= count; idx++) {
+        if (values[idx] == value) return 1
+      }
+      return 0
     }
-  ' "${topic_file}" | LC_ALL=C sort -u)"
-  replica_count="$(printf '%s\n' "${replica_ids}" | awk 'NF { count++ } END { print count + 0 }')"
-  [[ "${replica_count}" == "${expected_replication}" ]] || matching_die \
-    "${topic}: expected ${expected_replication} distinct replica broker IDs, got ${replica_count}"
-
-  under_replicated="$(awk -v minimum="$(matching_profile_value topic.min.insync.replicas)" '
+    function clean_values(values, count, idx) {
+      for (idx = 1; idx <= count; idx++) {
+        gsub(/^[[:space:]]+|[[:space:]]+$/, "", values[idx])
+      }
+    }
+    function fail_closed(message) {
+      print message
+      failure = 1
+      exit
+    }
     /Partition:/ {
-      isr = $0
-      sub(/^.*Isr:[[:space:]]*/, "", isr)
-      sub(/[[:space:]].*$/, "", isr)
-      count = split(isr, replicas, ",")
-      if (count < minimum) {
-        print $0
-        exit
+      partition_id = $0
+      sub(/^.*Partition:[[:space:]]*/, "", partition_id)
+      sub(/[[:space:]].*$/, "", partition_id)
+      if (partition_id !~ /^[0-9]+$/ || partition_id + 0 < 0 ||
+          partition_id + 0 >= expected_partitions + 0) {
+        fail_closed("partition id is outside the fixed range 0-" (expected_partitions - 1) ": " partition_id)
+      }
+      if (seen_partitions[partition_id]++) {
+        fail_closed("duplicate partition id: " partition_id)
+      }
+
+      replicas_text = $0
+      sub(/^.*Replicas:[[:space:]]*/, "", replicas_text)
+      sub(/[[:space:]]+Isr:.*$/, "", replicas_text)
+      replica_count = split(replicas_text, replicas, ",")
+      clean_values(replicas, replica_count)
+      distinct_replica_count = 0
+      for (idx = 1; idx <= replica_count; idx++) {
+        if (replicas[idx] != "") {
+          all_replicas[replicas[idx]] = 1
+        }
+        if (replicas[idx] != "" && !contains(replicas[idx], replicas, idx - 1)) {
+          distinct_replica_count++
+        }
+      }
+      if (replica_count != expected_replication || distinct_replica_count != expected_replication) {
+        fail_closed("expected " expected_replication " distinct replicas, got " replicas_text)
+      }
+
+      isr_text = $0
+      sub(/^.*Isr:[[:space:]]*/, "", isr_text)
+      sub(/[[:space:]].*$/, "", isr_text)
+      isr_count = split(isr_text, isr, ",")
+      clean_values(isr, isr_count)
+      if (isr_count < minimum_isr) {
+        fail_closed("ISR below minimum " minimum_isr ": " isr_text)
+      }
+      for (idx = 1; idx <= isr_count; idx++) {
+        if (isr[idx] == "" || !contains(isr[idx], replicas, replica_count)) {
+          fail_closed("ISR broker is not assigned to the partition replicas: " isr_text)
+        }
+        if (contains(isr[idx], isr, idx - 1)) {
+          fail_closed("ISR contains a duplicate broker identity: " isr_text)
+        }
+      }
+
+      leader = $0
+      sub(/^.*Leader:[[:space:]]*/, "", leader)
+      sub(/[[:space:]].*$/, "", leader)
+      if (leader !~ /^[0-9]+$/ || !contains(leader, replicas, replica_count)) {
+        fail_closed("leader is not an assigned broker: " leader)
+      }
+      if (!contains(leader, isr, isr_count)) {
+        fail_closed("leader is not in the ISR: " leader)
+      }
+    }
+    END {
+      if (!failure) {
+        topic_replica_count = 0
+        for (replica_id in all_replicas) {
+          topic_replica_count++
+        }
+        if (topic_replica_count != expected_replication) {
+          print "expected " expected_replication \
+            " distinct replica broker IDs across topic, got " topic_replica_count
+          exit
+        }
+        for (idx = 0; idx < expected_partitions; idx++) {
+          if (!seen_partitions[idx]) {
+            print "missing partition id: " idx
+            exit
+          }
+        }
       }
     }
   ' "${topic_file}")"
-  [[ -z "${under_replicated}" ]] || matching_die \
-    "${topic}: an assigned partition has fewer than the required ISR: ${under_replicated}"
+  [[ -z "${partition_failure}" ]] || matching_die \
+    "${topic}: ${partition_failure}"
 }
 
 assert_topic_config() {

@@ -1,0 +1,3 @@
+# Effective producer settings used by the Matching command and event publishers.
+acks=all
+enable.idempotence=true

@@ -9,6 +9,8 @@ compose_file="$repo_root/deploy/compose/kafka-connect.production-like.yml"
 compose_project="${SIMPLEMATCH_CERTIFICATION_COMPOSE_PROJECT:-simplematch-local-production-like}"
 image_tag="${SIMPLEMATCH_LOCAL_IMAGE_TAG:-local}"
 evidence_dir="${SIMPLEMATCH_CERTIFICATION_EVIDENCE_DIR:-$repo_root/out/certification/local-production-like}"
+matching_producer_config_file="${SIMPLEMATCH_KAFKA_PRODUCER_CONFIG_FILE:-$repo_root/scripts/testdata/matching-topic-profile/valid/matching.producer.config.txt}"
+matching_capacity_evidence_file="${SIMPLEMATCH_KAFKA_CAPACITY_EVIDENCE_FILE:-$repo_root/scripts/testdata/matching-topic-profile/valid/capacity.properties}"
 certification_trading_day="${SIMPLEMATCH_CERTIFICATION_TRADING_DAY:-$(date -u +%F)}"
 namespace=""
 kind_cluster="${SIMPLEMATCH_KIND_CLUSTER_NAME:-simplematch-local}"
@@ -50,6 +52,9 @@ The Kubernetes gate uses the approved delivery manifest for
 SIMPLEMATCH_CERTIFICATION_TRADING_DAY (default: current UTC day) under
 tools/market-reference-builder/data, or the path supplied by
 SIMPLEMATCH_MARKET_REFERENCE_DELIVERY_MANIFEST.
+The Kafka profile gate uses the repository-local producer and capacity evidence fixtures by
+default, or the paths supplied by SIMPLEMATCH_KAFKA_PRODUCER_CONFIG_FILE and
+SIMPLEMATCH_KAFKA_CAPACITY_EVIDENCE_FILE.
 EOF
 }
 
@@ -345,7 +350,9 @@ collect_kafka_fixture() {
   run_capture kafka-broker-config "$fixture_dir/broker.config.txt" \
     "${compose_command[@]}" exec -T kafka-1 cat /opt/kafka/config/server.properties
   run_logged kafka-profile-validation bash "$repo_root/scripts/validate-matching-topic-profile.sh" \
-    --profile production --fixture-dir "$fixture_dir" --certify-production
+    --profile production --fixture-dir "$fixture_dir" \
+    --producer-config-file "$matching_producer_config_file" \
+    --capacity-evidence-file "$matching_capacity_evidence_file" --certify-production
 }
 
 container_ip_on_network() {

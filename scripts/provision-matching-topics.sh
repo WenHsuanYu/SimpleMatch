@@ -8,6 +8,8 @@ source "${SCRIPT_DIR}/lib/matching-topic-profile.sh"
 BOOTSTRAP_SERVER=""
 PROFILE="production"
 BROKER_CONFIG_FILE=""
+PRODUCER_CONFIG_FILE=""
+CAPACITY_EVIDENCE_FILE=""
 CERTIFY_PRODUCTION=false
 DRY_RUN=false
 COMMAND_CONFIG_FILE="${MATCHING_KAFKA_COMMAND_CONFIG:-}"
@@ -19,6 +21,8 @@ usage() {
     '  --profile production|local    Select the profile (default: production).' \
     '  --broker-config-file FILE     Effective broker configuration for validation.' \
     '  --command-config FILE        Kafka CLI TLS/SASL client properties.' \
+    '  --producer-config-file FILE  Effective Matching producer properties.' \
+    '  --capacity-evidence-file FILE Workload-based retention and disk evidence.' \
     '  --certify-production          Validate the production profile after provisioning.' \
     '  --dry-run                     Print Kafka CLI commands without changing a broker.' \
     '  --kafka-bin-dir DIRECTORY     Directory containing Kafka CLI programs.'
@@ -30,6 +34,8 @@ while [[ $# -gt 0 ]]; do
     --profile) PROFILE="$2"; shift 2 ;;
     --broker-config-file) BROKER_CONFIG_FILE="$2"; shift 2 ;;
     --command-config) COMMAND_CONFIG_FILE="$2"; shift 2 ;;
+    --producer-config-file) PRODUCER_CONFIG_FILE="$2"; shift 2 ;;
+    --capacity-evidence-file) CAPACITY_EVIDENCE_FILE="$2"; shift 2 ;;
     --certify-production) CERTIFY_PRODUCTION=true; shift ;;
     --dry-run) DRY_RUN=true; shift ;;
     --kafka-bin-dir) MATCHING_KAFKA_BIN_DIR="$2"; shift 2 ;;
@@ -44,8 +50,19 @@ if [[ "${CERTIFY_PRODUCTION}" == true ]]; then
   matching_require_production_profile
 fi
 if [[ -n "${COMMAND_CONFIG_FILE}" ]]; then
-  [[ -f "${COMMAND_CONFIG_FILE}" ]] || matching_die \
-    "Kafka command config does not exist: ${COMMAND_CONFIG_FILE}"
+  matching_require_file "${COMMAND_CONFIG_FILE}" 'Kafka command config'
+fi
+if [[ -n "${PRODUCER_CONFIG_FILE}" ]]; then
+  matching_require_file "${PRODUCER_CONFIG_FILE}" 'Producer configuration'
+fi
+if [[ -n "${CAPACITY_EVIDENCE_FILE}" ]]; then
+  matching_require_file "${CAPACITY_EVIDENCE_FILE}" 'Capacity evidence'
+fi
+if [[ -n "${PRODUCER_CONFIG_FILE}" ]]; then
+  matching_validate_producer_config "${PRODUCER_CONFIG_FILE}"
+fi
+if [[ -n "${CAPACITY_EVIDENCE_FILE}" ]]; then
+  matching_validate_capacity_evidence "${CAPACITY_EVIDENCE_FILE}"
 fi
 
 KAFKA_COMMAND_ARGS=()
@@ -86,6 +103,12 @@ if [[ "${DRY_RUN}" == false ]]; then
   fi
   if [[ -n "${COMMAND_CONFIG_FILE}" ]]; then
     validation_args+=(--command-config "${COMMAND_CONFIG_FILE}")
+  fi
+  if [[ -n "${PRODUCER_CONFIG_FILE}" ]]; then
+    validation_args+=(--producer-config-file "${PRODUCER_CONFIG_FILE}")
+  fi
+  if [[ -n "${CAPACITY_EVIDENCE_FILE}" ]]; then
+    validation_args+=(--capacity-evidence-file "${CAPACITY_EVIDENCE_FILE}")
   fi
   if [[ "${CERTIFY_PRODUCTION}" == true ]]; then
     validation_args+=(--certify-production)
