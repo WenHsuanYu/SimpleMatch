@@ -33,6 +33,7 @@ expected_images=(
   "simplematch/persistence:local"
   "simplematch/market-data-projection:local"
   "simplematch/marketdata-publisher:local"
+  "simplematch/marketdata-streamer:local"
   "simplematch/query-service:local"
   "simplematch/flyway-runner:local"
   "simplematch-matching:local"
@@ -85,6 +86,13 @@ grep -Fq 'market-reference-${trading_day//-/}' \
 grep -Fq 'kubectl -n "$namespace" create -f "$artifact_manifest"' \
   "$repo_root/scripts/run-local-production-like-certification.sh" || {
   echo "Local certification must create the immutable artifact without a large apply annotation." >&2
+  exit 1
+}
+grep -Fq 'create_certification_namespace' \
+  "$repo_root/scripts/run-local-production-like-certification.sh" &&
+grep -Fq 'Certification namespace already exists' \
+  "$repo_root/scripts/run-local-production-like-certification.sh" || {
+  echo "Local certification does not own and clean up its generated namespace safely." >&2
   exit 1
 }
 certification_dry_run="$($script_dir/run-local-production-like-certification.sh \
@@ -159,7 +167,7 @@ grep -Fq 'trading_session_id=${trading_day}-regular' \
   exit 1
 }
 
-for service in account-service risk-service persistence market-data-projection marketdata-publisher; do
+for service in account-service risk-service persistence market-data-projection marketdata-publisher marketdata-streamer; do
   grep -Fq 'implementation("org.springframework.boot:spring-boot-starter-web")' \
     "$repo_root/services/$service/build.gradle.kts" || {
     echo "$service does not provide the HTTP management runtime required by Kubernetes probes." >&2

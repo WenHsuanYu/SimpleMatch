@@ -8,6 +8,7 @@
 #include <iomanip>
 #include <iostream>
 #include <limits>
+#include <optional>
 #include <stdexcept>
 #include <string>
 #include <string_view>
@@ -47,8 +48,64 @@ struct Measurements {
   std::uint64_t measured_events{};
   std::uint64_t duplicate_event_ids{};
   std::uint64_t rejected_commands{};
+  std::uint64_t event_checksum = 1469598103934665603ULL;
   std::unordered_set<std::string> event_ids;
 };
+
+std::uint64_t checksum_event(std::uint64_t checksum, const CoreEvent &event) {
+  const auto mix_byte = [&checksum](std::uint8_t byte) {
+    checksum ^= byte;
+    checksum *= 1099511628211ULL;
+  };
+  const auto mix_integer = [&mix_byte](std::uint64_t value) {
+    for (std::size_t index = 0; index < sizeof(value); ++index) {
+      mix_byte(static_cast<std::uint8_t>(value >> (index * 8)));
+    }
+  };
+  const auto mix_text = [&mix_byte](std::string_view value) {
+    for (const char character : value) {
+      mix_byte(static_cast<std::uint8_t>(character));
+    }
+  };
+  const auto mix_uuid = [&mix_byte](const CoreUuid &value) {
+    for (const std::uint8_t byte : value.bytes) {
+      mix_byte(byte);
+    }
+  };
+  const auto mix_instrument = [&mix_byte, &mix_text](const CoreInstrument &value) {
+    for (const char character : value.venue) {
+      mix_byte(static_cast<std::uint8_t>(character));
+    }
+    mix_text(std::string_view(value.symbol.data(), value.symbol_length));
+    mix_byte(value.symbol_length);
+  };
+  mix_text(std::string_view(event.event_id.data(), 64));
+  mix_text(std::string_view(event.trade_id.data(), 64));
+  mix_uuid(event.source_command_id);
+  mix_uuid(event.order_id);
+  mix_uuid(event.account_id);
+  mix_uuid(event.maker_order_id);
+  mix_uuid(event.maker_account_id);
+  mix_uuid(event.taker_order_id);
+  mix_uuid(event.taker_account_id);
+  mix_instrument(event.instrument);
+  mix_integer(static_cast<std::uint64_t>(event.type));
+  mix_integer(static_cast<std::uint64_t>(event.side));
+  mix_integer(static_cast<std::uint64_t>(event.maker_side));
+  mix_integer(static_cast<std::uint64_t>(event.taker_side));
+  mix_integer(static_cast<std::uint64_t>(event.quantity.value()));
+  mix_integer(static_cast<std::uint64_t>(event.leaves_quantity.value()));
+  mix_integer(static_cast<std::uint64_t>(event.maker_cumulative_quantity.value()));
+  mix_integer(static_cast<std::uint64_t>(event.maker_leaves_quantity.value()));
+  mix_integer(static_cast<std::uint64_t>(event.taker_cumulative_quantity.value()));
+  mix_integer(static_cast<std::uint64_t>(event.taker_leaves_quantity.value()));
+  mix_integer(static_cast<std::uint64_t>(event.maker_average_price.value()));
+  mix_integer(static_cast<std::uint64_t>(event.taker_average_price.value()));
+  mix_integer(static_cast<std::uint64_t>(event.price.value()));
+  mix_integer(static_cast<std::uint64_t>(event.cancellation_reason));
+  mix_integer(static_cast<std::uint64_t>(event.output_index));
+  return checksum;
+}
 
 CoreUuid uuid(std::uint64_t sequence, std::uint8_t marker) {
   CoreUuid value{};
@@ -182,6 +239,7 @@ bool record_event(
       event.order_id != order_id) {
     return false;
   }
+  measurements.event_checksum = checksum_event(measurements.event_checksum, event);
   if (!measure) {
     return true;
   }
@@ -191,6 +249,25 @@ bool record_event(
   }
   ++measurements.measured_events;
   return true;
+}
+
+std::optional<std::uint64_t> replay_checksum(
+    const std::vector<CoreInstrument> &instruments,
+    const std::vector<WorkItem> &work,
+    const Options &options) {
+  DeterministicMatchingCore replay(instruments, options.maximum_resting_orders, 0);
+  std::uint64_t checksum = 1469598103934665603ULL;
+  for (const WorkItem &item : work) {
+    if (replay.process(item.rest) != MatchingProcessResult::kApplied || replay.events().size() != 1) {
+      return std::nullopt;
+    }
+    checksum = checksum_event(checksum, replay.events().front());
+    if (replay.process(item.cancel) != MatchingProcessResult::kApplied || replay.events().size() != 1) {
+      return std::nullopt;
+    }
+    checksum = checksum_event(checksum, replay.events().front());
+  }
+  return checksum;
 }
 
 bool process_one(
@@ -229,7 +306,8 @@ void print_result(
     const Options &options,
     const Measurements &measurements,
     std::uint64_t wall_time_ns,
-    std::size_t book_count) {
+    std::size_t book_count,
+    std::uint64_t replay_event_checksum) {
   const auto &latencies = measurements.process_latencies_ns;
   const double wall_seconds = static_cast<double>(wall_time_ns) / 1'000'000'000.0;
   const double commands_per_second =
@@ -243,10 +321,12 @@ void print_result(
       std::min(expected_commands, measurements.measured_commands - measurements.rejected_commands);
   const std::uint64_t lost_events = expected_events -
       std::min(expected_events, measurements.measured_events);
+  const bool checksum_matches = measurements.event_checksum == replay_event_checksum;
   std::cout << std::fixed << std::setprecision(3)
             << "{\"schema_version\":1,\"status\":\""
             << (lost_commands == 0 && lost_events == 0 && measurements.duplicate_event_ids == 0
-                    ? "PASS"
+                    && checksum_matches
+                ? "PASS"
                     : "FAIL")
             << "\",\"book_count\":" << book_count
             << ",\"warmup_iterations\":" << options.warmup_iterations
@@ -261,6 +341,11 @@ void print_result(
             << ",\"p99_9\":" << percentile(latencies, 0.999)
             << ",\"max\":" << (latencies.empty() ? 0 : *std::max_element(latencies.begin(), latencies.end()))
             << "},\"rss_peak_bytes\":" << peak_rss_bytes()
+            << ",\"determinism\":{\"measured_event_checksum\":\""
+            << std::hex << std::setw(16) << std::setfill('0') << measurements.event_checksum
+            << "\",\"replay_event_checksum\":\"" << std::setw(16) << replay_event_checksum
+            << "\",\"checksum_matches\":" << std::boolalpha << checksum_matches << std::noboolalpha
+            << std::dec << "}"
             << ",\"integrity\":{\"lost_commands\":" << lost_commands
             << ",\"lost_events\":" << lost_events
             << ",\"duplicate_event_ids\":" << measurements.duplicate_event_ids
@@ -308,8 +393,22 @@ int main(int argc, char **argv) {
         std::chrono::duration_cast<std::chrono::nanoseconds>(
             std::chrono::steady_clock::now() - measurement_started)
             .count());
-    print_result(options, measurements, std::max<std::uint64_t>(wall_time_ns, 1), instruments.size());
-    return measurements.rejected_commands == 0 && measurements.duplicate_event_ids == 0 ? 0 : 1;
+    const std::optional<std::uint64_t> replay_event_checksum =
+        replay_checksum(instruments, work, options);
+    if (!replay_event_checksum.has_value()) {
+      std::cerr << "deterministic replay checksum run failed\n";
+      return 1;
+    }
+    print_result(
+        options,
+        measurements,
+        std::max<std::uint64_t>(wall_time_ns, 1),
+        instruments.size(),
+        *replay_event_checksum);
+    return measurements.rejected_commands == 0 && measurements.duplicate_event_ids == 0
+               && measurements.event_checksum == *replay_event_checksum
+           ? 0
+           : 1;
   } catch (const std::exception &error) {
     std::cerr << "benchmark setup failed: " << error.what() << '\n';
     return 2;

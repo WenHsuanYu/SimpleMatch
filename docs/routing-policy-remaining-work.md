@@ -40,7 +40,7 @@ do not keep a locally verified capability in `PARTIAL`.
 | Class | Current entries | Meaning |
 | --- | --- | --- |
 | Local gate or operational verification pending | RM-1, ME-1, ME-2, ME-3, PS-1, AC-1, AR-1, FG-1, QS-1, KD-1, KC-1, PC-1 | The primary remaining work is to run the retained implementation through the local production-like dependency, restart, replay, and end-to-end scenarios. PS-1, AC-1, and FG-1 also retain their explicitly named status-adapter work. |
-| Implementation plus local gate pending | MD-1, GO-1, PD-1 | The repository still lacks named runtime consumers, infrastructure adapters, deployment resources, or other behavior before a local gate can be meaningful. |
+| Implementation or capability-specific local verification pending | MD-1, GO-1, PD-1 | The repository implementation and structural gates now exist, and the complete local gate has passed; capability-specific subscriber, collector, connector, security, and outage evidence is still required. |
 | Compatibility or legacy cleanup | MR-5, CL-1 | Superseded runtime paths and migration-only seams still require source/configuration removal; local certification alone cannot close them. |
 
 ## Latest verification evidence (2026-08-12)
@@ -58,7 +58,20 @@ do not keep a locally verified capability in `PARTIAL`.
 - Gateway Kubernetes resources were applied and inspected at API level: one replica, digest-pinned
   image, Bound data PVC, owner-0 Service, and resource-scoped ConfigMap RBAC. The placeholder
   Gateway image is not available, so its Pod remained `ErrImagePull`; no Gateway runtime or
-end-to-end admission claim follows from this check.
+  end-to-end admission claim follows from this check.
+- The current implementation pass adds a bounded `marketdata-streamer` Kafka-to-gRPC runtime,
+  authenticated Gateway operations over HTTP, a production Debezium Connect deployment template,
+  projection replay reset operations, and a measured-versus-replay checksum in the native capacity
+  benchmark. Focused service tests, the Matching benchmark smoke, connector contract checks,
+  Kubernetes overlay validation, the complete Gradle test suite, global static analysis, and the
+  native CMake/Ninja test suite pass.
+
+- On 2026-08-12, the complete repository-owned local production-like gate passed with local
+  `bootBuildImage`/Dockerfile images, the production-shaped Compose dependency graph, all seven
+  Kubernetes Flyway Jobs, the Java/Matching workload fleet, and the Matching fleet verification.
+  It used the explicitly approved `2026-08-11` Market Reference delivery fixture because a current
+  `2026-08-12` fixture is not present; the report records that trading day. The gate's generated
+  Compose project and Kubernetes namespace were removed after the run, including test PVCs/PVs.
 
 - The certification runbook now separates the repository-owned local production-like gate from the
   later staging/production template sequence. The external sequence remains available as a
@@ -66,14 +79,11 @@ end-to-end admission claim follows from this check.
 - The Kafka profile validator now accepts an external TLS/SASL command-properties file and rejects
   duplicate replica broker identities. These changes strengthen the gate but do not constitute a
   live three-broker certification.
-- The local production-like gate has not yet been run for the current worktree. Its required
-  evidence is therefore still pending. No external Kubernetes context, broker credentials,
-  PostgreSQL endpoint, or external FIX session is required for this local milestone.
-- On 2026-08-12, the local image/version contracts, all Kubernetes overlay and Matching manifest
-  checks, the Kafka profile and Flyway mapping checks, Markdown navigation, the complete Gradle
-  test suite, Gradle static analysis, and the CMake/Ninja Matching build passed. The Docker image
-  export/runtime phase remains pending because the local Docker daemon became unresponsive during
-  the native image build; no existing containers or images were removed.
+- The first same-day gate attempt failed closed at `kubernetes-inputs` because the default current
+  day had no approved delivery manifest. That was an input-fixture blocker, not a Kubernetes
+  workload failure; rerunning with the repository's approved historical fixture passed. No external
+  Kubernetes context, broker credentials, PostgreSQL endpoint, or external FIX session is required
+  for this local milestone.
 
 ## Frozen target boundaries
 
@@ -402,13 +412,17 @@ end-to-end admission claim follows from this check.
   builder.
 - **Current evidence:** `services/market-data-projection` owns a Flyway projection/inbox/outbox,
   ordered final-event consumer, complete top-five/last-trade snapshot encoder, delayed retry/DLQ,
-  rebuild service, `marketdata.events` publisher, and Redis cache repair path. Its focused runtime,
-  Kafka-consumer, and application tests pass. The repository-local Compose environment now includes
-  Redis with AOF persistence, and the production profile enables the projection and Redis settings.
-- **Missing behavior:** A real Kafka/PostgreSQL/Redis projection integration,
-  `marketdata-streamer` consumption, topic provisioning, deployment manifests, and replay/rebuild
-  operations still need production certification. Projection failure remains isolated from trading
-  admission by design.
+  rebuild service, `marketdata.events` publisher, and Redis cache repair path. The new
+  `marketdata-streamer` consumes complete snapshots from that topic and exposes a bounded public
+  gRPC subscription with venue-qualified and symbol-only filters. A protected projection replay
+  reset endpoint and Kubernetes base/overlay resources are now present. Focused projection and
+  streamer tests pass. The repository-local Compose environment includes Redis with AOF persistence,
+  and the production profile enables the projection and Redis settings.
+- **Missing behavior:** A real Kafka/PostgreSQL/Redis integration, gRPC subscriber smoke, and
+  replay/rebuild run still need local production-like certification. The authorized private
+  notification stream remains a separate compatibility boundary; only the public snapshot stream
+  is implemented in this slice. Projection failure remains isolated from trading admission by
+  design.
 - **Acceptance criteria:** Projection failure does not affect Matching, permanent trade storage,
   Account, QuickFIX, or admission. Delayed retry/DLQ is allowed because the view can be rebuilt.
 - **Blocking dependencies:** ME-3.
@@ -448,9 +462,11 @@ end-to-end admission claim follows from this check.
   records operations in Flyway V2, and exposes a fixed five-command application boundary. Focused
   state-machine, controller, audit, ingress, migration, and application-context tests pass.
 - **Missing behavior:** Infrastructure adapters must still collect live Risk, Matching Lease/readiness,
-  Kafka end-offset, Persistence, Account, and QuickFIX facts into one observation. Until then a
-  deployed Gateway remains `PRE_OPEN`; authenticated CLI/HTTP exposure and an end-to-end cluster
-  certification belong with the deployment/security work in PD-1.
+  Kafka end-offset, Persistence, Account, and QuickFIX facts into one observation. The authenticated
+  HTTP adapter now accepts the five fixed commands and normalized `TradingSystemObservation` reports,
+  but it is disabled by default and does not invent those live facts. Until then a deployed Gateway
+  remains `PRE_OPEN`; end-to-end cluster certification belongs with the deployment/security work in
+  PD-1.
 - **Acceptance criteria:** `open` verifies Risk, 15 Matching owners, identical day/artifact/schema/
   algorithm versions, recovery lag zero for three checks, no quarantine, and critical-consumer
   readiness. Status silence over five seconds pauses new orders. Oldest unprocessed critical event
@@ -498,10 +514,12 @@ end-to-end admission claim follows from this check.
   PostgreSQL CA mounts/TLS parameters, and Account/Risk gRPC mTLS. `scripts/test-kubernetes-
   overlays.sh` renders and structurally validates all four overlays. PostgreSQL URI TLS parameters
   are preserved by the shared adapter.
-- **Missing behavior:** The external Flyway runner, real registry digests/endpoints/CIDRs, retained
-  Debezium deployment object, live dependency-outage smoke, and environment-owned collector/agent
-  instrumentation still require staging/production certification. The committed overlay values are
-  deliberately placeholders and cannot be treated as a live security gate.
+- **Missing behavior:** A retained two-replica Debezium Connect worker, endpoint/secret/TLS contract,
+  and staging/production overlay template are now represented. The external Flyway runner, real
+  registry digests/endpoints/CIDRs, connector registration, live dependency-outage smoke, and
+  environment-owned collector/agent instrumentation still require staging/production certification.
+  The committed overlay values are deliberately placeholders and cannot be treated as a live
+  security gate.
 - **Acceptance criteria:** Required secrets and staging/production security fail closed. Applications
   do not migrate at startup. Connectors can reach only their owning outboxes. Liveness represents
   process health; readiness represents business-role availability. Logs expose no secrets, complete
@@ -553,11 +571,12 @@ end-to-end admission claim follows from this check.
 - **Current evidence:** `simplematch-matching-capacity-benchmark` runs a fixed 150-book distribution
   with explicit warmup and measured iterations, records core p50/p99/p99.9/max latency, throughput,
   peak RSS, and measured loss/duplicate counters, and the wrapper records the host, CPU shape, and
-  requested CPU set in a JSON report. It is a direct-core integrity/capacity gate, not a production
-  performance claim.
+  requested CPU set in a JSON report. The benchmark now replays the same workload on a fresh core and
+  fails when the measured and replay event checksums differ. It is a direct-core integrity/capacity
+  gate, not a production performance claim.
 - **Missing behavior:** Kafka end-to-end latency, ring occupancy, workload-depth/rate calibration,
-  soak tests, broker-outage tests, deterministic replay checksum, and 15-pod deployment recovery
-  certification still require the live environment.
+  soak tests, broker-outage tests, and 15-pod deployment recovery certification still require the
+  live environment.
 - **Acceptance criteria:** Report core and Kafka end-to-end p50/p99/p99.9/max, RSS, ring occupancy,
   commands/events per second, and zero-loss recovery. Engine replay reaches lag zero within 60
   seconds after Lease/baseline/Kafka availability; total replacement target is 120 seconds. If

@@ -501,8 +501,6 @@ apply_local_kubernetes_inputs() {
     "Approved Market Reference delivery manifest has no ConfigMap name"
   grep -Fxq 'immutable: true' "$artifact_manifest" || die \
     "Approved Market Reference ConfigMap must be immutable"
-  kubectl create namespace "$namespace" >/dev/null
-  kubernetes_namespace_created=true
 
   if ! kubectl -n "$namespace" create -f "$artifact_manifest" >/dev/null; then
     printf 'Failed to create the immutable Market Reference artifact ConfigMap.\n' >&2
@@ -528,6 +526,15 @@ apply_local_kubernetes_inputs() {
       --from-literal=postgres_dsn='postgresql://simplematch:simplematch@postgres:5432/simplematch' \
       --dry-run=client -o yaml | kubectl apply -f - >/dev/null
   done
+}
+
+create_certification_namespace() {
+  if kubectl get namespace "$namespace" >/dev/null 2>&1; then
+    die "Certification namespace already exists: $namespace"
+  fi
+
+  kubectl create namespace "$namespace" >/dev/null
+  kubernetes_namespace_created=true
 }
 
 publish_local_matching_open_barriers() {
@@ -585,7 +592,7 @@ select_matching_workload() {
 
 wait_for_kubernetes_workloads() {
   local workload
-  for workload in account-service risk-service persistence market-data-projection marketdata-publisher query-service; do
+  for workload in account-service risk-service persistence market-data-projection marketdata-publisher marketdata-streamer query-service; do
     kubectl -n "$namespace" rollout status "deployment/${workload}" --timeout=300s
   done
   kubectl -n "$namespace" rollout status statefulset/matching --timeout=600s
@@ -639,6 +646,7 @@ if [[ "$skip_kubernetes" == false ]]; then
     input_manifest="$evidence_dir/local-kubernetes-inputs.yaml"
     run_logged kubernetes-manifest-split split_kubernetes_manifest \
       "$rendered_manifest" "$platform_manifest" "$migration_manifest" "$workload_manifest" "$input_manifest"
+    create_certification_namespace
     run_logged kubernetes-inputs apply_local_kubernetes_inputs "$matching_digest" "$input_manifest"
     prepare_kubernetes_bridge
     run_logged kubernetes-platform-apply kubectl apply -f "$platform_manifest"

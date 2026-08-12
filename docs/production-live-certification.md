@@ -85,7 +85,7 @@ trading day and trading session:
 
 ## Verification already completed
 
-The following evidence was recorded on 2026-08-11.
+The following evidence was recorded or reconfirmed on 2026-08-12.
 
 | Layer | Command or scenario | Result and boundary |
 | --- | --- | --- |
@@ -97,7 +97,9 @@ The following evidence was recorded on 2026-08-11.
 | Kafka profile fixtures | bash scripts/test-matching-topic-profile.sh | Passed; includes RF/ISR/safety and duplicate-replica rejection |
 | Outbox contracts | bash scripts/verify-outbox-connector-contracts.sh; bash scripts/run-outbox-cdc-contract-check.sh | Passed in the disposable CDC environment |
 | Java services | Persistence, Account, QuickFIX, and Market Data module tests | Passed in the controlled Gradle environment |
-| Java quality gate | GRADLE_USER_HOME=/tmp/simplematch-gradle-cache ./gradlew --no-daemon -q staticAnalysis | Passed at the recorded checkpoint; rerun after later Java changes |
+| Java quality gate | GRADLE_USER_HOME=/tmp/simplematch-gradle-cache ./gradlew --no-daemon -q staticAnalysis | Passed after the current Java changes |
+| Local production-like gate | `SIMPLEMATCH_CERTIFICATION_TRADING_DAY=2026-08-11 SIMPLEMATCH_MARKET_REFERENCE_DELIVERY_MANIFEST=tools/market-reference-builder/data/2026-08-11/delivery/manifest.yaml bash scripts/run-local-production-like-certification.sh` | Passed; local images, Compose dependencies, seven Kubernetes Flyway Jobs, Java/Matching fleet, and cleanup completed; report: `out/certification/local-production-like/report.md` |
+| Market-data streamer and operational adapters | Focused service tests and Kubernetes overlay contract | Passed structural/runtime adapter checks; gRPC subscriber, live Gateway collectors, and projection replay remain capability-specific evidence |
 | Repo-local FIX certification | :services:quickfix-gateway:certificationTest | Passed; real in-process QuickFIX/J acceptor/initiator, H2, WAL, duplicate/cancel/recovery scenarios |
 | Disposable kind Matching smoke | One native matching-0 against one in-cluster broker | Lease/PVC/replay/Ready path passed; one node and RF1, therefore non-certifying |
 | Disposable kind restart | Delete/recreate one Matching pod normally | Old Lease blocked handover until expiry; new UID replayed baseline; no duplicate output |
