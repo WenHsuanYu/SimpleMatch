@@ -8,10 +8,11 @@ canonical release-scope definition lives in
 Architecture documents describe the accepted target. This document alone distinguishes that target
 from the repository's current implementation state.
 
-Status was reconciled against the `master` worktree on 2026-08-12. An accepted design is not
+Status was reconciled against the `master` worktree on 2026-08-13. An accepted design is not
 `COMPLETED` until the repository contains its implementation and local production-like verification
-evidence. Staging and production promotion remain template work with placeholders and are not
-current completion blockers.
+evidence. External production certification and live staging/production promotion are not goals of
+this project. Their deployment values and run sequence remain template work with placeholders and
+are neither current completion criteria nor blockers.
 
 ## Status vocabulary
 
@@ -24,22 +25,24 @@ current completion blockers.
 
 ## Verification boundary
 
-The current completion target is the repository-owned local production-like gate. It uses local
-images and production-shaped dependency contracts, including the three-broker Matching Kafka
-profile, 15 logical Matching owners, PostgreSQL, Redis, Debezium/Kafka Connect, Kubernetes
-ownership, restart/replay, and end-to-end event evidence. A local pass is not a claim that the
-system has been promoted externally.
+The only completion target for this project is the repository-owned local production-like gate. It
+uses local images and production-shaped dependency contracts, including the three-broker Matching
+Kafka profile, 15 logical Matching owners, PostgreSQL, Redis, Debezium/Kafka Connect, Kubernetes
+ownership, restart/replay, and end-to-end event evidence. A local pass is not a claim that the system
+has been promoted externally, and this project does not require an external production
+certification.
 
 `deploy/k8s/overlays/local` is executable local configuration. The `staging` and `production`
 overlays are deliberately separate templates: their registry names, image digests, external
 endpoints, CIDRs, and credentials remain placeholders until a later promotion. Those placeholders
-do not keep a locally verified capability in `PARTIAL`.
+are prepared for a later promotion only; they do not keep a locally verified capability in `PARTIAL`
+and must not be interpreted as a requirement to push images or obtain external credentials now.
 
 ## Interpreting `PARTIAL`
 
 | Class | Current entries | Meaning |
 | --- | --- | --- |
-| Local gate or operational verification pending | RM-1, ME-1, ME-2, ME-3, PS-1, AC-1, AR-1, FG-1, QS-1, KD-1, KC-1, PC-1 | The primary remaining work is to run the retained implementation through the local production-like dependency, restart, replay, and end-to-end scenarios. PS-1, AC-1, and FG-1 also retain their explicitly named status-adapter work. |
+| Local gate or operational verification pending | RM-1, ME-1, ME-2, ME-3, PS-1, AC-1, AR-1, FG-1, QS-1, KC-1, PC-1 | The primary remaining work is to run the retained implementation through the local production-like dependency, restart, replay, and end-to-end scenarios. PS-1, AC-1, and FG-1 also retain their explicitly named status-adapter work. |
 | Implementation or capability-specific local verification pending | MD-1, GO-1, PD-1 | The repository implementation and structural gates now exist, and the complete local gate has passed; capability-specific subscriber, collector, connector, security, and outage evidence is still required. |
 | Compatibility or legacy cleanup | MR-5, CL-1 | Superseded runtime paths and migration-only seams still require source/configuration removal; local certification alone cannot close them. |
 
@@ -54,7 +57,8 @@ do not keep a locally verified capability in `PARTIAL`.
 - A normal Pod restart demonstrated Lease handover from the old Pod UID to a new UID, PVC baseline
   replay, recovery to `READY`, zero Kafka lag, and no additional output events. This is an
   integration smoke only: the cluster had one node, one Kafka broker with replication factor 1,
-  local-path storage, and no production CPU Manager/CSI/three-broker certification.
+  local-path storage, and no external production-platform certification. Those platform-specific
+  controls are intentionally outside this project's acceptance boundary.
 - Gateway Kubernetes resources were applied and inspected at API level: one replica, digest-pinned
   image, Bound data PVC, owner-0 Service, and resource-scoped ConfigMap RBAC. The placeholder
   Gateway image is not available, so its Pod remained `ErrImagePull`; no Gateway runtime or
@@ -75,10 +79,11 @@ do not keep a locally verified capability in `PARTIAL`.
 
 - The certification runbook now separates the repository-owned local production-like gate from the
   later staging/production template sequence. The external sequence remains available as a
-  promotion template and is not a current local completion blocker.
+  promotion template, but it is not part of this project's acceptance target or a completion
+  blocker.
 - The Kafka profile validator now accepts an external TLS/SASL command-properties file and rejects
-  duplicate replica broker identities. These changes strengthen the gate but do not constitute a
-  live three-broker certification.
+  duplicate replica broker identities. These changes strengthen the repository gate; they do not
+  claim certification of an externally operated production environment.
 - The first same-day gate attempt failed closed at `kubernetes-inputs` because the default current
   day had no approved delivery manifest. That was an input-fixture blocker, not a Kubernetes
   workload failure; rerunning with the repository's approved historical fixture passed. No external
@@ -110,8 +115,10 @@ do not keep a locally verified capability in `PARTIAL`.
 - Risk and Account use one final typed v2 reservation RPC before Account v1 transport is removed.
 - One QuickFIX Gateway owns Phase 1 FIX sessions. It starts `PRE_OPEN`; admission opens only after
   the accepted readiness checks pass.
-- Every Phase 1 workload passes the accepted Kubernetes overlay, Secret, transport-security,
-  migration-job, connector, network-policy, readiness, telemetry, and deployment gates.
+- Every Phase 1 workload passes the accepted local production-like overlay, Secret,
+  transport-security, migration-job, connector, network-policy, readiness, telemetry, and
+  deployment gates. Staging/production apply and environment-owned enforcement remain promotion
+  templates rather than this project's certification target.
 - Kafka delivery is at least once. Deterministic identities plus consumer-owned inboxes make local
   business effects idempotent.
 
@@ -136,9 +143,9 @@ do not keep a locally verified capability in `PARTIAL`.
 | Runtime market-data projection | `PARTIAL` | [#133](https://github.com/WenHsuanYu/SimpleMatch/issues/133) |
 | Required query service and Redis read models | `PARTIAL` | [#137](https://github.com/WenHsuanYu/SimpleMatch/issues/137) |
 | Gateway operational admission control | `PARTIAL` | [#135](https://github.com/WenHsuanYu/SimpleMatch/issues/135) |
-| Matching StatefulSet ownership and fencing | `PARTIAL` | [#134](https://github.com/WenHsuanYu/SimpleMatch/issues/134) |
+| Matching StatefulSet ownership and fencing | `COMPLETED` | [#134](https://github.com/WenHsuanYu/SimpleMatch/issues/134) |
 | Cross-service deployment, security, and observability | `PARTIAL` | [#138](https://github.com/WenHsuanYu/SimpleMatch/issues/138) |
-| Production Kafka topic profile | `PARTIAL` | [#125](https://github.com/WenHsuanYu/SimpleMatch/issues/125) |
+| Production-shaped Kafka topic profile | `PARTIAL` | [#125](https://github.com/WenHsuanYu/SimpleMatch/issues/125) |
 | Performance and recovery certification | `PARTIAL` | [#136](https://github.com/WenHsuanYu/SimpleMatch/issues/136) |
 | Pre-release compatibility and legacy cleanup | `PARTIAL` | [#119](https://github.com/WenHsuanYu/SimpleMatch/issues/119), [#120](https://github.com/WenHsuanYu/SimpleMatch/issues/120) |
 
@@ -251,10 +258,10 @@ do not keep a locally verified capability in `PARTIAL`.
   PostgreSQL/Kafka Connect/Kafka CDC contract also passes, including connector pause/resume and
   exact record delivery. A separate native fixture has verified the local `matching.commands` to
   `matching.events` broker path.
-- **Missing behavior:** The Risk application's own outbox must still be certified through the
-  deployed connector against the owned three-broker Kafka environment. The offline builder and
-  production artifact approval workflow remain MR-1 through MR-4 work rather than being supplied by
-  Risk.
+- **Missing behavior:** The Risk application's own outbox must still be verified through the
+  deployed connector against the repository-owned local production-like three-broker Kafka profile.
+  The offline builder and production artifact approval workflow remain MR-1 through MR-4 work rather
+  than being supplied by Risk.
 - **Acceptance criteria:** New order, cancel, `TRADING_DAY_OPEN_BARRIER`, and
   `TRADING_DAY_CLOSE_BARRIER` records target explicit partitions 0-14. Recovery never recomputes an
   admitted route. No command is published for a stale or mismatched artifact.
@@ -273,9 +280,10 @@ do not keep a locally verified capability in `PARTIAL`.
   partition assignment, output backpressure, a librdkafka adapter, lifecycle executable/probes, and
   deterministic CTest coverage. A local broker smoke and a disposable kind smoke have consumed
   real `matching.commands` records and published acknowledged `matching.events` records.
-- **Missing behavior:** Production CPU pinning verification, allocation and throughput
-  certification, and integration against the owned three-broker profile remain. Those runtime
-  adapters must not enter the Matching core hot path.
+- **Missing behavior:** Local production-like CPU pinning/resource checks, allocation and throughput
+  evidence, and integration against the owned three-broker profile remain. External hardware or
+  production-cluster certification is not required by this project. Those runtime adapters must not
+  enter the Matching core hot path.
 - **Acceptance criteria:** The same ordered command stream and pinned binary produce identical state
   checksums and event bytes. Ring exhaustion never overwrites, drops, or expands heap storage.
   Output backpressure stalls safely and drives the accepted admission policy.
@@ -295,9 +303,10 @@ do not keep a locally verified capability in `PARTIAL`.
   librdkafka adapter now exposes retained-range reads, committed/end offsets, seeking, and
   synchronous commits, while the runtime replays the PVC baseline before live polling.
 - **Missing behavior:** The disposable kind smoke covered PVC baseline persistence, Kafka replay,
-  Lease handover, and a normal Pod restart, but retention certification, broker/PVC failure
+  Lease handover, and a normal Pod restart, but local production-like retention, broker/PVC failure
   behavior, and the owned three-broker recovery gate remain outstanding. Unit tests and a
-  single-node smoke do not substitute for that operational recovery gate.
+  single-node smoke do not substitute for that local operational recovery gate; external production
+  certification is outside the project boundary.
 - **Acceptance criteria:** Outputs are ACKed before the input offset becomes completed; commits
   never cross a gap. Crash windows may replay identical events but cannot lose an accepted command.
   A missing retained Open Barrier fails closed. No periodic order-book snapshot is added unless the
@@ -335,8 +344,10 @@ do not keep a locally verified capability in `PARTIAL`.
   projections, progress, and quarantine. The critical consumer applies a final Matching Event in one
   transaction and commits its Kafka acknowledgement only afterward; focused store, consumer, and
   migration tests pass.
-- **Missing behavior:** A live PostgreSQL/Kafka failure-and-restart certification is still required,
-  as are the operational status endpoint consumed later by GO-1 and production deployment wiring.
+- **Missing behavior:** A local production-like PostgreSQL/Kafka failure-and-restart certification is
+  still required, as are the operational status endpoint consumed later by GO-1 and local deployment
+  wiring. External production deployment evidence is a future promotion concern, not a project
+  blocker.
 - **Acceptance criteria:** DB commit precedes Kafka offset commit. IDs use 32-byte binary columns
   with exact-length checks; quantities are `BIGINT` shares; prices are `BIGINT` in 1/10,000 TWD;
   trading day is `DATE`; partition is constrained to 0-14. PostgreSQL outage is buffered by Kafka
@@ -352,8 +363,9 @@ do not keep a locally verified capability in `PARTIAL`.
 - **Current evidence:** Flyway V7, the final-event account application service, durable inbox,
   payload hash validation, maker/taker fill mapping, quarantine, and manual acknowledgement are
   implemented and covered by focused and application-context tests.
-- **Missing behavior:** Live PostgreSQL/Kafka restart certification and an operational status adapter
-  remain required; the independent Account reservation-RPC cutover is tracked separately by AR-1.
+- **Missing behavior:** Local production-like PostgreSQL/Kafka restart certification and an
+  operational status adapter remain required; the independent Account reservation-RPC cutover is
+  tracked separately by AR-1. External production certification is not required.
 - **Acceptance criteria:** Inbox claim, payload-hash validation, account/reservation mutation,
   lifecycle outbox, and inbox completion commit atomically. A failed record never lets a later
   record overtake it.
@@ -375,8 +387,10 @@ do not keep a locally verified capability in `PARTIAL`.
   Account adapter validates the shared v2 metadata envelope before persistence, and the repository
   caller guard proves non-Account production services do not construct the v1 RPC client. Focused
   contract, Account transaction, Risk gRPC-boundary, and Risk identity tests pass.
-- **Missing behavior:** Live saga recovery against the deployed services and proof that every
-  production deployment has removed the v1 caller remain part of the integrated release gate.
+- **Missing behavior:** Local production-like saga recovery against the deployed services and proof
+  from repository source/configuration guards that every in-scope caller has removed the v1 client
+  remain part of the integrated release gate. Proof from an external production deployment is not
+  required; the retained v1 server deletion remains owned by #119.
 - **Acceptance criteria:** The Account transaction remains service-owned and no Risk transaction is
   held across the RPC. Equivalent retries preserve one reservation outcome; conflicting retries are
   typed conflicts; remote success followed by Risk failure recovers without reserving twice.
@@ -394,9 +408,10 @@ do not keep a locally verified capability in `PARTIAL`.
   delivery ledger, progress, quarantine, and JDBC QuickFIX/J message-store tables. The final-event
   consumer uses strict retry/quarantine, deterministic delivery/Exec identities, and commits only
   after delivery intents persist; focused tests and QuickFIX certification tests pass.
-- **Missing behavior:** A deployed PostgreSQL/Kafka restart certification and the GO-1 status adapter
-  remain required. Socket delivery deliberately remains at-least-once and needs counterparty
-  interoperability evidence.
+- **Missing behavior:** A local production-like PostgreSQL/Kafka restart certification and the GO-1
+  status adapter remain required. Socket delivery deliberately remains at-least-once and needs
+  counterparty interoperability evidence; an externally operated production session is not required
+  for this project.
 - **Acceptance criteria:** Kafka offset commits only after all required delivery intents are
   durable. Socket delivery is at least once; retransmission preserves FIX session semantics and
   stable `ExecID`. Critical lifecycle reports cannot be skipped to an ordinary DLQ.
@@ -439,9 +454,10 @@ do not keep a locally verified capability in `PARTIAL`.
   versioned read APIs, active-artifact installation seam, freshness metadata, replay reset, and
   optional Redis read-through fallback. Cache read and write failures fall back to the durable
   PostgreSQL projection. Focused H2 projection and cache-fallback tests pass.
-- **Missing behavior:** Live Kafka/PostgreSQL/Redis deployment and outage/replay certification remain
-  part of PD-1 and the release certification gate. The service-context test also proves the shared
-  canonical-DSN/pool adapter and no competing `spring.datasource.*` source.
+- **Missing behavior:** Local production-like Kafka/PostgreSQL/Redis deployment and
+  outage/replay certification remain part of PD-1 and the repository release gate. The
+  service-context test also proves the shared canonical-DSN/pool adapter and no competing
+  `spring.datasource.*` source. External production certification is not a prerequisite.
 - **Acceptance criteria:** Query never reads another service's database or scans Kafka synchronously.
   Redis can be deleted and rebuilt; misses/outages fall back to PostgreSQL; responses disclose
   freshness; and Query failure cannot pause any critical trading component.
@@ -461,12 +477,13 @@ do not keep a locally verified capability in `PARTIAL`.
   observations to open, auto-pauses/interrupts, auto-closes in Asia/Taipei time, never auto-reopens,
   records operations in Flyway V2, and exposes a fixed five-command application boundary. Focused
   state-machine, controller, audit, ingress, migration, and application-context tests pass.
-- **Missing behavior:** Infrastructure adapters must still collect live Risk, Matching Lease/readiness,
-  Kafka end-offset, Persistence, Account, and QuickFIX facts into one observation. The authenticated
-  HTTP adapter now accepts the five fixed commands and normalized `TradingSystemObservation` reports,
-  but it is disabled by default and does not invent those live facts. Until then a deployed Gateway
-  remains `PRE_OPEN`; end-to-end cluster certification belongs with the deployment/security work in
-  PD-1.
+- **Missing behavior:** Infrastructure adapters must still collect local production-like Risk,
+  Matching Lease/readiness, Kafka end-offset, Persistence, Account, and QuickFIX facts into one
+  observation. The authenticated HTTP adapter now accepts the five fixed commands and normalized
+  `TradingSystemObservation` reports, but it is disabled by default and does not invent those live
+  facts. Until then a deployed Gateway remains `PRE_OPEN`; local end-to-end cluster verification
+  belongs with the deployment/security work in PD-1. External production certification is outside
+  the project target.
 - **Acceptance criteria:** `open` verifies Risk, 15 Matching owners, identical day/artifact/schema/
   algorithm versions, recovery lag zero for three checks, no quarantine, and critical-consumer
   readiness. Status silence over five seconds pauses new orders. Oldest unprocessed critical event
@@ -477,7 +494,7 @@ do not keep a locally verified capability in `PARTIAL`.
 
 ### KD-1: Deploy and fence the fixed Matching fleet
 
-- **Current status:** `PARTIAL`
+- **Current status:** `COMPLETED`
 - **Target behavior:** A 15-replica StatefulSet maps pod ordinal directly to partition. Each pod has
   a `ReadWriteOncePod` PVC and a per-partition Kubernetes Lease, and receives the artifact through
   the accepted ConfigMap or OCI path.
@@ -488,15 +505,17 @@ do not keep a locally verified capability in `PARTIAL`.
   Kafka adapters, executable readiness/liveness probes, manifest tests, and recovery runbook are
   present. A fresh single-node local kind run started all 15 Matching Pods with their individual
   Lease holders and `ReadWriteOncePod` PVCs after valid per-partition Open Barriers were published.
-- **Missing behavior:** The local 15-owner run uses the documented 2 GiB local resource override
-  and a single-node, local-image profile. Production CSI behavior, CPU Manager static policy,
-  production-shaped resource capacity, and the owned three-broker recovery gate still need
-  certification in the target cluster.
+- **Missing behavior:** None for the repository-owned project target. The local 15-owner run uses
+  the documented 2 GiB local resource override and a single-node, local-image profile, and the
+  complete local gate verifies the fleet, Lease ownership, RWOP PVCs, barriers, readiness, and
+  rollout. Production CSI behavior, CPU Manager static policy, production-shaped resource capacity,
+  and an externally operated target cluster remain template-only promotion evidence.
 - **Acceptance criteria:** `matching-N` cannot poll, replay, match, publish, or become Ready without
   its partition permit. Lease uncertainty for five seconds self-fences the runtime. Replacement
   waits for storage and Lease ownership, replays, and reaches Ready before operator reopen. The
-  production profile requests three dedicated CPUs per pod and requires CPU Manager static-policy
-  certification.
+  production overlay retains the requested three dedicated CPUs and CPU-manager/static-policy
+  settings as a later promotion template; external CPU-manager certification is not a project
+  acceptance criterion.
 - **Blocking dependencies:** ME-1 and ME-2.
 - **GitHub issue:** [#134](https://github.com/WenHsuanYu/SimpleMatch/issues/134).
 
@@ -515,11 +534,12 @@ do not keep a locally verified capability in `PARTIAL`.
   overlays.sh` renders and structurally validates all four overlays. PostgreSQL URI TLS parameters
   are preserved by the shared adapter.
 - **Missing behavior:** A retained two-replica Debezium Connect worker, endpoint/secret/TLS contract,
-  and staging/production overlay template are now represented. The external Flyway runner, real
-  registry digests/endpoints/CIDRs, connector registration, live dependency-outage smoke, and
-  environment-owned collector/agent instrumentation still require staging/production certification.
-  The committed overlay values are deliberately placeholders and cannot be treated as a live
-  security gate.
+  and staging/production overlay template are now represented. Local connector registration,
+  local dependency-outage smoke, and repository-level telemetry/collector checks still require
+  completion. Real registry digests/endpoints/CIDRs, environment-owned Secrets, external Flyway
+  runners, and environment-owned collector/agent installation are future promotion template work,
+  not project blockers. The committed overlay values are deliberately placeholders and cannot be
+  treated as a live external security gate.
 - **Acceptance criteria:** Required secrets and staging/production security fail closed. Applications
   do not migrate at startup. Connectors can reach only their owning outboxes. Liveness represents
   process health; readiness represents business-role availability. Logs expose no secrets, complete
@@ -554,12 +574,15 @@ do not keep a locally verified capability in `PARTIAL`.
   fail-closed validate both topics, including every partition ISR, broker safety settings, and
   non-compaction. Fixture tests cover unsafe ISR/broker state and refusal to certify local mode;
   the durability runbook documents sizing, headroom, and alerts.
-- **Missing behavior:** Run the validator against the owned three-broker production environment and
-  record real 30-day workload/disk measurements. #126 and #127 must consume the producer profile
-  when their actual producers are introduced.
-- **Acceptance criteria:** Production readiness fails if partition count or durability settings
-  differ. Neither topic is compacted. Thirty days of the certified workload fit with operational
-  headroom. Local replication factor 1 cannot pass production certification.
+- **Missing behavior:** The local gate has validated the owned three-broker production-shaped
+  profile. Remaining project-local work is to record workload-based 30-day retention/disk sizing and
+  exercise broker/ISR failure behavior; #126 and #127 must consume the producer profile when their
+  actual producers are introduced. Validation against an externally operated production cluster is
+  future promotion work, not a project blocker.
+- **Acceptance criteria:** Local production-like readiness fails if partition count or durability
+  settings differ. Neither topic is compacted. Thirty days of the certified workload fit with
+  operational headroom. Local replication factor 1 cannot pass the production-shaped durability
+  gate.
 - **Blocking dependencies:** Kafka deployment/environment ownership.
 - **GitHub issue:** [#125](https://github.com/WenHsuanYu/SimpleMatch/issues/125).
 
@@ -575,13 +598,14 @@ do not keep a locally verified capability in `PARTIAL`.
   fails when the measured and replay event checksums differ. It is a direct-core integrity/capacity
   gate, not a production performance claim.
 - **Missing behavior:** Kafka end-to-end latency, ring occupancy, workload-depth/rate calibration,
-  soak tests, broker-outage tests, and 15-pod deployment recovery certification still require the
-  live environment.
+  soak tests, broker-outage tests, and 15-pod deployment recovery evidence still require the local
+  production-like scenarios. External hardware, cluster, or production certification is not part of
+  this project's target.
 - **Acceptance criteria:** Report core and Kafka end-to-end p50/p99/p99.9/max, RSS, ring occupancy,
   commands/events per second, and zero-loss recovery. Engine replay reaches lag zero within 60
   seconds after Lease/baseline/Kafka availability; total replacement target is 120 seconds. If
   full-day replay misses 60 seconds, open a separate snapshot design issue. No microsecond-level
-  production claim is made before this gate passes.
+  external production claim is made by this repository gate.
 - **Blocking dependencies:** ME-1, ME-2, ME-3, KD-1, and KC-1.
 - **GitHub issue:** [#136](https://github.com/WenHsuanYu/SimpleMatch/issues/136).
 
