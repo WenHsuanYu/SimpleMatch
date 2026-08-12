@@ -79,8 +79,9 @@ This repo's Java dependencies use an explicit ownership model.
 This repo is primarily a Gradle/Java workspace today.
 
 - The active FIX runtime dependency is **QuickFix/J** in `services/quickfix-gateway`.
-- `services/quickfix-gateway` now also carries Spring Boot web + actuator runtime dependencies so
-  Kubernetes probes can terminate on `/healthz` and `/readyz`.
+- Spring Boot services carry Actuator and the deployed services carry the web runtime required for
+  Kubernetes management probes. Query uses port 8086; the other Java workloads expose Actuator on
+  port 8080. QuickFIX retains its application-specific `/healthz` and `/readyz` endpoints.
 - The root CMake project now builds the policy-aware `matching-engine` ingress seam; the order book,
   matching algorithm, and execution publisher remain future capabilities.
 - Native dependencies are installed through **vcpkg** using the manifest at `vcpkg.json`.

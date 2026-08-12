@@ -50,6 +50,10 @@ runner owns only its named project, namespace, cluster, volumes, and evidence di
 The local image digest is recorded in the evidence report as a local image identity. It is not a
 promotion identity and must not replace the staging/production digest placeholders.
 
+The Kubernetes startup dependency investigation, including the read-only Flyway runtime fixes,
+diagnostic evidence, and migration-first apply sequence, is recorded in
+[Local production-like Kubernetes workload startup](local-production-like-kubernetes-workload-startup.md).
+
 The local dependency/build versions are checked in the deployment documentation and contract test:
 Gradle 9.7.0, Spring Boot 4.1.0, vcpkg 2026.07.29, Apache Kafka 4.3.1, PostgreSQL 18.4, Redis
 8.8.1-alpine, Debezium 3.6.0.Final, and Ubuntu 26.04 LTS for the native image builder/runtime.

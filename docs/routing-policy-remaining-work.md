@@ -470,11 +470,12 @@ end-to-end admission claim follows from this check.
   uncertainty. A 15-replica StatefulSet, headless Service, `ReadWriteOncePod` PVCs, per-partition
   Lease RBAC/resources, OCI-data-image patch, PDB, CPU/affinity policy, native Kubernetes Lease and
   Kafka adapters, executable readiness/liveness probes, manifest tests, and recovery runbook are
-  present.
-- **Missing behavior:** A disposable single-node kind smoke validated the native Lease adapter,
-  `ReadWriteOncePod` claim, storage/Lease handover, and Kafka recovery for one partition. Production
-  CSI behavior, CPU Manager static policy, all-15-pod scheduling, and the owned three-broker
-  recovery gate still need certification in the target cluster.
+  present. A fresh single-node local kind run started all 15 Matching Pods with their individual
+  Lease holders and `ReadWriteOncePod` PVCs after valid per-partition Open Barriers were published.
+- **Missing behavior:** The local 15-owner run uses the documented 2 GiB local resource override
+  and a single-node, local-image profile. Production CSI behavior, CPU Manager static policy,
+  production-shaped resource capacity, and the owned three-broker recovery gate still need
+  certification in the target cluster.
 - **Acceptance criteria:** `matching-N` cannot poll, replay, match, publish, or become Ready without
   its partition permit. Lease uncertainty for five seconds self-fences the runtime. Replacement
   waits for storage and Lease ownership, replays, and reaches Ready before operator reopen. The

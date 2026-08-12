@@ -148,4 +148,10 @@ QuickFIX sequence is recorded in
 The local production-like gate is
 `bash scripts/run-local-production-like-certification.sh`. It verifies the same logical 15-owner,
 Lease, PVC, Kafka, and restart/replay contracts with local images and disposable infrastructure;
-it does not require 15 physical nodes or real registry digests.
+it does not require 15 physical nodes or real registry digests. The gate applies the approved
+immutable Market Reference under the local `matching-daily-artifact` name, creates the platform
+resources, runs Flyway Jobs before creating runtime workloads, and then verifies the Java,
+QuickFIX, and Matching rollouts. Risk and Query receive their local session identity from
+`matching-session-config`; the superseded `marketdata-publisher` runtime is disabled only in the
+local overlay. The investigation and troubleshooting record is in
+[Local production-like Kubernetes workload startup](../../docs/local-production-like-kubernetes-workload-startup.md).
