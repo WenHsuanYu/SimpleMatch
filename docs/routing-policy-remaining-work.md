@@ -532,26 +532,32 @@ and must not be interpreted as a requirement to push images or obtain external c
 - **Current status:** `PARTIAL`
 - **Target behavior:** Every Phase 1 Java workload and retained connector uses reusable Kubernetes
   bases/overlays, service-owned migration and CDC jobs, authenticated encrypted transport,
-  least-privilege policy, business-role readiness, and auditable telemetry. Matching-specific
-  ownership and fencing remain in KD-1.
+  least-privilege policy, business-role readiness, structured safe application logs, basic
+  health/metrics endpoints, and the key delivery/recovery metrics needed by the local lab.
+  Matching-specific ownership and fencing remain in KD-1.
 - **Current evidence:** `deploy/k8s/base` and local/test/staging/production overlays now cover the
   Java services, retained QuickFIX/Matching resources, service ConfigMaps/RBAC, one-shot service-
   scoped Flyway Jobs, startup/readiness/liveness probes, non-root/read-only containers, scoped
   NetworkPolicy, digest-pinned promotion templates, external Secret contracts, Kafka SASL/TLS,
-  PostgreSQL CA mounts/TLS parameters, and Account/Risk gRPC mTLS. `scripts/test-kubernetes-
-  overlays.sh` renders and structurally validates all four overlays. PostgreSQL URI TLS parameters
-  are preserved by the shared adapter.
+  PostgreSQL CA mounts/TLS parameters, and Account/Risk gRPC mTLS. Spring services include Actuator,
+  several services expose its metrics endpoint, and critical delivery paths register Micrometer
+  counters and observations. `scripts/test-kubernetes-overlays.sh` renders and structurally validates
+  all four overlays. PostgreSQL URI TLS parameters are preserved by the shared adapter.
 - **Missing behavior:** A retained two-replica Debezium Connect worker, endpoint/secret/TLS contract,
   and staging/production overlay template are now represented. Local connector registration,
-  local dependency-outage smoke, and repository-level telemetry/collector checks still require
-  completion. Real registry digests/endpoints/CIDRs, environment-owned Secrets, external Flyway
-  runners, and environment-owned collector/agent installation are future promotion template work,
-  not project blockers. The committed overlay values are deliberately placeholders and cannot be
-  treated as a live external security gate.
+  local dependency-outage smoke, consistent structured log fields, consistent basic health/metrics
+  exposure, key metric assertions, and automated sensitive-log checks still require completion.
+  Complete OpenTelemetry propagation/collection, a Prometheus server, dashboards, external alerts,
+  and a tracing backend are future observability work rather than side-project completion blockers.
+  Real registry digests/endpoints/CIDRs, environment-owned Secrets, external Flyway runners, and
+  environment-owned collector/agent installation remain future promotion-template work. The
+  committed overlay values are deliberately placeholders and cannot be treated as a live external
+  security or observability gate.
 - **Acceptance criteria:** Required secrets and staging/production security fail closed. Applications
   do not migrate at startup. Connectors can reach only their owning outboxes. Liveness represents
-  process health; readiness represents business-role availability. Logs expose no secrets, complete
-  account payload, or raw FIX payload by default.
+  process health; readiness represents business-role availability. Local checks can inspect the
+  basic health/metrics endpoints and the required delivery/recovery metrics. Structured logs expose
+  no secrets, complete account payload, or raw FIX payload by default.
 - **Blocking dependencies:** KC-1, RM-1, PS-1, AC-1, AR-1, FG-1, MD-1, QS-1, GO-1, and KD-1.
 - **GitHub issue:** [#138](https://github.com/WenHsuanYu/SimpleMatch/issues/138).
 

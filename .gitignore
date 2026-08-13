@@ -73,8 +73,6 @@ third_party/
 plan-simpleMatchQuickfix.prompt.md
 Concept/*.md
 .copilot-tracking/*
-# Added by code-review-graph
-.code-review-graph/
 
 graphify-out/
 .gitattributes
@@ -84,3 +82,5 @@ graphify-out/
 # Ignore all matched build directories recursively
 **/build/
 
+# Added by code-review-graph
+.code-review-graph/
