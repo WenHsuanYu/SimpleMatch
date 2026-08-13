@@ -182,33 +182,12 @@ matching_validate_capacity_evidence() {
       "Capacity evidence broker count ${broker_count} must equal topic replication factor " \
       "$(matching_profile_value topic.replication.factor)"
 
-  required_cluster_bytes="$(awk \
-    -v commands_per_day="${commands_per_day}" \
-    -v events_per_day="${events_per_day}" \
-    -v command_record_bytes="${command_record_bytes}" \
-    -v event_record_bytes="${event_record_bytes}" \
-    -v retention_days="${retention_days}" \
-    -v replication_factor="$(matching_profile_value topic.replication.factor)" \
-    -v headroom_percent="${headroom_percent}" \
-    'BEGIN {
-       logical_bytes = commands_per_day * command_record_bytes + events_per_day * event_record_bytes;
-       numerator = logical_bytes * retention_days * replication_factor * 100;
-       denominator = 100 - headroom_percent;
-       printf "%.0f", int((numerator + denominator - 1) / denominator);
-     }')"
-  required_broker_bytes="$(awk \
-    -v commands_per_day="${commands_per_day}" \
-    -v events_per_day="${events_per_day}" \
-    -v command_record_bytes="${command_record_bytes}" \
-    -v event_record_bytes="${event_record_bytes}" \
-    -v retention_days="${retention_days}" \
-    -v headroom_percent="${headroom_percent}" \
-    'BEGIN {
-       logical_bytes = commands_per_day * command_record_bytes + events_per_day * event_record_bytes;
-       numerator = logical_bytes * retention_days * 100;
-       denominator = 100 - headroom_percent;
-       printf "%.0f", int((numerator + denominator - 1) / denominator);
-     }')"
+  read -r required_cluster_bytes required_broker_bytes < <(
+    matching_capacity_requirements \
+      "${commands_per_day}" "${events_per_day}" "${command_record_bytes}" \
+      "${event_record_bytes}" "${retention_days}" \
+      "$(matching_profile_value topic.replication.factor)" "${headroom_percent}"
+  )
 
   [[ "${usable_cluster_bytes}" -ge "${required_cluster_bytes}" ]] || matching_die \
     "Capacity evidence is below the required 30-day replicated headroom: " \
@@ -220,6 +199,38 @@ matching_validate_capacity_evidence() {
   printf '%s\n' \
     "Matching Kafka capacity evidence is valid (required cluster bytes: ${required_cluster_bytes}; " \
     "required broker bytes: ${required_broker_bytes})."
+}
+
+matching_capacity_requirements() {
+  local commands_per_day="$1"
+  local events_per_day="$2"
+  local command_record_bytes="$3"
+  local event_record_bytes="$4"
+  local retention_days="$5"
+  local replication_factor="$6"
+  local headroom_percent="$7"
+  awk -v commands_per_day="${commands_per_day}" -v events_per_day="${events_per_day}" \
+    -v command_record_bytes="${command_record_bytes}" -v event_record_bytes="${event_record_bytes}" \
+    -v retention_days="${retention_days}" -v replication_factor="${replication_factor}" \
+    -v headroom_percent="${headroom_percent}" 'BEGIN {
+      logical_bytes = commands_per_day * command_record_bytes + events_per_day * event_record_bytes;
+      denominator = 100 - headroom_percent;
+      cluster_numerator = logical_bytes * retention_days * replication_factor * 100;
+      broker_numerator = logical_bytes * retention_days * 100;
+      printf "%.0f %.0f\n", int((cluster_numerator + denominator - 1) / denominator),
+        int((broker_numerator + denominator - 1) / denominator);
+    }'
+}
+
+matching_require_certification_evidence() {
+  local producer_config_file="$1"
+  local capacity_evidence_file="$2"
+  [[ -n "${producer_config_file}" ]] || matching_die \
+    '--certify-production requires --producer-config-file'
+  [[ -n "${capacity_evidence_file}" ]] || matching_die \
+    '--certify-production requires --capacity-evidence-file'
+  matching_validate_producer_config "${producer_config_file}"
+  matching_validate_capacity_evidence "${capacity_evidence_file}"
 }
 
 matching_require_production_profile() {

@@ -24,6 +24,12 @@ assert_fails() {
   --certify-production
 assert_fails 'local profile production certification' "${VALIDATOR}" --profile local \
   --fixture-dir "${FIXTURE_DIR}" --certify-production
+assert_fails 'missing producer evidence' "${VALIDATOR}" --profile production \
+  --fixture-dir "${FIXTURE_DIR}" --capacity-evidence-file "${CAPACITY_EVIDENCE_FILE}" \
+  --certify-production
+assert_fails 'missing capacity evidence' "${VALIDATOR}" --profile production \
+  --fixture-dir "${FIXTURE_DIR}" --producer-config-file "${PRODUCER_CONFIG_FILE}" \
+  --certify-production
 
 TEMPORARY_FIXTURES="$(mktemp -d)"
 trap 'rm -rf "${TEMPORARY_FIXTURES}"' EXIT
@@ -92,7 +98,7 @@ assert_fails 'unsafe broker policy' "${VALIDATOR}" --profile production \
   --capacity-evidence-file "${CAPACITY_EVIDENCE_FILE}" --certify-production
 
 cp "${CAPACITY_EVIDENCE_FILE}" "${TEMPORARY_FIXTURES}/under-capacity.properties"
-sed -i 's/capacity.usable.cluster.bytes=200000000000/capacity.usable.cluster.bytes=100000000000/' \
+sed -i 's/capacity.usable.cluster.bytes=200000000000/capacity.usable.cluster.bytes=1000000000/' \
   "${TEMPORARY_FIXTURES}/under-capacity.properties"
 assert_fails 'insufficient 30-day capacity' "${VALIDATOR}" --profile production \
   --fixture-dir "${FIXTURE_DIR}" --producer-config-file "${PRODUCER_CONFIG_FILE}" \

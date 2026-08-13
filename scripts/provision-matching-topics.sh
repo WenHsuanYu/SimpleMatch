@@ -48,6 +48,7 @@ done
 matching_load_profile "${PROFILE}"
 if [[ "${CERTIFY_PRODUCTION}" == true ]]; then
   matching_require_production_profile
+  matching_require_certification_evidence "${PRODUCER_CONFIG_FILE}" "${CAPACITY_EVIDENCE_FILE}"
 fi
 if [[ -n "${COMMAND_CONFIG_FILE}" ]]; then
   matching_require_file "${COMMAND_CONFIG_FILE}" 'Kafka command config'

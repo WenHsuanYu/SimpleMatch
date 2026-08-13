@@ -9,8 +9,9 @@ compose_file="$repo_root/deploy/compose/kafka-connect.production-like.yml"
 compose_project="${SIMPLEMATCH_CERTIFICATION_COMPOSE_PROJECT:-simplematch-local-production-like}"
 image_tag="${SIMPLEMATCH_LOCAL_IMAGE_TAG:-local}"
 evidence_dir="${SIMPLEMATCH_CERTIFICATION_EVIDENCE_DIR:-$repo_root/out/certification/local-production-like}"
-matching_producer_config_file="${SIMPLEMATCH_KAFKA_PRODUCER_CONFIG_FILE:-$repo_root/scripts/testdata/matching-topic-profile/valid/matching.producer.config.txt}"
-matching_capacity_evidence_file="${SIMPLEMATCH_KAFKA_CAPACITY_EVIDENCE_FILE:-$repo_root/scripts/testdata/matching-topic-profile/valid/capacity.properties}"
+matching_producer_config_file="${SIMPLEMATCH_KAFKA_PRODUCER_CONFIG_FILE:-$evidence_dir/matching-producer.config.txt}"
+matching_capacity_evidence_file="${SIMPLEMATCH_KAFKA_CAPACITY_EVIDENCE_FILE:-$evidence_dir/kafka-capacity.properties}"
+matching_capacity_workload_file="$repo_root/scripts/testdata/matching-topic-profile/valid/capacity.properties"
 certification_trading_day="${SIMPLEMATCH_CERTIFICATION_TRADING_DAY:-$(date -u +%F)}"
 namespace=""
 kind_cluster="${SIMPLEMATCH_KIND_CLUSTER_NAME:-simplematch-local}"
@@ -52,9 +53,9 @@ The Kubernetes gate uses the approved delivery manifest for
 SIMPLEMATCH_CERTIFICATION_TRADING_DAY (default: current UTC day) under
 tools/market-reference-builder/data, or the path supplied by
 SIMPLEMATCH_MARKET_REFERENCE_DELIVERY_MANIFEST.
-The Kafka profile gate uses the repository-local producer and capacity evidence fixtures by
-default, or the paths supplied by SIMPLEMATCH_KAFKA_PRODUCER_CONFIG_FILE and
-SIMPLEMATCH_KAFKA_CAPACITY_EVIDENCE_FILE.
+The Kafka profile gate generates source-backed producer evidence and measures free Docker
+filesystem capacity for the local brokers. Override either evidence file with
+SIMPLEMATCH_KAFKA_PRODUCER_CONFIG_FILE or SIMPLEMATCH_KAFKA_CAPACITY_EVIDENCE_FILE.
 EOF
 }
 
@@ -333,6 +334,45 @@ create_kafka_topics() {
       --topic "$topic" --partitions 15 --replication-factor 3 \
       --config cleanup.policy=delete --config retention.ms=2592000000 --config min.insync.replicas=2
   done
+}
+
+generate_kafka_capacity_evidence() {
+  local source_file="$matching_capacity_workload_file"
+  local output_file="$matching_capacity_evidence_file"
+  local service free_kib free_bytes
+  local minimum_free_bytes=""
+  local broker_count=3
+
+  [[ -f "${source_file}" ]] || die "Kafka workload scenario does not exist: ${source_file}"
+  if [[ -n "${SIMPLEMATCH_KAFKA_CAPACITY_EVIDENCE_FILE:-}" ]]; then
+    [[ -f "${output_file}" ]] || die "Kafka capacity evidence does not exist: ${output_file}"
+    printf 'Using supplied Kafka capacity evidence: %s\n' "${output_file}"
+    return 0
+  fi
+
+  mkdir -p "$(dirname -- "${output_file}")"
+  for service in kafka-1 kafka-2 kafka-3; do
+    free_kib="$("${compose_command[@]}" exec -T "${service}" sh -c \
+      'df -Pk / | tail -n 1' | awk 'NR == 1 { print $4 }' | tr -d '\r')"
+    [[ "${free_kib}" =~ ^[0-9]+$ ]] || die \
+      "Kafka broker ${service} reported invalid free filesystem blocks: ${free_kib}"
+    free_bytes="$(awk -v kib="${free_kib}" 'BEGIN { printf "%.0f", kib * 1024 }')"
+    if [[ -z "${minimum_free_bytes}" || "${free_bytes}" -lt "${minimum_free_bytes}" ]]; then
+      minimum_free_bytes="${free_bytes}"
+    fi
+  done
+
+  {
+    awk -F= '/^(workload\.commands\.per\.day|workload\.events\.per\.day|workload\.average\.command\.record\.bytes|workload\.average\.event\.record\.bytes)=/ { print }' \
+      "${source_file}"
+    printf '%s\n' "capacity.broker.count=${broker_count}"
+    printf '%s\n' "capacity.usable.cluster.bytes=${minimum_free_bytes}"
+    printf '%s\n' "capacity.usable.broker.bytes=$((minimum_free_bytes / broker_count))"
+    printf '%s\n' 'capacity.evidence.source=runtime-docker-filesystem'
+    printf '%s\n' 'capacity.evidence.path=/'
+    printf '%s\n' "capacity.evidence.generated_at_utc=$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+  } >"${output_file}"
+  printf 'Generated runtime Kafka capacity evidence: %s\n' "${output_file}"
 }
 
 collect_kafka_fixture() {
@@ -615,8 +655,20 @@ if [[ "$skip_compose" == false ]]; then
   run_logged compose-up "${compose_command[@]}" up --detach --remove-orphans
   run_logged compose-wait wait_for_compose
   run_logged compose-status "${compose_command[@]}" ps
+  run_logged kafka-capacity-evidence generate_kafka_capacity_evidence
+  if [[ -z "${SIMPLEMATCH_KAFKA_PRODUCER_CONFIG_FILE:-}" ]]; then
+    run_logged kafka-producer-contract bash \
+      "$repo_root/scripts/validate-matching-producer-contract.sh" \
+      --output "$matching_producer_config_file"
+  fi
   create_kafka_topics
   collect_kafka_fixture
+  run_logged kafka-broker-failure-live bash \
+    "$repo_root/scripts/run-matching-kafka-failure-check.sh" \
+    --compose-project "$compose_project" --compose-file "$compose_file" \
+    --evidence-dir "$evidence_dir/kafka-failure" \
+    --producer-config-file "$matching_producer_config_file" \
+    --capacity-evidence-file "$matching_capacity_evidence_file"
   if [[ "$matching_fleet_only" == false ]]; then
     run_flyway_migrations
   else

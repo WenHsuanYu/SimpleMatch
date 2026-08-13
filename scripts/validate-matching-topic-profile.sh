@@ -61,6 +61,7 @@ fi
 matching_load_profile "${PROFILE}"
 if [[ "${CERTIFY_PRODUCTION}" == true ]]; then
   matching_require_production_profile
+  matching_require_certification_evidence "${PRODUCER_CONFIG_FILE}" "${CAPACITY_EVIDENCE_FILE}"
 fi
 if [[ -n "${PRODUCER_CONFIG_FILE}" ]]; then
   matching_validate_producer_config "${PRODUCER_CONFIG_FILE}"

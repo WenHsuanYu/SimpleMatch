@@ -64,14 +64,17 @@ unclean.leader.election.enable=false
 The provisioner creates the two topics with explicit partition, replication, cleanup, retention, and
 minimum-ISR settings, then invokes the fail-closed validator. The validator checks every partition
 description (including replica/ISR membership and leader state), exact topic configuration, effective
-broker safety settings, producer requirements, and optional workload capacity evidence. It rejects a
-single-broker profile when `--certify-production` is supplied.
+broker safety settings, producer requirements, and workload capacity evidence. It rejects a
+single-broker profile or missing evidence when `--certify-production` is supplied.
 
-For a no-write review of the generated Kafka CLI calls:
+For a no-write review of the generated Kafka CLI calls, pass the evidence files explicitly:
 
 ```bash
 bash scripts/provision-matching-topics.sh \
-  --bootstrap-server kafka:9092 --profile production --certify-production --dry-run
+  --bootstrap-server kafka:9092 --profile production \
+  --producer-config-file scripts/testdata/matching-topic-profile/valid/matching.producer.config.txt \
+  --capacity-evidence-file scripts/testdata/matching-topic-profile/valid/capacity.properties \
+  --certify-production --dry-run
 ```
 
 The one-broker Compose service intentionally uses the local profile and disables implicit topic

@@ -136,6 +136,9 @@ for required_topic in matching.executions account.lifecycle marketdata.events; d
   }
 done
 
+bash "$repo_root/scripts/validate-matching-producer-contract.sh"
+"$repo_root/scripts/run-matching-kafka-failure-check.sh" --help >/dev/null
+
 grep -Fq 'publish_local_matching_open_barriers' \
   "$repo_root/scripts/run-local-production-like-certification.sh" || {
   echo "Local certification does not publish the required Matching Open Barriers." >&2

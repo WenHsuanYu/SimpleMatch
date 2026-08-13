@@ -29,6 +29,8 @@ spring:
       key-serializer: org.apache.kafka.common.serialization.StringSerializer
       value-serializer: org.apache.kafka.common.serialization.ByteArraySerializer
       acks: all
+      properties:
+        enable.idempotence: true
     consumer:
       group-id: risk-routing-policy
       auto-offset-reset: earliest

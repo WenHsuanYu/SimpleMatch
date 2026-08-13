@@ -27,6 +27,8 @@ spring:
       key-serializer: org.apache.kafka.common.serialization.StringSerializer
       value-serializer: org.apache.kafka.common.serialization.ByteArraySerializer
       acks: all
+      properties:
+        enable.idempotence: true
     consumer:
       group-id: ${simplematch.quickfix-gateway.owner-id:quickfix-gateway-0}
       auto-offset-reset: earliest
