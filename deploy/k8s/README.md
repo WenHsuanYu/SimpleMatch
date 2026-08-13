@@ -37,6 +37,40 @@ separate registry names and digest placeholders, and retain placeholders for ext
 Kafka, Redis, OpenTelemetry, CIDR, and Secret values. Filling those values and publishing images is
 outside the current local completion boundary.
 
+### Canonical local kind cluster
+
+The repository-managed local resilience lab is the reusable `simplematch-live` kind cluster. It has
+one tainted control plane and three labeled workers with stable local-resilience slots. Create and
+verify it explicitly before a resilience run:
+
+```text
+bash scripts/manage-simplematch-live.sh create
+bash scripts/manage-simplematch-live.sh verify
+```
+
+`create` refuses to modify an existing cluster. `verify` checks the topology, worker labels, kind
+container mapping, StorageClass, and a disposable PVC/Pod probe that confirms the provisioned PV
+contains node affinity. `delete` is reserved for an explicit rebuild or cutover operation and
+verifies the canonical cluster identity before deleting it:
+
+```text
+bash scripts/manage-simplematch-live.sh delete
+```
+
+Normal local resilience cleanup never deletes this reusable cluster. It deletes only the generated
+run namespace and resources owned by that run.
+
+The runner has two profiles:
+
+```text
+bash scripts/run-local-resilience.sh --profile contract
+bash scripts/run-local-resilience.sh --profile full-local
+```
+
+The `contract` profile is static and cannot produce runtime resilience evidence. The `full-local`
+profile owns one run namespace, evidence directory, bounded verdicts, and cleanup; scenarios that
+are not yet executable remain explicitly incomplete.
+
 ### Local production-like version contract
 
 The executable local profile is checked against this stable version set as of 2026-08-12. The
