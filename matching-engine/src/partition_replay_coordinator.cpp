@@ -283,7 +283,8 @@ PartitionReplayResult PartitionReplayCoordinator::ingest_internal(
       maximum_pending_publications_) {
     return PartitionReplayResult::kOutputBackpressured;
   }
-  if (!runtime_.submit(decoded.command)) {
+  const auto input_sequence = runtime_.submit(decoded.command);
+  if (!input_sequence.has_value()) {
     return ownership_permitted() ? PartitionReplayResult::kInputBackpressured
                                  : PartitionReplayResult::kOwnershipDenied;
   }
@@ -296,7 +297,11 @@ PartitionReplayResult PartitionReplayCoordinator::ingest_internal(
       record.offset,
       std::make_unique<PendingInput>(PendingInput{decoded.command.context, 0, {}, false}));
   active_command_ = ActiveCommand{
-      record.offset, decoded.command.context, decoded.command.type, suppress_publication};
+      *input_sequence,
+      record.offset,
+      decoded.command.context,
+      decoded.command.type,
+      suppress_publication};
   return drive_active_command();
 }
 
@@ -326,14 +331,17 @@ PartitionReplayResult PartitionReplayCoordinator::drive_active_command() {
   std::size_t output_count = 0;
   bool saw_end_of_input = false;
   while (const auto output = runtime_.take_output()) {
-    if (output->kind == RuntimeOutputKind::kEndOfInput) {
-      if (output->output_count != output_count || output->output_index != output_count) {
+    if (const auto *end = std::get_if<RuntimeEndOfInput>(&*output)) {
+      if (end->input_sequence != active.input_sequence ||
+          end->output_count != output_count) {
         return fail_closed("MATCHING_OUTPUT_SEQUENCE_CORRUPTED");
       }
       saw_end_of_input = true;
       break;
     }
-    if (output->output_index != output_count) {
+    const auto &event = std::get<RuntimeEventOutput>(*output);
+    if (event.input_sequence != active.input_sequence ||
+        event.output_index != output_count) {
       return fail_closed("MATCHING_OUTPUT_SEQUENCE_CORRUPTED");
     }
     ++output_count;
@@ -343,7 +351,7 @@ PartitionReplayResult PartitionReplayCoordinator::drive_active_command() {
     if (pending_publications_.size() == maximum_pending_publications_) {
       return fail_closed("MATCHING_PUBLICATION_CAPACITY_EXHAUSTED");
     }
-    const auto encoded = event_encoder_.encode(active.context, active.input_offset, output->event);
+    const auto encoded = event_encoder_.encode(active.context, active.input_offset, event.event);
     if (!encoded.has_value()) {
       return fail_closed("MATCHING_EVENT_ENCODING_FAILED");
     }

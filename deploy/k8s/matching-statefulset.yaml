@@ -95,6 +95,8 @@ spec:
               value: matching.events
             - name: MATCHING_MAX_RESTING_ORDERS_PER_INSTRUMENT
               value: "4096"
+            - name: MATCHING_OUTPUT_CAPACITY
+              value: "1048576"
             - name: MATCHING_MAX_PENDING_PUBLICATIONS
               value: "1000000"
           resources:

@@ -14,6 +14,8 @@ spec:
           env:
             - name: MATCHING_MAX_RESTING_ORDERS_PER_INSTRUMENT
               value: "1024"
+            - name: MATCHING_OUTPUT_CAPACITY
+              value: "262144"
             - name: MATCHING_MAX_PENDING_PUBLICATIONS
               value: "250000"
           resources:

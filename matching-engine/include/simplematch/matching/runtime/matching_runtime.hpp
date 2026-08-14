@@ -8,6 +8,7 @@
 #include <cstdint>
 #include <memory>
 #include <optional>
+#include <variant>
 
 namespace simplematch::matching {
 
@@ -21,16 +22,19 @@ enum class MatchingRuntimeStep {
 
 using InputSequence = std::uint64_t;
 
-enum class RuntimeOutputKind { kEvent, kEndOfInput };
-
-/** Transport-independent output produced by the single Matching writer. */
-struct RuntimeOutput {
-  RuntimeOutputKind kind;
+struct RuntimeEventOutput {
   InputSequence input_sequence;
   std::size_t output_index;
-  std::size_t output_count;
   CoreEvent event;
 };
+
+struct RuntimeEndOfInput {
+  InputSequence input_sequence;
+  std::size_t output_count;
+};
+
+/** Transport-independent output produced by the single Matching writer. */
+using RuntimeOutput = std::variant<RuntimeEventOutput, RuntimeEndOfInput>;
 
 /**
  * Owns the preallocated command and event rings around one strictly single-writer matching core.
@@ -46,7 +50,7 @@ public:
       std::size_t output_capacity,
       std::shared_ptr<const PartitionOwnershipPermit> ownership_permit);
 
-  [[nodiscard]] bool submit(CoreCommand command);
+  [[nodiscard]] std::optional<InputSequence> submit(CoreCommand command);
   [[nodiscard]] MatchingRuntimeStep process_one();
   [[nodiscard]] std::size_t input_size() const;
   [[nodiscard]] std::size_t output_size() const;

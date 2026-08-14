@@ -47,6 +47,7 @@ struct RuntimeConfiguration {
   std::string status_path;
   std::int32_t partition_id{};
   std::size_t input_capacity{};
+  std::size_t output_capacity{};
   std::size_t maximum_resting_orders{};
   std::size_t maximum_distinct_commands{};
   std::size_t maximum_pending_publications{};
@@ -162,6 +163,7 @@ RuntimeConfiguration load_configuration() {
       environment_value("MATCHING_STATUS_PATH", std::string(kDefaultStatusPath)),
       non_negative_environment<std::int32_t>("MATCHING_PARTITION_ID", -1),
       positive_environment<std::size_t>("MATCHING_INPUT_CAPACITY", 1024),
+      positive_environment<std::size_t>("MATCHING_OUTPUT_CAPACITY", 1048576),
       positive_environment<std::size_t>("MATCHING_MAX_RESTING_ORDERS_PER_INSTRUMENT", 4096),
       positive_environment<std::size_t>("MATCHING_MAX_DISTINCT_COMMANDS", 100000),
       positive_environment<std::size_t>("MATCHING_MAX_PENDING_PUBLICATIONS", 1000000),
@@ -352,7 +354,7 @@ int run_runtime() {
         permit,
         std::move(core),
         configuration.input_capacity,
-        configuration.maximum_pending_publications,
+        configuration.output_capacity,
         configuration.maximum_distinct_commands,
         configuration.maximum_pending_publications);
     PvcBaselineMetadataStore baseline_store(configuration.baseline_path);

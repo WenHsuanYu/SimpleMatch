@@ -17,17 +17,20 @@ MatchingRuntime::MatchingRuntime(
   if (core_ == nullptr || ownership_permit_ == nullptr) {
     throw std::invalid_argument("matching runtime requires one core and ownership permit");
   }
+  if (output_ring_.capacity() < core_->maximum_output_events() + 1) {
+    throw std::invalid_argument(
+        "matching output ring must hold one worst-case event burst and its end marker");
+  }
 }
 
-bool MatchingRuntime::submit(CoreCommand command) {
+std::optional<InputSequence> MatchingRuntime::submit(CoreCommand command) {
   if (!ownership_permit_->allows_processing()) {
-    return false;
+    return std::nullopt;
   }
   if (!input_ring_.try_push(RuntimeInput{next_input_sequence_, std::move(command)})) {
-    return false;
+    return std::nullopt;
   }
-  ++next_input_sequence_;
-  return true;
+  return next_input_sequence_++;
 }
 
 MatchingRuntimeStep MatchingRuntime::process_one() {
@@ -50,22 +53,13 @@ MatchingRuntimeStep MatchingRuntime::process_one() {
   }
   std::size_t output_index = 0;
   for (const CoreEvent &event : core_->events()) {
-    if (!output_ring_.try_push(RuntimeOutput{
-            RuntimeOutputKind::kEvent,
-            command->sequence,
-            output_index,
-            0,
-            event})) {
+    if (!output_ring_.try_push(RuntimeEventOutput{
+            command->sequence, output_index, event})) {
       throw std::logic_error("output ring capacity changed while the single writer was processing");
     }
     ++output_index;
   }
-  if (!output_ring_.try_push(RuntimeOutput{
-          RuntimeOutputKind::kEndOfInput,
-          command->sequence,
-          output_index,
-          output_index,
-          CoreEvent{}})) {
+  if (!output_ring_.try_push(RuntimeEndOfInput{command->sequence, output_index})) {
     throw std::logic_error("output ring lost its reserved end-of-input slot");
   }
   return MatchingRuntimeStep::kProcessed;

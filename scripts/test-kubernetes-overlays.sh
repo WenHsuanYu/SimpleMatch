@@ -113,6 +113,7 @@ if overlay == "local"
   end.to_h
   abort "local: Matching native workload does not bound local preallocation" unless
     matching_env.fetch("MATCHING_MAX_RESTING_ORDERS_PER_INSTRUMENT") == "1024" &&
+      matching_env.fetch("MATCHING_OUTPUT_CAPACITY") == "262144" &&
       matching_env.fetch("MATCHING_MAX_PENDING_PUBLICATIONS") == "250000"
   abort "local: Matching native workload is under-provisioned for startup" unless
     matching_container.fetch("resources") == {

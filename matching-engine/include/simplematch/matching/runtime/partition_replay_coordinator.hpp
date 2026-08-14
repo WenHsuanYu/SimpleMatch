@@ -193,6 +193,7 @@ private:
   };
 
   struct ActiveCommand {
+    InputSequence input_sequence;
     std::int64_t input_offset;
     MatchingCommandContext context;
     CoreCommandType type;

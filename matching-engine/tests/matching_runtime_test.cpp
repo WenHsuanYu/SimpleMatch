@@ -42,6 +42,20 @@ CoreCommand order(std::string_view command_id, std::string_view order_id) {
       CoreTimeInForce::kRod);
 }
 
+CoreCommand ioc_sell(std::string_view command_id, std::string_view order_id) {
+  return CoreCommand::new_order(
+      context(),
+      uuid(command_id),
+      uuid(order_id),
+      uuid("0198a001-0000-7000-8000-0000000000aa"),
+      instrument(),
+      CoreSide::kSell,
+      ShareQuantity(150),
+      FixedPrice(1'000'000),
+      CoreOrderType::kLimit,
+      CoreTimeInForce::kIoc);
+}
+
 std::unique_ptr<DeterministicMatchingCore> core() {
   return std::make_unique<DeterministicMatchingCore>(
       std::vector<CoreInstrument>{instrument()}, 1, 0);
@@ -75,12 +89,52 @@ TEST(MatchingRuntimeTest, BoundedInputRingNeverOverwritesAnUnreadCommand) {
   const auto end = runtime.take_output();
   ASSERT_TRUE(event.has_value());
   ASSERT_TRUE(end.has_value());
-  EXPECT_EQ(event->kind, RuntimeOutputKind::kEvent);
-  EXPECT_EQ(event->input_sequence, 0U);
-  EXPECT_EQ(event->output_index, 0U);
-  EXPECT_EQ(end->kind, RuntimeOutputKind::kEndOfInput);
-  EXPECT_EQ(end->input_sequence, 0U);
-  EXPECT_EQ(end->output_count, 1U);
+  const auto &framed_event = std::get<RuntimeEventOutput>(*event);
+  const auto &framed_end = std::get<RuntimeEndOfInput>(*end);
+  EXPECT_EQ(framed_event.input_sequence, 0U);
+  EXPECT_EQ(framed_event.output_index, 0U);
+  EXPECT_EQ(framed_end.input_sequence, 0U);
+  EXPECT_EQ(framed_end.output_count, 1U);
+}
+
+TEST(MatchingRuntimeTest, FramesConsecutiveInputsAndAMultiEventBurst) {
+  const auto permit = ready_permit();
+  MatchingRuntime runtime(core(), 2, 4, permit);
+  ASSERT_TRUE(runtime.submit(order(
+      "0198a001-0000-7000-8000-000000000005",
+      "0198a001-0000-7000-8000-000000000015")));
+  ASSERT_EQ(runtime.process_one(), MatchingRuntimeStep::kProcessed);
+  ASSERT_TRUE(runtime.take_output().has_value());
+  const auto first_end = runtime.take_output();
+  ASSERT_TRUE(first_end.has_value());
+  EXPECT_EQ(std::get<RuntimeEndOfInput>(*first_end).input_sequence, 0U);
+
+  ASSERT_TRUE(runtime.submit(ioc_sell(
+      "0198a001-0000-7000-8000-000000000006",
+      "0198a001-0000-7000-8000-000000000016")));
+  ASSERT_EQ(runtime.process_one(), MatchingRuntimeStep::kProcessed);
+  const auto first_event = runtime.take_output();
+  const auto second_event = runtime.take_output();
+  const auto second_end = runtime.take_output();
+
+  ASSERT_TRUE(first_event.has_value());
+  ASSERT_TRUE(second_event.has_value());
+  ASSERT_TRUE(second_end.has_value());
+  const auto &first = std::get<RuntimeEventOutput>(*first_event);
+  const auto &second = std::get<RuntimeEventOutput>(*second_event);
+  const auto &end = std::get<RuntimeEndOfInput>(*second_end);
+  EXPECT_EQ(first.input_sequence, 1U);
+  EXPECT_EQ(first.output_index, 0U);
+  EXPECT_EQ(second.input_sequence, 1U);
+  EXPECT_EQ(second.output_index, 1U);
+  EXPECT_EQ(end.input_sequence, 1U);
+  EXPECT_EQ(end.output_count, 2U);
+}
+
+TEST(MatchingRuntimeTest, RejectsAnOutputRingThatCannotHoldOneWorstCaseFrame) {
+  const auto permit = ready_permit();
+
+  EXPECT_THROW(MatchingRuntime(core(), 1, 2, permit), std::invalid_argument);
 }
 
 TEST(BoundedSpscRingTest, RequiresAPowerOfTwoCapacity) {
@@ -146,8 +200,7 @@ TEST(MatchingRuntimeTest, OutputBackpressureLeavesTheInputCommandUnconsumed) {
   ASSERT_TRUE(runtime.submit(order(
       "0198a001-0000-7000-8000-000000000003",
       "0198a001-0000-7000-8000-000000000013")));
-  const RuntimeOutput occupied{
-      RuntimeOutputKind::kEvent, 999, 0, 0, CoreEvent{}};
+  const RuntimeOutput occupied = RuntimeEventOutput{999, 0, CoreEvent{}};
   ASSERT_TRUE(runtime.output_ring().try_push(occupied));
   ASSERT_TRUE(runtime.output_ring().try_push(occupied));
 
