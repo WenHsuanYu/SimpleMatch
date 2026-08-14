@@ -23,7 +23,11 @@ bool MatchingRuntime::submit(CoreCommand command) {
   if (!ownership_permit_->allows_processing()) {
     return false;
   }
-  return input_ring_.try_push(std::move(command));
+  if (!input_ring_.try_push(RuntimeInput{next_input_sequence_, std::move(command)})) {
+    return false;
+  }
+  ++next_input_sequence_;
+  return true;
 }
 
 MatchingRuntimeStep MatchingRuntime::process_one() {
@@ -33,20 +37,36 @@ MatchingRuntimeStep MatchingRuntime::process_one() {
   if (input_ring_.size() == 0) {
     return MatchingRuntimeStep::kNoInput;
   }
-  if (output_ring_.available_to_write() < core_->maximum_output_events()) {
+  const std::size_t required_output_slots = core_->maximum_output_events() + 1;
+  if (output_ring_.available_to_write() < required_output_slots) {
     return MatchingRuntimeStep::kOutputBackpressured;
   }
   auto command = input_ring_.try_pop();
   if (!command.has_value()) {
     return MatchingRuntimeStep::kNoInput;
   }
-  if (core_->process(*command) != MatchingProcessResult::kApplied) {
+  if (core_->process(command->command) != MatchingProcessResult::kApplied) {
     return MatchingRuntimeStep::kCoreRejected;
   }
+  std::size_t output_index = 0;
   for (const CoreEvent &event : core_->events()) {
-    if (!output_ring_.try_push(event)) {
+    if (!output_ring_.try_push(RuntimeOutput{
+            RuntimeOutputKind::kEvent,
+            command->sequence,
+            output_index,
+            0,
+            event})) {
       throw std::logic_error("output ring capacity changed while the single writer was processing");
     }
+    ++output_index;
+  }
+  if (!output_ring_.try_push(RuntimeOutput{
+          RuntimeOutputKind::kEndOfInput,
+          command->sequence,
+          output_index,
+          output_index,
+          CoreEvent{}})) {
+    throw std::logic_error("output ring lost its reserved end-of-input slot");
   }
   return MatchingRuntimeStep::kProcessed;
 }
@@ -63,11 +83,11 @@ std::size_t MatchingRuntime::maximum_output_events() const {
   return core_->maximum_output_events();
 }
 
-std::optional<CoreEvent> MatchingRuntime::take_output() {
+std::optional<RuntimeOutput> MatchingRuntime::take_output() {
   return output_ring_.try_pop();
 }
 
-BoundedSpscRing<CoreEvent> &MatchingRuntime::output_ring() {
+BoundedSpscRing<RuntimeOutput> &MatchingRuntime::output_ring() {
   return output_ring_;
 }
 

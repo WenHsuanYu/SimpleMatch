@@ -324,7 +324,18 @@ PartitionReplayResult PartitionReplayCoordinator::drive_active_command() {
     return fail_closed("MATCHING_PENDING_INPUT_MISSING");
   }
   std::size_t output_count = 0;
-  while (const auto event = runtime_.take_output()) {
+  bool saw_end_of_input = false;
+  while (const auto output = runtime_.take_output()) {
+    if (output->kind == RuntimeOutputKind::kEndOfInput) {
+      if (output->output_count != output_count || output->output_index != output_count) {
+        return fail_closed("MATCHING_OUTPUT_SEQUENCE_CORRUPTED");
+      }
+      saw_end_of_input = true;
+      break;
+    }
+    if (output->output_index != output_count) {
+      return fail_closed("MATCHING_OUTPUT_SEQUENCE_CORRUPTED");
+    }
     ++output_count;
     if (active.suppress_publication) {
       continue;
@@ -332,11 +343,14 @@ PartitionReplayResult PartitionReplayCoordinator::drive_active_command() {
     if (pending_publications_.size() == maximum_pending_publications_) {
       return fail_closed("MATCHING_PUBLICATION_CAPACITY_EXHAUSTED");
     }
-    const auto encoded = event_encoder_.encode(active.context, active.input_offset, *event);
+    const auto encoded = event_encoder_.encode(active.context, active.input_offset, output->event);
     if (!encoded.has_value()) {
       return fail_closed("MATCHING_EVENT_ENCODING_FAILED");
     }
     pending_publications_.push_back(PendingPublication{*encoded, false});
+  }
+  if (!saw_end_of_input) {
+    return fail_closed("MATCHING_END_OF_INPUT_MISSING");
   }
 
   pending->second->expected_output_count = active.suppress_publication ? 0 : output_count;
