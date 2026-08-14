@@ -71,10 +71,35 @@ end
     build_mount == { "name" => "build-output", "mountPath" => "/workspace/build" }
   abort "#{overlay}: #{name} Flyway Job does not define the build output volume" unless
     job.fetch("spec").fetch("template").fetch("spec").fetch("volumes").include?("name" => "build-output", "emptyDir" => {})
+
+  if overlay == "local"
+    expected_resources = {
+      "requests" => { "cpu" => "500m", "memory" => "1Gi" },
+      "limits" => { "cpu" => "2", "memory" => "2Gi" }
+    }
+    expected_gradle_jvm_args = "-Xmx1g -XX:MaxMetaspaceSize=256m -XX:+UseSerialGC"
+    abort "local: #{name} Flyway Job must bound Gradle JVM memory" unless
+      gradle_environment.fetch("SIMPLEMATCH_GRADLE_JVM_ARGS") == {
+        "name" => "SIMPLEMATCH_GRADLE_JVM_ARGS",
+        "value" => expected_gradle_jvm_args
+      }
+    abort "local: #{name} Flyway Job must use the in-process Kotlin compiler" unless
+      gradle_environment.fetch("SIMPLEMATCH_KOTLIN_COMPILER_EXECUTION_STRATEGY") == {
+        "name" => "SIMPLEMATCH_KOTLIN_COMPILER_EXECUTION_STRATEGY",
+        "value" => "in-process"
+      }
+    abort "local: #{name} Flyway Job must use the local Gradle memory budget" unless
+      container.fetch("resources") == expected_resources
+  end
 end
 
 if overlay == "local"
   quickfix = resources.fetch(["StatefulSet", "quickfix-gateway"])
+  quickfix_claim = quickfix.fetch("spec").fetch("volumeClaimTemplates").fetch(0)
+  abort "local: QuickFIX must use the node-local StorageClass" unless
+    quickfix_claim.dig("spec", "storageClassName") == "simplematch-rwo-pod" &&
+      quickfix_claim.dig("spec", "accessModes") == ["ReadWriteOnce"] &&
+      quickfix_claim.dig("spec", "resources", "requests", "storage") == "2Gi"
   quickfix_container = quickfix.fetch("spec").fetch("template").fetch("spec").fetch("containers").first
   quickfix_env = quickfix_container.fetch("env").to_h { |entry| [entry.fetch("name"), entry] }
   abort "local: QuickFIX Gateway must use the local Spring profile" unless
@@ -107,14 +132,17 @@ if overlay == "local"
   end
 
   matching = resources.fetch(["StatefulSet", "matching"])
+  matching_pod_spec = matching.fetch("spec").fetch("template").fetch("spec")
+  abort "local: Matching must not require a CPU Manager label in the local lab" if
+    matching_pod_spec.dig("nodeSelector", "simplematch.io/cpu-manager-static")
   matching_container = matching.fetch("spec").fetch("template").fetch("spec").fetch("containers").first
   matching_env = matching_container.fetch("env").filter_map do |entry|
     entry.key?("value") ? [entry.fetch("name"), entry.fetch("value")] : nil
   end.to_h
   abort "local: Matching native workload does not bound local preallocation" unless
     matching_env.fetch("MATCHING_MAX_RESTING_ORDERS_PER_INSTRUMENT") == "1024" &&
-      matching_env.fetch("MATCHING_OUTPUT_CAPACITY") == "262144" &&
-      matching_env.fetch("MATCHING_MAX_PENDING_PUBLICATIONS") == "250000"
+      matching_env.fetch("MATCHING_OUTPUT_CAPACITY") == "524288" &&
+      matching_env.fetch("MATCHING_MAX_PENDING_PUBLICATIONS") == "524288"
   abort "local: Matching native workload is under-provisioned for startup" unless
     matching_container.fetch("resources") == {
       "requests" => { "cpu" => "100m", "memory" => "2Gi" },
@@ -243,7 +271,14 @@ if %w[staging production].include?(overlay)
   abort "#{overlay}: Kafka Connect is not non-root" unless connector_container.fetch("securityContext").fetch("runAsNonRoot")
   abort "#{overlay}: Kafka Connect is not read-only root" unless connector_container.fetch("securityContext").fetch("readOnlyRootFilesystem")
   connector_env = connector_container.fetch("env").to_h { |entry| [entry.fetch("name"), entry] }
-  %w[CONNECT_SECURITY_PROTOCOL CONNECT_SASL_MECHANISM CONNECT_SASL_JAAS_CONFIG CONNECT_SSL_TRUSTSTORE_PASSWORD].each do |name|
+  %w[
+    CONNECT_CONFIG_PROVIDERS
+    CONNECT_CONFIG_PROVIDERS_ENV_CLASS
+    CONNECT_SECURITY_PROTOCOL
+    CONNECT_SASL_MECHANISM
+    CONNECT_SASL_JAAS_CONFIG
+    CONNECT_SSL_TRUSTSTORE_PASSWORD
+  ].each do |name|
     abort "#{overlay}: Kafka Connect is missing #{name}" unless connector_env.key?(name)
   end
   abort "#{overlay}: Kafka Connect does not require the PostgreSQL CA" unless

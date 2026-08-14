@@ -1,0 +1,14 @@
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: kafka-connect
+  labels:
+    app.kubernetes.io/name: kafka-connect
+    app.kubernetes.io/component: connector
+    app.kubernetes.io/part-of: simplematch
+spec:
+  minAvailable: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: kafka-connect
+      app.kubernetes.io/component: connector

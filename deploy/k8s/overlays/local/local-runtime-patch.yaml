@@ -67,6 +67,16 @@ kind: StatefulSet
 metadata:
   name: quickfix-gateway
 spec:
+  volumeClaimTemplates:
+    - metadata:
+        name: quickfix-data
+      spec:
+        storageClassName: simplematch-rwo-pod
+        accessModes:
+          - ReadWriteOnce
+        resources:
+          requests:
+            storage: 2Gi
   template:
     spec:
       containers:

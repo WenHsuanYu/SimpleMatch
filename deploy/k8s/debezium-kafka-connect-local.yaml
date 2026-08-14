@@ -71,6 +71,9 @@ spec:
               app.kubernetes.io/name: kafka-connect
               app.kubernetes.io/component: connector
       securityContext:
+        runAsUser: 1001
+        runAsGroup: 1001
+        fsGroup: 1001
         seccompProfile:
           type: RuntimeDefault
       containers:
@@ -91,18 +94,16 @@ spec:
               value: simplematch-connect-offsets
             - name: STATUS_STORAGE_TOPIC
               value: simplematch-connect-status
-            - name: CONFIG_STORAGE_REPLICATION_FACTOR
+            - name: CONNECT_CONFIG_STORAGE_REPLICATION_FACTOR
               value: "3"
-            - name: OFFSET_STORAGE_REPLICATION_FACTOR
+            - name: CONNECT_OFFSET_STORAGE_REPLICATION_FACTOR
               value: "3"
-            - name: STATUS_STORAGE_REPLICATION_FACTOR
+            - name: CONNECT_STATUS_STORAGE_REPLICATION_FACTOR
               value: "3"
-            - name: CONFIG_STORAGE_MIN_ISR
-              value: "2"
-            - name: OFFSET_STORAGE_MIN_ISR
-              value: "2"
-            - name: STATUS_STORAGE_MIN_ISR
-              value: "2"
+            - name: CONNECT_CONFIG_PROVIDERS
+              value: env
+            - name: CONNECT_CONFIG_PROVIDERS_ENV_CLASS
+              value: org.apache.kafka.common.config.provider.EnvVarConfigProvider
             - name: KEY_CONVERTER
               value: org.apache.kafka.connect.storage.StringConverter
             - name: VALUE_CONVERTER
@@ -197,8 +198,20 @@ spec:
           volumeMounts:
             - name: runtime-tmp
               mountPath: /tmp
+            - name: kafka-config
+              mountPath: /kafka/config
+            - name: kafka-data
+              mountPath: /kafka/data
+            - name: kafka-logs
+              mountPath: /kafka/logs
       volumes:
         - name: runtime-tmp
+          emptyDir: {}
+        - name: kafka-config
+          emptyDir: {}
+        - name: kafka-data
+          emptyDir: {}
+        - name: kafka-logs
           emptyDir: {}
 ---
 apiVersion: v1

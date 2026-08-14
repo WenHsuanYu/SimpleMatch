@@ -5,7 +5,17 @@ set -euo pipefail
 service_id="${SIMPLEMATCH_FLYWAY_SERVICE_ID:?SIMPLEMATCH_FLYWAY_SERVICE_ID is required}"
 gradle_user_home="${GRADLE_USER_HOME:-/tmp/gradle}"
 project_cache_dir="${SIMPLEMATCH_GRADLE_PROJECT_CACHE_DIR:-/tmp/gradle-project}"
+gradle_jvm_args="${SIMPLEMATCH_GRADLE_JVM_ARGS:-}"
+kotlin_compiler_execution_strategy="${SIMPLEMATCH_KOTLIN_COMPILER_EXECUTION_STRATEGY:-}"
 work_dir="${SIMPLEMATCH_FLYWAY_WORK_DIR:-/tmp/simplematch-workspace}"
+gradle_jvm_options=()
+
+if [[ -n "$gradle_jvm_args" ]]; then
+  gradle_jvm_options+=("-Dorg.gradle.jvmargs=$gradle_jvm_args")
+fi
+if [[ -n "$kotlin_compiler_execution_strategy" ]]; then
+  gradle_jvm_options+=("-Dkotlin.compiler.execution.strategy=$kotlin_compiler_execution_strategy")
+fi
 
 mkdir -p "$work_dir"
 cp -a /workspace/. "$work_dir/"
@@ -27,6 +37,7 @@ esac
 cd "$work_dir"
 
 exec "$work_dir/gradlew" --no-daemon \
+  "${gradle_jvm_options[@]}" \
   --gradle-user-home "$gradle_user_home" \
   --project-cache-dir "$project_cache_dir" \
   --stacktrace "$task"

@@ -78,6 +78,21 @@ grep -Fq 'SIMPLEMATCH_CERTIFICATION_TRADING_DAY' \
   echo "Local certification does not support an explicit approved trading day." >&2
   exit 1
 }
+grep -Fq -- '--resume' "$repo_root/scripts/run-local-production-like-certification.sh" &&
+grep -Fq 'phase_marker_directory' "$repo_root/scripts/run-local-production-like-certification.sh" || {
+  echo "Local certification does not support reusing successful phase evidence." >&2
+  exit 1
+}
+grep -Fq 'SIMPLEMATCH_CERTIFICATION_TIMEOUT_SECONDS' \
+  "$repo_root/scripts/run-local-production-like-certification.sh" || {
+  echo "Local certification does not define a global bounded timeout." >&2
+  exit 1
+}
+grep -Fq -- '--connect-timeout 5 --max-time 15' \
+  "$repo_root/scripts/run-local-production-like-certification.sh" || {
+  echo "Kafka Connect checks do not bound their HTTP requests." >&2
+  exit 1
+}
 grep -Fq 'market-reference-${trading_day//-/}' \
   "$repo_root/scripts/run-local-production-like-certification.sh" || {
   echo "Local certification does not verify the approved artifact trading day." >&2
@@ -120,6 +135,37 @@ grep -Fq 'local-kubernetes-migrations.yaml' \
 grep -Fq 'local-kubernetes-workloads.yaml' \
   "$repo_root/scripts/run-local-production-like-certification.sh" || {
   echo "Local certification does not sequence migrations before runtime workloads." >&2
+  exit 1
+}
+grep -Fq 'document.dig("metadata", "name") == "redis" ? platform_manifest : workload_manifest' \
+  "$repo_root/scripts/run-local-production-like-certification.sh" || {
+  echo "Local certification must defer Kafka Connect until topic provisioning completes." >&2
+  exit 1
+}
+workload_apply_line="$(grep -n 'run_logged kubernetes-workload-apply kubectl apply -f "\$workload_manifest"' \
+  "$repo_root/scripts/run-local-production-like-certification.sh" | tail -1 | cut -d: -f1)"
+connector_register_line="$(grep -n 'run_logged kubernetes-risk-outbox-connector register_kubernetes_risk_connector' \
+  "$repo_root/scripts/run-local-production-like-certification.sh" | tail -1 | cut -d: -f1)"
+[[ -n "$workload_apply_line" && -n "$connector_register_line" &&
+  "$workload_apply_line" -lt "$connector_register_line" ]] || {
+  echo "Local certification must start Kafka Connect before registering the connector." >&2
+  exit 1
+}
+certification_migration_function="$(sed -n '/^apply_kubernetes_migrations()/,/^register_kubernetes_risk_connector()/p' \
+  "$repo_root/scripts/run-local-production-like-certification.sh")"
+grep -Fq "kubectl -n \"\$namespace\" wait \\" <<<"$certification_migration_function" &&
+grep -Fq -- "--for=jsonpath='{.status.readyReplicas}'=3 statefulset/kafka --timeout=300s" \
+  <<<"$certification_migration_function" || {
+  echo "Local certification does not wait for Kafka quorum before topic provisioning." >&2
+  exit 1
+}
+matching_barrier_function="$(sed -n '/^publish_local_matching_open_barriers()/,/^apply_kubernetes_migrations()/p' \
+  "$repo_root/scripts/run-local-production-like-certification.sh")"
+grep -Fq "kubectl -n \"\$namespace\" wait \\" <<<"$matching_barrier_function" &&
+grep -Fq -- "--for=jsonpath='{.status.readyReplicas}'=3 statefulset/kafka --timeout=300s" \
+  <<<"$matching_barrier_function" &&
+! grep -Fq 'rollout status statefulset/kafka' <<<"$matching_barrier_function" || {
+  echo "Local barrier publication must wait for Kafka readiness without assuming RollingUpdate." >&2
   exit 1
 }
 grep -Fq 'register_kubernetes_risk_connector' \

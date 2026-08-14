@@ -18,6 +18,7 @@ resources:
   - ../quickfix-gateway-quickfix-configmap.yaml
   - ../quickfix-gateway-statefulset.yaml
   - ../quickfix-gateway-pod-disruption-budget.yaml
+  - ../kafka-connect-pod-disruption-budget.yaml
   - java-services-pod-disruption-budgets.yaml
   - ../marketdata-streamer.yaml
   - java-services.yaml

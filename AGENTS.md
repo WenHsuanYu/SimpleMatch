@@ -12,6 +12,11 @@ These instructions apply to the whole repository.
 - Keep code, tests, documentation, the owning GitHub Issue, and configuration aligned in the same
   change. Use `tasks.md` only as historical navigation.
 - Do not widen scope without a concrete reason.
+- For local Docker/Kubernetes cleanup, inspect containers, images, volumes, and their references
+  before deleting anything. Preserve running containers, canonical kind clusters, images used by
+  them, persistent named volumes, and unrelated resources. Remove only exact stopped containers,
+  dangling images, or run-owned disposable volumes from completed tests; avoid blanket prune
+  commands and broad globs. Verify the remaining inventory and report what was removed.
 - PostgreSQL schema changes must use versioned Flyway migrations via the shared
   `simplematch.flyway-service` convention; do not reintroduce runtime migration or ad hoc schema
   initialization flows.

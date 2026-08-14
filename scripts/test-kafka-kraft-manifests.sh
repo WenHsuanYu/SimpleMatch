@@ -115,6 +115,10 @@ require_value(
   "Kafka broker resources must be bounded"
 )
 require_value(
+  container.dig("livenessProbe", "tcpSocket", "port") == "internal",
+  "Kafka liveness must only check the broker listener"
+)
+require_value(
   job.dig("spec", "activeDeadlineSeconds").is_a?(Integer) &&
     job.dig("spec", "activeDeadlineSeconds").between?(1, 300),
   "Kafka topic provisioning must have a bounded active deadline"

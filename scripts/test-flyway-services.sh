@@ -37,7 +37,15 @@ grep -Fq 'gradle_user_home="${GRADLE_USER_HOME:-/tmp/gradle}"' \
   "$repo_root/deploy/docker/run-flyway" &&
 grep -Fq 'project_cache_dir="${SIMPLEMATCH_GRADLE_PROJECT_CACHE_DIR:-/tmp/gradle-project}"' \
   "$repo_root/deploy/docker/run-flyway" &&
+grep -Fq 'gradle_jvm_args="${SIMPLEMATCH_GRADLE_JVM_ARGS:-}"' \
+  "$repo_root/deploy/docker/run-flyway" &&
+grep -Fq 'kotlin_compiler_execution_strategy="${SIMPLEMATCH_KOTLIN_COMPILER_EXECUTION_STRATEGY:-}"' \
+  "$repo_root/deploy/docker/run-flyway" &&
 grep -Fq 'exec "$work_dir/gradlew" --no-daemon \' \
+  "$repo_root/deploy/docker/run-flyway" &&
+grep -Fq '"-Dorg.gradle.jvmargs=$gradle_jvm_args"' \
+  "$repo_root/deploy/docker/run-flyway" &&
+grep -Fq '"-Dkotlin.compiler.execution.strategy=$kotlin_compiler_execution_strategy"' \
   "$repo_root/deploy/docker/run-flyway" &&
 grep -Fq '  --gradle-user-home "$gradle_user_home" \' \
   "$repo_root/deploy/docker/run-flyway" &&

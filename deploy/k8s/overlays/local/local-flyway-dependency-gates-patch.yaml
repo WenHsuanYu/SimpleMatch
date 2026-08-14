@@ -26,12 +26,25 @@
           drop: ["ALL"]
         readOnlyRootFilesystem: true
         runAsNonRoot: true
+        runAsUser: 999
+        runAsGroup: 999
 - op: add
   path: /spec/template/spec/containers/0/resources
   value:
     requests:
-      cpu: 100m
-      memory: 256Mi
-    limits:
       cpu: 500m
-      memory: 512Mi
+      memory: 1Gi
+    limits:
+      cpu: "2"
+      memory: 2Gi
+- op: add
+  path: /spec/template/spec/containers/0/env/-
+  value:
+    name: SIMPLEMATCH_GRADLE_JVM_ARGS
+    value: >-
+      -Xmx1g -XX:MaxMetaspaceSize=256m -XX:+UseSerialGC
+- op: add
+  path: /spec/template/spec/containers/0/env/-
+  value:
+    name: SIMPLEMATCH_KOTLIN_COMPILER_EXECUTION_STRATEGY
+    value: in-process

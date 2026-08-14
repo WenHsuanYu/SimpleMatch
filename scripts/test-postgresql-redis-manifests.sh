@@ -102,7 +102,8 @@ abort_unless(
   password_ref == {"name" => "simplematch-postgres-secrets", "key" => "postgres_password", "optional" => false},
   "PostgreSQL password must come from the external Secret contract"
 )
-abort_unless(postgres_container.fetch("command").include?("wal_level=logical"), "PostgreSQL must enable logical WAL")
+postgres_start_arguments = Array(postgres_container["command"]) + Array(postgres_container["args"])
+abort_unless(postgres_start_arguments.include?("wal_level=logical"), "PostgreSQL must enable logical WAL")
 
 postgres_resources = postgres_container.fetch("resources")
 abort_unless(

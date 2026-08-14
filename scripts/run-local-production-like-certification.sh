@@ -28,12 +28,18 @@ skip_compose=false
 skip_kubernetes=false
 matching_fleet_only=false
 keep_resources=false
+resume=false
 compose_started=false
 kubernetes_namespace_created=false
 failure_reason=""
 failed_phase=""
 completion_status="RUNNING"
 completed_phases=()
+certification_timeout_seconds="${SIMPLEMATCH_CERTIFICATION_TIMEOUT_SECONDS:-7200}"
+certification_deadline_epoch=0
+phase_marker_directory=""
+run_context_file=""
+source_signature=""
 compose_prefix=()
 compose_command=()
 
@@ -50,6 +56,9 @@ Options:
   --matching-fleet-only    Run a clean local Kafka plus Matching fleet gate; skip Flyway and other
                            runtime workloads. The report is intentionally PARTIAL.
   --keep-resources         Keep only this run's Compose project and Kubernetes namespace.
+  --resume                 Reuse successful phases from the supplied evidence directory and
+                           namespace; requires SIMPLEMATCH_CERTIFICATION_EVIDENCE_DIR and
+                           SIMPLEMATCH_CERTIFICATION_NAMESPACE.
   --dry-run                Print planned commands without changing external state.
   --help                   Show this help.
 
@@ -82,6 +91,18 @@ run_logged() {
   local phase="$1"
   shift
   local log_path="$evidence_dir/${phase}.log"
+  local marker_path="$phase_marker_directory/${phase}.ok"
+  local phase_signature
+
+  phase_signature="$(printf '%s\0' "$source_signature" "$phase" "$@" | sha256sum | awk '{print $1}')"
+
+  if [[ "$resume" == true && -f "$marker_path" && "$(<"$marker_path")" == "$phase_signature" ]]; then
+    completed_phases+=("$phase (reused)")
+    printf 'REUSE %-32s (%s)\n' "$phase" "$marker_path"
+    return 0
+  fi
+
+  check_certification_deadline
 
   if [[ "$dry_run" == true ]]; then
     print_command "$@"
@@ -96,11 +117,13 @@ run_logged() {
   set +e
   (
     set -e
-    "$@"
+    execute_with_certification_deadline "$@"
   ) >>"$log_path" 2>&1
   command_status=$?
   set -e
   if [[ "$command_status" -eq 0 ]]; then
+    mkdir -p "$phase_marker_directory"
+    printf '%s\n' "$phase_signature" >"$marker_path"
     completed_phases+=("$phase")
     printf 'PASS %-32s (%s)\n' "$phase" "$log_path"
     return 0
@@ -116,6 +139,18 @@ run_capture() {
   local phase="$1"
   local output_path="$2"
   shift 2
+  local marker_path="$phase_marker_directory/${phase}.ok"
+  local phase_signature
+
+  phase_signature="$(printf '%s\0' "$source_signature" "$phase" "$output_path" "$@" | sha256sum | awk '{print $1}')"
+
+  if [[ "$resume" == true && -f "$marker_path" && "$(<"$marker_path")" == "$phase_signature" ]]; then
+    completed_phases+=("$phase (reused)")
+    printf 'REUSE %-32s (%s)\n' "$phase" "$marker_path"
+    return 0
+  fi
+
+  check_certification_deadline
 
   if [[ "$dry_run" == true ]]; then
     print_command "$@"
@@ -127,11 +162,13 @@ run_capture() {
   set +e
   (
     set -e
-    "$@"
+    execute_with_certification_deadline "$@"
   ) >"$output_path" 2>&1
   command_status=$?
   set -e
   if [[ "$command_status" -eq 0 ]]; then
+    mkdir -p "$phase_marker_directory"
+    printf '%s\n' "$phase_signature" >"$marker_path"
     completed_phases+=("$phase")
     printf 'PASS %-32s (%s)\n' "$phase" "$output_path"
     return 0
@@ -141,6 +178,42 @@ run_capture() {
   failure_reason="Phase failed: $phase"
   cat "$output_path" >&2
   return "$command_status"
+}
+
+check_certification_deadline() {
+  local now remaining
+  if [[ "$certification_deadline_epoch" -eq 0 ]]; then
+    return 0
+  fi
+  now="$(date +%s)"
+  remaining=$((certification_deadline_epoch - now))
+  if (( remaining <= 0 )); then
+    die "Certification exceeded SIMPLEMATCH_CERTIFICATION_TIMEOUT_SECONDS=${certification_timeout_seconds}."
+  fi
+}
+
+certification_deadline_remaining() {
+  local now remaining
+  if [[ "$certification_deadline_epoch" -eq 0 ]]; then
+    printf '%s\n' 0
+    return 0
+  fi
+  now="$(date +%s)"
+  remaining=$((certification_deadline_epoch - now))
+  (( remaining > 0 )) || return 1
+  printf '%s\n' "$remaining"
+}
+
+execute_with_certification_deadline() {
+  local remaining
+  check_certification_deadline
+  if declare -F "$1" >/dev/null 2>&1; then
+    "$@"
+    return
+  fi
+  remaining="$(certification_deadline_remaining)" || die \
+    "Certification deadline expired while starting $1."
+  timeout --foreground "${remaining}s" "$@"
 }
 
 write_report() {
@@ -233,6 +306,10 @@ while [[ $# -gt 0 ]]; do
       keep_resources=true
       shift
       ;;
+    --resume)
+      resume=true
+      shift
+      ;;
     --dry-run)
       dry_run=true
       shift
@@ -254,6 +331,12 @@ done
 
 [[ -f "$compose_file" ]] || die "Production-like Compose file does not exist: $compose_file"
 
+[[ "$certification_timeout_seconds" =~ ^[1-9][0-9]*$ ]] || die \
+  "SIMPLEMATCH_CERTIFICATION_TIMEOUT_SECONDS must be a positive integer: $certification_timeout_seconds"
+if [[ "$dry_run" == false ]]; then
+  command -v timeout >/dev/null 2>&1 || die 'timeout is required for bounded certification commands.'
+fi
+
 if [[ "$dry_run" == true ]]; then
   compose_prefix=(docker compose)
 elif command -v docker >/dev/null 2>&1 && docker compose version >/dev/null 2>&1; then
@@ -267,6 +350,42 @@ compose_command=("${compose_prefix[@]}" --project-name "$compose_project" --file
 
 run_id="$(date -u +%Y%m%d-%H%M%S)-$$"
 namespace="${SIMPLEMATCH_CERTIFICATION_NAMESPACE:-simplematch-local-cert-${run_id}}"
+phase_marker_directory="$evidence_dir/phases"
+run_context_file="$evidence_dir/run-context"
+certification_deadline_epoch=$(( $(date +%s) + certification_timeout_seconds ))
+source_signature="$({
+  git rev-parse HEAD
+  git ls-files -co --exclude-standard -- \
+    AGENTS.md deploy/k8s deploy/docker/run-flyway scripts/run-local-production-like-certification.sh \
+    scripts/test-kubernetes-overlays.sh scripts/test-local-kubernetes-dependencies.sh \
+    scripts/test-postgresql-redis-manifests.sh scripts/test-flyway-services.sh |
+    sort -u |
+    while IFS= read -r path; do
+      sha256sum "$path"
+    done
+} | sha256sum | awk '{print $1}')"
+
+if [[ "$resume" == true ]]; then
+  [[ -n "${SIMPLEMATCH_CERTIFICATION_EVIDENCE_DIR:-}" ]] || die \
+    '--resume requires SIMPLEMATCH_CERTIFICATION_EVIDENCE_DIR.'
+  [[ -n "${SIMPLEMATCH_CERTIFICATION_NAMESPACE:-}" ]] || die \
+    '--resume requires SIMPLEMATCH_CERTIFICATION_NAMESPACE.'
+  [[ -f "$run_context_file" ]] || die "Resume context is missing: $run_context_file"
+  expected_context="$(printf 'namespace=%s\ncluster=%s\ntrading_day=%s\nsource_signature=%s\n' \
+    "$namespace" "$kind_cluster" "$certification_trading_day" "$source_signature")"
+  actual_context="$(cat "$run_context_file")"
+  [[ "$actual_context" == "$expected_context" ]] || die \
+    "Resume context does not match the current cluster, trading day, namespace, or source."
+  [[ "$dry_run" == true ]] || kubectl get namespace "$namespace" >/dev/null 2>&1 || die \
+    "Resume namespace does not exist: $namespace"
+  kubernetes_namespace_created=true
+else
+  if [[ "$dry_run" == false ]]; then
+    mkdir -p "$evidence_dir"
+    printf 'namespace=%s\ncluster=%s\ntrading_day=%s\nsource_signature=%s\n' \
+      "$namespace" "$kind_cluster" "$certification_trading_day" "$source_signature" >"$run_context_file"
+  fi
+fi
 
 if [[ "$skip_kubernetes" == false ]]; then
   if [[ "$dry_run" == false ]]; then
@@ -301,6 +420,7 @@ wait_for_compose() {
   local services service container_id state health ready attempt
   mapfile -t services < <("${compose_command[@]}" config --services)
   for attempt in $(seq 1 90); do
+    check_certification_deadline
     ready=true
     for service in "${services[@]}"; do
       container_id="$("${compose_command[@]}" ps -q "$service")"
@@ -437,7 +557,7 @@ documents.each do |document|
            when "StatefulSet"
              %w[postgres kafka].include?(document.dig("metadata", "name")) ? platform_manifest : workload_manifest
            when "Deployment"
-             %w[redis kafka-connect].include?(document.dig("metadata", "name")) ? platform_manifest : workload_manifest
+             document.dig("metadata", "name") == "redis" ? platform_manifest : workload_manifest
            else
              platform_manifest
            end
@@ -543,7 +663,8 @@ publish_local_matching_open_barriers() {
     cmake --preset full-native-dev
   fi
   cmake --build --preset full-native-dev --target simplematch-matching-kafka-fixture-publisher --parallel
-  kubectl -n "$namespace" rollout status statefulset/kafka --timeout=300s
+  kubectl -n "$namespace" wait \
+    --for=jsonpath='{.status.readyReplicas}'=3 statefulset/kafka --timeout=300s
   kubectl -n "$namespace" wait --for=condition=complete \
     job/kafka-topic-provisioning --timeout=300s
   kubectl -n "$namespace" delete pod "$fixture_pod" --ignore-not-found --wait=true >/dev/null
@@ -563,6 +684,8 @@ publish_local_matching_open_barriers() {
 apply_kubernetes_migrations() {
   local migration_manifest="$1"
   local workload
+  kubectl -n "$namespace" wait \
+    --for=jsonpath='{.status.readyReplicas}'=3 statefulset/kafka --timeout=300s
   kubectl apply -f "$migration_manifest" \
     --selector 'app.kubernetes.io/component=topic-provisioning'
   kubectl -n "$namespace" wait --for=condition=complete \
@@ -585,6 +708,7 @@ register_kubernetes_risk_connector() (
   local port_forward_log="$evidence_dir/kafka-connect-port-forward.log"
   local port_forward_pid
   local status_code
+  local -a curl_options=(--connect-timeout 5 --max-time 15)
 
   kubectl -n "$namespace" rollout status deployment/kafka-connect --timeout=300s
   kubectl -n "$namespace" get configmap risk-service-outbox-connector \
@@ -601,14 +725,15 @@ register_kubernetes_risk_connector() (
   trap stop_port_forward EXIT
 
   for _ in $(seq 1 90); do
-    if curl -fsS "$connector_url/connectors" >/dev/null 2>&1; then
+    check_certification_deadline
+    if curl "${curl_options[@]}" -fsS "$connector_url/connectors" >/dev/null 2>&1; then
       break
     fi
     sleep 2
   done
-  curl -fsS "$connector_url/connectors" >/dev/null
+  curl "${curl_options[@]}" -fsS "$connector_url/connectors" >/dev/null
 
-  status_code="$(curl -sS -o "$response_file" -w '%{http_code}' \
+  status_code="$(curl "${curl_options[@]}" -sS -o "$response_file" -w '%{http_code}' \
     -X POST -H 'Content-Type: application/json' --data-binary @"$connector_json" \
     "$connector_url/connectors")"
   case "$status_code" in
@@ -616,7 +741,7 @@ register_kubernetes_risk_connector() (
       ;;
     409)
       jq -c '.config' "$connector_json" >"$connector_config"
-      curl -fsS -X PUT -H 'Content-Type: application/json' \
+      curl "${curl_options[@]}" -fsS -X PUT -H 'Content-Type: application/json' \
         --data-binary @"$connector_config" \
         "$connector_url/connectors/risk-service-outbox/config" >/dev/null
       ;;
@@ -627,14 +752,15 @@ register_kubernetes_risk_connector() (
   esac
 
   for _ in $(seq 1 90); do
-    if curl -fsS "$connector_url/connectors/risk-service-outbox/status" \
+    check_certification_deadline
+    if curl "${curl_options[@]}" -fsS "$connector_url/connectors/risk-service-outbox/status" \
       | jq -e '.connector.state == "RUNNING" and (.tasks | length > 0) and .tasks[0].state == "RUNNING"' \
       >"$status_file" 2>/dev/null; then
       exit 0
     fi
     sleep 2
   done
-  curl -fsS "$connector_url/connectors/risk-service-outbox/status" | tee "$status_file" >&2
+  curl "${curl_options[@]}" -fsS "$connector_url/connectors/risk-service-outbox/status" | tee "$status_file" >&2
   exit 1
 )
 
@@ -655,13 +781,17 @@ select_matching_workload() {
 wait_for_kubernetes_workloads() {
   local workload
   for workload in account-service risk-service persistence market-data-projection marketdata-publisher marketdata-streamer query-service; do
+    check_certification_deadline
     kubectl -n "$namespace" rollout status "deployment/${workload}" --timeout=300s
   done
+  check_certification_deadline
   kubectl -n "$namespace" rollout status statefulset/matching --timeout=600s
+  check_certification_deadline
   kubectl -n "$namespace" rollout status statefulset/quickfix-gateway --timeout=300s
 }
 
 wait_for_local_matching_fleet() {
+  check_certification_deadline
   kubectl -n "$namespace" rollout status statefulset/matching --timeout=600s
 }
 
@@ -702,8 +832,8 @@ if [[ "$skip_kubernetes" == false ]]; then
     print_command kubectl apply -f "$evidence_dir/local-kubernetes-platform.yaml"
     print_command kubectl apply -f "$evidence_dir/local-kubernetes-migrations.yaml"
     print_command kubectl wait --for=condition=complete job/account-service-flyway --timeout=300s
-    print_command register_kubernetes_risk_connector
     print_command kubectl apply -f "$evidence_dir/local-kubernetes-workloads.yaml"
+    print_command register_kubernetes_risk_connector
     print_command bash "$repo_root/scripts/verify-matching-fleet-live.sh" --namespace "$namespace" --allow-shared-node --allow-local-image
   else
     run_logged kubernetes-image-normalization bash \
@@ -720,7 +850,11 @@ if [[ "$skip_kubernetes" == false ]]; then
     input_manifest="$evidence_dir/local-kubernetes-inputs.yaml"
     run_logged kubernetes-manifest-split split_kubernetes_manifest \
       "$rendered_manifest" "$platform_manifest" "$migration_manifest" "$workload_manifest" "$input_manifest"
-    create_certification_namespace
+    if [[ "$resume" == true ]]; then
+      printf 'Reusing certification namespace %s.\n' "$namespace"
+    else
+      create_certification_namespace
+    fi
     run_logged kubernetes-inputs apply_local_kubernetes_inputs "$matching_digest" "$input_manifest"
     run_logged kubernetes-platform-apply kubectl apply -f "$platform_manifest"
     if [[ "$matching_fleet_only" == true ]]; then
@@ -729,9 +863,9 @@ if [[ "$skip_kubernetes" == false ]]; then
         "$workload_manifest" "$matching_workload_manifest"
       run_logged kubernetes-matching-apply kubectl apply -f "$matching_workload_manifest"
     else
-      run_logged kubernetes-migrations apply_kubernetes_migrations "$migration_manifest"
-      run_logged kubernetes-risk-outbox-connector register_kubernetes_risk_connector
-      run_logged kubernetes-workload-apply kubectl apply -f "$workload_manifest"
+    run_logged kubernetes-migrations apply_kubernetes_migrations "$migration_manifest"
+    run_logged kubernetes-workload-apply kubectl apply -f "$workload_manifest"
+    run_logged kubernetes-risk-outbox-connector register_kubernetes_risk_connector
     fi
     run_logged kubernetes-open-barriers publish_local_matching_open_barriers "$matching_digest"
     if [[ "$matching_fleet_only" == true ]]; then

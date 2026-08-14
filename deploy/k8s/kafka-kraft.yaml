@@ -328,11 +328,8 @@ spec:
             failureThreshold: 3
             timeoutSeconds: 5
           livenessProbe:
-            exec:
-              command:
-                - /opt/kafka/bin/kafka-broker-api-versions.sh
-                - --bootstrap-server
-                - 127.0.0.1:9092
+            tcpSocket:
+              port: internal
             periodSeconds: 10
             failureThreshold: 3
             timeoutSeconds: 5
@@ -347,6 +344,8 @@ spec:
               readOnly: true
             - name: kafka-tmp
               mountPath: /tmp
+            - name: kafka-logs
+              mountPath: /opt/kafka/logs
       volumes:
         - name: kafka-generated-config
           emptyDir: {}
@@ -358,6 +357,8 @@ spec:
               - key: broker-init.sh
                 path: broker-init.sh
         - name: kafka-tmp
+          emptyDir: {}
+        - name: kafka-logs
           emptyDir: {}
   volumeClaimTemplates:
     - metadata:

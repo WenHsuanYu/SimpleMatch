@@ -71,18 +71,16 @@ spec:
               value: simplematch-connect-offsets
             - name: STATUS_STORAGE_TOPIC
               value: simplematch-connect-status
-            - name: CONFIG_STORAGE_REPLICATION_FACTOR
+            - name: CONNECT_CONFIG_STORAGE_REPLICATION_FACTOR
               value: "3"
-            - name: OFFSET_STORAGE_REPLICATION_FACTOR
+            - name: CONNECT_OFFSET_STORAGE_REPLICATION_FACTOR
               value: "3"
-            - name: STATUS_STORAGE_REPLICATION_FACTOR
+            - name: CONNECT_STATUS_STORAGE_REPLICATION_FACTOR
               value: "3"
-            - name: CONFIG_STORAGE_MIN_ISR
-              value: "2"
-            - name: OFFSET_STORAGE_MIN_ISR
-              value: "2"
-            - name: STATUS_STORAGE_MIN_ISR
-              value: "2"
+            - name: CONNECT_CONFIG_PROVIDERS
+              value: env
+            - name: CONNECT_CONFIG_PROVIDERS_ENV_CLASS
+              value: org.apache.kafka.common.config.provider.EnvVarConfigProvider
             - name: KEY_CONVERTER
               value: org.apache.kafka.connect.storage.StringConverter
             - name: VALUE_CONVERTER

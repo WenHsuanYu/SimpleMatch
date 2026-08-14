@@ -12,6 +12,13 @@ owners on the restarted local kind node. It is deliberately a `PARTIAL` local re
 Matching fleet wiring, but it does not replace the full cross-service certification or an external
 production certification.
 
+The fresh in-cluster cross-service run `kubernetes-resume-20260815-9` also completed the Kubernetes
+runtime phases: all seven Flyway Jobs, workload apply, Kafka Connect connector registration, Open
+Barriers, seven Java rollouts, QuickFIX, and the 15-pod Matching fleet. Its report remains
+`PARTIAL` because image build and Compose phases were intentionally skipped and the namespace was
+kept for evidence collection. This is deployment/runtime evidence, not completion of the native
+Matching ring/replay/performance work in #127, #128, and #136.
+
 ## What happened
 
 The first report failed while loading a Spring Boot image into kind with `ctr: wrong diff id`.
@@ -51,6 +58,19 @@ startup gate still failed. The failures appeared in dependency order rather than
 11. The original live verifier sorted StatefulSet pod names lexically (`matching-10` before
     `matching-2`) and rejected the repository's exact local image tag. It therefore produced a
     false failure after the fleet had become Ready.
+12. The local Matching profile had 129 instruments on its largest partition. With 1,024 resting
+    orders per instrument, the runtime needs `129 * 2 * 1,024 + 2 = 264,194` output slots,
+    including the end marker. The configured 262,144 slots were therefore correctly rejected at
+    startup; the local power-of-two capacity is now 524,288, with the same bound for pending
+    publications.
+13. The Java NetworkPolicy allowed the Kubernetes Service CIDR but not the kind control-plane
+    address used after Service-to-endpoint translation (`:6443`). Spring Cloud Kubernetes then
+    timed out while reading ConfigMaps. The local overlay now allows the canonical kind Docker
+    network to reach the API port; this is a local-kind rule, not a production network policy.
+14. The local QuickFIX PVC patch initially replaced the complete `volumeClaimTemplates` item and
+    dropped `accessModes` and `resources.storage`. Kubernetes rejected the StatefulSet before
+    startup. The patch now repeats the complete local RWO PVC contract (`2Gi`, `ReadWriteOnce`,
+    and `simplematch-rwo-pod`).
 
 The final live run is therefore intentionally gated by both dependency order and adequate Docker
 capacity. A 1 GiB Docker limit cannot run this workload set. The successful fresh fleet-only run
@@ -108,6 +128,10 @@ Pods are not merely checked later; they are created only after the migration Job
 | QuickFIX inherited `production` | Validator rejected a production profile without the production ConfigMap source | Local overlay sets `SPRING_PROFILES_ACTIVE=local` and constrains local resources | Uses the local contract without weakening staging/production templates |
 | Superseded publisher runtime exited cleanly | Deployment restarted an intentionally completed process | Local overlay sets `marketdata-publisher` replicas to zero | Represents the accepted removal target instead of adding a keepalive workaround |
 | Diagnostic resources consumed node capacity | Scheduler reported `Insufficient memory` | Delete only certification namespaces created by the investigation; preserve `default` resources; use a sufficiently sized Docker limit | Cleans the scoped test environment without changing production-shaped requests |
+| Matching local output bound was smaller than the mathematical burst | `matching output ring must hold one worst-case event burst and its end marker` | Increase the local power-of-two output and pending-publication capacities to 524,288 | Keeps the 1,024-order local functional bound honest instead of weakening the runtime check |
+| Java API traffic was blocked after kind Service translation | Spring Cloud Kubernetes ConfigMap reads ended in `SocketTimeoutException` | Add a local-only API egress policy for the kind network and Kubernetes API port | Restores the required local ConfigMap/Lease path without widening staging or production policy |
+| QuickFIX local PVC patch omitted inherited fields | Kubernetes rejected missing `accessModes` and `resources.storage` | Preserve the complete RWO PVC spec while adding the explicit local StorageClass | Makes the StorageClass guarantee executable rather than declarative only |
+| Kafka Connect had no disruption guardrail | Static review found no PDB for the two-worker deployment | Add `minAvailable: 1` PDB | Matches the accepted planned-disruption contract |
 
 ## How the issue was narrowed down
 
@@ -130,6 +154,12 @@ docker exec KIND_NODE ctr -n k8s.io images ls
 The certification now records each phase under its evidence directory and writes `failed_phase`
 and `note` into `report.md`. This matters because a report marked `FAILED` without identifying
 whether image load, input application, or workload startup failed is not actionable evidence.
+
+Successful phases also write a source-bound marker under `evidence-dir/phases/`. A later diagnostic
+run can use `--resume` with the same evidence directory and namespace to reuse those phases. The
+runner refuses to reuse markers when the relevant source/configuration fingerprint, cluster,
+trading day, or namespace differs; this prevents an old phase result from being presented as new
+runtime evidence.
 
 The focused regression checks are:
 
@@ -190,6 +220,19 @@ SIMPLEMATCH_CERTIFICATION_TRADING_DAY=2026-08-11 \
 SIMPLEMATCH_MARKET_REFERENCE_DELIVERY_MANIFEST=tools/market-reference-builder/data/2026-08-11/delivery/manifest.yaml \
 bash scripts/run-local-production-like-certification.sh
 ```
+
+When a diagnostic run uses `--keep-resources`, a later attempt can continue from its successful
+phase markers:
+
+```bash
+SIMPLEMATCH_CERTIFICATION_NAMESPACE=<same-namespace> \
+SIMPLEMATCH_CERTIFICATION_EVIDENCE_DIR=<same-evidence-directory> \
+KUBECONFIG=<same-kubeconfig> \
+bash scripts/run-local-production-like-certification.sh --resume --keep-resources
+```
+
+This is a bounded rerun convenience, not a way to skip a changed manifest or claim a new fault
+test from an old result.
 
 Do not use `--keep-resources` for a normal run. It is useful only while diagnosing a failure. The
 runner removes its own Compose project and generated namespace on exit while retaining the

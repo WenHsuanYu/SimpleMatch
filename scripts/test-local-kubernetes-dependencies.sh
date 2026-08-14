@@ -46,6 +46,8 @@ require_value(postgres_claim.dig("spec", "accessModes") == ["ReadWriteOnce"], "P
 require_value(postgres_pdb.dig("spec", "minAvailable") == 1, "PostgreSQL PDB must protect the sole replica")
 require_value(postgres_container&.dig("resources", "requests") && postgres_container.dig("resources", "limits"), "PostgreSQL must define resources")
 require_value(postgres_container&.key?("readinessProbe"), "PostgreSQL must define a readiness probe")
+require_value(postgres_container&.dig("command").nil?, "PostgreSQL must preserve the image entrypoint")
+require_value(postgres_container&.dig("args") == ["-c", "wal_level=logical"], "PostgreSQL must pass wal_level through container args")
 require_value(postgres_service.dig("spec", "ports", 0, "port") == 5432, "PostgreSQL Service must expose 5432")
 
 redis = resources.fetch(["Deployment", "redis"])
@@ -73,6 +75,8 @@ kafka_pdb = resources.fetch(["PodDisruptionBudget", "kafka"])
 kafka_service = resources.fetch(["Service", "kafka"])
 kafka_headless = resources.fetch(["Service", "kafka-headless"])
 topic_job = resources.fetch(["Job", "kafka-topic-provisioning"])
+kafka_volume_mounts = kafka_container.fetch("volumeMounts")
+kafka_volumes = kafka_spec.fetch("volumes")
 
 require_value(kafka.fetch("spec").fetch("replicas") == 3, "Kafka must have three broker/controller replicas")
 require_value(kafka_spec.dig("nodeSelector", "simplematch.io/node-pool") == "local-resilience", "Kafka must use local-resilience workers")
@@ -80,6 +84,14 @@ require_value(kafka_claims.length == 1 && kafka_claims.fetch(0).dig("spec", "sto
 require_value(kafka_pdb.dig("spec", "minAvailable") == 2, "Kafka PDB must retain two brokers")
 require_value(kafka_container&.dig("resources", "requests") && kafka_container.dig("resources", "limits"), "Kafka must define resources")
 require_value(kafka_container&.key?("readinessProbe") && kafka_container.key?("startupProbe"), "Kafka must define startup and readiness probes")
+require_value(
+  kafka_volume_mounts.any? { |mount| mount["name"] == "kafka-logs" && mount["mountPath"] == "/opt/kafka/logs" },
+  "Kafka must provide a writable log path"
+)
+require_value(
+  kafka_volumes.any? { |volume| volume["name"] == "kafka-logs" && volume["emptyDir"] == {} },
+  "Kafka log path must use an ephemeral writable volume"
+)
 require_value(kafka_service.dig("spec", "ports", 0, "port") == 9092, "Kafka bootstrap Service must expose 9092")
 require_value(kafka_headless.dig("spec", "clusterIP") == "None", "Kafka broker DNS must use a headless Service")
 require_value(topic_job.dig("spec", "activeDeadlineSeconds") == 300, "Kafka topic provisioning must be bounded")
@@ -87,13 +99,17 @@ topic_container = topic_job.dig("spec", "template", "spec", "containers", 0)
 require_value(topic_container&.dig("resources", "requests") && topic_container.dig("resources", "limits"), "Kafka topic provisioning must define resources")
 
 connect = resources.fetch(["Deployment", "kafka-connect"])
+connect_pdb = resources.fetch(["PodDisruptionBudget", "kafka-connect"])
 connect_spec = connect.fetch("spec").fetch("template").fetch("spec")
 connect_container = connect_spec.fetch("containers").find { |container| container.fetch("name") == "kafka-connect" }
 connect_service = resources.fetch(["Service", "kafka-connect"])
 connect_environment = connect_container.fetch("env").to_h { |entry| [entry.fetch("name"), entry] }
 connect_config = resources.fetch(["ConfigMap", "simplematch-kafka-connect-config"])
+connect_volume_mounts = connect_container.fetch("volumeMounts")
+connect_volumes = connect_spec.fetch("volumes")
 
 require_value(connect.fetch("spec").fetch("replicas") == 2, "Local Kafka Connect must retain two workers")
+require_value(connect_pdb.dig("spec", "minAvailable") == 1, "Kafka Connect PDB must retain one worker")
 require_value(
   connect_spec.dig("nodeSelector", "simplematch.io/node-pool") == "local-resilience",
   "Local Kafka Connect must use local-resilience workers"
@@ -104,10 +120,11 @@ require_value(
   "Local Kafka Connect must use the in-cluster plaintext Kafka endpoint"
 )
 require_value(
-  connect_environment.dig("CONFIG_STORAGE_REPLICATION_FACTOR", "value") == "3" &&
-    connect_environment.dig("OFFSET_STORAGE_REPLICATION_FACTOR", "value") == "3" &&
-    connect_environment.dig("STATUS_STORAGE_REPLICATION_FACTOR", "value") == "3",
-  "Local Kafka Connect internal topics must use replication factor three"
+  connect_environment.dig("CONNECT_CONFIG_STORAGE_REPLICATION_FACTOR", "value") == "3" &&
+    connect_environment.dig("CONNECT_OFFSET_STORAGE_REPLICATION_FACTOR", "value") == "3" &&
+    connect_environment.dig("CONNECT_STATUS_STORAGE_REPLICATION_FACTOR", "value") == "3" &&
+    connect_environment.keys.none? { |name| name.end_with?("_MIN_ISR") },
+  "Local Kafka Connect internal topics must declare replication factor three; topic ISR belongs to provisioning"
 )
 require_value(
   connect_environment.dig("RISK_SERVICE_POSTGRES_USER", "valueFrom", "secretKeyRef", "name") == "simplematch-postgres-secrets" &&
@@ -116,6 +133,24 @@ require_value(
 )
 require_value(connect_container&.dig("resources", "requests") && connect_container.dig("resources", "limits"), "Local Kafka Connect must define resources")
 require_value(connect_container&.key?("readinessProbe") && connect_container.key?("startupProbe"), "Local Kafka Connect must define bounded probes")
+require_value(
+  connect_spec.dig("securityContext", "runAsUser") == 1001 &&
+    connect_spec.dig("securityContext", "runAsGroup") == 1001 &&
+    connect_spec.dig("securityContext", "fsGroup") == 1001,
+  "Local Kafka Connect must declare its numeric kafka identity"
+)
+%w[/kafka/config /kafka/data /kafka/logs].each do |mount_path|
+  require_value(
+    connect_volume_mounts.any? { |mount| mount["mountPath"] == mount_path },
+    "Local Kafka Connect must provide a writable #{mount_path}"
+  )
+end
+%w[kafka-config kafka-data kafka-logs].each do |volume_name|
+  require_value(
+    connect_volumes.any? { |volume| volume["name"] == volume_name && volume["emptyDir"] == {} },
+    "Local Kafka Connect #{volume_name} volume must be ephemeral and writable"
+  )
+end
 require_value(connect_service.dig("spec", "ports", 0, "port") == 8083, "Kafka Connect Service must expose 8083")
 require_value(
   connect_spec.fetch("volumes", []).none? { |volume| volume.dig("name") == "postgres-tls" || volume.dig("name") == "kafka-tls" },
@@ -135,8 +170,25 @@ flyway_jobs.each do |job|
   require_value(container&.dig("resources", "requests") && container.dig("resources", "limits"), "#{job_name} must define resources")
   require_value(wait_container&.fetch("name") == "wait-for-postgres", "#{job_name} must wait for PostgreSQL readiness")
   require_value(wait_container.dig("resources", "requests") && wait_container.dig("resources", "limits"), "#{job_name} readiness gate must define resources")
+  require_value(
+    wait_container.dig("securityContext", "runAsUser") == 999 &&
+      wait_container.dig("securityContext", "runAsGroup") == 999,
+    "#{job_name} PostgreSQL readiness gate must use the image's numeric postgres identity"
+  )
 end
 
 require_value(!resources.key?(["NetworkPolicy", "simplematch-java-services-local-bridge"]), "local workloads must not depend on the old Compose bridge")
+require_value(
+  resources.fetch(["NetworkPolicy", "simplematch-java-services-kubernetes-api"]).dig("spec", "egress")&.any? { |rule|
+    rule.dig("to", 0, "ipBlock", "cidr") == "10.96.0.0/12" && rule.dig("ports", 0, "port") == 443
+  },
+  "local Java workloads must be allowed to read the Kubernetes API"
+)
+require_value(
+  resources.fetch(["NetworkPolicy", "simplematch-java-services-kubernetes-api"]).dig("spec", "egress")&.any? { |rule|
+    rule.dig("to", 0, "ipBlock", "cidr") == "172.18.0.0/16" && rule.dig("ports", 0, "port") == 6443
+  },
+  "local Java workloads must be allowed to reach the kind control-plane API"
+)
 puts "Local Kubernetes dependency checks passed."
 RUBY
