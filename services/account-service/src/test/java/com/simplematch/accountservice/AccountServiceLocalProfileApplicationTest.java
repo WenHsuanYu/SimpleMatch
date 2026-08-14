@@ -10,7 +10,7 @@ import org.springframework.test.context.ActiveProfiles;
 
 @SpringBootTest(
     properties = {
-      "simplematch.postgres.dsn=jdbc:h2:mem:account-local;MODE=PostgreSQL;DB_CLOSE_DELAY=-1;INIT=CREATE SCHEMA IF NOT EXISTS account_service\\;SET SCHEMA account_service",
+      "simplematch.postgres.dsn=jdbc:h2:mem:account_local;MODE=PostgreSQL;DB_CLOSE_DELAY=-1;INIT=CREATE SCHEMA IF NOT EXISTS account_service\\;SET SCHEMA account_service",
       "simplematch.account-service.grpc.enabled=false",
       "spring.flyway.enabled=false",
       "spring.main.web-application-type=none"

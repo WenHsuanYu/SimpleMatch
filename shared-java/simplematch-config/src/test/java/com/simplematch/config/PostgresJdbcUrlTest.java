@@ -17,6 +17,16 @@ class PostgresJdbcUrlTest {
   }
 
   @Test
+  void acceptsThePostgresUriSchemeAlias() {
+    final PostgresJdbcUrl settings =
+        PostgresJdbcUrl.parse("postgres://alice:secret@db.example/simplematch");
+
+    assertThat(settings.jdbcUrl()).isEqualTo("jdbc:postgresql://db.example:5432/simplematch");
+    assertThat(settings.username()).isEqualTo("alice");
+    assertThat(settings.password()).isEqualTo("secret");
+  }
+
+  @Test
   void preservesJdbcUrlsWithoutInventingCredentials() {
     final PostgresJdbcUrl settings =
         PostgresJdbcUrl.parse("jdbc:postgresql://localhost:5432/simplematch");
