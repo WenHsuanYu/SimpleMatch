@@ -1,0 +1,454 @@
+# Local-only, fixed three-broker Kafka KRaft lab.
+#
+# The resource is intentionally not wired into a shared Kustomization by this slice. The local
+# overlay should opt in explicitly so staging and production continue to use their external Kafka
+# templates.
+apiVersion: v1
+kind: Service
+metadata:
+  name: kafka-headless
+  labels:
+    app.kubernetes.io/name: kafka
+    app.kubernetes.io/component: broker
+    app.kubernetes.io/part-of: simplematch
+spec:
+  clusterIP: None
+  publishNotReadyAddresses: true
+  ports:
+    - name: internal
+      port: 9092
+      targetPort: internal
+    - name: controller
+      port: 9093
+      targetPort: controller
+  selector:
+    app.kubernetes.io/name: kafka
+    app.kubernetes.io/component: broker
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: kafka
+  labels:
+    app.kubernetes.io/name: kafka
+    app.kubernetes.io/component: bootstrap
+    app.kubernetes.io/part-of: simplematch
+spec:
+  ports:
+    - name: internal
+      port: 9092
+      targetPort: internal
+  selector:
+    app.kubernetes.io/name: kafka
+    app.kubernetes.io/component: broker
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: kafka-kraft-config
+  labels:
+    app.kubernetes.io/name: kafka
+    app.kubernetes.io/component: broker
+    app.kubernetes.io/part-of: simplematch
+immutable: true
+data:
+  # This is a lab fixture identity, not a credential. Every ordinal must use this same ID.
+  cluster_id: 5L6g3nShT-eMCtK--X86sw
+  matching-producer.properties: |-
+    acks=all
+    enable.idempotence=true
+  broker-init.sh: |-
+    #!/bin/sh
+    set -eu
+
+    fail() {
+      printf 'Kafka KRaft bootstrap refused: %s\n' "$*" >&2
+      exit 1
+    }
+
+    data_dir="${KAFKA_DATA_DIR:-/var/lib/kafka/data}"
+    config_dir="${KAFKA_CONFIG_DIR:-/etc/kafka/generated}"
+    storage_bin="${KAFKA_STORAGE_BIN:-/opt/kafka/bin/kafka-storage.sh}"
+    cluster_id="${KAFKA_CLUSTER_ID:?KAFKA_CLUSTER_ID is required}"
+    pod_name="${POD_NAME:?POD_NAME is required}"
+    node_id="${NODE_ID:?NODE_ID is required}"
+
+    case "$node_id" in
+      0|1|2) ;;
+      *) fail "node ID must be one of 0, 1, or 2, got $node_id" ;;
+    esac
+    case "$pod_name" in
+      kafka-0|kafka-1|kafka-2) ;;
+      *) fail "unexpected StatefulSet pod name: $pod_name" ;;
+    esac
+    [ "$pod_name" = "kafka-$node_id" ] ||
+      fail "pod $pod_name does not match node ID $node_id"
+
+    mkdir -p "$data_dir" "$config_dir"
+    config_file="$config_dir/server.properties"
+    cat >"$config_file" <<EOF
+    process.roles=broker,controller
+    node.id=$node_id
+    controller.quorum.voters=0@kafka-0.kafka-headless:9093,1@kafka-1.kafka-headless:9093,2@kafka-2.kafka-headless:9093
+    listeners=INTERNAL://0.0.0.0:9092,CONTROLLER://0.0.0.0:9093
+    advertised.listeners=INTERNAL://$pod_name.kafka-headless:9092
+    listener.security.protocol.map=INTERNAL:PLAINTEXT,CONTROLLER:PLAINTEXT
+    inter.broker.listener.name=INTERNAL
+    controller.listener.names=CONTROLLER
+    log.dirs=$data_dir
+    num.partitions=15
+    default.replication.factor=3
+    min.insync.replicas=2
+    offsets.topic.replication.factor=3
+    transaction.state.log.replication.factor=3
+    transaction.state.log.min.isr=2
+    auto.create.topics.enable=false
+    unclean.leader.election.enable=false
+    log.retention.ms=2592000000
+    EOF
+
+    meta_file="$data_dir/meta.properties"
+    if [ -e "$meta_file" ]; then
+      [ -f "$meta_file" ] || fail "$meta_file exists but is not a regular file"
+      actual_cluster_id="$(awk -F= '$1 == "cluster.id" { print $2 }' "$meta_file" | tail -n 1)"
+      actual_node_id="$(awk -F= '$1 == "node.id" { print $2 }' "$meta_file" | tail -n 1)"
+      [ "$actual_cluster_id" = "$cluster_id" ] ||
+        fail "existing cluster ID $actual_cluster_id does not match $cluster_id"
+      [ "$actual_node_id" = "$node_id" ] ||
+        fail "existing node ID $actual_node_id does not match $node_id"
+      printf 'Kafka KRaft metadata verified for %s (cluster %s).\n' "$pod_name" "$cluster_id"
+    else
+      unexpected_entry="$(find "$data_dir" -mindepth 1 -maxdepth 1 ! -name lost+found -print -quit)"
+      [ -z "$unexpected_entry" ] ||
+        fail "data exists without meta.properties: $unexpected_entry"
+      "$storage_bin" format --config "$config_file" --cluster-id "$cluster_id"
+      [ -f "$meta_file" ] || fail "storage format did not create $meta_file"
+      actual_cluster_id="$(awk -F= '$1 == "cluster.id" { print $2 }' "$meta_file" | tail -n 1)"
+      actual_node_id="$(awk -F= '$1 == "node.id" { print $2 }' "$meta_file" | tail -n 1)"
+      [ "$actual_cluster_id" = "$cluster_id" ] ||
+        fail "storage format produced cluster ID $actual_cluster_id, expected $cluster_id"
+      [ "$actual_node_id" = "$node_id" ] ||
+        fail "storage format produced node ID $actual_node_id, expected $node_id"
+      printf 'Kafka KRaft storage formatted once for %s (cluster %s).\n' "$pod_name" "$cluster_id"
+    fi
+  topic-provision.sh: |-
+    #!/bin/sh
+    set -eu
+
+    fail() {
+      printf 'Kafka topic provisioning refused: %s\n' "$*" >&2
+      exit 1
+    }
+
+    bootstrap="${KAFKA_BOOTSTRAP_SERVERS:-kafka:9092}"
+    topics_bin="${KAFKA_TOPICS_BIN:-/opt/kafka/bin/kafka-topics.sh}"
+    configs_bin="${KAFKA_CONFIGS_BIN:-/opt/kafka/bin/kafka-configs.sh}"
+    attempts=0
+    while ! "$topics_bin" --bootstrap-server "$bootstrap" --list >/dev/null 2>&1; do
+      attempts=$((attempts + 1))
+      [ "$attempts" -lt 60 ] || fail "Kafka bootstrap $bootstrap did not become available"
+      sleep 5
+    done
+
+    temporary_output="$(mktemp)"
+    trap 'rm -f "$temporary_output"' EXIT
+
+    ensure_topic() {
+      name="$1"
+      partitions="$2"
+      cleanup_policy="$3"
+      if ! "$topics_bin" --bootstrap-server "$bootstrap" --describe --topic "$name" >"$temporary_output" 2>&1; then
+        "$topics_bin" --bootstrap-server "$bootstrap" --create --if-not-exists \
+          --topic "$name" \
+          --partitions "$partitions" \
+          --replication-factor 3 \
+          --config "cleanup.policy=$cleanup_policy" \
+          --config retention.ms=2592000000 \
+          --config min.insync.replicas=2
+      fi
+
+      description="$("$topics_bin" --bootstrap-server "$bootstrap" --describe --topic "$name" 2>&1)" ||
+        fail "cannot describe topic $name"
+      printf '%s\n' "$description" | grep -Fq "PartitionCount: $partitions" ||
+        fail "topic $name has the wrong partition count"
+      printf '%s\n' "$description" | grep -Fq 'ReplicationFactor: 3' ||
+        fail "topic $name has the wrong replication factor"
+
+      topic_config="$("$configs_bin" --bootstrap-server "$bootstrap" \
+        --entity-type topics --entity-name "$name" --describe --all 2>&1)" ||
+        fail "cannot describe configuration for topic $name"
+      printf '%s\n' "$topic_config" | grep -Fq "cleanup.policy=$cleanup_policy" ||
+        fail "topic $name has the wrong cleanup policy"
+      printf '%s\n' "$topic_config" | grep -Fq 'retention.ms=2592000000' ||
+        fail "topic $name has the wrong retention"
+      printf '%s\n' "$topic_config" | grep -Fq 'min.insync.replicas=2' ||
+        fail "topic $name has the wrong minimum ISR"
+    }
+
+    # Matching journals use delete-only retention and fifteen explicitly owned partitions.
+    ensure_topic matching.commands 15 delete
+    ensure_topic matching.events 15 delete
+
+    # Connect's distributed-worker state is compacted, replicated, and explicitly retained.
+    ensure_topic simplematch-connect-configs 1 compact
+    ensure_topic simplematch-connect-offsets 25 compact
+    ensure_topic simplematch-connect-status 3 compact
+
+    printf 'Kafka KRaft topic contract provisioned through %s.\n' "$bootstrap"
+---
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: kafka
+  labels:
+    app.kubernetes.io/name: kafka
+    app.kubernetes.io/component: broker
+    app.kubernetes.io/part-of: simplematch
+spec:
+  serviceName: kafka-headless
+  replicas: 3
+  podManagementPolicy: Parallel
+  updateStrategy:
+    type: OnDelete
+  persistentVolumeClaimRetentionPolicy:
+    whenDeleted: Retain
+    whenScaled: Retain
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: kafka
+      app.kubernetes.io/component: broker
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: kafka
+        app.kubernetes.io/component: broker
+        app.kubernetes.io/part-of: simplematch
+    spec:
+      nodeSelector:
+        simplematch.io/node-pool: local-resilience
+      affinity:
+        podAntiAffinity:
+          requiredDuringSchedulingIgnoredDuringExecution:
+            - labelSelector:
+                matchLabels:
+                  app.kubernetes.io/name: kafka
+                  app.kubernetes.io/component: broker
+              topologyKey: kubernetes.io/hostname
+      topologySpreadConstraints:
+        - maxSkew: 1
+          topologyKey: simplematch.io/worker-slot
+          whenUnsatisfiable: DoNotSchedule
+          labelSelector:
+            matchLabels:
+              app.kubernetes.io/name: kafka
+              app.kubernetes.io/component: broker
+      terminationGracePeriodSeconds: 60
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 1000
+        runAsGroup: 1000
+        fsGroup: 1000
+        seccompProfile:
+          type: RuntimeDefault
+      initContainers:
+        - name: kafka-kraft-init
+          image: apache/kafka:4.3.1
+          imagePullPolicy: IfNotPresent
+          command: ["/bin/sh", "/opt/kafka/scripts/broker-init.sh"]
+          env:
+            - name: POD_NAME
+              valueFrom:
+                fieldRef:
+                  fieldPath: metadata.name
+            - name: NODE_ID
+              valueFrom:
+                fieldRef:
+                  fieldPath: metadata.labels['apps.kubernetes.io/pod-index']
+            - name: KAFKA_CLUSTER_ID
+              valueFrom:
+                configMapKeyRef:
+                  name: kafka-kraft-config
+                  key: cluster_id
+            - name: KAFKA_DATA_DIR
+              value: /var/lib/kafka/data
+            - name: KAFKA_CONFIG_DIR
+              value: /etc/kafka/generated
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop: ["ALL"]
+            readOnlyRootFilesystem: true
+          volumeMounts:
+            - name: kafka-data
+              mountPath: /var/lib/kafka/data
+            - name: kafka-generated-config
+              mountPath: /etc/kafka/generated
+            - name: kafka-scripts
+              mountPath: /opt/kafka/scripts
+              readOnly: true
+      containers:
+        - name: kafka
+          image: apache/kafka:4.3.1
+          imagePullPolicy: IfNotPresent
+          command: ["/opt/kafka/bin/kafka-server-start.sh"]
+          args: ["/etc/kafka/generated/server.properties"]
+          ports:
+            - name: internal
+              containerPort: 9092
+            - name: controller
+              containerPort: 9093
+          resources:
+            requests:
+              cpu: 500m
+              memory: 1Gi
+            limits:
+              cpu: "1"
+              memory: 2Gi
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop: ["ALL"]
+            readOnlyRootFilesystem: true
+          startupProbe:
+            exec:
+              command:
+                - /opt/kafka/bin/kafka-broker-api-versions.sh
+                - --bootstrap-server
+                - 127.0.0.1:9092
+            periodSeconds: 5
+            failureThreshold: 60
+            timeoutSeconds: 5
+          readinessProbe:
+            exec:
+              command:
+                - /opt/kafka/bin/kafka-broker-api-versions.sh
+                - --bootstrap-server
+                - 127.0.0.1:9092
+            periodSeconds: 5
+            failureThreshold: 3
+            timeoutSeconds: 5
+          livenessProbe:
+            exec:
+              command:
+                - /opt/kafka/bin/kafka-broker-api-versions.sh
+                - --bootstrap-server
+                - 127.0.0.1:9092
+            periodSeconds: 10
+            failureThreshold: 3
+            timeoutSeconds: 5
+          volumeMounts:
+            - name: kafka-data
+              mountPath: /var/lib/kafka/data
+            - name: kafka-generated-config
+              mountPath: /etc/kafka/generated
+              readOnly: true
+            - name: kafka-scripts
+              mountPath: /opt/kafka/scripts
+              readOnly: true
+            - name: kafka-tmp
+              mountPath: /tmp
+      volumes:
+        - name: kafka-generated-config
+          emptyDir: {}
+        - name: kafka-scripts
+          configMap:
+            name: kafka-kraft-config
+            defaultMode: 0555
+            items:
+              - key: broker-init.sh
+                path: broker-init.sh
+        - name: kafka-tmp
+          emptyDir: {}
+  volumeClaimTemplates:
+    - metadata:
+        name: kafka-data
+        labels:
+          app.kubernetes.io/name: kafka
+          app.kubernetes.io/component: broker
+          app.kubernetes.io/part-of: simplematch
+      spec:
+        accessModes: ["ReadWriteOncePod"]
+        storageClassName: simplematch-rwo-pod
+        resources:
+          requests:
+            storage: 20Gi
+---
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: kafka
+  labels:
+    app.kubernetes.io/name: kafka
+    app.kubernetes.io/component: broker
+    app.kubernetes.io/part-of: simplematch
+spec:
+  minAvailable: 2
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: kafka
+      app.kubernetes.io/component: broker
+---
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: kafka-topic-provisioning
+  labels:
+    app.kubernetes.io/name: kafka
+    app.kubernetes.io/component: topic-provisioning
+    app.kubernetes.io/part-of: simplematch
+spec:
+  activeDeadlineSeconds: 300
+  backoffLimit: 4
+  ttlSecondsAfterFinished: 86400
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: kafka
+        app.kubernetes.io/component: topic-provisioning
+        app.kubernetes.io/part-of: simplematch
+    spec:
+      restartPolicy: OnFailure
+      nodeSelector:
+        simplematch.io/node-pool: local-resilience
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 1000
+        runAsGroup: 1000
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+        - name: topic-provisioning
+          image: apache/kafka:4.3.1
+          imagePullPolicy: IfNotPresent
+          command: ["/bin/sh", "/opt/kafka/scripts/topic-provision.sh"]
+          env:
+            - name: KAFKA_BOOTSTRAP_SERVERS
+              value: kafka:9092
+          resources:
+            requests:
+              cpu: 100m
+              memory: 128Mi
+            limits:
+              cpu: 250m
+              memory: 256Mi
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop: ["ALL"]
+            readOnlyRootFilesystem: true
+          volumeMounts:
+            - name: kafka-scripts
+              mountPath: /opt/kafka/scripts
+              readOnly: true
+            - name: kafka-tmp
+              mountPath: /tmp
+      volumes:
+        - name: kafka-scripts
+          configMap:
+            name: kafka-kraft-config
+            defaultMode: 0555
+            items:
+              - key: topic-provision.sh
+                path: topic-provision.sh
+        - name: kafka-tmp
+          emptyDir: {}

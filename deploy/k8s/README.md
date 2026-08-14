@@ -30,7 +30,8 @@ The four overlays are `local`, `test`, `staging`, and `production`.
 `local` tag and is the deployment surface used by the local production-like certification gate.
 The local image set currently includes Account, Risk, Persistence, Market Data Projection,
 Marketdata Publisher, Marketdata Streamer, Query Service, Flyway Runner, Matching, and QuickFIX
-Gateway.
+Gateway. PostgreSQL, Redis, and Kafka are separate Kubernetes workloads in the local overlay; they
+are not reached through the retired Compose bridge.
 
 `staging` and `production` are promotion templates, not local verification environments. They use
 separate registry names and digest placeholders, and retain placeholders for external PostgreSQL,
@@ -82,9 +83,9 @@ review and the local contract test.
 | Gradle wrapper | 9.7.0 | `gradle/wrapper/gradle-wrapper.properties` |
 | Spring Boot | 4.1.0 | `gradle/libs.versions.toml` |
 | vcpkg | 2026.07.29 | `ci-native.yml`, `Dockerfile.matching` |
-| Apache Kafka | 4.3.1 | local Compose profile |
-| PostgreSQL | 18.4 | local Compose and Flyway CI |
-| Redis | 8.8.1-alpine | local Compose profile |
+| Apache Kafka | 4.3.1 | `kafka-kraft.yaml` and local Compose profile |
+| PostgreSQL | 18.4 | `postgresql.yaml` and local Compose/Flyway CI |
+| Redis | 8.8.1-alpine | `redis.yaml` and local Compose profile |
 | Debezium Kafka Connect | 3.6.0.Final | local Compose profile |
 | Matching build base | Ubuntu 26.04 LTS | `Dockerfile.matching` |
 
@@ -96,7 +97,15 @@ Render and validate them with:
 
 ```text
 bash scripts/test-kubernetes-overlays.sh
+bash scripts/test-local-kubernetes-dependencies.sh
 ```
+
+The local dependency contract is deliberately small. PostgreSQL is a node-local singleton on worker
+slot 0 with one RWO PVC and a protective PDB; its worker loss is fail-closed until the required
+storage returns. Redis is a portable disposable cache with no PDB and a 30-second portable-workload
+toleration. Kafka is a fixed three-member KRaft StatefulSet with one broker/controller per worker,
+RF3/minimum ISR 2 topic durability, and a two-available PDB. These are local lab contracts, not
+cross-node storage HA or production certification.
 
 The base deliberately reuses the reviewed flat Matching and QuickFIX manifests. The renderer uses
 `--load-restrictor LoadRestrictionsNone` for those repository-local files; it does not permit

@@ -140,6 +140,9 @@ if [[ "$profile" == contract ]]; then
   checks=(
     "$script_dir/test-simplematch-kind-manager.sh"
     "$script_dir/test-kubernetes-overlays.sh"
+    "$script_dir/test-local-kubernetes-dependencies.sh"
+    "$script_dir/test-postgresql-redis-manifests.sh"
+    "$script_dir/test-kafka-kraft-manifests.sh"
     "$script_dir/test-matching-kubernetes-manifests.sh"
     "$script_dir/validate-local-resilience-contract.sh"
   )

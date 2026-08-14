@@ -120,11 +120,18 @@ if overlay == "local"
       "limits" => { "cpu" => "1", "memory" => "2Gi" }
     }
 
-  bridge_policy = resources.fetch(["NetworkPolicy", "simplematch-java-services-local-bridge"])
-  bridge_rule = bridge_policy.fetch("spec").fetch("egress").first
-  abort "local: Java workloads cannot reach the Compose bridge network" unless
-    bridge_rule.fetch("to") == [{ "ipBlock" => { "cidr" => "172.19.0.0/16" } }] &&
-      bridge_rule.fetch("ports").map { |port| port.fetch("port") }.sort == [5432, 6379, 29092]
+  abort "local: Java workloads must not depend on the old Compose bridge" if
+    resources.key?(["NetworkPolicy", "simplematch-java-services-local-bridge"])
+  {
+    "postgres" => 5432,
+    "redis" => 6379,
+    "kafka" => 9092
+  }.each do |service_name, port|
+    service = resources.fetch(["Service", service_name])
+    abort "local: #{service_name} must be an in-cluster SimpleMatch Service" unless
+      service.dig("metadata", "labels", "app.kubernetes.io/part-of") == "simplematch" &&
+        service.dig("spec", "ports", 0, "port") == port
+  end
 
   %w[risk-service query-service].each do |deployment_name|
     deployment = resources.fetch(["Deployment", deployment_name])

@@ -1,0 +1,37 @@
+- op: add
+  path: /spec/activeDeadlineSeconds
+  value: 300
+- op: add
+  path: /spec/template/spec/initContainers
+  value:
+    - name: wait-for-postgres
+      image: postgres:18.4
+      imagePullPolicy: IfNotPresent
+      command: ["sh", "-ec"]
+      args:
+        - >-
+          timeout 180s sh -ec
+          'until pg_isready -h postgres -p 5432 -U simplematch -d simplematch;
+          do sleep 2; done'
+      resources:
+        requests:
+          cpu: 10m
+          memory: 32Mi
+        limits:
+          cpu: 100m
+          memory: 64Mi
+      securityContext:
+        allowPrivilegeEscalation: false
+        capabilities:
+          drop: ["ALL"]
+        readOnlyRootFilesystem: true
+        runAsNonRoot: true
+- op: add
+  path: /spec/template/spec/containers/0/resources
+  value:
+    requests:
+      cpu: 100m
+      memory: 256Mi
+    limits:
+      cpu: 500m
+      memory: 512Mi

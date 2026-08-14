@@ -13,6 +13,12 @@ matching_producer_config_file="${SIMPLEMATCH_KAFKA_PRODUCER_CONFIG_FILE:-$eviden
 matching_capacity_evidence_file="${SIMPLEMATCH_KAFKA_CAPACITY_EVIDENCE_FILE:-$evidence_dir/kafka-capacity.properties}"
 matching_capacity_workload_file="$repo_root/scripts/testdata/matching-topic-profile/valid/capacity.properties"
 certification_trading_day="${SIMPLEMATCH_CERTIFICATION_TRADING_DAY:-$(date -u +%F)}"
+local_postgres_password="${SIMPLEMATCH_LOCAL_POSTGRES_PASSWORD:-simplematch}"
+if [[ ! "$local_postgres_password" =~ ^[A-Za-z0-9._~-]+$ ]]; then
+  printf '%s\n' 'SIMPLEMATCH_LOCAL_POSTGRES_PASSWORD may contain only URL-safe local-lab characters.' >&2
+  exit 1
+fi
+local_postgres_dsn="postgresql://simplematch:${local_postgres_password}@postgres:5432/simplematch"
 namespace=""
 kind_cluster="${SIMPLEMATCH_KIND_CLUSTER_NAME:-simplematch-local}"
 dry_run=false
@@ -276,6 +282,7 @@ else
 fi
 
 run_logged static-kubernetes-overlays bash "$repo_root/scripts/test-kubernetes-overlays.sh"
+run_logged static-kubernetes-dependencies bash "$repo_root/scripts/test-local-kubernetes-dependencies.sh"
 run_logged static-matching-manifests bash "$repo_root/scripts/test-matching-kubernetes-manifests.sh"
 run_logged static-matching-profile bash "$repo_root/scripts/test-matching-topic-profile.sh"
 run_logged static-flyway-services bash "$repo_root/scripts/test-flyway-services.sh"
@@ -312,18 +319,6 @@ wait_for_compose() {
     sleep 2
   done
   die 'Production-like Compose services did not become ready within 180 seconds.'
-}
-
-run_flyway_migrations() {
-  local service
-  local dsn='postgresql://simplematch:simplematch@postgres:5432/simplematch'
-  for service in account-service risk-service persistence market-data-projection marketdata-publisher query-service quickfix-gateway; do
-    run_logged "flyway-${service}" docker run --rm \
-      --network "${SIMPLEMATCH_PRODUCTION_LIKE_NETWORK}" \
-      --env SIMPLEMATCH_POSTGRES_DSN="$dsn" \
-      --env SIMPLEMATCH_FLYWAY_SERVICE_ID="$service" \
-      "simplematch/flyway-runner:${image_tag}"
-  done
 }
 
 create_kafka_topics() {
@@ -395,86 +390,15 @@ collect_kafka_fixture() {
     --capacity-evidence-file "$matching_capacity_evidence_file" --certify-production
 }
 
-container_ip_on_network() {
-  local service="$1"
-  local container_id
-  container_id="$("${compose_command[@]}" ps -q "$service")"
-  [[ -n "$container_id" ]] || die "No Compose container found for $service"
-  docker inspect --format "{{(index .NetworkSettings.Networks \"${SIMPLEMATCH_PRODUCTION_LIKE_NETWORK}\").IPAddress}}" \
-    "$container_id"
-}
-
-append_bridge_service() {
-  local name="$1"
-  local port="$2"
-  local address="$3"
-  cat <<EOF
----
-apiVersion: v1
-kind: Service
-metadata:
-  name: ${name}
-  namespace: ${namespace}
-spec:
-  ports:
-    - name: tcp
-      port: ${port}
-      targetPort: ${port}
----
-apiVersion: v1
-kind: Endpoints
-metadata:
-  name: ${name}
-  namespace: ${namespace}
-subsets:
-  - addresses:
-      - ip: ${address}
-    ports:
-      - name: tcp
-        port: ${port}
-EOF
-}
-
-prepare_kubernetes_bridge() {
-  local bridge_manifest="$evidence_dir/compose-kubernetes-bridge.yaml"
-  local postgres_ip redis_ip kafka_1_ip kafka_2_ip kafka_3_ip
-  postgres_ip="$(container_ip_on_network postgres)"
-  redis_ip="$(container_ip_on_network redis)"
-  kafka_1_ip="$(container_ip_on_network kafka-1)"
-  kafka_2_ip="$(container_ip_on_network kafka-2)"
-  kafka_3_ip="$(container_ip_on_network kafka-3)"
-  [[ -n "$postgres_ip" && -n "$redis_ip" && -n "$kafka_1_ip" && -n "$kafka_2_ip" && -n "$kafka_3_ip" ]] || \
-    die "Compose containers are not attached to ${SIMPLEMATCH_PRODUCTION_LIKE_NETWORK}."
-
-  {
-    append_bridge_service postgres 5432 "$postgres_ip"
-    append_bridge_service redis 6379 "$redis_ip"
-    append_bridge_service kafka 29092 "$kafka_1_ip"
-    append_bridge_service kafka-1 29092 "$kafka_1_ip"
-    append_bridge_service kafka-2 29092 "$kafka_2_ip"
-    append_bridge_service kafka-3 29092 "$kafka_3_ip"
-  } >"$bridge_manifest"
-  run_logged kubernetes-compose-bridge kubectl apply -f "$bridge_manifest"
-}
-
 render_local_kubernetes_manifest() {
   local rendered_manifest="$evidence_dir/local-kubernetes.yaml"
-  local network_cidr
   mkdir -p "$evidence_dir"
   if [[ "$dry_run" == true ]]; then
     print_command kubectl kustomize "$repo_root/deploy/k8s/overlays/local" --load-restrictor LoadRestrictionsNone
     return 0
   fi
-  network_cidr="$(docker network inspect "$SIMPLEMATCH_PRODUCTION_LIKE_NETWORK" \
-    --format '{{range .IPAM.Config}}{{println .Subnet}}{{end}}' | awk '/\./ {print; exit}')"
-  [[ "$network_cidr" =~ ^[0-9]{1,3}(\.[0-9]{1,3}){3}/[0-9]{1,2}$ ]] || die \
-    "Production-like Docker network has no usable IPv4 subnet: $network_cidr"
   kubectl kustomize "$repo_root/deploy/k8s/overlays/local" --load-restrictor LoadRestrictionsNone >"$rendered_manifest"
-  sed -i \
-    -e "s/namespace: simplematch-local$/namespace: ${namespace}/g" \
-    -e 's/kafka:9092/kafka:29092/g' \
-    -e "s|cidr: 172.19.0.0/16|cidr: ${network_cidr}|g" \
-    "$rendered_manifest"
+  sed -i -e "s/namespace: simplematch-local$/namespace: ${namespace}/g" "$rendered_manifest"
   printf '%s\n' "$rendered_manifest"
 }
 
@@ -506,8 +430,10 @@ documents.each do |document|
              document.fetch("metadata").fetch("name") == "quickfix-gateway-fix-spec" ? input_manifest : platform_manifest
            when "Job"
              migration_manifest
-           when "Deployment", "StatefulSet"
-             workload_manifest
+           when "StatefulSet"
+             %w[postgres kafka].include?(document.dig("metadata", "name")) ? platform_manifest : workload_manifest
+           when "Deployment"
+             document.dig("metadata", "name") == "redis" ? platform_manifest : workload_manifest
            else
              platform_manifest
            end
@@ -565,12 +491,16 @@ apply_local_kubernetes_inputs() {
     --dry-run=client -o yaml | kubectl apply -f - >/dev/null
 
   kubectl -n "$namespace" create secret generic simplematch-flyway-secrets \
-    --from-literal=postgres_dsn='postgresql://simplematch:simplematch@postgres:5432/simplematch' \
+    --from-literal=postgres_dsn="$local_postgres_dsn" \
+    --dry-run=client -o yaml | kubectl apply -f - >/dev/null
+
+  kubectl -n "$namespace" create secret generic simplematch-postgres-secrets \
+    --from-literal=postgres_password="$local_postgres_password" \
     --dry-run=client -o yaml | kubectl apply -f - >/dev/null
 
   for service in account-service risk-service persistence market-data-projection marketdata-publisher query-service quickfix-gateway; do
     kubectl -n "$namespace" create secret generic "${service}-secrets" \
-      --from-literal=postgres_dsn='postgresql://simplematch:simplematch@postgres:5432/simplematch' \
+      --from-literal=postgres_dsn="$local_postgres_dsn" \
       --dry-run=client -o yaml | kubectl apply -f - >/dev/null
   done
 }
@@ -615,6 +545,10 @@ publish_local_matching_open_barriers() {
 apply_kubernetes_migrations() {
   local migration_manifest="$1"
   local workload
+  kubectl apply -f "$migration_manifest" \
+    --selector 'app.kubernetes.io/component=topic-provisioning'
+  kubectl -n "$namespace" wait --for=condition=complete \
+    job/kafka-topic-provisioning --timeout=300s
   for workload in account-service risk-service persistence market-data-projection marketdata-publisher query-service quickfix-gateway; do
     kubectl apply -f "$migration_manifest" \
       --selector "app.kubernetes.io/name=${workload}-flyway"
@@ -670,7 +604,7 @@ if [[ "$skip_compose" == false ]]; then
     --producer-config-file "$matching_producer_config_file" \
     --capacity-evidence-file "$matching_capacity_evidence_file"
   if [[ "$matching_fleet_only" == false ]]; then
-    run_flyway_migrations
+    printf '%s\n' 'Compose Flyway phase omitted; Kubernetes Flyway Jobs own the local schema.'
   else
     printf '%s\n' 'Compose Flyway phases skipped for the Matching fleet-only gate.'
   fi
@@ -683,7 +617,6 @@ if [[ "$skip_kubernetes" == false ]]; then
     print_command bash "$repo_root/scripts/normalize-local-images-for-kind.sh" --tag "$image_tag"
     print_command kind load docker-image --name "$kind_cluster" "simplematch-matching:${image_tag}"
     print_command kubectl create namespace "$namespace"
-    print_command kubectl apply -f "$evidence_dir/compose-kubernetes-bridge.yaml"
     print_command kubectl create -f "$evidence_dir/local-kubernetes-inputs.yaml"
     print_command kubectl apply -f "$evidence_dir/local-kubernetes-platform.yaml"
     print_command kubectl apply -f "$evidence_dir/local-kubernetes-migrations.yaml"
@@ -707,7 +640,6 @@ if [[ "$skip_kubernetes" == false ]]; then
       "$rendered_manifest" "$platform_manifest" "$migration_manifest" "$workload_manifest" "$input_manifest"
     create_certification_namespace
     run_logged kubernetes-inputs apply_local_kubernetes_inputs "$matching_digest" "$input_manifest"
-    prepare_kubernetes_bridge
     run_logged kubernetes-platform-apply kubectl apply -f "$platform_manifest"
     if [[ "$matching_fleet_only" == true ]]; then
       matching_workload_manifest="$evidence_dir/local-kubernetes-matching-workload.yaml"

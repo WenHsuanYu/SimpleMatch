@@ -3,7 +3,9 @@ kind: Kustomization
 namespace: simplematch-local
 resources:
   - ../../base
-  - local-network-policy.yaml
+  - ../../postgresql.yaml
+  - ../../redis.yaml
+  - ../../kafka-kraft.yaml
 configMapGenerator:
   - name: quickfix-gateway-fix-spec
     files:
@@ -13,6 +15,12 @@ configMapGenerator:
 patches:
   - path: matching-scheduling-patch.yaml
   - path: local-runtime-patch.yaml
+  - path: local-flyway-dependency-gates-patch.yaml
+    target:
+      group: batch
+      version: v1
+      kind: Job
+      name: .*-flyway
 images:
   - name: simplematch/account-service
     newTag: local

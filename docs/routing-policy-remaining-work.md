@@ -542,7 +542,10 @@ and must not be interpreted as a requirement to push images or obtain external c
   PostgreSQL CA mounts/TLS parameters, and Account/Risk gRPC mTLS. Spring services include Actuator,
   several services expose its metrics endpoint, and critical delivery paths register Micrometer
   counters and observations. `scripts/test-kubernetes-overlays.sh` renders and structurally validates
-  all four overlays. PostgreSQL URI TLS parameters are preserved by the shared adapter.
+  all four overlays. The executable local overlay now also contains the node-local PostgreSQL
+  singleton, disposable Redis cache, three-broker KRaft StatefulSet, bounded Flyway/PostgreSQL
+  readiness gates, and explicit Kafka topic provisioning; focused manifest tests pass. PostgreSQL
+  URI TLS parameters are preserved by the shared adapter.
 - **Missing behavior:** A retained two-replica Debezium Connect worker, endpoint/secret/TLS contract,
   and staging/production overlay template are now represented. Local connector registration,
   local dependency-outage smoke, consistent structured log fields, consistent basic health/metrics

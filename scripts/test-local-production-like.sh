@@ -101,6 +101,10 @@ grep -Fq 'test-kubernetes-overlays.sh' <<<"$certification_dry_run" || {
   echo "Local certification dry-run does not include Kubernetes overlay validation." >&2
   exit 1
 }
+grep -Fq 'test-local-kubernetes-dependencies.sh' <<<"$certification_dry_run" || {
+  echo "Local certification dry-run does not include in-cluster dependency validation." >&2
+  exit 1
+}
 grep -Fq 'test-matching-topic-profile.sh' <<<"$certification_dry_run" || {
   echo "Local certification dry-run does not include the Kafka profile contract." >&2
   exit 1
@@ -123,9 +127,14 @@ grep -Fq 'local-kubernetes-inputs.yaml' \
   echo "Local certification does not isolate large immutable Kubernetes inputs." >&2
   exit 1
 }
-grep -Fq 'range .IPAM.Config' \
+if grep -Fq 'prepare_kubernetes_bridge' "$repo_root/scripts/run-local-production-like-certification.sh"; then
+  echo "Local certification still depends on the Compose-to-Kubernetes bridge." >&2
+  exit 1
+fi
+
+grep -Fq 'test-local-kubernetes-dependencies.sh' \
   "$repo_root/scripts/run-local-production-like-certification.sh" || {
-  echo "Local certification does not select an IPv4 Docker bridge subnet." >&2
+  echo "Local certification does not validate in-cluster dependencies." >&2
   exit 1
 }
 
