@@ -325,7 +325,10 @@ and must not be interpreted as a requirement to push images or obtain external c
   partition deterministically. PVC metadata is an acceleration index, not the authority.
 - **Current evidence:** `PartitionReplayCoordinator` models explicit partition assignment,
   Open/Close barriers, command de-duplication, retained-record replay, output ACK tracking, and a
-  contiguous commit watermark; CTests cover the crash/replay and barrier invariants. The native
+  contiguous commit watermark. A bounded `InputOffsetLedger` now maps every accepted process-local
+  `InputSequence` (including deduplicated inputs) to its Kafka offset, accepts out-of-order
+  completion without crossing an incomplete prefix, and releases only completed contiguous entries.
+  CTests cover the ledger, coordinator handoff, replay, and barrier invariants. The native
   librdkafka adapter now exposes retained-range reads, committed/end offsets, seeking, and
   synchronous commits, while the runtime replays the PVC baseline before live polling.
 - **Missing behavior:** The disposable kind smoke covered PVC baseline persistence, Kafka replay,

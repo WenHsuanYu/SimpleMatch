@@ -139,6 +139,19 @@ TEST(PartitionReplayCoordinatorTest, AcknowledgesOutputsBeforeAdvancingTheContig
   EXPECT_EQ(runtime.next_commit_offset(), 13);
 }
 
+TEST(PartitionReplayCoordinatorTest, AssignsASequenceToDeduplicatedInputsBeforeCommittingThem) {
+  auto runtime = coordinator();
+
+  ASSERT_EQ(runtime.ingest(open_record(10)), PartitionReplayResult::kAccepted);
+  ASSERT_TRUE(runtime.acknowledge_commit(11));
+
+  EXPECT_EQ(runtime.ingest(open_record(11)), PartitionReplayResult::kDuplicate);
+  ASSERT_TRUE(runtime.next_commit_offset().has_value());
+  EXPECT_EQ(*runtime.next_commit_offset(), 12);
+  EXPECT_TRUE(runtime.acknowledge_commit(12));
+  EXPECT_FALSE(runtime.next_commit_offset().has_value());
+}
+
 TEST(PartitionReplayCoordinatorTest, RebuildsFromTheRetainedBarrierWithoutRepublishingCommittedEffects) {
   auto first = coordinator();
   const auto open = open_record(20);

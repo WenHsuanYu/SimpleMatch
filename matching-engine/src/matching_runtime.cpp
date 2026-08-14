@@ -1,5 +1,6 @@
 #include "simplematch/matching/runtime/matching_runtime.hpp"
 
+#include <limits>
 #include <stdexcept>
 #include <utility>
 
@@ -28,6 +29,14 @@ std::optional<InputSequence> MatchingRuntime::submit(CoreCommand command) {
     return std::nullopt;
   }
   if (!input_ring_.try_push(RuntimeInput{next_input_sequence_, std::move(command)})) {
+    return std::nullopt;
+  }
+  return next_input_sequence_++;
+}
+
+std::optional<InputSequence> MatchingRuntime::reserve_input_sequence() {
+  if (!ownership_permit_->allows_processing() ||
+      next_input_sequence_ == std::numeric_limits<InputSequence>::max()) {
     return std::nullopt;
   }
   return next_input_sequence_++;

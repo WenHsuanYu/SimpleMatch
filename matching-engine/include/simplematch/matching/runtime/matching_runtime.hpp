@@ -2,6 +2,7 @@
 
 #include "simplematch/matching/core/deterministic_matching_core.hpp"
 #include "simplematch/matching/runtime/bounded_spsc_ring.hpp"
+#include "simplematch/matching/runtime/input_sequence.hpp"
 #include "simplematch/matching/runtime/partition_ownership_permit.hpp"
 
 #include <cstddef>
@@ -19,8 +20,6 @@ enum class MatchingRuntimeStep {
   kProcessed,
   kCoreRejected
 };
-
-using InputSequence = std::uint64_t;
 
 struct RuntimeEventOutput {
   InputSequence input_sequence;
@@ -51,6 +50,8 @@ public:
       std::shared_ptr<const PartitionOwnershipPermit> ownership_permit);
 
   [[nodiscard]] std::optional<InputSequence> submit(CoreCommand command);
+  /** Reserves a sequence for an input that was accepted but needs no core execution. */
+  [[nodiscard]] std::optional<InputSequence> reserve_input_sequence();
   [[nodiscard]] MatchingRuntimeStep process_one();
   [[nodiscard]] std::size_t input_size() const;
   [[nodiscard]] std::size_t output_size() const;

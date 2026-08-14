@@ -177,6 +177,7 @@ PartitionReplayCoordinator::PartitionReplayCoordinator(
       identity_(std::move(identity)),
       ownership_permit_(std::move(ownership_permit)),
       runtime_(std::move(core), input_capacity, output_capacity, ownership_permit_),
+      input_ledger_(input_capacity),
       maximum_distinct_commands_(maximum_distinct_commands),
       maximum_pending_publications_(maximum_pending_publications) {
   if (!valid_assignment(assignment_) || !valid_identity(identity_) || ownership_permit_ == nullptr ||
@@ -250,12 +251,24 @@ PartitionReplayResult PartitionReplayCoordinator::ingest_internal(
     if (observed->second != fingerprint) {
       return fail_closed("MATCHING_COMMAND_IDENTITY_CONFLICT");
     }
+    if (input_ledger_.pending_count() == input_ledger_.capacity()) {
+      return PartitionReplayResult::kInputBackpressured;
+    }
+    const auto input_sequence = runtime_.reserve_input_sequence();
+    if (!input_sequence.has_value()) {
+      return ownership_permitted() ? PartitionReplayResult::kInputBackpressured
+                                   : PartitionReplayResult::kOwnershipDenied;
+    }
+    if (input_ledger_.append(*input_sequence, record.offset) != InputLedgerResult::kAccepted) {
+      return fail_closed("MATCHING_INPUT_LEDGER_APPEND_FAILED");
+    }
     if (!accepts_next_offset(record.offset)) {
       return fail_closed("ASSIGNED_COMMAND_OFFSET_GAP");
     }
     pending_inputs_.emplace(
         record.offset,
-        std::make_unique<PendingInput>(PendingInput{decoded.command.context, 0, {}, true}));
+        std::make_unique<PendingInput>(
+            PendingInput{*input_sequence, decoded.command.context, 0, {}, true}));
     mark_completed(record.offset);
     return PartitionReplayResult::kDuplicate;
   }
@@ -283,10 +296,16 @@ PartitionReplayResult PartitionReplayCoordinator::ingest_internal(
       maximum_pending_publications_) {
     return PartitionReplayResult::kOutputBackpressured;
   }
+  if (input_ledger_.pending_count() == input_ledger_.capacity()) {
+    return PartitionReplayResult::kInputBackpressured;
+  }
   const auto input_sequence = runtime_.submit(decoded.command);
   if (!input_sequence.has_value()) {
     return ownership_permitted() ? PartitionReplayResult::kInputBackpressured
                                  : PartitionReplayResult::kOwnershipDenied;
+  }
+  if (input_ledger_.append(*input_sequence, record.offset) != InputLedgerResult::kAccepted) {
+    return fail_closed("MATCHING_INPUT_LEDGER_APPEND_FAILED");
   }
 
   command_fingerprints_.emplace(command_identity, fingerprint);
@@ -295,7 +314,8 @@ PartitionReplayResult PartitionReplayCoordinator::ingest_internal(
   }
   pending_inputs_.emplace(
       record.offset,
-      std::make_unique<PendingInput>(PendingInput{decoded.command.context, 0, {}, false}));
+      std::make_unique<PendingInput>(
+          PendingInput{*input_sequence, decoded.command.context, 0, {}, false}));
   active_command_ = ActiveCommand{
       *input_sequence,
       record.offset,
@@ -433,17 +453,11 @@ std::optional<std::int64_t> PartitionReplayCoordinator::next_commit_offset() con
   if (!ownership_permitted()) {
     return std::nullopt;
   }
-  if (!highest_contiguous_completed_offset_.has_value() ||
-      (committed_offset_.has_value() &&
-       *highest_contiguous_completed_offset_ <= *committed_offset_)) {
-    return std::nullopt;
-  }
-  return *highest_contiguous_completed_offset_ + 1;
+  return input_ledger_.next_commit_offset();
 }
 
 bool PartitionReplayCoordinator::acknowledge_commit(std::int64_t next_offset) {
-  const auto expected = next_commit_offset();
-  if (!expected.has_value() || *expected != next_offset) {
+  if (!input_ledger_.acknowledge_commit(next_offset)) {
     return false;
   }
   committed_offset_ = next_offset - 1;
@@ -461,7 +475,7 @@ std::optional<PartitionBaselineMetadata> PartitionReplayCoordinator::baseline_me
 PartitionReplayStatus PartitionReplayCoordinator::status() const {
   return {state_,
           ownership_permit_->status(),
-          highest_contiguous_completed_offset_,
+          input_ledger_.highest_contiguous_completed_offset(),
           next_commit_offset(),
           pending_inputs_.size(),
           pending_publications_.size(),
@@ -487,8 +501,6 @@ PartitionReplayResult PartitionReplayCoordinator::recover(
     return PartitionReplayResult::kMissingRetainedOpenBarrier;
   }
   expected_next_input_offset_ = baseline.open_barrier_offset;
-  next_contiguous_offset_ = baseline.open_barrier_offset;
-  highest_contiguous_completed_offset_.reset();
   committed_offset_.reset();
 
   for (std::int64_t offset = baseline.open_barrier_offset;
@@ -508,12 +520,15 @@ PartitionReplayResult PartitionReplayCoordinator::recover(
       return result;
     }
   }
-  if (!highest_contiguous_completed_offset_.has_value() ||
-      *highest_contiguous_completed_offset_ != baseline.committed_offset ||
+  if (!input_ledger_.highest_contiguous_completed_offset().has_value() ||
+      *input_ledger_.highest_contiguous_completed_offset() != baseline.committed_offset ||
       !open_barrier_offset_.has_value()) {
     return fail_closed("MATCHING_REPLAY_INCOMPLETE");
   }
   committed_offset_ = baseline.committed_offset;
+  if (!input_ledger_.acknowledge_commit(baseline.committed_offset + 1)) {
+    return fail_closed("MATCHING_REPLAY_COMMIT_WATERMARK_INVALID");
+  }
   return PartitionReplayResult::kRecovered;
 }
 
@@ -575,7 +590,6 @@ bool PartitionReplayCoordinator::accepts_next_offset(std::int64_t offset) {
   }
   if (!expected_next_input_offset_.has_value()) {
     expected_next_input_offset_ = offset;
-    next_contiguous_offset_ = offset;
   }
   expected_next_input_offset_ = offset + 1;
   return true;
@@ -589,15 +603,26 @@ void PartitionReplayCoordinator::mark_completed(std::int64_t input_offset) {
     return;
   }
   pending->second->processed = true;
-  while (next_contiguous_offset_.has_value()) {
-    const auto next = pending_inputs_.find(*next_contiguous_offset_);
-    if (next == pending_inputs_.end() || !next->second->processed ||
-        next->second->acknowledged_output_indices.size() != next->second->expected_output_count) {
-      break;
+  const auto result = input_ledger_.complete(pending->second->input_sequence);
+  if (result != InputLedgerResult::kAccepted && result != InputLedgerResult::kDuplicate) {
+    state_ = PartitionSessionState::kFailedClosed;
+    failure_reason_ = "MATCHING_INPUT_LEDGER_COMPLETION_FAILED";
+    return;
+  }
+  release_completed_inputs();
+}
+
+void PartitionReplayCoordinator::release_completed_inputs() {
+  const auto highest = input_ledger_.highest_contiguous_completed_sequence();
+  if (!highest.has_value()) {
+    return;
+  }
+  for (auto pending = pending_inputs_.begin(); pending != pending_inputs_.end();) {
+    if (pending->second->input_sequence <= *highest) {
+      pending = pending_inputs_.erase(pending);
+    } else {
+      ++pending;
     }
-    highest_contiguous_completed_offset_ = *next_contiguous_offset_;
-    ++*next_contiguous_offset_;
-    pending_inputs_.erase(next);
   }
 }
 

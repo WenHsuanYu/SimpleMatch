@@ -3,6 +3,7 @@
 #include "simplematch/matching/ingress/matching_command_decoder.hpp"
 #include "simplematch/matching/runtime/matching_event_encoder.hpp"
 #include "simplematch/matching/runtime/matching_runtime.hpp"
+#include "simplematch/matching/runtime/input_offset_ledger.hpp"
 #include "simplematch/matching/runtime/partition_ownership_permit.hpp"
 
 #include <array>
@@ -181,6 +182,7 @@ private:
   };
 
   struct PendingInput {
+    InputSequence input_sequence;
     MatchingCommandContext context;
     std::size_t expected_output_count{};
     std::set<std::int32_t> acknowledged_output_indices;
@@ -207,6 +209,7 @@ private:
   [[nodiscard]] bool accepts_open_barrier(const MatchingCommandDecodeResult &decoded) const;
   [[nodiscard]] bool accepts_next_offset(std::int64_t offset);
   void mark_completed(std::int64_t input_offset);
+  void release_completed_inputs();
   [[nodiscard]] PartitionReplayResult fail_closed(std::string reason);
 
   DirectKafkaPartitionAssignment assignment_;
@@ -215,13 +218,12 @@ private:
   MatchingCommandDecoder decoder_;
   MatchingEventEncoder event_encoder_;
   MatchingRuntime runtime_;
+  InputOffsetLedger input_ledger_;
   std::size_t maximum_distinct_commands_;
   std::size_t maximum_pending_publications_;
   PartitionSessionState state_{PartitionSessionState::kAwaitingOpen};
   std::string failure_reason_;
   std::optional<std::int64_t> expected_next_input_offset_;
-  std::optional<std::int64_t> next_contiguous_offset_;
-  std::optional<std::int64_t> highest_contiguous_completed_offset_;
   std::optional<std::int64_t> committed_offset_;
   std::optional<std::int64_t> open_barrier_offset_;
   std::map<CommandIdentity, std::array<char, 65>> command_fingerprints_;
