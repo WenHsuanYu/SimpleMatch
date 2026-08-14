@@ -215,9 +215,11 @@ DirectKafkaPartitionOffsets RdkafkaDirectPartitionKafkaConsumer::offsets() {
   return {earliest, end, committed};
 }
 
-std::vector<AssignedCommandRecord> RdkafkaDirectPartitionKafkaConsumer::read_retained(
-    std::int64_t first_offset, std::int64_t end_offset) {
-  if (first_offset < 0 || end_offset < first_offset) {
+std::vector<AssignedCommandRecord> RdkafkaDirectPartitionKafkaConsumer::read_retained_batch(
+    std::int64_t first_offset,
+    std::int64_t end_offset,
+    std::size_t maximum_records) {
+  if (first_offset < 0 || end_offset < first_offset || maximum_records == 0) {
     throw std::invalid_argument("invalid Matching Kafka retained range");
   }
   const auto range = offsets();
@@ -226,10 +228,14 @@ std::vector<AssignedCommandRecord> RdkafkaDirectPartitionKafkaConsumer::read_ret
   }
   seek(first_offset);
   std::vector<AssignedCommandRecord> records;
-  records.reserve(static_cast<std::size_t>(end_offset - first_offset));
+  const auto available = static_cast<std::uintmax_t>(end_offset - first_offset);
+  const auto batch_width =
+      std::min(available, static_cast<std::uintmax_t>(maximum_records));
+  const auto batch_end = first_offset + static_cast<std::int64_t>(batch_width);
+  records.reserve(static_cast<std::size_t>(batch_width));
   std::int64_t next_offset = first_offset;
   std::size_t idle_polls = 0;
-  while (next_offset < end_offset) {
+  while (next_offset < batch_end) {
     const auto record = poll();
     if (!record.has_value()) {
       if (++idle_polls >= 1000) {

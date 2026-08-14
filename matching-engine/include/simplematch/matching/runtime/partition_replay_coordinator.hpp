@@ -10,6 +10,7 @@
 #include <cstddef>
 #include <cstdint>
 #include <deque>
+#include <functional>
 #include <map>
 #include <memory>
 #include <optional>
@@ -37,6 +38,16 @@ struct AssignedCommandRecord {
   std::string value;
 };
 
+/**
+ * Reads one bounded retained batch from the Kafka recovery adapter.
+ *
+ * <p>The reader returns records in ascending, contiguous offset order, returns no more than the
+ * requested maximum, and returns an empty batch only when the requested range is empty or the
+ * retention source cannot provide the next record.</p>
+ */
+using RetainedRecordBatchReader = std::function<std::vector<AssignedCommandRecord>(
+    std::int64_t first_offset, std::int64_t end_offset, std::size_t maximum_records)>;
+
 /** Kafka offsets needed to decide whether a retained replay can complete safely. */
 struct DirectKafkaPartitionOffsets {
   std::int64_t earliest_retained_offset;
@@ -58,11 +69,12 @@ public:
     throw std::logic_error("Kafka consumer does not expose partition offsets");
   }
 
-  /** Reads [first_offset, end_offset) without applying Matching effects to publications. */
-  [[nodiscard]] virtual std::vector<AssignedCommandRecord> read_retained(
-      std::int64_t first_offset, std::int64_t end_offset) {
+  /** Reads at most maximum_records from [first_offset, end_offset). */
+  [[nodiscard]] virtual std::vector<AssignedCommandRecord> read_retained_batch(
+      std::int64_t first_offset, std::int64_t end_offset, std::size_t maximum_records) {
     static_cast<void>(first_offset);
     static_cast<void>(end_offset);
+    static_cast<void>(maximum_records);
     throw std::logic_error("Kafka consumer does not expose retained replay");
   }
 
@@ -169,10 +181,20 @@ public:
       const PartitionBaselineMetadata &baseline,
       std::int64_t earliest_retained_offset,
       std::span<const AssignedCommandRecord> retained_records);
+  /** Rebuilds from a baseline while retaining only one bounded Kafka batch at a time. */
+  [[nodiscard]] PartitionReplayResult recover(
+      const PartitionBaselineMetadata &baseline,
+      std::int64_t earliest_retained_offset,
+      const RetainedRecordBatchReader &reader);
   [[nodiscard]] PartitionReplayResult recover_from_retained_records(
       std::int64_t earliest_retained_offset,
       std::int64_t committed_offset,
       std::span<const AssignedCommandRecord> retained_records);
+  /** Scans for the latest valid Open Barrier and replays it using bounded Kafka batches. */
+  [[nodiscard]] PartitionReplayResult recover_from_retained_batches(
+      std::int64_t earliest_retained_offset,
+      std::int64_t committed_offset,
+      const RetainedRecordBatchReader &reader);
 
 private:
   struct CommandIdentity {
@@ -210,6 +232,10 @@ private:
   [[nodiscard]] bool accepts_next_offset(std::int64_t offset);
   void mark_completed(std::int64_t input_offset);
   void release_completed_inputs();
+  [[nodiscard]] PartitionReplayResult recover_from_batches(
+      const PartitionBaselineMetadata &baseline,
+      const RetainedRecordBatchReader &reader);
+  [[nodiscard]] PartitionReplayResult fail_retention(std::string reason);
   [[nodiscard]] PartitionReplayResult fail_closed(std::string reason);
 
   DirectKafkaPartitionAssignment assignment_;

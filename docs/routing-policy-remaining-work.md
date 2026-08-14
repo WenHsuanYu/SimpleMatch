@@ -329,13 +329,15 @@ and must not be interpreted as a requirement to push images or obtain external c
   `InputSequence` (including deduplicated inputs) to its Kafka offset, accepts out-of-order
   completion without crossing an incomplete prefix, and releases only completed contiguous entries.
   CTests cover the ledger, coordinator handoff, replay, and barrier invariants. The native
-  librdkafka adapter now exposes retained-range reads, committed/end offsets, seeking, and
-  synchronous commits, while the runtime replays the PVC baseline before live polling.
+  librdkafka adapter now exposes bounded retained batches, committed/end offsets, seeking, and
+  synchronous commits; the runtime replays the PVC baseline (or scans for a retained Open Barrier)
+  in batches bounded by the input ledger capacity before live polling.
 - **Missing behavior:** The disposable kind smoke covered PVC baseline persistence, Kafka replay,
-  Lease handover, and a normal Pod restart, but local production-like retention, broker/PVC failure
-  behavior, and the owned three-broker recovery gate remain outstanding. Unit tests and a
-  single-node smoke do not substitute for that local operational recovery gate; external production
-  certification is outside the project boundary.
+  Lease handover, and a normal Pod restart, but asynchronous delivery tracking, crash-window
+  handling, graceful shutdown, local production-like broker/PVC failure behavior, and the owned
+  three-broker recovery gate remain outstanding. Unit tests and a single-node smoke do not
+  substitute for that local operational recovery gate; external production certification is
+  outside the project boundary.
 - **Acceptance criteria:** Outputs are ACKed before the input offset becomes completed; commits
   never cross a gap. Crash windows may replay identical events but cannot lose an accepted command.
   A missing retained Open Barrier fails closed. No periodic order-book snapshot is added unless the

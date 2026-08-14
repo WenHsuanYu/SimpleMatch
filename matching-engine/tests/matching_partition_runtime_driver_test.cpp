@@ -1,5 +1,6 @@
 #include "simplematch/matching/runtime/matching_partition_runtime_driver.hpp"
 
+#include <algorithm>
 #include <chrono>
 #include <deque>
 #include <filesystem>
@@ -142,11 +143,22 @@ public:
 
   DirectKafkaPartitionOffsets offsets() override { return offset_range; }
 
-  std::vector<AssignedCommandRecord> read_retained(
-      std::int64_t first_offset, std::int64_t end_offset) override {
-    EXPECT_EQ(first_offset, retained.front().offset);
-    EXPECT_EQ(end_offset, retained.back().offset + 1);
-    return retained;
+  std::vector<AssignedCommandRecord> read_retained_batch(
+      std::int64_t first_offset,
+      std::int64_t end_offset,
+      std::size_t maximum_records) override {
+    ++read_batch_calls;
+    maximum_requested_batch_size = std::max(maximum_requested_batch_size, maximum_records);
+    std::vector<AssignedCommandRecord> batch;
+    for (const auto &record : retained) {
+      if (record.offset >= first_offset && record.offset < end_offset) {
+        batch.push_back(record);
+        if (batch.size() == maximum_records) {
+          break;
+        }
+      }
+    }
+    return batch;
   }
 
   void seek(std::int64_t next_offset) override { seek_offsets.push_back(next_offset); }
@@ -156,6 +168,8 @@ public:
   std::optional<DirectKafkaPartitionAssignment> assigned;
   std::vector<std::int64_t> committed_offsets;
   std::vector<std::int64_t> seek_offsets;
+  std::size_t read_batch_calls{};
+  std::size_t maximum_requested_batch_size{};
 };
 
 TEST(MatchingPartitionRuntimeDriverTest, DrainsPendingPublicationBeforePollingAnotherCommand) {
@@ -244,8 +258,54 @@ TEST(MatchingPartitionRuntimeDriverTest, ReplaysThePvcBaselineBeforeLivePolling)
 
   ASSERT_TRUE(driver.start(&store));
   EXPECT_EQ(consumer.seek_offsets, std::vector<std::int64_t>{12});
+  EXPECT_EQ(consumer.read_batch_calls, 1U);
+  EXPECT_EQ(consumer.maximum_requested_batch_size, 4U);
   EXPECT_TRUE(publisher.records.empty());
   EXPECT_EQ(driver.run_once(), MatchingPartitionDriverStep::kProcessed);
+  EXPECT_TRUE(publisher.records.empty());
+  std::filesystem::remove(path);
+}
+
+TEST(MatchingPartitionRuntimeDriverTest, ReplaysBaselineUsingBoundedKafkaBatches) {
+  const auto path =
+      std::filesystem::temp_directory_path() / "simplematch-driver-batched-baseline.json";
+  std::filesystem::remove(path);
+  PvcBaselineMetadataStore store(path.string());
+  store.save(PartitionBaselineMetadata{assignment(), identity(), 10, 14});
+
+  auto replay = coordinator();
+  RetainedRecoveryConsumer consumer;
+  consumer.offset_range = {10, 15, 15};
+  consumer.retained = {
+      open_record(10), order_record(11), order_record(12), order_record(13), order_record(14)};
+  RecordingPublisher publisher;
+  MatchingPartitionRuntimeDriver driver(consumer, replay, publisher);
+
+  ASSERT_TRUE(driver.start(&store));
+  EXPECT_EQ(consumer.read_batch_calls, 2U);
+  EXPECT_EQ(consumer.maximum_requested_batch_size, 4U);
+  EXPECT_EQ(consumer.seek_offsets, std::vector<std::int64_t>{15});
+  EXPECT_TRUE(publisher.records.empty());
+  std::filesystem::remove(path);
+}
+
+TEST(MatchingPartitionRuntimeDriverTest, ScansAndReplaysRetainedBatchesWithoutABaseline) {
+  const auto path =
+      std::filesystem::temp_directory_path() / "simplematch-driver-scan-baseline.json";
+  std::filesystem::remove(path);
+
+  auto replay = coordinator();
+  RetainedRecoveryConsumer consumer;
+  consumer.offset_range = {10, 12, 12};
+  consumer.retained = {open_record(10), order_record(11)};
+  RecordingPublisher publisher;
+  MatchingPartitionRuntimeDriver driver(consumer, replay, publisher);
+  PvcBaselineMetadataStore store(path.string());
+
+  ASSERT_TRUE(driver.start(&store));
+  EXPECT_EQ(consumer.read_batch_calls, 2U);
+  EXPECT_EQ(consumer.maximum_requested_batch_size, 4U);
+  EXPECT_EQ(consumer.seek_offsets, std::vector<std::int64_t>{12});
   EXPECT_TRUE(publisher.records.empty());
   std::filesystem::remove(path);
 }

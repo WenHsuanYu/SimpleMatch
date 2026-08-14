@@ -5,6 +5,7 @@
 #include <cctype>
 #include <filesystem>
 #include <fstream>
+#include <limits>
 #include <stdexcept>
 #include <set>
 #include <string_view>
@@ -110,6 +111,36 @@ PartitionBaselineMetadata metadata_from_json(const nlohmann::json &value) {
     throw std::runtime_error("invalid partition baseline metadata");
   }
   return metadata;
+}
+
+RetainedRecordBatchReader span_batch_reader(
+    std::span<const AssignedCommandRecord> retained_records) {
+  return [retained_records](
+             std::int64_t first_offset,
+             std::int64_t end_offset,
+             std::size_t maximum_records) {
+    std::vector<AssignedCommandRecord> batch;
+    if (maximum_records == 0) {
+      return batch;
+    }
+    batch.reserve(maximum_records);
+    for (const auto &record : retained_records) {
+      if (record.offset >= first_offset && record.offset < end_offset) {
+        batch.push_back(record);
+        if (batch.size() == maximum_records) {
+          break;
+        }
+      }
+    }
+    return batch;
+  };
+}
+
+std::int64_t bounded_batch_end(
+    std::int64_t first_offset, std::int64_t end_offset, std::size_t maximum_records) {
+  const auto available = static_cast<std::uintmax_t>(end_offset - first_offset);
+  const auto width = std::min(available, static_cast<std::uintmax_t>(maximum_records));
+  return first_offset + static_cast<std::int64_t>(width);
 }
 
 } // namespace
@@ -486,8 +517,18 @@ PartitionReplayResult PartitionReplayCoordinator::recover(
     const PartitionBaselineMetadata &baseline,
     std::int64_t earliest_retained_offset,
     std::span<const AssignedCommandRecord> retained_records) {
+  return recover(baseline, earliest_retained_offset, span_batch_reader(retained_records));
+}
+
+PartitionReplayResult PartitionReplayCoordinator::recover(
+    const PartitionBaselineMetadata &baseline,
+    std::int64_t earliest_retained_offset,
+    const RetainedRecordBatchReader &reader) {
   if (!ownership_permitted()) {
     return PartitionReplayResult::kOwnershipDenied;
+  }
+  if (!reader) {
+    return fail_closed("MATCHING_REPLAY_READER_MISSING");
   }
   if (state_ != PartitionSessionState::kAwaitingOpen || active_command_.has_value() ||
       baseline.assignment != assignment_ || baseline.identity != identity_) {
@@ -500,24 +541,40 @@ PartitionReplayResult PartitionReplayCoordinator::recover(
     failure_reason_ = "MATCHING_OPEN_BARRIER_NOT_RETAINED";
     return PartitionReplayResult::kMissingRetainedOpenBarrier;
   }
+  if (baseline.committed_offset < baseline.open_barrier_offset ||
+      baseline.committed_offset == std::numeric_limits<std::int64_t>::max()) {
+    return fail_retention("MATCHING_REPLAY_RANGE_INVALID");
+  }
+  return recover_from_batches(baseline, reader);
+}
+
+PartitionReplayResult PartitionReplayCoordinator::recover_from_batches(
+    const PartitionBaselineMetadata &baseline, const RetainedRecordBatchReader &reader) {
   expected_next_input_offset_ = baseline.open_barrier_offset;
   committed_offset_.reset();
 
-  for (std::int64_t offset = baseline.open_barrier_offset;
-       offset <= baseline.committed_offset;
-       ++offset) {
-    const auto record = std::find_if(
-        retained_records.begin(), retained_records.end(), [offset](const AssignedCommandRecord &candidate) {
-          return candidate.offset == offset;
-        });
-    if (record == retained_records.end()) {
-      state_ = PartitionSessionState::kFailedClosed;
-      failure_reason_ = "MATCHING_REPLAY_RETENTION_GAP";
-      return PartitionReplayResult::kRetentionInsufficient;
+  std::int64_t next_offset = baseline.open_barrier_offset;
+  const auto end_offset = baseline.committed_offset + 1;
+  while (next_offset < end_offset) {
+    const auto batch_end = bounded_batch_end(next_offset, end_offset, input_ledger_.capacity());
+    const auto batch = reader(next_offset, batch_end, input_ledger_.capacity());
+    if (batch.empty()) {
+      return fail_retention("MATCHING_REPLAY_RETENTION_GAP");
     }
-    const auto result = ingest_internal(*record, true);
-    if (result != PartitionReplayResult::kAccepted && result != PartitionReplayResult::kDuplicate) {
-      return result;
+    if (batch.size() > input_ledger_.capacity() ||
+        batch.size() > static_cast<std::size_t>(batch_end - next_offset)) {
+      return fail_closed("MATCHING_REPLAY_BATCH_CAPACITY_EXCEEDED");
+    }
+    for (const auto &record : batch) {
+      if (record.offset != next_offset) {
+        return fail_retention("MATCHING_REPLAY_RETENTION_GAP");
+      }
+      const auto result = ingest_internal(record, true);
+      if (result != PartitionReplayResult::kAccepted &&
+          result != PartitionReplayResult::kDuplicate) {
+        return result;
+      }
+      ++next_offset;
     }
   }
   if (!input_ledger_.highest_contiguous_completed_offset().has_value() ||
@@ -536,25 +593,50 @@ PartitionReplayResult PartitionReplayCoordinator::recover_from_retained_records(
     std::int64_t earliest_retained_offset,
     std::int64_t committed_offset,
     std::span<const AssignedCommandRecord> retained_records) {
+  return recover_from_retained_batches(
+      earliest_retained_offset, committed_offset, span_batch_reader(retained_records));
+}
+
+PartitionReplayResult PartitionReplayCoordinator::recover_from_retained_batches(
+    std::int64_t earliest_retained_offset,
+    std::int64_t committed_offset,
+    const RetainedRecordBatchReader &reader) {
   if (!ownership_permitted()) {
     return PartitionReplayResult::kOwnershipDenied;
   }
-  if (earliest_retained_offset < 0 || committed_offset < earliest_retained_offset) {
-    state_ = PartitionSessionState::kFailedClosed;
-    failure_reason_ = "MATCHING_RETENTION_RANGE_INVALID";
-    return PartitionReplayResult::kRetentionInsufficient;
+  if (!reader) {
+    return fail_closed("MATCHING_REPLAY_READER_MISSING");
+  }
+  if (earliest_retained_offset < 0 || committed_offset < earliest_retained_offset ||
+      committed_offset == std::numeric_limits<std::int64_t>::max()) {
+    return fail_retention("MATCHING_RETENTION_RANGE_INVALID");
   }
   std::optional<std::int64_t> open_offset;
-  for (const AssignedCommandRecord &record : retained_records) {
-    if (record.offset < earliest_retained_offset || record.offset > committed_offset ||
-        record.assignment != assignment_) {
-      continue;
+  std::int64_t next_offset = earliest_retained_offset;
+  const auto end_offset = committed_offset + 1;
+  while (next_offset < end_offset) {
+    const auto batch_end = bounded_batch_end(next_offset, end_offset, input_ledger_.capacity());
+    const auto batch = reader(next_offset, batch_end, input_ledger_.capacity());
+    if (batch.empty()) {
+      return fail_retention("MATCHING_REPLAY_RETENTION_GAP");
     }
-    const MatchingCommandDecodeResult decoded = decoder_.decode(record.value);
-    if (decoded.accepted() && decoded.command.type == CoreCommandType::kOpenBarrier &&
-        record.key == uuid_text(decoded.command.command_id) &&
-        accepts_context(decoded.command.context) && accepts_open_barrier(decoded)) {
-      open_offset = record.offset;
+    if (batch.size() > input_ledger_.capacity() ||
+        batch.size() > static_cast<std::size_t>(batch_end - next_offset)) {
+      return fail_closed("MATCHING_REPLAY_BATCH_CAPACITY_EXCEEDED");
+    }
+    for (const auto &record : batch) {
+      if (record.offset != next_offset) {
+        return fail_retention("MATCHING_REPLAY_RETENTION_GAP");
+      }
+      if (record.assignment == assignment_) {
+        const MatchingCommandDecodeResult decoded = decoder_.decode(record.value);
+        if (decoded.accepted() && decoded.command.type == CoreCommandType::kOpenBarrier &&
+            record.key == uuid_text(decoded.command.command_id) &&
+            accepts_context(decoded.command.context) && accepts_open_barrier(decoded)) {
+          open_offset = record.offset;
+        }
+      }
+      ++next_offset;
     }
   }
   if (!open_offset.has_value()) {
@@ -565,7 +647,7 @@ PartitionReplayResult PartitionReplayCoordinator::recover_from_retained_records(
   return recover(
       PartitionBaselineMetadata{assignment_, identity_, *open_offset, committed_offset},
       earliest_retained_offset,
-      retained_records);
+      reader);
 }
 
 bool PartitionReplayCoordinator::accepts_context(const MatchingCommandContext &context) const {
@@ -630,6 +712,12 @@ PartitionReplayResult PartitionReplayCoordinator::fail_closed(std::string reason
   state_ = PartitionSessionState::kFailedClosed;
   failure_reason_ = std::move(reason);
   return PartitionReplayResult::kFailedClosed;
+}
+
+PartitionReplayResult PartitionReplayCoordinator::fail_retention(std::string reason) {
+  state_ = PartitionSessionState::kFailedClosed;
+  failure_reason_ = std::move(reason);
+  return PartitionReplayResult::kRetentionInsufficient;
 }
 
 DirectPartitionRuntimeDriver::DirectPartitionRuntimeDriver(

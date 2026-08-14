@@ -44,6 +44,10 @@ bool MatchingPartitionRuntimeDriver::recover_before_live_processing(
   }
   const DirectKafkaPartitionOffsets offsets = consumer_.offsets();
   const auto baseline = baseline_store->load();
+  const RetainedRecordBatchReader reader =
+      [this](std::int64_t first_offset, std::int64_t end_offset, std::size_t maximum_records) {
+        return consumer_.read_retained_batch(first_offset, end_offset, maximum_records);
+      };
   if (baseline.has_value()) {
     if (!offsets.committed_offset.has_value() ||
         baseline->committed_offset >= *offsets.committed_offset ||
@@ -52,10 +56,8 @@ bool MatchingPartitionRuntimeDriver::recover_before_live_processing(
         baseline->open_barrier_offset < offsets.earliest_retained_offset) {
       return false;
     }
-    const auto retained = consumer_.read_retained(
-        baseline->open_barrier_offset, baseline->committed_offset + 1);
     if (coordinator_.recover(
-            *baseline, offsets.earliest_retained_offset, retained) !=
+            *baseline, offsets.earliest_retained_offset, reader) !=
         PartitionReplayResult::kRecovered) {
       return false;
     }
@@ -71,10 +73,8 @@ bool MatchingPartitionRuntimeDriver::recover_before_live_processing(
       *offsets.committed_offset > offsets.end_offset) {
     return false;
   }
-  const auto retained = consumer_.read_retained(
-      offsets.earliest_retained_offset, *offsets.committed_offset);
-  const auto result = coordinator_.recover_from_retained_records(
-      offsets.earliest_retained_offset, committed_last_offset, retained);
+  const auto result = coordinator_.recover_from_retained_batches(
+      offsets.earliest_retained_offset, committed_last_offset, reader);
   if (result != PartitionReplayResult::kRecovered) {
     return false;
   }

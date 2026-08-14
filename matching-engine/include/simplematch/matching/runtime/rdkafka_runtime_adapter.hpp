@@ -33,8 +33,10 @@ public:
   [[nodiscard]] std::optional<AssignedCommandRecord> poll() override;
   void commit_synchronously(std::int64_t next_offset) override;
   [[nodiscard]] DirectKafkaPartitionOffsets offsets() override;
-  [[nodiscard]] std::vector<AssignedCommandRecord> read_retained(
-      std::int64_t first_offset, std::int64_t end_offset) override;
+  [[nodiscard]] std::vector<AssignedCommandRecord> read_retained_batch(
+      std::int64_t first_offset,
+      std::int64_t end_offset,
+      std::size_t maximum_records) override;
   void seek(std::int64_t next_offset) override;
 
 private:

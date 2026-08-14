@@ -189,6 +189,78 @@ TEST(PartitionReplayCoordinatorTest, RebuildsFromTheRetainedBarrierWithoutRepubl
       PartitionReplayResult::kMissingRetainedOpenBarrier);
 }
 
+TEST(PartitionReplayCoordinatorTest, ReplaysRetainedRecordsInBoundedBatches) {
+  auto restarted = coordinator();
+  const std::vector<AssignedCommandRecord> retained{
+      open_record(20),
+      order_record(
+          21,
+          "0198a001-0000-7000-8000-000000000004",
+          "0198a001-0000-7000-8000-000000000014",
+          simplematch::common::v2::SIDE_SELL),
+      order_record(
+          22,
+          "0198a001-0000-7000-8000-000000000005",
+          "0198a001-0000-7000-8000-000000000015",
+          simplematch::common::v2::SIDE_SELL),
+      order_record(
+          23,
+          "0198a001-0000-7000-8000-000000000006",
+          "0198a001-0000-7000-8000-000000000016",
+          simplematch::common::v2::SIDE_SELL),
+      order_record(
+          24,
+          "0198a001-0000-7000-8000-000000000007",
+          "0198a001-0000-7000-8000-000000000017",
+          simplematch::common::v2::SIDE_SELL)};
+  std::size_t read_calls = 0;
+  std::vector<std::size_t> requested_capacities;
+  const RetainedRecordBatchReader reader =
+      [&retained, &read_calls, &requested_capacities](
+          std::int64_t first_offset,
+          std::int64_t end_offset,
+          std::size_t maximum_records) {
+        ++read_calls;
+        requested_capacities.push_back(maximum_records);
+        std::vector<AssignedCommandRecord> batch;
+        for (const auto &record : retained) {
+          if (record.offset >= first_offset && record.offset < end_offset) {
+            batch.push_back(record);
+            if (batch.size() == maximum_records) {
+              break;
+            }
+          }
+        }
+        return batch;
+      };
+
+  ASSERT_EQ(
+      restarted.recover(
+          PartitionBaselineMetadata{assignment(), identity(), 20, 24}, 20, reader),
+      PartitionReplayResult::kRecovered);
+  EXPECT_EQ(read_calls, 2U);
+  EXPECT_EQ(requested_capacities, (std::vector<std::size_t>{4, 4}));
+}
+
+TEST(PartitionReplayCoordinatorTest, RejectsARetainedBatchWithAnOffsetGap) {
+  auto restarted = coordinator();
+  const RetainedRecordBatchReader reader = [](std::int64_t, std::int64_t, std::size_t) {
+    return std::vector<AssignedCommandRecord>{
+        open_record(20),
+        order_record(
+            22,
+            "0198a001-0000-7000-8000-000000000004",
+            "0198a001-0000-7000-8000-000000000014",
+            simplematch::common::v2::SIDE_SELL)};
+  };
+
+  EXPECT_EQ(
+      restarted.recover(
+          PartitionBaselineMetadata{assignment(), identity(), 20, 21}, 20, reader),
+      PartitionReplayResult::kRetentionInsufficient);
+  EXPECT_EQ(restarted.status().state, PartitionSessionState::kFailedClosed);
+}
+
 TEST(PartitionReplayCoordinatorTest, PersistsOnlyBoundedBaselineCoordinatesOnThePvc) {
   const auto path = std::filesystem::temp_directory_path() / "simplematch-partition-baseline.json";
   std::filesystem::remove(path);
