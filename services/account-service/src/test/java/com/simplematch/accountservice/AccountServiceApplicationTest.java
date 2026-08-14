@@ -72,6 +72,6 @@ class AccountServiceApplicationTest {
     assertThat(hikariDataSource.getMaximumPoolSize()).isEqualTo(4);
     assertThat(hikariDataSource.getPoolName()).isEqualTo("account-service-hikari");
     assertThat(jdbcTemplate.queryForObject("SELECT CURRENT_SCHEMA()", String.class))
-        .isEqualTo("ACCOUNT_SERVICE");
+        .isEqualTo("account_service");
   }
 }

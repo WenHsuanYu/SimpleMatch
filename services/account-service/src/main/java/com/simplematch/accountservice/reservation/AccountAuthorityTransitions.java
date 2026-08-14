@@ -31,7 +31,9 @@ final class AccountAuthorityTransitions {
       final AccountLimit limit =
           authorityReader
               .findLimitForUpdate(reservation.accountIdentity(), tradingDay)
-              .orElseThrow(() -> new IllegalStateException("account limit is not provisioned"));
+              .orElseThrow(
+                  () ->
+                      new AccountReservationInvariantException("account limit is not provisioned"));
       final AccountLimit changed =
           limit.withLedger(
               new AccountLimitLedger(
@@ -49,7 +51,8 @@ final class AccountAuthorityTransitions {
     final AccountPosition position =
         authorityReader
             .findPositionForUpdate(reservation.accountIdentity(), reservation.symbol())
-            .orElseThrow(() -> new IllegalStateException("position is not provisioned"));
+            .orElseThrow(
+                () -> new AccountReservationInvariantException("position is not provisioned"));
     final BigDecimal released =
         position.reservedLongQuantity().min(reservation.remainingQuantity());
     final AccountPosition changed =
@@ -76,7 +79,9 @@ final class AccountAuthorityTransitions {
       final AccountLimit limit =
           authorityReader
               .findLimitForUpdate(reservation.accountIdentity(), tradingDay)
-              .orElseThrow(() -> new IllegalStateException("account limit is not provisioned"));
+              .orElseThrow(
+                  () ->
+                      new AccountReservationInvariantException("account limit is not provisioned"));
       final AccountLimit changed =
           limit.withLedger(
               new AccountLimitLedger(
@@ -89,7 +94,8 @@ final class AccountAuthorityTransitions {
       final AccountPosition position =
           authorityReader
               .findPositionForUpdate(reservation.accountIdentity(), reservation.symbol())
-              .orElseThrow(() -> new IllegalStateException("position is not provisioned"));
+              .orElseThrow(
+                  () -> new AccountReservationInvariantException("position is not provisioned"));
       final AccountPosition changedPosition =
           position.withInventory(
               new AccountPositionInventory(
@@ -104,7 +110,8 @@ final class AccountAuthorityTransitions {
     final AccountPosition position =
         authorityReader
             .findPositionForUpdate(reservation.accountIdentity(), reservation.symbol())
-            .orElseThrow(() -> new IllegalStateException("position is not provisioned"));
+            .orElseThrow(
+                () -> new AccountReservationInvariantException("position is not provisioned"));
     final BigDecimal released = position.reservedLongQuantity().min(fill.quantity().value());
     final AccountPosition changed =
         position.withInventory(

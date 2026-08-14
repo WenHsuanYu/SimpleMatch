@@ -6,6 +6,7 @@ import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.when;
 
 import com.simplematch.accountservice.reservation.AccountReservationApplicationService;
+import com.simplematch.accountservice.reservation.AccountReservationInvariantException;
 import com.simplematch.accountservice.reservation.ReserveOperation;
 import com.simplematch.accountservice.store.JdbcAccountAuthorityLifecycleWriter;
 import com.simplematch.accountservice.store.JdbcAccountAuthorityReader;
@@ -181,7 +182,7 @@ class AccountReservationV2GrpcServiceTest {
     final AccountReservationApplicationService failingService =
         mock(AccountReservationApplicationService.class);
     when(failingService.reserve(any(ReserveOperation.class)))
-        .thenThrow(new IllegalStateException("optimistic version conflict"));
+        .thenThrow(new AccountReservationInvariantException("optimistic version conflict"));
     final AccountReservationV2GrpcService grpcService =
         new AccountReservationV2GrpcService(failingService);
     final TestStreamObserver<AccountLifecycleEvent> observer = new TestStreamObserver<>();
@@ -192,6 +193,24 @@ class AccountReservationV2GrpcServiceTest {
         .isEqualTo(Status.Code.FAILED_PRECONDITION);
     assertThat(Status.fromThrowable(observer.error()).getDescription())
         .isEqualTo("account reservation invariant failed");
+  }
+
+  @DisplayName("v2 reserve reports unexpected state failures as internal errors")
+  @Test
+  void reserveReportsUnexpectedStateAsInternal() {
+    final AccountReservationApplicationService failingService =
+        mock(AccountReservationApplicationService.class);
+    when(failingService.reserve(any(ReserveOperation.class)))
+        .thenThrow(new IllegalStateException("unexpected state"));
+    final AccountReservationV2GrpcService grpcService =
+        new AccountReservationV2GrpcService(failingService);
+    final TestStreamObserver<AccountLifecycleEvent> observer = new TestStreamObserver<>();
+
+    grpcService.reserve(validRequest(), observer);
+
+    assertThat(Status.fromThrowable(observer.error()).getCode()).isEqualTo(Status.Code.INTERNAL);
+    assertThat(Status.fromThrowable(observer.error()).getDescription())
+        .isEqualTo("failed to persist reservation");
   }
 
   private ReservationCommand validRequest() {

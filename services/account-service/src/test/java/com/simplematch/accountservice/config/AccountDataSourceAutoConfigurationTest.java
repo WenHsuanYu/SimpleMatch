@@ -61,7 +61,22 @@ class AccountDataSourceAutoConfigurationTest {
               assertThat(dataSource.getJdbcUrl()).startsWith("jdbc:h2:mem:account_auto_config");
               assertThat(dataSource.getMaximumPoolSize()).isEqualTo(4);
               assertThat(dataSource.getPoolName()).isEqualTo("account-service-hikari");
-              assertThat(currentSchema(dataSource)).isEqualTo("ACCOUNT_SERVICE");
+              assertThat(currentSchema(dataSource)).isEqualTo("account_service");
+            });
+  }
+
+  @Test
+  void createsAndSelectsAccountSchemaWhenH2DsnHasNoInitClause() {
+    contextRunner
+        .withPropertyValues(
+            "simplematch.postgres.dsn=jdbc:h2:mem:account_auto_config_without_init;MODE=PostgreSQL;DB_CLOSE_DELAY=-1",
+            "spring.datasource.url=jdbc:h2:mem:wrong-source")
+        .run(
+            context -> {
+              assertThat(context).hasNotFailed();
+              final HikariDataSource dataSource = context.getBean(HikariDataSource.class);
+
+              assertThat(currentSchema(dataSource)).isEqualTo("account_service");
             });
   }
 

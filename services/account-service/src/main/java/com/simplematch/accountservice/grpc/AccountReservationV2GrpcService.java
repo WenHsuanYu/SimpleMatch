@@ -1,6 +1,7 @@
 package com.simplematch.accountservice.grpc;
 
 import com.simplematch.accountservice.reservation.AccountReservationApplicationService;
+import com.simplematch.accountservice.reservation.AccountReservationInvariantException;
 import com.simplematch.accountservice.reservation.ReservationRecord;
 import com.simplematch.accountservice.reservation.ReservationRequestConflictException;
 import com.simplematch.contracts.account.v2.AccountLifecycleEvent;
@@ -44,7 +45,7 @@ public final class AccountReservationV2GrpcService
     } catch (IllegalArgumentException invalid) {
       responseObserver.onError(
           Status.INVALID_ARGUMENT.withDescription(invalid.getMessage()).asRuntimeException());
-    } catch (IllegalStateException invariant) {
+    } catch (AccountReservationInvariantException invariant) {
       responseObserver.onError(
           Status.FAILED_PRECONDITION
               .withDescription("account reservation invariant failed")

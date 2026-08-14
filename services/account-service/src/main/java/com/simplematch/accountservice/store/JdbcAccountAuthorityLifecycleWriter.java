@@ -4,6 +4,7 @@ import com.simplematch.accountservice.authority.AccountAuthorityLifecycleWriter;
 import com.simplematch.accountservice.authority.AccountLimit;
 import com.simplematch.accountservice.authority.AccountPosition;
 import com.simplematch.accountservice.authority.AccountReservation;
+import com.simplematch.accountservice.reservation.AccountReservationInvariantException;
 import java.util.UUID;
 import org.springframework.dao.DuplicateKeyException;
 import org.springframework.jdbc.core.JdbcTemplate;
@@ -198,7 +199,8 @@ public class JdbcAccountAuthorityLifecycleWriter implements AccountAuthorityLife
 
   private void updateExactlyOne(String sql, Object... arguments) {
     if (jdbc.update(sql, arguments) != 1) {
-      throw new IllegalStateException("account authority optimistic version conflict");
+      throw new AccountReservationInvariantException(
+          "account authority optimistic version conflict");
     }
   }
 }

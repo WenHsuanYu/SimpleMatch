@@ -39,13 +39,18 @@ public final class SimpleMatchDataSourceAutoConfiguration {
       dataSourceBuilder.password(parsedDsn.password());
     }
     final HikariDataSource dataSource = dataSourceBuilder.build();
-    // H2 executes URL INIT statements while opening its first connection, after Hikari applies
-    // the configured schema. The test URL owns schema selection, so applying it twice fails.
-    if (!parsedDsn.jdbcUrl().startsWith("jdbc:h2:")) {
+    if (parsedDsn.jdbcUrl().startsWith("jdbc:h2:")) {
+      dataSource.setConnectionInitSql(h2SchemaInitialization(settings.schema()));
+    } else {
       dataSource.setSchema(settings.schema());
     }
     dataSource.setMaximumPoolSize(settings.maximumPoolSize());
     dataSource.setPoolName(settings.poolName());
     return dataSource;
+  }
+
+  private static String h2SchemaInitialization(String schema) {
+    final String quotedSchema = "\"" + schema.replace("\"", "\"\"") + "\"";
+    return "CREATE SCHEMA IF NOT EXISTS " + quotedSchema + "; SET SCHEMA " + quotedSchema;
   }
 }
