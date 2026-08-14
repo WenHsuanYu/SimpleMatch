@@ -1,0 +1,130 @@
+# PostgreSQL is intentionally a node-local singleton for the local resilience lab.
+# A PDB protects planned disruption; it does not provide cross-node HA or storage failover.
+apiVersion: v1
+kind: Service
+metadata:
+  name: postgres
+  labels:
+    app.kubernetes.io/name: postgres
+    app.kubernetes.io/component: database
+    app.kubernetes.io/part-of: simplematch
+spec:
+  clusterIP: "None"
+  publishNotReadyAddresses: false
+  ports:
+    - name: postgres
+      port: 5432
+      targetPort: postgres
+  selector:
+    app.kubernetes.io/name: postgres
+    app.kubernetes.io/component: database
+    app.kubernetes.io/part-of: simplematch
+---
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: postgres
+  labels:
+    app.kubernetes.io/name: postgres
+    app.kubernetes.io/component: database
+    app.kubernetes.io/part-of: simplematch
+spec:
+  serviceName: postgres
+  replicas: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: postgres
+      app.kubernetes.io/component: database
+      app.kubernetes.io/part-of: simplematch
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: postgres
+        app.kubernetes.io/component: database
+        app.kubernetes.io/part-of: simplematch
+    spec:
+      nodeSelector:
+        simplematch.io/node-pool: local-resilience
+        simplematch.io/worker-slot: "0"
+      securityContext:
+        fsGroup: 999
+      terminationGracePeriodSeconds: 60
+      containers:
+        - name: postgres
+          image: postgres:18.4
+          imagePullPolicy: IfNotPresent
+          command: ["postgres", "-c", "wal_level=logical"]
+          env:
+            - name: POSTGRES_DB
+              value: simplematch
+            - name: POSTGRES_USER
+              value: simplematch
+            - name: POSTGRES_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: simplematch-postgres-secrets
+                  key: postgres_password
+                  optional: false
+            - name: PGDATA
+              value: /var/lib/postgresql/data/pgdata
+          ports:
+            - name: postgres
+              containerPort: 5432
+          startupProbe:
+            exec:
+              command: ["pg_isready", "-h", "127.0.0.1", "-p", "5432", "-U", "simplematch", "-d", "simplematch"]
+            failureThreshold: 30
+            periodSeconds: 5
+            timeoutSeconds: 5
+          readinessProbe:
+            exec:
+              command: ["pg_isready", "-h", "127.0.0.1", "-p", "5432", "-U", "simplematch", "-d", "simplematch"]
+            failureThreshold: 3
+            periodSeconds: 5
+            timeoutSeconds: 3
+          livenessProbe:
+            exec:
+              command: ["pg_isready", "-h", "127.0.0.1", "-p", "5432", "-U", "simplematch", "-d", "simplematch"]
+            failureThreshold: 6
+            periodSeconds: 10
+            timeoutSeconds: 5
+          resources:
+            requests:
+              cpu: 500m
+              memory: 1Gi
+            limits:
+              cpu: "1"
+              memory: 2Gi
+          volumeMounts:
+            - name: postgres-data
+              mountPath: /var/lib/postgresql/data
+  volumeClaimTemplates:
+    - metadata:
+        name: postgres-data
+        labels:
+          app.kubernetes.io/name: postgres
+          app.kubernetes.io/component: database
+          app.kubernetes.io/part-of: simplematch
+      spec:
+        accessModes:
+          - ReadWriteOnce
+        storageClassName: simplematch-rwo-pod
+        resources:
+          requests:
+            storage: 10Gi
+---
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: postgres
+  labels:
+    app.kubernetes.io/name: postgres
+    app.kubernetes.io/component: database
+    app.kubernetes.io/part-of: simplematch
+spec:
+  minAvailable: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: postgres
+      app.kubernetes.io/component: database
+      app.kubernetes.io/part-of: simplematch
