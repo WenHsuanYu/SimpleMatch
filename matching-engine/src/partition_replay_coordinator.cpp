@@ -223,13 +223,27 @@ const DirectKafkaPartitionAssignment &PartitionReplayCoordinator::assignment() c
   return assignment_;
 }
 
+MatchingRuntime &PartitionReplayCoordinator::runtime() {
+  return runtime_;
+}
+
+std::shared_ptr<const PartitionOwnershipPermit>
+PartitionReplayCoordinator::ownership_permit() const {
+  return ownership_permit_;
+}
+
 bool PartitionReplayCoordinator::ownership_permitted() const {
   return ownership_permit_->partition_id() == assignment_.partition &&
          ownership_permit_->allows_processing();
 }
 
 PartitionReplayResult PartitionReplayCoordinator::ingest(const AssignedCommandRecord &record) {
-  return ingest_internal(record, false);
+  return ingest_internal(record, false, true);
+}
+
+PartitionReplayResult PartitionReplayCoordinator::ingest_for_threaded_writer(
+    const AssignedCommandRecord &record, bool suppress_publication) {
+  return ingest_internal(record, suppress_publication, false);
 }
 
 PartitionReplayResult PartitionReplayCoordinator::continue_processing() {
@@ -242,8 +256,15 @@ PartitionReplayResult PartitionReplayCoordinator::continue_processing() {
   return drive_active_command();
 }
 
+PartitionReplayResult PartitionReplayCoordinator::drain_threaded_outputs() {
+  if (!ownership_permitted()) {
+    return PartitionReplayResult::kOwnershipDenied;
+  }
+  return drain_active_command_outputs();
+}
+
 PartitionReplayResult PartitionReplayCoordinator::ingest_internal(
-    const AssignedCommandRecord &record, bool suppress_publication) {
+    const AssignedCommandRecord &record, bool suppress_publication, bool process_immediately) {
   if (state_ == PartitionSessionState::kFailedClosed) {
     return PartitionReplayResult::kFailedClosed;
   }
@@ -352,8 +373,9 @@ PartitionReplayResult PartitionReplayCoordinator::ingest_internal(
       record.offset,
       decoded.command.context,
       decoded.command.type,
-      suppress_publication};
-  return drive_active_command();
+      suppress_publication,
+      0};
+  return process_immediately ? drive_active_command() : PartitionReplayResult::kAccepted;
 }
 
 PartitionReplayResult PartitionReplayCoordinator::drive_active_command() {
@@ -374,17 +396,23 @@ PartitionReplayResult PartitionReplayCoordinator::drive_active_command() {
     return fail_closed("MATCHING_CORE_REJECTED_COMMAND");
   }
 
-  const ActiveCommand active = *active_command_;
+  return drain_active_command_outputs();
+}
+
+PartitionReplayResult PartitionReplayCoordinator::drain_active_command_outputs() {
+  if (!active_command_.has_value()) {
+    return PartitionReplayResult::kAccepted;
+  }
+
+  ActiveCommand &active = *active_command_;
   const auto pending = pending_inputs_.find(active.input_offset);
   if (pending == pending_inputs_.end()) {
     return fail_closed("MATCHING_PENDING_INPUT_MISSING");
   }
-  std::size_t output_count = 0;
   bool saw_end_of_input = false;
   while (const auto output = runtime_.take_output()) {
     if (const auto *end = std::get_if<RuntimeEndOfInput>(&*output)) {
-      if (end->input_sequence != active.input_sequence ||
-          end->output_count != output_count) {
+      if (end->input_sequence != active.input_sequence || end->output_count != active.output_count) {
         return fail_closed("MATCHING_OUTPUT_SEQUENCE_CORRUPTED");
       }
       saw_end_of_input = true;
@@ -392,10 +420,11 @@ PartitionReplayResult PartitionReplayCoordinator::drive_active_command() {
     }
     const auto &event = std::get<RuntimeEventOutput>(*output);
     if (event.input_sequence != active.input_sequence ||
-        event.output_index != output_count) {
+        event.output_index != active.output_count || event.event.output_index < 0 ||
+        static_cast<std::size_t>(event.event.output_index) != active.output_count) {
       return fail_closed("MATCHING_OUTPUT_SEQUENCE_CORRUPTED");
     }
-    ++output_count;
+    ++active.output_count;
     if (active.suppress_publication) {
       continue;
     }
@@ -406,13 +435,17 @@ PartitionReplayResult PartitionReplayCoordinator::drive_active_command() {
     if (!encoded.has_value()) {
       return fail_closed("MATCHING_EVENT_ENCODING_FAILED");
     }
-    pending_publications_.push_back(PendingPublication{*encoded, false});
+    if (next_publication_id_ == std::numeric_limits<std::uint64_t>::max()) {
+      return fail_closed("MATCHING_PUBLICATION_ID_EXHAUSTED");
+    }
+    pending_publications_.push_back(
+        PendingPublication{*encoded, false, false, next_publication_id_++});
   }
   if (!saw_end_of_input) {
-    return fail_closed("MATCHING_END_OF_INPUT_MISSING");
+    return PartitionReplayResult::kInputBackpressured;
   }
 
-  pending->second->expected_output_count = active.suppress_publication ? 0 : output_count;
+  pending->second->expected_output_count = active.suppress_publication ? 0 : active.output_count;
   pending->second->processed = true;
   if (active.type == CoreCommandType::kOpenBarrier) {
     state_ = PartitionSessionState::kOpen;
@@ -420,9 +453,10 @@ PartitionReplayResult PartitionReplayCoordinator::drive_active_command() {
   } else if (active.type == CoreCommandType::kCloseBarrier) {
     state_ = PartitionSessionState::kClosed;
   }
+  const auto completed_input_offset = active.input_offset;
   active_command_.reset();
   if (pending->second->expected_output_count == 0) {
-    mark_completed(active.input_offset);
+    mark_completed(completed_input_offset);
   }
   return PartitionReplayResult::kAccepted;
 }
@@ -432,13 +466,67 @@ PartitionReplayCoordinator::next_unacknowledged_publication() const {
   if (!ownership_permitted()) {
     return std::nullopt;
   }
+  if (retry_publication_id_.has_value()) {
+    const auto retry = std::find_if(
+        pending_publications_.begin(), pending_publications_.end(),
+        [this](const PendingPublication &publication) {
+          const auto pending = pending_inputs_.find(publication.record.source_input_offset);
+          return publication.publication_id == *retry_publication_id_ &&
+                 pending != pending_inputs_.end() && pending->second->processed;
+        });
+    if (retry == pending_publications_.end() || retry->acknowledged || retry->submitted) {
+      return std::nullopt;
+    }
+    return retry->record;
+  }
   const auto next = std::find_if(
       pending_publications_.begin(), pending_publications_.end(),
-      [](const PendingPublication &publication) { return !publication.acknowledged; });
+      [this](const PendingPublication &publication) {
+        const auto pending = pending_inputs_.find(publication.record.source_input_offset);
+        return !publication.acknowledged && !publication.submitted &&
+               pending != pending_inputs_.end() && pending->second->processed;
+      });
   if (next == pending_publications_.end()) {
     return std::nullopt;
   }
   return next->record;
+}
+
+bool PartitionReplayCoordinator::publication_retry_pending() const noexcept {
+  return retry_publication_id_.has_value();
+}
+
+std::optional<std::uint64_t> PartitionReplayCoordinator::publication_id_for(
+    std::int64_t input_offset, std::int32_t output_index) const {
+  const auto publication = std::find_if(
+      pending_publications_.begin(), pending_publications_.end(),
+      [input_offset, output_index](const PendingPublication &candidate) {
+        return candidate.record.source_input_offset == input_offset &&
+               candidate.record.output_index == output_index;
+      });
+  if (publication == pending_publications_.end() || publication->acknowledged) {
+    return std::nullopt;
+  }
+  return publication->publication_id;
+}
+
+PartitionReplayResult PartitionReplayCoordinator::mark_publication_submitted(
+    std::int64_t input_offset, std::int32_t output_index, std::uint64_t publication_id) {
+  const auto publication = std::find_if(
+      pending_publications_.begin(), pending_publications_.end(),
+      [input_offset, output_index](const PendingPublication &candidate) {
+        return candidate.record.source_input_offset == input_offset &&
+               candidate.record.output_index == output_index;
+      });
+  if (publication == pending_publications_.end() || publication->acknowledged ||
+      publication->publication_id != publication_id) {
+    return fail_closed("MATCHING_PUBLICATION_SUBMISSION_UNKNOWN");
+  }
+  if (publication->submitted) {
+    return PartitionReplayResult::kDuplicate;
+  }
+  publication->submitted = true;
+  return PartitionReplayResult::kAccepted;
 }
 
 PartitionReplayResult PartitionReplayCoordinator::acknowledge_published(
@@ -461,23 +549,65 @@ PartitionReplayResult PartitionReplayCoordinator::acknowledge_published(
   if (publication->acknowledged) {
     return PartitionReplayResult::kDuplicate;
   }
+  publication->submitted = true;
+  return acknowledge_publication(*publication);
+}
+
+PartitionReplayResult PartitionReplayCoordinator::acknowledge_published(
+    std::uint64_t publication_id, MatchingPublicationDelivery delivery) {
+  const auto publication = std::find_if(
+      pending_publications_.begin(), pending_publications_.end(),
+      [publication_id](const PendingPublication &candidate) {
+        return candidate.publication_id == publication_id;
+      });
+  if (publication == pending_publications_.end() || publication->acknowledged) {
+    return PartitionReplayResult::kDuplicate;
+  }
+  if (!publication->submitted) {
+    return fail_closed("MATCHING_PUBLICATION_ACK_BEFORE_SUBMISSION");
+  }
+  if (delivery == MatchingPublicationDelivery::kNotPersisted ||
+      delivery == MatchingPublicationDelivery::kPossiblyPersisted) {
+    if (retry_publication_id_.has_value() && *retry_publication_id_ != publication_id) {
+      return fail_closed("MATCHING_MULTIPLE_PUBLICATION_RETRIES_REQUIRED");
+    }
+    retry_publication_id_ = publication_id;
+    publication->submitted = false;
+    return PartitionReplayResult::kOutputBackpressured;
+  }
+  if (delivery == MatchingPublicationDelivery::kFatal) {
+    return fail_closed("MATCHING_PUBLICATION_FATAL_FAILURE");
+  }
+  return acknowledge_publication(*publication);
+}
+
+PartitionReplayResult PartitionReplayCoordinator::acknowledge_publication(
+    PendingPublication &publication) {
+  const auto input_offset = publication.record.source_input_offset;
+  const auto publication_id = publication.publication_id;
   const auto pending = pending_inputs_.find(input_offset);
   if (pending == pending_inputs_.end() || !pending->second->processed) {
     return fail_closed("MATCHING_PUBLICATION_INPUT_MISSING");
   }
-  publication->acknowledged = true;
-  if (!pending->second->acknowledged_output_indices.insert(output_index).second) {
+  publication.acknowledged = true;
+  publication.submitted = false;
+  if (!pending->second->acknowledged_output_indices.insert(
+          publication.record.output_index).second) {
     return PartitionReplayResult::kDuplicate;
   }
   const bool all_outputs_acknowledged =
       pending->second->acknowledged_output_indices.size() == pending->second->expected_output_count;
+  const auto completed_input_offset = publication.record.source_input_offset;
   while (!pending_publications_.empty() && pending_publications_.front().acknowledged) {
     pending_publications_.pop_front();
   }
   if (all_outputs_acknowledged) {
-    mark_completed(input_offset);
+    mark_completed(completed_input_offset);
   }
-  return continue_processing();
+  if (retry_publication_id_ == publication_id) {
+    retry_publication_id_.reset();
+  }
+  return PartitionReplayResult::kAccepted;
 }
 
 std::optional<std::int64_t> PartitionReplayCoordinator::next_commit_offset() const {
@@ -545,11 +675,46 @@ PartitionReplayResult PartitionReplayCoordinator::recover(
       baseline.committed_offset == std::numeric_limits<std::int64_t>::max()) {
     return fail_retention("MATCHING_REPLAY_RANGE_INVALID");
   }
-  return recover_from_batches(baseline, reader);
+  return recover_from_batches(baseline, reader, true, nullptr);
+}
+
+PartitionReplayResult PartitionReplayCoordinator::recover_threaded(
+    const PartitionBaselineMetadata &baseline,
+    std::int64_t earliest_retained_offset,
+    const RetainedRecordBatchReader &reader,
+    const ThreadedRecoveryStep &execution_step) {
+  if (!execution_step) {
+    return fail_closed("MATCHING_REPLAY_EXECUTION_STEP_MISSING");
+  }
+  if (!ownership_permitted()) {
+    return PartitionReplayResult::kOwnershipDenied;
+  }
+  if (!reader) {
+    return fail_closed("MATCHING_REPLAY_READER_MISSING");
+  }
+  if (state_ != PartitionSessionState::kAwaitingOpen || active_command_.has_value() ||
+      baseline.assignment != assignment_ || baseline.identity != identity_) {
+    state_ = PartitionSessionState::kFailedClosed;
+    failure_reason_ = "MATCHING_BASELINE_IDENTITY_MISMATCH";
+    return PartitionReplayResult::kIdentityMismatch;
+  }
+  if (earliest_retained_offset < 0 || baseline.open_barrier_offset < earliest_retained_offset) {
+    state_ = PartitionSessionState::kFailedClosed;
+    failure_reason_ = "MATCHING_OPEN_BARRIER_NOT_RETAINED";
+    return PartitionReplayResult::kMissingRetainedOpenBarrier;
+  }
+  if (baseline.committed_offset < baseline.open_barrier_offset ||
+      baseline.committed_offset == std::numeric_limits<std::int64_t>::max()) {
+    return fail_retention("MATCHING_REPLAY_RANGE_INVALID");
+  }
+  return recover_from_batches(baseline, reader, false, &execution_step);
 }
 
 PartitionReplayResult PartitionReplayCoordinator::recover_from_batches(
-    const PartitionBaselineMetadata &baseline, const RetainedRecordBatchReader &reader) {
+    const PartitionBaselineMetadata &baseline,
+    const RetainedRecordBatchReader &reader,
+    bool process_immediately,
+    const ThreadedRecoveryStep *execution_step) {
   expected_next_input_offset_ = baseline.open_barrier_offset;
   committed_offset_.reset();
 
@@ -569,10 +734,20 @@ PartitionReplayResult PartitionReplayCoordinator::recover_from_batches(
       if (record.offset != next_offset) {
         return fail_retention("MATCHING_REPLAY_RETENTION_GAP");
       }
-      const auto result = ingest_internal(record, true);
+      const auto result = ingest_internal(record, true, process_immediately);
       if (result != PartitionReplayResult::kAccepted &&
           result != PartitionReplayResult::kDuplicate) {
         return result;
+      }
+      if (result == PartitionReplayResult::kAccepted && !process_immediately) {
+        if (execution_step == nullptr) {
+          return fail_closed("MATCHING_REPLAY_EXECUTION_STEP_MISSING");
+        }
+        const auto execution_result = (*execution_step)();
+        if (execution_result != PartitionReplayResult::kAccepted &&
+            execution_result != PartitionReplayResult::kDuplicate) {
+          return execution_result;
+        }
       }
       ++next_offset;
     }
@@ -648,6 +823,114 @@ PartitionReplayResult PartitionReplayCoordinator::recover_from_retained_batches(
       PartitionBaselineMetadata{assignment_, identity_, *open_offset, committed_offset},
       earliest_retained_offset,
       reader);
+}
+
+PartitionReplayResult PartitionReplayCoordinator::recover_from_retained_batches_threaded(
+    std::int64_t earliest_retained_offset,
+    std::int64_t committed_offset,
+    const RetainedRecordBatchReader &reader,
+    const ThreadedRecoveryStep &execution_step) {
+  if (!execution_step) {
+    return fail_closed("MATCHING_REPLAY_EXECUTION_STEP_MISSING");
+  }
+  if (!ownership_permitted()) {
+    return PartitionReplayResult::kOwnershipDenied;
+  }
+  if (!reader) {
+    return fail_closed("MATCHING_REPLAY_READER_MISSING");
+  }
+  if (earliest_retained_offset < 0 || committed_offset < earliest_retained_offset ||
+      committed_offset == std::numeric_limits<std::int64_t>::max()) {
+    return fail_retention("MATCHING_RETENTION_RANGE_INVALID");
+  }
+  std::optional<std::int64_t> open_offset;
+  std::int64_t next_offset = earliest_retained_offset;
+  const auto end_offset = committed_offset + 1;
+  while (next_offset < end_offset) {
+    const auto batch_end = bounded_batch_end(next_offset, end_offset, input_ledger_.capacity());
+    const auto batch = reader(next_offset, batch_end, input_ledger_.capacity());
+    if (batch.empty()) {
+      return fail_retention("MATCHING_REPLAY_RETENTION_GAP");
+    }
+    if (batch.size() > input_ledger_.capacity() ||
+        batch.size() > static_cast<std::size_t>(batch_end - next_offset)) {
+      return fail_closed("MATCHING_REPLAY_BATCH_CAPACITY_EXCEEDED");
+    }
+    for (const auto &record : batch) {
+      if (record.offset != next_offset) {
+        return fail_retention("MATCHING_REPLAY_RETENTION_GAP");
+      }
+      if (record.assignment == assignment_) {
+        const MatchingCommandDecodeResult decoded = decoder_.decode(record.value);
+        if (decoded.accepted() && decoded.command.type == CoreCommandType::kOpenBarrier &&
+            record.key == uuid_text(decoded.command.command_id) &&
+            accepts_context(decoded.command.context) && accepts_open_barrier(decoded)) {
+          open_offset = record.offset;
+        }
+      }
+      ++next_offset;
+    }
+  }
+  if (!open_offset.has_value()) {
+    state_ = PartitionSessionState::kFailedClosed;
+    failure_reason_ = "MATCHING_OPEN_BARRIER_NOT_RETAINED";
+    return PartitionReplayResult::kMissingRetainedOpenBarrier;
+  }
+  return recover_threaded(
+      PartitionBaselineMetadata{assignment_, identity_, *open_offset, committed_offset},
+      earliest_retained_offset,
+      reader,
+      execution_step);
+}
+
+bool PartitionReplayCoordinator::validate_recovery_baseline(
+    const PartitionBaselineMetadata &baseline,
+    std::int64_t earliest_retained_offset,
+    std::int64_t committed_next_offset) const {
+  return baseline.assignment == assignment_ && baseline.identity == identity_ &&
+         earliest_retained_offset >= 0 && baseline.open_barrier_offset >= earliest_retained_offset &&
+         baseline.committed_offset >= baseline.open_barrier_offset &&
+         baseline.committed_offset < committed_next_offset;
+}
+
+std::optional<PartitionBaselineMetadata>
+PartitionReplayCoordinator::discover_retained_recovery_baseline(
+    std::int64_t earliest_retained_offset,
+    std::int64_t committed_offset,
+    const RetainedRecordBatchReader &reader) const {
+  if (!reader || earliest_retained_offset < 0 || committed_offset < earliest_retained_offset ||
+      committed_offset == std::numeric_limits<std::int64_t>::max()) {
+    return std::nullopt;
+  }
+  std::optional<std::int64_t> open_offset;
+  std::int64_t next_offset = earliest_retained_offset;
+  const auto end_offset = committed_offset + 1;
+  while (next_offset < end_offset) {
+    const auto batch_end = bounded_batch_end(next_offset, end_offset, input_ledger_.capacity());
+    const auto batch = reader(next_offset, batch_end, input_ledger_.capacity());
+    if (batch.empty() || batch.size() > input_ledger_.capacity() ||
+        batch.size() > static_cast<std::size_t>(batch_end - next_offset)) {
+      return std::nullopt;
+    }
+    for (const auto &record : batch) {
+      if (record.offset != next_offset) {
+        return std::nullopt;
+      }
+      if (record.assignment == assignment_) {
+        const MatchingCommandDecodeResult decoded = decoder_.decode(record.value);
+        if (decoded.accepted() && decoded.command.type == CoreCommandType::kOpenBarrier &&
+            record.key == uuid_text(decoded.command.command_id) &&
+            accepts_context(decoded.command.context) && accepts_open_barrier(decoded)) {
+          open_offset = record.offset;
+        }
+      }
+      ++next_offset;
+    }
+  }
+  if (!open_offset.has_value()) {
+    return std::nullopt;
+  }
+  return PartitionBaselineMetadata{assignment_, identity_, *open_offset, committed_offset};
 }
 
 bool PartitionReplayCoordinator::accepts_context(const MatchingCommandContext &context) const {
@@ -738,6 +1021,15 @@ PartitionReplayResult DirectPartitionRuntimeDriver::poll_once() {
   }
   const auto record = consumer_.poll();
   return record.has_value() ? coordinator_.ingest(*record) : coordinator_.continue_processing();
+}
+
+PartitionReplayResult DirectPartitionRuntimeDriver::poll_once_threaded() {
+  if (!coordinator_.ownership_permitted()) {
+    return PartitionReplayResult::kOwnershipDenied;
+  }
+  const auto record = consumer_.poll();
+  return record.has_value() ? coordinator_.ingest_for_threaded_writer(*record)
+                            : PartitionReplayResult::kAccepted;
 }
 
 bool DirectPartitionRuntimeDriver::commit_completed_synchronously() {

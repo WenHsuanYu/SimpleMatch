@@ -1,8 +1,11 @@
 #include "simplematch/matching/runtime/rdkafka_runtime_adapter.hpp"
+#include "simplematch/matching/runtime/bounded_spsc_ring.hpp"
 
+#include <atomic>
 #include <chrono>
 #include <cstddef>
 #include <algorithm>
+#include <limits>
 #include <stdexcept>
 #include <utility>
 #include <vector>
@@ -276,39 +279,91 @@ void RdkafkaDirectPartitionKafkaConsumer::seek(std::int64_t next_offset) {
   }
 }
 
-struct DeliveryState {
-  rd_kafka_resp_err_t last_delivery_error{RD_KAFKA_RESP_ERR_NO_ERROR};
+struct DeliveryContext;
+
+struct DeliveryCompletion {
+  std::uint64_t publication_id{};
+  MatchingPublicationDelivery delivery{MatchingPublicationDelivery::kFatal};
+  DeliveryContext *context{};
 };
 
-void delivery_report(rd_kafka_t *, const rd_kafka_message_t *message, void *opaque) {
-  auto *state = static_cast<DeliveryState *>(opaque);
-  state->last_delivery_error = message->err;
+struct DeliveryState {
+  explicit DeliveryState(std::size_t capacity) : completions(capacity) {}
+
+  BoundedSpscRing<DeliveryCompletion> completions;
+};
+
+struct DeliveryContext {
+  std::uint64_t publication_id{};
+  std::atomic<bool> occupied{};
+  DeliveryState *state{};
+};
+
+MatchingPublicationDelivery delivery_status(const rd_kafka_message_t *message) {
+  if (message->err == RD_KAFKA_RESP_ERR_NO_ERROR ||
+      message->err == RD_KAFKA_RESP_ERR__FATAL) {
+    return message->err == RD_KAFKA_RESP_ERR__FATAL
+               ? MatchingPublicationDelivery::kFatal
+               : MatchingPublicationDelivery::kPersisted;
+  }
+  return rd_kafka_message_status(message) == RD_KAFKA_MSG_STATUS_POSSIBLY_PERSISTED
+             ? MatchingPublicationDelivery::kPossiblyPersisted
+             : MatchingPublicationDelivery::kNotPersisted;
+}
+
+void delivery_report(rd_kafka_t *, const rd_kafka_message_t *message, void *) {
+  auto *context = static_cast<DeliveryContext *>(message->_private);
+  if (context == nullptr || context->state == nullptr) {
+    return;
+  }
+  static_cast<void>(context->state->completions.try_push(
+      DeliveryCompletion{context->publication_id, delivery_status(message), context}));
 }
 
 struct RdkafkaMatchingEventPublisher::Implementation {
+  explicit Implementation(std::size_t maximum_in_flight)
+      : delivery_state(maximum_in_flight), contexts(maximum_in_flight) {
+    for (auto &context : contexts) {
+      context.state = &delivery_state;
+    }
+  }
+
   rd_kafka_t *producer{};
   DeliveryState delivery_state;
+  std::vector<DeliveryContext> contexts;
+  std::size_t next_context{};
+  std::uint64_t next_synchronous_id{1};
 };
+
+bool power_of_two(std::size_t value) {
+  return value != 0 && (value & (value - 1)) == 0;
+}
 
 RdkafkaMatchingEventPublisher::RdkafkaMatchingEventPublisher(
     std::string bootstrap_servers,
     std::string topic,
-    std::chrono::milliseconds flush_timeout)
-    : implementation_(std::make_unique<Implementation>()),
+    std::chrono::milliseconds flush_timeout,
+    std::size_t maximum_in_flight)
+    : implementation_(
+          power_of_two(maximum_in_flight)
+              ? std::make_unique<Implementation>(maximum_in_flight)
+              : nullptr),
       topic_(std::move(topic)),
-      flush_timeout_(flush_timeout) {
+      flush_timeout_(flush_timeout),
+      maximum_in_flight_(maximum_in_flight) {
   if (bootstrap_servers.empty() || topic_.empty() ||
-      flush_timeout_ <= std::chrono::milliseconds::zero()) {
+      flush_timeout_ <= std::chrono::milliseconds::zero() || implementation_ == nullptr) {
     throw std::invalid_argument("Kafka publisher requires brokers, topic, and positive flush timeout");
   }
   std::unique_ptr<rd_kafka_conf_t, KafkaConfigurationDeleter> configuration(
       rd_kafka_conf_new());
   rd_kafka_conf_set_dr_msg_cb(configuration.get(), delivery_report);
-  rd_kafka_conf_set_opaque(configuration.get(), &implementation_->delivery_state);
   set_required_configuration(configuration.get(), "bootstrap.servers", bootstrap_servers);
   set_required_configuration(configuration.get(), "enable.idempotence", "true");
   set_required_configuration(configuration.get(), "acks", "all");
   set_required_configuration(configuration.get(), "allow.auto.create.topics", "false");
+  set_required_configuration(
+      configuration.get(), "queue.buffering.max.messages", std::to_string(maximum_in_flight_));
 
   char error[512]{};
   implementation_->producer = rd_kafka_new(
@@ -326,11 +381,54 @@ RdkafkaMatchingEventPublisher::~RdkafkaMatchingEventPublisher() {
 }
 
 bool RdkafkaMatchingEventPublisher::publish(const MatchingEventRecord &record) {
+  const bool another_publication_in_flight = std::any_of(
+      implementation_->contexts.begin(), implementation_->contexts.end(),
+      [](const DeliveryContext &context) {
+        return context.occupied.load(std::memory_order_acquire);
+      });
+  if (another_publication_in_flight || implementation_->delivery_state.completions.size() != 0) {
+    return false;
+  }
+  if (implementation_->next_synchronous_id == std::numeric_limits<std::uint64_t>::max()) {
+    return false;
+  }
+  const auto id = implementation_->next_synchronous_id++;
+  if (submit_async(record, id) != MatchingPublicationSubmitResult::kSubmitted) {
+    return false;
+  }
+  if (rd_kafka_flush(implementation_->producer, flush_timeout_.count()) !=
+      RD_KAFKA_RESP_ERR_NO_ERROR) {
+    return false;
+  }
+  while (const auto completion = next_completion()) {
+    if (completion->publication_id == id) {
+      return completion->delivery == MatchingPublicationDelivery::kPersisted;
+    }
+  }
+  return false;
+}
+
+MatchingPublicationSubmitResult RdkafkaMatchingEventPublisher::submit_async(
+    const MatchingEventRecord &record, std::uint64_t publication_id) {
   checked_partition(record.partition_id);
   if (record.key.empty() || record.value.empty()) {
     throw std::invalid_argument("Matching Event publication requires a key and value");
   }
-  implementation_->delivery_state.last_delivery_error = RD_KAFKA_RESP_ERR_NO_ERROR;
+  DeliveryContext *context = nullptr;
+  for (std::size_t attempt = 0; attempt < implementation_->contexts.size(); ++attempt) {
+    const std::size_t index =
+        (implementation_->next_context + attempt) % implementation_->contexts.size();
+    if (!implementation_->contexts[index].occupied.load(std::memory_order_acquire)) {
+      context = &implementation_->contexts[index];
+      implementation_->next_context = (index + 1) % implementation_->contexts.size();
+      break;
+    }
+  }
+  if (context == nullptr) {
+    return MatchingPublicationSubmitResult::kBackpressured;
+  }
+  context->publication_id = publication_id;
+  context->occupied.store(true, std::memory_order_release);
   const auto error = rd_kafka_producev(
       implementation_->producer,
       RD_KAFKA_V_TOPIC(topic_.c_str()),
@@ -338,15 +436,30 @@ bool RdkafkaMatchingEventPublisher::publish(const MatchingEventRecord &record) {
       RD_KAFKA_V_KEY(record.key.data(), record.key.size()),
       RD_KAFKA_V_VALUE(const_cast<char *>(record.value.data()), record.value.size()),
       RD_KAFKA_V_MSGFLAGS(RD_KAFKA_MSG_F_COPY),
+      RD_KAFKA_V_OPAQUE(static_cast<void *>(context)),
       RD_KAFKA_V_END);
   if (error != RD_KAFKA_RESP_ERR_NO_ERROR) {
-    return false;
+    context->occupied.store(false, std::memory_order_release);
+    return error == RD_KAFKA_RESP_ERR__QUEUE_FULL
+               ? MatchingPublicationSubmitResult::kBackpressured
+               : error == RD_KAFKA_RESP_ERR__FATAL
+                     ? MatchingPublicationSubmitResult::kFailedClosed
+                     : MatchingPublicationSubmitResult::kUnavailable;
   }
-  if (rd_kafka_flush(implementation_->producer, flush_timeout_.count()) !=
-      RD_KAFKA_RESP_ERR_NO_ERROR) {
-    return false;
+  return MatchingPublicationSubmitResult::kSubmitted;
+}
+
+void RdkafkaMatchingEventPublisher::service() {
+  static_cast<void>(rd_kafka_poll(implementation_->producer, 0));
+}
+
+std::optional<MatchingPublicationCompletion> RdkafkaMatchingEventPublisher::next_completion() {
+  const auto completion = implementation_->delivery_state.completions.try_pop();
+  if (!completion.has_value()) {
+    return std::nullopt;
   }
-  return implementation_->delivery_state.last_delivery_error == RD_KAFKA_RESP_ERR_NO_ERROR;
+  completion->context->occupied.store(false, std::memory_order_release);
+  return MatchingPublicationCompletion{completion->publication_id, completion->delivery};
 }
 
 } // namespace simplematch::matching

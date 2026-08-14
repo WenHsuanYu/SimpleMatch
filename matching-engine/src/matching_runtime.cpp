@@ -28,10 +28,15 @@ std::optional<InputSequence> MatchingRuntime::submit(CoreCommand command) {
   if (!ownership_permit_->allows_processing()) {
     return std::nullopt;
   }
-  if (!input_ring_.try_push(RuntimeInput{next_input_sequence_, std::move(command)})) {
+  if (next_input_sequence_ == std::numeric_limits<InputSequence>::max()) {
     return std::nullopt;
   }
-  return next_input_sequence_++;
+  const InputSequence sequence = next_input_sequence_;
+  if (!input_ring_.try_push(RuntimeInput{sequence, std::move(command)})) {
+    return std::nullopt;
+  }
+  ++next_input_sequence_;
+  return sequence;
 }
 
 std::optional<InputSequence> MatchingRuntime::reserve_input_sequence() {

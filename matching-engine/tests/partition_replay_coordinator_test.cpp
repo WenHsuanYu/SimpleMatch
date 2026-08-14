@@ -189,6 +189,37 @@ TEST(PartitionReplayCoordinatorTest, RebuildsFromTheRetainedBarrierWithoutRepubl
       PartitionReplayResult::kMissingRetainedOpenBarrier);
 }
 
+TEST(PartitionReplayCoordinatorTest, ReplaysIdenticalEventAfterOutputAckBeforeInputCommit) {
+  auto before_crash = coordinator();
+  const auto open = open_record(20);
+  const auto sell = order_record(
+      21,
+      "0198a001-0000-7000-8000-000000000004",
+      "0198a001-0000-7000-8000-000000000014",
+      simplematch::common::v2::SIDE_SELL);
+
+  ASSERT_EQ(before_crash.ingest(open), PartitionReplayResult::kAccepted);
+  ASSERT_TRUE(before_crash.acknowledge_commit(21));
+  ASSERT_EQ(before_crash.ingest(sell), PartitionReplayResult::kAccepted);
+  const auto original = before_crash.next_unacknowledged_publication();
+  ASSERT_TRUE(original.has_value());
+  ASSERT_EQ(before_crash.acknowledge_published(21, 0), PartitionReplayResult::kAccepted);
+  ASSERT_EQ(before_crash.next_commit_offset(), 22);
+
+  auto restarted = coordinator();
+  ASSERT_EQ(
+      restarted.recover(
+          PartitionBaselineMetadata{assignment(), identity(), 20, 20},
+          20,
+          std::vector<AssignedCommandRecord>{open}),
+      PartitionReplayResult::kRecovered);
+  ASSERT_EQ(restarted.ingest(sell), PartitionReplayResult::kAccepted);
+  const auto replayed = restarted.next_unacknowledged_publication();
+  ASSERT_TRUE(replayed.has_value());
+  EXPECT_EQ(replayed->key, original->key);
+  EXPECT_EQ(replayed->value, original->value);
+}
+
 TEST(PartitionReplayCoordinatorTest, ReplaysRetainedRecordsInBoundedBatches) {
   auto restarted = coordinator();
   const std::vector<AssignedCommandRecord> retained{

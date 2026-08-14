@@ -5,6 +5,7 @@
 #include <deque>
 #include <filesystem>
 #include <memory>
+#include <stdexcept>
 #include <string>
 #include <string_view>
 #include <vector>
@@ -53,6 +54,13 @@ std::unique_ptr<DeterministicMatchingCore> core() {
 PartitionReplayCoordinator coordinator() {
   return PartitionReplayCoordinator(
       assignment(), identity(), ready_permit(), core(), 4, 32, 32, 64);
+}
+
+RuntimeSupervisorOptions sanitizer_tolerant_supervisor_options() {
+  RuntimeSupervisorOptions options;
+  options.startup_timeout = std::chrono::seconds(10);
+  options.output_drain_timeout = std::chrono::seconds(10);
+  return options;
 }
 
 simplematch::matching::runtime::v1::MatchingCommand base_command(std::string_view command_id) {
@@ -109,12 +117,18 @@ public:
   }
 
   void commit_synchronously(std::int64_t next_offset) override {
+    ++commit_calls;
     committed_offsets.push_back(next_offset);
+    if (throw_on_commit_call.has_value() && commit_calls == *throw_on_commit_call) {
+      throw std::runtime_error("simulated commit acknowledgement loss");
+    }
   }
 
   std::deque<AssignedCommandRecord> records;
   std::optional<DirectKafkaPartitionAssignment> assigned;
   std::vector<std::int64_t> committed_offsets;
+  std::size_t commit_calls{};
+  std::optional<std::size_t> throw_on_commit_call;
 };
 
 class RecordingPublisher final : public MatchingEventPublisher {
@@ -129,6 +143,38 @@ public:
 
   bool available{true};
   std::vector<MatchingEventRecord> records;
+};
+
+class AsyncRecordingPublisher final : public MatchingEventPublisher {
+public:
+  bool publish(const MatchingEventRecord &) override { return false; }
+
+  bool supports_async() const noexcept override { return true; }
+
+  MatchingPublicationSubmitResult submit_async(
+      const MatchingEventRecord &record, std::uint64_t publication_id) override {
+    submissions.push_back({publication_id, record});
+    return available ? MatchingPublicationSubmitResult::kSubmitted
+                     : MatchingPublicationSubmitResult::kUnavailable;
+  }
+
+  std::optional<MatchingPublicationCompletion> next_completion() override {
+    if (completions.empty()) {
+      return std::nullopt;
+    }
+    auto completion = completions.front();
+    completions.pop_front();
+    return completion;
+  }
+
+  struct Submission {
+    std::uint64_t publication_id;
+    MatchingEventRecord record;
+  };
+
+  bool available{true};
+  std::vector<Submission> submissions;
+  std::deque<MatchingPublicationCompletion> completions;
 };
 
 class RetainedRecoveryConsumer final : public DirectPartitionKafkaConsumer {
@@ -179,7 +225,8 @@ TEST(MatchingPartitionRuntimeDriverTest, DrainsPendingPublicationBeforePollingAn
   consumer.records.push_back(order_record(11));
   consumer.records.push_back(order_record(12));
   RecordingPublisher publisher;
-  MatchingPartitionRuntimeDriver driver(consumer, replay, publisher);
+  MatchingPartitionRuntimeDriver driver(
+      consumer, replay, publisher, nullptr, sanitizer_tolerant_supervisor_options());
 
   ASSERT_TRUE(driver.start());
   ASSERT_EQ(driver.run_once(), MatchingPartitionDriverStep::kProcessed);
@@ -198,7 +245,8 @@ TEST(MatchingPartitionRuntimeDriverTest, PublishesBeforeCommittingAnInputOffset)
   consumer.records.push_back(open_record(10));
   consumer.records.push_back(order_record(11));
   RecordingPublisher publisher;
-  MatchingPartitionRuntimeDriver driver(consumer, replay, publisher);
+  MatchingPartitionRuntimeDriver driver(
+      consumer, replay, publisher, nullptr, sanitizer_tolerant_supervisor_options());
 
   ASSERT_TRUE(driver.start());
   EXPECT_EQ(driver.run_once(), MatchingPartitionDriverStep::kProcessed);
@@ -216,7 +264,8 @@ TEST(MatchingPartitionRuntimeDriverTest, LeavesPublicationAndCommitPendingWhenPu
   consumer.records.push_back(open_record(10));
   consumer.records.push_back(order_record(11));
   RecordingPublisher publisher;
-  MatchingPartitionRuntimeDriver driver(consumer, replay, publisher);
+  MatchingPartitionRuntimeDriver driver(
+      consumer, replay, publisher, nullptr, sanitizer_tolerant_supervisor_options());
 
   ASSERT_TRUE(driver.start());
   ASSERT_EQ(driver.run_once(), MatchingPartitionDriverStep::kProcessed);
@@ -229,6 +278,68 @@ TEST(MatchingPartitionRuntimeDriverTest, LeavesPublicationAndCommitPendingWhenPu
   EXPECT_EQ(consumer.committed_offsets, (std::vector<std::int64_t>{11, 12}));
 }
 
+TEST(MatchingPartitionRuntimeDriverTest, CommitsOnlyAfterAsyncDeliveryReport) {
+  auto replay = coordinator();
+  RecordingConsumer consumer;
+  consumer.records.push_back(open_record(10));
+  consumer.records.push_back(order_record(11));
+  AsyncRecordingPublisher publisher;
+  MatchingPartitionRuntimeDriver driver(
+      consumer, replay, publisher, nullptr, sanitizer_tolerant_supervisor_options());
+
+  ASSERT_TRUE(driver.start());
+  ASSERT_EQ(driver.run_once(), MatchingPartitionDriverStep::kProcessed);
+  ASSERT_EQ(driver.run_once(), MatchingPartitionDriverStep::kProcessed);
+  ASSERT_EQ(publisher.submissions.size(), 1U);
+  EXPECT_EQ(consumer.committed_offsets, std::vector<std::int64_t>{11});
+
+  publisher.completions.push_back(
+      {publisher.submissions.front().publication_id, MatchingPublicationDelivery::kPersisted});
+  EXPECT_EQ(driver.run_once(), MatchingPartitionDriverStep::kProcessed);
+  EXPECT_EQ(consumer.committed_offsets, (std::vector<std::int64_t>{11, 12}));
+}
+
+TEST(MatchingPartitionRuntimeDriverTest, RetriesAmbiguousPublicationWithoutCommittingIt) {
+  auto replay = coordinator();
+  RecordingConsumer consumer;
+  consumer.records.push_back(open_record(10));
+  consumer.records.push_back(order_record(11));
+  AsyncRecordingPublisher publisher;
+  MatchingPartitionRuntimeDriver driver(
+      consumer, replay, publisher, nullptr, sanitizer_tolerant_supervisor_options());
+
+  ASSERT_TRUE(driver.start());
+  ASSERT_EQ(driver.run_once(), MatchingPartitionDriverStep::kProcessed);
+  ASSERT_EQ(driver.run_once(), MatchingPartitionDriverStep::kProcessed);
+  const auto first_id = publisher.submissions.front().publication_id;
+  publisher.completions.push_back({first_id, MatchingPublicationDelivery::kPossiblyPersisted});
+  EXPECT_EQ(driver.run_once(), MatchingPartitionDriverStep::kBackpressured);
+  EXPECT_EQ(consumer.committed_offsets, std::vector<std::int64_t>{11});
+  ASSERT_EQ(publisher.submissions.size(), 2U);
+  EXPECT_EQ(publisher.submissions.back().publication_id, first_id);
+}
+
+TEST(MatchingPartitionRuntimeDriverTest, DoesNotAcknowledgeAnOffsetWhenCommitAcknowledgementIsLost) {
+  auto replay = coordinator();
+  RecordingConsumer consumer;
+  consumer.records.push_back(open_record(10));
+  consumer.records.push_back(order_record(11));
+  consumer.throw_on_commit_call = 2;
+  AsyncRecordingPublisher publisher;
+  MatchingPartitionRuntimeDriver driver(
+      consumer, replay, publisher, nullptr, sanitizer_tolerant_supervisor_options());
+
+  ASSERT_TRUE(driver.start());
+  ASSERT_EQ(driver.run_once(), MatchingPartitionDriverStep::kProcessed);
+  ASSERT_EQ(driver.run_once(), MatchingPartitionDriverStep::kProcessed);
+  publisher.completions.push_back(
+      {publisher.submissions.front().publication_id, MatchingPublicationDelivery::kPersisted});
+
+  EXPECT_THROW(static_cast<void>(driver.run_once()), std::runtime_error);
+  ASSERT_TRUE(replay.next_commit_offset().has_value());
+  EXPECT_EQ(*replay.next_commit_offset(), 12);
+}
+
 TEST(MatchingPartitionRuntimeDriverTest, DoesNotAssignWhenOwnershipIsNotConfirmed) {
   auto permit = ready_permit();
   permit->report_renewal_uncertainty(std::chrono::steady_clock::time_point{});
@@ -236,7 +347,8 @@ TEST(MatchingPartitionRuntimeDriverTest, DoesNotAssignWhenOwnershipIsNotConfirme
   auto replay = PartitionReplayCoordinator(assignment(), identity(), permit, core(), 4, 32, 32, 64);
   RecordingConsumer consumer;
   RecordingPublisher publisher;
-  MatchingPartitionRuntimeDriver driver(consumer, replay, publisher);
+  MatchingPartitionRuntimeDriver driver(
+      consumer, replay, publisher, nullptr, sanitizer_tolerant_supervisor_options());
 
   EXPECT_FALSE(driver.start());
   EXPECT_FALSE(consumer.assigned.has_value());
@@ -254,7 +366,8 @@ TEST(MatchingPartitionRuntimeDriverTest, ReplaysThePvcBaselineBeforeLivePolling)
   RetainedRecoveryConsumer consumer;
   consumer.retained = {open_record(10), order_record(11)};
   RecordingPublisher publisher;
-  MatchingPartitionRuntimeDriver driver(consumer, replay, publisher);
+  MatchingPartitionRuntimeDriver driver(
+      consumer, replay, publisher, nullptr, sanitizer_tolerant_supervisor_options());
 
   ASSERT_TRUE(driver.start(&store));
   EXPECT_EQ(consumer.seek_offsets, std::vector<std::int64_t>{12});
@@ -279,7 +392,8 @@ TEST(MatchingPartitionRuntimeDriverTest, ReplaysBaselineUsingBoundedKafkaBatches
   consumer.retained = {
       open_record(10), order_record(11), order_record(12), order_record(13), order_record(14)};
   RecordingPublisher publisher;
-  MatchingPartitionRuntimeDriver driver(consumer, replay, publisher);
+  MatchingPartitionRuntimeDriver driver(
+      consumer, replay, publisher, nullptr, sanitizer_tolerant_supervisor_options());
 
   ASSERT_TRUE(driver.start(&store));
   EXPECT_EQ(consumer.read_batch_calls, 2U);
@@ -299,7 +413,8 @@ TEST(MatchingPartitionRuntimeDriverTest, ScansAndReplaysRetainedBatchesWithoutAB
   consumer.offset_range = {10, 12, 12};
   consumer.retained = {open_record(10), order_record(11)};
   RecordingPublisher publisher;
-  MatchingPartitionRuntimeDriver driver(consumer, replay, publisher);
+  MatchingPartitionRuntimeDriver driver(
+      consumer, replay, publisher, nullptr, sanitizer_tolerant_supervisor_options());
   PvcBaselineMetadataStore store(path.string());
 
   ASSERT_TRUE(driver.start(&store));
@@ -322,7 +437,8 @@ TEST(MatchingPartitionRuntimeDriverTest, RejectsBaselineAheadOfKafkaCommitWaterm
   consumer.offset_range = {10, 12, 11};
   consumer.retained = {open_record(10), order_record(11)};
   RecordingPublisher publisher;
-  MatchingPartitionRuntimeDriver driver(consumer, replay, publisher);
+  MatchingPartitionRuntimeDriver driver(
+      consumer, replay, publisher, nullptr, sanitizer_tolerant_supervisor_options());
 
   EXPECT_FALSE(driver.start(&store));
   EXPECT_TRUE(consumer.seek_offsets.empty());

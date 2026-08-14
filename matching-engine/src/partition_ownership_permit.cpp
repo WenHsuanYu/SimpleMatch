@@ -26,38 +26,45 @@ bool LeaseFencedPartitionOwnershipPermit::confirm_renewal(
     const PartitionOwnershipIdentity &observed_identity,
     std::chrono::steady_clock::time_point observed_at) {
   static_cast<void>(observed_at);
-  if (status_.state == PartitionOwnershipState::kSelfFenced) {
+  std::lock_guard lock(mutex_);
+  if (state_.load(std::memory_order_acquire) == PartitionOwnershipState::kSelfFenced) {
     return false;
   }
   if (observed_identity != expected_identity_) {
-    self_fence("LEASE_HOLDER_IDENTITY_MISMATCH");
+    self_fence_locked("LEASE_HOLDER_IDENTITY_MISMATCH");
     return false;
   }
-  uncertainty_started_at_.reset();
-  has_confirmed_renewal_ = true;
-  status_ = {PartitionOwnershipState::kPermitted, "LEASE_RENEWED"};
+  {
+    uncertainty_started_at_.reset();
+    reason_ = "LEASE_RENEWED";
+  }
+  has_confirmed_renewal_.store(true, std::memory_order_release);
+  state_.store(PartitionOwnershipState::kPermitted, std::memory_order_release);
   return true;
 }
 
 void LeaseFencedPartitionOwnershipPermit::report_renewal_uncertainty(
     std::chrono::steady_clock::time_point observed_at) {
-  if (status_.state == PartitionOwnershipState::kSelfFenced) {
+  std::lock_guard lock(mutex_);
+  if (state_.load(std::memory_order_acquire) == PartitionOwnershipState::kSelfFenced) {
     return;
   }
   if (!uncertainty_started_at_.has_value()) {
     uncertainty_started_at_ = observed_at;
   }
-  status_ = {PartitionOwnershipState::kLeaseUncertain, "LEASE_RENEWAL_UNCERTAIN"};
+  reason_ = "LEASE_RENEWAL_UNCERTAIN";
+  state_.store(PartitionOwnershipState::kLeaseUncertain, std::memory_order_release);
 }
 
 void LeaseFencedPartitionOwnershipPermit::evaluate_at(
     std::chrono::steady_clock::time_point observed_at) {
-  if (status_.state == PartitionOwnershipState::kSelfFenced ||
+  std::lock_guard lock(mutex_);
+  if (state_.load(std::memory_order_acquire) == PartitionOwnershipState::kSelfFenced ||
       !uncertainty_started_at_.has_value() || observed_at < *uncertainty_started_at_) {
     return;
   }
   if (observed_at - *uncertainty_started_at_ >= self_fence_after_) {
-    self_fence("LEASE_RENEWAL_UNCONFIRMED");
+    self_fence_locked("LEASE_RENEWAL_UNCONFIRMED");
   }
 }
 
@@ -66,18 +73,26 @@ std::int32_t LeaseFencedPartitionOwnershipPermit::partition_id() const {
 }
 
 bool LeaseFencedPartitionOwnershipPermit::allows_processing() const {
-  return status_.state == PartitionOwnershipState::kPermitted ||
-         (status_.state == PartitionOwnershipState::kLeaseUncertain &&
-          has_confirmed_renewal_);
+  const auto state = state_.load(std::memory_order_acquire);
+  const bool confirmed = has_confirmed_renewal_.load(std::memory_order_acquire);
+  return state == PartitionOwnershipState::kPermitted ||
+         (state == PartitionOwnershipState::kLeaseUncertain && confirmed);
 }
 
 PartitionOwnershipStatus LeaseFencedPartitionOwnershipPermit::status() const {
-  return status_;
+  std::lock_guard lock(mutex_);
+  return {state_.load(std::memory_order_acquire), reason_};
 }
 
 void LeaseFencedPartitionOwnershipPermit::self_fence(std::string reason) {
+  std::lock_guard lock(mutex_);
+  self_fence_locked(std::move(reason));
+}
+
+void LeaseFencedPartitionOwnershipPermit::self_fence_locked(std::string reason) {
   uncertainty_started_at_.reset();
-  status_ = {PartitionOwnershipState::kSelfFenced, std::move(reason)};
+  state_.store(PartitionOwnershipState::kSelfFenced, std::memory_order_release);
+  reason_ = std::move(reason);
 }
 
 } // namespace simplematch::matching

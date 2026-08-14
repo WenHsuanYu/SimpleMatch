@@ -59,7 +59,8 @@ add_library(simplematch_matching_ingress STATIC
     matching-engine/src/partition_ownership_permit.cpp
     matching-engine/src/partition_replay_coordinator.cpp
     matching-engine/src/input_offset_ledger.cpp
-    matching-engine/src/matching_runtime.cpp)
+    matching-engine/src/matching_runtime.cpp
+    matching-engine/src/matching_runtime_supervisor.cpp)
 target_include_directories(simplematch_matching_ingress
     PUBLIC matching-engine/include
     PRIVATE ${CMAKE_CURRENT_BINARY_DIR})

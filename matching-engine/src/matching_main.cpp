@@ -5,7 +5,9 @@
 #include "simplematch/matching/runtime/rdkafka_runtime_adapter.hpp"
 
 #include <charconv>
+#include <atomic>
 #include <chrono>
+#include <csignal>
 #include <cstdint>
 #include <cstdlib>
 #include <filesystem>
@@ -32,6 +34,11 @@ using namespace std::chrono_literals;
 
 constexpr std::int32_t kPartitionCount = 15;
 constexpr std::string_view kDefaultStatusPath = "/var/lib/simplematch/matching/runtime-status";
+std::atomic<bool> shutdown_requested{};
+
+void request_shutdown(int) noexcept {
+  shutdown_requested.store(true, std::memory_order_relaxed);
+}
 
 struct RuntimeConfiguration {
   std::string brokers;
@@ -303,6 +310,9 @@ std::unique_ptr<KubernetesLeaseOwnershipAdapter> create_lease_adapter(
 
 int run_runtime() {
   RuntimeConfiguration configuration = load_configuration();
+  shutdown_requested.store(false, std::memory_order_relaxed);
+  std::signal(SIGINT, request_shutdown);
+  std::signal(SIGTERM, request_shutdown);
   write_status(configuration.status_path, "STARTING");
   try {
     const std::string artifact_json = read_file(configuration.artifact_path);
@@ -358,22 +368,42 @@ int run_runtime() {
         configuration.maximum_distinct_commands,
         configuration.maximum_pending_publications);
     PvcBaselineMetadataStore baseline_store(configuration.baseline_path);
-    MatchingPartitionRuntimeDriver driver(consumer, coordinator, publisher);
+    std::unique_ptr<RuntimeCpuAffinity> cpu_affinity;
+    const auto requested_cpu_set = environment_value("MATCHING_WRITER_CPU_SET");
+    if (!requested_cpu_set.empty()) {
+      cpu_affinity = std::make_unique<RequestedCpuAffinity>(requested_cpu_set);
+    } else {
+      cpu_affinity = std::make_unique<CgroupCpuAffinity>();
+    }
+    RuntimeSupervisorOptions supervisor_options;
+    supervisor_options.ownership_poll_interval = 2s;
+    if (lease_adapter != nullptr) {
+      supervisor_options.ownership_observer = [&lease_adapter] {
+        return lease_adapter->refresh();
+      };
+    }
+    MatchingPartitionRuntimeDriver driver(
+        consumer,
+        coordinator,
+        publisher,
+        std::move(cpu_affinity),
+        std::move(supervisor_options));
     if (!driver.start(&baseline_store)) {
       write_status(configuration.status_path, "NOT_READY");
       return 3;
     }
     std::optional<PartitionBaselineMetadata> last_saved_baseline;
-    auto next_lease_refresh = std::chrono::steady_clock::now();
     write_status(configuration.status_path, "RUNNING");
     for (;;) {
-      const auto now = std::chrono::steady_clock::now();
-      if (lease_adapter != nullptr && now >= next_lease_refresh) {
-        if (!lease_adapter->refresh() && !permit->allows_processing()) {
-          write_status(configuration.status_path, "NOT_READY");
-          return 3;
+      if (shutdown_requested.load(std::memory_order_relaxed)) {
+        const bool stopped = driver.shutdown(configuration.flush_timeout);
+        if (const auto baseline = coordinator.baseline_metadata();
+            stopped && baseline.has_value() && baseline != last_saved_baseline) {
+          baseline_store.save(*baseline);
+          last_saved_baseline = baseline;
         }
-        next_lease_refresh = now + 2s;
+        write_status(configuration.status_path, stopped ? "STOPPED" : "FAILED");
+        return stopped ? 0 : 4;
       }
       const auto step = driver.run_once();
       if (step == MatchingPartitionDriverStep::kFailedClosed ||

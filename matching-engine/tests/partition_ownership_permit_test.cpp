@@ -51,6 +51,8 @@ TEST(LeaseFencedPartitionOwnershipPermitTest, RefusesALeaseHeldByAnotherRuntimeI
   EXPECT_FALSE(permit.allows_processing());
   EXPECT_EQ(permit.status().state, PartitionOwnershipState::kSelfFenced);
   EXPECT_EQ(permit.status().reason, "LEASE_HOLDER_IDENTITY_MISMATCH");
+  EXPECT_FALSE(permit.confirm_renewal(expected_identity(), std::chrono::steady_clock::time_point{}));
+  EXPECT_EQ(permit.status().state, PartitionOwnershipState::kSelfFenced);
 }
 
 } // namespace

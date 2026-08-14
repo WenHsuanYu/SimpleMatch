@@ -5,6 +5,7 @@
 #include <chrono>
 #include <cstdint>
 #include <memory>
+#include <cstddef>
 #include <optional>
 #include <string>
 
@@ -53,13 +54,19 @@ public:
   RdkafkaMatchingEventPublisher(
       std::string bootstrap_servers,
       std::string topic,
-      std::chrono::milliseconds flush_timeout);
+      std::chrono::milliseconds flush_timeout,
+      std::size_t maximum_in_flight = 1024);
   ~RdkafkaMatchingEventPublisher() override;
 
   RdkafkaMatchingEventPublisher(const RdkafkaMatchingEventPublisher &) = delete;
   RdkafkaMatchingEventPublisher &operator=(const RdkafkaMatchingEventPublisher &) = delete;
 
   [[nodiscard]] bool publish(const MatchingEventRecord &record) override;
+  [[nodiscard]] bool supports_async() const noexcept override { return true; }
+  [[nodiscard]] MatchingPublicationSubmitResult submit_async(
+      const MatchingEventRecord &record, std::uint64_t publication_id) override;
+  void service() override;
+  [[nodiscard]] std::optional<MatchingPublicationCompletion> next_completion() override;
 
 private:
   struct Implementation;
@@ -67,6 +74,7 @@ private:
   std::unique_ptr<Implementation> implementation_;
   std::string topic_;
   std::chrono::milliseconds flush_timeout_;
+  std::size_t maximum_in_flight_;
 };
 
 } // namespace simplematch::matching

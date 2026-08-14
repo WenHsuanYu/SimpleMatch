@@ -2,6 +2,8 @@
 
 #include <chrono>
 #include <cstdint>
+#include <atomic>
+#include <mutex>
 #include <optional>
 #include <string>
 
@@ -72,13 +74,15 @@ public:
 
 private:
   void self_fence(std::string reason);
+  void self_fence_locked(std::string reason);
 
   PartitionOwnershipIdentity expected_identity_;
   std::chrono::steady_clock::duration self_fence_after_;
+  mutable std::mutex mutex_;
   std::optional<std::chrono::steady_clock::time_point> uncertainty_started_at_;
-  bool has_confirmed_renewal_{};
-  PartitionOwnershipStatus status_{PartitionOwnershipState::kAwaitingLease,
-                                   "LEASE_NOT_CONFIRMED"};
+  std::atomic<bool> has_confirmed_renewal_{};
+  std::atomic<PartitionOwnershipState> state_{PartitionOwnershipState::kAwaitingLease};
+  std::string reason_{"LEASE_NOT_CONFIRMED"};
 };
 
 } // namespace simplematch::matching

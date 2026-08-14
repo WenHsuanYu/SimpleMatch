@@ -1,4 +1,5 @@
 #include "simplematch/matching/runtime/matching_runtime.hpp"
+#include "simplematch/matching/runtime/matching_runtime_supervisor.hpp"
 #include "simplematch/matching/runtime/partition_ownership_permit.hpp"
 
 #include <chrono>
@@ -71,6 +72,97 @@ std::shared_ptr<LeaseFencedPartitionOwnershipPermit> ready_permit() {
   return permit;
 }
 
+class AlwaysPinnedAffinity final : public RuntimeCpuAffinity {
+public:
+  bool pin_current_thread() override {
+    ++pin_calls;
+    return true;
+  }
+
+  int pin_calls{};
+};
+
+class RefusingAffinity final : public RuntimeCpuAffinity {
+public:
+  bool pin_current_thread() override { return false; }
+};
+
+bool wait_for_output(MatchingRuntimeSupervisor &supervisor, std::size_t count) {
+  const auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds(10);
+  while (std::chrono::steady_clock::now() < deadline) {
+    if (supervisor.output_size() >= count) {
+      return true;
+    }
+    std::this_thread::yield();
+  }
+  return supervisor.output_size() >= count;
+}
+
+RuntimeSupervisorOptions sanitizer_tolerant_supervisor_options() {
+  RuntimeSupervisorOptions options;
+  options.startup_timeout = std::chrono::seconds(10);
+  options.output_drain_timeout = std::chrono::seconds(10);
+  return options;
+}
+
+TEST(MatchingRuntimeSupervisorTest, KeepsWriterParkedUntilStartupGateIsReleased) {
+  const auto permit = ready_permit();
+  auto affinity = std::make_unique<AlwaysPinnedAffinity>();
+  MatchingRuntime runtime(core(), 2, 4, permit);
+  MatchingRuntimeSupervisor supervisor(
+      runtime, permit, std::move(affinity), sanitizer_tolerant_supervisor_options());
+
+  ASSERT_TRUE(supervisor.start());
+  EXPECT_EQ(supervisor.state(), MatchingRuntimeSupervisorState::kParked);
+  EXPECT_FALSE(supervisor.submit(order(
+      "0198a001-0000-7000-8000-000000000020",
+      "0198a001-0000-7000-8000-000000000030")));
+
+  ASSERT_TRUE(supervisor.release_startup());
+  ASSERT_TRUE(supervisor.submit(order(
+      "0198a001-0000-7000-8000-000000000021",
+      "0198a001-0000-7000-8000-000000000031")));
+  ASSERT_TRUE(wait_for_output(supervisor, 2))
+      << "state=" << static_cast<int>(supervisor.state())
+      << ", failure=" << supervisor.failure_reason()
+      << ", input_size=" << runtime.input_size()
+      << ", output_size=" << runtime.output_size();
+  supervisor.shutdown(std::chrono::seconds(10));
+  EXPECT_EQ(supervisor.state(), MatchingRuntimeSupervisorState::kStopped);
+}
+
+TEST(MatchingRuntimeSupervisorTest, ConvertsWriterPinFailureIntoTerminalFailure) {
+  const auto permit = ready_permit();
+  MatchingRuntime runtime(core(), 2, 4, permit);
+  MatchingRuntimeSupervisor supervisor(
+      runtime,
+      permit,
+      std::make_unique<RefusingAffinity>(),
+      RuntimeSupervisorOptions{});
+
+  EXPECT_FALSE(supervisor.start());
+  EXPECT_EQ(supervisor.state(), MatchingRuntimeSupervisorState::kFailedClosed);
+  EXPECT_EQ(supervisor.failure_reason(), "MATCHING_WRITER_CPU_AFFINITY_FAILED");
+}
+
+TEST(MatchingRuntimeSupervisorTest, TerminalAlertStopsTheWriterWithoutUsingADataRing) {
+  const auto permit = ready_permit();
+  MatchingRuntime runtime(core(), 2, 4, permit);
+  MatchingRuntimeSupervisor supervisor(
+      runtime,
+      permit,
+      std::make_unique<AlwaysPinnedAffinity>(),
+      RuntimeSupervisorOptions{});
+
+  ASSERT_TRUE(supervisor.start());
+  ASSERT_TRUE(supervisor.release_startup());
+  supervisor.fail_closed("TEST_TERMINAL_ALERT");
+  ASSERT_TRUE(supervisor.wait_until_stopped(std::chrono::seconds(2)));
+
+  EXPECT_EQ(supervisor.state(), MatchingRuntimeSupervisorState::kFailedClosed);
+  EXPECT_EQ(supervisor.failure_reason(), "TEST_TERMINAL_ALERT");
+}
+
 TEST(MatchingRuntimeTest, BoundedInputRingNeverOverwritesAnUnreadCommand) {
   const auto permit = ready_permit();
   MatchingRuntime runtime(core(), 1, 4, permit);
@@ -95,6 +187,28 @@ TEST(MatchingRuntimeTest, BoundedInputRingNeverOverwritesAnUnreadCommand) {
   EXPECT_EQ(framed_event.output_index, 0U);
   EXPECT_EQ(framed_end.input_sequence, 0U);
   EXPECT_EQ(framed_end.output_count, 1U);
+}
+
+TEST(MatchingRuntimeTest, DoesNotConsumeInputSequenceWhenTheRingIsFull) {
+  const auto permit = ready_permit();
+  MatchingRuntime runtime(core(), 1, 4, permit);
+
+  ASSERT_TRUE(runtime.submit(order(
+      "0198a001-0000-7000-8000-000000000007",
+      "0198a001-0000-7000-8000-000000000017")));
+  EXPECT_FALSE(runtime.submit(order(
+      "0198a001-0000-7000-8000-000000000008",
+      "0198a001-0000-7000-8000-000000000018")));
+
+  ASSERT_EQ(runtime.process_one(), MatchingRuntimeStep::kProcessed);
+  ASSERT_TRUE(runtime.take_output().has_value());
+  ASSERT_TRUE(runtime.take_output().has_value());
+
+  const auto sequence = runtime.submit(order(
+      "0198a001-0000-7000-8000-000000000009",
+      "0198a001-0000-7000-8000-000000000019"));
+  ASSERT_TRUE(sequence.has_value());
+  EXPECT_EQ(*sequence, 1U);
 }
 
 TEST(MatchingRuntimeTest, FramesConsecutiveInputsAndAMultiEventBurst) {
