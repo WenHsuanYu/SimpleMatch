@@ -112,6 +112,20 @@ class GrpcAccountReservationClientErrorMappingTest {
     }
   }
 
+  @DisplayName("Account invariant failures remain distinct from validation and outage")
+  @Test
+  void mapsFailedPreconditionToInvariantFailure() throws Exception {
+    server = serverFailing(Status.FAILED_PRECONDITION.withDescription("account invariant failure"));
+
+    try (GrpcAccountReservationClient client = reservationClient()) {
+      assertThatThrownBy(() -> client.reserve(command()))
+          .isInstanceOf(AdmissionInvariantException.class)
+          .isNotInstanceOf(AdmissionValidationException.class)
+          .isNotInstanceOf(AdmissionUnavailableException.class)
+          .isNotInstanceOf(AdmissionAccountFailureException.class);
+    }
+  }
+
   private Server serverReturning(AccountLifecycleEvent response) throws Exception {
     return ServerBuilder.forPort(0)
         .addService(

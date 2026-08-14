@@ -14,7 +14,8 @@ Account outbox. The following outcomes are distinct:
 - an equivalent retry returns the original reservation outcome and identity;
 - changed reservation facts produce a stable conflict;
 - validation failures remain validation failures;
-- deadline and unavailable failures leave Risk admission recoverable; and
+- deadline and unavailable failures leave Risk admission recoverable;
+- Account invariant failures remain a distinct failed-precondition dependency outcome; and
 - unexpected Account failures remain internal dependency failures.
 
 Risk writes `PENDING` before the Account RPC. The RPC is outside the Risk database transaction. A

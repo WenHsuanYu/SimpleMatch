@@ -369,6 +369,17 @@ class OrderAdmissionApplicationServiceTransactionTest {
         .isInstanceOf(AdmissionValidationException.class);
   }
 
+  @DisplayName("account invariant failure remains distinct from an unavailable dependency")
+  @Test
+  void accountInvariantRemainsDistinct() {
+    account.failure =
+        new AdmissionInvariantException(new IllegalStateException("account invariant"));
+
+    assertThatThrownBy(() -> admissions.admit(command()))
+        .isInstanceOf(AdmissionInvariantException.class)
+        .isNotInstanceOf(AdmissionUnavailableException.class);
+  }
+
   @DisplayName("pending admission recovery retries the account call and finalizes once")
   @Test
   void recoversPendingAdmissionAfterAccountOutage() {

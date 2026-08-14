@@ -44,6 +44,11 @@ public final class AccountReservationV2GrpcService
     } catch (IllegalArgumentException invalid) {
       responseObserver.onError(
           Status.INVALID_ARGUMENT.withDescription(invalid.getMessage()).asRuntimeException());
+    } catch (IllegalStateException invariant) {
+      responseObserver.onError(
+          Status.FAILED_PRECONDITION
+              .withDescription("account reservation invariant failed")
+              .asRuntimeException());
     } catch (RuntimeException failure) {
       responseObserver.onError(
           Status.INTERNAL.withDescription("failed to persist reservation").asRuntimeException());

@@ -1,8 +1,12 @@
 package com.simplematch.accountservice.grpc;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.when;
 
 import com.simplematch.accountservice.reservation.AccountReservationApplicationService;
+import com.simplematch.accountservice.reservation.ReserveOperation;
 import com.simplematch.accountservice.store.JdbcAccountAuthorityLifecycleWriter;
 import com.simplematch.accountservice.store.JdbcAccountAuthorityReader;
 import com.simplematch.accountservice.store.JdbcAccountOutboxRepository;
@@ -169,6 +173,25 @@ class AccountReservationV2GrpcServiceTest {
             jdbcTemplate.queryForObject(
                 "SELECT COUNT(*) FROM account_service.account_reservations", Integer.class))
         .isZero();
+  }
+
+  @DisplayName("v2 reserve reports Account invariant failures as failed precondition")
+  @Test
+  void reserveReportsInvariantFailureAsFailedPrecondition() {
+    final AccountReservationApplicationService failingService =
+        mock(AccountReservationApplicationService.class);
+    when(failingService.reserve(any(ReserveOperation.class)))
+        .thenThrow(new IllegalStateException("optimistic version conflict"));
+    final AccountReservationV2GrpcService grpcService =
+        new AccountReservationV2GrpcService(failingService);
+    final TestStreamObserver<AccountLifecycleEvent> observer = new TestStreamObserver<>();
+
+    grpcService.reserve(validRequest(), observer);
+
+    assertThat(Status.fromThrowable(observer.error()).getCode())
+        .isEqualTo(Status.Code.FAILED_PRECONDITION);
+    assertThat(Status.fromThrowable(observer.error()).getDescription())
+        .isEqualTo("account reservation invariant failed");
   }
 
   private ReservationCommand validRequest() {

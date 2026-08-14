@@ -31,6 +31,7 @@ public class OrderAdmissionApplicationService {
     } catch (AdmissionValidationException
         | AdmissionConflictException
         | AdmissionUnavailableException
+        | AdmissionInvariantException
         | AdmissionAccountFailureException knownFailure) {
       throw knownFailure;
     } catch (RuntimeException failure) {

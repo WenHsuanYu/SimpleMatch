@@ -101,6 +101,7 @@ public final class GrpcAccountReservationClient implements AccountReservationCli
       case INVALID_ARGUMENT ->
           new AdmissionValidationException(
               AdmissionFailure.invalidCommand(accountDescription(failure)));
+      case FAILED_PRECONDITION -> new AdmissionInvariantException(failure);
       case DEADLINE_EXCEEDED, UNAVAILABLE, RESOURCE_EXHAUSTED ->
           new AdmissionUnavailableException(failure);
       default -> new AdmissionAccountFailureException(failure);
