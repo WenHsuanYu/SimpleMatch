@@ -73,15 +73,27 @@ fi
 config_value() {
   local config_file="$1"
   local requested_key="$2"
+  # Kafka emits comma-delimited properties, but cleanup.policy can itself be a comma-delimited list.
   awk -v key="${requested_key}" '
     {
-      field_count = split($0, fields, /[[:space:],]+/)
-      for (field_index = 1; field_index <= field_count; field_index++) {
-        separator = index(fields[field_index], "=")
-        if (separator > 1 && substr(fields[field_index], 1, separator - 1) == key) {
-          print substr(fields[field_index], separator + 1)
+      needle = key "="
+      search_offset = 1
+      while (search_offset <= length($0)) {
+        relative_position = index(substr($0, search_offset), needle)
+        if (relative_position == 0) break
+        position = search_offset + relative_position - 1
+        previous_character = position > 1 ? substr($0, position - 1, 1) : ""
+        if (position == 1 || previous_character ~ /[[:space:],:]/) {
+          value = substr($0, position + length(needle))
+          next_property = match(value, /[[:space:],][[:alnum:]_.-]+=/)
+          if (next_property > 0) {
+            value = substr(value, 1, next_property - 1)
+          }
+          gsub(/^[[:space:]]+|[[:space:]]+$/, "", value)
+          print value
           exit
         }
+        search_offset = position + 1
       }
     }
   ' "${config_file}"
