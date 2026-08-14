@@ -287,7 +287,12 @@ and must not be interpreted as a requirement to push images or obtain external c
   output ring, and Kafka publisher/offset coordinator. The core performs no network or disk I/O,
   locks, or post-warmup allocation.
 - **Current evidence:** The native runtime has preallocated SPSC ingress/output rings, a
-  single-writer price-time order-book core capped at 150 instruments, command decoding, direct
+  single-writer price-time order-book core capped at 150 instruments. The rings now use
+  cache-line-isolated monotonic producer/consumer sequences, power-of-two typed storage,
+  acquire/release publication, bounded batch consumption, and explicit full-capacity
+  backpressure. The writer reserves the mathematical worst-case event burst plus one
+  `EndOfInput` marker before changing core state; output indices and the terminal count are checked
+  before publication coordination. The runtime also has command decoding, direct
   partition assignment, output backpressure, a librdkafka adapter, lifecycle executable/probes, and
   deterministic CTest coverage, including a bounded-capacity benchmark smoke and a Close Barrier
   regression that covers both sides of an order book, plus explicit input-ring, output-ring, and
@@ -297,7 +302,10 @@ and must not be interpreted as a requirement to push images or obtain external c
   consumed real `matching.commands` records and published acknowledged `matching.events` records.
 - **Missing behavior:** The production binary still polls Kafka and drives the partition coordinator
   in one loop; a separate Kafka-ingress/writer-thread split and live CPU pinning are not yet
-  implemented. Local production-like CPU/resource mapping and end-to-end Kafka/ring throughput
+  implemented. Safely moving the writer to its own thread requires the bounded ingress ledger and
+  replay/commit handoff owned by ME-2; merely dispatching `process_one()` in the background would
+  allow an already-polled Kafka record to advance before the preceding input completes. Local
+  production-like CPU/resource mapping and end-to-end Kafka/ring throughput
   integration against the owned three-broker profile also remain. The direct-core allocation and
   throughput smoke is evidence only for the native core; external hardware or production-cluster
   certification is not required by this project. Those runtime adapters must not enter the Matching
