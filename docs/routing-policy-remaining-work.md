@@ -265,11 +265,14 @@ and must not be interpreted as a requirement to push images or obtain external c
   resolver, barrier, transaction, Flyway, and application-context tests pass. The repository-local
   PostgreSQL/Kafka Connect/Kafka CDC contract also passes, including connector pause/resume and
   exact record delivery. A separate native fixture has verified the local `matching.commands` to
-  `matching.events` broker path.
-- **Missing behavior:** The Risk application's own outbox must still be verified through the
-  deployed connector against the repository-owned local production-like three-broker Kafka profile.
-  The offline builder and production artifact approval workflow remain MR-1 through MR-4 work rather
-  than being supplied by Risk.
+  `matching.events` broker path. The local Kubernetes overlay now contains two in-cluster Debezium
+  workers, and the certification runner registers `risk-service-outbox` only after Flyway completes,
+  then requires the connector and task to report `RUNNING`.
+- **Missing behavior:** A full local production-like run still needs to execute that deployed Risk
+  connector against the repository-owned three-broker Kafka profile and prove a real accepted
+  command reaches `matching.commands`; the static deployment and registration contract is now in
+  place. The offline builder and production artifact approval workflow remain MR-1 through MR-4
+  work rather than being supplied by Risk.
 - **Acceptance criteria:** New order, cancel, `TRADING_DAY_OPEN_BARRIER`, and
   `TRADING_DAY_CLOSE_BARRIER` records target explicit partitions 0-14. Recovery never recomputes an
   admitted route. No command is published for a stale or mismatched artifact.

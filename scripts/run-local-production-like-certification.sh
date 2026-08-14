@@ -433,7 +433,7 @@ documents.each do |document|
            when "StatefulSet"
              %w[postgres kafka].include?(document.dig("metadata", "name")) ? platform_manifest : workload_manifest
            when "Deployment"
-             document.dig("metadata", "name") == "redis" ? platform_manifest : workload_manifest
+             %w[redis kafka-connect].include?(document.dig("metadata", "name")) ? platform_manifest : workload_manifest
            else
              platform_manifest
            end
@@ -495,6 +495,7 @@ apply_local_kubernetes_inputs() {
     --dry-run=client -o yaml | kubectl apply -f - >/dev/null
 
   kubectl -n "$namespace" create secret generic simplematch-postgres-secrets \
+    --from-literal=postgres_user=simplematch \
     --from-literal=postgres_password="$local_postgres_password" \
     --dry-run=client -o yaml | kubectl apply -f - >/dev/null
 
@@ -556,6 +557,69 @@ apply_kubernetes_migrations() {
       "job/${workload}-flyway" --timeout=300s
   done
 }
+
+register_kubernetes_risk_connector() (
+  local forward_port="${SIMPLEMATCH_KAFKA_CONNECT_FORWARD_PORT:-18083}"
+  local connector_url="http://127.0.0.1:${forward_port}"
+  local connector_json="$evidence_dir/risk-service-outbox-connector.json"
+  local connector_config="$evidence_dir/risk-service-outbox-connector-config.json"
+  local response_file="$evidence_dir/risk-service-outbox-connector-response.json"
+  local status_file="$evidence_dir/risk-service-outbox-status.json"
+  local port_forward_log="$evidence_dir/kafka-connect-port-forward.log"
+  local port_forward_pid
+  local status_code
+
+  kubectl -n "$namespace" rollout status deployment/kafka-connect --timeout=300s
+  kubectl -n "$namespace" get configmap risk-service-outbox-connector \
+    -o jsonpath='{.data.connector\.json}' >"$connector_json"
+  jq -e '.name == "risk-service-outbox" and (.config | type == "object")' "$connector_json" >/dev/null
+
+  kubectl -n "$namespace" port-forward service/kafka-connect "${forward_port}:8083" \
+    >"$port_forward_log" 2>&1 &
+  port_forward_pid=$!
+  stop_port_forward() {
+    kill "$port_forward_pid" >/dev/null 2>&1 || true
+    wait "$port_forward_pid" >/dev/null 2>&1 || true
+  }
+  trap stop_port_forward EXIT
+
+  for _ in $(seq 1 90); do
+    if curl -fsS "$connector_url/connectors" >/dev/null 2>&1; then
+      break
+    fi
+    sleep 2
+  done
+  curl -fsS "$connector_url/connectors" >/dev/null
+
+  status_code="$(curl -sS -o "$response_file" -w '%{http_code}' \
+    -X POST -H 'Content-Type: application/json' --data-binary @"$connector_json" \
+    "$connector_url/connectors")"
+  case "$status_code" in
+    2??)
+      ;;
+    409)
+      jq -c '.config' "$connector_json" >"$connector_config"
+      curl -fsS -X PUT -H 'Content-Type: application/json' \
+        --data-binary @"$connector_config" \
+        "$connector_url/connectors/risk-service-outbox/config" >/dev/null
+      ;;
+    *)
+      cat "$response_file" >&2
+      exit 1
+      ;;
+  esac
+
+  for _ in $(seq 1 90); do
+    if curl -fsS "$connector_url/connectors/risk-service-outbox/status" \
+      | jq -e '.connector.state == "RUNNING" and (.tasks | length > 0) and .tasks[0].state == "RUNNING"' \
+      >"$status_file" 2>/dev/null; then
+      exit 0
+    fi
+    sleep 2
+  done
+  curl -fsS "$connector_url/connectors/risk-service-outbox/status" | tee "$status_file" >&2
+  exit 1
+)
 
 select_matching_workload() {
   local workload_manifest="$1"
@@ -621,6 +685,7 @@ if [[ "$skip_kubernetes" == false ]]; then
     print_command kubectl apply -f "$evidence_dir/local-kubernetes-platform.yaml"
     print_command kubectl apply -f "$evidence_dir/local-kubernetes-migrations.yaml"
     print_command kubectl wait --for=condition=complete job/account-service-flyway --timeout=300s
+    print_command register_kubernetes_risk_connector
     print_command kubectl apply -f "$evidence_dir/local-kubernetes-workloads.yaml"
     print_command bash "$repo_root/scripts/verify-matching-fleet-live.sh" --namespace "$namespace" --allow-shared-node --allow-local-image
   else
@@ -648,6 +713,7 @@ if [[ "$skip_kubernetes" == false ]]; then
       run_logged kubernetes-matching-apply kubectl apply -f "$matching_workload_manifest"
     else
       run_logged kubernetes-migrations apply_kubernetes_migrations "$migration_manifest"
+      run_logged kubernetes-risk-outbox-connector register_kubernetes_risk_connector
       run_logged kubernetes-workload-apply kubectl apply -f "$workload_manifest"
     fi
     run_logged kubernetes-open-barriers publish_local_matching_open_barriers "$matching_digest"

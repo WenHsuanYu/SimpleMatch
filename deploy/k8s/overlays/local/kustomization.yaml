@@ -6,6 +6,7 @@ resources:
   - ../../postgresql.yaml
   - ../../redis.yaml
   - ../../kafka-kraft.yaml
+  - ../../debezium-kafka-connect-local.yaml
 configMapGenerator:
   - name: quickfix-gateway-fix-spec
     files:

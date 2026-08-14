@@ -86,7 +86,7 @@ review and the local contract test.
 | Apache Kafka | 4.3.1 | `kafka-kraft.yaml` and local Compose profile |
 | PostgreSQL | 18.4 | `postgresql.yaml` and local Compose/Flyway CI |
 | Redis | 8.8.1-alpine | `redis.yaml` and local Compose profile |
-| Debezium Kafka Connect | 3.6.0.Final | local Compose profile |
+| Debezium Kafka Connect | 3.6.0.Final | `debezium-kafka-connect-local.yaml` and local Compose profile |
 | Matching build base | Ubuntu 26.04 LTS | `Dockerfile.matching` |
 
 The local Kustomize patch intentionally removes physical-node anti-affinity and lowers Matching
@@ -106,6 +106,12 @@ storage returns. Redis is a portable disposable cache with no PDB and a 30-secon
 toleration. Kafka is a fixed three-member KRaft StatefulSet with one broker/controller per worker,
 RF3/minimum ISR 2 topic durability, and a two-available PDB. These are local lab contracts, not
 cross-node storage HA or production certification.
+
+The local overlay also runs two Debezium Kafka Connect workers against the in-cluster Kafka and
+PostgreSQL Services. The certification runner waits for all Flyway Jobs to complete, then registers
+the Risk outbox connector through the Connect REST API and records its `RUNNING` connector/task
+status before creating the application workloads. This is a local plaintext/Secret-backed lab
+profile; staging and production keep the separate TLS/SASL template.
 
 The base deliberately reuses the reviewed flat Matching and QuickFIX manifests. The renderer uses
 `--load-restrictor LoadRestrictionsNone` for those repository-local files; it does not permit
@@ -207,8 +213,8 @@ The local production-like gate is
 Lease, PVC, Kafka, and restart/replay contracts with local images and disposable infrastructure;
 it does not require 15 physical nodes or real registry digests. The gate applies the approved
 immutable Market Reference under the local `matching-daily-artifact` name, creates the platform
-resources, runs Flyway Jobs before creating runtime workloads, and then verifies the Java,
-QuickFIX, and Matching rollouts. Risk and Query receive their local session identity from
+resources, runs Flyway Jobs before registering the Risk outbox connector and creating runtime
+workloads, and then verifies the Java, QuickFIX, and Matching rollouts. Risk and Query receive their local session identity from
 `matching-session-config`; the superseded `marketdata-publisher` runtime is disabled only in the
 local overlay. The investigation and troubleshooting record is in
 [Local production-like Kubernetes workload startup](../../docs/local-production-like-kubernetes-workload-startup.md).

@@ -86,6 +86,42 @@ require_value(topic_job.dig("spec", "activeDeadlineSeconds") == 300, "Kafka topi
 topic_container = topic_job.dig("spec", "template", "spec", "containers", 0)
 require_value(topic_container&.dig("resources", "requests") && topic_container.dig("resources", "limits"), "Kafka topic provisioning must define resources")
 
+connect = resources.fetch(["Deployment", "kafka-connect"])
+connect_spec = connect.fetch("spec").fetch("template").fetch("spec")
+connect_container = connect_spec.fetch("containers").find { |container| container.fetch("name") == "kafka-connect" }
+connect_service = resources.fetch(["Service", "kafka-connect"])
+connect_environment = connect_container.fetch("env").to_h { |entry| [entry.fetch("name"), entry] }
+connect_config = resources.fetch(["ConfigMap", "simplematch-kafka-connect-config"])
+
+require_value(connect.fetch("spec").fetch("replicas") == 2, "Local Kafka Connect must retain two workers")
+require_value(
+  connect_spec.dig("nodeSelector", "simplematch.io/node-pool") == "local-resilience",
+  "Local Kafka Connect must use local-resilience workers"
+)
+require_value(
+  connect_config.dig("data", "bootstrap_servers") == "kafka:9092" &&
+    connect_environment.dig("CONNECT_SECURITY_PROTOCOL", "value") == "PLAINTEXT",
+  "Local Kafka Connect must use the in-cluster plaintext Kafka endpoint"
+)
+require_value(
+  connect_environment.dig("CONFIG_STORAGE_REPLICATION_FACTOR", "value") == "3" &&
+    connect_environment.dig("OFFSET_STORAGE_REPLICATION_FACTOR", "value") == "3" &&
+    connect_environment.dig("STATUS_STORAGE_REPLICATION_FACTOR", "value") == "3",
+  "Local Kafka Connect internal topics must use replication factor three"
+)
+require_value(
+  connect_environment.dig("RISK_SERVICE_POSTGRES_USER", "valueFrom", "secretKeyRef", "name") == "simplematch-postgres-secrets" &&
+    connect_environment.dig("RISK_SERVICE_POSTGRES_PASSWORD", "valueFrom", "secretKeyRef", "name") == "simplematch-postgres-secrets",
+  "Local Kafka Connect must receive Risk database credentials from the local Secret"
+)
+require_value(connect_container&.dig("resources", "requests") && connect_container.dig("resources", "limits"), "Local Kafka Connect must define resources")
+require_value(connect_container&.key?("readinessProbe") && connect_container.key?("startupProbe"), "Local Kafka Connect must define bounded probes")
+require_value(connect_service.dig("spec", "ports", 0, "port") == 8083, "Kafka Connect Service must expose 8083")
+require_value(
+  connect_spec.fetch("volumes", []).none? { |volume| volume.dig("name") == "postgres-tls" || volume.dig("name") == "kafka-tls" },
+  "Local Kafka Connect must not require external TLS volumes"
+)
+
 flyway_jobs = resources.values.select do |resource|
   resource["kind"] == "Job" && resource.dig("metadata", "name")&.end_with?("-flyway")
 end

@@ -122,6 +122,13 @@ grep -Fq 'local-kubernetes-workloads.yaml' \
   echo "Local certification does not sequence migrations before runtime workloads." >&2
   exit 1
 }
+grep -Fq 'register_kubernetes_risk_connector' \
+  "$repo_root/scripts/run-local-production-like-certification.sh" &&
+grep -Fq 'kubernetes-risk-outbox-connector' \
+  "$repo_root/scripts/run-local-production-like-certification.sh" || {
+  echo "Local certification does not register the Risk outbox connector after migrations." >&2
+  exit 1
+}
 grep -Fq 'local-kubernetes-inputs.yaml' \
   "$repo_root/scripts/run-local-production-like-certification.sh" || {
   echo "Local certification does not isolate large immutable Kubernetes inputs." >&2
