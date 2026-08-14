@@ -154,6 +154,27 @@ if(BUILD_TESTING)
   simplematch_enable_warnings(simplematch_matching_ingress_tests)
   simplematch_enable_sanitizers(simplematch_matching_ingress_tests)
 
+  add_executable(
+      simplematch_matching_core_allocation_tests
+      matching-engine/tests/matching_core_allocation_test.cpp)
+  target_link_libraries(
+      simplematch_matching_core_allocation_tests
+      PRIVATE simplematch_matching_ingress
+              GTest::gtest
+              GTest::gtest_main
+              Threads::Threads)
+  target_include_directories(
+      simplematch_matching_core_allocation_tests PRIVATE ${CMAKE_CURRENT_BINARY_DIR})
+  simplematch_enable_warnings(simplematch_matching_core_allocation_tests)
+  simplematch_enable_sanitizers(simplematch_matching_core_allocation_tests)
+
   include(GoogleTest)
   gtest_discover_tests(simplematch_matching_ingress_tests)
+  gtest_discover_tests(simplematch_matching_core_allocation_tests)
+  add_test(
+      NAME simplematch_matching_capacity_benchmark
+      COMMAND simplematch-matching-capacity-benchmark
+              --warmup 1
+              --iterations 5
+              --maximum-resting-orders 32)
 endif()

@@ -1,4 +1,5 @@
 #include "simplematch/matching/core/deterministic_matching_core.hpp"
+#include "simplematch/matching/runtime/matching_event_encoder.hpp"
 
 #include <algorithm>
 #include <array>
@@ -9,13 +10,16 @@
 #include <iostream>
 #include <limits>
 #include <optional>
+#include <sstream>
 #include <stdexcept>
 #include <string>
 #include <string_view>
 #include <unordered_set>
+#include <utility>
 #include <vector>
 
 #ifdef __linux__
+#include <sched.h>
 #include <sys/resource.h>
 #endif
 
@@ -27,9 +31,10 @@ constexpr std::size_t kDefaultWarmupIterations = 10;
 constexpr std::size_t kDefaultMeasuredIterations = 100;
 constexpr std::size_t kDefaultMaximumRestingOrders = 256;
 constexpr std::string_view kArtifactIdentity =
-    "2026-08-11:benchmark-artifact-7cd06c51691bcde248e606ed1adfaddc";
+    "2026-08-11:7cd06c51691bcde248e606ed1adfaddc4bd10ece582a6803fd2f04155a032943";
 constexpr std::string_view kTradingSession = "2026-08-11-regular";
 constexpr std::string_view kRoutingAlgorithm = "stable-least-loaded-v1";
+constexpr std::int64_t kFirstInputOffset = 100;
 
 struct Options {
   std::size_t warmup_iterations = kDefaultWarmupIterations;
@@ -49,7 +54,22 @@ struct Measurements {
   std::uint64_t duplicate_event_ids{};
   std::uint64_t rejected_commands{};
   std::uint64_t event_checksum = 1469598103934665603ULL;
+  std::uint64_t serialized_event_checksum = 1469598103934665603ULL;
+  std::uint64_t state_checksum{};
+  std::vector<std::string> serialized_event_bytes;
   std::unordered_set<std::string> event_ids;
+};
+
+struct ReplayChecksums {
+  std::uint64_t event_checksum;
+  std::uint64_t serialized_event_checksum;
+  std::uint64_t state_checksum;
+  std::vector<std::string> serialized_event_bytes;
+};
+
+struct CpuAffinity {
+  std::string set;
+  std::size_t count{};
 };
 
 std::uint64_t checksum_event(std::uint64_t checksum, const CoreEvent &event) {
@@ -104,6 +124,14 @@ std::uint64_t checksum_event(std::uint64_t checksum, const CoreEvent &event) {
   mix_integer(static_cast<std::uint64_t>(event.price.value()));
   mix_integer(static_cast<std::uint64_t>(event.cancellation_reason));
   mix_integer(static_cast<std::uint64_t>(event.output_index));
+  return checksum;
+}
+
+std::uint64_t checksum_bytes(std::uint64_t checksum, std::string_view value) {
+  for (const unsigned char byte : value) {
+    checksum ^= byte;
+    checksum *= 1099511628211ULL;
+  }
   return checksum;
 }
 
@@ -218,6 +246,31 @@ std::uint64_t peak_rss_bytes() {
   return 0;
 }
 
+CpuAffinity effective_cpu_affinity() {
+#ifdef __linux__
+  cpu_set_t affinity;
+  CPU_ZERO(&affinity);
+  if (sched_getaffinity(0, sizeof(affinity), &affinity) != 0) {
+    return {"unavailable", 0};
+  }
+  std::ostringstream encoded;
+  std::size_t count = 0;
+  for (int cpu = 0; cpu < CPU_SETSIZE; ++cpu) {
+    if (!CPU_ISSET(cpu, &affinity)) {
+      continue;
+    }
+    if (count > 0) {
+      encoded << ',';
+    }
+    encoded << cpu;
+    ++count;
+  }
+  return {encoded.str(), count};
+#else
+  return {"unsupported", 0};
+#endif
+}
+
 std::uint64_t percentile(std::vector<std::uint64_t> sorted, double fraction) {
   if (sorted.empty()) {
     return 0;
@@ -233,6 +286,9 @@ bool record_event(
     CoreEventType expected_type,
     const CoreUuid &command_id,
     const CoreUuid &order_id,
+    const MatchingEventEncoder &encoder,
+    const MatchingCommandContext &context,
+    std::int64_t source_input_offset,
     bool measure,
     Measurements &measurements) {
   if (event.type != expected_type || event.source_command_id != command_id ||
@@ -240,6 +296,13 @@ bool record_event(
     return false;
   }
   measurements.event_checksum = checksum_event(measurements.event_checksum, event);
+  const auto encoded = encoder.encode(context, source_input_offset, event);
+  if (!encoded.has_value()) {
+    return false;
+  }
+  measurements.serialized_event_checksum =
+      checksum_bytes(measurements.serialized_event_checksum, encoded->value);
+  measurements.serialized_event_bytes.push_back(encoded->value);
   if (!measure) {
     return true;
   }
@@ -251,29 +314,58 @@ bool record_event(
   return true;
 }
 
-std::optional<std::uint64_t> replay_checksum(
+std::optional<ReplayChecksums> replay_checksum(
     const std::vector<CoreInstrument> &instruments,
     const std::vector<WorkItem> &work,
     const Options &options) {
   DeterministicMatchingCore replay(instruments, options.maximum_resting_orders, 0);
-  std::uint64_t checksum = 1469598103934665603ULL;
-  for (const WorkItem &item : work) {
+  MatchingEventEncoder encoder;
+  std::uint64_t event_checksum = 1469598103934665603ULL;
+  std::uint64_t serialized_event_checksum = 1469598103934665603ULL;
+  std::vector<std::string> serialized_event_bytes;
+  serialized_event_bytes.reserve(work.size() * 2);
+  for (std::size_t index = 0; index < work.size(); ++index) {
+    const WorkItem &item = work[index];
     if (replay.process(item.rest) != MatchingProcessResult::kApplied || replay.events().size() != 1) {
       return std::nullopt;
     }
-    checksum = checksum_event(checksum, replay.events().front());
+    event_checksum = checksum_event(event_checksum, replay.events().front());
+    const auto encoded_rest = encoder.encode(
+        item.rest.context, kFirstInputOffset + static_cast<std::int64_t>(index * 2),
+        replay.events().front());
+    if (!encoded_rest.has_value()) {
+      return std::nullopt;
+    }
+    serialized_event_checksum =
+        checksum_bytes(serialized_event_checksum, encoded_rest->value);
+    serialized_event_bytes.push_back(encoded_rest->value);
     if (replay.process(item.cancel) != MatchingProcessResult::kApplied || replay.events().size() != 1) {
       return std::nullopt;
     }
-    checksum = checksum_event(checksum, replay.events().front());
+    event_checksum = checksum_event(event_checksum, replay.events().front());
+    const auto encoded_cancel = encoder.encode(
+        item.cancel.context, kFirstInputOffset + static_cast<std::int64_t>(index * 2 + 1),
+        replay.events().front());
+    if (!encoded_cancel.has_value()) {
+      return std::nullopt;
+    }
+    serialized_event_checksum =
+        checksum_bytes(serialized_event_checksum, encoded_cancel->value);
+    serialized_event_bytes.push_back(encoded_cancel->value);
   }
-  return checksum;
+  return ReplayChecksums{
+      event_checksum,
+      serialized_event_checksum,
+      replay.deterministic_state_checksum(),
+      std::move(serialized_event_bytes)};
 }
 
 bool process_one(
     DeterministicMatchingCore &core,
     const CoreCommand &command,
     CoreEventType expected_type,
+    const MatchingEventEncoder &encoder,
+    std::int64_t source_input_offset,
     bool measure,
     Measurements &measurements) {
   const auto started = measure ? std::chrono::steady_clock::now()
@@ -299,7 +391,15 @@ bool process_one(
                                  ? command.new_order_payload.order_id
                                  : command.cancel_order_payload.order_id;
   return record_event(
-      core.events().front(), expected_type, command.command_id, order_id, measure, measurements);
+      core.events().front(),
+      expected_type,
+      command.command_id,
+      order_id,
+      encoder,
+      command.context,
+      source_input_offset,
+      measure,
+      measurements);
 }
 
 void print_result(
@@ -307,7 +407,8 @@ void print_result(
     const Measurements &measurements,
     std::uint64_t wall_time_ns,
     std::size_t book_count,
-    std::uint64_t replay_event_checksum) {
+    const ReplayChecksums &replay_checksums,
+    const CpuAffinity &cpu_affinity) {
   const auto &latencies = measurements.process_latencies_ns;
   const double wall_seconds = static_cast<double>(wall_time_ns) / 1'000'000'000.0;
   const double commands_per_second =
@@ -321,11 +422,20 @@ void print_result(
       std::min(expected_commands, measurements.measured_commands - measurements.rejected_commands);
   const std::uint64_t lost_events = expected_events -
       std::min(expected_events, measurements.measured_events);
-  const bool checksum_matches = measurements.event_checksum == replay_event_checksum;
+  const bool event_checksum_matches = measurements.event_checksum == replay_checksums.event_checksum;
+  const bool serialized_event_checksum_matches =
+      measurements.serialized_event_checksum == replay_checksums.serialized_event_checksum;
+  const bool serialized_event_bytes_match =
+      measurements.serialized_event_bytes == replay_checksums.serialized_event_bytes;
+  const bool state_checksum_matches =
+      measurements.state_checksum == replay_checksums.state_checksum;
+  const bool determinism_matches =
+      event_checksum_matches && serialized_event_checksum_matches &&
+      serialized_event_bytes_match && state_checksum_matches;
   std::cout << std::fixed << std::setprecision(3)
             << "{\"schema_version\":1,\"status\":\""
             << (lost_commands == 0 && lost_events == 0 && measurements.duplicate_event_ids == 0
-                    && checksum_matches
+                    && determinism_matches
                 ? "PASS"
                     : "FAIL")
             << "\",\"book_count\":" << book_count
@@ -341,10 +451,24 @@ void print_result(
             << ",\"p99_9\":" << percentile(latencies, 0.999)
             << ",\"max\":" << (latencies.empty() ? 0 : *std::max_element(latencies.begin(), latencies.end()))
             << "},\"rss_peak_bytes\":" << peak_rss_bytes()
+            << ",\"effective_cpu_set\":\"" << cpu_affinity.set
+            << "\",\"effective_cpu_count\":" << cpu_affinity.count
             << ",\"determinism\":{\"measured_event_checksum\":\""
             << std::hex << std::setw(16) << std::setfill('0') << measurements.event_checksum
-            << "\",\"replay_event_checksum\":\"" << std::setw(16) << replay_event_checksum
-            << "\",\"checksum_matches\":" << std::boolalpha << checksum_matches << std::noboolalpha
+            << "\",\"replay_event_checksum\":\"" << std::setw(16)
+            << replay_checksums.event_checksum
+            << "\",\"event_checksum_matches\":" << std::boolalpha << event_checksum_matches
+            << ",\"measured_serialized_event_checksum\":\"" << std::setw(16)
+            << measurements.serialized_event_checksum
+            << "\",\"replay_serialized_event_checksum\":\"" << std::setw(16)
+            << replay_checksums.serialized_event_checksum
+            << "\",\"serialized_event_bytes_match\":" << serialized_event_bytes_match
+            << ",\"measured_state_checksum\":\"" << std::setw(16)
+            << measurements.state_checksum
+            << "\",\"replay_state_checksum\":\"" << std::setw(16)
+            << replay_checksums.state_checksum
+            << "\",\"state_checksum_matches\":" << state_checksum_matches
+            << ",\"checksum_matches\":" << determinism_matches << std::noboolalpha
             << std::dec << "}"
             << ",\"integrity\":{\"lost_commands\":" << lost_commands
             << ",\"lost_events\":" << lost_events
@@ -362,18 +486,33 @@ int main(int argc, char **argv) {
     const std::vector<CoreInstrument> instruments = production_instruments();
     const std::vector<WorkItem> work = make_work(instruments, options);
     DeterministicMatchingCore core(instruments, options.maximum_resting_orders, 0);
+    MatchingEventEncoder encoder;
     Measurements measurements;
     measurements.process_latencies_ns.reserve(
         options.measured_iterations * instruments.size() * 2);
+    measurements.serialized_event_bytes.reserve(
+        (options.warmup_iterations + options.measured_iterations) * instruments.size() * 2);
     measurements.event_ids.reserve(options.measured_iterations * instruments.size() * 2);
 
     const std::size_t warmup_work_items = options.warmup_iterations * instruments.size();
     for (std::size_t index = 0; index < warmup_work_items; ++index) {
       const WorkItem &item = work[index];
       if (!process_one(
-              core, item.rest, CoreEventType::kOrderRested, false, measurements) ||
+              core,
+              item.rest,
+              CoreEventType::kOrderRested,
+              encoder,
+              kFirstInputOffset + static_cast<std::int64_t>(index * 2),
+              false,
+              measurements) ||
           !process_one(
-              core, item.cancel, CoreEventType::kOrderCancelled, false, measurements)) {
+              core,
+              item.cancel,
+              CoreEventType::kOrderCancelled,
+              encoder,
+              kFirstInputOffset + static_cast<std::int64_t>(index * 2 + 1),
+              false,
+              measurements)) {
         std::cerr << "benchmark integrity check failed at work item " << index << '\n';
         return 1;
       }
@@ -382,9 +521,21 @@ int main(int argc, char **argv) {
     for (std::size_t index = warmup_work_items; index < work.size(); ++index) {
       const WorkItem &item = work[index];
       if (!process_one(
-              core, item.rest, CoreEventType::kOrderRested, true, measurements) ||
+              core,
+              item.rest,
+              CoreEventType::kOrderRested,
+              encoder,
+              kFirstInputOffset + static_cast<std::int64_t>(index * 2),
+              true,
+              measurements) ||
           !process_one(
-              core, item.cancel, CoreEventType::kOrderCancelled, true, measurements)) {
+              core,
+              item.cancel,
+              CoreEventType::kOrderCancelled,
+              encoder,
+              kFirstInputOffset + static_cast<std::int64_t>(index * 2 + 1),
+              true,
+              measurements)) {
         std::cerr << "benchmark integrity check failed at work item " << index << '\n';
         return 1;
       }
@@ -393,9 +544,10 @@ int main(int argc, char **argv) {
         std::chrono::duration_cast<std::chrono::nanoseconds>(
             std::chrono::steady_clock::now() - measurement_started)
             .count());
-    const std::optional<std::uint64_t> replay_event_checksum =
+    measurements.state_checksum = core.deterministic_state_checksum();
+    const std::optional<ReplayChecksums> replay_checksums =
         replay_checksum(instruments, work, options);
-    if (!replay_event_checksum.has_value()) {
+    if (!replay_checksums.has_value()) {
       std::cerr << "deterministic replay checksum run failed\n";
       return 1;
     }
@@ -404,9 +556,13 @@ int main(int argc, char **argv) {
         measurements,
         std::max<std::uint64_t>(wall_time_ns, 1),
         instruments.size(),
-        *replay_event_checksum);
+        *replay_checksums,
+        effective_cpu_affinity());
     return measurements.rejected_commands == 0 && measurements.duplicate_event_ids == 0
-               && measurements.event_checksum == *replay_event_checksum
+               && measurements.event_checksum == replay_checksums->event_checksum
+               && measurements.serialized_event_checksum == replay_checksums->serialized_event_checksum
+               && measurements.serialized_event_bytes == replay_checksums->serialized_event_bytes
+               && measurements.state_checksum == replay_checksums->state_checksum
            ? 0
            : 1;
   } catch (const std::exception &error) {

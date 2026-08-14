@@ -51,6 +51,20 @@ bool valid_context(const MatchingCommandContext &context, std::int32_t owned_par
          !context.trading_session_id.empty() && !context.routing_algorithm_version.empty();
 }
 
+std::size_t maximum_output_events_for(
+    std::size_t book_count, std::size_t maximum_resting_orders_per_instrument) {
+  constexpr std::size_t kSidesPerBook = 2;
+  const std::size_t maximum_size = std::numeric_limits<std::size_t>::max();
+  if (maximum_resting_orders_per_instrument > maximum_size / kSidesPerBook) {
+    throw std::invalid_argument("matching output capacity is too large");
+  }
+  const std::size_t events_per_book = maximum_resting_orders_per_instrument * kSidesPerBook;
+  if (book_count > (maximum_size - 1) / events_per_book) {
+    throw std::invalid_argument("matching output capacity is too large");
+  }
+  return book_count * events_per_book + 1;
+}
+
 class HashInput {
 public:
   void text(std::string_view value) {
@@ -306,6 +320,8 @@ DeterministicMatchingCore::DeterministicMatchingCore(
       maximum_resting_orders_per_instrument == 0 || owned_partition < 0) {
     throw std::invalid_argument("invalid fixed matching-core capacity or owned partition");
   }
+  const std::size_t maximum_output_events =
+      maximum_output_events_for(assigned_instruments.size(), maximum_resting_orders_per_instrument);
   books_.reserve(assigned_instruments.size());
   for (const auto &instrument : assigned_instruments) {
     if (find_book(instrument) != nullptr) {
@@ -313,7 +329,7 @@ DeterministicMatchingCore::DeterministicMatchingCore(
     }
     books_.emplace_back(instrument, maximum_resting_orders_per_instrument);
   }
-  events_.reserve(books_.size() * maximum_resting_orders_per_instrument_ + 1);
+  events_.reserve(maximum_output_events);
 }
 
 MatchingProcessResult DeterministicMatchingCore::process(const CoreCommand &command) {
@@ -358,7 +374,58 @@ std::size_t DeterministicMatchingCore::resting_order_count(const CoreInstrument 
 }
 
 std::size_t DeterministicMatchingCore::maximum_output_events() const {
-  return books_.size() * maximum_resting_orders_per_instrument_ + 1;
+  return maximum_output_events_for(books_.size(), maximum_resting_orders_per_instrument_);
+}
+
+std::uint64_t DeterministicMatchingCore::deterministic_state_checksum() const {
+  std::uint64_t checksum = 1469598103934665603ULL;
+  const auto mix_byte = [&checksum](std::uint8_t value) {
+    checksum ^= value;
+    checksum *= 1099511628211ULL;
+  };
+  const auto mix_integer = [&mix_byte](std::uint64_t value) {
+    for (std::size_t index = 0; index < sizeof(value); ++index) {
+      mix_byte(static_cast<std::uint8_t>(value >> (index * 8)));
+    }
+  };
+  const auto mix_uuid = [&mix_byte](const CoreUuid &value) {
+    for (const std::uint8_t byte : value.bytes) {
+      mix_byte(byte);
+    }
+  };
+  const auto mix_instrument = [&mix_byte](const CoreInstrument &value) {
+    for (const char character : value.venue) {
+      mix_byte(static_cast<std::uint8_t>(character));
+    }
+    mix_byte(value.symbol_length);
+    for (std::size_t index = 0; index < value.symbol_length; ++index) {
+      mix_byte(static_cast<std::uint8_t>(value.symbol[index]));
+    }
+  };
+  const auto mix_order = [&](const RestingOrder &order) {
+    mix_uuid(order.order_id);
+    mix_uuid(order.account_id);
+    mix_integer(static_cast<std::uint64_t>(order.side));
+    mix_integer(static_cast<std::uint64_t>(order.original_quantity.value()));
+    mix_integer(static_cast<std::uint64_t>(order.remaining.value()));
+    mix_integer(static_cast<std::uint64_t>(order.price.value()));
+    mix_integer(order.arrival_sequence);
+  };
+  for (const Book &book : books_) {
+    mix_instrument(book.instrument);
+    mix_integer(book.buys.size());
+    for (const RestingOrder &order : book.buys) {
+      mix_byte(0);
+      mix_order(order);
+    }
+    mix_integer(book.sells.size());
+    for (const RestingOrder &order : book.sells) {
+      mix_byte(1);
+      mix_order(order);
+    }
+  }
+  mix_integer(arrival_sequence_);
+  return checksum;
 }
 
 DeterministicMatchingCore::Book *DeterministicMatchingCore::find_book(

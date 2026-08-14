@@ -1,4 +1,5 @@
 #include "simplematch/matching/core/deterministic_matching_core.hpp"
+#include "matching_test_support.hpp"
 
 #include <algorithm>
 #include <array>
@@ -10,23 +11,9 @@
 namespace simplematch::matching {
 namespace {
 
-constexpr std::string_view kArtifactIdentity =
-    "2026-08-11:7cd06c51691bcde248e606ed1adfaddc4bd10ece582a6803fd2f04155a032943";
-constexpr std::string_view kSession = "2026-08-11-regular";
-
-CoreUuid uuid(std::string_view value) {
-  return CoreUuid::parse(value).value();
-}
-
-CoreInstrument instrument() {
-  return CoreInstrument::create("XTAI", "2330").value();
-}
-
-MatchingCommandContext context() {
-  return MatchingCommandContext::create(
-             kArtifactIdentity, kSession, "stable-least-loaded-v1", 0)
-      .value();
-}
+using test_support::context;
+using test_support::instrument;
+using test_support::uuid;
 
 CoreCommand new_order(
     std::string_view command_id,
@@ -34,7 +21,8 @@ CoreCommand new_order(
     CoreSide side,
     std::int64_t quantity,
     std::int64_t price,
-    CoreTimeInForce tif = CoreTimeInForce::kRod) {
+    CoreTimeInForce tif = CoreTimeInForce::kRod,
+    CoreOrderType order_type = CoreOrderType::kLimit) {
   return CoreCommand::new_order(
       context(),
       uuid(command_id),
@@ -44,7 +32,7 @@ CoreCommand new_order(
       side,
       ShareQuantity(quantity),
       FixedPrice(price),
-      CoreOrderType::kLimit,
+      order_type,
       tif);
 }
 
@@ -146,6 +134,45 @@ TEST(DeterministicMatchingCoreTest, IocNeverRestsAndFokNeverPartiallyFills) {
   EXPECT_EQ(engine.resting_order_count(instrument()), 1U);
 }
 
+TEST(DeterministicMatchingCoreTest, MarketOrderConsumesBestAvailableLiquidityWithoutResting) {
+  auto engine = core();
+  ASSERT_EQ(
+      engine.process(new_order(
+          "0198a001-0000-7000-8000-000000000020",
+          "0198a001-0000-7000-8000-000000000030",
+          CoreSide::kSell,
+          100,
+          1'000'000)),
+      MatchingProcessResult::kApplied);
+  ASSERT_EQ(
+      engine.process(new_order(
+          "0198a001-0000-7000-8000-000000000021",
+          "0198a001-0000-7000-8000-000000000031",
+          CoreSide::kSell,
+          100,
+          1'010'000)),
+      MatchingProcessResult::kApplied);
+
+  ASSERT_EQ(
+      engine.process(new_order(
+          "0198a001-0000-7000-8000-000000000022",
+          "0198a001-0000-7000-8000-000000000032",
+          CoreSide::kBuy,
+          150,
+          0,
+          CoreTimeInForce::kIoc,
+          CoreOrderType::kMarket)),
+      MatchingProcessResult::kApplied);
+  ASSERT_EQ(engine.events().size(), 2U);
+  EXPECT_EQ(engine.events()[0].type, CoreEventType::kTradeExecuted);
+  EXPECT_EQ(engine.events()[0].price.value(), 1'000'000);
+  EXPECT_EQ(engine.events()[0].quantity.value(), 100);
+  EXPECT_EQ(engine.events()[1].type, CoreEventType::kTradeExecuted);
+  EXPECT_EQ(engine.events()[1].price.value(), 1'010'000);
+  EXPECT_EQ(engine.events()[1].quantity.value(), 50);
+  EXPECT_EQ(engine.resting_order_count(instrument()), 1U);
+}
+
 TEST(DeterministicMatchingCoreTest, RejectsUnknownPartitionAndRetainsNoDynamicBookExpansion) {
   auto engine = core();
   auto wrong_partition = new_order(
@@ -159,6 +186,103 @@ TEST(DeterministicMatchingCoreTest, RejectsUnknownPartitionAndRetainsNoDynamicBo
   EXPECT_EQ(engine.process(wrong_partition), MatchingProcessResult::kPartitionMismatch);
   EXPECT_EQ(engine.process(CoreCommand::close(context())), MatchingProcessResult::kApplied);
   EXPECT_TRUE(engine.events().empty());
+}
+
+TEST(DeterministicMatchingCoreTest, StateChecksumChangesWithOrderBookState) {
+  auto engine = core();
+  const std::uint64_t empty_checksum = engine.deterministic_state_checksum();
+  const auto resting = new_order(
+      "0198a001-0000-7000-8000-000000000008",
+      "0198a001-0000-7000-8000-000000000018",
+      CoreSide::kBuy,
+      100,
+      1'000'000);
+
+  ASSERT_EQ(engine.process(resting), MatchingProcessResult::kApplied);
+  const std::uint64_t resting_checksum = engine.deterministic_state_checksum();
+  EXPECT_NE(resting_checksum, empty_checksum);
+
+  ASSERT_EQ(
+      engine.process(CoreCommand::cancel(
+          context(),
+          uuid("0198a001-0000-7000-8000-000000000009"),
+          resting.new_order().order_id,
+          resting.new_order().account_id,
+          instrument(),
+          CoreSide::kBuy)),
+      MatchingProcessResult::kApplied);
+  EXPECT_NE(engine.deterministic_state_checksum(), resting_checksum);
+}
+
+TEST(DeterministicMatchingCoreTest, RejectsOrderBookCapacityWithoutExpandingTheBook) {
+  auto engine = DeterministicMatchingCore({instrument()}, 1, 0);
+
+  ASSERT_EQ(
+      engine.process(new_order(
+          "0198a001-0000-7000-8000-000000000018",
+          "0198a001-0000-7000-8000-000000000028",
+          CoreSide::kBuy,
+          100,
+          1'000'000)),
+      MatchingProcessResult::kApplied);
+  EXPECT_EQ(
+      engine.process(new_order(
+          "0198a001-0000-7000-8000-000000000019",
+          "0198a001-0000-7000-8000-000000000029",
+          CoreSide::kBuy,
+          100,
+          990'000)),
+      MatchingProcessResult::kOrderBookFull);
+  EXPECT_EQ(engine.resting_order_count(instrument()), 1U);
+}
+
+TEST(DeterministicMatchingCoreTest, ReservesOutputCapacityForBothSidesOfCloseBarrier) {
+  auto engine = DeterministicMatchingCore({instrument()}, 2, 0);
+
+  ASSERT_EQ(
+      engine.process(new_order(
+          "0198a001-0000-7000-8000-000000000021",
+          "0198a001-0000-7000-8000-000000000031",
+          CoreSide::kBuy,
+          100,
+          1'000'000)),
+      MatchingProcessResult::kApplied);
+  ASSERT_EQ(
+      engine.process(new_order(
+          "0198a001-0000-7000-8000-000000000022",
+          "0198a001-0000-7000-8000-000000000032",
+          CoreSide::kBuy,
+          100,
+          990'000)),
+      MatchingProcessResult::kApplied);
+  ASSERT_EQ(
+      engine.process(new_order(
+          "0198a001-0000-7000-8000-000000000023",
+          "0198a001-0000-7000-8000-000000000033",
+          CoreSide::kSell,
+          100,
+          2'000'000)),
+      MatchingProcessResult::kApplied);
+  ASSERT_EQ(
+      engine.process(new_order(
+          "0198a001-0000-7000-8000-000000000024",
+          "0198a001-0000-7000-8000-000000000034",
+          CoreSide::kSell,
+          100,
+          2'010'000)),
+      MatchingProcessResult::kApplied);
+
+  EXPECT_EQ(engine.resting_order_count(instrument()), 4U);
+  EXPECT_EQ(engine.maximum_output_events(), 5U);
+  ASSERT_EQ(
+      engine.process(CoreCommand::close(
+          context(), uuid("0198a001-0000-7000-8000-000000000025"))),
+      MatchingProcessResult::kApplied);
+  EXPECT_EQ(engine.events().size(), 4U);
+  for (const CoreEvent &event : engine.events()) {
+    EXPECT_EQ(event.type, CoreEventType::kOrderExpired);
+    EXPECT_EQ(event.cancellation_reason, CoreCancellationReason::kSessionExpired);
+  }
 }
 
 } // namespace

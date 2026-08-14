@@ -83,15 +83,16 @@ trading day and trading session:
    cluster/topic description, PostgreSQL endpoint identity without the password, FIX session IDs,
    test order identity, and rollback/cleanup decisions.
 
-## Verification already completed
+## Verification already completed or reconfirmed
 
-The following evidence was recorded or reconfirmed on 2026-08-12.
+The table combines evidence recorded on 2026-08-12 with native checks reconfirmed on 2026-08-14;
+rows that were not rerun retain their original date and boundary.
 
 | Layer | Command or scenario | Result and boundary |
 | --- | --- | --- |
 | Native build | cmake --build --preset full-native-dev --parallel | Passed |
-| Native full feature tests | ctest --preset full-native-dev --output-on-failure | 40/40 passed |
-| Native reduced feature tests | cmake --build --preset dev-debug --parallel; ctest --preset dev-debug --output-on-failure | 38/38 passed |
+| Native full feature tests | ctest --preset full-native-dev --output-on-failure | 47/47 passed when reconfirmed on 2026-08-14; the earlier 2026-08-12 run was 40/40 |
+| Native reduced feature tests | cmake --build --preset dev-debug --parallel; ctest --preset dev-debug --output-on-failure | 38/38 passed in the historical 2026-08-12 run; not rerun after #127 changes |
 | Native capacity harness | scripts/run-matching-capacity-certification.sh | Repository gate available; report is non-certifying until run on pinned production-shaped hardware |
 | Kubernetes manifest contract | bash scripts/test-matching-kubernetes-manifests.sh | Passed; static contract only |
 | Kafka profile fixtures | bash scripts/test-matching-topic-profile.sh | Passed; includes RF/ISR/safety and duplicate-replica rejection |
@@ -139,18 +140,22 @@ The repository-side capacity gate is separate from the live dependency gates:
 
 ~~~bash
 cmake --build --preset full-native-dev --target simplematch-matching-capacity-benchmark --parallel
-SIMPLEMATCH_BENCHMARK_CPUSET='0-2' \
+SIMPLEMATCH_BENCHMARK_CPUSET='0' \
 SIMPLEMATCH_REQUIRE_PINNED=true \
 SIMPLEMATCH_BENCHMARK_REPORT=/secure/certification/matching-capacity.json \
 bash scripts/run-matching-capacity-certification.sh \
   --warmup 100 --iterations 1000 --maximum-resting-orders 256
 ~~~
 
-The benchmark exercises 150 books and checks the measured command/event stream for loss and
-duplicate event identities. Its latency samples cover the direct native core call; the report does
-not include Kafka, ring wait, publication, or recovery time. The operator must record the actual
-CPU-manager policy, cgroup quota, governor, workload/depth/rate, and ring occupancy alongside the
-JSON report. A direct-core pass therefore does not satisfy the production gate by itself. The
+The benchmark exercises 150 books and checks the measured command/event stream for loss,
+duplicate event identities, state checksum equality, and deterministic serialized event bytes.
+Its latency samples cover the direct native core call; the report does
+not include Kafka, ring wait, publication, or recovery time. The report records the benchmark
+process's effective CPU affinity when the operator supplies `SIMPLEMATCH_BENCHMARK_CPUSET`. This
+is evidence about the benchmark process only; it does not prove Kubernetes CPU Manager placement
+or live Matching writer isolation. The operator must record the actual CPU-manager policy, cgroup
+quota, governor, workload/depth/rate, and ring occupancy alongside the JSON report. A direct-core
+pass therefore does not satisfy the production gate by itself. The
 production gate still requires Kafka end-to-end percentiles, a soak, broker outage and replay
 checksum scenarios, and the 60-second lag/120-second replacement SLOs below.
 

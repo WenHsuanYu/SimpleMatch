@@ -46,6 +46,16 @@ ruby -rjson -rtime - "${temporary_output}" "${report_path}" "${benchmark_binary}
   "${requested_cpu_set}" "${cpu_model}" "${host_name}" "${actual_cpu_count}" <<'RUBY'
 benchmark_path, report_path, binary, cpu_set, cpu_model, host_name, cpu_count = ARGV
 benchmark = JSON.parse(File.read(benchmark_path))
+if ENV.fetch("SIMPLEMATCH_REQUIRE_PINNED", "false") == "true"
+  if [nil, "", "unavailable", "unsupported"].include?(benchmark["effective_cpu_set"])
+    warn "benchmark did not report an effective CPU affinity while pinning was required"
+    exit 1
+  end
+  unless benchmark["effective_cpu_count"] == 1
+    warn "pinned capacity benchmark must run on exactly one CPU"
+    exit 1
+  end
+end
 report = {
   "schema_version" => 1,
   "generated_at_utc" => Time.now.utc.iso8601,
@@ -54,6 +64,8 @@ report = {
   "cpu_model" => cpu_model,
   "online_cpu_count" => cpu_count,
   "requested_cpu_set" => cpu_set,
+  "effective_cpu_set" => benchmark["effective_cpu_set"],
+  "effective_cpu_count" => benchmark["effective_cpu_count"],
   "benchmark" => benchmark
 }
 File.write(report_path, JSON.pretty_generate(report) + "\n")

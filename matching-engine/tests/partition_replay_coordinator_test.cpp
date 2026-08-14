@@ -55,7 +55,7 @@ std::unique_ptr<DeterministicMatchingCore> core() {
 
 PartitionReplayCoordinator coordinator(
     std::shared_ptr<const PartitionOwnershipPermit> permit = ready_permit()) {
-  return PartitionReplayCoordinator(assignment(), identity(), std::move(permit), core(), 4, 16, 32, 64);
+  return PartitionReplayCoordinator(assignment(), identity(), std::move(permit), core(), 4, 32, 32, 64);
 }
 
 simplematch::matching::runtime::v1::MatchingCommand base_command(std::string_view command_id) {

@@ -51,7 +51,7 @@ std::unique_ptr<DeterministicMatchingCore> core() {
 
 PartitionReplayCoordinator coordinator() {
   return PartitionReplayCoordinator(
-      assignment(), identity(), ready_permit(), core(), 4, 16, 32, 64);
+      assignment(), identity(), ready_permit(), core(), 4, 32, 32, 64);
 }
 
 simplematch::matching::runtime::v1::MatchingCommand base_command(std::string_view command_id) {
@@ -219,7 +219,7 @@ TEST(MatchingPartitionRuntimeDriverTest, DoesNotAssignWhenOwnershipIsNotConfirme
   auto permit = ready_permit();
   permit->report_renewal_uncertainty(std::chrono::steady_clock::time_point{});
   permit->evaluate_at(std::chrono::steady_clock::time_point{} + std::chrono::seconds(5));
-  auto replay = PartitionReplayCoordinator(assignment(), identity(), permit, core(), 4, 16, 32, 64);
+  auto replay = PartitionReplayCoordinator(assignment(), identity(), permit, core(), 4, 32, 32, 64);
   RecordingConsumer consumer;
   RecordingPublisher publisher;
   MatchingPartitionRuntimeDriver driver(consumer, replay, publisher);

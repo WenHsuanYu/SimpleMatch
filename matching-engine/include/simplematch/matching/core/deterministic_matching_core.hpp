@@ -235,6 +235,8 @@ public:
   [[nodiscard]] std::span<const CoreEvent> events() const;
   [[nodiscard]] std::size_t resting_order_count(const CoreInstrument &instrument) const;
   [[nodiscard]] std::size_t maximum_output_events() const;
+  /** Returns a deterministic checksum of every mutable order-book field. */
+  [[nodiscard]] std::uint64_t deterministic_state_checksum() const;
 
 private:
   struct RestingOrder;

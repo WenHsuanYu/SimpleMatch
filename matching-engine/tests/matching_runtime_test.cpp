@@ -56,7 +56,7 @@ std::shared_ptr<LeaseFencedPartitionOwnershipPermit> ready_permit() {
 
 TEST(MatchingRuntimeTest, BoundedInputRingNeverOverwritesAnUnreadCommand) {
   const auto permit = ready_permit();
-  MatchingRuntime runtime(core(), 1, 3, permit);
+  MatchingRuntime runtime(core(), 1, 4, permit);
 
   EXPECT_TRUE(runtime.submit(order(
       "0198a001-0000-7000-8000-000000000001",
@@ -72,7 +72,7 @@ TEST(MatchingRuntimeTest, BoundedInputRingNeverOverwritesAnUnreadCommand) {
 
 TEST(MatchingRuntimeTest, OutputBackpressureLeavesTheInputCommandUnconsumed) {
   const auto permit = ready_permit();
-  MatchingRuntime runtime(core(), 1, 3, permit);
+  MatchingRuntime runtime(core(), 1, 4, permit);
   ASSERT_TRUE(runtime.submit(order(
       "0198a001-0000-7000-8000-000000000003",
       "0198a001-0000-7000-8000-000000000013")));
@@ -89,7 +89,7 @@ TEST(MatchingRuntimeTest, OutputBackpressureLeavesTheInputCommandUnconsumed) {
 
 TEST(MatchingRuntimeTest, SelfFencedPermitLeavesQueuedCommandsUnread) {
   const auto permit = ready_permit();
-  MatchingRuntime runtime(core(), 1, 3, permit);
+  MatchingRuntime runtime(core(), 1, 4, permit);
   ASSERT_TRUE(runtime.submit(order(
       "0198a001-0000-7000-8000-000000000004",
       "0198a001-0000-7000-8000-000000000014")));

@@ -289,12 +289,19 @@ and must not be interpreted as a requirement to push images or obtain external c
 - **Current evidence:** The native runtime has preallocated SPSC ingress/output rings, a
   single-writer price-time order-book core capped at 150 instruments, command decoding, direct
   partition assignment, output backpressure, a librdkafka adapter, lifecycle executable/probes, and
-  deterministic CTest coverage. A local broker smoke and a disposable kind smoke have consumed
-  real `matching.commands` records and published acknowledged `matching.events` records.
-- **Missing behavior:** Local production-like CPU pinning/resource checks, allocation and throughput
-  evidence, and integration against the owned three-broker profile remain. External hardware or
-  production-cluster certification is not required by this project. Those runtime adapters must not
-  enter the Matching core hot path.
+  deterministic CTest coverage, including a bounded-capacity benchmark smoke and a Close Barrier
+  regression that covers both sides of an order book, plus explicit input-ring, output-ring, and
+  order-book-capacity checks. The capacity report now compares native state checksums and
+  deterministic serialized event bytes, and also records the benchmark process's effective CPU
+  affinity when pinning is requested. A local broker smoke and a disposable kind smoke have
+  consumed real `matching.commands` records and published acknowledged `matching.events` records.
+- **Missing behavior:** The production binary still polls Kafka and drives the partition coordinator
+  in one loop; a separate Kafka-ingress/writer-thread split and live CPU pinning are not yet
+  implemented. Local production-like CPU/resource mapping and end-to-end Kafka/ring throughput
+  integration against the owned three-broker profile also remain. The direct-core allocation and
+  throughput smoke is evidence only for the native core; external hardware or production-cluster
+  certification is not required by this project. Those runtime adapters must not enter the Matching
+  core hot path.
 - **Acceptance criteria:** The same ordered command stream and pinned binary produce identical state
   checksums and event bytes. Ring exhaustion never overwrites, drops, or expands heap storage.
   Output backpressure stalls safely and drives the accepted admission policy.
@@ -615,10 +622,11 @@ and must not be interpreted as a requirement to push images or obtain external c
   150-book distribution, workload mix/depth/rate, warmup, and measurement definitions.
 - **Current evidence:** `simplematch-matching-capacity-benchmark` runs a fixed 150-book distribution
   with explicit warmup and measured iterations, records core p50/p99/p99.9/max latency, throughput,
-  peak RSS, and measured loss/duplicate counters, and the wrapper records the host, CPU shape, and
-  requested CPU set in a JSON report. The benchmark now replays the same workload on a fresh core and
-  fails when the measured and replay event checksums differ. It is a direct-core integrity/capacity
-  gate, not a production performance claim.
+  peak RSS, and measured loss/duplicate counters, and the wrapper records the host, CPU shape,
+  requested CPU set, and effective benchmark-process affinity in a JSON report. The benchmark now
+  replays the same workload on a fresh core and fails when measured and replay state, event fields,
+  or serialized event bytes differ. It is a direct-core integrity/capacity gate, not a production
+  performance claim.
 - **Missing behavior:** Kafka end-to-end latency, ring occupancy, workload-depth/rate calibration,
   soak tests, broker-outage tests, and 15-pod deployment recovery evidence still require the local
   production-like scenarios. External hardware, cluster, or production certification is not part of
