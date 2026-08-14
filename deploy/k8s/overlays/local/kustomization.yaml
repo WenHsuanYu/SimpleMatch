@@ -14,6 +14,7 @@ configMapGenerator:
     options:
       disableNameSuffixHash: true
 patches:
+  - path: java-services-scheduling-patch.yaml
   - path: matching-scheduling-patch.yaml
   - path: local-runtime-patch.yaml
   - path: local-flyway-dependency-gates-patch.yaml

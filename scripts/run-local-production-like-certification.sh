@@ -20,7 +20,8 @@ if [[ ! "$local_postgres_password" =~ ^[A-Za-z0-9._~-]+$ ]]; then
 fi
 local_postgres_dsn="postgresql://simplematch:${local_postgres_password}@postgres:5432/simplematch"
 namespace=""
-kind_cluster="${SIMPLEMATCH_KIND_CLUSTER_NAME:-simplematch-local}"
+kind_cluster="${SIMPLEMATCH_KIND_CLUSTER_NAME:-simplematch-live}"
+kind_context="kind-${kind_cluster}"
 dry_run=false
 skip_build=false
 skip_compose=false
@@ -273,6 +274,9 @@ if [[ "$skip_kubernetes" == false ]]; then
     command -v kind >/dev/null 2>&1 || die 'kind is required for the local Kubernetes gate; install kind or use --skip-kubernetes.'
     kind get clusters | grep -Fxq "$kind_cluster" || die \
       "kind cluster '$kind_cluster' does not exist; create it before running this gate."
+    current_context="$(kubectl config current-context)"
+    [[ "$current_context" == "$kind_context" ]] || die \
+      "current Kubernetes context '$current_context' is not the canonical '$kind_context'."
   fi
   export SIMPLEMATCH_PRODUCTION_LIKE_NETWORK="${SIMPLEMATCH_PRODUCTION_LIKE_NETWORK:-kind}"
   export SIMPLEMATCH_PRODUCTION_LIKE_NETWORK_EXTERNAL="${SIMPLEMATCH_PRODUCTION_LIKE_NETWORK_EXTERNAL:-true}"
@@ -523,6 +527,7 @@ publish_local_matching_open_barriers() {
   local artifact_sha256
   local routing_version
   local fixture_publisher="$repo_root/out/build/full-native-dev/simplematch-matching-kafka-fixture-publisher"
+  local fixture_pod="matching-fixture-publisher"
 
   delivery_manifest="${SIMPLEMATCH_MARKET_REFERENCE_DELIVERY_MANIFEST:-$repo_root/tools/market-reference-builder/data/${certification_trading_day}/delivery/manifest.yaml}"
   artifact_root="$(cd -- "$(dirname -- "$delivery_manifest")/.." && pwd)"
@@ -538,9 +543,21 @@ publish_local_matching_open_barriers() {
     cmake --preset full-native-dev
   fi
   cmake --build --preset full-native-dev --target simplematch-matching-kafka-fixture-publisher --parallel
-  "$fixture_publisher" "localhost:${SIMPLEMATCH_KAFKA_1_PORT:-19092}" matching.commands \
+  kubectl -n "$namespace" rollout status statefulset/kafka --timeout=300s
+  kubectl -n "$namespace" wait --for=condition=complete \
+    job/kafka-topic-provisioning --timeout=300s
+  kubectl -n "$namespace" delete pod "$fixture_pod" --ignore-not-found --wait=true >/dev/null
+  kubectl -n "$namespace" run "$fixture_pod" \
+    --image=simplematch-matching:local --image-pull-policy=IfNotPresent \
+    --restart=Never --command -- sleep 300 >/dev/null
+  kubectl -n "$namespace" wait --for=condition=Ready "pod/$fixture_pod" --timeout=120s
+  base64 "$fixture_publisher" | kubectl -n "$namespace" exec -i "$fixture_pod" -- \
+    sh -c 'base64 -d >/tmp/simplematch-matching-kafka-fixture-publisher && chmod 755 /tmp/simplematch-matching-kafka-fixture-publisher'
+  kubectl -n "$namespace" exec "$fixture_pod" -- \
+    /tmp/simplematch-matching-kafka-fixture-publisher kafka:9092 matching.commands \
     "$certification_trading_day" "${certification_trading_day}-regular" "$artifact_sha256" \
     "$routing_version" "$matching_digest"
+  kubectl -n "$namespace" delete pod "$fixture_pod" --ignore-not-found --wait=true >/dev/null
 }
 
 apply_kubernetes_migrations() {

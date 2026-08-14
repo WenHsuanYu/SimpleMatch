@@ -91,7 +91,7 @@ rows that were not rerun retain their original date and boundary.
 | Layer | Command or scenario | Result and boundary |
 | --- | --- | --- |
 | Native build | cmake --build --preset full-native-dev --parallel | Passed |
-| Native full feature tests | ctest --preset full-native-dev --output-on-failure | 47/47 passed when reconfirmed on 2026-08-14; the earlier 2026-08-12 run was 40/40 |
+| Native full feature tests | ctest --preset full-native-dev --output-on-failure | 72/72 passed when reconfirmed on 2026-08-14 |
 | Native reduced feature tests | cmake --build --preset dev-debug --parallel; ctest --preset dev-debug --output-on-failure | 38/38 passed in the historical 2026-08-12 run; not rerun after #127 changes |
 | Native capacity harness | scripts/run-matching-capacity-certification.sh | Repository gate available; report is non-certifying until run on pinned production-shaped hardware |
 | Kubernetes manifest contract | bash scripts/test-matching-kubernetes-manifests.sh | Passed; static contract only |
@@ -99,7 +99,7 @@ rows that were not rerun retain their original date and boundary.
 | Outbox contracts | bash scripts/verify-outbox-connector-contracts.sh; bash scripts/run-outbox-cdc-contract-check.sh | Passed in the disposable CDC environment |
 | Java services | Persistence, Account, QuickFIX, and Market Data module tests | Passed in the controlled Gradle environment |
 | Java quality gate | GRADLE_USER_HOME=/tmp/simplematch-gradle-cache ./gradlew --no-daemon -q staticAnalysis | Passed after the current Java changes |
-| Local production-like gate | `SIMPLEMATCH_CERTIFICATION_TRADING_DAY=2026-08-11 SIMPLEMATCH_MARKET_REFERENCE_DELIVERY_MANIFEST=tools/market-reference-builder/data/2026-08-11/delivery/manifest.yaml bash scripts/run-local-production-like-certification.sh` | Passed; local images, Compose dependencies, seven Kubernetes Flyway Jobs, Java/Matching fleet, and cleanup completed; report: `out/certification/local-production-like/report.md` |
+| Local production-like gate | `SIMPLEMATCH_CERTIFICATION_TRADING_DAY=2026-08-11 SIMPLEMATCH_MARKET_REFERENCE_DELIVERY_MANIFEST=tools/market-reference-builder/data/2026-08-11/delivery/manifest.yaml bash scripts/run-local-production-like-certification.sh` | Latest rerun stopped during the Kubernetes open-barrier phase when Docker Desktop became unavailable; no new resilience pass was issued. The report records the failed environment run at `out/certification/local-production-like/report.md`. |
 | Market-data streamer and operational adapters | Focused service tests and Kubernetes overlay contract | Passed structural/runtime adapter checks; gRPC subscriber, live Gateway collectors, and projection replay remain capability-specific evidence |
 | Repo-local FIX certification | :services:quickfix-gateway:certificationTest | Passed; real in-process QuickFIX/J acceptor/initiator, H2, WAL, duplicate/cancel/recovery scenarios |
 | Disposable kind Matching smoke | One native matching-0 against one in-cluster broker | Lease/PVC/replay/Ready path passed; one node and RF1, therefore non-certifying |
@@ -158,6 +158,20 @@ quota, governor, workload/depth/rate, and ring occupancy alongside the JSON repo
 pass therefore does not satisfy the production gate by itself. The
 production gate still requires Kafka end-to-end percentiles, a soak, broker outage and replay
 checksum scenarios, and the 60-second lag/120-second replacement SLOs below.
+
+For repository-owned deployed evidence, use the read-only collector:
+
+~~~bash
+bash scripts/run-matching-deployed-certification.sh \
+  --namespace <local-run-namespace> \
+  --report out/certification/matching-deployed/report.json
+~~~
+
+It records the actual Matching Pod UID/Node/image mapping, 5/5/5 placement, process CPU
+allowance, cgroup quota, PVC/Lease snapshots, and the native benchmark report. It returns
+`INCOMPLETE` until the same run also supplies Kafka E2E latency, ring occupancy, loss/duplicate,
+replay, and replacement measurements through `SIMPLEMATCH_E2E_METRICS_FILE`. It never deletes or
+modifies the cluster and does not claim external production certification.
 
 The local native Kafka fixture publisher is:
 

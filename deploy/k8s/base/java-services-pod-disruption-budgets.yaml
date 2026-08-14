@@ -1,0 +1,64 @@
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: account-service
+  labels:
+    app.kubernetes.io/name: account-service
+spec:
+  minAvailable: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: account-service
+      app.kubernetes.io/component: java-service
+---
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: risk-service
+  labels:
+    app.kubernetes.io/name: risk-service
+spec:
+  minAvailable: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: risk-service
+      app.kubernetes.io/component: java-service
+---
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: persistence
+  labels:
+    app.kubernetes.io/name: persistence
+spec:
+  minAvailable: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: persistence
+      app.kubernetes.io/component: java-service
+---
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: market-data-projection
+  labels:
+    app.kubernetes.io/name: market-data-projection
+spec:
+  minAvailable: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: market-data-projection
+      app.kubernetes.io/component: java-service
+---
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: query-service
+  labels:
+    app.kubernetes.io/name: query-service
+spec:
+  minAvailable: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: query-service
+      app.kubernetes.io/component: java-service

@@ -8,7 +8,7 @@ canonical release-scope definition lives in
 Architecture documents describe the accepted target. This document alone distinguishes that target
 from the repository's current implementation state.
 
-Status was reconciled against the `master` worktree on 2026-08-13. An accepted design is not
+Status was reconciled against the current worktree on 2026-08-14. An accepted design is not
 `COMPLETED` until the repository contains its implementation and local production-like verification
 evidence. External production certification and live staging/production promotion are not goals of
 this project. Their deployment values and run sequence remain template work with placeholders and
@@ -46,10 +46,11 @@ and must not be interpreted as a requirement to push images or obtain external c
 | Implementation or capability-specific local verification pending | MD-1, GO-1, PD-1 | The repository implementation and structural gates now exist, and the complete local gate has passed; capability-specific subscriber, collector, connector, security, and outage evidence is still required. |
 | Compatibility or legacy cleanup | MR-5, CL-1 | Superseded runtime paths and migration-only seams still require source/configuration removal; local certification alone cannot close them. |
 
-## Latest verification evidence (2026-08-13)
+## Latest verification evidence (2026-08-14)
 
-- Native CTest now passes all 40 tests, including Kubernetes Lease timestamp formatting and a
-  minimum one-second timeout for Kafka recovery metadata queries.
+- Native CTest now passes all 72 tests, including the pinned-writer startup gate, terminal alert,
+  ownership fencing, bounded replay, commit watermark, and crash-window checks. The full messaging
+  build also passes all 72 tests under ThreadSanitizer without a reported data race.
 - A disposable single-node `simplematch-live` kind cluster ran one real `matching-0` process against
   an in-cluster Kafka broker. The process acquired and renewed its partition Lease, mounted a
   `ReadWriteOncePod` PVC, consumed the Open Barrier plus two order commands, reached `READY`,
@@ -298,18 +299,20 @@ and must not be interpreted as a requirement to push images or obtain external c
   regression that covers both sides of an order book, plus explicit input-ring, output-ring, and
   order-book-capacity checks. The capacity report now compares native state checksums and
   deterministic serialized event bytes, and also records the benchmark process's effective CPU
-  affinity when pinning is requested. A local broker smoke and a disposable kind smoke have
-  consumed real `matching.commands` records and published acknowledged `matching.events` records.
-- **Missing behavior:** The production binary still polls Kafka and drives the partition coordinator
-  in one loop; a separate Kafka-ingress/writer-thread split and live CPU pinning are not yet
-  implemented. Safely moving the writer to its own thread requires the bounded ingress ledger and
-  replay/commit handoff owned by ME-2; merely dispatching `process_one()` in the background would
-  allow an already-polled Kafka record to advance before the preceding input completes. Local
-  production-like CPU/resource mapping and end-to-end Kafka/ring throughput
-  integration against the owned three-broker profile also remain. The direct-core allocation and
-  throughput smoke is evidence only for the native core; external hardware or production-cluster
-  certification is not required by this project. Those runtime adapters must not enter the Matching
-  core hot path.
+  affinity when pinning is requested; without an explicit CPU set, the deployed binary pins the
+  writer to the first CPU in its effective cgroup cpuset. A `MatchingRuntimeSupervisor` now starts
+  the writer parked, validates the recovery boundary before release, propagates terminal failures
+  out of band, observes ownership independently, and bounds shutdown draining. The production
+  binary uses the supervisor for Kafka ingress, the pinned writer, asynchronous publication
+  coordination, and contiguous commit handoff. CTests cover the startup gate, affinity failure,
+  terminal alert, and threaded driver path.
+  A local broker smoke and a disposable kind smoke have consumed real `matching.commands` records
+  and published acknowledged `matching.events` records.
+- **Missing behavior:** A live deployed run still needs to prove the requested CPU/resource mapping
+  against the canonical multi-node kind cluster and the production-shaped three-broker profile.
+  The direct-core allocation and throughput smoke is evidence only for the native core; external
+  hardware or production-cluster certification is not required by this project. Those runtime
+  adapters must not enter the Matching core hot path.
 - **Acceptance criteria:** The same ordered command stream and pinned binary produce identical state
   checksums and event bytes. Ring exhaustion never overwrites, drops, or expands heap storage.
   Output backpressure stalls safely and drives the accepted admission policy.
@@ -331,13 +334,14 @@ and must not be interpreted as a requirement to push images or obtain external c
   CTests cover the ledger, coordinator handoff, replay, and barrier invariants. The native
   librdkafka adapter now exposes bounded retained batches, committed/end offsets, seeking, and
   synchronous commits; the runtime replays the PVC baseline (or scans for a retained Open Barrier)
-  in batches bounded by the input ledger capacity before live polling.
-- **Missing behavior:** The disposable kind smoke covered PVC baseline persistence, Kafka replay,
-  Lease handover, and a normal Pod restart, but asynchronous delivery tracking, crash-window
-  handling, graceful shutdown, local production-like broker/PVC failure behavior, and the owned
-  three-broker recovery gate remain outstanding. Unit tests and a single-node smoke do not
-  substitute for that local operational recovery gate; external production certification is
-  outside the project boundary.
+  in bounded batches through the pinned writer before live polling. Async delivery reports map back
+  to publication IDs, retain unresolved output until a terminal delivery result, retry ambiguous
+  results before admitting later input, and never commit before the output ACK. Tests cover commit
+  acknowledgement loss, ambiguous delivery retry, bounded replay, and graceful shutdown behavior.
+- **Missing behavior:** A real three-broker local run still needs to exercise broker/PVC failure,
+  process crash windows, and recovery timing. The repository now contains the executable behavior
+  and deterministic adapter tests, but unit tests do not substitute for that environment-backed
+  operational gate; external production certification is outside the project boundary.
 - **Acceptance criteria:** Outputs are ACKed before the input offset becomes completed; commits
   never cross a gap. Crash windows may replay identical events but cannot lose an accepted command.
   A missing retained Open Barrier fails closed. No periodic order-book snapshot is added unless the
@@ -563,16 +567,17 @@ and must not be interpreted as a requirement to push images or obtain external c
   scoped Flyway Jobs, startup/readiness/liveness probes, non-root/read-only containers, scoped
   NetworkPolicy, digest-pinned promotion templates, external Secret contracts, Kafka SASL/TLS,
   PostgreSQL CA mounts/TLS parameters, and Account/Risk gRPC mTLS. Spring services include Actuator,
-  several services expose its metrics endpoint, and critical delivery paths register Micrometer
-  counters and observations. `scripts/test-kubernetes-overlays.sh` renders and structurally validates
-  all four overlays. The executable local overlay now also contains the node-local PostgreSQL
+  all application services expose the basic health/info/metrics endpoint, and critical delivery
+  paths register Micrometer counters and observations. The local resilience contract also rejects
+  raw FIX message logging and unsafe account-payload templates. `scripts/test-kubernetes-overlays.sh`
+  renders and structurally validates all four overlays. The executable local overlay now also contains the node-local PostgreSQL
   singleton, disposable Redis cache, three-broker KRaft StatefulSet, bounded Flyway/PostgreSQL
   readiness gates, and explicit Kafka topic provisioning; focused manifest tests pass. PostgreSQL
   URI TLS parameters are preserved by the shared adapter.
 - **Missing behavior:** A retained two-replica Debezium Connect worker, endpoint/secret/TLS contract,
   and staging/production overlay template are now represented. Local connector registration,
-  local dependency-outage smoke, consistent structured log fields, consistent basic health/metrics
-  exposure, key metric assertions, and automated sensitive-log checks still require completion.
+  local dependency-outage smoke, consistent structured log fields, and key metric assertions still
+  require completion.
   Complete OpenTelemetry propagation/collection, a Prometheus server, dashboards, external alerts,
   and a tracing backend are future observability work rather than side-project completion blockers.
   Real registry digests/endpoints/CIDRs, environment-owned Secrets, external Flyway runners, and
@@ -639,11 +644,17 @@ and must not be interpreted as a requirement to push images or obtain external c
   requested CPU set, and effective benchmark-process affinity in a JSON report. The benchmark now
   replays the same workload on a fresh core and fails when measured and replay state, event fields,
   or serialized event bytes differ. It is a direct-core integrity/capacity gate, not a production
-  performance claim.
-- **Missing behavior:** Kafka end-to-end latency, ring occupancy, workload-depth/rate calibration,
-  soak tests, broker-outage tests, and 15-pod deployment recovery evidence still require the local
-  production-like scenarios. External hardware, cluster, or production certification is not part of
-  this project's target.
+  performance claim. `scripts/run-matching-deployed-certification.sh` now collects read-only
+  deployed evidence for the canonical cluster: StatefulSet/pod readiness, Pod UID to Node and
+  image identity, 5/5/5 placement, process CPU allowance, cgroup CPU quota, PVC/Lease snapshots,
+  and the native benchmark report. It returns `INCOMPLETE` when the deployed fleet or required
+  Kafka/recovery measurement file is absent; it cannot turn a native benchmark into deployed Kafka
+  evidence.
+- **Missing behavior:** The deployed collector has not yet received a completed 15-pod run in the
+  canonical three-worker cluster. Kafka end-to-end latency, ring occupancy, workload-depth/rate
+  calibration, soak, broker-outage, full-day replay, and 60-second replay/120-second replacement
+  evidence therefore remain open. External hardware, cluster, or production certification is not
+  part of this project's target.
 - **Acceptance criteria:** Report core and Kafka end-to-end p50/p99/p99.9/max, RSS, ring occupancy,
   commands/events per second, and zero-loss recovery. Engine replay reaches lag zero within 60
   seconds after Lease/baseline/Kafka availability; total replacement target is 120 seconds. If

@@ -122,6 +122,27 @@ verify_identity() {
   verify_topology "$(nodes_json)"
 }
 
+verify_delete_identity() {
+  local node role control_planes=0
+  local -a nodes
+  require_tools
+  exists || die "kind cluster $cluster_name does not exist"
+  mapfile -t nodes < <(kind get nodes --name "$cluster_name")
+  [[ ${#nodes[@]} -gt 0 ]] || die 'kind cluster has no discoverable nodes'
+  for node in "${nodes[@]}"; do
+    docker inspect "$node" >/dev/null 2>&1 || die "missing Docker container for $node"
+    [[ "$(docker inspect --format '{{index .Config.Labels "io.x-k8s.kind.cluster"}}' "$node")" == "$cluster_name" ]] ||
+      die "Docker container $node is not owned by $cluster_name"
+    role="$(docker inspect --format '{{index .Config.Labels "io.x-k8s.kind.role"}}' "$node")"
+    case "$role" in
+      control-plane) ((control_planes += 1)) ;;
+      worker) ;;
+      *) die "Docker container $node has an invalid kind role: $role" ;;
+    esac
+  done
+  [[ "$control_planes" -eq 1 ]] || die 'cluster must have exactly one canonical control plane before deletion'
+}
+
 create_cluster() {
   [[ -f "$config" && -f "$storage_manifest" ]] || die 'kind configuration or StorageClass manifest is missing'
   if [[ "$dry_run" == true ]]; then
@@ -134,6 +155,7 @@ create_cluster() {
   exists && die "refusing to modify existing kind cluster $cluster_name"
   kind create cluster --config "$config"
   kubectl --context "$context" apply --filename "$storage_manifest" >/dev/null
+  kubectl --context "$context" wait --for=condition=Ready nodes --all --timeout=180s >/dev/null
   verify_identity
   verify_storage_class
   verify_pv_affinity
@@ -158,7 +180,7 @@ delete_cluster() {
     print_dry_run kind delete cluster --name "$cluster_name"
     return
   fi
-  verify_identity
+  verify_delete_identity
   kind delete cluster --name "$cluster_name"
   printf 'Deleted %s.\n' "$cluster_name"
 }

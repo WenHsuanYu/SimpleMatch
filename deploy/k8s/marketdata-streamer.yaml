@@ -10,11 +10,10 @@ spec:
   # One consumer owns the complete public stream. Scale-out requires one Kafka group per
   # instance or a shared fan-out layer; ordinary consumer-group scaling would split snapshots.
   replicas: 1
+  # One full-stream owner must finish before its replacement starts. A brief stream gap is
+  # explicit; clients reconnect and resubscribe instead of receiving split partitions.
   strategy:
-    type: RollingUpdate
-    rollingUpdate:
-      maxUnavailable: 0
-      maxSurge: 1
+    type: Recreate
   selector:
     matchLabels:
       app.kubernetes.io/name: marketdata-streamer

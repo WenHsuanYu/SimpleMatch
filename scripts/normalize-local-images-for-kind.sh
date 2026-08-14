@@ -46,6 +46,19 @@ normalizer="$repo_root/deploy/docker/Dockerfile.kind-normalized"
   exit 1
 }
 
+# Docker Desktop may expose the default Buildx activity directory as read-only while its
+# background builder owns it. Keep this disposable normalization build independent from that
+# mutable Desktop state; the image content and active Docker context remain unchanged.
+temporary_buildx_config=""
+if [[ -z "${BUILDX_CONFIG:-}" ]]; then
+  temporary_buildx_config="$(mktemp -d /tmp/simplematch-buildx-config.XXXXXX)"
+  export BUILDX_CONFIG="$temporary_buildx_config"
+  cleanup_buildx_config() {
+    rm -rf "$temporary_buildx_config"
+  }
+  trap cleanup_buildx_config EXIT
+fi
+
 mapfile -t spring_images < <(
   bash "$repo_root/scripts/build-local-images.sh" --tag "$image_tag" --list |
     awk -F'|' '$1 == "spring" { print $4 }'

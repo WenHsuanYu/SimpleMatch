@@ -1,0 +1,89 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: account-service
+spec:
+  template:
+    spec:
+      nodeSelector:
+        simplematch.io/node-pool: local-resilience
+      topologySpreadConstraints:
+        - maxSkew: 1
+          topologyKey: kubernetes.io/hostname
+          whenUnsatisfiable: DoNotSchedule
+          labelSelector:
+            matchLabels:
+              app.kubernetes.io/name: account-service
+              app.kubernetes.io/component: java-service
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: risk-service
+spec:
+  template:
+    spec:
+      nodeSelector:
+        simplematch.io/node-pool: local-resilience
+      topologySpreadConstraints:
+        - maxSkew: 1
+          topologyKey: kubernetes.io/hostname
+          whenUnsatisfiable: DoNotSchedule
+          labelSelector:
+            matchLabels:
+              app.kubernetes.io/name: risk-service
+              app.kubernetes.io/component: java-service
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: persistence
+spec:
+  template:
+    spec:
+      nodeSelector:
+        simplematch.io/node-pool: local-resilience
+      topologySpreadConstraints:
+        - maxSkew: 1
+          topologyKey: kubernetes.io/hostname
+          whenUnsatisfiable: DoNotSchedule
+          labelSelector:
+            matchLabels:
+              app.kubernetes.io/name: persistence
+              app.kubernetes.io/component: java-service
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: market-data-projection
+spec:
+  template:
+    spec:
+      nodeSelector:
+        simplematch.io/node-pool: local-resilience
+      topologySpreadConstraints:
+        - maxSkew: 1
+          topologyKey: kubernetes.io/hostname
+          whenUnsatisfiable: DoNotSchedule
+          labelSelector:
+            matchLabels:
+              app.kubernetes.io/name: market-data-projection
+              app.kubernetes.io/component: java-service
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: query-service
+spec:
+  template:
+    spec:
+      nodeSelector:
+        simplematch.io/node-pool: local-resilience
+      topologySpreadConstraints:
+        - maxSkew: 1
+          topologyKey: kubernetes.io/hostname
+          whenUnsatisfiable: DoNotSchedule
+          labelSelector:
+            matchLabels:
+              app.kubernetes.io/name: query-service
+              app.kubernetes.io/component: java-service

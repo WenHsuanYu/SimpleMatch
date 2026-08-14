@@ -57,18 +57,18 @@ public final class QuickFixApplicationAdapter implements Application {
 
   @Override
   public void toAdmin(Message message, SessionID sessionId) {
-    logger.debug("toAdmin session={} msg={}", sessionId, message);
+    logger.debug("toAdmin QuickFIX message for session={}", sessionId);
   }
 
   @Override
   public void toApp(Message message, SessionID sessionId) throws DoNotSend {
-    logger.debug("toApp session={} msg={}", sessionId, message);
+    logger.debug("toApp QuickFIX message for session={}", sessionId);
   }
 
   @Override
   public void fromAdmin(Message message, SessionID sessionId)
       throws FieldNotFound, IncorrectDataFormat, IncorrectTagValue, RejectLogon {
-    logger.debug("fromAdmin session={} msg={}", sessionId, message);
+    logger.debug("fromAdmin QuickFIX message for session={}", sessionId);
   }
 
   @Override
@@ -78,7 +78,7 @@ public final class QuickFixApplicationAdapter implements Application {
       logger.warn("ignored application message from conflicting session owner: {}", sessionId);
       return;
     }
-    logger.info("fromApp session={} msg={}", sessionId, message);
+    logger.info("fromApp QuickFIX message accepted for session={}", sessionId);
     inboundFixMessageHandler.handle(message, sessionId);
   }
 }
