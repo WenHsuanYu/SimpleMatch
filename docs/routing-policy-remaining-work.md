@@ -8,7 +8,7 @@ canonical release-scope definition lives in
 Architecture documents describe the accepted target. This document alone distinguishes that target
 from the repository's current implementation state.
 
-Status was reconciled against the current worktree on 2026-08-14. An accepted design is not
+Status was reconciled against the current worktree on 2026-08-15. An accepted design is not
 `COMPLETED` until the repository contains its implementation and local production-like verification
 evidence. External production certification and live staging/production promotion are not goals of
 this project. Their deployment values and run sequence remain template work with placeholders and
@@ -42,13 +42,13 @@ and must not be interpreted as a requirement to push images or obtain external c
 
 | Class | Current entries | Meaning |
 | --- | --- | --- |
-| Local gate or operational verification pending | RM-1, ME-1, ME-2, ME-3, PS-1, AC-1, FG-1, QS-1, PC-1 | The primary remaining work is to run the retained implementation through the local production-like dependency, restart, replay, and end-to-end scenarios. PS-1, AC-1, and FG-1 also retain their explicitly named status-adapter work. |
+| Local gate or operational verification pending | RM-1, ME-2, ME-3, PS-1, AC-1, FG-1, QS-1, PC-1 | The primary remaining work is to run the retained implementation through the local production-like dependency, restart, replay, and end-to-end scenarios. PS-1, AC-1, and FG-1 also retain their explicitly named status-adapter work. |
 | Implementation or capability-specific local verification pending | MD-1, GO-1, PD-1 | The repository implementation and structural gates now exist, and the complete local gate has passed; capability-specific subscriber, collector, connector, security, and outage evidence is still required. |
 | Compatibility or legacy cleanup | MR-5, CL-1 | Superseded runtime paths and migration-only seams still require source/configuration removal; local certification alone cannot close them. |
 
-## Latest verification evidence (2026-08-14)
+## Latest verification evidence (2026-08-15)
 
-- Native CTest now passes all 72 tests, including the pinned-writer startup gate, terminal alert,
+- Native CTest now passes all 73 tests, including the pinned-writer startup gate, terminal alert,
   ownership fencing, bounded replay, commit watermark, and crash-window checks. The full messaging
   build also passes all 72 tests under ThreadSanitizer without a reported data race.
 - A disposable single-node `simplematch-live` kind cluster ran one real `matching-0` process against
@@ -60,6 +60,29 @@ and must not be interpreted as a requirement to push images or obtain external c
   integration smoke only: the cluster had one node, one Kafka broker with replication factor 1,
   local-path storage, and no external production-platform certification. Those platform-specific
   controls are intentionally outside this project's acceptance boundary.
+- The canonical three-worker `simplematch-live` local run now has deployed evidence for both a
+  normal `matching-0` Pod replacement and an exact Matching container crash. The normal replacement
+  kept the same Node/PVC/PV and completed in 25.704 seconds with 2.982 seconds of marker-batch
+  replay; the process-crash case kept the same Pod UID/Node/PVC/PV, moved restart count from 2 to 3,
+  completed in 4.469 seconds with 3.001 seconds of replay, and both cases observed zero loss and
+  zero duplicates. The historical deployed collector passed the 15-pod, 5/5/5 placement, CPU, and
+  native-capacity gates. Its strengthened E2E evidence contract now requires a rerun with per-event
+  correlation plus 15-pod and Node/PVC/PV continuity evidence once the Docker disk preflight passes.
+  These are local marker-batch claims, not soak, full-day replay, or external production claims.
+- The same canonical three-broker run also deleted only `kafka-0` normally and verified the
+  two remaining brokers could complete an 8-command/8-event real data-plane batch with zero loss
+  and duplicates while the replacement was not Ready. The replacement received a new Pod UID but
+  returned to `simplematch-live-worker2` with the same `kafka-data-kafka-0` PVC and PV; after it
+  became Ready, all 15 partitions of both Matching topics reported ISR `0,1,2`, the three KRaft
+  voters were present, and maximum follower lag was zero. This proves local single-broker Pod-loss
+  and same-PVC rejoin behavior, not worker loss, PVC loss, destructive storage takeover, or a
+  full-day replay claim. Evidence is under
+  `out/certification/matching-deployed/kafka-broker-replacement-20260815/`.
+- A fresh canonical-cluster rebuild was attempted on 2026-08-15 after the previous Docker data
+  move. The Docker root resolved to an NTFS filesystem; kind's nested containerd overlay mounts
+  failed with `invalid argument`, so the control plane never became healthy and no new Kubernetes
+  workload or E2E result was produced. The deployment preflight now records this as DT-012 and
+  requires a Linux-backed Docker root before the next run.
 - Gateway Kubernetes resources were applied and inspected at API level: one replica, digest-pinned
   image, Bound data PVC, owner-0 Service, and resource-scoped ConfigMap RBAC. The placeholder
   Gateway image is not available, so its Pod remained `ErrImagePull`; no Gateway runtime or
@@ -141,7 +164,7 @@ and must not be interpreted as a requirement to push images or obtain external c
 | Stable 15-partition routing assignment | `COMPLETED` | [#123](https://github.com/WenHsuanYu/SimpleMatch/issues/123) |
 | Runtime Market Reference publication stack | `OBSOLETE_TO_REMOVE` | [#119](https://github.com/WenHsuanYu/SimpleMatch/issues/119) |
 | Risk artifact loading and `matching.commands` publication | `PARTIAL` | [#126](https://github.com/WenHsuanYu/SimpleMatch/issues/126) |
-| Native deterministic Matching runtime | `PARTIAL` | [#127](https://github.com/WenHsuanYu/SimpleMatch/issues/127) |
+| Native deterministic Matching runtime | `COMPLETED` | [#127](https://github.com/WenHsuanYu/SimpleMatch/issues/127) |
 | Kafka journal recovery and trading-day barriers | `PARTIAL` | [#128](https://github.com/WenHsuanYu/SimpleMatch/issues/128) |
 | `matching.events` wire identity and publication | `PARTIAL` | [#129](https://github.com/WenHsuanYu/SimpleMatch/issues/129) |
 | Permanent PostgreSQL trades and fills | `PARTIAL` | [#130](https://github.com/WenHsuanYu/SimpleMatch/issues/130) |
@@ -282,7 +305,7 @@ and must not be interpreted as a requirement to push images or obtain external c
 
 ### ME-1: Build the native single-writer Matching runtime
 
-- **Current status:** `PARTIAL`
+- **Current status:** `COMPLETED`
 - **Target behavior:** Each native `matching-N` contains a Kafka ingress thread, preallocated SPSC
   input ring, one CPU-pinned single-writer core owning at most 150 order books, preallocated SPSC
   output ring, and Kafka publisher/offset coordinator. The core performs no network or disk I/O,
@@ -308,11 +331,9 @@ and must not be interpreted as a requirement to push images or obtain external c
   terminal alert, and threaded driver path.
   A local broker smoke and a disposable kind smoke have consumed real `matching.commands` records
   and published acknowledged `matching.events` records.
-- **Missing behavior:** A live deployed run still needs to prove the requested CPU/resource mapping
-  against the canonical multi-node kind cluster and the production-shaped three-broker profile.
-  The direct-core allocation and throughput smoke is evidence only for the native core; external
-  hardware or production-cluster certification is not required by this project. Those runtime
-  adapters must not enter the Matching core hot path.
+- **Missing behavior:** None for the repository-owned local target. The deployed evidence does not
+  certify external hardware or a production cluster, which are not required by this project. Those
+  runtime adapters must not enter the Matching core hot path.
 - **Acceptance criteria:** The same ordered command stream and pinned binary produce identical state
   checksums and event bytes. Ring exhaustion never overwrites, drops, or expands heap storage.
   Output backpressure stalls safely and drives the accepted admission policy.
@@ -338,10 +359,11 @@ and must not be interpreted as a requirement to push images or obtain external c
   to publication IDs, retain unresolved output until a terminal delivery result, retry ambiguous
   results before admitting later input, and never commit before the output ACK. Tests cover commit
   acknowledgement loss, ambiguous delivery retry, bounded replay, and graceful shutdown behavior.
-- **Missing behavior:** A real three-broker local run still needs to exercise broker/PVC failure,
-  process crash windows, and recovery timing. The repository now contains the executable behavior
-  and deterministic adapter tests, but unit tests do not substitute for that environment-backed
-  operational gate; external production certification is outside the project boundary.
+- **Missing behavior:** The canonical three-broker local run now exercises a real deployed process
+  crash, normal Matching Pod replacement, and single-broker Pod loss with data-plane continuity and
+  same-PVC rejoin. Worker loss, PVC loss, destructive storage takeover, and longer retained-history
+  recovery remain unverified; the marker-batch replay timing is not a full-day replay claim.
+  External production certification remains outside the project boundary.
 - **Acceptance criteria:** Outputs are ACKed before the input offset becomes completed; commits
   never cross a gap. Crash windows may replay identical events but cannot lose an accepted command.
   A missing retained Open Barrier fails closed. No periodic order-book snapshot is added unless the
@@ -650,11 +672,18 @@ and must not be interpreted as a requirement to push images or obtain external c
   and the native benchmark report. It returns `INCOMPLETE` when the deployed fleet or required
   Kafka/recovery measurement file is absent; it cannot turn a native benchmark into deployed Kafka
   evidence.
-- **Missing behavior:** The deployed collector has not yet received a completed 15-pod run in the
-  canonical three-worker cluster. Kafka end-to-end latency, ring occupancy, workload-depth/rate
-  calibration, soak, broker-outage, full-day replay, and 60-second replay/120-second replacement
-  evidence therefore remain open. External hardware, cluster, or production certification is not
-  part of this project's target.
+- **Missing behavior:** Existing 15-pod evidence covers marker-batch zero-loss/duplicate checks,
+  process-crash replay, and local 60-second replay/120-second replacement bounds. The strengthened
+  collector must be rerun after the Docker filesystem preflight and fresh cluster pass to record per-event latency correlation
+  and complete 15-pod plus Node/PVC/PV continuity evidence. A separate broker replacement evidence
+  run proves one broker Pod loss, two-broker data-plane continuity, and same-PVC ISR recovery.
+  Workload-depth/rate calibration, soak, and full-day replay remain open. The rendered local overlay
+  requests about 38.63 GiB in steady state and about 45.75 GiB while one-shot bootstrap Jobs are
+  present; 15 Matching replicas account for 30 GiB at the current 2 GiB local request. This exceeds
+  the accepted local lab aggregate request target of 20 GiB, so it is a resource-budget limitation,
+  not capacity certification. The local PVC request envelope is 87 GiB and is logical local-path
+  reservation rather than immediate allocation. External hardware, cluster, or production
+  certification is not part of this project's target.
 - **Acceptance criteria:** Report core and Kafka end-to-end p50/p99/p99.9/max, RSS, ring occupancy,
   commands/events per second, and zero-loss recovery. Engine replay reaches lag zero within 60
   seconds after Lease/baseline/Kafka availability; total replacement target is 120 seconds. If

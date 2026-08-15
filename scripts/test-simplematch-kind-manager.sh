@@ -36,5 +36,7 @@ grep -Fq 'PV node affinity' "$manager"
 grep -Fq "docker inspect \"\$node\"" "$manager"
 grep -Fq 'io.x-k8s.kind.cluster' "$manager"
 grep -Fq 'verify_identity' "$manager"
+grep -Fq 'verify_docker_storage' "$manager"
+grep -Fq 'unsupported filesystem' "$manager"
 
 printf '%s\n' 'Canonical kind cluster manager contract passed.'

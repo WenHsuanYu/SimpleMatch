@@ -28,9 +28,22 @@ print_dry_run() {
 }
 
 require_tools() {
-  for tool in kind kubectl jq docker; do
+  for tool in kind kubectl jq docker findmnt; do
     command -v "$tool" >/dev/null 2>&1 || die "$tool is required"
   done
+}
+
+verify_docker_storage() {
+  local docker_root filesystem
+  docker_root="$(docker info --format '{{.DockerRootDir}}')" || die 'cannot inspect Docker root'
+  [[ -n "$docker_root" ]] || die 'Docker root is empty'
+  filesystem="$(findmnt -T "$docker_root" -no FSTYPE 2>/dev/null || true)"
+  [[ -n "$filesystem" ]] || die "cannot determine filesystem for Docker root $docker_root"
+  case "$filesystem" in
+    ntfs|ntfs3|exfat|vfat|fuseblk|cifs|smb3)
+      die "Docker root $docker_root uses unsupported filesystem $filesystem; move Docker data to a Linux-backed filesystem before creating kind"
+      ;;
+  esac
 }
 
 exists() { kind get clusters 2>/dev/null | grep -Fxq "$cluster_name"; }
@@ -152,6 +165,7 @@ create_cluster() {
     return
   fi
   require_tools
+  verify_docker_storage
   exists && die "refusing to modify existing kind cluster $cluster_name"
   kind create cluster --config "$config"
   kubectl --context "$context" apply --filename "$storage_manifest" >/dev/null

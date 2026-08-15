@@ -47,6 +47,14 @@ to-consumer path, Flyway ownership, Lease/PVC behavior, restart/replay, and the 
 scenarios. It may run the dependency profile with Compose and the Kubernetes profile with kind; the
 runner owns only its named project, namespace, cluster, volumes, and evidence directory.
 
+The local Kafka capacity check keeps the production-shaped durability settings (RF3, minimum ISR 2,
+`acks=all`, 30-day retention, and 30% headroom) but uses the bounded workload envelope in
+`scripts/testdata/matching-topic-profile/local/capacity.properties`. That envelope is deliberately
+local side-project evidence, not a production throughput or capacity claim. A different workload
+envelope must be supplied explicitly through `SIMPLEMATCH_KAFKA_CAPACITY_WORKLOAD_FILE` and recorded
+with the run evidence; the 1,000,000-record/day fixture remains available for the stricter profile
+contract tests.
+
 The local image digest is recorded in the evidence report as a local image identity. It is not a
 promotion identity and must not replace the staging/production digest placeholders.
 
@@ -91,7 +99,7 @@ rows that were not rerun retain their original date and boundary.
 | Layer | Command or scenario | Result and boundary |
 | --- | --- | --- |
 | Native build | cmake --build --preset full-native-dev --parallel | Passed |
-| Native full feature tests | ctest --preset full-native-dev --output-on-failure | 72/72 passed when reconfirmed on 2026-08-14 |
+| Native full feature tests | ctest --preset full-native-dev --output-on-failure | 73/73 passed from the current full-native build tree on 2026-08-15 |
 | Native reduced feature tests | cmake --build --preset dev-debug --parallel; ctest --preset dev-debug --output-on-failure | 38/38 passed in the historical 2026-08-12 run; not rerun after #127 changes |
 | Native capacity harness | scripts/run-matching-capacity-certification.sh | Repository gate available; report is non-certifying until run on pinned production-shaped hardware |
 | Kubernetes manifest contract | bash scripts/test-matching-kubernetes-manifests.sh | Passed; static contract only |
@@ -99,11 +107,14 @@ rows that were not rerun retain their original date and boundary.
 | Outbox contracts | bash scripts/verify-outbox-connector-contracts.sh; bash scripts/run-outbox-cdc-contract-check.sh | Passed in the disposable CDC environment |
 | Java services | Persistence, Account, QuickFIX, and Market Data module tests | Passed in the controlled Gradle environment |
 | Java quality gate | GRADLE_USER_HOME=/tmp/simplematch-gradle-cache ./gradlew --no-daemon -q staticAnalysis | Passed after the current Java changes |
-| Local production-like gate | `SIMPLEMATCH_CERTIFICATION_TRADING_DAY=2026-08-11 SIMPLEMATCH_MARKET_REFERENCE_DELIVERY_MANIFEST=tools/market-reference-builder/data/2026-08-11/delivery/manifest.yaml bash scripts/run-local-production-like-certification.sh` | Latest rerun stopped during the Kubernetes open-barrier phase when Docker Desktop became unavailable; no new resilience pass was issued. The report records the failed environment run at `out/certification/local-production-like/report.md`. |
+| Local production-like gate | `SIMPLEMATCH_CERTIFICATION_TRADING_DAY=2026-08-11 SIMPLEMATCH_MARKET_REFERENCE_DELIVERY_MANIFEST=tools/market-reference-builder/data/2026-08-11/delivery/manifest.yaml bash scripts/run-local-production-like-certification.sh` | The earlier full gate remains recorded separately. A fresh 2026-08-15 Kubernetes rerun was blocked before bootstrap because the relocated Docker root was NTFS and kind's nested containerd overlay mount failed; no new deployed claim follows from that attempt. |
 | Market-data streamer and operational adapters | Focused service tests and Kubernetes overlay contract | Passed structural/runtime adapter checks; gRPC subscriber, live Gateway collectors, and projection replay remain capability-specific evidence |
 | Repo-local FIX certification | :services:quickfix-gateway:certificationTest | Passed; real in-process QuickFIX/J acceptor/initiator, H2, WAL, duplicate/cancel/recovery scenarios |
 | Disposable kind Matching smoke | One native matching-0 against one in-cluster broker | Lease/PVC/replay/Ready path passed; one node and RF1, therefore non-certifying |
 | Disposable kind restart | Delete/recreate one Matching pod normally | Old Lease blocked handover until expiry; new UID replayed baseline; no duplicate output |
+| Canonical three-worker Matching E2E | `bash scripts/run-matching-e2e-certification.sh --fault-mode pod-delete` and `--fault-mode process-crash` | Both local runs passed with zero loss/duplicates. Normal replacement: 25.704s replacement and 2.982s marker replay; exact container crash: same Pod UID, restart 2→3, 4.469s replacement and 3.001s marker replay. |
+| Canonical three-broker Kafka replacement | Delete only `kafka-0`, run the real E2E helper during loss and after rejoin | Passed: two brokers remained usable for an 8-command/8-event batch with zero loss/duplicates; replacement returned on the same node and PVC/PV; all 15 partitions of both Matching topics restored ISR 0,1,2 and KRaft follower lag was zero. Evidence: `out/certification/matching-deployed/kafka-broker-replacement-20260815/`. |
+| Deployed Matching collector | `bash scripts/run-matching-deployed-certification.sh` with the E2E metrics report | The historical report passed the previous collector. The strengthened collector now requires per-event latency correlation plus 15-pod and Node/PVC/PV continuity evidence, so it must be rerun after the Docker filesystem preflight and fresh canonical cluster pass; not a soak, full-day replay, or production certification. |
 | Gateway kind inspection | Apply Gateway resources and inspect API objects | API-level checks passed, but placeholder image caused ErrImagePull; no runtime claim |
 
 The disposable kind scenario was intentionally small: an Open Barrier followed by one sell and one
@@ -156,8 +167,8 @@ is evidence about the benchmark process only; it does not prove Kubernetes CPU M
 or live Matching writer isolation. The operator must record the actual CPU-manager policy, cgroup
 quota, governor, workload/depth/rate, and ring occupancy alongside the JSON report. A direct-core
 pass therefore does not satisfy the production gate by itself. The
-production gate still requires Kafka end-to-end percentiles, a soak, broker outage and replay
-checksum scenarios, and the 60-second lag/120-second replacement SLOs below.
+production gate still requires workload calibration, Kafka end-to-end percentiles, a soak, and
+full-day replay checksum scenarios, as well as the 60-second lag/120-second replacement SLOs below.
 
 For repository-owned deployed evidence, use the read-only collector:
 

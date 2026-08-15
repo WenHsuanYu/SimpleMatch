@@ -89,6 +89,8 @@ spec:
               value: /var/lib/simplematch/matching/partition-baseline.json
             - name: MATCHING_STATUS_PATH
               value: /var/lib/simplematch/matching/runtime-status
+            - name: MATCHING_METRICS_PATH
+              value: /var/lib/simplematch/matching/runtime-metrics.json
             - name: MATCHING_COMMANDS_TOPIC
               value: matching.commands
             - name: MATCHING_EVENTS_TOPIC

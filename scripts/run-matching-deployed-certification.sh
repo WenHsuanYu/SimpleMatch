@@ -4,6 +4,8 @@ set -euo pipefail
 
 script_dir="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
 repo_root="$(cd -- "$script_dir/.." && pwd)"
+# shellcheck source=scripts/lib/matching-e2e.sh
+source "$script_dir/lib/matching-e2e.sh"
 cluster_name="${SIMPLEMATCH_KIND_CLUSTER_NAME:-simplematch-live}"
 context="${SIMPLEMATCH_KUBE_CONTEXT:-kind-${cluster_name}}"
 namespace="${SIMPLEMATCH_NAMESPACE:-simplematch-local}"
@@ -127,6 +129,7 @@ else
     status_text=""
     cpu_max=""
     cpuset_effective=""
+    # shellcheck disable=SC2016 # Variables expand inside the invoked container shell.
     if ! status_text="$(kubectl --context "$context" -n "$namespace" exec "$pod" -c matching -- \
       sh -ec 'for status in /proc/1/task/*/status; do
         comm="$(sed -n "s/^Name:[[:space:]]*//p" "$status")"
@@ -185,11 +188,16 @@ else
   missing_gates+=(native_capacity_benchmark)
 fi
 
-if [[ -n "${SIMPLEMATCH_E2E_METRICS_FILE:-}" && -f "${SIMPLEMATCH_E2E_METRICS_FILE}" ]] && \
-  jq -e 'has("kafka_e2e_latency_ns") and has("ring_occupancy") and has("loss") and has("duplicates") and has("replay_lag_seconds") and has("replacement_seconds")' \
-  "${SIMPLEMATCH_E2E_METRICS_FILE}" >/dev/null; then
-  cp "${SIMPLEMATCH_E2E_METRICS_FILE}" "$evidence_dir/e2e-metrics.json"
-  e2e_status="PASSED"
+if [[ -n "${SIMPLEMATCH_E2E_METRICS_FILE:-}" && -f "${SIMPLEMATCH_E2E_METRICS_FILE}" ]]; then
+  if [[ "${SIMPLEMATCH_E2E_METRICS_FILE}" != "$evidence_dir/e2e-metrics.json" ]]; then
+    cp "${SIMPLEMATCH_E2E_METRICS_FILE}" "$evidence_dir/e2e-metrics.json"
+  fi
+  if matching_e2e_report_is_valid "${SIMPLEMATCH_E2E_METRICS_FILE}" "$runtime_evidence"; then
+    e2e_status="PASSED"
+  else
+    e2e_status="FAILED"
+    failure_reason="E2E metrics report is invalid or outside the local recovery contract"
+  fi
 else
   missing_gates+=(kafka_e2e_ring_and_recovery_measurements)
 fi
@@ -198,7 +206,7 @@ if [[ "$status" != UNSUPPORTED && "$deployed_status" == PASSED && "$placement_st
   "$cpu_status" == PASSED && "$benchmark_status" == PASSED && "$e2e_status" == PASSED ]]; then
   status="PASSED"
 elif [[ "$status" != UNSUPPORTED && ( "$deployed_status" == FAILED || "$placement_status" == FAILED || \
-  "$cpu_status" == FAILED || "$benchmark_status" == FAILED ) ]]; then
+  "$cpu_status" == FAILED || "$benchmark_status" == FAILED || "$e2e_status" == FAILED ) ]]; then
   status="FAILED"
 fi
 
@@ -212,7 +220,7 @@ jq -n \
   --argjson runtime_evidence "$runtime_evidence" --argjson missing_gates "$missing_json" \
   '{schema_version:($schema_version|tonumber),generated_at_utc:$generated_at_utc,profile:$profile,
     cluster:$cluster,context:$context,namespace:$namespace,statefulset:$statefulset,status:$status,
-    failure_reason:($failure_reason | select(length > 0)),
+    failure_reason:(if ($failure_reason | length) > 0 then $failure_reason else null end),
     gates:{deployed_fleet:$deployed_status,placement_5_5_5:$placement_status,
       pod_cpu_evidence:$cpu_status,native_capacity:$benchmark_status,e2e_metrics:$e2e_status},
     missing_gates:$missing_gates,pod_runtime:$runtime_evidence,
