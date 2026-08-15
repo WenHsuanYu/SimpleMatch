@@ -60,15 +60,15 @@ and must not be interpreted as a requirement to push images or obtain external c
   integration smoke only: the cluster had one node, one Kafka broker with replication factor 1,
   local-path storage, and no external production-platform certification. Those platform-specific
   controls are intentionally outside this project's acceptance boundary.
-- The canonical three-worker `simplematch-live` local run now has deployed evidence for both a
+- The canonical three-worker `simplematch-live` local run now has fresh deployed evidence for both a
   normal `matching-0` Pod replacement and an exact Matching container crash. The normal replacement
-  kept the same Node/PVC/PV and completed in 25.704 seconds with 2.982 seconds of marker-batch
+  kept the same Node/PVC/PV and completed in 28.062 seconds with 3.225 seconds of marker-batch
   replay; the process-crash case kept the same Pod UID/Node/PVC/PV, moved restart count from 2 to 3,
-  completed in 4.469 seconds with 3.001 seconds of replay, and both cases observed zero loss and
-  zero duplicates. The historical deployed collector passed the 15-pod, 5/5/5 placement, CPU, and
-  native-capacity gates. Its strengthened E2E evidence contract now requires a rerun with per-event
-  correlation plus 15-pod and Node/PVC/PV continuity evidence once the Docker disk preflight passes.
-  These are local marker-batch claims, not soak, full-day replay, or external production claims.
+  completed in 33.856 seconds with 3.161 seconds of replay, and both cases observed zero loss and
+  zero duplicates. The strengthened deployed collector also passed the 15-pod, 5/5/5 placement,
+  per-writer CPU cgroup, native-capacity, and per-event correlation gates. Evidence is under
+  `out/certification/local-production-like/e2e-rebuild-20260815-144800/`. These are local
+  marker-batch claims, not worker takeover, soak, full-day replay, or external production claims.
 - The same canonical three-broker run also deleted only `kafka-0` normally and verified the
   two remaining brokers could complete an 8-command/8-event real data-plane batch with zero loss
   and duplicates while the replacement was not Ready. The replacement received a new Pod UID but
@@ -78,11 +78,11 @@ and must not be interpreted as a requirement to push images or obtain external c
   and same-PVC rejoin behavior, not worker loss, PVC loss, destructive storage takeover, or a
   full-day replay claim. Evidence is under
   `out/certification/matching-deployed/kafka-broker-replacement-20260815/`.
-- A fresh canonical-cluster rebuild was attempted on 2026-08-15 after the previous Docker data
-  move. The Docker root resolved to an NTFS filesystem; kind's nested containerd overlay mounts
-  failed with `invalid argument`, so the control plane never became healthy and no new Kubernetes
-  workload or E2E result was produced. The deployment preflight now records this as DT-012 and
-  requires a Linux-backed Docker root before the next run.
+- The Docker data move was corrected before the fresh 2026-08-15 run: Docker now uses a
+  Linux-backed root, the repository preflight verified `simplematch-live` as one control-plane plus
+  three labelled workers, and the canonical Kubernetes workload run completed. The earlier NTFS
+  overlay failure remains documented as DT-012 for prevention; it is no longer the current
+  environment result.
 - Gateway Kubernetes resources were applied and inspected at API level: one replica, digest-pinned
   image, Bound data PVC, owner-0 Service, and resource-scoped ConfigMap RBAC. The placeholder
   Gateway image is not available, so its Pod remained `ErrImagePull`; no Gateway runtime or
@@ -361,8 +361,10 @@ and must not be interpreted as a requirement to push images or obtain external c
   acknowledgement loss, ambiguous delivery retry, bounded replay, and graceful shutdown behavior.
 - **Missing behavior:** The canonical three-broker local run now exercises a real deployed process
   crash, normal Matching Pod replacement, and single-broker Pod loss with data-plane continuity and
-  same-PVC rejoin. Worker loss, PVC loss, destructive storage takeover, and longer retained-history
-  recovery remain unverified; the marker-batch replay timing is not a full-day replay claim.
+  same-PVC rejoin. The fresh 2026-08-15 E2E run also passed per-event correlation and same-worker
+  Node/PVC/PV continuity. Worker loss, PVC loss, destructive storage takeover, and longer
+  retained-history recovery remain unverified; the marker-batch replay timing is not a full-day
+  replay claim.
   External production certification remains outside the project boundary.
 - **Acceptance criteria:** Outputs are ACKed before the input offset becomes completed; commits
   never cross a gap. Crash windows may replay identical events but cannot lose an accepted command.
@@ -672,16 +674,16 @@ and must not be interpreted as a requirement to push images or obtain external c
   and the native benchmark report. It returns `INCOMPLETE` when the deployed fleet or required
   Kafka/recovery measurement file is absent; it cannot turn a native benchmark into deployed Kafka
   evidence.
-- **Missing behavior:** Existing 15-pod evidence covers marker-batch zero-loss/duplicate checks,
-  process-crash replay, and local 60-second replay/120-second replacement bounds. The strengthened
-  collector must be rerun after the Docker filesystem preflight and fresh cluster pass to record per-event latency correlation
-  and complete 15-pod plus Node/PVC/PV continuity evidence. A separate broker replacement evidence
-  run proves one broker Pod loss, two-broker data-plane continuity, and same-PVC ISR recovery.
-  Workload-depth/rate calibration, soak, and full-day replay remain open. The rendered local overlay
-  requests about 38.63 GiB in steady state and about 45.75 GiB while one-shot bootstrap Jobs are
-  present; 15 Matching replicas account for 30 GiB at the current 2 GiB local request. This exceeds
-  the accepted local lab aggregate request target of 20 GiB, so it is a resource-budget limitation,
-  not capacity certification. The local PVC request envelope is 87 GiB and is logical local-path
+- **Missing behavior:** Fresh deployed evidence now covers marker-batch zero-loss/duplicate checks,
+  per-event latency correlation, process-crash replay, normal Pod replacement, 15-pod 5/5/5
+  placement, writer CPU cgroup evidence, and local 60-second replay/120-second replacement bounds.
+  A separate broker replacement evidence run proves one broker Pod loss, two-broker data-plane
+  continuity, and same-PVC ISR recovery. Workload-depth/rate calibration, soak, and full-day replay
+  remain open. The rendered local overlay requests about 38.63 GiB in steady state and about 45.75
+  GiB while one-shot bootstrap Jobs are present; 15 Matching replicas account for 30 GiB at the
+  current 2 GiB local request. This exceeds the accepted local lab aggregate request target of 20
+  GiB, so it is a resource-budget limitation, not capacity certification.
+  The local PVC request envelope is 87 GiB and is logical local-path
   reservation rather than immediate allocation. External hardware, cluster, or production
   certification is not part of this project's target.
 - **Acceptance criteria:** Report core and Kafka end-to-end p50/p99/p99.9/max, RSS, ring occupancy,
