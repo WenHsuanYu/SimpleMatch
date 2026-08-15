@@ -11,7 +11,7 @@ image_tag="${SIMPLEMATCH_LOCAL_IMAGE_TAG:-local}"
 evidence_dir="${SIMPLEMATCH_CERTIFICATION_EVIDENCE_DIR:-$repo_root/out/certification/local-production-like}"
 matching_producer_config_file="${SIMPLEMATCH_KAFKA_PRODUCER_CONFIG_FILE:-$evidence_dir/matching-producer.config.txt}"
 matching_capacity_evidence_file="${SIMPLEMATCH_KAFKA_CAPACITY_EVIDENCE_FILE:-$evidence_dir/kafka-capacity.properties}"
-matching_capacity_workload_file="$repo_root/scripts/testdata/matching-topic-profile/valid/capacity.properties"
+matching_capacity_workload_file="${SIMPLEMATCH_KAFKA_CAPACITY_WORKLOAD_FILE:-$repo_root/scripts/testdata/matching-topic-profile/local/capacity.properties}"
 certification_trading_day="${SIMPLEMATCH_CERTIFICATION_TRADING_DAY:-$(date -u +%F)}"
 local_postgres_password="${SIMPLEMATCH_LOCAL_POSTGRES_PASSWORD:-simplematch}"
 if [[ ! "$local_postgres_password" =~ ^[A-Za-z0-9._~-]+$ ]]; then
@@ -70,7 +70,10 @@ SIMPLEMATCH_CERTIFICATION_TRADING_DAY (default: current UTC day) under
 tools/market-reference-builder/data, or the path supplied by
 SIMPLEMATCH_MARKET_REFERENCE_DELIVERY_MANIFEST.
 The Kafka profile gate generates source-backed producer evidence and measures free Docker
-filesystem capacity for the local brokers. Override either evidence file with
+filesystem capacity for the local brokers. The default workload envelope is the bounded local
+side-project scenario under scripts/testdata/matching-topic-profile/local/capacity.properties;
+override it with SIMPLEMATCH_KAFKA_CAPACITY_WORKLOAD_FILE when a different explicitly documented
+workload envelope is required. Override producer or capacity evidence with
 SIMPLEMATCH_KAFKA_PRODUCER_CONFIG_FILE or SIMPLEMATCH_KAFKA_CAPACITY_EVIDENCE_FILE.
 EOF
 }
@@ -699,8 +702,9 @@ apply_kubernetes_migrations() {
 }
 
 register_kubernetes_risk_connector() (
-  local forward_port="${SIMPLEMATCH_KAFKA_CONNECT_FORWARD_PORT:-18083}"
-  local connector_url="http://127.0.0.1:${forward_port}"
+  local requested_forward_port="${SIMPLEMATCH_KAFKA_CONNECT_FORWARD_PORT:-}"
+  local forward_port=""
+  local connector_url=""
   local connector_json="$evidence_dir/risk-service-outbox-connector.json"
   local connector_config="$evidence_dir/risk-service-outbox-connector-config.json"
   local response_file="$evidence_dir/risk-service-outbox-connector-response.json"
@@ -708,14 +712,23 @@ register_kubernetes_risk_connector() (
   local port_forward_log="$evidence_dir/kafka-connect-port-forward.log"
   local port_forward_pid
   local status_code
+  local provider_retry_count=0
+  local provider_retry_limit="${SIMPLEMATCH_KAFKA_CONNECT_PROVIDER_RETRIES:-90}"
+  local connect_rest_ready=false
   local -a curl_options=(--connect-timeout 5 --max-time 15)
+
+  [[ "$provider_retry_limit" =~ ^[1-9][0-9]*$ ]] || {
+    printf 'SIMPLEMATCH_KAFKA_CONNECT_PROVIDER_RETRIES must be a positive integer.\n' >&2
+    exit 1
+  }
 
   kubectl -n "$namespace" rollout status deployment/kafka-connect --timeout=300s
   kubectl -n "$namespace" get configmap risk-service-outbox-connector \
     -o jsonpath='{.data.connector\.json}' >"$connector_json"
   jq -e '.name == "risk-service-outbox" and (.config | type == "object")' "$connector_json" >/dev/null
 
-  kubectl -n "$namespace" port-forward service/kafka-connect "${forward_port}:8083" \
+  local forward_spec="${requested_forward_port}:8083"
+  kubectl -n "$namespace" port-forward service/kafka-connect "$forward_spec" \
     >"$port_forward_log" 2>&1 &
   port_forward_pid=$!
   stop_port_forward() {
@@ -724,32 +737,93 @@ register_kubernetes_risk_connector() (
   }
   trap stop_port_forward EXIT
 
+  for _ in $(seq 1 30); do
+    check_certification_deadline
+    if [[ -s "$port_forward_log" ]]; then
+      if grep -Eq 'Unable to listen|error: unable to listen|address already in use' \
+        "$port_forward_log"; then
+        cat "$port_forward_log" >&2
+        exit 1
+      fi
+      forward_port="$(sed -nE 's/.*Forwarding from 127\.0\.0\.1:([0-9]+).*/\1/p' \
+        "$port_forward_log" | tail -1)"
+      if [[ -n "$forward_port" ]]; then
+        break
+      fi
+    fi
+    if ! kill -0 "$port_forward_pid" >/dev/null 2>&1; then
+      cat "$port_forward_log" >&2
+      exit 1
+    fi
+    sleep 1
+  done
+  [[ -n "$forward_port" ]] || {
+    cat "$port_forward_log" >&2
+    exit 1
+  }
+  connector_url="http://127.0.0.1:${forward_port}"
+
   for _ in $(seq 1 90); do
     check_certification_deadline
     if curl "${curl_options[@]}" -fsS "$connector_url/connectors" >/dev/null 2>&1; then
+      connect_rest_ready=true
       break
+    fi
+    if ! kill -0 "$port_forward_pid" >/dev/null 2>&1; then
+      cat "$port_forward_log" >&2
+      exit 1
     fi
     sleep 2
   done
-  curl "${curl_options[@]}" -fsS "$connector_url/connectors" >/dev/null
+  if [[ "$connect_rest_ready" != true ]]; then
+    printf 'Kafka Connect REST endpoint did not become ready before registration.\n' >&2
+    cat "$port_forward_log" >&2
+    exit 1
+  fi
 
-  status_code="$(curl "${curl_options[@]}" -sS -o "$response_file" -w '%{http_code}' \
-    -X POST -H 'Content-Type: application/json' --data-binary @"$connector_json" \
-    "$connector_url/connectors")"
-  case "$status_code" in
-    2??)
-      ;;
-    409)
-      jq -c '.config' "$connector_json" >"$connector_config"
-      curl "${curl_options[@]}" -fsS -X PUT -H 'Content-Type: application/json' \
-        --data-binary @"$connector_config" \
-        "$connector_url/connectors/risk-service-outbox/config" >/dev/null
-      ;;
-    *)
-      cat "$response_file" >&2
+  while true; do
+    check_certification_deadline
+    if ! status_code="$(curl "${curl_options[@]}" -sS -o "$response_file" -w '%{http_code}' \
+        -X POST -H 'Content-Type: application/json' --data-binary @"$connector_json" \
+        "$connector_url/connectors")"; then
+      printf 'Kafka Connect REST registration request failed before receiving a response.\n' >&2
+      cat "$port_forward_log" >&2
       exit 1
-      ;;
-  esac
+    fi
+    case "$status_code" in
+      2??)
+        break
+        ;;
+      409)
+        jq -c '.config' "$connector_json" >"$connector_config"
+        curl "${curl_options[@]}" -fsS -X PUT -H 'Content-Type: application/json' \
+          --data-binary @"$connector_config" \
+          "$connector_url/connectors/risk-service-outbox/config" >/dev/null
+        break
+        ;;
+      400)
+        if ! jq -e '
+          (.message // "")
+          | test("\\$\\{envvarprovider:[A-Za-z0-9_]+\\}")
+        ' "$response_file" >/dev/null 2>&1; then
+          cat "$response_file" >&2
+          exit 1
+        fi
+        provider_retry_count=$((provider_retry_count + 1))
+        if (( provider_retry_count >= provider_retry_limit )); then
+          cat "$response_file" >&2
+          exit 1
+        fi
+        printf 'Kafka Connect EnvVarConfigProvider is not ready; retrying registration (%d/%d).\n' \
+          "$provider_retry_count" "$provider_retry_limit" >&2
+        sleep 2
+        ;;
+      *)
+        cat "$response_file" >&2
+        exit 1
+        ;;
+    esac
+  done
 
   for _ in $(seq 1 90); do
     check_certification_deadline

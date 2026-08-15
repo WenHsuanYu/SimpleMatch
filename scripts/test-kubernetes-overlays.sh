@@ -273,7 +273,7 @@ if %w[staging production].include?(overlay)
   connector_env = connector_container.fetch("env").to_h { |entry| [entry.fetch("name"), entry] }
   %w[
     CONNECT_CONFIG_PROVIDERS
-    CONNECT_CONFIG_PROVIDERS_ENV_CLASS
+    CONNECT_CONFIG_PROVIDERS_ENVVARPROVIDER_CLASS
     CONNECT_SECURITY_PROTOCOL
     CONNECT_SASL_MECHANISM
     CONNECT_SASL_JAAS_CONFIG

@@ -11,6 +11,7 @@ command -v kubectl >/dev/null 2>&1 || { printf '%s\n' 'kubectl is required.' >&2
 kubectl kustomize "$repo_root/deploy/k8s/overlays/local" --load-restrictor LoadRestrictionsNone >"$rendered"
 
 ruby - "$rendered" <<'RUBY'
+require "json"
 require "psych"
 
 rendered_path = ARGV.fetch(0)
@@ -105,6 +106,9 @@ connect_container = connect_spec.fetch("containers").find { |container| containe
 connect_service = resources.fetch(["Service", "kafka-connect"])
 connect_environment = connect_container.fetch("env").to_h { |entry| [entry.fetch("name"), entry] }
 connect_config = resources.fetch(["ConfigMap", "simplematch-kafka-connect-config"])
+connector_configmap = resources.fetch(["ConfigMap", "risk-service-outbox-connector"])
+connector_document = JSON.parse(connector_configmap.dig("data", "connector.json"))
+connector_values = connector_document.fetch("config")
 connect_volume_mounts = connect_container.fetch("volumeMounts")
 connect_volumes = connect_spec.fetch("volumes")
 
@@ -125,6 +129,15 @@ require_value(
     connect_environment.dig("CONNECT_STATUS_STORAGE_REPLICATION_FACTOR", "value") == "3" &&
     connect_environment.keys.none? { |name| name.end_with?("_MIN_ISR") },
   "Local Kafka Connect internal topics must declare replication factor three; topic ISR belongs to provisioning"
+)
+require_value(
+  connect_environment.dig("CONNECT_CONFIG_PROVIDERS", "value") == "envvarprovider" &&
+    connect_environment.dig("CONNECT_CONFIG_PROVIDERS_ENVVARPROVIDER_CLASS", "value") ==
+      "org.apache.kafka.common.config.provider.EnvVarConfigProvider" &&
+    !connector_values.key?("config.providers") &&
+    !connector_values.key?("config.providers.envvarprovider.class") &&
+    connector_values["database.hostname"] == "${envvarprovider:SIMPLEMATCH_POSTGRES_HOSTNAME}",
+  "Local Kafka Connect must configure EnvVarConfigProvider on the worker and use its placeholders"
 )
 require_value(
   connect_environment.dig("RISK_SERVICE_POSTGRES_USER", "valueFrom", "secretKeyRef", "name") == "simplematch-postgres-secrets" &&

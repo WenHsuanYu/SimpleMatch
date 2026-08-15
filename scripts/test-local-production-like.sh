@@ -88,9 +88,49 @@ grep -Fq 'SIMPLEMATCH_CERTIFICATION_TIMEOUT_SECONDS' \
   echo "Local certification does not define a global bounded timeout." >&2
   exit 1
 }
+grep -Fq 'SIMPLEMATCH_KAFKA_CAPACITY_WORKLOAD_FILE' \
+  "$repo_root/scripts/run-local-production-like-certification.sh" || {
+  echo "Local certification does not expose its bounded Kafka workload envelope." >&2
+  exit 1
+}
+grep -Fq 'scripts/testdata/matching-topic-profile/local/capacity.properties' \
+  "$repo_root/scripts/run-local-production-like-certification.sh" || {
+  echo "Local certification does not default to the bounded local Kafka workload envelope." >&2
+  exit 1
+}
+grep -Fq 'workload.commands.per.day=10000' \
+  "$repo_root/scripts/testdata/matching-topic-profile/local/capacity.properties" || {
+  echo "Local Kafka capacity envelope is not bounded to the side-project workload." >&2
+  exit 1
+}
+grep -Fq 'workload.events.per.day=10000' \
+  "$repo_root/scripts/testdata/matching-topic-profile/local/capacity.properties" || {
+  echo "Local Kafka event capacity envelope is not bounded to the side-project workload." >&2
+  exit 1
+}
+run_logged_function="$(sed -n '/^run_logged()/,/^run_capture()/p' \
+  "$repo_root/scripts/run-local-production-like-certification.sh")"
+[[ "$(grep -Fc 'execute_with_certification_deadline "$@"' <<<"$run_logged_function")" == 1 ]] || {
+  echo "Local certification must execute each logged phase exactly once." >&2
+  exit 1
+}
 grep -Fq -- '--connect-timeout 5 --max-time 15' \
   "$repo_root/scripts/run-local-production-like-certification.sh" || {
   echo "Kafka Connect checks do not bound their HTTP requests." >&2
+  exit 1
+}
+grep -Fq 'SIMPLEMATCH_KAFKA_CONNECT_PROVIDER_RETRIES' \
+  "$repo_root/scripts/run-local-production-like-certification.sh" &&
+grep -Fq 'EnvVarConfigProvider is not ready; retrying registration' \
+  "$repo_root/scripts/run-local-production-like-certification.sh" || {
+  echo "Kafka Connect registration does not bound the provider startup race." >&2
+  exit 1
+}
+grep -Fq 'Forwarding from 127\.0\.0\.1:([0-9]+)' \
+  "$repo_root/scripts/run-local-production-like-certification.sh" &&
+grep -Fq 'Unable to listen|error: unable to listen|address already in use' \
+  "$repo_root/scripts/run-local-production-like-certification.sh" || {
+  echo "Kafka Connect registration does not verify its port-forward endpoint." >&2
   exit 1
 }
 grep -Fq 'market-reference-${trading_day//-/}' \
