@@ -41,6 +41,7 @@ set(CMAKE_CXX_EXTENSIONS OFF)
 find_package(protobuf CONFIG REQUIRED)
 find_package(nlohmann_json CONFIG REQUIRED)
 find_package(OpenSSL REQUIRED)
+find_package(spdlog CONFIG REQUIRED)
 
 set(SIMPLEMATCH_ROUTING_PROTO_FILES
     ${CMAKE_CURRENT_SOURCE_DIR}/proto/common_v2.proto
@@ -67,7 +68,8 @@ target_include_directories(simplematch_matching_ingress
 target_link_libraries(simplematch_matching_ingress
     PUBLIC protobuf::libprotobuf
            nlohmann_json::nlohmann_json
-           OpenSSL::Crypto)
+           OpenSSL::Crypto
+           spdlog::spdlog_header_only)
 protobuf_generate(
     TARGET simplematch_matching_ingress
     LANGUAGE cpp
@@ -78,7 +80,7 @@ simplematch_enable_sanitizers(simplematch_matching_ingress)
 
 if(SIMPLEMATCH_ENABLE_MESSAGING)
   find_package(RdKafka CONFIG REQUIRED)
-  find_package(CURL REQUIRED)
+  find_package(CURL CONFIG REQUIRED)
 
   add_library(simplematch_matching_messaging STATIC
       matching-engine/src/kubernetes_lease_ownership_adapter.cpp
@@ -110,6 +112,17 @@ if(SIMPLEMATCH_ENABLE_MESSAGING)
         PRIVATE simplematch_matching_ingress RdKafka::rdkafka)
     simplematch_enable_warnings(simplematch-matching-kafka-fixture-publisher)
     simplematch_enable_sanitizers(simplematch-matching-kafka-fixture-publisher)
+
+    add_executable(
+        simplematch-matching-e2e-certification
+        matching-engine/tests/matching_e2e_certification.cpp)
+    target_include_directories(
+        simplematch-matching-e2e-certification PRIVATE ${CMAKE_CURRENT_BINARY_DIR})
+    target_link_libraries(
+        simplematch-matching-e2e-certification
+        PRIVATE simplematch_matching_ingress RdKafka::rdkafka)
+    simplematch_enable_warnings(simplematch-matching-e2e-certification)
+    simplematch_enable_sanitizers(simplematch-matching-e2e-certification)
   endif()
 endif()
 

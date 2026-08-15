@@ -5,6 +5,17 @@
 #include <utility>
 
 namespace simplematch::matching {
+namespace {
+
+void update_high_watermark(std::atomic<std::size_t> &watermark, std::size_t value) {
+  auto previous = watermark.load(std::memory_order_relaxed);
+  while (previous < value &&
+         !watermark.compare_exchange_weak(
+             previous, value, std::memory_order_relaxed, std::memory_order_relaxed)) {
+  }
+}
+
+} // namespace
 
 MatchingRuntime::MatchingRuntime(
     std::unique_ptr<DeterministicMatchingCore> core,
@@ -35,6 +46,7 @@ std::optional<InputSequence> MatchingRuntime::submit(CoreCommand command) {
   if (!input_ring_.try_push(RuntimeInput{sequence, std::move(command)})) {
     return std::nullopt;
   }
+  update_high_watermark(input_high_watermark_, input_ring_.size());
   ++next_input_sequence_;
   return sequence;
 }
@@ -62,7 +74,8 @@ MatchingRuntimeStep MatchingRuntime::process_one() {
   if (!command.has_value()) {
     return MatchingRuntimeStep::kNoInput;
   }
-  if (core_->process(command->command) != MatchingProcessResult::kApplied) {
+  const auto result = core_->process(command->command);
+  if (result != MatchingProcessResult::kApplied) {
     return MatchingRuntimeStep::kCoreRejected;
   }
   std::size_t output_index = 0;
@@ -71,11 +84,13 @@ MatchingRuntimeStep MatchingRuntime::process_one() {
             command->sequence, output_index, event})) {
       throw std::logic_error("output ring capacity changed while the single writer was processing");
     }
+    update_high_watermark(output_high_watermark_, output_ring_.size());
     ++output_index;
   }
   if (!output_ring_.try_push(RuntimeEndOfInput{command->sequence, output_index})) {
     throw std::logic_error("output ring lost its reserved end-of-input slot");
   }
+  update_high_watermark(output_high_watermark_, output_ring_.size());
   return MatchingRuntimeStep::kProcessed;
 }
 
@@ -97,6 +112,15 @@ std::optional<RuntimeOutput> MatchingRuntime::take_output() {
 
 BoundedSpscRing<RuntimeOutput> &MatchingRuntime::output_ring() {
   return output_ring_;
+}
+
+MatchingRuntimeMetrics MatchingRuntime::metrics() const {
+  return {input_ring_.capacity(),
+          input_ring_.size(),
+          input_high_watermark_.load(std::memory_order_relaxed),
+          output_ring_.capacity(),
+          output_ring_.size(),
+          output_high_watermark_.load(std::memory_order_relaxed)};
 }
 
 } // namespace simplematch::matching

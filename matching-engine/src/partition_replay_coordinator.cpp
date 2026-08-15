@@ -227,6 +227,10 @@ MatchingRuntime &PartitionReplayCoordinator::runtime() {
   return runtime_;
 }
 
+const MatchingRuntime &PartitionReplayCoordinator::runtime() const {
+  return runtime_;
+}
+
 std::shared_ptr<const PartitionOwnershipPermit>
 PartitionReplayCoordinator::ownership_permit() const {
   return ownership_permit_;
@@ -641,6 +645,14 @@ PartitionReplayStatus PartitionReplayCoordinator::status() const {
           pending_inputs_.size(),
           pending_publications_.size(),
           failure_reason_};
+}
+
+void PartitionReplayCoordinator::record_runtime_failure(std::string reason) {
+  if (state_ == PartitionSessionState::kFailedClosed) {
+    return;
+  }
+  state_ = PartitionSessionState::kFailedClosed;
+  failure_reason_ = std::move(reason);
 }
 
 PartitionReplayResult PartitionReplayCoordinator::recover(

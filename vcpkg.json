@@ -4,7 +4,8 @@
   "description": "SimpleMatch native dependencies organized by capability",
   "dependencies": [
     "protobuf",
-    "openssl"
+    "openssl",
+    "spdlog"
   ],
   "features": {
     "tests": {
@@ -22,6 +23,7 @@
     "messaging": {
       "description": "Native Kafka messaging capabilities",
       "dependencies": [
+        "curl",
         "librdkafka"
       ]
     },

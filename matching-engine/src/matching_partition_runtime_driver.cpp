@@ -81,6 +81,10 @@ bool MatchingPartitionRuntimeDriver::shutdown(std::chrono::milliseconds deadline
 MatchingPartitionDriverStep MatchingPartitionRuntimeDriver::run_threaded_once() {
   if (supervisor_ == nullptr ||
       supervisor_->state() == MatchingRuntimeSupervisorState::kFailedClosed) {
+    if (supervisor_ != nullptr &&
+        supervisor_->state() == MatchingRuntimeSupervisorState::kFailedClosed) {
+      coordinator_.record_runtime_failure(supervisor_->failure_reason());
+    }
     return coordinator_.ownership_permitted() ? MatchingPartitionDriverStep::kFailedClosed
                                               : MatchingPartitionDriverStep::kOwnershipDenied;
   }
@@ -98,6 +102,10 @@ MatchingPartitionDriverStep MatchingPartitionRuntimeDriver::run_threaded_once() 
     return mapped;
   }
   if (!drain_threaded_output_until_complete()) {
+    if (supervisor_->state() == MatchingRuntimeSupervisorState::kFailedClosed) {
+      coordinator_.record_runtime_failure(supervisor_->failure_reason());
+      return MatchingPartitionDriverStep::kFailedClosed;
+    }
     return supervisor_->state() == MatchingRuntimeSupervisorState::kFailedClosed
                ? MatchingPartitionDriverStep::kFailedClosed
                : MatchingPartitionDriverStep::kBackpressured;

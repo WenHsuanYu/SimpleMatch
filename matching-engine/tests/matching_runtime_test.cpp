@@ -187,6 +187,14 @@ TEST(MatchingRuntimeTest, BoundedInputRingNeverOverwritesAnUnreadCommand) {
   EXPECT_EQ(framed_event.output_index, 0U);
   EXPECT_EQ(framed_end.input_sequence, 0U);
   EXPECT_EQ(framed_end.output_count, 1U);
+
+  const auto metrics = runtime.metrics();
+  EXPECT_EQ(metrics.input_capacity, 1U);
+  EXPECT_EQ(metrics.input_occupancy, 0U);
+  EXPECT_EQ(metrics.input_high_watermark, 1U);
+  EXPECT_EQ(metrics.output_capacity, 4U);
+  EXPECT_EQ(metrics.output_occupancy, 0U);
+  EXPECT_EQ(metrics.output_high_watermark, 2U);
 }
 
 TEST(MatchingRuntimeTest, DoesNotConsumeInputSequenceWhenTheRingIsFull) {

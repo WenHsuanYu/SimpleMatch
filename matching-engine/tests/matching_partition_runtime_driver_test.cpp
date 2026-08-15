@@ -101,6 +101,21 @@ AssignedCommandRecord order_record(std::int64_t offset) {
   return {assignment(), offset, command.header().command_id(), command.SerializeAsString()};
 }
 
+AssignedCommandRecord unknown_instrument_order_record(std::int64_t offset) {
+  auto command = base_command("0198a001-0000-7000-8000-000000000003");
+  auto *order = command.mutable_new_order();
+  order->set_order_id("0198a001-0000-7000-8000-000000000013");
+  order->set_account_id("0198a001-0000-7000-8000-0000000000aa");
+  order->mutable_instrument()->set_venue_mic("XTAI");
+  order->mutable_instrument()->set_symbol("9999");
+  order->set_side(simplematch::common::v2::SIDE_SELL);
+  order->set_quantity_shares(100);
+  order->set_limit_price_units(1'000'000);
+  order->set_order_type(simplematch::common::v2::ORDER_TYPE_LIMIT);
+  order->set_time_in_force(simplematch::common::v2::TIME_IN_FORCE_ROD);
+  return {assignment(), offset, command.header().command_id(), command.SerializeAsString()};
+}
+
 class RecordingConsumer final : public DirectPartitionKafkaConsumer {
 public:
   void assign(const DirectKafkaPartitionAssignment &value) override {
@@ -353,6 +368,23 @@ TEST(MatchingPartitionRuntimeDriverTest, DoesNotAssignWhenOwnershipIsNotConfirme
   EXPECT_FALSE(driver.start());
   EXPECT_FALSE(consumer.assigned.has_value());
   EXPECT_EQ(driver.run_once(), MatchingPartitionDriverStep::kOwnershipDenied);
+}
+
+TEST(MatchingPartitionRuntimeDriverTest, PropagatesUnknownInstrumentFailureWithoutTeardownCrash) {
+  auto replay = coordinator();
+  RecordingConsumer consumer;
+  consumer.records.push_back(open_record(10));
+  consumer.records.push_back(unknown_instrument_order_record(11));
+  RecordingPublisher publisher;
+  auto options = sanitizer_tolerant_supervisor_options();
+  options.output_drain_timeout = std::chrono::milliseconds(50);
+  MatchingPartitionRuntimeDriver driver(consumer, replay, publisher, nullptr, options);
+
+  ASSERT_TRUE(driver.start());
+  ASSERT_EQ(driver.run_once(), MatchingPartitionDriverStep::kProcessed);
+  EXPECT_EQ(driver.run_once(), MatchingPartitionDriverStep::kFailedClosed);
+  EXPECT_EQ(replay.status().state, PartitionSessionState::kFailedClosed);
+  EXPECT_EQ(replay.status().reason, "MATCHING_CORE_REJECTED_COMMAND");
 }
 
 TEST(MatchingPartitionRuntimeDriverTest, ReplaysThePvcBaselineBeforeLivePolling) {

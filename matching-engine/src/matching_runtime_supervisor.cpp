@@ -12,6 +12,8 @@
 #include <sched.h>
 #endif
 
+#include <spdlog/spdlog.h>
+
 namespace simplematch::matching {
 namespace {
 
@@ -210,6 +212,7 @@ std::size_t MatchingRuntimeSupervisor::output_size() const {
 }
 
 void MatchingRuntimeSupervisor::fail_closed(std::string reason) {
+  std::string recorded_reason;
   {
     std::lock_guard lock(control_mutex_);
     const auto current = state_.load(std::memory_order_acquire);
@@ -219,7 +222,9 @@ void MatchingRuntimeSupervisor::fail_closed(std::string reason) {
     }
     state_.store(MatchingRuntimeSupervisorState::kFailedClosed, std::memory_order_release);
     failure_reason_ = std::move(reason);
+    recorded_reason = failure_reason_;
   }
+  spdlog::error("Matching runtime failed closed: {}", recorded_reason);
   stop_requested_.store(true, std::memory_order_release);
   notify_all();
 }
@@ -324,9 +329,12 @@ void MatchingRuntimeSupervisor::writer_loop() {
         }
         continue;
       }
-      if (step == MatchingRuntimeStep::kOwnershipDenied ||
-          step == MatchingRuntimeStep::kCoreRejected) {
-        fail_closed("MATCHING_WRITER_PROCESSING_FAILED");
+      if (step == MatchingRuntimeStep::kOwnershipDenied) {
+        fail_closed("MATCHING_OWNERSHIP_LOST");
+        break;
+      }
+      if (step == MatchingRuntimeStep::kCoreRejected) {
+        fail_closed("MATCHING_CORE_REJECTED_COMMAND");
         break;
       }
       if (stop_requested() || state() == MatchingRuntimeSupervisorState::kFailedClosed) {

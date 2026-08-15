@@ -7,6 +7,7 @@
 
 #include <cstddef>
 #include <cstdint>
+#include <atomic>
 #include <memory>
 #include <optional>
 #include <variant>
@@ -35,6 +36,16 @@ struct RuntimeEndOfInput {
 /** Transport-independent output produced by the single Matching writer. */
 using RuntimeOutput = std::variant<RuntimeEventOutput, RuntimeEndOfInput>;
 
+/** Read-only queue measurements exported to an infrastructure-side evidence writer. */
+struct MatchingRuntimeMetrics {
+  std::size_t input_capacity{};
+  std::size_t input_occupancy{};
+  std::size_t input_high_watermark{};
+  std::size_t output_capacity{};
+  std::size_t output_occupancy{};
+  std::size_t output_high_watermark{};
+};
+
 /**
  * Owns the preallocated command and event rings around one strictly single-writer matching core.
  *
@@ -58,6 +69,7 @@ public:
   [[nodiscard]] std::size_t maximum_output_events() const;
   [[nodiscard]] std::optional<RuntimeOutput> take_output();
   [[nodiscard]] BoundedSpscRing<RuntimeOutput> &output_ring();
+  [[nodiscard]] MatchingRuntimeMetrics metrics() const;
 
 private:
   struct RuntimeInput {
@@ -69,6 +81,8 @@ private:
   std::unique_ptr<DeterministicMatchingCore> core_;
   BoundedSpscRing<RuntimeInput> input_ring_;
   BoundedSpscRing<RuntimeOutput> output_ring_;
+  std::atomic<std::size_t> input_high_watermark_{};
+  std::atomic<std::size_t> output_high_watermark_{};
   InputSequence next_input_sequence_{};
 };
 

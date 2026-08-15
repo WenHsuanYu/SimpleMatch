@@ -178,6 +178,7 @@ public:
   [[nodiscard]] const DirectKafkaPartitionAssignment &assignment() const;
   /** Exposes the transport-free runtime to the single-writer supervisor. */
   [[nodiscard]] MatchingRuntime &runtime();
+  [[nodiscard]] const MatchingRuntime &runtime() const;
   /** Exposes the immutable ownership adapter to infrastructure lifecycle components. */
   [[nodiscard]] std::shared_ptr<const PartitionOwnershipPermit> ownership_permit() const;
   [[nodiscard]] bool ownership_permitted() const;
@@ -203,6 +204,9 @@ public:
   [[nodiscard]] bool acknowledge_commit(std::int64_t next_offset);
   [[nodiscard]] std::optional<PartitionBaselineMetadata> baseline_metadata() const;
   [[nodiscard]] PartitionReplayStatus status() const;
+
+  /** Records a terminal failure reported by the external writer supervisor. */
+  void record_runtime_failure(std::string reason);
 
   [[nodiscard]] PartitionReplayResult recover(
       const PartitionBaselineMetadata &baseline,

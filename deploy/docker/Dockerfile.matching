@@ -14,10 +14,6 @@ RUN apt-get update \
     && git -C "$VCPKG_ROOT" checkout --detach "$VCPKG_VERSION" \
     && "$VCPKG_ROOT/bootstrap-vcpkg.sh" -disableMetrics
 
-RUN apt-get update \
-    && apt-get install --no-install-recommends --yes libcurl4-openssl-dev \
-    && rm -rf /var/lib/apt/lists/*
-
 WORKDIR /src
 COPY . /src/
 
@@ -35,7 +31,7 @@ ENV DEBIAN_FRONTEND=noninteractive
 
 RUN apt-get update \
     && apt-get install --no-install-recommends --yes \
-       ca-certificates libcurl4t64 libgcc-s1 libssl3t64 libstdc++6 zlib1g \
+       ca-certificates libgcc-s1 libssl3t64 libstdc++6 zlib1g \
     && rm -rf /var/lib/apt/lists/* \
     && useradd --system --uid 10001 --home-dir /nonexistent --shell /usr/sbin/nologin simplematch \
     && mkdir -p /app /var/lib/simplematch/matching /tmp \

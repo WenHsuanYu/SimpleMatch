@@ -13,7 +13,6 @@
 #include <filesystem>
 #include <fstream>
 #include <iomanip>
-#include <iostream>
 #include <memory>
 #include <optional>
 #include <sstream>
@@ -25,6 +24,7 @@
 #include <vector>
 
 #include <nlohmann/json.hpp>
+#include <spdlog/spdlog.h>
 
 namespace simplematch::matching {
 namespace {
@@ -52,6 +52,7 @@ struct RuntimeConfiguration {
   std::string matching_image_digest;
   std::string baseline_path;
   std::string status_path;
+  std::string metrics_path;
   std::int32_t partition_id{};
   std::size_t input_capacity{};
   std::size_t output_capacity{};
@@ -168,6 +169,7 @@ RuntimeConfiguration load_configuration() {
       required_environment("MATCHING_MATCHING_IMAGE_DIGEST"),
       environment_value("MATCHING_BASELINE_PATH", "/var/lib/simplematch/matching/partition-baseline.json"),
       environment_value("MATCHING_STATUS_PATH", std::string(kDefaultStatusPath)),
+      environment_value("MATCHING_METRICS_PATH", "/var/lib/simplematch/matching/runtime-metrics.json"),
       non_negative_environment<std::int32_t>("MATCHING_PARTITION_ID", -1),
       positive_environment<std::size_t>("MATCHING_INPUT_CAPACITY", 1024),
       positive_environment<std::size_t>("MATCHING_OUTPUT_CAPACITY", 1048576),
@@ -190,7 +192,7 @@ RuntimeConfiguration load_configuration() {
   return configuration;
 }
 
-void write_status(const std::string &path, std::string_view status) {
+void write_atomic_file(const std::string &path, std::string_view content) {
   const std::filesystem::path destination(path);
   if (!destination.parent_path().empty()) {
     std::filesystem::create_directories(destination.parent_path());
@@ -198,14 +200,79 @@ void write_status(const std::string &path, std::string_view status) {
   const std::filesystem::path temporary = destination.string() + ".next";
   std::ofstream output(temporary, std::ios::trunc);
   if (!output) {
-    throw std::runtime_error("unable to write Matching runtime status");
+    throw std::runtime_error("unable to write Matching runtime file");
   }
-  output << status << '\n';
+  output << content;
+  if (!content.empty() && content.back() != '\n') {
+    output << '\n';
+  }
   output.flush();
   if (!output) {
-    throw std::runtime_error("unable to flush Matching runtime status");
+    throw std::runtime_error("unable to flush Matching runtime file");
   }
   std::filesystem::rename(temporary, destination);
+}
+
+void write_status(const std::string &path, std::string_view status) {
+  write_atomic_file(path, status);
+}
+
+std::string partition_session_state_name(PartitionSessionState state) {
+  switch (state) {
+    case PartitionSessionState::kAwaitingOpen:
+      return "AWAITING_OPEN";
+    case PartitionSessionState::kOpen:
+      return "OPEN";
+    case PartitionSessionState::kClosed:
+      return "CLOSED";
+    case PartitionSessionState::kFailedClosed:
+      return "FAILED_CLOSED";
+  }
+  return "UNKNOWN";
+}
+
+Json optional_offset_json(std::optional<std::int64_t> offset) {
+  return offset.has_value() ? Json(*offset) : Json(nullptr);
+}
+
+std::int64_t current_epoch_millis() {
+  return std::chrono::duration_cast<std::chrono::milliseconds>(
+             std::chrono::system_clock::now().time_since_epoch())
+      .count();
+}
+
+void write_runtime_state_metrics(const std::string &path, std::string_view runtime_state) {
+  const Json encoded = {
+      {"schema_version", 1},
+      {"updated_at_epoch_ms", current_epoch_millis()},
+      {"runtime_state", runtime_state},
+  };
+  write_atomic_file(path, encoded.dump());
+}
+
+void write_runtime_metrics(
+    const std::string &path,
+    const PartitionReplayCoordinator &coordinator,
+    std::string_view runtime_state) {
+  const auto metrics = coordinator.runtime().metrics();
+  const auto replay_status = coordinator.status();
+  const Json encoded = {
+      {"schema_version", 1},
+      {"updated_at_epoch_ms", current_epoch_millis()},
+      {"runtime_state", runtime_state},
+      {"partition_state", partition_session_state_name(replay_status.state)},
+      {"input_ring", {{"capacity", metrics.input_capacity},
+                       {"occupancy", metrics.input_occupancy},
+                       {"high_watermark", metrics.input_high_watermark}}},
+      {"output_ring", {{"capacity", metrics.output_capacity},
+                        {"occupancy", metrics.output_occupancy},
+                        {"high_watermark", metrics.output_high_watermark}}},
+      {"pending_inputs", replay_status.pending_input_count},
+      {"pending_publications", replay_status.pending_publication_count},
+      {"highest_contiguous_completed_offset",
+       optional_offset_json(replay_status.highest_contiguous_completed_offset)},
+      {"next_commit_offset", optional_offset_json(replay_status.next_commit_offset)}};
+  write_atomic_file(path, encoded.dump());
 }
 
 bool status_is(const std::string &path, std::string_view expected) {
@@ -313,8 +380,9 @@ int run_runtime() {
   shutdown_requested.store(false, std::memory_order_relaxed);
   std::signal(SIGINT, request_shutdown);
   std::signal(SIGTERM, request_shutdown);
-  write_status(configuration.status_path, "STARTING");
   try {
+    write_runtime_state_metrics(configuration.metrics_path, "STARTING");
+    write_status(configuration.status_path, "STARTING");
     const std::string artifact_json = read_file(configuration.artifact_path);
     const std::string checksum = read_file(configuration.checksum_path);
     const auto decision = MarketReferenceArtifactLoader().load(
@@ -334,6 +402,7 @@ int run_runtime() {
         ownership_identity, configuration.lease_uncertainty_deadline);
     auto lease_adapter = create_lease_adapter(configuration, *permit, ownership_identity);
     if (lease_adapter != nullptr && !lease_adapter->refresh()) {
+      write_runtime_state_metrics(configuration.metrics_path, "NOT_READY");
       write_status(configuration.status_path, "NOT_READY");
       return 3;
     }
@@ -389,10 +458,14 @@ int run_runtime() {
         std::move(cpu_affinity),
         std::move(supervisor_options));
     if (!driver.start(&baseline_store)) {
+      write_runtime_metrics(configuration.metrics_path, coordinator, "NOT_READY");
       write_status(configuration.status_path, "NOT_READY");
       return 3;
     }
     std::optional<PartitionBaselineMetadata> last_saved_baseline;
+    bool runtime_ready = false;
+    auto next_metrics_snapshot = std::chrono::steady_clock::now();
+    write_runtime_metrics(configuration.metrics_path, coordinator, "RUNNING");
     write_status(configuration.status_path, "RUNNING");
     for (;;) {
       if (shutdown_requested.load(std::memory_order_relaxed)) {
@@ -402,12 +475,14 @@ int run_runtime() {
           baseline_store.save(*baseline);
           last_saved_baseline = baseline;
         }
+        write_runtime_metrics(configuration.metrics_path, coordinator, stopped ? "STOPPED" : "FAILED");
         write_status(configuration.status_path, stopped ? "STOPPED" : "FAILED");
         return stopped ? 0 : 4;
       }
       const auto step = driver.run_once();
       if (step == MatchingPartitionDriverStep::kFailedClosed ||
           step == MatchingPartitionDriverStep::kOwnershipDenied) {
+        write_runtime_metrics(configuration.metrics_path, coordinator, "FAILED");
         write_status(configuration.status_path, "FAILED");
         return 4;
       }
@@ -416,17 +491,28 @@ int run_runtime() {
         baseline_store.save(*baseline);
         last_saved_baseline = baseline;
       }
-      if (coordinator.status().state == PartitionSessionState::kOpen &&
-          permit->allows_processing()) {
-        write_status(configuration.status_path, "READY");
+      const bool can_serve = coordinator.status().state == PartitionSessionState::kOpen &&
+                             permit->allows_processing();
+      if (can_serve != runtime_ready) {
+        write_status(configuration.status_path, can_serve ? "READY" : "RUNNING");
+        runtime_ready = can_serve;
+      }
+      if (std::chrono::steady_clock::now() >= next_metrics_snapshot) {
+        write_runtime_metrics(
+            configuration.metrics_path, coordinator, runtime_ready ? "READY" : "RUNNING");
+        next_metrics_snapshot = std::chrono::steady_clock::now() + 1s;
       }
     }
   } catch (const std::exception &failure) {
     try {
+      write_runtime_state_metrics(configuration.metrics_path, "FAILED");
+    } catch (const std::exception &) {
+    }
+    try {
       write_status(configuration.status_path, "FAILED");
     } catch (const std::exception &) {
     }
-    std::cerr << failure.what() << '\n';
+    spdlog::error("Matching runtime terminated: {}", failure.what());
     return 2;
   }
 }
@@ -436,6 +522,8 @@ int run_runtime() {
 
 int main(int argc, char **argv) {
   try {
+    spdlog::set_pattern("%Y-%m-%dT%H:%M:%S.%e [%l] %v");
+    spdlog::flush_on(spdlog::level::err);
     if (argc == 2 && (std::string_view(argv[1]) == "readiness" ||
                       std::string_view(argv[1]) == "liveness")) {
       return simplematch::matching::run_probe(argv[1]);
@@ -445,7 +533,7 @@ int main(int argc, char **argv) {
     }
     throw std::invalid_argument("usage: simplematch-matching [readiness|liveness]");
   } catch (const std::exception &failure) {
-    std::cerr << failure.what() << '\n';
+    spdlog::error("Matching command-line invocation failed: {}", failure.what());
     return 2;
   }
 }

@@ -47,6 +47,7 @@ build-sanitize/
 build-vcpkg-sanitize/
 out/
 .gradle/
+vcpkg_installed/
 
 # Local runtime config (do not commit secrets)
 config/simplematch.json
