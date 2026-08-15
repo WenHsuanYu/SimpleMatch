@@ -17,6 +17,24 @@ These instructions apply to the whole repository.
   them, persistent named volumes, and unrelated resources. Remove only exact stopped containers,
   dangling images, or run-owned disposable volumes from completed tests; avoid blanket prune
   commands and broad globs. Verify the remaining inventory and report what was removed.
+- Before any test that applies Compose, Docker, kind, or Kubernetes deployment resources, read
+  [docs/agents/deployment-test-lessons.md](docs/agents/deployment-test-lessons.md) and complete its
+  preflight checklist. Treat a known lesson as a gate: verify its prevention check before starting
+  the dependent test. After a new or repeated deployment-test failure, record the symptom, root
+  cause, safe fix, prevention check, and redacted evidence in that document before declaring the
+  run complete.
+- For every implementation or test task, invoke the repository's `implement` skill when it is
+  available and follow its acceptance-criteria, test, review, and handoff workflow. Keep the
+  implementation slice narrow, run focused checks during the work, and run the relevant complete
+  suite before handoff. An explicit user instruction about diagnosis-only scope, staging, or
+  committing takes precedence and must be recorded in the handoff.
+- Maintain disk space as part of deployment-test hygiene. At the end of a run, inventory Docker
+  containers, images, volumes, builder cache, and generated build caches before removing anything.
+  Remove only stopped run-owned containers, unreferenced disposable volumes, dangling images, or
+  explicitly stale run-owned cache entries. When multiple tags resolve to the same image identity,
+  keep the newest tag only after confirming older tags are not referenced by running containers,
+  canonical kind clusters, evidence, or another active workflow. Never use broad prune commands as
+  a substitute for this inventory; verify the post-cleanup inventory and report the reclaimed space.
 - PostgreSQL schema changes must use versioned Flyway migrations via the shared
   `simplematch.flyway-service` convention; do not reintroduce runtime migration or ad hoc schema
   initialization flows.
