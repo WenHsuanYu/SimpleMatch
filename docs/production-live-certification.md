@@ -99,7 +99,7 @@ rows that were not rerun retain their original date and boundary.
 | Layer | Command or scenario | Result and boundary |
 | --- | --- | --- |
 | Native build | cmake --build --preset full-native-dev --parallel | Passed |
-| Native full feature tests | ctest --preset full-native-dev --output-on-failure | 73/73 passed from the current full-native build tree on 2026-08-15 |
+| Native full feature tests | ctest --preset full-native-dev --output-on-failure | 75/75 passed from the current full-native build tree on 2026-08-16 |
 | Native reduced feature tests | cmake --build --preset dev-debug --parallel; ctest --preset dev-debug --output-on-failure | 38/38 passed in the historical 2026-08-12 run; not rerun after #127 changes |
 | Native capacity harness | scripts/run-matching-capacity-certification.sh | Repository gate available; report is non-certifying until run on pinned production-shaped hardware |
 | Kubernetes manifest contract | bash scripts/test-matching-kubernetes-manifests.sh | Passed; static contract only |
@@ -112,9 +112,9 @@ rows that were not rerun retain their original date and boundary.
 | Repo-local FIX certification | :services:quickfix-gateway:certificationTest | Passed; real in-process QuickFIX/J acceptor/initiator, H2, WAL, duplicate/cancel/recovery scenarios |
 | Disposable kind Matching smoke | One native matching-0 against one in-cluster broker | Lease/PVC/replay/Ready path passed; one node and RF1, therefore non-certifying |
 | Disposable kind restart | Delete/recreate one Matching pod normally | Old Lease blocked handover until expiry; new UID replayed baseline; no duplicate output |
-| Canonical three-worker Matching E2E | `bash scripts/run-matching-e2e-certification.sh --fault-mode pod-delete` and `--fault-mode process-crash` | Fresh 2026-08-15 deployed runs passed with zero loss/duplicates. Pod deletion kept the same worker/PVC/PV and replaced the Pod in 28.062s with 3.225s replay lag; process crash kept the same Pod UID/worker/PVC/PV, moved restart count 2→3, and recovered in 33.856s with 3.161s replay lag. Evidence: `out/certification/local-production-like/e2e-rebuild-20260815-144800/e2e/`. These are local marker-batch claims, not worker takeover, soak, full-day replay, or production certification. |
+| Canonical three-worker Matching E2E | `bash scripts/run-matching-e2e-certification.sh --fault-mode pod-delete`, `--fault-mode process-crash`, and `--fault-mode worker-stop` | Fresh local runs passed with zero loss/duplicates. The worker-stop case observed `simplematch-live-worker2` become NotReady, restarted the same container, retained the same Pod UID/Node/PVC/PV, completed replacement in 76.956s, and reached replay catch-up in 3.542s. Evidence: `out/certification/local-production-like/worker-stop-prep-20260816-r3/worker-stop-e2e-r2/`. The claim is temporary same-worker recovery, not PVC loss, cross-node takeover, 24-hour endurance, or production certification. |
 | Canonical three-broker Kafka replacement | Delete only `kafka-0`, run the real E2E helper during loss and after rejoin | Passed: two brokers remained usable for an 8-command/8-event batch with zero loss/duplicates; replacement returned on the same node and PVC/PV; all 15 partitions of both Matching topics restored ISR 0,1,2 and KRaft follower lag was zero. Evidence: `out/certification/matching-deployed/kafka-broker-replacement-20260815/`. |
-| Deployed Matching collector | `bash scripts/run-matching-deployed-certification.sh --namespace <local-run-namespace>` with the fresh E2E metrics report | Fresh report passed all deployed-local gates: 15/15 fleet, 5/5/5 placement, 15 writer CPU cgroup records, native capacity benchmark, and per-event E2E evidence. Evidence: `out/certification/local-production-like/e2e-rebuild-20260815-144800/deployed-certification/report.json`. This remains local evidence, not a soak, full-day replay, production latency, or production certification. |
+| Deployed Matching collector | `bash scripts/run-matching-deployed-certification.sh --namespace <local-run-namespace>` with the fresh E2E metrics report | Fresh report passed all deployed-local gates: 15/15 fleet, 5/5/5 placement, 15 writer CPU-allowance records, native capacity benchmark, and worker-stop E2E evidence. Evidence: `out/certification/local-production-like/worker-stop-prep-20260816-r3/deployed-certification-local/report.json`. The bounded native local-day profile separately passed 10 cycles / 102,000 commands and events with deterministic checksums. These remain local bounded evidence, not a 24-hour endurance run, production latency, or production certification. |
 | Gateway kind inspection | Apply Gateway resources and inspect API objects | API-level checks passed, but placeholder image caused ErrImagePull; no runtime claim |
 
 The disposable kind scenario was intentionally small: an Open Barrier followed by one sell and one
@@ -167,8 +167,11 @@ is evidence about the benchmark process only; it does not prove Kubernetes CPU M
 or live Matching writer isolation. The operator must record the actual CPU-manager policy, cgroup
 quota, governor, workload/depth/rate, and ring occupancy alongside the JSON report. A direct-core
 pass therefore does not satisfy the production gate by itself. The
-production gate still requires workload calibration, Kafka end-to-end percentiles, a soak, and
-full-day replay checksum scenarios, as well as the 60-second lag/120-second replacement SLOs below.
+For this side project, the local completion profile uses the bounded local-day envelope and the
+10-cycle repeated checksum run below. A later production-shaped promotion may choose a 24-hour
+wall-clock soak or larger replay profile, but those are not required for the repository-owned local
+completion gate. The local gate still measures Kafka end-to-end percentiles and the 60-second
+lag/120-second replacement bounds.
 
 For repository-owned deployed evidence, use the read-only collector:
 

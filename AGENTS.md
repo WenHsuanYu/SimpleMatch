@@ -172,3 +172,20 @@ Rules:
 - Read graphify-out/GRAPH_REPORT.md only for broad architecture review or when query/path/explain do
   not surface enough context.
 - After modifying code, run `graphify update .` to keep the graph current (AST-only, no API cost).
+
+## Kubernetes / kind image runtime integrity
+
+- Do not treat `docker image inspect`, `ctr images ls`, or `crictl inspecti` as sufficient proof that an image is usable inside a kind node. Image metadata may exist while containerd content or snapshot state is corrupted.
+
+- Before deployment or certification that depends on node-local helper images, verify the pinned image can actually start on every eligible kind worker. Prefer an execution probe such as running `/bin/sh -c 'true'` through that node's containerd.
+
+- If a Pod fails with `exec format error`, missing layer digest, snapshot preparation failure, or an image that inspects correctly but cannot start:
+  1. verify host/node architecture and the pinned image platform;
+  2. verify the same image executes successfully outside the affected node;
+  3. remove only the affected node's stale image/snapshot state and re-pull the exact pinned image;
+  4. re-run the execution probe;
+  5. if containerd state remains inconsistent, rebuild the canonical kind cluster instead of repeatedly retrying the workload.
+
+- Do not classify PVC `Pending` as a StorageClass or Kubernetes configuration defect until the local-path provisioner/helper Pod and target-node container runtime have been checked.
+
+- Do not delete the cluster as the first remediation step. Preserve failure evidence and prefer the smallest scoped repair first.
