@@ -34,6 +34,7 @@ using namespace std::chrono_literals;
 
 constexpr std::int32_t kPartitionCount = 15;
 constexpr std::string_view kDefaultStatusPath = "/var/lib/simplematch/matching/runtime-status";
+constexpr std::string_view kDefaultMetricsPath = "/var/lib/simplematch/matching/runtime-metrics.json";
 std::atomic<bool> shutdown_requested{};
 
 void request_shutdown(int) noexcept {
@@ -169,7 +170,7 @@ RuntimeConfiguration load_configuration() {
       required_environment("MATCHING_MATCHING_IMAGE_DIGEST"),
       environment_value("MATCHING_BASELINE_PATH", "/var/lib/simplematch/matching/partition-baseline.json"),
       environment_value("MATCHING_STATUS_PATH", std::string(kDefaultStatusPath)),
-      environment_value("MATCHING_METRICS_PATH", "/var/lib/simplematch/matching/runtime-metrics.json"),
+      environment_value("MATCHING_METRICS_PATH", std::string(kDefaultMetricsPath)),
       non_negative_environment<std::int32_t>("MATCHING_PARTITION_ID", -1),
       positive_environment<std::size_t>("MATCHING_INPUT_CAPACITY", 1024),
       positive_environment<std::size_t>("MATCHING_OUTPUT_CAPACITY", 1048576),
@@ -295,10 +296,12 @@ int run_probe(std::string_view mode) {
     if (!status_is(path, "RUNNING") && !status_is(path, "READY")) {
       return 1;
     }
+    const auto heartbeat_path =
+        environment_value("MATCHING_METRICS_PATH", std::string(kDefaultMetricsPath));
     try {
       return std::chrono::duration_cast<std::chrono::seconds>(
                      std::filesystem::file_time_type::clock::now() -
-                     std::filesystem::last_write_time(path)) <= 30s
+                     std::filesystem::last_write_time(heartbeat_path)) <= 30s
                  ? 0
                  : 1;
     } catch (const std::filesystem::filesystem_error &) {

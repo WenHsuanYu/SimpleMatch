@@ -2,9 +2,12 @@
 
 #include <algorithm>
 #include <chrono>
+#include <cstdint>
 #include <deque>
 #include <filesystem>
+#include <iomanip>
 #include <memory>
+#include <sstream>
 #include <stdexcept>
 #include <string>
 #include <string_view>
@@ -94,6 +97,28 @@ AssignedCommandRecord order_record(std::int64_t offset) {
   order->mutable_instrument()->set_venue_mic("XTAI");
   order->mutable_instrument()->set_symbol("2330");
   order->set_side(simplematch::common::v2::SIDE_SELL);
+  order->set_quantity_shares(100);
+  order->set_limit_price_units(1'000'000);
+  order->set_order_type(simplematch::common::v2::ORDER_TYPE_LIMIT);
+  order->set_time_in_force(simplematch::common::v2::TIME_IN_FORCE_ROD);
+  return {assignment(), offset, command.header().command_id(), command.SerializeAsString()};
+}
+
+std::string indexed_uuid(std::uint64_t index) {
+  std::ostringstream value;
+  value << "0198a001-0000-7000-8000-" << std::hex << std::setw(12) << std::setfill('0') << index;
+  return value.str();
+}
+
+AssignedCommandRecord matched_order_record(
+    std::int64_t offset, std::uint64_t command_index, simplematch::common::v2::Side side) {
+  auto command = base_command(indexed_uuid(command_index));
+  auto *order = command.mutable_new_order();
+  order->set_order_id(indexed_uuid(0x100000 + command_index));
+  order->set_account_id(indexed_uuid(0x200000 + command_index / 2));
+  order->mutable_instrument()->set_venue_mic("XTAI");
+  order->mutable_instrument()->set_symbol("2330");
+  order->set_side(side);
   order->set_quantity_shares(100);
   order->set_limit_price_units(1'000'000);
   order->set_order_type(simplematch::common::v2::ORDER_TYPE_LIMIT);
@@ -432,6 +457,53 @@ TEST(MatchingPartitionRuntimeDriverTest, ReplaysBaselineUsingBoundedKafkaBatches
   EXPECT_EQ(consumer.maximum_requested_batch_size, 4U);
   EXPECT_EQ(consumer.seek_offsets, std::vector<std::int64_t>{15});
   EXPECT_TRUE(publisher.records.empty());
+  std::filesystem::remove(path);
+}
+
+TEST(MatchingPartitionRuntimeDriverTest, ReplaysTheLocalFullDayEnvelopeInBoundedBatches) {
+  constexpr std::size_t kCommandsPerLocalDay = 10'000;
+  constexpr std::int64_t kOpenOffset = 10;
+  const auto path =
+      std::filesystem::temp_directory_path() / "simplematch-driver-local-full-day-baseline.json";
+  std::filesystem::remove(path);
+  PvcBaselineMetadataStore store(path.string());
+  store.save(PartitionBaselineMetadata{
+      assignment(), identity(), kOpenOffset, kOpenOffset + static_cast<std::int64_t>(kCommandsPerLocalDay)});
+
+  auto replay = PartitionReplayCoordinator(
+      assignment(), identity(), ready_permit(), core(), 4, 32, kCommandsPerLocalDay + 1, 64);
+  RetainedRecoveryConsumer consumer;
+  consumer.offset_range = {
+      kOpenOffset,
+      kOpenOffset + static_cast<std::int64_t>(kCommandsPerLocalDay) + 1,
+      kOpenOffset + static_cast<std::int64_t>(kCommandsPerLocalDay) + 1};
+  consumer.retained.reserve(kCommandsPerLocalDay + 1);
+  consumer.retained.push_back(open_record(kOpenOffset));
+  for (std::size_t index = 0; index < kCommandsPerLocalDay / 2; ++index) {
+    const auto sell_offset = kOpenOffset + 1 + static_cast<std::int64_t>(index * 2);
+    consumer.retained.push_back(matched_order_record(
+        sell_offset, static_cast<std::uint64_t>(index * 2 + 2), simplematch::common::v2::SIDE_SELL));
+    consumer.retained.push_back(matched_order_record(
+        sell_offset + 1,
+        static_cast<std::uint64_t>(index * 2 + 3),
+        simplematch::common::v2::SIDE_BUY));
+  }
+  RecordingPublisher publisher;
+  MatchingPartitionRuntimeDriver driver(
+      consumer, replay, publisher, nullptr, sanitizer_tolerant_supervisor_options());
+
+  ASSERT_TRUE(driver.start(&store)) << replay.status().reason;
+  EXPECT_EQ(consumer.maximum_requested_batch_size, 4U);
+  EXPECT_EQ(consumer.read_batch_calls, (kCommandsPerLocalDay + 1 + 3) / 4);
+  EXPECT_EQ(
+      consumer.seek_offsets,
+      std::vector<std::int64_t>{kOpenOffset + static_cast<std::int64_t>(kCommandsPerLocalDay) + 1});
+  EXPECT_EQ(replay.status().state, PartitionSessionState::kOpen);
+  EXPECT_EQ(replay.status().pending_input_count, 0U);
+  EXPECT_EQ(replay.status().pending_publication_count, 0U);
+  EXPECT_TRUE(publisher.records.empty());
+
+  EXPECT_TRUE(driver.shutdown(std::chrono::seconds(10)));
   std::filesystem::remove(path);
 }
 

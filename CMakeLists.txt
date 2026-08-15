@@ -123,6 +123,12 @@ if(SIMPLEMATCH_ENABLE_MESSAGING)
         PRIVATE simplematch_matching_ingress RdKafka::rdkafka)
     simplematch_enable_warnings(simplematch-matching-e2e-certification)
     simplematch_enable_sanitizers(simplematch-matching-e2e-certification)
+
+    add_test(
+        NAME simplematch_matching_liveness_probe
+        COMMAND bash
+                "${CMAKE_CURRENT_SOURCE_DIR}/scripts/test-matching-liveness-probe.sh"
+                "$<TARGET_FILE:simplematch-matching>")
   endif()
 endif()
 
