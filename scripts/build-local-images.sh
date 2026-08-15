@@ -38,6 +38,19 @@ Options:
   --dry-run             Print image build commands without executing them.
   --list                List the local image inventory and exit.
   --help                Show this help.
+
+Environment:
+  SIMPLEMATCH_BOOT_RUN_IMAGE
+                        Optional local run image for BootBuildImage. Use this
+                        when the Docker daemon has transferred multi-platform
+                        image metadata that cannot be exported for local amd64
+                        builds.
+  SIMPLEMATCH_BOOT_PULL_POLICY
+                        Optional BootBuildImage pull policy. When a local run
+                        image override is set, the default is IF_NOT_PRESENT.
+  SIMPLEMATCH_BOOT_RUN_IMAGE_PLATFORM
+                        Local run-image platform checked before BootBuildImage
+                        (default: linux/amd64).
 EOF
 }
 
@@ -128,14 +141,31 @@ fi
 
 cd "$repo_root"
 
+if [[ "$skip_spring" == false && -n "${SIMPLEMATCH_BOOT_RUN_IMAGE:-}" ]]; then
+  run_command "$script_dir/verify-local-boot-run-image.sh" \
+    "$SIMPLEMATCH_BOOT_RUN_IMAGE" "${SIMPLEMATCH_BOOT_RUN_IMAGE_PLATFORM:-linux/amd64}"
+fi
+
 if [[ "$skip_spring" == false ]]; then
   for entry in "${spring_images[@]}"; do
     IFS='|' read -r service project image <<<"$entry"
     selected "$service" || continue
+    gradle_image_args=(
+      "${project}:bootBuildImage"
+      "--imageName=$(image_name "$image")"
+    )
+    if [[ -n "${SIMPLEMATCH_BOOT_RUN_IMAGE:-}" ]]; then
+      gradle_image_args+=(
+        "--runImage=${SIMPLEMATCH_BOOT_RUN_IMAGE}"
+        "--pullPolicy=${SIMPLEMATCH_BOOT_PULL_POLICY:-IF_NOT_PRESENT}"
+      )
+    elif [[ -n "${SIMPLEMATCH_BOOT_PULL_POLICY:-}" ]]; then
+      gradle_image_args+=("--pullPolicy=${SIMPLEMATCH_BOOT_PULL_POLICY}")
+    fi
     run_command env \
       GRADLE_USER_HOME="${GRADLE_USER_HOME:-$repo_root/out/gradle-home}" \
       "$repo_root/gradlew" --no-daemon \
-      "${project}:bootBuildImage" "--imageName=$(image_name "$image")"
+      "${gradle_image_args[@]}"
   done
 fi
 

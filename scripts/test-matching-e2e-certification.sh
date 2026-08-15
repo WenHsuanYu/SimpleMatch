@@ -37,6 +37,27 @@ jq -n --argjson rings "$ring_evidence" '
    evidence:{e2e_before:"e2e-before.json",e2e_after:"e2e-after.json"}}' >"$valid_report"
 matching_e2e_report_is_valid "$valid_report" "$runtime_evidence"
 
+worker_stop_report="$fixture_dir/worker-stop.json"
+jq '.fault_mode = "worker-stop" |
+    .worker_stop = {node:"worker-a",container_id:"container-123",node_not_ready_observed:true,same_container_restarted:true} |
+    .target.old_uid = "same-pod" |
+    .target.new_uid = "same-pod" |
+    .target.new_restart_count = 1' "$valid_report" >"$worker_stop_report"
+matching_e2e_report_is_valid "$worker_stop_report" "$runtime_evidence"
+
+missing_worker_stop_evidence="$fixture_dir/missing-worker-stop-evidence.json"
+jq '.fault_mode = "worker-stop" | del(.worker_stop)' "$valid_report" >"$missing_worker_stop_evidence"
+if matching_e2e_report_is_valid "$missing_worker_stop_evidence" "$runtime_evidence"; then
+  printf '%s\n' 'Worker-stop report without worker evidence unexpectedly passed.' >&2
+  exit 1
+fi
+
+e2e_script="$script_dir/run-matching-e2e-certification.sh"
+grep -Fq 'helper_node=' "$e2e_script"
+grep -Fq 'simplematch.io/node-pool=local-resilience' "$e2e_script"
+grep -Fq 'distinct from $old_node' "$e2e_script"
+grep -Fq 'actual_helper_node' "$e2e_script"
+
 invalid_node_report="$fixture_dir/invalid-node.json"
 jq '.target.new_node = "worker-b"' "$valid_report" >"$invalid_node_report"
 if matching_e2e_report_is_valid "$invalid_node_report" "$runtime_evidence"; then

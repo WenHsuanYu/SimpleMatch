@@ -60,6 +60,13 @@ grep -Fq 'Dockerfile.flyway-runner' <<<"$dry_run" || {
   echo "Local image dry-run does not include the Flyway runner Dockerfile." >&2
   exit 1
 }
+boot_override_dry_run="$(SIMPLEMATCH_BOOT_RUN_IMAGE=local/paketo-run:amd64 \
+  "$script_dir/build-local-images.sh" --dry-run --service account-service)"
+grep -Fq -- '--runImage=local/paketo-run:amd64' <<<"$boot_override_dry_run" &&
+grep -Fq -- '--pullPolicy=IF_NOT_PRESENT' <<<"$boot_override_dry_run" || {
+  echo "Local image build does not support a bounded local Boot run-image override." >&2
+  exit 1
+}
 
 grep -Fq 'COPY --from=source / /' "$repo_root/deploy/docker/Dockerfile.kind-normalized" || {
   echo "Kind image normalizer does not flatten the local transfer image." >&2
@@ -67,6 +74,18 @@ grep -Fq 'COPY --from=source / /' "$repo_root/deploy/docker/Dockerfile.kind-norm
 }
 
 bash -n "$repo_root/scripts/normalize-local-images-for-kind.sh"
+bash -n "$repo_root/scripts/verify-local-boot-run-image.sh"
+grep -Fq 'docker image save --platform' \
+  "$repo_root/scripts/verify-local-boot-run-image.sh" || {
+  echo "Local Boot run-image preflight does not verify platform exportability." >&2
+  exit 1
+}
+boot_preflight_dry_run="$(SIMPLEMATCH_BOOT_RUN_IMAGE=local/paketo-run:amd64 \
+  "$repo_root/scripts/build-local-images.sh" --dry-run --service account-service)"
+grep -Fq 'verify-local-boot-run-image.sh' <<<"$boot_preflight_dry_run" || {
+  echo "Local image build does not run the Boot run-image preflight." >&2
+  exit 1
+}
 grep -Fq 'bootBuildImage source retained' "$repo_root/scripts/normalize-local-images-for-kind.sh" || {
   echo "Kind image normalizer does not retain the bootBuildImage source." >&2
   exit 1
@@ -170,6 +189,8 @@ grep -Fq 'normalize-local-images-for-kind.sh' <<<"$certification_dry_run" || {
 }
 grep -Fq 'apply_kubernetes_migrations' \
   "$repo_root/scripts/run-local-production-like-certification.sh" &&
+grep -Fq 'apply_kubernetes_topic_provisioning' \
+  "$repo_root/scripts/run-local-production-like-certification.sh" &&
 grep -Fq 'local-kubernetes-migrations.yaml' \
   "$repo_root/scripts/run-local-production-like-certification.sh" &&
 grep -Fq 'local-kubernetes-workloads.yaml' \
@@ -184,11 +205,14 @@ grep -Fq 'document.dig("metadata", "name") == "redis" ? platform_manifest : work
 }
 workload_apply_line="$(grep -n 'run_logged kubernetes-workload-apply kubectl apply -f "\$workload_manifest"' \
   "$repo_root/scripts/run-local-production-like-certification.sh" | tail -1 | cut -d: -f1)"
+barrier_publish_line="$(grep -n 'run_logged kubernetes-open-barriers publish_local_matching_open_barriers' \
+  "$repo_root/scripts/run-local-production-like-certification.sh" | tail -1 | cut -d: -f1)"
 connector_register_line="$(grep -n 'run_logged kubernetes-risk-outbox-connector register_kubernetes_risk_connector' \
   "$repo_root/scripts/run-local-production-like-certification.sh" | tail -1 | cut -d: -f1)"
-[[ -n "$workload_apply_line" && -n "$connector_register_line" &&
+[[ -n "$workload_apply_line" && -n "$barrier_publish_line" && -n "$connector_register_line" &&
+  "$barrier_publish_line" -lt "$workload_apply_line" &&
   "$workload_apply_line" -lt "$connector_register_line" ]] || {
-  echo "Local certification must start Kafka Connect before registering the connector." >&2
+  echo "Local certification must publish the durable Matching barrier before starting workloads." >&2
   exit 1
 }
 certification_migration_function="$(sed -n '/^apply_kubernetes_migrations()/,/^register_kubernetes_risk_connector()/p' \
@@ -254,6 +278,11 @@ grep -Fq 'kubernetes-open-barriers' \
 grep -Fq -- '--matching-fleet-only' \
   "$repo_root/scripts/run-local-production-like-certification.sh" || {
   echo "Local certification does not support a clean Matching-only retest." >&2
+  exit 1
+}
+grep -Fq 'simplematch-matching:${image_tag}' \
+  "$repo_root/scripts/run-local-production-like-certification.sh" || {
+  echo "Matching-only retest does not isolate the Matching image load." >&2
   exit 1
 }
 grep -Fq 'select_matching_workload' \

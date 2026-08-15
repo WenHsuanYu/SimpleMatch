@@ -42,7 +42,7 @@ matching_e2e_report_is_valid() {
     (.replay_lag_seconds | type == "number" and . >= 0 and . <= 60) and
     (.replacement_seconds | type == "number" and . >= 0 and . <= 120) and
     (.command_end_offset | type == "number") and
-    (.fault_mode == "pod-delete" or .fault_mode == "process-crash") and
+    (.fault_mode == "pod-delete" or .fault_mode == "process-crash" or .fault_mode == "worker-stop") and
     (.target.old_uid | type == "string" and length > 0) and
     (.target.new_uid | type == "string" and length > 0) and
     (.target.old_node | type == "string" and length > 0) and
@@ -53,6 +53,12 @@ matching_e2e_report_is_valid() {
     (.target.new_restart_count | type == "number" and . >= 0) and
     (if .fault_mode == "process-crash"
      then .target.new_uid == .target.old_uid and .target.new_restart_count > .target.old_restart_count
+     elif .fault_mode == "worker-stop"
+     then (.worker_stop | type == "object") and
+       (.worker_stop.node == .target.old_node) and
+       (.worker_stop.container_id | type == "string" and length > 0) and
+       (.worker_stop.node_not_ready_observed == true) and
+       (.worker_stop.same_container_restarted == true)
      else .target.new_uid != .target.old_uid
      end) and
     (.evidence.e2e_before | type == "string" and length > 0) and

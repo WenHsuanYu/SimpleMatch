@@ -37,6 +37,7 @@ default_run_token="$(generate_run_token)"
 run_token="${run_token_override:-$default_run_token}"
 helper_pod="matching-e2e-certifier-$run_token"
 helper_path="/tmp/simplematch-matching-e2e-certification"
+helper_node=""
 
 usage() {
   cat <<'EOF'
@@ -46,7 +47,7 @@ Options:
   --namespace NAME       Existing local certification namespace.
   --context NAME         Kubernetes context (default: kind-simplematch-live).
   --report PATH          E2E metrics report path.
-  --fault-mode MODE      pod-delete or process-crash (default: pod-delete).
+  --fault-mode MODE      pod-delete, process-crash, or worker-stop (default: pod-delete).
   --help                 Show this help.
 
 The command runs only the deployed Matching E2E phase. It does not rebuild the
@@ -98,15 +99,15 @@ done
 [[ "$run_token" =~ ^[0-9a-f]{8}$ ]] || die "run token must be eight lowercase hexadecimal characters"
 [[ "$namespace" =~ ^[a-z0-9]([-a-z0-9]*[a-z0-9])?$ ]] || die "namespace is not a valid Kubernetes name"
 case "$fault_mode" in
-  pod-delete|process-crash) ;;
-  *) die "fault mode must be pod-delete or process-crash" ;;
+  pod-delete|process-crash|worker-stop) ;;
+  *) die "fault mode must be pod-delete, process-crash, or worker-stop" ;;
 esac
 
 for tool in kind kubectl jq base64 od; do
   command -v "$tool" >/dev/null 2>&1 || die "$tool is required"
 done
-if [[ "$fault_mode" == process-crash ]]; then
-  command -v docker >/dev/null 2>&1 || die "docker is required for process-crash mode"
+if [[ "$fault_mode" == process-crash || "$fault_mode" == worker-stop ]]; then
+  command -v docker >/dev/null 2>&1 || die "docker is required for process-crash or worker-stop mode"
 fi
 [[ -x "$helper_binary" ]] || die "E2E helper is not executable: $helper_binary"
 
@@ -143,7 +144,19 @@ configmap_value() {
 cleanup_helper() {
   kns delete pod "$helper_pod" --ignore-not-found --wait=true >/dev/null 2>&1 || true
 }
-trap cleanup_helper EXIT
+
+worker_stop_node=""
+cleanup_worker() {
+  if [[ -n "$worker_stop_node" ]]; then
+    docker start "$worker_stop_node" >/dev/null 2>&1 || true
+  fi
+}
+
+cleanup() {
+  cleanup_helper
+  cleanup_worker
+}
+trap cleanup EXIT
 
 kind get clusters | grep -Fxq "$cluster_name" || die "kind cluster is not available: $cluster_name"
 kube get nodes -o json >"$evidence_dir/cluster-nodes.json"
@@ -198,6 +211,20 @@ if [[ -z "$helper_image" ]]; then
   helper_image="$target_image"
 fi
 
+if [[ "$fault_mode" == worker-stop ]]; then
+  helper_node="$(kube get nodes \
+    -l simplematch.io/node-pool=local-resilience \
+    -o json | jq -r --arg excluded "$old_node" '
+      [.items[]
+       | select(.metadata.name != $excluded)
+       | select(any(.status.conditions[]?; .type == "Ready" and .status == "True"))
+       | .metadata.name]
+      | sort
+      | .[0] // empty
+    ')"
+  [[ -n "$helper_node" ]] || die "worker-stop requires a Ready helper worker distinct from $old_node"
+fi
+
 kns get pvc "$old_pvc" -o json >"$evidence_dir/replacement/pvc-before.json"
 old_pv="$(jq -r '.spec.volumeName' "$evidence_dir/replacement/pvc-before.json")"
 [[ -n "$old_pv" && "$old_pv" != null ]] || die "matching-0 PVC is not bound"
@@ -218,10 +245,26 @@ while IFS= read -r pod; do
 done < <(jq -r '.items[] | .metadata.name' "$evidence_dir/pods-before.json" | sort)
 
 kns delete pod "$helper_pod" --ignore-not-found --wait=true >/dev/null
-kns run "$helper_pod" \
-  --image="$helper_image" --image-pull-policy=IfNotPresent --restart=Never \
-  --command -- sleep 600 >/dev/null
+helper_run_args=(
+  run "$helper_pod"
+  --image="$helper_image"
+  --image-pull-policy=IfNotPresent
+  --restart=Never
+)
+if [[ -n "$helper_node" ]]; then
+  helper_run_args+=(
+    --overrides
+    "$(jq -cn --arg node "$helper_node" '{spec:{nodeName:$node}}')"
+  )
+fi
+helper_run_args+=(--command -- sleep 600)
+kns "${helper_run_args[@]}" >/dev/null
 kns wait --for=condition=Ready "pod/$helper_pod" --timeout=120s >/dev/null
+if [[ -n "$helper_node" ]]; then
+  actual_helper_node="$(kns get pod "$helper_pod" -o json | jq -r '.spec.nodeName // empty')"
+  [[ "$actual_helper_node" == "$helper_node" ]] ||
+    die "worker-stop helper moved from its isolated worker: $actual_helper_node"
+fi
 base64 "$helper_binary" | kns exec -i "$helper_pod" -- \
   sh -c "base64 -d >$helper_path && chmod 755 $helper_path"
 
@@ -247,10 +290,13 @@ new_node=""
 new_restart_count=""
 replacement_ready_ms=""
 replacement_deadline=$(( $(date +%s) + replacement_timeout_seconds ))
+worker_container_id=""
+worker_not_ready_observed=false
+same_container_restarted=false
 if [[ "$fault_mode" == pod-delete ]]; then
   kns delete pod "$target_name" --wait=false >"$evidence_dir/replacement/delete.txt"
   kns wait --for=delete "pod/$target_name" --timeout=60s >/dev/null
-else
+elif [[ "$fault_mode" == process-crash ]]; then
   node_cluster="$(docker inspect --format '{{ index .Config.Labels "io.x-k8s.kind.cluster" }}' \
     "$old_node" 2>/dev/null || true)"
   [[ "$node_cluster" == "$cluster_name" ]] ||
@@ -272,6 +318,36 @@ else
       "$old_node" "$runtime_container_id" "$old_uid"
     docker exec "$old_node" crictl stop --timeout=0 "$runtime_container_id"
   } >"$evidence_dir/replacement/process-crash.txt" 2>&1
+else
+  node_cluster="$(docker inspect --format '{{ index .Config.Labels "io.x-k8s.kind.cluster" }}' \
+    "$old_node" 2>/dev/null || true)"
+  node_role="$(docker inspect --format '{{ index .Config.Labels "io.x-k8s.kind.role" }}' \
+    "$old_node" 2>/dev/null || true)"
+  [[ "$node_cluster" == "$cluster_name" && "$node_role" == worker ]] ||
+    die "worker-stop target is not a worker in the selected kind cluster: $old_node"
+  worker_stop_node="$old_node"
+  worker_container_id="$(docker inspect --format '{{.Id}}' "$old_node")"
+  [[ "$worker_container_id" =~ ^[0-9a-f]{64}$ ]] ||
+    die "worker-stop target container identity is incomplete: $old_node"
+  {
+    printf 'node=%s\ncontainer_id=%s\npod_uid=%s\n' \
+      "$old_node" "$worker_container_id" "$old_uid"
+    docker stop --time 0 "$old_node"
+  } >"$evidence_dir/replacement/worker-stop.txt" 2>&1
+  for _ in $(seq 1 60); do
+    node_after_stop="$(kube get node "$old_node" -o json 2>/dev/null || true)"
+    if [[ -n "$node_after_stop" ]] && ! jq -e '
+      any(.status.conditions[]?; .type == "Ready" and .status == "True")
+    ' <<<"$node_after_stop" >/dev/null; then
+      worker_not_ready_observed=true
+      break
+    fi
+    sleep 2
+  done
+  [[ "$worker_not_ready_observed" == true ]] ||
+    die "worker loss was not observed for $old_node within the fault observation bound"
+  docker start "$old_node" >>"$evidence_dir/replacement/worker-stop.txt" 2>&1
+  same_container_restarted=true
 fi
 while [[ "$(date +%s)" -le "$replacement_deadline" ]]; do
   target_after="$(kns get pod "$target_name" -o json 2>/dev/null || true)"
@@ -284,10 +360,12 @@ while [[ "$(date +%s)" -le "$replacement_deadline" ]]; do
     if [[ "$fault_mode" == pod-delete ]]; then
       [[ -n "$candidate_uid" && "$candidate_uid" != "$old_uid" && "$candidate_ready" == true ]] &&
         replacement_observed=true
-    else
+    elif [[ "$fault_mode" == process-crash ]]; then
       [[ -n "$candidate_uid" && "$candidate_uid" == "$old_uid" && \
         "$candidate_restart_count" =~ ^[0-9]+$ && "$candidate_restart_count" -gt "$old_restart_count" && \
         "$candidate_ready" == true ]] && replacement_observed=true
+    else
+      [[ -n "$candidate_uid" && "$candidate_ready" == true ]] && replacement_observed=true
     fi
     if [[ "$replacement_observed" == true ]]; then
       new_uid="$candidate_uid"
@@ -374,6 +452,9 @@ jq -n \
   --argjson replacement_seconds "$replacement_seconds" --argjson replay_lag_seconds "$replay_lag_seconds" \
   --argjson ring_before "$ring_before" --argjson ring_after "$ring_after" \
   --argjson replacement_limit "$replacement_timeout_seconds" --argjson replay_limit "$replay_timeout_seconds" \
+  --arg worker_container_id "$worker_container_id" \
+  --argjson worker_not_ready_observed "$worker_not_ready_observed" \
+  --argjson same_container_restarted "$same_container_restarted" \
   --arg command_end_offset "$command_end_offset" \
   --arg e2e_before "$(basename -- "$evidence_dir/e2e-before.json")" \
   --arg e2e_after "$(basename -- "$evidence_dir/e2e-after.json")" \
@@ -388,6 +469,9 @@ jq -n \
    fault_mode:$fault_mode,
    target:{pod:$target,old_uid:$old_uid,new_uid:$new_uid,old_node:$old_node,new_node:$new_node,
      pvc:$pvc,pv:$pv,old_restart_count:$old_restart_count,new_restart_count:$new_restart_count},
+   worker_stop:{node:$old_node,container_id:$worker_container_id,
+     node_not_ready_observed:$worker_not_ready_observed,
+     same_container_restarted:$same_container_restarted},
    kafka_e2e_latency_ns:$latency,kafka_e2e_latency_definition:$latency_definition,
    ring_occupancy:{before:$ring_before,after:$ring_after},
    loss:$loss,duplicates:$duplicates,
@@ -397,7 +481,13 @@ jq -n \
    evidence:{e2e_before:$e2e_before,e2e_after:$e2e_after},
    observed:{before:{loss:$before_loss,duplicates:$before_duplicates},after:{loss:$after_loss,duplicates:$after_duplicates}},
    replay_lag_definition:"time from replacement Ready until runtime metrics show READY, zero pending inputs, zero pending publications, and either a pending commit covering or an acknowledged commit completing the post-replacement command batch",
-   claim_boundary:["local deployed Kafka E2E and the selected process/Pod recovery evidence","replay lag is bounded local offset catch-up evidence for the marker batch","not full-day replay, soak, production latency, automatic failover, or cross-node storage HA"],
+   claim_boundary:(if $fault_mode == "worker-stop"
+     then ["local deployed Kafka E2E and same-worker recovery after one kind worker stop",
+     "the affected Matching owner remains tied to its node-local PVC until that worker returns",
+       "not cross-node takeover, PVC loss recovery, 24-hour wall-clock endurance, production latency, or external HA"]
+     else ["local deployed Kafka E2E and the selected process/Pod recovery evidence",
+       "replay lag is bounded local offset catch-up evidence for the marker batch",
+       "not full-day replay, soak, production latency, automatic failover, or cross-node storage HA"] end),
    failure_reason:(if $passed then null else "one or more local E2E assertions exceeded the accepted bound" end)}' \
   >"$report_path"
 

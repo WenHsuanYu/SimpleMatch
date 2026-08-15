@@ -687,18 +687,23 @@ publish_local_matching_open_barriers() {
 apply_kubernetes_migrations() {
   local migration_manifest="$1"
   local workload
-  kubectl -n "$namespace" wait \
-    --for=jsonpath='{.status.readyReplicas}'=3 statefulset/kafka --timeout=300s
-  kubectl apply -f "$migration_manifest" \
-    --selector 'app.kubernetes.io/component=topic-provisioning'
-  kubectl -n "$namespace" wait --for=condition=complete \
-    job/kafka-topic-provisioning --timeout=300s
+  apply_kubernetes_topic_provisioning "$migration_manifest"
   for workload in account-service risk-service persistence market-data-projection marketdata-publisher query-service quickfix-gateway; do
     kubectl apply -f "$migration_manifest" \
       --selector "app.kubernetes.io/name=${workload}-flyway"
     kubectl -n "$namespace" wait --for=condition=complete \
       "job/${workload}-flyway" --timeout=300s
   done
+}
+
+apply_kubernetes_topic_provisioning() {
+  local migration_manifest="$1"
+  kubectl -n "$namespace" wait \
+    --for=jsonpath='{.status.readyReplicas}'=3 statefulset/kafka --timeout=300s
+  kubectl apply -f "$migration_manifest" \
+    --selector 'app.kubernetes.io/component=topic-provisioning'
+  kubectl -n "$namespace" wait --for=condition=complete \
+    job/kafka-topic-provisioning --timeout=300s
 }
 
 register_kubernetes_risk_connector() (
@@ -910,9 +915,15 @@ if [[ "$skip_kubernetes" == false ]]; then
     print_command register_kubernetes_risk_connector
     print_command bash "$repo_root/scripts/verify-matching-fleet-live.sh" --namespace "$namespace" --allow-shared-node --allow-local-image
   else
-    run_logged kubernetes-image-normalization bash \
-      "$repo_root/scripts/normalize-local-images-for-kind.sh" --tag "$image_tag"
-    mapfile -t local_images < <(bash "$repo_root/scripts/build-local-images.sh" --tag "$image_tag" --list | awk -F'|' '{print $4}')
+    if [[ "$matching_fleet_only" == true ]]; then
+      run_logged kubernetes-image-normalization docker image inspect \
+        "simplematch-matching:${image_tag}"
+      local_images=("simplematch-matching:${image_tag}")
+    else
+      run_logged kubernetes-image-normalization bash \
+        "$repo_root/scripts/normalize-local-images-for-kind.sh" --tag "$image_tag"
+      mapfile -t local_images < <(bash "$repo_root/scripts/build-local-images.sh" --tag "$image_tag" --list | awk -F'|' '{print $4}')
+    fi
     run_logged kubernetes-image-load kind load docker-image --name "$kind_cluster" "${local_images[@]}"
     matching_digest="$(docker image inspect --format '{{.Id}}' "simplematch-matching:${image_tag}")"
     [[ "$matching_digest" =~ ^sha256:[0-9a-f]{64}$ ]] || die \
@@ -935,13 +946,16 @@ if [[ "$skip_kubernetes" == false ]]; then
       matching_workload_manifest="$evidence_dir/local-kubernetes-matching-workload.yaml"
       run_logged kubernetes-matching-manifest select_matching_workload \
         "$workload_manifest" "$matching_workload_manifest"
+      run_logged kubernetes-topic-provisioning apply_kubernetes_topic_provisioning \
+        "$migration_manifest"
+      run_logged kubernetes-open-barriers publish_local_matching_open_barriers "$matching_digest"
       run_logged kubernetes-matching-apply kubectl apply -f "$matching_workload_manifest"
     else
     run_logged kubernetes-migrations apply_kubernetes_migrations "$migration_manifest"
+    run_logged kubernetes-open-barriers publish_local_matching_open_barriers "$matching_digest"
     run_logged kubernetes-workload-apply kubectl apply -f "$workload_manifest"
     run_logged kubernetes-risk-outbox-connector register_kubernetes_risk_connector
     fi
-    run_logged kubernetes-open-barriers publish_local_matching_open_barriers "$matching_digest"
     if [[ "$matching_fleet_only" == true ]]; then
       run_logged kubernetes-matching-workloads wait_for_local_matching_fleet
     else
