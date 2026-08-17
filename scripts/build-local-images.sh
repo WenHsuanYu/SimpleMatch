@@ -11,6 +11,7 @@ list_only=false
 skip_spring=false
 skip_native=false
 skip_flyway=false
+skip_verifier=false
 selected_services=()
 
 spring_images=(
@@ -31,10 +32,12 @@ Usage:
 
 Options:
   --tag TAG             Local image tag (default: SIMPLEMATCH_LOCAL_IMAGE_TAG or local).
-  --service NAME        Build one named service, matching, or flyway-runner.
+  --service NAME        Build one named service, matching, flyway-runner, or
+                        risk-matching-e2e-verifier.
   --skip-spring         Skip Spring Boot images.
   --skip-native         Skip the native Matching image.
   --skip-flyway         Skip the Flyway runner image.
+  --skip-verifier       Skip the RM-1 Risk-to-Matching verifier image.
   --dry-run             Print image build commands without executing them.
   --list                List the local image inventory and exit.
   --help                Show this help.
@@ -74,6 +77,10 @@ while [[ $# -gt 0 ]]; do
       ;;
     --skip-flyway)
       skip_flyway=true
+      shift
+      ;;
+    --skip-verifier)
+      skip_verifier=true
       shift
       ;;
     --dry-run)
@@ -120,6 +127,8 @@ print_inventory() {
   done
   printf 'flyway|flyway-runner|deploy/docker/Dockerfile.flyway-runner|%s\n' \
     "$(image_name simplematch/flyway-runner)"
+  printf 'verification|risk-matching-e2e-verifier|deploy/docker/Dockerfile.risk-matching-e2e-verifier|%s\n' \
+    "$(image_name simplematch/risk-matching-e2e-verifier)"
   printf 'native|matching|deploy/docker/Dockerfile.matching|%s\n' \
     "$(image_name simplematch-matching)"
 }
@@ -173,6 +182,13 @@ if [[ "$skip_flyway" == false ]] && selected flyway-runner; then
   run_command docker build \
     --file "$repo_root/deploy/docker/Dockerfile.flyway-runner" \
     --tag "$(image_name simplematch/flyway-runner)" \
+    "$repo_root"
+fi
+
+if [[ "$skip_verifier" == false ]] && selected risk-matching-e2e-verifier; then
+  run_command docker build \
+    --file "$repo_root/deploy/docker/Dockerfile.risk-matching-e2e-verifier" \
+    --tag "$(image_name simplematch/risk-matching-e2e-verifier)" \
     "$repo_root"
 fi
 

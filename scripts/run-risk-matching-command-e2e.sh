@@ -1,15 +1,23 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
+script_dir="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
+repo_root="$(cd -- "$script_dir/.." && pwd)"
+
 # RM-1 deployed verification intentionally reuses an already-running local production-like
-# namespace. The script owns only a run-scoped Account limit fixture and one ephemeral verifier Pod;
-# it never creates/deletes the kind cluster or the application namespace.
+# namespace. Kubernetes execution policy lives in the repository-owned Job manifest; this shell
+# owns orchestration only: run facts, prerequisite checks, fixture setup, evidence collection, and
+# cleanup.
 namespace=""
 trading_day=""
 evidence_dir=""
-image="${SIMPLEMATCH_RM1_VERIFIER_IMAGE:-simplematch/flyway-runner:local}"
 timeout_seconds="${SIMPLEMATCH_RM1_VERIFIER_TIMEOUT_SECONDS:-90}"
 keep_helper=false
+
+job_name="risk-matching-e2e-verifier"
+run_config_name="risk-matching-e2e-run"
+job_manifest="$repo_root/deploy/k8s/verification/risk-matching-e2e-verifier-job.yaml"
+verifier_image="simplematch/risk-matching-e2e-verifier:local"
 
 usage() {
   cat <<'EOF'
@@ -18,7 +26,6 @@ Usage:
     --namespace NAME \
     --trading-day YYYY-MM-DD \
     --evidence-dir PATH \
-    [--image IMAGE] \
     [--timeout-seconds N] \
     [--keep-helper]
 
@@ -27,6 +34,13 @@ Proves the deployed RM-1 path:
 
 The namespace must already have been created by the local production-like certification workflow.
 The script does not create the kind cluster and does not delete application resources.
+
+The verifier uses the repository-owned Job manifest:
+  deploy/k8s/verification/risk-matching-e2e-verifier-job.yaml
+
+--keep-helper preserves the verifier Job and its immutable run ConfigMap for inspection. A later run
+in the same namespace will intentionally refuse to start until those retained helper resources are
+removed.
 EOF
 }
 
@@ -40,7 +54,6 @@ while [[ $# -gt 0 ]]; do
     --namespace) namespace="${2:?--namespace requires a value}"; shift 2 ;;
     --trading-day) trading_day="${2:?--trading-day requires a value}"; shift 2 ;;
     --evidence-dir) evidence_dir="${2:?--evidence-dir requires a value}"; shift 2 ;;
-    --image) image="${2:?--image requires a value}"; shift 2 ;;
     --timeout-seconds) timeout_seconds="${2:?--timeout-seconds requires a value}"; shift 2 ;;
     --keep-helper) keep_helper=true; shift ;;
     --help|-h) usage; exit 0 ;;
@@ -53,10 +66,13 @@ done
   '--trading-day must use YYYY-MM-DD'
 [[ -n "$evidence_dir" ]] || { usage >&2; die '--evidence-dir is required'; }
 [[ "$timeout_seconds" =~ ^[1-9][0-9]*$ ]] || die '--timeout-seconds must be a positive integer'
+(( timeout_seconds <= 300 )) || die \
+  '--timeout-seconds must not exceed 300; the verifier Job has a separate 600-second active deadline'
 
-for tool in kubectl jq curl awk sed grep date seq sleep tail; do
+for tool in kubectl jq curl awk sed grep date seq sleep tail base64; do
   command -v "$tool" >/dev/null 2>&1 || die "$tool is required"
 done
+[[ -f "$job_manifest" ]] || die "verifier Job manifest does not exist: $job_manifest"
 
 mkdir -p "$evidence_dir"
 evidence_dir="$(cd -- "$evidence_dir" && pwd)"
@@ -67,13 +83,11 @@ evidence_dir="$(cd -- "$evidence_dir" && pwd)"
 [[ -r /proc/sys/kernel/random/uuid ]] || die '/proc/sys/kernel/random/uuid is required'
 account_id="$(cat /proc/sys/kernel/random/uuid)"
 run_id="rm1-$(date -u +%Y%m%d-%H%M%S)-$$"
-helper_name="rm1-risk-matching-${run_id#rm1-}"
-helper_name="${helper_name,,}"
-helper_name="${helper_name//_/-}"
-helper_name="${helper_name:0:63}"
 port_forward_pid=""
 port_forward_log="$evidence_dir/kafka-connect-port-forward.log"
-helper_created=false
+job_created=false
+run_config_created=false
+helper_pod=""
 
 collect_diagnostics() {
   # Diagnostics are best-effort by design: they must never replace the original invariant failure.
@@ -87,9 +101,16 @@ collect_diagnostics() {
   kubectl -n "$namespace" logs -l app.kubernetes.io/name=account-service \
     --all-containers=true --prefix=true --tail=250 \
     >"$evidence_dir/diagnostics-account.log" 2>&1 || true
-  if [[ "$helper_created" == true ]]; then
-    kubectl -n "$namespace" logs "pod/$helper_name" --all-containers=true \
+
+  if [[ "$job_created" == true ]]; then
+    kubectl -n "$namespace" describe job "$job_name" \
+      >"$evidence_dir/diagnostics-verifier-job.txt" 2>&1 || true
+    kubectl -n "$namespace" logs "job/$job_name" --all-containers=true \
       >"$evidence_dir/diagnostics-helper.log" 2>&1 || true
+  fi
+  if [[ "$run_config_created" == true ]]; then
+    kubectl -n "$namespace" get configmap "$run_config_name" -o json \
+      >"$evidence_dir/diagnostics-run-config.json" 2>&1 || true
   fi
 }
 
@@ -108,9 +129,15 @@ cleanup() {
     fi
   fi
 
-  if [[ "$helper_created" == true && "$keep_helper" == false ]]; then
-    kubectl -n "$namespace" delete pod "$helper_name" --ignore-not-found \
-      --wait=false >/dev/null 2>&1 || true
+  if [[ "$keep_helper" == false ]]; then
+    if [[ "$job_created" == true ]]; then
+      kubectl -n "$namespace" delete job "$job_name" --ignore-not-found \
+        --wait=false >/dev/null 2>&1 || true
+    fi
+    if [[ "$run_config_created" == true ]]; then
+      kubectl -n "$namespace" delete configmap "$run_config_name" --ignore-not-found \
+        --wait=false >/dev/null 2>&1 || true
+    fi
   fi
 
   trap - EXIT
@@ -125,6 +152,14 @@ current_context="$(kubectl config current-context)"
   "current Kubernetes context=$current_context, expected canonical $expected_context"
 kubectl get namespace "$namespace" >/dev/null 2>&1 || die "namespace does not exist: $namespace"
 
+# Fixed helper identities deliberately serialize this verification within one disposable namespace.
+# Silent replacement would destroy failure evidence and could make two concurrent orders appear to
+# belong to one run, so stale or retained resources require an explicit operator decision.
+if kubectl -n "$namespace" get job "$job_name" >/dev/null 2>&1 \
+    || kubectl -n "$namespace" get configmap "$run_config_name" >/dev/null 2>&1; then
+  die "verifier helper resources already exist; inspect or delete job/$job_name and configmap/$run_config_name before rerunning"
+fi
+
 # These are runtime prerequisites, not completion claims. Waiting here prevents an order rejection
 # caused merely by racing service startup from being misreported as an RM-1 routing failure.
 kubectl -n "$namespace" rollout status deployment/risk-service --timeout=300s >/dev/null
@@ -133,7 +168,7 @@ kubectl -n "$namespace" rollout status deployment/kafka-connect --timeout=300s >
 kubectl -n "$namespace" rollout status statefulset/postgres --timeout=300s >/dev/null
 kubectl -n "$namespace" rollout status statefulset/matching --timeout=600s >/dev/null
 
-# The mounted ConfigMap is the runtime authority for both Risk and Matching. The Java verifier mounts
+# The mounted ConfigMap is the runtime authority for both Risk and Matching. The verifier Job mounts
 # the same object and runs the shared startup validator, so a stale/malformed/checksum-mismatched
 # artifact fails before a command is submitted.
 kubectl -n "$namespace" get configmap matching-daily-artifact -o json \
@@ -230,113 +265,109 @@ jq -n \
   --arg tradingDay "$trading_day" \
   --arg accountLimitDay "$account_limit_day" \
   --arg accountId "$account_id" \
-  --arg verifierImage "$image" \
-  '{
-    runId:$runId,
-    namespace:$namespace,
-    tradingDay:$tradingDay,
-    accountLimitDay:$accountLimitDay,
-    accountId:$accountId,
-    verifierImage:$verifierImage
-  }' >"$evidence_dir/run-metadata.json"
+  --arg verifierImage "$verifier_image" \
+  '{runId:$runId, namespace:$namespace, tradingDay:$tradingDay,
+    accountLimitDay:$accountLimitDay, accountId:$accountId, verifierImage:$verifierImage}' \
+  >"$evidence_dir/run-metadata.json"
 
-# The helper runs inside the namespace so Kafka's advertised in-cluster addresses are directly
-# reachable. Reusing flyway-runner is intentional for the first retained verifier: it already
-# contains the repository source and Java 25. The command copies the read-only image workspace into
-# /tmp before Gradle so the Pod can keep a read-only root filesystem.
-cat <<YAML | kubectl -n "$namespace" apply -f - >/dev/null
-apiVersion: v1
-kind: Pod
-metadata:
-  name: $helper_name
-  labels:
-    app.kubernetes.io/name: risk-matching-e2e-verifier
-    app.kubernetes.io/component: verification
-    app.kubernetes.io/part-of: simplematch
-spec:
-  restartPolicy: Never
-  securityContext:
-    seccompProfile:
-      type: RuntimeDefault
-  containers:
-    - name: verifier
-      image: $image
-      imagePullPolicy: IfNotPresent
-      command: ["/bin/bash", "-lc"]
-      args:
-        - |
-          set -euo pipefail
-          work_dir=/tmp/simplematch-rm1-workspace
-          cp -a /workspace/. "\$work_dir/"
-          cd "\$work_dir"
-          verifier_args="--artifact-path /etc/simplematch/market-reference/market_reference.json "
-          verifier_args+="--checksum-path /etc/simplematch/market-reference/market_reference.sha256 "
-          verifier_args+="--trading-day $trading_day --account-id $account_id "
-          verifier_args+="--run-id $run_id --evidence-dir /evidence "
-          verifier_args+="--timeout-seconds $timeout_seconds"
-          exec ./gradlew --no-daemon \
-            --gradle-user-home /tmp/gradle \
-            --project-cache-dir /tmp/gradle-project \
-            :tools:risk-matching-e2e-verifier:run \
-            --args="\$verifier_args"
-      securityContext:
-        allowPrivilegeEscalation: false
-        capabilities:
-          drop: ["ALL"]
-        readOnlyRootFilesystem: true
-        runAsNonRoot: true
-      resources:
-        requests:
-          cpu: 250m
-          memory: 512Mi
-        limits:
-          cpu: "2"
-          memory: 2Gi
-      volumeMounts:
-        - name: runtime-tmp
-          mountPath: /tmp
-        - name: evidence
-          mountPath: /evidence
-        - name: market-reference
-          mountPath: /etc/simplematch/market-reference
-          readOnly: true
-  volumes:
-    - name: runtime-tmp
-      emptyDir: {}
-    - name: evidence
-      emptyDir: {}
-    - name: market-reference
-      configMap:
-        name: matching-daily-artifact
-        items:
-          - key: market_reference.json
-            path: market_reference.json
-          - key: market_reference.sha256
-            path: market_reference.sha256
-YAML
-helper_created=true
+# Run-specific values are data, not deployment policy. Keep them in one immutable ConfigMap rather
+# than rendering them into YAML. The stable Job manifest consumes these exact keys with envFrom.
+kubectl -n "$namespace" create configmap "$run_config_name" \
+  --from-literal="SIMPLEMATCH_RM1_TRADING_DAY=$trading_day" \
+  --from-literal="SIMPLEMATCH_RM1_ACCOUNT_ID=$account_id" \
+  --from-literal="SIMPLEMATCH_RM1_RUN_ID=$run_id" \
+  --from-literal="SIMPLEMATCH_RM1_TIMEOUT_SECONDS=$timeout_seconds" \
+  --dry-run=client -o json \
+  | jq '
+      .immutable = true
+      | .metadata.labels = {
+          "app.kubernetes.io/name":"risk-matching-e2e-verifier",
+          "app.kubernetes.io/component":"verification",
+          "app.kubernetes.io/part-of":"simplematch"
+        }
+    ' \
+  | kubectl -n "$namespace" create -f - >/dev/null
+run_config_created=true
+kubectl -n "$namespace" get configmap "$run_config_name" -o json \
+  >"$evidence_dir/verifier-run-config.json"
 
-# Wait for either success or a terminal failure. kubectl wait for Ready is not appropriate for a
-# short-lived batch Pod because a fast successful process can become Succeeded before Ready is
-# observed.
-deadline_epoch="$(( $(date +%s) + timeout_seconds + 300 ))"
+# The Job manifest owns the Pod security/resources/volumes and the dedicated verifier image.
+# No inline YAML, repository copy, or runtime Gradle invocation is permitted in this orchestration
+# path.
+kubectl -n "$namespace" create -f "$job_manifest" >/dev/null
+job_created=true
+
+# Resolve the controller-created Pod once. The fixed Job name and one-run-at-a-time preflight make
+# this selector unambiguous.
+for _ in $(seq 1 60); do
+  helper_pod="$(
+    kubectl -n "$namespace" get pods -l "job-name=$job_name" -o json 2>/dev/null \
+      | jq -r '.items[0].metadata.name // empty'
+  )"
+  [[ -n "$helper_pod" ]] && break
+  sleep 1
+done
+[[ -n "$helper_pod" ]] || die 'verifier Job did not create a Pod'
+
+# The dedicated image keeps its wrapper alive after the Java verifier exits and exposes .ready only
+# after all JSON evidence has been flushed. This explicit hand-off avoids trying to kubectl cp from
+# an already terminated container.
+handoff_deadline_epoch="$(( $(date +%s) + timeout_seconds + 240 ))"
 while true; do
-  phase="$(kubectl -n "$namespace" get pod "$helper_name" -o jsonpath='{.status.phase}')"
-  case "$phase" in
-    Succeeded) break ;;
-    Failed)
-      kubectl -n "$namespace" logs "$helper_name" --all-containers=true >&2 || true
-      die 'verifier Pod failed'
-      ;;
-  esac
-  (( $(date +%s) < deadline_epoch )) || die 'verifier Pod exceeded bounded deadline'
+  if kubectl -n "$namespace" exec "$helper_pod" -- \
+      test -f /tmp/evidence/.ready >/dev/null 2>&1; then
+    break
+  fi
+
+  pod_json="$(kubectl -n "$namespace" get pod "$helper_pod" -o json)"
+  phase="$(jq -r '.status.phase // ""' <<<"$pod_json")"
+  if [[ "$phase" == Failed || "$phase" == Succeeded ]]; then
+    kubectl -n "$namespace" logs "$helper_pod" --all-containers=true >&2 || true
+    die "verifier Pod became terminal before evidence hand-off (phase=$phase)"
+  fi
+
+  (( $(date +%s) < handoff_deadline_epoch )) || die \
+    'verifier did not expose evidence before the bounded hand-off deadline'
   sleep 2
 done
 
-kubectl -n "$namespace" logs "$helper_name" --all-containers=true \
+kubectl -n "$namespace" logs "$helper_pod" --all-containers=true \
   >"$evidence_dir/verifier.log" 2>&1 || true
-kubectl -n "$namespace" cp "$helper_name:/evidence/." "$evidence_dir" >/dev/null
+kubectl -n "$namespace" cp "$helper_pod:/tmp/evidence/." "$evidence_dir" >/dev/null
 
+[[ -f "$evidence_dir/.exit-code" ]] || die 'verifier evidence is missing .exit-code'
+verifier_exit_code="$(tr -d '[:space:]' <"$evidence_dir/.exit-code")"
+[[ "$verifier_exit_code" =~ ^[0-9]+$ ]] || die 'verifier .exit-code is malformed'
+
+# Acknowledge evidence collection so the image wrapper can return the original Java verifier status
+# and let the Kubernetes Job reach its truthful terminal condition.
+kubectl -n "$namespace" exec "$helper_pod" -- touch /tmp/evidence/.collected
+
+job_deadline_epoch="$(( $(date +%s) + 60 ))"
+job_terminal=""
+while true; do
+  job_json="$(kubectl -n "$namespace" get job "$job_name" -o json)"
+  if jq -e \
+      '[.status.conditions[]? | select(.type == "Complete" and .status == "True")] | length > 0' \
+      <<<"$job_json" >/dev/null; then
+    job_terminal="Complete"
+    break
+  fi
+  if jq -e \
+      '[.status.conditions[]? | select(.type == "Failed" and .status == "True")] | length > 0' \
+      <<<"$job_json" >/dev/null; then
+    job_terminal="Failed"
+    break
+  fi
+  (( $(date +%s) < job_deadline_epoch )) || die \
+    'verifier Job did not become terminal after evidence acknowledgement'
+  sleep 1
+done
+
+if (( verifier_exit_code != 0 )); then
+  die "typed verifier exited with status $verifier_exit_code"
+fi
+[[ "$job_terminal" == Complete ]] || die 'verifier Job reported Failed after a zero verifier exit code'
 jq -e '.status == "PASS"' "$evidence_dir/verifier-verdict.json" >/dev/null \
   || die 'typed verifier did not report PASS'
 
