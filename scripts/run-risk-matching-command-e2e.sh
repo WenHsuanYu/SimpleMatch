@@ -54,7 +54,7 @@ done
 [[ -n "$evidence_dir" ]] || { usage >&2; die '--evidence-dir is required'; }
 [[ "$timeout_seconds" =~ ^[1-9][0-9]*$ ]] || die '--timeout-seconds must be a positive integer'
 
-for tool in kubectl jq curl awk sed grep date; do
+for tool in kubectl jq curl awk sed grep date seq sleep tail; do
   command -v "$tool" >/dev/null 2>&1 || die "$tool is required"
 done
 
@@ -118,6 +118,11 @@ cleanup() {
 }
 trap cleanup EXIT
 
+kind_cluster="${SIMPLEMATCH_KIND_CLUSTER_NAME:-simplematch-live}"
+expected_context="kind-${kind_cluster}"
+current_context="$(kubectl config current-context)"
+[[ "$current_context" == "$expected_context" ]] || die \
+  "current Kubernetes context=$current_context, expected canonical $expected_context"
 kubectl get namespace "$namespace" >/dev/null 2>&1 || die "namespace does not exist: $namespace"
 
 # These are runtime prerequisites, not completion claims. Waiting here prevents an order rejection
@@ -159,6 +164,7 @@ done
 [[ -n "$connect_port" ]] || die 'could not resolve local Kafka Connect port-forward'
 
 connector_status_url="http://127.0.0.1:${connect_port}/connectors/risk-service-outbox/status"
+printf '%s\n' '{}' >"$evidence_dir/connector-status.json"
 for _ in $(seq 1 60); do
   if curl -fsS "$connector_status_url" >"$evidence_dir/connector-status.json" 2>/dev/null \
       && jq -e \

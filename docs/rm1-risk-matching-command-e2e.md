@@ -40,10 +40,18 @@ The verifier expects the retained namespace to contain Ready Risk, Account, Post
 Kafka, and Kafka Connect workloads, the `matching-daily-artifact` ConfigMap, and a RUNNING
 `risk-service-outbox` connector/task.
 
-The `simplematch/flyway-runner:local` image must be rebuilt from the worktree containing
-`tools/risk-matching-e2e-verifier`; the normal local certification image build does this
-automatically. The verifier reuses that image only as a JDK/repository execution environment. It
-does not invoke Flyway.
+The `simplematch/flyway-runner:local` image must contain the worktree with
+`tools/risk-matching-e2e-verifier`. When reusing an already-running certification namespace after
+checking out this change, rebuild and reload only that helper image:
+
+```bash
+scripts/build-local-images.sh --service flyway-runner
+kind load docker-image --name simplematch-live simplematch/flyway-runner:local
+```
+
+A fresh normal local certification image build/load already performs the equivalent work. The
+verifier reuses this image only as a JDK/repository execution environment; it does not invoke
+Flyway.
 
 ## Run
 
