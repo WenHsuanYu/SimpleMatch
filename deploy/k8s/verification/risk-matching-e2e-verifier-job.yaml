@@ -39,8 +39,9 @@ spec:
         - name: verifier
           image: simplematch/risk-matching-e2e-verifier:local
           imagePullPolicy: IfNotPresent
-          # The image entrypoint is the Gradle application distribution built at image-build time.
-          # No repository copy, shell wrapper, or Gradle invocation occurs in the running Pod.
+          # The dedicated image already contains the built application. Its small image-owned
+          # entrypoint only coordinates evidence hand-off; it never copies the repository or runs
+          # Gradle inside the deployed verifier Pod.
           args:
             - --artifact-path
             - /etc/simplematch/market-reference/market_reference.json
