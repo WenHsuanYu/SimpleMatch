@@ -3,6 +3,7 @@ plugins {
     `java-library`
     id("simplematch.java-conventions")
     id("simplematch.java-quality")
+
 }
 
 dependencies {
@@ -14,7 +15,7 @@ dependencies {
     implementation(libs.grpc.protobuf)
     implementation(libs.grpc.stub)
     implementation("org.apache.kafka:kafka-clients")
-
+    compileOnly(libs.spotbugs.annotations)
     testImplementation("org.springframework.boot:spring-boot-starter-test")
     testImplementation(libs.junit.jupiter)
     testRuntimeOnly(libs.junit.jupiter.engine)

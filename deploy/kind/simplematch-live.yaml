@@ -4,7 +4,7 @@ name: simplematch-live
 
 nodes:
   - role: control-plane
-    image: kindest/node:v1.34.0
+    image: kindest/node:v1.36.1
     labels:
       simplematch.io/node-pool: control-plane
     kubeadmConfigPatches:
@@ -15,17 +15,17 @@ nodes:
             - key: node-role.kubernetes.io/control-plane
               effect: NoSchedule
   - role: worker
-    image: kindest/node:v1.34.0
+    image: kindest/node:v1.36.1
     labels:
       simplematch.io/node-pool: local-resilience
       simplematch.io/worker-slot: "0"
   - role: worker
-    image: kindest/node:v1.34.0
+    image: kindest/node:v1.36.1
     labels:
       simplematch.io/node-pool: local-resilience
       simplematch.io/worker-slot: "1"
   - role: worker
-    image: kindest/node:v1.34.0
+    image: kindest/node:v1.36.1
     labels:
       simplematch.io/node-pool: local-resilience
       simplematch.io/worker-slot: "2"

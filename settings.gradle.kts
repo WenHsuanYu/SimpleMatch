@@ -6,6 +6,13 @@ pluginManagement {
     }
 }
 
+//dependencyResolutionManagement {
+//    repositoriesMode.set(RepositoriesMode.FAIL_ON_PROJECT_REPOS)
+//
+//    repositories {
+//        mavenCentral()
+//    }
+//}
 
 rootProject.name = "SimpleMatch"
 
@@ -27,8 +34,7 @@ include(
 
 project(":shared-java:simplematch-config").projectDir = file("shared-java/simplematch-config")
 project(":shared-java:simplematch-contracts").projectDir = file("shared-java/simplematch-contracts")
-project(":shared-java:market-reference-contract").projectDir =
-    file("shared-java/market-reference-contract")
+project(":shared-java:market-reference-contract").projectDir = file("shared-java/market-reference-contract")
 project(":services:account-service").projectDir = file("services/account-service")
 project(":services:market-data-projection").projectDir = file("services/market-data-projection")
 project(":services:marketdata-streamer").projectDir = file("services/marketdata-streamer")

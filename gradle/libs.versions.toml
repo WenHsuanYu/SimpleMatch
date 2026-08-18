@@ -44,10 +44,11 @@ spring-boot-gradle-plugin = { module = "org.springframework.boot:spring-boot-gra
 spring-boot-bom = { module = "org.springframework.boot:spring-boot-dependencies", version.ref = "spring-boot" }
 spring-cloud-bom = { module = "org.springframework.cloud:spring-cloud-dependencies", version.ref = "spring-cloud" }
 spotbugs-gradle-plugin = { module = "com.github.spotbugs.snom:spotbugs-gradle-plugin", version.ref = "spotbugs-gradle-plugin" }
+spotbugs-annotations = { module = "com.github.spotbugs:spotbugs-annotations", version.ref = "spotbugs-tool" }
 uuid-creator = { module = "com.github.f4b6a3:uuid-creator", version.ref = "uuid-creator" }
 
 [plugins]
 errorprone = { id = "net.ltgt.errorprone", version.ref = "errorprone-gradle-plugin" }
-protobuf = { id = "com.google.protobuf", version.ref = "protobuf-gradle-plugin" }
-spotbugs = { id = "com.github.spotbugs", version.ref = "spotbugs-gradle-plugin" }
-spring-boot = { id = "org.springframework.boot", version.ref = "spring-boot" }
+#protobuf = { id = "com.google.protobuf", version.ref = "protobuf-gradle-plugin" }
+#spotbugs = { id = "com.github.spotbugs", version.ref = "spotbugs-gradle-plugin" }
+#spring-boot = { id = "org.springframework.boot", version.ref = "spring-boot" }
