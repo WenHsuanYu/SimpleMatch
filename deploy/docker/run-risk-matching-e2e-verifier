@@ -1,0 +1,43 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+# The verifier Job must remain alive long enough for the host-side harness to copy structured
+# evidence from the Pod. A completed container cannot service `kubectl cp`, so this wrapper provides
+# an explicit hand-off protocol without making the Java verifier aware of Kubernetes.
+evidence_dir="${SIMPLEMATCH_RM1_EVIDENCE_DIR:-/tmp/evidence}"
+handoff_timeout_seconds="${SIMPLEMATCH_RM1_EVIDENCE_HANDOFF_SECONDS:-120}"
+
+if [[ ! "$handoff_timeout_seconds" =~ ^[1-9][0-9]*$ ]]; then
+  printf 'SIMPLEMATCH_RM1_EVIDENCE_HANDOFF_SECONDS must be a positive integer.\n' >&2
+  exit 2
+fi
+
+mkdir -p "$evidence_dir"
+rm -f "$evidence_dir/.ready" "$evidence_dir/.collected" "$evidence_dir/.exit-code"
+
+# Do not use `set -e` around the verifier. A failed verification still owns valuable JSON evidence
+# (especially verifier-verdict.json), and the outer harness must be allowed to collect it before the
+# Job becomes terminal.
+set +e
+/app/bin/risk-matching-e2e-verifier "$@"
+verifier_status=$?
+set -e
+
+printf '%s\n' "$verifier_status" >"$evidence_dir/.exit-code"
+touch "$evidence_dir/.ready"
+
+# The outer harness copies /tmp/evidence and then creates .collected. The bounded wait prevents a
+# disconnected harness from leaving a verification Job alive forever; activeDeadlineSeconds is a
+# second Kubernetes-level bound.
+for ((elapsed = 0; elapsed < handoff_timeout_seconds; elapsed++)); do
+  if [[ -f "$evidence_dir/.collected" ]]; then
+    exit "$verifier_status"
+  fi
+  sleep 1
+done
+
+printf 'Timed out waiting for RM-1 evidence collection acknowledgement.\n' >&2
+if (( verifier_status != 0 )); then
+  exit "$verifier_status"
+fi
+exit 124

@@ -1,0 +1,97 @@
+# Repository-owned Kubernetes contract for the deployed RM-1 verifier.
+#
+# Dynamic run facts do not belong in this file. The orchestration script creates the immutable
+# risk-matching-e2e-run ConfigMap for one run; this Job consumes those values through envFrom and
+# Kubernetes expands $(VAR_NAME) references in the argument list before the process starts.
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: risk-matching-e2e-verifier
+  labels:
+    app.kubernetes.io/name: risk-matching-e2e-verifier
+    app.kubernetes.io/component: verification
+    app.kubernetes.io/part-of: simplematch
+spec:
+  # Verification must be fail-closed. Retrying the whole process could submit another command and
+  # blur whether a later attempt or the original attempt produced the observed Kafka record.
+  backoffLimit: 0
+  activeDeadlineSeconds: 600
+  ttlSecondsAfterFinished: 86400
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: risk-matching-e2e-verifier
+        app.kubernetes.io/component: verification
+        app.kubernetes.io/part-of: simplematch
+    spec:
+      restartPolicy: Never
+      automountServiceAccountToken: false
+      enableServiceLinks: false
+      securityContext:
+        seccompProfile:
+          type: RuntimeDefault
+        runAsNonRoot: true
+        runAsUser: 10001
+        runAsGroup: 10001
+        fsGroup: 10001
+        fsGroupChangePolicy: OnRootMismatch
+      containers:
+        - name: verifier
+          image: simplematch/risk-matching-e2e-verifier:local
+          imagePullPolicy: IfNotPresent
+          # The dedicated image already contains the built application. Its small image-owned
+          # entrypoint only coordinates evidence hand-off; it never copies the repository or runs
+          # Gradle inside the deployed verifier Pod.
+          args:
+            - --artifact-path
+            - /etc/simplematch/market-reference/market_reference.json
+            - --checksum-path
+            - /etc/simplematch/market-reference/market_reference.sha256
+            - --trading-day
+            - $(SIMPLEMATCH_RM1_TRADING_DAY)
+            - --account-id
+            - $(SIMPLEMATCH_RM1_ACCOUNT_ID)
+            - --run-id
+            - $(SIMPLEMATCH_RM1_RUN_ID)
+            - --evidence-dir
+            - /tmp/evidence
+            - --timeout-seconds
+            - $(SIMPLEMATCH_RM1_TIMEOUT_SECONDS)
+          envFrom:
+            - configMapRef:
+                name: risk-matching-e2e-run
+                optional: false
+          terminationMessagePolicy: FallbackToLogsOnError
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop: ["ALL"]
+            readOnlyRootFilesystem: true
+            runAsNonRoot: true
+            runAsUser: 10001
+            runAsGroup: 10001
+          resources:
+            requests:
+              cpu: 250m
+              memory: 512Mi
+            limits:
+              cpu: "2"
+              memory: 2Gi
+          volumeMounts:
+            - name: runtime-tmp
+              mountPath: /tmp
+            - name: market-reference
+              mountPath: /etc/simplematch/market-reference
+              readOnly: true
+      volumes:
+        - name: runtime-tmp
+          emptyDir: {}
+        - name: market-reference
+          configMap:
+            name: matching-daily-artifact
+            optional: false
+            items:
+              - key: market_reference.json
+                path: market_reference.json
+              - key: market_reference.sha256
+                path: market_reference.sha256

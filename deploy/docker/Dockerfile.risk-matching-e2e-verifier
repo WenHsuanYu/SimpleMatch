@@ -1,0 +1,30 @@
+# Build the verifier once and ship only its runnable application distribution.
+# Runtime verification must not depend on downloading Gradle, compiling build-logic, or copying the
+# repository into a writable Pod filesystem.
+FROM eclipse-temurin:25-jdk AS build
+
+WORKDIR /workspace
+COPY . /workspace/
+
+RUN ./gradlew --no-daemon :tools:risk-matching-e2e-verifier:installDist
+
+FROM eclipse-temurin:25-jre
+
+# bash runs the small evidence hand-off wrapper; tar is required by kubectl cp while the verifier
+# container is intentionally kept alive for evidence collection.
+RUN apt-get update \
+    && apt-get install --no-install-recommends --yes bash tar \
+    && rm -rf /var/lib/apt/lists/* \
+    && useradd --system --uid 10001 --home-dir /nonexistent --shell /usr/sbin/nologin simplematch
+
+COPY --from=build --chown=10001:10001 \
+  /workspace/tools/risk-matching-e2e-verifier/build/install/risk-matching-e2e-verifier/ /app/
+COPY --chown=10001:10001 deploy/docker/run-risk-matching-e2e-verifier /app/run-risk-matching-e2e-verifier
+
+RUN chmod 0555 /app/bin/risk-matching-e2e-verifier /app/run-risk-matching-e2e-verifier
+
+ENV HOME=/tmp
+ENV SIMPLEMATCH_RM1_EVIDENCE_DIR=/tmp/evidence
+
+USER 10001:10001
+ENTRYPOINT ["/app/run-risk-matching-e2e-verifier"]
