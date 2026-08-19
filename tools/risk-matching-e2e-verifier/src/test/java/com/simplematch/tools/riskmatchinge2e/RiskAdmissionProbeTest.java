@@ -8,6 +8,7 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 import com.simplematch.contracts.common.v2.OrderType;
 import com.simplematch.contracts.common.v2.Side;
 import com.simplematch.contracts.common.v2.TimeInForce;
+import com.simplematch.contracts.orders.v2.AdmissionRejectReason;
 import com.simplematch.contracts.orders.v2.NewOrderCommand;
 import com.simplematch.contracts.orders.v2.OrderAdmissionAccepted;
 import com.simplematch.contracts.orders.v2.OrderAdmissionRejected;
@@ -268,7 +269,7 @@ class RiskAdmissionProbeTest {
                 .setCommandId(COMMAND_ID.toString())
                 .setOrderId(ORDER_ID.toString())
                 .setAccountId(ACCOUNT_ID.toString())
-                .setReasonCode("TEST_REJECTION")
+                .setReason(AdmissionRejectReason.ADMISSION_REJECT_REASON_RISK_LIMIT)
                 .setReasonDetail("synthetic rejection"))
         .build();
   }
