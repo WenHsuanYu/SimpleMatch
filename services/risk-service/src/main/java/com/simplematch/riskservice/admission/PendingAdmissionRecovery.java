@@ -69,7 +69,8 @@ public final class PendingAdmissionRecovery {
         recovered++;
       } catch (RuntimeException failure) {
         LOGGER.warn(
-            "pending admission recovery failed command_id={} order_id={} account_id={} state_remains_pending=true",
+            "pending admission recovery failed command_id={} order_id={} account_id={} "
+                + "state_remains_pending=true",
             command.identity().commandId().value(),
             command.identity().orderId().value(),
             command.identity().accountId().value(),
