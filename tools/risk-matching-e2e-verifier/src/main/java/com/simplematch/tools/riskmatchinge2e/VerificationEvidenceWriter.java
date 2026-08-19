@@ -8,7 +8,6 @@ import com.simplematch.tools.riskmatchinge2e.RiskAdmissionProbe.AdmissionObserva
 import com.simplematch.tools.riskmatchinge2e.RiskAdmissionProbe.SubmissionObservation;
 import io.grpc.Status;
 import java.io.IOException;
-import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.LinkedHashMap;
 import java.util.Map;
@@ -22,16 +21,6 @@ final class VerificationEvidenceWriter {
   VerificationEvidenceWriter(ObjectMapper json, Path evidenceDir) {
     this.json = Objects.requireNonNull(json, "JSON mapper is required");
     this.evidenceDir = Objects.requireNonNull(evidenceDir, "evidence directory is required");
-  }
-
-  void prepareEmptyDirectory() throws IOException {
-    Files.createDirectories(evidenceDir);
-    try (var entries = Files.list(evidenceDir)) {
-      if (entries.findAny().isPresent()) {
-        throw new IllegalStateException(
-            "evidence directory must be empty before RM-1 verification: " + evidenceDir);
-      }
-    }
   }
 
   void writeSelectedInstrument(RiskMatchingScenario.Scenario scenario) throws IOException {
@@ -82,8 +71,34 @@ final class VerificationEvidenceWriter {
     final Map<String, Object> evidence = new LinkedHashMap<>();
     evidence.put("grpcCode", submission.grpcCode().name());
     evidence.put("elapsedMs", submission.elapsedMillis());
-    evidence.put("synchronousOutcome", synchronousOutcome(submission));
-    submission.response().ifPresent(response -> addSynchronousResponse(evidence, response));
+    final OrderAdmissionResponse response = submission.response().orElse(null);
+    final String synchronousOutcome;
+    if (submission.grpcCode() != Status.Code.OK) {
+      synchronousOutcome = "UNCERTAIN";
+    } else if (response == null) {
+      synchronousOutcome = "MISSING";
+    } else if (response.hasAccepted()) {
+      synchronousOutcome = "ACCEPTED";
+    } else if (response.hasRejected()) {
+      synchronousOutcome = "REJECTED";
+    } else {
+      synchronousOutcome = "MISSING";
+    }
+    evidence.put("synchronousOutcome", synchronousOutcome);
+    if (response != null && response.hasAccepted()) {
+      final var accepted = response.getAccepted();
+      evidence.put("commandId", accepted.getCommandId());
+      evidence.put("orderId", accepted.getOrderId());
+      evidence.put("accountId", accepted.getAccountId());
+      evidence.put("routingPartition", accepted.getRoutingPartition());
+    } else if (response != null && response.hasRejected()) {
+      final var rejected = response.getRejected();
+      evidence.put("commandId", rejected.getCommandId());
+      evidence.put("orderId", rejected.getOrderId());
+      evidence.put("accountId", rejected.getAccountId());
+      evidence.put("reasonCode", rejected.getReason().name());
+      evidence.put("reasonDetail", rejected.getReasonDetail());
+    }
     write("admission-submit.json", evidence);
   }
 
@@ -165,56 +180,17 @@ final class VerificationEvidenceWriter {
       verdict.put("stage", "UNEXPECTED");
       verdict.put("failureCode", "UNEXPECTED_FAILURE");
     }
-    verdict.put("reason", safeMessage(failure));
+    final String message = failure.getMessage();
+    verdict.put(
+        "reason",
+        message == null || message.isBlank() ? failure.getClass().getName() : message);
     if (commandId != null && !commandId.isBlank()) {
       verdict.put("commandId", commandId);
     }
     write("verifier-verdict.json", verdict);
   }
 
-  private String synchronousOutcome(SubmissionObservation submission) {
-    if (submission.grpcCode() != Status.Code.OK) {
-      return "UNCERTAIN";
-    }
-    final OrderAdmissionResponse response = submission.response().orElse(null);
-    if (response == null) {
-      return "MISSING";
-    }
-    if (response.hasAccepted()) {
-      return "ACCEPTED";
-    }
-    if (response.hasRejected()) {
-      return "REJECTED";
-    }
-    return "MISSING";
-  }
-
-  private void addSynchronousResponse(
-      Map<String, Object> evidence, OrderAdmissionResponse response) {
-    if (response.hasAccepted()) {
-      final var accepted = response.getAccepted();
-      evidence.put("commandId", accepted.getCommandId());
-      evidence.put("orderId", accepted.getOrderId());
-      evidence.put("accountId", accepted.getAccountId());
-      evidence.put("routingPartition", accepted.getRoutingPartition());
-      return;
-    }
-    if (response.hasRejected()) {
-      final var rejected = response.getRejected();
-      evidence.put("commandId", rejected.getCommandId());
-      evidence.put("orderId", rejected.getOrderId());
-      evidence.put("accountId", rejected.getAccountId());
-      evidence.put("reasonCode", rejected.getReason().name());
-      evidence.put("reasonDetail", rejected.getReasonDetail());
-    }
-  }
-
   private void write(String fileName, Object value) throws IOException {
     json.writerWithDefaultPrettyPrinter().writeValue(evidenceDir.resolve(fileName).toFile(), value);
-  }
-
-  private static String safeMessage(Throwable failure) {
-    final String message = failure.getMessage();
-    return message == null || message.isBlank() ? failure.getClass().getName() : message;
   }
 }
