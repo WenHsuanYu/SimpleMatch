@@ -119,23 +119,41 @@ final class RiskAdmissionProbe {
     boolean pendingObserved = false;
     int attempts = 0;
     while (true) {
-      final Duration remaining =
-          deadline.requireRemaining(
-              VerificationFailure.Stage.ADMISSION_RECONCILIATION,
-              VerificationFailure.Code.ADMISSION_REMAINED_PENDING,
-              "Risk admission remained pending until the verifier deadline");
       attempts++;
-      final GetAdmissionOutcomeResponse response;
-      try {
-        response =
-            gateway.lookup(
-                scenario.command().commandId().toString(),
-                min(remaining, LOOKUP_ATTEMPT_TIMEOUT));
-      } catch (StatusRuntimeException failure) {
-        if (Status.fromThrowable(failure).getCode() == Status.Code.UNAVAILABLE) {
-          waitForNextLookup(deadline);
-          continue;
+      final Optional<GetAdmissionOutcomeResponse> response =
+          lookupOutcome(scenario, deadline);
+      if (response.isPresent()) {
+        final ReconciliationState state =
+            RiskAdmissionSemantics.classifyReconciliation(scenario, response.orElseThrow());
+        if (state == ReconciliationState.ACCEPTED) {
+          return acceptedObservation(
+              scenario,
+              AdmissionPath.RECOVERED_ACCEPTED,
+              submission,
+              pendingObserved,
+              attempts,
+              "ACCEPTED");
         }
+        pendingObserved = true;
+        waitForNextLookup(deadline);
+      }
+    }
+  }
+
+  private Optional<GetAdmissionOutcomeResponse> lookupOutcome(
+      Scenario scenario, VerificationDeadline deadline) {
+    final Duration remaining =
+        deadline.requireRemaining(
+            VerificationFailure.Stage.ADMISSION_RECONCILIATION,
+            VerificationFailure.Code.ADMISSION_REMAINED_PENDING,
+            "Risk admission remained pending until the verifier deadline");
+    try {
+      return Optional.of(
+          gateway.lookup(
+              scenario.command().commandId().toString(),
+              min(remaining, LOOKUP_ATTEMPT_TIMEOUT)));
+    } catch (StatusRuntimeException failure) {
+      if (Status.fromThrowable(failure).getCode() != Status.Code.UNAVAILABLE) {
         throw new VerificationFailure(
             VerificationFailure.Stage.ADMISSION_RECONCILIATION,
             VerificationFailure.Code.ADMISSION_RECONCILIATION_FAILED,
@@ -143,21 +161,8 @@ final class RiskAdmissionProbe {
                 + Status.fromThrowable(failure).getCode(),
             failure);
       }
-
-      final ReconciliationState state =
-          RiskAdmissionSemantics.classifyReconciliation(scenario, response);
-      if (state == ReconciliationState.PENDING) {
-        pendingObserved = true;
-        waitForNextLookup(deadline);
-        continue;
-      }
-      return acceptedObservation(
-          scenario,
-          AdmissionPath.RECOVERED_ACCEPTED,
-          submission,
-          pendingObserved,
-          attempts,
-          "ACCEPTED");
+      waitForNextLookup(deadline);
+      return Optional.empty();
     }
   }
 
