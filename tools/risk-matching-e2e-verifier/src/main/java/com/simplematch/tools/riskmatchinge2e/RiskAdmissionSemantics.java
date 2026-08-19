@@ -1,5 +1,6 @@
 package com.simplematch.tools.riskmatchinge2e;
 
+import com.simplematch.contracts.risk.v2.AdmissionOutcomeStatus;
 import com.simplematch.contracts.risk.v2.GetAdmissionOutcomeResponse;
 import com.simplematch.contracts.risk.v2.OrderAdmissionResponse;
 import com.simplematch.tools.riskmatchinge2e.RiskMatchingScenario.Scenario;
@@ -22,28 +23,28 @@ final class RiskAdmissionSemantics {
   static ReconciliationState classifyReconciliation(
       Scenario scenario, GetAdmissionOutcomeResponse response) {
     validateCommandId(scenario, response);
-    return switch (response.getStatus()) {
-      case ADMISSION_OUTCOME_STATUS_NOT_FOUND ->
-          throw new VerificationFailure(
-              VerificationFailure.Stage.ADMISSION_RECONCILIATION,
-              VerificationFailure.Code.ADMISSION_NOT_FOUND,
-              "Risk returned NOT_FOUND for the durable admission after UNAVAILABLE submission");
-      case ADMISSION_OUTCOME_STATUS_PENDING -> {
-        validateDurableIdentity(scenario, response);
-        yield ReconciliationState.PENDING;
-      }
-      case ADMISSION_OUTCOME_STATUS_ACCEPTED -> {
-        validateDurableIdentity(scenario, response);
-        yield ReconciliationState.ACCEPTED;
-      }
-      case ADMISSION_OUTCOME_STATUS_REJECTED ->
-          throw rejected(
-              VerificationFailure.Stage.ADMISSION_RECONCILIATION,
-              response.getReasonCode(),
-              response.getReasonDetail());
-      case ADMISSION_OUTCOME_STATUS_UNSPECIFIED, UNRECOGNIZED -> throw unspecifiedOutcome();
-      default -> throw unspecifiedOutcome();
-    };
+    final AdmissionOutcomeStatus status = response.getStatus();
+    if (status == AdmissionOutcomeStatus.ADMISSION_OUTCOME_STATUS_PENDING) {
+      validateDurableIdentity(scenario, response);
+      return ReconciliationState.PENDING;
+    }
+    if (status == AdmissionOutcomeStatus.ADMISSION_OUTCOME_STATUS_ACCEPTED) {
+      validateDurableIdentity(scenario, response);
+      return ReconciliationState.ACCEPTED;
+    }
+    if (status == AdmissionOutcomeStatus.ADMISSION_OUTCOME_STATUS_NOT_FOUND) {
+      throw new VerificationFailure(
+          VerificationFailure.Stage.ADMISSION_RECONCILIATION,
+          VerificationFailure.Code.ADMISSION_NOT_FOUND,
+          "Risk returned NOT_FOUND for the durable admission after UNAVAILABLE submission");
+    }
+    if (status == AdmissionOutcomeStatus.ADMISSION_OUTCOME_STATUS_REJECTED) {
+      throw rejected(
+          VerificationFailure.Stage.ADMISSION_RECONCILIATION,
+          response.getReasonCode(),
+          response.getReasonDetail());
+    }
+    throw unspecifiedOutcome();
   }
 
   static VerificationFailure rejected(
