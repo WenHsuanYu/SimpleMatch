@@ -45,7 +45,8 @@ public final class RiskMatchingE2eVerifierMain {
       VerifierArguments arguments,
       ObjectMapper json,
       VerificationEvidenceWriter evidence) throws Exception {
-    final VerificationDeadline deadline = VerificationDeadline.start(arguments.execution().timeout());
+    final VerificationDeadline deadline =
+        VerificationDeadline.start(arguments.execution().timeout());
     final byte[] artifactBytes = Files.readAllBytes(arguments.artifact().artifactPath());
     final String checksum = Files.readString(arguments.artifact().checksumPath()).trim();
     final VerifiedMarketReferenceArtifact verified =
@@ -129,10 +130,14 @@ public final class RiskMatchingE2eVerifierMain {
           offsetsBefore,
           timeout);
     } catch (RuntimeException failure) {
+      final String message =
+          failure.getMessage() == null
+              ? "matching command observation failed"
+              : failure.getMessage();
       throw new VerificationFailure(
           VerificationFailure.Stage.KAFKA_OBSERVATION,
           VerificationFailure.Code.KAFKA_COMMAND_NOT_OBSERVED,
-          failure.getMessage() == null ? "matching command observation failed" : failure.getMessage(),
+          message,
           failure);
     }
   }
@@ -143,10 +148,14 @@ public final class RiskMatchingE2eVerifierMain {
     try {
       RiskMatchingScenario.validateMatchingCommand(scenario, observed.command());
     } catch (RuntimeException failure) {
+      final String message =
+          failure.getMessage() == null
+              ? "matching command validation failed"
+              : failure.getMessage();
       throw new VerificationFailure(
           VerificationFailure.Stage.KAFKA_VALIDATION,
           VerificationFailure.Code.KAFKA_COMMAND_INVALID,
-          failure.getMessage() == null ? "matching command validation failed" : failure.getMessage(),
+          message,
           failure);
     }
   }
