@@ -14,7 +14,7 @@ record VerifierArguments(
     RiskMatchingScenario.RunIdentity run,
     ServiceEndpoints services,
     ExecutionOptions execution) {
-  private static final Duration MAX_TIMEOUT = Duration.ofSeconds(300);
+  private static final Duration MAX_TIMEOUT = Duration.ofMinutes(5);
 
   VerifierArguments {
     Objects.requireNonNull(artifact, "artifact files are required");
