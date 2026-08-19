@@ -15,7 +15,7 @@ import org.springframework.test.context.ActiveProfiles;
 
 @SpringBootTest(
     properties = {
-      "simplematch.postgres.dsn=jdbc:h2:mem:query-context;MODE=PostgreSQL;DB_CLOSE_DELAY=-1;INIT=CREATE SCHEMA IF NOT EXISTS query_service\\;SET SCHEMA query_service",
+      "simplematch.postgres.dsn=jdbc:h2:mem:query-context;MODE=PostgreSQL;DB_CLOSE_DELAY=-1",
       "spring.datasource.url=jdbc:h2:mem:wrong-query-source",
       "simplematch.query-service.matching-events.enabled=false",
       "simplematch.query-service.account-lifecycle.enabled=false",
