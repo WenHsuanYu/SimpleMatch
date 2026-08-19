@@ -76,6 +76,11 @@ done
 
 mkdir -p "$evidence_dir"
 evidence_dir="$(cd -- "$evidence_dir" && pwd)"
+shopt -s nullglob dotglob
+existing_evidence=("$evidence_dir"/*)
+shopt -u nullglob dotglob
+((${#existing_evidence[@]} == 0)) || die \
+  "evidence directory must be empty before verification: $evidence_dir"
 
 # A unique account prevents one run's reservation state from changing another run's available
 # notional. /proc/sys/kernel/random/uuid is available on the Linux environment required by kind and
@@ -370,8 +375,10 @@ fi
 [[ "$job_terminal" == Complete ]] || die 'verifier Job reported Failed after a zero verifier exit code'
 jq -e '.status == "PASS"' "$evidence_dir/verifier-verdict.json" >/dev/null \
   || die 'typed verifier did not report PASS'
+jq -e '.terminalStatus == "ACCEPTED"' "$evidence_dir/admission-outcome.json" >/dev/null \
+  || die 'typed verifier did not report a terminal accepted Admission outcome'
 
-command_id="$(jq -r '.commandId' "$evidence_dir/response.json")"
+command_id="$(jq -r '.commandId' "$evidence_dir/request.json")"
 expected_partition="$(jq -r '.expectedPartition' "$evidence_dir/selected-instrument.json")"
 expected_artifact_day="$(jq -r '.tradingDay' "$evidence_dir/selected-instrument.json")"
 expected_artifact_sha="$(jq -r '.artifactContentSha256' "$evidence_dir/selected-instrument.json")"
@@ -450,15 +457,18 @@ printf '%s\n' "$outbox_json" | jq . >"$evidence_dir/risk-outbox.json"
 jq -n \
   --arg status PASS \
   --arg commandId "$command_id" \
+  --arg admissionPath "$(jq -r '.path' "$evidence_dir/admission-outcome.json")" \
   --argjson partition "$expected_partition" \
   --arg artifactIdentity "${expected_artifact_day}:${expected_artifact_sha}" \
   '{
     status:$status,
     commandId:$commandId,
+    admissionPath:$admissionPath,
     partition:$partition,
     artifactIdentity:$artifactIdentity,
     provenPath:[
       "risk-service/SubmitNewOrder",
+      "risk-service/GetAdmissionOutcome when required",
       "risk_service.admission_journal",
       "risk_service.outbox",
       "risk-service-outbox Debezium connector",
