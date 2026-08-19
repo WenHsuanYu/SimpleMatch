@@ -19,26 +19,31 @@ final class RiskAdmissionSemantics {
     }
   }
 
-  static void validateCommandId(Scenario scenario, GetAdmissionOutcomeResponse response) {
-    requireIdentity(
-        VerificationFailure.Stage.ADMISSION_RECONCILIATION,
-        scenario.command().commandId().toString(),
-        response.getCommandId(),
-        "reconciliation command_id");
-  }
-
-  static void validateDurableIdentity(Scenario scenario, GetAdmissionOutcomeResponse response) {
+  static ReconciliationState classifyReconciliation(
+      Scenario scenario, GetAdmissionOutcomeResponse response) {
     validateCommandId(scenario, response);
-    requireIdentity(
-        VerificationFailure.Stage.ADMISSION_RECONCILIATION,
-        scenario.command().orderId().toString(),
-        response.getOrderId(),
-        "reconciliation order_id");
-    requireIdentity(
-        VerificationFailure.Stage.ADMISSION_RECONCILIATION,
-        scenario.run().accountId().toString(),
-        response.getAccountId(),
-        "reconciliation account_id");
+    return switch (response.getStatus()) {
+      case ADMISSION_OUTCOME_STATUS_NOT_FOUND ->
+          throw new VerificationFailure(
+              VerificationFailure.Stage.ADMISSION_RECONCILIATION,
+              VerificationFailure.Code.ADMISSION_NOT_FOUND,
+              "Risk returned NOT_FOUND for the durable admission after UNAVAILABLE submission");
+      case ADMISSION_OUTCOME_STATUS_PENDING -> {
+        validateDurableIdentity(scenario, response);
+        yield ReconciliationState.PENDING;
+      }
+      case ADMISSION_OUTCOME_STATUS_ACCEPTED -> {
+        validateDurableIdentity(scenario, response);
+        yield ReconciliationState.ACCEPTED;
+      }
+      case ADMISSION_OUTCOME_STATUS_REJECTED ->
+          throw rejected(
+              VerificationFailure.Stage.ADMISSION_RECONCILIATION,
+              response.getReasonCode(),
+              response.getReasonDetail());
+      case ADMISSION_OUTCOME_STATUS_UNSPECIFIED, UNRECOGNIZED -> throw unspecifiedOutcome();
+      default -> throw unspecifiedOutcome();
+    };
   }
 
   static VerificationFailure rejected(
@@ -52,7 +57,30 @@ final class RiskAdmissionSemantics {
         "Risk rejected RM-1 admission: reason_code=" + code + ", reason_detail=" + detail);
   }
 
-  static VerificationFailure unspecifiedOutcome() {
+  private static void validateCommandId(Scenario scenario, GetAdmissionOutcomeResponse response) {
+    requireIdentity(
+        VerificationFailure.Stage.ADMISSION_RECONCILIATION,
+        scenario.command().commandId().toString(),
+        response.getCommandId(),
+        "reconciliation command_id");
+  }
+
+  private static void validateDurableIdentity(
+      Scenario scenario, GetAdmissionOutcomeResponse response) {
+    validateCommandId(scenario, response);
+    requireIdentity(
+        VerificationFailure.Stage.ADMISSION_RECONCILIATION,
+        scenario.command().orderId().toString(),
+        response.getOrderId(),
+        "reconciliation order_id");
+    requireIdentity(
+        VerificationFailure.Stage.ADMISSION_RECONCILIATION,
+        scenario.run().accountId().toString(),
+        response.getAccountId(),
+        "reconciliation account_id");
+  }
+
+  private static VerificationFailure unspecifiedOutcome() {
     return new VerificationFailure(
         VerificationFailure.Stage.ADMISSION_RECONCILIATION,
         VerificationFailure.Code.ADMISSION_RECONCILIATION_FAILED,
@@ -76,5 +104,10 @@ final class RiskAdmissionSemantics {
         VerificationFailure.Code.ADMISSION_IDENTITY_MISMATCH,
         message,
         cause);
+  }
+
+  enum ReconciliationState {
+    PENDING,
+    ACCEPTED
   }
 }
