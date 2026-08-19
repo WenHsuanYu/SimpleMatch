@@ -149,7 +149,7 @@ run_capture() {
 
   if [[ "$resume" == true && -f "$marker_path" && "$(<"$marker_path")" == "$phase_signature" ]]; then
     completed_phases+=("$phase (reused)")
-    printf 'REUSE %-32s (%s)\n' "$phase" "$marker_path"
+    printf 'REUSE %-32s (%s)\n' "$phase" "$output_path"
     return 0
   fi
 
@@ -713,7 +713,9 @@ register_kubernetes_risk_connector() (
   local connector_json="$evidence_dir/risk-service-outbox-connector.json"
   local connector_config="$evidence_dir/risk-service-outbox-connector-config.json"
   local response_file="$evidence_dir/risk-service-outbox-connector-response.json"
+  local update_response_file="$evidence_dir/risk-service-outbox-connector-update-response.json"
   local status_file="$evidence_dir/risk-service-outbox-status.json"
+  local connectors_file="$evidence_dir/kafka-connect-connectors.json"
   local port_forward_log="$evidence_dir/kafka-connect-port-forward.log"
   local port_forward_pid
   local status_code
@@ -721,6 +723,70 @@ register_kubernetes_risk_connector() (
   local provider_retry_limit="${SIMPLEMATCH_KAFKA_CONNECT_PROVIDER_RETRIES:-90}"
   local connect_rest_ready=false
   local -a curl_options=(--connect-timeout 5 --max-time 15)
+
+  request_to_file() {
+    local method="$1"
+    local path="$2"
+    local output_file="$3"
+    local payload_file="${4:-}"
+    local -a request=(curl "${curl_options[@]}" -sS -o "$output_file" -w '%{http_code}' -X "$method")
+
+    if [[ -n "$payload_file" ]]; then
+      request+=(-H 'Content-Type: application/json' --data-binary "@$payload_file")
+    fi
+    "${request[@]}" "${connector_url}${path}"
+  }
+
+  print_evidence() {
+    local label="$1"
+    local path="$2"
+    printf '\n=== %s ===\n' "$label" >&2
+    if [[ ! -s "$path" ]]; then
+      printf '(empty)\n' >&2
+      return 0
+    fi
+    jq . "$path" >&2 2>/dev/null || cat "$path" >&2
+    printf '\n' >&2
+  }
+
+  dump_connect_diagnostics() {
+    request_to_file GET /connectors "$connectors_file" >/dev/null 2>&1 || true
+    request_to_file GET /connectors/risk-service-outbox/status "$status_file" >/dev/null 2>&1 || true
+    print_evidence 'Kafka Connect connectors' "$connectors_file"
+    print_evidence 'risk-service-outbox registration response' "$response_file"
+    print_evidence 'risk-service-outbox update response' "$update_response_file"
+    print_evidence 'risk-service-outbox status' "$status_file"
+    printf '\n=== Kafka Connect port-forward ===\n' >&2
+    cat "$port_forward_log" >&2 || true
+  }
+
+  status_response_is_valid() {
+    jq -e '
+      (.connector.state | type == "string")
+      and (.tasks | type == "array")
+    ' "$status_file" >/dev/null 2>&1
+  }
+
+  status_response_has_failure() {
+    jq -e '
+      (.connector.state == "FAILED")
+      or any(.tasks[]?; .state == "FAILED")
+    ' "$status_file" >/dev/null 2>&1
+  }
+
+  status_response_is_running() {
+    jq -e '
+      .connector.state == "RUNNING"
+      and (.tasks | length > 0)
+      and all(.tasks[]; .state == "RUNNING")
+    ' "$status_file" >/dev/null 2>&1
+  }
+
+  fail_with_diagnostics() {
+    printf '%s\n' "$1" >&2
+    dump_connect_diagnostics
+    exit 1
+  }
 
   [[ "$provider_retry_limit" =~ ^[1-9][0-9]*$ ]] || {
     printf 'SIMPLEMATCH_KAFKA_CONNECT_PROVIDER_RETRIES must be a positive integer.\n' >&2
@@ -770,7 +836,8 @@ register_kubernetes_risk_connector() (
 
   for _ in $(seq 1 90); do
     check_certification_deadline
-    if curl "${curl_options[@]}" -fsS "$connector_url/connectors" >/dev/null 2>&1; then
+    if status_code="$(request_to_file GET /connectors "$connectors_file" 2>/dev/null)" \
+      && [[ "$status_code" == 2?? ]]; then
       connect_rest_ready=true
       break
     fi
@@ -781,19 +848,13 @@ register_kubernetes_risk_connector() (
     sleep 2
   done
   if [[ "$connect_rest_ready" != true ]]; then
-    printf 'Kafka Connect REST endpoint did not become ready before registration.\n' >&2
-    cat "$port_forward_log" >&2
-    exit 1
+    fail_with_diagnostics 'Kafka Connect REST endpoint did not become ready before registration.'
   fi
 
   while true; do
     check_certification_deadline
-    if ! status_code="$(curl "${curl_options[@]}" -sS -o "$response_file" -w '%{http_code}' \
-        -X POST -H 'Content-Type: application/json' --data-binary @"$connector_json" \
-        "$connector_url/connectors")"; then
-      printf 'Kafka Connect REST registration request failed before receiving a response.\n' >&2
-      cat "$port_forward_log" >&2
-      exit 1
+    if ! status_code="$(request_to_file POST /connectors "$response_file" "$connector_json")"; then
+      fail_with_diagnostics 'Kafka Connect REST registration request failed before receiving a response.'
     fi
     case "$status_code" in
       2??)
@@ -801,9 +862,12 @@ register_kubernetes_risk_connector() (
         ;;
       409)
         jq -c '.config' "$connector_json" >"$connector_config"
-        curl "${curl_options[@]}" -fsS -X PUT -H 'Content-Type: application/json' \
-          --data-binary @"$connector_config" \
-          "$connector_url/connectors/risk-service-outbox/config" >/dev/null
+        if ! status_code="$(request_to_file PUT /connectors/risk-service-outbox/config \
+          "$update_response_file" "$connector_config")"; then
+          fail_with_diagnostics 'Kafka Connect REST update request failed before receiving a response.'
+        fi
+        [[ "$status_code" == 2?? ]] || fail_with_diagnostics \
+          "Kafka Connect rejected risk-service-outbox update with HTTP ${status_code}."
         break
         ;;
       400)
@@ -811,36 +875,53 @@ register_kubernetes_risk_connector() (
           (.message // "")
           | test("\\$\\{envvarprovider:[A-Za-z0-9_]+\\}")
         ' "$response_file" >/dev/null 2>&1; then
-          cat "$response_file" >&2
-          exit 1
+          fail_with_diagnostics 'Kafka Connect rejected risk-service-outbox registration with HTTP 400.'
         fi
         provider_retry_count=$((provider_retry_count + 1))
         if (( provider_retry_count >= provider_retry_limit )); then
-          cat "$response_file" >&2
-          exit 1
+          fail_with_diagnostics \
+            "Kafka Connect EnvVarConfigProvider remained unavailable after ${provider_retry_limit} attempts."
         fi
         printf 'Kafka Connect EnvVarConfigProvider is not ready; retrying registration (%d/%d).\n' \
           "$provider_retry_count" "$provider_retry_limit" >&2
         sleep 2
         ;;
       *)
-        cat "$response_file" >&2
-        exit 1
+        fail_with_diagnostics \
+          "Kafka Connect rejected risk-service-outbox registration with HTTP ${status_code}."
         ;;
     esac
   done
 
   for _ in $(seq 1 90); do
     check_certification_deadline
-    if curl "${curl_options[@]}" -fsS "$connector_url/connectors/risk-service-outbox/status" \
-      | jq -e '.connector.state == "RUNNING" and (.tasks | length > 0) and .tasks[0].state == "RUNNING"' \
-      >"$status_file" 2>/dev/null; then
-      exit 0
+    if ! status_code="$(request_to_file GET /connectors/risk-service-outbox/status "$status_file")"; then
+      fail_with_diagnostics 'Kafka Connect status request failed before receiving a response.'
     fi
+
+    case "$status_code" in
+      200)
+        status_response_is_valid || fail_with_diagnostics \
+          'Kafka Connect returned a malformed risk-service-outbox status response.'
+        status_response_has_failure && fail_with_diagnostics \
+          'risk-service-outbox entered FAILED state.'
+        if status_response_is_running; then
+          exit 0
+        fi
+        ;;
+      404)
+        # A newly registered connector can be briefly absent from the REST view while the
+        # distributed workers publish and consume the config update. Treat this as transient.
+        ;;
+      *)
+        fail_with_diagnostics \
+          "Kafka Connect returned unexpected HTTP ${status_code} for risk-service-outbox status."
+        ;;
+    esac
     sleep 2
   done
-  curl "${curl_options[@]}" -fsS "$connector_url/connectors/risk-service-outbox/status" | tee "$status_file" >&2
-  exit 1
+
+  fail_with_diagnostics 'risk-service-outbox did not reach RUNNING state before the status deadline.'
 )
 
 select_matching_workload() {
