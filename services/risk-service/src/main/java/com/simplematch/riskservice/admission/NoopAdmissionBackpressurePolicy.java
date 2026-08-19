@@ -1,6 +1,6 @@
 package com.simplematch.riskservice.admission;
 
-/** Default policy for environments without a live CDC lag metric. */
+/** Admission policy used only when CDC delivery-lag backpressure is explicitly disabled. */
 public final class NoopAdmissionBackpressurePolicy implements AdmissionBackpressurePolicy {
   /** Performs no rejection. */
   @Override

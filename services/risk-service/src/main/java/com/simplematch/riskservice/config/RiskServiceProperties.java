@@ -21,11 +21,13 @@ public record RiskServiceProperties(@DefaultValue AdmissionProperties admission)
   /**
    * Admission backpressure settings.
    *
+   * @param cdcBackpressureEnabled whether admission consumes the live CDC delivery-lag safety gate
    * @param cdcMetricName durable CDC metric identity
    * @param maximumCdcLagEvents largest permitted durable event backlog
    * @param maximumMetricAge longest permitted time since metric refresh
    */
   public record AdmissionProperties(
+      @DefaultValue("true") boolean cdcBackpressureEnabled,
       @DefaultValue("matching.commands") String cdcMetricName,
       @DefaultValue("10000") long maximumCdcLagEvents,
       @DefaultValue("30s") Duration maximumMetricAge) {

@@ -146,7 +146,8 @@ class QuickFixCertificationEvidenceTest {
 
       assertLogContains(output, "quickfix-gateway session created: FIX.4.4:SIMPLEMATCH->CLIENT");
       assertLogContains(output, "quickfix-gateway logon: FIX.4.4:SIMPLEMATCH->CLIENT");
-      assertLogContains(output, "fromApp session=FIX.4.4:SIMPLEMATCH->CLIENT");
+      assertLogContains(
+          output, "fromApp QuickFIX message accepted for session=FIX.4.4:SIMPLEMATCH->CLIENT");
       assertLogContains(output, "quickfix-gateway logout: FIX.4.4:SIMPLEMATCH->CLIENT");
       assertLogContains(output, "quickfix-gateway acceptor started env=test");
       assertLogContains(output, "quickfix-gateway acceptor stopped");

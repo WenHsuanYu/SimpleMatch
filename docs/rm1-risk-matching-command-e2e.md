@@ -138,6 +138,20 @@ At-least-once Kafka delivery is handled intentionally: multiple physical records
 `commandId` are accepted only when they are on the same partition and have byte-identical payloads.
 A same-key record on another partition or with different bytes fails the gate.
 
+## CDC backpressure boundary
+
+The local RM-1 overlay explicitly sets
+`SIMPLEMATCH_RISK_SERVICE_ADMISSION_CDC_BACKPRESSURE_ENABLED=false`. This is a scoped certification
+boundary, not a healthy-CDC simulation and not a production default. RM-1 verifies the real durable
+Risk outbox -> Debezium -> `matching.commands` path directly, including connector state and exact
+Kafka bytes, so manually refreshing `risk_service.cdc_delivery_lag` would add synthetic health data
+without strengthening the RM-1 claim.
+
+The production/default Risk configuration keeps CDC backpressure enabled. Issue #138 owns the
+runtime producer that must continuously derive a fresh delivery-lag measurement from real
+outbox/CDC/Kafka progress. Until that producer exists and has its own outage/recovery evidence, this
+RM-1 verifier does not claim that the CDC lag safety controller is operationally certified.
+
 ## Evidence hand-off
 
 The Java verifier writes structured JSON under `/tmp/evidence`. The dedicated image entrypoint runs a

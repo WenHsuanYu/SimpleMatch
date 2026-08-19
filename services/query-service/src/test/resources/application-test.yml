@@ -1,0 +1,30 @@
+simplematch:
+  environment: test
+
+  postgres:
+    # The test profile owns only the H2 endpoint. Schema creation and selection remain
+    # the responsibility of SimpleMatchDataSourceAutoConfiguration.
+    dsn: "jdbc:h2:mem:query-context;MODE=PostgreSQL;DB_CLOSE_DELAY=-1"
+
+  query-service:
+    matching-events:
+      enabled: false
+    account-lifecycle:
+      enabled: false
+    redis:
+      enabled: false
+
+spring:
+  flyway:
+    enabled: false
+
+  main:
+    web-application-type: none
+
+  cloud:
+    kubernetes:
+      enabled: false
+      config:
+        enabled: false
+      secrets:
+        enabled: false

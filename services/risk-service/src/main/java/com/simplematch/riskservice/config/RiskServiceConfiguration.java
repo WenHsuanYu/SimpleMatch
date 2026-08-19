@@ -11,6 +11,7 @@ import com.simplematch.riskservice.admission.AdmissionRoutingPolicyResolver;
 import com.simplematch.riskservice.admission.CdcLagBackpressurePolicy;
 import com.simplematch.riskservice.admission.CdcLagReader;
 import com.simplematch.riskservice.admission.GrpcAccountReservationClient;
+import com.simplematch.riskservice.admission.NoopAdmissionBackpressurePolicy;
 import com.simplematch.riskservice.outbox.OutboxRepository;
 import com.simplematch.riskservice.store.JdbcOutboxRepository;
 import java.time.Clock;
@@ -35,6 +36,10 @@ public class RiskServiceConfiguration {
   AdmissionBackpressurePolicy admissionBackpressurePolicy(
       CdcLagReader cdcLagReader, Clock riskServiceClock, RiskServiceProperties properties) {
     final RiskServiceProperties.AdmissionProperties admission = properties.admission();
+
+    if (!admission.cdcBackpressureEnabled()) {
+      return new NoopAdmissionBackpressurePolicy();
+    }
 
     return new CdcLagBackpressurePolicy(
         cdcLagReader,
