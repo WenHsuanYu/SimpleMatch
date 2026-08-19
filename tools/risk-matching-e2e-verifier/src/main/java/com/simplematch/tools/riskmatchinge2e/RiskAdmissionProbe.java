@@ -172,12 +172,17 @@ final class RiskAdmissionProbe {
                 response.getReasonCode(),
                 response.getReasonDetail());
         case ADMISSION_OUTCOME_STATUS_UNSPECIFIED, UNRECOGNIZED ->
-            throw new VerificationFailure(
-                VerificationFailure.Stage.ADMISSION_RECONCILIATION,
-                VerificationFailure.Code.ADMISSION_RECONCILIATION_FAILED,
-                "Risk returned an unspecified admission reconciliation outcome");
+            throw unspecifiedOutcome();
+        default -> throw unspecifiedOutcome();
       }
     }
+  }
+
+  private VerificationFailure unspecifiedOutcome() {
+    return new VerificationFailure(
+        VerificationFailure.Stage.ADMISSION_RECONCILIATION,
+        VerificationFailure.Code.ADMISSION_RECONCILIATION_FAILED,
+        "Risk returned an unspecified admission reconciliation outcome");
   }
 
   private void waitForNextLookup(VerificationDeadline deadline) {
@@ -346,7 +351,8 @@ final class RiskAdmissionProbe {
 
     @Override
     public OrderAdmissionResponse submit(NewOrderCommand request, Duration timeout) {
-      return stub.withDeadlineAfter(timeout.toNanos(), TimeUnit.NANOSECONDS).submitNewOrder(request);
+      return stub.withDeadlineAfter(timeout.toNanos(), TimeUnit.NANOSECONDS)
+          .submitNewOrder(request);
     }
 
     @Override
