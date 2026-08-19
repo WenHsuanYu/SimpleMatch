@@ -6,6 +6,7 @@ import com.simplematch.contracts.orders.v2.NewOrderCommand;
 import com.simplematch.contracts.risk.v2.OrderAdmissionResponse;
 import com.simplematch.tools.riskmatchinge2e.RiskAdmissionProbe.AdmissionObservation;
 import com.simplematch.tools.riskmatchinge2e.RiskAdmissionProbe.SubmissionObservation;
+import io.grpc.Status;
 import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
@@ -172,11 +173,20 @@ final class VerificationEvidenceWriter {
   }
 
   private String synchronousOutcome(SubmissionObservation submission) {
-    if (submission.grpcCode() != io.grpc.Status.Code.OK) {
+    if (submission.grpcCode() != Status.Code.OK) {
       return "UNCERTAIN";
     }
-    return submission.response().map(response -> response.hasAccepted() ? "ACCEPTED" : "REJECTED")
-        .orElse("MISSING");
+    final OrderAdmissionResponse response = submission.response().orElse(null);
+    if (response == null) {
+      return "MISSING";
+    }
+    if (response.hasAccepted()) {
+      return "ACCEPTED";
+    }
+    if (response.hasRejected()) {
+      return "REJECTED";
+    }
+    return "MISSING";
   }
 
   private void addSynchronousResponse(
