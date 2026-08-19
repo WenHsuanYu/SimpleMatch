@@ -10,6 +10,7 @@ import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
+import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.test.context.ActiveProfiles;
 
 @SpringBootTest(
@@ -26,6 +27,8 @@ import org.springframework.test.context.ActiveProfiles;
 class QueryServiceApplicationTest {
   @Autowired private DataSource dataSource;
 
+  @Autowired private JdbcTemplate jdbcTemplate;
+
   @Autowired private SimpleMatchDataSourceSettings dataSourceSettings;
 
   @Autowired private NoopQueryReadCache queryReadCache;
@@ -40,8 +43,9 @@ class QueryServiceApplicationTest {
 
     final HikariDataSource hikariDataSource = (HikariDataSource) dataSource;
     assertThat(hikariDataSource.getJdbcUrl()).startsWith("jdbc:h2:mem:query-context");
-    assertThat(hikariDataSource.getSchema()).isEqualTo("query_service");
     assertThat(hikariDataSource.getMaximumPoolSize()).isEqualTo(4);
     assertThat(hikariDataSource.getPoolName()).isEqualTo("query-service-hikari");
+    assertThat(jdbcTemplate.queryForObject("SELECT CURRENT_SCHEMA()", String.class))
+        .isEqualTo("query_service");
   }
 }
