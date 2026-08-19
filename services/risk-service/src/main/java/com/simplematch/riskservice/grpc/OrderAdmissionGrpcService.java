@@ -21,6 +21,8 @@ import io.grpc.Status;
 import io.grpc.stub.StreamObserver;
 import java.time.Clock;
 import java.util.UUID;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Service;
 
 /**
@@ -31,6 +33,8 @@ import org.springframework.stereotype.Service;
 @Service
 public final class OrderAdmissionGrpcService
     extends OrderAdmissionServiceGrpc.OrderAdmissionServiceImplBase {
+  private static final Logger LOG = LoggerFactory.getLogger(OrderAdmissionGrpcService.class);
+
   private final OrderAdmissionApplicationService admissions;
   private final AdmissionOutcomeGrpcResponder outcomeResponder;
   private final Clock clock;
@@ -59,6 +63,12 @@ public final class OrderAdmissionGrpcService
       responseObserver.onError(
           Status.UNAVAILABLE.withDescription(unavailable.getMessage()).asRuntimeException());
     } catch (RuntimeException failure) {
+      LOG.error(
+          "Unexpected order admission failure: commandId={}, orderId={}, accountId={}",
+          request.getCommandId(),
+          request.getOrderId(),
+          request.getAccountId(),
+          failure);
       responseObserver.onError(
           Status.INTERNAL.withDescription("failed to admit order").asRuntimeException());
     }
@@ -78,6 +88,12 @@ public final class OrderAdmissionGrpcService
       responseObserver.onError(
           Status.ALREADY_EXISTS.withDescription(conflict.getMessage()).asRuntimeException());
     } catch (RuntimeException failure) {
+      LOG.error(
+          "Unexpected cancel admission failure: commandId={}, orderId={}, accountId={}",
+          request.getCommandId(),
+          request.getOrderId(),
+          request.getAccountId(),
+          failure);
       responseObserver.onError(
           Status.INTERNAL.withDescription("failed to admit cancel").asRuntimeException());
     }
