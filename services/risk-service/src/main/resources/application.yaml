@@ -44,10 +44,10 @@ simplematch:
     market-reference:
       matching-image-digest: ${SIMPLEMATCH_MATCHING_IMAGE_DIGEST:}
     admission:
+      cdc-backpressure-enabled: true
       cdc-metric-name: matching.commands
       maximum-cdc-lag-events: 10000
       maximum-metric-age: 30s
-
 
 management:
   endpoints:
