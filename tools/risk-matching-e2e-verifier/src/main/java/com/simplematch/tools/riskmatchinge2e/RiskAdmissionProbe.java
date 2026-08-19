@@ -5,6 +5,7 @@ import com.simplematch.contracts.risk.v2.GetAdmissionOutcomeRequest;
 import com.simplematch.contracts.risk.v2.GetAdmissionOutcomeResponse;
 import com.simplematch.contracts.risk.v2.OrderAdmissionResponse;
 import com.simplematch.contracts.risk.v2.OrderAdmissionServiceGrpc;
+import com.simplematch.tools.riskmatchinge2e.RiskAdmissionSemantics.ReconciliationState;
 import com.simplematch.tools.riskmatchinge2e.RiskMatchingScenario.Scenario;
 import io.grpc.ManagedChannel;
 import io.grpc.Status;
@@ -137,37 +138,20 @@ final class RiskAdmissionProbe {
             failure);
       }
 
-      RiskAdmissionSemantics.validateCommandId(scenario, response);
-      switch (response.getStatus()) {
-        case ADMISSION_OUTCOME_STATUS_NOT_FOUND ->
-            throw new VerificationFailure(
-                VerificationFailure.Stage.ADMISSION_RECONCILIATION,
-                VerificationFailure.Code.ADMISSION_NOT_FOUND,
-                "Risk returned NOT_FOUND for the durable admission after UNAVAILABLE submission");
-        case ADMISSION_OUTCOME_STATUS_PENDING -> {
-          RiskAdmissionSemantics.validateDurableIdentity(scenario, response);
-          pendingObserved = true;
-          waitForNextLookup(deadline);
-        }
-        case ADMISSION_OUTCOME_STATUS_ACCEPTED -> {
-          RiskAdmissionSemantics.validateDurableIdentity(scenario, response);
-          return acceptedObservation(
-              scenario,
-              AdmissionPath.RECOVERED_ACCEPTED,
-              submission,
-              pendingObserved,
-              attempts,
-              "ACCEPTED");
-        }
-        case ADMISSION_OUTCOME_STATUS_REJECTED ->
-            throw RiskAdmissionSemantics.rejected(
-                VerificationFailure.Stage.ADMISSION_RECONCILIATION,
-                response.getReasonCode(),
-                response.getReasonDetail());
-        case ADMISSION_OUTCOME_STATUS_UNSPECIFIED, UNRECOGNIZED ->
-            throw RiskAdmissionSemantics.unspecifiedOutcome();
-        default -> throw RiskAdmissionSemantics.unspecifiedOutcome();
+      final ReconciliationState state =
+          RiskAdmissionSemantics.classifyReconciliation(scenario, response);
+      if (state == ReconciliationState.PENDING) {
+        pendingObserved = true;
+        waitForNextLookup(deadline);
+        continue;
       }
+      return acceptedObservation(
+          scenario,
+          AdmissionPath.RECOVERED_ACCEPTED,
+          submission,
+          pendingObserved,
+          attempts,
+          "ACCEPTED");
     }
   }
 
