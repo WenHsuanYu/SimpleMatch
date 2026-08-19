@@ -26,8 +26,8 @@ class VerificationEvidenceWriterTest {
   @Test
   void writesRecoveredAdmissionAsOneNormalizedTerminalOutcome() throws Exception {
     final ObjectMapper json = new ObjectMapper();
+    VerificationEvidenceDirectory.prepare(tempDir);
     final VerificationEvidenceWriter writer = new VerificationEvidenceWriter(json, tempDir);
-    writer.prepareEmptyDirectory();
 
     writer.writeSubmission(
         new SubmissionObservation(Status.Code.UNAVAILABLE, Optional.empty(), 0L, 2_000_000L));
@@ -57,9 +57,9 @@ class VerificationEvidenceWriterTest {
   @Test
   void refusesToReuseNonEmptyEvidenceDirectory() throws Exception {
     Files.writeString(tempDir.resolve("previous-run.json"), "{}\n");
-    final VerificationEvidenceWriter writer =
-        new VerificationEvidenceWriter(new ObjectMapper(), tempDir);
 
-    assertThrows(IllegalStateException.class, writer::prepareEmptyDirectory);
+    assertThrows(
+        IllegalStateException.class,
+        () -> VerificationEvidenceDirectory.prepare(tempDir));
   }
 }
