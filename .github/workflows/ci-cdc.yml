@@ -8,11 +8,14 @@ on:
     paths:
       - '.github/workflows/ci-cdc.yml'
       - 'deploy/compose/**'
+      - 'deploy/k8s/base/java-services-configmaps.yaml'
       - 'config/kafka/**'
+      - 'scripts/run-local-production-like-certification.sh'
       - 'scripts/run-outbox-cdc-contract-check.sh'
       - 'scripts/verify-outbox-connector-contracts.sh'
       - 'scripts/lib/matching-topic-profile.sh'
       - 'scripts/provision-matching-topics.sh'
+      - 'scripts/test-matching-topic-cutover.sh'
       - 'scripts/test-matching-topic-profile.sh'
       - 'scripts/validate-matching-topic-profile.sh'
       - 'shared-java/**'
@@ -24,11 +27,14 @@ on:
     paths:
       - '.github/workflows/ci-cdc.yml'
       - 'deploy/compose/**'
+      - 'deploy/k8s/base/java-services-configmaps.yaml'
       - 'config/kafka/**'
+      - 'scripts/run-local-production-like-certification.sh'
       - 'scripts/run-outbox-cdc-contract-check.sh'
       - 'scripts/verify-outbox-connector-contracts.sh'
       - 'scripts/lib/matching-topic-profile.sh'
       - 'scripts/provision-matching-topics.sh'
+      - 'scripts/test-matching-topic-cutover.sh'
       - 'scripts/test-matching-topic-profile.sh'
       - 'scripts/validate-matching-topic-profile.sh'
       - 'shared-java/**'
@@ -52,12 +58,14 @@ jobs:
     timeout-minutes: 30
     steps:
       - name: Checkout
-        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        uses: actions/checkout@3d3c42e5aac5ba805825abcc0c181273ba90b1 # v7.0.1
         with:
           fetch-depth: 1
           persist-credentials: false
       - name: Verify connector contracts
         run: bash scripts/verify-outbox-connector-contracts.sh
+      - name: Validate Matching topic cutover
+        run: bash scripts/test-matching-topic-cutover.sh
       - name: Validate Matching Kafka durability profile
         run: bash scripts/test-matching-topic-profile.sh
       - name: Run live CDC contract check
