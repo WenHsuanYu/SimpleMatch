@@ -15,13 +15,9 @@ import org.springframework.test.context.ActiveProfiles;
 
 @SpringBootTest(
     properties = {
-      "simplematch.postgres.dsn=jdbc:h2:mem:query-context;MODE=PostgreSQL;DB_CLOSE_DELAY=-1",
-      "spring.datasource.url=jdbc:h2:mem:wrong-query-source",
-      "simplematch.query-service.matching-events.enabled=false",
-      "simplematch.query-service.account-lifecycle.enabled=false",
-      "simplematch.query-service.redis.enabled=false",
-      "spring.flyway.enabled=false",
-      "spring.main.web-application-type=none"
+      // Intentionally wrong: this test verifies that the canonical SimpleMatch DSN remains
+      // authoritative instead of Spring Boot's generic datasource namespace.
+      "spring.datasource.url=jdbc:h2:mem:wrong-query-source"
     })
 @ActiveProfiles("test")
 class QueryServiceApplicationTest {
@@ -42,9 +38,14 @@ class QueryServiceApplicationTest {
     assertThat(queryReadCache).isNotNull();
 
     final HikariDataSource hikariDataSource = (HikariDataSource) dataSource;
-    assertThat(hikariDataSource.getJdbcUrl()).startsWith("jdbc:h2:mem:query-context");
+    assertThat(hikariDataSource.getJdbcUrl())
+        .isEqualTo("jdbc:h2:mem:query-context;MODE=PostgreSQL;DB_CLOSE_DELAY=-1");
     assertThat(hikariDataSource.getMaximumPoolSize()).isEqualTo(4);
     assertThat(hikariDataSource.getPoolName()).isEqualTo("query-service-hikari");
+
+    // Verify the effective database session rather than Hikari's schema configuration property.
+    // H2 uses connectionInitSql here, so HikariDataSource#getSchema() is intentionally not the
+    // contract under test.
     assertThat(jdbcTemplate.queryForObject("SELECT CURRENT_SCHEMA()", String.class))
         .isEqualTo("query_service");
   }
