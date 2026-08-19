@@ -13,6 +13,7 @@ final class VerificationFailure extends RuntimeException {
 
   enum Code {
     ADMISSION_SUBMISSION_FAILED,
+    ADMISSION_RECONCILIATION_FAILED,
     ADMISSION_NOT_FOUND,
     ADMISSION_REJECTED,
     ADMISSION_REMAINED_PENDING,
