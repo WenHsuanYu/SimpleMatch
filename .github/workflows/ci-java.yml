@@ -24,6 +24,11 @@ on:
       - 'services/persistence/**'
       - 'services/quickfix-gateway/**'
       - 'services/risk-service/**'
+      - 'deploy/docker/Dockerfile.risk-matching-e2e-verifier'
+      - 'deploy/docker/run-risk-matching-e2e-verifier'
+      - 'deploy/k8s/verification/risk-matching-e2e-verifier-job.yaml'
+      - 'scripts/run-risk-matching-command-e2e.sh'
+      - 'scripts/test-risk-matching-e2e-manifest.sh'
       - 'config/checkstyle/**'
       - 'config/pmd/**'
       - 'config/spotbugs/**'
@@ -49,6 +54,11 @@ on:
       - 'services/persistence/**'
       - 'services/quickfix-gateway/**'
       - 'services/risk-service/**'
+      - 'deploy/docker/Dockerfile.risk-matching-e2e-verifier'
+      - 'deploy/docker/run-risk-matching-e2e-verifier'
+      - 'deploy/k8s/verification/risk-matching-e2e-verifier-job.yaml'
+      - 'scripts/run-risk-matching-command-e2e.sh'
+      - 'scripts/test-risk-matching-e2e-manifest.sh'
       - 'config/checkstyle/**'
       - 'config/pmd/**'
       - 'config/spotbugs/**'
@@ -74,6 +84,8 @@ jobs:
         with:
           fetch-depth: 1
           persist-credentials: false
+      - name: Verify RM-1 deployment contract
+        run: bash scripts/test-risk-matching-e2e-manifest.sh
       - name: Set up Java and Gradle
         id: java-gradle
         uses: ./.github/actions/setup-java-gradle
