@@ -96,6 +96,12 @@ final class RiskAdmissionProbe {
           response.getRejected().getReason().name(),
           response.getRejected().getReasonDetail());
     }
+    if (!response.hasAccepted()) {
+      throw new VerificationFailure(
+          VerificationFailure.Stage.ADMISSION_SUBMISSION,
+          VerificationFailure.Code.ADMISSION_SUBMISSION_FAILED,
+          "Risk returned OK without an accepted or rejected admission outcome");
+    }
     RiskAdmissionSemantics.validateSynchronousAccepted(scenario, response);
     return acceptedObservation(
         scenario,
