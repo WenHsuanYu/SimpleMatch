@@ -5,12 +5,15 @@ import java.time.Duration;
 import java.time.Instant;
 import java.util.List;
 import java.util.Objects;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Service;
 
 /** Owns scheduled retry orchestration for pending Admission aggregates. */
 @Service
 public final class PendingAdmissionRecovery {
+  private static final Logger LOGGER = LoggerFactory.getLogger(PendingAdmissionRecovery.class);
   private static final Duration RECOVERY_AGE = Duration.ofSeconds(30);
   private static final int RECOVERY_BATCH_SIZE = 100;
   private static final long RECOVERY_INTERVAL_MILLIS = 30_000L;
@@ -56,17 +59,21 @@ public final class PendingAdmissionRecovery {
         journal.findPendingBefore(Instant.now(clock).minus(RECOVERY_AGE), RECOVERY_BATCH_SIZE);
     int recovered = 0;
     for (AdmissionJournalEntry entry : pending) {
+      final AdmissionCommand command = entry.command();
       try {
-        final AdmissionCommand command = entry.command();
         final ReservationOutcome outcome =
             command.order().isCancellation()
                 ? ReservationOutcome.accepted(null)
                 : account.reserve(command);
-        lifecycleTransactions.finalizeAdmission(
-            command.identity().commandId().value(), outcome);
+        lifecycleTransactions.finalizeAdmission(command.identity().commandId().value(), outcome);
         recovered++;
-      } catch (RuntimeException ignored) {
-        // Keep the pending row durable and eligible for the next bounded recovery pass.
+      } catch (RuntimeException failure) {
+        LOGGER.warn(
+            "pending admission recovery failed command_id={} order_id={} account_id={} state_remains_pending=true",
+            command.identity().commandId().value(),
+            command.identity().orderId().value(),
+            command.identity().accountId().value(),
+            failure);
       }
     }
     return recovered;
