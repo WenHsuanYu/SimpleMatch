@@ -53,8 +53,8 @@ itself proof that the durable admission failed.
 Before running the deployed check:
 
 ```bash
-scripts/test-risk-matching-e2e-manifest.sh
-scripts/test-matching-topic-cutover.sh
+bash scripts/test-risk-matching-e2e-manifest.sh
+bash scripts/test-matching-topic-cutover.sh
 
 ./gradlew --no-daemon \
   :tools:risk-matching-e2e-verifier:test
