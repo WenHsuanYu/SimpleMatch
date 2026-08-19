@@ -196,6 +196,22 @@ class RiskAdmissionProbeTest {
   }
 
   @Test
+  void rejectsSynchronousOkWithoutAdmissionOutcome() {
+    final Fixture fixture = fixture(OrderAdmissionResponse.getDefaultInstance());
+
+    final SubmissionObservation submission =
+        fixture.probe().submit(fixture.scenario(), fixture.deadline());
+    final VerificationFailure failure =
+        assertThrows(
+            VerificationFailure.class,
+            () ->
+                fixture.probe().awaitAccepted(
+                    fixture.scenario(), submission, fixture.deadline()));
+
+    assertEquals(VerificationFailure.Code.ADMISSION_SUBMISSION_FAILED, failure.code());
+  }
+
+  @Test
   void rejectsNonRecoverableSubmissionGrpcFailure() {
     final Fixture fixture = fixture(Status.INVALID_ARGUMENT.asRuntimeException());
 
