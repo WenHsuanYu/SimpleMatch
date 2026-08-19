@@ -90,19 +90,12 @@ final class RiskAdmissionProbe {
                     VerificationFailure.Code.ADMISSION_SUBMISSION_FAILED,
                     "Risk returned OK without an admission response"));
     if (response.hasRejected()) {
-      throw rejected(
+      throw RiskAdmissionSemantics.rejected(
           VerificationFailure.Stage.ADMISSION_SUBMISSION,
           response.getRejected().getReason().name(),
           response.getRejected().getReasonDetail());
     }
-    try {
-      RiskMatchingScenario.validateAcceptedResponse(scenario, response);
-    } catch (IllegalStateException invalid) {
-      throw identityFailure(
-          VerificationFailure.Stage.ADMISSION_SUBMISSION,
-          invalid.getMessage(),
-          invalid);
-    }
+    RiskAdmissionSemantics.validateSynchronousAccepted(scenario, response);
     return acceptedObservation(
         scenario,
         AdmissionPath.SYNCHRONOUS_ACCEPTED,
@@ -144,7 +137,7 @@ final class RiskAdmissionProbe {
             failure);
       }
 
-      validateCommandId(scenario, response);
+      RiskAdmissionSemantics.validateCommandId(scenario, response);
       switch (response.getStatus()) {
         case ADMISSION_OUTCOME_STATUS_NOT_FOUND ->
             throw new VerificationFailure(
@@ -152,12 +145,12 @@ final class RiskAdmissionProbe {
                 VerificationFailure.Code.ADMISSION_NOT_FOUND,
                 "Risk returned NOT_FOUND for the durable admission after UNAVAILABLE submission");
         case ADMISSION_OUTCOME_STATUS_PENDING -> {
-          validateDurableIdentity(scenario, response);
+          RiskAdmissionSemantics.validateDurableIdentity(scenario, response);
           pendingObserved = true;
           waitForNextLookup(deadline);
         }
         case ADMISSION_OUTCOME_STATUS_ACCEPTED -> {
-          validateDurableIdentity(scenario, response);
+          RiskAdmissionSemantics.validateDurableIdentity(scenario, response);
           return acceptedObservation(
               scenario,
               AdmissionPath.RECOVERED_ACCEPTED,
@@ -167,22 +160,15 @@ final class RiskAdmissionProbe {
               "ACCEPTED");
         }
         case ADMISSION_OUTCOME_STATUS_REJECTED ->
-            throw rejected(
+            throw RiskAdmissionSemantics.rejected(
                 VerificationFailure.Stage.ADMISSION_RECONCILIATION,
                 response.getReasonCode(),
                 response.getReasonDetail());
         case ADMISSION_OUTCOME_STATUS_UNSPECIFIED, UNRECOGNIZED ->
-            throw unspecifiedOutcome();
-        default -> throw unspecifiedOutcome();
+            throw RiskAdmissionSemantics.unspecifiedOutcome();
+        default -> throw RiskAdmissionSemantics.unspecifiedOutcome();
       }
     }
-  }
-
-  private VerificationFailure unspecifiedOutcome() {
-    return new VerificationFailure(
-        VerificationFailure.Stage.ADMISSION_RECONCILIATION,
-        VerificationFailure.Code.ADMISSION_RECONCILIATION_FAILED,
-        "Risk returned an unspecified admission reconciliation outcome");
   }
 
   private void waitForNextLookup(VerificationDeadline deadline) {
@@ -201,59 +187,6 @@ final class RiskAdmissionProbe {
           "Risk reconciliation wait was interrupted",
           interrupted);
     }
-  }
-
-  private void validateCommandId(Scenario scenario, GetAdmissionOutcomeResponse response) {
-    requireIdentity(
-        VerificationFailure.Stage.ADMISSION_RECONCILIATION,
-        scenario.command().commandId().toString(),
-        response.getCommandId(),
-        "reconciliation command_id");
-  }
-
-  private void validateDurableIdentity(
-      Scenario scenario, GetAdmissionOutcomeResponse response) {
-    validateCommandId(scenario, response);
-    requireIdentity(
-        VerificationFailure.Stage.ADMISSION_RECONCILIATION,
-        scenario.command().orderId().toString(),
-        response.getOrderId(),
-        "reconciliation order_id");
-    requireIdentity(
-        VerificationFailure.Stage.ADMISSION_RECONCILIATION,
-        scenario.run().accountId().toString(),
-        response.getAccountId(),
-        "reconciliation account_id");
-  }
-
-  private void requireIdentity(
-      VerificationFailure.Stage stage, String expected, String actual, String field) {
-    if (!expected.equals(actual)) {
-      throw identityFailure(
-          stage,
-          field + " mismatch: expected=" + expected + ", actual=" + actual,
-          null);
-    }
-  }
-
-  private VerificationFailure identityFailure(
-      VerificationFailure.Stage stage, String message, Throwable cause) {
-    return new VerificationFailure(
-        stage,
-        VerificationFailure.Code.ADMISSION_IDENTITY_MISMATCH,
-        message,
-        cause);
-  }
-
-  private VerificationFailure rejected(
-      VerificationFailure.Stage stage, String reasonCode, String reasonDetail) {
-    final String detail =
-        reasonDetail == null || reasonDetail.isBlank() ? "no rejection detail" : reasonDetail;
-    final String code = reasonCode == null || reasonCode.isBlank() ? "unspecified" : reasonCode;
-    return new VerificationFailure(
-        stage,
-        VerificationFailure.Code.ADMISSION_REJECTED,
-        "Risk rejected RM-1 admission: reason_code=" + code + ", reason_detail=" + detail);
   }
 
   private AdmissionObservation acceptedObservation(
