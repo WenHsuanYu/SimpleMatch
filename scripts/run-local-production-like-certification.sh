@@ -450,7 +450,7 @@ wait_for_compose() {
 
 create_kafka_topics() {
   local topic
-  for topic in matching.commands matching.events matching.executions account.lifecycle marketdata.events; do
+  for topic in matching.commands matching.events account.lifecycle marketdata.events; do
     run_logged "kafka-create-${topic//./-}" "${compose_command[@]}" exec -T kafka-1 \
       /opt/kafka/bin/kafka-topics.sh --bootstrap-server kafka-1:29092 --create --if-not-exists \
       --topic "$topic" --partitions 15 --replication-factor 3 \
