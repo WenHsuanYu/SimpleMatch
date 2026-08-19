@@ -27,14 +27,14 @@ public final class RiskMatchingE2eVerifierMain {
   public static void main(String[] args) throws Exception {
     final VerifierArguments arguments = VerifierArguments.parse(args);
     final ObjectMapper json = new ObjectMapper().findAndRegisterModules();
-    final VerificationEvidenceWriter evidence =
-        new VerificationEvidenceWriter(json, arguments.execution().evidenceDir());
+    final var evidenceDir = arguments.execution().evidenceDir();
+    VerificationEvidenceDirectory.prepare(evidenceDir);
+    final VerificationEvidenceWriter evidence = new VerificationEvidenceWriter(json, evidenceDir);
 
-    evidence.prepareEmptyDirectory();
     try {
       run(arguments, json, evidence);
     } catch (Exception failure) {
-      if (!Files.exists(arguments.execution().evidenceDir().resolve("verifier-verdict.json"))) {
+      if (!Files.exists(evidenceDir.resolve("verifier-verdict.json"))) {
         evidence.writeFailure(failure, null);
       }
       throw failure;
