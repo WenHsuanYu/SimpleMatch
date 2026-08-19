@@ -1,7 +1,6 @@
 package com.simplematch.tools.riskmatchinge2e;
 
 import com.simplematch.contracts.orders.v2.NewOrderCommand;
-import com.simplematch.contracts.risk.v2.AdmissionOutcomeStatus;
 import com.simplematch.contracts.risk.v2.GetAdmissionOutcomeRequest;
 import com.simplematch.contracts.risk.v2.GetAdmissionOutcomeResponse;
 import com.simplematch.contracts.risk.v2.OrderAdmissionResponse;
@@ -93,13 +92,16 @@ final class RiskAdmissionProbe {
     if (response.hasRejected()) {
       throw rejected(
           VerificationFailure.Stage.ADMISSION_SUBMISSION,
-          response.getRejected().getReasonCode(),
+          response.getRejected().getReason().name(),
           response.getRejected().getReasonDetail());
     }
     try {
       RiskMatchingScenario.validateAcceptedResponse(scenario, response);
     } catch (IllegalStateException invalid) {
-      throw identityFailure(invalid.getMessage(), invalid);
+      throw identityFailure(
+          VerificationFailure.Stage.ADMISSION_SUBMISSION,
+          invalid.getMessage(),
+          invalid);
     }
     return acceptedObservation(
         scenario,
@@ -136,7 +138,7 @@ final class RiskAdmissionProbe {
         }
         throw new VerificationFailure(
             VerificationFailure.Stage.ADMISSION_RECONCILIATION,
-            VerificationFailure.Code.ADMISSION_SUBMISSION_FAILED,
+            VerificationFailure.Code.ADMISSION_RECONCILIATION_FAILED,
             "Risk reconciliation failed with gRPC status "
                 + Status.fromThrowable(failure).getCode(),
             failure);
@@ -172,7 +174,7 @@ final class RiskAdmissionProbe {
         case ADMISSION_OUTCOME_STATUS_UNSPECIFIED, UNRECOGNIZED ->
             throw new VerificationFailure(
                 VerificationFailure.Stage.ADMISSION_RECONCILIATION,
-                VerificationFailure.Code.ADMISSION_SUBMISSION_FAILED,
+                VerificationFailure.Code.ADMISSION_RECONCILIATION_FAILED,
                 "Risk returned an unspecified admission reconciliation outcome");
       }
     }
@@ -190,7 +192,7 @@ final class RiskAdmissionProbe {
       Thread.currentThread().interrupt();
       throw new VerificationFailure(
           VerificationFailure.Stage.ADMISSION_RECONCILIATION,
-          VerificationFailure.Code.ADMISSION_SUBMISSION_FAILED,
+          VerificationFailure.Code.ADMISSION_RECONCILIATION_FAILED,
           "Risk reconciliation wait was interrupted",
           interrupted);
     }
@@ -198,6 +200,7 @@ final class RiskAdmissionProbe {
 
   private void validateCommandId(Scenario scenario, GetAdmissionOutcomeResponse response) {
     requireIdentity(
+        VerificationFailure.Stage.ADMISSION_RECONCILIATION,
         scenario.command().commandId().toString(),
         response.getCommandId(),
         "reconciliation command_id");
@@ -207,26 +210,31 @@ final class RiskAdmissionProbe {
       Scenario scenario, GetAdmissionOutcomeResponse response) {
     validateCommandId(scenario, response);
     requireIdentity(
+        VerificationFailure.Stage.ADMISSION_RECONCILIATION,
         scenario.command().orderId().toString(),
         response.getOrderId(),
         "reconciliation order_id");
     requireIdentity(
+        VerificationFailure.Stage.ADMISSION_RECONCILIATION,
         scenario.run().accountId().toString(),
         response.getAccountId(),
         "reconciliation account_id");
   }
 
-  private void requireIdentity(String expected, String actual, String field) {
+  private void requireIdentity(
+      VerificationFailure.Stage stage, String expected, String actual, String field) {
     if (!expected.equals(actual)) {
       throw identityFailure(
+          stage,
           field + " mismatch: expected=" + expected + ", actual=" + actual,
           null);
     }
   }
 
-  private VerificationFailure identityFailure(String message, Throwable cause) {
+  private VerificationFailure identityFailure(
+      VerificationFailure.Stage stage, String message, Throwable cause) {
     return new VerificationFailure(
-        VerificationFailure.Stage.ADMISSION_RECONCILIATION,
+        stage,
         VerificationFailure.Code.ADMISSION_IDENTITY_MISMATCH,
         message,
         cause);
@@ -331,8 +339,9 @@ final class RiskAdmissionProbe {
     private final OrderAdmissionServiceGrpc.OrderAdmissionServiceBlockingStub stub;
 
     private GrpcRiskGateway(ManagedChannel channel) {
-      stub = OrderAdmissionServiceGrpc.newBlockingStub(
-          Objects.requireNonNull(channel, "Risk channel is required"));
+      stub =
+          OrderAdmissionServiceGrpc.newBlockingStub(
+              Objects.requireNonNull(channel, "Risk channel is required"));
     }
 
     @Override
