@@ -5,8 +5,10 @@ import com.simplematch.marketreference.MarketReferenceArtifactStartupValidator;
 import com.simplematch.marketreference.VerifiedMarketReferenceArtifact;
 import com.simplematch.tools.riskmatchinge2e.RiskAdmissionProbe.AdmissionObservation;
 import com.simplematch.tools.riskmatchinge2e.RiskAdmissionProbe.SubmissionObservation;
+import com.simplematch.tools.riskmatchinge2e.VerifierArguments.VerificationMode;
 import io.grpc.ManagedChannel;
 import io.grpc.ManagedChannelBuilder;
+import io.grpc.Status;
 import java.nio.file.Files;
 import java.time.Duration;
 import java.time.Instant;
@@ -16,9 +18,11 @@ import java.util.concurrent.TimeUnit;
 /**
  * Deployed RM-1 verifier entry point.
  *
- * <p>The verifier submits one real Risk order, observes either synchronous acceptance or the
- * service-owned durable recovery path, then proves the resulting MatchingCommand on the production
- * {@code matching.commands} topic. PostgreSQL/outbox inspection remains in the outer shell harness.
+ * <p>INITIAL mode submits one real Risk order and proves the resulting MatchingCommand on the
+ * production {@code matching.commands} topic. REPLAY mode resubmits the same durably-equivalent
+ * command identity after an externally controlled restart boundary and requires Risk to return the
+ * already-terminal admission synchronously. PostgreSQL/outbox inspection remains in the outer shell
+ * harness.
  */
 public final class RiskMatchingE2eVerifierMain {
   private RiskMatchingE2eVerifierMain() {}
@@ -59,21 +63,24 @@ public final class RiskMatchingE2eVerifierMain {
     evidence.writeRequest(scenario.request());
 
     try {
-      verifyScenario(arguments, scenario, deadline, evidence);
+      if (arguments.execution().mode() == VerificationMode.REPLAY) {
+        verifyReplayScenario(arguments, scenario, deadline, evidence);
+      } else {
+        verifyInitialScenario(arguments, scenario, deadline, evidence);
+      }
     } catch (Exception failure) {
       evidence.writeFailure(failure, scenario.command().commandId().toString());
       throw failure;
     }
   }
 
-  private static void verifyScenario(
+  private static void verifyInitialScenario(
       VerifierArguments arguments,
       RiskMatchingScenario.Scenario scenario,
       VerificationDeadline deadline,
       VerificationEvidenceWriter evidence) throws Exception {
     final VerifierArguments.ServiceEndpoints services = arguments.services();
-    final ManagedChannel channel =
-        ManagedChannelBuilder.forTarget(services.riskTarget()).usePlaintext().build();
+    final ManagedChannel channel = createRiskChannel(services.riskTarget());
 
     try (KafkaMatchingCommandProbe kafka =
         new KafkaMatchingCommandProbe(
@@ -101,9 +108,48 @@ public final class RiskMatchingE2eVerifierMain {
       evidence.writeMatchingCommand(observed.command());
       evidence.writePass(admission, observed);
     } finally {
-      channel.shutdownNow();
-      channel.awaitTermination(5, TimeUnit.SECONDS);
+      closeRiskChannel(channel);
     }
+  }
+
+  private static void verifyReplayScenario(
+      VerifierArguments arguments,
+      RiskMatchingScenario.Scenario scenario,
+      VerificationDeadline deadline,
+      VerificationEvidenceWriter evidence) throws Exception {
+    final ManagedChannel channel = createRiskChannel(arguments.services().riskTarget());
+    try {
+      final RiskAdmissionProbe admissionProbe = new RiskAdmissionProbe(channel);
+      final SubmissionObservation submission = admissionProbe.submit(scenario, deadline);
+      evidence.writeSubmission(submission);
+      final AdmissionObservation admission =
+          admissionProbe.awaitAccepted(scenario, submission, deadline);
+      evidence.writeAdmissionOutcome(admission);
+      requireTerminalReplay(submission, admission);
+      evidence.writeReplayPass(admission);
+    } finally {
+      closeRiskChannel(channel);
+    }
+  }
+
+  private static void requireTerminalReplay(
+      SubmissionObservation submission, AdmissionObservation admission) {
+    if (submission.grpcCode() != Status.Code.OK
+        || admission.path() != RiskAdmissionProbe.AdmissionPath.SYNCHRONOUS_ACCEPTED) {
+      throw new VerificationFailure(
+          VerificationFailure.Stage.ADMISSION_REPLAY,
+          VerificationFailure.Code.ADMISSION_REPLAY_NOT_TERMINAL,
+          "equivalent replay did not return the durable terminal admission synchronously");
+    }
+  }
+
+  private static ManagedChannel createRiskChannel(String target) {
+    return ManagedChannelBuilder.forTarget(target).usePlaintext().build();
+  }
+
+  private static void closeRiskChannel(ManagedChannel channel) throws InterruptedException {
+    channel.shutdownNow();
+    channel.awaitTermination(5, TimeUnit.SECONDS);
   }
 
   private static Map<Integer, Long> snapshotOffsets(KafkaMatchingCommandProbe kafka) {
