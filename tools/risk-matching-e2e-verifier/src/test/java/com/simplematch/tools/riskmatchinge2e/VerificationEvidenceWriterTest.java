@@ -55,6 +55,33 @@ class VerificationEvidenceWriterTest {
   }
 
   @Test
+  void writesReplayPassAsSynchronousTerminalEvidence() throws Exception {
+    final ObjectMapper json = new ObjectMapper();
+    VerificationEvidenceDirectory.prepare(tempDir);
+    final VerificationEvidenceWriter writer = new VerificationEvidenceWriter(json, tempDir);
+    final AdmissionObservation admission =
+        new AdmissionObservation(
+            AdmissionPath.SYNCHRONOUS_ACCEPTED,
+            COMMAND_ID,
+            ORDER_ID,
+            ACCOUNT_ID,
+            false,
+            0,
+            12L,
+            Status.Code.OK,
+            "ACCEPTED");
+
+    writer.writeReplayPass(admission);
+
+    final JsonNode verdict = json.readTree(tempDir.resolve("verifier-verdict.json").toFile());
+    assertEquals("PASS", verdict.path("status").asText());
+    assertEquals("REPLAY", verdict.path("mode").asText());
+    assertEquals("SYNCHRONOUS_ACCEPTED", verdict.path("admissionPath").asText());
+    assertEquals("ACCEPTED", verdict.path("terminalStatus").asText());
+    assertEquals(0, verdict.path("reconciliationAttempts").asInt());
+  }
+
+  @Test
   void refusesToReuseNonEmptyEvidenceDirectory() throws Exception {
     Files.writeString(tempDir.resolve("previous-run.json"), "{}\n");
 
