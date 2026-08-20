@@ -34,7 +34,8 @@ class OrderAdmissionApplicationServiceReplayTest {
 
     verify(backpressure).check();
     verify(lifecycle).beginAdmission(validated);
-    verify(lifecycle, never()).finalizeAdmission(any(UUID.class), any());
+    verify(lifecycle, never())
+        .finalizeAdmission(any(UUID.class), any(ReservationOutcome.class));
     verifyNoInteractions(account);
   }
 }
