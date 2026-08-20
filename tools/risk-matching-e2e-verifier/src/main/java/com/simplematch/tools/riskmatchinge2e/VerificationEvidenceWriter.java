@@ -162,11 +162,24 @@ final class VerificationEvidenceWriter {
     final Map<String, Object> verdict = new LinkedHashMap<>();
     verdict.put("status", "PASS");
     verdict.put("stage", "COMPLETE");
+    verdict.put("mode", "INITIAL");
     verdict.put("commandId", admission.commandId());
     verdict.put("admissionPath", admission.path().name());
     verdict.put("partition", observed.partition());
     verdict.put("physicalDeliveryCount", observed.physicalDeliveryCount());
     verdict.put("payloadSha256", observed.payloadSha256());
+    write("verifier-verdict.json", verdict);
+  }
+
+  void writeReplayPass(AdmissionObservation admission) throws IOException {
+    final Map<String, Object> verdict = new LinkedHashMap<>();
+    verdict.put("status", "PASS");
+    verdict.put("stage", "COMPLETE");
+    verdict.put("mode", "REPLAY");
+    verdict.put("commandId", admission.commandId());
+    verdict.put("admissionPath", admission.path().name());
+    verdict.put("terminalStatus", admission.terminalStatus());
+    verdict.put("reconciliationAttempts", admission.reconciliationAttempts());
     write("verifier-verdict.json", verdict);
   }
 
