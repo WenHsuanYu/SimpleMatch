@@ -64,7 +64,9 @@ public final class RiskMatchingE2eVerifierMain {
 
     try {
       if (arguments.execution().mode() == VerificationMode.REPLAY) {
-        verifyReplayScenario(arguments, scenario, deadline, evidence);
+        final ReplayEvidenceWriter replayEvidence =
+            new ReplayEvidenceWriter(json, arguments.execution().evidenceDir());
+        verifyReplayScenario(arguments, scenario, deadline, evidence, replayEvidence);
       } else {
         verifyInitialScenario(arguments, scenario, deadline, evidence);
       }
@@ -116,7 +118,8 @@ public final class RiskMatchingE2eVerifierMain {
       VerifierArguments arguments,
       RiskMatchingScenario.Scenario scenario,
       VerificationDeadline deadline,
-      VerificationEvidenceWriter evidence) throws Exception {
+      VerificationEvidenceWriter evidence,
+      ReplayEvidenceWriter replayEvidence) throws Exception {
     final ManagedChannel channel = createRiskChannel(arguments.services().riskTarget());
     try {
       final RiskAdmissionProbe admissionProbe = new RiskAdmissionProbe(channel);
@@ -126,7 +129,7 @@ public final class RiskMatchingE2eVerifierMain {
           admissionProbe.awaitAccepted(scenario, submission, deadline);
       evidence.writeAdmissionOutcome(admission);
       requireTerminalReplay(submission, admission);
-      evidence.writeReplayPass(admission);
+      replayEvidence.writePass(admission);
     } finally {
       closeRiskChannel(channel);
     }
