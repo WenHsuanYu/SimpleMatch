@@ -1,0 +1,94 @@
+# Repository-owned Kubernetes contract for the retained RM-1 restart/replay verifier.
+#
+# The outer restart/replay harness reuses the baseline run identity after replacing Risk and Kafka
+# Connect Pods. This Job resubmits only the durably-equivalent Risk command; it does not mutate
+# connector offsets or query owner databases.
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: risk-matching-replay-verifier
+  labels:
+    app.kubernetes.io/name: risk-matching-replay-verifier
+    app.kubernetes.io/component: verification
+    app.kubernetes.io/part-of: simplematch
+spec:
+  backoffLimit: 0
+  activeDeadlineSeconds: 600
+  ttlSecondsAfterFinished: 86400
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: risk-matching-replay-verifier
+        app.kubernetes.io/component: verification
+        app.kubernetes.io/part-of: simplematch
+    spec:
+      restartPolicy: Never
+      automountServiceAccountToken: false
+      enableServiceLinks: false
+      securityContext:
+        seccompProfile:
+          type: RuntimeDefault
+        runAsNonRoot: true
+        runAsUser: 10001
+        runAsGroup: 10001
+        fsGroup: 10001
+        fsGroupChangePolicy: OnRootMismatch
+      containers:
+        - name: verifier
+          image: simplematch/risk-matching-e2e-verifier:local
+          imagePullPolicy: IfNotPresent
+          args:
+            - --artifact-path
+            - /etc/simplematch/market-reference/market_reference.json
+            - --checksum-path
+            - /etc/simplematch/market-reference/market_reference.sha256
+            - --trading-day
+            - $(SIMPLEMATCH_RM1_TRADING_DAY)
+            - --account-id
+            - $(SIMPLEMATCH_RM1_ACCOUNT_ID)
+            - --run-id
+            - $(SIMPLEMATCH_RM1_RUN_ID)
+            - --evidence-dir
+            - /tmp/evidence
+            - --timeout-seconds
+            - $(SIMPLEMATCH_RM1_TIMEOUT_SECONDS)
+            - --mode
+            - REPLAY
+          envFrom:
+            - configMapRef:
+                name: risk-matching-replay-run
+                optional: false
+          terminationMessagePolicy: FallbackToLogsOnError
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop: ["ALL"]
+            readOnlyRootFilesystem: true
+            runAsNonRoot: true
+            runAsUser: 10001
+            runAsGroup: 10001
+          resources:
+            requests:
+              cpu: 250m
+              memory: 512Mi
+            limits:
+              cpu: "2"
+              memory: 2Gi
+          volumeMounts:
+            - name: runtime-tmp
+              mountPath: /tmp
+            - name: market-reference
+              mountPath: /etc/simplematch/market-reference
+              readOnly: true
+      volumes:
+        - name: runtime-tmp
+          emptyDir: {}
+        - name: market-reference
+          configMap:
+            name: matching-daily-artifact
+            optional: false
+            items:
+              - key: market_reference.json
+                path: market_reference.json
+              - key: market_reference.sha256
+                path: market_reference.sha256
