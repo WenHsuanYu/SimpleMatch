@@ -21,8 +21,7 @@ import io.grpc.Status;
 import io.grpc.stub.StreamObserver;
 import java.time.Clock;
 import java.util.UUID;
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
+import lombok.extern.log4j.Log4j2;
 import org.springframework.stereotype.Service;
 
 /**
@@ -31,9 +30,9 @@ import org.springframework.stereotype.Service;
  * <p>The adapter maps admission outcomes and reconciliation snapshots to v2 protobuf responses.
  */
 @Service
+@Log4j2
 public final class OrderAdmissionGrpcService
     extends OrderAdmissionServiceGrpc.OrderAdmissionServiceImplBase {
-  private static final Logger LOG = LoggerFactory.getLogger(OrderAdmissionGrpcService.class);
 
   private final OrderAdmissionApplicationService admissions;
   private final AdmissionOutcomeGrpcResponder outcomeResponder;
@@ -63,12 +62,10 @@ public final class OrderAdmissionGrpcService
       responseObserver.onError(
           Status.UNAVAILABLE.withDescription(unavailable.getMessage()).asRuntimeException());
     } catch (RuntimeException failure) {
-      LOG.error(
-          "Unexpected order admission failure: commandId={}, orderId={}, accountId={}",
-          request.getCommandId(),
-          request.getOrderId(),
-          request.getAccountId(),
-          failure);
+
+      log.error("Unexpected order admission failure: commandId={}, orderId={}, "
+                + "accountId={}", request.getCommandId(), request.getOrderId(),
+                request.getAccountId(), failure);
       responseObserver.onError(
           Status.INTERNAL.withDescription("failed to admit order").asRuntimeException());
     }
