@@ -171,18 +171,6 @@ final class VerificationEvidenceWriter {
     write("verifier-verdict.json", verdict);
   }
 
-  void writeReplayPass(AdmissionObservation admission) throws IOException {
-    final Map<String, Object> verdict = new LinkedHashMap<>();
-    verdict.put("status", "PASS");
-    verdict.put("stage", "COMPLETE");
-    verdict.put("mode", "REPLAY");
-    verdict.put("commandId", admission.commandId());
-    verdict.put("admissionPath", admission.path().name());
-    verdict.put("terminalStatus", admission.terminalStatus());
-    verdict.put("reconciliationAttempts", admission.reconciliationAttempts());
-    write("verifier-verdict.json", verdict);
-  }
-
   void writeFailure(Throwable failure, String commandId) throws IOException {
     final Map<String, Object> verdict = new LinkedHashMap<>();
     verdict.put("status", "FAIL");
