@@ -9,8 +9,12 @@ claim external staging or production certification.
 
 The verifier is split into stable layers so each concern has one owner:
 
-- `tools:risk-matching-e2e-verifier` owns typed Market Reference validation, deterministic scenario
-  construction, Risk gRPC submission, Kafka observation, protobuf decoding, and semantic assertions.
+- `tools/risk-matching-e2e-verifier` owns typed Market Reference validation, deterministic scenario
+  construction, Risk gRPC submission/reconciliation, Kafka observation, protobuf decoding, and
+  semantic assertions.
+- `RiskAdmissionProbe` treats the initial submission response and durable reconciliation as one
+  bounded state machine. It can observe `GetAdmissionOutcome`, but it never resubmits the order and
+  never owns saga recovery.
 - `deploy/docker/Dockerfile.risk-matching-e2e-verifier` builds that tool into a dedicated runtime
   image. Gradle is used while building the image, not inside the deployed verification Pod.
 - `deploy/k8s/verification/risk-matching-e2e-verifier-job.yaml` owns Kubernetes execution policy:
@@ -19,22 +23,49 @@ The verifier is split into stable layers so each concern has one owner:
   run-scoped Account fixture, immutable run configuration, evidence collection, PostgreSQL
   cross-checks, and cleanup.
 
-The shell harness must not embed Kubernetes YAML, reimplement protobuf parsing, or recalculate
-routing. Production Risk and Matching code are not bypassed.
+The shell harness must not embed Kubernetes YAML, reimplement protobuf parsing, recalculate routing,
+or drive Risk recovery. Production Risk and Matching code are not bypassed.
+
+The verifier has one end-to-end timeout budget. Submission, reconciliation, and Kafka observation
+all consume the same remaining budget; a later stage cannot receive a fresh copy of the original
+timeout.
+
+## Admission completion semantics
+
+Two admission paths are valid and must satisfy the same terminal assertions.
+
+`SYNCHRONOUS_ACCEPTED` means `SubmitNewOrder` returned an accepted response within the initial RPC.
+The response identity and artifact-assigned partition are validated before Kafka observation.
+
+`RECOVERED_ACCEPTED` covers an ambiguous remote outcome. If `SubmitNewOrder` returns gRPC
+`UNAVAILABLE`, the verifier queries the existing public `GetAdmissionOutcome(command_id)` API. A
+durable `PENDING` result is observed until Risk's own scheduled recovery reaches a terminal state.
+The verifier does not call `SubmitNewOrder` again. `ACCEPTED` continues to Kafka verification;
+`REJECTED`, `NOT_FOUND`, an identity mismatch, a non-recoverable gRPC error, or expiration of the
+shared deadline fails the gate.
+
+This distinction is required because an Account reservation can commit before the caller receives
+the response. `UNAVAILABLE` therefore describes uncertainty at the synchronous boundary; it is not
+itself proof that the durable admission failed.
 
 ## Static verification
 
 Before running the deployed check:
 
 ```bash
-scripts/test-risk-matching-e2e-manifest.sh
+bash scripts/test-risk-matching-e2e-manifest.sh
+bash scripts/test-matching-topic-cutover.sh
 
 ./gradlew --no-daemon \
   :tools:risk-matching-e2e-verifier:test
 ```
 
 The manifest test protects the verifier's Job type, no-retry behavior, security context, image,
-resource budget, Market Reference mount, and run-ConfigMap argument contract.
+resource budget, Market Reference mount, run-ConfigMap argument contract, normalized Admission
+evidence contract, and fail-closed evidence-directory behavior. The topic cutover test protects the
+production-shaped `matching.commands` / `matching.events` contract and prevents the legacy
+`matching.executions` consumer/topic from being re-enabled by deployment or local certification
+configuration.
 
 ## Build the dedicated verifier image
 
@@ -77,14 +108,17 @@ Connect workloads, the `matching-daily-artifact` ConfigMap, and a RUNNING
 
 ## Run
 
-From the repository root:
+From the repository root, use a new or empty evidence directory:
 
 ```bash
 scripts/run-risk-matching-command-e2e.sh \
   --namespace simplematch-rm1-20260817 \
   --trading-day 2026-08-17 \
-  --evidence-dir out/certification/rm1-20260817/rm1
+  --evidence-dir out/certification/rm1-20260817/rm1-02
 ```
+
+A non-empty evidence directory is rejected. Certification artifacts from separate runs must never be
+mixed or silently overwritten.
 
 The script intentionally allows only one verifier run at a time in one disposable namespace. It
 uses the stable helper identities:
@@ -124,7 +158,8 @@ The harness performs these checks:
 9. snapshots all 15 `matching.commands` end offsets before submission;
 10. submits a real BUY/LIMIT/ROD board-lot order through
     `simplematch.risk.v2.OrderAdmissionService/SubmitNewOrder`;
-11. requires Risk to accept the order and return the artifact-assigned partition;
+11. accepts either a validated synchronous Risk acceptance or an `UNAVAILABLE` submission that
+    subsequently reaches durable `ACCEPTED` through Risk-owned recovery and `GetAdmissionOutcome`;
 12. consumes only records after the pre-submit offset boundary, decodes `MatchingCommand`, and
     rejects wrong-partition or conflicting same-key payloads;
 13. copies verifier-owned JSON evidence while the image's bounded evidence hand-off wrapper keeps
@@ -182,7 +217,8 @@ account-fixture.log
 verifier-run-config.json
 selected-instrument.json
 request.json
-response.json
+admission-submit.json
+admission-outcome.json
 matching-offsets-before.json
 matching-command-record.json
 matching-command-decoded.json
@@ -193,11 +229,19 @@ verdict.json
 verifier.log
 ```
 
-The hidden hand-off files `.exit-code`, `.ready`, and `.collected` are implementation evidence and
-are not business assertions.
+`admission-submit.json` records the initial gRPC code and any synchronous response facts.
+`admission-outcome.json` normalizes both valid paths into one terminal result and records the path,
+identities, whether `PENDING` was observed, reconciliation attempt count, elapsed time, and terminal
+status. The older `response.json` artifact is intentionally retired because a valid recovered path
+may have no synchronous accepted response.
+
+Failures use stable `stage` and `failureCode` fields rather than requiring automation to parse Java
+exception class names. The hidden hand-off files `.exit-code`, `.ready`, and `.collected` are
+implementation evidence and are not business assertions.
 
 `verdict.json` is the outer cross-layer verdict. `verifier-verdict.json` is the typed Java
-gRPC/Kafka verdict. A successful run requires both to report `PASS`.
+gRPC/Kafka verdict. A successful run requires both to report `PASS` and the normalized Admission
+outcome to be terminal `ACCEPTED`.
 
 On failure the harness also captures bounded Pod/workload inventory, recent Risk and Account logs,
 the verifier Job description/logs, and the run ConfigMap. Diagnostic collection is best-effort and
@@ -205,12 +249,12 @@ must not overwrite the original failure.
 
 ## Current boundary
 
-This retained verifier closes the missing deployed **accepted New Order** path and checks initial
-at-least-once duplicate consistency. It intentionally does not yet claim the restart/replay portion
-of the complete RM-1 acceptance criteria. Before RM-1 is changed from `PARTIAL` to `COMPLETED`,
-extend the retained scenario with an explicit Risk/connector restart or pause/resume boundary and
-prove that the same durable command identity preserves artifact identity, partition, and command
-semantics after replay.
+This retained verifier closes the missing deployed **accepted New Order** path, including the valid
+Risk admission recovery path, and checks initial at-least-once duplicate consistency. It intentionally
+does not yet claim the restart/replay portion of the complete RM-1 acceptance criteria. Before RM-1
+is changed from `PARTIAL` to `COMPLETED`, extend the retained scenario with an explicit Risk/connector
+restart or pause/resume boundary and prove that the same durable command identity preserves artifact
+identity, partition, and command semantics after replay.
 
 Do not mark RM-1 complete merely because this script exists. Status changes require a fresh canonical
 local production-like run and retained evidence from the version of the verifier being claimed.

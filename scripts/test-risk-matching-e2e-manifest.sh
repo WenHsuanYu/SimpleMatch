@@ -23,6 +23,24 @@ done
 bash -n "$wrapper"
 bash -n "$orchestrator"
 
+grep -Fq 'command_id="$(jq -r '\''.commandId'\'' "$evidence_dir/request.json")"' \
+  "$orchestrator" || {
+    printf '%s\n' 'RM-1 orchestrator must derive commandId from the submitted request evidence.' >&2
+    exit 1
+  }
+if grep -Fq 'response.json' "$orchestrator"; then
+  printf '%s\n' 'RM-1 orchestrator must not depend on a synchronous response.json artifact.' >&2
+  exit 1
+fi
+grep -Fq 'admission-outcome.json' "$orchestrator" || {
+  printf '%s\n' 'RM-1 orchestrator must require normalized terminal Admission evidence.' >&2
+  exit 1
+}
+grep -Fq 'evidence directory must be empty before verification' "$orchestrator" || {
+  printf '%s\n' 'RM-1 orchestrator must fail closed when the evidence directory is non-empty.' >&2
+  exit 1
+}
+
 image_inventory="$("$repo_root/scripts/build-local-images.sh" --list)"
 grep -Fq \
   'verification|risk-matching-e2e-verifier|deploy/docker/Dockerfile.risk-matching-e2e-verifier|simplematch/risk-matching-e2e-verifier:local' \

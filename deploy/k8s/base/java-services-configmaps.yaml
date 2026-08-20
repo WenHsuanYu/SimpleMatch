@@ -8,8 +8,6 @@ data:
       account-service:
         grpc:
           enabled: true
-        lifecycle-consumer:
-          enabled: true
         final-matching-events:
           enabled: true
 ---
