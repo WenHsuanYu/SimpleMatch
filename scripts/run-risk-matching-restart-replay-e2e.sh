@@ -8,11 +8,14 @@ namespace=""
 baseline_evidence_dir=""
 evidence_dir=""
 timeout_seconds="${SIMPLEMATCH_RM1_REPLAY_TIMEOUT_SECONDS:-120}"
+pod_replacement_timeout_seconds="${SIMPLEMATCH_RM1_POD_REPLACEMENT_TIMEOUT_SECONDS:-60}"
 
 job_name="risk-matching-replay-verifier"
 run_config_name="risk-matching-replay-run"
 job_manifest="$repo_root/deploy/k8s/verification/risk-matching-replay-verifier-job.yaml"
 verifier_image="simplematch/risk-matching-e2e-verifier:local"
+risk_pod_selector='app.kubernetes.io/name=risk-service'
+kafka_connect_pod_selector='app.kubernetes.io/name=kafka-connect,app.kubernetes.io/component=connector'
 port_forward_pid=""
 job_created=false
 run_config_created=false
@@ -60,6 +63,10 @@ done
 [[ -n "$evidence_dir" ]] || { usage >&2; die '--evidence-dir is required'; }
 [[ "$timeout_seconds" =~ ^[1-9][0-9]*$ ]] || die '--timeout-seconds must be a positive integer'
 (( timeout_seconds <= 300 )) || die '--timeout-seconds must not exceed 300'
+[[ "$pod_replacement_timeout_seconds" =~ ^[1-9][0-9]*$ ]] \
+  || die 'SIMPLEMATCH_RM1_POD_REPLACEMENT_TIMEOUT_SECONDS must be a positive integer'
+(( pod_replacement_timeout_seconds <= 300 )) \
+  || die 'SIMPLEMATCH_RM1_POD_REPLACEMENT_TIMEOUT_SECONDS must not exceed 300'
 
 for tool in kubectl jq curl sed tail seq sleep cmp awk date; do
   command -v "$tool" >/dev/null 2>&1 || die "$tool is required"
@@ -262,14 +269,36 @@ capture_pod_uids() {
   [[ "$(jq 'length' "$destination")" -gt 0 ]] || die "selector has no Pods: $selector"
 }
 
-require_all_pods_replaced() {
-  local before="$1"
-  local after="$2"
-  jq -e -n --slurpfile before "$before" --slurpfile after "$after" '
-    ($before[0] | length) > 0
-    and ($after[0] | length) > 0
-    and ($before[0] | all(. as $uid | ($after[0] | index($uid) | not)))
-  ' >/dev/null || die "restart did not replace every Pod recorded in $before"
+wait_for_all_pods_replaced() {
+  local selector="$1"
+  local before="$2"
+  local after="$3"
+  local expected_count
+  expected_count="$(jq 'length' "$before")"
+  (( expected_count > 0 )) || die "pre-restart Pod snapshot is empty: $before"
+
+  for _ in $(seq 1 "$pod_replacement_timeout_seconds"); do
+    capture_pod_uids "$selector" "$after"
+    if jq -e -n \
+        --argjson expected_count "$expected_count" \
+        --slurpfile before "$before" \
+        --slurpfile after "$after" '
+          ($after[0] | length) == $expected_count
+          and ($before[0] | all(. as $uid | ($after[0] | index($uid) | not)))
+        ' >/dev/null; then
+      return 0
+    fi
+    sleep 1
+  done
+
+  printf 'Pre-restart Pod UIDs (%s):\n' "$selector" >&2
+  jq . "$before" >&2 || true
+  printf 'Current Pod UIDs after %ss:\n' "$pod_replacement_timeout_seconds" >&2
+  jq . "$after" >&2 || true
+  kubectl -n "$namespace" get pods -l "$selector" \
+    -o custom-columns='NAME:.metadata.name,UID:.metadata.uid,DELETING:.metadata.deletionTimestamp,READY:.status.containerStatuses[0].ready' \
+    >&2 || true
+  die "restart did not reach a stable full Pod replacement for selector: $selector"
 }
 
 require_json_equal() {
@@ -336,8 +365,8 @@ require_json_equal "$baseline_evidence_dir/risk-outbox.json" \
   'retained Risk outbox drifted since the passing baseline run'
 
 capture_offsets "$evidence_dir/matching-offsets-before-restart.json"
-capture_pod_uids 'app.kubernetes.io/name=risk-service' "$evidence_dir/risk-pod-uids-before.json"
-capture_pod_uids 'app.kubernetes.io/name=kafka-connect' "$evidence_dir/kafka-connect-pod-uids-before.json"
+capture_pod_uids "$risk_pod_selector" "$evidence_dir/risk-pod-uids-before.json"
+capture_pod_uids "$kafka_connect_pod_selector" "$evidence_dir/kafka-connect-pod-uids-before.json"
 
 start_connect_port_forward
 capture_connector_status "$evidence_dir/connector-status-before-restart.json"
@@ -349,10 +378,11 @@ kubectl -n "$namespace" rollout restart deployment/risk-service deployment/kafka
 kubectl -n "$namespace" rollout status deployment/risk-service --timeout=300s >/dev/null
 kubectl -n "$namespace" rollout status deployment/kafka-connect --timeout=300s >/dev/null
 
-capture_pod_uids 'app.kubernetes.io/name=risk-service' "$evidence_dir/risk-pod-uids-after.json"
-capture_pod_uids 'app.kubernetes.io/name=kafka-connect' "$evidence_dir/kafka-connect-pod-uids-after.json"
-require_all_pods_replaced "$evidence_dir/risk-pod-uids-before.json" "$evidence_dir/risk-pod-uids-after.json"
-require_all_pods_replaced "$evidence_dir/kafka-connect-pod-uids-before.json" \
+wait_for_all_pods_replaced "$risk_pod_selector" \
+  "$evidence_dir/risk-pod-uids-before.json" \
+  "$evidence_dir/risk-pod-uids-after.json"
+wait_for_all_pods_replaced "$kafka_connect_pod_selector" \
+  "$evidence_dir/kafka-connect-pod-uids-before.json" \
   "$evidence_dir/kafka-connect-pod-uids-after.json"
 
 start_connect_port_forward

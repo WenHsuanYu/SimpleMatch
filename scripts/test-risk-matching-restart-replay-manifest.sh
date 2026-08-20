@@ -18,8 +18,8 @@ grep -Fq 'rollout restart deployment/risk-service deployment/kafka-connect' "$or
   printf '%s\n' 'RM-1 restart/replay must cross both Risk and Kafka Connect Pod replacement.' >&2
   exit 1
 }
-grep -Fq 'require_all_pods_replaced' "$orchestrator" || {
-  printf '%s\n' 'RM-1 restart/replay must prove Pod UID replacement, not only rollout readiness.' >&2
+grep -Fq 'wait_for_all_pods_replaced' "$orchestrator" || {
+  printf '%s\n' 'RM-1 restart/replay must wait for stable Pod UID replacement after rollout availability.' >&2
   exit 1
 }
 grep -Fq 'matching-offsets-before-restart.json' "$orchestrator" || {
