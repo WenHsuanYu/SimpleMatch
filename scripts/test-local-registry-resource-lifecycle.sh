@@ -105,17 +105,29 @@ grep -Fq 'simplematch_local_resource_render_comparison_file' "$resource_report"
 grep -Fq 'establish_resource_baseline' "$manager"
 grep -Fq 'SIMPLEMATCH_LOCAL_RESOURCE_BASELINE_FILE' "$manager"
 
-# The image transport has one policy module and one side-effecting preparation CLI.
+# The image transport policy is registry-only. Preparation owns publication side effects;
+# direct image normalization and kind-node imports must not be executable dependencies.
 grep -Fq 'SIMPLEMATCH_LOCAL_IMAGE_TRANSPORT_DEFAULT="registry"' "$transport_lib"
-grep -Fq 'registry|kind-load' "$transport_lib"
+grep -Fq 'simplematch_local_image_transport_validate' "$transport_lib"
 grep -Fq 'simplematch_local_image_lock_digest_reference' "$transport_lib"
 grep -Fq 'simplematch_local_image_transport_matching_reference' "$transport_lib"
+if grep -Fq 'kind-load' "$transport_lib"; then
+  printf '%s\n' 'transport policy still contains the removed kind-load mode' >&2
+  exit 1
+fi
 grep -Fq 'simplematch_registry_verify "$cluster_name"' "$transport_prepare"
 grep -Fq 'publish-local-images.sh' "$transport_prepare"
-grep -Fq 'normalize-local-images-for-kind.sh' "$transport_prepare"
-grep -Fq 'kind load docker-image' "$transport_prepare"
+if grep -Fq 'normalize-local-images-for-kind.sh' "$transport_prepare"; then
+  printf '%s\n' 'image preparation still depends on the removed kind normalizer' >&2
+  exit 1
+fi
+if grep -Fq 'kind load docker-image' "$transport_prepare"; then
+  printf '%s\n' 'image preparation still imports images directly into kind nodes' >&2
+  exit 1
+fi
 
-# Certification consumes the transport abstraction. It must not own kind-load implementation details.
+# Certification consumes the transport abstraction during the staged runner cutover. It must not
+# own direct-import implementation details; the next cutover slice removes the public switch itself.
 grep -Fq 'source "$script_dir/lib/local-image-transport.sh"' "$certification"
 grep -Fq 'SIMPLEMATCH_LOCAL_IMAGE_TRANSPORT_DEFAULT' "$certification"
 grep -Fq -- '--image-transport' "$certification"
@@ -134,16 +146,22 @@ if grep -Fq 'kind load docker-image' "$certification"; then
   exit 1
 fi
 
-# The renderer owns transport-specific image mutation; registry is digest pinned, kind-load is unchanged.
+# Rendering is registry-backed and digest pinned. The compatibility option remains only long enough
+# to reject a removed transport explicitly during this staged cutover.
 grep -Fq -- '--transport MODE' "$renderer"
-grep -Fq 'if [[ "$transport" == registry ]]' "$renderer"
+grep -Fq 'simplematch_local_image_transport_validate "$transport"' "$renderer"
 grep -Fq 'digest: %s' "$renderer"
 grep -Fq 'newName: %s' "$renderer"
+if grep -Fq 'kind-load preserves' "$renderer"; then
+  printf '%s\n' 'renderer still documents mutable kind-load rendering' >&2
+  exit 1
+fi
 
 grep -Fq 'digest_reference=' "$publisher"
 grep -Fq 'docker push' "$publisher"
 
-# Registry mode uses normal strict digest verification. The fallback may name an exact local tag.
+# The fleet verifier still owns its independent explicit-local-image verification mode until the
+# certification runner no longer has any local-image call sites.
 grep -Fq -- '--allow-local-image IMAGE' "$fleet_verifier"
 grep -Fq 'LOCAL_IMAGE_REFERENCE' "$fleet_verifier"
 
@@ -180,4 +198,4 @@ grep -Fq 'simplematch_registry_verify' "$manager"
 grep -Fq 'containerdConfigPatches:' "$kind_config"
 grep -Fq 'config_path = "/etc/containerd/certs.d"' "$kind_config"
 
-printf '%s\n' 'Local registry, image transport, and resource lifecycle contract passed.'
+printf '%s\n' 'Local registry, registry-only image transport, and resource lifecycle contract passed.'
