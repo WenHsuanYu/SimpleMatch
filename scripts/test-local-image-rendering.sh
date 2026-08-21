@@ -68,7 +68,6 @@ if simplematch_local_image_lock_render_profile "$partial_lock" >/dev/null 2>&1; 
 fi
 
 bash "$renderer" \
-  --transport registry \
   --image-lock "$full_lock" \
   --namespace "$namespace" \
   --output "$full_manifest" >/dev/null
@@ -93,7 +92,6 @@ if grep -Eq '^[[:space:]]*image:[[:space:]]+[^[:space:]]+:local[[:space:]]*$' "$
 fi
 
 bash "$renderer" \
-  --transport registry \
   --image-lock "$matching_lock" \
   --namespace "$namespace" \
   --output "$matching_manifest" >/dev/null
@@ -108,19 +106,21 @@ fi
 grep -Fq 'image: simplematch/risk-service:local' "$matching_manifest"
 
 if bash "$renderer" \
-    --transport registry \
     --image-lock "$partial_lock" \
     --namespace "$namespace" \
     --output "$temp_dir/unsupported.yaml" >/dev/null 2>&1; then
   printf '%s\n' 'renderer unexpectedly accepted unsupported partial image lock' >&2
   exit 1
 fi
-
-# Removed transport switches must fail closed rather than silently re-enable
-# direct kind-node imports or mutable local-image rendering.
-if bash "$renderer" --transport kind-load --image-lock "$matching_lock" \
+if bash "$renderer" --transport registry --image-lock "$matching_lock" \
     --namespace "$namespace" --output "$temp_dir/legacy.yaml" >/dev/null 2>&1; then
-  printf '%s\n' 'renderer unexpectedly accepted the removed kind-load transport' >&2
+  printf '%s\n' 'renderer unexpectedly accepted the removed --transport option' >&2
+  exit 1
+fi
+if SIMPLEMATCH_LOCAL_IMAGE_TRANSPORT=registry bash "$renderer" \
+    --image-lock "$matching_lock" --namespace "$namespace" \
+    --output "$temp_dir/legacy-env.yaml" >/dev/null 2>&1; then
+  printf '%s\n' 'renderer unexpectedly accepted the removed transport environment override' >&2
   exit 1
 fi
 
@@ -133,7 +133,6 @@ exit 17
 EOF_KUBECTL
 chmod +x "$fake_bin/kubectl"
 if PATH="$fake_bin:$PATH" bash "$renderer" \
-    --transport registry \
     --image-lock "$matching_lock" \
     --namespace "$namespace" \
     --output "$atomic_target" >/dev/null 2>&1; then
