@@ -20,6 +20,10 @@ storage_manifest="$repo_root/deploy/kind/simplematch-live-storageclass.yaml"
 storage_class=simplematch-rwo-pod
 resource_baseline_file="${SIMPLEMATCH_LOCAL_RESOURCE_BASELINE_FILE:-$repo_root/out/local-resource-baseline.json}"
 resource_baseline_timeout="${SIMPLEMATCH_LOCAL_RESOURCE_BASELINE_TIMEOUT_SECONDS:-120}"
+kubelet_image_minimum_gc_age=10m0s
+kubelet_image_maximum_gc_age=24h0m0s
+kubelet_image_gc_high_threshold=80
+kubelet_image_gc_low_threshold=70
 SIMPLEMATCH_DRY_RUN=false
 
 usage() {
@@ -27,11 +31,12 @@ usage() {
 Usage: scripts/manage-simplematch-live.sh {create|verify|delete} [--dry-run]
 
 Manage the repository-owned canonical one-control-plane, three-worker kind lab.
-create also creates/connects the repository-owned local registry and records a
-clean resource baseline after topology/storage verification and probe cleanup.
-The registry cache survives cluster deletion so a rebuilt cluster can pull
-current images without re-publishing them. Normal resilience runs reuse the
-cluster; delete is reserved for explicit rebuilds.
+create also creates/connects the repository-owned local registry, verifies the
+cluster-wide local kubelet image-GC policy, and records a clean resource baseline
+after topology/storage verification and probe cleanup. The registry cache
+survives cluster deletion so a rebuilt cluster can pull current images without
+re-publishing them. Normal resilience runs reuse the cluster; delete is reserved
+for explicit rebuilds.
 EOF_USAGE
 }
 
@@ -89,6 +94,48 @@ verify_topology() {
     [[ "$node" == "${cluster_name}-control-plane" ]] && expected_role=control-plane
     [[ "$(docker inspect --format '{{index .Config.Labels "io.x-k8s.kind.role"}}' "$node")" == "$expected_role" ]] ||
       simplematch_die "Docker container $node has the wrong kind role"
+  done
+}
+
+kubelet_config_value() {
+  local node="$1"
+  local key="$2"
+
+  docker exec "$node" awk -v wanted="$key" '
+    $1 == wanted ":" {
+      count += 1
+      value = $2
+    }
+    END {
+      if (count != 1 || value == "") exit 1
+      print value
+    }
+  ' /var/lib/kubelet/config.yaml
+}
+
+assert_kubelet_config_value() {
+  local node="$1"
+  local key="$2"
+  local expected="$3"
+  local actual
+
+  actual="$(kubelet_config_value "$node" "$key")" ||
+    simplematch_die "cannot read kubelet $key from $node"
+  [[ "$actual" == "$expected" ]] ||
+    simplematch_die "kubelet $key mismatch on $node: expected $expected, got $actual"
+}
+
+verify_kubelet_image_gc_policy() {
+  local node
+  local -a nodes
+
+  mapfile -t nodes < <(kind get nodes --name "$cluster_name")
+  [[ ${#nodes[@]} -eq 4 ]] || simplematch_die 'cannot verify kubelet image GC policy without four canonical nodes'
+  for node in "${nodes[@]}"; do
+    assert_kubelet_config_value "$node" imageMinimumGCAge "$kubelet_image_minimum_gc_age"
+    assert_kubelet_config_value "$node" imageMaximumGCAge "$kubelet_image_maximum_gc_age"
+    assert_kubelet_config_value "$node" imageGCHighThresholdPercent "$kubelet_image_gc_high_threshold"
+    assert_kubelet_config_value "$node" imageGCLowThresholdPercent "$kubelet_image_gc_low_threshold"
   done
 }
 
@@ -159,6 +206,7 @@ verify_identity() {
   [[ -f "$config" && -f "$storage_manifest" ]] || simplematch_die 'kind configuration or StorageClass manifest is missing'
   exists || simplematch_die "kind cluster $cluster_name does not exist"
   verify_topology "$(nodes_json)"
+  verify_kubelet_image_gc_policy
 }
 
 verify_delete_identity() {
@@ -207,7 +255,7 @@ create_cluster() {
     simplematch_quote_command kind create cluster --config "$config"
     printf 'DRY RUN: configure kind nodes for registry %s\n' "$(simplematch_registry_endpoint)"
     simplematch_quote_command kubectl --context "$context" apply --filename "$storage_manifest"
-    printf '%s\n' 'DRY RUN: verify topology, local registry, StorageClass, executable PV node affinity, and clean resource baseline.'
+    printf '%s\n' 'DRY RUN: verify topology, local kubelet image GC policy, local registry, StorageClass, executable PV node affinity, and clean resource baseline.'
     printf 'DRY RUN: write resource baseline %q\n' "$resource_baseline_file"
     return 0
   fi
@@ -232,7 +280,7 @@ verify_cluster() {
   if [[ "$SIMPLEMATCH_DRY_RUN" == true ]]; then
     simplematch_quote_command kind get clusters
     simplematch_quote_command kubectl --context "$context" get nodes
-    printf '%s\n' 'DRY RUN: verify local registry, StorageClass, and executable PV node affinity.'
+    printf '%s\n' 'DRY RUN: verify local kubelet image GC policy, local registry, StorageClass, and executable PV node affinity.'
     return 0
   fi
   verify_identity
