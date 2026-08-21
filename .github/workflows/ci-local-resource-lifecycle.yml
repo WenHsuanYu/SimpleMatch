@@ -1,0 +1,86 @@
+name: Local Resource Lifecycle CI
+
+on:
+  pull_request:
+    paths:
+      - '.github/workflows/ci-local-resource-lifecycle.yml'
+      - 'deploy/kind/**'
+      - 'deploy/k8s/**'
+      - 'scripts/lib/local-common.sh'
+      - 'scripts/lib/local-kind.sh'
+      - 'scripts/lib/local-registry.sh'
+      - 'scripts/lib/local-resource.sh'
+      - 'scripts/lib/local-resilience.sh'
+      - 'scripts/lib/local-image-inventory.sh'
+      - 'scripts/lib/local-image-transport.sh'
+      - 'scripts/manage-local-registry.sh'
+      - 'scripts/manage-simplematch-live.sh'
+      - 'scripts/prepare-local-kubernetes-images.sh'
+      - 'scripts/simplematch-clean-local-disk.sh'
+      - 'scripts/hard-reset-local.sh'
+      - 'scripts/local-resource-report.sh'
+      - 'scripts/publish-local-images.sh'
+      - 'scripts/render-local-kubernetes-manifest.sh'
+      - 'scripts/run-local-production-like-certification.sh'
+      - 'scripts/run-local-resilience.sh'
+      - 'scripts/verify-matching-fleet-live.sh'
+      - 'scripts/test-local-registry-resource-lifecycle.sh'
+      - 'scripts/test-local-image-transport.sh'
+      - 'scripts/test-local-image-rendering.sh'
+      - 'scripts/test-local-resource-report.sh'
+      - 'scripts/test-local-resource-kind-integration.sh'
+      - 'scripts/test-local-resilience.sh'
+      - 'scripts/test-simplematch-kind-manager.sh'
+      - 'docs/local-registry-resource-lifecycle.md'
+  workflow_dispatch:
+
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  contracts:
+    name: Local resource and image transport contracts
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 1
+          persist-credentials: false
+      - name: Validate shell lifecycle contracts
+        run: |
+          bash scripts/test-local-registry-resource-lifecycle.sh
+          bash scripts/test-local-image-transport.sh
+          bash scripts/test-local-image-rendering.sh
+          bash scripts/test-local-resource-report.sh
+          bash scripts/test-local-resilience.sh
+          bash scripts/test-simplematch-kind-manager.sh
+
+  kind-integration-smoke:
+    name: Live kind registry and resource lifecycle smoke
+    needs: contracts
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 1
+          persist-credentials: false
+      - name: Install kind v0.32.0
+        run: |
+          curl --fail --silent --show-error --location \
+            --output /tmp/kind-linux-amd64 \
+            https://kind.sigs.k8s.io/dl/v0.32.0/kind-linux-amd64
+          curl --fail --silent --show-error --location \
+            --output /tmp/kind-linux-amd64.sha256sum \
+            https://kind.sigs.k8s.io/dl/v0.32.0/kind-linux-amd64.sha256sum
+          (cd /tmp && sha256sum --check kind-linux-amd64.sha256sum)
+          sudo install -m 0755 /tmp/kind-linux-amd64 /usr/local/bin/kind
+          kind version
+      - name: Run live kind registry/resource smoke
+        run: bash scripts/test-local-resource-kind-integration.sh

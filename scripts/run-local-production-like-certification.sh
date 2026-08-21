@@ -4,11 +4,19 @@ set -euo pipefail
 
 script_dir="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
 repo_root="$(cd -- "$script_dir/.." && pwd)"
+# shellcheck source=scripts/lib/local-common.sh
+source "$script_dir/lib/local-common.sh"
+# shellcheck source=scripts/lib/local-kind.sh
+source "$script_dir/lib/local-kind.sh"
+# shellcheck source=scripts/lib/local-image-transport.sh
+source "$script_dir/lib/local-image-transport.sh"
 
 compose_file="$repo_root/deploy/compose/kafka-connect.production-like.yml"
 compose_project="${SIMPLEMATCH_CERTIFICATION_COMPOSE_PROJECT:-simplematch-local-production-like}"
 image_tag="${SIMPLEMATCH_LOCAL_IMAGE_TAG:-local}"
 evidence_dir="${SIMPLEMATCH_CERTIFICATION_EVIDENCE_DIR:-$repo_root/out/certification/local-production-like}"
+image_transport="${SIMPLEMATCH_LOCAL_IMAGE_TRANSPORT:-$SIMPLEMATCH_LOCAL_IMAGE_TRANSPORT_DEFAULT}"
+image_lock="${SIMPLEMATCH_LOCAL_IMAGE_LOCK:-$evidence_dir/local-images.lock}"
 matching_producer_config_file="${SIMPLEMATCH_KAFKA_PRODUCER_CONFIG_FILE:-$evidence_dir/matching-producer.config.txt}"
 matching_capacity_evidence_file="${SIMPLEMATCH_KAFKA_CAPACITY_EVIDENCE_FILE:-$evidence_dir/kafka-capacity.properties}"
 matching_capacity_workload_file="${SIMPLEMATCH_KAFKA_CAPACITY_WORKLOAD_FILE:-$repo_root/scripts/testdata/matching-topic-profile/local/capacity.properties}"
@@ -36,10 +44,12 @@ failed_phase=""
 completion_status="RUNNING"
 completed_phases=()
 certification_timeout_seconds="${SIMPLEMATCH_CERTIFICATION_TIMEOUT_SECONDS:-7200}"
+namespace_cleanup_timeout="${SIMPLEMATCH_NAMESPACE_CLEANUP_TIMEOUT_SECONDS:-180}"
 certification_deadline_epoch=0
 phase_marker_directory=""
 run_context_file=""
 source_signature=""
+matching_image_reference=""
 compose_prefix=()
 compose_command=()
 
@@ -50,6 +60,7 @@ Usage:
 
 Options:
   --tag TAG               Local image tag (default: SIMPLEMATCH_LOCAL_IMAGE_TAG or local).
+  --image-transport MODE  Kubernetes image transport: registry (default) or kind-load fallback.
   --skip-build            Reuse local images instead of running the image build workflow.
   --skip-compose          Skip PostgreSQL, Redis, Kafka, and Kafka Connect runtime checks.
   --skip-kubernetes        Skip the live Kubernetes deployment and Matching fleet checks.
@@ -64,7 +75,11 @@ Options:
 
 The local gate owns only the Compose project named by
 SIMPLEMATCH_CERTIFICATION_COMPOSE_PROJECT and a generated Kubernetes namespace.
-It never pushes images and never touches staging or production resources.
+Generated namespaces are labeled simplematch.io/lifecycle=disposable; that label
+is the authoritative routine-cleanup boundary. registry transport publishes only
+to the repository-owned localhost registry; it never pushes to staging,
+production, or a remote registry. kind-load remains an explicit compatibility
+fallback and imports images directly into kind nodes.
 The Kubernetes gate uses the approved delivery manifest for
 SIMPLEMATCH_CERTIFICATION_TRADING_DAY (default: current UTC day) under
 tools/market-reference-builder/data, or the path supplied by
@@ -136,6 +151,14 @@ run_logged() {
   failure_reason="Phase failed: $phase"
   cat "$log_path" >&2
   return "$command_status"
+}
+
+run_refreshable_logged() {
+  local phase="$1"
+  if [[ "$dry_run" == false ]]; then
+    rm -f "$phase_marker_directory/${phase}.ok"
+  fi
+  run_logged "$@"
 }
 
 run_capture() {
@@ -238,6 +261,10 @@ write_report() {
     printf '%s\n' "- status: $completion_status"
     printf '%s\n' "- generated_at_utc: $(date -u +%Y-%m-%dT%H:%M:%SZ)"
     printf '%s\n' "- local_image_tag: $image_tag"
+    printf '%s\n' "- image_transport: $image_transport"
+    if [[ "$image_transport" == registry ]]; then
+      printf '%s\n' "- image_lock: ${image_lock#$repo_root/}"
+    fi
     printf '%s\n' "- compose_project: $compose_project"
     printf '%s\n' "- compose_file: ${compose_file#$repo_root/}"
     printf '%s\n' "- kubernetes_namespace: ${namespace:-not-run}"
@@ -267,14 +294,25 @@ write_report() {
 
 cleanup() {
   local exit_code="$?"
+  local namespace_cleanup_failed=false
 
   if [[ "$dry_run" == false && "$keep_resources" == false ]]; then
     if [[ "$compose_started" == true ]]; then
       "${compose_command[@]}" down --volumes --remove-orphans >/dev/null 2>&1 || true
     fi
     if [[ "$kubernetes_namespace_created" == true && -n "$namespace" ]]; then
-      kubectl delete namespace "$namespace" --ignore-not-found >/dev/null 2>&1 || true
+      if ! simplematch_kind_delete_disposable_namespace \
+          "$kind_context" "$namespace" "$namespace_cleanup_timeout" >/dev/null 2>&1; then
+        namespace_cleanup_failed=true
+        printf 'Disposable namespace cleanup did not complete: %s\n' "$namespace" >&2
+      fi
     fi
+  fi
+
+  if [[ "$namespace_cleanup_failed" == true && "$exit_code" -eq 0 ]]; then
+    exit_code=1
+    failed_phase="cleanup"
+    failure_reason="Disposable Kubernetes namespace cleanup did not complete."
   fi
 
   write_report "$exit_code"
@@ -287,6 +325,10 @@ while [[ $# -gt 0 ]]; do
   case "$1" in
     --tag)
       image_tag="${2:?--tag requires a value}"
+      shift 2
+      ;;
+    --image-transport)
+      image_transport="${2:?--image-transport requires a value}"
       shift 2
       ;;
     --skip-build)
@@ -329,6 +371,8 @@ while [[ $# -gt 0 ]]; do
   esac
 done
 
+simplematch_local_image_transport_validate "$image_transport" || die \
+  "SIMPLEMATCH_LOCAL_IMAGE_TRANSPORT/--image-transport must be registry or kind-load: $image_transport"
 [[ "$certification_trading_day" =~ ^[0-9]{4}-[0-9]{2}-[0-9]{2}$ ]] || die \
   "SIMPLEMATCH_CERTIFICATION_TRADING_DAY must use YYYY-MM-DD: $certification_trading_day"
 
@@ -336,6 +380,8 @@ done
 
 [[ "$certification_timeout_seconds" =~ ^[1-9][0-9]*$ ]] || die \
   "SIMPLEMATCH_CERTIFICATION_TIMEOUT_SECONDS must be a positive integer: $certification_timeout_seconds"
+[[ "$namespace_cleanup_timeout" =~ ^[1-9][0-9]*$ ]] || die \
+  "SIMPLEMATCH_NAMESPACE_CLEANUP_TIMEOUT_SECONDS must be a positive integer: $namespace_cleanup_timeout"
 if [[ "$dry_run" == false ]]; then
   command -v timeout >/dev/null 2>&1 || die 'timeout is required for bounded certification commands.'
 fi
@@ -360,6 +406,9 @@ source_signature="$({
   git rev-parse HEAD
   git ls-files -co --exclude-standard -- \
     AGENTS.md deploy/k8s deploy/docker/run-flyway scripts/run-local-production-like-certification.sh \
+    scripts/lib/local-common.sh scripts/lib/local-kind.sh scripts/lib/local-image-transport.sh \
+    scripts/prepare-local-kubernetes-images.sh scripts/publish-local-images.sh \
+    scripts/render-local-kubernetes-manifest.sh \
     scripts/test-kubernetes-overlays.sh scripts/test-local-kubernetes-dependencies.sh \
     scripts/test-postgresql-redis-manifests.sh scripts/test-flyway-services.sh |
     sort -u |
@@ -374,19 +423,24 @@ if [[ "$resume" == true ]]; then
   [[ -n "${SIMPLEMATCH_CERTIFICATION_NAMESPACE:-}" ]] || die \
     '--resume requires SIMPLEMATCH_CERTIFICATION_NAMESPACE.'
   [[ -f "$run_context_file" ]] || die "Resume context is missing: $run_context_file"
-  expected_context="$(printf 'namespace=%s\ncluster=%s\ntrading_day=%s\nsource_signature=%s\n' \
-    "$namespace" "$kind_cluster" "$certification_trading_day" "$source_signature")"
+  expected_context="$(printf 'namespace=%s\ncluster=%s\ntrading_day=%s\nimage_transport=%s\nimage_tag=%s\nsource_signature=%s\n' \
+    "$namespace" "$kind_cluster" "$certification_trading_day" "$image_transport" "$image_tag" "$source_signature")"
   actual_context="$(cat "$run_context_file")"
   [[ "$actual_context" == "$expected_context" ]] || die \
-    "Resume context does not match the current cluster, trading day, namespace, or source."
-  [[ "$dry_run" == true ]] || kubectl get namespace "$namespace" >/dev/null 2>&1 || die \
-    "Resume namespace does not exist: $namespace"
+    "Resume context does not match the current cluster, trading day, namespace, image transport/tag, or source."
+  if [[ "$dry_run" == false ]]; then
+    kubectl --context "$kind_context" get namespace "$namespace" >/dev/null 2>&1 || die \
+      "Resume namespace does not exist: $namespace"
+    simplematch_kind_namespace_is_disposable \
+      "$kind_context" "$namespace" local-production-like-certification || die \
+      "Resume namespace is not owned as a disposable local certification namespace: $namespace"
+  fi
   kubernetes_namespace_created=true
 else
   if [[ "$dry_run" == false ]]; then
     mkdir -p "$evidence_dir"
-    printf 'namespace=%s\ncluster=%s\ntrading_day=%s\nsource_signature=%s\n' \
-      "$namespace" "$kind_cluster" "$certification_trading_day" "$source_signature" >"$run_context_file"
+    printf 'namespace=%s\ncluster=%s\ntrading_day=%s\nimage_transport=%s\nimage_tag=%s\nsource_signature=%s\n' \
+      "$namespace" "$kind_cluster" "$certification_trading_day" "$image_transport" "$image_tag" "$source_signature" >"$run_context_file"
   fi
 fi
 
@@ -519,13 +573,14 @@ collect_kafka_fixture() {
 
 render_local_kubernetes_manifest() {
   local rendered_manifest="$evidence_dir/local-kubernetes.yaml"
+  local -a render_args=(
+    --transport "$image_transport"
+    --namespace "$namespace"
+    --output "$rendered_manifest"
+  )
+  [[ "$image_transport" == registry ]] && render_args+=(--image-lock "$image_lock")
   mkdir -p "$evidence_dir"
-  if [[ "$dry_run" == true ]]; then
-    print_command kubectl kustomize "$repo_root/deploy/k8s/overlays/local" --load-restrictor LoadRestrictionsNone
-    return 0
-  fi
-  kubectl kustomize "$repo_root/deploy/k8s/overlays/local" --load-restrictor LoadRestrictionsNone >"$rendered_manifest"
-  sed -i -e "s/namespace: simplematch-local$/namespace: ${namespace}/g" "$rendered_manifest"
+  bash "$repo_root/scripts/render-local-kubernetes-manifest.sh" "${render_args[@]}" >/dev/null
   printf '%s\n' "$rendered_manifest"
 }
 
@@ -634,16 +689,19 @@ apply_local_kubernetes_inputs() {
 }
 
 create_certification_namespace() {
-  if kubectl get namespace "$namespace" >/dev/null 2>&1; then
+  if kubectl --context "$kind_context" get namespace "$namespace" >/dev/null 2>&1; then
     die "Certification namespace already exists: $namespace"
   fi
 
-  kubectl create namespace "$namespace" >/dev/null
+  simplematch_kind_create_disposable_namespace \
+    "$kind_context" "$namespace" local-production-like-certification "$run_id" || die \
+    "Failed to create owned disposable certification namespace: $namespace"
   kubernetes_namespace_created=true
 }
 
 publish_local_matching_open_barriers() {
   local matching_digest="$1"
+  local matching_runtime_image="$2"
   local delivery_manifest
   local artifact_root
   local artifact_json
@@ -672,7 +730,7 @@ publish_local_matching_open_barriers() {
     job/kafka-topic-provisioning --timeout=300s
   kubectl -n "$namespace" delete pod "$fixture_pod" --ignore-not-found --wait=true >/dev/null
   kubectl -n "$namespace" run "$fixture_pod" \
-    --image=simplematch-matching:local --image-pull-policy=IfNotPresent \
+    --image="$matching_runtime_image" --image-pull-policy=IfNotPresent \
     --restart=Never --command -- sleep 300 >/dev/null
   kubectl -n "$namespace" wait --for=condition=Ready "pod/$fixture_pod" --timeout=120s
   base64 "$fixture_publisher" | kubectl -n "$namespace" exec -i "$fixture_pod" -- \
@@ -955,6 +1013,17 @@ wait_for_local_matching_fleet() {
   kubectl -n "$namespace" rollout status statefulset/matching --timeout=600s
 }
 
+verify_local_matching_fleet() {
+  local -a verify_args=(
+    --namespace "$namespace"
+    --allow-shared-node
+  )
+  if [[ "$image_transport" == kind-load ]]; then
+    verify_args+=(--allow-local-image "$matching_image_reference")
+  fi
+  bash "$repo_root/scripts/verify-matching-fleet-live.sh" "${verify_args[@]}"
+}
+
 if [[ "$skip_compose" == false ]]; then
   compose_started=true
   run_logged compose-up "${compose_command[@]}" up --detach --remove-orphans
@@ -984,31 +1053,53 @@ else
 fi
 
 if [[ "$skip_kubernetes" == false ]]; then
+  prepare_image_args=(
+    --transport "$image_transport"
+    --tag "$image_tag"
+    --cluster "$kind_cluster"
+    --image-lock "$image_lock"
+  )
+  [[ "$matching_fleet_only" == true ]] && prepare_image_args+=(--matching-only)
+
   if [[ "$dry_run" == true ]]; then
-    print_command bash "$repo_root/scripts/normalize-local-images-for-kind.sh" --tag "$image_tag"
-    print_command kind load docker-image --name "$kind_cluster" "simplematch-matching:${image_tag}"
+    print_command bash "$repo_root/scripts/prepare-local-kubernetes-images.sh" "${prepare_image_args[@]}" --dry-run
+    render_args=(
+      --transport "$image_transport"
+      --namespace "$namespace"
+      --output "$evidence_dir/local-kubernetes.yaml"
+    )
+    [[ "$image_transport" == registry ]] && render_args+=(--image-lock "$image_lock")
+    print_command bash "$repo_root/scripts/render-local-kubernetes-manifest.sh" "${render_args[@]}"
     print_command kubectl create namespace "$namespace"
+    print_command kubectl label namespace "$namespace" \
+      simplematch.io/lifecycle=disposable \
+      simplematch.io/managed-by=local-production-like-certification \
+      "simplematch.io/run-id=${run_id}"
     print_command kubectl create -f "$evidence_dir/local-kubernetes-inputs.yaml"
     print_command kubectl apply -f "$evidence_dir/local-kubernetes-platform.yaml"
     print_command kubectl apply -f "$evidence_dir/local-kubernetes-migrations.yaml"
     print_command kubectl wait --for=condition=complete job/account-service-flyway --timeout=300s
     print_command kubectl apply -f "$evidence_dir/local-kubernetes-workloads.yaml"
     print_command register_kubernetes_risk_connector
-    print_command bash "$repo_root/scripts/verify-matching-fleet-live.sh" --namespace "$namespace" --allow-shared-node --allow-local-image
-  else
-    if [[ "$matching_fleet_only" == true ]]; then
-      run_logged kubernetes-image-normalization docker image inspect \
-        "simplematch-matching:${image_tag}"
-      local_images=("simplematch-matching:${image_tag}")
+    if [[ "$image_transport" == kind-load ]]; then
+      print_command bash "$repo_root/scripts/verify-matching-fleet-live.sh" \
+        --namespace "$namespace" --allow-shared-node \
+        --allow-local-image "simplematch-matching:${image_tag}"
     else
-      run_logged kubernetes-image-normalization bash \
-        "$repo_root/scripts/normalize-local-images-for-kind.sh" --tag "$image_tag"
-      mapfile -t local_images < <(bash "$repo_root/scripts/build-local-images.sh" --tag "$image_tag" --list | awk -F'|' '{print $4}')
+      print_command bash "$repo_root/scripts/verify-matching-fleet-live.sh" \
+        --namespace "$namespace" --allow-shared-node
     fi
-    run_logged kubernetes-image-load kind load docker-image --name "$kind_cluster" "${local_images[@]}"
-    matching_digest="$(docker image inspect --format '{{.Id}}' "simplematch-matching:${image_tag}")"
-    [[ "$matching_digest" =~ ^sha256:[0-9a-f]{64}$ ]] || die \
-      "Matching local image does not expose an OCI image ID: $matching_digest"
+  else
+    run_refreshable_logged kubernetes-image-transport \
+      bash "$repo_root/scripts/prepare-local-kubernetes-images.sh" "${prepare_image_args[@]}"
+
+    matching_digest="$(simplematch_local_image_transport_matching_digest \
+      "$image_transport" "$image_tag" "$image_lock")" || die \
+      "Unable to resolve Matching image digest for transport=$image_transport"
+    matching_image_reference="$(simplematch_local_image_transport_matching_reference \
+      "$image_transport" "$image_tag" "$image_lock")" || die \
+      "Unable to resolve Matching image reference for transport=$image_transport"
+
     rendered_manifest="$(render_local_kubernetes_manifest)"
     platform_manifest="$evidence_dir/local-kubernetes-platform.yaml"
     migration_manifest="$evidence_dir/local-kubernetes-migrations.yaml"
@@ -1029,21 +1120,22 @@ if [[ "$skip_kubernetes" == false ]]; then
         "$workload_manifest" "$matching_workload_manifest"
       run_logged kubernetes-topic-provisioning apply_kubernetes_topic_provisioning \
         "$migration_manifest"
-      run_logged kubernetes-open-barriers publish_local_matching_open_barriers "$matching_digest"
+      run_logged kubernetes-open-barriers publish_local_matching_open_barriers \
+        "$matching_digest" "$matching_image_reference"
       run_logged kubernetes-matching-apply kubectl apply -f "$matching_workload_manifest"
     else
-    run_logged kubernetes-migrations apply_kubernetes_migrations "$migration_manifest"
-    run_logged kubernetes-open-barriers publish_local_matching_open_barriers "$matching_digest"
-    run_logged kubernetes-workload-apply kubectl apply -f "$workload_manifest"
-    run_logged kubernetes-risk-outbox-connector register_kubernetes_risk_connector
+      run_logged kubernetes-migrations apply_kubernetes_migrations "$migration_manifest"
+      run_logged kubernetes-open-barriers publish_local_matching_open_barriers \
+        "$matching_digest" "$matching_image_reference"
+      run_logged kubernetes-workload-apply kubectl apply -f "$workload_manifest"
+      run_logged kubernetes-risk-outbox-connector register_kubernetes_risk_connector
     fi
     if [[ "$matching_fleet_only" == true ]]; then
       run_logged kubernetes-matching-workloads wait_for_local_matching_fleet
     else
       run_logged kubernetes-workloads wait_for_kubernetes_workloads
     fi
-    run_logged kubernetes-fleet bash "$repo_root/scripts/verify-matching-fleet-live.sh" \
-      --namespace "$namespace" --allow-shared-node --allow-local-image
+    run_logged kubernetes-fleet verify_local_matching_fleet
   fi
 else
   printf '%s\n' 'Kubernetes runtime phases skipped.'

@@ -2,6 +2,14 @@ kind: Cluster
 apiVersion: kind.x-k8s.io/v1alpha4
 name: simplematch-live
 
+# Keep the registry configuration directory explicit even though recent kind
+# node images enable it by default. The local registry manager writes the actual
+# localhost:<port> alias under /etc/containerd/certs.d after cluster creation.
+containerdConfigPatches:
+  - |-
+    [plugins."io.containerd.grpc.v1.cri".registry]
+      config_path = "/etc/containerd/certs.d"
+
 nodes:
   - role: control-plane
     image: kindest/node:v1.36.1

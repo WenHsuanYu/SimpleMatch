@@ -83,7 +83,9 @@ resilience_owned_namespace() {
 resilience_namespace_json_is_owned() {
   local run_id="$1"
   jq -e --arg run_id "$run_id" '
+    .metadata.labels["simplematch.io/lifecycle"] == "disposable" and
     .metadata.labels["simplematch.io/managed-by"] == "local-resilience" and
+    .metadata.labels["simplematch.io/run-id"] == $run_id and
     .metadata.labels["simplematch.io/resilience-run"] == $run_id
   ' >/dev/null
 }

@@ -1,244 +1,119 @@
 #!/usr/bin/env bash
-set -euo pipefail
+set -Eeuo pipefail
+IFS=$'\n\t'
 
-# SimpleMatch local disk cleanup.
-#
-# Default:
-#   - remove the SimpleMatch production-like Compose project, including its volumes
-#   - delete disposable certification namespaces from simplematch-live
-#   - prune unused containerd images inside kind nodes
-#   - prune Docker build cache older than 24h
-#
-# Optional:
-#   --delete-cluster  Delete the entire simplematch-live kind cluster for maximum reclamation.
-#   --aggressive      Also prune unused Docker images and anonymous/unused Docker volumes globally.
-#                     This is intentionally opt-in because those resources may belong to other projects.
-#   --dry-run         Print commands without executing them.
+script_dir="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
+repo_root="$(cd -- "$script_dir/.." && pwd)"
+# shellcheck source=scripts/lib/local-common.sh
+source "$script_dir/lib/local-common.sh"
+# shellcheck source=scripts/lib/local-kind.sh
+source "$script_dir/lib/local-kind.sh"
+# shellcheck source=scripts/lib/local-registry.sh
+source "$script_dir/lib/local-registry.sh"
 
-COMPOSE_PROJECT="${SIMPLEMATCH_CERTIFICATION_COMPOSE_PROJECT:-simplematch-local-production-like}"
-KIND_CLUSTER="${SIMPLEMATCH_KIND_CLUSTER_NAME:-simplematch-live}"
-KIND_CONTEXT="kind-${KIND_CLUSTER}"
-CERT_NAMESPACE_PREFIX="${SIMPLEMATCH_CERTIFICATION_NAMESPACE_PREFIX:-simplematch-local-cert-}"
-BUILDER_CACHE_UNTIL="${SIMPLEMATCH_BUILDER_CACHE_UNTIL:-24h}"
+compose_project="${SIMPLEMATCH_CERTIFICATION_COMPOSE_PROJECT:-simplematch-local-production-like}"
+compose_file="$repo_root/deploy/compose/kafka-connect.production-like.yml"
+cluster_name="${SIMPLEMATCH_KIND_CLUSTER_NAME:-simplematch-live}"
+builder_cache_until="${SIMPLEMATCH_BUILDER_CACHE_UNTIL:-24h}"
+namespace_timeout="${SIMPLEMATCH_NAMESPACE_CLEANUP_TIMEOUT_SECONDS:-180}"
 
 delete_cluster=false
 aggressive=false
-dry_run=false
+purge_registry=false
+remove_pack_caches=false
+report_details=false
+SIMPLEMATCH_DRY_RUN=false
 
 usage() {
-  cat <<'EOF'
+  cat <<'EOF_USAGE'
 Usage:
-  scripts/clean-local-disk.sh [options]
+  scripts/simplematch-clean-local-disk.sh [options]
+
+Default routine cleanup:
+  - stop/remove the SimpleMatch production-like Compose project and its volumes
+  - synchronously delete namespaces labeled simplematch.io/lifecycle=disposable
+  - wait for namespace deletion and run-owned PV references to disappear
+  - only then prune unused CRI images from each kind node
+  - prune Docker builder cache older than the configured age
 
 Options:
-  --delete-cluster  Delete the entire simplematch-live kind cluster.
-  --aggressive      Additionally prune globally unused Docker images and volumes.
-  --dry-run         Print commands without changing anything.
-  -h, --help        Show this help.
+  --delete-cluster       Delete simplematch-live instead of pruning its node caches.
+  --purge-registry       Remove local registry container AND registry data volume.
+  --pack-caches          Remove unattached pack-cache-* volumes.
+  --namespace-timeout S  Wait at most S seconds per namespace/PV cleanup.
+  --report-details       Show baseline-aware resource snapshots before/after cleanup.
+  --aggressive           Also prune globally unused Docker images and volumes.
+  --dry-run              Print destructive commands without executing them.
+  -h, --help             Show this help.
 
-Environment:
-  SIMPLEMATCH_CERTIFICATION_COMPOSE_PROJECT
-      Compose project name. Default: simplematch-local-production-like
+The lifecycle label is the only automatic namespace-deletion authority. Historical
+unlabeled namespaces are intentionally not inferred from their names; inspect and
+label them explicitly before routine cleanup, or use an explicit cluster rebuild.
 
-  SIMPLEMATCH_KIND_CLUSTER_NAME
-      kind cluster name. Default: simplematch-live
-
-  SIMPLEMATCH_CERTIFICATION_NAMESPACE_PREFIX
-      Disposable namespace prefix. Default: simplematch-local-cert-
-
-  SIMPLEMATCH_BUILDER_CACHE_UNTIL
-      Age threshold for Docker builder cache. Default: 24h
-
-Default cleanup deliberately does NOT run `docker system prune -a` and does NOT
-delete the reusable kind cluster. Use --delete-cluster when the cluster itself is
-no longer needed.
-EOF
+The default path preserves the reusable kind cluster and registry cache. It does
+not remove containerd snapshots directly; kubelet/containerd remain responsible
+for runtime object lifecycle. When a resource baseline exists, --report-details
+shows growth relative to that exact kind cluster generation instead of applying a
+fixed disk-size threshold.
+EOF_USAGE
 }
 
-log() {
-  printf '==> %s\n' "$*"
-}
-
-warn() {
-  printf 'WARN: %s\n' "$*" >&2
-}
-
-die() {
-  printf 'ERROR: %s\n' "$*" >&2
-  exit 1
-}
-
-run() {
-  if [[ "$dry_run" == true ]]; then
-    printf 'DRY RUN:'
-    printf ' %q' "$@"
-    printf '\n'
-    return 0
-  fi
-  "$@"
-}
-
-have() {
-  command -v "$1" >/dev/null 2>&1
-}
-
-docker_disk_usage() {
-  if ! have docker; then
-    return 0
-  fi
-  log "Docker disk usage"
-  docker system df || true
-}
-
-compose_down() {
-  local compose=(docker compose)
-
-  if ! have docker; then
-    die "docker is required."
-  fi
-
-  if ! docker info >/dev/null 2>&1; then
-    die "Docker daemon is not reachable."
-  fi
-
+remove_compose_project() {
   if ! docker compose version >/dev/null 2>&1; then
-    if have docker-compose; then
-      compose=(docker-compose)
-    else
-      die "Docker Compose v2 or docker-compose is required."
-    fi
+    simplematch_warn 'docker compose plugin is unavailable; skipping Compose cleanup'
+    return 0
   fi
-
-  # Project-name-only teardown is intentional. Compose can identify containers,
-  # networks, and named project resources through Docker Compose labels even if
-  # this cleanup script is invoked outside the repository root.
-  log "Removing Compose project: ${COMPOSE_PROJECT}"
-  run "${compose[@]}" \
-    --project-name "$COMPOSE_PROJECT" \
-    down \
-    --volumes \
-    --remove-orphans \
-    --timeout 30
-
-  # The production-like compose network has an explicitly stable name in the
-  # repository. Normally `compose down` removes it; this handles stale networks
-  # left by interrupted runs. Refuse to remove a network that still has endpoints.
-  local network_name="${SIMPLEMATCH_PRODUCTION_LIKE_NETWORK:-simplematch-production-like}"
-  if docker network inspect "$network_name" >/dev/null 2>&1; then
-    local attached
-    attached="$(docker network inspect \
-      --format '{{len .Containers}}' "$network_name" 2>/dev/null || printf 'unknown')"
-    if [[ "$attached" == "0" ]]; then
-      log "Removing stale Compose network: ${network_name}"
-      run docker network rm "$network_name"
-    else
-      warn "Keeping network ${network_name}; attached endpoints: ${attached}"
-    fi
-  fi
+  [[ -f "$compose_file" ]] || simplematch_die "Compose file does not exist: $compose_file"
+  simplematch_log "Remove Compose project $compose_project"
+  simplematch_run docker compose \
+    --project-name "$compose_project" \
+    --file "$compose_file" \
+    down --volumes --remove-orphans --timeout 30
 }
 
-kind_cluster_exists() {
-  have kind && kind get clusters 2>/dev/null | grep -Fxq "$KIND_CLUSTER"
-}
-
-delete_disposable_namespaces() {
-  if ! kind_cluster_exists; then
-    log "kind cluster ${KIND_CLUSTER} does not exist; skipping Kubernetes cleanup."
-    return 0
-  fi
-
-  if ! have kubectl; then
-    warn "kubectl is not installed; skipping disposable namespace cleanup."
-    return 0
-  fi
-
-  log "Deleting disposable namespaces in ${KIND_CONTEXT} with prefix ${CERT_NAMESPACE_PREFIX}"
-
-  local namespaces
-  namespaces="$(
-    kubectl --context "$KIND_CONTEXT" get namespaces \
-      -o jsonpath='{range .items[*]}{.metadata.name}{"\n"}{end}' 2>/dev/null |
-      awk -v prefix="$CERT_NAMESPACE_PREFIX" 'index($0, prefix) == 1'
-  )"
-
-  if [[ -z "$namespaces" ]]; then
-    log "No disposable certification namespaces found."
-    return 0
-  fi
-
-  while IFS= read -r namespace; do
-    [[ -n "$namespace" ]] || continue
-    run kubectl --context "$KIND_CONTEXT" delete namespace \
-      "$namespace" \
-      --ignore-not-found \
-      --wait=false
-  done <<<"$namespaces"
-}
-
-prune_kind_node_images() {
-  if ! kind_cluster_exists; then
-    return 0
-  fi
-
-  local nodes
-  nodes="$(kind get nodes --name "$KIND_CLUSTER" 2>/dev/null || true)"
-  if [[ -z "$nodes" ]]; then
-    warn "No nodes found for kind cluster ${KIND_CLUSTER}."
-    return 0
-  fi
-
-  log "Pruning unused containerd images inside ${KIND_CLUSTER}"
-
-  while IFS= read -r node; do
-    [[ -n "$node" ]] || continue
-
-    # kind node images include crictl. `crictl rmi --prune` removes images not
-    # currently used by containers; running workloads remain intact. Future Pods
-    # may need to pull/reload an image again.
-    if [[ "$dry_run" == true ]]; then
-      printf 'DRY RUN: docker exec %q crictl rmi --prune\n' "$node"
+remove_unattached_pack_caches() {
+  local volume
+  local users
+  while IFS= read -r volume; do
+    [[ "$volume" == pack-cache-* ]] || continue
+    users="$(docker ps -aq --filter "volume=$volume" 2>/dev/null || true)"
+    if [[ -n "$users" ]]; then
+      simplematch_warn "keeping attached pack cache: $volume"
       continue
     fi
-
-    if ! docker exec "$node" crictl rmi --prune; then
-      warn "Image prune failed on ${node}; continuing."
-    fi
-  done <<<"$nodes"
+    simplematch_info "Removing pack cache: $volume"
+    simplematch_run docker volume rm "$volume"
+  done < <(docker volume ls -q)
 }
 
-delete_kind_cluster() {
-  if ! kind_cluster_exists; then
-    log "kind cluster ${KIND_CLUSTER} does not exist."
-    return 0
-  fi
-
-  log "Deleting kind cluster: ${KIND_CLUSTER}"
-  run kind delete cluster --name "$KIND_CLUSTER"
+report_resources() {
+  [[ "$report_details" == true ]] || return 0
+  [[ "$SIMPLEMATCH_DRY_RUN" != true ]] || return 0
+  command -v kind >/dev/null 2>&1 || return 0
+  bash "$script_dir/local-resource-report.sh" --cluster "$cluster_name" ||
+    simplematch_warn 'baseline-aware local resource report failed'
 }
 
-prune_builder_cache() {
-  log "Pruning Docker builder cache older than ${BUILDER_CACHE_UNTIL}"
-  run docker builder prune \
-    --force \
-    --filter "until=${BUILDER_CACHE_UNTIL}"
-}
-
-aggressive_docker_prune() {
-  [[ "$aggressive" == true ]] || return 0
-
-  warn "Aggressive cleanup is enabled; globally unused Docker resources may belong to other projects."
-
-  log "Pruning globally unused Docker images"
-  run docker image prune --all --force
-
-  log "Pruning globally unused Docker volumes"
-  run docker volume prune --force
-}
-
-while [[ $# -gt 0 ]]; do
+while (($# > 0)); do
   case "$1" in
     --delete-cluster)
       delete_cluster=true
+      shift
+      ;;
+    --purge-registry)
+      purge_registry=true
+      shift
+      ;;
+    --pack-caches)
+      remove_pack_caches=true
+      shift
+      ;;
+    --namespace-timeout)
+      namespace_timeout="${2:?--namespace-timeout requires seconds}"
+      shift 2
+      ;;
+    --report-details)
+      report_details=true
       shift
       ;;
     --aggressive)
@@ -246,7 +121,7 @@ while [[ $# -gt 0 ]]; do
       shift
       ;;
     --dry-run)
-      dry_run=true
+      SIMPLEMATCH_DRY_RUN=true
       shift
       ;;
     -h|--help)
@@ -255,35 +130,61 @@ while [[ $# -gt 0 ]]; do
       ;;
     *)
       usage >&2
-      die "Unknown option: $1"
+      simplematch_die "unknown option: $1"
       ;;
   esac
 done
 
-have docker || die "docker is required."
-docker info >/dev/null 2>&1 || die "Docker daemon is not reachable."
+[[ "$namespace_timeout" =~ ^[1-9][0-9]*$ ]] ||
+  simplematch_die '--namespace-timeout must be a positive integer'
+
+simplematch_require_command docker
+docker info >/dev/null 2>&1 || simplematch_die 'Docker daemon is not reachable'
+
+simplematch_log 'Docker disk usage before cleanup'
+docker system df || true
+report_resources
+
+remove_compose_project
 
 if [[ "$delete_cluster" == true ]]; then
-  have kind || die "kind is required by --delete-cluster."
-fi
-
-printf '\n'
-docker_disk_usage
-printf '\n'
-
-compose_down
-
-if [[ "$delete_cluster" == true ]]; then
-  delete_kind_cluster
+  simplematch_require_command kind
+  if simplematch_kind_exists "$cluster_name"; then
+    manager_args=(delete)
+    [[ "$SIMPLEMATCH_DRY_RUN" == true ]] && manager_args+=(--dry-run)
+    simplematch_run bash "$script_dir/manage-simplematch-live.sh" "${manager_args[@]}"
+  else
+    simplematch_info "kind cluster already absent: $cluster_name"
+  fi
 else
-  delete_disposable_namespaces
-  prune_kind_node_images
+  simplematch_require_command kind
+  simplematch_kind_delete_disposable_namespaces \
+    "$cluster_name" "$namespace_timeout"
+  simplematch_kind_prune_unused_images "$cluster_name"
 fi
 
-prune_builder_cache
-aggressive_docker_prune
+if [[ "$purge_registry" == true ]]; then
+  simplematch_registry_delete true
+fi
 
-printf '\n'
-docker_disk_usage
-printf '\n'
-log "Cleanup complete."
+if [[ "$remove_pack_caches" == true ]]; then
+  simplematch_log 'Remove unattached Paketo/pack cache volumes'
+  remove_unattached_pack_caches
+fi
+
+simplematch_log "Prune Docker builder cache older than $builder_cache_until"
+simplematch_run docker builder prune --force --filter "until=${builder_cache_until}"
+
+if [[ "$aggressive" == true ]]; then
+  simplematch_warn 'Aggressive mode affects unused Docker resources from other projects.'
+  simplematch_run docker image prune --all --force
+  simplematch_run docker volume prune --force
+fi
+
+simplematch_log 'Docker disk usage after cleanup'
+docker system df || true
+if [[ "$delete_cluster" == false ]]; then
+  report_resources
+fi
+
+simplematch_log 'SimpleMatch routine disk cleanup completed'
