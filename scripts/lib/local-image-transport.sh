@@ -10,13 +10,13 @@ _simplematch_local_image_transport_dir="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}
 source "$_simplematch_local_image_transport_dir/local-image-inventory.sh"
 unset _simplematch_local_image_transport_dir
 
-# Compatibility boundary during final cutover: existing callers may still pass
-# an explicit transport argument, but registry is now the only supported mode.
-SIMPLEMATCH_LOCAL_IMAGE_TRANSPORT_DEFAULT="registry"
-
-simplematch_local_image_transport_validate() {
-  [[ "$1" == registry ]] || {
-    printf 'unsupported local image transport: %s (registry is the only supported mode)\n' "$1" >&2
+# The transport selector was removed when the local registry became canonical.
+# Reject an inherited legacy override instead of silently ignoring stale shell,
+# CI, or developer configuration.
+simplematch_local_image_transport_reject_legacy_override() {
+  [[ -z "${SIMPLEMATCH_LOCAL_IMAGE_TRANSPORT:-}" ]] || {
+    printf '%s\n' \
+      'SIMPLEMATCH_LOCAL_IMAGE_TRANSPORT was removed; unset it because registry is the only supported local Kubernetes image transport.' >&2
     return 1
   }
 }
@@ -198,22 +198,4 @@ simplematch_local_image_lock_render_services() {
       simplematch_local_image_inventory_local_overlay_services
       ;;
   esac
-}
-
-# Keep the current caller signature until the certification runner is simplified
-# in the next cutover commit. Non-registry values are rejected above.
-simplematch_local_image_transport_matching_reference() {
-  local transport="$1"
-  local _image_tag="$2"
-  local image_lock="$3"
-  simplematch_local_image_transport_validate "$transport" || return 1
-  simplematch_local_image_lock_digest_reference "$image_lock" matching
-}
-
-simplematch_local_image_transport_matching_digest() {
-  local transport="$1"
-  local _image_tag="$2"
-  local image_lock="$3"
-  simplematch_local_image_transport_validate "$transport" || return 1
-  simplematch_local_image_lock_digest "$image_lock" matching
 }
