@@ -72,7 +72,10 @@ the [domain parameter-safety refactor](docs/refactoring/domain-parameter-safety-
 
 The deployed RM-1 Risk-to-`matching.commands` certification is documented in the
 [accepted-command E2E runbook](docs/rm1-risk-matching-command-e2e.md) and the retained
-[restart/equivalent-replay runbook](docs/rm1-risk-matching-restart-replay.md).
+[restart/equivalent-replay runbook](docs/rm1-risk-matching-restart-replay.md). Risk and Account
+transactional-outbox publication, outage recovery, duplicate delivery, and exact Kafka-record
+evidence are mapped in the
+[CDC publication verification guide](docs/cdc-publication-verification.md).
 
 The exact release scope is defined by the
 [Phase 1 Trading Release system boundary](services/docs/architecture/system-boundaries.md#phase-1-trading-release-boundary).

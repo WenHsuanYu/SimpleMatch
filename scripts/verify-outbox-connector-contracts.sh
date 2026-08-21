@@ -35,6 +35,7 @@ verify_connector() {
   local owner_table="$3"
   local name="${config_name}-outbox"
   local config="${REPO_ROOT}/deploy/compose/${config_name}-outbox-connector.json"
+  local placement
   assert_equal "$(jq -r '.name' "${config}")" "${name}" "${service} connector name"
   assert_equal "$(jq -r '.config["table.include.list"]' "${config}")" "${owner_table}" \
     "${service} connector table scope"
@@ -66,8 +67,26 @@ verify_connector() {
   fi
 }
 
+assert_no_direct_kafka_publisher() {
+  local service="$1" source_dir="$2" matches
+  matches="$(grep -R -n -E --include='*.java' \
+    'KafkaTemplate|ProducerFactory|ProducerRecord|org\.apache\.kafka\.clients\.producer' \
+    "$source_dir" || true)"
+  if [[ -n "$matches" ]]; then
+    echo "${service} production code must publish through its transactional outbox, not Kafka directly:" >&2
+    printf '%s\n' "$matches" >&2
+    exit 1
+  fi
+}
+
 verify_connector "risk" "risk-service" "risk_service.outbox" "account_service.outbox"
 verify_connector "account" "account-service" "account_service.outbox" "risk_service.outbox"
 verify_connector "Market Reference" "marketdata-publisher" "marketdata_publisher.outbox" "risk_service.outbox"
 
+assert_no_direct_kafka_publisher \
+  "risk" "${REPO_ROOT}/services/risk-service/src/main/java"
+assert_no_direct_kafka_publisher \
+  "account" "${REPO_ROOT}/services/account-service/src/main/java"
+
 echo "Risk, Account, and Market Reference outbox connector contracts are valid."
+echo "Risk and Account production code contain no direct Kafka producer path."

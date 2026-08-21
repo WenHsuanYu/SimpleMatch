@@ -27,8 +27,7 @@ class JdbcQueryProjectionStoreTest {
   private static final String ORDER_ID = "0198a001-0000-7000-8000-000000000002";
   private static final String ACCOUNT_ID = "0198a001-0000-7000-8000-000000000003";
 
-  private JdbcTemplate jdbcTemplate;
-  private JdbcQueryProjectionStore store;
+  private QueryProjectionStore store;
 
   @BeforeEach
   void setUp() {
@@ -38,13 +37,12 @@ class JdbcQueryProjectionStoreTest {
         "jdbc:h2:mem:querytest"
             + UUID.randomUUID().toString().replace("-", "")
             + ";MODE=PostgreSQL;DB_CLOSE_DELAY=-1;INIT=CREATE SCHEMA IF NOT EXISTS query_service\\;SET SCHEMA query_service");
-    jdbcTemplate = new JdbcTemplate(dataSource);
     Flyway.configure()
         .dataSource(dataSource)
         .locations("classpath:db/migration/query-service")
         .load()
         .migrate();
-    store = new JdbcQueryProjectionStore(jdbcTemplate);
+    store = new JdbcQueryProjectionStore(new JdbcTemplate(dataSource));
   }
 
   @Test
@@ -63,6 +61,48 @@ class JdbcQueryProjectionStoreTest {
     assertThat(store.freshness().partitions())
         .extracting(QueryFreshness.PartitionFreshness::sourceTopic)
         .containsExactly("account.lifecycle", "matching.events");
+  }
+
+  @Test
+  void equivalentAccountDuplicateAdvancesTransportProgressWithoutSecondProjection() {
+    final AccountLifecycleEvent first = accountEvent();
+    store.projectAccountLifecycle(first, first.toByteArray(), 0, 0, 200L);
+
+    store.projectAccountLifecycle(first, first.toByteArray(), 0, 1, 201L);
+
+    final AccountLifecycleEvent next =
+        first.toBuilder()
+            .setMetadata(
+                first.getMetadata().toBuilder()
+                    .setEventId("0198a001-0000-7000-8000-000000000011")
+                    .setCreatedAtUnixMs(202L))
+            .setReservedNotional(TwdNotional.newBuilder().setUnits(2_000L))
+            .build();
+    store.projectAccountLifecycle(next, next.toByteArray(), 0, 2, 202L);
+
+    assertThat(store.findAccountSummary(ACCOUNT_ID))
+        .isPresent()
+        .get()
+        .extracting("reservedNotionalUnits")
+        .isEqualTo(2_000L);
+    assertThat(store.freshness().partitions())
+        .singleElement()
+        .extracting(QueryFreshness.PartitionFreshness::lastProcessedOffset)
+        .isEqualTo(2L);
+  }
+
+  @Test
+  void conflictingAccountDuplicateFailsClosed() {
+    final AccountLifecycleEvent first = accountEvent();
+    final byte[] firstPayload = first.toByteArray();
+    store.projectAccountLifecycle(first, firstPayload, 0, 0, 200L);
+    final byte[] conflictingPayload = firstPayload.clone();
+    conflictingPayload[conflictingPayload.length - 1] ^= 0x01;
+
+    assertThatThrownBy(
+            () -> store.projectAccountLifecycle(first, conflictingPayload, 0, 1, 201L))
+        .isInstanceOf(IllegalStateException.class)
+        .hasMessageContaining(first.getMetadata().getEventId());
   }
 
   @Test

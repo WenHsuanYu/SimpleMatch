@@ -55,9 +55,9 @@ The shared PostgreSQL URL adapter preserves TLS query parameters such as `sslmod
 default to local plaintext but require complete certificate, private-key, and trust-certificate
 paths before enabling mTLS in staging or production.
 Risk Admission consumes `GrpcProperties`, `KafkaProperties`, and `PostgresProperties` for its
-account client, policy-aware outbox, runtime, and datasource. The Phase 1 target takes its routing
-identity and explicit partition from the approved startup Market Reference Artifact; the current
-legacy projection remains a removal target until #126 installs that loader.
+account client, policy-aware outbox, runtime, and datasource. The completed #126 cutover loads the
+approved startup Market Reference Artifact, persists its identity and explicit partition with the
+Admission, and removes production Risk fallback to runtime Market Reference topics or hashing.
 QuickFIX Gateway consumes `EnvironmentProperties` for its runtime identity, `GrpcProperties` for the
 risk-service channel, and `KafkaProperties` for the compatibility topic; gateway-local paths,
 features, and retry policy remain owned by its service-specific property modules.
@@ -103,6 +103,21 @@ rendering gate in `scripts/test-kubernetes-overlays.sh`.
 The risk-service Debezium connector template resolves its database username and password from Kafka
 Connect environment variables. Those environment variables must be injected from a Kubernetes
 Secret.
+
+## Local CDC verification harness
+
+The following environment variables belong only to the local/CI CDC verification harness. They are
+not Spring `Environment` properties and do not create a second runtime configuration authority for
+Risk or Account services:
+
+- `SIMPLEMATCH_CONNECT_OFFSET_FLUSH_INTERVAL_MS` controls Kafka Connect's worker offset-flush
+  interval in `deploy/compose/kafka-connect.local.yml`. The Compose default is `60000` ms. The live
+  CDC fault script defaults it to `120000` ms so it can observe a publication and terminate Connect
+  before the next source-offset flush; callers may override it for diagnostic runs.
+- `SIMPLEMATCH_CDC_COMPOSE_PROJECT` optionally supplies the run-owned Docker Compose project name for
+  `scripts/run-outbox-cdc-contract-check.sh`. If unset, the script generates a unique name from the
+  GitHub run identity (when present), wall-clock epoch, and process ID. An explicitly selected name
+  must not already own Compose resources; collision is a preflight failure, never a cleanup signal.
 
 ## Change Policy
 
