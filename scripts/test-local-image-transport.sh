@@ -56,9 +56,9 @@ if bash "$script_dir/publish-local-images.sh" --tag local --service matching --s
   exit 1
 fi
 
-simplematch_local_image_transport_validate registry
-if simplematch_local_image_transport_validate kind-load >/dev/null 2>&1; then
-  printf '%s\n' 'kind-load unexpectedly remains a supported local image transport' >&2
+simplematch_local_image_transport_reject_legacy_override
+if SIMPLEMATCH_LOCAL_IMAGE_TRANSPORT=registry simplematch_local_image_transport_reject_legacy_override >/dev/null 2>&1; then
+  printf '%s\n' 'removed transport environment selector unexpectedly accepted' >&2
   exit 1
 fi
 
@@ -109,7 +109,6 @@ if simplematch_local_image_lock_validate_file "$malformed_file" >/dev/null 2>&1;
 fi
 
 bash "$script_dir/prepare-local-kubernetes-images.sh" \
-  --transport registry \
   --tag local \
   --cluster simplematch-live \
   --image-lock "$lock_file" \
@@ -123,15 +122,15 @@ if grep -Fq 'kind load docker-image' "$dry_run_file"; then
 fi
 
 if bash "$script_dir/prepare-local-kubernetes-images.sh" \
-    --transport kind-load --tag local --cluster simplematch-live --matching-only --dry-run \
+    --transport registry --tag local --cluster simplematch-live --matching-only --dry-run \
     >/dev/null 2>&1; then
-  printf '%s\n' 'removed kind-load transport unexpectedly accepted by image preparation' >&2
+  printf '%s\n' 'removed --transport option unexpectedly accepted by image preparation' >&2
   exit 1
 fi
-if SIMPLEMATCH_LOCAL_IMAGE_TRANSPORT=kind-load \
+if SIMPLEMATCH_LOCAL_IMAGE_TRANSPORT=registry \
     bash "$script_dir/prepare-local-kubernetes-images.sh" --tag local --cluster simplematch-live \
       --matching-only --dry-run >/dev/null 2>&1; then
-  printf '%s\n' 'removed kind-load environment override unexpectedly accepted' >&2
+  printf '%s\n' 'removed transport environment override unexpectedly accepted' >&2
   exit 1
 fi
 
