@@ -13,7 +13,6 @@ source "$script_dir/lib/local-image-inventory.sh"
 # shellcheck source=scripts/lib/local-image-transport.sh
 source "$script_dir/lib/local-image-transport.sh"
 
-transport="${SIMPLEMATCH_LOCAL_IMAGE_TRANSPORT:-$SIMPLEMATCH_LOCAL_IMAGE_TRANSPORT_DEFAULT}"
 image_tag="${SIMPLEMATCH_LOCAL_IMAGE_TAG:-local}"
 cluster_name="${SIMPLEMATCH_KIND_CLUSTER_NAME:-simplematch-live}"
 image_lock="${SIMPLEMATCH_LOCAL_IMAGE_LOCK:-$repo_root/out/local-images.lock}"
@@ -26,7 +25,6 @@ Usage:
   scripts/prepare-local-kubernetes-images.sh [options]
 
 Options:
-  --transport MODE    Compatibility option; only registry is accepted.
   --tag TAG           Source image tag (default: local).
   --cluster NAME      kind cluster name (default: simplematch-live).
   --image-lock PATH   Registry image lockfile output path.
@@ -42,7 +40,6 @@ EOF_USAGE
 
 while (($# > 0)); do
   case "$1" in
-    --transport) transport="${2:?--transport requires a value}"; shift 2 ;;
     --tag) image_tag="${2:?--tag requires a value}"; shift 2 ;;
     --cluster) cluster_name="${2:?--cluster requires a value}"; shift 2 ;;
     --image-lock) image_lock="${2:?--image-lock requires a value}"; shift 2 ;;
@@ -53,7 +50,7 @@ while (($# > 0)); do
   esac
 done
 
-simplematch_local_image_transport_validate "$transport" || exit 2
+simplematch_local_image_transport_reject_legacy_override || exit 2
 simplematch_local_image_tag_validate "$image_tag" || exit 2
 simplematch_local_image_inventory_validate || exit 2
 
