@@ -115,7 +115,6 @@ fi
 # path used by certification. The smoke payload is never applied as Matching;
 # it only verifies the configuration transformation with a real published digest.
 bash "$renderer" \
-  --transport registry \
   --image-lock "$render_lock" \
   --namespace "$smoke_namespace" \
   --output "$rendered_manifest" >/dev/null
