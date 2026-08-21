@@ -150,6 +150,25 @@ When `--output` is used, Kustomize first renders to generated temporary state an
 
 Matching uses the same registry manifest digest for the rendered runtime image, `matching-session-config`, and Open Barrier identity. The compatibility path continues to use the local Docker image ID because that path imports the local image directly into kind.
 
+## Kubelet image cache garbage collection
+
+The registry/digest path makes node-local application images reproducible external cache rather than durable cluster state. The canonical `simplematch-live` kind configuration therefore enables a local-lab-specific kubelet image-GC policy:
+
+```text
+imageMinimumGCAge: 10m0s
+imageMaximumGCAge: 24h0m0s
+imageGCHighThresholdPercent: 80
+imageGCLowThresholdPercent: 70
+```
+
+`imageMinimumGCAge` protects images that were only just pulled from being immediately selected by disk-pressure garbage collection. `imageMaximumGCAge` gives unused images a 24-hour maximum tracked age, so old application caches can become eligible for collection even when the image filesystem never reaches the high disk threshold. The 80/70 thresholds retain a ten-percentage-point hysteresis window: crossing 80% triggers image garbage collection and kubelet can continue reclaiming until usage returns to the low threshold instead of oscillating around one value.
+
+This policy belongs to `deploy/kind/simplematch-live.yaml`, not to certification or cleanup scripts. kind/kubeadm reads `KubeletConfiguration` from the first/control-plane node and applies that configuration to every node. `manage-simplematch-live.sh create` and `verify` treat the effective policy as a canonical cluster invariant by reading `/var/lib/kubelet/config.yaml` from all four kind node containers and failing if any node differs. This catches both incorrectly created clusters and reusable clusters whose effective kubelet configuration no longer matches repository policy.
+
+Age-based image usage tracking is not persistent across kubelet restarts. Restarting kubelet resets the tracked age, so `imageMaximumGCAge: 24h0m0s` starts a new 24-hour eligibility window after a restart. The age bound is therefore a background cache-lifecycle policy, not a wall-clock deletion guarantee.
+
+Kubelet image GC complements rather than replaces explicit lifecycle cleanup. Routine cleanup still waits for disposable namespace and PV teardown before `crictl rmi --prune`, because that path is an operator-requested immediate reclaim after Kubernetes releases runtime references. Kubelet GC provides automatic long-term pressure/age-based cache control between explicit cleanups. Neither mechanism manually deletes containerd snapshot files.
+
 ## Runtime cleanup
 
 Every runner-owned disposable Kubernetes namespace must carry:
@@ -279,12 +298,12 @@ test-local-resilience.sh
 test-simplematch-kind-manager.sh
 ```
 
-The image contracts validate canonical inventory consistency, semantic lock identity, full/matching-only rendering profiles, local-overlay inventory parity, complete digest substitution, rejection of unsupported partial locks, the legacy `kind-load` boundary, and atomic output preservation when Kustomize fails. The lifecycle/resource contracts cover ownership, snapshot invariants/comparison, resilience behavior, and the canonical kind manager. Changes under `deploy/k8s/**` trigger this workflow so a local-overlay image change cannot bypass the rendering contract.
+The image contracts validate canonical inventory consistency, semantic lock identity, full/matching-only rendering profiles, local-overlay inventory parity, complete digest substitution, rejection of unsupported partial locks, the legacy `kind-load` boundary, and atomic output preservation when Kustomize fails. The lifecycle/resource contracts cover ownership, snapshot invariants/comparison, resilience behavior, and the canonical kind manager. The kind-manager contract additionally parses the embedded `KubeletConfiguration` patch and fixes the local image-GC policy at 10m minimum age, 24h maximum age, and 80/70 disk thresholds. Changes under `deploy/k8s/**` or the canonical kind configuration trigger this workflow.
 
-The second job is a live integration smoke test. It installs a pinned kind release, creates the actual canonical one-control-plane/three-worker `simplematch-live` cluster, connects the local registry, executes the PV-affinity probe, establishes a clean baseline, runs manager verification and a baseline-aware resource report, and then tests demand-driven image delivery. The smoke publishes a uniquely tagged canonical Matching source image through `publish-local-images.sh`, consumes the generated digest lockfile through `render-local-kubernetes-manifest.sh`, schedules exactly one digest-backed Pod to worker slot 0, verifies that worker pulled the image, and verifies that the control-plane and the other two workers did not acquire that repository. It then deletes the disposable test namespace, cluster, registry data, and host-side smoke tag. Cleanup is protected by an EXIT trap.
+The second job is a live integration smoke test. It installs a pinned kind release, creates the actual canonical one-control-plane/three-worker `simplematch-live` cluster, connects the local registry, executes the PV-affinity probe, establishes a clean baseline, runs manager verification and a baseline-aware resource report, and then tests demand-driven image delivery. Manager verification reads the effective kubelet configuration from every node before the smoke continues, so CI proves that the repository-owned image-GC policy reached all four kubelets. The smoke then publishes a uniquely tagged canonical Matching source image through `publish-local-images.sh`, consumes the generated digest lockfile through `render-local-kubernetes-manifest.sh`, schedules exactly one digest-backed Pod to worker slot 0, verifies that worker pulled the image, and verifies that the control-plane and the other two workers did not acquire that repository. It then deletes the disposable test namespace, cluster, registry data, and host-side smoke tag. Cleanup is protected by an EXIT trap.
 
 This live test has also exposed runtime-only reliability defects that deterministic fixtures cannot reproduce. Resource snapshot collection therefore treats transient filesystem-measurement races as retryable at the whole-snapshot boundary while keeping malformed or repeatedly failing collection fail-closed.
 
 ## Compatibility boundary
 
-The registry path is the default certification transport. `kind-load` remains only as an explicit migration/debugging fallback. Keeping that fallback behind the same transport interface lets it be removed later without changing certification orchestration, digest-based registry identity, resource cleanup, or resource reporting.
+The registry path is the default certification transport. `kind-load` remains only as an explicit migration/debugging fallback. Keeping that fallback behind the same transport interface lets it be removed later without changing certification orchestration, digest-based registry identity, resource cleanup, kubelet image-cache policy, or resource reporting.
