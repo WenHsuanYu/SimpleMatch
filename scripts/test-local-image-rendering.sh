@@ -19,7 +19,6 @@ matching_lock="$temp_dir/matching.lock"
 partial_lock="$temp_dir/partial.lock"
 full_manifest="$temp_dir/full.yaml"
 matching_manifest="$temp_dir/matching.yaml"
-kind_load_manifest="$temp_dir/kind-load.yaml"
 atomic_target="$temp_dir/atomic.yaml"
 overlay_expected="$temp_dir/overlay-expected.txt"
 overlay_actual="$temp_dir/overlay-actual.txt"
@@ -41,9 +40,6 @@ append_lock_entry() {
     "$service" "$repository" "$repository" "$repository" "$digest" >>"$file"
 }
 
-# Keep the canonical rendering scope synchronized with the tracked local
-# Kustomization. A new or removed `images:` entry must be reflected explicitly in
-# the inventory instead of silently escaping digest rendering.
 while IFS= read -r service; do
   simplematch_local_image_inventory_repository "$service"
 done < <(simplematch_local_image_inventory_local_overlay_services) | sort -u >"$overlay_expected"
@@ -58,9 +54,6 @@ cmp -s "$overlay_expected" "$overlay_actual" || {
   exit 1
 }
 
-# A normal publication lock contains the complete canonical inventory, including
-# verification-only images. Rendering intentionally consumes only the services
-# owned by deploy/k8s/overlays/local.
 while IFS='|' read -r _ service _ _; do
   append_lock_entry "$service" "$full_lock"
 done < <(simplematch_local_image_inventory_entries)
@@ -123,20 +116,14 @@ if bash "$renderer" \
   exit 1
 fi
 
-bash "$renderer" \
-  --transport kind-load \
-  --namespace "$namespace" \
-  --output "$kind_load_manifest" >/dev/null
-while IFS= read -r service; do
-  repository="$(simplematch_local_image_inventory_repository "$service")"
-  grep -Fq "image: ${repository}:local" "$kind_load_manifest" || {
-    printf 'kind-load render changed local image for %s\n' "$service" >&2
-    exit 1
-  }
-done < <(simplematch_local_image_inventory_local_overlay_services)
+# Removed transport switches must fail closed rather than silently re-enable
+# direct kind-node imports or mutable local-image rendering.
+if bash "$renderer" --transport kind-load --image-lock "$matching_lock" \
+    --namespace "$namespace" --output "$temp_dir/legacy.yaml" >/dev/null 2>&1; then
+  printf '%s\n' 'renderer unexpectedly accepted the removed kind-load transport' >&2
+  exit 1
+fi
 
-# A renderer failure must not destroy a previously valid output file. Inject a
-# failing kubectl executable after argument validation and verify atomic replace.
 printf '%s\n' 'previous-valid-manifest' >"$atomic_target"
 mkdir -p "$fake_bin"
 cat >"$fake_bin/kubectl" <<'EOF_KUBECTL'
@@ -146,7 +133,8 @@ exit 17
 EOF_KUBECTL
 chmod +x "$fake_bin/kubectl"
 if PATH="$fake_bin:$PATH" bash "$renderer" \
-    --transport kind-load \
+    --transport registry \
+    --image-lock "$matching_lock" \
     --namespace "$namespace" \
     --output "$atomic_target" >/dev/null 2>&1; then
   printf '%s\n' 'renderer unexpectedly succeeded with failing kubectl' >&2

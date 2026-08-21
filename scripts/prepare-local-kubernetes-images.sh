@@ -26,7 +26,7 @@ Usage:
   scripts/prepare-local-kubernetes-images.sh [options]
 
 Options:
-  --transport MODE    registry (default) or kind-load.
+  --transport MODE    Compatibility option; only registry is accepted.
   --tag TAG           Source image tag (default: local).
   --cluster NAME      kind cluster name (default: simplematch-live).
   --image-lock PATH   Registry image lockfile output path.
@@ -34,13 +34,9 @@ Options:
   --dry-run           Print side effects without changing Docker/kind.
   -h, --help          Show this help.
 
-registry:
-  Verify the repository local registry is connected to the target kind cluster,
-  publish selected canonical inventory images, and write immutable references.
-
-kind-load:
-  Compatibility fallback. Normalize local images when needed and import the
-  selected canonical inventory directly into every kind node.
+The repository-owned local registry is the only supported Kubernetes image
+transport. Selected canonical images are published and recorded by immutable
+digest reference in the image lockfile.
 EOF_USAGE
 }
 
@@ -61,50 +57,15 @@ simplematch_local_image_transport_validate "$transport" || exit 2
 simplematch_local_image_tag_validate "$image_tag" || exit 2
 simplematch_local_image_inventory_validate || exit 2
 
-case "$transport" in
-  registry)
-    if [[ "$SIMPLEMATCH_DRY_RUN" == true ]]; then
-      printf 'DRY RUN: verify local registry integration for kind cluster %s\n' "$cluster_name"
-    else
-      simplematch_registry_verify "$cluster_name"
-    fi
+if [[ "$SIMPLEMATCH_DRY_RUN" == true ]]; then
+  printf 'DRY RUN: verify local registry integration for kind cluster %s\n' "$cluster_name"
+else
+  simplematch_registry_verify "$cluster_name"
+fi
 
-    publish_args=(--tag "$image_tag" --output "$image_lock")
-    [[ "$matching_only" == true ]] && publish_args+=(--service matching)
-    [[ "$SIMPLEMATCH_DRY_RUN" == true ]] && publish_args+=(--dry-run)
-    bash "$script_dir/publish-local-images.sh" "${publish_args[@]}"
-    ;;
+publish_args=(--tag "$image_tag" --output "$image_lock")
+[[ "$matching_only" == true ]] && publish_args+=(--service matching)
+[[ "$SIMPLEMATCH_DRY_RUN" == true ]] && publish_args+=(--dry-run)
+bash "$script_dir/publish-local-images.sh" "${publish_args[@]}"
 
-  kind-load)
-    if [[ "$SIMPLEMATCH_DRY_RUN" != true ]]; then
-      simplematch_require_command docker
-      simplematch_require_command kind
-    fi
-
-    if [[ "$matching_only" == true ]]; then
-      local_images=("$(simplematch_local_image_inventory_source_image matching "$image_tag")")
-      if [[ "$SIMPLEMATCH_DRY_RUN" == true ]]; then
-        simplematch_quote_command docker image inspect "${local_images[0]}"
-      else
-        docker image inspect "${local_images[0]}" >/dev/null 2>&1 ||
-          simplematch_die "local image does not exist: ${local_images[0]}"
-      fi
-    else
-      if [[ "$SIMPLEMATCH_DRY_RUN" == true ]]; then
-        simplematch_quote_command bash "$script_dir/normalize-local-images-for-kind.sh" --tag "$image_tag"
-      else
-        bash "$script_dir/normalize-local-images-for-kind.sh" --tag "$image_tag"
-      fi
-      mapfile -t local_images < <(simplematch_local_image_inventory_images "$image_tag")
-      [[ ${#local_images[@]} -gt 0 ]] || simplematch_die 'local image inventory is empty'
-    fi
-
-    if [[ "$SIMPLEMATCH_DRY_RUN" == true ]]; then
-      simplematch_quote_command kind load docker-image --name "$cluster_name" "${local_images[@]}"
-    else
-      kind load docker-image --name "$cluster_name" "${local_images[@]}"
-    fi
-    ;;
-esac
-
-simplematch_info "Prepared local Kubernetes images with transport=$transport"
+simplematch_info 'Prepared local Kubernetes images through the repository local registry'

@@ -1,25 +1,24 @@
 #!/usr/bin/env bash
 
-# Local Kubernetes image-transport policy and digest-lock helpers.
-# Publishing/loading belongs to prepare-local-kubernetes-images.sh; manifest
-# rendering belongs to render-local-kubernetes-manifest.sh. This module owns the
-# semantic contract between canonical local images and registry digest locks.
+# Local registry image-lock policy and digest identity helpers.
+# Publication belongs to publish-local-images.sh and manifest rendering belongs
+# to render-local-kubernetes-manifest.sh. This module is side-effect free and
+# owns the semantic contract between canonical local images and registry locks.
 
 _simplematch_local_image_transport_dir="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
 # shellcheck source=scripts/lib/local-image-inventory.sh
 source "$_simplematch_local_image_transport_dir/local-image-inventory.sh"
 unset _simplematch_local_image_transport_dir
 
+# Compatibility boundary during final cutover: existing callers may still pass
+# an explicit transport argument, but registry is now the only supported mode.
 SIMPLEMATCH_LOCAL_IMAGE_TRANSPORT_DEFAULT="registry"
 
 simplematch_local_image_transport_validate() {
-  case "$1" in
-    registry|kind-load) return 0 ;;
-    *)
-      printf 'unsupported local image transport: %s (expected registry or kind-load)\n' "$1" >&2
-      return 1
-      ;;
-  esac
+  [[ "$1" == registry ]] || {
+    printf 'unsupported local image transport: %s (registry is the only supported mode)\n' "$1" >&2
+    return 1
+  }
 }
 
 simplematch_local_image_lock_validate_file() {
@@ -201,40 +200,20 @@ simplematch_local_image_lock_render_services() {
   esac
 }
 
+# Keep the current caller signature until the certification runner is simplified
+# in the next cutover commit. Non-registry values are rejected above.
 simplematch_local_image_transport_matching_reference() {
   local transport="$1"
-  local image_tag="$2"
+  local _image_tag="$2"
   local image_lock="$3"
-
   simplematch_local_image_transport_validate "$transport" || return 1
-  case "$transport" in
-    registry)
-      simplematch_local_image_lock_digest_reference "$image_lock" matching
-      ;;
-    kind-load)
-      printf 'simplematch-matching:%s\n' "$image_tag"
-      ;;
-  esac
+  simplematch_local_image_lock_digest_reference "$image_lock" matching
 }
 
 simplematch_local_image_transport_matching_digest() {
   local transport="$1"
-  local image_tag="$2"
+  local _image_tag="$2"
   local image_lock="$3"
-  local digest
-
   simplematch_local_image_transport_validate "$transport" || return 1
-  case "$transport" in
-    registry)
-      simplematch_local_image_lock_digest "$image_lock" matching
-      ;;
-    kind-load)
-      digest="$(docker image inspect --format '{{.Id}}' "simplematch-matching:${image_tag}")" || return 1
-      [[ "$digest" =~ ^sha256:[0-9a-f]{64}$ ]] || {
-        printf 'Matching local image does not expose an OCI image ID: %s\n' "$digest" >&2
-        return 1
-      }
-      printf '%s\n' "$digest"
-      ;;
-  esac
+  simplematch_local_image_lock_digest "$image_lock" matching
 }
