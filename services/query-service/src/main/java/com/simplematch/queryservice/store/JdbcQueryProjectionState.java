@@ -20,9 +20,10 @@ final class JdbcQueryProjectionState {
       String sourceTopic,
       byte[] payloadSha256,
       QueryProjectionPosition position) {
-    final Optional<byte[]> existing = findInboxHash(jdbcTemplate, eventId);
+    final Optional<Inbox.Entry> existing = Inbox.find(jdbcTemplate, eventId);
     if (existing.isPresent()) {
-      assertMatchingHash(eventId, existing.get(), payloadSha256);
+      Inbox.acceptEquivalentDuplicate(
+          jdbcTemplate, eventId, sourceTopic, payloadSha256, position, existing.get());
       return false;
     }
     try {
@@ -38,39 +39,24 @@ final class JdbcQueryProjectionState {
           position.observedAtUnixMs());
       return true;
     } catch (DuplicateKeyException duplicate) {
-      final byte[] inserted =
-          findInboxHash(jdbcTemplate, eventId)
+      final Inbox.Entry inserted =
+          Inbox.find(jdbcTemplate, eventId)
               .orElseThrow(
                   () ->
                       new IllegalStateException(
                           "query projection inbox position conflicts", duplicate));
-      assertMatchingHash(eventId, inserted, payloadSha256);
+      Inbox.acceptEquivalentDuplicate(
+          jdbcTemplate, eventId, sourceTopic, payloadSha256, position, inserted);
       return false;
     }
   }
 
   static void assertContiguous(
       JdbcOperations jdbcTemplate, String sourceTopic, QueryProjectionPosition position) {
-    final List<Checkpoint> checkpoints =
-        jdbcTemplate.query(
-            "SELECT last_processed_offset, recovery_state "
-                + "FROM query_service.projection_checkpoint "
-                + "WHERE source_topic = ? AND partition_id = ?",
-            (resultSet, ignored) -> new Checkpoint(resultSet.getLong(1), resultSet.getString(2)),
-            sourceTopic,
-            position.partition());
-    if (!checkpoints.isEmpty()) {
-      final Checkpoint checkpoint = checkpoints.getFirst();
-      if (!READY.equals(checkpoint.state())
-          || position.offset() != checkpoint.offset() + 1L) {
-        throw new QueryProjectionGapException(
-            "query projection requires replay for "
-                + sourceTopic
-                + "-"
-                + position.partition()
-                + "-"
-                + position.offset());
-      }
+    final Optional<Checkpoint> checkpoint =
+        findCheckpoint(jdbcTemplate, sourceTopic, position.partition());
+    if (checkpoint.isPresent()) {
+      requireNextReadyPosition(sourceTopic, position, checkpoint.get());
     }
   }
 
@@ -110,21 +96,35 @@ final class JdbcQueryProjectionState {
     jdbcTemplate.update("DELETE FROM query_service.active_market_reference");
   }
 
-  private static Optional<byte[]> findInboxHash(JdbcOperations jdbcTemplate, String eventId) {
-    return jdbcTemplate
-        .query(
-            "SELECT payload_sha256 FROM query_service.projection_inbox WHERE event_id = ?",
-            (resultSet, ignored) -> resultSet.getBytes(1),
-            eventId)
-        .stream()
-        .findFirst();
+  private static Optional<Checkpoint> findCheckpoint(
+      JdbcOperations jdbcTemplate, String sourceTopic, int partition) {
+    final List<Checkpoint> checkpoints =
+        jdbcTemplate.query(
+            "SELECT last_processed_offset, recovery_state "
+                + "FROM query_service.projection_checkpoint "
+                + "WHERE source_topic = ? AND partition_id = ?",
+            (resultSet, ignored) -> new Checkpoint(resultSet.getLong(1), resultSet.getString(2)),
+            sourceTopic,
+            partition);
+    return checkpoints.stream().findFirst();
   }
 
-  private static void assertMatchingHash(String eventId, byte[] existing, byte[] observed) {
-    if (!Arrays.equals(existing, observed)) {
-      throw new IllegalStateException(
-          "query projection received conflicting payload for event " + eventId);
+  private static void requireNextReadyPosition(
+      String sourceTopic, QueryProjectionPosition position, Checkpoint checkpoint) {
+    if (!READY.equals(checkpoint.state()) || position.offset() != checkpoint.offset() + 1L) {
+      throw gap(sourceTopic, position);
     }
+  }
+
+  private static QueryProjectionGapException gap(
+      String sourceTopic, QueryProjectionPosition position) {
+    return new QueryProjectionGapException(
+        "query projection requires replay for "
+            + sourceTopic
+            + "-"
+            + position.partition()
+            + "-"
+            + position.offset());
   }
 
   private static void upsertCheckpoint(
@@ -185,6 +185,92 @@ final class JdbcQueryProjectionState {
                         .getDatabaseProductName()
                         .toLowerCase(java.util.Locale.ROOT)
                         .contains("postgresql")));
+  }
+
+  private static final class Inbox {
+    private Inbox() {}
+
+    private static Optional<Entry> find(JdbcOperations jdbcTemplate, String eventId) {
+      return jdbcTemplate
+          .query(
+              "SELECT payload_sha256, source_topic, partition_id, offset_value "
+                  + "FROM query_service.projection_inbox WHERE event_id = ?",
+              (resultSet, ignored) ->
+                  new Entry(
+                      resultSet.getBytes(1),
+                      resultSet.getString(2),
+                      resultSet.getInt(3),
+                      resultSet.getLong(4)),
+              eventId)
+          .stream()
+          .findFirst();
+    }
+
+    private static void acceptEquivalentDuplicate(
+        JdbcOperations jdbcTemplate,
+        String eventId,
+        String sourceTopic,
+        byte[] payloadSha256,
+        QueryProjectionPosition observed,
+        Entry original) {
+      original.requireCompatible(eventId, sourceTopic, payloadSha256, observed);
+      consumePosition(jdbcTemplate, sourceTopic, observed);
+    }
+
+    private static void consumePosition(
+        JdbcOperations jdbcTemplate, String sourceTopic, QueryProjectionPosition position) {
+      final Checkpoint checkpoint =
+          findCheckpoint(jdbcTemplate, sourceTopic, position.partition())
+              .orElseThrow(() -> gap(sourceTopic, position));
+      if (!READY.equals(checkpoint.state())) {
+        throw gap(sourceTopic, position);
+      }
+      if (position.offset() <= checkpoint.offset()) {
+        return;
+      }
+      if (position.offset() == checkpoint.offset() + 1L) {
+        advance(jdbcTemplate, sourceTopic, position);
+        return;
+      }
+      throw gap(sourceTopic, position);
+    }
+
+    private static final class Entry {
+      private final byte[] payloadSha256;
+      private final String sourceTopic;
+      private final int partition;
+      private final long offset;
+
+      private Entry(byte[] payloadSha256, String sourceTopic, int partition, long offset) {
+        this.payloadSha256 = payloadSha256.clone();
+        this.sourceTopic = sourceTopic;
+        this.partition = partition;
+        this.offset = offset;
+      }
+
+      private void requireCompatible(
+          String eventId,
+          String observedTopic,
+          byte[] observedPayloadSha256,
+          QueryProjectionPosition observedPosition) {
+        if (!Arrays.equals(payloadSha256, observedPayloadSha256)) {
+          throw new IllegalStateException(
+              "query projection received conflicting payload for event " + eventId);
+        }
+        if (!sourceTopic.equals(observedTopic)) {
+          throw new IllegalStateException(
+              "query projection duplicate event changed source topic for " + eventId);
+        }
+        if (partition != observedPosition.partition()) {
+          throw new IllegalStateException(
+              "query projection duplicate event changed Kafka partition for " + eventId);
+        }
+        if (observedPosition.offset() < offset) {
+          throw new IllegalStateException(
+              "query projection duplicate event moved before original Kafka offset for " + eventId);
+        }
+      }
+    }
   }
 
   private record Checkpoint(long offset, String state) {}

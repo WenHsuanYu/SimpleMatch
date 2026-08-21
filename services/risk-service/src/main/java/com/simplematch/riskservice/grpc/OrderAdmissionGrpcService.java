@@ -62,10 +62,12 @@ public final class OrderAdmissionGrpcService
       responseObserver.onError(
           Status.UNAVAILABLE.withDescription(unavailable.getMessage()).asRuntimeException());
     } catch (RuntimeException failure) {
-
-      log.error("Unexpected order admission failure: commandId={}, orderId={}, "
-                + "accountId={}", request.getCommandId(), request.getOrderId(),
-                request.getAccountId(), failure);
+      log.error(
+          "Unexpected order admission failure: commandId={}, orderId={}, accountId={}",
+          request.getCommandId(),
+          request.getOrderId(),
+          request.getAccountId(),
+          failure);
       responseObserver.onError(
           Status.INTERNAL.withDescription("failed to admit order").asRuntimeException());
     }
@@ -85,7 +87,7 @@ public final class OrderAdmissionGrpcService
       responseObserver.onError(
           Status.ALREADY_EXISTS.withDescription(conflict.getMessage()).asRuntimeException());
     } catch (RuntimeException failure) {
-      LOG.error(
+      log.error(
           "Unexpected cancel admission failure: commandId={}, orderId={}, accountId={}",
           request.getCommandId(),
           request.getOrderId(),

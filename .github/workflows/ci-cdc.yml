@@ -12,12 +12,16 @@ on:
       - 'config/kafka/**'
       - 'scripts/run-local-production-like-certification.sh'
       - 'scripts/run-outbox-cdc-contract-check.sh'
+      - 'scripts/test-cdc-verifier.sh'
       - 'scripts/verify-outbox-connector-contracts.sh'
+      - 'scripts/lib/cdc-verifier.sh'
       - 'scripts/lib/matching-topic-profile.sh'
       - 'scripts/provision-matching-topics.sh'
       - 'scripts/test-matching-topic-cutover.sh'
       - 'scripts/test-matching-topic-profile.sh'
       - 'scripts/validate-matching-topic-profile.sh'
+      - 'scripts/check-markdown-links.sh'
+      - 'scripts/test-check-markdown-links.sh'
       - 'shared-java/**'
       - 'proto/**'
       - 'services/account-service/**'
@@ -31,12 +35,16 @@ on:
       - 'config/kafka/**'
       - 'scripts/run-local-production-like-certification.sh'
       - 'scripts/run-outbox-cdc-contract-check.sh'
+      - 'scripts/test-cdc-verifier.sh'
       - 'scripts/verify-outbox-connector-contracts.sh'
+      - 'scripts/lib/cdc-verifier.sh'
       - 'scripts/lib/matching-topic-profile.sh'
       - 'scripts/provision-matching-topics.sh'
       - 'scripts/test-matching-topic-cutover.sh'
       - 'scripts/test-matching-topic-profile.sh'
       - 'scripts/validate-matching-topic-profile.sh'
+      - 'scripts/check-markdown-links.sh'
+      - 'scripts/test-check-markdown-links.sh'
       - 'shared-java/**'
       - 'proto/**'
       - 'services/account-service/**'
@@ -60,10 +68,16 @@ jobs:
       - name: Checkout
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
-          fetch-depth: 1
+          fetch-depth: 2
           persist-credentials: false
+      - name: Verify diff hygiene
+        run: git diff --check HEAD^1 HEAD
+      - name: Verify CDC documentation links
+        run: bash scripts/test-check-markdown-links.sh
       - name: Verify connector contracts
         run: bash scripts/verify-outbox-connector-contracts.sh
+      - name: Test CDC verifier interface
+        run: bash scripts/test-cdc-verifier.sh
       - name: Validate Matching topic cutover
         run: bash scripts/test-matching-topic-cutover.sh
       - name: Validate Matching Kafka durability profile
