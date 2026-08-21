@@ -12,6 +12,13 @@ files=(
   "$script_dir/lib/local-resource.sh"
   "$script_dir/lib/local-resilience.sh"
   "$script_dir/lib/local-image-transport.sh"
+  "$script_dir/lib/local-certification-framework.sh"
+  "$script_dir/lib/local-certification-kafka.sh"
+  "$script_dir/lib/local-certification-kubernetes.sh"
+  "$script_dir/lib/local-certification-connect.sh"
+  "$script_dir/lib/local-certification-workloads.sh"
+  "$script_dir/lib/local-certification-bootstrap.sh"
+  "$script_dir/lib/local-certification-run.sh"
   "$script_dir/manage-local-registry.sh"
   "$script_dir/prepare-local-kubernetes-images.sh"
   "$script_dir/publish-local-images.sh"
@@ -24,6 +31,7 @@ files=(
   "$script_dir/run-local-resilience.sh"
   "$script_dir/verify-matching-fleet-live.sh"
   "$script_dir/test-local-image-transport.sh"
+  "$script_dir/test-local-image-rendering.sh"
   "$script_dir/test-local-resource-report.sh"
   "$script_dir/test-local-resource-kind-integration.sh"
 )
@@ -37,6 +45,12 @@ kind_lib="$script_dir/lib/local-kind.sh"
 resource_lib="$script_dir/lib/local-resource.sh"
 resilience_lib="$script_dir/lib/local-resilience.sh"
 transport_lib="$script_dir/lib/local-image-transport.sh"
+framework_lib="$script_dir/lib/local-certification-framework.sh"
+bootstrap_lib="$script_dir/lib/local-certification-bootstrap.sh"
+kubernetes_lib="$script_dir/lib/local-certification-kubernetes.sh"
+connect_lib="$script_dir/lib/local-certification-connect.sh"
+workloads_lib="$script_dir/lib/local-certification-workloads.sh"
+run_lib="$script_dir/lib/local-certification-run.sh"
 transport_prepare="$script_dir/prepare-local-kubernetes-images.sh"
 cleaner="$script_dir/simplematch-clean-local-disk.sh"
 hard_reset="$script_dir/hard-reset-local.sh"
@@ -50,11 +64,16 @@ resilience="$script_dir/run-local-resilience.sh"
 fleet_verifier="$script_dir/verify-matching-fleet-live.sh"
 kind_config="$repo_root/deploy/kind/simplematch-live.yaml"
 
+# Registry and kind integration remain one explicit local infrastructure boundary.
 grep -Fq 'registry:3' "$registry_lib"
 grep -Fq '/etc/containerd/certs.d/' "$registry_lib"
 grep -Fq 'local-registry-hosting' "$registry_lib"
 grep -Fq 'docker network connect' "$registry_lib"
 grep -Fq 'simplematch-local-registry-data' "$registry_lib"
+grep -Fq 'simplematch_registry_connect_kind_cluster' "$manager"
+grep -Fq 'simplematch_registry_verify' "$manager"
+grep -Fq 'containerdConfigPatches:' "$kind_config"
+grep -Fq 'config_path = "/etc/containerd/certs.d"' "$kind_config"
 
 # The lifecycle label is the only automatic namespace deletion authority.
 grep -Fq 'simplematch.io/lifecycle=disposable' "$kind_lib"
@@ -84,12 +103,10 @@ prune_line="$(grep -n 'simplematch_kind_prune_unused_images' "$cleaner" | tail -
   exit 1
 }
 
-# Resource reporting is baseline-aware, internally consistent, and tied to the exact kind generation.
+# Resource reporting remains baseline-aware and bound to an exact kind generation.
 grep -Fq 'simplematch_local_resource_snapshot' "$resource_lib"
 grep -Fq 'simplematch_local_resource_cluster_fingerprint' "$resource_lib"
 grep -Fq 'simplematch_local_resource_compare_files' "$resource_lib"
-grep -Fq 'simplematch_local_resource_render_snapshot_file' "$resource_lib"
-grep -Fq 'simplematch_local_resource_render_comparison_file' "$resource_lib"
 grep -Fq 'map(.name) | unique' "$resource_lib"
 grep -Fq 'map(.container_id) | unique' "$resource_lib"
 grep -Fq '.kind.totals.containerd_bytes == ([.kind.nodes[].containerd_bytes] | add // 0)' "$resource_lib"
@@ -100,72 +117,64 @@ grep -Fq 'recycle_candidate' "$resource_lib"
 grep -Fq -- '--write-baseline' "$resource_report"
 grep -Fq -- '--baseline' "$resource_report"
 grep -Fq 'simplematch_local_resource_assert_clean_baseline_json' "$resource_report"
-grep -Fq 'simplematch_local_resource_render_snapshot_file' "$resource_report"
-grep -Fq 'simplematch_local_resource_render_comparison_file' "$resource_report"
 grep -Fq 'establish_resource_baseline' "$manager"
 grep -Fq 'SIMPLEMATCH_LOCAL_RESOURCE_BASELINE_FILE' "$manager"
 
-# The image transport policy is registry-only. Preparation owns publication side effects;
-# direct image normalization and kind-node imports must not be executable dependencies.
-grep -Fq 'SIMPLEMATCH_LOCAL_IMAGE_TRANSPORT_DEFAULT="registry"' "$transport_lib"
-grep -Fq 'simplematch_local_image_transport_validate' "$transport_lib"
+# Registry is the only Kubernetes application-image transport. The policy module
+# owns lock semantics only; publication and rendering own side effects.
+grep -Fq 'simplematch_local_image_transport_reject_legacy_override' "$transport_lib"
 grep -Fq 'simplematch_local_image_lock_digest_reference' "$transport_lib"
-grep -Fq 'simplematch_local_image_transport_matching_reference' "$transport_lib"
+grep -Fq 'simplematch_local_image_lock_digest' "$transport_lib"
 if grep -Fq 'kind-load' "$transport_lib"; then
   printf '%s\n' 'transport policy still contains the removed kind-load mode' >&2
   exit 1
 fi
 grep -Fq 'simplematch_registry_verify "$cluster_name"' "$transport_prepare"
 grep -Fq 'publish-local-images.sh' "$transport_prepare"
-if grep -Fq 'normalize-local-images-for-kind.sh' "$transport_prepare"; then
-  printf '%s\n' 'image preparation still depends on the removed kind normalizer' >&2
-  exit 1
-fi
-if grep -Fq 'kind load docker-image' "$transport_prepare"; then
-  printf '%s\n' 'image preparation still imports images directly into kind nodes' >&2
-  exit 1
-fi
+for removed_reference in 'normalize-local-images-for-kind.sh' 'kind load docker-image'; do
+  if grep -Fq "$removed_reference" "$transport_prepare"; then
+    printf 'image preparation still contains removed direct-import behavior: %s\n' "$removed_reference" >&2
+    exit 1
+  fi
+done
 
-# Certification consumes the transport abstraction during the staged runner cutover. It must not
-# own direct-import implementation details; the next cutover slice removes the public switch itself.
-grep -Fq 'source "$script_dir/lib/local-image-transport.sh"' "$certification"
-grep -Fq 'SIMPLEMATCH_LOCAL_IMAGE_TRANSPORT_DEFAULT' "$certification"
-grep -Fq -- '--image-transport' "$certification"
-grep -Fq 'prepare-local-kubernetes-images.sh' "$certification"
-grep -Fq 'render-local-kubernetes-manifest.sh' "$certification"
-grep -Fq 'simplematch_local_image_transport_matching_digest' "$certification"
-grep -Fq 'simplematch_local_image_transport_matching_reference' "$certification"
-grep -Fq 'run_refreshable_logged kubernetes-image-transport' "$certification"
-grep -Fq -- '--image="$matching_runtime_image"' "$certification"
-if grep -Fq 'normalize-local-images-for-kind.sh' "$certification"; then
-  printf '%s\n' 'certification runner still owns kind image normalization' >&2
-  exit 1
-fi
-if grep -Fq 'kind load docker-image' "$certification"; then
-  printf '%s\n' 'certification runner still owns kind image loading' >&2
-  exit 1
-fi
+# Certification is an orchestrator over cohesive domain modules, not a transport switch.
+grep -Fq 'local-certification-framework.sh' "$certification"
+grep -Fq 'local-certification-kafka.sh' "$certification"
+grep -Fq 'local-certification-kubernetes.sh' "$certification"
+grep -Fq 'local-certification-connect.sh' "$certification"
+grep -Fq 'local-certification-workloads.sh' "$certification"
+grep -Fq 'local-certification-bootstrap.sh' "$certification"
+grep -Fq 'local-certification-run.sh' "$certification"
+grep -Fq 'run_logged()' "$framework_lib"
+grep -Fq 'simplematch_local_image_transport_reject_legacy_override' "$bootstrap_lib"
+grep -Fq 'simplematch_local_image_lock_digest "$image_lock" matching' "$run_lib"
+grep -Fq 'simplematch_local_image_lock_digest_reference "$image_lock" matching' "$run_lib"
+grep -Fq 'prepare-local-kubernetes-images.sh' "$run_lib"
+grep -Fq 'render-local-kubernetes-manifest.sh' "$kubernetes_lib"
+grep -Fq -- '--image="$matching_runtime_image"' "$kubernetes_lib"
+grep -Fq -- '--allow-shared-node' "$workloads_lib"
+grep -Fq -- '--connect-timeout 5 --max-time 15' "$connect_lib"
 
-# Rendering is registry-backed and digest pinned. The compatibility option remains only long enough
-# to reject a removed transport explicitly during this staged cutover.
-grep -Fq -- '--transport MODE' "$renderer"
-grep -Fq 'simplematch_local_image_transport_validate "$transport"' "$renderer"
+for removed_reference in '--image-transport' 'SIMPLEMATCH_LOCAL_IMAGE_TRANSPORT_DEFAULT' 'normalize-local-images-for-kind.sh' 'kind load docker-image' '--allow-local-image'; do
+  if grep -Fq -- "$removed_reference" "$certification" "$bootstrap_lib" "$run_lib" "$kubernetes_lib" "$workloads_lib"; then
+    printf 'certification still exposes removed image-transport behavior: %s\n' "$removed_reference" >&2
+    exit 1
+  fi
+done
+
+# Renderer is digest-only and has no compatibility transport option.
+grep -Fq 'simplematch_local_image_transport_reject_legacy_override' "$renderer"
 grep -Fq 'digest: %s' "$renderer"
 grep -Fq 'newName: %s' "$renderer"
-if grep -Fq 'kind-load preserves' "$renderer"; then
-  printf '%s\n' 'renderer still documents mutable kind-load rendering' >&2
+if grep -Fq -- '--transport' "$renderer"; then
+  printf '%s\n' 'renderer still exposes the removed transport selector' >&2
   exit 1
 fi
-
 grep -Fq 'digest_reference=' "$publisher"
 grep -Fq 'docker push' "$publisher"
 
-# The fleet verifier still owns its independent explicit-local-image verification mode until the
-# certification runner no longer has any local-image call sites.
-grep -Fq -- '--allow-local-image IMAGE' "$fleet_verifier"
-grep -Fq 'LOCAL_IMAGE_REFERENCE' "$fleet_verifier"
-
-# The live smoke exercises canonical lifecycle and proves demand-driven registry pulling.
+# Live smoke proves demand-driven registry pulling rather than node preloading.
 grep -Fq 'bash "$manager" create' "$resource_integration"
 grep -Fq 'bash "$manager" verify' "$resource_integration"
 grep -Fq -- '--baseline "$baseline_file"' "$resource_integration"
@@ -176,13 +185,13 @@ grep -Fq 'bash "$manager" delete' "$resource_integration"
 grep -Fq 'trap cleanup EXIT' "$resource_integration"
 grep -Fq 'delete --purge-data' "$resource_integration"
 
-# Both run owners must establish lifecycle ownership and use the same teardown primitive.
-grep -Fq 'simplematch_kind_create_disposable_namespace' "$certification"
-grep -Fq 'local-production-like-certification' "$certification"
-grep -Fq 'simplematch_kind_namespace_is_disposable' "$certification"
-grep -Fq 'simplematch_kind_delete_disposable_namespace' "$certification"
-grep -Fq 'market_reference.sha256' "$certification"
-! grep -Fq 'market-reference.sha256' "$certification"
+# Both run owners still share the same namespace lifecycle primitives.
+grep -Fq 'simplematch_kind_create_disposable_namespace' "$kubernetes_lib"
+grep -Fq 'local-production-like-certification' "$kubernetes_lib" "$bootstrap_lib"
+grep -Fq 'simplematch_kind_namespace_is_disposable' "$bootstrap_lib"
+grep -Fq 'simplematch_kind_delete_disposable_namespace' "$framework_lib"
+grep -Fq 'market_reference.sha256' "$kubernetes_lib"
+! grep -Fq 'market-reference.sha256' "$kubernetes_lib"
 grep -Fq 'simplematch_kind_create_disposable_namespace' "$resilience"
 grep -Fq 'local-resilience' "$resilience"
 grep -Fq 'simplematch_kind_delete_disposable_namespace' "$resilience"
@@ -193,9 +202,13 @@ grep -Fq 'manage-simplematch-live.sh' "$hard_reset"
 grep -Fq 'simplematch_registry_delete' "$hard_reset"
 ! grep -Fq -- '--rmi all' "$hard_reset"
 
-grep -Fq 'simplematch_registry_connect_kind_cluster' "$manager"
-grep -Fq 'simplematch_registry_verify' "$manager"
-grep -Fq 'containerdConfigPatches:' "$kind_config"
-grep -Fq 'config_path = "/etc/containerd/certs.d"' "$kind_config"
+[[ ! -e "$script_dir/normalize-local-images-for-kind.sh" ]] || {
+  printf '%s\n' 'removed kind normalizer script still exists' >&2
+  exit 1
+}
+[[ ! -e "$repo_root/deploy/docker/Dockerfile.kind-normalized" ]] || {
+  printf '%s\n' 'removed kind normalizer Dockerfile still exists' >&2
+  exit 1
+}
 
-printf '%s\n' 'Local registry, registry-only image transport, and resource lifecycle contract passed.'
+printf '%s\n' 'Local registry, certification modularity, and resource lifecycle contract passed.'

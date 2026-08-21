@@ -2,9 +2,8 @@
 
 # Canonical SimpleMatch local application image inventory.
 #
-# This module is intentionally side-effect free. Build, publication, and the
-# legacy kind-load transport all consume the same inventory instead of parsing
-# each other's CLI output. Each entry is:
+# This module is intentionally side-effect free. Build and registry publication
+# consume the same inventory instead of parsing each other's CLI output. Each entry is:
 #
 #   image-class|service|build-source|repository
 #

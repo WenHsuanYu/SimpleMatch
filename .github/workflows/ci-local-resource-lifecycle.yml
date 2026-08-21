@@ -13,6 +13,7 @@ on:
       - 'scripts/lib/local-resilience.sh'
       - 'scripts/lib/local-image-inventory.sh'
       - 'scripts/lib/local-image-transport.sh'
+      - 'scripts/lib/local-certification-*.sh'
       - 'scripts/manage-local-registry.sh'
       - 'scripts/manage-simplematch-live.sh'
       - 'scripts/prepare-local-kubernetes-images.sh'
@@ -24,6 +25,7 @@ on:
       - 'scripts/run-local-production-like-certification.sh'
       - 'scripts/run-local-resilience.sh'
       - 'scripts/verify-matching-fleet-live.sh'
+      - 'scripts/test-local-production-like.sh'
       - 'scripts/test-local-registry-resource-lifecycle.sh'
       - 'scripts/test-local-image-transport.sh'
       - 'scripts/test-local-image-rendering.sh'
@@ -43,7 +45,7 @@ permissions:
 
 jobs:
   contracts:
-    name: Local resource and image transport contracts
+    name: Local resource and registry contracts
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
@@ -56,6 +58,7 @@ jobs:
           bash scripts/test-local-registry-resource-lifecycle.sh
           bash scripts/test-local-image-transport.sh
           bash scripts/test-local-image-rendering.sh
+          bash scripts/test-local-production-like.sh
           bash scripts/test-local-resource-report.sh
           bash scripts/test-local-resilience.sh
           bash scripts/test-simplematch-kind-manager.sh
