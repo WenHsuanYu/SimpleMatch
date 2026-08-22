@@ -52,11 +52,17 @@ inputs for local and test usage. They make no HTTP call.
 
 ## Verification
 
-Run the normal phase checks with:
+Run the current service tests with:
 
 ```bash
 ./gradlew -q :services:marketdata-publisher:test
-bash scripts/check-phase-5-gate.sh
+```
+
+The completed Phase 5 source and fixture structure gate is retained as
+historical regression evidence:
+
+```bash
+bash scripts/archive/check-phase-5-gate.sh
 ```
 
 `MarketSnapshotPublicationPostgresIT` is an opt-in PostgreSQL verification. It requires an isolated
