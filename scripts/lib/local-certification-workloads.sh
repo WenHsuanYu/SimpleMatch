@@ -36,7 +36,12 @@ wait_for_local_matching_fleet() {
 }
 
 verify_local_matching_fleet() {
-  bash "$repo_root/scripts/verify-matching-fleet-live.sh" \
-    --namespace "$namespace" \
+  local args=(
+    --namespace "$namespace"
     --allow-shared-node
+  )
+  if [[ "$image_transport" == kind-load ]]; then
+    args+=(--allow-local-image "$matching_image_reference")
+  fi
+  bash "$repo_root/scripts/verify-matching-fleet-live.sh" "${args[@]}"
 }
