@@ -30,14 +30,16 @@ Commands:
 Environment:
   SIMPLEMATCH_LOCAL_REGISTRY_NAME         default: simplematch-local-registry
   SIMPLEMATCH_LOCAL_REGISTRY_IMAGE        default: registry:3
-  SIMPLEMATCH_LOCAL_REGISTRY_HOST         default: localhost
   SIMPLEMATCH_LOCAL_REGISTRY_PORT         default: 5001
   SIMPLEMATCH_LOCAL_REGISTRY_DATA_VOLUME  default: simplematch-local-registry-data
   SIMPLEMATCH_LOCAL_REGISTRY_NETWORK      default: kind
   SIMPLEMATCH_KIND_CLUSTER_NAME           default: simplematch-live
 
-An existing registry container is reused only when its image, restart policy,
-published port, and registry-data volume match these configured values.
+The logical registry host is intentionally fixed to localhost so this local-lab
+publication path cannot be redirected to a remote registry. The port remains
+configurable. An existing registry container is reused only when its image,
+restart policy, published port, and registry-data volume match the configured
+local identity.
 EOF_USAGE
 }
 

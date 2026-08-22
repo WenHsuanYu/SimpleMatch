@@ -6,6 +6,8 @@ on:
       - '.github/workflows/ci-local-resource-lifecycle.yml'
       - 'deploy/kind/**'
       - 'deploy/k8s/**'
+      - 'deploy/docker/Dockerfile.kind-normalized'
+      - 'scripts/build-local-images.sh'
       - 'scripts/lib/local-common.sh'
       - 'scripts/lib/local-kind.sh'
       - 'scripts/lib/local-registry.sh'
@@ -16,6 +18,7 @@ on:
       - 'scripts/lib/local-certification-*.sh'
       - 'scripts/manage-local-registry.sh'
       - 'scripts/manage-simplematch-live.sh'
+      - 'scripts/normalize-local-images-for-kind.sh'
       - 'scripts/prepare-local-kubernetes-images.sh'
       - 'scripts/simplematch-clean-local-disk.sh'
       - 'scripts/hard-reset-local.sh'
@@ -25,6 +28,7 @@ on:
       - 'scripts/run-local-production-like-certification.sh'
       - 'scripts/run-local-resilience.sh'
       - 'scripts/verify-matching-fleet-live.sh'
+      - 'scripts/test-local-lifecycle-safety.sh'
       - 'scripts/test-local-production-like.sh'
       - 'scripts/test-local-registry-resource-lifecycle.sh'
       - 'scripts/test-local-image-transport.sh'
@@ -34,6 +38,7 @@ on:
       - 'scripts/test-local-resilience.sh'
       - 'scripts/test-simplematch-kind-manager.sh'
       - 'docs/local-registry-resource-lifecycle.md'
+      - 'docs/agents/deployment-test-lessons.md'
   workflow_dispatch:
 
 concurrency:
@@ -55,6 +60,7 @@ jobs:
           persist-credentials: false
       - name: Validate shell lifecycle contracts
         run: |
+          bash scripts/test-local-lifecycle-safety.sh
           bash scripts/test-local-registry-resource-lifecycle.sh
           bash scripts/test-local-image-transport.sh
           bash scripts/test-local-image-rendering.sh

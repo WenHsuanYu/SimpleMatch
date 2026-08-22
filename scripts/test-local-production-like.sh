@@ -13,6 +13,8 @@ workloads_lib="$script_dir/lib/local-certification-workloads.sh"
 bootstrap_lib="$script_dir/lib/local-certification-bootstrap.sh"
 run_lib="$script_dir/lib/local-certification-run.sh"
 transport_lib="$script_dir/lib/local-image-transport.sh"
+normalizer="$script_dir/normalize-local-images-for-kind.sh"
+normalizer_dockerfile="$repo_root/deploy/docker/Dockerfile.kind-normalized"
 
 for file in "$runner" "$framework_lib" "$kafka_lib" "$kubernetes_lib" "$connect_lib" \
   "$workloads_lib" "$bootstrap_lib" "$run_lib" "$transport_lib"; do
@@ -72,26 +74,32 @@ grep -Fq 'verify-local-boot-run-image.sh' <<<"$boot_override_dry_run"
 bash -n "$repo_root/scripts/verify-local-boot-run-image.sh"
 grep -Fq 'docker image save --platform' "$repo_root/scripts/verify-local-boot-run-image.sh"
 
-# Registry-only transport is explicit: build, publish, digest-lock, render, pull.
+# Image delivery is staged: registry is the default and immutable runtime path;
+# kind-load remains an explicit compatibility fallback while the local registry
+# path proves stable. Both use one canonical inventory.
 bash -n "$script_dir/prepare-local-kubernetes-images.sh"
 bash -n "$script_dir/publish-local-images.sh"
 bash -n "$script_dir/render-local-kubernetes-manifest.sh"
+bash -n "$normalizer"
+[[ -f "$normalizer_dockerfile" ]] || {
+  printf '%s\n' 'kind-load fallback normalization Dockerfile is missing.' >&2
+  exit 1
+}
+grep -Fq 'SIMPLEMATCH_LOCAL_IMAGE_TRANSPORT_DEFAULT="registry"' "$transport_lib"
+grep -Fq 'registry|kind-load' "$transport_lib"
 grep -Fq 'publish-local-images.sh' "$script_dir/prepare-local-kubernetes-images.sh"
+grep -Fq 'normalize-local-images-for-kind.sh' "$script_dir/prepare-local-kubernetes-images.sh"
+grep -Fq 'kind load docker-image' "$script_dir/prepare-local-kubernetes-images.sh"
 grep -Fq 'simplematch_local_image_lock_digest_reference' "$transport_lib"
 grep -Fq 'docker push' "$script_dir/publish-local-images.sh"
 grep -Fq 'digest: %s' "$script_dir/render-local-kubernetes-manifest.sh"
-for removed_path in \
-  "$repo_root/scripts/normalize-local-images-for-kind.sh" \
-  "$repo_root/deploy/docker/Dockerfile.kind-normalized"; do
-  [[ ! -e "$removed_path" ]] || {
-    printf 'Removed direct-import artifact still exists: %s\n' "$removed_path" >&2
-    exit 1
-  }
-done
 
 "$runner" --help >/dev/null
 grep -Fq 'SIMPLEMATCH_CERTIFICATION_TRADING_DAY' "$bootstrap_lib"
 grep -Fq -- '--resume' "$bootstrap_lib"
+grep -Fq -- '--image-transport' "$framework_lib" "$bootstrap_lib"
+grep -Fq 'simplematch_local_image_transport_validate "$image_transport"' "$bootstrap_lib"
+grep -Fq 'image_transport=%s' "$bootstrap_lib"
 grep -Fq 'phase_marker_directory' "$framework_lib" "$bootstrap_lib"
 grep -Fq 'SIMPLEMATCH_CERTIFICATION_TIMEOUT_SECONDS' "$runner" "$framework_lib" "$bootstrap_lib"
 grep -Fq 'SIMPLEMATCH_KAFKA_CAPACITY_WORKLOAD_FILE' "$runner"
@@ -120,6 +128,8 @@ grep -Fq 'Certification namespace already exists' "$kubernetes_lib"
 grep -Fq 'simplematch_kind_namespace_is_disposable' "$bootstrap_lib"
 grep -Fq 'simplematch_kind_delete_disposable_namespace' "$framework_lib"
 
+# Default certification must use registry publication/rendering and must not
+# execute the legacy direct-import path.
 certification_dry_run="$($runner --dry-run --skip-build --skip-compose)"
 grep -Fq 'test-kubernetes-overlays.sh' <<<"$certification_dry_run"
 grep -Fq 'test-local-kubernetes-dependencies.sh' <<<"$certification_dry_run"
@@ -127,7 +137,19 @@ grep -Fq 'test-matching-topic-profile.sh' <<<"$certification_dry_run"
 grep -Fq 'prepare-local-kubernetes-images.sh' <<<"$certification_dry_run"
 grep -Fq 'render-local-kubernetes-manifest.sh' <<<"$certification_dry_run"
 if grep -Fq 'kind load docker-image' <<<"$certification_dry_run"; then
-  printf '%s\n' 'Certification dry-run still imports images directly into kind.' >&2
+  printf '%s\n' 'Default certification dry-run unexpectedly imports images directly into kind.' >&2
+  exit 1
+fi
+
+# Explicit fallback must remain reachable without leaking direct-import details
+# into the top-level runner implementation.
+fallback_dry_run="$($runner --image-transport kind-load --matching-fleet-only --dry-run --skip-build --skip-compose)"
+grep -Fq 'prepare-local-kubernetes-images.sh' <<<"$fallback_dry_run"
+grep -Fq -- '--transport kind-load' <<<"$fallback_dry_run"
+grep -Fq 'kind load docker-image' <<<"$fallback_dry_run"
+grep -Fq -- '--allow-local-image simplematch-matching:local' <<<"$fallback_dry_run"
+if grep -Fq 'normalize-local-images-for-kind.sh' "$runner"; then
+  printf '%s\n' 'Top-level certification runner knows legacy normalizer details.' >&2
   exit 1
 fi
 
@@ -165,18 +187,12 @@ grep -Fq 'publish_local_matching_open_barriers' "$kubernetes_lib" "$run_lib"
 grep -Fq 'kubernetes-open-barriers' "$run_lib"
 grep -Fq -- '--matching-fleet-only' "$framework_lib" "$bootstrap_lib"
 grep -Fq 'select_matching_workload' "$workloads_lib" "$run_lib"
-grep -Fq 'simplematch_local_image_lock_digest "$image_lock" matching' "$run_lib"
-grep -Fq 'simplematch_local_image_lock_digest_reference "$image_lock" matching' "$run_lib"
+grep -Fq 'simplematch_local_image_transport_matching_digest' "$run_lib"
+grep -Fq 'simplematch_local_image_transport_matching_reference' "$run_lib"
+grep -Fq -- '--transport "$image_transport"' "$run_lib"
 grep -Fq 'trading_session_id=${trading_day}-regular' "$kubernetes_lib"
 grep -Fq -- '--allow-shared-node' "$workloads_lib"
-
-for removed_contract in '--image-transport' 'SIMPLEMATCH_LOCAL_IMAGE_TRANSPORT_DEFAULT' 'kind-load' \
-  'normalize-local-images-for-kind.sh' '--allow-local-image'; do
-  if grep -Fq -- "$removed_contract" "$runner" "$framework_lib" "$bootstrap_lib" "$run_lib" "$kubernetes_lib" "$workloads_lib"; then
-    printf 'Removed image transport contract still appears in certification: %s\n' "$removed_contract" >&2
-    exit 1
-  fi
-done
+grep -Fq -- '--allow-local-image' "$workloads_lib"
 
 # Modularity is itself a contract: orchestration stays small and implementation lives by domain.
 runner_lines="$(wc -l <"$runner")"
@@ -204,4 +220,4 @@ done
 ruby -r yaml -e 'YAML.load_file(ARGV.fetch(0), aliases: true)' \
   "$repo_root/deploy/compose/kafka-connect.production-like.yml" >/dev/null
 
-printf '%s\n' 'Local production-like registry and certification contracts are valid.'
+printf '%s\n' 'Local production-like staged image transport and certification contracts are valid.'
