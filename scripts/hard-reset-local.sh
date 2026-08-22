@@ -12,11 +12,9 @@ source "$script_dir/lib/local-registry.sh"
 canonical_kind_cluster="${SIMPLEMATCH_KIND_CLUSTER_NAME:-simplematch-live}"
 default_compose_project="${SIMPLEMATCH_CERTIFICATION_COMPOSE_PROJECT:-simplematch-local-production-like}"
 compose_file="$repo_root/deploy/compose/kafka-connect.production-like.yml"
-kind_config="$repo_root/deploy/kind/simplematch-live.yaml"
 
 assume_yes=false
 aggressive_unused_docker=false
-remove_pack_caches=true
 remove_project_build_state=true
 purge_registry=true
 SIMPLEMATCH_DRY_RUN=false
@@ -28,10 +26,14 @@ usage() {
 Usage:
   scripts/hard-reset-local.sh [options]
 
-Project hard reset removes the SimpleMatch local runtime, canonical kind cluster,
-local registry cache, SimpleMatch-tagged host images, pack caches and generated
+Project hard reset removes only attributable SimpleMatch local runtime state:
+canonical/explicitly selected SimpleMatch kind clusters, SimpleMatch Compose
+resources, the local registry cache, SimpleMatch-tagged host images, and generated
 repository build/evidence state. It does not manually mutate containerd snapshot
-metadata; deleting the kind cluster removes those node-local caches atomically.
+metadata; deleting a verified kind cluster removes those node-local caches.
+
+Daemon-wide Pack/BuildKit caches and unrelated Docker resources are preserved by
+default because they cannot be reliably attributed to this repository.
 
 Options:
   --yes
@@ -39,10 +41,8 @@ Options:
   --dry-run
       Print destructive commands without executing them.
   --aggressive-unused-docker
-      Also remove ALL globally unused Docker containers, images, volumes and
-      networks. This can affect other projects.
-  --keep-pack-caches
-      Preserve pack-cache-*.build / pack-cache-*.launch volumes.
+      Also remove ALL globally unused Docker containers, images, volumes,
+      networks, and builder/buildx caches. This can affect other projects.
   --keep-project-build-state
       Preserve .gradle/, out/gradle-home/, out/build/, out/certification/ and
       module build/ directories.
@@ -54,10 +54,6 @@ Options:
       Additionally remove a SimpleMatch-named Compose project. May repeat.
   -h, --help
       Show this help.
-
-Docker builder/buildx caches remain part of hard-reset semantics and are pruned
-because they cannot be reliably attributed to one repository. Use routine
-simplematch-clean-local-disk.sh when that daemon-wide cache impact is unwanted.
 EOF_USAGE
 }
 
@@ -66,7 +62,6 @@ while (($# > 0)); do
     --yes) assume_yes=true; shift ;;
     --dry-run) SIMPLEMATCH_DRY_RUN=true; shift ;;
     --aggressive-unused-docker) aggressive_unused_docker=true; shift ;;
-    --keep-pack-caches) remove_pack_caches=false; shift ;;
     --keep-project-build-state) remove_project_build_state=false; shift ;;
     --keep-registry-cache) purge_registry=false; shift ;;
     --kind-cluster)
@@ -118,6 +113,7 @@ printf 'Registry: %s (%s) data=%s purge_data=%s\n' \
   "$SIMPLEMATCH_LOCAL_REGISTRY_NAME" "$(simplematch_registry_endpoint)" \
   "$SIMPLEMATCH_LOCAL_REGISTRY_DATA_VOLUME" "$purge_registry"
 printf 'SimpleMatch image repositories: simplematch/*, simplematch-matching:*, quickfix-gateway:*\n'
+printf 'Daemon-wide unused Docker cleanup: %s\n' "$aggressive_unused_docker"
 
 if [[ "$assume_yes" != true && "$SIMPLEMATCH_DRY_RUN" != true ]]; then
   printf 'Type exactly HARD-RESET-SIMPLEMATCH to continue: '
@@ -146,7 +142,10 @@ if command -v kind >/dev/null 2>&1; then
     if [[ "$cluster" == "$canonical_kind_cluster" ]]; then
       args=(delete)
       [[ "$SIMPLEMATCH_DRY_RUN" == true ]] && args+=(--dry-run)
-      simplematch_run_best_effort bash "$script_dir/manage-simplematch-live.sh" "${args[@]}"
+      # Canonical deletion is a safety gate, not best-effort cleanup. If the
+      # manager cannot prove cluster identity, stop before generic container
+      # cleanup can bypass that refusal.
+      simplematch_run bash "$script_dir/manage-simplematch-live.sh" "${args[@]}"
     else
       simplematch_run_best_effort kind delete cluster --name "$cluster"
     fi
@@ -186,19 +185,6 @@ done < <(docker network ls --format '{{.Name}}')
 simplematch_log 'Remove local registry'
 simplematch_registry_delete "$purge_registry"
 
-if [[ "$remove_pack_caches" == true ]]; then
-  simplematch_log 'Remove unattached Paketo/pack caches'
-  while IFS= read -r volume; do
-    [[ "$volume" == pack-cache-* ]] || continue
-    users="$(docker ps -aq --filter "volume=$volume" 2>/dev/null || true)"
-    if [[ -n "$users" ]]; then
-      simplematch_warn "keeping attached pack cache: $volume"
-      continue
-    fi
-    simplematch_run docker volume rm "$volume"
-  done < <(docker volume ls -q)
-fi
-
 simplematch_log 'Remove SimpleMatch host images'
 image_refs=()
 while IFS='|' read -r repository tag; do
@@ -227,19 +213,17 @@ if [[ "$remove_project_build_state" == true ]]; then
   done < <(find "$repo_root" -path "$repo_root/.git" -prune -o -type d -name build -print0)
 fi
 
-simplematch_log 'Prune Docker builder caches'
-simplematch_warn 'Builder caches are daemon-scoped and may include other projects.'
-simplematch_run docker builder prune --all --force
-if docker buildx version >/dev/null 2>&1; then
-  simplematch_run docker buildx prune --all --force
-fi
-
 if [[ "$aggressive_unused_docker" == true ]]; then
   simplematch_log 'Aggressive daemon-wide unused-resource cleanup'
+  simplematch_warn 'This opt-in cleanup can remove resources and builder caches owned by other projects.'
   simplematch_run docker container prune --force
   simplematch_run docker image prune --all --force
   simplematch_run docker volume prune --all --force
   simplematch_run docker network prune --force
+  simplematch_run docker builder prune --all --force
+  if docker buildx version >/dev/null 2>&1; then
+    simplematch_run docker buildx prune --all --force
+  fi
 fi
 
 if [[ "$SIMPLEMATCH_DRY_RUN" == true ]]; then
@@ -283,14 +267,6 @@ while IFS= read -r container; do
     verification_failed=true
   fi
 done < <(docker ps -aq --filter 'label=com.docker.compose.project')
-
-if [[ "$remove_pack_caches" == true ]]; then
-  while IFS= read -r volume; do
-    [[ "$volume" == pack-cache-* ]] || continue
-    simplematch_warn "Paketo cache volume remains: $volume"
-    verification_failed=true
-  done < <(docker volume ls -q)
-fi
 
 if [[ "$remove_project_build_state" == true ]]; then
   for path in \
