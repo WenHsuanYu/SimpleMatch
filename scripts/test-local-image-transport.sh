@@ -108,6 +108,12 @@ if simplematch_local_image_lock_validate_file "$malformed_file" >/dev/null 2>&1;
   exit 1
 fi
 
+printf 'matching|simplematch-matching:local|remote.example/simplematch-matching:local|remote.example/simplematch-matching@%s\n' "$digest" >"$malformed_file"
+if simplematch_local_image_lock_validate_file "$malformed_file" >/dev/null 2>&1; then
+  printf '%s\n' 'non-local registry repository unexpectedly accepted by local image lock' >&2
+  exit 1
+fi
+
 bash "$script_dir/prepare-local-kubernetes-images.sh" \
   --tag local \
   --cluster simplematch-live \
