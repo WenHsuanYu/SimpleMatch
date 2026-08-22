@@ -69,5 +69,7 @@ unset certification_lib
 # Bootstrap validates configuration and static prerequisites; run owns phase ordering.
 # shellcheck source=/dev/null
 source "$script_dir/lib/local-certification-bootstrap.sh"
+# CLI selection is shared with sourced helpers and child image scripts.
+export SIMPLEMATCH_LOCAL_IMAGE_TRANSPORT="$image_transport"
 # shellcheck source=/dev/null
 source "$script_dir/lib/local-certification-run.sh"
