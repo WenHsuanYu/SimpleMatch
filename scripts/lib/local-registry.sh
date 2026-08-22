@@ -24,6 +24,37 @@ simplematch_registry_container_running() {
   [[ "$(docker inspect --format '{{.State.Running}}' "$SIMPLEMATCH_LOCAL_REGISTRY_NAME" 2>/dev/null || true)" == true ]]
 }
 
+simplematch_registry_verify_container_identity() {
+  local image restart_policy data_volume published_endpoint
+
+  simplematch_registry_container_exists || {
+    printf 'local registry container is missing: %s\n' "$SIMPLEMATCH_LOCAL_REGISTRY_NAME" >&2
+    return 1
+  }
+  image="$(docker inspect --format '{{.Config.Image}}' "$SIMPLEMATCH_LOCAL_REGISTRY_NAME")" || return 1
+  restart_policy="$(docker inspect --format '{{.HostConfig.RestartPolicy.Name}}' "$SIMPLEMATCH_LOCAL_REGISTRY_NAME")" || return 1
+  data_volume="$(docker inspect --format '{{range .Mounts}}{{if eq .Destination "/var/lib/registry"}}{{.Name}}{{end}}{{end}}' "$SIMPLEMATCH_LOCAL_REGISTRY_NAME")" || return 1
+  published_endpoint="$(docker port "$SIMPLEMATCH_LOCAL_REGISTRY_NAME" 5000/tcp 2>/dev/null | sed '/^$/d')" || return 1
+
+  [[ "$image" == "$SIMPLEMATCH_LOCAL_REGISTRY_IMAGE" ]] || {
+    printf 'local registry image mismatch: expected %s, got %s\n' "$SIMPLEMATCH_LOCAL_REGISTRY_IMAGE" "$image" >&2
+    return 1
+  }
+  [[ "$restart_policy" == 'unless-stopped' ]] || {
+    printf 'local registry restart policy mismatch: expected unless-stopped, got %s\n' "$restart_policy" >&2
+    return 1
+  }
+  [[ "$data_volume" == "$SIMPLEMATCH_LOCAL_REGISTRY_DATA_VOLUME" ]] || {
+    printf 'local registry data-volume mismatch: expected %s, got %s\n' "$SIMPLEMATCH_LOCAL_REGISTRY_DATA_VOLUME" "$data_volume" >&2
+    return 1
+  }
+  [[ "$published_endpoint" == "127.0.0.1:${SIMPLEMATCH_LOCAL_REGISTRY_PORT}" ]] || {
+    printf 'local registry published endpoint mismatch: expected 127.0.0.1:%s, got %s\n' \
+      "$SIMPLEMATCH_LOCAL_REGISTRY_PORT" "${published_endpoint:-none}" >&2
+    return 1
+  }
+}
+
 simplematch_registry_create() {
   if [[ "${SIMPLEMATCH_DRY_RUN:-false}" == true ]]; then
     simplematch_quote_command docker volume create "$SIMPLEMATCH_LOCAL_REGISTRY_DATA_VOLUME"
@@ -40,12 +71,13 @@ simplematch_registry_create() {
   simplematch_require_command docker
   docker info >/dev/null 2>&1 || simplematch_die 'Docker daemon is not reachable'
 
-  if simplematch_registry_container_running; then
-    simplematch_info "Local registry already running: $SIMPLEMATCH_LOCAL_REGISTRY_NAME"
-    return 0
-  fi
-
   if simplematch_registry_container_exists; then
+    simplematch_registry_verify_container_identity ||
+      simplematch_die "existing local registry container does not match repository identity: $SIMPLEMATCH_LOCAL_REGISTRY_NAME"
+    if simplematch_registry_container_running; then
+      simplematch_info "Local registry already running: $SIMPLEMATCH_LOCAL_REGISTRY_NAME"
+      return 0
+    fi
     simplematch_log "Start local registry $SIMPLEMATCH_LOCAL_REGISTRY_NAME"
     simplematch_run docker start "$SIMPLEMATCH_LOCAL_REGISTRY_NAME"
     return 0
@@ -60,6 +92,8 @@ simplematch_registry_create() {
     --volume "${SIMPLEMATCH_LOCAL_REGISTRY_DATA_VOLUME}:/var/lib/registry" \
     --name "$SIMPLEMATCH_LOCAL_REGISTRY_NAME" \
     "$SIMPLEMATCH_LOCAL_REGISTRY_IMAGE"
+  simplematch_registry_verify_container_identity ||
+    simplematch_die 'new local registry container does not match repository identity'
 }
 
 simplematch_registry_connect_kind_cluster() {
@@ -130,6 +164,8 @@ simplematch_registry_verify() {
   simplematch_require_command docker
   simplematch_registry_container_running ||
     simplematch_die "local registry is not running: $SIMPLEMATCH_LOCAL_REGISTRY_NAME"
+  simplematch_registry_verify_container_identity ||
+    simplematch_die "local registry container identity is invalid: $SIMPLEMATCH_LOCAL_REGISTRY_NAME"
 
   endpoint="$(simplematch_registry_endpoint)"
   docker volume inspect "$SIMPLEMATCH_LOCAL_REGISTRY_DATA_VOLUME" >/dev/null 2>&1 ||
