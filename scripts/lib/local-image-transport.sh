@@ -1,9 +1,9 @@
 #!/usr/bin/env bash
 
-# Local registry image-lock policy and digest identity helpers.
-# Publication belongs to publish-local-images.sh and manifest rendering belongs
-# to render-local-kubernetes-manifest.sh. This module is side-effect free and
-# owns the semantic contract between canonical local images and registry locks.
+# Local Kubernetes image-transport policy and digest-lock helpers.
+# Publication/loading belongs to prepare-local-kubernetes-images.sh; manifest
+# rendering belongs to render-local-kubernetes-manifest.sh. This module owns the
+# semantic contract between canonical local images and registry digest locks.
 
 _simplematch_local_image_transport_dir="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
 # shellcheck source=scripts/lib/local-image-inventory.sh
@@ -12,15 +12,16 @@ source "$_simplematch_local_image_transport_dir/local-image-inventory.sh"
 source "$_simplematch_local_image_transport_dir/local-registry.sh"
 unset _simplematch_local_image_transport_dir
 
-# The transport selector was removed when the local registry became canonical.
-# Reject an inherited legacy override instead of silently ignoring stale shell,
-# CI, or developer configuration.
-simplematch_local_image_transport_reject_legacy_override() {
-  [[ -z "${SIMPLEMATCH_LOCAL_IMAGE_TRANSPORT:-}" ]] || {
-    printf '%s\n' \
-      'SIMPLEMATCH_LOCAL_IMAGE_TRANSPORT was removed; unset it because registry is the only supported local Kubernetes image transport.' >&2
-    return 1
-  }
+SIMPLEMATCH_LOCAL_IMAGE_TRANSPORT_DEFAULT="registry"
+
+simplematch_local_image_transport_validate() {
+  case "$1" in
+    registry|kind-load) return 0 ;;
+    *)
+      printf 'unsupported local image transport: %s (expected registry or kind-load)\n' "$1" >&2
+      return 1
+      ;;
+  esac
 }
 
 simplematch_local_image_lock_validate_file() {
@@ -109,7 +110,7 @@ simplematch_local_image_lock_validate_file() {
     }
     expected_registry_repository="$(simplematch_registry_endpoint)/${expected_source_repository}"
     [[ "$registry_repository" == "$expected_registry_repository" ]] || {
-      printf 'registry repository is not the canonical local registry repository for service %s: expected %s, got %s\n' \
+      printf 'registry repository is not the configured local registry repository for service %s: expected %s, got %s\n' \
         "$service" "$expected_registry_repository" "$registry_repository" >&2
       return 1
     }
@@ -157,11 +158,9 @@ simplematch_local_image_lock_digest() {
   printf '%s\n' "${digest_reference##*@}"
 }
 
-# Rendering deliberately supports only deployment profiles that the repository
-# owns end-to-end. A complete local overlay lock must contain every image used by
-# deploy/k8s/overlays/local. The existing Matching fleet-only certification is
-# the one supported partial profile. Any other partial lock is rejected instead
-# of silently leaving mutable :local images in a registry-backed manifest.
+# Registry rendering supports only deployment profiles the repository owns
+# end-to-end. kind-load does not consume a lock and leaves tracked local image
+# references unchanged for compatibility.
 simplematch_local_image_lock_render_profile() {
   local lock_file="$1"
   local line service
@@ -199,6 +198,44 @@ simplematch_local_image_lock_render_services() {
       ;;
     full)
       simplematch_local_image_inventory_local_overlay_services
+      ;;
+  esac
+}
+
+simplematch_local_image_transport_matching_reference() {
+  local transport="$1"
+  local image_tag="$2"
+  local image_lock="$3"
+
+  simplematch_local_image_transport_validate "$transport" || return 1
+  case "$transport" in
+    registry)
+      simplematch_local_image_lock_digest_reference "$image_lock" matching
+      ;;
+    kind-load)
+      printf 'simplematch-matching:%s\n' "$image_tag"
+      ;;
+  esac
+}
+
+simplematch_local_image_transport_matching_digest() {
+  local transport="$1"
+  local image_tag="$2"
+  local image_lock="$3"
+  local digest
+
+  simplematch_local_image_transport_validate "$transport" || return 1
+  case "$transport" in
+    registry)
+      simplematch_local_image_lock_digest "$image_lock" matching
+      ;;
+    kind-load)
+      digest="$(docker image inspect --format '{{.Id}}' "simplematch-matching:${image_tag}")" || return 1
+      [[ "$digest" =~ ^sha256:[0-9a-f]{64}$ ]] || {
+        printf 'Matching local image does not expose an OCI image ID: %s\n' "$digest" >&2
+        return 1
+      }
+      printf '%s\n' "$digest"
       ;;
   esac
 }
