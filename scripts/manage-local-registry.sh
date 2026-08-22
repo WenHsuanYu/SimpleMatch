@@ -21,18 +21,23 @@ Usage:
 
 Commands:
   create       Create or start the repository-owned local OCI registry.
-  connect      Configure an existing kind cluster to pull localhost:<port> images
+  connect      Configure an existing kind cluster to pull localhost:5001 images
                from the registry container.
-  verify       Verify registry state and, by default, kind integration.
+  verify       Verify canonical registry identity and, by default, kind integration.
   delete       Remove the registry container. Registry data is preserved unless
                --purge-data is supplied.
 
+Canonical registry identity is fixed by repository policy:
+  container    simplematch-local-registry
+  image        registry:3
+  endpoint     localhost:5001
+  data volume  simplematch-local-registry-data
+  network      kind
+
+Only the target kind cluster is selectable. Registry identity overrides are
+rejected rather than allowing setup or cleanup to target a different Docker object.
+
 Environment:
-  SIMPLEMATCH_LOCAL_REGISTRY_NAME         default: simplematch-local-registry
-  SIMPLEMATCH_LOCAL_REGISTRY_IMAGE        default: registry:3
-  SIMPLEMATCH_LOCAL_REGISTRY_HOST         default: localhost
-  SIMPLEMATCH_LOCAL_REGISTRY_PORT         default: 5001
-  SIMPLEMATCH_LOCAL_REGISTRY_DATA_VOLUME  default: simplematch-local-registry-data
   SIMPLEMATCH_KIND_CLUSTER_NAME           default: simplematch-live
 EOF_USAGE
 }
