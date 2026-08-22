@@ -5,13 +5,19 @@ repo_root="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd)"
 account_config="$repo_root/deploy/k8s/base/java-services-configmaps.yaml"
 matching_provisioner="$repo_root/scripts/provision-matching-topics.sh"
 production_like_runner="$repo_root/scripts/run-local-production-like-certification.sh"
+production_like_kafka="$repo_root/scripts/lib/local-certification-kafka.sh"
 
-for path in "$account_config" "$matching_provisioner" "$production_like_runner"; do
+for path in "$account_config" "$matching_provisioner" "$production_like_runner" "$production_like_kafka"; do
   [[ -f "$path" ]] || {
     printf 'Matching topic cutover input does not exist: %s\n' "$path" >&2
     exit 1
   }
 done
+
+grep -Fq 'local-certification-kafka.sh' "$production_like_runner" || {
+  printf '%s\n' 'Production-like runner does not source the Kafka certification module.' >&2
+  exit 1
+}
 
 ruby -ryaml - "$account_config" <<'RUBY'
 documents = YAML.load_stream(File.read(ARGV.fetch(0), encoding: "UTF-8")).compact
@@ -42,9 +48,9 @@ create_topics_block="$(awk '
   /^create_kafka_topics\(\) \{/ { inside=1 }
   inside { print }
   inside && /^}$/ { exit }
-' "$production_like_runner")"
+' "$production_like_kafka")"
 [[ -n "$create_topics_block" ]] || {
-  printf '%s\n' 'Production-like runner has no create_kafka_topics function.' >&2
+  printf '%s\n' 'Production-like Kafka module has no create_kafka_topics function.' >&2
   exit 1
 }
 for topic in matching.commands matching.events; do

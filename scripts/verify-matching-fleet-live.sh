@@ -5,7 +5,7 @@ namespace="${SIMPLEMATCH_NAMESPACE:-production}"
 statefulset_name="${SIMPLEMATCH_MATCHING_STATEFULSET:-matching}"
 kubectl_bin="${KUBECTL:-kubectl}"
 allow_shared_node=false
-allow_local_image=false
+local_image_reference=""
 
 usage() {
   printf '%s\n' \
@@ -14,11 +14,13 @@ usage() {
     '  --namespace NAME       Kubernetes namespace (default: SIMPLEMATCH_NAMESPACE or production).' \
     '  --statefulset NAME     Matching StatefulSet (default: SIMPLEMATCH_MATCHING_STATEFULSET or matching).' \
     '  --kubectl PATH         kubectl executable (default: KUBECTL or kubectl).' \
-    '  --allow-shared-node    Local-only mode; permit 15 logical owners on one node.' \
-    '  --allow-local-image    Local-only mode; require the exact simplematch-matching:local image.' \
+    '  --allow-shared-node    Local-only topology mode; permit 15 logical owners to share nodes.' \
+    '  --allow-local-image IMAGE' \
+    '                         kind-load fallback; require this exact non-digest local image.' \
     '' \
-    'The gate is intentionally strict: it requires 15 Ready pods, 15 distinct nodes,' \
-    '15 current Lease holders, 15 Bound ReadWriteOncePod PVCs, and real digest-pinned images.'
+    'The gate requires 15 Ready pods, 15 current Lease holders and 15 Bound' \
+    'ReadWriteOncePod PVCs. Registry mode requires real digest-pinned images;' \
+    'the explicit kind-load fallback may instead require one exact local image reference.'
 }
 
 while [[ $# -gt 0 ]]; do
@@ -27,7 +29,7 @@ while [[ $# -gt 0 ]]; do
     --statefulset) statefulset_name="$2"; shift 2 ;;
     --kubectl) kubectl_bin="$2"; shift 2 ;;
     --allow-shared-node) allow_shared_node=true; shift ;;
-    --allow-local-image) allow_local_image=true; shift ;;
+    --allow-local-image) local_image_reference="${2:?--allow-local-image requires an image reference}"; shift 2 ;;
     --help|-h) usage; exit 0 ;;
     *) usage >&2; printf 'Unknown option: %s\n' "$1" >&2; exit 2 ;;
   esac
@@ -56,7 +58,7 @@ trap 'rm -rf "$temporary_directory"' EXIT
 "$kubectl_bin" -n "$namespace" get pvc -o json \
   > "$temporary_directory/pvcs.json"
 
-ALLOW_SHARED_NODE="$allow_shared_node" ALLOW_LOCAL_IMAGE="$allow_local_image" NAMESPACE="$namespace" STATEFULSET_NAME="$statefulset_name" ruby -rjson -rtime - \
+ALLOW_SHARED_NODE="$allow_shared_node" LOCAL_IMAGE_REFERENCE="$local_image_reference" NAMESPACE="$namespace" STATEFULSET_NAME="$statefulset_name" ruby -rjson -rtime - \
   "$temporary_directory/statefulset.json" \
   "$temporary_directory/pods.json" \
   "$temporary_directory/leases.json" \
@@ -122,12 +124,13 @@ require_gate(
   "Matching pod-index labels must cover every partition from 0 through 14 exactly once"
 )
 
+local_image_reference = ENV.fetch("LOCAL_IMAGE_REFERENCE", "")
 matching_pods.each do |pod|
   image = pod.dig("spec", "containers", 0, "image").to_s
-  if ENV.fetch("ALLOW_LOCAL_IMAGE", "false") == "true"
+  if !local_image_reference.empty?
     require_gate(
-      image == "simplematch-matching:local",
-      "#{pod.dig("metadata", "name")} must use the local Matching image: #{image}"
+      image == local_image_reference,
+      "#{pod.dig("metadata", "name")} must use the expected kind-load fallback image #{local_image_reference}: #{image}"
     )
   else
     require_gate(
@@ -184,5 +187,6 @@ node_summary = if ENV.fetch("ALLOW_SHARED_NODE", "false") == "true"
 else
   "15 distinct nodes"
 end
-puts "Matching fleet certification passed: 15 Ready pods, 15 Lease holders, 15 RWOP PVCs, and #{node_summary} in #{namespace}."
+image_summary = local_image_reference.empty? ? "digest-pinned images" : "exact kind-load image #{local_image_reference}"
+puts "Matching fleet certification passed: 15 Ready pods, 15 Lease holders, 15 RWOP PVCs, #{image_summary}, and #{node_summary} in #{namespace}."
 RUBY

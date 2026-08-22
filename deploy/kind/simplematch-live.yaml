@@ -2,6 +2,14 @@ kind: Cluster
 apiVersion: kind.x-k8s.io/v1alpha4
 name: simplematch-live
 
+# Keep the registry configuration directory explicit even though recent kind
+# node images enable it by default. The local registry manager writes the actual
+# localhost:<port> alias under /etc/containerd/certs.d after cluster creation.
+containerdConfigPatches:
+  - |-
+    [plugins."io.containerd.grpc.v1.cri".registry]
+      config_path = "/etc/containerd/certs.d"
+
 nodes:
   - role: control-plane
     image: kindest/node:v1.36.1
@@ -14,6 +22,16 @@ nodes:
           taints:
             - key: node-role.kubernetes.io/control-plane
               effect: NoSchedule
+      # kind/kubeadm reads KubeletConfiguration from the first node and applies
+      # it cluster-wide. Keep this policy local-lab specific: registry-backed
+      # digest pulls make an aged-out node cache cheap to repopulate on demand.
+      - |
+        apiVersion: kubelet.config.k8s.io/v1beta1
+        kind: KubeletConfiguration
+        imageMinimumGCAge: 10m0s
+        imageMaximumGCAge: 24h0m0s
+        imageGCHighThresholdPercent: 80
+        imageGCLowThresholdPercent: 70
   - role: worker
     image: kindest/node:v1.36.1
     labels:

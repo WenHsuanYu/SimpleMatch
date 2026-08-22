@@ -30,9 +30,11 @@ printf '%s\n' '{"targets":[{"id":"worker-0"}]}' >"$fixture"
 printf '%s\n' '{"targets":[{"id":"worker-0"},{"id":"worker-1"}]}' >"$fixture"
 if resilience_select_unique_target "$fixture" '.targets[].id' >/dev/null; then exit 1; fi
 
-printf '%s\n' '{"metadata":{"labels":{"simplematch.io/managed-by":"local-resilience","simplematch.io/resilience-run":"run-1"}}}' >"$namespace_fixture"
+printf '%s\n' '{"metadata":{"labels":{"simplematch.io/lifecycle":"disposable","simplematch.io/managed-by":"local-resilience","simplematch.io/run-id":"run-1","simplematch.io/resilience-run":"run-1"}}}' >"$namespace_fixture"
 resilience_namespace_json_is_owned run-1 <"$namespace_fixture"
 if resilience_namespace_json_is_owned run-2 <"$namespace_fixture"; then exit 1; fi
+printf '%s\n' '{"metadata":{"labels":{"simplematch.io/managed-by":"local-resilience","simplematch.io/resilience-run":"run-1"}}}' >"$namespace_fixture"
+if resilience_namespace_json_is_owned run-1 <"$namespace_fixture"; then exit 1; fi
 
 printf '%s\n' 'event=consumer_recovered correlation_id=abc-123' >"$safe_log"
 printf '%s\n' 'fromApp session=FIX.4.4 msg=8=FIX.4.4|35=D|55=2330 secret=value credentials=secret complete_account_payload=redacted' >"$unsafe_log"
@@ -57,5 +59,6 @@ grep -Fq 'profile=contract' <<<"$contract_dry_run"
 grep -Fq 'cannot become a resilience pass' "$script_dir/run-local-resilience.sh"
 full_local_dry_run="$("$script_dir"/run-local-resilience.sh --profile full-local --dry-run)"
 grep -Fq 'pod-replacement, planned-disruption, worker-stop' <<<"$full_local_dry_run"
+grep -Fq 'lifecycle-labeled disposable namespace' <<<"$full_local_dry_run"
 
 printf '%s\n' 'Local resilience runner contract passed.'

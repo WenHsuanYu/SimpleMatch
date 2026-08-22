@@ -38,6 +38,10 @@ services:
 
   kafka-connect:
     image: quay.io/debezium/connect:3.6.0.Final
+    # The CDC contract deliberately SIGKILLs Connect to verify crash recovery.
+    # Let Docker supervise that process transition instead of racing a manual
+    # `compose up` against a container that may still be entering the exited state.
+    restart: on-failure
     depends_on:
       - kafka
       - postgres

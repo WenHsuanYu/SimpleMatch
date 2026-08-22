@@ -4,6 +4,8 @@ set -euo pipefail
 
 script_dir="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
 repo_root="$(cd -- "$script_dir/.." && pwd)"
+# shellcheck source=scripts/lib/local-image-inventory.sh
+source "$script_dir/lib/local-image-inventory.sh"
 
 image_tag="${SIMPLEMATCH_LOCAL_IMAGE_TAG:-local}"
 dry_run=false
@@ -14,17 +16,6 @@ skip_flyway=false
 skip_verifier=false
 selected_services=()
 
-spring_images=(
-  "account-service|:services:account-service|simplematch/account-service"
-  "risk-service|:services:risk-service|simplematch/risk-service"
-  "persistence|:services:persistence|simplematch/persistence"
-  "market-data-projection|:services:market-data-projection|simplematch/market-data-projection"
-  "marketdata-publisher|:services:marketdata-publisher|simplematch/marketdata-publisher"
-  "marketdata-streamer|:services:marketdata-streamer|simplematch/marketdata-streamer"
-  "query-service|:services:query-service|simplematch/query-service"
-  "quickfix-gateway|:services:quickfix-gateway|quickfix-gateway"
-)
-
 usage() {
   cat <<'EOF'
 Usage:
@@ -33,13 +24,13 @@ Usage:
 Options:
   --tag TAG             Local image tag (default: SIMPLEMATCH_LOCAL_IMAGE_TAG or local).
   --service NAME        Build one named service, matching, flyway-runner, or
-                        risk-matching-e2e-verifier.
+                        risk-matching-e2e-verifier. May repeat.
   --skip-spring         Skip Spring Boot images.
   --skip-native         Skip the native Matching image.
   --skip-flyway         Skip the Flyway runner image.
   --skip-verifier       Skip the RM-1 Risk-to-Matching verifier image.
   --dry-run             Print image build commands without executing them.
-  --list                List the local image inventory and exit.
+  --list                List the canonical local image inventory and exit.
   --help                Show this help.
 
 Environment:
@@ -103,35 +94,9 @@ while [[ $# -gt 0 ]]; do
   esac
 done
 
-image_name() {
-  printf '%s:%s' "$1" "$image_tag"
-}
-
-selected() {
-  local candidate="$1"
-  if [[ ${#selected_services[@]} -eq 0 ]]; then
-    return 0
-  fi
-  local selected_service
-  for selected_service in "${selected_services[@]}"; do
-    [[ "$selected_service" == "$candidate" ]] && return 0
-  done
-  return 1
-}
-
-print_inventory() {
-  local entry service project image
-  for entry in "${spring_images[@]}"; do
-    IFS='|' read -r service project image <<<"$entry"
-    printf 'spring|%s|%s|%s\n' "$service" "$project" "$(image_name "$image")"
-  done
-  printf 'flyway|flyway-runner|deploy/docker/Dockerfile.flyway-runner|%s\n' \
-    "$(image_name simplematch/flyway-runner)"
-  printf 'verification|risk-matching-e2e-verifier|deploy/docker/Dockerfile.risk-matching-e2e-verifier|%s\n' \
-    "$(image_name simplematch/risk-matching-e2e-verifier)"
-  printf 'native|matching|deploy/docker/Dockerfile.matching|%s\n' \
-    "$(image_name simplematch-matching)"
-}
+simplematch_local_image_tag_validate "$image_tag" || exit 2
+simplematch_local_image_inventory_validate || exit 2
+simplematch_local_image_inventory_validate_selection "${selected_services[@]}" || exit 2
 
 run_command() {
   if [[ "$dry_run" == true ]]; then
@@ -144,57 +109,75 @@ run_command() {
 }
 
 if [[ "$list_only" == true ]]; then
-  print_inventory
+  simplematch_local_image_inventory_emit "$image_tag"
   exit 0
 fi
 
 cd "$repo_root"
 
-if [[ "$skip_spring" == false && -n "${SIMPLEMATCH_BOOT_RUN_IMAGE:-}" ]]; then
+will_build_spring=false
+if [[ "$skip_spring" == false ]]; then
+  while IFS='|' read -r image_class service _ _; do
+    [[ "$image_class" == spring ]] || continue
+    if simplematch_local_image_inventory_service_selected "$service" "${selected_services[@]}"; then
+      will_build_spring=true
+      break
+    fi
+  done < <(simplematch_local_image_inventory_entries)
+fi
+
+if [[ "$will_build_spring" == true && -n "${SIMPLEMATCH_BOOT_RUN_IMAGE:-}" ]]; then
   run_command "$script_dir/verify-local-boot-run-image.sh" \
     "$SIMPLEMATCH_BOOT_RUN_IMAGE" "${SIMPLEMATCH_BOOT_RUN_IMAGE_PLATFORM:-linux/amd64}"
 fi
 
-if [[ "$skip_spring" == false ]]; then
-  for entry in "${spring_images[@]}"; do
-    IFS='|' read -r service project image <<<"$entry"
-    selected "$service" || continue
-    gradle_image_args=(
-      "${project}:bootBuildImage"
-      "--imageName=$(image_name "$image")"
-    )
-    if [[ -n "${SIMPLEMATCH_BOOT_RUN_IMAGE:-}" ]]; then
-      gradle_image_args+=(
-        "--runImage=${SIMPLEMATCH_BOOT_RUN_IMAGE}"
-        "--pullPolicy=${SIMPLEMATCH_BOOT_PULL_POLICY:-IF_NOT_PRESENT}"
+while IFS='|' read -r image_class service build_source repository; do
+  simplematch_local_image_inventory_service_selected "$service" "${selected_services[@]}" || continue
+  source_image="${repository}:${image_tag}"
+
+  case "$image_class" in
+    spring)
+      [[ "$skip_spring" == false ]] || continue
+      gradle_image_args=(
+        "${build_source}:bootBuildImage"
+        "--imageName=${source_image}"
       )
-    elif [[ -n "${SIMPLEMATCH_BOOT_PULL_POLICY:-}" ]]; then
-      gradle_image_args+=("--pullPolicy=${SIMPLEMATCH_BOOT_PULL_POLICY}")
-    fi
-    run_command env \
-      GRADLE_USER_HOME="${GRADLE_USER_HOME:-$repo_root/out/gradle-home}" \
-      "$repo_root/gradlew" --no-daemon \
-      "${gradle_image_args[@]}"
-  done
-fi
+      if [[ -n "${SIMPLEMATCH_BOOT_RUN_IMAGE:-}" ]]; then
+        gradle_image_args+=(
+          "--runImage=${SIMPLEMATCH_BOOT_RUN_IMAGE}"
+          "--pullPolicy=${SIMPLEMATCH_BOOT_PULL_POLICY:-IF_NOT_PRESENT}"
+        )
+      elif [[ -n "${SIMPLEMATCH_BOOT_PULL_POLICY:-}" ]]; then
+        gradle_image_args+=("--pullPolicy=${SIMPLEMATCH_BOOT_PULL_POLICY}")
+      fi
+      run_command env \
+        GRADLE_USER_HOME="${GRADLE_USER_HOME:-$repo_root/out/gradle-home}" \
+        "$repo_root/gradlew" --no-daemon \
+        "${gradle_image_args[@]}"
+      ;;
 
-if [[ "$skip_flyway" == false ]] && selected flyway-runner; then
-  run_command docker build \
-    --file "$repo_root/deploy/docker/Dockerfile.flyway-runner" \
-    --tag "$(image_name simplematch/flyway-runner)" \
-    "$repo_root"
-fi
+    flyway)
+      [[ "$skip_flyway" == false ]] || continue
+      run_command docker build \
+        --file "$repo_root/$build_source" \
+        --tag "$source_image" \
+        "$repo_root"
+      ;;
 
-if [[ "$skip_verifier" == false ]] && selected risk-matching-e2e-verifier; then
-  run_command docker build \
-    --file "$repo_root/deploy/docker/Dockerfile.risk-matching-e2e-verifier" \
-    --tag "$(image_name simplematch/risk-matching-e2e-verifier)" \
-    "$repo_root"
-fi
+    verification)
+      [[ "$skip_verifier" == false ]] || continue
+      run_command docker build \
+        --file "$repo_root/$build_source" \
+        --tag "$source_image" \
+        "$repo_root"
+      ;;
 
-if [[ "$skip_native" == false ]] && selected matching; then
-  run_command docker build \
-    --file "$repo_root/deploy/docker/Dockerfile.matching" \
-    --tag "$(image_name simplematch-matching)" \
-    "$repo_root"
-fi
+    native)
+      [[ "$skip_native" == false ]] || continue
+      run_command docker build \
+        --file "$repo_root/$build_source" \
+        --tag "$source_image" \
+        "$repo_root"
+      ;;
+  esac
+done < <(simplematch_local_image_inventory_entries)
