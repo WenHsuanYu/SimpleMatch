@@ -5,6 +5,10 @@ set -euo pipefail
 
 script_dir="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
 repo_root="$(cd -- "$script_dir/.." && pwd)"
+# shellcheck source=scripts/lib/local-common.sh
+source "$script_dir/lib/local-common.sh"
+# shellcheck source=scripts/lib/local-kind.sh
+source "$script_dir/lib/local-kind.sh"
 # shellcheck source=scripts/lib/local-resilience.sh
 source "$script_dir/lib/local-resilience.sh"
 
@@ -22,6 +26,7 @@ environment_safety_result=NOT_APPLICABLE
 profile_verdict=INCOMPLETE
 scenario_json='[]'
 deadline_seconds="$RESILIENCE_DEFAULT_DEADLINE_SECONDS"
+namespace_cleanup_timeout="${SIMPLEMATCH_NAMESPACE_CLEANUP_TIMEOUT_SECONDS:-180}"
 
 usage() {
   cat <<'EOF'
@@ -79,19 +84,14 @@ cleanup() {
     if [[ "$keep_resources" == true ]]; then
       cleanup_result=NOT_EVALUATED
     elif resilience_owned_namespace "$namespace" "$run_id" "$context"; then
-      if kubectl --context "$context" delete namespace "$namespace" --wait=true --timeout=120s >/dev/null 2>&1; then
+      if simplematch_kind_delete_disposable_namespace \
+          "$context" "$namespace" "$namespace_cleanup_timeout" >/dev/null 2>&1; then
         cleanup_result=PASSED
       else
         cleanup_result=FAILED
       fi
     else
-      # Namespace creation succeeded under this exact run-generated name, so
-      # deleting that exact name is safe even if labeling failed afterward.
-      if kubectl --context "$context" delete namespace "$namespace" --wait=true --timeout=120s >/dev/null 2>&1; then
-        cleanup_result=PASSED
-      else
-        cleanup_result=FAILED
-      fi
+      cleanup_result=FAILED
     fi
   elif [[ "$profile" == contract ]]; then
     cleanup_result=NOT_APPLICABLE
@@ -105,6 +105,9 @@ cleanup() {
 on_exit() {
   local status="$?"
   cleanup "$status"
+  if [[ "$cleanup_result" == FAILED && "$status" -eq 0 ]]; then
+    status=1
+  fi
   trap - EXIT
   exit "$status"
 }
@@ -120,6 +123,10 @@ while [[ $# -gt 0 ]]; do
   esac
 done
 [[ "$profile" == contract || "$profile" == full-local ]] || { usage >&2; exit 2; }
+[[ "$namespace_cleanup_timeout" =~ ^[1-9][0-9]*$ ]] || {
+  printf '%s\n' 'SIMPLEMATCH_NAMESPACE_CLEANUP_TIMEOUT_SECONDS must be a positive integer.' >&2
+  exit 2
+}
 
 if [[ "$dry_run" == true ]]; then
   printf 'DRY RUN: profile=%s cluster=%s namespace=%s deadline=%ss\n' "$profile" "$cluster_name" "$namespace" "$deadline_seconds"
@@ -127,7 +134,7 @@ if [[ "$dry_run" == true ]]; then
   if [[ "$profile" == contract ]]; then
     printf '%s\n' 'DRY RUN: render topology, placement, PDB, rollout, resources, dependency, probe, and log contracts.'
   else
-    printf '%s\n' 'DRY RUN: create one owned namespace; run pod-replacement, planned-disruption, worker-stop sequentially.'
+    printf '%s\n' 'DRY RUN: create one lifecycle-labeled disposable namespace; run pod-replacement, planned-disruption, worker-stop sequentially.'
   fi
   trap - EXIT
   exit 0
@@ -169,9 +176,13 @@ else
     mapfile -t verdicts < <(jq -r '.[].execution_verdict' <<<"$scenario_json")
     profile_verdict="$(resilience_aggregate_full_local NOT_EVALUATED "${verdicts[@]}")"
   else
-    kubectl --context "$context" create namespace "$namespace" >/dev/null
+    if ! simplematch_kind_create_disposable_namespace \
+        "$context" "$namespace" local-resilience "$run_id" \
+        "simplematch.io/resilience-run=${run_id}"; then
+      printf 'Failed to create owned disposable resilience namespace: %s\n' "$namespace" >&2
+      exit 1
+    fi
     namespace_created=true
-    kubectl --context "$context" label namespace "$namespace" simplematch.io/managed-by=local-resilience simplematch.io/resilience-run="$run_id" >/dev/null
     jq -n --arg status NOT_IMPLEMENTED '{gate:"baseline",status:$status,reason:"full-local scenarios are delivered by later #151 tickets"}' >"$evidence_dir/baseline.json"
     for scenario in "${RESILIENCE_SCENARIOS[@]}"; do
       output="$evidence_dir/scenarios/$scenario.json"
