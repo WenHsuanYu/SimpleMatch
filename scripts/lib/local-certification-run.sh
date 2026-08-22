@@ -33,6 +33,7 @@ fi
 
 if [[ "$skip_kubernetes" == false ]]; then
   prepare_image_args=(
+    --transport "$image_transport"
     --tag "$image_tag"
     --cluster "$kind_cluster"
     --image-lock "$image_lock"
@@ -42,6 +43,7 @@ if [[ "$skip_kubernetes" == false ]]; then
   if [[ "$dry_run" == true ]]; then
     print_command bash "$repo_root/scripts/prepare-local-kubernetes-images.sh" "${prepare_image_args[@]}" --dry-run
     render_args=(
+      --transport "$image_transport"
       --image-lock "$image_lock"
       --namespace "$namespace"
       --output "$evidence_dir/local-kubernetes.yaml"
@@ -58,16 +60,24 @@ if [[ "$skip_kubernetes" == false ]]; then
     print_command kubectl wait --for=condition=complete job/account-service-flyway --timeout=300s
     print_command kubectl apply -f "$evidence_dir/local-kubernetes-workloads.yaml"
     print_command register_kubernetes_risk_connector
-    print_command bash "$repo_root/scripts/verify-matching-fleet-live.sh" \
-      --namespace "$namespace" --allow-shared-node
+    if [[ "$image_transport" == kind-load ]]; then
+      print_command bash "$repo_root/scripts/verify-matching-fleet-live.sh" \
+        --namespace "$namespace" --allow-shared-node \
+        --allow-local-image "simplematch-matching:${image_tag}"
+    else
+      print_command bash "$repo_root/scripts/verify-matching-fleet-live.sh" \
+        --namespace "$namespace" --allow-shared-node
+    fi
   else
     run_refreshable_logged kubernetes-image-transport \
       bash "$repo_root/scripts/prepare-local-kubernetes-images.sh" "${prepare_image_args[@]}"
 
-    matching_digest="$(simplematch_local_image_lock_digest "$image_lock" matching)" || die \
-      'Unable to resolve Matching image digest from the local image lock.'
-    matching_image_reference="$(simplematch_local_image_lock_digest_reference "$image_lock" matching)" || die \
-      'Unable to resolve Matching image reference from the local image lock.'
+    matching_digest="$(simplematch_local_image_transport_matching_digest \
+      "$image_transport" "$image_tag" "$image_lock")" || die \
+      "Unable to resolve Matching image digest for transport=$image_transport"
+    matching_image_reference="$(simplematch_local_image_transport_matching_reference \
+      "$image_transport" "$image_tag" "$image_lock")" || die \
+      "Unable to resolve Matching image reference for transport=$image_transport"
 
     rendered_manifest="$(render_local_kubernetes_manifest)"
     platform_manifest="$evidence_dir/local-kubernetes-platform.yaml"
