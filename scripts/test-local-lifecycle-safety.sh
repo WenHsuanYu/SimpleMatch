@@ -57,8 +57,8 @@ for invalid_port in 0 65536 not-a-port; do
 done
 
 # Step 7 destructive ownership is centralized behind the two managers. The hard
-# reset may read shared registry constants, but it must not bypass the registry
-# manager to perform deletion.
+# reset may read shared registry constants, but it must not bypass either manager
+# when canonical runtime ownership still exists.
 grep -Fq 'registry_manager="$script_dir/manage-local-registry.sh"' "$hard_reset"
 grep -Fq 'simplematch_run bash "$registry_manager" "${args[@]}"' "$hard_reset"
 if grep -Fq 'simplematch_registry_delete' "$hard_reset"; then
@@ -66,6 +66,14 @@ if grep -Fq 'simplematch_registry_delete' "$hard_reset"; then
   exit 1
 fi
 
+grep -Fq 'kind_cluster_has_container_reference()' "$hard_reset"
+grep -Fq 'if kind_cluster_has_container_reference "$cluster" || grep -Fxq "$cluster" <<<"$current_clusters"; then' "$hard_reset"
 grep -Fq 'simplematch_run bash "$script_dir/manage-simplematch-live.sh"' "$hard_reset"
+manager_delete_line="$(grep -n 'simplematch_run bash "$script_dir/manage-simplematch-live.sh"' "$hard_reset" | head -1 | cut -d: -f1)"
+orphan_cleanup_line="$(grep -n "Remove orphaned containers for selected kind clusters" "$hard_reset" | head -1 | cut -d: -f1)"
+[[ -n "$manager_delete_line" && -n "$orphan_cleanup_line" && "$manager_delete_line" -lt "$orphan_cleanup_line" ]] || {
+  printf '%s\n' 'canonical kind manager safety gate must precede generic kind-container cleanup' >&2
+  exit 1
+}
 
 printf '%s\n' 'Local lifecycle fail-closed and destructive-ownership safety contract passed.'
