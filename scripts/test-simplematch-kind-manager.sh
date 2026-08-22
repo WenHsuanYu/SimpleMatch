@@ -75,7 +75,12 @@ grep -Fq '/var/lib/kubelet/config.yaml' "$manager"
 grep -Fq 'imageMaximumGCAge' "$manager"
 grep -Fq 'imageGCHighThresholdPercent' "$manager"
 grep -Fq 'simplematch_local_resource_wait_clean_cluster' "$manager"
-grep -Fq 'simplematch_local_resource_snapshot' "$manager"
+grep -Fq 'local-resource-report.sh' "$manager"
+grep -Fq -- '--no-baseline --json' "$manager"
 grep -Fq 'simplematch_local_resource_assert_clean_baseline_json' "$manager"
+if grep -Fq 'simplematch_local_resource_snapshot "$cluster_name"' "$manager"; then
+  printf '%s\n' 'kind manager bypasses bounded whole-snapshot collection' >&2
+  exit 1
+fi
 
 printf '%s\n' 'Canonical kind cluster manager contract passed.'
