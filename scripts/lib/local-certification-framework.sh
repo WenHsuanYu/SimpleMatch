@@ -11,6 +11,7 @@ Usage:
 
 Options:
   --tag TAG               Local image tag (default: SIMPLEMATCH_LOCAL_IMAGE_TAG or local).
+  --image-transport MODE  Kubernetes image transport: registry (default) or kind-load fallback.
   --skip-build            Reuse local images instead of running the image build workflow.
   --skip-compose          Skip PostgreSQL, Redis, Kafka, and Kafka Connect runtime checks.
   --skip-kubernetes        Skip the live Kubernetes deployment and Matching fleet checks.
@@ -26,10 +27,11 @@ Options:
 The local gate owns only the Compose project named by
 SIMPLEMATCH_CERTIFICATION_COMPOSE_PROJECT and a generated Kubernetes namespace.
 Generated namespaces are labeled simplematch.io/lifecycle=disposable; that label
-is the authoritative routine-cleanup boundary. Local Kubernetes images publish only
-to the repository-owned localhost registry, render by immutable digest reference, and
-are pulled by scheduled nodes on demand; they never publish to staging, production,
-or a remote registry.
+is the authoritative routine-cleanup boundary. registry is the default image
+transport and publishes only to the configured local registry, rendering runtime
+images by immutable digest. kind-load remains an explicit compatibility fallback
+that imports the local image inventory into kind without using registry digest
+substitution. Neither path publishes to staging, production, or a remote registry.
 The Kubernetes gate uses the approved delivery manifest for
 SIMPLEMATCH_CERTIFICATION_TRADING_DAY (default: current UTC day) under
 tools/market-reference-builder/data, or the path supplied by
@@ -211,8 +213,10 @@ write_report() {
     printf '%s\n' "- status: $completion_status"
     printf '%s\n' "- generated_at_utc: $(date -u +%Y-%m-%dT%H:%M:%SZ)"
     printf '%s\n' "- local_image_tag: $image_tag"
-    printf '%s\n' '- image_transport: registry'
-    printf '%s\n' "- image_lock: ${image_lock#$repo_root/}"
+    printf '%s\n' "- image_transport: $image_transport"
+    if [[ "$image_transport" == registry ]]; then
+      printf '%s\n' "- image_lock: ${image_lock#$repo_root/}"
+    fi
     printf '%s\n' "- compose_project: $compose_project"
     printf '%s\n' "- compose_file: ${compose_file#$repo_root/}"
     printf '%s\n' "- kubernetes_namespace: ${namespace:-not-run}"
