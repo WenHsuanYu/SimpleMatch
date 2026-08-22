@@ -62,6 +62,10 @@ for commands, source-file requirements, and the restricted Gradle-cache fallback
 
 ## Documentation
 
+For day-to-day development, local kind/registry setup, image publication,
+certification, resource reporting, cleanup, and troubleshooting, start with the
+[Traditional Chinese operations manual](docs/operation-manual.zh-TW.md).
+
 Start with the [domain context and context map](CONTEXT.md) for bounded-context ownership and
 ubiquitous language. Use then the [target documentation index](services/docs/README.md) to navigate
 detailed architecture, contract, platform, and service specifications. Domain-value decisions for
