@@ -238,7 +238,11 @@ establish_resource_baseline() {
   simplematch_local_resource_wait_clean_cluster "$cluster_name" "$resource_baseline_timeout" ||
     simplematch_die 'cluster did not become clean enough to establish a resource baseline'
   temp_baseline="$(mktemp "${TMPDIR:-/tmp}/simplematch-resource-baseline.XXXXXX.json")"
-  simplematch_local_resource_snapshot "$cluster_name" >"$temp_baseline"
+  if ! bash "$script_dir/local-resource-report.sh" \
+      --cluster "$cluster_name" --no-baseline --json >"$temp_baseline"; then
+    rm -f "$temp_baseline"
+    simplematch_die 'failed to collect clean resource baseline after bounded snapshot retries'
+  fi
   if ! simplematch_local_resource_assert_clean_baseline_json "$temp_baseline"; then
     rm -f "$temp_baseline"
     simplematch_die 'resource baseline snapshot contains run-owned Kubernetes state'
