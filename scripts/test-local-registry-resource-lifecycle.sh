@@ -122,14 +122,19 @@ require_literal 'simplematch_local_image_transport_matching_digest' "$run_lib"
 require_literal 'simplematch_local_image_transport_matching_reference' "$run_lib"
 require_literal '--allow-local-image' "$workloads_lib" "$fleet_verifier"
 
-# Step 6 — local-only kubelet image GC, verified from effective node config.
+# Step 6 — local-only kubelet image GC, verified from effective node config. The
+# live smoke contract checks CRI metadata structurally: one positive scheduled
+# node assertion and negative assertions for every other canonical node.
 require_literal 'imageMinimumGCAge:' "$kind_config"
 require_literal 'imageMaximumGCAge:' "$kind_config"
 require_literal 'imageGCHighThresholdPercent:' "$kind_config"
 require_literal 'imageGCLowThresholdPercent:' "$kind_config"
 require_literal 'verify_kubelet_image_gc_policy' "$manager"
 require_literal 'registry-pull-smoke' "$resource_integration"
-require_literal 'unexpectedly preloaded' "$resource_integration"
+require_literal 'node_has_smoke_repository()' "$resource_integration"
+require_literal 'crictl images --output=json' "$resource_integration"
+require_literal 'node_has_smoke_repository simplematch-live-worker || {' "$resource_integration"
+require_literal 'if node_has_smoke_repository "$node"; then' "$resource_integration"
 
 # Step 7 — destructive ownership delegated to managers; daemon-global cleanup is
 # explicit aggressive-only behavior.
