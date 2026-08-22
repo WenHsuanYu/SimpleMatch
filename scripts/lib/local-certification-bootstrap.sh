@@ -9,6 +9,10 @@ while [[ $# -gt 0 ]]; do
       image_tag="${2:?--tag requires a value}"
       shift 2
       ;;
+    --image-transport)
+      image_transport="${2:?--image-transport requires a value}"
+      shift 2
+      ;;
     --skip-build)
       skip_build=true
       shift
@@ -49,8 +53,8 @@ while [[ $# -gt 0 ]]; do
   esac
 done
 
-simplematch_local_image_transport_reject_legacy_override || die \
-  'SIMPLEMATCH_LOCAL_IMAGE_TRANSPORT was removed; unset it because registry is the only local Kubernetes image transport.'
+simplematch_local_image_transport_validate "$image_transport" || die \
+  "SIMPLEMATCH_LOCAL_IMAGE_TRANSPORT/--image-transport must be registry or kind-load: $image_transport"
 [[ "$certification_trading_day" =~ ^[0-9]{4}-[0-9]{2}-[0-9]{2}$ ]] || die \
   "SIMPLEMATCH_CERTIFICATION_TRADING_DAY must use YYYY-MM-DD: $certification_trading_day"
 
@@ -83,14 +87,15 @@ certification_deadline_epoch=$(( $(date +%s) + certification_timeout_seconds ))
 source_signature="$({
   git rev-parse HEAD
   git ls-files -co --exclude-standard -- \
-    AGENTS.md deploy/k8s deploy/docker/run-flyway scripts/run-local-production-like-certification.sh \
+    AGENTS.md deploy/k8s deploy/docker/run-flyway deploy/docker/Dockerfile.kind-normalized \
+    scripts/run-local-production-like-certification.sh \
     scripts/lib/local-common.sh scripts/lib/local-kind.sh scripts/lib/local-image-transport.sh \
     scripts/lib/local-certification-framework.sh scripts/lib/local-certification-kafka.sh \
     scripts/lib/local-certification-kubernetes.sh scripts/lib/local-certification-connect.sh \
     scripts/lib/local-certification-workloads.sh scripts/lib/local-certification-bootstrap.sh \
     scripts/lib/local-certification-run.sh \
-    scripts/prepare-local-kubernetes-images.sh scripts/publish-local-images.sh \
-    scripts/render-local-kubernetes-manifest.sh \
+    scripts/prepare-local-kubernetes-images.sh scripts/normalize-local-images-for-kind.sh \
+    scripts/publish-local-images.sh scripts/render-local-kubernetes-manifest.sh \
     scripts/test-kubernetes-overlays.sh scripts/test-local-kubernetes-dependencies.sh \
     scripts/test-postgresql-redis-manifests.sh scripts/test-flyway-services.sh |
     sort -u |
@@ -105,11 +110,11 @@ if [[ "$resume" == true ]]; then
   [[ -n "${SIMPLEMATCH_CERTIFICATION_NAMESPACE:-}" ]] || die \
     '--resume requires SIMPLEMATCH_CERTIFICATION_NAMESPACE.'
   [[ -f "$run_context_file" ]] || die "Resume context is missing: $run_context_file"
-  expected_context="$(printf 'namespace=%s\ncluster=%s\ntrading_day=%s\nimage_tag=%s\nsource_signature=%s\n' \
-    "$namespace" "$kind_cluster" "$certification_trading_day" "$image_tag" "$source_signature")"
+  expected_context="$(printf 'namespace=%s\ncluster=%s\ntrading_day=%s\nimage_tag=%s\nimage_transport=%s\nsource_signature=%s\n' \
+    "$namespace" "$kind_cluster" "$certification_trading_day" "$image_tag" "$image_transport" "$source_signature")"
   actual_context="$(cat "$run_context_file")"
   [[ "$actual_context" == "$expected_context" ]] || die \
-    "Resume context does not match the current cluster, trading day, namespace, image tag, or source."
+    "Resume context does not match the current cluster, trading day, namespace, image tag, image transport, or source."
   if [[ "$dry_run" == false ]]; then
     kubectl --context "$kind_context" get namespace "$namespace" >/dev/null 2>&1 || die \
       "Resume namespace does not exist: $namespace"
@@ -121,8 +126,8 @@ if [[ "$resume" == true ]]; then
 else
   if [[ "$dry_run" == false ]]; then
     mkdir -p "$evidence_dir"
-    printf 'namespace=%s\ncluster=%s\ntrading_day=%s\nimage_tag=%s\nsource_signature=%s\n' \
-      "$namespace" "$kind_cluster" "$certification_trading_day" "$image_tag" "$source_signature" >"$run_context_file"
+    printf 'namespace=%s\ncluster=%s\ntrading_day=%s\nimage_tag=%s\nimage_transport=%s\nsource_signature=%s\n' \
+      "$namespace" "$kind_cluster" "$certification_trading_day" "$image_tag" "$image_transport" "$source_signature" >"$run_context_file"
   fi
 fi
 
