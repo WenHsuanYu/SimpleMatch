@@ -29,7 +29,8 @@ export SIMPLEMATCH_LOCAL_RESOURCE_BASELINE_TIMEOUT_SECONDS="${SIMPLEMATCH_LOCAL_
 smoke_namespace="simplematch-registry-pull-smoke"
 smoke_image_tag="registry-smoke-${GITHUB_RUN_ID:-local}-${GITHUB_RUN_ATTEMPT:-0}-$$"
 smoke_source_image="simplematch-matching:${smoke_image_tag}"
-smoke_repository="localhost:5001/simplematch-matching"
+smoke_registry_endpoint="$(simplematch_registry_endpoint)"
+smoke_repository="${smoke_registry_endpoint}/simplematch-matching"
 smoke_registry_tag="${smoke_repository}:${smoke_image_tag}"
 
 cleanup() {
@@ -94,7 +95,7 @@ grep -Fq 'cluster_idle=true' "$report_file"
 # binary. Reuse registry:3 as harmless content but expose it under the canonical
 # matching source repository with a unique tag. The publisher must derive that
 # repository from the shared inventory, push it, emit the digest lockfile, and
-# remove its transient localhost:5001 host tag.
+# remove its transient local-registry host tag.
 docker tag registry:3 "$smoke_source_image"
 bash "$publisher" \
   --tag "$smoke_image_tag" \
@@ -127,8 +128,19 @@ grep -Fq "namespace: ${smoke_namespace}" "$rendered_manifest" || {
   exit 1
 }
 
+node_has_smoke_repository() {
+  local node="$1"
+
+  docker exec "$node" crictl images --output=json |
+    jq -e --arg repository "$smoke_repository" '
+      [.images[]? | ((.repoTags // []) + (.repoDigests // []))[]?]
+      | any(startswith($repository + ":") or startswith($repository + "@"))
+    ' >/dev/null
+}
+
 # Prove registry transport remains demand-driven: schedule exactly one Pod on
-# worker slot 0 and verify only that node acquires the published repository.
+# worker slot 0 and inspect CRI image metadata rather than parsing crictl's
+# human-readable table. Only the scheduled node may acquire this repository.
 simplematch_kind_create_disposable_namespace \
   kind-simplematch-live "$smoke_namespace" local-registry-pull-smoke registry-pull-smoke
 kubectl --context kind-simplematch-live -n "$smoke_namespace" run registry-pull-smoke \
@@ -145,13 +157,13 @@ scheduled_node="$(kubectl --context kind-simplematch-live -n "$smoke_namespace" 
   exit 1
 }
 
-docker exec simplematch-live-worker crictl images --digests | grep -Fq "$smoke_repository" || {
-  printf '%s\n' 'scheduled worker did not pull the local-registry smoke image' >&2
+node_has_smoke_repository simplematch-live-worker || {
+  printf '%s\n' 'scheduled worker CRI metadata does not contain the local-registry smoke repository' >&2
   exit 1
 }
 for node in simplematch-live-control-plane simplematch-live-worker2 simplematch-live-worker3; do
-  if docker exec "$node" crictl images --digests | grep -Fq "$smoke_repository"; then
-    printf 'local-registry smoke image was unexpectedly preloaded on %s\n' "$node" >&2
+  if node_has_smoke_repository "$node"; then
+    printf 'local-registry smoke repository was unexpectedly present on %s\n' "$node" >&2
     exit 1
   fi
 done
