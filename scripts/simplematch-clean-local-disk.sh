@@ -14,13 +14,11 @@ source "$script_dir/lib/local-registry.sh"
 compose_project="${SIMPLEMATCH_CERTIFICATION_COMPOSE_PROJECT:-simplematch-local-production-like}"
 compose_file="$repo_root/deploy/compose/kafka-connect.production-like.yml"
 cluster_name="${SIMPLEMATCH_KIND_CLUSTER_NAME:-simplematch-live}"
-builder_cache_until="${SIMPLEMATCH_BUILDER_CACHE_UNTIL:-24h}"
 namespace_timeout="${SIMPLEMATCH_NAMESPACE_CLEANUP_TIMEOUT_SECONDS:-180}"
 
 delete_cluster=false
 aggressive=false
 purge_registry=false
-remove_pack_caches=false
 report_details=false
 SIMPLEMATCH_DRY_RUN=false
 
@@ -30,19 +28,18 @@ Usage:
   scripts/simplematch-clean-local-disk.sh [options]
 
 Default routine cleanup:
-  - stop/remove the SimpleMatch production-like Compose project and its volumes
+  - stop/remove the selected SimpleMatch production-like Compose project and its volumes
   - synchronously delete namespaces labeled simplematch.io/lifecycle=disposable
   - wait for namespace deletion and run-owned PV references to disappear
   - only then prune unused CRI images from each kind node
-  - prune Docker builder cache older than the configured age
 
 Options:
   --delete-cluster       Delete simplematch-live instead of pruning its node caches.
   --purge-registry       Remove local registry container AND registry data volume.
-  --pack-caches          Remove unattached pack-cache-* volumes.
   --namespace-timeout S  Wait at most S seconds per namespace/PV cleanup.
   --report-details       Show baseline-aware resource snapshots before/after cleanup.
-  --aggressive           Also prune globally unused Docker images and volumes.
+  --aggressive           Also prune globally unused Docker images, volumes, and builder cache.
+                         This can affect other projects.
   --dry-run              Print destructive commands without executing them.
   -h, --help             Show this help.
 
@@ -50,11 +47,11 @@ The lifecycle label is the only automatic namespace-deletion authority. Historic
 unlabeled namespaces are intentionally not inferred from their names; inspect and
 label them explicitly before routine cleanup, or use an explicit cluster rebuild.
 
-The default path preserves the reusable kind cluster and registry cache. It does
-not remove containerd snapshots directly; kubelet/containerd remain responsible
-for runtime object lifecycle. When a resource baseline exists, --report-details
-shows growth relative to that exact kind cluster generation instead of applying a
-fixed disk-size threshold.
+The default path preserves the reusable kind cluster, registry cache, daemon-wide
+Pack/BuildKit caches, and unrelated Docker resources. It does not remove containerd
+snapshots directly; kubelet/containerd remain responsible for runtime object
+lifecycle. When a resource baseline exists, --report-details shows growth relative
+to that exact kind cluster generation instead of applying a fixed disk-size threshold.
 EOF_USAGE
 }
 
@@ -69,21 +66,6 @@ remove_compose_project() {
     --project-name "$compose_project" \
     --file "$compose_file" \
     down --volumes --remove-orphans --timeout 30
-}
-
-remove_unattached_pack_caches() {
-  local volume
-  local users
-  while IFS= read -r volume; do
-    [[ "$volume" == pack-cache-* ]] || continue
-    users="$(docker ps -aq --filter "volume=$volume" 2>/dev/null || true)"
-    if [[ -n "$users" ]]; then
-      simplematch_warn "keeping attached pack cache: $volume"
-      continue
-    fi
-    simplematch_info "Removing pack cache: $volume"
-    simplematch_run docker volume rm "$volume"
-  done < <(docker volume ls -q)
 }
 
 report_resources() {
@@ -102,10 +84,6 @@ while (($# > 0)); do
       ;;
     --purge-registry)
       purge_registry=true
-      shift
-      ;;
-    --pack-caches)
-      remove_pack_caches=true
       shift
       ;;
     --namespace-timeout)
@@ -167,18 +145,14 @@ if [[ "$purge_registry" == true ]]; then
   simplematch_registry_delete true
 fi
 
-if [[ "$remove_pack_caches" == true ]]; then
-  simplematch_log 'Remove unattached Paketo/pack cache volumes'
-  remove_unattached_pack_caches
-fi
-
-simplematch_log "Prune Docker builder cache older than $builder_cache_until"
-simplematch_run docker builder prune --force --filter "until=${builder_cache_until}"
-
 if [[ "$aggressive" == true ]]; then
-  simplematch_warn 'Aggressive mode affects unused Docker resources from other projects.'
+  simplematch_warn 'Aggressive mode affects unused Docker resources and builder caches from other projects.'
   simplematch_run docker image prune --all --force
   simplematch_run docker volume prune --force
+  simplematch_run docker builder prune --all --force
+  if docker buildx version >/dev/null 2>&1; then
+    simplematch_run docker buildx prune --all --force
+  fi
 fi
 
 simplematch_log 'Docker disk usage after cleanup'
