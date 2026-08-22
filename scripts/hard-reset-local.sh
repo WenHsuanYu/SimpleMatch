@@ -33,6 +33,11 @@ cache, unreferenced SimpleMatch-tagged host images, and generated repository
 build/evidence state. It does not manually mutate containerd snapshot metadata;
 deleting a verified kind cluster removes those node-local caches.
 
+If another SimpleMatch kind cluster or Compose project exists, hard reset refuses
+to start until that runtime is either stopped separately or explicitly added with
+--kind-cluster / --compose-project. This prevents shared registry or generated
+state from being removed underneath an unselected SimpleMatch runtime.
+
 Daemon-wide Pack/BuildKit caches and unrelated Docker resources are preserved by
 default because they cannot be reliably attributed to this repository.
 
@@ -94,6 +99,37 @@ for project in "${extra_compose_projects[@]:-}"; do
   [[ "$project" == simplematch* ]] || simplematch_die "refusing non-SimpleMatch Compose project: $project"
   simplematch_append_unique compose_projects "$project"
 done
+
+# Shared registry/build state means an unselected SimpleMatch runtime makes the
+# destructive scope ambiguous. Discover from Docker labels rather than only from
+# kind/Compose CLIs so broken or partially removed runtimes are still protected.
+unselected_kind_clusters=()
+while IFS= read -r container; do
+  [[ -n "$container" ]] || continue
+  cluster="$(docker inspect "$container" --format '{{index .Config.Labels "io.x-k8s.kind.cluster"}}' 2>/dev/null || true)"
+  [[ "$cluster" == simplematch* ]] || continue
+  simplematch_contains "$cluster" "${kind_clusters[@]}" ||
+    simplematch_append_unique unselected_kind_clusters "$cluster"
+done < <(docker ps -aq --filter 'label=io.x-k8s.kind.cluster')
+
+unselected_compose_projects=()
+while IFS= read -r container; do
+  [[ -n "$container" ]] || continue
+  project="$(docker inspect "$container" --format '{{index .Config.Labels "com.docker.compose.project"}}' 2>/dev/null || true)"
+  [[ "$project" == simplematch* ]] || continue
+  simplematch_contains "$project" "${compose_projects[@]}" ||
+    simplematch_append_unique unselected_compose_projects "$project"
+done < <(docker ps -aq --filter 'label=com.docker.compose.project')
+
+if ((${#unselected_kind_clusters[@]} > 0 || ${#unselected_compose_projects[@]} > 0)); then
+  for cluster in "${unselected_kind_clusters[@]}"; do
+    simplematch_warn "unselected SimpleMatch kind cluster: $cluster (add --kind-cluster $cluster to remove it)"
+  done
+  for project in "${unselected_compose_projects[@]}"; do
+    simplematch_warn "unselected SimpleMatch Compose project: $project (add --compose-project $project to remove it)"
+  done
+  simplematch_die 'hard reset scope is ambiguous while unselected SimpleMatch runtimes exist'
+fi
 
 image_has_container_reference() {
   local image_reference="$1"
