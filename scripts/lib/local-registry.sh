@@ -12,8 +12,24 @@ SIMPLEMATCH_LOCAL_REGISTRY_PORT="${SIMPLEMATCH_LOCAL_REGISTRY_PORT:-5001}"
 SIMPLEMATCH_LOCAL_REGISTRY_DATA_VOLUME="${SIMPLEMATCH_LOCAL_REGISTRY_DATA_VOLUME:-simplematch-local-registry-data}"
 SIMPLEMATCH_LOCAL_REGISTRY_NETWORK="${SIMPLEMATCH_LOCAL_REGISTRY_NETWORK:-kind}"
 
+simplematch_registry_validate_configuration() {
+  [[ "$SIMPLEMATCH_LOCAL_REGISTRY_HOST" == localhost ]] || {
+    printf 'local registry host must remain localhost: %s\n' "$SIMPLEMATCH_LOCAL_REGISTRY_HOST" >&2
+    return 1
+  }
+  [[ "$SIMPLEMATCH_LOCAL_REGISTRY_PORT" =~ ^[1-9][0-9]*$ ]] || {
+    printf 'local registry port must be an integer from 1 through 65535: %s\n' "$SIMPLEMATCH_LOCAL_REGISTRY_PORT" >&2
+    return 1
+  }
+  ((10#$SIMPLEMATCH_LOCAL_REGISTRY_PORT <= 65535)) || {
+    printf 'local registry port must be an integer from 1 through 65535: %s\n' "$SIMPLEMATCH_LOCAL_REGISTRY_PORT" >&2
+    return 1
+  }
+}
+
 simplematch_registry_endpoint() {
-  printf '%s:%s\n' "$SIMPLEMATCH_LOCAL_REGISTRY_HOST" "$SIMPLEMATCH_LOCAL_REGISTRY_PORT"
+  simplematch_registry_validate_configuration || return 1
+  printf 'localhost:%s\n' "$SIMPLEMATCH_LOCAL_REGISTRY_PORT"
 }
 
 simplematch_registry_container_exists() {
@@ -29,6 +45,7 @@ simplematch_registry_container_running() {
 simplematch_registry_verify_container_identity() {
   local image restart_policy data_volume published_endpoint
 
+  simplematch_registry_validate_configuration || return 1
   simplematch_registry_container_exists || {
     printf 'local registry container is missing: %s\n' "$SIMPLEMATCH_LOCAL_REGISTRY_NAME" >&2
     return 1
@@ -58,6 +75,9 @@ simplematch_registry_verify_container_identity() {
 }
 
 simplematch_registry_create() {
+  simplematch_registry_validate_configuration ||
+    simplematch_die 'invalid local registry configuration'
+
   if [[ "${SIMPLEMATCH_DRY_RUN:-false}" == true ]]; then
     simplematch_quote_command docker volume create "$SIMPLEMATCH_LOCAL_REGISTRY_DATA_VOLUME"
     simplematch_quote_command docker run \
@@ -101,10 +121,13 @@ simplematch_registry_create() {
 simplematch_registry_connect_kind_cluster() {
   local cluster_name="$1"
   local context="kind-${cluster_name}"
-  local registry_dir="/etc/containerd/certs.d/$(simplematch_registry_endpoint)"
+  local registry_dir
   local node
   local nodes
 
+  simplematch_registry_validate_configuration ||
+    simplematch_die 'invalid local registry configuration'
+  registry_dir="/etc/containerd/certs.d/$(simplematch_registry_endpoint)"
   simplematch_require_command kind
   simplematch_require_command kubectl
   simplematch_registry_create
@@ -163,6 +186,8 @@ simplematch_registry_verify() {
   local node
   local nodes
 
+  simplematch_registry_validate_configuration ||
+    simplematch_die 'invalid local registry configuration'
   simplematch_require_command docker
   simplematch_registry_container_running ||
     simplematch_die "local registry is not running: $SIMPLEMATCH_LOCAL_REGISTRY_NAME"

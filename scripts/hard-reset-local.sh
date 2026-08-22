@@ -12,6 +12,7 @@ source "$script_dir/lib/local-registry.sh"
 canonical_kind_cluster="${SIMPLEMATCH_KIND_CLUSTER_NAME:-simplematch-live}"
 default_compose_project="${SIMPLEMATCH_CERTIFICATION_COMPOSE_PROJECT:-simplematch-local-production-like}"
 compose_file="$repo_root/deploy/compose/kafka-connect.production-like.yml"
+registry_manager="$script_dir/manage-local-registry.sh"
 
 assume_yes=false
 aggressive_unused_docker=false
@@ -87,6 +88,7 @@ simplematch_require_command docker
 docker info >/dev/null 2>&1 || simplematch_die 'Docker daemon is not reachable'
 [[ -d "$repo_root/.git" ]] || simplematch_die "not inside the SimpleMatch repository: $repo_root"
 [[ -f "$script_dir/build-local-images.sh" ]] || simplematch_die 'repository identity check failed'
+[[ -f "$registry_manager" ]] || simplematch_die "registry manager does not exist: $registry_manager"
 
 kind_clusters=("$canonical_kind_cluster")
 compose_projects=("$default_compose_project")
@@ -134,6 +136,13 @@ fi
 image_has_container_reference() {
   local image_reference="$1"
   [[ -n "$(docker ps -aq --filter "ancestor=${image_reference}" 2>/dev/null || true)" ]]
+}
+
+remove_local_registry() {
+  local -a args=(delete)
+  [[ "$purge_registry" == true ]] && args+=(--purge-data)
+  [[ "$SIMPLEMATCH_DRY_RUN" == true ]] && args+=(--dry-run)
+  simplematch_run bash "$registry_manager" "${args[@]}"
 }
 
 simplematch_log 'Hard-reset plan'
@@ -213,8 +222,8 @@ while IFS= read -r network; do
   simplematch_run_best_effort docker network rm "$network"
 done < <(docker network ls --format '{{.Name}}')
 
-simplematch_log 'Remove local registry'
-simplematch_registry_delete "$purge_registry"
+simplematch_log 'Remove local registry through registry manager'
+remove_local_registry
 
 simplematch_log 'Remove unreferenced SimpleMatch host images'
 image_refs=()

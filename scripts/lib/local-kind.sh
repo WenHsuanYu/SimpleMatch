@@ -69,6 +69,14 @@ simplematch_kind_namespace_is_disposable() {
   fi
 }
 
+simplematch_kind_claim_namespaces() {
+  local context="$1"
+
+  kubectl --context "$context" get pv \
+    -o jsonpath='{range .items[*]}{.spec.claimRef.namespace}{"\n"}{end}' \
+    2>/dev/null
+}
+
 simplematch_kind_wait_claim_pvs_gone() {
   local context="$1"
   local namespace="$2"
@@ -77,18 +85,17 @@ simplematch_kind_wait_claim_pvs_gone() {
   local claim_namespaces
 
   while ((SECONDS < deadline)); do
-    claim_namespaces="$(
-      kubectl --context "$context" get pv \
-        -o jsonpath='{range .items[*]}{.spec.claimRef.namespace}{"\n"}{end}' \
-        2>/dev/null || true
-    )"
+    if ! claim_namespaces="$(simplematch_kind_claim_namespaces "$context")"; then
+      sleep 1
+      continue
+    fi
     if ! grep -Fxq "$namespace" <<<"$claim_namespaces"; then
       return 0
     fi
     sleep 1
   done
 
-  simplematch_warn "PV cleanup did not finish within ${timeout_seconds}s for namespace $namespace"
+  simplematch_warn "PV cleanup could not be confirmed within ${timeout_seconds}s for namespace $namespace"
   return 1
 }
 
@@ -120,7 +127,7 @@ simplematch_kind_disposable_namespaces() {
   kubectl --context "$context" get namespaces \
     -l simplematch.io/lifecycle=disposable \
     -o jsonpath='{range .items[*]}{.metadata.name}{"\n"}{end}' \
-    2>/dev/null || true
+    2>/dev/null
 }
 
 simplematch_kind_delete_disposable_namespaces() {
@@ -137,7 +144,10 @@ simplematch_kind_delete_disposable_namespaces() {
     return 0
   fi
 
-  namespaces="$(simplematch_kind_disposable_namespaces "$context")"
+  if ! namespaces="$(simplematch_kind_disposable_namespaces "$context")"; then
+    simplematch_warn "failed to list lifecycle-labeled disposable namespaces in $context"
+    return 1
+  fi
   if [[ -z "$namespaces" ]]; then
     simplematch_info 'No lifecycle-labeled disposable SimpleMatch namespaces found.'
     return 0
