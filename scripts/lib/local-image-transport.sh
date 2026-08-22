@@ -8,6 +8,8 @@
 _simplematch_local_image_transport_dir="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
 # shellcheck source=scripts/lib/local-image-inventory.sh
 source "$_simplematch_local_image_transport_dir/local-image-inventory.sh"
+# shellcheck source=scripts/lib/local-registry.sh
+source "$_simplematch_local_image_transport_dir/local-registry.sh"
 unset _simplematch_local_image_transport_dir
 
 # The transport selector was removed when the local registry became canonical.
@@ -27,7 +29,7 @@ simplematch_local_image_lock_validate_file() {
   local line field_count
   local service source_image registry_tag digest_reference
   local source_repository source_tag expected_source_repository
-  local registry_tag_repository registry_tag_tag registry_repository
+  local registry_tag_repository registry_tag_tag registry_repository expected_registry_repository
   local entry image_class build_source repository
   local -A canonical_repositories=()
   local -A seen_services=()
@@ -105,9 +107,10 @@ simplematch_local_image_lock_validate_file() {
       printf 'registry tag/digest repository mismatch for service %s\n' "$service" >&2
       return 1
     }
-    [[ "$registry_repository" == "$source_repository" || "$registry_repository" == */"$source_repository" ]] || {
-      printf 'registry repository does not preserve canonical source repository for service %s: %s\n' \
-        "$service" "$registry_repository" >&2
+    expected_registry_repository="$(simplematch_registry_endpoint)/${expected_source_repository}"
+    [[ "$registry_repository" == "$expected_registry_repository" ]] || {
+      printf 'registry repository is not the canonical local registry repository for service %s: expected %s, got %s\n' \
+        "$service" "$expected_registry_repository" "$registry_repository" >&2
       return 1
     }
   done <"$lock_file"
