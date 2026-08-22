@@ -1,60 +1,34 @@
 #!/usr/bin/env bash
 
 # SimpleMatch local OCI registry primitives.
-# The registry identity is repository policy, not a runtime transport choice.
-# kind nodes alias localhost:5001 to the registry container through hosts.toml.
+# This follows kind's documented localhost registry pattern: the host pushes to
+# localhost:<port>, while each kind node aliases that endpoint to the registry
+# container through containerd hosts.toml.
 
-readonly SIMPLEMATCH_CANONICAL_LOCAL_REGISTRY_NAME='simplematch-local-registry'
-readonly SIMPLEMATCH_CANONICAL_LOCAL_REGISTRY_IMAGE='registry:3'
-readonly SIMPLEMATCH_CANONICAL_LOCAL_REGISTRY_HOST='localhost'
-readonly SIMPLEMATCH_CANONICAL_LOCAL_REGISTRY_PORT='5001'
-readonly SIMPLEMATCH_CANONICAL_LOCAL_REGISTRY_DATA_VOLUME='simplematch-local-registry-data'
-readonly SIMPLEMATCH_CANONICAL_LOCAL_REGISTRY_NETWORK='kind'
-
-SIMPLEMATCH_LOCAL_REGISTRY_NAME="${SIMPLEMATCH_LOCAL_REGISTRY_NAME:-$SIMPLEMATCH_CANONICAL_LOCAL_REGISTRY_NAME}"
-SIMPLEMATCH_LOCAL_REGISTRY_IMAGE="${SIMPLEMATCH_LOCAL_REGISTRY_IMAGE:-$SIMPLEMATCH_CANONICAL_LOCAL_REGISTRY_IMAGE}"
-SIMPLEMATCH_LOCAL_REGISTRY_HOST="${SIMPLEMATCH_LOCAL_REGISTRY_HOST:-$SIMPLEMATCH_CANONICAL_LOCAL_REGISTRY_HOST}"
-SIMPLEMATCH_LOCAL_REGISTRY_PORT="${SIMPLEMATCH_LOCAL_REGISTRY_PORT:-$SIMPLEMATCH_CANONICAL_LOCAL_REGISTRY_PORT}"
-SIMPLEMATCH_LOCAL_REGISTRY_DATA_VOLUME="${SIMPLEMATCH_LOCAL_REGISTRY_DATA_VOLUME:-$SIMPLEMATCH_CANONICAL_LOCAL_REGISTRY_DATA_VOLUME}"
-SIMPLEMATCH_LOCAL_REGISTRY_NETWORK="${SIMPLEMATCH_LOCAL_REGISTRY_NETWORK:-$SIMPLEMATCH_CANONICAL_LOCAL_REGISTRY_NETWORK}"
-
-simplematch_registry_validate_canonical_config() {
-  local actual expected variable_name
-  while IFS='|' read -r variable_name actual expected; do
-    [[ "$actual" == "$expected" ]] || {
-      printf 'non-canonical local registry configuration: %s must be %s, got %s\n' \
-        "$variable_name" "$expected" "$actual" >&2
-      return 1
-    }
-  done <<EOF_REGISTRY_CONFIG
-SIMPLEMATCH_LOCAL_REGISTRY_NAME|$SIMPLEMATCH_LOCAL_REGISTRY_NAME|$SIMPLEMATCH_CANONICAL_LOCAL_REGISTRY_NAME
-SIMPLEMATCH_LOCAL_REGISTRY_IMAGE|$SIMPLEMATCH_LOCAL_REGISTRY_IMAGE|$SIMPLEMATCH_CANONICAL_LOCAL_REGISTRY_IMAGE
-SIMPLEMATCH_LOCAL_REGISTRY_HOST|$SIMPLEMATCH_LOCAL_REGISTRY_HOST|$SIMPLEMATCH_CANONICAL_LOCAL_REGISTRY_HOST
-SIMPLEMATCH_LOCAL_REGISTRY_PORT|$SIMPLEMATCH_LOCAL_REGISTRY_PORT|$SIMPLEMATCH_CANONICAL_LOCAL_REGISTRY_PORT
-SIMPLEMATCH_LOCAL_REGISTRY_DATA_VOLUME|$SIMPLEMATCH_LOCAL_REGISTRY_DATA_VOLUME|$SIMPLEMATCH_CANONICAL_LOCAL_REGISTRY_DATA_VOLUME
-SIMPLEMATCH_LOCAL_REGISTRY_NETWORK|$SIMPLEMATCH_LOCAL_REGISTRY_NETWORK|$SIMPLEMATCH_CANONICAL_LOCAL_REGISTRY_NETWORK
-EOF_REGISTRY_CONFIG
-}
+SIMPLEMATCH_LOCAL_REGISTRY_NAME="${SIMPLEMATCH_LOCAL_REGISTRY_NAME:-simplematch-local-registry}"
+SIMPLEMATCH_LOCAL_REGISTRY_IMAGE="${SIMPLEMATCH_LOCAL_REGISTRY_IMAGE:-registry:3}"
+SIMPLEMATCH_LOCAL_REGISTRY_HOST="${SIMPLEMATCH_LOCAL_REGISTRY_HOST:-localhost}"
+SIMPLEMATCH_LOCAL_REGISTRY_PORT="${SIMPLEMATCH_LOCAL_REGISTRY_PORT:-5001}"
+SIMPLEMATCH_LOCAL_REGISTRY_DATA_VOLUME="${SIMPLEMATCH_LOCAL_REGISTRY_DATA_VOLUME:-simplematch-local-registry-data}"
+SIMPLEMATCH_LOCAL_REGISTRY_NETWORK="${SIMPLEMATCH_LOCAL_REGISTRY_NETWORK:-kind}"
 
 simplematch_registry_endpoint() {
-  simplematch_registry_validate_canonical_config || return 1
   printf '%s:%s\n' "$SIMPLEMATCH_LOCAL_REGISTRY_HOST" "$SIMPLEMATCH_LOCAL_REGISTRY_PORT"
 }
 
 simplematch_registry_container_exists() {
-  simplematch_registry_validate_canonical_config || return 1
   docker inspect "$SIMPLEMATCH_LOCAL_REGISTRY_NAME" >/dev/null 2>&1
 }
 
 simplematch_registry_container_running() {
-  simplematch_registry_validate_canonical_config || return 1
   [[ "$(docker inspect --format '{{.State.Running}}' "$SIMPLEMATCH_LOCAL_REGISTRY_NAME" 2>/dev/null || true)" == true ]]
 }
 
+# A configured registry name is not sufficient proof of ownership. Verify the
+# concrete container shape against the same configured values before reusing it.
 simplematch_registry_verify_container_identity() {
   local image restart_policy data_volume published_endpoint
 
-  simplematch_registry_validate_canonical_config || return 1
   simplematch_registry_container_exists || {
     printf 'local registry container is missing: %s\n' "$SIMPLEMATCH_LOCAL_REGISTRY_NAME" >&2
     return 1
@@ -84,9 +58,6 @@ simplematch_registry_verify_container_identity() {
 }
 
 simplematch_registry_create() {
-  simplematch_registry_validate_canonical_config ||
-    simplematch_die 'local registry configuration does not match repository policy'
-
   if [[ "${SIMPLEMATCH_DRY_RUN:-false}" == true ]]; then
     simplematch_quote_command docker volume create "$SIMPLEMATCH_LOCAL_REGISTRY_DATA_VOLUME"
     simplematch_quote_command docker run \
@@ -104,7 +75,7 @@ simplematch_registry_create() {
 
   if simplematch_registry_container_exists; then
     simplematch_registry_verify_container_identity ||
-      simplematch_die "existing local registry container does not match repository identity: $SIMPLEMATCH_LOCAL_REGISTRY_NAME"
+      simplematch_die "existing local registry container does not match configured repository identity: $SIMPLEMATCH_LOCAL_REGISTRY_NAME"
     if simplematch_registry_container_running; then
       simplematch_info "Local registry already running: $SIMPLEMATCH_LOCAL_REGISTRY_NAME"
       return 0
@@ -124,19 +95,16 @@ simplematch_registry_create() {
     --name "$SIMPLEMATCH_LOCAL_REGISTRY_NAME" \
     "$SIMPLEMATCH_LOCAL_REGISTRY_IMAGE"
   simplematch_registry_verify_container_identity ||
-    simplematch_die 'new local registry container does not match repository identity'
+    simplematch_die 'new local registry container does not match configured repository identity'
 }
 
 simplematch_registry_connect_kind_cluster() {
   local cluster_name="$1"
   local context="kind-${cluster_name}"
-  local registry_dir
+  local registry_dir="/etc/containerd/certs.d/$(simplematch_registry_endpoint)"
   local node
   local nodes
 
-  simplematch_registry_validate_canonical_config ||
-    simplematch_die 'local registry configuration does not match repository policy'
-  registry_dir="/etc/containerd/certs.d/$(simplematch_registry_endpoint)"
   simplematch_require_command kind
   simplematch_require_command kubectl
   simplematch_registry_create
@@ -195,8 +163,6 @@ simplematch_registry_verify() {
   local node
   local nodes
 
-  simplematch_registry_validate_canonical_config ||
-    simplematch_die 'local registry configuration does not match repository policy'
   simplematch_require_command docker
   simplematch_registry_container_running ||
     simplematch_die "local registry is not running: $SIMPLEMATCH_LOCAL_REGISTRY_NAME"
@@ -239,8 +205,6 @@ simplematch_registry_verify() {
 simplematch_registry_delete() {
   local remove_data="${1:-false}"
 
-  simplematch_registry_validate_canonical_config ||
-    simplematch_die 'local registry configuration does not match repository policy'
   if [[ "${SIMPLEMATCH_DRY_RUN:-false}" == true ]]; then
     simplematch_quote_command docker rm --force "$SIMPLEMATCH_LOCAL_REGISTRY_NAME"
     if [[ "$remove_data" == true ]]; then
