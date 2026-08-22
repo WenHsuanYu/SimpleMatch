@@ -1,17 +1,23 @@
 # Local registry and resource lifecycle
 
-The reusable `simplematch-live` kind cluster must not treat application images as permanent node-local state. Each kind node has its own containerd content store and unpacked overlayfs snapshots, so preloading the complete SimpleMatch image inventory into every node multiplies disk usage even when a workload never runs there. The repository therefore treats node-local images as reproducible cache: application images are published to one local OCI registry, Kubernetes manifests are pinned by digest, and only nodes that actually schedule a workload pull the required image.
+The reusable `simplematch-live` kind cluster must not treat application images as permanent node-local state. Each kind node has its own containerd content store and unpacked overlayfs snapshots, so preloading the complete SimpleMatch image inventory into every node multiplies disk usage even when a workload never runs there. The repository therefore treats node-local application images as reproducible cache: publish once to the local registry, render Kubernetes manifests by immutable digest, and let only scheduled nodes pull what they need.
+
+This design is a bounded local-lab implementation. It supports the local resilience work in #151 and #170, but it does not by itself satisfy every acceptance criterion of those broader issues or claim production HA, storage HA, automatic failover, or external certification.
 
 ## Registry-only image transport
 
-Local Kubernetes application images use the repository-owned registry exclusively:
+Local Kubernetes application images use one repository-owned OCI registry:
 
-- host endpoint: `localhost:5001`
+- endpoint: `localhost:5001`
 - container: `simplematch-local-registry`
 - image: `registry:3`
-- data volume: `simplematch-local-registry-data`
+- restart policy: `unless-stopped`
+- data volume: `simplematch-local-registry-data` mounted at `/var/lib/registry`
+- host publication: `127.0.0.1:5001 -> container :5000`
 
-The host pushes `localhost:5001/...`. Each kind node has `/etc/containerd/certs.d/localhost:5001/hosts.toml` mapping that logical endpoint to `http://simplematch-local-registry:5000` on the Docker `kind` network. Kubernetes therefore uses the same logical image reference that the host publishes while containerd reaches the registry over the internal Docker network.
+Each kind node has `/etc/containerd/certs.d/localhost:5001/hosts.toml` mapping that logical endpoint to `http://simplematch-local-registry:5000` on the Docker `kind` network. Kubernetes therefore sees the same image reference the host publishes while containerd reaches the registry over the internal Docker network.
+
+`manage-local-registry.sh` and `manage-simplematch-live.sh` do not trust a same-named Docker container by name alone. Existing registry state is accepted only when the configured image, restart policy, named data volume, and host-published endpoint match the repository contract. A conflicting same-named container is a hard error rather than an object that setup silently reuses.
 
 Create or inspect the registry with:
 
@@ -21,13 +27,11 @@ bash scripts/manage-local-registry.sh connect
 bash scripts/manage-local-registry.sh verify
 ```
 
-`manage-simplematch-live.sh create` also ensures the registry exists, connects the canonical cluster, verifies the integration, and establishes a clean resource baseline. Deleting the cluster preserves registry data unless the registry itself is explicitly purged.
+`manage-simplematch-live.sh create` also ensures the registry exists, connects the canonical cluster, verifies the integration, and establishes a clean resource baseline. Cluster deletion preserves registry data unless the registry itself is explicitly purged.
 
-The previous direct `kind load docker-image` path has been removed. `normalize-local-images-for-kind.sh` and its normalization Dockerfile no longer exist, and `prepare-local-kubernetes-images.sh` plus `render-local-kubernetes-manifest.sh` no longer expose `--transport`. A stale `SIMPLEMATCH_LOCAL_IMAGE_TRANSPORT` environment override is rejected fail-closed instead of silently selecting an obsolete delivery path.
+The previous direct `kind load docker-image` path has been removed. `normalize-local-images-for-kind.sh` and its normalization Dockerfile no longer exist, and preparation/rendering no longer expose a transport selector. A stale `SIMPLEMATCH_LOCAL_IMAGE_TRANSPORT` override is rejected fail-closed.
 
 ## Image-path responsibilities
-
-The image path is split by responsibility rather than by transport mode:
 
 ```text
 scripts/lib/local-image-inventory.sh
@@ -35,10 +39,10 @@ scripts/lib/local-image-inventory.sh
 
 scripts/lib/local-image-transport.sh
     side-effect-free digest-lock semantics, rendering profiles,
-    and rejection of removed transport overrides
+    canonical local-registry identity, and rejection of removed overrides
 
 scripts/prepare-local-kubernetes-images.sh
-    verify registry integration and invoke publication
+    verify registry/kind integration and invoke publication
 
 scripts/publish-local-images.sh
     push canonical images and atomically publish the digest lockfile
@@ -47,56 +51,50 @@ scripts/render-local-kubernetes-manifest.sh
     fail-closed digest substitution and atomic manifest output
 
 scripts/run-local-production-like-certification.sh
-    configuration/state plus module composition only
+    shared configuration/state plus certification module composition
 ```
 
-No component parses another component's human-readable output to discover image identity. The canonical inventory is the single source for service, build source, and repository identity; the lockfile is the single hand-off between publication and rendering.
+No component parses another component's human-readable output to discover image identity. The canonical inventory is the source of service/build/repository identity; the lockfile is the machine-readable hand-off from publication to rendering.
 
 ## Certification runner modularity
 
-`run-local-production-like-certification.sh` deliberately owns only shared configuration, run state, module loading, and the top-level lifecycle boundary. Domain behavior is sourced from cohesive modules:
+The production-like runner is intentionally split by responsibility:
 
 ```text
-scripts/lib/local-certification-framework.sh
-    CLI help, evidence/report lifecycle, phase execution, resume markers,
-    cleanup, deadline handling, and common certification control flow
+local-certification-framework.sh
+    CLI help, evidence/report lifecycle, phase execution,
+    resume markers, cleanup, deadlines
 
-scripts/lib/local-certification-kafka.sh
-    Compose readiness, Kafka topic/bootstrap helpers, fixtures,
-    producer/capacity evidence, and Kafka failure checks
+local-certification-kafka.sh
+    Compose readiness, Kafka bootstrap, fixtures,
+    producer/capacity evidence, Kafka failure checks
 
-scripts/lib/local-certification-kubernetes.sh
-    digest-rendered manifest generation, manifest splitting,
-    Kubernetes inputs, migration/platform deployment helpers
+local-certification-kubernetes.sh
+    digest-rendered manifest generation/splitting,
+    Kubernetes inputs, platform/migration helpers
 
-scripts/lib/local-certification-connect.sh
-    Kafka Connect registration, REST interaction, status collection,
-    and connector-specific evidence
+local-certification-connect.sh
+    Kafka Connect registration, REST/status evidence
 
-scripts/lib/local-certification-workloads.sh
-    Matching-only selection, workload readiness, and workload verification
+local-certification-workloads.sh
+    Matching-only selection, workload readiness/verification
 
-scripts/lib/local-certification-bootstrap.sh
-    CLI parsing, configuration validation, run context, prerequisites,
-    namespace/evidence initialization, and source signature setup
+local-certification-bootstrap.sh
+    argument/config validation, run context, prerequisites,
+    namespace/evidence initialization, source signature
 
-scripts/lib/local-certification-run.sh
-    final phase ordering across Compose, Kafka, image publication,
-    Kubernetes deployment, connector setup, and verification
+local-certification-run.sh
+    final cross-domain phase ordering
 ```
 
-The modules are not independent executables. They are sourced by the top-level runner and operate on run state owned there. This keeps orchestration explicit while preventing the runner from becoming a thousand-line cross-domain script.
-
-Resume remains fail-closed around code changes: the source signature includes the certification modules, so changing module behavior invalidates reusable phase evidence. Registry preparation is also deliberately refreshable during `--resume`; a phase marker cannot prove that mutable external registry/cache state still exists after the registry was purged or kubelet garbage collection reclaimed node images.
+The modules are sourced implementation seams, not independent public entry points. Shared run state remains owned by `run-local-production-like-certification.sh`. The resume source signature includes these modules so a behavior change invalidates reusable phase evidence. Registry preparation is deliberately refreshable during resume because a phase marker cannot prove that mutable external registry/cache state still exists.
 
 ## Registry certification flow
-
-For a normal certification run, the Kubernetes application-image path is:
 
 ```text
 build-local-images.sh
 -> prepare-local-kubernetes-images.sh
--> verify local registry / kind integration
+-> verify canonical local registry / kind integration
 -> publish-local-images.sh
 -> immutable digest lockfile
 -> render-local-kubernetes-manifest.sh
@@ -105,29 +103,15 @@ build-local-images.sh
 -> only the scheduled node pulls the required image
 ```
 
-Run the full certification with:
+Run the normal certification with:
 
 ```text
 bash scripts/run-local-production-like-certification.sh
 ```
 
-For `--matching-fleet-only`, only the Matching application image is published and the report is intentionally partial. A full certification publishes the canonical local application image inventory.
+`--matching-fleet-only` publishes only the Matching application image and intentionally produces a partial result. A full certification publishes the canonical local application-image inventory.
 
 ## Image lockfile
-
-Build remains separate from publication:
-
-```text
-bash scripts/build-local-images.sh --tag local
-```
-
-Publish the resulting host images with:
-
-```text
-bash scripts/publish-local-images.sh \
-  --tag local \
-  --output out/local-images.lock
-```
 
 The lockfile format is:
 
@@ -135,21 +119,21 @@ The lockfile format is:
 service|source-image|registry-tag|registry-digest-reference
 ```
 
-`local-image-transport.sh` validates the lock semantically rather than merely checking delimiters:
+`local-image-transport.sh` validates it semantically:
 
 - every service must exist in the canonical inventory;
 - the source repository must be the canonical repository for that service;
 - services and source repositories must be unique;
 - source and registry tags must agree;
 - registry tag and digest reference must identify the same repository;
-- the registry repository must preserve the canonical source repository identity;
+- the registry repository must equal `<simplematch_registry_endpoint>/<canonical-source-repository>` exactly;
 - runtime references must end in a canonical lowercase `sha256` digest.
 
-Publication writes a temporary lockfile and atomically replaces the active lockfile only after every selected push and the complete lock validation succeed. An interrupted publish therefore cannot leave a half-written lock that a later certification run mistakes for valid state. Transient host-side `localhost:5001/...:<tag>` aliases are removed after publication; the registry content and immutable digest reference remain.
+The exact endpoint rule matters because the lockfile can also be supplied to the renderer. A syntactically valid `remote.example/...@sha256:...` reference is not accepted as local certification identity merely because its repository suffix matches the canonical source repository.
+
+Publication writes a temporary lockfile and atomically replaces the active lock only after every selected push and complete validation succeed. An interrupted publish therefore cannot leave a half-written lock that a later certification run mistakes for valid state. Transient host-side `localhost:5001/...:<tag>` aliases are removed after publication; registry content and immutable digest identity remain.
 
 ## Digest-based manifest rendering
-
-Render a local manifest with:
 
 ```text
 bash scripts/render-local-kubernetes-manifest.sh \
@@ -158,24 +142,22 @@ bash scripts/render-local-kubernetes-manifest.sh \
   --output out/local-kubernetes.yaml
 ```
 
-The renderer creates a temporary outer Kustomization, leaving `deploy/k8s/overlays/local` registry-agnostic. It accepts only two repository-owned lock profiles:
+The renderer creates a temporary outer Kustomization and leaves `deploy/k8s/overlays/local` registry-agnostic. It accepts exactly two repository-owned lock profiles:
 
 ```text
 full
 matching-only
 ```
 
-`full` requires every application image represented by the local overlay. A complete publication may include canonical verification-only images that are not present in the overlay; those entries are ignored by rendering. `matching-only` must contain exactly the Matching image and exists for the Matching fleet-only certification path. Any other partial lock is rejected instead of silently producing a mixed mutable/digest deployment.
+`full` requires every application image represented by the local overlay. A complete publication may also contain canonical verification-only images not present in that overlay. `matching-only` must contain exactly the Matching image. Any other partial lock is rejected instead of producing a mixed mutable/digest deployment.
 
-The rendering contract checks that the canonical local-overlay repository set matches the tracked `images:` entries in `deploy/k8s/overlays/local/kustomization.yaml`. After Kustomize renders, every selected service is checked again against the expected registry digest reference. A full render also rejects any remaining mutable `:local` application image.
+The rendering contract checks local-overlay inventory parity and verifies each selected digest after Kustomize. A full render rejects any remaining mutable `:local` application image. When `--output` is supplied, all semantic checks run against generated temporary state before an atomic rename replaces the previous output.
 
-When `--output` is supplied, Kustomize renders into generated temporary state and all post-render checks run there first. Only a fully validated manifest is copied to a temporary file in the destination directory and atomically renamed over the requested output. A failed Kustomize invocation or failed semantic check therefore preserves the previous valid output.
+Matching uses the same registry manifest digest for the runtime image, `matching-session-config`, and Open Barrier identity. `verify-matching-fleet-live.sh` also requires digest-pinned images; the obsolete local-image compatibility identity has been removed. `--allow-shared-node` remains only as a local topology relaxation for fifteen logical owners.
 
-Matching uses the same registry manifest digest for the rendered runtime image, `matching-session-config`, and Open Barrier identity. There is no separate Docker image-ID compatibility identity after the registry-only cutover.
+## Kubelet image-cache garbage collection
 
-## Kubelet image cache garbage collection
-
-The registry/digest path makes node-local application images reproducible cache rather than durable cluster state. `deploy/kind/simplematch-live.yaml` therefore defines a local-lab-specific kubelet image-GC policy:
+`deploy/kind/simplematch-live.yaml` defines:
 
 ```text
 imageMinimumGCAge: 10m0s
@@ -184,15 +166,13 @@ imageGCHighThresholdPercent: 80
 imageGCLowThresholdPercent: 70
 ```
 
-`imageMinimumGCAge` protects images that were just pulled from immediate disk-pressure collection. `imageMaximumGCAge` allows long-unused images to become eligible for collection even if disk usage never crosses the high threshold. The 80/70 thresholds provide hysteresis so image GC does not oscillate around one disk-usage value.
+The minimum age protects newly pulled images from immediate disk-pressure collection. The maximum tracked unused age provides background cache aging even without reaching the high threshold; the 80/70 thresholds provide hysteresis. Kubelet image-age tracking resets when kubelet restarts, so 24 hours is not a persistent wall-clock deletion deadline.
 
-This policy belongs to the canonical kind configuration, not to certification or cleanup scripts. kind/kubeadm propagates the `KubeletConfiguration` from the control-plane configuration to all nodes. `manage-simplematch-live.sh create` and `verify` read `/var/lib/kubelet/config.yaml` from all four kind containers and fail if the effective image-GC policy drifts from repository policy.
-
-Kubelet image-age tracking is not persistent across kubelet restarts, so `imageMaximumGCAge: 24h0m0s` is a maximum tracked unused age rather than a persistent wall-clock deletion deadline. Kubelet GC complements explicit cleanup; neither path manually deletes containerd snapshot files.
+`manage-simplematch-live.sh create` and `verify` read `/var/lib/kubelet/config.yaml` from all four kind containers and fail if effective policy drifts from repository policy.
 
 ## Runtime cleanup
 
-Every runner-owned disposable Kubernetes namespace must carry:
+Every runner-owned disposable namespace must carry:
 
 ```text
 simplematch.io/lifecycle=disposable
@@ -200,29 +180,18 @@ simplematch.io/managed-by=<runner>
 simplematch.io/run-id=<id>
 ```
 
-`simplematch.io/lifecycle=disposable` is the only automatic namespace-deletion authority. Routine cleanup never infers ownership from a namespace prefix. If label establishment fails during namespace creation, the namespace is treated as failed setup and removed rather than leaving an ambiguously owned resource behind. Resume verifies the expected ownership before reusing an existing certification namespace.
+The lifecycle label is the only automatic namespace-deletion authority. Routine cleanup never infers ownership from a namespace prefix. Historical unlabeled namespaces must be inspected and explicitly labelled before routine deletion.
 
-Historical namespaces created before this contract may be unlabeled. Routine cleanup intentionally leaves them alone. If an old namespace is known to be disposable, migrate it explicitly:
-
-```text
-kubectl --context kind-simplematch-live label namespace <namespace> \
-  simplematch.io/lifecycle=disposable \
-  simplematch.io/managed-by=manual-migration \
-  simplematch.io/run-id=legacy
-```
-
-The routine cleanup order is intentional:
+Routine cleanup order is:
 
 ```text
-delete labeled disposable namespace
--> wait until namespace deletion completes
--> wait until PV claim references disappear
+delete labelled disposable namespace
+-> wait for namespace deletion
+-> wait for PV claim references to disappear
 -> allow kubelet/containerd to release runtime references
--> crictl rmi --prune on kind nodes
+-> crictl rmi --prune on canonical kind nodes
 -> compare current resource state with the clean baseline
 ```
-
-A namespace or PV cleanup failure stops cleanup before CRI image pruning. Exited containers, Pod sandboxes, snapshots, and image content are reference-managed runtime state, so deleting low-level containerd files directly is not a safe ownership model.
 
 Use:
 
@@ -230,53 +199,23 @@ Use:
 bash scripts/simplematch-clean-local-disk.sh --report-details
 ```
 
-for routine cleanup while preserving the reusable cluster and registry cache. Do not manually delete `/var/lib/containerd` files or use `ctr snapshots rm` as a normal cleanup mechanism.
+The default routine path is project-scoped. It does not guess ownership of `pack-cache-*` volumes and does not run daemon-wide Docker builder/image/volume prune. `--aggressive` is the explicit opt-in for globally unused Docker resources and builder caches and can affect unrelated projects. Routine cleanup never manually removes containerd snapshot files.
 
 ## Resource baseline and growth
 
-`manage-simplematch-live.sh create` records a clean baseline after topology, registry, StorageClass, and executable PV-affinity verification have completed and the storage probe has been synchronously removed. The default file is:
+`manage-simplematch-live.sh create` records a clean baseline only after topology, registry, StorageClass, and executable PV-affinity verification complete and the storage probe has been removed. The default file is:
 
 ```text
 out/local-resource-baseline.json
 ```
 
-Override it with `SIMPLEMATCH_LOCAL_RESOURCE_BASELINE_FILE`. A baseline is accepted only when the cluster has no disposable namespaces, no Pods outside the baseline system namespaces, and no PVs. This prevents an application run from accidentally becoming the definition of clean state.
+A baseline is accepted only when the cluster has no disposable namespaces, no non-baseline Pods, and no PVs. It records Docker system usage, optional registry-volume size, each kind node's containerd/content/overlayfs bytes, exited-container and NotReady-sandbox counts, disposable namespaces, non-baseline Pods, and PV count.
 
-The baseline records:
+Each baseline is tied to the exact kind cluster generation using the Docker container IDs of kind nodes. Snapshot validation is fail-closed: node names/container IDs must be unique, measurements must be non-negative integers, and aggregate totals must equal the per-node sums.
 
-- Docker `system df` rows for host images, containers, volumes, and build cache;
-- local-registry data-volume size when the host filesystem permits non-interactive measurement;
-- each kind node's total `/var/lib/containerd` bytes;
-- each node's containerd content-store and overlayfs-snapshot bytes;
-- exited-container and NotReady-sandbox counts;
-- Kubernetes disposable namespaces, non-baseline Pods, and PV count.
+Resource collection is non-atomic because kubelet/containerd can mutate while filesystem measurements run. `local-resource-report.sh` therefore owns bounded whole-snapshot retry. `manage-simplematch-live.sh create` uses the same report path when establishing its baseline rather than bypassing the retry policy with a one-shot low-level collection. The default attempt count is three and can be changed with `SIMPLEMATCH_LOCAL_RESOURCE_SNAPSHOT_ATTEMPTS`; exhaustion is a hard failure.
 
-Each baseline is tied to the exact kind cluster generation using Docker container IDs for the kind nodes. A baseline from a deleted/recreated cluster is rejected even if the new cluster reuses the same cluster and node names. `manage-simplematch-live.sh delete` may leave the old file as forensic evidence; the next successful create establishes the new generation's baseline.
-
-Snapshot validation is fail-closed. Node names and Docker container IDs must be unique, byte/count measurements must be non-negative integers, and every `kind.totals.*` value must equal the sum of the corresponding per-node measurements. A malformed or internally inconsistent snapshot is never used for a growth decision.
-
-Resource collection is necessarily non-atomic because kubelet and containerd can mutate runtime state during measurement. `local-resource-report.sh` retries collection as a whole for bounded transient Docker/kubelet/containerd measurement races rather than accepting a partial low-level snapshot. The default retry count is three and can be overridden with `SIMPLEMATCH_LOCAL_RESOURCE_SNAPSHOT_ATTEMPTS`; exhausting the attempts remains a hard failure.
-
-Use the read-only report at any time:
-
-```text
-bash scripts/local-resource-report.sh
-```
-
-Save a standalone snapshot with:
-
-```text
-bash scripts/local-resource-report.sh --output out/local-resource-now.json
-```
-
-Establish a clean baseline explicitly with:
-
-```text
-bash scripts/local-resource-report.sh \
-  --write-baseline out/local-resource-baseline.json
-```
-
-The comparison deliberately avoids an arbitrary fixed "N GB means rebuild" threshold. It reports one of:
+Resource comparison reports:
 
 ```text
 NO_CONTAINERD_GROWTH
@@ -284,23 +223,32 @@ ACTIVE_WORKLOAD_GROWTH
 IDLE_RESIDUAL_GROWTH
 ```
 
-`ACTIVE_WORKLOAD_GROWTH` means containerd has grown while non-baseline workloads or PV state still exist, so the growth may be legitimate runtime state. `IDLE_RESIDUAL_GROWTH` requires the cluster to be back at its baseline Kubernetes workload shape while containerd remains larger than the clean baseline. In that state `recycle_candidate=true`: rebuilding the reusable kind cluster is a defensible reclamation action, but the report never destroys the cluster automatically.
-
-Large and roughly equal content/snapshot growth across all nodes usually indicates duplicated cache state rather than PVC application data. Registry-only transport reduces unnecessary duplication because an application repository is not imported into nodes that never schedule it, but each node that actually executes an image still keeps its own containerd content and unpacked layers. Registry growth is reported separately because deleting the kind cluster does not delete registry data.
+`ACTIVE_WORKLOAD_GROWTH` means workloads/PV state still exist, so growth may be legitimate runtime state. `IDLE_RESIDUAL_GROWTH` means the cluster returned to its baseline Kubernetes workload shape but containerd remains larger. In that state `recycle_candidate=true`; the report recommends but never automatically performs cluster recycle. Registry growth is reported separately because cluster deletion does not delete registry data.
 
 ## Hard reset
-
-When node-local containerd state is no longer worth preserving, rebuild the cluster rather than manually mutating snapshots:
 
 ```text
 bash scripts/hard-reset-local.sh
 ```
 
-Hard reset delegates canonical cluster deletion to `manage-simplematch-live.sh`, purges registry cache by default, removes repository-owned SimpleMatch host images, and clears generated local state. It does not use Compose `--rmi all`, because PostgreSQL, Kafka, Redis, Debezium, and other upstream images are not repository-owned artifacts. `--aggressive-unused-docker` remains explicitly daemon-wide and can affect unrelated projects.
+Default hard reset is still destructive, but its ownership scope is explicit:
+
+- the canonical `simplematch-live` cluster;
+- the canonical production-like Compose project;
+- additional `simplematch*` clusters/projects only when explicitly passed with `--kind-cluster` / `--compose-project`;
+- the repository-owned local registry;
+- unreferenced SimpleMatch-tagged host images;
+- generated repository build/evidence state.
+
+Before deleting anything, hard reset discovers SimpleMatch kind/Compose ownership from Docker labels. If another SimpleMatch runtime exists outside the selected set, reset stops fail-closed because removing shared registry/build state could damage that runtime. The user must either leave that runtime alone and avoid hard reset, or explicitly add it to the deletion scope.
+
+Canonical cluster deletion is delegated to `manage-simplematch-live.sh delete` as a required safety gate. If the manager cannot prove exact cluster identity, hard reset stops; generic orphan-container cleanup is not allowed to bypass that refusal. Residual cleanup only matches the selected cluster/project sets.
+
+Daemon-wide Pack/BuildKit caches and unrelated resources are preserved by default. `--aggressive-unused-docker` explicitly opts into global unused-container/image/volume/network and builder-cache pruning and may affect other projects.
 
 ## Validation
 
-`Local Resource Lifecycle CI` has two layers. The deterministic contract job runs:
+`Local Resource Lifecycle CI` deterministic contracts run:
 
 ```text
 test-local-registry-resource-lifecycle.sh
@@ -312,21 +260,12 @@ test-local-resilience.sh
 test-simplematch-kind-manager.sh
 ```
 
-Together these contracts verify:
+They verify registry container identity, exact local-registry lock identity, registry-only interfaces, full/Matching-only rendering, atomic output, certification module boundaries/resume signatures, namespace/PV cleanup ownership, hard-reset scope, bounded baseline collection, resource invariants/growth classification, resilience behavior, and kubelet image-GC policy.
 
-- registry-only public interfaces and fail-closed rejection of removed transport selectors;
-- canonical image inventory and semantic digest-lock identity;
-- full and Matching-only rendering profiles, local-overlay inventory parity, digest substitution, unsupported-partial-lock rejection, and atomic output preservation;
-- certification module boundaries, top-level runner size/responsibility, module-aware resume source signatures, and dry-run orchestration;
-- namespace ownership, PV-aware cleanup ordering, cluster-generation/node-set checks, resource snapshot invariants, baseline-relative growth classification, and resilience behavior;
-- canonical kubelet image-GC values and manager verification behavior.
+The live kind job creates the actual one-control-plane/three-worker cluster, connects and verifies the repository registry, runs the PV-affinity probe, establishes a clean baseline, publishes a canonical Matching image through the real publisher, consumes its generated lock through the real renderer, schedules one digest-backed Pod to worker slot 0, proves that only that worker acquires the application repository, and tears down its disposable resources.
 
-Changes to the registry/resource lifecycle scripts, certification modules, local Kubernetes/kind configuration, tests, or this design document trigger the workflow.
-
-The live integration job installs pinned kind v0.32.0 and runs `test-local-resource-kind-integration.sh`. It creates the actual one-control-plane/three-worker `simplematch-live` cluster, connects the local registry, runs the PV-affinity probe, establishes a clean baseline, verifies the manager and resource report, publishes a uniquely tagged canonical Matching source image through the real publisher, consumes the generated lockfile through the real renderer, schedules one digest-backed Pod to worker slot 0, and proves that only that worker acquires the application repository. It then deletes the disposable namespace, canonical cluster, registry data, and host smoke image. Cleanup is protected by an EXIT trap.
-
-CDC CI provides an additional regression boundary because the certification refactor moved Kafka topic creation into `local-certification-kafka.sh`. Its Matching topic cutover contract resolves the Kafka module rather than assuming topic bootstrap lives in the top-level runner, while the existing Kafka durability and live CDC checks continue to run unchanged.
+CDC CI remains a regression boundary for the certification-module split: Matching topic cutover resolves Kafka bootstrap from `local-certification-kafka.sh`, while Kafka durability and live CDC checks remain unchanged.
 
 ## Removed compatibility surface
 
-Registry publication plus digest-pinned rendering is now the only supported local Kubernetes application-image delivery model. Old invocations using `--image-transport`, renderer/preparation `--transport`, `SIMPLEMATCH_LOCAL_IMAGE_TRANSPORT`, `kind load docker-image`, or `normalize-local-images-for-kind.sh` must be removed rather than preserved behind another abstraction layer. This keeps one image identity model throughout publication, certification, Kubernetes scheduling, cache lifecycle, and resource reporting.
+Registry publication plus digest-pinned rendering is the only supported local Kubernetes application-image delivery model. Old invocations using `--image-transport`, renderer/preparation `--transport`, `SIMPLEMATCH_LOCAL_IMAGE_TRANSPORT`, `kind load docker-image`, `normalize-local-images-for-kind.sh`, or verifier `--allow-local-image` must be removed rather than preserved behind another abstraction layer.
