@@ -71,6 +71,11 @@ grep -Fq '/etc/containerd/certs.d/' "$registry_lib"
 grep -Fq 'local-registry-hosting' "$registry_lib"
 grep -Fq 'docker network connect' "$registry_lib"
 grep -Fq 'simplematch-local-registry-data' "$registry_lib"
+grep -Fq 'simplematch_registry_verify_container_identity' "$registry_lib"
+grep -Fq '.Config.Image' "$registry_lib"
+grep -Fq '.HostConfig.RestartPolicy.Name' "$registry_lib"
+grep -Fq '/var/lib/registry' "$registry_lib"
+grep -Fq 'docker port "$SIMPLEMATCH_LOCAL_REGISTRY_NAME" 5000/tcp' "$registry_lib"
 grep -Fq 'simplematch_registry_connect_kind_cluster' "$manager"
 grep -Fq 'simplematch_registry_verify' "$manager"
 grep -Fq 'containerdConfigPatches:' "$kind_config"
@@ -103,6 +108,16 @@ prune_line="$(grep -n 'simplematch_kind_prune_unused_images' "$cleaner" | tail -
   printf '%s\n' 'namespace cleanup must precede CRI image prune' >&2
   exit 1
 }
+if grep -Fq -- '--pack-caches' "$cleaner" || grep -Fq 'pack-cache-' "$cleaner"; then
+  printf '%s\n' 'routine cleanup still guesses Pack-cache ownership by a global name pattern' >&2
+  exit 1
+fi
+cleaner_aggressive_line="$(grep -n 'if \[\[ "$aggressive" == true \]\]' "$cleaner" | cut -d: -f1)"
+cleaner_builder_line="$(grep -n 'docker builder prune --all --force' "$cleaner" | cut -d: -f1)"
+[[ -n "$cleaner_aggressive_line" && -n "$cleaner_builder_line" && "$cleaner_aggressive_line" -lt "$cleaner_builder_line" ]] || {
+  printf '%s\n' 'daemon-wide builder cleanup must remain behind routine-cleanup aggressive opt-in' >&2
+  exit 1
+}
 
 # Resource reporting remains baseline-aware and bound to an exact kind generation.
 grep -Fq 'simplematch_local_resource_snapshot' "$resource_lib"
@@ -120,12 +135,20 @@ grep -Fq -- '--baseline' "$resource_report"
 grep -Fq 'simplematch_local_resource_assert_clean_baseline_json' "$resource_report"
 grep -Fq 'establish_resource_baseline' "$manager"
 grep -Fq 'SIMPLEMATCH_LOCAL_RESOURCE_BASELINE_FILE' "$manager"
+grep -Fq 'local-resource-report.sh' "$manager"
+grep -Fq -- '--no-baseline --json' "$manager"
+if grep -Fq 'simplematch_local_resource_snapshot "$cluster_name"' "$manager"; then
+  printf '%s\n' 'kind manager bypasses bounded whole-snapshot collection when establishing its baseline' >&2
+  exit 1
+fi
 
 # Registry is the only Kubernetes application-image transport. The policy module
 # owns lock semantics only; publication and rendering own side effects.
 grep -Fq 'simplematch_local_image_transport_reject_legacy_override' "$transport_lib"
 grep -Fq 'simplematch_local_image_lock_digest_reference' "$transport_lib"
 grep -Fq 'simplematch_local_image_lock_digest' "$transport_lib"
+grep -Fq 'simplematch_registry_endpoint' "$transport_lib"
+grep -Fq 'expected_registry_repository' "$transport_lib"
 if grep -Fq 'kind-load' "$transport_lib"; then
   printf '%s\n' 'transport policy still contains the removed kind-load mode' >&2
   exit 1
@@ -164,7 +187,7 @@ for removed_reference in '--image-transport' 'SIMPLEMATCH_LOCAL_IMAGE_TRANSPORT_
   fi
 done
 
-# Renderer is digest-only and has no compatibility transport option.
+# Renderer and live fleet verification are digest-only; no image compatibility selector remains.
 grep -Fq 'simplematch_local_image_transport_reject_legacy_override' "$renderer"
 grep -Fq 'digest: %s' "$renderer"
 grep -Fq 'newName: %s' "$renderer"
@@ -172,6 +195,11 @@ if grep -Fq -- '--transport' "$renderer"; then
   printf '%s\n' 'renderer still exposes the removed transport selector' >&2
   exit 1
 fi
+if grep -Fq -- '--allow-local-image' "$fleet_verifier"; then
+  printf '%s\n' 'fleet verifier still exposes removed local-image compatibility identity' >&2
+  exit 1
+fi
+grep -Fq '@sha256:' "$fleet_verifier"
 grep -Fq 'digest_reference=' "$publisher"
 grep -Fq 'docker push' "$publisher"
 
@@ -199,9 +227,30 @@ grep -Fq 'simplematch_kind_delete_disposable_namespace' "$resilience"
 grep -Fq '.metadata.labels["simplematch.io/lifecycle"] == "disposable"' "$resilience_lib"
 grep -Fq '.metadata.labels["simplematch.io/run-id"] == $run_id' "$resilience_lib"
 
+# Hard reset can remove only the canonical/explicitly selected project scope by default.
 grep -Fq 'manage-simplematch-live.sh' "$hard_reset"
 grep -Fq 'simplematch_registry_delete' "$hard_reset"
+grep -Fq 'unselected SimpleMatch kind cluster' "$hard_reset"
+grep -Fq 'unselected SimpleMatch Compose project' "$hard_reset"
+grep -Fq 'hard reset scope is ambiguous' "$hard_reset"
+grep -Fq 'simplematch_contains "$cluster" "${kind_clusters[@]}"' "$hard_reset"
+grep -Fq 'simplematch_contains "$project" "${compose_projects[@]}"' "$hard_reset"
+grep -Fq 'simplematch_run bash "$script_dir/manage-simplematch-live.sh"' "$hard_reset"
+if grep -Fq 'simplematch_run_best_effort bash "$script_dir/manage-simplematch-live.sh"' "$hard_reset"; then
+  printf '%s\n' 'canonical cluster deletion can still bypass manager identity failure' >&2
+  exit 1
+fi
+if grep -Fq 'pack-cache-' "$hard_reset"; then
+  printf '%s\n' 'hard reset still guesses Pack-cache ownership by a global name pattern' >&2
+  exit 1
+fi
 ! grep -Fq -- '--rmi all' "$hard_reset"
+hard_reset_aggressive_line="$(grep -n 'if \[\[ "$aggressive_unused_docker" == true \]\]' "$hard_reset" | cut -d: -f1)"
+hard_reset_builder_line="$(grep -n 'docker builder prune --all --force' "$hard_reset" | cut -d: -f1)"
+[[ -n "$hard_reset_aggressive_line" && -n "$hard_reset_builder_line" && "$hard_reset_aggressive_line" -lt "$hard_reset_builder_line" ]] || {
+  printf '%s\n' 'daemon-wide builder cleanup must remain behind hard-reset aggressive opt-in' >&2
+  exit 1
+}
 
 [[ ! -e "$script_dir/normalize-local-images-for-kind.sh" ]] || {
   printf '%s\n' 'removed kind normalizer script still exists' >&2
