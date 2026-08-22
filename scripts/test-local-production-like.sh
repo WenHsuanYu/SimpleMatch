@@ -142,12 +142,17 @@ if grep -Fq 'kind load docker-image' <<<"$certification_dry_run"; then
 fi
 
 # Explicit fallback must remain reachable without leaking direct-import details
-# into the top-level runner implementation.
+# into the top-level runner implementation. The runner dry-run only prints the
+# delegated preparation command; direct `kind load` execution belongs to that
+# preparation boundary and is covered by test-local-image-transport.sh.
 fallback_dry_run="$($runner --image-transport kind-load --matching-fleet-only --dry-run --skip-build --skip-compose)"
 grep -Fq 'prepare-local-kubernetes-images.sh' <<<"$fallback_dry_run"
 grep -Fq -- '--transport kind-load' <<<"$fallback_dry_run"
-grep -Fq 'kind load docker-image' <<<"$fallback_dry_run"
 grep -Fq -- '--allow-local-image simplematch-matching:local' <<<"$fallback_dry_run"
+if grep -Fq 'kind load docker-image' <<<"$fallback_dry_run"; then
+  printf '%s\n' 'Top-level certification dry-run leaks direct kind-load implementation details.' >&2
+  exit 1
+fi
 if grep -Fq 'normalize-local-images-for-kind.sh' "$runner"; then
   printf '%s\n' 'Top-level certification runner knows legacy normalizer details.' >&2
   exit 1
