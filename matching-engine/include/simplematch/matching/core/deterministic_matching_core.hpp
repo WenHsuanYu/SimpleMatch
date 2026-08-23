@@ -90,6 +90,7 @@ enum class CoreOrderType { kLimit, kMarket };
 enum class CoreTimeInForce { kRod, kIoc, kFok };
 enum class CoreCommandType { kNewOrder, kCancelOrder, kOpenBarrier, kCloseBarrier };
 enum class CoreEventType { kOrderRested, kTradeExecuted, kOrderCancelled, kOrderExpired };
+enum class CoreTradeLegState { kPartiallyFilled, kFilled };
 enum class CoreCancellationReason {
   kNone,
   kUserRequest,
@@ -105,7 +106,7 @@ enum class MatchingProcessResult {
   kOrderBookFull
 };
 
-/** Immutable context that makes each command's output identities deterministic. */
+/** Immutable execution context shared by a command and its externally published results. */
 struct MatchingCommandContext {
   FixedText<96> artifact_identity;
   FixedText<64> trading_session_id;
@@ -147,7 +148,7 @@ struct CoreCancelOrder {
   bool operator==(const CoreCancelOrder &) const = default;
 };
 
-/** Decoded command with a typed payload and immutable identity context. */
+/** Decoded command with a typed payload and immutable execution context. */
 struct CoreCommand {
   MatchingCommandContext context;
   CoreCommandType type;
@@ -182,11 +183,9 @@ struct CoreCommand {
   [[nodiscard]] const CoreCancelOrder &cancel_order() const;
 };
 
-/** Fixed-value result event consumed by a publisher outside the matching core. */
+/** Semantic result produced by the infrastructure-free matching core. */
 struct CoreEvent {
   CoreEventType type{CoreEventType::kOrderRested};
-  std::array<char, 65> event_id{};
-  std::array<char, 65> trade_id{};
   CoreUuid source_command_id{};
   CoreUuid order_id{};
   CoreUuid account_id{};
@@ -198,6 +197,8 @@ struct CoreEvent {
   CoreSide side{CoreSide::kBuy};
   CoreSide maker_side{CoreSide::kBuy};
   CoreSide taker_side{CoreSide::kBuy};
+  CoreTradeLegState maker_resulting_state{CoreTradeLegState::kPartiallyFilled};
+  CoreTradeLegState taker_resulting_state{CoreTradeLegState::kPartiallyFilled};
   ShareQuantity quantity{1};
   ShareQuantity leaves_quantity{1};
   ShareQuantity maker_cumulative_quantity{0};

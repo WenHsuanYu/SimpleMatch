@@ -73,6 +73,8 @@ TEST(DeterministicMatchingCoreTest, AppliesPriceTimePriorityAndEmitsStableMakerT
   EXPECT_EQ(trade.taker_account_id, buy.new_order().account_id);
   EXPECT_EQ(trade.maker_cumulative_quantity.value(), 100);
   EXPECT_EQ(trade.taker_leaves_quantity.value(), 0);
+  EXPECT_EQ(trade.maker_resulting_state, CoreTradeLegState::kFilled);
+  EXPECT_EQ(trade.taker_resulting_state, CoreTradeLegState::kFilled);
   EXPECT_EQ(trade.output_index, 0);
   EXPECT_EQ(trade.match_index, 0);
   EXPECT_EQ(trade.quantity.value(), 100);
@@ -134,7 +136,7 @@ TEST(DeterministicMatchingCoreTest, IocNeverRestsAndFokNeverPartiallyFills) {
   EXPECT_EQ(engine.resting_order_count(instrument()), 1U);
 }
 
-TEST(DeterministicMatchingCoreTest, MarketOrderConsumesBestAvailableLiquidityWithoutResting) {
+TEST(DeterministicMatchingCoreTest, MarketOrderIndexesTradesAndPublishesResultingStates) {
   auto engine = core();
   ASSERT_EQ(
       engine.process(new_order(
@@ -164,12 +166,24 @@ TEST(DeterministicMatchingCoreTest, MarketOrderConsumesBestAvailableLiquidityWit
           CoreOrderType::kMarket)),
       MatchingProcessResult::kApplied);
   ASSERT_EQ(engine.events().size(), 2U);
-  EXPECT_EQ(engine.events()[0].type, CoreEventType::kTradeExecuted);
-  EXPECT_EQ(engine.events()[0].price.value(), 1'000'000);
-  EXPECT_EQ(engine.events()[0].quantity.value(), 100);
-  EXPECT_EQ(engine.events()[1].type, CoreEventType::kTradeExecuted);
-  EXPECT_EQ(engine.events()[1].price.value(), 1'010'000);
-  EXPECT_EQ(engine.events()[1].quantity.value(), 50);
+
+  const CoreEvent &first_trade = engine.events()[0];
+  EXPECT_EQ(first_trade.type, CoreEventType::kTradeExecuted);
+  EXPECT_EQ(first_trade.output_index, 0);
+  EXPECT_EQ(first_trade.match_index, 0);
+  EXPECT_EQ(first_trade.price.value(), 1'000'000);
+  EXPECT_EQ(first_trade.quantity.value(), 100);
+  EXPECT_EQ(first_trade.maker_resulting_state, CoreTradeLegState::kFilled);
+  EXPECT_EQ(first_trade.taker_resulting_state, CoreTradeLegState::kPartiallyFilled);
+
+  const CoreEvent &second_trade = engine.events()[1];
+  EXPECT_EQ(second_trade.type, CoreEventType::kTradeExecuted);
+  EXPECT_EQ(second_trade.output_index, 1);
+  EXPECT_EQ(second_trade.match_index, 1);
+  EXPECT_EQ(second_trade.price.value(), 1'010'000);
+  EXPECT_EQ(second_trade.quantity.value(), 50);
+  EXPECT_EQ(second_trade.maker_resulting_state, CoreTradeLegState::kPartiallyFilled);
+  EXPECT_EQ(second_trade.taker_resulting_state, CoreTradeLegState::kFilled);
   EXPECT_EQ(engine.resting_order_count(instrument()), 1U);
 }
 

@@ -1,22 +1,16 @@
 #include "simplematch/matching/core/deterministic_matching_core.hpp"
 
 #include <algorithm>
-#include <array>
 #include <cctype>
-#include <cstring>
 #include <limits>
 #include <stdexcept>
 #include <string_view>
 #include <utility>
 
-#include <openssl/sha.h>
-
 namespace simplematch::matching {
 namespace {
 
 constexpr std::size_t kMaximumBooks = 150;
-constexpr std::size_t kHashInputCapacity = 256;
-constexpr char kHex[] = "0123456789abcdef";
 
 int hex_value(char character) {
   if (character >= '0' && character <= '9') {
@@ -65,86 +59,9 @@ std::size_t maximum_output_events_for(
   return book_count * events_per_book + 1;
 }
 
-class HashInput {
-public:
-  void text(std::string_view value) {
-    append_length(value.size());
-    append(value);
-  }
-
-  void integer(std::int32_t value) {
-    const auto unsigned_value = static_cast<std::uint32_t>(value);
-    for (int byte = 3; byte >= 0; --byte) {
-      append_byte(static_cast<std::uint8_t>(unsigned_value >> (byte * 8)));
-    }
-  }
-
-  void uuid(const CoreUuid &value) {
-    for (const auto byte : value.bytes) {
-      append_byte(byte);
-    }
-  }
-
-  [[nodiscard]] std::array<char, 65> digest_hex() const {
-    std::array<unsigned char, SHA256_DIGEST_LENGTH> digest{};
-    SHA256(bytes_.data(), size_, digest.data());
-    std::array<char, 65> encoded{};
-    for (std::size_t index = 0; index < digest.size(); ++index) {
-      encoded[index * 2] = kHex[digest[index] >> 4];
-      encoded[index * 2 + 1] = kHex[digest[index] & 0x0F];
-    }
-    return encoded;
-  }
-
-private:
-  void append_length(std::size_t value) {
-    if (value > std::numeric_limits<std::uint32_t>::max()) {
-      throw std::invalid_argument("deterministic identity input is too long");
-    }
-    integer(static_cast<std::int32_t>(value));
-  }
-
-  void append(std::string_view value) {
-    if (size_ + value.size() > bytes_.size()) {
-      throw std::invalid_argument("deterministic identity input exceeds fixed capacity");
-    }
-    std::memcpy(bytes_.data() + size_, value.data(), value.size());
-    size_ += value.size();
-  }
-
-  void append_byte(std::uint8_t value) {
-    if (size_ == bytes_.size()) {
-      throw std::invalid_argument("deterministic identity input exceeds fixed capacity");
-    }
-    bytes_[size_++] = value;
-  }
-
-  std::array<unsigned char, kHashInputCapacity> bytes_{};
-  std::size_t size_{};
-};
-
-std::array<char, 65> event_id(
-    const MatchingCommandContext &context, const CoreUuid &command_id, std::int32_t output_index) {
-  HashInput input;
-  input.text("simplematch.event-id.v1");
-  input.integer(1);
-  input.text(context.trading_session_id.view());
-  input.integer(context.partition_id);
-  input.uuid(command_id);
-  input.integer(output_index);
-  return input.digest_hex();
-}
-
-std::array<char, 65> trade_id(
-    const MatchingCommandContext &context, const CoreUuid &command_id, std::int32_t match_index) {
-  HashInput input;
-  input.text("simplematch.trade-id.v1");
-  input.integer(1);
-  input.text(context.trading_session_id.view());
-  input.integer(context.partition_id);
-  input.uuid(command_id);
-  input.integer(match_index);
-  return input.digest_hex();
+CoreTradeLegState resulting_state(std::int64_t leaves_quantity) {
+  return leaves_quantity == 0 ? CoreTradeLegState::kFilled
+                              : CoreTradeLegState::kPartiallyFilled;
 }
 
 } // namespace
@@ -483,7 +400,6 @@ MatchingProcessResult DeterministicMatchingCore::process_new_order(
     if (available < incoming.quantity.value()) {
       CoreEvent event{};
       event.type = CoreEventType::kOrderCancelled;
-      event.event_id = event_id(command.context, incoming.command_id, 0);
       event.output_index = 0;
       event.source_command_id = incoming.command_id;
       event.order_id = incoming.order_id;
@@ -506,11 +422,8 @@ MatchingProcessResult DeterministicMatchingCore::process_new_order(
     const std::int64_t matched = std::min(remaining, maker.remaining.value());
     CoreEvent event{};
     event.type = CoreEventType::kTradeExecuted;
-    const std::int32_t current_output_index = output_index++;
-    const std::int32_t current_match_index = match_index++;
-    event.event_id = event_id(command.context, incoming.command_id, current_output_index);
-    event.trade_id = trade_id(command.context, incoming.command_id, current_match_index);
-    event.output_index = current_output_index;
+    event.output_index = output_index++;
+    event.match_index = match_index++;
     event.source_command_id = incoming.command_id;
     event.maker_order_id = maker.order_id;
     event.maker_account_id = maker.account_id;
@@ -527,13 +440,15 @@ MatchingProcessResult DeterministicMatchingCore::process_new_order(
     event.taker_cumulative_quantity =
         ShareQuantity(incoming.quantity.value() - remaining + matched);
     event.taker_leaves_quantity = ShareQuantity(remaining - matched);
+    event.maker_resulting_state = resulting_state(event.maker_leaves_quantity.value());
+    event.taker_resulting_state = resulting_state(event.taker_leaves_quantity.value());
     event.maker_average_price = maker.price;
     taker_notional += static_cast<unsigned __int128>(matched) *
                        static_cast<unsigned __int128>(maker.price.value());
     event.taker_average_price =
         FixedPrice(static_cast<std::int64_t>(
-            taker_notional / static_cast<unsigned __int128>(event.taker_cumulative_quantity.value())));
-    event.match_index = current_match_index;
+            taker_notional /
+            static_cast<unsigned __int128>(event.taker_cumulative_quantity.value())));
     events_.push_back(event);
     remaining -= matched;
     const std::int64_t maker_remaining = maker.remaining.value() - matched;
@@ -547,7 +462,8 @@ MatchingProcessResult DeterministicMatchingCore::process_new_order(
   if (remaining == 0) {
     return MatchingProcessResult::kApplied;
   }
-  if (incoming.order_type == CoreOrderType::kLimit && incoming.time_in_force == CoreTimeInForce::kRod) {
+  if (incoming.order_type == CoreOrderType::kLimit &&
+      incoming.time_in_force == CoreTimeInForce::kRod) {
     RestingOrder resting{incoming.order_id,
                          incoming.account_id,
                          incoming.side,
@@ -555,20 +471,20 @@ MatchingProcessResult DeterministicMatchingCore::process_new_order(
                          ShareQuantity(remaining),
                          incoming.limit_price,
                          arrival_sequence_++};
-    const auto before = std::find_if(same_side.begin(), same_side.end(), [&](const RestingOrder &entry) {
-      if (incoming.side == CoreSide::kBuy) {
-        return resting.price.value() > entry.price.value() ||
-               (resting.price.value() == entry.price.value() &&
-                resting.arrival_sequence < entry.arrival_sequence);
-      }
-      return resting.price.value() < entry.price.value() ||
-             (resting.price.value() == entry.price.value() &&
-              resting.arrival_sequence < entry.arrival_sequence);
-    });
+    const auto before =
+        std::find_if(same_side.begin(), same_side.end(), [&](const RestingOrder &entry) {
+          if (incoming.side == CoreSide::kBuy) {
+            return resting.price.value() > entry.price.value() ||
+                   (resting.price.value() == entry.price.value() &&
+                    resting.arrival_sequence < entry.arrival_sequence);
+          }
+          return resting.price.value() < entry.price.value() ||
+                 (resting.price.value() == entry.price.value() &&
+                  resting.arrival_sequence < entry.arrival_sequence);
+        });
     same_side.insert(before, resting);
     CoreEvent event{};
     event.type = CoreEventType::kOrderRested;
-    event.event_id = event_id(command.context, incoming.command_id, output_index);
     event.output_index = output_index;
     event.source_command_id = incoming.command_id;
     event.order_id = incoming.order_id;
@@ -583,7 +499,6 @@ MatchingProcessResult DeterministicMatchingCore::process_new_order(
 
   CoreEvent event{};
   event.type = CoreEventType::kOrderCancelled;
-  event.event_id = event_id(command.context, incoming.command_id, output_index);
   event.output_index = output_index;
   event.source_command_id = incoming.command_id;
   event.order_id = incoming.order_id;
@@ -611,7 +526,6 @@ MatchingProcessResult DeterministicMatchingCore::process_cancel_order(
   }
   CoreEvent event{};
   event.type = CoreEventType::kOrderCancelled;
-  event.event_id = event_id(command.context, cancel.command_id, 0);
   event.output_index = 0;
   event.source_command_id = cancel.command_id;
   event.order_id = cancel.order_id;
@@ -632,8 +546,7 @@ void DeterministicMatchingCore::process_close_barrier(const CoreCommand &command
       for (const RestingOrder &resting : orders) {
         CoreEvent event{};
         event.type = CoreEventType::kOrderExpired;
-        event.event_id = event_id(command.context, command.command_id, output_index++);
-        event.output_index = output_index - 1;
+        event.output_index = output_index++;
         event.source_command_id = command.command_id;
         event.order_id = resting.order_id;
         event.account_id = resting.account_id;
