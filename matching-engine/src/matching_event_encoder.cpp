@@ -5,6 +5,7 @@
 #include <cctype>
 #include <cstring>
 #include <limits>
+#include <stdexcept>
 #include <string>
 #include <string_view>
 
@@ -152,10 +153,15 @@ simplematch::common::v2::Side side(CoreSide value) {
                                  : simplematch::common::v2::SIDE_SELL;
 }
 
-simplematch::matching::runtime::v1::TradeLegState trade_leg_state(std::int64_t leaves_quantity) {
-  return leaves_quantity == 0
+simplematch::matching::runtime::v1::TradeLegState trade_leg_state(CoreTradeLegState value) {
+  return value == CoreTradeLegState::kFilled
              ? simplematch::matching::runtime::v1::TRADE_LEG_STATE_FILLED
              : simplematch::matching::runtime::v1::TRADE_LEG_STATE_PARTIALLY_FILLED;
+}
+
+bool valid_trade_leg_state(CoreTradeLegState state, std::int64_t leaves_quantity) {
+  return (leaves_quantity == 0 && state == CoreTradeLegState::kFilled) ||
+         (leaves_quantity > 0 && state == CoreTradeLegState::kPartiallyFilled);
 }
 
 std::optional<simplematch::matching::runtime::v1::MatchingEventType> event_type(
@@ -205,7 +211,9 @@ bool valid_trade(const CoreEvent &event) {
          event.maker_cumulative_quantity.value() >= event.quantity.value() &&
          event.taker_cumulative_quantity.value() >= event.quantity.value() &&
          event.maker_leaves_quantity.value() >= 0 && event.taker_leaves_quantity.value() >= 0 &&
-         event.maker_average_price.value() > 0 && event.taker_average_price.value() > 0;
+         event.maker_average_price.value() > 0 && event.taker_average_price.value() > 0 &&
+         valid_trade_leg_state(event.maker_resulting_state, event.maker_leaves_quantity.value()) &&
+         valid_trade_leg_state(event.taker_resulting_state, event.taker_leaves_quantity.value());
 }
 
 bool serialize_deterministically(
@@ -283,7 +291,7 @@ std::optional<MatchingEventRecord> MatchingEventEncoder::encode(
       maker->set_cumulative_quantity_shares(event.maker_cumulative_quantity.value());
       maker->set_leaves_quantity_shares(event.maker_leaves_quantity.value());
       maker->set_average_price_units(event.maker_average_price.value());
-      maker->set_resulting_state(trade_leg_state(event.maker_leaves_quantity.value()));
+      maker->set_resulting_state(trade_leg_state(event.maker_resulting_state));
       auto *taker = trade->mutable_taker();
       taker->set_order_id(uuid_text(event.taker_order_id));
       taker->set_account_id(uuid_text(event.taker_account_id));
@@ -291,7 +299,7 @@ std::optional<MatchingEventRecord> MatchingEventEncoder::encode(
       taker->set_cumulative_quantity_shares(event.taker_cumulative_quantity.value());
       taker->set_leaves_quantity_shares(event.taker_leaves_quantity.value());
       taker->set_average_price_units(event.taker_average_price.value());
-      taker->set_resulting_state(trade_leg_state(event.taker_leaves_quantity.value()));
+      taker->set_resulting_state(trade_leg_state(event.taker_resulting_state));
       break;
     }
     case CoreEventType::kOrderCancelled:

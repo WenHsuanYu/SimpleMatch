@@ -99,8 +99,6 @@ std::uint64_t checksum_event(std::uint64_t checksum, const CoreEvent &event) {
     mix_text(std::string_view(value.symbol.data(), value.symbol_length));
     mix_byte(value.symbol_length);
   };
-  mix_text(std::string_view(event.event_id.data(), 64));
-  mix_text(std::string_view(event.trade_id.data(), 64));
   mix_uuid(event.source_command_id);
   mix_uuid(event.order_id);
   mix_uuid(event.account_id);
@@ -113,6 +111,8 @@ std::uint64_t checksum_event(std::uint64_t checksum, const CoreEvent &event) {
   mix_integer(static_cast<std::uint64_t>(event.side));
   mix_integer(static_cast<std::uint64_t>(event.maker_side));
   mix_integer(static_cast<std::uint64_t>(event.taker_side));
+  mix_integer(static_cast<std::uint64_t>(event.maker_resulting_state));
+  mix_integer(static_cast<std::uint64_t>(event.taker_resulting_state));
   mix_integer(static_cast<std::uint64_t>(event.quantity.value()));
   mix_integer(static_cast<std::uint64_t>(event.leaves_quantity.value()));
   mix_integer(static_cast<std::uint64_t>(event.maker_cumulative_quantity.value()));
@@ -124,6 +124,7 @@ std::uint64_t checksum_event(std::uint64_t checksum, const CoreEvent &event) {
   mix_integer(static_cast<std::uint64_t>(event.price.value()));
   mix_integer(static_cast<std::uint64_t>(event.cancellation_reason));
   mix_integer(static_cast<std::uint64_t>(event.output_index));
+  mix_integer(static_cast<std::uint64_t>(event.match_index));
   return checksum;
 }
 
@@ -306,8 +307,7 @@ bool record_event(
   if (!measure) {
     return true;
   }
-  const std::string event_id(event.event_id.data(), 64);
-  if (!measurements.event_ids.insert(event_id).second) {
+  if (!measurements.event_ids.insert(encoded->key).second) {
     ++measurements.duplicate_event_ids;
   }
   ++measurements.measured_events;
@@ -331,7 +331,8 @@ std::optional<ReplayChecksums> replay_checksum(
     }
     event_checksum = checksum_event(event_checksum, replay.events().front());
     const auto encoded_rest = encoder.encode(
-        item.rest.context, kFirstInputOffset + static_cast<std::int64_t>(index * 2),
+        item.rest.context,
+        kFirstInputOffset + static_cast<std::int64_t>(index * 2),
         replay.events().front());
     if (!encoded_rest.has_value()) {
       return std::nullopt;
@@ -339,12 +340,14 @@ std::optional<ReplayChecksums> replay_checksum(
     serialized_event_checksum =
         checksum_bytes(serialized_event_checksum, encoded_rest->value);
     serialized_event_bytes.push_back(encoded_rest->value);
-    if (replay.process(item.cancel) != MatchingProcessResult::kApplied || replay.events().size() != 1) {
+    if (replay.process(item.cancel) != MatchingProcessResult::kApplied ||
+        replay.events().size() != 1) {
       return std::nullopt;
     }
     event_checksum = checksum_event(event_checksum, replay.events().front());
     const auto encoded_cancel = encoder.encode(
-        item.cancel.context, kFirstInputOffset + static_cast<std::int64_t>(index * 2 + 1),
+        item.cancel.context,
+        kFirstInputOffset + static_cast<std::int64_t>(index * 2 + 1),
         replay.events().front());
     if (!encoded_cancel.has_value()) {
       return std::nullopt;
@@ -437,7 +440,7 @@ void print_result(
             << (lost_commands == 0 && lost_events == 0 && measurements.duplicate_event_ids == 0
                     && determinism_matches
                 ? "PASS"
-                    : "FAIL")
+                : "FAIL")
             << "\",\"book_count\":" << book_count
             << ",\"warmup_iterations\":" << options.warmup_iterations
             << ",\"measured_iterations\":" << options.measured_iterations
@@ -449,7 +452,8 @@ void print_result(
             << ",\"latency_ns\":{\"p50\":" << percentile(latencies, 0.50)
             << ",\"p99\":" << percentile(latencies, 0.99)
             << ",\"p99_9\":" << percentile(latencies, 0.999)
-            << ",\"max\":" << (latencies.empty() ? 0 : *std::max_element(latencies.begin(), latencies.end()))
+            << ",\"max\":"
+            << (latencies.empty() ? 0 : *std::max_element(latencies.begin(), latencies.end()))
             << "},\"rss_peak_bytes\":" << peak_rss_bytes()
             << ",\"effective_cpu_set\":\"" << cpu_affinity.set
             << "\",\"effective_cpu_count\":" << cpu_affinity.count
@@ -560,7 +564,8 @@ int main(int argc, char **argv) {
         effective_cpu_affinity());
     return measurements.rejected_commands == 0 && measurements.duplicate_event_ids == 0
                && measurements.event_checksum == replay_checksums->event_checksum
-               && measurements.serialized_event_checksum == replay_checksums->serialized_event_checksum
+               && measurements.serialized_event_checksum ==
+                      replay_checksums->serialized_event_checksum
                && measurements.serialized_event_bytes == replay_checksums->serialized_event_bytes
                && measurements.state_checksum == replay_checksums->state_checksum
            ? 0
