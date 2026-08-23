@@ -3,6 +3,7 @@ package com.simplematch.queryservice.store;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
+import com.google.protobuf.ByteString;
 import com.simplematch.contracts.account.v2.AccountLifecycleEvent;
 import com.simplematch.contracts.account.v2.AccountLifecycleState;
 import com.simplematch.contracts.common.v2.EventMetadata;
@@ -12,10 +13,10 @@ import com.simplematch.contracts.common.v2.VenueInstrument;
 import com.simplematch.contracts.matching.runtime.v1.ArtifactIdentity;
 import com.simplematch.contracts.matching.runtime.v1.FinalMatchingEventEnvelope;
 import com.simplematch.contracts.matching.runtime.v1.MatchingEvent;
+import com.simplematch.contracts.matching.runtime.v1.MatchingEventIdentityV1;
 import com.simplematch.contracts.matching.runtime.v1.MatchingEventType;
 import com.simplematch.contracts.matching.runtime.v1.OrderRested;
 import com.simplematch.queryservice.model.QueryFreshness;
-import java.time.LocalDate;
 import java.util.UUID;
 import org.flywaydb.core.Flyway;
 import org.junit.jupiter.api.BeforeEach;
@@ -26,6 +27,8 @@ import org.springframework.jdbc.datasource.DriverManagerDataSource;
 class JdbcQueryProjectionStoreTest {
   private static final String ORDER_ID = "0198a001-0000-7000-8000-000000000002";
   private static final String ACCOUNT_ID = "0198a001-0000-7000-8000-000000000003";
+  private static final String FIRST_COMMAND_ID = "0198a001-0000-7000-8000-000000000001";
+  private static final String LATER_COMMAND_ID = "0198a001-0000-7000-8000-000000000004";
 
   private QueryProjectionStore store;
 
@@ -47,7 +50,7 @@ class JdbcQueryProjectionStoreTest {
 
   @Test
   void projectsMatchingAndAccountFactsWithDurableFreshness() {
-    final FinalMatchingEventEnvelope matching = matchingEvent();
+    final FinalMatchingEventEnvelope matching = matchingEvent(FIRST_COMMAND_ID, 0L);
     store.projectMatching(matching, 0, 0, 100L);
     final AccountLifecycleEvent account = accountEvent();
     store.projectAccountLifecycle(account, account.toByteArray(), 0, 0, 200L);
@@ -107,12 +110,8 @@ class JdbcQueryProjectionStoreTest {
 
   @Test
   void recordsGapAndRequiresReplayBeforeApplyingLaterOffset() {
-    store.projectMatching(matchingEvent(), 0, 0, 100L);
-    final MatchingEvent later =
-        matchingEvent().event().toBuilder().setEventId("ab".repeat(32)).build();
-    final FinalMatchingEventEnvelope laterEnvelope =
-        new FinalMatchingEventEnvelope(
-            later, later.toByteArray(), FinalMatchingEventEnvelope.sha256(later.toByteArray()));
+    store.projectMatching(matchingEvent(FIRST_COMMAND_ID, 0L), 0, 0, 100L);
+    final FinalMatchingEventEnvelope laterEnvelope = matchingEvent(LATER_COMMAND_ID, 2L);
 
     assertThatThrownBy(() -> store.projectMatching(laterEnvelope, 0, 2, 300L))
         .isInstanceOf(QueryProjectionGapException.class);
@@ -124,16 +123,19 @@ class JdbcQueryProjectionStoreTest {
     assertThat(store.freshness().partitions()).isEmpty();
   }
 
-  private FinalMatchingEventEnvelope matchingEvent() {
+  private FinalMatchingEventEnvelope matchingEvent(String commandId, long sourceOffset) {
     final MatchingEvent event =
         MatchingEvent.newBuilder()
             .setSchemaVersion(1)
             .setIdentityVersion(1)
-            .setEventId("beef".repeat(16))
+            .setEventId(
+                ByteString.copyFrom(
+                    MatchingEventIdentityV1.eventId(
+                        "2026-08-11-regular", 0, UUID.fromString(commandId), 0)))
             .setTradingSessionId("2026-08-11-regular")
             .setPartitionId(0)
-            .setSourceCommandId("0198a001-0000-7000-8000-000000000001")
-            .setSourceInputOffset(0)
+            .setSourceCommandId(commandId)
+            .setSourceInputOffset(sourceOffset)
             .setOutputIndex(0)
             .setArtifactIdentity(
                 ArtifactIdentity.newBuilder()

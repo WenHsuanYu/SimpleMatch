@@ -17,6 +17,10 @@ namespace {
 
 constexpr std::string_view kArtifactIdentity =
     "2026-08-11:7cd06c51691bcde248e606ed1adfaddc4bd10ece582a6803fd2f04155a032943";
+constexpr std::string_view kExpectedEventId =
+    "436c95c15c97744324aaaf0cfd6cd27b371839e944df9ae40ebab37a207cbb6f";
+constexpr std::string_view kExpectedTradeId =
+    "033ec379a4a4f1b3b6e5826b4a31731304662b0647e412e59b4abe21afc3241b";
 
 int hex_value(char character) {
   if (character >= '0' && character <= '9') {
@@ -120,19 +124,25 @@ TEST(MatchingEventEncoderTest, ProducesPinnedGoldenBytesForACompleteTwoLegTrade)
   const auto encoded = MatchingEventEncoder().encode(context(), 42, core.events().front());
 
   ASSERT_TRUE(encoded.has_value());
-  EXPECT_EQ(encoded->key, std::string(core.events().front().event_id.data(), 64));
+  EXPECT_EQ(hex(encoded->key), kExpectedEventId);
   EXPECT_EQ(encoded->partition_id, 0);
   EXPECT_EQ(encoded->source_input_offset, 42);
   EXPECT_EQ(hex(encoded->value), fixture_hex());
 
   simplematch::matching::runtime::v1::MatchingEvent parsed;
   ASSERT_TRUE(parsed.ParseFromString(decode_hex(fixture_hex())));
+  EXPECT_EQ(hex(parsed.event_id()), kExpectedEventId);
   EXPECT_EQ(parsed.event_type(),
             simplematch::matching::runtime::v1::MATCHING_EVENT_TYPE_TRADE_EXECUTED);
-  EXPECT_EQ(parsed.trade_executed().maker().order_id(),
-            "0198a001-0000-7000-8000-000000000011");
-  EXPECT_EQ(parsed.trade_executed().taker().order_id(),
-            "0198a001-0000-7000-8000-000000000012");
+  EXPECT_EQ(hex(parsed.trade_executed().trade_id()), kExpectedTradeId);
+  EXPECT_EQ(parsed.trade_executed().match_index(), 0);
+  EXPECT_EQ(parsed.trade_executed().aggressor_side(), simplematch::common::v2::SIDE_BUY);
+  EXPECT_EQ(parsed.trade_executed().quantity_shares(), 100);
+  EXPECT_EQ(parsed.trade_executed().price_units(), 1'000'000);
+  EXPECT_EQ(parsed.trade_executed().maker().resulting_state(),
+            simplematch::matching::runtime::v1::TRADE_LEG_STATE_FILLED);
+  EXPECT_EQ(parsed.trade_executed().taker().resulting_state(),
+            simplematch::matching::runtime::v1::TRADE_LEG_STATE_FILLED);
 }
 
 } // namespace

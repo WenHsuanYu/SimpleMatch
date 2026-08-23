@@ -1,6 +1,8 @@
 package com.simplematch.contracts.matching.runtime.v1;
 
 import java.time.LocalDate;
+import java.util.Arrays;
+import java.util.UUID;
 
 /** Validates the final-event wire contract before a critical consumer applies business effects. */
 final class FinalMatchingEventValidator {
@@ -17,7 +19,7 @@ final class FinalMatchingEventValidator {
     FinalMatchingEventValidationFields.require(
         event.getIdentityVersion() == FINAL_IDENTITY_VERSION,
         "unsupported final matching event identity version");
-    FinalMatchingEventValidationFields.requireCanonicalHex(event.getEventId(), "eventId");
+    FinalMatchingEventValidationFields.requireSha256(event.getEventId(), "eventId");
     FinalMatchingEventValidationFields.requireUuid(event.getSourceCommandId(), "sourceCommandId");
     FinalMatchingEventValidationFields.require(
         !event.getTradingSessionId().isBlank(), "tradingSessionId must not be blank");
@@ -34,9 +36,20 @@ final class FinalMatchingEventValidator {
     FinalMatchingEventValidationFields.requireCanonicalHex(
         event.getArtifactIdentity().getContentSha256(), "artifact content SHA-256");
 
+    final UUID sourceCommandId = UUID.fromString(event.getSourceCommandId());
+    final byte[] expectedEventId =
+        MatchingEventIdentityV1.eventId(
+            event.getTradingSessionId(),
+            event.getPartitionId(),
+            sourceCommandId,
+            event.getOutputIndex());
+    FinalMatchingEventValidationFields.require(
+        Arrays.equals(expectedEventId, event.getEventId().toByteArray()),
+        "eventId does not match the deterministic Matching identity");
+
     switch (event.getEventType()) {
       case MATCHING_EVENT_TYPE_ORDER_RESTED -> validateRested(event);
-      case MATCHING_EVENT_TYPE_TRADE_EXECUTED -> validateTrade(event);
+      case MATCHING_EVENT_TYPE_TRADE_EXECUTED -> validateTrade(event, sourceCommandId);
       case MATCHING_EVENT_TYPE_ORDER_CANCELLED -> validateCancelled(event);
       case MATCHING_EVENT_TYPE_ORDER_EXPIRED -> validateExpired(event);
       default -> throw new IllegalArgumentException("final matching event type is required");
@@ -50,13 +63,23 @@ final class FinalMatchingEventValidator {
     FinalMatchingEventValidationFields.validateRested(event.getOrderRested());
   }
 
-  private static void validateTrade(MatchingEvent event) {
+  private static void validateTrade(MatchingEvent event, UUID sourceCommandId) {
     FinalMatchingEventValidationFields.require(
         event.getEventCase() == MatchingEvent.EventCase.TRADE_EXECUTED,
         "trade event payload mismatch");
+    final TradeExecuted trade = event.getTradeExecuted();
+    FinalMatchingEventValidationFields.validateTrade(trade);
     FinalMatchingEventValidationFields.require(
-        event.getMatchIndex() >= 0, "trade matchIndex must not be negative");
-    FinalMatchingEventValidationFields.validateTrade(event.getTradeExecuted());
+        trade.getMatchIndex() >= 0, "trade matchIndex must not be negative");
+    final byte[] expectedTradeId =
+        MatchingEventIdentityV1.tradeId(
+            event.getTradingSessionId(),
+            event.getPartitionId(),
+            sourceCommandId,
+            trade.getMatchIndex());
+    FinalMatchingEventValidationFields.require(
+        Arrays.equals(expectedTradeId, trade.getTradeId().toByteArray()),
+        "tradeId does not match the deterministic Matching identity");
   }
 
   private static void validateCancelled(MatchingEvent event) {

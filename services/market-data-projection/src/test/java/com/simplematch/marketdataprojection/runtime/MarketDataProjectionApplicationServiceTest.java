@@ -3,6 +3,7 @@ package com.simplematch.marketdataprojection.runtime;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
+import com.google.protobuf.ByteString;
 import com.simplematch.contracts.common.v2.Side;
 import com.simplematch.contracts.common.v2.VenueInstrument;
 import com.simplematch.contracts.marketdata.runtime.v1.MarketDataSnapshot;
@@ -10,15 +11,16 @@ import com.simplematch.contracts.matching.runtime.v1.ArtifactIdentity;
 import com.simplematch.contracts.matching.runtime.v1.DeterministicEventConflictException;
 import com.simplematch.contracts.matching.runtime.v1.FinalMatchingEventEnvelope;
 import com.simplematch.contracts.matching.runtime.v1.MatchingEvent;
+import com.simplematch.contracts.matching.runtime.v1.MatchingEventIdentityV1;
 import com.simplematch.contracts.matching.runtime.v1.MatchingEventType;
 import com.simplematch.contracts.matching.runtime.v1.OrderRested;
 import com.simplematch.contracts.matching.runtime.v1.TradeExecuted;
 import com.simplematch.contracts.matching.runtime.v1.TradeLeg;
+import com.simplematch.contracts.matching.runtime.v1.TradeLegState;
 import com.simplematch.marketdataprojection.store.JdbcMarketDataProjectionStore;
 import java.time.Clock;
 import java.time.Instant;
 import java.time.ZoneOffset;
-import java.util.HexFormat;
 import java.util.Optional;
 import java.util.UUID;
 import org.flywaydb.core.Flyway;
@@ -40,6 +42,9 @@ class MarketDataProjectionApplicationServiceTest {
   private static final String BUY_ORDER_ID = "0198a001-0000-7000-8000-000000000011";
   private static final String SELL_ORDER_ID = "0198a001-0000-7000-8000-000000000012";
   private static final String ACCOUNT_ID = "0198a001-0000-7000-8000-0000000000aa";
+  private static final String BUY_COMMAND_ID = "0198a001-0000-7000-8000-000000000001";
+  private static final String SELL_COMMAND_ID = "0198a001-0000-7000-8000-000000000002";
+  private static final String TRADE_COMMAND_ID = "0198a001-0000-7000-8000-000000000003";
 
   private JdbcTemplate jdbcTemplate;
   private SingleConnectionDataSource dataSource;
@@ -76,10 +81,10 @@ class MarketDataProjectionApplicationServiceTest {
 
   @Test
   void publishesACompleteTopFiveSnapshotForEachAppliedMatchingEvent() throws Exception {
-    service.project(rested("a".repeat(64), BUY_ORDER_ID, Side.SIDE_BUY, 100_000L, 100L), 0, 10L);
-    service.project(rested("b".repeat(64), SELL_ORDER_ID, Side.SIDE_SELL, 102_000L, 200L), 0, 11L);
+    service.project(rested(BUY_COMMAND_ID, BUY_ORDER_ID, Side.SIDE_BUY, 100_000L, 100L, 10L), 0, 10L);
+    service.project(rested(SELL_COMMAND_ID, SELL_ORDER_ID, Side.SIDE_SELL, 102_000L, 200L, 11L), 0, 11L);
 
-    final MarketDataProjectionResult result = service.project(trade("c".repeat(64)), 0, 12L);
+    final MarketDataProjectionResult result = service.project(trade(), 0, 12L);
 
     assertThat(result.applied()).isTrue();
     final MarketDataSnapshotView snapshot = result.snapshot().orElseThrow();
@@ -95,7 +100,7 @@ class MarketDataProjectionApplicationServiceTest {
                 "SELECT payload FROM market_data_projection.market_data_events_outbox "
                     + "WHERE source_matching_event_id = ?",
                 byte[].class,
-                HexFormat.of().parseHex("c".repeat(64))));
+                eventId(TRADE_COMMAND_ID)));
     assertThat(published.getSchemaVersion()).isEqualTo(1);
     assertThat(published.getIsSnapshot()).isTrue();
     assertThat(published.getInstrumentSequence()).isEqualTo(3L);
@@ -107,7 +112,7 @@ class MarketDataProjectionApplicationServiceTest {
   @Test
   void acceptsAnExactReplayWithoutAdvancingItsInstrumentSequenceOrOutbox() throws Exception {
     final FinalMatchingEventEnvelope event =
-        rested("a".repeat(64), BUY_ORDER_ID, Side.SIDE_BUY, 100_000L, 100L);
+        rested(BUY_COMMAND_ID, BUY_ORDER_ID, Side.SIDE_BUY, 100_000L, 100L, 10L);
 
     assertThat(service.project(event, 0, 10L).applied()).isTrue();
     assertThat(service.project(event, 0, 10L).applied()).isFalse();
@@ -123,12 +128,14 @@ class MarketDataProjectionApplicationServiceTest {
 
   @Test
   void refusesOneEventIdentityWithDifferentRawBytesWithoutPublishingAnotherSnapshot() throws Exception {
-    service.project(rested("a".repeat(64), BUY_ORDER_ID, Side.SIDE_BUY, 100_000L, 100L), 0, 10L);
+    service.project(rested(BUY_COMMAND_ID, BUY_ORDER_ID, Side.SIDE_BUY, 100_000L, 100L, 10L), 0, 10L);
 
     assertThatThrownBy(
             () ->
                 service.project(
-                    rested("a".repeat(64), BUY_ORDER_ID, Side.SIDE_BUY, 101_000L, 100L), 0, 10L))
+                    rested(BUY_COMMAND_ID, BUY_ORDER_ID, Side.SIDE_BUY, 101_000L, 100L, 10L),
+                    0,
+                    10L))
         .isInstanceOf(DeterministicEventConflictException.class);
 
     assertThat(count("market_data_events_outbox")).isEqualTo(1);
@@ -136,12 +143,12 @@ class MarketDataProjectionApplicationServiceTest {
 
   @Test
   void marksTheProjectionForResyncInsteadOfSilentlyApplyingAnOffsetGap() throws Exception {
-    service.project(rested("a".repeat(64), BUY_ORDER_ID, Side.SIDE_BUY, 100_000L, 100L), 0, 10L);
+    service.project(rested(BUY_COMMAND_ID, BUY_ORDER_ID, Side.SIDE_BUY, 100_000L, 100L, 10L), 0, 10L);
 
     assertThatThrownBy(
             () ->
                 service.project(
-                    rested("b".repeat(64), SELL_ORDER_ID, Side.SIDE_SELL, 102_000L, 200L),
+                    rested(SELL_COMMAND_ID, SELL_ORDER_ID, Side.SIDE_SELL, 102_000L, 200L, 12L),
                     0,
                     12L))
         .isInstanceOf(MarketDataProjectionGapException.class);
@@ -157,7 +164,7 @@ class MarketDataProjectionApplicationServiceTest {
 
   @Test
   void rebuildResetClearsOnlyReconstructibleProjectionStateBeforeKafkaReplay() throws Exception {
-    service.project(rested("a".repeat(64), BUY_ORDER_ID, Side.SIDE_BUY, 100_000L, 100L), 0, 10L);
+    service.project(rested(BUY_COMMAND_ID, BUY_ORDER_ID, Side.SIDE_BUY, 100_000L, 100L, 10L), 0, 10L);
     final MarketDataProjectionRebuildService rebuildService =
         new MarketDataProjectionRebuildService(
             new JdbcMarketDataProjectionStore(jdbcTemplate),
@@ -179,9 +186,16 @@ class MarketDataProjectionApplicationServiceTest {
   }
 
   private FinalMatchingEventEnvelope rested(
-      String eventId, String orderId, Side side, long priceUnits, long leaves) throws Exception {
+      String commandId,
+      String orderId,
+      Side side,
+      long priceUnits,
+      long leaves,
+      long sourceOffset)
+      throws Exception {
     return envelope(
-        eventId,
+        commandId,
+        sourceOffset,
         MatchingEventType.MATCHING_EVENT_TYPE_ORDER_RESTED,
         MatchingEvent.newBuilder()
             .setOrderRested(
@@ -194,30 +208,40 @@ class MarketDataProjectionApplicationServiceTest {
                     .setLeavesQuantityShares(leaves)));
   }
 
-  private FinalMatchingEventEnvelope trade(String eventId) throws Exception {
+  private FinalMatchingEventEnvelope trade() throws Exception {
+    final UUID commandId = UUID.fromString(TRADE_COMMAND_ID);
     return envelope(
-        eventId,
+        TRADE_COMMAND_ID,
+        12L,
         MatchingEventType.MATCHING_EVENT_TYPE_TRADE_EXECUTED,
         MatchingEvent.newBuilder()
             .setTradeExecuted(
                 TradeExecuted.newBuilder()
-                    .setTradeId("d".repeat(64))
+                    .setTradeId(ByteString.copyFrom(MatchingEventIdentityV1.tradeId("2026-08-11-regular", 0, commandId, 0)))
+                    .setMatchIndex(0)
                     .setInstrument(instrument())
-                    .setMaker(leg(BUY_ORDER_ID, Side.SIDE_BUY, 100_000L, 0L))
-                    .setTaker(leg(SELL_ORDER_ID, Side.SIDE_SELL, 100_000L, 100L))));
+                    .setAggressorSide(Side.SIDE_SELL)
+                    .setQuantityShares(100L)
+                    .setPriceUnits(100_000L)
+                    .setMaker(leg(BUY_ORDER_ID, Side.SIDE_BUY, 0L))
+                    .setTaker(leg(SELL_ORDER_ID, Side.SIDE_SELL, 100L))));
   }
 
   private FinalMatchingEventEnvelope envelope(
-      String eventId, MatchingEventType type, MatchingEvent.Builder builder) throws Exception {
+      String commandId,
+      long sourceOffset,
+      MatchingEventType type,
+      MatchingEvent.Builder builder)
+      throws Exception {
     return FinalMatchingEventEnvelope.parse(
         builder
             .setSchemaVersion(1)
             .setIdentityVersion(1)
-            .setEventId(eventId)
+            .setEventId(ByteString.copyFrom(eventId(commandId)))
             .setTradingSessionId("2026-08-11-regular")
             .setPartitionId(0)
-            .setSourceCommandId("0198a001-0000-7000-8000-000000000001")
-            .setSourceInputOffset(10L)
+            .setSourceCommandId(commandId)
+            .setSourceInputOffset(sourceOffset)
             .setOutputIndex(0)
             .setArtifactIdentity(ARTIFACT)
             .setRoutingAlgorithmVersion("stable-least-loaded-v1")
@@ -226,20 +250,27 @@ class MarketDataProjectionApplicationServiceTest {
             .toByteArray());
   }
 
+  private byte[] eventId(String commandId) {
+    return MatchingEventIdentityV1.eventId(
+        "2026-08-11-regular", 0, UUID.fromString(commandId), 0);
+  }
+
   private VenueInstrument instrument() {
     return VenueInstrument.newBuilder().setVenueMic("XTAI").setSymbol("2330").build();
   }
 
-  private TradeLeg leg(String orderId, Side side, long priceUnits, long leaves) {
+  private TradeLeg leg(String orderId, Side side, long leaves) {
     return TradeLeg.newBuilder()
         .setOrderId(orderId)
         .setAccountId(ACCOUNT_ID)
         .setSide(side)
-        .setQuantityShares(100L)
-        .setPriceUnits(priceUnits)
         .setCumulativeQuantityShares(100L)
         .setLeavesQuantityShares(leaves)
-        .setAveragePriceUnits(priceUnits)
+        .setAveragePriceUnits(100_000L)
+        .setResultingState(
+            leaves == 0L
+                ? TradeLegState.TRADE_LEG_STATE_FILLED
+                : TradeLegState.TRADE_LEG_STATE_PARTIALLY_FILLED)
         .build();
   }
 }

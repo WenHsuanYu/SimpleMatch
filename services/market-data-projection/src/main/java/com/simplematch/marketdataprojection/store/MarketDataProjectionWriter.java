@@ -50,7 +50,7 @@ final class MarketDataProjectionWriter {
         mutation.lastTrade().isPresent() ? mutation.lastTrade() : previous.lastTrade();
     final MarketDataSnapshotView view =
         new MarketDataSnapshotView(
-            event.getEventId(),
+            envelope.eventIdHex(),
             event.getTradingSessionId(),
             mutation.instrument().venueMic(),
             mutation.instrument().symbol(),

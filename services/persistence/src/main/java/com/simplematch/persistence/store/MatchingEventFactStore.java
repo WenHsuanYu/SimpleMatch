@@ -4,7 +4,6 @@ import com.simplematch.contracts.matching.runtime.v1.MatchingEvent;
 import com.simplematch.contracts.matching.runtime.v1.OrderTerminal;
 import com.simplematch.contracts.matching.runtime.v1.TradeLeg;
 import java.time.LocalDate;
-import java.util.HexFormat;
 import java.util.UUID;
 import org.springframework.jdbc.core.JdbcTemplate;
 
@@ -46,7 +45,7 @@ final class MatchingEventFactStore {
 
   private void persistTrade(byte[] eventId, MatchingEvent event) {
     final var trade = event.getTradeExecuted();
-    final byte[] tradeId = HexFormat.of().parseHex(trade.getTradeId());
+    final byte[] tradeId = trade.getTradeId().toByteArray();
     jdbcTemplate.update(
         """
         INSERT INTO persistence.trades (
@@ -62,10 +61,10 @@ final class MatchingEventFactStore {
         event.getSourceInputOffset(),
         trade.getInstrument().getVenueMic(),
         trade.getInstrument().getSymbol(),
-        trade.getMaker().getQuantityShares(),
-        trade.getMaker().getPriceUnits());
-    insertFill(tradeId, 1, trade.getMaker());
-    insertFill(tradeId, 2, trade.getTaker());
+        trade.getQuantityShares(),
+        trade.getPriceUnits());
+    insertFill(tradeId, 1, trade.getMaker(), trade.getQuantityShares(), trade.getPriceUnits());
+    insertFill(tradeId, 2, trade.getTaker(), trade.getQuantityShares(), trade.getPriceUnits());
     upsertTradeProjection(
         eventId,
         trade.getMaker(),
@@ -78,7 +77,8 @@ final class MatchingEventFactStore {
         trade.getInstrument().getSymbol());
   }
 
-  private void insertFill(byte[] tradeId, int role, TradeLeg leg) {
+  private void insertFill(
+      byte[] tradeId, int role, TradeLeg leg, long quantityShares, long priceUnits) {
     jdbcTemplate.update(
         """
         INSERT INTO persistence.order_fills (
@@ -91,8 +91,8 @@ final class MatchingEventFactStore {
         UUID.fromString(leg.getOrderId()),
         UUID.fromString(leg.getAccountId()),
         MatchingEventSqlValues.sideCode(leg.getSide()),
-        leg.getQuantityShares(),
-        leg.getPriceUnits(),
+        quantityShares,
+        priceUnits,
         leg.getCumulativeQuantityShares(),
         leg.getLeavesQuantityShares());
   }
@@ -106,7 +106,7 @@ final class MatchingEventFactStore {
             venueMic,
             symbol,
             leg.getSide(),
-            MatchingEventSqlValues.statusForLeaves(leg.getLeavesQuantityShares()),
+            MatchingEventSqlValues.status(leg.getResultingState()),
             leg.getCumulativeQuantityShares(),
             leg.getLeavesQuantityShares()));
   }

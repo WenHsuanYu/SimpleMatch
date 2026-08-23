@@ -1,7 +1,7 @@
 package com.simplematch.marketdataprojection.store;
 
+import com.simplematch.contracts.DeterministicTextIdentity;
 import com.simplematch.contracts.marketdata.runtime.v1.MarketDataSnapshot;
-import com.simplematch.contracts.matching.runtime.v1.FinalMatchingEventEnvelope;
 import com.simplematch.marketdataprojection.runtime.MarketDataSnapshotView;
 import com.simplematch.marketdataprojection.runtime.PriceLevel;
 import java.util.HexFormat;
@@ -35,7 +35,7 @@ final class MarketDataSnapshotEncoder {
   }
 
   byte[] eventId(MarketDataSnapshotView view) {
-    return FinalMatchingEventEnvelope.deterministicIdentity(
+    return DeterministicTextIdentity.sha256(
         "market-data-snapshot-v1", view.sourceMatchingEventId(), view.venueMic(), view.symbol());
   }
 

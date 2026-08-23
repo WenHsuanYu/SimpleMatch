@@ -1,5 +1,6 @@
 package com.simplematch.queryservice.store;
 
+import com.simplematch.contracts.DeterministicTextIdentity;
 import com.simplematch.contracts.matching.runtime.v1.MatchingEvent;
 import com.simplematch.contracts.matching.runtime.v1.TradeLeg;
 import org.springframework.jdbc.core.ConnectionCallback;
@@ -11,8 +12,7 @@ final class JdbcQueryMatchingProjection {
       "(order_id, account_id, venue_mic, symbol, side, state, "
           + "leaves_quantity_shares, last_event_id, source_partition_id, "
           + "source_offset_value, updated_at_unix_ms)";
-  private static final String ORDER_VALUES =
-      "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)";
+  private static final String ORDER_VALUES = "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)";
   private static final String EXECUTION_INSERT_COLUMNS =
       "(execution_id, order_id, account_id, venue_mic, symbol, side, "
           + "fill_quantity_shares, fill_price_units, cumulative_quantity_shares, "
@@ -24,7 +24,10 @@ final class JdbcQueryMatchingProjection {
   private JdbcQueryMatchingProjection() {}
 
   static void project(
-      JdbcOperations jdbcTemplate, MatchingEvent event, QueryProjectionPosition position) {
+      JdbcOperations jdbcTemplate,
+      MatchingEvent event,
+      String eventId,
+      QueryProjectionPosition position) {
     switch (event.getEventType()) {
       case MATCHING_EVENT_TYPE_ORDER_RESTED ->
           upsertOrder(
@@ -38,8 +41,9 @@ final class JdbcQueryMatchingProjection {
                   event.getOrderRested().getSide().name(),
                   "RESTING",
                   event.getOrderRested().getLeavesQuantityShares(),
-                  new ProjectionSource(event.getEventId(), position)));
-      case MATCHING_EVENT_TYPE_TRADE_EXECUTED -> projectTrade(jdbcTemplate, event, position);
+                  new ProjectionSource(eventId, position)));
+      case MATCHING_EVENT_TYPE_TRADE_EXECUTED ->
+          projectTrade(jdbcTemplate, event, eventId, position);
       case MATCHING_EVENT_TYPE_ORDER_CANCELLED ->
           projectTerminal(
               jdbcTemplate,
@@ -52,7 +56,7 @@ final class JdbcQueryMatchingProjection {
                   event.getOrderCancelled().getSide().name(),
                   event.getOrderCancelled().getLeavesQuantityShares(),
                   "CANCELED",
-                  new ProjectionSource(event.getEventId(), position)));
+                  new ProjectionSource(eventId, position)));
       case MATCHING_EVENT_TYPE_ORDER_EXPIRED ->
           projectTerminal(
               jdbcTemplate,
@@ -65,29 +69,45 @@ final class JdbcQueryMatchingProjection {
                   event.getOrderExpired().getSide().name(),
                   event.getOrderExpired().getLeavesQuantityShares(),
                   "EXPIRED",
-                  new ProjectionSource(event.getEventId(), position)));
+                  new ProjectionSource(eventId, position)));
       default -> throw new IllegalArgumentException("final Matching Event type is required");
     }
   }
 
   private static void projectTrade(
-      JdbcOperations jdbcTemplate, MatchingEvent event, QueryProjectionPosition position) {
+      JdbcOperations jdbcTemplate,
+      MatchingEvent event,
+      String eventId,
+      QueryProjectionPosition position) {
     final var trade = event.getTradeExecuted();
     final InstrumentProjection instrument =
         new InstrumentProjection(
             trade.getInstrument().getVenueMic(), trade.getInstrument().getSymbol());
-    final ProjectionSource source = new ProjectionSource(event.getEventId(), position);
+    final ProjectionSource source = new ProjectionSource(eventId, position);
     projectTradeLeg(
-        jdbcTemplate, new TradeLegProjection(trade.getMaker(), instrument, "maker", source));
+        jdbcTemplate,
+        new TradeLegProjection(
+            trade.getMaker(),
+            instrument,
+            "maker",
+            source,
+            trade.getQuantityShares(),
+            trade.getPriceUnits()));
     projectTradeLeg(
-        jdbcTemplate, new TradeLegProjection(trade.getTaker(), instrument, "taker", source));
+        jdbcTemplate,
+        new TradeLegProjection(
+            trade.getTaker(),
+            instrument,
+            "taker",
+            source,
+            trade.getQuantityShares(),
+            trade.getPriceUnits()));
   }
 
   private static void projectTradeLeg(JdbcOperations jdbcTemplate, TradeLegProjection projection) {
     final TradeLeg leg = projection.leg();
     final String executionId =
-        com.simplematch.contracts.matching.runtime.v1.FinalMatchingEventEnvelope
-            .deterministicUuid(
+        DeterministicTextIdentity.uuid(
                 "simplematch.query-execution-v1",
                 projection.source().eventId(),
                 leg.getOrderId(),
@@ -100,12 +120,27 @@ final class JdbcQueryMatchingProjection {
             leg.getAccountId(),
             projection.instrument(),
             leg.getSide().name(),
-            leg.getLeavesQuantityShares() == 0 ? "FILLED" : "PARTIALLY_FILLED",
+            orderState(leg),
             leg.getLeavesQuantityShares(),
             projection.source()));
     upsertExecution(
         jdbcTemplate,
-        new ExecutionProjection(executionId, leg, projection.instrument(), projection.source()));
+        new ExecutionProjection(
+            executionId,
+            leg,
+            projection.instrument(),
+            projection.source(),
+            projection.quantityShares(),
+            projection.priceUnits()));
+  }
+
+  private static String orderState(TradeLeg leg) {
+    return switch (leg.getResultingState()) {
+      case TRADE_LEG_STATE_FILLED -> "FILLED";
+      case TRADE_LEG_STATE_PARTIALLY_FILLED -> "PARTIALLY_FILLED";
+      case TRADE_LEG_STATE_UNSPECIFIED, UNRECOGNIZED ->
+          throw new IllegalArgumentException("validated trade leg state is required");
+    };
   }
 
   private static void projectTerminal(JdbcOperations jdbcTemplate, TerminalProjection projection) {
@@ -160,7 +195,8 @@ final class JdbcQueryMatchingProjection {
     }
   }
 
-  private static void upsertExecution(JdbcOperations jdbcTemplate, ExecutionProjection projection) {
+  private static void upsertExecution(
+      JdbcOperations jdbcTemplate, ExecutionProjection projection) {
     final TradeLeg leg = projection.leg();
     final Object[] values = {
       projection.executionId(),
@@ -169,8 +205,8 @@ final class JdbcQueryMatchingProjection {
       projection.instrument().venueMic(),
       projection.instrument().symbol(),
       leg.getSide().name(),
-      leg.getQuantityShares(),
-      leg.getPriceUnits(),
+      projection.quantityShares(),
+      projection.priceUnits(),
       leg.getCumulativeQuantityShares(),
       leg.getLeavesQuantityShares(),
       leg.getAveragePriceUnits(),
@@ -213,11 +249,11 @@ final class JdbcQueryMatchingProjection {
         jdbcTemplate.execute(
             (ConnectionCallback<Boolean>)
                 connection ->
-                connection
-                    .getMetaData()
-                    .getDatabaseProductName()
-                    .toLowerCase(java.util.Locale.ROOT)
-                    .contains("postgresql")));
+                    connection
+                        .getMetaData()
+                        .getDatabaseProductName()
+                        .toLowerCase(java.util.Locale.ROOT)
+                        .contains("postgresql")));
   }
 
   private record OrderProjection(
@@ -246,11 +282,15 @@ final class JdbcQueryMatchingProjection {
       TradeLeg leg,
       InstrumentProjection instrument,
       String role,
-      ProjectionSource source) {}
+      ProjectionSource source,
+      long quantityShares,
+      long priceUnits) {}
 
   private record ExecutionProjection(
       String executionId,
       TradeLeg leg,
       InstrumentProjection instrument,
-      ProjectionSource source) {}
+      ProjectionSource source,
+      long quantityShares,
+      long priceUnits) {}
 }

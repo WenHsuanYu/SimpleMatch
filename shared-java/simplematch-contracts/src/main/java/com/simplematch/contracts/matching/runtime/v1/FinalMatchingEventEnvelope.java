@@ -1,13 +1,11 @@
 package com.simplematch.contracts.matching.runtime.v1;
 
 import com.google.protobuf.InvalidProtocolBufferException;
-import java.nio.charset.StandardCharsets;
 import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
 import java.util.Arrays;
 import java.util.HexFormat;
 import java.util.Objects;
-import java.util.UUID;
 
 /**
  * Validated final Matching Event together with the SHA-256 of its exact Kafka value bytes.
@@ -45,9 +43,14 @@ public final class FinalMatchingEventEnvelope {
     return new FinalMatchingEventEnvelope(event, owned, payloadSha256);
   }
 
-  /** Returns the stable 32-byte binary event identity for PostgreSQL storage. */
+  /** Returns the stable 32-byte binary event identity for durable storage and transport checks. */
   public byte[] eventIdBytes() {
-    return HexFormat.of().parseHex(event.getEventId());
+    return event.getEventId().toByteArray();
+  }
+
+  /** Renders the binary event identity for logs and text-only local persistence fields. */
+  public String eventIdHex() {
+    return HexFormat.of().formatHex(eventIdBytes());
   }
 
   /** Returns the validated final Matching Event. */
@@ -77,39 +80,5 @@ public final class FinalMatchingEventEnvelope {
     } catch (NoSuchAlgorithmException unavailable) {
       throw new IllegalStateException("SHA-256 must be available in the Java runtime", unavailable);
     }
-  }
-
-  /** Computes a deterministic 32-byte identity from length-delimited business identity fields. */
-  public static byte[] deterministicIdentity(String namespace, String... values) {
-    final MessageDigest digest;
-    try {
-      digest = MessageDigest.getInstance("SHA-256");
-    } catch (NoSuchAlgorithmException unavailable) {
-      throw new IllegalStateException("SHA-256 must be available in the Java runtime", unavailable);
-    }
-    updateLengthDelimited(digest, namespace);
-    for (String value : values) {
-      updateLengthDelimited(digest, value);
-    }
-    return digest.digest();
-  }
-
-  /**
-   * Derives a stable UUID bridge only where a retained legacy local API still requires UUID text.
-   */
-  public static UUID deterministicUuid(String namespace, String... values) {
-    final byte[] identity = deterministicIdentity(namespace, values);
-    identity[6] = (byte) ((identity[6] & 0x0F) | 0x50);
-    identity[8] = (byte) ((identity[8] & 0x3F) | 0x80);
-    return new UUID(
-        java.nio.ByteBuffer.wrap(identity, 0, Long.BYTES).getLong(),
-        java.nio.ByteBuffer.wrap(identity, Long.BYTES, Long.BYTES).getLong());
-  }
-
-  private static void updateLengthDelimited(MessageDigest digest, String value) {
-    final byte[] bytes =
-        Objects.requireNonNull(value, "identity value").getBytes(StandardCharsets.UTF_8);
-    digest.update(java.nio.ByteBuffer.allocate(Integer.BYTES).putInt(bytes.length).array());
-    digest.update(bytes);
   }
 }
