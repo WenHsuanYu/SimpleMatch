@@ -6,6 +6,7 @@ import com.simplematch.config.delivery.DeliveryDecision;
 import com.simplematch.config.delivery.DeliveryPosition;
 import com.simplematch.config.delivery.DeliveryRecord;
 import com.simplematch.contracts.matching.runtime.v1.FinalMatchingEventEnvelope;
+import java.util.Arrays;
 import java.util.List;
 import java.util.Objects;
 import org.apache.kafka.clients.consumer.Consumer;
@@ -28,7 +29,7 @@ public final class FinalMatchingEventAccountConsumer {
   private final CriticalDeliveryController deliveryController;
   private final AccountFinalMatchingEventStatus status;
 
-  /** Creates Account's critical final-event consumer boundary. */
+  /** Creates Account's critical final-event consumer seam. */
   public FinalMatchingEventAccountConsumer(
       FinalMatchingEventAccountHandler accountHandler,
       CriticalDeliveryController deliveryController,
@@ -42,9 +43,10 @@ public final class FinalMatchingEventAccountConsumer {
   @KafkaListener(
       topics = "${simplematch.account-service.final-matching-events.topic:matching.events}",
       groupId = CONSUMER_GROUP,
-      autoStartup = "${simplematch.account-service.final-matching-events.enabled:false}")
+      autoStartup = "${simplematch.account-service.final-matching-events.enabled:false}",
+      properties = "key.deserializer=org.apache.kafka.common.serialization.ByteArrayDeserializer")
   public void onMatchingEvent(
-      ConsumerRecord<String, byte[]> record,
+      ConsumerRecord<byte[], byte[]> record,
       Acknowledgment acknowledgment,
       Consumer<?, ?> consumer) {
     final byte[] payload = record.value() == null ? new byte[0] : record.value();
@@ -53,7 +55,8 @@ public final class FinalMatchingEventAccountConsumer {
     try {
       final FinalMatchingEventEnvelope envelope = FinalMatchingEventEnvelope.parse(payload);
       delivery = finalEventDelivery(record, payload, envelope);
-      requireExactKafkaKey(record.key(), envelope.event().getEventId());
+      requireExactKafkaKey(record.key(), envelope.eventIdBytes());
+      requireExactPartition(record.partition(), envelope.event().getPartitionId());
       final FinalMatchingEventAccountOutcome outcome =
           accountHandler.apply(envelope, record.partition(), record.offset());
       if (outcome == FinalMatchingEventAccountOutcome.DUPLICATE) {
@@ -89,7 +92,8 @@ public final class FinalMatchingEventAccountConsumer {
     status.recordRecovered(position);
   }
 
-  private DeliveryRecord opaqueDelivery(ConsumerRecord<String, byte[]> record, byte[] payload) {
+  private DeliveryRecord opaqueDelivery(
+      ConsumerRecord<byte[], byte[]> record, byte[] payload) {
     return new DeliveryRecord(
         record.topic() + ":" + record.partition() + ":" + record.offset(),
         new DeliveryPosition(record.topic(), record.partition(), record.offset()),
@@ -97,16 +101,24 @@ public final class FinalMatchingEventAccountConsumer {
   }
 
   private DeliveryRecord finalEventDelivery(
-      ConsumerRecord<String, byte[]> record, byte[] payload, FinalMatchingEventEnvelope envelope) {
+      ConsumerRecord<byte[], byte[]> record,
+      byte[] payload,
+      FinalMatchingEventEnvelope envelope) {
     return new DeliveryRecord(
-        envelope.event().getEventId(),
+        envelope.eventIdHex(),
         new DeliveryPosition(record.topic(), record.partition(), record.offset()),
         payload);
   }
 
-  private void requireExactKafkaKey(String recordKey, String eventId) {
-    if (!eventId.equals(recordKey)) {
-      throw new IllegalArgumentException("matching.events Kafka key must equal eventId");
+  private void requireExactKafkaKey(byte[] recordKey, byte[] eventId) {
+    if (recordKey == null || !Arrays.equals(eventId, recordKey)) {
+      throw new IllegalArgumentException("matching.events Kafka key must equal eventId bytes");
+    }
+  }
+
+  private void requireExactPartition(int recordPartition, int eventPartition) {
+    if (recordPartition != eventPartition) {
+      throw new IllegalArgumentException("matching.events Kafka partition must equal partitionId");
     }
   }
 

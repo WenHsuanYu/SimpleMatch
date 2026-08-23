@@ -7,6 +7,7 @@ import com.simplematch.queryservice.runtime.QueryProjectionApplicationService;
 import com.simplematch.queryservice.store.QueryProjectionGapException;
 import com.simplematch.queryservice.store.QueryProjectionStore;
 import java.time.Clock;
+import java.util.Arrays;
 import java.util.Objects;
 import org.apache.kafka.clients.consumer.ConsumerRecord;
 import org.slf4j.Logger;
@@ -21,7 +22,7 @@ public final class QueryProjectionKafkaConsumer {
   private final QueryProjectionStore store;
   private final Clock clock;
 
-  /** Creates the query-only consumer boundary; no critical service is called from this class. */
+  /** Creates the query-only consumer seam; no critical service is called from this class. */
   public QueryProjectionKafkaConsumer(
       QueryProjectionApplicationService projectionService,
       QueryProjectionStore store,
@@ -37,13 +38,15 @@ public final class QueryProjectionKafkaConsumer {
       groupId =
           "${simplematch.query-service.matching-events.consumer-group:"
               + "query-service-matching-events}",
-      autoStartup = "${simplematch.query-service.matching-events.enabled:false}")
+      autoStartup = "${simplematch.query-service.matching-events.enabled:false}",
+      properties = "key.deserializer=org.apache.kafka.common.serialization.ByteArrayDeserializer")
   public void onMatchingEvent(
-      ConsumerRecord<String, byte[]> record, Acknowledgment acknowledgment) {
+      ConsumerRecord<byte[], byte[]> record, Acknowledgment acknowledgment) {
     final byte[] rawPayload = record.value() == null ? new byte[0] : record.value();
     try {
       final FinalMatchingEventEnvelope envelope = FinalMatchingEventEnvelope.parse(rawPayload);
-      requireExactKafkaKey(record.key(), envelope.event().getEventId());
+      requireExactKafkaKey(record.key(), envelope.eventIdBytes());
+      requireExactPartition(record.partition(), envelope.event().getPartitionId());
       projectionService.projectMatching(
           envelope, record.partition(), record.offset(), clock.millis());
       acknowledgment.acknowledge();
@@ -103,9 +106,15 @@ public final class QueryProjectionKafkaConsumer {
     }
   }
 
-  private void requireExactKafkaKey(String recordKey, String eventId) {
-    if (!eventId.equals(recordKey)) {
-      throw new IllegalArgumentException("matching.events Kafka key must equal eventId");
+  private void requireExactKafkaKey(byte[] recordKey, byte[] eventId) {
+    if (recordKey == null || !Arrays.equals(eventId, recordKey)) {
+      throw new IllegalArgumentException("matching.events Kafka key must equal eventId bytes");
+    }
+  }
+
+  private void requireExactPartition(int recordPartition, int eventPartition) {
+    if (recordPartition != eventPartition) {
+      throw new IllegalArgumentException("matching.events Kafka partition must equal partitionId");
     }
   }
 }

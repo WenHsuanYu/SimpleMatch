@@ -1,5 +1,6 @@
 package com.simplematch.contracts.matching.runtime.v1;
 
+import com.google.protobuf.ByteString;
 import com.simplematch.contracts.common.v2.Side;
 import java.util.UUID;
 
@@ -19,11 +20,23 @@ final class FinalMatchingEventValidationFields {
   }
 
   static void validateTrade(TradeExecuted trade) {
-    requireCanonicalHex(trade.getTradeId(), "tradeId");
+    requireSha256(trade.getTradeId(), "tradeId");
     require(!trade.getInstrument().getVenueMic().isBlank(), "trade venue must not be blank");
     require(!trade.getInstrument().getSymbol().isBlank(), "trade symbol must not be blank");
-    validateLeg(trade.getMaker(), "maker");
-    validateLeg(trade.getTaker(), "taker");
+    requireKnownSide(trade.getAggressorSide());
+    require(trade.getQuantityShares() > 0, "trade quantity must be positive");
+    require(trade.getPriceUnits() > 0, "trade price must be positive");
+    validateLeg(trade.getMaker(), "maker", trade.getQuantityShares());
+    validateLeg(trade.getTaker(), "taker", trade.getQuantityShares());
+    require(
+        !trade.getMaker().getOrderId().equals(trade.getTaker().getOrderId()),
+        "maker and taker order identities must differ");
+    require(
+        trade.getMaker().getSide() != trade.getTaker().getSide(),
+        "maker and taker sides must differ");
+    require(
+        trade.getAggressorSide() == trade.getTaker().getSide(),
+        "aggressor side must equal taker side");
   }
 
   static void validateTerminal(OrderTerminal terminal) {
@@ -37,6 +50,10 @@ final class FinalMatchingEventValidationFields {
     require(
         terminal.getReason() != CancellationReason.CANCELLATION_REASON_UNSPECIFIED,
         "terminal cancellation reason is required");
+  }
+
+  static void requireSha256(ByteString value, String name) {
+    require(value != null && value.size() == 32, name + " must contain exactly 32 bytes");
   }
 
   static void requireCanonicalHex(String value, String name) {
@@ -58,16 +75,23 @@ final class FinalMatchingEventValidationFields {
     }
   }
 
-  private static void validateLeg(TradeLeg leg, String role) {
+  private static void validateLeg(TradeLeg leg, String role, long tradeQuantity) {
     validateOrderIdentity(leg.getOrderId(), leg.getAccountId(), "X", "X");
     requireKnownSide(leg.getSide());
-    require(leg.getQuantityShares() > 0, role + " quantity must be positive");
-    require(leg.getPriceUnits() > 0, role + " price must be positive");
     require(
-        leg.getCumulativeQuantityShares() >= leg.getQuantityShares(),
-        role + " cumulative quantity must include this fill");
+        leg.getCumulativeQuantityShares() >= tradeQuantity,
+        role + " cumulative quantity must include this trade");
     require(leg.getLeavesQuantityShares() >= 0, role + " leaves quantity must not be negative");
-    require(leg.getAveragePriceUnits() >= 0, role + " average price must not be negative");
+    require(leg.getAveragePriceUnits() > 0, role + " average price must be positive");
+    if (leg.getLeavesQuantityShares() == 0) {
+      require(
+          leg.getResultingState() == TradeLegState.TRADE_LEG_STATE_FILLED,
+          role + " state must be FILLED when no quantity remains");
+    } else {
+      require(
+          leg.getResultingState() == TradeLegState.TRADE_LEG_STATE_PARTIALLY_FILLED,
+          role + " state must be PARTIALLY_FILLED when quantity remains");
+    }
   }
 
   private static void validateOrderIdentity(

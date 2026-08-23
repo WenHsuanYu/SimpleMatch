@@ -2,6 +2,7 @@ package com.simplematch.accountservice.matching;
 
 import com.simplematch.accountservice.kafka.AccountLifecycleApplier;
 import com.simplematch.accountservice.store.JdbcFinalMatchingEventAccountInbox;
+import com.simplematch.contracts.DeterministicTextIdentity;
 import com.simplematch.contracts.matching.runtime.v1.FinalMatchingEventEnvelope;
 import com.simplematch.contracts.matching.runtime.v1.MatchingEvent;
 import com.simplematch.contracts.matching.runtime.v1.TradeLeg;
@@ -35,37 +36,40 @@ public class FinalMatchingEventAccountApplicationService
   }
 
   /**
-   * Applies raw inbox, authority effects, Account outbox, and progress in one local transaction.
+   * Applies the raw inbox, authority effects, Account outbox, and progress in one transaction.
    */
   @Override
   @Transactional(timeout = TRANSACTION_TIMEOUT_SECONDS)
   public FinalMatchingEventAccountOutcome apply(
       FinalMatchingEventEnvelope envelope, int kafkaPartition, long kafkaOffset) {
-    final FinalMatchingEventEnvelope finalEnvelope = Objects.requireNonNull(envelope, "envelope");
+    final FinalMatchingEventEnvelope finalEnvelope =
+        Objects.requireNonNull(envelope, "envelope");
     final long now = clock.millis();
     if (!inbox.claim(finalEnvelope, now)) {
       inbox.recordProgress(kafkaPartition, kafkaOffset, now);
       return FinalMatchingEventAccountOutcome.DUPLICATE;
     }
-    applyAuthorityEffects(finalEnvelope.event());
+    applyAuthorityEffects(finalEnvelope);
     inbox.recordProgress(kafkaPartition, kafkaOffset, now);
     return FinalMatchingEventAccountOutcome.APPLIED;
   }
 
-  private void applyAuthorityEffects(MatchingEvent event) {
+  private void applyAuthorityEffects(FinalMatchingEventEnvelope envelope) {
+    final MatchingEvent event = envelope.event();
     switch (event.getEventType()) {
       case MATCHING_EVENT_TYPE_TRADE_EXECUTED -> {
-        applyTradeLeg(event, event.getTradeExecuted().getMaker(), "maker");
-        applyTradeLeg(event, event.getTradeExecuted().getTaker(), "taker");
+        applyTradeLeg(envelope, event.getTradeExecuted().getMaker(), "maker");
+        applyTradeLeg(envelope, event.getTradeExecuted().getTaker(), "taker");
       }
       case MATCHING_EVENT_TYPE_ORDER_CANCELLED ->
           applyTerminal(
-              event,
+              envelope,
               event.getOrderCancelled().getOrderId(),
               event.getOrderCancelled().getAccountId());
       case MATCHING_EVENT_TYPE_ORDER_EXPIRED ->
           applyTerminal(
-              event, event.getOrderExpired().getOrderId(), event.getOrderExpired().getAccountId());
+              envelope,
+              event.getOrderExpired().getOrderId(), event.getOrderExpired().getAccountId());
       case MATCHING_EVENT_TYPE_ORDER_RESTED -> {
         // The reservation has already been accepted; resting is intentionally account-neutral.
       }
@@ -73,23 +77,28 @@ public class FinalMatchingEventAccountApplicationService
     }
   }
 
-  private void applyTradeLeg(MatchingEvent event, TradeLeg leg, String role) {
+  private void applyTradeLeg(FinalMatchingEventEnvelope envelope, TradeLeg leg, String role) {
+    final MatchingEvent event = envelope.event();
     final String executionId =
-        FinalMatchingEventEnvelope.deterministicUuid(
-                "simplematch.account-final-fill-v1", event.getEventId(), leg.getOrderId(), role)
+        DeterministicTextIdentity.uuid(
+                "simplematch.account-final-fill-v1", envelope.eventIdHex(), leg.getOrderId(), role)
             .toString();
+    final ExecutionType executionType =
+        switch (leg.getResultingState()) {
+          case TRADE_LEG_STATE_FILLED -> ExecutionType.EXECUTION_TYPE_FILL;
+          case TRADE_LEG_STATE_PARTIALLY_FILLED -> ExecutionType.EXECUTION_TYPE_PARTIAL_FILL;
+          case TRADE_LEG_STATE_UNSPECIFIED, UNRECOGNIZED ->
+              throw new IllegalArgumentException("validated trade leg state is required");
+        };
     accountLifecycleApplier.applyMatchingExecution(
         ExecutionEvent.newBuilder()
             .setExecId(executionId)
             .setOrderId(leg.getOrderId())
             .setAccountId(leg.getAccountId())
             .setSymbol(event.getTradeExecuted().getInstrument().getSymbol())
-            .setExecutionType(
-                leg.getLeavesQuantityShares() == 0
-                    ? ExecutionType.EXECUTION_TYPE_FILL
-                    : ExecutionType.EXECUTION_TYPE_PARTIAL_FILL)
-            .setFillQty(Long.toString(leg.getQuantityShares()))
-            .setFillPx(twdPrice(leg.getPriceUnits()))
+            .setExecutionType(executionType)
+            .setFillQty(Long.toString(event.getTradeExecuted().getQuantityShares()))
+            .setFillPx(twdPrice(event.getTradeExecuted().getPriceUnits()))
             .setCumQty(Long.toString(leg.getCumulativeQuantityShares()))
             .setLeavesQty(Long.toString(leg.getLeavesQuantityShares()))
             .setAveragePx(twdPrice(leg.getAveragePriceUnits()))
@@ -97,10 +106,12 @@ public class FinalMatchingEventAccountApplicationService
             .build());
   }
 
-  private void applyTerminal(MatchingEvent event, String orderId, String accountId) {
+  private void applyTerminal(
+      FinalMatchingEventEnvelope envelope, String orderId, String accountId) {
+    final MatchingEvent event = envelope.event();
     final String executionId =
-        FinalMatchingEventEnvelope.deterministicUuid(
-                "simplematch.account-final-terminal-v1", event.getEventId(), orderId)
+        DeterministicTextIdentity.uuid(
+                "simplematch.account-final-terminal-v1", envelope.eventIdHex(), orderId)
             .toString();
     accountLifecycleApplier.applyMatchingExecution(
         ExecutionEvent.newBuilder()
@@ -117,7 +128,8 @@ public class FinalMatchingEventAccountApplicationService
     return switch (event.getEventType()) {
       case MATCHING_EVENT_TYPE_ORDER_CANCELLED ->
           event.getOrderCancelled().getInstrument().getSymbol();
-      case MATCHING_EVENT_TYPE_ORDER_EXPIRED -> event.getOrderExpired().getInstrument().getSymbol();
+      case MATCHING_EVENT_TYPE_ORDER_EXPIRED ->
+          event.getOrderExpired().getInstrument().getSymbol();
       default -> throw new IllegalArgumentException("terminal Matching Event type is required");
     };
   }

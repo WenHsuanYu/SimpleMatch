@@ -7,6 +7,7 @@ import com.simplematch.config.delivery.DeliveryRecord;
 import com.simplematch.config.delivery.NonCriticalDeliveryController;
 import com.simplematch.contracts.matching.runtime.v1.FinalMatchingEventEnvelope;
 import com.simplematch.marketdataprojection.runtime.MarketDataProjectionHandler;
+import java.util.Arrays;
 import java.util.Objects;
 import org.apache.kafka.clients.consumer.ConsumerRecord;
 import org.slf4j.Logger;
@@ -23,7 +24,7 @@ public final class MarketDataProjectionConsumer {
   private final NonCriticalDeliveryController deliveryController;
   private final MarketDataProjectionRetryScheduler retryScheduler;
 
-  /** Creates the non-critical Kafka boundary and its independent retry policy. */
+  /** Creates the non-critical Kafka seam and its independent retry policy. */
   public MarketDataProjectionConsumer(
       MarketDataProjectionHandler projectionHandler,
       NonCriticalDeliveryController deliveryController,
@@ -33,21 +34,19 @@ public final class MarketDataProjectionConsumer {
     this.retryScheduler = Objects.requireNonNull(retryScheduler, "retryScheduler");
   }
 
-  /**
-   * Commits the source record after either a successful projection or durable retry/dead-letter
-   * handoff.
-   */
+  /** Commits after either a successful projection or durable retry/dead-letter handoff. */
   @KafkaListener(
       id = "market-data-projection",
       topics = "${simplematch.market-data-projection.matching-events.topic:matching.events}",
-      autoStartup = "${simplematch.market-data-projection.matching-events.enabled:false}")
+      autoStartup = "${simplematch.market-data-projection.matching-events.enabled:false}",
+      properties = "key.deserializer=org.apache.kafka.common.serialization.ByteArrayDeserializer")
   public void onMatchingEvent(
-      ConsumerRecord<String, byte[]> record, Acknowledgment acknowledgment) {
+      ConsumerRecord<byte[], byte[]> record, Acknowledgment acknowledgment) {
     deliverRecord(record);
     acknowledgment.acknowledge();
   }
 
-  private void deliverRecord(ConsumerRecord<String, byte[]> record) {
+  private void deliverRecord(ConsumerRecord<byte[], byte[]> record) {
     final DeliveryRecord opaque = opaqueDelivery(record);
     final FinalMatchingEventEnvelope envelope;
     try {
@@ -58,7 +57,8 @@ public final class MarketDataProjectionConsumer {
     }
     final DeliveryRecord delivery = finalEventDelivery(record, envelope);
     try {
-      requireExactKafkaKey(record.key(), envelope.event().getEventId());
+      requireExactKafkaKey(record.key(), envelope.eventIdBytes());
+      requireExactPartition(record.partition(), envelope.event().getPartitionId());
       deliver(delivery, envelope, () -> deliverRecord(record));
     } catch (RuntimeException failure) {
       deferOrDeadLetter(delivery, failure, () -> deliverRecord(record));
@@ -101,7 +101,7 @@ public final class MarketDataProjectionConsumer {
     retryScheduler.schedule(delivery, result.retryAt(), retry);
   }
 
-  private DeliveryRecord opaqueDelivery(ConsumerRecord<String, byte[]> record) {
+  private DeliveryRecord opaqueDelivery(ConsumerRecord<byte[], byte[]> record) {
     final byte[] payload = record.value() == null ? new byte[0] : record.value();
     return new DeliveryRecord(
         record.topic() + ":" + record.partition() + ":" + record.offset(),
@@ -110,16 +110,22 @@ public final class MarketDataProjectionConsumer {
   }
 
   private DeliveryRecord finalEventDelivery(
-      ConsumerRecord<String, byte[]> record, FinalMatchingEventEnvelope envelope) {
+      ConsumerRecord<byte[], byte[]> record, FinalMatchingEventEnvelope envelope) {
     return new DeliveryRecord(
-        envelope.event().getEventId(),
+        envelope.eventIdHex(),
         new DeliveryPosition(record.topic(), record.partition(), record.offset()),
         envelope.rawValue());
   }
 
-  private void requireExactKafkaKey(String recordKey, String eventId) {
-    if (!eventId.equals(recordKey)) {
-      throw new IllegalArgumentException("matching.events Kafka key must equal eventId");
+  private void requireExactKafkaKey(byte[] recordKey, byte[] eventId) {
+    if (recordKey == null || !Arrays.equals(eventId, recordKey)) {
+      throw new IllegalArgumentException("matching.events Kafka key must equal eventId bytes");
+    }
+  }
+
+  private void requireExactPartition(int recordPartition, int eventPartition) {
+    if (recordPartition != eventPartition) {
+      throw new IllegalArgumentException("matching.events Kafka partition must equal partitionId");
     }
   }
 }

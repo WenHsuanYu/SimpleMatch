@@ -4,6 +4,7 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
+import com.google.protobuf.ByteString;
 import com.google.protobuf.InvalidProtocolBufferException;
 import com.simplematch.contracts.common.v2.OrderType;
 import com.simplematch.contracts.common.v2.Side;
@@ -13,13 +14,16 @@ import com.simplematch.contracts.matching.runtime.v1.ArtifactIdentity;
 import com.simplematch.contracts.matching.runtime.v1.CommandHeader;
 import com.simplematch.contracts.matching.runtime.v1.MatchingCommand;
 import com.simplematch.contracts.matching.runtime.v1.MatchingEvent;
+import com.simplematch.contracts.matching.runtime.v1.MatchingEventIdentityV1;
 import com.simplematch.contracts.matching.runtime.v1.MatchingEventType;
 import com.simplematch.contracts.matching.runtime.v1.NewOrder;
 import com.simplematch.contracts.matching.runtime.v1.OrderRested;
+import com.simplematch.contracts.matching.runtime.v1.TradeLegState;
 import java.io.IOException;
 import java.io.InputStream;
 import java.nio.charset.StandardCharsets;
 import java.util.HexFormat;
+import java.util.UUID;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 
@@ -48,8 +52,7 @@ class MatchingRuntimeContractTest {
                 NewOrder.newBuilder()
                     .setOrderId("0198a001-0000-7000-8000-000000000002")
                     .setAccountId("0198a001-0000-7000-8000-000000000003")
-                    .setInstrument(
-                        VenueInstrument.newBuilder().setVenueMic("XTAI").setSymbol("2330"))
+                    .setInstrument(VenueInstrument.newBuilder().setVenueMic("XTAI").setSymbol("2330"))
                     .setSide(Side.SIDE_BUY)
                     .setQuantityShares(1_000)
                     .setLimitPriceUnits(1_000_000)
@@ -64,17 +67,21 @@ class MatchingRuntimeContractTest {
     assertEquals(MatchingCommand.CommandCase.NEW_ORDER, decoded.getCommandCase());
   }
 
-  @DisplayName("event identity is explicit while its type remains payload metadata")
+  @DisplayName("event identity is a 32-byte deterministic wire value")
   @Test
-  void restingEventRoundTripsWithStableHexIdentity() throws InvalidProtocolBufferException {
+  void restingEventRoundTripsWithBinaryIdentity() throws InvalidProtocolBufferException {
+    final String commandId = "0198a001-0000-7000-8000-000000000001";
     final MatchingEvent event =
         MatchingEvent.newBuilder()
             .setSchemaVersion(1)
             .setIdentityVersion(1)
-            .setEventId("beef".repeat(16))
+            .setEventId(
+                ByteString.copyFrom(
+                    MatchingEventIdentityV1.eventId(
+                        "2026-08-11-regular", 0, UUID.fromString(commandId), 0)))
             .setTradingSessionId("2026-08-11-regular")
             .setPartitionId(0)
-            .setSourceCommandId("0198a001-0000-7000-8000-000000000001")
+            .setSourceCommandId(commandId)
             .setSourceInputOffset(42)
             .setOutputIndex(0)
             .setArtifactIdentity(ARTIFACT)
@@ -84,8 +91,7 @@ class MatchingRuntimeContractTest {
                 OrderRested.newBuilder()
                     .setOrderId("0198a001-0000-7000-8000-000000000002")
                     .setAccountId("0198a001-0000-7000-8000-000000000003")
-                    .setInstrument(
-                        VenueInstrument.newBuilder().setVenueMic("XTAI").setSymbol("2330"))
+                    .setInstrument(VenueInstrument.newBuilder().setVenueMic("XTAI").setSymbol("2330"))
                     .setSide(Side.SIDE_BUY)
                     .setLeavesQuantityShares(1_000)
                     .setRestingPriceUnits(1_000_000))
@@ -94,7 +100,7 @@ class MatchingRuntimeContractTest {
     final MatchingEvent decoded = MatchingEvent.parseFrom(event.toByteArray());
 
     assertEquals(event, decoded);
-    assertTrue(decoded.getEventId().matches("[0-9a-f]{64}"));
+    assertEquals(32, decoded.getEventId().size());
     assertEquals(MatchingEventType.MATCHING_EVENT_TYPE_ORDER_RESTED, decoded.getEventType());
     assertFalse(HexFormat.of().formatHex(event.toByteArray()).isBlank());
   }
@@ -104,8 +110,7 @@ class MatchingRuntimeContractTest {
   void parsesCppGoldenTradeEvent() throws IOException {
     final byte[] bytes;
     try (InputStream fixture =
-        getClass()
-            .getResourceAsStream("/native-routing-fixtures/cpp-matching-event-v1.hex")) {
+        getClass().getResourceAsStream("/native-routing-fixtures/cpp-matching-event-v1.hex")) {
       assertTrue(fixture != null, "native matching event fixture must exist");
       final String hex =
           new String(fixture.readAllBytes(), StandardCharsets.US_ASCII).replaceAll("\\s", "");
@@ -117,9 +122,13 @@ class MatchingRuntimeContractTest {
     assertEquals(1, event.getSchemaVersion());
     assertEquals(1, event.getIdentityVersion());
     assertEquals(42, event.getSourceInputOffset());
+    assertEquals(32, event.getEventId().size());
     assertEquals(MatchingEventType.MATCHING_EVENT_TYPE_TRADE_EXECUTED, event.getEventType());
-    assertEquals(Side.SIDE_SELL, event.getTradeExecuted().getMaker().getSide());
-    assertEquals("0198a001-0000-7000-8000-000000000011", event.getTradeExecuted().getMaker().getOrderId());
-    assertEquals("0198a001-0000-7000-8000-000000000012", event.getTradeExecuted().getTaker().getOrderId());
+    assertEquals(0, event.getTradeExecuted().getMatchIndex());
+    assertEquals(Side.SIDE_BUY, event.getTradeExecuted().getAggressorSide());
+    assertEquals(100, event.getTradeExecuted().getQuantityShares());
+    assertEquals(1_000_000, event.getTradeExecuted().getPriceUnits());
+    assertEquals(TradeLegState.TRADE_LEG_STATE_FILLED, event.getTradeExecuted().getMaker().getResultingState());
+    assertEquals(TradeLegState.TRADE_LEG_STATE_FILLED, event.getTradeExecuted().getTaker().getResultingState());
   }
 }

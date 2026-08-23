@@ -9,6 +9,7 @@ import com.simplematch.contracts.matching.runtime.v1.FinalMatchingEventEnvelope;
 import com.simplematch.quickfixgateway.matching.FinalMatchingEventFixDeliveryHandler;
 import com.simplematch.quickfixgateway.matching.FinalMatchingEventFixDeliveryOutcome;
 import com.simplematch.quickfixgateway.matching.QuickFixFinalMatchingEventStatus;
+import java.util.Arrays;
 import java.util.List;
 import java.util.Objects;
 import org.apache.kafka.clients.consumer.Consumer;
@@ -19,9 +20,7 @@ import org.slf4j.LoggerFactory;
 import org.springframework.kafka.annotation.KafkaListener;
 import org.springframework.kafka.support.Acknowledgment;
 
-/**
- * Commits final-event offsets only after the Gateway has durably stored every FIX report intent.
- */
+/** Commits final-event offsets only after the Gateway durably stores every FIX report intent. */
 public final class FinalMatchingEventFixConsumer {
   private static final String CONSUMER_GROUP =
       "${simplematch.quickfix-gateway.final-matching-events."
@@ -32,7 +31,7 @@ public final class FinalMatchingEventFixConsumer {
   private final CriticalDeliveryController deliveryController;
   private final QuickFixFinalMatchingEventStatus status;
 
-  /** Creates the strict Kafka boundary for Gateway final Matching Event delivery. */
+  /** Creates the strict Kafka seam for Gateway final Matching Event delivery. */
   public FinalMatchingEventFixConsumer(
       FinalMatchingEventFixDeliveryHandler deliveryHandler,
       CriticalDeliveryController deliveryController,
@@ -42,13 +41,14 @@ public final class FinalMatchingEventFixConsumer {
     this.status = Objects.requireNonNull(status, "status");
   }
 
-  /** Consumes one final event with in-place retry and no ordinary DLQ escape path. */
+  /** Consumes one final event with in-place retry and no ordinary dead-letter escape path. */
   @KafkaListener(
       topics = "${simplematch.quickfix-gateway.final-matching-events.topic:matching.events}",
       groupId = CONSUMER_GROUP,
-      autoStartup = "${simplematch.quickfix-gateway.final-matching-events.enabled:false}")
+      autoStartup = "${simplematch.quickfix-gateway.final-matching-events.enabled:false}",
+      properties = "key.deserializer=org.apache.kafka.common.serialization.ByteArrayDeserializer")
   public void onMatchingEvent(
-      ConsumerRecord<String, byte[]> record,
+      ConsumerRecord<byte[], byte[]> record,
       Acknowledgment acknowledgment,
       Consumer<?, ?> consumer) {
     final byte[] payload = record.value() == null ? new byte[0] : record.value();
@@ -57,7 +57,8 @@ public final class FinalMatchingEventFixConsumer {
     try {
       final FinalMatchingEventEnvelope envelope = FinalMatchingEventEnvelope.parse(payload);
       delivery = finalEventDelivery(record, payload, envelope);
-      requireExactKafkaKey(record.key(), envelope.event().getEventId());
+      requireExactKafkaKey(record.key(), envelope.eventIdBytes());
+      requireExactPartition(record.partition(), envelope.event().getPartitionId());
       final FinalMatchingEventFixDeliveryOutcome outcome =
           deliveryHandler.persist(envelope, record.partition(), record.offset());
       if (outcome == FinalMatchingEventFixDeliveryOutcome.DUPLICATE) {
@@ -93,7 +94,8 @@ public final class FinalMatchingEventFixConsumer {
     status.recordRecovered(position);
   }
 
-  private DeliveryRecord opaqueDelivery(ConsumerRecord<String, byte[]> record, byte[] payload) {
+  private DeliveryRecord opaqueDelivery(
+      ConsumerRecord<byte[], byte[]> record, byte[] payload) {
     return new DeliveryRecord(
         record.topic() + ":" + record.partition() + ":" + record.offset(),
         new DeliveryPosition(record.topic(), record.partition(), record.offset()),
@@ -101,16 +103,24 @@ public final class FinalMatchingEventFixConsumer {
   }
 
   private DeliveryRecord finalEventDelivery(
-      ConsumerRecord<String, byte[]> record, byte[] payload, FinalMatchingEventEnvelope envelope) {
+      ConsumerRecord<byte[], byte[]> record,
+      byte[] payload,
+      FinalMatchingEventEnvelope envelope) {
     return new DeliveryRecord(
-        envelope.event().getEventId(),
+        envelope.eventIdHex(),
         new DeliveryPosition(record.topic(), record.partition(), record.offset()),
         payload);
   }
 
-  private void requireExactKafkaKey(String recordKey, String eventId) {
-    if (!eventId.equals(recordKey)) {
-      throw new IllegalArgumentException("matching.events Kafka key must equal eventId");
+  private void requireExactKafkaKey(byte[] recordKey, byte[] eventId) {
+    if (recordKey == null || !Arrays.equals(eventId, recordKey)) {
+      throw new IllegalArgumentException("matching.events Kafka key must equal eventId bytes");
+    }
+  }
+
+  private void requireExactPartition(int recordPartition, int eventPartition) {
+    if (recordPartition != eventPartition) {
+      throw new IllegalArgumentException("matching.events Kafka partition must equal partitionId");
     }
   }
 

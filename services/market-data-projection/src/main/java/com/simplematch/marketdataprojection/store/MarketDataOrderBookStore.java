@@ -129,7 +129,7 @@ final class MarketDataOrderBookStore {
       throw new MarketDataProjectionGapException(
           "a trade referenced a resting maker order that is absent from the projection");
     }
-    return new LastTrade(trade.getMaker().getPriceUnits(), trade.getMaker().getQuantityShares());
+    return new LastTrade(trade.getPriceUnits(), trade.getQuantityShares());
   }
 
   private void deleteTerminal(OrderTerminal terminal) {

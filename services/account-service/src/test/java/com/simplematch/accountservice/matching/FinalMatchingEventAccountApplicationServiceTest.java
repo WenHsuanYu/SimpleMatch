@@ -3,6 +3,7 @@ package com.simplematch.accountservice.matching;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
+import com.google.protobuf.ByteString;
 import com.simplematch.accountservice.kafka.AccountLifecycleApplier;
 import com.simplematch.accountservice.reservation.ReservationRecord;
 import com.simplematch.accountservice.store.JdbcFinalMatchingEventAccountInbox;
@@ -12,10 +13,12 @@ import com.simplematch.contracts.matching.runtime.v1.ArtifactIdentity;
 import com.simplematch.contracts.matching.runtime.v1.DeterministicEventConflictException;
 import com.simplematch.contracts.matching.runtime.v1.FinalMatchingEventEnvelope;
 import com.simplematch.contracts.matching.runtime.v1.MatchingEvent;
+import com.simplematch.contracts.matching.runtime.v1.MatchingEventIdentityV1;
 import com.simplematch.contracts.matching.runtime.v1.MatchingEventType;
 import com.simplematch.contracts.matching.runtime.v1.OrderTerminal;
 import com.simplematch.contracts.matching.runtime.v1.TradeExecuted;
 import com.simplematch.contracts.matching.runtime.v1.TradeLeg;
+import com.simplematch.contracts.matching.runtime.v1.TradeLegState;
 import com.simplematch.contracts.matching.v1.ExecutionEvent;
 import com.simplematch.contracts.matching.v1.ExecutionType;
 import java.time.Clock;
@@ -42,7 +45,8 @@ class FinalMatchingEventAccountApplicationServiceTest {
           .build();
   private static final Clock CLOCK =
       Clock.fixed(Instant.parse("2026-08-11T00:00:00Z"), ZoneOffset.UTC);
-  private static final String EVENT_ID = "e".repeat(64);
+  private static final String TRADE_COMMAND_ID = "0198a001-0000-7000-8000-000000000001";
+  private static final String EXPIRE_COMMAND_ID = "0198a001-0000-7000-8000-000000000002";
 
   private SingleConnectionDataSource dataSource;
   private JdbcTemplate jdbcTemplate;
@@ -74,11 +78,11 @@ class FinalMatchingEventAccountApplicationServiceTest {
   }
 
   @Test
-  void mapsBothTradeLegsWithIndependentTradeAndAveragePrices() throws Exception {
+  void mapsBothTradeLegsWithPublishedTradeAndAveragePrices() throws Exception {
     final List<ExecutionEvent> applied = new ArrayList<>();
     final FinalMatchingEventAccountApplicationService service = service(applied::add);
 
-    assertThat(service.apply(tradeEnvelope(EVENT_ID, 1_000_000L), 0, 42L))
+    assertThat(service.apply(tradeEnvelope(1_000_000L), 0, 42L))
         .isEqualTo(FinalMatchingEventAccountOutcome.APPLIED);
 
     assertThat(applied)
@@ -102,11 +106,10 @@ class FinalMatchingEventAccountApplicationServiceTest {
   void deduplicatesOneReplayedRawEventBeforeItReachesAccountAuthority() throws Exception {
     final List<ExecutionEvent> applied = new ArrayList<>();
     final FinalMatchingEventAccountApplicationService service = service(applied::add);
-    final FinalMatchingEventEnvelope envelope = tradeEnvelope(EVENT_ID, 1_000_000L);
+    final FinalMatchingEventEnvelope envelope = tradeEnvelope(1_000_000L);
 
     assertThat(service.apply(envelope, 0, 42L)).isEqualTo(FinalMatchingEventAccountOutcome.APPLIED);
-    assertThat(service.apply(envelope, 0, 42L))
-        .isEqualTo(FinalMatchingEventAccountOutcome.DUPLICATE);
+    assertThat(service.apply(envelope, 0, 42L)).isEqualTo(FinalMatchingEventAccountOutcome.DUPLICATE);
 
     assertThat(applied).hasSize(2);
   }
@@ -115,10 +118,10 @@ class FinalMatchingEventAccountApplicationServiceTest {
   void failsClosedForConflictingBytesWithTheSameFinalEventIdentity() throws Exception {
     final FinalMatchingEventAccountApplicationService service = service(ignored -> {});
 
-    assertThat(service.apply(tradeEnvelope(EVENT_ID, 1_000_000L), 0, 42L))
+    assertThat(service.apply(tradeEnvelope(1_000_000L), 0, 42L))
         .isEqualTo(FinalMatchingEventAccountOutcome.APPLIED);
 
-    assertThatThrownBy(() -> service.apply(tradeEnvelope(EVENT_ID, 1_000_001L), 0, 42L))
+    assertThatThrownBy(() -> service.apply(tradeEnvelope(1_000_001L), 0, 42L))
         .isInstanceOf(DeterministicEventConflictException.class);
   }
 
@@ -131,7 +134,7 @@ class FinalMatchingEventAccountApplicationServiceTest {
             });
     final TransactionTemplate transactions =
         new TransactionTemplate(new DataSourceTransactionManager(dataSource));
-    final FinalMatchingEventEnvelope envelope = tradeEnvelope(EVENT_ID, 1_000_000L);
+    final FinalMatchingEventEnvelope envelope = tradeEnvelope(1_000_000L);
 
     assertThatThrownBy(
             () -> transactions.executeWithoutResult(ignored -> service.apply(envelope, 0, 42L)))
@@ -174,16 +177,16 @@ class FinalMatchingEventAccountApplicationServiceTest {
         "SELECT COUNT(*) FROM account_service." + table, Integer.class);
   }
 
-  private FinalMatchingEventEnvelope tradeEnvelope(String eventId, long priceUnits)
-      throws Exception {
+  private FinalMatchingEventEnvelope tradeEnvelope(long priceUnits) throws Exception {
+    final UUID commandId = UUID.fromString(TRADE_COMMAND_ID);
     return FinalMatchingEventEnvelope.parse(
         MatchingEvent.newBuilder()
             .setSchemaVersion(1)
             .setIdentityVersion(1)
-            .setEventId(eventId)
+            .setEventId(ByteString.copyFrom(MatchingEventIdentityV1.eventId("2026-08-11-regular", 0, commandId, 0)))
             .setTradingSessionId("2026-08-11-regular")
             .setPartitionId(0)
-            .setSourceCommandId("0198a001-0000-7000-8000-000000000001")
+            .setSourceCommandId(TRADE_COMMAND_ID)
             .setSourceInputOffset(42L)
             .setOutputIndex(0)
             .setArtifactIdentity(ARTIFACT)
@@ -191,30 +194,28 @@ class FinalMatchingEventAccountApplicationServiceTest {
             .setEventType(MatchingEventType.MATCHING_EVENT_TYPE_TRADE_EXECUTED)
             .setTradeExecuted(
                 TradeExecuted.newBuilder()
-                    .setTradeId("d".repeat(64))
-                    .setInstrument(
-                        VenueInstrument.newBuilder().setVenueMic("XTAI").setSymbol("2330"))
-                    .setMaker(
-                        leg("0198a001-0000-7000-8000-000000000011", Side.SIDE_SELL, priceUnits, 0L))
-                    .setTaker(
-                        leg(
-                            "0198a001-0000-7000-8000-000000000012",
-                            Side.SIDE_BUY,
-                            priceUnits,
-                            200L)))
+                    .setTradeId(ByteString.copyFrom(MatchingEventIdentityV1.tradeId("2026-08-11-regular", 0, commandId, 0)))
+                    .setMatchIndex(0)
+                    .setInstrument(VenueInstrument.newBuilder().setVenueMic("XTAI").setSymbol("2330"))
+                    .setAggressorSide(Side.SIDE_BUY)
+                    .setQuantityShares(100L)
+                    .setPriceUnits(priceUnits)
+                    .setMaker(leg("0198a001-0000-7000-8000-000000000011", Side.SIDE_SELL, 0L))
+                    .setTaker(leg("0198a001-0000-7000-8000-000000000012", Side.SIDE_BUY, 200L)))
             .build()
             .toByteArray());
   }
 
   private FinalMatchingEventEnvelope expiredEnvelope() throws Exception {
+    final UUID commandId = UUID.fromString(EXPIRE_COMMAND_ID);
     return FinalMatchingEventEnvelope.parse(
         MatchingEvent.newBuilder()
             .setSchemaVersion(1)
             .setIdentityVersion(1)
-            .setEventId("f".repeat(64))
+            .setEventId(ByteString.copyFrom(MatchingEventIdentityV1.eventId("2026-08-11-regular", 0, commandId, 0)))
             .setTradingSessionId("2026-08-11-regular")
             .setPartitionId(0)
-            .setSourceCommandId("0198a001-0000-7000-8000-000000000001")
+            .setSourceCommandId(EXPIRE_COMMAND_ID)
             .setSourceInputOffset(43L)
             .setOutputIndex(0)
             .setArtifactIdentity(ARTIFACT)
@@ -224,8 +225,7 @@ class FinalMatchingEventAccountApplicationServiceTest {
                 OrderTerminal.newBuilder()
                     .setOrderId("0198a001-0000-7000-8000-000000000011")
                     .setAccountId("0198a001-0000-7000-8000-0000000000aa")
-                    .setInstrument(
-                        VenueInstrument.newBuilder().setVenueMic("XTAI").setSymbol("2330"))
+                    .setInstrument(VenueInstrument.newBuilder().setVenueMic("XTAI").setSymbol("2330"))
                     .setSide(Side.SIDE_SELL)
                     .setLeavesQuantityShares(100L)
                     .setReason(
@@ -235,16 +235,18 @@ class FinalMatchingEventAccountApplicationServiceTest {
             .toByteArray());
   }
 
-  private TradeLeg leg(String orderId, Side side, long priceUnits, long leavesQuantityShares) {
+  private TradeLeg leg(String orderId, Side side, long leavesQuantityShares) {
     return TradeLeg.newBuilder()
         .setOrderId(orderId)
         .setAccountId("0198a001-0000-7000-8000-0000000000aa")
         .setSide(side)
-        .setQuantityShares(100L)
-        .setPriceUnits(priceUnits)
-        .setAveragePriceUnits(priceUnits - 100_000L)
+        .setAveragePriceUnits(900_000L)
         .setCumulativeQuantityShares(100L)
         .setLeavesQuantityShares(leavesQuantityShares)
+        .setResultingState(
+            leavesQuantityShares == 0L
+                ? TradeLegState.TRADE_LEG_STATE_FILLED
+                : TradeLegState.TRADE_LEG_STATE_PARTIALLY_FILLED)
         .build();
   }
 

@@ -8,6 +8,7 @@ import com.simplematch.config.delivery.DeliveryRecord;
 import com.simplematch.contracts.matching.runtime.v1.FinalMatchingEventEnvelope;
 import com.simplematch.persistence.matching.MatchingEventPersistenceHandler;
 import com.simplematch.persistence.matching.MatchingEventPersistenceOutcome;
+import java.util.Arrays;
 import java.util.List;
 import java.util.Objects;
 import org.apache.kafka.clients.consumer.Consumer;
@@ -27,7 +28,7 @@ public final class PersistenceMatchingEventConsumer {
   private final CriticalDeliveryController deliveryController;
   private final PersistenceMatchingEventStatus status;
 
-  /** Creates the critical final-event Kafka boundary. */
+  /** Creates the critical final-event Kafka seam. */
   public PersistenceMatchingEventConsumer(
       MatchingEventPersistenceHandler persistenceHandler,
       CriticalDeliveryController deliveryController,
@@ -40,9 +41,10 @@ public final class PersistenceMatchingEventConsumer {
   /** Consumes one final Matching Event and never skips a failed or quarantined offset. */
   @KafkaListener(
       topics = "${simplematch.persistence.matching-events.topic:matching.events}",
-      autoStartup = "${simplematch.persistence.matching-events.enabled:false}")
+      autoStartup = "${simplematch.persistence.matching-events.enabled:false}",
+      properties = "key.deserializer=org.apache.kafka.common.serialization.ByteArrayDeserializer")
   public void onMatchingEvent(
-      ConsumerRecord<String, byte[]> record,
+      ConsumerRecord<byte[], byte[]> record,
       Acknowledgment acknowledgment,
       Consumer<?, ?> consumer) {
     final byte[] payload = record.value() == null ? new byte[0] : record.value();
@@ -51,7 +53,8 @@ public final class PersistenceMatchingEventConsumer {
     try {
       final FinalMatchingEventEnvelope envelope = FinalMatchingEventEnvelope.parse(payload);
       delivery = finalEventDelivery(record, payload, envelope);
-      requireExactKafkaKey(record.key(), envelope.event().getEventId());
+      requireExactKafkaKey(record.key(), envelope.eventIdBytes());
+      requireExactPartition(record.partition(), envelope.event().getPartitionId());
       final MatchingEventPersistenceOutcome outcome =
           persistenceHandler.persist(envelope, record.partition(), record.offset());
       if (outcome == MatchingEventPersistenceOutcome.DUPLICATE) {
@@ -87,7 +90,8 @@ public final class PersistenceMatchingEventConsumer {
     status.recordRecovered(position);
   }
 
-  private DeliveryRecord opaqueDelivery(ConsumerRecord<String, byte[]> record, byte[] payload) {
+  private DeliveryRecord opaqueDelivery(
+      ConsumerRecord<byte[], byte[]> record, byte[] payload) {
     return new DeliveryRecord(
         record.topic() + ":" + record.partition() + ":" + record.offset(),
         new DeliveryPosition(record.topic(), record.partition(), record.offset()),
@@ -95,16 +99,24 @@ public final class PersistenceMatchingEventConsumer {
   }
 
   private DeliveryRecord finalEventDelivery(
-      ConsumerRecord<String, byte[]> record, byte[] payload, FinalMatchingEventEnvelope envelope) {
+      ConsumerRecord<byte[], byte[]> record,
+      byte[] payload,
+      FinalMatchingEventEnvelope envelope) {
     return new DeliveryRecord(
-        envelope.event().getEventId(),
+        envelope.eventIdHex(),
         new DeliveryPosition(record.topic(), record.partition(), record.offset()),
         payload);
   }
 
-  private void requireExactKafkaKey(String recordKey, String eventId) {
-    if (!eventId.equals(recordKey)) {
-      throw new IllegalArgumentException("matching.events Kafka key must equal eventId");
+  private void requireExactKafkaKey(byte[] recordKey, byte[] eventId) {
+    if (recordKey == null || !Arrays.equals(eventId, recordKey)) {
+      throw new IllegalArgumentException("matching.events Kafka key must equal eventId bytes");
+    }
+  }
+
+  private void requireExactPartition(int recordPartition, int eventPartition) {
+    if (recordPartition != eventPartition) {
+      throw new IllegalArgumentException("matching.events Kafka partition must equal partitionId");
     }
   }
 

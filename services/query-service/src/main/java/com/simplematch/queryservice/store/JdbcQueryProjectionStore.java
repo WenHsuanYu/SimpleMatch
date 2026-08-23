@@ -29,16 +29,13 @@ public final class JdbcQueryProjectionStore implements QueryProjectionStore {
       FinalMatchingEventEnvelope envelope, int partition, long offset, long observedAtUnixMs) {
     final QueryProjectionPosition position =
         new QueryProjectionPosition(partition, offset, observedAtUnixMs);
+    final String eventId = envelope.eventIdHex();
     if (!JdbcQueryProjectionState.claimInbox(
-        jdbcTemplate,
-        envelope.event().getEventId(),
-        MATCHING_TOPIC,
-        envelope.payloadSha256(),
-        position)) {
+        jdbcTemplate, eventId, MATCHING_TOPIC, envelope.payloadSha256(), position)) {
       return;
     }
     JdbcQueryProjectionState.assertContiguous(jdbcTemplate, MATCHING_TOPIC, position);
-    JdbcQueryMatchingProjection.project(jdbcTemplate, envelope.event(), position);
+    JdbcQueryMatchingProjection.project(jdbcTemplate, envelope.event(), eventId, position);
     JdbcQueryProjectionState.advance(jdbcTemplate, MATCHING_TOPIC, position);
   }
 
@@ -71,8 +68,7 @@ public final class JdbcQueryProjectionStore implements QueryProjectionStore {
   @Override
   public void installMarketReference(
       VerifiedMarketReferenceArtifact artifact, long installedAtUnixMs) {
-    JdbcQueryMarketReferenceProjection.install(
-        jdbcTemplate, artifact, installedAtUnixMs);
+    JdbcQueryMarketReferenceProjection.install(jdbcTemplate, artifact, installedAtUnixMs);
   }
 
   @Override

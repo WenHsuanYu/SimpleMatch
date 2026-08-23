@@ -1,5 +1,6 @@
 package com.simplematch.quickfixgateway.matching;
 
+import com.simplematch.contracts.DeterministicTextIdentity;
 import com.simplematch.contracts.matching.runtime.v1.FinalMatchingEventEnvelope;
 import com.simplematch.contracts.matching.runtime.v1.MatchingEvent;
 import com.simplematch.contracts.matching.runtime.v1.OrderRested;
@@ -38,26 +39,29 @@ public final class FinalMatchingEventFixDeliveryPlanner {
     return switch (event.getEventType()) {
       case MATCHING_EVENT_TYPE_ORDER_RESTED ->
           List.of(rested(envelope, kafkaPartition, kafkaOffset, createdAtUnixMs));
-      case MATCHING_EVENT_TYPE_TRADE_EXECUTED ->
-          List.of(
-              tradeLeg(
-                  envelope,
-                  event.getTradeExecuted().getMaker(),
-                  event.getTradeExecuted().getTradeId(),
-                  "maker",
-                  0,
-                  kafkaPartition,
-                  kafkaOffset,
-                  createdAtUnixMs),
-              tradeLeg(
-                  envelope,
-                  event.getTradeExecuted().getTaker(),
-                  event.getTradeExecuted().getTradeId(),
-                  "taker",
-                  1,
-                  kafkaPartition,
-                  kafkaOffset,
-                  createdAtUnixMs));
+      case MATCHING_EVENT_TYPE_TRADE_EXECUTED -> {
+        final String tradeId =
+            HexFormat.of().formatHex(event.getTradeExecuted().getTradeId().toByteArray());
+        yield List.of(
+            tradeLeg(
+                envelope,
+                event.getTradeExecuted().getMaker(),
+                tradeId,
+                "maker",
+                0,
+                kafkaPartition,
+                kafkaOffset,
+                createdAtUnixMs),
+            tradeLeg(
+                envelope,
+                event.getTradeExecuted().getTaker(),
+                tradeId,
+                "taker",
+                1,
+                kafkaPartition,
+                kafkaOffset,
+                createdAtUnixMs));
+      }
       case MATCHING_EVENT_TYPE_ORDER_CANCELLED ->
           List.of(
               terminal(
@@ -103,7 +107,7 @@ public final class FinalMatchingEventFixDeliveryPlanner {
         rested.getOrderId(),
         0,
         new FinalFixDeliveryReport(
-            lifecycleExecutionId(envelope.event(), rested.getOrderId()),
+            lifecycleExecutionId(envelope, rested.getOrderId()),
             '0',
             '0',
             0,
@@ -136,9 +140,13 @@ public final class FinalMatchingEventFixDeliveryPlanner {
     final long orderQuantity = quantity(state);
     requireLifecycleQuantities(
         orderQuantity, leg.getCumulativeQuantityShares(), leg.getLeavesQuantityShares());
-    final char status = leg.getLeavesQuantityShares() == 0 ? '2' : '1';
-    final long averagePrice =
-        leg.getAveragePriceUnits() > 0 ? leg.getAveragePriceUnits() : leg.getPriceUnits();
+    final char status =
+        switch (leg.getResultingState()) {
+          case TRADE_LEG_STATE_FILLED -> '2';
+          case TRADE_LEG_STATE_PARTIALLY_FILLED -> '1';
+          case TRADE_LEG_STATE_UNSPECIFIED, UNRECOGNIZED ->
+              throw new IllegalArgumentException("validated trade leg state is required");
+        };
     return intent(
         envelope,
         state,
@@ -148,11 +156,11 @@ public final class FinalMatchingEventFixDeliveryPlanner {
             tradeId + "-" + role,
             status,
             status,
-            leg.getQuantityShares(),
-            leg.getPriceUnits(),
+            event.getTradeExecuted().getQuantityShares(),
+            event.getTradeExecuted().getPriceUnits(),
             leg.getCumulativeQuantityShares(),
             leg.getLeavesQuantityShares(),
-            averagePrice,
+            leg.getAveragePriceUnits(),
             ""),
         kafkaPartition,
         kafkaOffset,
@@ -181,7 +189,7 @@ public final class FinalMatchingEventFixDeliveryPlanner {
         terminal.getOrderId(),
         0,
         new FinalFixDeliveryReport(
-            lifecycleExecutionId(envelope.event(), terminal.getOrderId()),
+            lifecycleExecutionId(envelope, terminal.getOrderId()),
             executionType,
             orderStatus,
             0,
@@ -204,12 +212,10 @@ public final class FinalMatchingEventFixDeliveryPlanner {
       int kafkaPartition,
       long kafkaOffset,
       long createdAtUnixMs) {
-    final String eventId = envelope.event().getEventId();
+    final String eventId = envelope.eventIdHex();
     final String deliveryId =
         HexFormat.of()
-            .formatHex(
-                FinalMatchingEventEnvelope.deterministicIdentity(
-                    DELIVERY_NAMESPACE, eventId, orderId));
+            .formatHex(DeterministicTextIdentity.sha256(DELIVERY_NAMESPACE, eventId, orderId));
     return new FinalFixDeliveryIntent(
         new FinalFixDeliveryIdentity(deliveryId, eventId, deliveryIndex),
         new FinalFixDeliveryRecipient(UUID.fromString(orderId), state.sessionId(), state.order()),
@@ -266,13 +272,13 @@ public final class FinalMatchingEventFixDeliveryPlanner {
     }
   }
 
-  private String lifecycleExecutionId(MatchingEvent event, String orderId) {
+  private String lifecycleExecutionId(FinalMatchingEventEnvelope envelope, String orderId) {
     return HexFormat.of()
         .formatHex(
-            FinalMatchingEventEnvelope.deterministicIdentity(
+            DeterministicTextIdentity.sha256(
                 LIFECYCLE_EXEC_NAMESPACE,
-                event.getEventId(),
+                envelope.eventIdHex(),
                 orderId,
-                event.getEventType().name()));
+                envelope.event().getEventType().name()));
   }
 }

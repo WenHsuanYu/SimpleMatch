@@ -3,6 +3,7 @@ package com.simplematch.quickfixgateway.matching;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
+import com.google.protobuf.ByteString;
 import com.simplematch.contracts.common.v2.OrderType;
 import com.simplematch.contracts.common.v2.Side;
 import com.simplematch.contracts.common.v2.TimeInForce;
@@ -11,9 +12,11 @@ import com.simplematch.contracts.matching.runtime.v1.ArtifactIdentity;
 import com.simplematch.contracts.matching.runtime.v1.DeterministicEventConflictException;
 import com.simplematch.contracts.matching.runtime.v1.FinalMatchingEventEnvelope;
 import com.simplematch.contracts.matching.runtime.v1.MatchingEvent;
+import com.simplematch.contracts.matching.runtime.v1.MatchingEventIdentityV1;
 import com.simplematch.contracts.matching.runtime.v1.MatchingEventType;
 import com.simplematch.contracts.matching.runtime.v1.TradeExecuted;
 import com.simplematch.contracts.matching.runtime.v1.TradeLeg;
+import com.simplematch.contracts.matching.runtime.v1.TradeLegState;
 import com.simplematch.quickfixgateway.fix.OrderSessionRegistry;
 import com.simplematch.quickfixgateway.store.JdbcFinalFixDeliveryStore;
 import com.simplematch.quickfixgateway.wal.FixSessionIdentity;
@@ -26,7 +29,7 @@ import com.simplematch.quickfixgateway.wal.WalRecord;
 import java.time.Clock;
 import java.time.Instant;
 import java.time.ZoneOffset;
-import java.util.List;
+import java.util.HexFormat;
 import java.util.UUID;
 import org.flywaydb.core.Flyway;
 import org.junit.jupiter.api.AfterEach;
@@ -47,8 +50,11 @@ class FinalMatchingEventFixDeliveryApplicationServiceTest {
           .build();
   private static final Clock CLOCK =
       Clock.fixed(Instant.parse("2026-08-11T00:00:00Z"), ZoneOffset.UTC);
-  private static final String EVENT_ID = "e".repeat(64);
-  private static final String TRADE_ID = "d".repeat(64);
+  private static final String COMMAND_ID = "0198a001-0000-7000-8000-000000000001";
+  private static final UUID COMMAND_UUID = UUID.fromString(COMMAND_ID);
+  private static final String TRADE_ID =
+      HexFormat.of().formatHex(
+          MatchingEventIdentityV1.tradeId("2026-08-11-regular", 0, COMMAND_UUID, 0));
   private static final String MAKER_ORDER_ID = "0198a001-0000-7000-8000-000000000011";
   private static final String TAKER_ORDER_ID = "0198a001-0000-7000-8000-000000000012";
   private static final String MAKER_ACCOUNT_ID = "0198a001-0000-7000-8000-0000000000aa";
@@ -89,7 +95,7 @@ class FinalMatchingEventFixDeliveryApplicationServiceTest {
   void storesOneInboxRowAndMakerTakerIntentsBeforeAdvancingProgress() throws Exception {
     final FinalMatchingEventFixDeliveryApplicationService service = service(completeRegistry());
 
-    assertThat(persist(service, tradeEnvelope(EVENT_ID, 1_000_000L)))
+    assertThat(persist(service, tradeEnvelope(1_000_000L)))
         .isEqualTo(FinalMatchingEventFixDeliveryOutcome.APPLIED);
 
     assertThat(count("matching_event_inbox")).isEqualTo(1);
@@ -108,7 +114,7 @@ class FinalMatchingEventFixDeliveryApplicationServiceTest {
   @Test
   void replayedBytesProduceNoSecondDeliveryIntent() throws Exception {
     final FinalMatchingEventFixDeliveryApplicationService service = service(completeRegistry());
-    final FinalMatchingEventEnvelope envelope = tradeEnvelope(EVENT_ID, 1_000_000L);
+    final FinalMatchingEventEnvelope envelope = tradeEnvelope(1_000_000L);
 
     assertThat(persist(service, envelope)).isEqualTo(FinalMatchingEventFixDeliveryOutcome.APPLIED);
     assertThat(persist(service, envelope)).isEqualTo(FinalMatchingEventFixDeliveryOutcome.DUPLICATE);
@@ -120,10 +126,10 @@ class FinalMatchingEventFixDeliveryApplicationServiceTest {
   void conflictingRawBytesWithTheSameEventIdentityFailClosed() throws Exception {
     final FinalMatchingEventFixDeliveryApplicationService service = service(completeRegistry());
 
-    assertThat(persist(service, tradeEnvelope(EVENT_ID, 1_000_000L)))
+    assertThat(persist(service, tradeEnvelope(1_000_000L)))
         .isEqualTo(FinalMatchingEventFixDeliveryOutcome.APPLIED);
 
-    assertThatThrownBy(() -> persist(service, tradeEnvelope(EVENT_ID, 1_000_001L)))
+    assertThatThrownBy(() -> persist(service, tradeEnvelope(1_000_001L)))
         .isInstanceOf(DeterministicEventConflictException.class);
   }
 
@@ -133,7 +139,7 @@ class FinalMatchingEventFixDeliveryApplicationServiceTest {
     register(incompleteRegistry, MAKER_ORDER_ID, MAKER_ACCOUNT_ID, Side.SIDE_SELL, "M-1");
     final FinalMatchingEventFixDeliveryApplicationService service = service(incompleteRegistry);
 
-    assertThatThrownBy(() -> persist(service, tradeEnvelope(EVENT_ID, 1_000_000L)))
+    assertThatThrownBy(() -> persist(service, tradeEnvelope(1_000_000L)))
         .isInstanceOf(IllegalStateException.class)
         .hasMessageContaining("no owning FIX session");
 
@@ -184,17 +190,17 @@ class FinalMatchingEventFixDeliveryApplicationServiceTest {
         "SELECT COUNT(*) FROM quickfix_gateway." + table, Integer.class);
   }
 
-  private FinalMatchingEventEnvelope tradeEnvelope(String eventId, long priceUnits) throws Exception {
-    final TradeLeg maker = leg(MAKER_ORDER_ID, MAKER_ACCOUNT_ID, Side.SIDE_SELL, priceUnits);
-    final TradeLeg taker = leg(TAKER_ORDER_ID, TAKER_ACCOUNT_ID, Side.SIDE_BUY, priceUnits);
+  private FinalMatchingEventEnvelope tradeEnvelope(long priceUnits) throws Exception {
+    final TradeLeg maker = leg(MAKER_ORDER_ID, MAKER_ACCOUNT_ID, Side.SIDE_SELL);
+    final TradeLeg taker = leg(TAKER_ORDER_ID, TAKER_ACCOUNT_ID, Side.SIDE_BUY);
     return FinalMatchingEventEnvelope.parse(
         MatchingEvent.newBuilder()
             .setSchemaVersion(1)
             .setIdentityVersion(1)
-            .setEventId(eventId)
+            .setEventId(ByteString.copyFrom(MatchingEventIdentityV1.eventId("2026-08-11-regular", 0, COMMAND_UUID, 0)))
             .setTradingSessionId("2026-08-11-regular")
             .setPartitionId(0)
-            .setSourceCommandId("0198a001-0000-7000-8000-000000000001")
+            .setSourceCommandId(COMMAND_ID)
             .setSourceInputOffset(42L)
             .setOutputIndex(0)
             .setArtifactIdentity(ARTIFACT)
@@ -202,25 +208,27 @@ class FinalMatchingEventFixDeliveryApplicationServiceTest {
             .setEventType(MatchingEventType.MATCHING_EVENT_TYPE_TRADE_EXECUTED)
             .setTradeExecuted(
                 TradeExecuted.newBuilder()
-                    .setTradeId(TRADE_ID)
-                    .setInstrument(
-                        VenueInstrument.newBuilder().setVenueMic("XTAI").setSymbol("2330"))
+                    .setTradeId(ByteString.copyFrom(MatchingEventIdentityV1.tradeId("2026-08-11-regular", 0, COMMAND_UUID, 0)))
+                    .setMatchIndex(0)
+                    .setInstrument(VenueInstrument.newBuilder().setVenueMic("XTAI").setSymbol("2330"))
+                    .setAggressorSide(Side.SIDE_BUY)
+                    .setQuantityShares(100L)
+                    .setPriceUnits(priceUnits)
                     .setMaker(maker)
                     .setTaker(taker))
             .build()
             .toByteArray());
   }
 
-  private TradeLeg leg(String orderId, String accountId, Side side, long priceUnits) {
+  private TradeLeg leg(String orderId, String accountId, Side side) {
     return TradeLeg.newBuilder()
         .setOrderId(orderId)
         .setAccountId(accountId)
         .setSide(side)
-        .setQuantityShares(100L)
-        .setPriceUnits(priceUnits)
-        .setAveragePriceUnits(priceUnits)
+        .setAveragePriceUnits(1_000_000L)
         .setCumulativeQuantityShares(100L)
         .setLeavesQuantityShares(0L)
+        .setResultingState(TradeLegState.TRADE_LEG_STATE_FILLED)
         .build();
   }
 }
