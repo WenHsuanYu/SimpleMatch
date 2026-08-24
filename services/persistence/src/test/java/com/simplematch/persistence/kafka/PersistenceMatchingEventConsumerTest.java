@@ -9,8 +9,10 @@ import com.simplematch.config.delivery.CriticalDeliveryController;
 import com.simplematch.config.delivery.DeliveryPosition;
 import com.simplematch.config.delivery.QuarantineEvidence;
 import com.simplematch.config.delivery.QuarantineStore;
-import com.simplematch.contracts.matching.runtime.v1.MatchingEventType;
+import com.simplematch.persistence.matching.MatchingEventPersistenceApplicationService;
+import com.simplematch.persistence.matching.MatchingEventPersistenceHandler;
 import com.simplematch.persistence.matching.MatchingEventPersistenceOutcome;
+import com.simplematch.persistence.store.JdbcMatchingEventStore;
 import java.io.IOException;
 import java.io.InputStream;
 import java.nio.charset.StandardCharsets;
@@ -20,50 +22,82 @@ import java.time.ZoneOffset;
 import java.util.ArrayList;
 import java.util.HexFormat;
 import java.util.List;
+import java.util.UUID;
 import org.apache.kafka.clients.consumer.Consumer;
 import org.apache.kafka.clients.consumer.ConsumerRecord;
 import org.apache.kafka.common.TopicPartition;
+import org.flywaydb.core.Flyway;
+import org.junit.jupiter.api.AfterEach;
+import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
+import org.springframework.jdbc.core.JdbcTemplate;
+import org.springframework.jdbc.datasource.DataSourceTransactionManager;
+import org.springframework.jdbc.datasource.SingleConnectionDataSource;
 import org.springframework.kafka.support.Acknowledgment;
+import org.springframework.transaction.support.TransactionTemplate;
 
-/** Verifies Persistence consumes the native final-event record before committing Kafka. */
+/** Verifies native final-event bytes reach Persistence's real application transaction. */
 class PersistenceMatchingEventConsumerTest {
   private static final Clock CLOCK =
       Clock.fixed(Instant.parse("2026-08-11T00:00:00Z"), ZoneOffset.UTC);
   private static final String EVENT_ID_HEX =
       "436c95c15c97744324aaaf0cfd6cd27b371839e944df9ae40ebab37a207cbb6f";
-  private static final String PAYLOAD_SHA256 =
-      "f263bd42b276005f17556ea3c1fbe5a998c6c1d438521cc5feb1b5c147087a27";
   private static final byte[] EVENT_ID = HexFormat.of().parseHex(EVENT_ID_HEX);
 
+  private SingleConnectionDataSource dataSource;
+  private JdbcTemplate jdbcTemplate;
+  private TransactionTemplate transactions;
+
+  @BeforeEach
+  void setUp() {
+    dataSource =
+        new SingleConnectionDataSource(
+            "jdbc:h2:mem:"
+                + UUID.randomUUID().toString().replace("-", "")
+                + ";MODE=PostgreSQL;DB_CLOSE_DELAY=-1",
+            "sa",
+            "",
+            true);
+    dataSource.setDriverClassName("org.h2.Driver");
+    Flyway.configure()
+        .dataSource(dataSource)
+        .locations("classpath:db/migration/persistence")
+        .load()
+        .migrate();
+    jdbcTemplate = new JdbcTemplate(dataSource);
+    transactions = new TransactionTemplate(new DataSourceTransactionManager(dataSource));
+  }
+
+  @AfterEach
+  void tearDown() {
+    dataSource.destroy();
+  }
+
   @Test
-  void acknowledgesNativeTradeOnlyAfterPersistenceCompletes() throws IOException {
+  void nativeTradeReachesTheRealPersistenceApplicationBeforeKafkaCommit() throws IOException {
     final Acknowledgment acknowledgment = mock(Acknowledgment.class);
-    final Consumer<?, ?> consumer = mockConsumer();
+    final Consumer<?, ?> kafkaConsumer = mockConsumer();
     final PersistenceMatchingEventConsumer matchingConsumer =
         new PersistenceMatchingEventConsumer(
-            (envelope, partition, offset) -> {
-              assertThat(envelope.event().getEventType())
-                  .isEqualTo(MatchingEventType.MATCHING_EVENT_TYPE_TRADE_EXECUTED);
-              assertThat(envelope.payloadSha256Hex()).isEqualTo(PAYLOAD_SHA256);
-              assertThat(partition).isZero();
-              assertThat(offset).isEqualTo(42L);
-              return MatchingEventPersistenceOutcome.APPLIED;
-            },
+            realHandler(),
             controller(new RecordingQuarantineStore(), 2),
             new PersistenceMatchingEventStatus());
 
-    matchingConsumer.onMatchingEvent(record(EVENT_ID), acknowledgment, consumer);
+    matchingConsumer.onMatchingEvent(record(EVENT_ID), acknowledgment, kafkaConsumer);
 
     verify(acknowledgment).acknowledge();
-    verify(consumer, never()).seek(new TopicPartition("matching.events", 0), 42L);
+    verify(kafkaConsumer, never()).seek(new TopicPartition("matching.events", 0), 42L);
+    assertThat(count("matching_event_inbox")).isEqualTo(1);
+    assertThat(count("trades")).isEqualTo(1);
+    assertThat(count("order_fills")).isEqualTo(2);
+    assertThat(count("matching_consumer_progress")).isEqualTo(1);
   }
 
   @Test
   void quarantinesWhenTheKafkaKeyDisagreesWithNativePayloadIdentity() throws IOException {
     final RecordingQuarantineStore quarantines = new RecordingQuarantineStore();
     final Acknowledgment acknowledgment = mock(Acknowledgment.class);
-    final Consumer<?, ?> consumer = mockConsumer();
+    final Consumer<?, ?> kafkaConsumer = mockConsumer();
     final PersistenceMatchingEventConsumer matchingConsumer =
         new PersistenceMatchingEventConsumer(
             (envelope, partition, offset) -> MatchingEventPersistenceOutcome.APPLIED,
@@ -72,15 +106,22 @@ class PersistenceMatchingEventConsumerTest {
     final ConsumerRecord<byte[], byte[]> record = record(new byte[32]);
     final TopicPartition topicPartition = new TopicPartition("matching.events", 0);
 
-    matchingConsumer.onMatchingEvent(record, acknowledgment, consumer);
-    matchingConsumer.onMatchingEvent(record, acknowledgment, consumer);
+    matchingConsumer.onMatchingEvent(record, acknowledgment, kafkaConsumer);
+    matchingConsumer.onMatchingEvent(record, acknowledgment, kafkaConsumer);
 
-    verify(consumer).seek(topicPartition, 42L);
-    verify(consumer).pause(List.of(topicPartition));
+    verify(kafkaConsumer).seek(topicPartition, 42L);
+    verify(kafkaConsumer).pause(List.of(topicPartition));
     verify(acknowledgment, never()).acknowledge();
     assertThat(quarantines.evidence)
         .singleElement()
         .satisfies(evidence -> assertThat(evidence.record().eventId()).isEqualTo(EVENT_ID_HEX));
+  }
+
+  private MatchingEventPersistenceHandler realHandler() {
+    final MatchingEventPersistenceApplicationService service =
+        new MatchingEventPersistenceApplicationService(new JdbcMatchingEventStore(jdbcTemplate), CLOCK);
+    return (envelope, partition, offset) ->
+        transactions.execute(status -> service.persist(envelope, partition, offset));
   }
 
   private CriticalDeliveryController controller(
@@ -91,6 +132,11 @@ class PersistenceMatchingEventConsumerTest {
         "Correct the durable Persistence state, then resume the same topic partition and offset.",
         CLOCK,
         quarantines);
+  }
+
+  private int count(String table) {
+    return jdbcTemplate.queryForObject(
+        "SELECT COUNT(*) FROM persistence." + table, Integer.class);
   }
 
   private Consumer<?, ?> mockConsumer() {

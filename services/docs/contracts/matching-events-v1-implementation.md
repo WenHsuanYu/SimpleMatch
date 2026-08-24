@@ -30,11 +30,19 @@ idempotence, and `acks=all`. Issue #129 does not introduce another publication
 abstraction or duplicate the producer durability policy.
 
 On the Java side, `FinalMatchingEventEnvelope.parse(byte[])` is the shared
-contract seam. It computes SHA-256 over the exact Kafka record value before
-Protobuf parsing, validates schema and event semantics, and independently
-recomputes V1 event and trade identities. Persistence, Account, and QuickFIX
-Kafka Adapters verify the raw 32-byte Kafka key and numeric Kafka partition
-before invoking their transaction-owning application Interfaces.
+contract seam and the only construction path for a validated final event. It
+computes SHA-256 over the exact Kafka record value before Protobuf parsing,
+validates schema and event semantics, and independently recomputes V1 event and
+trade identities. A caller cannot pair parsed semantics from one event with raw
+bytes or a fingerprint from another event.
+
+Persistence, Account, and QuickFIX Kafka Adapters verify the raw 32-byte Kafka
+key and numeric Kafka partition before invoking their transaction-owning
+application Interfaces. Account additionally translates the validated Protobuf
+value at its Kafka seam into `FinalMatchingEventAccountCommand` and
+`MatchingAccountEffect` values. Its final-event application service therefore
+owns inbox, authority-effect, and progress transactions without depending on the
+final Matching Protobuf contract.
 
 ## Deterministic identity
 
@@ -108,8 +116,15 @@ The C++ encoder tests compare final record bytes with these independent fixture
 literals and pin known event and trade identity vectors. The shared Java
 contract suite parses all four records and pins their exact raw-value hashes.
 Persistence, Account, and QuickFIX consumer tests feed the same native trade
-record through their public Kafka Adapter seams and require successful parsing,
-identity validation, partition validation, and acknowledgment behavior.
+record through their public Kafka Adapter seams and their real application
+transactions, then verify the resulting durable facts or delivery progress
+before Kafka acknowledgment.
+
+The `simplematch.contract-test-fixtures` build convention is the single place
+that exposes shared contract resources to service tests. Service build files do
+not depend on another Module's internal test-resource path. The obsolete generic
+`cpp-matching-event-v1.hex` alias is removed; the event-specific fixture names
+are the only native Matching Event test vectors.
 
 Existing transaction-level inbox tests retain the duplicate and conflict
 coverage: exact replay produces no second durable effect, while the same event

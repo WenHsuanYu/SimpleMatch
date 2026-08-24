@@ -57,8 +57,10 @@ public final class FinalMatchingEventAccountConsumer {
       delivery = finalEventDelivery(record, payload, envelope);
       requireExactKafkaKey(record.key(), envelope.eventIdBytes());
       requireExactPartition(record.partition(), envelope.event().getPartitionId());
+      final FinalMatchingEventAccountCommand command =
+          FinalMatchingEventAccountAdapter.adapt(envelope);
       final FinalMatchingEventAccountOutcome outcome =
-          accountHandler.apply(envelope, record.partition(), record.offset());
+          accountHandler.apply(command, record.partition(), record.offset());
       if (outcome == FinalMatchingEventAccountOutcome.DUPLICATE) {
         deliveryController.recordDuplicate(delivery);
       }

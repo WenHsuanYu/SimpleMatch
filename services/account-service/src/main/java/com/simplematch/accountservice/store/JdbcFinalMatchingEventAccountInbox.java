@@ -1,7 +1,6 @@
 package com.simplematch.accountservice.store;
 
 import com.simplematch.contracts.matching.runtime.v1.DeterministicEventConflictException;
-import com.simplematch.contracts.matching.runtime.v1.FinalMatchingEventEnvelope;
 import java.util.Arrays;
 import java.util.HexFormat;
 import java.util.List;
@@ -24,14 +23,13 @@ public class JdbcFinalMatchingEventAccountInbox {
    * transaction-participating data source.
    */
   public JdbcFinalMatchingEventAccountInbox(JdbcTemplate jdbcTemplate) {
-    this.jdbcTemplate =
-        new JdbcTemplate(jdbcTemplate.getDataSource());
+    this.jdbcTemplate = new JdbcTemplate(jdbcTemplate.getDataSource());
   }
 
   /** Claims one exact final event or fails closed when the identity's bytes conflict. */
-  public boolean claim(FinalMatchingEventEnvelope envelope, long receivedAtUnixMs) {
-    final byte[] eventId = envelope.eventIdBytes();
-    final byte[] payloadSha256 = envelope.payloadSha256();
+  public boolean claim(byte[] eventId, byte[] payloadSha256, long receivedAtUnixMs) {
+    final byte[] identity = requireSha256(eventId, "eventId");
+    final byte[] observedHash = requireSha256(payloadSha256, "payloadSha256");
     final List<byte[]> existing =
         jdbcTemplate.query(
             """
@@ -41,9 +39,9 @@ public class JdbcFinalMatchingEventAccountInbox {
             """,
             (resultSet, rowNumber) -> resultSet.getBytes("payload_sha256"),
             CONSUMER_NAME,
-            eventId);
+            identity);
     if (!existing.isEmpty()) {
-      assertMatchingHash(eventId, existing.getFirst(), payloadSha256);
+      assertMatchingHash(identity, existing.getFirst(), observedHash);
       return false;
     }
     try {
@@ -54,8 +52,8 @@ public class JdbcFinalMatchingEventAccountInbox {
           ) VALUES (?, ?, ?, ?)
           """,
           CONSUMER_NAME,
-          eventId,
-          payloadSha256,
+          identity,
+          observedHash,
           receivedAtUnixMs);
       return true;
     } catch (DuplicateKeyException duplicate) {
@@ -68,8 +66,8 @@ public class JdbcFinalMatchingEventAccountInbox {
               """,
               byte[].class,
               CONSUMER_NAME,
-              eventId);
-      assertMatchingHash(eventId, racedHash, payloadSha256);
+              identity);
+      assertMatchingHash(identity, racedHash, observedHash);
       return false;
     }
   }
@@ -108,6 +106,13 @@ public class JdbcFinalMatchingEventAccountInbox {
         kafkaPartition,
         kafkaOffset,
         observedAtUnixMs);
+  }
+
+  private byte[] requireSha256(byte[] value, String name) {
+    if (value == null || value.length != 32) {
+      throw new IllegalArgumentException(name + " must contain exactly 32 bytes");
+    }
+    return value.clone();
   }
 
   private void assertMatchingHash(byte[] eventId, byte[] existing, byte[] observed) {
