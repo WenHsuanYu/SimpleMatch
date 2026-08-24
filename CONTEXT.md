@@ -165,6 +165,7 @@ authoritative lifecycle events and must not become a second command path.
 | Match index            | Zero-based order of only the trades produced by one new-order Matching Command.                          | Matching                                    |
 | Maker                  | For one trade, the order already resting in the order book and providing liquidity.                     | Matching                                    |
 | Taker                  | For one trade, the incoming order that removes resting liquidity; the role is per trade, not permanently buy or sell. | Matching                                    |
+| Aggressor side         | The side of the incoming order that removes resting liquidity in one trade.                              | Matching                                    |
 | Critical consumer      | Consumer whose failed record cannot be skipped because it owns permanent trade, account, or FIX-delivery effects. | Consuming context                            |
 | Quarantine             | Durable evidence that a critical consumer stopped before a record whose identity, payload, sequence, or schema cannot be applied safely. | Consuming context                            |
 | Partition Ownership Permit | Infrastructure-derived permission that allows one `matching-N` runtime to process partition `N`; the core does not depend on Kubernetes types. | Matching infrastructure                     |

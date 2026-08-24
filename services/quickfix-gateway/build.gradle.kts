@@ -4,6 +4,9 @@ plugins {
 }
 
 val testSourceSet = the<JavaPluginExtension>().sourceSets.getByName("test")
+testSourceSet.resources.srcDir(
+    rootProject.file("shared-java/simplematch-contracts/src/test/resources")
+)
 
 dependencies {
     implementation("org.springframework.boot:spring-boot-starter-web")
