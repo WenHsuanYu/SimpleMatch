@@ -27,12 +27,13 @@ import java.util.UUID;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 
-/** Proves the final Matching wire boundary has one deterministic command and event shape. */
+/** Proves the final Matching wire seam has one deterministic command and event shape. */
 class MatchingRuntimeContractTest {
   private static final ArtifactIdentity ARTIFACT =
       ArtifactIdentity.newBuilder()
           .setTradingDay("2026-08-11")
-          .setContentSha256("7cd06c51691bcde248e606ed1adfaddc4bd10ece582a6803fd2f04155a032943")
+          .setContentSha256(
+              "7cd06c51691bcde248e606ed1adfaddc4bd10ece582a6803fd2f04155a032943")
           .build();
 
   @DisplayName("new-order commands retain the daily identity and explicit partition")
@@ -52,7 +53,8 @@ class MatchingRuntimeContractTest {
                 NewOrder.newBuilder()
                     .setOrderId("0198a001-0000-7000-8000-000000000002")
                     .setAccountId("0198a001-0000-7000-8000-000000000003")
-                    .setInstrument(VenueInstrument.newBuilder().setVenueMic("XTAI").setSymbol("2330"))
+                    .setInstrument(
+                        VenueInstrument.newBuilder().setVenueMic("XTAI").setSymbol("2330"))
                     .setSide(Side.SIDE_BUY)
                     .setQuantityShares(1_000)
                     .setLimitPriceUnits(1_000_000)
@@ -91,7 +93,8 @@ class MatchingRuntimeContractTest {
                 OrderRested.newBuilder()
                     .setOrderId("0198a001-0000-7000-8000-000000000002")
                     .setAccountId("0198a001-0000-7000-8000-000000000003")
-                    .setInstrument(VenueInstrument.newBuilder().setVenueMic("XTAI").setSymbol("2330"))
+                    .setInstrument(
+                        VenueInstrument.newBuilder().setVenueMic("XTAI").setSymbol("2330"))
                     .setSide(Side.SIDE_BUY)
                     .setLeavesQuantityShares(1_000)
                     .setRestingPriceUnits(1_000_000))
@@ -105,17 +108,10 @@ class MatchingRuntimeContractTest {
     assertFalse(HexFormat.of().formatHex(event.toByteArray()).isBlank());
   }
 
-  @DisplayName("C++ golden Matching Event bytes parse as one complete maker and taker trade")
+  @DisplayName("native trade bytes expose one complete maker and taker transition")
   @Test
   void parsesCppGoldenTradeEvent() throws IOException {
-    final byte[] bytes;
-    try (InputStream fixture =
-        getClass().getResourceAsStream("/native-routing-fixtures/cpp-matching-event-v1.hex")) {
-      assertTrue(fixture != null, "native matching event fixture must exist");
-      final String hex =
-          new String(fixture.readAllBytes(), StandardCharsets.US_ASCII).replaceAll("\\s", "");
-      bytes = HexFormat.of().parseHex(hex);
-    }
+    final byte[] bytes = fixture("cpp-matching-trade-executed-v1.hex");
 
     final MatchingEvent event = MatchingEvent.parseFrom(bytes);
 
@@ -128,7 +124,21 @@ class MatchingRuntimeContractTest {
     assertEquals(Side.SIDE_BUY, event.getTradeExecuted().getAggressorSide());
     assertEquals(100, event.getTradeExecuted().getQuantityShares());
     assertEquals(1_000_000, event.getTradeExecuted().getPriceUnits());
-    assertEquals(TradeLegState.TRADE_LEG_STATE_FILLED, event.getTradeExecuted().getMaker().getResultingState());
-    assertEquals(TradeLegState.TRADE_LEG_STATE_FILLED, event.getTradeExecuted().getTaker().getResultingState());
+    assertEquals(
+        TradeLegState.TRADE_LEG_STATE_FILLED,
+        event.getTradeExecuted().getMaker().getResultingState());
+    assertEquals(
+        TradeLegState.TRADE_LEG_STATE_FILLED,
+        event.getTradeExecuted().getTaker().getResultingState());
+  }
+
+  private byte[] fixture(String name) throws IOException {
+    try (InputStream stream =
+        getClass().getResourceAsStream("/native-routing-fixtures/" + name)) {
+      assertTrue(stream != null, "native Matching Event fixture must exist");
+      final String encoded =
+          new String(stream.readAllBytes(), StandardCharsets.US_ASCII).replaceAll("\\s", "");
+      return HexFormat.of().parseHex(encoded);
+    }
   }
 }

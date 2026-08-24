@@ -5,61 +5,63 @@ import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 
-import com.google.protobuf.ByteString;
 import com.simplematch.config.delivery.CriticalDeliveryController;
 import com.simplematch.config.delivery.DeliveryPosition;
 import com.simplematch.config.delivery.QuarantineEvidence;
 import com.simplematch.config.delivery.QuarantineStore;
-import com.simplematch.contracts.common.v2.Side;
-import com.simplematch.contracts.common.v2.VenueInstrument;
-import com.simplematch.contracts.matching.runtime.v1.ArtifactIdentity;
-import com.simplematch.contracts.matching.runtime.v1.MatchingEvent;
-import com.simplematch.contracts.matching.runtime.v1.MatchingEventIdentityV1;
 import com.simplematch.contracts.matching.runtime.v1.MatchingEventType;
-import com.simplematch.contracts.matching.runtime.v1.OrderRested;
 import com.simplematch.quickfixgateway.matching.FinalMatchingEventFixDeliveryOutcome;
 import com.simplematch.quickfixgateway.matching.QuickFixFinalMatchingEventStatus;
+import java.io.IOException;
+import java.io.InputStream;
+import java.nio.charset.StandardCharsets;
 import java.time.Clock;
 import java.time.Instant;
 import java.time.ZoneOffset;
 import java.util.ArrayList;
 import java.util.HexFormat;
 import java.util.List;
-import java.util.UUID;
 import org.apache.kafka.clients.consumer.Consumer;
 import org.apache.kafka.clients.consumer.ConsumerRecord;
 import org.apache.kafka.common.TopicPartition;
 import org.junit.jupiter.api.Test;
 import org.springframework.kafka.support.Acknowledgment;
 
-/** Verifies Gateway offsets are acknowledged only after durable delivery intent work. */
+/** Verifies QuickFIX consumes the native final-event record before committing Kafka. */
 class FinalMatchingEventFixConsumerTest {
   private static final Clock CLOCK =
       Clock.fixed(Instant.parse("2026-08-11T00:00:00Z"), ZoneOffset.UTC);
-  private static final String COMMAND_ID = "0198a001-0000-7000-8000-000000000001";
-  private static final byte[] EVENT_ID =
-      MatchingEventIdentityV1.eventId(
-          "2026-08-11-regular", 0, UUID.fromString(COMMAND_ID), 0);
-  private static final String EVENT_ID_HEX = HexFormat.of().formatHex(EVENT_ID);
+  private static final String EVENT_ID_HEX =
+      "436c95c15c97744324aaaf0cfd6cd27b371839e944df9ae40ebab37a207cbb6f";
+  private static final String PAYLOAD_SHA256 =
+      "f263bd42b276005f17556ea3c1fbe5a998c6c1d438521cc5feb1b5c147087a27";
+  private static final byte[] EVENT_ID = HexFormat.of().parseHex(EVENT_ID_HEX);
 
   @Test
-  void acknowledgesOnlyAfterTheDurableDeliveryHandlerCompletes() {
+  void acknowledgesNativeTradeOnlyAfterDeliveryIntentPersists() throws IOException {
     final Acknowledgment acknowledgment = mock(Acknowledgment.class);
     final Consumer<?, ?> consumer = mockConsumer();
     final FinalMatchingEventFixConsumer finalEventConsumer =
         new FinalMatchingEventFixConsumer(
-            (envelope, partition, offset) -> FinalMatchingEventFixDeliveryOutcome.APPLIED,
+            (envelope, partition, offset) -> {
+              assertThat(envelope.event().getEventType())
+                  .isEqualTo(MatchingEventType.MATCHING_EVENT_TYPE_TRADE_EXECUTED);
+              assertThat(envelope.payloadSha256Hex()).isEqualTo(PAYLOAD_SHA256);
+              assertThat(partition).isZero();
+              assertThat(offset).isEqualTo(42L);
+              return FinalMatchingEventFixDeliveryOutcome.APPLIED;
+            },
             controller(new RecordingQuarantineStore(), 2),
             new QuickFixFinalMatchingEventStatus());
 
-    finalEventConsumer.onMatchingEvent(record(EVENT_ID, 9L), acknowledgment, consumer);
+    finalEventConsumer.onMatchingEvent(record(EVENT_ID), acknowledgment, consumer);
 
     verify(acknowledgment).acknowledge();
-    verify(consumer, never()).seek(new TopicPartition("matching.events", 0), 9L);
+    verify(consumer, never()).seek(new TopicPartition("matching.events", 0), 42L);
   }
 
   @Test
-  void keyMismatchQuarantinesAndStopsTheExactFinalEventOffset() {
+  void quarantinesWhenTheKafkaKeyDisagreesWithNativePayloadIdentity() throws IOException {
     final RecordingQuarantineStore quarantines = new RecordingQuarantineStore();
     final Acknowledgment acknowledgment = mock(Acknowledgment.class);
     final Consumer<?, ?> consumer = mockConsumer();
@@ -68,13 +70,13 @@ class FinalMatchingEventFixConsumerTest {
             (envelope, partition, offset) -> FinalMatchingEventFixDeliveryOutcome.APPLIED,
             controller(quarantines, 2),
             new QuickFixFinalMatchingEventStatus());
-    final ConsumerRecord<byte[], byte[]> record = record(new byte[32], 9L);
+    final ConsumerRecord<byte[], byte[]> record = record(new byte[32]);
     final TopicPartition topicPartition = new TopicPartition("matching.events", 0);
 
     finalEventConsumer.onMatchingEvent(record, acknowledgment, consumer);
     finalEventConsumer.onMatchingEvent(record, acknowledgment, consumer);
 
-    verify(consumer).seek(topicPartition, 9L);
+    verify(consumer).seek(topicPartition, 42L);
     verify(consumer).pause(List.of(topicPartition));
     verify(acknowledgment, never()).acknowledge();
     assertThat(quarantines.evidence)
@@ -96,37 +98,22 @@ class FinalMatchingEventFixConsumerTest {
     return mock(Consumer.class);
   }
 
-  private ConsumerRecord<byte[], byte[]> record(byte[] key, long offset) {
-    return new ConsumerRecord<>("matching.events", 0, offset, key, eventPayload());
+  private ConsumerRecord<byte[], byte[]> record(byte[] key) throws IOException {
+    return new ConsumerRecord<>("matching.events", 0, 42L, key, nativeTradePayload());
   }
 
-  private byte[] eventPayload() {
-    return MatchingEvent.newBuilder()
-        .setSchemaVersion(1)
-        .setIdentityVersion(1)
-        .setEventId(ByteString.copyFrom(EVENT_ID))
-        .setTradingSessionId("2026-08-11-regular")
-        .setPartitionId(0)
-        .setSourceCommandId(COMMAND_ID)
-        .setSourceInputOffset(9L)
-        .setOutputIndex(0)
-        .setArtifactIdentity(
-            ArtifactIdentity.newBuilder()
-                .setTradingDay("2026-08-11")
-                .setContentSha256(
-                    "7cd06c51691bcde248e606ed1adfaddc4bd10ece582a6803fd2f04155a032943"))
-        .setRoutingAlgorithmVersion("stable-least-loaded-v1")
-        .setEventType(MatchingEventType.MATCHING_EVENT_TYPE_ORDER_RESTED)
-        .setOrderRested(
-            OrderRested.newBuilder()
-                .setOrderId("0198a001-0000-7000-8000-000000000011")
-                .setAccountId("0198a001-0000-7000-8000-0000000000aa")
-                .setInstrument(VenueInstrument.newBuilder().setVenueMic("XTAI").setSymbol("2330"))
-                .setSide(Side.SIDE_BUY)
-                .setLeavesQuantityShares(100L)
-                .setRestingPriceUnits(1_000_000L))
-        .build()
-        .toByteArray();
+  private byte[] nativeTradePayload() throws IOException {
+    try (InputStream stream =
+        getClass()
+            .getResourceAsStream(
+                "/native-routing-fixtures/cpp-matching-trade-executed-v1.hex")) {
+      if (stream == null) {
+        throw new IOException("missing native TRADE_EXECUTED fixture");
+      }
+      final String encoded =
+          new String(stream.readAllBytes(), StandardCharsets.US_ASCII).replaceAll("\\s", "");
+      return HexFormat.of().parseHex(encoded);
+    }
   }
 
   private static final class RecordingQuarantineStore implements QuarantineStore {
@@ -139,7 +126,7 @@ class FinalMatchingEventFixConsumerTest {
 
     @Override
     public void markRecovered(DeliveryPosition position, long recoveredAtUnixMs) {
-      // This consumer test only verifies creation of exact blocked evidence.
+      // This test only verifies creation of evidence for the exact blocked record.
     }
   }
 }

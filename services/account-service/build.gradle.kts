@@ -3,6 +3,12 @@ plugins {
     id("simplematch.flyway-service")
 }
 
+the<JavaPluginExtension>()
+    .sourceSets
+    .getByName("test")
+    .resources
+    .srcDir(rootProject.file("shared-java/simplematch-contracts/src/test/resources"))
+
 dependencies {
     implementation("org.springframework.boot:spring-boot-starter-jdbc")
     implementation("org.springframework.boot:spring-boot-starter-kafka")
