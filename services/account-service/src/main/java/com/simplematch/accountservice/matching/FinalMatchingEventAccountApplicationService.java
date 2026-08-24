@@ -36,7 +36,10 @@ public class FinalMatchingEventAccountApplicationService
     final FinalMatchingEventAccountCommand finalCommand =
         Objects.requireNonNull(command, "command");
     final long now = clock.millis();
-    if (!inbox.claim(finalCommand.eventId(), finalCommand.payloadSha256(), now)) {
+    if (!inbox.claim(
+        finalCommand.eventId().bytes(),
+        finalCommand.payloadFingerprint().bytes(),
+        now)) {
       inbox.recordProgress(kafkaPartition, kafkaOffset, now);
       return FinalMatchingEventAccountOutcome.DUPLICATE;
     }

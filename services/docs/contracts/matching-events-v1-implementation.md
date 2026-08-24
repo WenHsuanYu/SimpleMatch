@@ -36,13 +36,26 @@ validates schema and event semantics, and independently recomputes V1 event and
 trade identities. A caller cannot pair parsed semantics from one event with raw
 bytes or a fingerprint from another event.
 
-Persistence, Account, and QuickFIX Kafka Adapters verify the raw 32-byte Kafka
-key and numeric Kafka partition before invoking their transaction-owning
-application Interfaces. Account additionally translates the validated Protobuf
-value at its Kafka seam into `FinalMatchingEventAccountCommand` and
-`MatchingAccountEffect` values. Its final-event application service therefore
-owns inbox, authority-effect, and progress transactions without depending on the
-final Matching Protobuf contract.
+`FinalMatchingEventTransportValidator` is the shared transport-invariant seam.
+It owns the two requirements that every `matching.events` consumer must apply:
+the Kafka key must equal the raw 32-byte `eventId`, and the numeric Kafka
+partition must equal the payload `partitionId`. Consumer Adapters retain their
+own delivery, retry, quarantine, and transaction behavior instead of sharing a
+consumer superclass or messaging framework.
+
+Persistence, Account, QuickFIX, Market Data, and Query invoke that transport
+validator before applying final-event effects. Account additionally translates
+the validated Protobuf value at its Kafka seam into
+`FinalMatchingEventAccountCommand` and `MatchingAccountEffect` values. Those
+effects use Account-owned identifier, instrument, quantity, and price value
+objects rather than carrying transport strings into business behavior.
+
+For trade effects, Account also translates each Matching leg's explicit
+resulting state into an Account-owned `ResultingState`. After a fill is applied,
+the Account application service verifies that `PARTIALLY_FILLED` corresponds to
+an active reservation and `FILLED` corresponds to an applied reservation. A
+disagreement fails the transaction so the inbox claim, authority mutation, and
+consumer progress roll back together.
 
 ## Deterministic identity
 
@@ -114,11 +127,17 @@ The native contract suite pins one raw record for every final event type:
 
 The C++ encoder tests compare final record bytes with these independent fixture
 literals and pin known event and trade identity vectors. The shared Java
-contract suite parses all four records and pins their exact raw-value hashes.
-Persistence, Account, and QuickFIX consumer tests feed the same native trade
-record through their public Kafka Adapter seams and their real application
-transactions, then verify the resulting durable facts or delivery progress
-before Kafka acknowledgment.
+contract suite parses all four records, pins their exact raw-value hashes, and
+verifies the shared Kafka key and partition invariant. Persistence, Account, and
+QuickFIX consumer tests feed the same native trade record through their public
+Kafka Adapter seams and their real application transactions, then verify the
+resulting durable facts or delivery progress before Kafka acknowledgment.
+
+The Account interoperability test also changes a native trade leg from `FILLED`
+to a valid `PARTIALLY_FILLED` representation while keeping the trade quantity
+large enough to finish the local reservation. The Account transaction rejects
+that semantic disagreement and rolls back all local effects before the record
+is quarantined.
 
 The `simplematch.contract-test-fixtures` build convention is the single place
 that exposes shared contract resources to service tests. Service build files do

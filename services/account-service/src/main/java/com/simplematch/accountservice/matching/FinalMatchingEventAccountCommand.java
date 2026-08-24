@@ -7,31 +7,86 @@ import java.util.Objects;
 
 /** Account-owned command for applying one validated final Matching Event delivery. */
 public final class FinalMatchingEventAccountCommand {
-  private final byte[] eventId;
-  private final byte[] payloadSha256;
+  private final EventId eventId;
+  private final PayloadFingerprint payloadFingerprint;
   private final List<MatchingAccountEffect> effects;
 
   /** Requires exact identity evidence and the complete ordered Account effects. */
   public FinalMatchingEventAccountCommand(
-      byte[] eventId, byte[] payloadSha256, List<MatchingAccountEffect> effects) {
-    this.eventId = requireSha256(eventId, "eventId");
-    this.payloadSha256 = requireSha256(payloadSha256, "payloadSha256");
+      EventId eventId,
+      PayloadFingerprint payloadFingerprint,
+      List<MatchingAccountEffect> effects) {
+    this.eventId = Objects.requireNonNull(eventId, "eventId");
+    this.payloadFingerprint = Objects.requireNonNull(payloadFingerprint, "payloadFingerprint");
     this.effects = List.copyOf(Objects.requireNonNull(effects, "effects"));
   }
 
-  /** Returns the binary Matching Event identity without exposing internal storage. */
-  public byte[] eventId() {
-    return eventId.clone();
+  /** Returns the typed binary Matching Event identity. */
+  public EventId eventId() {
+    return eventId;
   }
 
-  /** Returns the exact Kafka value fingerprint without exposing internal storage. */
-  public byte[] payloadSha256() {
-    return payloadSha256.clone();
+  /** Returns the typed fingerprint of the exact Kafka record value. */
+  public PayloadFingerprint payloadFingerprint() {
+    return payloadFingerprint;
   }
 
   /** Returns the ordered Account effects translated at the Kafka seam. */
   public List<MatchingAccountEffect> effects() {
     return effects;
+  }
+
+  /** Binary Matching Event identity used for Account inbox idempotency. */
+  public static final class EventId {
+    private final byte[] bytes;
+
+    /** Requires one exact 32-byte Matching Event identity. */
+    public EventId(byte[] bytes) {
+      this.bytes = requireSha256(bytes, "eventId");
+    }
+
+    /** Returns the identity bytes without exposing internal storage. */
+    public byte[] bytes() {
+      return bytes.clone();
+    }
+
+    @Override
+    public boolean equals(Object other) {
+      return this == other
+          || (other instanceof EventId eventId && Arrays.equals(bytes, eventId.bytes));
+    }
+
+    @Override
+    public int hashCode() {
+      return Arrays.hashCode(bytes);
+    }
+  }
+
+  /** SHA-256 fingerprint of the exact Kafka record value bytes. */
+  public static final class PayloadFingerprint {
+    private final byte[] bytes;
+
+    /** Requires one exact 32-byte raw-value SHA-256 fingerprint. */
+    public PayloadFingerprint(byte[] bytes) {
+      this.bytes = requireSha256(bytes, "payloadFingerprint");
+    }
+
+    /** Returns the fingerprint bytes without exposing internal storage. */
+    public byte[] bytes() {
+      return bytes.clone();
+    }
+
+    @Override
+    public boolean equals(Object other) {
+      return this == other
+          || (other instanceof PayloadFingerprint fingerprint
+              && Arrays.equals(bytes, fingerprint.bytes));
+    }
+
+    @Override
+    public int hashCode() {
+      return Arrays.hashCode(bytes);
+    }
   }
 
   private static byte[] requireSha256(byte[] value, String name) {
@@ -50,15 +105,13 @@ public final class FinalMatchingEventAccountCommand {
     if (!(other instanceof FinalMatchingEventAccountCommand command)) {
       return false;
     }
-    return Arrays.equals(eventId, command.eventId)
-        && Arrays.equals(payloadSha256, command.payloadSha256)
+    return eventId.equals(command.eventId)
+        && payloadFingerprint.equals(command.payloadFingerprint)
         && effects.equals(command.effects);
   }
 
   @Override
   public int hashCode() {
-    int result = Arrays.hashCode(eventId);
-    result = 31 * result + Arrays.hashCode(payloadSha256);
-    return 31 * result + effects.hashCode();
+    return Objects.hash(eventId, payloadFingerprint, effects);
   }
 }

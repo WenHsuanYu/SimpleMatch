@@ -6,9 +6,9 @@ import com.simplematch.config.delivery.DeliveryDecision;
 import com.simplematch.config.delivery.DeliveryPosition;
 import com.simplematch.config.delivery.DeliveryRecord;
 import com.simplematch.contracts.matching.runtime.v1.FinalMatchingEventEnvelope;
+import com.simplematch.contracts.matching.runtime.v1.FinalMatchingEventTransportValidator;
 import com.simplematch.persistence.matching.MatchingEventPersistenceHandler;
 import com.simplematch.persistence.matching.MatchingEventPersistenceOutcome;
-import java.util.Arrays;
 import java.util.List;
 import java.util.Objects;
 import org.apache.kafka.clients.consumer.Consumer;
@@ -33,8 +33,10 @@ public final class PersistenceMatchingEventConsumer {
       MatchingEventPersistenceHandler persistenceHandler,
       CriticalDeliveryController deliveryController,
       PersistenceMatchingEventStatus status) {
-    this.persistenceHandler = Objects.requireNonNull(persistenceHandler, "persistenceHandler");
-    this.deliveryController = Objects.requireNonNull(deliveryController, "deliveryController");
+    this.persistenceHandler =
+        Objects.requireNonNull(persistenceHandler, "persistenceHandler");
+    this.deliveryController =
+        Objects.requireNonNull(deliveryController, "deliveryController");
     this.status = Objects.requireNonNull(status, "status");
   }
 
@@ -42,21 +44,25 @@ public final class PersistenceMatchingEventConsumer {
   @KafkaListener(
       topics = "${simplematch.persistence.matching-events.topic:matching.events}",
       autoStartup = "${simplematch.persistence.matching-events.enabled:false}",
-      properties = "key.deserializer=org.apache.kafka.common.serialization.ByteArrayDeserializer")
+      properties =
+          "key.deserializer=org.apache.kafka.common.serialization.ByteArrayDeserializer")
   public void onMatchingEvent(
       ConsumerRecord<byte[], byte[]> record,
       Acknowledgment acknowledgment,
       Consumer<?, ?> consumer) {
     final byte[] payload = record.value() == null ? new byte[0] : record.value();
     DeliveryRecord delivery = opaqueDelivery(record, payload);
-    final TopicPartition topicPartition = new TopicPartition(record.topic(), record.partition());
+    final TopicPartition topicPartition =
+        new TopicPartition(record.topic(), record.partition());
     try {
-      final FinalMatchingEventEnvelope envelope = FinalMatchingEventEnvelope.parse(payload);
+      final FinalMatchingEventEnvelope envelope =
+          FinalMatchingEventEnvelope.parse(payload);
       delivery = finalEventDelivery(record, payload, envelope);
-      requireExactKafkaKey(record.key(), envelope.eventIdBytes());
-      requireExactPartition(record.partition(), envelope.event().getPartitionId());
+      FinalMatchingEventTransportValidator.requireKafkaRecord(
+          record.key(), record.partition(), envelope);
       final MatchingEventPersistenceOutcome outcome =
-          persistenceHandler.persist(envelope, record.partition(), record.offset());
+          persistenceHandler.persist(
+              envelope, record.partition(), record.offset());
       if (outcome == MatchingEventPersistenceOutcome.DUPLICATE) {
         deliveryController.recordDuplicate(delivery);
       }
@@ -67,7 +73,8 @@ public final class PersistenceMatchingEventConsumer {
         seek(consumer, topicPartition, delivery.position().offset());
       }
     } catch (RuntimeException | InvalidProtocolBufferException failure) {
-      final DeliveryDecision decision = deliveryController.onFailure(delivery, failure);
+      final DeliveryDecision decision =
+          deliveryController.onFailure(delivery, failure);
       LOGGER.warn(
           "persistence final-event delivery failed topic={} partition={} offset={} decision={}",
           record.topic(),
@@ -94,7 +101,8 @@ public final class PersistenceMatchingEventConsumer {
       ConsumerRecord<byte[], byte[]> record, byte[] payload) {
     return new DeliveryRecord(
         record.topic() + ":" + record.partition() + ":" + record.offset(),
-        new DeliveryPosition(record.topic(), record.partition(), record.offset()),
+        new DeliveryPosition(
+            record.topic(), record.partition(), record.offset()),
         payload);
   }
 
@@ -104,23 +112,13 @@ public final class PersistenceMatchingEventConsumer {
       FinalMatchingEventEnvelope envelope) {
     return new DeliveryRecord(
         envelope.eventIdHex(),
-        new DeliveryPosition(record.topic(), record.partition(), record.offset()),
+        new DeliveryPosition(
+            record.topic(), record.partition(), record.offset()),
         payload);
   }
 
-  private void requireExactKafkaKey(byte[] recordKey, byte[] eventId) {
-    if (recordKey == null || !Arrays.equals(eventId, recordKey)) {
-      throw new IllegalArgumentException("matching.events Kafka key must equal eventId bytes");
-    }
-  }
-
-  private void requireExactPartition(int recordPartition, int eventPartition) {
-    if (recordPartition != eventPartition) {
-      throw new IllegalArgumentException("matching.events Kafka partition must equal partitionId");
-    }
-  }
-
-  private long blockedOffset(DeliveryRecord delivery, DeliveryDecision decision) {
+  private long blockedOffset(
+      DeliveryRecord delivery, DeliveryDecision decision) {
     if (decision == DeliveryDecision.BLOCKED) {
       return deliveryController
           .pausedOffset(delivery.position().topicPartition())
@@ -129,7 +127,8 @@ public final class PersistenceMatchingEventConsumer {
     return delivery.position().offset();
   }
 
-  private void seek(Consumer<?, ?> consumer, TopicPartition partition, long offset) {
+  private void seek(
+      Consumer<?, ?> consumer, TopicPartition partition, long offset) {
     consumer.seek(partition, offset);
   }
 }
