@@ -5,13 +5,14 @@ import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 
+import com.google.protobuf.InvalidProtocolBufferException;
 import com.simplematch.accountservice.matching.AccountFinalMatchingEventStatus;
 import com.simplematch.accountservice.matching.FinalMatchingEventAccountApplicationService;
 import com.simplematch.accountservice.matching.FinalMatchingEventAccountConsumer;
 import com.simplematch.accountservice.matching.FinalMatchingEventAccountHandler;
 import com.simplematch.accountservice.matching.FinalMatchingEventAccountOutcome;
-import com.simplematch.accountservice.reservation.AccountMatchingExecutionApplicationService;
 import com.simplematch.accountservice.reservation.AccountReservationApplicationService;
+import com.simplematch.accountservice.reservation.FinalMatchingAccountEffectApplicationService;
 import com.simplematch.accountservice.reservation.ReservationRequestIdentity;
 import com.simplematch.accountservice.reservation.ReservationTerms;
 import com.simplematch.accountservice.reservation.ReserveOperation;
@@ -25,6 +26,8 @@ import com.simplematch.config.delivery.QuarantineEvidence;
 import com.simplematch.config.delivery.QuarantineStore;
 import com.simplematch.contracts.common.v1.ReservationStatus;
 import com.simplematch.contracts.common.v1.Side;
+import com.simplematch.contracts.matching.runtime.v1.MatchingEvent;
+import com.simplematch.contracts.matching.runtime.v1.TradeLegState;
 import java.io.IOException;
 import java.io.InputStream;
 import java.math.BigDecimal;
@@ -110,7 +113,8 @@ class FinalMatchingEventAccountConsumerTest {
             controller(new RecordingQuarantineStore(), 2),
             new AccountFinalMatchingEventStatus());
 
-    matchingConsumer.onMatchingEvent(record(EVENT_ID), acknowledgment, kafkaConsumer);
+    matchingConsumer.onMatchingEvent(
+        record(EVENT_ID, nativeTradePayload()), acknowledgment, kafkaConsumer);
 
     verify(acknowledgment).acknowledge();
     verify(kafkaConsumer, never()).seek(new TopicPartition("matching.events", 0), 42L);
@@ -126,6 +130,29 @@ class FinalMatchingEventAccountConsumerTest {
   }
 
   @Test
+  void rejectsMatchingStateThatDisagreesWithAppliedReservation() throws IOException {
+    final RecordingQuarantineStore quarantines = new RecordingQuarantineStore();
+    final Acknowledgment acknowledgment = mock(Acknowledgment.class);
+    final Consumer<?, ?> kafkaConsumer = mockConsumer();
+    final FinalMatchingEventAccountConsumer matchingConsumer =
+        new FinalMatchingEventAccountConsumer(
+            realHandler(), controller(quarantines, 2), new AccountFinalMatchingEventStatus());
+    final ConsumerRecord<byte[], byte[]> record = record(EVENT_ID, partialMakerPayload());
+    final TopicPartition topicPartition = new TopicPartition("matching.events", 0);
+
+    matchingConsumer.onMatchingEvent(record, acknowledgment, kafkaConsumer);
+    matchingConsumer.onMatchingEvent(record, acknowledgment, kafkaConsumer);
+
+    verify(kafkaConsumer).seek(topicPartition, 42L);
+    verify(kafkaConsumer).pause(List.of(topicPartition));
+    verify(acknowledgment, never()).acknowledge();
+    assertThat(count("matching_event_inbox")).isZero();
+    assertThat(count("matching_event_consumer_progress")).isZero();
+    assertThat(count("inbox")).isZero();
+    assertThat(quarantines.evidence).hasSize(1);
+  }
+
+  @Test
   void quarantinesWhenTheKafkaKeyDisagreesWithNativePayloadIdentity() throws IOException {
     final RecordingQuarantineStore quarantines = new RecordingQuarantineStore();
     final Acknowledgment acknowledgment = mock(Acknowledgment.class);
@@ -135,7 +162,7 @@ class FinalMatchingEventAccountConsumerTest {
             (command, partition, offset) -> FinalMatchingEventAccountOutcome.APPLIED,
             controller(quarantines, 2),
             new AccountFinalMatchingEventStatus());
-    final ConsumerRecord<byte[], byte[]> record = record(new byte[32]);
+    final ConsumerRecord<byte[], byte[]> record = record(new byte[32], nativeTradePayload());
     final TopicPartition topicPartition = new TopicPartition("matching.events", 0);
 
     matchingConsumer.onMatchingEvent(record, acknowledgment, kafkaConsumer);
@@ -151,11 +178,11 @@ class FinalMatchingEventAccountConsumerTest {
 
   private FinalMatchingEventAccountHandler realHandler() {
     final JdbcAccountAuthorityReader reader = new JdbcAccountAuthorityReader(jdbcTemplate);
-    final AccountMatchingExecutionApplicationService matchingExecutionService =
-        new AccountMatchingExecutionApplicationService(reader, reservationService);
+    final FinalMatchingAccountEffectApplicationService matchingEffectService =
+        new FinalMatchingAccountEffectApplicationService(reader, reservationService);
     final FinalMatchingEventAccountApplicationService service =
         new FinalMatchingEventAccountApplicationService(
-            new JdbcFinalMatchingEventAccountInbox(jdbcTemplate), matchingExecutionService, CLOCK);
+            new JdbcFinalMatchingEventAccountInbox(jdbcTemplate), matchingEffectService, CLOCK);
     return (command, partition, offset) ->
         transactions.execute(status -> service.apply(command, partition, offset));
   }
@@ -206,8 +233,32 @@ class FinalMatchingEventAccountConsumerTest {
     return mock(Consumer.class);
   }
 
-  private ConsumerRecord<byte[], byte[]> record(byte[] key) throws IOException {
-    return new ConsumerRecord<>("matching.events", 0, 42L, key, nativeTradePayload());
+  private ConsumerRecord<byte[], byte[]> record(byte[] key, byte[] payload) {
+    return new ConsumerRecord<>("matching.events", 0, 42L, key, payload);
+  }
+
+  private byte[] partialMakerPayload() throws IOException {
+    try {
+      final MatchingEvent event = MatchingEvent.parseFrom(nativeTradePayload());
+      return event
+          .toBuilder()
+          .setTradeExecuted(
+              event
+                  .getTradeExecuted()
+                  .toBuilder()
+                  .setMaker(
+                      event
+                          .getTradeExecuted()
+                          .getMaker()
+                          .toBuilder()
+                          .setLeavesQuantityShares(1)
+                          .setResultingState(
+                              TradeLegState.TRADE_LEG_STATE_PARTIALLY_FILLED)))
+          .build()
+          .toByteArray();
+    } catch (InvalidProtocolBufferException invalidFixture) {
+      throw new IOException("native TRADE_EXECUTED fixture is invalid", invalidFixture);
+    }
   }
 
   private byte[] nativeTradePayload() throws IOException {

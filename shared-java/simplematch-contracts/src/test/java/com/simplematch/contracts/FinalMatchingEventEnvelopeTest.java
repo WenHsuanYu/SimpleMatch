@@ -1,10 +1,12 @@
 package com.simplematch.contracts;
 
 import static org.junit.jupiter.api.Assertions.assertArrayEquals;
+import static org.junit.jupiter.api.Assertions.assertDoesNotThrow;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 
 import com.simplematch.contracts.matching.runtime.v1.FinalMatchingEventEnvelope;
+import com.simplematch.contracts.matching.runtime.v1.FinalMatchingEventTransportValidator;
 import com.simplematch.contracts.matching.runtime.v1.MatchingEvent;
 import com.simplematch.contracts.matching.runtime.v1.MatchingEventType;
 import java.io.IOException;
@@ -36,9 +38,38 @@ class FinalMatchingEventEnvelopeTest {
   }
 
   @Test
+  void validatesKafkaKeyAndPartitionFromTheValidatedEnvelope() throws IOException {
+    final FinalMatchingEventEnvelope envelope =
+        FinalMatchingEventEnvelope.parse(
+            fixture("cpp-matching-trade-executed-v1.hex"));
+
+    assertDoesNotThrow(
+        () ->
+            FinalMatchingEventTransportValidator.requireKafkaRecord(
+                envelope.eventIdBytes(),
+                envelope.event().getPartitionId(),
+                envelope));
+    assertThrows(
+        IllegalArgumentException.class,
+        () ->
+            FinalMatchingEventTransportValidator.requireKafkaRecord(
+                new byte[32],
+                envelope.event().getPartitionId(),
+                envelope));
+    assertThrows(
+        IllegalArgumentException.class,
+        () ->
+            FinalMatchingEventTransportValidator.requireKafkaRecord(
+                envelope.eventIdBytes(),
+                envelope.event().getPartitionId() + 1,
+                envelope));
+  }
+
+  @Test
   void rejectsAnEventWhoseTypeDoesNotMatchItsPayload() throws IOException {
     final MatchingEvent event =
-        MatchingEvent.parseFrom(fixture("cpp-matching-trade-executed-v1.hex"));
+        MatchingEvent.parseFrom(
+            fixture("cpp-matching-trade-executed-v1.hex"));
     final byte[] invalid =
         event
             .toBuilder()
@@ -47,29 +78,36 @@ class FinalMatchingEventEnvelopeTest {
             .build()
             .toByteArray();
 
-    assertThrows(IllegalArgumentException.class, () -> FinalMatchingEventEnvelope.parse(invalid));
+    assertThrows(
+        IllegalArgumentException.class,
+        () -> FinalMatchingEventEnvelope.parse(invalid));
   }
 
-  private void assertFixture(String name, MatchingEventType type, String payloadSha256)
+  private void assertFixture(
+      String name, MatchingEventType type, String payloadSha256)
       throws IOException {
     final byte[] raw = fixture(name);
-    final FinalMatchingEventEnvelope envelope = FinalMatchingEventEnvelope.parse(raw);
+    final FinalMatchingEventEnvelope envelope =
+        FinalMatchingEventEnvelope.parse(raw);
 
     assertEquals(type, envelope.event().getEventType());
     assertEquals(32, envelope.eventIdBytes().length);
     assertEquals(payloadSha256, envelope.payloadSha256Hex());
     assertEquals(raw.length, envelope.rawValue().length);
-    assertArrayEquals(FinalMatchingEventEnvelope.sha256(raw), envelope.payloadSha256());
+    assertArrayEquals(
+        FinalMatchingEventEnvelope.sha256(raw), envelope.payloadSha256());
   }
 
   private byte[] fixture(String name) throws IOException {
     try (InputStream stream =
         getClass().getResourceAsStream("/native-routing-fixtures/" + name)) {
       if (stream == null) {
-        throw new IOException("missing native Matching Event fixture " + name);
+        throw new IOException(
+            "missing native Matching Event fixture " + name);
       }
       final String encoded =
-          new String(stream.readAllBytes(), StandardCharsets.US_ASCII).replaceAll("\\s", "");
+          new String(stream.readAllBytes(), StandardCharsets.US_ASCII)
+              .replaceAll("\\s", "");
       return HexFormat.of().parseHex(encoded);
     }
   }

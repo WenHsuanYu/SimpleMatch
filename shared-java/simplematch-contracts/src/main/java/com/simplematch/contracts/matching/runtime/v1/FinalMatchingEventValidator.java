@@ -13,27 +13,27 @@ final class FinalMatchingEventValidator {
   private FinalMatchingEventValidator() {}
 
   static void validate(MatchingEvent event) {
-    FinalMatchingEventValidationFields.require(
+    FinalMatchingEventValidationRules.require(
         event.getSchemaVersion() == FINAL_SCHEMA_VERSION,
         "unsupported final matching event schema");
-    FinalMatchingEventValidationFields.require(
+    FinalMatchingEventValidationRules.require(
         event.getIdentityVersion() == FINAL_IDENTITY_VERSION,
         "unsupported final matching event identity version");
-    FinalMatchingEventValidationFields.requireSha256(event.getEventId(), "eventId");
-    FinalMatchingEventValidationFields.requireUuid(event.getSourceCommandId(), "sourceCommandId");
-    FinalMatchingEventValidationFields.require(
+    FinalMatchingEventValidationRules.requireSha256(event.getEventId(), "eventId");
+    FinalMatchingEventValidationRules.requireUuid(event.getSourceCommandId(), "sourceCommandId");
+    FinalMatchingEventValidationRules.require(
         !event.getTradingSessionId().isBlank(), "tradingSessionId must not be blank");
-    FinalMatchingEventValidationFields.require(
+    FinalMatchingEventValidationRules.require(
         !event.getRoutingAlgorithmVersion().isBlank(), "routingAlgorithmVersion must not be blank");
-    FinalMatchingEventValidationFields.require(
+    FinalMatchingEventValidationRules.require(
         event.getPartitionId() >= 0 && event.getPartitionId() < FIXED_PARTITION_COUNT,
         "partitionId must be between 0 and 14");
-    FinalMatchingEventValidationFields.require(
+    FinalMatchingEventValidationRules.require(
         event.getSourceInputOffset() >= 0, "sourceInputOffset must not be negative");
-    FinalMatchingEventValidationFields.require(
+    FinalMatchingEventValidationRules.require(
         event.getOutputIndex() >= 0, "outputIndex must not be negative");
     LocalDate.parse(event.getArtifactIdentity().getTradingDay());
-    FinalMatchingEventValidationFields.requireCanonicalHex(
+    FinalMatchingEventValidationRules.requireCanonicalHex(
         event.getArtifactIdentity().getContentSha256(), "artifact content SHA-256");
 
     final UUID sourceCommandId = UUID.fromString(event.getSourceCommandId());
@@ -43,7 +43,7 @@ final class FinalMatchingEventValidator {
             event.getPartitionId(),
             sourceCommandId,
             event.getOutputIndex());
-    FinalMatchingEventValidationFields.require(
+    FinalMatchingEventValidationRules.require(
         Arrays.equals(expectedEventId, event.getEventId().toByteArray()),
         "eventId does not match the deterministic Matching identity");
 
@@ -57,19 +57,19 @@ final class FinalMatchingEventValidator {
   }
 
   private static void validateRested(MatchingEvent event) {
-    FinalMatchingEventValidationFields.require(
+    FinalMatchingEventValidationRules.require(
         event.getEventCase() == MatchingEvent.EventCase.ORDER_RESTED,
         "rested event payload mismatch");
     FinalMatchingEventValidationFields.validateRested(event.getOrderRested());
   }
 
   private static void validateTrade(MatchingEvent event, UUID sourceCommandId) {
-    FinalMatchingEventValidationFields.require(
+    FinalMatchingEventValidationRules.require(
         event.getEventCase() == MatchingEvent.EventCase.TRADE_EXECUTED,
         "trade event payload mismatch");
     final TradeExecuted trade = event.getTradeExecuted();
     FinalMatchingEventValidationFields.validateTrade(trade);
-    FinalMatchingEventValidationFields.require(
+    FinalMatchingEventValidationRules.require(
         trade.getMatchIndex() >= 0, "trade matchIndex must not be negative");
     final byte[] expectedTradeId =
         MatchingEventIdentityV1.tradeId(
@@ -77,20 +77,20 @@ final class FinalMatchingEventValidator {
             event.getPartitionId(),
             sourceCommandId,
             trade.getMatchIndex());
-    FinalMatchingEventValidationFields.require(
+    FinalMatchingEventValidationRules.require(
         Arrays.equals(expectedTradeId, trade.getTradeId().toByteArray()),
         "tradeId does not match the deterministic Matching identity");
   }
 
   private static void validateCancelled(MatchingEvent event) {
-    FinalMatchingEventValidationFields.require(
+    FinalMatchingEventValidationRules.require(
         event.getEventCase() == MatchingEvent.EventCase.ORDER_CANCELLED,
         "cancelled event payload mismatch");
     FinalMatchingEventValidationFields.validateTerminal(event.getOrderCancelled());
   }
 
   private static void validateExpired(MatchingEvent event) {
-    FinalMatchingEventValidationFields.require(
+    FinalMatchingEventValidationRules.require(
         event.getEventCase() == MatchingEvent.EventCase.ORDER_EXPIRED,
         "expired event payload mismatch");
     FinalMatchingEventValidationFields.validateTerminal(event.getOrderExpired());

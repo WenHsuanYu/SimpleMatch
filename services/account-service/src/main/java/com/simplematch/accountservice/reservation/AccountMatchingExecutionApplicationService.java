@@ -11,91 +11,61 @@ import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
-/** Applies matching execution facts to Account Authority reservation use cases. */
+/** Adapts retained matching execution events to Account Authority reservation use cases. */
 @Service
 @RequiredArgsConstructor
-public class AccountMatchingExecutionApplicationService
-    implements AccountLifecycleApplier, AccountMatchingExecutionHandler {
+public class AccountMatchingExecutionApplicationService implements AccountLifecycleApplier {
   private static final int TRANSACTION_TIMEOUT_SECONDS = 8;
 
   @NonNull private final AccountAuthorityReader authorityReader;
   @NonNull private final AccountReservationApplicationService reservationService;
 
-  /** Applies the retained legacy execution contract through the Account transaction boundary. */
+  /** Applies one retained matching fill or terminal outcome through the Account transaction. */
   @Transactional(timeout = TRANSACTION_TIMEOUT_SECONDS)
   @Override
   public ReservationRecord applyMatchingExecution(ExecutionEvent event) {
     Objects.requireNonNull(event, "execution event");
     validateIdentity(event);
-    final AccountReservation reservation =
-        findReservation(event.getOrderId(), event.getAccountId(), event.getSymbol());
+    final AccountReservation reservation = findReservation(event);
     final ReservationIdentity identity = reservationIdentity(reservation);
-    return switch (event.getExecutionType()) {
-      case EXECUTION_TYPE_PARTIAL_FILL, EXECUTION_TYPE_FILL ->
-          applyFill(
-              identity,
-              new MatchingAccountEffect.Fill(
-                  event.getExecId(),
-                  event.getOrderId(),
-                  event.getAccountId(),
-                  event.getSymbol(),
-                  new ExecutionFill.FillQuantity(parsePositive(event.getFillQty(), "fill_qty")),
-                  new ExecutionFill.FillPrice(parsePositive(event.getFillPx(), "fill_px"))));
-      case EXECUTION_TYPE_CANCELED, EXECUTION_TYPE_REJECTED ->
-          applyTerminal(
-              identity,
-              new MatchingAccountEffect.Terminal(
-                  event.getExecId(),
-                  event.getOrderId(),
-                  event.getAccountId(),
-                  event.getSymbol(),
-                  new ReleaseReservationOperation.ReleaseReason(
-                      event.getText().isBlank() ? "MATCHING_TERMINAL" : event.getText())));
-      default -> ReservationRecord.from(reservation);
-    };
+    return transition(event, identity, reservation);
   }
 
-  /** Applies an Account-owned matching effect without exposing its wire representation. */
-  @Override
-  @Transactional(timeout = TRANSACTION_TIMEOUT_SECONDS)
-  public ReservationRecord apply(MatchingAccountEffect effect) {
-    final MatchingAccountEffect command = Objects.requireNonNull(effect, "effect");
-    final AccountReservation reservation =
-        findReservation(command.orderId(), command.accountId(), command.symbol());
-    final ReservationIdentity identity = reservationIdentity(reservation);
-    return switch (command) {
-      case MatchingAccountEffect.Fill fill -> applyFill(identity, fill);
-      case MatchingAccountEffect.Terminal terminal -> applyTerminal(identity, terminal);
-    };
-  }
-
-  private ReservationRecord applyFill(
-      ReservationIdentity identity, MatchingAccountEffect.Fill fill) {
-    return reservationService.applyFill(
-        new ApplyFillOperation(
-            identity,
-            new ExecutionFill(
-                new ExecutionFill.ExecutionId(fill.executionId()),
-                ExecutionFill.AggregateSequence.absent(),
-                fill.quantity(),
-                fill.price())));
-  }
-
-  private ReservationRecord applyTerminal(
-      ReservationIdentity identity, MatchingAccountEffect.Terminal terminal) {
-    return reservationService.release(
-        new ReleaseReservationOperation(identity, terminal.reason(), terminal.executionId()));
-  }
-
-  private AccountReservation findReservation(String orderId, String accountId, String symbol) {
+  private AccountReservation findReservation(ExecutionEvent event) {
     final AccountReservation reservation =
         authorityReader
-            .findReservationByOrderId(orderId)
+            .findReservationByOrderId(event.getOrderId())
             .orElseThrow(() -> new IllegalArgumentException("reservation not found for order"));
-    if (!reservation.accountId().equals(accountId) || !reservation.symbol().equals(symbol)) {
+    if (!reservation.accountId().equals(event.getAccountId())
+        || !reservation.symbol().equals(event.getSymbol())) {
       throw new IllegalArgumentException("matching execution reservation identity does not match");
     }
     return reservation;
+  }
+
+  private ReservationRecord transition(
+      ExecutionEvent event, ReservationIdentity identity, AccountReservation reservation) {
+    return switch (event.getExecutionType()) {
+      case EXECUTION_TYPE_PARTIAL_FILL, EXECUTION_TYPE_FILL ->
+          reservationService.applyFill(
+              new ApplyFillOperation(
+                  identity,
+                  new ExecutionFill(
+                      new ExecutionFill.ExecutionId(event.getExecId()),
+                      ExecutionFill.AggregateSequence.absent(),
+                      new ExecutionFill.FillQuantity(
+                          parsePositive(event.getFillQty(), "fill_qty")),
+                      new ExecutionFill.FillPrice(
+                          parsePositive(event.getFillPx(), "fill_px")))));
+      case EXECUTION_TYPE_CANCELED, EXECUTION_TYPE_REJECTED ->
+          reservationService.release(
+              new ReleaseReservationOperation(
+                  identity,
+                  new ReleaseReservationOperation.ReleaseReason(
+                      event.getText().isBlank() ? "MATCHING_TERMINAL" : event.getText()),
+                  event.getExecId()));
+      default -> ReservationRecord.from(reservation);
+    };
   }
 
   private ReservationIdentity reservationIdentity(AccountReservation reservation) {

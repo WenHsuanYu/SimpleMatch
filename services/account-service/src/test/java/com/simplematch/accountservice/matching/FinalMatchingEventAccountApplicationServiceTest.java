@@ -3,10 +3,13 @@ package com.simplematch.accountservice.matching;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
+import com.simplematch.accountservice.authority.AccountId;
 import com.simplematch.accountservice.reservation.AccountMatchingExecutionHandler;
 import com.simplematch.accountservice.reservation.ExecutionFill;
 import com.simplematch.accountservice.reservation.MatchingAccountEffect;
 import com.simplematch.accountservice.reservation.ReleaseReservationOperation;
+import com.simplematch.accountservice.reservation.ReservationIdentity;
+import com.simplematch.accountservice.reservation.ReservationTerms;
 import com.simplematch.accountservice.store.JdbcFinalMatchingEventAccountInbox;
 import com.simplematch.contracts.matching.runtime.v1.DeterministicEventConflictException;
 import java.math.BigDecimal;
@@ -30,8 +33,10 @@ import org.springframework.transaction.support.TransactionTemplate;
 class FinalMatchingEventAccountApplicationServiceTest {
   private static final Clock CLOCK =
       Clock.fixed(Instant.parse("2026-08-11T00:00:00Z"), ZoneOffset.UTC);
-  private static final byte[] EVENT_ID = bytes(1);
-  private static final byte[] PAYLOAD_HASH = bytes(2);
+  private static final FinalMatchingEventAccountCommand.EventId EVENT_ID =
+      new FinalMatchingEventAccountCommand.EventId(bytes(1));
+  private static final FinalMatchingEventAccountCommand.PayloadFingerprint PAYLOAD_FINGERPRINT =
+      new FinalMatchingEventAccountCommand.PayloadFingerprint(bytes(2));
 
   private SingleConnectionDataSource dataSource;
   private JdbcTemplate jdbcTemplate;
@@ -66,7 +71,7 @@ class FinalMatchingEventAccountApplicationServiceTest {
   void appliesTranslatedEffectsAndProgressAfterClaimingTheExactEvent() {
     final List<MatchingAccountEffect> applied = new ArrayList<>();
     final FinalMatchingEventAccountApplicationService service = service(applied::add);
-    final FinalMatchingEventAccountCommand command = command(PAYLOAD_HASH, effects());
+    final FinalMatchingEventAccountCommand command = command(PAYLOAD_FINGERPRINT, effects());
 
     assertThat(service.apply(command, 0, 42L))
         .isEqualTo(FinalMatchingEventAccountOutcome.APPLIED);
@@ -80,7 +85,7 @@ class FinalMatchingEventAccountApplicationServiceTest {
   void deduplicatesExactReplayBeforeApplyingAccountEffects() {
     final List<MatchingAccountEffect> applied = new ArrayList<>();
     final FinalMatchingEventAccountApplicationService service = service(applied::add);
-    final FinalMatchingEventAccountCommand command = command(PAYLOAD_HASH, effects());
+    final FinalMatchingEventAccountCommand command = command(PAYLOAD_FINGERPRINT, effects());
 
     assertThat(service.apply(command, 0, 42L))
         .isEqualTo(FinalMatchingEventAccountOutcome.APPLIED);
@@ -94,10 +99,13 @@ class FinalMatchingEventAccountApplicationServiceTest {
   void failsClosedWhenTheSameEventIdentityHasDifferentRawValueEvidence() {
     final FinalMatchingEventAccountApplicationService service = service(ignored -> {});
 
-    assertThat(service.apply(command(PAYLOAD_HASH, List.of()), 0, 42L))
+    assertThat(service.apply(command(PAYLOAD_FINGERPRINT, List.of()), 0, 42L))
         .isEqualTo(FinalMatchingEventAccountOutcome.APPLIED);
 
-    assertThatThrownBy(() -> service.apply(command(bytes(3), List.of()), 0, 42L))
+    final FinalMatchingEventAccountCommand.PayloadFingerprint conflictingFingerprint =
+        new FinalMatchingEventAccountCommand.PayloadFingerprint(bytes(3));
+    assertThatThrownBy(
+            () -> service.apply(command(conflictingFingerprint, List.of()), 0, 42L))
         .isInstanceOf(DeterministicEventConflictException.class);
   }
 
@@ -114,12 +122,35 @@ class FinalMatchingEventAccountApplicationServiceTest {
     assertThatThrownBy(
             () ->
                 transactions.executeWithoutResult(
-                    ignored -> service.apply(command(PAYLOAD_HASH, effects()), 0, 42L)))
+                    ignored ->
+                        service.apply(command(PAYLOAD_FINGERPRINT, effects()), 0, 42L)))
         .isInstanceOf(IllegalStateException.class)
         .hasMessage("account authority is unavailable");
 
     assertThat(count("matching_event_inbox")).isZero();
     assertThat(count("matching_event_consumer_progress")).isZero();
+  }
+
+  @Test
+  void keepsEventIdentityAndPayloadFingerprintAsDistinctDefensiveValues() {
+    final byte[] eventIdBytes = bytes(4);
+    final byte[] fingerprintBytes = bytes(5);
+    final FinalMatchingEventAccountCommand.EventId eventId =
+        new FinalMatchingEventAccountCommand.EventId(eventIdBytes);
+    final FinalMatchingEventAccountCommand.PayloadFingerprint fingerprint =
+        new FinalMatchingEventAccountCommand.PayloadFingerprint(fingerprintBytes);
+
+    eventIdBytes[0] = 0;
+    fingerprintBytes[0] = 0;
+    assertThat(eventId.bytes()).containsExactly(bytes(4));
+    assertThat(fingerprint.bytes()).containsExactly(bytes(5));
+
+    final byte[] exposedEventId = eventId.bytes();
+    final byte[] exposedFingerprint = fingerprint.bytes();
+    exposedEventId[0] = 0;
+    exposedFingerprint[0] = 0;
+    assertThat(eventId.bytes()).containsExactly(bytes(4));
+    assertThat(fingerprint.bytes()).containsExactly(bytes(5));
   }
 
   private FinalMatchingEventAccountApplicationService service(EffectSink sink) {
@@ -132,24 +163,26 @@ class FinalMatchingEventAccountApplicationServiceTest {
   }
 
   private FinalMatchingEventAccountCommand command(
-      byte[] payloadHash, List<MatchingAccountEffect> effects) {
-    return new FinalMatchingEventAccountCommand(EVENT_ID, payloadHash, effects);
+      FinalMatchingEventAccountCommand.PayloadFingerprint payloadFingerprint,
+      List<MatchingAccountEffect> effects) {
+    return new FinalMatchingEventAccountCommand(EVENT_ID, payloadFingerprint, effects);
   }
 
   private List<MatchingAccountEffect> effects() {
     return List.of(
         new MatchingAccountEffect.Fill(
-            "fill-1",
-            "0198a001-0000-7000-8000-000000000011",
-            "0198a001-0000-7000-8000-0000000000aa",
-            "2330",
+            new ExecutionFill.ExecutionId("fill-1"),
+            new ReservationIdentity.OrderId("0198a001-0000-7000-8000-000000000011"),
+            AccountId.parse("0198a001-0000-7000-8000-0000000000aa"),
+            new ReservationTerms.InstrumentSymbol("2330"),
             new ExecutionFill.FillQuantity(new BigDecimal("100")),
-            new ExecutionFill.FillPrice(new BigDecimal("100.0000"))),
+            new ExecutionFill.FillPrice(new BigDecimal("100.0000")),
+            MatchingAccountEffect.ResultingState.FILLED),
         new MatchingAccountEffect.Terminal(
-            "terminal-1",
-            "0198a001-0000-7000-8000-000000000012",
-            "0198a001-0000-7000-8000-0000000000aa",
-            "2330",
+            new ExecutionFill.ExecutionId("terminal-1"),
+            new ReservationIdentity.OrderId("0198a001-0000-7000-8000-000000000012"),
+            AccountId.parse("0198a001-0000-7000-8000-0000000000aa"),
+            new ReservationTerms.InstrumentSymbol("2330"),
             new ReleaseReservationOperation.ReleaseReason("MATCHING_EXPIRED")));
   }
 
