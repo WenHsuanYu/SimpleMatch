@@ -29,6 +29,7 @@ on:
       - 'scripts/run-local-resilience.sh'
       - 'scripts/verify-matching-fleet-live.sh'
       - 'scripts/archive/test-local-lifecycle-safety.sh'
+      - 'scripts/test-critical-consumer-kubernetes-config.sh'
       - 'scripts/test-local-production-like.sh'
       - 'scripts/archive/test-local-registry-resource-lifecycle.sh'
       - 'scripts/test-local-image-transport.sh'
@@ -62,6 +63,7 @@ jobs:
         run: |
           bash scripts/archive/test-local-lifecycle-safety.sh
           bash scripts/archive/test-local-registry-resource-lifecycle.sh
+          bash scripts/test-critical-consumer-kubernetes-config.sh
           bash scripts/test-local-image-transport.sh
           bash scripts/test-local-image-rendering.sh
           bash scripts/test-local-production-like.sh

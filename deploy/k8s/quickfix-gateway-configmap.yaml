@@ -10,3 +10,5 @@ data:
         wal-path: /var/lib/simplematch/quickfix-gateway/wal/inbound.wal
         data-plane-enabled: true
         replay-enabled: true
+        final-matching-events:
+          enabled: true
