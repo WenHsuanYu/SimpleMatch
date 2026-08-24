@@ -66,5 +66,9 @@ gradlePlugin {
             id = "simplematch.java-quality"
             implementationClass = "com.simplematch.gradle.SimpleMatchJavaQualityPlugin"
         }
+        register("simpleMatchContractTestFixtures") {
+            id = "simplematch.contract-test-fixtures"
+            implementationClass = "com.simplematch.gradle.SimpleMatchContractTestFixturesPlugin"
+        }
     }
 }

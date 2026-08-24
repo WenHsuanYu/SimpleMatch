@@ -19,8 +19,8 @@ public final class FinalMatchingEventEnvelope {
   private final byte[] rawValue;
   private final byte[] payloadSha256;
 
-  /** Defensively owns a validated event and its original delivery bytes. */
-  public FinalMatchingEventEnvelope(MatchingEvent event, byte[] rawValue, byte[] payloadSha256) {
+  private FinalMatchingEventEnvelope(
+      MatchingEvent event, byte[] rawValue, byte[] payloadSha256) {
     this.event = Objects.requireNonNull(event, "event");
     this.rawValue = Objects.requireNonNull(rawValue, "rawValue").clone();
     this.payloadSha256 = Objects.requireNonNull(payloadSha256, "payloadSha256").clone();
