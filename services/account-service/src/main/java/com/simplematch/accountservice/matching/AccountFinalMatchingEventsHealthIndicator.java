@@ -18,10 +18,12 @@ public final class AccountFinalMatchingEventsHealthIndicator implements HealthIn
         status.state() == AccountFinalMatchingEventStatus.State.READY
             ? Health.up()
             : Health.outOfService();
-    return builder
+    builder
         .withDetail("state", status.state().name())
         .withDetail("committedOffsets", status.committedOffsets())
-        .withDetail("quarantinePosition", status.quarantinePosition().orElse(null))
-        .build();
+        .withDetail("oldestUnprocessedAgeMillis", status.oldestUnprocessedAgeMillis());
+    status.quarantinePosition()
+        .ifPresent(position -> builder.withDetail("quarantinePosition", position));
+    return builder.build();
   }
 }

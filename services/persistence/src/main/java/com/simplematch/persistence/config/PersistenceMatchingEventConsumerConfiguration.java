@@ -10,10 +10,13 @@ import com.simplematch.persistence.kafka.PersistenceMatchingEventConsumerPropert
 import com.simplematch.persistence.kafka.PersistenceMatchingEventStatus;
 import com.simplematch.persistence.kafka.PersistenceMatchingEventsHealthIndicator;
 import com.simplematch.persistence.matching.MatchingEventPersistenceHandler;
+import com.simplematch.persistence.store.JdbcMatchingEventStore;
 import io.micrometer.core.instrument.MeterRegistry;
 import java.time.Clock;
+import java.util.List;
 import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.boot.context.properties.EnableConfigurationProperties;
+import org.springframework.boot.sql.init.dependency.DependsOnDatabaseInitialization;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.jdbc.core.JdbcTemplate;
@@ -24,6 +27,8 @@ import org.springframework.kafka.annotation.EnableKafka;
 @EnableKafka
 @EnableConfigurationProperties(PersistenceMatchingEventConsumerProperties.class)
 public class PersistenceMatchingEventConsumerConfiguration {
+  private static final String CONSUMER_NAME = "persistence-matching-events";
+
   /** Creates durable raw-byte quarantine storage for Persistence's critical consumer. */
   @Bean
   QuarantineStore persistenceMatchingEventQuarantineStore(JdbcTemplate jdbcTemplate) {
@@ -43,7 +48,7 @@ public class PersistenceMatchingEventConsumerConfiguration {
             ? DeliveryMetrics.noop()
             : new MicrometerDeliveryMetrics(meterRegistry);
     return new CriticalDeliveryController(
-        "persistence-matching-events",
+        CONSUMER_NAME,
         properties.maximumAttempts(),
         properties.recoveryInstructions(),
         persistenceClock,
@@ -51,10 +56,25 @@ public class PersistenceMatchingEventConsumerConfiguration {
         metrics);
   }
 
-  /** Creates the compact state projection used by Persistence readiness. */
+  /** Creates Persistence readiness state from durable progress and unresolved quarantine state. */
   @Bean
-  PersistenceMatchingEventStatus persistenceMatchingEventStatus() {
-    return new PersistenceMatchingEventStatus();
+  @DependsOnDatabaseInitialization
+  PersistenceMatchingEventStatus persistenceMatchingEventStatus(
+      JdbcMatchingEventStore store,
+      Clock persistenceClock,
+      PersistenceMatchingEventConsumerProperties properties,
+      QuarantineStore persistenceMatchingEventQuarantineStore,
+      CriticalDeliveryController persistenceMatchingEventDeliveryController) {
+    final PersistenceMatchingEventStatus status =
+        new PersistenceMatchingEventStatus(persistenceClock);
+    if (properties.enabled()) {
+      store.loadLastProcessedOffsets().forEach(status::recordCommitted);
+      final List<com.simplematch.config.delivery.DeliveryPosition> openPositions =
+          persistenceMatchingEventQuarantineStore.loadOpenPositions(CONSUMER_NAME);
+      persistenceMatchingEventDeliveryController.restoreQuarantines(openPositions);
+      openPositions.stream().findFirst().ifPresent(status::recordQuarantined);
+    }
+    return status;
   }
 
   /** Creates the public final-event consumer boundary. */

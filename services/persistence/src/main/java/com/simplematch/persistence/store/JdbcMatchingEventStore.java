@@ -2,6 +2,7 @@ package com.simplematch.persistence.store;
 
 import com.simplematch.contracts.matching.runtime.v1.FinalMatchingEventEnvelope;
 import com.simplematch.persistence.matching.MatchingEventPersistenceOutcome;
+import java.util.Map;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Repository;
 
@@ -42,5 +43,10 @@ public class JdbcMatchingEventStore {
     factStore.persist(eventId, envelope.event());
     progressStore.advance(position);
     return MatchingEventPersistenceOutcome.APPLIED;
+  }
+
+  /** Returns durable last-processed offsets for the final-event consumer. */
+  public Map<Integer, Long> loadLastProcessedOffsets() {
+    return progressStore.loadLastProcessedOffsets();
   }
 }

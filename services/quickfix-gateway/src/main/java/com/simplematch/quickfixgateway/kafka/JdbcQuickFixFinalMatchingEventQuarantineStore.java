@@ -5,6 +5,7 @@ import com.simplematch.config.delivery.QuarantineEvidence;
 import com.simplematch.config.delivery.QuarantineStore;
 import com.simplematch.contracts.matching.runtime.v1.FinalMatchingEventEnvelope;
 import java.util.HexFormat;
+import java.util.List;
 import java.util.Objects;
 import org.springframework.jdbc.core.JdbcTemplate;
 
@@ -35,6 +36,23 @@ public final class JdbcQuickFixFinalMatchingEventQuarantineStore implements Quar
         FinalMatchingEventEnvelope.sha256(evidence.record().payload()),
         evidence.reason(),
         evidence.quarantinedAt().toEpochMilli());
+  }
+
+  @Override
+  public List<DeliveryPosition> loadOpenPositions(String consumerName) {
+    return jdbcTemplate.query(
+        """
+        SELECT topic, partition_id, offset_value
+        FROM quickfix_gateway.matching_consumer_quarantines
+        WHERE consumer_name = ? AND status = 'QUARANTINED'
+        ORDER BY topic, partition_id, offset_value
+        """,
+        (resultSet, rowNumber) ->
+            new DeliveryPosition(
+                resultSet.getString("topic"),
+                resultSet.getInt("partition_id"),
+                resultSet.getLong("offset_value")),
+        consumerName);
   }
 
   @Override

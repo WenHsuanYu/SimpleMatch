@@ -1,6 +1,8 @@
 package com.simplematch.quickfixgateway.store;
 
+import java.util.HashMap;
 import java.util.Locale;
+import java.util.Map;
 import org.springframework.jdbc.core.ConnectionCallback;
 import org.springframework.jdbc.core.JdbcTemplate;
 
@@ -37,6 +39,25 @@ final class FinalFixDeliveryProgressStore {
         position.partition(),
         position.offset(),
         position.observedAtUnixMs());
+  }
+
+  static Map<Integer, Long> loadLastProcessedOffsets(JdbcTemplate jdbcTemplate) {
+    return jdbcTemplate.query(
+        """
+        SELECT partition_id, last_processed_offset
+        FROM quickfix_gateway.matching_consumer_progress
+        WHERE consumer_name = ?
+        ORDER BY partition_id
+        """,
+        resultSet -> {
+          final Map<Integer, Long> offsets = new HashMap<>();
+          while (resultSet.next()) {
+            offsets.put(
+                resultSet.getInt("partition_id"), resultSet.getLong("last_processed_offset"));
+          }
+          return Map.copyOf(offsets);
+        },
+        CONSUMER_NAME);
   }
 
   private static boolean isPostgres(JdbcTemplate jdbcTemplate) {

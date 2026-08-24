@@ -1,9 +1,9 @@
 package com.simplematch.quickfixgateway.matching;
 
+import com.simplematch.config.delivery.CriticalConsumerProgressTracker;
 import com.simplematch.config.delivery.DeliveryPosition;
+import java.time.Clock;
 import java.util.Map;
-import java.util.concurrent.ConcurrentHashMap;
-import java.util.concurrent.atomic.AtomicReference;
 
 /** Holds Gateway final-event consumer state without treating an idle market as unhealthy. */
 public final class QuickFixFinalMatchingEventStatus {
@@ -13,40 +13,55 @@ public final class QuickFixFinalMatchingEventStatus {
     QUARANTINED
   }
 
-  private final AtomicReference<State> state = new AtomicReference<>(State.READY);
-  private final Map<Integer, Long> committedOffsets = new ConcurrentHashMap<>();
-  private final AtomicReference<DeliveryPosition> quarantinePosition = new AtomicReference<>();
+  private final CriticalConsumerProgressTracker progress;
+
+  /** Creates status using the system UTC clock. */
+  public QuickFixFinalMatchingEventStatus() {
+    this(Clock.systemUTC());
+  }
+
+  /** Creates status using the supplied service clock. */
+  public QuickFixFinalMatchingEventStatus(Clock clock) {
+    progress = new CriticalConsumerProgressTracker(clock);
+  }
 
   /** Returns whether the Gateway critical final-event consumer is able to continue safely. */
   public State state() {
-    return state.get();
+    return progress.quarantinePosition().isPresent() ? State.QUARANTINED : State.READY;
   }
 
-  /** Returns the Gateway's post-transaction acknowledged final-event offsets by partition. */
+  /** Returns the next Kafka position to consume for each Matching partition. */
   public Map<Integer, Long> committedOffsets() {
-    return Map.copyOf(committedOffsets);
+    return progress.committedPositions();
+  }
+
+  /** Returns the age of the oldest currently unprocessed record in each partition. */
+  public Map<Integer, Long> oldestUnprocessedAgeMillis() {
+    return progress.oldestUnprocessedAgeMillis();
   }
 
   /** Returns the exact record requiring an operator recovery, if the consumer is quarantined. */
   public java.util.Optional<DeliveryPosition> quarantinePosition() {
-    return java.util.Optional.ofNullable(quarantinePosition.get());
+    return progress.quarantinePosition();
   }
 
-  /** Records a Kafka acknowledgement that followed durable inbox and intent persistence. */
+  /** Marks one Kafka record pending before the Gateway plans durable FIX delivery. */
+  public void recordPending(int partition, long offset, long recordTimestampUnixMs) {
+    progress.recordPending(partition, offset, recordTimestampUnixMs);
+  }
+
+  /** Records the processed record offset as the next Kafka position after acknowledgement. */
   public void recordCommitted(int partition, long offset) {
-    committedOffsets.merge(partition, offset, Math::max);
+    progress.recordCommitted(partition, offset);
   }
 
   /** Marks an exact final-event record quarantined and no longer ready. */
   public void recordQuarantined(DeliveryPosition position) {
-    quarantinePosition.set(position);
-    state.set(State.QUARANTINED);
+    progress.recordQuarantined(position);
   }
 
   /** Clears only the exact operator-recovered quarantine record. */
   public void recordRecovered(DeliveryPosition position) {
-    if (quarantinePosition.compareAndSet(position, null)) {
-      state.set(State.READY);
-    }
+    progress.recordRecovered(position);
   }
 }

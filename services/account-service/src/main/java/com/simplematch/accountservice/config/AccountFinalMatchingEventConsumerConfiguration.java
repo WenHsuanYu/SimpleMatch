@@ -5,15 +5,19 @@ import com.simplematch.accountservice.matching.AccountFinalMatchingEventsHealthI
 import com.simplematch.accountservice.matching.FinalMatchingEventAccountConsumer;
 import com.simplematch.accountservice.matching.FinalMatchingEventAccountHandler;
 import com.simplematch.accountservice.store.JdbcAccountFinalMatchingEventQuarantineStore;
+import com.simplematch.accountservice.store.JdbcFinalMatchingEventAccountInbox;
 import com.simplematch.config.delivery.CriticalDeliveryController;
 import com.simplematch.config.delivery.DeliveryMetrics;
+import com.simplematch.config.delivery.DeliveryPosition;
 import com.simplematch.config.delivery.MicrometerDeliveryMetrics;
 import com.simplematch.config.delivery.QuarantineStore;
 import io.micrometer.core.instrument.MeterRegistry;
 import java.time.Clock;
+import java.util.List;
 import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.boot.context.properties.EnableConfigurationProperties;
+import org.springframework.boot.sql.init.dependency.DependsOnDatabaseInitialization;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.jdbc.core.JdbcTemplate;
@@ -22,6 +26,8 @@ import org.springframework.jdbc.core.JdbcTemplate;
 @Configuration(proxyBeanMethods = false)
 @EnableConfigurationProperties(AccountFinalMatchingEventConsumerProperties.class)
 public class AccountFinalMatchingEventConsumerConfiguration {
+  private static final String CONSUMER_NAME = "account-final-matching-events";
+
   /** Creates durable raw-byte quarantine storage for Account's final Matching Event consumer. */
   @Bean("accountFinalMatchingEventQuarantineStore")
   QuarantineStore accountFinalMatchingEventQuarantineStore(JdbcTemplate jdbcTemplate) {
@@ -41,7 +47,7 @@ public class AccountFinalMatchingEventConsumerConfiguration {
             ? DeliveryMetrics.noop()
             : new MicrometerDeliveryMetrics(meterRegistry);
     return new CriticalDeliveryController(
-        "account-final-matching-events",
+        CONSUMER_NAME,
         properties.maximumAttempts(),
         properties.recoveryInstructions(),
         accountServiceClock,
@@ -49,10 +55,26 @@ public class AccountFinalMatchingEventConsumerConfiguration {
         metrics);
   }
 
-  /** Creates Account's compact readiness state. */
+  /** Creates Account readiness state from durable progress and unresolved quarantine state. */
   @Bean
-  AccountFinalMatchingEventStatus accountFinalMatchingEventStatus() {
-    return new AccountFinalMatchingEventStatus();
+  @DependsOnDatabaseInitialization
+  AccountFinalMatchingEventStatus accountFinalMatchingEventStatus(
+      JdbcFinalMatchingEventAccountInbox inbox,
+      Clock accountServiceClock,
+      AccountFinalMatchingEventConsumerProperties properties,
+      @Qualifier("accountFinalMatchingEventQuarantineStore") QuarantineStore quarantineStore,
+      @Qualifier("accountFinalMatchingEventDeliveryController")
+          CriticalDeliveryController deliveryController) {
+    final AccountFinalMatchingEventStatus status =
+        new AccountFinalMatchingEventStatus(accountServiceClock);
+    if (properties.enabled()) {
+      inbox.loadLastProcessedOffsets().forEach(status::recordCommitted);
+      final List<DeliveryPosition> openPositions =
+          quarantineStore.loadOpenPositions(CONSUMER_NAME);
+      deliveryController.restoreQuarantines(openPositions);
+      openPositions.stream().findFirst().ifPresent(status::recordQuarantined);
+    }
+    return status;
   }
 
   /** Creates Account's public critical final-event consumer boundary. */

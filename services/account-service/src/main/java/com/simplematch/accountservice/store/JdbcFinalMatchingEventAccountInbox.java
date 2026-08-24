@@ -2,9 +2,11 @@ package com.simplematch.accountservice.store;
 
 import com.simplematch.contracts.matching.runtime.v1.DeterministicEventConflictException;
 import java.util.Arrays;
+import java.util.HashMap;
 import java.util.HexFormat;
 import java.util.List;
 import java.util.Locale;
+import java.util.Map;
 import org.springframework.dao.DuplicateKeyException;
 import org.springframework.jdbc.core.ConnectionCallback;
 import org.springframework.jdbc.core.JdbcTemplate;
@@ -106,6 +108,26 @@ public class JdbcFinalMatchingEventAccountInbox {
         kafkaPartition,
         kafkaOffset,
         observedAtUnixMs);
+  }
+
+  /** Returns the durable last-processed record offset for every observed Matching partition. */
+  public Map<Integer, Long> loadLastProcessedOffsets() {
+    return jdbcTemplate.query(
+        """
+        SELECT partition_id, last_processed_offset
+        FROM account_service.matching_event_consumer_progress
+        WHERE consumer_name = ?
+        """,
+        resultSet -> {
+          final Map<Integer, Long> offsets = new HashMap<>();
+          while (resultSet.next()) {
+            offsets.put(
+                resultSet.getInt("partition_id"),
+                resultSet.getLong("last_processed_offset"));
+          }
+          return Map.copyOf(offsets);
+        },
+        CONSUMER_NAME);
   }
 
   private byte[] requireSha256(byte[] value, String name) {

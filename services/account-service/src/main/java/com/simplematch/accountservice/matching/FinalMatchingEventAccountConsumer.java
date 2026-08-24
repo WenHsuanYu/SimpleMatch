@@ -9,6 +9,7 @@ import com.simplematch.contracts.matching.runtime.v1.FinalMatchingEventEnvelope;
 import com.simplematch.contracts.matching.runtime.v1.FinalMatchingEventTransportValidator;
 import java.util.List;
 import java.util.Objects;
+import java.util.OptionalLong;
 import org.apache.kafka.clients.consumer.Consumer;
 import org.apache.kafka.clients.consumer.ConsumerRecord;
 import org.apache.kafka.common.TopicPartition;
@@ -53,10 +54,20 @@ public final class FinalMatchingEventAccountConsumer {
       ConsumerRecord<byte[], byte[]> record,
       Acknowledgment acknowledgment,
       Consumer<?, ?> consumer) {
-    final byte[] payload = record.value() == null ? new byte[0] : record.value();
-    DeliveryRecord delivery = opaqueDelivery(record, payload);
     final TopicPartition topicPartition =
         new TopicPartition(record.topic(), record.partition());
+    final OptionalLong pausedOffset =
+        deliveryController.pausedOffset(
+            new DeliveryPosition.TopicPartition(record.topic(), record.partition()));
+    if (pausedOffset.isPresent() && pausedOffset.getAsLong() <= record.offset()) {
+      seek(consumer, topicPartition, pausedOffset.getAsLong());
+      consumer.pause(List.of(topicPartition));
+      return;
+    }
+
+    status.recordPending(record.partition(), record.offset(), record.timestamp());
+    final byte[] payload = record.value() == null ? new byte[0] : record.value();
+    DeliveryRecord delivery = opaqueDelivery(record, payload);
     try {
       final FinalMatchingEventEnvelope envelope =
           FinalMatchingEventEnvelope.parse(payload);
