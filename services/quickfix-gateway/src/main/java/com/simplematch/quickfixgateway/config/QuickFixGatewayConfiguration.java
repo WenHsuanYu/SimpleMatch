@@ -4,6 +4,7 @@ import com.simplematch.config.EnvironmentProperties;
 import com.simplematch.quickfixgateway.fix.FixSessionMessageSender;
 import com.simplematch.quickfixgateway.fix.OrderSessionRegistry;
 import com.simplematch.quickfixgateway.fix.QuickFixSessionMessageSender;
+import com.simplematch.quickfixgateway.risk.RiskOrderIdentityDeriver;
 import com.simplematch.quickfixgateway.wal.WalAppender;
 import com.simplematch.quickfixgateway.wal.WalDurableCommandWriter;
 import com.simplematch.quickfixgateway.wal.WalRecoveryJournal;
@@ -87,8 +88,8 @@ public class QuickFixGatewayConfiguration {
   }
 
   @Bean
-  OrderSessionRegistry orderSessionRegistry() {
-    return new OrderSessionRegistry();
+  OrderSessionRegistry orderSessionRegistry(RiskOrderIdentityDeriver orderIdentityDeriver) {
+    return new OrderSessionRegistry(orderIdentityDeriver);
   }
 
   private Path resolve(String rawPath) {

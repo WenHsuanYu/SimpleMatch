@@ -71,7 +71,6 @@ public final class MatchingExecutionConsumer {
             ? fixMessageMapper.buildOrderCancelReject(executionEvent, state)
             : fixMessageMapper.buildExecutionReport(executionEvent, state);
     fixSessionMessageSender.send(sessionId, outbound);
-    orderSessionRegistry.applyExecution(executionEvent);
-    orderSessionRegistry.markExecutionSeen(executionEvent.getExecId());
+    orderSessionRegistry.recordExecution(executionEvent);
   }
 }

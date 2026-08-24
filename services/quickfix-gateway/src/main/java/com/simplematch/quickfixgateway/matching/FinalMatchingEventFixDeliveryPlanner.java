@@ -237,8 +237,7 @@ public final class FinalMatchingEventFixDeliveryPlanner {
                 () -> new IllegalStateException("final Matching Event has no owning FIX session"));
     if (!state.accountId().equals(accountId)
         || !state.symbol().equals(symbol)
-        || state.side() != side
-        || !state.orderId().equals(orderId)) {
+        || state.side() != side) {
       throw new IllegalArgumentException(
           "final Matching Event does not match the owning FIX order");
     }

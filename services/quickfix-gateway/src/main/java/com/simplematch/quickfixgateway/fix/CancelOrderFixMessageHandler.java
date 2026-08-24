@@ -58,7 +58,8 @@ final class CancelOrderFixMessageHandler {
       return;
     }
     final String orderId = FixInboundCommandFactory.orderIdFor(origClOrdId);
-    final OrderSessionState existing = orderSessionRegistry.find(orderId).orElse(null);
+    final OrderSessionState existing =
+        orderSessionRegistry.find(sessionId, orderId).orElse(null);
     final WalRecord walRecord;
     try {
       walRecord =
