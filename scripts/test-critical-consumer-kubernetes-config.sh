@@ -2,6 +2,7 @@
 set -euo pipefail
 
 repo_root="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd)"
+restart_certification="$repo_root/scripts/run-critical-consumer-restart-certification.sh"
 
 ruby -r yaml - \
   "$repo_root/deploy/k8s/base/java-services-configmaps.yaml" \
@@ -47,4 +48,18 @@ expected.each do |config_name, path|
 end
 RUBY
 
-printf '%s\n' 'Critical Matching Event consumer deployment configuration is enabled.'
+[[ -x "$restart_certification" ]] || {
+  printf '%s\n' 'Critical consumer restart certification must be executable.' >&2
+  exit 1
+}
+bash -n "$restart_certification"
+"$restart_certification" --help >/dev/null
+
+grep -Fq 'simplematch_kind_namespace_is_disposable' "$restart_certification"
+grep -Fq 'rollout restart deployment/account-service deployment/persistence' "$restart_certification"
+grep -Fq 'deployment/quickfix-gateway' "$restart_certification"
+grep -Fq 'delete pod "$postgres"' "$restart_certification"
+grep -Fq 'delete pod "$broker"' "$restart_certification"
+grep -Fq 'notProven' "$restart_certification"
+
+printf '%s\n' 'Critical Matching Event consumer deployment and restart contracts are valid.'
