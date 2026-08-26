@@ -115,18 +115,6 @@ class QuickFixPreparedSubmissionLiveCertificationTest {
       final ExecutionReport report =
           application.awaitExecutionReport(clOrdId, timeoutSeconds);
       writeEvidence(evidencePath, report, sentAtEpochMs);
-
-      final String actualExecType = report.getString(ExecType.FIELD);
-      final String actualOrdStatus = report.getString(OrdStatus.FIELD);
-      final String text = optionalText(report);
-      assertThat(actualExecType)
-          .as(
-              "FIX admission for ClOrdID=%s; OrdStatus=%s; Text=%s",
-              clOrdId, actualOrdStatus, text)
-          .isEqualTo("A");
-      assertThat(actualOrdStatus)
-          .as("FIX admission OrdStatus for ClOrdID=%s; Text=%s", clOrdId, text)
-          .isEqualTo("A");
     } finally {
       initiator.stop(true);
     }

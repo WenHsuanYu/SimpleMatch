@@ -6,6 +6,7 @@ repo_root="$(cd -- "$script_dir/../../../.." && pwd)"
 cluster_module="$script_dir/../lib/cluster-data.sh"
 recovery_module="$script_dir/../lib/failure-recovery.sh"
 quickfix_build="$repo_root/services/quickfix-gateway/build.gradle.kts"
+prepared_test="$repo_root/services/quickfix-gateway/src/test/java/com/simplematch/quickfixgateway/fix/QuickFixPreparedSubmissionLiveCertificationTest.java"
 temporary_directory="$(mktemp -d "${TMPDIR:-/tmp}/simplematch-admission-contract.XXXXXX")"
 trap 'rm -rf "$temporary_directory"' EXIT
 
@@ -40,6 +41,15 @@ simulator = build[/tasks\.register<Test>\("certificationTest"\) \{(.*?)^\}/m, 1]
 abort "certificationTest is missing" unless simulator
 abort "simulator certification should retain normal Gradle state tracking" if
   simulator.include?("configureLiveCertification(") || simulator.include?("doNotTrackState(")
+RUBY
+
+ruby - "$prepared_test" <<'RUBY'
+path = ARGV.fetch(0)
+source = File.read(path, encoding: "UTF-8")
+abort "prepared FIX client must retain structured ExecutionReport evidence" unless
+  source.include?("writeEvidence(evidencePath, report, sentAtEpochMs);")
+abort "prepared FIX client must not classify admission semantics inside JUnit" if
+  source.include?("assertThat(actualExecType)") || source.include?("assertThat(actualOrdStatus)")
 RUBY
 
 rendered="$temporary_directory/local.yaml"
@@ -113,6 +123,10 @@ RUBY
     fail "$*"
   }
 
+  current_taipei_calendar_day() {
+    printf '%s\n' '2026-08-26'
+  }
+
   decode_configmap_file() {
     local configmap="$1"
     local key="$2"
@@ -168,17 +182,76 @@ YAML
 )
 
 (
+  # shellcheck source=scripts/end-to-end/critical-consumers/lib/cluster-data.sh
+  source "$cluster_module"
+  reason="$temporary_directory/trading-day-reason.txt"
+
+  die() {
+    printf '%s\n' "$*" >"$reason"
+    return 1
+  }
+
+  current_taipei_calendar_day() {
+    printf '%s\n' '2026-08-27'
+  }
+
+  require_live_fix_trading_day '2026-08-27' ||
+    fail 'current Taipei trading day must be accepted'
+
+  if require_live_fix_trading_day '2026-08-26'; then
+    fail 'stale retained namespace trading day must be rejected'
+  fi
+  grep -F \
+    'retained namespace trading day 2026-08-26 does not match current Asia/Taipei date 2026-08-27' \
+    "$reason" >/dev/null ||
+    fail 'trading-day mismatch must retain configured and current dates'
+)
+
+(
   # shellcheck source=scripts/end-to-end/critical-consumers/lib/failure-recovery.sh
   source "$recovery_module"
   unknown="$temporary_directory/unknown.json"
   accepted="$temporary_directory/accepted.json"
-  printf '%s\n' '{"execId":"UN-123","text":"SYSTEM_ERROR: order outcome is pending confirmation; no client action is required"}' >"$unknown"
-  printf '%s\n' '{"execId":"E-123","text":""}' >"$accepted"
+  rejected="$temporary_directory/rejected.json"
+  unexpected="$temporary_directory/unexpected.json"
+  reason="$temporary_directory/reason.txt"
+
+  printf '%s\n' '{"execId":"UN-123","execType":"A","ordStatus":"A","text":"SYSTEM_ERROR: order outcome is pending confirmation; no client action is required"}' >"$unknown"
+  printf '%s\n' '{"execId":"E-123","execType":"A","ordStatus":"A","text":""}' >"$accepted"
+  printf '%s\n' '{"execId":"R-123","execType":"8","ordStatus":"8","text":"validation rejected"}' >"$rejected"
+  printf '%s\n' '{"execId":"X-123","execType":"0","ordStatus":"0","text":"unexpected lifecycle"}' >"$unexpected"
+
+  die() {
+    printf '%s\n' "$*" >"$reason"
+    return 1
+  }
+
   fix_submission_outcome_is_unknown "$unknown" ||
     fail 'UN-prefixed FIX evidence must be classified as UNKNOWN'
   if fix_submission_outcome_is_unknown "$accepted"; then
     fail 'accepted FIX evidence must not be classified as UNKNOWN'
   fi
+
+  require_fix_submission_accepted "$accepted" ||
+    fail 'A/A FIX evidence must be accepted by the runner'
+
+  if require_fix_submission_accepted "$unknown"; then
+    fail 'UNKNOWN FIX evidence must not be accepted by the runner'
+  fi
+  grep -F 'FIX Risk admission outcome remained UNKNOWN' "$reason" >/dev/null ||
+    fail 'UNKNOWN FIX evidence must retain a specific failure reason'
+
+  if require_fix_submission_accepted "$rejected"; then
+    fail 'rejected FIX evidence must not be accepted by the runner'
+  fi
+  grep -F 'ExecType=8 OrdStatus=8 Text=validation rejected' "$reason" >/dev/null ||
+    fail 'rejected FIX evidence must retain FIX status and Text(58)'
+
+  if require_fix_submission_accepted "$unexpected"; then
+    fail 'unexpected lifecycle FIX evidence must not be accepted by the runner'
+  fi
+  grep -F 'ExecType=0 OrdStatus=0 Text=unexpected lifecycle' "$reason" >/dev/null ||
+    fail 'unexpected FIX evidence must retain FIX status and Text(58)'
 )
 
 (

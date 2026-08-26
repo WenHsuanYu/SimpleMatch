@@ -36,6 +36,7 @@ on:
       - 'scripts/test-critical-consumer-certification-matching.sh'
       - 'scripts/test-critical-consumer-kubernetes-config.sh'
       - 'scripts/test-local-certification-job-supervision.sh'
+      - 'scripts/test-local-certification-trading-day.sh'
       - 'scripts/test-local-kubernetes-dependencies.sh'
       - 'scripts/test-local-production-like.sh'
       - 'scripts/archive/test-local-registry-resource-lifecycle.sh'
@@ -76,11 +77,13 @@ jobs:
           bash scripts/end-to-end/critical-consumers/tests/matching-status-contract.sh
           bash scripts/end-to-end/critical-consumers/tests/system-observation-contract.sh
           bash scripts/end-to-end/critical-consumers/tests/deployment-contract.sh
+          bash scripts/end-to-end/critical-consumers/tests/verdict-contract.sh
           bash scripts/end-to-end/critical-consumers/tests/admission-contract.sh
           bash scripts/end-to-end/critical-consumers/tests/verifier-helper-contract.sh
           bash scripts/test-local-image-transport.sh
           bash scripts/test-local-image-rendering.sh
           bash scripts/test-local-certification-job-supervision.sh
+          bash scripts/test-local-certification-trading-day.sh
           bash scripts/test-local-kubernetes-dependencies.sh
           bash scripts/test-local-production-like.sh
           bash scripts/test-local-resource-report.sh

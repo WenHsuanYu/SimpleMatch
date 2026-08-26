@@ -11,11 +11,39 @@ fix_submission_outcome_is_unknown() {
   ' "$submission" >/dev/null 2>&1
 }
 
+require_fix_submission_accepted() {
+  local submission="$1"
+  if [[ ! -s "$submission" ]]; then
+    die 'FIX submission evidence is missing'
+    return 1
+  fi
+
+  if fix_submission_outcome_is_unknown "$submission"; then
+    die 'FIX Risk admission outcome remained UNKNOWN'
+    return 1
+  fi
+
+  local exec_type ord_status text
+  exec_type="$(jq -r '.execType // empty' "$submission")"
+  ord_status="$(jq -r '.ordStatus // empty' "$submission")"
+  text="$(jq -r '.text // ""' "$submission")"
+
+  if [[ "$exec_type" == A && "$ord_status" == A ]]; then
+    return 0
+  fi
+
+  if [[ "$exec_type" == 8 || "$ord_status" == 8 ]]; then
+    die "FIX order was rejected before durable Risk admission: ExecType=$exec_type OrdStatus=$ord_status Text=$text"
+    return 1
+  fi
+
+  die "FIX admission response was unexpected: ExecType=$exec_type OrdStatus=$ord_status Text=$text"
+  return 1
+}
+
 capture_risk_admission() {
   local destination="$1"
-  if fix_submission_outcome_is_unknown "$evidence_dir/fix/submit.json"; then
-    die 'FIX Risk admission outcome remained UNKNOWN'
-  fi
+  require_fix_submission_accepted "$evidence_dir/fix/submit.json"
 
   local postgres
   postgres="$(postgres_pod)"

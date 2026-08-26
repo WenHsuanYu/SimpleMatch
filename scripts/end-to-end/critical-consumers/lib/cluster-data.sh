@@ -247,6 +247,21 @@ configured_quickfix_ingress_venue() {
   printf '%s\n' "$venue"
 }
 
+current_taipei_calendar_day() {
+  TZ=Asia/Taipei date +%F
+}
+
+require_live_fix_trading_day() {
+  local configured_trading_day="$1"
+  local current_trading_day
+  current_trading_day="$(current_taipei_calendar_day)"
+
+  if [[ "$configured_trading_day" != "$current_trading_day" ]]; then
+    die "retained namespace trading day $configured_trading_day does not match current Asia/Taipei date $current_trading_day; run a fresh production-like certification"
+    return 1
+  fi
+}
+
 select_market_input() {
   artifact_json="$(decode_configmap_file matching-daily-artifact market_reference.json)"
   artifact_checksum="$(decode_configmap_file matching-daily-artifact market_reference.sha256 | tr -d '\r\n')"
@@ -263,6 +278,7 @@ select_market_input() {
   [[ -n "$matching_image_identity" ]] || die 'matching-session-config matching_image_digest is missing'
   [[ "$(jq -r '.metadata.tradingDay' <<<"$artifact_json")" == "$trading_day" ]] ||
     die 'Market Reference trading day does not match matching-session-config'
+  require_live_fix_trading_day "$trading_day"
 
   routing_algorithm_version="$(jq -r '.metadata.routingAlgorithmVersion // empty' <<<"$artifact_json")"
   [[ -n "$routing_algorithm_version" ]] || die 'Market Reference routing algorithm version is missing'

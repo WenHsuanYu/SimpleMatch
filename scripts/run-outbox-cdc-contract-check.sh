@@ -105,6 +105,18 @@ wait_for_kafka() {
   exit 1
 }
 
+print_connect_diagnostics() {
+  local container_id="${1:-}"
+  echo "Kafka Connect diagnostics:" >&2
+  "${COMPOSE[@]}" ps -a >&2 || true
+  if [[ -n "$container_id" ]]; then
+    docker inspect --format \
+      'id={{.Id}} status={{.State.Status}} running={{.State.Running}} restartCount={{.RestartCount}} exitCode={{.State.ExitCode}} startedAt={{.State.StartedAt}} restartPolicy={{.HostConfig.RestartPolicy.Name}}' \
+      "$container_id" >&2 || true
+  fi
+  "${COMPOSE[@]}" logs --no-color --tail=200 kafka-connect >&2 || true
+}
+
 wait_for_connect() {
   for _ in $(seq 1 60); do
     if curl -fsS http://localhost:8083/connectors >/dev/null 2>&1; then
@@ -112,8 +124,113 @@ wait_for_connect() {
     fi
     sleep 1
   done
+  local container_id
+  container_id="$("${COMPOSE[@]}" ps -a -q kafka-connect 2>/dev/null || true)"
   echo "Kafka Connect did not become ready" >&2
+  print_connect_diagnostics "$container_id"
   exit 1
+}
+
+wait_for_connect_crash_transition() {
+  local container_id="$1"
+  local initial_started_at="$2"
+  local initial_restart_count="$3"
+  local state running status started_at exit_code restart_count
+
+  for _ in $(seq 1 120); do
+    state="$(
+      docker inspect --format \
+        '{{.State.Running}}|{{.State.Status}}|{{.State.StartedAt}}|{{.State.ExitCode}}|{{.RestartCount}}' \
+        "$container_id" 2>/dev/null || true
+    )"
+    IFS='|' read -r running status started_at exit_code restart_count <<<"$state"
+
+    if [[ "$running" == false && "$status" == exited ]]; then
+      if [[ "$exit_code" != 137 ]]; then
+        echo "Kafka Connect exited with $exit_code after SIGKILL; expected 137" >&2
+        print_connect_diagnostics "$container_id"
+        return 1
+      fi
+      printf 'stopped\n'
+      return 0
+    fi
+
+    if [[ "$running" == true && "$status" == running \
+          && -n "$started_at" && "$started_at" != "$initial_started_at" \
+          && "$restart_count" =~ ^[0-9]+$ \
+          && "$initial_restart_count" =~ ^[0-9]+$ \
+          && "$restart_count" -gt "$initial_restart_count" ]]; then
+      printf 'restarted\n'
+      return 0
+    fi
+    sleep 0.5
+  done
+
+  echo "Kafka Connect did not expose a completed SIGKILL transition" >&2
+  print_connect_diagnostics "$container_id"
+  return 1
+}
+
+wait_for_connect_new_incarnation() {
+  local container_id="$1"
+  local initial_started_at="$2"
+  local state running status started_at
+
+  for _ in $(seq 1 120); do
+    state="$(
+      docker inspect --format \
+        '{{.State.Running}}|{{.State.Status}}|{{.State.StartedAt}}' \
+        "$container_id" 2>/dev/null || true
+    )"
+    IFS='|' read -r running status started_at <<<"$state"
+    if [[ "$running" == true && "$status" == running \
+          && -n "$started_at" && "$started_at" != "$initial_started_at" ]]; then
+      return 0
+    fi
+    sleep 0.5
+  done
+
+  echo "Kafka Connect did not start a new process incarnation after SIGKILL" >&2
+  print_connect_diagnostics "$container_id"
+  return 1
+}
+
+crash_connect_process() {
+  local container_id initial_started_at initial_restart_count transition
+  container_id="$("${COMPOSE[@]}" ps -q kafka-connect)"
+  [[ -n "$container_id" ]] || {
+    echo "Kafka Connect container is not running before crash injection" >&2
+    exit 1
+  }
+
+  initial_started_at="$(docker inspect --format '{{.State.StartedAt}}' "$container_id")"
+  initial_restart_count="$(docker inspect --format '{{.RestartCount}}' "$container_id")"
+  [[ -n "$initial_started_at" ]] || {
+    echo "Kafka Connect StartedAt is missing before crash injection" >&2
+    print_connect_diagnostics "$container_id"
+    exit 1
+  }
+  [[ "$initial_restart_count" =~ ^[0-9]+$ ]] || {
+    echo "Kafka Connect restart count is invalid before crash injection" >&2
+    print_connect_diagnostics "$container_id"
+    exit 1
+  }
+
+  "${COMPOSE[@]}" kill -s SIGKILL kafka-connect >/dev/null
+  transition="$(
+    wait_for_connect_crash_transition \
+      "$container_id" "$initial_started_at" "$initial_restart_count"
+  )" || exit 1
+
+  if [[ "$transition" == stopped ]]; then
+    "${COMPOSE[@]}" start kafka-connect >/dev/null
+  elif [[ "$transition" != restarted ]]; then
+    echo "Kafka Connect crash transition is invalid: $transition" >&2
+    print_connect_diagnostics "$container_id"
+    exit 1
+  fi
+
+  wait_for_connect_new_incarnation "$container_id" "$initial_started_at" || exit 1
 }
 
 psql_query() {
@@ -423,8 +540,7 @@ risk_duplicate_after="$TMP_DIR/risk-duplicate-after.json"
 account_duplicate_after="$TMP_DIR/account-duplicate-after.json"
 cdc_capture_topic_end_offsets orders.validated "$risk_duplicate_redelivery_baseline"
 cdc_capture_topic_end_offsets account.lifecycle "$account_duplicate_redelivery_baseline"
-"${COMPOSE[@]}" kill -s SIGKILL kafka-connect >/dev/null
-"${COMPOSE[@]}" up -d kafka-connect >/dev/null
+crash_connect_process
 wait_for_connect
 wait_for_all_connectors
 verify_probe_publication "$risk_duplicate_probe" "$risk_duplicate_redelivery_baseline" risk_service

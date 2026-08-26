@@ -49,6 +49,7 @@ restoration_failed=false
 evidence_initialized=false
 current_stage="preflight"
 failure_reason=""
+pending_pass_verdict=""
 
 usage() {
   cat <<'EOF_USAGE'
@@ -113,6 +114,10 @@ cleanup() {
   trap - ERR EXIT
   set +e
 
+  if (( status == 0 )); then
+    current_stage="restore certification environment"
+  fi
+
   stop_background_process "${fix_submit_pid:-}"
   fix_submit_pid=""
   stop_fix_port_forward
@@ -138,8 +143,23 @@ cleanup() {
     status=1
     [[ -n "$failure_reason" ]] || failure_reason='environment restoration failed'
   fi
+
   if (( status != 0 )); then
+    if [[ -n "$pending_pass_verdict" ]]; then
+      rm -f "$pending_pass_verdict"
+    fi
     write_failure_verdict "$status"
+  elif [[ -n "$pending_pass_verdict" ]]; then
+    current_stage="publish successful certification verdict"
+    if mv "$pending_pass_verdict" "$evidence_dir/verdict.json"; then
+      current_stage="completed"
+      printf 'Critical consumer failure certification passed: %s\n' "$evidence_dir/verdict.json"
+    else
+      status=1
+      failure_reason='failed to publish successful certification verdict'
+      rm -f "$pending_pass_verdict"
+      write_failure_verdict "$status"
+    fi
   fi
   exit "$status"
 }
@@ -199,7 +219,7 @@ done
 [[ "$timeout_seconds" =~ ^[1-9][0-9]*$ ]] || die '--timeout-seconds must be a positive integer'
 (( timeout_seconds <= 300 )) || die '--timeout-seconds must not exceed 300'
 
-for tool in kubectl jq curl awk sed grep date seq sleep tr cp; do
+for tool in kubectl jq curl awk sed grep date seq sleep tr cp mv; do
   command -v "$tool" >/dev/null 2>&1 || die "$tool is required"
 done
 [[ -x "$repo_root/gradlew" ]] || die 'Gradle wrapper is missing'
@@ -293,6 +313,7 @@ jq -e '.accepted == true and .gateState == "OPEN" and (.occurredAt | type == "st
 }
 
 current_stage="submit FIX order immediately after Gateway open"
+require_live_fix_trading_day "$trading_day"
 release_fix_submit_client
 wait_fix_submit_client || die 'retained FIX submission client failed'
 stop_fix_port_forward
@@ -400,7 +421,8 @@ jq -e '
 ' "$evidence_dir/recovery/final-consumer-state.json" >/dev/null ||
   die 'final critical-consumer state is not healthy'
 
-current_stage="completed"
+current_stage="stage successful certification verdict"
+pending_pass_verdict="$evidence_dir/verdict.pending.json"
 jq -n \
   --arg status PASS \
   --arg namespace "$namespace" \
@@ -437,9 +459,8 @@ jq -n \
       "offline FIX delivery remained durably PENDING",
       "explicit FIX ResendRequest preserved MsgSeqNum and stable ExecID",
       "Gateway restart preserved the same FIX retransmission identity",
-      "no critical consumer quarantine or pending FIX intent remained"
+      "no critical consumer quarantine or pending FIX intent remained",
+      "certification environment restoration completed before PASS publication"
     ],
     outOfScope:["exactly-once network delivery"]
-  }' >"$evidence_dir/verdict.json"
-
-printf 'Critical consumer failure certification passed: %s\n' "$evidence_dir/verdict.json"
+  }' >"$pending_pass_verdict"

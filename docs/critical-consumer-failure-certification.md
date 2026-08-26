@@ -28,6 +28,7 @@ scripts/end-to-end/critical-consumers/
     ├── matching-status-contract.sh
     ├── system-observation-contract.sh
     ├── deployment-contract.sh
+    ├── verdict-contract.sh
     └── verifier-helper-contract.sh
 ```
 
@@ -271,6 +272,9 @@ healthy production-like namespace
 → client reconnects and requests resend
 → QuickFIX Gateway restarts
 → same resend identity verified again
+→ final durable consumer state verified
+→ temporary Gateway and workload changes restored
+→ PASS verdict published
 ```
 
 The Kafka event observer matches both the canonical command ID and order ID.
@@ -297,7 +301,12 @@ After the evidence directory has been initialized, both successful and failed
 runs write `verdict.json`.
 
 A successful result contains `status: PASS` and the command, order, event, FIX
-execution, Kafka partition, event offset, and FIX sequence identities.
+execution, Kafka partition, event offset, and FIX sequence identities. The PASS
+payload is first written as `verdict.pending.json`. The cleanup path restores
+temporary Gateway configuration, connector state, and workload replicas before
+atomically publishing that file as `verdict.json`. A restoration failure removes
+the pending PASS and writes a FAIL verdict instead, so retained PASS evidence
+cannot describe a run that exited with an unrestored environment.
 
 A failed result contains `status: FAIL`, the stage that failed, a reason, the
 process exit status, and whether environment restoration failed. This prevents a

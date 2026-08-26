@@ -22,7 +22,7 @@ image_lock="${SIMPLEMATCH_LOCAL_IMAGE_LOCK:-$evidence_dir/local-images.lock}"
 matching_producer_config_file="${SIMPLEMATCH_KAFKA_PRODUCER_CONFIG_FILE:-$evidence_dir/matching-producer.config.txt}"
 matching_capacity_evidence_file="${SIMPLEMATCH_KAFKA_CAPACITY_EVIDENCE_FILE:-$evidence_dir/kafka-capacity.properties}"
 matching_capacity_workload_file="${SIMPLEMATCH_KAFKA_CAPACITY_WORKLOAD_FILE:-$repo_root/scripts/testdata/matching-topic-profile/local/capacity.properties}"
-certification_trading_day="${SIMPLEMATCH_CERTIFICATION_TRADING_DAY:-$(date -u +%F)}"
+certification_trading_day="${SIMPLEMATCH_CERTIFICATION_TRADING_DAY:-$(TZ=Asia/Taipei date +%F)}"
 local_postgres_password="${SIMPLEMATCH_LOCAL_POSTGRES_PASSWORD:-simplematch}"
 if [[ ! "$local_postgres_password" =~ ^[A-Za-z0-9._~-]+$ ]]; then
   printf '%s\n' 'SIMPLEMATCH_LOCAL_POSTGRES_PASSWORD may contain only URL-safe local-lab characters.' >&2
