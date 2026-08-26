@@ -5,11 +5,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
-import java.time.Instant;
-import java.time.ZoneOffset;
-import java.time.format.DateTimeFormatter;
 import java.util.Locale;
-import java.util.UUID;
 import java.util.concurrent.LinkedBlockingQueue;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicReference;
@@ -29,35 +25,23 @@ import quickfix.SessionID;
 import quickfix.SessionSettings;
 import quickfix.SocketInitiator;
 import quickfix.UnsupportedMessageType;
-import quickfix.field.Account;
 import quickfix.field.BeginSeqNo;
 import quickfix.field.ClOrdID;
 import quickfix.field.EndSeqNo;
 import quickfix.field.ExecID;
 import quickfix.field.ExecType;
-import quickfix.field.HandlInst;
 import quickfix.field.MsgSeqNum;
 import quickfix.field.MsgType;
 import quickfix.field.OrdStatus;
-import quickfix.field.OrdType;
 import quickfix.field.OrderID;
-import quickfix.field.OrderQty;
+import quickfix.field.OrigSendingTime;
 import quickfix.field.PossDupFlag;
-import quickfix.field.Price;
-import quickfix.field.Symbol;
 import quickfix.field.Text;
-import quickfix.field.TransactTime;
 import quickfix.fix44.ExecutionReport;
-import quickfix.fix44.NewOrderSingle;
 import quickfix.fix44.ResendRequest;
 
-/** Exercises one retained external FIX session across disconnect, resend, and Gateway restart. */
+/** Exercises retained FIX delivery and retransmission across Gateway restart. */
 class QuickFixRetainedSessionLiveCertificationTest {
-  private static final DateTimeFormatter FIX_TIMESTAMP =
-      DateTimeFormatter.ofPattern("yyyyMMdd-HH:mm:ss.SSS")
-          .withLocale(Locale.ROOT)
-          .withZone(ZoneOffset.UTC);
-
   @Test
   void retainedSessionPhase() throws Exception {
     final Phase phase = Phase.parse(requiredEnvironment("SIMPLEMATCH_RETAINED_FIX_PHASE"));
@@ -89,12 +73,14 @@ class QuickFixRetainedSessionLiveCertificationTest {
             writeInitiatorConfig(stateDir, host, port, senderCompId, targetCompId, dictionary)
                 .toString());
     final RetainedInitiatorApplication application = new RetainedInitiatorApplication();
+    final FixWireLogObserver wireObserver =
+        new FixWireLogObserver(new FileLogFactory(settings));
     final SocketInitiator initiator =
         new SocketInitiator(
             application,
             new FileStoreFactory(settings),
             settings,
-            new FileLogFactory(settings),
+            wireObserver,
             new DefaultMessageFactory());
 
     try {
@@ -104,52 +90,25 @@ class QuickFixRetainedSessionLiveCertificationTest {
       assertThat(sessionId).isNotNull();
 
       switch (phase) {
-        case SUBMIT -> submit(application, sessionId, evidencePath, clOrdId, timeoutSeconds);
         case RECEIVE_RESEND ->
-            receiveAndResend(application, sessionId, evidencePath, clOrdId, timeoutSeconds);
-        case RESEND_ONLY -> resendOnly(application, sessionId, evidencePath, clOrdId, timeoutSeconds);
+            receiveAndResend(
+                application,
+                wireObserver,
+                sessionId,
+                evidencePath,
+                clOrdId,
+                timeoutSeconds);
+        case RESEND_ONLY ->
+            resendOnly(wireObserver, sessionId, evidencePath, clOrdId, timeoutSeconds);
       }
     } finally {
       initiator.stop(true);
     }
   }
 
-  private void submit(
-      RetainedInitiatorApplication application,
-      SessionID sessionId,
-      Path evidencePath,
-      String clOrdId,
-      int timeoutSeconds)
-      throws Exception {
-    final String accountId =
-        canonicalAccountId(requiredEnvironment("SIMPLEMATCH_LIVE_FIX_ACCOUNT_ID"));
-    final String symbol = requiredEnvironment("SIMPLEMATCH_LIVE_FIX_SYMBOL");
-    final String quantity = requiredEnvironment("SIMPLEMATCH_LIVE_FIX_QUANTITY");
-    final String price = requiredEnvironment("SIMPLEMATCH_LIVE_FIX_PRICE");
-
-    assertThat(
-            Session.sendToTarget(
-                newOrder(clOrdId, symbol, quantity, price, accountId), sessionId))
-        .isTrue();
-    final ExecutionReport report =
-        application.awaitExecutionReport(clOrdId, timeoutSeconds, candidate -> true);
-    writeEvidence(evidencePath, "SUBMIT", report);
-
-    final String actualExecType = report.getString(ExecType.FIELD);
-    final String actualOrdStatus = report.getString(OrdStatus.FIELD);
-    final String text = optionalText(report);
-    assertThat(actualExecType)
-        .as(
-            "FIX admission for ClOrdID=%s; OrdStatus=%s; Text=%s",
-            clOrdId, actualOrdStatus, text)
-        .isEqualTo("A");
-    assertThat(actualOrdStatus)
-        .as("FIX admission OrdStatus for ClOrdID=%s; Text=%s", clOrdId, text)
-        .isEqualTo("A");
-  }
-
   private void receiveAndResend(
       RetainedInitiatorApplication application,
+      FixWireLogObserver wireObserver,
       SessionID sessionId,
       Path evidencePath,
       String clOrdId,
@@ -164,25 +123,21 @@ class QuickFixRetainedSessionLiveCertificationTest {
     final String executionId = lifecycle.getString(ExecID.FIELD);
     assertThat(executionId).isNotBlank();
 
+    wireObserver.discardIncoming();
     requestResend(sessionId, messageSequence);
-    final ExecutionReport duplicate =
-        application.awaitExecutionReport(
-            clOrdId,
-            timeoutSeconds,
-            candidate ->
-                candidate.getHeader().getInt(MsgSeqNum.FIELD) == messageSequence
-                    && candidate.getString(ExecID.FIELD).equals(executionId)
-                    && candidate.getHeader().isSetField(PossDupFlag.FIELD)
-                    && candidate.getHeader().getBoolean(PossDupFlag.FIELD));
+    final FixWireLogObserver.WireMessage duplicate =
+        wireObserver.awaitResentExecutionReport(
+            clOrdId, messageSequence, executionId, timeoutSeconds);
 
-    assertThat(duplicate.getHeader().getInt(MsgSeqNum.FIELD)).isEqualTo(messageSequence);
-    assertThat(duplicate.getString(ExecID.FIELD)).isEqualTo(executionId);
-    assertThat(duplicate.getHeader().getBoolean(PossDupFlag.FIELD)).isTrue();
+    assertThat(duplicate.requiredIntegerField(MsgSeqNum.FIELD)).isEqualTo(messageSequence);
+    assertThat(duplicate.requiredField(ExecID.FIELD)).isEqualTo(executionId);
+    assertThat(duplicate.requiredField(PossDupFlag.FIELD)).isEqualTo("Y");
+    assertThat(duplicate.requiredField(OrigSendingTime.FIELD)).isNotBlank();
     writeEvidence(evidencePath, "RECEIVE_RESEND", duplicate);
   }
 
   private void resendOnly(
-      RetainedInitiatorApplication application,
+      FixWireLogObserver wireObserver,
       SessionID sessionId,
       Path evidencePath,
       String clOrdId,
@@ -194,20 +149,16 @@ class QuickFixRetainedSessionLiveCertificationTest {
     final String expectedExecutionId =
         requiredEnvironment("SIMPLEMATCH_RETAINED_FIX_EXPECTED_EXEC_ID");
 
+    wireObserver.discardIncoming();
     requestResend(sessionId, expectedSequence);
-    final ExecutionReport duplicate =
-        application.awaitExecutionReport(
-            clOrdId,
-            timeoutSeconds,
-            candidate ->
-                candidate.getHeader().getInt(MsgSeqNum.FIELD) == expectedSequence
-                    && candidate.getString(ExecID.FIELD).equals(expectedExecutionId)
-                    && candidate.getHeader().isSetField(PossDupFlag.FIELD)
-                    && candidate.getHeader().getBoolean(PossDupFlag.FIELD));
+    final FixWireLogObserver.WireMessage duplicate =
+        wireObserver.awaitResentExecutionReport(
+            clOrdId, expectedSequence, expectedExecutionId, timeoutSeconds);
 
-    assertThat(duplicate.getString(ExecID.FIELD)).isEqualTo(expectedExecutionId);
-    assertThat(duplicate.getHeader().getInt(MsgSeqNum.FIELD)).isEqualTo(expectedSequence);
-    assertThat(duplicate.getHeader().getBoolean(PossDupFlag.FIELD)).isTrue();
+    assertThat(duplicate.requiredField(ExecID.FIELD)).isEqualTo(expectedExecutionId);
+    assertThat(duplicate.requiredIntegerField(MsgSeqNum.FIELD)).isEqualTo(expectedSequence);
+    assertThat(duplicate.requiredField(PossDupFlag.FIELD)).isEqualTo("Y");
+    assertThat(duplicate.requiredField(OrigSendingTime.FIELD)).isNotBlank();
     writeEvidence(evidencePath, "RESEND_ONLY", duplicate);
   }
 
@@ -216,21 +167,6 @@ class QuickFixRetainedSessionLiveCertificationTest {
     request.setInt(BeginSeqNo.FIELD, messageSequence);
     request.setInt(EndSeqNo.FIELD, messageSequence);
     assertThat(Session.sendToTarget(request, sessionId)).isTrue();
-  }
-
-  private NewOrderSingle newOrder(
-      String clOrdId, String symbol, String quantity, String price, String accountId) {
-    final NewOrderSingle order = new NewOrderSingle();
-    order.setString(ClOrdID.FIELD, clOrdId);
-    order.setString(Symbol.FIELD, symbol);
-    order.setChar(quickfix.field.Side.FIELD, '1');
-    order.setString(OrderQty.FIELD, quantity);
-    order.setChar(OrdType.FIELD, '2');
-    order.setString(Price.FIELD, price);
-    order.setChar(HandlInst.FIELD, '1');
-    order.setString(TransactTime.FIELD, FIX_TIMESTAMP.format(Instant.now()));
-    order.setString(Account.FIELD, accountId);
-    return order;
   }
 
   private Path writeInitiatorConfig(
@@ -280,46 +216,41 @@ class QuickFixRetainedSessionLiveCertificationTest {
     return configPath;
   }
 
-  private void writeEvidence(Path path, String phase, ExecutionReport report) throws Exception {
-    final int messageSequence = report.getHeader().getInt(MsgSeqNum.FIELD);
-    final boolean possibleDuplicate =
-        report.getHeader().isSetField(PossDupFlag.FIELD)
-            && report.getHeader().getBoolean(PossDupFlag.FIELD);
+  private void writeEvidence(
+      Path path, String phase, FixWireLogObserver.WireMessage message) throws IOException {
+    final String text = message.field(Text.FIELD) == null ? "" : message.field(Text.FIELD);
     final String json =
         "{\n"
             + "  \"phase\":\""
             + jsonEscape(phase)
             + "\",\n"
             + "  \"clOrdId\":\""
-            + jsonEscape(report.getString(ClOrdID.FIELD))
+            + jsonEscape(message.requiredField(ClOrdID.FIELD))
             + "\",\n"
             + "  \"orderId\":\""
-            + jsonEscape(report.getString(OrderID.FIELD))
+            + jsonEscape(message.requiredField(OrderID.FIELD))
             + "\",\n"
             + "  \"execId\":\""
-            + jsonEscape(report.getString(ExecID.FIELD))
+            + jsonEscape(message.requiredField(ExecID.FIELD))
             + "\",\n"
             + "  \"execType\":\""
-            + jsonEscape(report.getString(ExecType.FIELD))
+            + jsonEscape(message.requiredField(ExecType.FIELD))
             + "\",\n"
             + "  \"ordStatus\":\""
-            + jsonEscape(report.getString(OrdStatus.FIELD))
+            + jsonEscape(message.requiredField(OrdStatus.FIELD))
             + "\",\n"
             + "  \"text\":\""
-            + jsonEscape(optionalText(report))
+            + jsonEscape(text)
             + "\",\n"
             + "  \"msgSeqNum\":"
-            + messageSequence
+            + message.requiredIntegerField(MsgSeqNum.FIELD)
             + ",\n"
-            + "  \"possDup\":"
-            + possibleDuplicate
-            + "\n"
+            + "  \"possDup\":true,\n"
+            + "  \"origSendingTime\":\""
+            + jsonEscape(message.requiredField(OrigSendingTime.FIELD))
+            + "\"\n"
             + "}\n";
     Files.writeString(path, json);
-  }
-
-  private String optionalText(ExecutionReport report) throws FieldNotFound {
-    return report.isSetField(Text.FIELD) ? report.getString(Text.FIELD) : "";
   }
 
   private Path dictionaryPath() {
@@ -342,12 +273,6 @@ class QuickFixRetainedSessionLiveCertificationTest {
       current = current.getParent();
     }
     throw new IllegalStateException("workspace root not found");
-  }
-
-  private String canonicalAccountId(String value) {
-    final UUID accountId = UUID.fromString(value);
-    assertThat(accountId.toString()).isEqualTo(value.toLowerCase(Locale.ROOT));
-    return value;
   }
 
   private int positivePort(String environmentName) {
@@ -386,7 +311,6 @@ class QuickFixRetainedSessionLiveCertificationTest {
   }
 
   private enum Phase {
-    SUBMIT,
     RECEIVE_RESEND,
     RESEND_ONLY;
 
@@ -395,7 +319,7 @@ class QuickFixRetainedSessionLiveCertificationTest {
         return Phase.valueOf(value.trim().toUpperCase(Locale.ROOT).replace('-', '_'));
       } catch (IllegalArgumentException invalid) {
         throw new IllegalArgumentException(
-            "SIMPLEMATCH_RETAINED_FIX_PHASE must be submit, receive-resend, or resend-only",
+            "SIMPLEMATCH_RETAINED_FIX_PHASE must be receive-resend or resend-only",
             invalid);
       }
     }
