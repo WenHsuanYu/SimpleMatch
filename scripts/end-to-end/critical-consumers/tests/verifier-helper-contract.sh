@@ -52,6 +52,19 @@ for manifest in \
   fi
 done
 
+registry_digest="localhost:5001/simplematch/risk-matching-e2e-verifier@sha256:$(printf 'a%.0s' {1..64})"
+cat >"$tmp/registry.lock" <<EOF_LOCK
+risk-matching-e2e-verifier|simplematch/risk-matching-e2e-verifier:contract|localhost:5001/simplematch/risk-matching-e2e-verifier:contract|$registry_digest
+EOF_LOCK
+simplematch_record_certification_provenance \
+  "$repo_root" "$production_evidence" "$namespace" \
+  registry contract "$tmp/registry.lock" ||
+  fail 'registry provenance should preserve the digest-pinned verifier image'
+actual_image="$(simplematch_certification_verifier_image "$repo_root" "$namespace")" ||
+  fail 'digest-pinned registry provenance should be accepted'
+[[ "$actual_image" == "$registry_digest" ]] ||
+  fail "unexpected registry verifier image reference: $actual_image"
+
 printf '%s\n' deadbeef >"$production_evidence/source-revision"
 if simplematch_certification_verifier_image "$repo_root" "$namespace" >/dev/null 2>&1; then
   fail 'a different source revision must reject retained production-like evidence'
