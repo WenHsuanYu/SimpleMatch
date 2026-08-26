@@ -27,11 +27,51 @@ scripts/end-to-end/critical-consumers/
 └── tests/
     ├── matching-status-contract.sh
     ├── system-observation-contract.sh
-    └── deployment-contract.sh
+    ├── deployment-contract.sh
+    └── verifier-helper-contract.sh
 ```
+
+`scripts/lib/local-certification-provenance.sh` is shared with the local
+production-like runner. It owns the retained source/image provenance consumed by
+verification helpers.
 
 `scripts/run-critical-consumer-failure-certification.sh` remains as a
 compatibility entrypoint and delegates to the canonical runner.
+
+## Retained production-like provenance
+
+Failure certification is a continuation of one completed production-like run,
+not a test that may attach to any disposable namespace. A successful full
+production-like run records the repository revision and the exact verifier image
+reference next to its existing `run-context` evidence. Registry transport stores
+the digest-pinned verifier reference from `local-images.lock`; `kind-load`
+records the canonical tagged image that was loaded into the kind nodes.
+
+Before creating a verification helper, the failure certification requires all
+of the following:
+
+- the retained `run-context` namespace equals the requested namespace;
+- `source-revision` equals the current repository `HEAD`;
+- `verifier-image-reference` exists and is well formed.
+
+The tracked helper manifests deliberately keep a canonical placeholder image.
+For a certification run they are rendered into the failure evidence directory
+with the retained verifier image reference. Both the warm Kafka observer and the
+later exact Matching Event observer therefore use the same image that belongs to
+the production-like run instead of assuming a node-local
+`simplematch/risk-matching-e2e-verifier:local` image.
+
+This check prevents mixed evidence such as a new verifier testing application
+workloads that were deployed from an older commit. A production-like run created
+before provenance recording was introduced is intentionally rejected and must
+be recreated on the current source. If a Kafka observer Pod still fails to
+become Ready, its Pod YAML, `describe` output, and container log are retained
+under `diagnostics/kafka-observer-startup` before cleanup.
+
+The production-like evidence directory defaults to
+`out/certification/local-production-like`. If the retained run used another
+directory, set `SIMPLEMATCH_PRODUCTION_LIKE_EVIDENCE_DIR` to that directory when
+running failure certification.
 
 ## Why the order is admitted before failure injection
 
@@ -269,10 +309,27 @@ Gateway-attempt-specific path before a later retry can reuse the original path.
 
 ## Running the test
 
-Use a disposable namespace that has already passed the local production-like
-certification. The evidence directory must be empty.
+Use a disposable namespace from a production-like certification that completed
+on the same repository revision. Retain that namespace with `--keep-resources`.
+For the default evidence location:
 
-Canonical command:
+```bash
+bash scripts/run-local-production-like-certification.sh --keep-resources
+
+export SIMPLEMATCH_CERTIFICATION_NAMESPACE="$(
+  awk -F= '$1 == "namespace" {print $2}' \
+    out/certification/local-production-like/run-context
+)"
+```
+
+If the production-like run used a custom evidence directory, preserve that path
+for the dependent failure certification:
+
+```bash
+export SIMPLEMATCH_PRODUCTION_LIKE_EVIDENCE_DIR=/path/to/production-like-evidence
+```
+
+The failure evidence directory must be new and empty. Canonical command:
 
 ```bash
 scripts/end-to-end/critical-consumers/run-failure-certification.sh \
