@@ -3,6 +3,8 @@ set -euo pipefail
 
 script_dir="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
 repo_root="$(cd -- "$script_dir/../../../.." && pwd)"
+production_runner="$repo_root/scripts/run-local-production-like-certification.sh"
+failure_support="$repo_root/scripts/end-to-end/critical-consumers/lib/failure-support.sh"
 # shellcheck source=scripts/lib/local-certification-provenance.sh
 source "$repo_root/scripts/lib/local-certification-provenance.sh"
 
@@ -10,6 +12,13 @@ fail() {
   printf 'Verifier helper contract: %s\n' "$*" >&2
   exit 1
 }
+
+grep -Fq 'local-certification-provenance.sh' "$production_runner" ||
+  fail 'production-like runner must load the shared provenance module'
+grep -Fq 'simplematch_record_certification_provenance' "$production_runner" ||
+  fail 'completed production-like runs must record dependent-test provenance'
+grep -Fq 'local-certification-provenance.sh' "$failure_support" ||
+  fail 'failure certification must load the same provenance module'
 
 tmp="$(mktemp -d)"
 trap 'rm -rf "$tmp"' EXIT
