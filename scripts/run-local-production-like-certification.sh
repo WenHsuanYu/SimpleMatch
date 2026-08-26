@@ -10,6 +10,8 @@ source "$script_dir/lib/local-common.sh"
 source "$script_dir/lib/local-kind.sh"
 # shellcheck source=scripts/lib/local-image-transport.sh
 source "$script_dir/lib/local-image-transport.sh"
+# shellcheck source=scripts/lib/local-certification-provenance.sh
+source "$script_dir/lib/local-certification-provenance.sh"
 
 compose_file="$repo_root/deploy/compose/kafka-connect.production-like.yml"
 compose_project="${SIMPLEMATCH_CERTIFICATION_COMPOSE_PROJECT:-simplematch-local-production-like}"
@@ -76,3 +78,12 @@ source "$script_dir/lib/local-certification-bootstrap.sh"
 export SIMPLEMATCH_LOCAL_IMAGE_TRANSPORT="$image_transport"
 # shellcheck source=/dev/null
 source "$script_dir/lib/local-certification-run.sh"
+
+if [[ "$dry_run" == false \
+      && "$skip_kubernetes" == false \
+      && "$matching_fleet_only" == false ]]; then
+  simplematch_record_certification_provenance \
+    "$repo_root" "$evidence_dir" "$namespace" \
+    "$image_transport" "$image_tag" "$image_lock" || die \
+    'Failed to record production-like source and verifier image provenance.'
+fi
