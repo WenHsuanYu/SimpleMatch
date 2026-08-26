@@ -10,8 +10,10 @@ observation_module="$script_dir/../lib/system-observation.sh"
 support_module="$script_dir/../lib/failure-support.sh"
 cluster_module="$script_dir/../lib/cluster-data.sh"
 interfaces_module="$script_dir/../lib/test-interfaces.sh"
+kafka_interface="$script_dir/../lib/kafka-observation-interface.sh"
 recovery_module="$script_dir/../lib/failure-recovery.sh"
 observer_manifest="$repo_root/deploy/k8s/verification/matching-event-observer-pod.yaml"
+kafka_observer_manifest="$repo_root/deploy/k8s/verification/critical-consumer-kafka-observer-pod.yaml"
 quickfix_build="$repo_root/services/quickfix-gateway/build.gradle.kts"
 
 fail() {
@@ -27,6 +29,7 @@ for script in \
   "$support_module" \
   "$cluster_module" \
   "$interfaces_module" \
+  "$kafka_interface" \
   "$recovery_module"; do
   [[ -r "$script" ]] || fail "required script is missing: $script"
   bash -n "$script"
@@ -38,13 +41,27 @@ done
 grep -Fq 'end-to-end/critical-consumers/run-failure-certification.sh' "$compatibility_runner" ||
   fail 'legacy runner must delegate to the end-to-end certification entrypoint'
 grep -Fq 'capture_matching_samples_parallel' "$observation_module" ||
-  fail 'Matching runtime samples must be collected in parallel'
+  fail 'Matching runtime samples must be collected in parallel across partitions'
+grep -Fq 'capture_kafka_log_end_positions' "$observation_module" ||
+  fail 'system observation must use the reusable Kafka observation interface'
+grep -Fq 'capture_kafka_matching_committed_positions' "$observation_module" ||
+  fail 'Matching committed positions must use the reusable Kafka observation interface'
+if grep -Fq 'capture_topic_offsets' "$observation_module" ||
+   grep -Fq 'capture_matching_committed_offsets' "$observation_module"; then
+  fail 'freshness-sensitive observation must not launch Kafka command-line snapshots'
+fi
 grep -Fq 'updated_at_epoch_ms' "$matching_module" ||
   fail 'Matching status must retain the runtime source timestamp'
 grep -Fq 'matching-commands-before.json' "$observation_module" ||
   fail 'system observation must capture Kafka positions before collection'
 grep -Fq 'matching-commands-after.json' "$observation_module" ||
   fail 'system observation must verify Kafka positions after collection'
+grep -Fq 'EVIDENCE_EXPIRED_DURING_COLLECTION' "$observation_module" ||
+  fail 'collector-induced expiration must have a distinct failure classification'
+grep -Fq 'SOURCE_ALREADY_STALE' "$observation_module" ||
+  fail 'source-side staleness must have a distinct failure classification'
+grep -Fq 'ageAddedByCollectorMillis' "$observation_module" ||
+  fail 'timing evidence must expose age added after Matching sampling'
 grep -Fq 'partition-$partition-pod-before.json' "$observation_module" ||
   fail 'Matching collection must record Pod identity before runtime read'
 grep -Fq 'partition-$partition-pod-after.json' "$observation_module" ||
@@ -63,8 +80,14 @@ grep -Fq 'oldestSourceAgeAtSubmissionCompletionMillis' "$interfaces_module" ||
   fail 'Gateway submission timing must retain source age at completion'
 grep -Fq 'archive_gateway_observation_attempts' "$interfaces_module" ||
   fail 'Gateway retries must archive prior collection evidence before reuse'
+grep -Fq 'start_kafka_observation_adapter' "$canonical_runner" ||
+  fail 'canonical runner must prepare the warm Kafka observation adapter'
+grep -Fq 'stop_kafka_observation_adapter' "$canonical_runner" ||
+  fail 'canonical runner must stop the Kafka observation adapter'
 grep -Fq 'gateway-open-to-fix-send.json' "$canonical_runner" ||
   fail 'Gateway open-to-send timing evidence is missing'
+grep -Fq 'kafka-observation-interface.sh' "$support_module" ||
+  fail 'failure support must expose the Kafka observation interface'
 
 if grep -Fq 'OPERATIONS_MONITOR_ENABLED=false' "$canonical_runner" "$interfaces_module"; then
   fail 'failure certification must not disable the Gateway stale-observation monitor'
@@ -84,8 +107,49 @@ grep -Fq 'QuickFixPreparedSubmissionLiveCertificationTest' "$quickfix_build" ||
 grep -Fq 'preparedSubmissionCertificationTest' "$quickfix_build" ||
   fail 'QuickFIX prepared-submission Gradle task is missing'
 
+kafka_tmp="$(mktemp -d)"
 submission_tmp="$(mktemp -d)"
-trap 'rm -rf "$submission_tmp"' EXIT
+trap 'rm -rf "$kafka_tmp" "$submission_tmp"' EXIT
+(
+  # shellcheck source=scripts/end-to-end/critical-consumers/lib/kafka-observation-interface.sh
+  source "$kafka_interface"
+  kafka_observation_request() {
+    local path="$1"
+    local destination="$2"
+    case "$path" in
+      /log-end-positions)
+        jq -n '
+          def parts($base): [range(0; 15) | {partition:., offset:($base + .)}];
+          {
+            matchingCommands:{topic:"matching.commands",partitions:parts(10)},
+            matchingEvents:{topic:"matching.events",partitions:parts(20)}
+          }
+        ' >"$destination"
+        ;;
+      /matching-committed-positions)
+        jq -n '
+          {topic:"matching.commands",partitions:[
+            range(0; 15) | {partition:., committedOffset:(30 + .)}
+          ]}
+        ' >"$destination"
+        ;;
+      *) return 1 ;;
+    esac
+  }
+  capture_kafka_log_end_positions "$kafka_tmp/commands.json" "$kafka_tmp/events.json" ||
+    fail 'Kafka interface rejected a valid log-end snapshot'
+  capture_kafka_matching_committed_positions "$kafka_tmp/committed.json" ||
+    fail 'Kafka interface rejected valid Matching committed positions'
+  jq -e '.topic == "matching.commands" and .partitions[14].offset == 24' \
+    "$kafka_tmp/commands.json" >/dev/null ||
+    fail 'Kafka interface did not normalize matching.commands positions'
+  jq -e '.topic == "matching.events" and .partitions[14].offset == 34' \
+    "$kafka_tmp/events.json" >/dev/null ||
+    fail 'Kafka interface did not normalize matching.events positions'
+  jq -e '.partitions[14].committedOffset == 44' "$kafka_tmp/committed.json" >/dev/null ||
+    fail 'Kafka interface did not retain Matching committed positions'
+)
+
 (
   # shellcheck source=scripts/end-to-end/critical-consumers/lib/test-interfaces.sh
   source "$interfaces_module"
@@ -144,6 +208,7 @@ main = script.split('current_stage="capture original workload configuration"', 2
 abort "failure certification main sequence was not found" if main == script
 markers = [
   "start_fix_submit_client",
+  "start_kafka_observation_adapter",
   "pause_risk_outbox",
   'submit_open_eligible_observation "$check"',
   "gateway_request POST /operations/open",
@@ -181,5 +246,21 @@ abort "observer must reuse typed verifier image" unless container["image"] == "s
 abort "observer must remain available for exec/cp" unless container["command"] == ["sleep", "600"]
 abort "observer root filesystem must be read-only" unless container.dig("securityContext", "readOnlyRootFilesystem") == true
 abort "observer must drop all Linux capabilities" unless container.dig("securityContext", "capabilities", "drop") == ["ALL"]
+RUBY
+
+ruby -r yaml - "$kafka_observer_manifest" <<'RUBY'
+path = ARGV.fetch(0)
+pod = YAML.safe_load(File.read(path, encoding: "UTF-8"))
+abort "Kafka observer must be a v1 Pod" unless pod["apiVersion"] == "v1" && pod["kind"] == "Pod"
+spec = pod.fetch("spec")
+abort "Kafka observer must never restart" unless spec["restartPolicy"] == "Never"
+abort "Kafka observer must not receive an API token" unless spec["automountServiceAccountToken"] == false
+container = spec.fetch("containers").fetch(0)
+abort "Kafka observer must reuse typed verifier image" unless container["image"] == "simplematch/risk-matching-e2e-verifier:local"
+command = container.fetch("command")
+abort "Kafka observer must run the reusable observation server" unless command.include?("com.simplematch.tools.riskmatchinge2e.KafkaObservationServerMain")
+abort "Kafka observer must expose the health check" unless container.dig("readinessProbe", "httpGet", "path") == "/health"
+abort "Kafka observer root filesystem must be read-only" unless container.dig("securityContext", "readOnlyRootFilesystem") == true
+abort "Kafka observer must drop all Linux capabilities" unless container.dig("securityContext", "capabilities", "drop") == ["ALL"]
 puts "Critical consumer deployment contracts are valid."
 RUBY

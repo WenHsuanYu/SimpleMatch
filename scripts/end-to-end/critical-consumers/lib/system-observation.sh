@@ -114,7 +114,8 @@ write_observation_timing() {
   local closing_commands_started closing_commands_completed
   local closing_events_started closing_events_completed
   local oldest_runtime newest_runtime maximum_fact_age_millis
-  local oldest_runtime_age_at_validation remaining_freshness_budget
+  local oldest_runtime_age_at_capture_completion oldest_runtime_age_at_validation
+  local age_added_by_collector remaining_freshness_budget
 
   attempt_started="$(timing_epoch_or_null "$attempt_dir/attempt-started-at")"
   attempt_completed="$(timing_epoch_or_null "$attempt_dir/attempt-completed-at")"
@@ -163,10 +164,18 @@ write_observation_timing() {
     ))"
   fi
 
+  oldest_runtime_age_at_capture_completion=null
   oldest_runtime_age_at_validation=null
+  age_added_by_collector=null
   remaining_freshness_budget=null
+  if [[ "$oldest_runtime" =~ ^[0-9]+$ && "$matching_completed" =~ ^[0-9]+$ ]]; then
+    oldest_runtime_age_at_capture_completion="$((matching_completed - oldest_runtime))"
+  fi
   if [[ "$oldest_runtime" =~ ^[0-9]+$ && "$validation_started" =~ ^[0-9]+$ ]]; then
     oldest_runtime_age_at_validation="$((validation_started - oldest_runtime))"
+    if [[ "$matching_completed" =~ ^[0-9]+$ ]]; then
+      age_added_by_collector="$((validation_started - matching_completed))"
+    fi
     if [[ "$maximum_fact_age_millis" =~ ^[0-9]+$ ]]; then
       remaining_freshness_budget="$((
         maximum_fact_age_millis - oldest_runtime_age_at_validation
@@ -198,7 +207,9 @@ write_observation_timing() {
     --argjson oldestRuntime "$oldest_runtime" \
     --argjson newestRuntime "$newest_runtime" \
     --argjson maximumFactAge "$maximum_fact_age_millis" \
-    --argjson oldestRuntimeAge "$oldest_runtime_age_at_validation" \
+    --argjson oldestRuntimeAgeAtCapture "$oldest_runtime_age_at_capture_completion" \
+    --argjson oldestRuntimeAgeAtValidation "$oldest_runtime_age_at_validation" \
+    --argjson ageAddedByCollector "$age_added_by_collector" \
     --argjson remainingFreshnessBudget "$remaining_freshness_budget" '
       def phase($started; $completed):
         {
@@ -232,7 +243,9 @@ write_observation_timing() {
           oldestSourceEpochMs:$oldestRuntime,
           newestSourceEpochMs:$newestRuntime,
           maximumFactAgeMillis:$maximumFactAge,
-          oldestSourceAgeAtValidationMillis:$oldestRuntimeAge,
+          oldestSourceAgeAtCaptureCompletionMillis:$oldestRuntimeAgeAtCapture,
+          oldestSourceAgeAtValidationMillis:$oldestRuntimeAgeAtValidation,
+          ageAddedByCollectorMillis:$ageAddedByCollector,
           remainingBudgetAtValidationMillis:$remainingFreshnessBudget
         }
       }
@@ -332,37 +345,23 @@ capture_source_with_timing() {
 
 capture_opening_kafka_positions() {
   local attempt_dir="$1"
-  local -a pids=()
-  local -a failure_reasons=(
-    "cannot capture matching.commands opening offsets"
-    "cannot capture matching.events opening offsets"
-  )
+  local started completed status=0
+  started="$(date +%s%3N)"
+  printf '%s\n' "$started" >"$attempt_dir/matching-commands-opening-started-at"
+  printf '%s\n' "$started" >"$attempt_dir/matching-events-opening-started-at"
 
-  capture_source_with_timing \
-    "$attempt_dir/matching-commands-opening-started-at" \
-    "$attempt_dir/matching-commands-opening-completed-at" \
-    capture_topic_offsets matching.commands \
-    "$attempt_dir/matching-commands-before.json" &
-  pids+=("$!")
+  capture_kafka_log_end_positions \
+    "$attempt_dir/matching-commands-before.json" \
+    "$attempt_dir/matching-events-before.json" || status="$?"
 
-  capture_source_with_timing \
-    "$attempt_dir/matching-events-opening-started-at" \
-    "$attempt_dir/matching-events-opening-completed-at" \
-    capture_topic_offsets matching.events \
-    "$attempt_dir/matching-events-before.json" &
-  pids+=("$!")
-
-  local index
-  local failed=false
-  for index in "${!pids[@]}"; do
-    if ! wait "${pids[$index]}"; then
-      if [[ "$failed" == false ]]; then
-        set_observation_failure SOURCE_COLLECTION_FAILED "${failure_reasons[$index]}"
-      fi
-      failed=true
-    fi
-  done
-  [[ "$failed" == false ]]
+  completed="$(date +%s%3N)"
+  printf '%s\n' "$completed" >"$attempt_dir/matching-commands-opening-completed-at"
+  printf '%s\n' "$completed" >"$attempt_dir/matching-events-opening-completed-at"
+  if (( status != 0 )); then
+    set_observation_failure SOURCE_COLLECTION_FAILED \
+      "cannot capture opening Kafka log-end positions"
+    return 1
+  fi
 }
 
 capture_middle_observation_sources() {
@@ -373,7 +372,7 @@ capture_middle_observation_sources() {
   capture_source_with_timing \
     "$attempt_dir/matching-committed-started-at" \
     "$attempt_dir/matching-committed-observed-at" \
-    capture_matching_committed_offsets \
+    capture_kafka_matching_committed_positions \
     "$attempt_dir/matching-committed-offsets.json" &
   pids+=("$!")
   failure_reasons+=("Matching committed positions are temporarily unavailable")
@@ -392,13 +391,6 @@ capture_middle_observation_sources() {
   pids+=("$!")
   failure_reasons+=("required Kubernetes workload status is temporarily unavailable")
 
-  capture_source_with_timing \
-    "$attempt_dir/matching-samples-started-at" \
-    "$attempt_dir/matching-samples-completed-at" \
-    capture_matching_samples_parallel "$attempt_dir/matching" &
-  pids+=("$!")
-  failure_reasons+=("one or more Matching Pod samples changed or were unavailable")
-
   local index
   local failed=false
   for index in "${!pids[@]}"; do
@@ -409,42 +401,37 @@ capture_middle_observation_sources() {
       failed=true
     fi
   done
-  [[ "$failed" == false ]]
+  [[ "$failed" == false ]] || return 1
+
+  capture_source_with_timing \
+    "$attempt_dir/matching-samples-started-at" \
+    "$attempt_dir/matching-samples-completed-at" \
+    capture_matching_samples_parallel "$attempt_dir/matching" || {
+    set_observation_failure SOURCE_COLLECTION_FAILED \
+      "one or more Matching Pod samples changed or were unavailable"
+    return 1
+  }
 }
 
 capture_closing_kafka_positions() {
   local attempt_dir="$1"
-  local -a pids=()
-  local -a failure_reasons=(
-    "cannot capture matching.commands closing offsets"
-    "cannot capture matching.events closing offsets"
-  )
+  local started completed status=0
+  started="$(date +%s%3N)"
+  printf '%s\n' "$started" >"$attempt_dir/matching-commands-closing-started-at"
+  printf '%s\n' "$started" >"$attempt_dir/matching-events-closing-started-at"
 
-  capture_source_with_timing \
-    "$attempt_dir/matching-commands-closing-started-at" \
-    "$attempt_dir/matching-commands-observed-at" \
-    capture_topic_offsets matching.commands \
-    "$attempt_dir/matching-commands-after.json" &
-  pids+=("$!")
+  capture_kafka_log_end_positions \
+    "$attempt_dir/matching-commands-after.json" \
+    "$attempt_dir/matching-events-after.json" || status="$?"
 
-  capture_source_with_timing \
-    "$attempt_dir/matching-events-closing-started-at" \
-    "$attempt_dir/matching-events-observed-at" \
-    capture_topic_offsets matching.events \
-    "$attempt_dir/matching-events-after.json" &
-  pids+=("$!")
-
-  local index
-  local failed=false
-  for index in "${!pids[@]}"; do
-    if ! wait "${pids[$index]}"; then
-      if [[ "$failed" == false ]]; then
-        set_observation_failure SOURCE_COLLECTION_FAILED "${failure_reasons[$index]}"
-      fi
-      failed=true
-    fi
-  done
-  [[ "$failed" == false ]]
+  completed="$(date +%s%3N)"
+  printf '%s\n' "$completed" >"$attempt_dir/matching-commands-observed-at"
+  printf '%s\n' "$completed" >"$attempt_dir/matching-events-observed-at"
+  if (( status != 0 )); then
+    set_observation_failure SOURCE_COLLECTION_FAILED \
+      "cannot capture closing Kafka log-end positions"
+    return 1
+  fi
 }
 
 capture_stable_observation_sources() {
@@ -470,8 +457,9 @@ build_matching_partition_statuses() {
   local committed_offsets="$3"
   local committed_observed_epoch_millis="$4"
   local command_observed_epoch_millis="$5"
-  local validation_epoch_millis="$6"
-  local destination="$7"
+  local matching_samples_completed_epoch_millis="$6"
+  local validation_epoch_millis="$7"
+  local destination="$8"
   local identity
   identity="$(identity_json)" || {
     set_observation_failure INVALID_EVIDENCE "cannot build Matching identity"
@@ -495,6 +483,14 @@ build_matching_partition_statuses() {
     local owner_id committed_offset end_offset
     local runtime_epoch_millis observed_epoch_millis observed_at readiness_reason
 
+    runtime_epoch_millis="$(
+      jq -er '.updated_at_epoch_ms | select(type == "number") | floor' "$metrics"
+    )" || {
+      set_observation_failure INVALID_EVIDENCE \
+        "Matching partition $partition source timestamp is invalid"
+      return 1
+    }
+
     readiness_reason="$(
       matching_runtime_readiness_reason \
         "$validation_epoch_millis" \
@@ -507,8 +503,16 @@ build_matching_partition_statuses() {
     case "$readiness_reason" in
       READY) ;;
       STATUS_STALE)
-        set_observation_failure EVIDENCE_TOO_OLD \
-          "Matching partition $partition is not yet ready: $readiness_reason"
+        if epoch_millis_is_fresh \
+            "$runtime_epoch_millis" \
+            "$matching_samples_completed_epoch_millis" \
+            "$maximum_fact_age_millis"; then
+          set_observation_failure EVIDENCE_EXPIRED_DURING_COLLECTION \
+            "Matching partition $partition was fresh when sampled but expired before validation"
+        else
+          set_observation_failure SOURCE_ALREADY_STALE \
+            "Matching partition $partition was already stale when sampling completed"
+        fi
         return 2
         ;;
       RUNTIME_NOT_READY|PARTITION_NOT_OPEN)
@@ -554,13 +558,6 @@ build_matching_partition_statuses() {
       return 2
     }
 
-    runtime_epoch_millis="$(
-      jq -er '.updated_at_epoch_ms | select(type == "number") | floor' "$metrics"
-    )" || {
-      set_observation_failure INVALID_EVIDENCE \
-        "Matching partition $partition source timestamp is invalid"
-      return 1
-    }
     observed_epoch_millis="$(
       minimum_epoch_millis \
         "$runtime_epoch_millis" \
@@ -783,6 +780,7 @@ capture_gateway_observation_once() {
     "$committed" \
     "$committed_observed_epoch_millis" \
     "$command_observed_epoch_millis" \
+    "$matching_samples_completed_epoch_millis" \
     "$validation_epoch_millis" \
     "$matching_ndjson" || matching_status="$?"
   (( matching_status == 0 )) || return "$matching_status"
@@ -982,6 +980,7 @@ capture_gateway_observation() {
   local destination="$2"
   local attempt
   local status
+  local collection_expiration_streak=0
 
   for attempt in $(seq 1 "$observation_max_attempts"); do
     local attempt_dir="$evidence_dir/baseline/observation-${label}-attempt-$attempt"
@@ -1025,6 +1024,16 @@ capture_gateway_observation() {
         return 1
         ;;
       2)
+        if [[ "$classification" == EVIDENCE_EXPIRED_DURING_COLLECTION ]]; then
+          collection_expiration_streak="$((collection_expiration_streak + 1))"
+          if (( collection_expiration_streak >= 2 )); then
+            printf '%s\n' \
+              'system observation repeatedly expired fresh evidence during collection' >&2
+            return 2
+          fi
+        else
+          collection_expiration_streak=0
+        fi
         sleep 0.2
         ;;
       *)

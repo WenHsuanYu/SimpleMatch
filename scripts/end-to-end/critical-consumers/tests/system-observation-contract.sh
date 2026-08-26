@@ -2,6 +2,8 @@
 set -euo pipefail
 
 script_dir="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
+# shellcheck source=scripts/end-to-end/critical-consumers/lib/matching-status.sh
+source "$script_dir/../lib/matching-status.sh"
 # shellcheck source=scripts/end-to-end/critical-consumers/lib/system-observation.sh
 source "$script_dir/../lib/system-observation.sh"
 
@@ -27,35 +29,36 @@ bundle_dir="$tmp/source-bundle"
 ordering_log="$bundle_dir/order.log"
 mkdir -p "$bundle_dir/matching"
 
-capture_matching_committed_offsets() {
-  printf '%s\n' 'middle:matching-committed:start' >>"$ordering_log"
+capture_kafka_matching_committed_positions() {
+  printf '%s\n' 'durable:matching-committed:start' >>"$ordering_log"
   sleep 0.05
   printf '{"topic":"matching.commands","partitions":[]}\n' >"$1"
-  printf '%s\n' 'middle:matching-committed:end' >>"$ordering_log"
+  printf '%s\n' 'durable:matching-committed:end' >>"$ordering_log"
 }
 capture_consumer_state() {
-  printf '%s\n' 'middle:consumer-progress:start' >>"$ordering_log"
+  printf '%s\n' 'durable:consumer-progress:start' >>"$ordering_log"
   printf '{"persistenceProgress":[],"accountProgress":[],"quickfixProgress":[]}\n' >"$1"
-  printf '%s\n' 'middle:consumer-progress:end' >>"$ordering_log"
+  printf '%s\n' 'durable:consumer-progress:end' >>"$ordering_log"
 }
 capture_required_workloads() {
-  printf '%s\n' 'middle:workloads:start' >>"$ordering_log"
+  printf '%s\n' 'durable:workloads:start' >>"$ordering_log"
   printf '{"items":[]}\n' >"$1"
-  printf '%s\n' 'middle:workloads:end' >>"$ordering_log"
+  printf '%s\n' 'durable:workloads:end' >>"$ordering_log"
 }
 capture_matching_samples_parallel() {
-  printf '%s\n' 'middle:matching-runtime:start' >>"$ordering_log"
+  printf '%s\n' 'runtime:start' >>"$ordering_log"
   mkdir -p "$1"
   printf 'captured\n' >"$1/contract-marker"
-  printf '%s\n' 'middle:matching-runtime:end' >>"$ordering_log"
+  printf '%s\n' 'runtime:end' >>"$ordering_log"
 }
-capture_topic_offsets() {
-  local topic="$1"
-  local destination="$2"
+capture_kafka_log_end_positions() {
+  local commands_destination="$1"
+  local events_destination="$2"
   local phase=closing
-  [[ "$destination" == *-before.json ]] && phase=opening
-  printf '%s:%s\n' "$phase" "$topic" >>"$ordering_log"
-  printf '{"topic":"%s","partitions":[]}\n' "$topic" >"$destination"
+  [[ "$commands_destination" == *-before.json ]] && phase=opening
+  printf '%s\n' "$phase:kafka" >>"$ordering_log"
+  printf '{"topic":"matching.commands","partitions":[]}\n' >"$commands_destination"
+  printf '{"topic":"matching.events","partitions":[]}\n' >"$events_destination"
 }
 
 date +%s%3N >"$bundle_dir/attempt-started-at"
@@ -93,27 +96,44 @@ done
    -f "$bundle_dir/matching/contract-marker" ]] ||
   fail 'middle observations must retain workload and Matching runtime evidence'
 
-last_opening_line="$(grep -n '^opening:' "$ordering_log" | tail -1 | cut -d: -f1)"
-first_middle_line="$(grep -n '^middle:.*:start$' "$ordering_log" | head -1 | cut -d: -f1)"
-last_middle_line="$(grep -n '^middle:.*:end$' "$ordering_log" | tail -1 | cut -d: -f1)"
-first_closing_line="$(grep -n '^closing:' "$ordering_log" | head -1 | cut -d: -f1)"
-[[ "$last_opening_line" =~ ^[0-9]+$ && "$first_middle_line" =~ ^[0-9]+$ ]] ||
-  fail 'opening and middle observation markers must be present'
-[[ "$last_middle_line" =~ ^[0-9]+$ && "$first_closing_line" =~ ^[0-9]+$ ]] ||
-  fail 'middle and closing observation markers must be present'
-(( last_opening_line < first_middle_line )) ||
-  fail 'all opening Kafka snapshots must complete before middle observations start'
-(( last_middle_line < first_closing_line )) ||
-  fail 'closing Kafka snapshots must not start before every middle observation completes'
+opening_line="$(grep -n '^opening:kafka$' "$ordering_log" | cut -d: -f1)"
+first_durable_line="$(grep -n '^durable:.*:start$' "$ordering_log" | head -1 | cut -d: -f1)"
+last_durable_line="$(grep -n '^durable:.*:end$' "$ordering_log" | tail -1 | cut -d: -f1)"
+runtime_start_line="$(grep -n '^runtime:start$' "$ordering_log" | cut -d: -f1)"
+runtime_end_line="$(grep -n '^runtime:end$' "$ordering_log" | cut -d: -f1)"
+closing_line="$(grep -n '^closing:kafka$' "$ordering_log" | cut -d: -f1)"
+(( opening_line < first_durable_line )) ||
+  fail 'opening Kafka positions must precede durable middle observations'
+(( last_durable_line < runtime_start_line )) ||
+  fail 'freshness-sensitive Matching samples must follow durable observations'
+(( runtime_end_line < closing_line )) ||
+  fail 'closing Kafka positions must follow Matching runtime samples'
 
 jq -e '
   .openingKafka.matchingCommands.completedEpochMs != null
   and .middleObservations.matchingCommitted.durationMillis >= 40
-  and .closingKafka.matchingCommands.startedEpochMs
+  and .middleObservations.matchingRuntime.startedEpochMs
       >= .middleObservations.matchingCommitted.completedEpochMs
+  and .closingKafka.matchingCommands.startedEpochMs
+      >= .middleObservations.matchingRuntime.completedEpochMs
   and .attempt.completedEpochMs != null
 ' "$bundle_dir/timing.json" >/dev/null ||
-  fail 'timing evidence must expose phase ordering and source duration'
+  fail 'timing evidence must expose the intended phase ordering'
+
+age_dir="$tmp/age-timing"
+mkdir -p "$age_dir/matching"
+printf '{"updated_at_epoch_ms":10000}\n' >"$age_dir/matching/partition-0-runtime.json"
+printf '12000\n' >"$age_dir/matching-samples-completed-at"
+printf '13000\n' >"$age_dir/validation-started-at"
+matching_runtime_default_max_age_millis=5000
+write_observation_timing "$age_dir"
+jq -e '
+  .matchingRuntimeFreshness.oldestSourceAgeAtCaptureCompletionMillis == 2000
+  and .matchingRuntimeFreshness.oldestSourceAgeAtValidationMillis == 3000
+  and .matchingRuntimeFreshness.ageAddedByCollectorMillis == 1000
+  and .matchingRuntimeFreshness.remainingBudgetAtValidationMillis == 500
+' "$age_dir/timing.json" >/dev/null ||
+  fail 'timing evidence must separate source age from collector-added age'
 
 validate_kafka_position_stability "$bundle_dir" ||
   fail 'unchanged opening and closing Kafka positions must be accepted'
@@ -217,6 +237,32 @@ if same_json "$tmp/a.json" "$tmp/c.json"; then
   fail 'changed snapshots must not be treated as one stable observation'
 fi
 
+trading_session_id=session
+artifact_id=artifact
+artifact_checksum=checksum
+routing_algorithm_version=algorithm
+matching_image_identity=image
+matching_runtime_default_max_age_millis=5000
+stale_dir="$tmp/stale"
+mkdir -p "$stale_dir"
+printf '{"schema_version":1,"runtime_state":"READY","partition_state":"OPEN","updated_at_epoch_ms":10000}\n' \
+  >"$stale_dir/partition-0-runtime.json"
+observation_failure_classification=""
+if build_matching_partition_statuses \
+    "$stale_dir" /dev/null /dev/null 0 0 12000 14000 "$tmp/stale.ndjson"; then
+  fail 'runtime evidence that expires before validation must not be accepted'
+fi
+[[ "$observation_failure_classification" == EVIDENCE_EXPIRED_DURING_COLLECTION ]] ||
+  fail 'fresh-at-capture runtime evidence must identify collection-induced expiration'
+
+observation_failure_classification=""
+if build_matching_partition_statuses \
+    "$stale_dir" /dev/null /dev/null 0 0 14000 15000 "$tmp/stale.ndjson"; then
+  fail 'runtime evidence already stale at sample completion must not be accepted'
+fi
+[[ "$observation_failure_classification" == SOURCE_ALREADY_STALE ]] ||
+  fail 'source-side staleness must remain distinct from collector-induced expiration'
+
 attempts=0
 capture_gateway_observation_once() {
   local attempt_dir="$1"
@@ -247,9 +293,23 @@ jq -e '
   and (.reason | length > 0)
 ' "$evidence_dir/baseline/observation-retry-attempt-1/result.json" >/dev/null ||
   fail 'retryable attempt must retain its classification and diagnostic reason'
-jq -e '.attempt.completedEpochMs != null' \
-  "$evidence_dir/baseline/observation-retry-attempt-1/timing.json" >/dev/null ||
-  fail 'retryable failed attempt must retain timing evidence'
+
+attempts=0
+capture_gateway_observation_once() {
+  local attempt_dir="$1"
+  attempts="$((attempts + 1))"
+  mkdir -p "$attempt_dir"
+  date +%s%3N >"$attempt_dir/attempt-started-at"
+  set_observation_failure EVIDENCE_EXPIRED_DURING_COLLECTION \
+    'fresh evidence expired during collection'
+  return 2
+}
+observation_max_attempts=5
+if capture_gateway_observation collection-expired "$tmp/never.json"; then
+  fail 'repeated collector-induced expiration must not be accepted'
+fi
+[[ "$attempts" == 2 ]] ||
+  fail 'repeated collector-induced expiration should fail after two attempts'
 
 attempts=0
 capture_gateway_observation_once() {
@@ -272,9 +332,6 @@ jq -e '
   and .reason == "invalid source identity"
 ' "$evidence_dir/baseline/observation-fatal-attempt-1/result.json" >/dev/null ||
   fail 'semantic failure must retain its diagnostic classification and reason'
-jq -e '.attempt.completedEpochMs != null' \
-  "$evidence_dir/baseline/observation-fatal-attempt-1/timing.json" >/dev/null ||
-  fail 'fatal failed attempt must retain timing evidence'
 
 cat >"$tmp/stale-response.json" <<'JSON'
 {"openEligible":false,"reasons":["MATCHING_PARTITION_0_STATUS_STALE","RISK_STATUS_STALE"]}

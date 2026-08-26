@@ -21,6 +21,7 @@ scripts/end-to-end/critical-consumers/
 │   ├── system-observation.sh
 │   ├── cluster-data.sh
 │   ├── test-interfaces.sh
+│   ├── kafka-observation-interface.sh
 │   ├── failure-recovery.sh
 │   └── failure-support.sh
 └── tests/
@@ -53,13 +54,20 @@ Each Gateway observation is assembled from explicit sources:
 
 - Matching runtime `READY`, partition `OPEN`, and the Matching `observedAt`
   timestamp come from `runtime-metrics.json`.
-- Matching durable command progress comes from Kafka consumer-group
-  `CURRENT-OFFSET` for `matching-partition-consumer-N`.
-- Kafka log-end positions come from `kafka-get-offsets.sh`.
+- Matching durable command progress comes from Kafka consumer-group committed
+  positions for `matching-partition-consumer-N`.
+- Kafka log-end positions and Matching committed positions are read through one
+  long-lived Kafka Admin client in the verification Pod.
 - Persistence, Account, and QuickFIX durable progress comes from PostgreSQL
   consumer-progress tables.
 - Risk, Account, Persistence, QuickFIX Gateway, and Kafka process availability
   comes from current Kubernetes workload status.
+
+The Kafka observation process is started before freshness-sensitive collection.
+Its JVM, Kafka client, connections, and topic metadata are therefore prepared
+before the bounded observation window. Opening, committed, and closing Kafka
+queries reuse that same process instead of starting `kafka-get-offsets.sh` or
+`kafka-consumer-groups.sh` for every snapshot.
 
 `runtime-metrics.json.next_commit_offset` is not a durable committed position.
 It is only a pending commit candidate and normally becomes `null` after a
@@ -68,21 +76,23 @@ successful commit.
 ### Avoiding observation races
 
 The verifier cannot obtain one atomic transaction across Kubernetes, Kafka, and
-PostgreSQL. Instead it establishes a bounded observation window with three
-explicit phases:
+PostgreSQL. Instead it establishes a bounded observation window with ordered
+phases:
 
 ```text
 capture opening Kafka positions
         |
         v
-capture middle observations in parallel
+capture durable observations in parallel
   - Matching committed positions
   - critical-consumer durable progress
   - required Kubernetes workload state
-  - all 15 Matching runtime samples
         |
         v
-wait for every middle observation to complete
+wait for durable observations to complete
+        |
+        v
+capture all 15 Matching runtime samples
         |
         v
 capture closing Kafka positions
@@ -92,11 +102,10 @@ require opening == closing
 ```
 
 The opening and closing snapshots bracket every intermediate source read. The
-closing Kafka snapshots are not started until all middle observations have
-finished. This ordering is required for the stable-position check to mean what
-it claims: if an opening and closing position are equal, the verifier has
-established that the relevant Kafka log-end position did not move across the
-bounded observation window.
+Matching runtime samples are intentionally collected after the slower durable
+observations because their source timestamps are freshness-sensitive. They still
+occur before the closing Kafka snapshot, so moving them later does not weaken
+the bounded observation window.
 
 This is not a distributed atomic snapshot. Kubernetes, Kafka, PostgreSQL, and
 the Matching runtime do not participate in one transaction. The verifier only
@@ -112,40 +121,47 @@ metadata from one process with runtime data from another.
 
 Matching runtime freshness is checked against the Gateway stale-status policy.
 The source timestamp from `updated_at_epoch_ms` is retained in the Gateway
-observation instead of replacing it with the shell script's current time. The
-Gateway freshness threshold remains unchanged; the certification must fit its
-measurement work inside that policy rather than weakening production admission
-semantics to accommodate a slow verifier.
+observation instead of replacing it with the collector's current time. The
+Gateway freshness threshold remains 5000 ms. The certification continues to
+reserve 1500 ms before submission until production-like timing evidence shows a
+better reserve is justified; the production threshold is not weakened to make a
+slow verifier pass.
 
-### Observation timing evidence
+### Observation timing and failure evidence
 
 Every collection attempt retains both `result.json` and `timing.json`, including
 attempts that fail or are retried. `result.json` records the exit status,
-retryability, a stable classification, and the diagnostic reason. Examples
-include `KAFKA_POSITION_CHANGED`, `SOURCE_COLLECTION_FAILED`,
-`EVIDENCE_TOO_OLD`, `MATCHING_NOT_READY`, and
-`CONSUMER_PROGRESS_INCOMPLETE`.
+retryability, a stable classification, and the diagnostic reason.
 
-`timing.json` separates the collection phases and records start, completion, and
-duration values for the opening Kafka snapshots, each parallel middle source,
-the closing Kafka snapshots, and validation. It also records the oldest and
-newest Matching runtime source timestamps when available, the maximum fact age
-allowed before submission, the oldest Matching runtime age at validation, and
-the remaining freshness budget.
+`timing.json` records start, completion, and duration for the opening Kafka
+snapshot, each durable observation, Matching runtime sampling, the closing Kafka
+snapshot, validation, and Gateway submission when one occurs. Matching runtime
+freshness evidence includes:
 
-When an accepted observation is submitted to the Gateway, the same attempt also
-records the HTTP submission start and completion times. The timing evidence then
-reports the oldest Matching runtime source age and remaining freshness budget at
-both ends of that HTTP call. The Gateway evaluates the request sometime within
-that interval, so the two timestamps provide an explicit bound rather than
-pretending the verifier knows the server's exact evaluation instant.
+```text
+oldestSourceAgeAtCaptureCompletionMillis
+oldestSourceAgeAtValidationMillis
+ageAddedByCollectorMillis
+remainingBudgetAtValidationMillis
+```
 
-The timing data distinguishes different failure classes that would otherwise
-look similar. A stale Matching source timestamp is different from a fresh source
-that became too old because another observation took too long. A fact that was
-fresh at validation but exhausted its budget during HTTP submission is also
-visible directly. Likewise, Kafka movement is a measurement race and not
-evidence that a production component is incorrect.
+These values distinguish a source that was already stale when sampled from a
+fresh source that expired while the collector completed the observation. The
+corresponding classifications are `SOURCE_ALREADY_STALE` and
+`EVIDENCE_EXPIRED_DURING_COLLECTION`.
+
+`EVIDENCE_EXPIRED_DURING_COLLECTION` is still retryable once because transient
+latency is possible. Two consecutive attempts with the same classification fail
+fast instead of repeating the same collection five times. Other transient
+conditions, such as Kafka movement or incomplete consumer progress, keep their
+existing retry behavior.
+
+When an accepted observation is submitted to the Gateway, the attempt records
+HTTP submission start and completion times. The timing evidence reports the
+oldest Matching runtime source age and remaining freshness budget at both ends
+of that HTTP call. The Gateway evaluates the request sometime within that
+interval, so these timestamps provide an explicit bound rather than assuming an
+unobservable server evaluation time.
 
 ## FIX submission boundary
 
@@ -165,7 +181,8 @@ start client
 The runner then performs:
 
 ```text
-pause risk-service-outbox
+prepare warm Kafka observation process
+→ pause risk-service-outbox
 → collect three fresh OPEN_ELIGIBLE observations
 → open Gateway admission
 → release FIX client
@@ -188,13 +205,14 @@ then proves that `matching.commands` has not advanced, stops Matching, resumes
 the connector until exactly one command reaches the expected partition, and
 pauses the connector again.
 
-This establishes the failure boundary without relying on sleep timing.
+This establishes the failure point without relying on sleep timing.
 
 ## Failure and recovery sequence
 
 ```text
 healthy production-like namespace
 → prepared FIX client logged on
+→ warm Kafka observation process ready
 → Risk outbox connector paused
 → three fresh Gateway observations
 → Gateway OPEN
@@ -215,8 +233,8 @@ healthy production-like namespace
 → same resend identity verified again
 ```
 
-The Kafka observer matches both the canonical command ID and order ID. Unrelated
-Kafka offset movement is not accepted as evidence.
+The Kafka event observer matches both the canonical command ID and order ID.
+Unrelated Kafka offset movement is not accepted as evidence.
 
 ## Baseline integrity
 
@@ -246,9 +264,8 @@ process exit status, and whether environment restoration failed. This prevents a
 missing verdict file from hiding an earlier certification failure.
 
 Observation attempts under `baseline/observation-*-attempt-*` retain their own
-`result.json` and `timing.json`. These artifacts are diagnostic evidence for the
-verifier itself and remain available even when an attempt is discarded before a
-Gateway observation is submitted.
+`result.json` and `timing.json`. Submitted attempts are archived under a
+Gateway-attempt-specific path before a later retry can reuse the original path.
 
 ## Running the test
 

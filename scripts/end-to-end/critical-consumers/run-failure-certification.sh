@@ -23,6 +23,10 @@ timeout_seconds="${SIMPLEMATCH_CRITICAL_CONSUMER_FAILURE_TIMEOUT_SECONDS:-180}"
 
 observer_pod="matching-event-outage-observer"
 observer_manifest="$repo_root/deploy/k8s/verification/matching-event-observer-pod.yaml"
+kafka_observer_pod="critical-consumer-kafka-observer"
+kafka_observer_manifest="$repo_root/deploy/k8s/verification/critical-consumer-kafka-observer-pod.yaml"
+kafka_observer_port_forward_pid=""
+kafka_observer_port=""
 fix_port_forward_pid=""
 fix_port=""
 fix_submit_pid=""
@@ -113,6 +117,8 @@ cleanup() {
   fix_submit_pid=""
   stop_fix_port_forward
   stop_gateway_port_forward
+  stop_kafka_observation_adapter
+  kns delete pod "$kafka_observer_pod" --ignore-not-found --wait=false >/dev/null 2>&1 || true
   kns delete pod "$observer_pod" --ignore-not-found --wait=false >/dev/null 2>&1 || true
 
   if [[ "$outbox_connector_paused" == true && -n "$connect_port" ]]; then
@@ -198,6 +204,8 @@ for tool in kubectl jq curl awk sed grep date seq sleep tr cp; do
 done
 [[ -x "$repo_root/gradlew" ]] || die 'Gradle wrapper is missing'
 [[ -f "$observer_manifest" ]] || die "observer Pod manifest is missing: $observer_manifest"
+[[ -f "$kafka_observer_manifest" ]] ||
+  die "Kafka observer Pod manifest is missing: $kafka_observer_manifest"
 [[ -r /proc/sys/kernel/random/uuid ]] || die '/proc/sys/kernel/random/uuid is required'
 [[ "$(kubectl config current-context)" == "$context" ]] ||
   die "current Kubernetes context must be $context"
@@ -251,7 +259,7 @@ account_id="$(cat /proc/sys/kernel/random/uuid)"
 cl_ord_id="FAIL-$(date -u +%Y%m%d-%H%M%S)-$$"
 seed_account_limit
 
-current_stage="prepare Gateway and external client"
+current_stage="prepare Gateway and external clients"
 enable_gateway_operations
 start_connect_port_forward
 wait_outbox_connector_state RUNNING "$evidence_dir/baseline/outbox-running-status.json" ||
@@ -259,6 +267,7 @@ wait_outbox_connector_state RUNNING "$evidence_dir/baseline/outbox-running-statu
 start_fix_port_forward
 start_fix_submit_client || die 'retained FIX client did not log on and reach the submission barrier'
 start_gateway_port_forward
+start_kafka_observation_adapter
 
 current_stage="establish deterministic Risk outbox barrier"
 pause_risk_outbox
@@ -288,6 +297,8 @@ release_fix_submit_client
 wait_fix_submit_client || die 'retained FIX submission client failed'
 stop_fix_port_forward
 stop_gateway_port_forward
+stop_kafka_observation_adapter
+kns delete pod "$kafka_observer_pod" --ignore-not-found --wait=false >/dev/null 2>&1 || true
 
 open_epoch_millis="$(date -u -d "$(jq -r '.occurredAt' "$open_response")" +%s%3N)"
 sent_epoch_millis="$(jq -er '.sentAtEpochMs | select(type == "number")' "$evidence_dir/fix/submit.json")"
