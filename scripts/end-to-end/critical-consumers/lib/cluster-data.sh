@@ -224,6 +224,29 @@ decode_configmap_file() {
     '
 }
 
+configured_quickfix_ingress_venue() {
+  local application
+  application="$(decode_configmap_file quickfix-gateway-config application.yaml)"
+  [[ -n "$application" ]] ||
+    die 'quickfix-gateway-config does not contain application.yaml'
+
+  local venue
+  venue="$(
+    awk '
+      /^[[:space:]]+venue-mic:[[:space:]]*/ {
+        value = $0
+        sub(/^[[:space:]]+venue-mic:[[:space:]]*/, "", value)
+        sub(/[[:space:]]+$/, "", value)
+        print value
+        exit
+      }
+    ' <<<"$application"
+  )"
+  [[ "$venue" == "XTAI" || "$venue" == "ROCO" ]] ||
+    die 'QuickFIX ingress venue must be explicitly configured as XTAI or ROCO'
+  printf '%s\n' "$venue"
+}
+
 select_market_input() {
   artifact_json="$(decode_configmap_file matching-daily-artifact market_reference.json)"
   artifact_checksum="$(decode_configmap_file matching-daily-artifact market_reference.sha256 | tr -d '\r\n')"
@@ -244,22 +267,26 @@ select_market_input() {
   routing_algorithm_version="$(jq -r '.metadata.routingAlgorithmVersion // empty' <<<"$artifact_json")"
   [[ -n "$routing_algorithm_version" ]] || die 'Market Reference routing algorithm version is missing'
   artifact_id="market-reference-$trading_day"
+  gateway_venue_mic="$(configured_quickfix_ingress_venue)"
 
   selected_instrument="$(
-    jq -c '
+    jq -c --arg venue_mic "$gateway_venue_mic" '
       [.marketSnapshot.instruments[]
+       | select(.venueMic == $venue_mic)
        | select(.eligibility == "ELIGIBLE")
        | select(.referencePriceUnits != null)]
-      | sort_by(.venueMic, .symbol)
+      | sort_by(.symbol)
       | .[0] // empty
     ' <<<"$artifact_json"
   )"
-  [[ -n "$selected_instrument" ]] || die 'Market Reference contains no eligible priced instrument'
+  [[ -n "$selected_instrument" ]] ||
+    die "Market Reference contains no eligible priced instrument for QuickFIX ingress venue $gateway_venue_mic"
   venue_mic="$(jq -r '.venueMic // empty' <<<"$selected_instrument")"
   symbol="$(jq -r '.symbol // empty' <<<"$selected_instrument")"
   price_units="$(jq -r '.referencePriceUnits' <<<"$selected_instrument")"
   rule_id="$(jq -r '.marketRuleId // empty' <<<"$selected_instrument")"
-  [[ -n "$venue_mic" ]] || die 'selected venue MIC is invalid'
+  [[ "$venue_mic" == "$gateway_venue_mic" ]] ||
+    die 'selected instrument venue does not match the QuickFIX ingress venue'
   [[ -n "$symbol" ]] || die 'selected symbol is invalid'
   [[ -n "$rule_id" ]] || die 'selected market rule is invalid'
 

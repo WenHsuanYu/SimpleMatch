@@ -2,8 +2,21 @@
 
 # Failure injection, recovery verification, diagnostics, and environment restoration.
 
+fix_submission_outcome_is_unknown() {
+  local submission="$1"
+  [[ -s "$submission" ]] || return 1
+  jq -e '
+    ((.execId // "") | startswith("UN-"))
+    or ((.text // "") | startswith("SYSTEM_ERROR: order outcome is pending confirmation"))
+  ' "$submission" >/dev/null 2>&1
+}
+
 capture_risk_admission() {
   local destination="$1"
+  if fix_submission_outcome_is_unknown "$evidence_dir/fix/submit.json"; then
+    die 'FIX Risk admission outcome remained UNKNOWN'
+  fi
+
   local postgres
   postgres="$(postgres_pod)"
   [[ -n "$postgres" ]] || die 'cannot resolve PostgreSQL Pod for Risk admission'
@@ -217,9 +230,30 @@ quickfix_pod_uid() {
   kns get pod quickfix-gateway-0 -o jsonpath='{.metadata.uid}'
 }
 
+statefulset_revision_converged() {
+  local name="$1"
+  local replicas="$2"
+  local revision
+  revision="$(kns get "statefulset/$name" -o jsonpath='{.status.updateRevision}')" || return 1
+  [[ -n "$revision" ]] || return 1
+  kns get pods -l "app.kubernetes.io/name=$name" -o json |
+    jq -e --arg revision "$revision" --argjson replicas "$replicas" '
+      (.items | length) == $replicas
+      and all(.items[];
+        .metadata.labels["controller-revision-hash"] == $revision
+        and any(.status.conditions[]?; .type == "Ready" and .status == "True"))
+    ' >/dev/null
+}
+
 collect_diagnostics() {
   kns get pods -o wide >"$evidence_dir/diagnostics/pods.txt" 2>&1 || true
   kns get deployments,statefulsets,pods,pvc >"$evidence_dir/diagnostics/workloads.txt" 2>&1 || true
+  kns get statefulset quickfix-gateway -o json \
+    >"$evidence_dir/diagnostics/quickfix-gateway-statefulset.json" 2>&1 || true
+  kns get pod quickfix-gateway-0 -o json \
+    >"$evidence_dir/diagnostics/quickfix-gateway-pod.json" 2>&1 || true
+  kns logs quickfix-gateway-0 -c quickfix-gateway --previous --tail=300 \
+    >"$evidence_dir/diagnostics/quickfix-gateway-previous.log" 2>&1 || true
   local selector
   for selector in account-service persistence quickfix-gateway risk-service; do
     kns logs -l "app.kubernetes.io/name=$selector" \
@@ -250,8 +284,14 @@ restore_workloads() {
     kns rollout status deployment/account-service --timeout="${timeout_seconds}s" >/dev/null 2>&1 || restoration_failed=true
   [[ -z "$original_persistence_replicas" || "$original_persistence_replicas" -eq 0 ]] ||
     kns rollout status deployment/persistence --timeout="${timeout_seconds}s" >/dev/null 2>&1 || restoration_failed=true
-  [[ -z "$original_quickfix_replicas" || "$original_quickfix_replicas" -eq 0 ]] ||
-    kns rollout status statefulset/quickfix-gateway --timeout="${timeout_seconds}s" >/dev/null 2>&1 || restoration_failed=true
+  if [[ -n "$original_quickfix_replicas" && "$original_quickfix_replicas" -ne 0 ]]; then
+    if ! kns rollout status statefulset/quickfix-gateway \
+        --timeout="${timeout_seconds}s" >/dev/null 2>&1; then
+      restoration_failed=true
+    elif ! statefulset_revision_converged quickfix-gateway "$original_quickfix_replicas"; then
+      restoration_failed=true
+    fi
+  fi
   [[ -z "$original_matching_replicas" || "$original_matching_replicas" -eq 0 ]] ||
     kns rollout status statefulset/matching --timeout="${timeout_seconds}s" >/dev/null 2>&1 || restoration_failed=true
   set -e

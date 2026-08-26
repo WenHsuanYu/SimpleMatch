@@ -47,6 +47,18 @@ tasks.named<Test>("test") {
     }
 }
 
+fun Test.configureLiveCertification(testClassName: String) {
+    testClassesDirs = testSourceSet.output.classesDirs
+    classpath = testSourceSet.runtimeClasspath
+    useJUnitPlatform()
+    doNotTrackState(
+        "Runs against a live FIX endpoint and writes evidence outside Gradle-managed outputs."
+    )
+    filter {
+        includeTestsMatching(testClassName)
+    }
+}
+
 tasks.register<Test>("certificationTest") {
     group = "verification"
     description = "Runs QuickFIX/J certification-style simulator evidence tests."
@@ -61,36 +73,21 @@ tasks.register<Test>("certificationTest") {
 tasks.register<Test>("liveCertificationTest") {
     group = "verification"
     description = "Runs the opt-in external QuickFIX gateway live certification."
-    testClassesDirs = testSourceSet.output.classesDirs
-    classpath = testSourceSet.runtimeClasspath
-    useJUnitPlatform()
-    filter {
-        includeTestsMatching("com.simplematch.quickfixgateway.fix.QuickFixLiveCertificationTest")
-    }
+    configureLiveCertification("com.simplematch.quickfixgateway.fix.QuickFixLiveCertificationTest")
 }
 
 tasks.register<Test>("retainedSessionCertificationTest") {
     group = "verification"
     description = "Runs the opt-in retained-session QuickFIX live certification."
-    testClassesDirs = testSourceSet.output.classesDirs
-    classpath = testSourceSet.runtimeClasspath
-    useJUnitPlatform()
-    filter {
-        includeTestsMatching(
-            "com.simplematch.quickfixgateway.fix.QuickFixRetainedSessionLiveCertificationTest"
-        )
-    }
+    configureLiveCertification(
+        "com.simplematch.quickfixgateway.fix.QuickFixRetainedSessionLiveCertificationTest"
+    )
 }
 
 tasks.register<Test>("preparedSubmissionCertificationTest") {
     group = "verification"
     description = "Runs the opt-in prepared QuickFIX submission certification."
-    testClassesDirs = testSourceSet.output.classesDirs
-    classpath = testSourceSet.runtimeClasspath
-    useJUnitPlatform()
-    filter {
-        includeTestsMatching(
-            "com.simplematch.quickfixgateway.fix.QuickFixPreparedSubmissionLiveCertificationTest"
-        )
-    }
+    configureLiveCertification(
+        "com.simplematch.quickfixgateway.fix.QuickFixPreparedSubmissionLiveCertificationTest"
+    )
 }

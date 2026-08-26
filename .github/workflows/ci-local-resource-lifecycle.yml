@@ -76,6 +76,7 @@ jobs:
           bash scripts/end-to-end/critical-consumers/tests/matching-status-contract.sh
           bash scripts/end-to-end/critical-consumers/tests/system-observation-contract.sh
           bash scripts/end-to-end/critical-consumers/tests/deployment-contract.sh
+          bash scripts/end-to-end/critical-consumers/tests/admission-contract.sh
           bash scripts/end-to-end/critical-consumers/tests/verifier-helper-contract.sh
           bash scripts/test-local-image-transport.sh
           bash scripts/test-local-image-rendering.sh
