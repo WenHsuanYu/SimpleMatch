@@ -1,0 +1,83 @@
+#!/usr/bin/env bash
+set -Eeuo pipefail
+IFS=$'\n\t'
+
+script_dir="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
+repo_root="$(cd -- "$script_dir/.." && pwd)"
+runner="$script_dir/run-local-production-like-certification.sh"
+job_lib="$script_dir/lib/local-certification-job.sh"
+kubernetes_lib="$script_dir/lib/local-certification-kubernetes.sh"
+bootstrap_lib="$script_dir/lib/local-certification-bootstrap.sh"
+run_lib="$script_dir/lib/local-certification-run.sh"
+kafka_manifest="$repo_root/deploy/k8s/kafka-kraft.yaml"
+
+for file in "$runner" "$job_lib" "$kubernetes_lib" "$bootstrap_lib" "$run_lib"; do
+  bash -n "$file"
+done
+
+grep -Fq 'SIMPLEMATCH_KUBERNETES_JOB_EVIDENCE_INTERVAL_SECONDS:-10' "$runner"
+grep -Fq 'SIMPLEMATCH_KAFKA_TOPIC_PROVISIONING_SUPERVISOR_SECONDS:-270' "$runner"
+grep -Fq 'local-certification-job.sh' "$runner" "$bootstrap_lib"
+grep -Fq 'supervise_kubernetes_job()' "$job_lib"
+grep -Fq '^Complete=True:' "$job_lib"
+grep -Fq '^(Failed|FailureTarget)=True:' "$job_lib"
+grep -Fq 'collect_kubernetes_job_evidence' "$job_lib"
+grep -Fq 'collect_kafka_provisioning_evidence' "$kubernetes_lib"
+grep -Fq 'kafka-endpointslices.yaml' "$kubernetes_lib"
+grep -Fq 'assert_certification_namespace_exclusive' "$kubernetes_lib" "$bootstrap_lib"
+grep -Fq 'simplematch.io/managed-by=local-production-like-certification' "$kubernetes_lib"
+grep -Fq 'run_logged compose-down-before-kubernetes' "$run_lib"
+grep -Fq 'down --volumes --remove-orphans' "$run_lib"
+
+if grep -Fq 'job/kafka-topic-provisioning --timeout=300s' "$kubernetes_lib"; then
+  printf '%s\n' 'Kafka provisioning still has the legacy 300s outer Job wait.' >&2
+  exit 1
+fi
+
+mapfile -t hierarchy < <(ruby -ryaml - "$kafka_manifest" "$runner" <<'RUBY'
+docs = YAML.load_stream(File.read(ARGV.fetch(0))).compact
+job = docs.find { |doc| doc["kind"] == "Job" && doc.dig("metadata", "name") == "kafka-topic-provisioning" }
+raise "Kafka topic provisioning Job is missing" unless job
+env = job.dig("spec", "template", "spec", "containers", 0, "env").to_h { |entry| [entry.fetch("name"), entry.fetch("value")] }
+runner = File.read(ARGV.fetch(1))
+supervisor = runner.match(/SIMPLEMATCH_KAFKA_TOPIC_PROVISIONING_SUPERVISOR_SECONDS:-([0-9]+)/)&.captures&.first
+puts env.fetch("KAFKA_ADMIN_OPERATION_TIMEOUT_SECONDS")
+puts env.fetch("KAFKA_BOOTSTRAP_RETRY_SECONDS")
+puts job.dig("spec", "activeDeadlineSeconds")
+puts supervisor || raise("Kafka supervisor default is missing")
+RUBY
+)
+
+admin_timeout="${hierarchy[0]}"
+retry_budget="${hierarchy[1]}"
+job_deadline="${hierarchy[2]}"
+supervisor_deadline="${hierarchy[3]}"
+(( admin_timeout < retry_budget && retry_budget < job_deadline && job_deadline < supervisor_deadline )) || {
+  printf 'Invalid Kafka timeout hierarchy: %s < %s < %s < %s\n' \
+    "$admin_timeout" "$retry_budget" "$job_deadline" "$supervisor_deadline" >&2
+  exit 1
+}
+[[ "$admin_timeout" == 15 && "$retry_budget" == 90 && "$job_deadline" == 240 && "$supervisor_deadline" == 270 ]] || {
+  printf '%s\n' 'Kafka certification timeout defaults changed without updating the contract.' >&2
+  exit 1
+}
+
+ruby -ryaml - "$kafka_manifest" <<'RUBY'
+docs = YAML.load_stream(File.read(ARGV.fetch(0))).compact
+stateful = docs.find { |doc| doc["kind"] == "StatefulSet" && doc.dig("metadata", "name") == "kafka" }
+raise "Kafka StatefulSet is missing" unless stateful
+container = stateful.dig("spec", "template", "spec", "containers").find { |item| item["name"] == "kafka" }
+raise "Kafka startup probe must retain protocol-level verification" unless container.dig("startupProbe", "exec", "command")&.include?("/opt/kafka/bin/kafka-broker-api-versions.sh")
+raise "Kafka startup timeout must tolerate loaded local hosts" unless container.dig("startupProbe", "timeoutSeconds") == 10
+raise "Kafka readiness must use the listener seam" unless container.dig("readinessProbe", "tcpSocket", "port") == "internal"
+raise "Kafka liveness must use the listener seam" unless container.dig("livenessProbe", "tcpSocket", "port") == "internal"
+job = docs.find { |doc| doc["kind"] == "Job" && doc.dig("metadata", "name") == "kafka-topic-provisioning" }
+raise "Kafka provisioning must not multiply retry layers" unless job.dig("spec", "backoffLimit") == 0
+raise "Kafka provisioning Pod must expose one attempt" unless job.dig("spec", "template", "spec", "restartPolicy") == "Never"
+config = docs.find { |doc| doc["kind"] == "ConfigMap" && doc.dig("metadata", "name") == "kafka-kraft-config" }
+script = config.dig("data", "topic-provision.sh")
+raise "Kafka Admin operations are not individually bounded" unless script.include?("timeout --foreground")
+raise "Legacy 60x5 bootstrap retry loop remains" if script.include?('attempts" -lt 60')
+RUBY
+
+printf '%s\n' 'Local certification Job supervision contracts are valid.'

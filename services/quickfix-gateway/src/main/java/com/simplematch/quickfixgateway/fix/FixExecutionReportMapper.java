@@ -49,9 +49,7 @@ final class FixExecutionReportMapper {
   ExecutionReport buildRejected(
       FixOrderSnapshot order, FixExecutionIdentity execution, String text) {
     final ExecutionReport report = baseReport(order, execution, '8', '8');
-    report.setString(LeavesQty.FIELD, "0");
-    report.setString(CumQty.FIELD, "0");
-    report.setString(AvgPx.FIELD, "0");
+    setRejectedExecutionState(report);
     if (!order.quantity().value().isBlank()) {
       report.setString(OrderQty.FIELD, FixWireValues.normalizeDecimal(order.quantity().value()));
     }
@@ -68,6 +66,7 @@ final class FixExecutionReportMapper {
     report.setString(ExecID.FIELD, execution.executionId().value());
     report.setChar(ExecType.FIELD, '8');
     report.setChar(OrdStatus.FIELD, '8');
+    setRejectedExecutionState(report);
     if (!order.clOrdId().isBlank()) {
       report.setString(ClOrdID.FIELD, order.clOrdId());
     }
@@ -121,6 +120,12 @@ final class FixExecutionReportMapper {
       report.setString(Text.FIELD, executionEvent.getText());
     }
     return report;
+  }
+
+  private static void setRejectedExecutionState(ExecutionReport report) {
+    report.setString(LeavesQty.FIELD, "0");
+    report.setString(CumQty.FIELD, "0");
+    report.setString(AvgPx.FIELD, "0");
   }
 
   private ExecutionReport baseReport(

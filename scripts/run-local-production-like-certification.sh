@@ -45,6 +45,8 @@ completion_status="RUNNING"
 completed_phases=()
 certification_timeout_seconds="${SIMPLEMATCH_CERTIFICATION_TIMEOUT_SECONDS:-7200}"
 namespace_cleanup_timeout="${SIMPLEMATCH_NAMESPACE_CLEANUP_TIMEOUT_SECONDS:-180}"
+kubernetes_job_evidence_interval_seconds="${SIMPLEMATCH_KUBERNETES_JOB_EVIDENCE_INTERVAL_SECONDS:-10}"
+kafka_topic_provisioning_supervisor_seconds="${SIMPLEMATCH_KAFKA_TOPIC_PROVISIONING_SUPERVISOR_SECONDS:-270}"
 certification_deadline_epoch=0
 phase_marker_directory=""
 run_context_file=""
@@ -57,6 +59,7 @@ compose_command=()
 # owns configuration, phase ordering, and lifecycle only.
 for certification_lib in \
   local-certification-framework.sh \
+  local-certification-job.sh \
   local-certification-kafka.sh \
   local-certification-kubernetes.sh \
   local-certification-connect.sh \

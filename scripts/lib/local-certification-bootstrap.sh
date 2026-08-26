@@ -64,6 +64,12 @@ simplematch_local_image_transport_validate "$image_transport" || die \
   "SIMPLEMATCH_CERTIFICATION_TIMEOUT_SECONDS must be a positive integer: $certification_timeout_seconds"
 [[ "$namespace_cleanup_timeout" =~ ^[1-9][0-9]*$ ]] || die \
   "SIMPLEMATCH_NAMESPACE_CLEANUP_TIMEOUT_SECONDS must be a positive integer: $namespace_cleanup_timeout"
+[[ "$kubernetes_job_evidence_interval_seconds" =~ ^[1-9][0-9]*$ ]] || die \
+  "SIMPLEMATCH_KUBERNETES_JOB_EVIDENCE_INTERVAL_SECONDS must be a positive integer: $kubernetes_job_evidence_interval_seconds"
+[[ "$kafka_topic_provisioning_supervisor_seconds" =~ ^[1-9][0-9]*$ ]] || die \
+  "SIMPLEMATCH_KAFKA_TOPIC_PROVISIONING_SUPERVISOR_SECONDS must be a positive integer: $kafka_topic_provisioning_supervisor_seconds"
+(( kafka_topic_provisioning_supervisor_seconds > 240 )) || die \
+  'Kafka topic provisioning supervisor deadline must exceed the 240s Job deadline.'
 if [[ "$dry_run" == false ]]; then
   command -v timeout >/dev/null 2>&1 || die 'timeout is required for bounded certification commands.'
 fi
@@ -90,10 +96,10 @@ source_signature="$({
     AGENTS.md deploy/k8s deploy/docker/run-flyway deploy/docker/Dockerfile.kind-normalized \
     scripts/run-local-production-like-certification.sh \
     scripts/lib/local-common.sh scripts/lib/local-kind.sh scripts/lib/local-image-transport.sh \
-    scripts/lib/local-certification-framework.sh scripts/lib/local-certification-kafka.sh \
-    scripts/lib/local-certification-kubernetes.sh scripts/lib/local-certification-connect.sh \
-    scripts/lib/local-certification-workloads.sh scripts/lib/local-certification-bootstrap.sh \
-    scripts/lib/local-certification-run.sh \
+    scripts/lib/local-certification-framework.sh scripts/lib/local-certification-job.sh \
+    scripts/lib/local-certification-kafka.sh scripts/lib/local-certification-kubernetes.sh \
+    scripts/lib/local-certification-connect.sh scripts/lib/local-certification-workloads.sh \
+    scripts/lib/local-certification-bootstrap.sh scripts/lib/local-certification-run.sh \
     scripts/prepare-local-kubernetes-images.sh scripts/normalize-local-images-for-kind.sh \
     scripts/publish-local-images.sh scripts/render-local-kubernetes-manifest.sh \
     scripts/test-kubernetes-overlays.sh scripts/test-local-kubernetes-dependencies.sh \
@@ -140,6 +146,8 @@ if [[ "$skip_kubernetes" == false ]]; then
     current_context="$(kubectl config current-context)"
     [[ "$current_context" == "$kind_context" ]] || die \
       "current Kubernetes context '$current_context' is not the canonical '$kind_context'."
+    assert_certification_namespace_exclusive || die \
+      'Local production-like certification namespace ownership is not exclusive.'
   fi
   export SIMPLEMATCH_PRODUCTION_LIKE_NETWORK="${SIMPLEMATCH_PRODUCTION_LIKE_NETWORK:-kind}"
   export SIMPLEMATCH_PRODUCTION_LIKE_NETWORK_EXTERNAL="${SIMPLEMATCH_PRODUCTION_LIKE_NETWORK_EXTERNAL:-true}"

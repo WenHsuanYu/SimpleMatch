@@ -38,6 +38,12 @@ tasks.named<Test>("test") {
     filter {
         excludeTestsMatching("com.simplematch.quickfixgateway.fix.QuickFixCertificationEvidenceTest")
         excludeTestsMatching("com.simplematch.quickfixgateway.fix.QuickFixLiveCertificationTest")
+        excludeTestsMatching(
+            "com.simplematch.quickfixgateway.fix.QuickFixRetainedSessionLiveCertificationTest"
+        )
+        excludeTestsMatching(
+            "com.simplematch.quickfixgateway.fix.QuickFixPreparedSubmissionLiveCertificationTest"
+        )
     }
 }
 
@@ -60,5 +66,31 @@ tasks.register<Test>("liveCertificationTest") {
     useJUnitPlatform()
     filter {
         includeTestsMatching("com.simplematch.quickfixgateway.fix.QuickFixLiveCertificationTest")
+    }
+}
+
+tasks.register<Test>("retainedSessionCertificationTest") {
+    group = "verification"
+    description = "Runs the opt-in retained-session QuickFIX live certification."
+    testClassesDirs = testSourceSet.output.classesDirs
+    classpath = testSourceSet.runtimeClasspath
+    useJUnitPlatform()
+    filter {
+        includeTestsMatching(
+            "com.simplematch.quickfixgateway.fix.QuickFixRetainedSessionLiveCertificationTest"
+        )
+    }
+}
+
+tasks.register<Test>("preparedSubmissionCertificationTest") {
+    group = "verification"
+    description = "Runs the opt-in prepared QuickFIX submission certification."
+    testClassesDirs = testSourceSet.output.classesDirs
+    classpath = testSourceSet.runtimeClasspath
+    useJUnitPlatform()
+    filter {
+        includeTestsMatching(
+            "com.simplematch.quickfixgateway.fix.QuickFixPreparedSubmissionLiveCertificationTest"
+        )
     }
 }

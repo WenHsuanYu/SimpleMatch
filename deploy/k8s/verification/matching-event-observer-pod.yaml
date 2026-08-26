@@ -1,0 +1,49 @@
+apiVersion: v1
+kind: Pod
+metadata:
+  name: matching-event-outage-observer
+  labels:
+    app.kubernetes.io/name: matching-event-outage-observer
+    app.kubernetes.io/component: verification
+    app.kubernetes.io/part-of: simplematch
+spec:
+  restartPolicy: Never
+  automountServiceAccountToken: false
+  enableServiceLinks: false
+  activeDeadlineSeconds: 600
+  securityContext:
+    runAsNonRoot: true
+    runAsUser: 10001
+    runAsGroup: 10001
+    fsGroup: 10001
+    seccompProfile:
+      type: RuntimeDefault
+  containers:
+    - name: observer
+      image: simplematch/risk-matching-e2e-verifier:local
+      imagePullPolicy: IfNotPresent
+      command:
+        - sleep
+        - "600"
+      securityContext:
+        allowPrivilegeEscalation: false
+        readOnlyRootFilesystem: true
+        runAsNonRoot: true
+        runAsUser: 10001
+        runAsGroup: 10001
+        capabilities:
+          drop:
+            - ALL
+      resources:
+        requests:
+          cpu: 100m
+          memory: 128Mi
+        limits:
+          cpu: "1"
+          memory: 512Mi
+      volumeMounts:
+        - name: runtime-tmp
+          mountPath: /tmp
+  volumes:
+    - name: runtime-tmp
+      emptyDir: {}
