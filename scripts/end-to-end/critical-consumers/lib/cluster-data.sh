@@ -251,18 +251,35 @@ current_taipei_calendar_day() {
   TZ=Asia/Taipei date +%F
 }
 
+expected_fix_trading_day() {
+  local requested="${SIMPLEMATCH_CERTIFICATION_TRADING_DAY:-}"
+  if [[ -z "$requested" ]]; then
+    current_taipei_calendar_day
+    return
+  fi
+  if [[ ! "$requested" =~ ^[0-9]{4}-[0-9]{2}-[0-9]{2}$ ]]; then
+    die "SIMPLEMATCH_CERTIFICATION_TRADING_DAY must use YYYY-MM-DD: $requested"
+    return 1
+  fi
+  printf '%s\n' "$requested"
+}
+
 require_live_fix_trading_day() {
   local configured_trading_day="$1"
-  local current_trading_day
-  current_trading_day="$(current_taipei_calendar_day)"
+  local expected_trading_day
+  expected_trading_day="$(expected_fix_trading_day)" || return 1
 
-  if [[ "$configured_trading_day" != "$current_trading_day" ]]; then
-    die "retained namespace trading day $configured_trading_day does not match current Asia/Taipei date $current_trading_day; run a fresh production-like certification"
+  if [[ "$configured_trading_day" != "$expected_trading_day" ]]; then
+    die "retained namespace trading day $configured_trading_day does not match expected certification trading day $expected_trading_day"
     return 1
   fi
 }
 
 select_market_input() {
+  if [[ "$(kns get configmap matching-session-config -o jsonpath='{.immutable}')" != "true" ]]; then
+    die 'matching-session-config must be immutable'
+    return 1
+  fi
   artifact_json="$(decode_configmap_file matching-daily-artifact market_reference.json)"
   artifact_checksum="$(decode_configmap_file matching-daily-artifact market_reference.sha256 | tr -d '\r\n')"
   [[ -n "$artifact_json" ]] || die 'matching-daily-artifact does not contain market_reference.json'

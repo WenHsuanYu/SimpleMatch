@@ -3,17 +3,13 @@ package com.simplematch.quickfixgateway.operations;
 import com.simplematch.quickfixgateway.fix.GatewayAdmissionGate;
 import java.time.Instant;
 import java.time.ZonedDateTime;
-import lombok.extern.log4j.Log4j2;
 
 /** Applies automatic session-close and readiness protections to the Gateway admission gate. */
-@Log4j2
 final class GatewayAdmissionAutomation {
   private final GatewayAdmissionGate admissionGate;
   private final GatewayOperationalPolicy policy;
   private final GatewayOperationAuditRecorder auditRecorder;
-  private final TradingSessionClosePort tradingSessionClosePort;
-  private boolean closeAccepted;
-  private boolean closeFailureReported;
+  private final TradingSessionCloseCoordinator closeCoordinator;
 
   GatewayAdmissionAutomation(
       GatewayAdmissionGate admissionGate,
@@ -23,12 +19,11 @@ final class GatewayAdmissionAutomation {
     this.admissionGate = admissionGate;
     this.policy = policy;
     this.auditRecorder = auditRecorder;
-    this.tradingSessionClosePort = tradingSessionClosePort;
+    this.closeCoordinator = new TradingSessionCloseCoordinator(tradingSessionClosePort);
   }
 
   void apply(TradingSystemStatus status, Instant now) {
     if (admissionGate.state() == GatewayAdmissionGate.State.CLOSED) {
-      requestTradingSessionClose(status);
       return;
     }
     if (!closeIfDue(status, now)) {
@@ -36,7 +31,18 @@ final class GatewayAdmissionAutomation {
     }
   }
 
+  void monitor(TradingSystemStatus status, Instant now) {
+    if (admissionGate.state() == GatewayAdmissionGate.State.CLOSED) {
+      closeCoordinator.request(status, now);
+      return;
+    }
+    apply(status, now);
+  }
+
   boolean closeIfDue(TradingSystemStatus status, Instant now) {
+    if (admissionGate.state() == GatewayAdmissionGate.State.CLOSED) {
+      return true;
+    }
     if (!isSessionCloseDue(now)) {
       return false;
     }
@@ -47,42 +53,17 @@ final class GatewayAdmissionAutomation {
         admissionGate.state(),
         status,
         now);
-    requestTradingSessionClose(status);
+    closeCoordinator.request(status, now);
     return true;
   }
 
-  void closeDay(TradingSystemStatus status) {
+  void closeDay(TradingSystemStatus status, Instant now) {
     admissionGate.closeDay();
-    requestTradingSessionClose(status);
+    closeCoordinator.request(status, now);
   }
 
   int requiredConsecutiveOpenEligibleChecks() {
     return policy.requiredConsecutiveOpenEligibleChecks();
-  }
-
-  private void requestTradingSessionClose(TradingSystemStatus status) {
-    if (closeAccepted || status.identity().isEmpty()) {
-      return;
-    }
-    final String tradingSessionId = status.identity().orElseThrow().tradingSessionId();
-    try {
-      tradingSessionClosePort.close(tradingSessionId);
-      closeAccepted = true;
-      if (closeFailureReported) {
-        log.info(
-            "Risk accepted trading-session close after retry: tradingSessionId={}",
-            tradingSessionId);
-      }
-    } catch (RuntimeException temporarilyUnavailable) {
-      if (!closeFailureReported) {
-        log.warn(
-            "Risk trading-session close is pending; Gateway admission remains closed: "
-                + "tradingSessionId={}",
-            tradingSessionId,
-            temporarilyUnavailable);
-        closeFailureReported = true;
-      }
-    }
   }
 
   private void applyReadinessProtection(TradingSystemStatus status, Instant now) {

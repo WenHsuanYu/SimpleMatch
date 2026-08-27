@@ -8,6 +8,7 @@ import com.simplematch.accountservice.reservation.ReserveOperation;
 import com.simplematch.contracts.common.v1.ReservationStatus;
 import com.simplematch.contracts.common.v1.Side;
 import java.math.BigDecimal;
+import java.time.LocalDate;
 import java.util.Objects;
 
 /**
@@ -16,18 +17,21 @@ import java.util.Objects;
  * @param identity reservation, request, and order identity
  * @param ownership account ownership
  * @param terms immutable order terms
+ * @param tradingDay immutable business trading day used for account authority
  * @param lifecycle mutable authority and execution state
  */
 public record AccountReservation(
     ReservationIdentity identity,
     ReservationOwnership ownership,
     ReservationTerms terms,
+    LocalDate tradingDay,
     ReservationLifecycle lifecycle) {
   /** Requires a complete reservation and validates its lifecycle against its immutable terms. */
   public AccountReservation {
     Objects.requireNonNull(identity, "identity");
     Objects.requireNonNull(ownership, "ownership");
     Objects.requireNonNull(terms, "terms");
+    Objects.requireNonNull(tradingDay, "tradingDay");
     Objects.requireNonNull(lifecycle, "lifecycle");
     lifecycle.validateAgainst(terms);
   }
@@ -37,10 +41,15 @@ public record AccountReservation(
       ReservationIdentity identity,
       ReservationOwnership ownership,
       ReservationTerms terms,
+      LocalDate tradingDay,
       BigDecimal reservedNotional,
       long now) {
     return new AccountReservation(
-        identity, ownership, terms, ReservationLifecycle.accepted(terms, reservedNotional, now));
+        identity,
+        ownership,
+        terms,
+        tradingDay,
+        ReservationLifecycle.accepted(terms, reservedNotional, now));
   }
 
   /** Creates a rejected reservation without changing account balances. */
@@ -48,6 +57,7 @@ public record AccountReservation(
       ReservationIdentity identity,
       ReservationOwnership ownership,
       ReservationTerms terms,
+      LocalDate tradingDay,
       String reasonCode,
       String reasonText,
       long now) {
@@ -55,6 +65,7 @@ public record AccountReservation(
         identity,
         ownership,
         terms,
+        tradingDay,
         ReservationLifecycle.rejected(terms, reasonCode, reasonText, now));
   }
 
@@ -123,6 +134,7 @@ public record AccountReservation(
     Objects.requireNonNull(operation, "operation");
     return orderId().equals(operation.orderId())
         && accountId().equals(operation.accountId())
+        && (operation.tradingDay() == null || tradingDay.equals(operation.tradingDay()))
         && terms.hasEquivalentFacts(operation.terms());
   }
 
@@ -170,11 +182,12 @@ public record AccountReservation(
   public AccountReservation applyFill(ExecutionFill fill, long now) {
     Objects.requireNonNull(fill, "fill");
     return new AccountReservation(
-        identity, ownership, terms, lifecycle.applyFill(fill, terms, now));
+        identity, ownership, terms, tradingDay, lifecycle.applyFill(fill, terms, now));
   }
 
   /** Releases only unused authority and preserves any quantity already filled. */
   public AccountReservation release(ReleaseReservationOperation.ReleaseReason reason, long now) {
-    return new AccountReservation(identity, ownership, terms, lifecycle.release(reason, now));
+    return new AccountReservation(
+        identity, ownership, terms, tradingDay, lifecycle.release(reason, now));
   }
 }

@@ -5,10 +5,8 @@ import com.simplematch.accountservice.authority.AccountAuthorityReader;
 import com.simplematch.accountservice.authority.AccountId;
 import com.simplematch.accountservice.authority.AccountLifecycleOutbox;
 import com.simplematch.accountservice.authority.AccountLimit;
-import com.simplematch.accountservice.authority.AccountLimitLedger;
 import com.simplematch.accountservice.authority.AccountOutboxRepository;
 import com.simplematch.accountservice.authority.AccountPosition;
-import com.simplematch.accountservice.authority.AccountPositionInventory;
 import com.simplematch.accountservice.authority.AccountReservation;
 import com.simplematch.accountservice.authority.ReservationOwnership;
 import com.simplematch.config.SimpleMatchUuids;
@@ -49,6 +47,10 @@ public class AccountReservationApplicationService {
   @Transactional(timeout = TRANSACTION_TIMEOUT_SECONDS)
   public ReservationRecord reserve(ReserveOperation operation) {
     Objects.requireNonNull(operation, "operation");
+    final LocalDate tradingDay =
+        operation.tradingDay() == null
+            ? clock.instant().atZone(TAIPEI).toLocalDate()
+            : operation.tradingDay();
     authorityWriter.claimReservationRequest(operation.requestId(), clock.millis());
     final AccountReservation existing =
         authorityReader.findReservationByRequestId(operation.requestId()).orElse(null);
@@ -57,7 +59,6 @@ public class AccountReservationApplicationService {
     }
 
     final long now = clock.millis();
-    final LocalDate tradingDay = clock.instant().atZone(TAIPEI).toLocalDate();
     final BigDecimal notional =
         operation.limitPrice() == null
             ? BigDecimal.ZERO
@@ -65,56 +66,23 @@ public class AccountReservationApplicationService {
     if (operation.limitPrice() == null) {
       return persistRejected(
           operation,
+          tradingDay,
           "LIMIT_PRICE_REQUIRED",
           "a limit price is required for reservation",
           now);
     }
 
-    if (operation.side() == Side.SIDE_BUY) {
-      final AccountLimit limit =
-          authorityReader.findLimitForUpdate(operation.accountIdentity(), tradingDay).orElse(null);
-      if (limit == null || limit.availableNotional().compareTo(notional) < 0) {
-        return persistRejected(
-            operation,
-            "INSUFFICIENT_AVAILABLE_NOTIONAL",
-            "available account notional is insufficient",
-            now);
-      }
-      final AccountLimit changed =
-          limit.withLedger(
-              new AccountLimitLedger(
-                  limit.limitTotalNotional(),
-                  limit.reservedNotional().add(notional),
-                  limit.utilizedNotional(),
-                  limit.availableNotional().subtract(notional)),
-              limit.revision().next(now));
-      authorityWriter.updateLimit(changed, limit.version());
-    } else {
-      final AccountPosition position =
-          authorityReader
-              .findPositionForUpdate(operation.accountIdentity(), operation.symbol())
-              .orElse(null);
-      if (position == null
-          || position
-                  .longQuantity()
-                  .subtract(position.reservedLongQuantity())
-                  .compareTo(operation.quantity())
-              < 0) {
-        return persistRejected(
-            operation,
-            "INSUFFICIENT_AVAILABLE_POSITION",
-            "available long position is insufficient",
-            now);
-      }
-      final AccountPosition changed =
-          position.withInventory(
-              new AccountPositionInventory(
-                  position.longQuantity(),
-                  position.shortQuantity(),
-                  position.reservedLongQuantity().add(operation.quantity()),
-                  position.reservedShortQuantity()),
-              position.revision().next(now));
-      authorityWriter.updatePosition(changed, position.version());
+    if (!AccountAuthorityTransitions.reserve(
+        authorityReader, authorityWriter, operation, tradingDay, notional, now)) {
+      final boolean buy = operation.side() == Side.SIDE_BUY;
+      return persistRejected(
+          operation,
+          tradingDay,
+          buy ? "INSUFFICIENT_AVAILABLE_NOTIONAL" : "INSUFFICIENT_AVAILABLE_POSITION",
+          buy
+              ? "available account notional is insufficient"
+              : "available long position is insufficient",
+          now);
     }
 
     final AccountReservation reservation =
@@ -122,6 +90,7 @@ public class AccountReservationApplicationService {
             operation.reservationIdentity(),
             new ReservationOwnership(operation.accountIdentity()),
             operation.terms(),
+            tradingDay,
             notional,
             now);
     authorityWriter.insertReservation(reservation);
@@ -175,7 +144,7 @@ public class AccountReservationApplicationService {
     }
     final long now = clock.millis();
     AccountAuthorityTransitions.releaseCancelledAuthority(
-        authorityReader, authorityWriter, clock, reservation, now);
+        authorityReader, authorityWriter, reservation, now);
     final AccountReservation changed = reservation.release(operation.reason(), now);
     authorityWriter.updateReservation(changed, reservation.version());
     emit(
@@ -211,7 +180,7 @@ public class AccountReservationApplicationService {
             ? reservation.reservedNotional()
             : reservation.reservedNotionalReleasedBy(fill);
     AccountAuthorityTransitions.applyFilledAuthority(
-        authorityReader, authorityWriter, clock, reservation, fill, releasedNotional, now);
+        authorityReader, authorityWriter, reservation, fill, releasedNotional, now);
     final AccountReservation changed = reservation.applyFill(fill, now);
     final ReservationStatus status = changed.status();
     authorityWriter.updateReservation(changed, reservation.version());
@@ -242,6 +211,7 @@ public class AccountReservationApplicationService {
 
   private ReservationRecord persistRejected(
       ReserveOperation operation,
+      LocalDate tradingDay,
       String reasonCode,
       String reasonText,
       long now) {
@@ -250,6 +220,7 @@ public class AccountReservationApplicationService {
         operation.reservationIdentity(),
             new ReservationOwnership(operation.accountIdentity()),
             operation.terms(),
+            tradingDay,
             reasonCode,
             reasonText,
             now);

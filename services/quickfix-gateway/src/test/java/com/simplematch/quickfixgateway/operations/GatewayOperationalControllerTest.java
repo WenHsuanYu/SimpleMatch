@@ -39,7 +39,8 @@ class GatewayOperationalControllerTest {
   void unsafeRecoveryPausesNewOrdersAndRequiresExplicitReopen() {
     final AdjustableClock clock = new AdjustableClock(Instant.parse("2026-08-11T01:00:00Z"));
     final GatewayAdmissionGate gate = new GatewayAdmissionGate();
-    final GatewayOperationalController controller = controller(gate, new TestAuditStore(), clock);
+    final GatewayOperationalController controller =
+        controller(gate, new TestAuditStore(), clock);
     final TradingSystemObservation ready =
         TradingSystemStatusFixtures.readyObservation(clock.instant());
 
@@ -65,7 +66,8 @@ class GatewayOperationalControllerTest {
   void statusSilenceAutomaticallyPausesAnOpenGateway() {
     final AdjustableClock clock = new AdjustableClock(Instant.parse("2026-08-11T01:00:00Z"));
     final GatewayAdmissionGate gate = new GatewayAdmissionGate();
-    final GatewayOperationalController controller = controller(gate, new TestAuditStore(), clock);
+    final GatewayOperationalController controller =
+        controller(gate, new TestAuditStore(), clock);
     final TradingSystemObservation ready =
         TradingSystemStatusFixtures.readyObservation(clock.instant());
 
@@ -105,6 +107,22 @@ class GatewayOperationalControllerTest {
   }
 
   @Test
+  void restartAfterSessionEndClosesWithoutExplicitOpen() {
+    final AdjustableClock clock = new AdjustableClock(Instant.parse("2026-08-11T05:31:00Z"));
+    final GatewayAdmissionGate gate = new GatewayAdmissionGate();
+    final RecordingClosePort closePort = new RecordingClosePort();
+    final GatewayOperationalController restarted =
+        controller(gate, new TestAuditStore(), closePort, clock);
+
+    restarted.report(TradingSystemStatusFixtures.readyObservation(clock.instant()));
+
+    assertThat(gate.state()).isEqualTo(GatewayAdmissionGate.State.CLOSED);
+    assertThat(closePort.sessionIds())
+        .containsExactly(TradingSystemStatusFixtures.identity().tradingSessionId());
+    assertThat(restarted.open("operator-1", "late restart").accepted()).isFalse();
+  }
+
+  @Test
   void closeWorkflowRetriesAfterTemporaryRiskFailure() {
     final AdjustableClock clock = new AdjustableClock(Instant.parse("2026-08-11T05:29:00Z"));
     final GatewayAdmissionGate gate = new GatewayAdmissionGate();
@@ -124,12 +142,32 @@ class GatewayOperationalControllerTest {
     assertThat(gate.state()).isEqualTo(GatewayAdmissionGate.State.CLOSED);
     assertThat(closePort.attempts()).isEqualTo(1);
 
+    clock.advance(Duration.ofSeconds(2));
     controller.monitor();
     controller.monitor();
 
     assertThat(closePort.attempts()).isEqualTo(2);
     assertThat(closePort.sessionIds())
         .containsExactly(TradingSystemStatusFixtures.identity().tradingSessionId());
+  }
+
+  @Test
+  void statusQueryDoesNotRetryPendingRiskClosure() {
+    final AdjustableClock clock = new AdjustableClock(Instant.parse("2026-08-11T05:31:00Z"));
+    final GatewayAdmissionGate gate = new GatewayAdmissionGate();
+    final FailOnceClosePort closePort = new FailOnceClosePort();
+    final GatewayOperationalController controller =
+        controller(gate, new TestAuditStore(), closePort, clock);
+
+    controller.report(TradingSystemStatusFixtures.readyObservation(clock.instant()));
+    assertThat(closePort.attempts()).isEqualTo(1);
+
+    clock.advance(Duration.ofSeconds(2));
+    controller.status();
+    assertThat(closePort.attempts()).isEqualTo(1);
+
+    controller.monitor();
+    assertThat(closePort.attempts()).isEqualTo(2);
   }
 
   @Test
@@ -214,7 +252,8 @@ class GatewayOperationalControllerTest {
     public void close(String tradingSessionId) {
       attempts++;
       if (attempts == 1) {
-        throw new IllegalStateException("Risk temporarily unavailable");
+        throw new RetryableTradingSessionCloseException(
+            "Risk temporarily unavailable", new IllegalStateException("unavailable"));
       }
       sessionIds.add(tradingSessionId);
     }

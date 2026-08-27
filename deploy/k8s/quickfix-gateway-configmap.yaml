@@ -12,5 +12,6 @@ data:
         replay-enabled: true
         ingress:
           venue-mic: XTAI
+          trading-day: ${SIMPLEMATCH_TRADING_DAY}
         final-matching-events:
           enabled: true

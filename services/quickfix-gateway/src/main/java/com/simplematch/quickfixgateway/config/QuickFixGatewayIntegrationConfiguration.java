@@ -39,8 +39,9 @@ public class QuickFixGatewayIntegrationConfiguration {
   }
 
   @Bean
-  RiskOrderIdentityDeriver riskOrderIdentityDeriver() {
-    return new RiskOrderIdentityDeriver();
+  RiskOrderIdentityDeriver riskOrderIdentityDeriver(
+      QuickFixGatewayIngressProperties ingressProperties) {
+    return new RiskOrderIdentityDeriver(ingressProperties.tradingDay());
   }
 
   @Bean

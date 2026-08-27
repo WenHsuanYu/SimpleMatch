@@ -1,31 +1,30 @@
 # Gateway admission completion specification
 
 This specification defines the remaining repository-owned work for GitHub issue #135. The existing
-QuickFIX Gateway operational code already owns admission state, readiness evaluation, operator
-commands, audit records, and automatic safety actions. This change completes the missing trading-day
-close coordination and certifies the existing behavior without creating another production module.
+QuickFIX Gateway operational code owns admission state, readiness evaluation, operator commands,
+audit records, and automatic safety actions. This change completes trading-day close coordination
+and certifies the behavior without creating another production service or readiness implementation.
 
 ## Current implementation
 
-The existing Gateway operations module is the application seam for trading admission. Its public
-behavior is `status`, `open`, `pause-new-orders`, `interrupt-market`, and `close-day`, together with
-normalized `TradingSystemObservation` reports. `TradingSystemStatusEvaluator` remains the single
-place that turns Risk, Matching fleet, Kafka, and critical-consumer observations into open, pause,
-or interrupt decisions.
+The Gateway operations module is the application seam for trading admission. Its public behavior is
+`status`, `open`, `pause-new-orders`, `interrupt-market`, and `close-day`, together with normalized
+`TradingSystemObservation` reports. `TradingSystemStatusEvaluator` remains the single place that
+turns Risk, Matching fleet, Kafka, and critical-consumer observations into open, pause, or interrupt
+decisions.
 
-The existing normalized observation interface is intentionally independent of Kubernetes and Kafka
-client types. Infrastructure-specific collection is not part of this issue.
+The normalized observation interface is intentionally independent of Kubernetes and Kafka client
+types. Infrastructure-specific production collection remains outside this issue.
 
 ## Scope decision for issue #160
 
 Issue #160 is not included in this implementation wave. Its live Kubernetes, Kafka, and service
-observation adapters remain blocked by issues #154 through #159 and must be added later as adapters
+observation adapters remain blocked by issues #154 through #159 and must later adapt deployed facts
 to the existing `TradingSystemObservation` seam. Issue #160 must not duplicate readiness policy or
 introduce another admission state machine.
 
-This issue may add certification-side observation code where needed to prove #135 behavior, but
-that code is test infrastructure and must not be presented as the production live-observation
-implementation required by #160.
+Issue #135 may use certification-side collectors to prove deployed behavior. Those collectors are
+test infrastructure and are not the production live-observation implementation required by #160.
 
 ## Module and seam design
 
@@ -33,13 +32,14 @@ No new Gradle subproject or standalone coordination service is introduced.
 
 The Gateway operations module remains the deep module that hides admission state transitions,
 consecutive-ready checks, automatic safety actions, close retry behavior, and audit recording behind
-its existing application interface.
+its existing application interface. A package-private `TradingSessionCloseCoordinator` owns only the
+process-local close-request lifecycle: pinning the first usable trading-session identity, applying a
+bounded retry schedule, and stopping retries after either acceptance or a permanent failure.
 
-Risk Admission already owns deterministic Open and Close Barrier construction and durable outbox
-publication. The cross-service seam for final close therefore exposes only the operation the Gateway
-needs: request closure of one trading session. The Gateway depends on a transport-neutral port;
-production uses the existing Risk gRPC channel as its adapter. Risk maps that RPC to the existing
-`TradingSessionBarrierService`. Tests use an in-process adapter or fake at the same seam.
+Risk Admission owns deterministic Open and Close Barrier construction and durable outbox
+publication. The cross-service seam exposes only the operation the Gateway needs: request closure of
+one trading session. Production uses the existing Risk gRPC channel through
+`TradingSessionClosePort`; Risk maps that RPC to the existing `TradingSessionBarrierService`.
 
 The Gateway never constructs Matching commands and never writes Risk's outbox. Risk remains the
 publisher of Close Barriers and Matching remains their consumer.
@@ -51,23 +51,28 @@ Closing a trading day has two ordered responsibilities:
 1. Stop new-order and cancellation admission by moving the Gateway to `CLOSED`.
 2. Request Risk to durably persist the deterministic Close Barrier set for partitions 0 through 14.
 
-The first responsibility is fail-closed and must not be rolled back if the second responsibility is
-temporarily unavailable. The close request is idempotent: retrying after a timeout or process
-restart may observe that some or all barrier rows already exist and must still be treated as the
-same trading-session close operation.
+The first responsibility is fail-closed and is never rolled back if the second responsibility is
+temporarily unavailable. The first usable trading-session identity is pinned for the process-local
+close request so a later observation cannot redirect a retry to another session.
 
-Automatic session-end close and explicit `close-day` use the same close workflow. If the Risk call
-fails after admission is closed, later monitor cycles retry the close request. A successful close
-request means Risk accepted durable publication responsibility; it does not mean every downstream
-consumer has already drained.
+The Risk close request is idempotent. The Gateway gRPC adapter classifies only statuses that are safe
+to retry, such as `UNAVAILABLE` and `DEADLINE_EXCEEDED`, as temporary. Risk maps only explicit
+persistence or transaction availability failures to `UNAVAILABLE`; data-integrity and unexpected
+server failures remain `INTERNAL`, while an invalid trading-session request remains
+`INVALID_ARGUMENT`. Retry attempts are bounded and spaced by the close coordinator. Permanent
+failures stop automatic retry while Gateway admission remains `CLOSED`.
 
-Deployment certification must separately prove that the accepted Close Barriers are published to
-all 15 `matching.commands` partitions, applied by Matching, and followed by drained critical
-consumer progress.
+Automatic session-end close and explicit `close-day` use the same close workflow. The scheduled
+`monitor()` path owns pending close retries. Read-only `status()` does not perform network calls or
+advance the retry state.
+
+A successful Risk close request means Risk accepted durable publication responsibility; it does not
+mean every downstream consumer has already drained. Deployment certification proves downstream
+publication and drain separately.
 
 ## Readiness and state behavior
 
-The existing admission contract remains unchanged:
+The admission contract remains:
 
 - `PRE_OPEN` rejects new orders and cancellations.
 - `OPEN` accepts new orders and cancellations.
@@ -84,52 +89,116 @@ The existing admission contract remains unchanged:
 - zero market activity is valid when committed and end offsets agree and no pending-event age
   exists.
 
+A Gateway process that starts after the configured session close time remains fail-closed: the next
+fresh observation or monitor cycle closes admission and requests the same Risk-owned idempotent close
+workflow. It does not require a prior `OPEN` transition.
+
 ## Verification seams
 
 Tests verify behavior through stable interfaces rather than implementation details:
 
-- `GatewayOperationalController` for operator commands, automatic protection, close retry, and
-  no-auto-reopen behavior;
-- the Risk trading-session gRPC interface for close request validation and idempotent delegation;
+- `GatewayOperationalController` for operator commands, automatic protection, query behavior,
+  close scheduling, and no-auto-reopen behavior;
+- `TradingSessionCloseCoordinator` for identity pinning and bounded retry;
+- the Risk gRPC adapter for temporary versus permanent transport failure classification;
 - `TradingSessionBarrierService` for deterministic durable barrier insertion;
 - FIX ingress through `GatewayAdmissionGate` for state-dependent new-order and cancellation
   admission; and
-- the deployment certification interfaces for Kafka publication, Matching closure, and critical
-  consumer drain.
+- the deployment certification interfaces for Kafka publication, Matching closure, and
+  critical-consumer drain.
 
-Focused tests must cover successful close, retry after a temporary Risk failure, repeated close,
-automatic session-end close, restart after session end, malformed session identity, and retained
-admission behavior in every gate state.
+Focused tests cover successful close, retry after a temporary Risk failure, bounded retry,
+permanent-failure termination, repeated close, automatic session-end close, restart after session
+end, close ordering, and side-effect-free status queries.
+
+## Retained-run provenance
+
+Gateway close certification is a continuation of one completed production-like run, not an operation
+that may attach to any disposable namespace. The dependent runner therefore requires the retained
+production-like evidence directory as an explicit input.
+
+Before any Gateway, FIX, or Kafka helper state is changed, the runner verifies:
+
+- the retained `run-context` names the requested namespace;
+- the retained `source-revision` equals the current repository `HEAD`;
+- the current repository has no tracked, staged, or untracked non-ignored source changes; and
+- the retained verifier image reference and immutable image identity are present and well formed.
+
+Registry transport retains the digest-qualified verifier reference. The `kind-load` compatibility
+path separately records the verifier OCI image identity because its local tag is mutable. After a
+kind-loaded helper Pod becomes Ready, certification resolves the node that runs the Pod and compares
+the retained image identity with the CRI image identity on that node. This one-time check closes
+mutable-tag ambiguity without treating the Pod `imageID` as an equivalent digest or adding a
+recurring observation loop.
+
+The close runner initializes its own empty evidence directory before retained-run validation. A
+provenance or namespace preflight failure therefore still produces the same machine-readable
+`verdict.json` shape as later certification failures, while no application or helper state has yet
+been mutated.
+
+This prevents a custom production-like evidence path from being confused with the default evidence
+directory, and prevents an uncommitted or untracked harness change from being presented as evidence
+for the recorded revision.
 
 ## Deployment close certification
 
 `scripts/end-to-end/critical-consumers/run-gateway-close-certification.sh` is a terminal capability
-runner over the existing critical-consumer verification runtime. It does not provide production
-observation adapters and does not duplicate Kubernetes, Kafka, or PostgreSQL access code. It reuses
-the established observation collector, Gateway HTTP adapter, FIX submission client, Kafka position
-collector, Matching committed-position collector, and critical-consumer progress collector.
+runner over the existing critical-consumer verification runtime. It reuses the normalized
+observation collector, Gateway HTTP adapter, prepared FIX client, warm Kafka observation adapter,
+Matching runtime evidence, PostgreSQL consumer-progress evidence, and the established exact-event
+inbox check.
+
+The runner is organized as explicit phases for retained-run preflight, baseline validation, client
+preparation, Gateway opening, order submission, session close, Matching proof, terminal-event proof,
+and verdict publication. The phases share the existing verification interfaces instead of creating a
+second cluster-access or readiness framework.
 
 The runner requires an already bootstrapped, lifecycle-labeled retained namespace with a clean
-baseline. It performs the following observable sequence:
+baseline and performs this observable sequence:
 
-1. Collect three fresh normalized observations and explicitly open Gateway admission.
-2. Submit one real FIX limit order and wait until Persistence reports the order as `RESTING`.
-3. Snapshot all 15 `matching.commands` positions and invoke authenticated `close-day`.
-4. Require every command partition to advance by exactly one record.
-5. Require every Matching consumer to commit through its resulting command position.
-6. Require all 15 Matching runtime reports to reach `CLOSED` with no pending input or publication.
-7. Snapshot the resulting `matching.events` log end and require Persistence, Account, and QuickFIX
-   consumer progress to catch up without quarantine.
-8. Require the previously resting order to become `EXPIRED`.
+1. Validate retained source, namespace, verifier-image reference and identity, and clean source
+   state.
+2. Collect three fresh normalized observations and explicitly open Gateway admission.
+3. Submit one real FIX limit order and wait until Persistence reports the order as `RESTING`.
+4. Snapshot all 15 `matching.commands` log ends through the warm Kafka observer and invoke
+   authenticated `close-day`.
+5. Require every command partition to advance by exactly one record.
+6. Require every Matching consumer to commit through its resulting command position.
+7. Sample all 15 Matching runtimes in parallel and require `CLOSED` with no pending input or
+   publication.
+8. Require the previously resting order to become `EXPIRED` and retain its terminal Matching Event
+   identity.
+9. Capture one post-close `matching.events` log-end snapshot and require Persistence, Account, and
+   QuickFIX progress to catch up with no current or historical quarantine.
+10. Require the selected order's terminal Matching Event to appear exactly once in each critical
+    consumer inbox.
 
-This is intentionally the last capability executed against that retained trading session. A
-successful close makes the Gateway and Matching session terminal for further admission work. The
-certification does not require exactly-once network delivery to a disconnected FIX client; it proves
-that the QuickFIX critical consumer durably consumes through the terminal event position.
+The runner intentionally does not maintain a second pre-close/post-close event-movement probe.
+Expiration of the selected order identifies the terminal event causally, the post-close log end
+establishes the durable drain boundary, and the exact inbox check proves that all three critical
+consumers processed that same terminal event.
 
-The pure position-comparison rules used by the runner are fixture-tested by
-`scripts/end-to-end/critical-consumers/tests/gateway-close-contract.sh` and are included in the local
-resource lifecycle CI contract job.
+The warm Kafka observer remains alive for the readiness and terminal close phases, avoiding repeated
+Kafka CLI/JVM startup. Matching runtime samples are parallelized rather than issuing 15 serial
+`kubectl exec` calls per poll. Helper cleanup is ownership-aware and bounded: the runner deletes the
+Kafka observer only if that run created it and waits for the fixed-name Pod to disappear. It also
+waits for the temporary Gateway operations overrides to roll back before a PASS verdict can be
+published.
+
+This capability runs last against the retained trading session. A successful close makes Gateway and
+Matching admission terminal for that process/session. Exactly-once network delivery to a
+disconnected FIX client remains out of scope; durable QuickFIX consumer progress is the required
+boundary.
+
+A typical invocation is:
+
+```bash
+scripts/end-to-end/critical-consumers/run-gateway-close-certification.sh \
+  --namespace "$SIMPLEMATCH_CERTIFICATION_NAMESPACE" \
+  --retained-evidence-dir "$SIMPLEMATCH_CERTIFICATION_EVIDENCE_DIR" \
+  --evidence-dir "$GATEWAY_CLOSE_EVIDENCE_DIR" \
+  --timeout-seconds 300
+```
 
 ## Completion gate
 

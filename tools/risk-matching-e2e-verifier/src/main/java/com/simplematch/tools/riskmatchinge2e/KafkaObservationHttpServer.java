@@ -1,5 +1,6 @@
 package com.simplematch.tools.riskmatchinge2e;
 
+import com.fasterxml.jackson.core.JacksonException;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.sun.net.httpserver.HttpExchange;
 import com.sun.net.httpserver.HttpServer;
@@ -38,6 +39,7 @@ final class KafkaObservationHttpServer implements AutoCloseable {
     server.createContext(
         "/matching-committed-positions",
         exchange -> handleSnapshot(exchange, session::captureMatchingCommittedPositions));
+    server.createContext("/close-barriers", this::handleCloseBarriers);
   }
 
   void start() {
@@ -65,6 +67,24 @@ final class KafkaObservationHttpServer implements AutoCloseable {
       respond(exchange, 200, mapper.writeValueAsString(snapshotSupplier.get()));
     } catch (RuntimeException failure) {
       respond(exchange, 503, "{\"error\":\"Kafka observation unavailable\"}");
+    }
+  }
+
+  private void handleCloseBarriers(HttpExchange exchange) throws IOException {
+    if (!"POST".equals(exchange.getRequestMethod())) {
+      respond(exchange, 405, "{\"error\":\"POST required\"}");
+      return;
+    }
+    try {
+      final KafkaObservationSession.CloseBarrierExpectation expectation =
+          mapper.readValue(
+              exchange.getRequestBody(),
+              KafkaObservationSession.CloseBarrierExpectation.class);
+      respond(exchange, 200, mapper.writeValueAsString(session.verifyCloseBarriers(expectation)));
+    } catch (JacksonException | IllegalArgumentException failure) {
+      respond(exchange, 400, "{\"error\":\"invalid Close Barrier expectation\"}");
+    } catch (RuntimeException failure) {
+      respond(exchange, 503, "{\"error\":\"Close Barrier observation unavailable\"}");
     }
   }
 

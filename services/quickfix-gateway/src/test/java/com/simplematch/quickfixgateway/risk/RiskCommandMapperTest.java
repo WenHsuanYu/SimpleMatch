@@ -16,16 +16,19 @@ import com.simplematch.quickfixgateway.wal.WalOrderReference;
 import com.simplematch.quickfixgateway.wal.WalOrderTerms;
 import com.simplematch.quickfixgateway.wal.WalRecord;
 import java.time.Instant;
+import java.time.LocalDate;
 import java.time.temporal.ChronoUnit;
 import java.util.UUID;
 import org.junit.jupiter.api.Test;
 
 class RiskCommandMapperTest {
   private static final Instant CREATED_AT = Instant.parse("2024-03-27T08:09:10.123Z");
+  private static final LocalDate TRADING_DAY = LocalDate.of(2024, 3, 27);
   private static final String ACCOUNT_ID = "0194a8f0-7c77-7b38-9e2d-2a5fdd0f7c13";
 
   private final RiskCommandMapper mapper =
-      new RiskCommandMapper(VenueMic.parse("XTAI"), new RiskOrderIdentityDeriver());
+      new RiskCommandMapper(
+          VenueMic.parse("XTAI"), new RiskOrderIdentityDeriver(TRADING_DAY));
 
   @Test
   void newAndCancelShareStableInternalOrderIdentity() {
@@ -45,11 +48,26 @@ class RiskCommandMapperTest {
 
   @Test
   void tradingDaySeparatesReusedClientOrderIds() {
+    final RiskCommandMapper nextDayMapper =
+        new RiskCommandMapper(
+            VenueMic.parse("XTAI"),
+            new RiskOrderIdentityDeriver(TRADING_DAY.plusDays(1)));
     final String firstDay = mapper.toNewOrder(newOrder(CREATED_AT)).getOrderId();
     final String nextDay =
-        mapper.toNewOrder(newOrder(CREATED_AT.plus(1, ChronoUnit.DAYS))).getOrderId();
+        nextDayMapper.toNewOrder(newOrder(CREATED_AT.plus(1, ChronoUnit.DAYS))).getOrderId();
 
     assertThat(nextDay).isNotEqualTo(firstDay);
+  }
+
+  @Test
+  void configuredSessionDayRemainsAuthoritativeAfterTheWallClockAdvances() {
+    final NewOrderCommand newOrder =
+        mapper.toNewOrder(newOrder(CREATED_AT.plus(1, ChronoUnit.DAYS)));
+    final CancelOrderCommand cancel =
+        mapper.toCancelOrder(cancel(CREATED_AT.plus(1, ChronoUnit.DAYS)));
+
+    assertThat(newOrder.getTradingDay().getIsoDate()).isEqualTo(TRADING_DAY.toString());
+    assertThat(cancel.getTradingDay().getIsoDate()).isEqualTo(TRADING_DAY.toString());
   }
 
   @Test

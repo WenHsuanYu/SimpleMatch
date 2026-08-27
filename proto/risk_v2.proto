@@ -39,9 +39,7 @@ message CloseTradingSessionRequest {
   string trading_session_id = 1;
 }
 
-message CloseTradingSessionResponse {
-  uint32 newly_inserted_barriers = 1;
-}
+message CloseTradingSessionResponse {}
 
 service OrderAdmissionService {
   rpc SubmitNewOrder(simplematch.orders.v2.NewOrderCommand) returns (OrderAdmissionResponse);

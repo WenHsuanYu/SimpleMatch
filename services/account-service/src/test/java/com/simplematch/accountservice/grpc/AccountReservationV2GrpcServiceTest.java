@@ -19,6 +19,7 @@ import com.simplematch.contracts.common.v2.EventMetadata;
 import com.simplematch.contracts.common.v2.Side;
 import com.simplematch.contracts.common.v2.TwdNotional;
 import com.simplematch.contracts.common.v2.TwdPrice;
+import com.simplematch.contracts.common.v2.TradingDay;
 import com.simplematch.contracts.common.v2.VenueInstrument;
 import com.simplematch.contracts.orders.v2.ShareQuantity;
 import io.grpc.Status;
@@ -65,7 +66,7 @@ class AccountReservationV2GrpcServiceTest {
             new JdbcAccountOutboxRepository(jdbcTemplate),
             FIXED_CLOCK);
     reservationService.provisionLimit(
-        ACCOUNT_ID, LocalDate.of(1970, 1, 1), new BigDecimal("10000"));
+        ACCOUNT_ID, LocalDate.of(2026, 8, 27), new BigDecimal("10000"));
     service = new AccountReservationV2GrpcService(reservationService);
   }
 
@@ -176,6 +177,23 @@ class AccountReservationV2GrpcServiceTest {
         .isZero();
   }
 
+  @DisplayName("v2 reserve requires an explicit business trading day")
+  @Test
+  void reserveRejectsMissingTradingDay() {
+    final TestStreamObserver<AccountLifecycleEvent> observer = new TestStreamObserver<>();
+
+    service.reserve(validRequest().toBuilder().clearTradingDay().build(), observer);
+
+    assertThat(Status.fromThrowable(observer.error()).getCode())
+        .isEqualTo(Status.Code.INVALID_ARGUMENT);
+    assertThat(Status.fromThrowable(observer.error()).getDescription())
+        .isEqualTo("trading_day.iso_date must not be blank");
+    assertThat(
+            jdbcTemplate.queryForObject(
+                "SELECT COUNT(*) FROM account_service.account_reservations", Integer.class))
+        .isZero();
+  }
+
   @DisplayName("v2 reserve reports Account invariant failures as failed precondition")
   @Test
   void reserveReportsInvariantFailureAsFailedPrecondition() {
@@ -233,6 +251,7 @@ class AccountReservationV2GrpcServiceTest {
         .setQuantity(ShareQuantity.newBuilder().setShares(10))
         .setLimitPrice(TwdPrice.newBuilder().setUnits(1_012_500))
         .setNotional(TwdNotional.newBuilder().setUnits(10_125_000))
+        .setTradingDay(TradingDay.newBuilder().setIsoDate("2026-08-27"))
         .build();
   }
 }

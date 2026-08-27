@@ -5,6 +5,8 @@ import java.io.IOException;
 import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
 import java.time.Duration;
+import java.util.ArrayList;
+import java.util.Comparator;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
@@ -57,6 +59,69 @@ public final class KafkaMatchingCommandProbe implements AutoCloseable {
         new RecordMetadata(first.partition(), first.offset(), first.timestamp(), first.key());
 
     return new ProbeResult(metadata, matches.size(), first.value());
+  }
+
+  /** Decodes and validates the records returned for one exact Close Barrier window. */
+  static KafkaObservationSession.CloseBarrierEvidence validateCloseBarriers(
+      String topic,
+      KafkaObservationSession.CloseBarrierExpectation expectation,
+      List<ObservedRecord> observed) {
+    if (!expectation.before().topic().equals(topic)) {
+      throw new IllegalArgumentException("Close Barrier topic does not match expectation");
+    }
+    if (observed.size() != KafkaObservationSession.EXPECTED_PARTITION_COUNT) {
+      throw new IllegalStateException("Close Barrier range must contain exactly 15 records");
+    }
+    final List<KafkaObservationSession.CloseBarrierRecord> evidence = new ArrayList<>();
+    for (ObservedRecord record : observed.stream()
+        .sorted(Comparator.comparingInt(ObservedRecord::partition))
+        .toList()) {
+      final MatchingCommand command = decodeCommand(record.value());
+      validateCloseBarrierRecord(expectation, record, command);
+      evidence.add(
+          new KafkaObservationSession.CloseBarrierRecord(
+              record.partition(), record.offset(), record.key()));
+    }
+    return new KafkaObservationSession.CloseBarrierEvidence(topic, evidence);
+  }
+
+  private static void validateCloseBarrierRecord(
+      KafkaObservationSession.CloseBarrierExpectation expectation,
+      ObservedRecord record,
+      MatchingCommand command) {
+    final var header = command.getHeader();
+    final long expectedOffset =
+        expectation.after().partitions().get(record.partition()).offset() - 1;
+    if (record.offset() != expectedOffset) {
+      throw new IllegalStateException("Close Barrier record is outside its frozen offset range");
+    }
+    requireEquals(record.key(), header.getCommandId(), "Kafka key and command id");
+    requireEquals(
+        expectation.tradingSessionId(), header.getTradingSessionId(), "trading session id");
+    requireEquals(
+        expectation.tradingDay(),
+        header.getArtifactIdentity().getTradingDay(),
+        "artifact trading day");
+    requireEquals(
+        expectation.artifactContentSha256(),
+        header.getArtifactIdentity().getContentSha256(),
+        "artifact content sha256");
+    requireEquals(
+        expectation.routingAlgorithmVersion(),
+        header.getRoutingAlgorithmVersion(),
+        "routing algorithm version");
+    if (!command.hasCloseBarrier()) {
+      throw new IllegalStateException("matching.commands record is not a Close Barrier");
+    }
+    if (record.partition() != header.getPartitionId()) {
+      throw new IllegalStateException("Kafka and command partitions do not match");
+    }
+  }
+
+  private static void requireEquals(String expected, String actual, String field) {
+    if (!expected.equals(actual)) {
+      throw new IllegalStateException(field + " does not match Close Barrier expectation");
+    }
   }
 
   /** Verifies partition placement and byte identity for all physical deliveries. */

@@ -54,22 +54,21 @@ public class GatewayOperationalController {
   }
 
   /**
-   * Reassesses the latest observation for staleness and closes the session when its cutoff passes.
+   * Reassesses the latest observation for staleness, session close, and pending close retry.
    *
    * @return the current domain readiness decision after automatic protection is applied
    */
   public synchronized TradingSystemStatus monitor() {
     final Instant now = clock.instant();
     final TradingSystemStatus status = operationalState.current(statusEvaluator, now);
-    automation.apply(status, now);
+    automation.monitor(status, now);
     return status;
   }
 
-  /** Returns the current readiness status without creating an audit record. */
+  /** Returns the current readiness status without creating side effects or an audit record. */
   public synchronized GatewayOperationResult status() {
     final Instant now = clock.instant();
     final TradingSystemStatus status = operationalState.current(statusEvaluator, now);
-    automation.apply(status, now);
     return new GatewayOperationResult(
         GatewayOperation.STATUS, true, admissionGate.state(), "STATUS", status, now);
   }
@@ -149,7 +148,7 @@ public class GatewayOperationalController {
         new GatewayOperationalCommand(GatewayOperation.CLOSE_DAY, actor, reason);
     final Instant now = clock.instant();
     final TradingSystemStatus status = operationalState.current(statusEvaluator, now);
-    automation.closeDay(status);
+    automation.closeDay(status, now);
     auditRecorder.record(command, true, admissionGate.state(), status, now);
     return new GatewayOperationResult(
         GatewayOperation.CLOSE_DAY, true, admissionGate.state(), "MARKET_CLOSED", status, now);

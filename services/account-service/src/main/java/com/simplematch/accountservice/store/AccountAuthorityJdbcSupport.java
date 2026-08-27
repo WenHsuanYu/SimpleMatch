@@ -21,7 +21,9 @@ import com.simplematch.contracts.common.v1.ReservationStatus;
 import com.simplematch.contracts.common.v1.Side;
 import java.sql.PreparedStatement;
 import java.sql.ResultSet;
+import java.time.Instant;
 import java.time.LocalDate;
+import java.time.ZoneId;
 import java.util.List;
 import java.util.Objects;
 import java.util.Optional;
@@ -32,6 +34,7 @@ import org.springframework.jdbc.core.RowMapper;
 
 /** Shared JDBC mechanics for the account-authority reader and lifecycle-writer adapters. */
 final class AccountAuthorityJdbcSupport {
+  private static final ZoneId TAIPEI = ZoneId.of("Asia/Taipei");
   static final int LOCK_QUERY_TIMEOUT_SECONDS = 2;
   static final RowMapper<AccountLimit> LIMIT_MAPPER =
       (rs, row) ->
@@ -76,6 +79,7 @@ final class AccountAuthorityJdbcSupport {
             Side.valueOf(rs.getString("side")),
             new ReservationTerms.ReservationQuantity(rs.getBigDecimal("quantity")),
             new ReservationTerms.LimitPrice(rs.getBigDecimal("limit_price"))),
+        reservationTradingDay(rs),
         new ReservationLifecycle(
             new ReservationAllocation(
                 rs.getBigDecimal("remaining_quantity"),
@@ -89,6 +93,15 @@ final class AccountAuthorityJdbcSupport {
                 rs.getLong("version"),
                 rs.getLong("created_at_unix_ms"),
                 rs.getLong("updated_at_unix_ms"))));
+  }
+
+  private static LocalDate reservationTradingDay(ResultSet rs) throws java.sql.SQLException {
+    final LocalDate persisted = rs.getObject("trading_day", LocalDate.class);
+    return persisted != null
+        ? persisted
+        : Instant.ofEpochMilli(rs.getLong("created_at_unix_ms"))
+            .atZone(TAIPEI)
+            .toLocalDate();
   }
 
   private final JdbcTemplate jdbcTemplate;
@@ -141,7 +154,7 @@ final class AccountAuthorityJdbcSupport {
   String reservationSelect() {
     return
         """
-                SELECT reservation_id, request_id, order_id, account_id, symbol, venue_mic, side, quantity, limit_price,
+                SELECT reservation_id, request_id, order_id, account_id, trading_day, symbol, venue_mic, side, quantity, limit_price,
                   reserved_notional, status, reason_code, reason_text, created_at_unix_ms, updated_at_unix_ms,
                   remaining_quantity, filled_quantity, version
                 FROM account_service.account_reservations

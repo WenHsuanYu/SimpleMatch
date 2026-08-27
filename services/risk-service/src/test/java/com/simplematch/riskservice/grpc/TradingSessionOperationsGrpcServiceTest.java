@@ -21,19 +21,18 @@ import java.time.ZoneOffset;
 import java.util.HashSet;
 import java.util.Set;
 import org.junit.jupiter.api.Test;
+import org.springframework.dao.DataAccessResourceFailureException;
+import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.jdbc.datasource.DataSourceTransactionManager;
 import org.springframework.jdbc.datasource.DriverManagerDataSource;
 import org.springframework.transaction.support.TransactionTemplate;
 
 class TradingSessionOperationsGrpcServiceTest {
   @Test
-  void repeatedCloseRequestsReuseTheSameDurableBarrierSet() {
+  void repeatedCloseRequestsCompleteSuccessfully() {
     final RecordingOutboxRepository outbox = new RecordingOutboxRepository();
     final TradingSessionOperationsGrpcService service = service(outbox);
-    final CloseTradingSessionRequest request =
-        CloseTradingSessionRequest.newBuilder()
-            .setTradingSessionId("2026-08-11-regular")
-            .build();
+    final CloseTradingSessionRequest request = closeRequest("2026-08-11-regular");
 
     final TestStreamObserver<CloseTradingSessionResponse> first = new TestStreamObserver<>();
     service.closeTradingSession(request, first);
@@ -42,10 +41,8 @@ class TradingSessionOperationsGrpcServiceTest {
 
     assertThat(first.completed()).isTrue();
     assertThat(first.error()).isNull();
-    assertThat(first.value().getNewlyInsertedBarriers()).isEqualTo(15);
     assertThat(repeated.completed()).isTrue();
     assertThat(repeated.error()).isNull();
-    assertThat(repeated.value().getNewlyInsertedBarriers()).isZero();
     assertThat(outbox.eventIds()).hasSize(15);
   }
 
@@ -54,15 +51,48 @@ class TradingSessionOperationsGrpcServiceTest {
     final TradingSessionOperationsGrpcService service = service(new RecordingOutboxRepository());
     final TestStreamObserver<CloseTradingSessionResponse> observer = new TestStreamObserver<>();
 
-    service.closeTradingSession(
-        CloseTradingSessionRequest.newBuilder()
-            .setTradingSessionId("2026-08-12-regular")
-            .build(),
-        observer);
+    service.closeTradingSession(closeRequest("2026-08-12-regular"), observer);
 
     assertThat(observer.completed()).isFalse();
     assertThat(Status.fromThrowable(observer.error()).getCode())
         .isEqualTo(Status.Code.INVALID_ARGUMENT);
+  }
+
+  @Test
+  void reportsPersistenceAvailabilityFailureAsUnavailable() {
+    final TradingSessionOperationsGrpcService service = service(new UnavailableOutboxRepository());
+    final TestStreamObserver<CloseTradingSessionResponse> observer = new TestStreamObserver<>();
+
+    service.closeTradingSession(closeRequest("2026-08-11-regular"), observer);
+
+    assertThat(observer.completed()).isFalse();
+    assertThat(Status.fromThrowable(observer.error()).getCode()).isEqualTo(Status.Code.UNAVAILABLE);
+  }
+
+  @Test
+  void reportsPersistenceIntegrityFailureAsInternal() {
+    final TradingSessionOperationsGrpcService service = service(new InvalidOutboxRepository());
+    final TestStreamObserver<CloseTradingSessionResponse> observer = new TestStreamObserver<>();
+
+    service.closeTradingSession(closeRequest("2026-08-11-regular"), observer);
+
+    assertThat(observer.completed()).isFalse();
+    assertThat(Status.fromThrowable(observer.error()).getCode()).isEqualTo(Status.Code.INTERNAL);
+  }
+
+  @Test
+  void reportsUnexpectedRuntimeFailureAsInternal() {
+    final TradingSessionOperationsGrpcService service = service(new BrokenOutboxRepository());
+    final TestStreamObserver<CloseTradingSessionResponse> observer = new TestStreamObserver<>();
+
+    service.closeTradingSession(closeRequest("2026-08-11-regular"), observer);
+
+    assertThat(observer.completed()).isFalse();
+    assertThat(Status.fromThrowable(observer.error()).getCode()).isEqualTo(Status.Code.INTERNAL);
+  }
+
+  private static CloseTradingSessionRequest closeRequest(String tradingSessionId) {
+    return CloseTradingSessionRequest.newBuilder().setTradingSessionId(tradingSessionId).build();
   }
 
   private static TradingSessionOperationsGrpcService service(OutboxRepository outbox) {
@@ -122,6 +152,54 @@ class TradingSessionOperationsGrpcServiceTest {
 
     Set<String> eventIds() {
       return Set.copyOf(eventIds);
+    }
+  }
+
+  private static final class UnavailableOutboxRepository implements OutboxRepository {
+    @Override
+    public void insert(OutboxRecord record) {
+      throw unavailable();
+    }
+
+    @Override
+    public boolean insertIfAbsent(OutboxRecord record) {
+      throw unavailable();
+    }
+
+    private DataAccessResourceFailureException unavailable() {
+      return new DataAccessResourceFailureException("database unavailable");
+    }
+  }
+
+  private static final class InvalidOutboxRepository implements OutboxRepository {
+    @Override
+    public void insert(OutboxRecord record) {
+      throw invalid();
+    }
+
+    @Override
+    public boolean insertIfAbsent(OutboxRecord record) {
+      throw invalid();
+    }
+
+    private DataIntegrityViolationException invalid() {
+      return new DataIntegrityViolationException("invalid outbox row");
+    }
+  }
+
+  private static final class BrokenOutboxRepository implements OutboxRepository {
+    @Override
+    public void insert(OutboxRecord record) {
+      throw broken();
+    }
+
+    @Override
+    public boolean insertIfAbsent(OutboxRecord record) {
+      throw broken();
+    }
+
+    private IllegalStateException broken() {
+      return new IllegalStateException("unexpected implementation failure");
     }
   }
 }

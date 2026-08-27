@@ -30,7 +30,8 @@ class AccountServiceFlywayMigrationTest {
     assertThat(hasTable(jdbcTemplate, "MATCHING_EVENT_CONSUMER_PROGRESS")).isTrue();
     assertThat(hasTable(jdbcTemplate, "MATCHING_EVENT_CONSUMER_QUARANTINES")).isTrue();
     assertThat(hasColumn(jdbcTemplate, "OUTBOX", "CREATED_AT")).isTrue();
-    assertThat(appliedMigrationCount(jdbcTemplate)).isEqualTo(8);
+    assertThat(hasColumn(jdbcTemplate, "ACCOUNT_RESERVATIONS", "TRADING_DAY")).isTrue();
+    assertThat(appliedMigrationCount(jdbcTemplate)).isEqualTo(9);
   }
 
   @DisplayName("a second account-service migration is a no-op")

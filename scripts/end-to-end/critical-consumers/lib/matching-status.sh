@@ -37,6 +37,40 @@ matching_runtime_is_ready() {
   [[ "$(matching_runtime_readiness_reason "$@")" == "READY" ]]
 }
 
+matching_runtime_closed_reason() {
+  local now_epoch_millis="${1:-$(date +%s%3N)}"
+  local maximum_age_millis="${2:-$matching_runtime_default_max_age_millis}"
+
+  [[ "$now_epoch_millis" =~ ^[0-9]+$ ]] || {
+    printf '%s\n' 'INVALID_VALIDATION_TIME'
+    return 1
+  }
+  [[ "$maximum_age_millis" =~ ^[0-9]+$ ]] || {
+    printf '%s\n' 'INVALID_FRESHNESS_LIMIT'
+    return 1
+  }
+
+  jq -r \
+    --argjson nowEpochMillis "$now_epoch_millis" \
+    --argjson maximumAgeMillis "$maximum_age_millis" '
+      if .schema_version != 1 then "INVALID_SCHEMA"
+      elif .runtime_state != "RUNNING" then "RUNTIME_NOT_RUNNING"
+      elif .partition_state != "CLOSED" then "PARTITION_NOT_CLOSED"
+      elif .pending_inputs != 0 then "PENDING_INPUTS"
+      elif .pending_publications != 0 then "PENDING_PUBLICATIONS"
+      elif ((.updated_at_epoch_ms | type) != "number") or .updated_at_epoch_ms < 0 then
+        "TIMESTAMP_MISSING"
+      elif .updated_at_epoch_ms > $nowEpochMillis then "TIMESTAMP_IN_FUTURE"
+      elif (($nowEpochMillis - .updated_at_epoch_ms) > $maximumAgeMillis) then "STATUS_STALE"
+      else "CLOSED"
+      end
+    '
+}
+
+matching_runtime_is_closed() {
+  [[ "$(matching_runtime_closed_reason "$@")" == "CLOSED" ]]
+}
+
 matching_runtime_observed_at() {
   local metrics_file="$1"
   local epoch_millis
