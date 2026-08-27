@@ -2,6 +2,7 @@ package com.simplematch.quickfixgateway.config;
 
 import com.simplematch.config.delivery.CriticalDeliveryController;
 import com.simplematch.config.delivery.DeliveryMetrics;
+import com.simplematch.config.delivery.DeliveryPosition;
 import com.simplematch.config.delivery.MicrometerDeliveryMetrics;
 import com.simplematch.config.delivery.QuarantineStore;
 import com.simplematch.quickfixgateway.fix.FinalFixDeliveryDispatcher;
@@ -18,9 +19,11 @@ import com.simplematch.quickfixgateway.matching.QuickFixFinalMatchingEventsHealt
 import com.simplematch.quickfixgateway.store.JdbcFinalFixDeliveryStore;
 import io.micrometer.core.instrument.MeterRegistry;
 import java.time.Clock;
+import java.util.List;
 import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.boot.context.properties.EnableConfigurationProperties;
+import org.springframework.boot.sql.init.dependency.DependsOnDatabaseInitialization;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.jdbc.core.JdbcTemplate;
@@ -35,6 +38,8 @@ import org.springframework.scheduling.annotation.EnableScheduling;
     havingValue = "true",
     matchIfMissing = true)
 public class QuickFixGatewayFinalMatchingEventConfiguration {
+  private static final String CONSUMER_NAME = "quickfix-final-matching-events";
+
   /** Creates the Gateway-owned final-event inbox and FIX delivery ledger adapter. */
   @Bean
   JdbcFinalFixDeliveryStore jdbcFinalFixDeliveryStore(JdbcTemplate jdbcTemplate) {
@@ -79,7 +84,7 @@ public class QuickFixGatewayFinalMatchingEventConfiguration {
             ? DeliveryMetrics.noop()
             : new MicrometerDeliveryMetrics(meterRegistry);
     return new CriticalDeliveryController(
-        "quickfix-final-matching-events",
+        CONSUMER_NAME,
         properties.maximumAttempts(),
         properties.recoveryInstructions(),
         quickFixGatewayClock,
@@ -87,10 +92,25 @@ public class QuickFixGatewayFinalMatchingEventConfiguration {
         metrics);
   }
 
-  /** Creates the compact consumer status used by readiness and Gateway admission composition. */
+  /** Creates consumer status from durable progress and unresolved quarantine state. */
   @Bean
-  QuickFixFinalMatchingEventStatus quickFixFinalMatchingEventStatus() {
-    return new QuickFixFinalMatchingEventStatus();
+  @DependsOnDatabaseInitialization
+  QuickFixFinalMatchingEventStatus quickFixFinalMatchingEventStatus(
+      JdbcFinalFixDeliveryStore store,
+      Clock quickFixGatewayClock,
+      QuickFixGatewayFinalMatchingEventConsumerProperties properties,
+      QuarantineStore quickFixFinalMatchingEventQuarantineStore,
+      CriticalDeliveryController quickFixFinalMatchingEventDeliveryController) {
+    final QuickFixFinalMatchingEventStatus status =
+        new QuickFixFinalMatchingEventStatus(quickFixGatewayClock);
+    if (properties.enabled()) {
+      store.loadLastProcessedOffsets().forEach(status::recordCommitted);
+      final List<DeliveryPosition> openPositions =
+          quickFixFinalMatchingEventQuarantineStore.loadOpenPositions(CONSUMER_NAME);
+      quickFixFinalMatchingEventDeliveryController.restoreQuarantines(openPositions);
+      openPositions.stream().findFirst().ifPresent(status::recordQuarantined);
+    }
+    return status;
   }
 
   /** Creates the manual-ack Kafka boundary for final Matching Event delivery. */

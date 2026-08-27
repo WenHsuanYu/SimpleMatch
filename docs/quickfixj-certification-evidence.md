@@ -65,6 +65,30 @@ The live baseline acknowledgement continues to verify the expected FIX 4.4 field
 Exact assertions remain authoritative in `QuickFixCertificationEvidenceTest` so this document does
 not duplicate every field literal and drift from the executable evidence.
 
+## Retained-session retransmission evidence
+
+The production-like failure certification also exercises a retained external FIX session after the
+client has been disconnected while a durable delivery intent is pending. The first lifecycle
+`ExecutionReport` is verified through the normal QuickFIX/J `Application.fromApp` callback. This
+proves that the ordinary application-delivery path remains functional after recovery.
+
+An explicit `ResendRequest (35=2)` for an already processed server sequence is verified at the raw
+incoming FIX log seam instead of through a second `Application.fromApp` callback. QuickFIX/J checks
+sequence numbers before application dispatch. A valid retransmission for a sequence lower than the
+initiator's current expected target sequence carries `PossDupFlag(43)=Y`, but the engine deliberately
+discards that already-processed message after duplicate validation rather than delivering it to the
+application again.
+
+The wire-level observation therefore verifies the protocol property that matters without weakening
+QuickFIX/J sequence semantics. The retransmitted `ExecutionReport` must retain its original
+`MsgSeqNum(34)` and `ExecID(17)`, set `PossDupFlag(43)=Y`, and provide `OrigSendingTime(122)`. The same
+invariants are checked again after a QuickFIX Gateway restart, which exercises the JDBC-backed
+QuickFIX/J message store rather than an application-level reconstruction of the report.
+
+The live QuickFIX Gradle tasks are state-untracked because they interact with external endpoints and
+write evidence outside Gradle-managed outputs. They must execute on every certification invocation;
+a previous local test result is not reusable evidence for a new deployed-system run.
+
 ## Rerun Command
 
 ```bash

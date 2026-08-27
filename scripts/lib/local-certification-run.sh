@@ -31,6 +31,20 @@ else
   printf '%s\n' 'Compose runtime phases skipped.'
 fi
 
+# Compose is a verification fixture, not part of the Kubernetes runtime. Running
+# both at once doubles local Kafka/PostgreSQL pressure and can invalidate the
+# production-like Kubernetes observation. Retention applies to the runtime that
+# remains after this phase transition, not to an already verified Compose fixture.
+if [[ "$skip_compose" == false && "$skip_kubernetes" == false ]]; then
+  if [[ "$dry_run" == true ]]; then
+    print_command "${compose_command[@]}" down --volumes --remove-orphans
+  else
+    run_logged compose-down-before-kubernetes \
+      "${compose_command[@]}" down --volumes --remove-orphans
+    compose_started=false
+  fi
+fi
+
 if [[ "$skip_kubernetes" == false ]]; then
   prepare_image_args=(
     --transport "$image_transport"
@@ -57,7 +71,9 @@ if [[ "$skip_kubernetes" == false ]]; then
     print_command kubectl create -f "$evidence_dir/local-kubernetes-inputs.yaml"
     print_command kubectl apply -f "$evidence_dir/local-kubernetes-platform.yaml"
     print_command kubectl apply -f "$evidence_dir/local-kubernetes-migrations.yaml"
-    print_command kubectl wait --for=condition=complete job/account-service-flyway --timeout=300s
+    print_command supervise_kubernetes_job kafka-topic-provisioning \
+      "$kafka_topic_provisioning_supervisor_seconds" \
+      "$evidence_dir/kubernetes-jobs/kafka-topic-provisioning"
     print_command kubectl apply -f "$evidence_dir/local-kubernetes-workloads.yaml"
     print_command register_kubernetes_risk_connector
     if [[ "$image_transport" == kind-load ]]; then

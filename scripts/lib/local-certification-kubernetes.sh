@@ -118,6 +118,26 @@ apply_local_kubernetes_inputs() {
   done
 }
 
+assert_certification_namespace_exclusive() {
+  local existing_namespace
+  local conflicting_namespaces=()
+
+  while IFS= read -r existing_namespace; do
+    [[ -n "$existing_namespace" ]] || continue
+    [[ "$existing_namespace" == "$namespace" ]] && continue
+    conflicting_namespaces+=("$existing_namespace")
+  done < <(kubectl --context "$kind_context" get namespaces \
+    -l 'simplematch.io/managed-by=local-production-like-certification' \
+    -o jsonpath='{range .items[*]}{.metadata.name}{"\n"}{end}')
+
+  if (( ${#conflicting_namespaces[@]} > 0 )); then
+    printf 'Another retained local production-like certification namespace exists: %s\n' \
+      "${conflicting_namespaces[*]}" >&2
+    printf '%s\n' 'Delete or explicitly finish that owned certification run before starting another.' >&2
+    return 1
+  fi
+}
+
 create_certification_namespace() {
   if kubectl --context "$kind_context" get namespace "$namespace" >/dev/null 2>&1; then
     die "Certification namespace already exists: $namespace"
@@ -127,6 +147,35 @@ create_certification_namespace() {
     "$kind_context" "$namespace" local-production-like-certification "$run_id" || die \
     "Failed to create owned disposable certification namespace: $namespace"
   kubernetes_namespace_created=true
+}
+
+require_kubernetes_job_complete() {
+  local job_name="$1"
+  local conditions
+  conditions="$(kubernetes_job_conditions "$job_name" 2>/dev/null || true)"
+  grep -Eq '^Complete=True:' <<<"$conditions" || {
+    printf 'Required Kubernetes Job %s is not complete: %s\n' \
+      "$job_name" "${conditions//$'\n'/, }" >&2
+    return 1
+  }
+}
+
+collect_kafka_provisioning_evidence() {
+  local output_dir="$1"
+  local pod
+
+  mkdir -p "$output_dir"
+  kubectl --context "$kind_context" -n "$namespace" get statefulset kafka -o yaml \
+    >"$output_dir/statefulset-kafka.yaml" 2>"$output_dir/statefulset-kafka.stderr" || true
+  kubectl --context "$kind_context" -n "$namespace" get service kafka kafka-headless -o yaml \
+    >"$output_dir/services.yaml" 2>"$output_dir/services.stderr" || true
+  kubectl --context "$kind_context" -n "$namespace" get endpointslices \
+    -l 'kubernetes.io/service-name=kafka' -o yaml \
+    >"$output_dir/kafka-endpointslices.yaml" 2>"$output_dir/kafka-endpointslices.stderr" || true
+  for pod in kafka-0 kafka-1 kafka-2; do
+    kubectl --context "$kind_context" -n "$namespace" logs "$pod" --tail=250 \
+      >"$output_dir/${pod}.tail.log" 2>"$output_dir/${pod}.tail.stderr" || true
+  done
 }
 
 publish_local_matching_open_barriers() {
@@ -156,8 +205,7 @@ publish_local_matching_open_barriers() {
   cmake --build --preset full-native-dev --target simplematch-matching-kafka-fixture-publisher --parallel
   kubectl -n "$namespace" wait \
     --for=jsonpath='{.status.readyReplicas}'=3 statefulset/kafka --timeout=300s
-  kubectl -n "$namespace" wait --for=condition=complete \
-    job/kafka-topic-provisioning --timeout=300s
+  require_kubernetes_job_complete kafka-topic-provisioning
   kubectl -n "$namespace" delete pod "$fixture_pod" --ignore-not-found --wait=true >/dev/null
   kubectl -n "$namespace" run "$fixture_pod" \
     --image="$matching_runtime_image" --image-pull-policy=IfNotPresent \
@@ -186,10 +234,15 @@ apply_kubernetes_migrations() {
 
 apply_kubernetes_topic_provisioning() {
   local migration_manifest="$1"
+  local job_evidence_dir="$evidence_dir/kubernetes-jobs/kafka-topic-provisioning"
+
   kubectl -n "$namespace" wait \
     --for=jsonpath='{.status.readyReplicas}'=3 statefulset/kafka --timeout=300s
   kubectl apply -f "$migration_manifest" \
     --selector 'app.kubernetes.io/component=topic-provisioning'
-  kubectl -n "$namespace" wait --for=condition=complete \
-    job/kafka-topic-provisioning --timeout=300s
+  if ! supervise_kubernetes_job kafka-topic-provisioning \
+      "$kafka_topic_provisioning_supervisor_seconds" "$job_evidence_dir"; then
+    collect_kafka_provisioning_evidence "$job_evidence_dir/kafka"
+    return 1
+  fi
 }

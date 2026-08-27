@@ -53,7 +53,8 @@ final class NewOrderFixMessageHandler {
     try {
       final PreparedNewOrder preparedOrder = commandPreparer.prepare(message, sessionId);
       final Optional<WalRecord> previous =
-          orderSessionRegistry.findAdmittedOrder(preparedOrder.walRecord().orderId());
+          orderSessionRegistry.findAdmittedOrder(
+              sessionId, preparedOrder.walRecord().orderId());
       if (previous.isPresent()) {
         final WalRecord previousRecord = previous.orElseThrow();
         if (previousRecord.hasSameBusinessIntent(preparedOrder.walRecord())) {

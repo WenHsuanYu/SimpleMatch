@@ -12,6 +12,7 @@ import com.simplematch.quickfixgateway.matching.FinalMatchingEventFixDeliveryOut
 import com.simplematch.quickfixgateway.matching.QuickFixFinalMatchingEventStatus;
 import java.util.List;
 import java.util.Objects;
+import java.util.OptionalLong;
 import org.apache.kafka.clients.consumer.Consumer;
 import org.apache.kafka.clients.consumer.ConsumerRecord;
 import org.apache.kafka.common.TopicPartition;
@@ -37,8 +38,7 @@ public final class FinalMatchingEventFixConsumer {
       FinalMatchingEventFixDeliveryHandler deliveryHandler,
       CriticalDeliveryController deliveryController,
       QuickFixFinalMatchingEventStatus status) {
-    this.deliveryHandler =
-        Objects.requireNonNull(deliveryHandler, "deliveryHandler");
+    this.deliveryHandler = Objects.requireNonNull(deliveryHandler, "deliveryHandler");
     this.deliveryController =
         Objects.requireNonNull(deliveryController, "deliveryController");
     this.status = Objects.requireNonNull(status, "status");
@@ -57,19 +57,27 @@ public final class FinalMatchingEventFixConsumer {
       ConsumerRecord<byte[], byte[]> record,
       Acknowledgment acknowledgment,
       Consumer<?, ?> consumer) {
-    final byte[] payload = record.value() == null ? new byte[0] : record.value();
-    DeliveryRecord delivery = opaqueDelivery(record, payload);
     final TopicPartition topicPartition =
         new TopicPartition(record.topic(), record.partition());
+    final OptionalLong pausedOffset =
+        deliveryController.pausedOffset(
+            new DeliveryPosition.TopicPartition(record.topic(), record.partition()));
+    if (pausedOffset.isPresent() && pausedOffset.getAsLong() <= record.offset()) {
+      seek(consumer, topicPartition, pausedOffset.getAsLong());
+      consumer.pause(List.of(topicPartition));
+      return;
+    }
+
+    status.recordPending(record.partition(), record.offset(), record.timestamp());
+    final byte[] payload = record.value() == null ? new byte[0] : record.value();
+    DeliveryRecord delivery = opaqueDelivery(record, payload);
     try {
-      final FinalMatchingEventEnvelope envelope =
-          FinalMatchingEventEnvelope.parse(payload);
+      final FinalMatchingEventEnvelope envelope = FinalMatchingEventEnvelope.parse(payload);
       delivery = finalEventDelivery(record, payload, envelope);
       FinalMatchingEventTransportValidator.requireKafkaRecord(
           record.key(), record.partition(), envelope);
       final FinalMatchingEventFixDeliveryOutcome outcome =
-          deliveryHandler.persist(
-              envelope, record.partition(), record.offset());
+          deliveryHandler.persist(envelope, record.partition(), record.offset());
       if (outcome == FinalMatchingEventFixDeliveryOutcome.DUPLICATE) {
         deliveryController.recordDuplicate(delivery);
       }
@@ -80,8 +88,7 @@ public final class FinalMatchingEventFixConsumer {
         seek(consumer, topicPartition, delivery.position().offset());
       }
     } catch (RuntimeException | InvalidProtocolBufferException failure) {
-      final DeliveryDecision decision =
-          deliveryController.onFailure(delivery, failure);
+      final DeliveryDecision decision = deliveryController.onFailure(delivery, failure);
       LOGGER.warn(
           "Gateway final-event delivery failed topic={} partition={} offset={} decision={}",
           record.topic(),
@@ -104,12 +111,10 @@ public final class FinalMatchingEventFixConsumer {
     status.recordRecovered(position);
   }
 
-  private DeliveryRecord opaqueDelivery(
-      ConsumerRecord<byte[], byte[]> record, byte[] payload) {
+  private DeliveryRecord opaqueDelivery(ConsumerRecord<byte[], byte[]> record, byte[] payload) {
     return new DeliveryRecord(
         record.topic() + ":" + record.partition() + ":" + record.offset(),
-        new DeliveryPosition(
-            record.topic(), record.partition(), record.offset()),
+        new DeliveryPosition(record.topic(), record.partition(), record.offset()),
         payload);
   }
 
@@ -119,13 +124,11 @@ public final class FinalMatchingEventFixConsumer {
       FinalMatchingEventEnvelope envelope) {
     return new DeliveryRecord(
         envelope.eventIdHex(),
-        new DeliveryPosition(
-            record.topic(), record.partition(), record.offset()),
+        new DeliveryPosition(record.topic(), record.partition(), record.offset()),
         payload);
   }
 
-  private long blockedOffset(
-      DeliveryRecord delivery, DeliveryDecision decision) {
+  private long blockedOffset(DeliveryRecord delivery, DeliveryDecision decision) {
     if (decision == DeliveryDecision.BLOCKED) {
       return deliveryController
           .pausedOffset(delivery.position().topicPartition())
@@ -134,8 +137,7 @@ public final class FinalMatchingEventFixConsumer {
     return delivery.position().offset();
   }
 
-  private void seek(
-      Consumer<?, ?> consumer, TopicPartition partition, long offset) {
+  private void seek(Consumer<?, ?> consumer, TopicPartition partition, long offset) {
     consumer.seek(partition, offset);
   }
 }

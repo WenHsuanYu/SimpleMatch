@@ -10,6 +10,8 @@ source "$script_dir/lib/local-common.sh"
 source "$script_dir/lib/local-kind.sh"
 # shellcheck source=scripts/lib/local-image-transport.sh
 source "$script_dir/lib/local-image-transport.sh"
+# shellcheck source=scripts/lib/local-certification-provenance.sh
+source "$script_dir/lib/local-certification-provenance.sh"
 
 compose_file="$repo_root/deploy/compose/kafka-connect.production-like.yml"
 compose_project="${SIMPLEMATCH_CERTIFICATION_COMPOSE_PROJECT:-simplematch-local-production-like}"
@@ -20,7 +22,7 @@ image_lock="${SIMPLEMATCH_LOCAL_IMAGE_LOCK:-$evidence_dir/local-images.lock}"
 matching_producer_config_file="${SIMPLEMATCH_KAFKA_PRODUCER_CONFIG_FILE:-$evidence_dir/matching-producer.config.txt}"
 matching_capacity_evidence_file="${SIMPLEMATCH_KAFKA_CAPACITY_EVIDENCE_FILE:-$evidence_dir/kafka-capacity.properties}"
 matching_capacity_workload_file="${SIMPLEMATCH_KAFKA_CAPACITY_WORKLOAD_FILE:-$repo_root/scripts/testdata/matching-topic-profile/local/capacity.properties}"
-certification_trading_day="${SIMPLEMATCH_CERTIFICATION_TRADING_DAY:-$(date -u +%F)}"
+certification_trading_day="${SIMPLEMATCH_CERTIFICATION_TRADING_DAY:-$(TZ=Asia/Taipei date +%F)}"
 local_postgres_password="${SIMPLEMATCH_LOCAL_POSTGRES_PASSWORD:-simplematch}"
 if [[ ! "$local_postgres_password" =~ ^[A-Za-z0-9._~-]+$ ]]; then
   printf '%s\n' 'SIMPLEMATCH_LOCAL_POSTGRES_PASSWORD may contain only URL-safe local-lab characters.' >&2
@@ -45,6 +47,8 @@ completion_status="RUNNING"
 completed_phases=()
 certification_timeout_seconds="${SIMPLEMATCH_CERTIFICATION_TIMEOUT_SECONDS:-7200}"
 namespace_cleanup_timeout="${SIMPLEMATCH_NAMESPACE_CLEANUP_TIMEOUT_SECONDS:-180}"
+kubernetes_job_evidence_interval_seconds="${SIMPLEMATCH_KUBERNETES_JOB_EVIDENCE_INTERVAL_SECONDS:-10}"
+kafka_topic_provisioning_supervisor_seconds="${SIMPLEMATCH_KAFKA_TOPIC_PROVISIONING_SUPERVISOR_SECONDS:-270}"
 certification_deadline_epoch=0
 phase_marker_directory=""
 run_context_file=""
@@ -57,6 +61,7 @@ compose_command=()
 # owns configuration, phase ordering, and lifecycle only.
 for certification_lib in \
   local-certification-framework.sh \
+  local-certification-job.sh \
   local-certification-kafka.sh \
   local-certification-kubernetes.sh \
   local-certification-connect.sh \
@@ -73,3 +78,12 @@ source "$script_dir/lib/local-certification-bootstrap.sh"
 export SIMPLEMATCH_LOCAL_IMAGE_TRANSPORT="$image_transport"
 # shellcheck source=/dev/null
 source "$script_dir/lib/local-certification-run.sh"
+
+if [[ "$dry_run" == false \
+      && "$skip_kubernetes" == false \
+      && "$matching_fleet_only" == false ]]; then
+  simplematch_record_certification_provenance \
+    "$repo_root" "$evidence_dir" "$namespace" \
+    "$image_transport" "$image_tag" "$image_lock" || die \
+    'Failed to record production-like source and verifier image provenance.'
+fi

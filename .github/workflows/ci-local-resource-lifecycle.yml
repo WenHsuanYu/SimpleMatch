@@ -7,6 +7,7 @@ on:
       - 'deploy/kind/**'
       - 'deploy/k8s/**'
       - 'deploy/docker/Dockerfile.kind-normalized'
+      - 'scripts/end-to-end/critical-consumers/**'
       - 'scripts/build-local-images.sh'
       - 'scripts/lib/local-common.sh'
       - 'scripts/lib/local-kind.sh'
@@ -16,6 +17,7 @@ on:
       - 'scripts/lib/local-image-inventory.sh'
       - 'scripts/lib/local-image-transport.sh'
       - 'scripts/lib/local-certification-*.sh'
+      - 'scripts/lib/critical-consumer-certification-*.sh'
       - 'scripts/manage-local-registry.sh'
       - 'scripts/manage-simplematch-live.sh'
       - 'scripts/normalize-local-images-for-kind.sh'
@@ -25,10 +27,17 @@ on:
       - 'scripts/local-resource-report.sh'
       - 'scripts/publish-local-images.sh'
       - 'scripts/render-local-kubernetes-manifest.sh'
+      - 'scripts/run-critical-consumer-restart-certification.sh'
+      - 'scripts/run-critical-consumer-failure-certification.sh'
       - 'scripts/run-local-production-like-certification.sh'
       - 'scripts/run-local-resilience.sh'
       - 'scripts/verify-matching-fleet-live.sh'
       - 'scripts/archive/test-local-lifecycle-safety.sh'
+      - 'scripts/test-critical-consumer-certification-matching.sh'
+      - 'scripts/test-critical-consumer-kubernetes-config.sh'
+      - 'scripts/test-local-certification-job-supervision.sh'
+      - 'scripts/test-local-certification-trading-day.sh'
+      - 'scripts/test-local-kubernetes-dependencies.sh'
       - 'scripts/test-local-production-like.sh'
       - 'scripts/archive/test-local-registry-resource-lifecycle.sh'
       - 'scripts/test-local-image-transport.sh'
@@ -37,6 +46,9 @@ on:
       - 'scripts/test-local-resource-kind-integration.sh'
       - 'scripts/test-local-resilience.sh'
       - 'scripts/test-simplematch-kind-manager.sh'
+      - 'services/quickfix-gateway/build.gradle.kts'
+      - 'services/quickfix-gateway/src/test/java/com/simplematch/quickfixgateway/fix/QuickFixPreparedSubmissionLiveCertificationTest.java'
+      - 'docs/critical-consumer-failure-certification.md'
       - 'docs/local-registry-resource-lifecycle.md'
       - 'docs/agents/deployment-test-lessons.md'
   workflow_dispatch:
@@ -62,8 +74,17 @@ jobs:
         run: |
           bash scripts/archive/test-local-lifecycle-safety.sh
           bash scripts/archive/test-local-registry-resource-lifecycle.sh
+          bash scripts/end-to-end/critical-consumers/tests/matching-status-contract.sh
+          bash scripts/end-to-end/critical-consumers/tests/system-observation-contract.sh
+          bash scripts/end-to-end/critical-consumers/tests/deployment-contract.sh
+          bash scripts/end-to-end/critical-consumers/tests/verdict-contract.sh
+          bash scripts/end-to-end/critical-consumers/tests/admission-contract.sh
+          bash scripts/end-to-end/critical-consumers/tests/verifier-helper-contract.sh
           bash scripts/test-local-image-transport.sh
           bash scripts/test-local-image-rendering.sh
+          bash scripts/test-local-certification-job-supervision.sh
+          bash scripts/test-local-certification-trading-day.sh
+          bash scripts/test-local-kubernetes-dependencies.sh
           bash scripts/test-local-production-like.sh
           bash scripts/test-local-resource-report.sh
           bash scripts/test-local-resilience.sh

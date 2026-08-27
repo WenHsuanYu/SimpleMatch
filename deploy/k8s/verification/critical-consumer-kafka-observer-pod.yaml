@@ -1,0 +1,72 @@
+apiVersion: v1
+kind: Pod
+metadata:
+  name: critical-consumer-kafka-observer
+  labels:
+    app.kubernetes.io/name: critical-consumer-kafka-observer
+    app.kubernetes.io/component: verification
+    app.kubernetes.io/part-of: simplematch
+spec:
+  restartPolicy: Never
+  automountServiceAccountToken: false
+  enableServiceLinks: false
+  activeDeadlineSeconds: 600
+  securityContext:
+    runAsNonRoot: true
+    runAsUser: 10001
+    runAsGroup: 10001
+    fsGroup: 10001
+    seccompProfile:
+      type: RuntimeDefault
+  containers:
+    - name: observer
+      image: simplematch/risk-matching-e2e-verifier:local
+      imagePullPolicy: IfNotPresent
+      command:
+        - java
+        - -cp
+        - /app/lib/*
+        - com.simplematch.tools.riskmatchinge2e.KafkaObservationServerMain
+        - --bootstrap
+        - kafka:9092
+        - --commands-topic
+        - matching.commands
+        - --events-topic
+        - matching.events
+        - --port
+        - "8081"
+        - --query-timeout-millis
+        - "2000"
+      ports:
+        - name: observation
+          containerPort: 8081
+          protocol: TCP
+      readinessProbe:
+        httpGet:
+          path: /health
+          port: observation
+        periodSeconds: 1
+        timeoutSeconds: 1
+        failureThreshold: 30
+      securityContext:
+        allowPrivilegeEscalation: false
+        readOnlyRootFilesystem: true
+        runAsNonRoot: true
+        runAsUser: 10001
+        runAsGroup: 10001
+        capabilities:
+          drop:
+            - ALL
+      resources:
+        requests:
+          cpu: 100m
+          memory: 128Mi
+        limits:
+          cpu: "1"
+          memory: 512Mi
+      volumeMounts:
+        - name: runtime-tmp
+          mountPath: /tmp
+  volumes:
+    - name: runtime-tmp
+      emptyDir: {}

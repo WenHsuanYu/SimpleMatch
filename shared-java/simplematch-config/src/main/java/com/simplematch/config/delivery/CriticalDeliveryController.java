@@ -59,6 +59,17 @@ public final class CriticalDeliveryController {
     this.metrics = Objects.requireNonNull(metrics, "delivery metrics");
   }
 
+  /** Restores durable quarantines before the consumer begins processing records. */
+  public synchronized void restoreQuarantines(List<DeliveryPosition> positions) {
+    Objects.requireNonNull(positions, "quarantine positions");
+    for (DeliveryPosition position : positions) {
+      final DeliveryPosition safePosition =
+          Objects.requireNonNull(position, "quarantine position");
+      pausedOffsets.merge(
+          safePosition.topicPartition(), safePosition.offset(), Math::min);
+    }
+  }
+
   /** Records success and permits an offset commit only when its partition is not blocked. */
   public synchronized DeliveryDecision onSuccess(DeliveryRecord record) {
     Objects.requireNonNull(record, "delivery record");

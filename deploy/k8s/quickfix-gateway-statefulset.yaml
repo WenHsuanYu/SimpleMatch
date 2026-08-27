@@ -2,6 +2,8 @@ apiVersion: apps/v1
 kind: StatefulSet
 metadata:
   name: quickfix-gateway
+  labels:
+    app.kubernetes.io/part-of: simplematch
 spec:
   serviceName: quickfix-gateway-headless
   replicas: 1
@@ -12,6 +14,7 @@ spec:
     metadata:
       labels:
         app.kubernetes.io/name: quickfix-gateway
+        app.kubernetes.io/part-of: simplematch
     spec:
       serviceAccountName: quickfix-gateway
       terminationGracePeriodSeconds: 30

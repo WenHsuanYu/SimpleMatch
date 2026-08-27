@@ -143,11 +143,41 @@ data:
     bootstrap="${KAFKA_BOOTSTRAP_SERVERS:-kafka:9092}"
     topics_bin="${KAFKA_TOPICS_BIN:-/opt/kafka/bin/kafka-topics.sh}"
     configs_bin="${KAFKA_CONFIGS_BIN:-/opt/kafka/bin/kafka-configs.sh}"
-    attempts=0
-    while ! "$topics_bin" --bootstrap-server "$bootstrap" --list >/dev/null 2>&1; do
-      attempts=$((attempts + 1))
-      [ "$attempts" -lt 60 ] || fail "Kafka bootstrap $bootstrap did not become available"
-      sleep 5
+    admin_operation_timeout_seconds="${KAFKA_ADMIN_OPERATION_TIMEOUT_SECONDS:-15}"
+    bootstrap_retry_seconds="${KAFKA_BOOTSTRAP_RETRY_SECONDS:-90}"
+    retry_sleep_seconds=5
+
+    case "$admin_operation_timeout_seconds" in
+      ''|*[!0-9]*) fail "Kafka Admin operation timeout must be an integer" ;;
+    esac
+    case "$bootstrap_retry_seconds" in
+      ''|*[!0-9]*) fail "Kafka bootstrap retry budget must be an integer" ;;
+    esac
+    [ "$admin_operation_timeout_seconds" -gt 0 ] || fail "Kafka Admin operation timeout must be positive"
+    [ "$bootstrap_retry_seconds" -gt "$admin_operation_timeout_seconds" ] ||
+      fail "Kafka bootstrap retry budget must exceed one Admin operation timeout"
+    command -v timeout >/dev/null 2>&1 || fail "timeout is required to bound Kafka Admin operations"
+
+    run_topics() {
+      timeout --foreground "${admin_operation_timeout_seconds}s" \
+        "$topics_bin" --bootstrap-server "$bootstrap" "$@"
+    }
+
+    run_configs() {
+      timeout --foreground "${admin_operation_timeout_seconds}s" \
+        "$configs_bin" --bootstrap-server "$bootstrap" "$@"
+    }
+
+    bootstrap_deadline=$(( $(date +%s) + bootstrap_retry_seconds ))
+    while ! run_topics --list >/dev/null 2>&1; do
+      now="$(date +%s)"
+      remaining=$(( bootstrap_deadline - now ))
+      [ "$remaining" -gt "$admin_operation_timeout_seconds" ] ||
+        fail "Kafka bootstrap $bootstrap did not become available within ${bootstrap_retry_seconds}s"
+      sleep_for="$retry_sleep_seconds"
+      max_sleep=$(( remaining - admin_operation_timeout_seconds ))
+      [ "$sleep_for" -le "$max_sleep" ] || sleep_for="$max_sleep"
+      sleep "$sleep_for"
     done
 
     temporary_output="$(mktemp)"
@@ -157,24 +187,24 @@ data:
       name="$1"
       partitions="$2"
       cleanup_policy="$3"
-      if ! "$topics_bin" --bootstrap-server "$bootstrap" --describe --topic "$name" >"$temporary_output" 2>&1; then
-        "$topics_bin" --bootstrap-server "$bootstrap" --create --if-not-exists \
+      if ! run_topics --describe --topic "$name" >"$temporary_output" 2>&1; then
+        run_topics --create --if-not-exists \
           --topic "$name" \
           --partitions "$partitions" \
           --replication-factor 3 \
           --config "cleanup.policy=$cleanup_policy" \
           --config retention.ms=2592000000 \
-          --config min.insync.replicas=2
+          --config min.insync.replicas=2 || fail "cannot create topic $name"
       fi
 
-      description="$("$topics_bin" --bootstrap-server "$bootstrap" --describe --topic "$name" 2>&1)" ||
+      description="$(run_topics --describe --topic "$name" 2>&1)" ||
         fail "cannot describe topic $name"
       printf '%s\n' "$description" | grep -Fq "PartitionCount: $partitions" ||
         fail "topic $name has the wrong partition count"
       printf '%s\n' "$description" | grep -Fq 'ReplicationFactor: 3' ||
         fail "topic $name has the wrong replication factor"
 
-      topic_config="$("$configs_bin" --bootstrap-server "$bootstrap" \
+      topic_config="$(run_configs \
         --entity-type topics --entity-name "$name" --describe --all 2>&1)" ||
         fail "cannot describe configuration for topic $name"
       printf '%s\n' "$topic_config" | grep -Fq "cleanup.policy=$cleanup_policy" ||
@@ -185,11 +215,8 @@ data:
         fail "topic $name has the wrong minimum ISR"
     }
 
-    # Matching journals use delete-only retention and fifteen explicitly owned partitions.
     ensure_topic matching.commands 15 delete
     ensure_topic matching.events 15 delete
-
-    # Connect's distributed-worker state is compacted, replicated, and explicitly retained.
     ensure_topic simplematch-connect-configs 1 compact
     ensure_topic simplematch-connect-offsets 25 compact
     ensure_topic simplematch-connect-status 3 compact
@@ -315,18 +342,15 @@ spec:
                 - /opt/kafka/bin/kafka-broker-api-versions.sh
                 - --bootstrap-server
                 - 127.0.0.1:9092
-            periodSeconds: 5
-            failureThreshold: 60
-            timeoutSeconds: 5
+            periodSeconds: 10
+            failureThreshold: 30
+            timeoutSeconds: 10
           readinessProbe:
-            exec:
-              command:
-                - /opt/kafka/bin/kafka-broker-api-versions.sh
-                - --bootstrap-server
-                - 127.0.0.1:9092
-            periodSeconds: 5
+            tcpSocket:
+              port: internal
+            periodSeconds: 10
             failureThreshold: 3
-            timeoutSeconds: 5
+            timeoutSeconds: 3
           livenessProbe:
             tcpSocket:
               port: internal
@@ -398,8 +422,8 @@ metadata:
     app.kubernetes.io/component: topic-provisioning
     app.kubernetes.io/part-of: simplematch
 spec:
-  activeDeadlineSeconds: 300
-  backoffLimit: 4
+  activeDeadlineSeconds: 240
+  backoffLimit: 0
   ttlSecondsAfterFinished: 86400
   template:
     metadata:
@@ -408,7 +432,7 @@ spec:
         app.kubernetes.io/component: topic-provisioning
         app.kubernetes.io/part-of: simplematch
     spec:
-      restartPolicy: OnFailure
+      restartPolicy: Never
       nodeSelector:
         simplematch.io/node-pool: local-resilience
       securityContext:
@@ -425,6 +449,10 @@ spec:
           env:
             - name: KAFKA_BOOTSTRAP_SERVERS
               value: kafka:9092
+            - name: KAFKA_ADMIN_OPERATION_TIMEOUT_SECONDS
+              value: "15"
+            - name: KAFKA_BOOTSTRAP_RETRY_SECONDS
+              value: "90"
           resources:
             requests:
               cpu: 100m

@@ -3,6 +3,7 @@ package com.simplematch.quickfixgateway.store;
 import com.simplematch.contracts.matching.runtime.v1.FinalMatchingEventEnvelope;
 import com.simplematch.quickfixgateway.fix.FinalFixDeliveryIntent;
 import java.util.List;
+import java.util.Map;
 import org.springframework.jdbc.core.JdbcTemplate;
 
 /**
@@ -39,6 +40,11 @@ public class JdbcFinalFixDeliveryStore {
     FinalFixDeliveryProgressStore.advance(
         jdbcTemplate,
         new FinalFixDeliveryKafkaPosition(kafkaPartition, kafkaOffset, observedAtUnixMs));
+  }
+
+  /** Returns durable last-processed offsets for the final-event consumer. */
+  public Map<Integer, Long> loadLastProcessedOffsets() {
+    return FinalFixDeliveryProgressStore.loadLastProcessedOffsets(jdbcTemplate);
   }
 
   /** Returns a deterministic bounded batch of delivery intents that have not been socket-sent. */

@@ -94,6 +94,31 @@ class PersistenceMatchingEventConsumerTest {
   }
 
   @Test
+  void restoredQuarantineStopsDeliveryBeforeApplicationTransaction() throws IOException {
+    final RecordingQuarantineStore quarantines = new RecordingQuarantineStore();
+    final CriticalDeliveryController controller = controller(quarantines, 2);
+    final DeliveryPosition blocked = new DeliveryPosition("matching.events", 0, 42L);
+    controller.restoreQuarantines(List.of(blocked));
+    final PersistenceMatchingEventStatus status = new PersistenceMatchingEventStatus();
+    status.recordQuarantined(blocked);
+    final Acknowledgment acknowledgment = mock(Acknowledgment.class);
+    final Consumer<?, ?> kafkaConsumer = mockConsumer();
+    final PersistenceMatchingEventConsumer matchingConsumer =
+        new PersistenceMatchingEventConsumer(realHandler(), controller, status);
+    final TopicPartition topicPartition = new TopicPartition("matching.events", 0);
+
+    matchingConsumer.onMatchingEvent(record(EVENT_ID), acknowledgment, kafkaConsumer);
+
+    verify(kafkaConsumer).seek(topicPartition, 42L);
+    verify(kafkaConsumer).pause(List.of(topicPartition));
+    verify(acknowledgment, never()).acknowledge();
+    assertThat(count("matching_event_inbox")).isZero();
+    assertThat(count("trades")).isZero();
+    assertThat(count("order_fills")).isZero();
+    assertThat(count("matching_consumer_progress")).isZero();
+  }
+
+  @Test
   void quarantinesWhenTheKafkaKeyDisagreesWithNativePayloadIdentity() throws IOException {
     final RecordingQuarantineStore quarantines = new RecordingQuarantineStore();
     final Acknowledgment acknowledgment = mock(Acknowledgment.class);
