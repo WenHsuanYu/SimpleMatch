@@ -67,3 +67,31 @@ tasks.named("test") {
 application {
     mainClass.set("com.simplematch.tools.riskmatchinge2e.RiskMatchingE2eVerifierMain")
 }
+
+tasks.register<JavaExec>("observeMarketDataSnapshot") {
+    group = "verification"
+    description = "Observes one deployed market-data snapshot through gRPC."
+    classpath = sourceSets.main.get().runtimeClasspath
+    mainClass.set("com.simplematch.tools.riskmatchinge2e.MarketDataSnapshotObservationMain")
+    doFirst {
+        val port = System.getenv("SIMPLEMATCH_MARKET_DATA_PORT")
+            ?: error("SIMPLEMATCH_MARKET_DATA_PORT is required")
+        val venueMic = System.getenv("SIMPLEMATCH_MARKET_DATA_VENUE_MIC")
+            ?: error("SIMPLEMATCH_MARKET_DATA_VENUE_MIC is required")
+        val symbol = System.getenv("SIMPLEMATCH_MARKET_DATA_SYMBOL")
+            ?: error("SIMPLEMATCH_MARKET_DATA_SYMBOL is required")
+        val evidence = System.getenv("SIMPLEMATCH_MARKET_DATA_EVIDENCE")
+            ?: error("SIMPLEMATCH_MARKET_DATA_EVIDENCE is required")
+        args(
+            "--host", System.getenv("SIMPLEMATCH_MARKET_DATA_HOST") ?: "127.0.0.1",
+            "--port", port,
+            "--venue-mic", venueMic,
+            "--symbol", symbol,
+            "--timeout-seconds", System.getenv("SIMPLEMATCH_MARKET_DATA_TIMEOUT_SECONDS") ?: "60",
+            "--evidence", evidence
+        )
+        System.getenv("SIMPLEMATCH_MARKET_DATA_READY_FILE")?.let {
+            args("--ready-file", it)
+        }
+    }
+}

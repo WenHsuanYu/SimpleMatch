@@ -43,3 +43,17 @@ For a controlled replay:
 
 The endpoint response proves only that the local reset transaction completed. Kafka offset reset,
 source retention, replay boundary, and final convergence remain operator-owned evidence.
+
+The repository-owned completion gate is
+[`docs/runtime-market-data-projection-certification.md`](../../../docs/runtime-market-data-projection-certification.md).
+Run it only against a lifecycle-labelled disposable namespace:
+
+```bash
+bash scripts/run-market-data-certification.sh \
+  --namespace "${SIMPLEMATCH_CERTIFICATION_NAMESPACE}" \
+  --evidence-dir "${SIMPLEMATCH_MARKET_DATA_EVIDENCE_DIR}"
+```
+
+The runner temporarily reduces the projection to one owner so the authenticated reset stops the
+only active group member before offset reset. It restores the original replica count, replay
+configuration, and Redis availability before publishing a passing verdict.
