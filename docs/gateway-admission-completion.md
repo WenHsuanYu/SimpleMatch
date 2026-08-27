@@ -101,6 +101,36 @@ Focused tests must cover successful close, retry after a temporary Risk failure,
 automatic session-end close, restart after session end, malformed session identity, and retained
 admission behavior in every gate state.
 
+## Deployment close certification
+
+`scripts/end-to-end/critical-consumers/run-gateway-close-certification.sh` is a terminal capability
+runner over the existing critical-consumer verification runtime. It does not provide production
+observation adapters and does not duplicate Kubernetes, Kafka, or PostgreSQL access code. It reuses
+the established observation collector, Gateway HTTP adapter, FIX submission client, Kafka position
+collector, Matching committed-position collector, and critical-consumer progress collector.
+
+The runner requires an already bootstrapped, lifecycle-labeled retained namespace with a clean
+baseline. It performs the following observable sequence:
+
+1. Collect three fresh normalized observations and explicitly open Gateway admission.
+2. Submit one real FIX limit order and wait until Persistence reports the order as `RESTING`.
+3. Snapshot all 15 `matching.commands` positions and invoke authenticated `close-day`.
+4. Require every command partition to advance by exactly one record.
+5. Require every Matching consumer to commit through its resulting command position.
+6. Require all 15 Matching runtime reports to reach `CLOSED` with no pending input or publication.
+7. Snapshot the resulting `matching.events` log end and require Persistence, Account, and QuickFIX
+   consumer progress to catch up without quarantine.
+8. Require the previously resting order to become `EXPIRED`.
+
+This is intentionally the last capability executed against that retained trading session. A
+successful close makes the Gateway and Matching session terminal for further admission work. The
+certification does not require exactly-once network delivery to a disconnected FIX client; it proves
+that the QuickFIX critical consumer durably consumes through the terminal event position.
+
+The pure position-comparison rules used by the runner are fixture-tested by
+`scripts/end-to-end/critical-consumers/tests/gateway-close-contract.sh` and are included in the local
+resource lifecycle CI contract job.
+
 ## Completion gate
 
 Issue #135 can close when all of the following are true:
