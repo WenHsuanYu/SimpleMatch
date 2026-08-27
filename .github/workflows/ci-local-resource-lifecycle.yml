@@ -8,6 +8,7 @@ on:
       - 'deploy/k8s/**'
       - 'deploy/docker/Dockerfile.kind-normalized'
       - 'scripts/end-to-end/critical-consumers/**'
+      - 'scripts/end-to-end/market-data/**'
       - 'scripts/build-local-images.sh'
       - 'scripts/lib/local-common.sh'
       - 'scripts/lib/local-kind.sh'
@@ -30,6 +31,7 @@ on:
       - 'scripts/run-critical-consumer-restart-certification.sh'
       - 'scripts/run-critical-consumer-failure-certification.sh'
       - 'scripts/run-local-production-like-certification.sh'
+      - 'scripts/run-market-data-certification.sh'
       - 'scripts/run-local-resilience.sh'
       - 'scripts/verify-matching-fleet-live.sh'
       - 'scripts/archive/test-local-lifecycle-safety.sh'
@@ -80,6 +82,7 @@ jobs:
           bash scripts/end-to-end/critical-consumers/tests/verdict-contract.sh
           bash scripts/end-to-end/critical-consumers/tests/admission-contract.sh
           bash scripts/end-to-end/critical-consumers/tests/verifier-helper-contract.sh
+          bash scripts/end-to-end/market-data/tests/verdict-contract.sh
           bash scripts/test-local-image-transport.sh
           bash scripts/test-local-image-rendering.sh
           bash scripts/test-local-certification-job-supervision.sh
