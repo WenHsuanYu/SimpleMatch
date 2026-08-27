@@ -35,8 +35,20 @@ message GetAdmissionOutcomeResponse {
   string reason_detail = 6;
 }
 
+message CloseTradingSessionRequest {
+  string trading_session_id = 1;
+}
+
+message CloseTradingSessionResponse {
+  uint32 newly_inserted_barriers = 1;
+}
+
 service OrderAdmissionService {
   rpc SubmitNewOrder(simplematch.orders.v2.NewOrderCommand) returns (OrderAdmissionResponse);
   rpc SubmitCancel(simplematch.orders.v2.CancelOrderCommand) returns (OrderAdmissionResponse);
   rpc GetAdmissionOutcome(GetAdmissionOutcomeRequest) returns (GetAdmissionOutcomeResponse);
+}
+
+service TradingSessionOperationsService {
+  rpc CloseTradingSession(CloseTradingSessionRequest) returns (CloseTradingSessionResponse);
 }

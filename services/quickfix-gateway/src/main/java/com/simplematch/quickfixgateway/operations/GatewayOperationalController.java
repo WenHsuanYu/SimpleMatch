@@ -3,7 +3,6 @@ package com.simplematch.quickfixgateway.operations;
 import com.simplematch.quickfixgateway.fix.GatewayAdmissionGate;
 import java.time.Clock;
 import java.time.Instant;
-import org.springframework.transaction.annotation.Transactional;
 
 /**
  * Application authority for one Gateway's trading-day admission operations.
@@ -11,6 +10,10 @@ import org.springframework.transaction.annotation.Transactional;
  * <p>It deliberately accepts only {@link TradingSystemObservation}; infrastructure adapters own
  * Kubernetes, Kafka, and service-specific client calls. A safe recovery never opens the gate by
  * itself: only {@link #open(String, String)} may do that after fresh ready checks.
+ *
+ * <p>The admission gate is process-local state and the audit store is durable evidence rather than
+ * authoritative trading state, so this controller does not create a database transaction around
+ * operational decisions or remote Risk calls.
  */
 public class GatewayOperationalController {
   private final GatewayAdmissionGate admissionGate;
@@ -26,12 +29,15 @@ public class GatewayOperationalController {
       TradingSystemStatusEvaluator statusEvaluator,
       GatewayOperationalPolicy policy,
       GatewayOperationAuditStore auditStore,
+      TradingSessionClosePort tradingSessionClosePort,
       Clock clock) {
     this.admissionGate = admissionGate;
     this.statusEvaluator = statusEvaluator;
     this.operationalState = new GatewayOperationalState();
     this.auditRecorder = new GatewayOperationAuditRecorder(auditStore);
-    this.automation = new GatewayAdmissionAutomation(admissionGate, policy, auditRecorder);
+    this.automation =
+        new GatewayAdmissionAutomation(
+            admissionGate, policy, auditRecorder, tradingSessionClosePort);
     this.clock = clock;
   }
 
@@ -40,7 +46,6 @@ public class GatewayOperationalController {
    *
    * @return the domain readiness decision produced from this fresh observation
    */
-  @Transactional
   public synchronized TradingSystemStatus report(TradingSystemObservation observation) {
     final Instant now = clock.instant();
     final TradingSystemStatus status = operationalState.report(observation, statusEvaluator, now);
@@ -53,7 +58,6 @@ public class GatewayOperationalController {
    *
    * @return the current domain readiness decision after automatic protection is applied
    */
-  @Transactional
   public synchronized TradingSystemStatus monitor() {
     final Instant now = clock.instant();
     final TradingSystemStatus status = operationalState.current(statusEvaluator, now);
@@ -62,7 +66,6 @@ public class GatewayOperationalController {
   }
 
   /** Returns the current readiness status without creating an audit record. */
-  @Transactional
   public synchronized GatewayOperationResult status() {
     final Instant now = clock.instant();
     final TradingSystemStatus status = operationalState.current(statusEvaluator, now);
@@ -72,7 +75,6 @@ public class GatewayOperationalController {
   }
 
   /** Attempts an explicit operator open after the configured number of fresh ready checks. */
-  @Transactional
   public synchronized GatewayOperationResult open(String actor, String reason) {
     final GatewayOperationalCommand command =
         new GatewayOperationalCommand(GatewayOperation.OPEN, actor, reason);
@@ -98,7 +100,6 @@ public class GatewayOperationalController {
   }
 
   /** Pauses only new orders while retaining cancellation admission in an active session. */
-  @Transactional
   public synchronized GatewayOperationResult pauseNewOrders(String actor, String reason) {
     final GatewayOperationalCommand command =
         new GatewayOperationalCommand(GatewayOperation.PAUSE_NEW_ORDERS, actor, reason);
@@ -123,7 +124,6 @@ public class GatewayOperationalController {
    * Interrupts new-order and cancellation admission because an operator has found an integrity
    * risk.
    */
-  @Transactional
   public synchronized GatewayOperationResult interruptMarket(String actor, String reason) {
     final GatewayOperationalCommand command =
         new GatewayOperationalCommand(GatewayOperation.INTERRUPT_MARKET, actor, reason);
@@ -143,14 +143,13 @@ public class GatewayOperationalController {
         now);
   }
 
-  /** Closes the current trading day so this process cannot reopen it. */
-  @Transactional
+  /** Closes admission and starts the idempotent Risk-owned trading-session close workflow. */
   public synchronized GatewayOperationResult closeDay(String actor, String reason) {
     final GatewayOperationalCommand command =
         new GatewayOperationalCommand(GatewayOperation.CLOSE_DAY, actor, reason);
     final Instant now = clock.instant();
     final TradingSystemStatus status = operationalState.current(statusEvaluator, now);
-    admissionGate.closeDay();
+    automation.closeDay(status);
     auditRecorder.record(command, true, admissionGate.state(), status, now);
     return new GatewayOperationResult(
         GatewayOperation.CLOSE_DAY, true, admissionGate.state(), "MARKET_CLOSED", status, now);
