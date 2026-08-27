@@ -133,7 +133,8 @@ require_value(
   "Kafka topic provisioning must use the dedicated component label"
 )
 require_value(
-  job.dig("spec", "template", "spec", "restartPolicy") == "OnFailure" &&
+  job.dig("spec", "backoffLimit") == 0 &&
+    job.dig("spec", "template", "spec", "restartPolicy") == "Never" &&
     job_container.dig("env", 0, "name") == "KAFKA_BOOTSTRAP_SERVERS" &&
     job_container.dig("env", 0, "value") == "kafka:9092",
   "Kafka topic provisioning must retry against the local bootstrap Service"
@@ -165,6 +166,7 @@ end
 %w[
   matching.commands
   matching.events
+  marketdata.events
   simplematch-connect-configs
   simplematch-connect-offsets
   simplematch-connect-status
@@ -183,6 +185,7 @@ require_value(
 %w[
   ensure_topic matching.commands 15 delete
   ensure_topic matching.events 15 delete
+  ensure_topic marketdata.events 15 delete
   ensure_topic simplematch-connect-configs 1 compact
   ensure_topic simplematch-connect-offsets 25 compact
   ensure_topic simplematch-connect-status 3 compact
