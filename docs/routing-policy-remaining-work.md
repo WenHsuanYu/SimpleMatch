@@ -43,7 +43,7 @@ and must not be interpreted as a requirement to push images or obtain external c
 | Class | Current entries | Meaning |
 | --- | --- | --- |
 | Local gate or operational verification pending | RM-1, ME-3, PS-1, AC-1, FG-1, QS-1 | The primary remaining work is to run the retained implementation through the local production-like dependency, restart, replay, and end-to-end scenarios. PS-1, AC-1, and FG-1 also retain their explicitly named status-adapter work. |
-| Implementation or capability-specific local verification pending | MD-1, GO-1, PD-1 | The repository implementation and structural gates now exist, and the complete local gate has passed; capability-specific subscriber, collector, connector, security, and outage evidence is still required. |
+| Implementation or capability-specific local verification pending | GO-1, PD-1 | The repository implementation and structural gates now exist, and the complete local gate has passed; capability-specific collector, connector, security, and outage evidence is still required. |
 | Compatibility or legacy cleanup | MR-5, CL-1 | Superseded runtime paths and migration-only seams still require source/configuration removal; local certification alone cannot close them. |
 
 ## Latest verification evidence (2026-08-16)
@@ -186,7 +186,7 @@ and must not be interpreted as a requirement to push images or obtain external c
 | Final Account reservation v2 RPC | `COMPLETED` | [#139](https://github.com/WenHsuanYu/SimpleMatch/issues/139) |
 | Account DataSource Boot auto-configuration | `COMPLETED` | [#140](https://github.com/WenHsuanYu/SimpleMatch/issues/140) |
 | Durable QuickFIX execution delivery | `PARTIAL` | [#132](https://github.com/WenHsuanYu/SimpleMatch/issues/132) |
-| Runtime market-data projection | `PARTIAL` | [#133](https://github.com/WenHsuanYu/SimpleMatch/issues/133) |
+| Runtime market-data projection | `COMPLETED` | [#133](https://github.com/WenHsuanYu/SimpleMatch/issues/133) |
 | Required query service and Redis read models | `PARTIAL` | [#137](https://github.com/WenHsuanYu/SimpleMatch/issues/137) |
 | Gateway operational admission control | `PARTIAL` | [#135](https://github.com/WenHsuanYu/SimpleMatch/issues/135) |
 | Matching StatefulSet ownership and fencing | `COMPLETED` | [#134](https://github.com/WenHsuanYu/SimpleMatch/issues/134) |
@@ -495,7 +495,7 @@ and must not be interpreted as a requirement to push images or obtain external c
 
 ### MD-1: Build the non-critical market-data projection
 
-- **Current status:** `PARTIAL`
+- **Current status:** `COMPLETED`
 - **Target behavior:** A separate runtime projection consumes `matching.events` and builds
   rebuildable last-trade and top-five order-book views. It is not the offline Market Reference
   builder.
@@ -506,12 +506,15 @@ and must not be interpreted as a requirement to push images or obtain external c
   gRPC subscription with venue-qualified and symbol-only filters. A protected projection replay
   reset endpoint and Kubernetes base/overlay resources are now present. Focused projection and
   streamer tests pass. The repository-local Compose environment includes Redis with AOF persistence,
-  and the production profile enables the projection and Redis settings.
-- **Missing behavior:** A real Kafka/PostgreSQL/Redis integration, gRPC subscriber smoke, and
-  replay/rebuild run still need local production-like certification. The authorized private
-  notification stream remains a separate compatibility boundary; only the public snapshot stream
-  is implemented in this slice. Projection failure remains isolated from trading admission by
-  design.
+  and the production profile enables the projection and Redis settings. The retained local
+  production-like run for revision `10ba747c1ce8abd474468cd1b77042ebd1eaf505` and projection image
+  digest `sha256:f537b22e2ea35302230ecd4e5a84279cd0ff297e7df409880e409a029d7e624c`
+  passed deterministic replay through the public gRPC subscription, PostgreSQL durability during
+  Redis outage, Redis repair, restoration, 15-partition Matching isolation, and critical-consumer
+  state isolation.
+- **Intentionally excluded:** The authorized private notification stream remains a separate
+  compatibility boundary; only the public snapshot stream is in this entry. The local result does
+  not claim external production promotion or exactly-once network delivery.
 - **Acceptance criteria:** Projection failure does not affect Matching, permanent trade storage,
   Account, QuickFIX, or admission. Delayed retry/DLQ is allowed because the view can be rebuilt.
 - **Blocking dependencies:** ME-3.

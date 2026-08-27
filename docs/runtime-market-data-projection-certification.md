@@ -88,3 +88,13 @@ commit pass. Repository readiness without an executed deployment run is partial 
 certification. The local production-like result proves the retained repository deployment shape; it
 does not claim external production promotion, cross-region availability, or exactly-once network
 delivery.
+
+## Latest retained result
+
+The local production-like run on 2026-08-27 passed for source revision
+`10ba747c1ce8abd474468cd1b77042ebd1eaf505` and immutable projection image digest
+`sha256:f537b22e2ea35302230ecd4e5a84279cd0ff297e7df409880e409a029d7e624c`. The
+retained verdict passed deterministic replay, Redis repair, projection and streamer restoration,
+15-partition Matching isolation, and critical-consumer state isolation. The runner also restored
+the projection to two replicas, Redis to one replica, and removed the temporary authenticated
+replay configuration.
