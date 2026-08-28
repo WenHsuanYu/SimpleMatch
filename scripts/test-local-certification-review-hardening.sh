@@ -91,6 +91,11 @@ SIMPLEMATCH_CERTIFICATION_PHASE_ORDER=("${original_registration_order[@]}")
 executed_phases=()
 record_phase() {
   executed_phases+=("$1")
+  # A real dispatcher can invoke a command that consumes inherited stdin. The
+  # planner must keep traversal independent from that command input.
+  if [[ "$1" == source-preflight ]]; then
+    while IFS= read -r _; do :; done || true
+  fi
 }
 certification_plan_execute record_phase || fail 'planner traversal failed'
 assert_eq "$(printf '%s\n' "${ordered_required[@]}" | sort)" \

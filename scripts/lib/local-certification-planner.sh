@@ -131,6 +131,7 @@ _certification_plan_record_explicit_skips() {
 certification_plan_execute() {
   local dispatcher="$1"
   local phase_id required_output
+  local -a required_phases=()
 
   declare -F "$dispatcher" >/dev/null 2>&1 || {
     printf 'certification phase dispatcher does not exist: %s\n' \
@@ -138,10 +139,16 @@ certification_plan_execute() {
     return 1
   }
   required_output="$(certification_required_phase_ids)" || return 1
-  while IFS= read -r phase_id; do
+  # Materialize the graph order before dispatching any phase.  A dispatcher may
+  # invoke a command that inherits stdin (for example, docker compose exec -T
+  # without an explicit input redirect); iterating directly over a here-string
+  # would let that command consume the remaining phase IDs and silently truncate
+  # the certification run.
+  mapfile -t required_phases <<<"$required_output"
+  for phase_id in "${required_phases[@]}"; do
     [[ -n "$phase_id" ]] || continue
     "$dispatcher" "$phase_id" || return 1
-  done <<<"$required_output"
+  done
 }
 
 _certification_plan_dependencies_ready() {
