@@ -183,11 +183,11 @@ docker() {
 }
 
 image_tag=local
-certification_phase_cached_outputs_valid \
+certification_image_phase_cached_outputs_valid \
   local-image-build/quickfix-gateway "$image_evidence" || \
   fail 'matching image tag and immutable identity were rejected'
 image_tag=other
-if certification_phase_cached_outputs_valid \
+if certification_image_phase_cached_outputs_valid \
     local-image-build/quickfix-gateway "$image_evidence"; then
   fail 'cached image from a different requested tag was accepted'
 fi
@@ -228,6 +228,8 @@ fi
   namespace=simplematch-local-cert-retained-test
   verifier_reference="localhost:5001/risk-matching-e2e-verifier@sha256:ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff"
   export SIMPLEMATCH_CERTIFICATION_CACHE_DIR="$retained_cache"
+  zero_timing="$(certification_execution_timing_json \
+    2026-08-28T00:00:00Z 2026-08-28T00:00:00Z 0)" || return 1
 
   certification_required_phase_ids() {
     printf '%s\n' source-preflight static-kubernetes-overlays
@@ -254,8 +256,7 @@ fi
     IFS='|' read -r decision input _evidence reason <<<"$plan"
     [[ "$decision" == EXECUTE ]] || return 1
     certification_plan_record_execution \
-      "$phase_id" "$input" "$reason" \
-      2026-08-28T00:00:00Z 2026-08-28T00:00:00Z 0
+      "$phase_id" "$input" "$reason" "$zero_timing"
   }
 
   evidence_dir="$cold_run"
@@ -275,8 +276,7 @@ fi
   [[ "$warm_decision" == REUSE ]] || return 1
   certification_plan_record_reuse \
     static-kubernetes-overlays "$warm_decision" "$warm_input" \
-    "$warm_evidence" "$warm_reason" \
-    2026-08-28T00:00:00Z 2026-08-28T00:00:00Z 0 || return 1
+    "$warm_evidence" "$warm_reason" "$zero_timing" || return 1
   certification_plan_finalize || return 1
 
   current_revision="$(git -C "$repo_root" rev-parse HEAD)" || return 1

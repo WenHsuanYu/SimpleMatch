@@ -1,7 +1,8 @@
 #!/usr/bin/env bash
 
 # Sourced by run-local-production-like-certification.sh. This file owns
-# certification bootstrap/configuration but is not an independent entry point.
+# certification bootstrap/configuration but does not execute certification
+# phases and is not an independent entry point.
 
 while [[ $# -gt 0 ]]; do
   case "$1" in
@@ -87,7 +88,8 @@ else
 fi
 compose_command=("${compose_prefix[@]}" --project-name "$compose_project" --file "$compose_file")
 
-run_id="$(date -u +%Y%m%d-%H%M%S)-$$"
+generated_run_id="$(date -u +%Y%m%d-%H%M%S)-$$"
+run_id="$generated_run_id"
 namespace="${SIMPLEMATCH_CERTIFICATION_NAMESPACE:-simplematch-local-cert-${run_id}}"
 phase_marker_directory="$evidence_dir/phase-markers"
 run_context_file="$evidence_dir/run-context"
@@ -112,8 +114,8 @@ source_signature="$({
 } | sha256sum | awk '{print $1}')"
 
 _certification_run_context() {
-  printf 'namespace=%s\ncluster=%s\ntrading_day=%s\nimage_tag=%s\nimage_transport=%s\nsource_signature=%s\nskip_build=%s\nskip_compose=%s\nskip_kubernetes=%s\nmatching_fleet_only=%s\n' \
-    "$namespace" "$kind_cluster" "$certification_trading_day" \
+  printf 'run_id=%s\nnamespace=%s\ncluster=%s\ntrading_day=%s\nimage_tag=%s\nimage_transport=%s\nsource_signature=%s\nskip_build=%s\nskip_compose=%s\nskip_kubernetes=%s\nmatching_fleet_only=%s\n' \
+    "$run_id" "$namespace" "$kind_cluster" "$certification_trading_day" \
     "$image_tag" "$image_transport" "$source_signature" \
     "$skip_build" "$skip_compose" "$skip_kubernetes" "$matching_fleet_only"
 }
@@ -124,16 +126,26 @@ if [[ "$resume" == true ]]; then
   [[ -n "${SIMPLEMATCH_CERTIFICATION_NAMESPACE:-}" ]] || die \
     '--resume requires SIMPLEMATCH_CERTIFICATION_NAMESPACE.'
   [[ -f "$run_context_file" ]] || die "Resume context is missing: $run_context_file"
+  retained_run_id="$(awk -F= '$1 == "run_id" { print substr($0, index($0, "=") + 1); exit }' \
+    "$run_context_file")"
+  [[ "$retained_run_id" =~ ^[0-9]{8}-[0-9]{6}-[0-9]+$ ]] || die \
+    "Resume context has an invalid run identity: ${retained_run_id:-<missing>}"
+  run_id="$retained_run_id"
   expected_context="$(_certification_run_context)"
   actual_context="$(cat "$run_context_file")"
   [[ "$actual_context" == "$expected_context" ]] || die \
-    'Resume context does not match the current namespace, cluster, trading day, image identity, source, or proof profile.'
+    'Resume context does not match the current run identity, namespace, cluster, trading day, image identity, source, or proof profile.'
   if [[ "$dry_run" == false ]]; then
     kubectl --context "$kind_context" get namespace "$namespace" >/dev/null 2>&1 || die \
       "Resume namespace does not exist: $namespace"
     simplematch_kind_namespace_is_disposable \
       "$kind_context" "$namespace" local-production-like-certification || die \
       "Resume namespace is not owned as a disposable local certification namespace: $namespace"
+    namespace_run_id="$(kubectl --context "$kind_context" get namespace "$namespace" \
+      -o jsonpath='{.metadata.labels.simplematch\.io/run-id}')" || die \
+      "Unable to read resume namespace run identity: $namespace"
+    [[ "$namespace_run_id" == "$run_id" ]] || die \
+      "Resume namespace belongs to run ${namespace_run_id:-<missing>}, expected $run_id"
   fi
   kubernetes_namespace_created=true
 else
@@ -168,17 +180,3 @@ fi
 
 certification_plan_initialize "$evidence_dir" || die \
   'Certification phase graph or plan initialization failed.'
-run_logged source-preflight simplematch_certification_source_revision "$repo_root"
-run_logged static-kubernetes-overlays bash "$repo_root/scripts/test-kubernetes-overlays.sh"
-run_logged static-kubernetes-dependencies bash "$repo_root/scripts/test-local-kubernetes-dependencies.sh"
-run_logged static-matching-manifests bash "$repo_root/scripts/test-matching-kubernetes-manifests.sh"
-run_logged static-matching-profile bash "$repo_root/scripts/test-matching-topic-profile.sh"
-run_logged static-flyway-services bash "$repo_root/scripts/test-flyway-services.sh"
-run_logged compose-config "${compose_command[@]}" config
-run_logged local-image-inventory bash "$repo_root/scripts/build-local-images.sh" --list
-
-if [[ "$skip_build" == false ]]; then
-  certification_build_local_images || die 'Local image preparation failed.'
-else
-  printf '%s\n' 'Local image build requirement explicitly skipped.'
-fi

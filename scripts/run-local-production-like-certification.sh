@@ -57,18 +57,19 @@ matching_image_reference=""
 compose_prefix=()
 compose_command=()
 
-# Policy and evidence modules are sourced before execution adapters so every
-# phase crosses one planner/execution seam instead of implementing cache rules
-# at individual call sites.
+# Policy modules load before concrete artifact adapters. The generic artifact
+# seam is loaded after image and Kafka adapters so Planner calls one interface
+# without either adapter depending on the other.
 for certification_lib in \
   local-certification-phase-graph.sh \
   local-certification-fingerprint.sh \
   local-certification-evidence.sh \
   local-certification-planner.sh \
   local-certification-images.sh \
+  local-certification-kafka.sh \
+  local-certification-artifacts.sh \
   local-certification-framework.sh \
   local-certification-job.sh \
-  local-certification-kafka.sh \
   local-certification-kubernetes.sh \
   local-certification-connect.sh \
   local-certification-workloads.sh; do
@@ -77,19 +78,13 @@ for certification_lib in \
 done
 unset certification_lib
 
-# Bootstrap validates configuration and static prerequisites; run owns phase ordering.
+# Bootstrap validates configuration and runtime preconditions only. The run
+# module maps phase IDs to adapters and the planner owns dependency order.
 # shellcheck source=/dev/null
 source "$script_dir/lib/local-certification-bootstrap.sh"
 export SIMPLEMATCH_LOCAL_IMAGE_TRANSPORT="$image_transport"
 # shellcheck source=/dev/null
 source "$script_dir/lib/local-certification-run.sh"
-
-if [[ "$skip_kubernetes" == false && "$matching_fleet_only" == false ]]; then
-  run_logged retained-run-provenance \
-    simplematch_record_certification_provenance \
-    "$repo_root" "$evidence_dir" "$namespace" \
-    "$image_transport" "$image_tag" "$image_lock"
-fi
 
 certification_plan_finalize || die \
   'Certification plan does not have complete successful phase evidence.'

@@ -48,16 +48,14 @@ _certification_now_millis() {
   date +%s%3N
 }
 
-_certification_resume_marker_valid() {
-  local phase="$1"
-  local marker_path="$2"
-  local phase_signature="$3"
-  local required_output="${4:-}"
+declare -gA SIMPLEMATCH_CERTIFICATION_ACTIVE_PHASE=()
 
-  [[ "$resume" == true && -f "$marker_path" ]] || return 1
-  [[ "$(<"$marker_path")" == "$phase_signature" ]] || return 1
-  certification_phase_resume_result_valid "$phase" || return 1
-  [[ -z "$required_output" || -f "$required_output" ]]
+_certification_phase_signature() {
+  local phase="$1"
+  local required_output="$2"
+  shift 2
+  printf '%s\0' "$source_signature" "$phase" "$required_output" "$@" |
+    sha256sum | awk '{print $1}'
 }
 
 _certification_mark_phase_complete() {
@@ -68,42 +66,164 @@ _certification_mark_phase_complete() {
   printf '%s\n' "$phase_signature" >"$marker_path"
 }
 
-run_logged() {
-  local phase="$1"
-  shift
-  local log_path="$evidence_dir/logs/${phase}.log"
-  local marker_path="$phase_marker_directory/${phase}.ok"
-  local phase_signature plan decision input_fingerprint evidence_digest reason
-  local started_at_utc completed_at_utc started_millis completed_millis duration_millis
-  local command_status
+_certification_mark_phase_started_if_needed() {
+  local started_marker
 
-  phase_signature="$(printf '%s\0' "$source_signature" "$phase" "$@" | sha256sum | awk '{print $1}')"
-  if _certification_resume_marker_valid "$phase" "$marker_path" "$phase_signature"; then
-    completed_phases+=("$phase (same-run resume)")
-    printf 'RESUME %-30s (%s)\n' "$phase" "$marker_path"
+  [[ "${SIMPLEMATCH_CERTIFICATION_ACTIVE_PHASE[resumeMode]}" == FORBID ]] || \
     return 0
+  started_marker="${SIMPLEMATCH_CERTIFICATION_ACTIVE_PHASE[startedMarker]}"
+  mkdir -p "$(dirname -- "$started_marker")" || return 1
+  printf '%s\n' "${SIMPLEMATCH_CERTIFICATION_ACTIVE_PHASE[signature]}" \
+    >"$started_marker"
+}
+
+_certification_clear_phase_started_if_needed() {
+  [[ "${SIMPLEMATCH_CERTIFICATION_ACTIVE_PHASE[resumeMode]}" == FORBID ]] || \
+    return 0
+  rm -f -- "${SIMPLEMATCH_CERTIFICATION_ACTIVE_PHASE[startedMarker]}"
+}
+
+_certification_prepare_phase_context() {
+  local phase="$1"
+  local required_output="$2"
+  shift 2
+  local marker_path started_marker phase_signature resume_decision resume_mode plan
+
+  SIMPLEMATCH_CERTIFICATION_ACTIVE_PHASE=()
+  marker_path="$phase_marker_directory/${phase}.ok"
+  started_marker="$phase_marker_directory/${phase}.started"
+  phase_signature="$(_certification_phase_signature \
+    "$phase" "$required_output" "$@")" || return 1
+  resume_mode="$(certification_phase_resume_mode "$phase")" || return 1
+  SIMPLEMATCH_CERTIFICATION_ACTIVE_PHASE[phase]="$phase"
+  SIMPLEMATCH_CERTIFICATION_ACTIVE_PHASE[markerPath]="$marker_path"
+  SIMPLEMATCH_CERTIFICATION_ACTIVE_PHASE[startedMarker]="$started_marker"
+  SIMPLEMATCH_CERTIFICATION_ACTIVE_PHASE[signature]="$phase_signature"
+  SIMPLEMATCH_CERTIFICATION_ACTIVE_PHASE[requiredOutput]="$required_output"
+  SIMPLEMATCH_CERTIFICATION_ACTIVE_PHASE[resumeMode]="$resume_mode"
+
+  if [[ "$resume" == true && "$resume_mode" == FORBID && \
+      -f "$started_marker" ]]; then
+    printf 'same-run resume cannot determine whether non-replayable phase %s already produced side effects; start a fresh production-like run\n' \
+      "$phase" >&2
+    return 2
+  fi
+
+  if [[ "$resume" == true && -f "$marker_path" && \
+      "$(<"$marker_path")" == "$phase_signature" ]]; then
+    resume_decision="$(certification_phase_resume_decision \
+      "$phase" "$required_output")" || return 1
+    case "$resume_decision" in
+      RESUME)
+        SIMPLEMATCH_CERTIFICATION_ACTIVE_PHASE[action]=RESUME
+        return 0
+        ;;
+      REEXECUTE)
+        ;;
+      REJECT)
+        printf 'same-run resume cannot safely accept completed phase %s; start a fresh production-like run\n' \
+          "$phase" >&2
+        return 2
+        ;;
+      *)
+        printf 'unsupported same-run resume decision for %s: %s\n' \
+          "$phase" "$resume_decision" >&2
+        return 1
+        ;;
+    esac
   fi
 
   check_certification_deadline
   if [[ "$dry_run" == true ]]; then
     certification_plan_phase "$phase" "$@" >/dev/null || return 1
-    print_command "$@"
+    SIMPLEMATCH_CERTIFICATION_ACTIVE_PHASE[action]=DRY_RUN
     return 0
   fi
 
-  started_at_utc="$(_certification_now_utc)"
-  started_millis="$(_certification_now_millis)"
+  SIMPLEMATCH_CERTIFICATION_ACTIVE_PHASE[startedAtUtc]="$(_certification_now_utc)"
+  SIMPLEMATCH_CERTIFICATION_ACTIVE_PHASE[startedMillis]="$(_certification_now_millis)"
   plan="$(certification_plan_phase "$phase" "$@")" || return 1
-  IFS='|' read -r decision input_fingerprint evidence_digest reason <<<"$plan"
+  IFS='|' read -r \
+    SIMPLEMATCH_CERTIFICATION_ACTIVE_PHASE[decision] \
+    SIMPLEMATCH_CERTIFICATION_ACTIVE_PHASE[inputFingerprint] \
+    SIMPLEMATCH_CERTIFICATION_ACTIVE_PHASE[evidenceDigest] \
+    SIMPLEMATCH_CERTIFICATION_ACTIVE_PHASE[reason] <<<"$plan"
+  SIMPLEMATCH_CERTIFICATION_ACTIVE_PHASE[action]=PLANNED
+}
 
+_certification_finish_phase_context() {
+  local completed_millis duration_millis execution_json
+
+  SIMPLEMATCH_CERTIFICATION_ACTIVE_PHASE[completedAtUtc]="$(_certification_now_utc)"
+  completed_millis="$(_certification_now_millis)"
+  duration_millis=$((
+    completed_millis - SIMPLEMATCH_CERTIFICATION_ACTIVE_PHASE[startedMillis]
+  ))
+  SIMPLEMATCH_CERTIFICATION_ACTIVE_PHASE[durationMillis]="$duration_millis"
+  execution_json="$(certification_execution_timing_json \
+    "${SIMPLEMATCH_CERTIFICATION_ACTIVE_PHASE[startedAtUtc]}" \
+    "${SIMPLEMATCH_CERTIFICATION_ACTIVE_PHASE[completedAtUtc]}" \
+    "$duration_millis")" || return 1
+  SIMPLEMATCH_CERTIFICATION_ACTIVE_PHASE[executionJson]="$execution_json"
+}
+
+_certification_record_execution_success() {
+  certification_plan_record_execution \
+    "${SIMPLEMATCH_CERTIFICATION_ACTIVE_PHASE[phase]}" \
+    "${SIMPLEMATCH_CERTIFICATION_ACTIVE_PHASE[inputFingerprint]}" \
+    "${SIMPLEMATCH_CERTIFICATION_ACTIVE_PHASE[reason]}" \
+    "${SIMPLEMATCH_CERTIFICATION_ACTIVE_PHASE[executionJson]}" \
+    "$@" || return 1
+  _certification_mark_phase_complete \
+    "${SIMPLEMATCH_CERTIFICATION_ACTIVE_PHASE[markerPath]}" \
+    "${SIMPLEMATCH_CERTIFICATION_ACTIVE_PHASE[signature]}" || return 1
+  _certification_clear_phase_started_if_needed
+}
+
+_certification_record_execution_failure() {
+  local command_status="$1"
+
+  certification_plan_record_failure \
+    "${SIMPLEMATCH_CERTIFICATION_ACTIVE_PHASE[phase]}" \
+    "${SIMPLEMATCH_CERTIFICATION_ACTIVE_PHASE[inputFingerprint]}" \
+    "command exited with status $command_status" \
+    "${SIMPLEMATCH_CERTIFICATION_ACTIVE_PHASE[executionJson]}" || true
+}
+
+run_logged() {
+  local phase="$1"
+  shift
+  local log_path="$evidence_dir/logs/${phase}.log"
+  local prepare_status=0 command_status decision duration_millis
+
+  _certification_prepare_phase_context "$phase" "" "$@" || prepare_status=$?
+  [[ "$prepare_status" -eq 0 ]] || return "$prepare_status"
+  case "${SIMPLEMATCH_CERTIFICATION_ACTIVE_PHASE[action]}" in
+    RESUME)
+      completed_phases+=("$phase (same-run resume)")
+      printf 'RESUME %-30s (%s)\n' \
+        "$phase" "${SIMPLEMATCH_CERTIFICATION_ACTIVE_PHASE[markerPath]}"
+      return 0
+      ;;
+    DRY_RUN)
+      print_command "$@"
+      return 0
+      ;;
+  esac
+
+  decision="${SIMPLEMATCH_CERTIFICATION_ACTIVE_PHASE[decision]}"
   if [[ "$decision" == REUSE || "$decision" == REVALIDATE ]]; then
-    completed_at_utc="$(_certification_now_utc)"
-    completed_millis="$(_certification_now_millis)"
-    duration_millis=$((completed_millis - started_millis))
+    _certification_finish_phase_context || return 1
     certification_plan_record_reuse \
-      "$phase" "$decision" "$input_fingerprint" "$evidence_digest" "$reason" \
-      "$started_at_utc" "$completed_at_utc" "$duration_millis" || return 1
-    _certification_mark_phase_complete "$marker_path" "$phase_signature" || return 1
+      "$phase" "$decision" \
+      "${SIMPLEMATCH_CERTIFICATION_ACTIVE_PHASE[inputFingerprint]}" \
+      "${SIMPLEMATCH_CERTIFICATION_ACTIVE_PHASE[evidenceDigest]}" \
+      "${SIMPLEMATCH_CERTIFICATION_ACTIVE_PHASE[reason]}" \
+      "${SIMPLEMATCH_CERTIFICATION_ACTIVE_PHASE[executionJson]}" || return 1
+    _certification_mark_phase_complete \
+      "${SIMPLEMATCH_CERTIFICATION_ACTIVE_PHASE[markerPath]}" \
+      "${SIMPLEMATCH_CERTIFICATION_ACTIVE_PHASE[signature]}" || return 1
+    duration_millis="${SIMPLEMATCH_CERTIFICATION_ACTIVE_PHASE[durationMillis]}"
     completed_phases+=("$phase (${decision,,})")
     printf '%-10s %-28s (%s ms)\n' "$decision" "$phase" "$duration_millis"
     return 0
@@ -114,6 +234,7 @@ run_logged() {
     return 1
   }
 
+  _certification_mark_phase_started_if_needed || return 1
   mkdir -p "$(dirname -- "$log_path")" || return 1
   printf '$' >"$log_path" || return 1
   printf ' %q' "$@" >>"$log_path" || return 1
@@ -125,27 +246,21 @@ run_logged() {
   ) >>"$log_path" 2>&1
   command_status=$?
   set -e
+  _certification_finish_phase_context || return 1
 
-  completed_at_utc="$(_certification_now_utc)"
-  completed_millis="$(_certification_now_millis)"
-  duration_millis=$((completed_millis - started_millis))
   if [[ "$command_status" -eq 0 ]]; then
-    certification_plan_record_execution \
-      "$phase" "$input_fingerprint" "$reason" \
-      "$started_at_utc" "$completed_at_utc" "$duration_millis" "$@" || {
+    _certification_record_execution_success "$@" || {
       failed_phase="$phase"
       failure_reason="Phase passed but valid evidence could not be recorded: $phase"
       return 1
     }
-    _certification_mark_phase_complete "$marker_path" "$phase_signature" || return 1
+    duration_millis="${SIMPLEMATCH_CERTIFICATION_ACTIVE_PHASE[durationMillis]}"
     completed_phases+=("$phase")
     printf 'PASS %-31s (%s ms, %s)\n' "$phase" "$duration_millis" "$log_path"
     return 0
   fi
 
-  certification_plan_record_failure \
-    "$phase" "$input_fingerprint" "command exited with status $command_status" \
-    "$started_at_utc" "$completed_at_utc" "$duration_millis" || true
+  _certification_record_execution_failure "$command_status"
   failed_phase="$phase"
   failure_reason="Phase failed: $phase"
   cat "$log_path" >&2
@@ -164,36 +279,31 @@ run_capture() {
   local phase="$1"
   local output_path="$2"
   shift 2
-  local marker_path="$phase_marker_directory/${phase}.ok"
-  local phase_signature plan decision input_fingerprint evidence_digest reason
-  local started_at_utc completed_at_utc started_millis completed_millis duration_millis
-  local command_status
+  local prepare_status=0 command_status decision duration_millis
 
-  phase_signature="$(printf '%s\0' "$source_signature" "$phase" "$output_path" "$@" | sha256sum | awk '{print $1}')"
-  if _certification_resume_marker_valid \
-      "$phase" "$marker_path" "$phase_signature" "$output_path"; then
-    completed_phases+=("$phase (same-run resume)")
-    printf 'RESUME %-30s (%s)\n' "$phase" "$output_path"
-    return 0
-  fi
+  _certification_prepare_phase_context "$phase" "$output_path" "$@" || \
+    prepare_status=$?
+  [[ "$prepare_status" -eq 0 ]] || return "$prepare_status"
+  case "${SIMPLEMATCH_CERTIFICATION_ACTIVE_PHASE[action]}" in
+    RESUME)
+      completed_phases+=("$phase (same-run resume)")
+      printf 'RESUME %-30s (%s)\n' "$phase" "$output_path"
+      return 0
+      ;;
+    DRY_RUN)
+      print_command "$@"
+      return 0
+      ;;
+  esac
 
-  check_certification_deadline
-  if [[ "$dry_run" == true ]]; then
-    certification_plan_phase "$phase" "$@" >/dev/null || return 1
-    print_command "$@"
-    return 0
-  fi
-
-  started_at_utc="$(_certification_now_utc)"
-  started_millis="$(_certification_now_millis)"
-  plan="$(certification_plan_phase "$phase" "$@")" || return 1
-  IFS='|' read -r decision input_fingerprint evidence_digest reason <<<"$plan"
+  decision="${SIMPLEMATCH_CERTIFICATION_ACTIVE_PHASE[decision]}"
   [[ "$decision" == EXECUTE ]] || {
     printf 'capture phase %s is not eligible for %s without an output adapter\n' \
       "$phase" "$decision" >&2
     return 1
   }
 
+  _certification_mark_phase_started_if_needed || return 1
   mkdir -p "$(dirname -- "$output_path")" || return 1
   set +e
   (
@@ -202,23 +312,17 @@ run_capture() {
   ) >"$output_path" 2>&1
   command_status=$?
   set -e
-  completed_at_utc="$(_certification_now_utc)"
-  completed_millis="$(_certification_now_millis)"
-  duration_millis=$((completed_millis - started_millis))
+  _certification_finish_phase_context || return 1
 
   if [[ "$command_status" -eq 0 ]]; then
-    certification_plan_record_execution \
-      "$phase" "$input_fingerprint" "$reason" \
-      "$started_at_utc" "$completed_at_utc" "$duration_millis" "$@" || return 1
-    _certification_mark_phase_complete "$marker_path" "$phase_signature" || return 1
+    _certification_record_execution_success "$@" || return 1
+    duration_millis="${SIMPLEMATCH_CERTIFICATION_ACTIVE_PHASE[durationMillis]}"
     completed_phases+=("$phase")
     printf 'PASS %-31s (%s ms, %s)\n' "$phase" "$duration_millis" "$output_path"
     return 0
   fi
 
-  certification_plan_record_failure \
-    "$phase" "$input_fingerprint" "command exited with status $command_status" \
-    "$started_at_utc" "$completed_at_utc" "$duration_millis" || true
+  _certification_record_execution_failure "$command_status"
   failed_phase="$phase"
   failure_reason="Phase failed: $phase"
   cat "$output_path" >&2
@@ -268,7 +372,8 @@ write_report() {
   mkdir -p "$evidence_dir"
   if [[ "$exit_code" -ne 0 ]]; then
     completion_status="FAILED"
-  elif [[ "$skip_build" == true || "$skip_compose" == true || "$skip_kubernetes" == true || "$matching_fleet_only" == true ]]; then
+  elif [[ "$skip_build" == true || "$skip_compose" == true || \
+      "$skip_kubernetes" == true || "$matching_fleet_only" == true ]]; then
     completion_status="PARTIAL"
     failure_reason="One or more certification phases were explicitly skipped."
   else
@@ -302,8 +407,12 @@ write_report() {
     fi
     if [[ -f "$certification_plan_file" ]]; then
       printf '\n%s\n\n' '## Phase plan'
-      jq -r '.phases[] | "- \(.decision) \(.phaseId): \(.reason)"' \
-        "$certification_plan_file"
+      jq -r '
+        .phases[] |
+        "- \(.decision) \(.phaseId): \(.reason) " +
+        "[lookup=\(.lookupDurationMillis)ms, " +
+        "revalidation=\(.revalidationDurationMillis)ms]"
+      ' "$certification_plan_file"
     fi
   } >"$evidence_dir/report.md"
 }

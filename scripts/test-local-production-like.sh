@@ -140,7 +140,8 @@ grep -Fq 'simplematch_kind_namespace_is_disposable' "$bootstrap_lib"
 grep -Fq 'simplematch_kind_delete_disposable_namespace' "$framework_lib"
 
 # Default certification must expose incremental registry work instead of the
-# old all-at-once image-preparation command.
+# old all-at-once image-preparation command. Artifact rendering stays behind the
+# Kubernetes manifest phase adapter and is tested independently below.
 certification_dry_run="$($runner --dry-run --skip-build --skip-compose)"
 grep -Fq 'test-kubernetes-overlays.sh' <<<"$certification_dry_run"
 grep -Fq 'test-local-kubernetes-dependencies.sh' <<<"$certification_dry_run"
@@ -148,7 +149,8 @@ grep -Fq 'test-matching-topic-profile.sh' <<<"$certification_dry_run"
 grep -Fq 'publish-local-images.sh' <<<"$certification_dry_run"
 grep -Fq -- '--service account-service' <<<"$certification_dry_run"
 grep -Fq 'certification_construct_registry_image_lock' <<<"$certification_dry_run"
-grep -Fq 'render-local-kubernetes-manifest.sh' <<<"$certification_dry_run"
+grep -Fq '_certification_render_and_split_kubernetes_manifest' <<<"$certification_dry_run"
+grep -Fq 'render_local_kubernetes_manifest' "$run_lib"
 if grep -Fq 'kind load docker-image' <<<"$certification_dry_run"; then
   printf '%s\n' 'Default certification dry-run unexpectedly imports images directly into kind.' >&2
   exit 1
@@ -169,20 +171,33 @@ if grep -Fq 'normalize-local-images-for-kind.sh' "$runner"; then
   exit 1
 fi
 
-# Migrations, durable barrier, workloads, then connector registration remain ordered.
+# Ordering is owned by PhaseGraph rather than by source-file line order.
+# Concrete command adapters remain separately visible in the run module.
+# shellcheck source=scripts/lib/local-certification-phase-graph.sh
+source "$phase_graph_lib"
+skip_build=false
+skip_compose=false
+skip_kubernetes=false
+matching_fleet_only=false
+image_transport=registry
+unset SIMPLEMATCH_KAFKA_PRODUCER_CONFIG_FILE || true
+
+grep -Fxq kubernetes-open-barriers \
+  <<<"$(certification_phase_dependencies kubernetes-workload-apply)" || {
+  printf '%s\n' 'Workload application must depend on the durable Matching barrier.' >&2
+  exit 1
+}
+grep -Fxq kubernetes-workload-apply \
+  <<<"$(certification_phase_dependencies kubernetes-risk-outbox-connector)" || {
+  printf '%s\n' 'Connector registration must depend on workload application.' >&2
+  exit 1
+}
 grep -Fq 'apply_kubernetes_migrations' "$kubernetes_lib" "$run_lib"
 grep -Fq 'apply_kubernetes_topic_provisioning' "$kubernetes_lib" "$run_lib"
 grep -Fq 'local-kubernetes-migrations.yaml' "$run_lib"
 grep -Fq 'local-kubernetes-workloads.yaml' "$run_lib"
-barrier_publish_line="$(grep -n 'run_logged kubernetes-open-barriers publish_local_matching_open_barriers' "$run_lib" | tail -1 | cut -d: -f1)"
-workload_apply_line="$(grep -n 'run_logged kubernetes-workload-apply kubectl apply -f "$workload_manifest"' "$run_lib" | tail -1 | cut -d: -f1)"
-connector_register_line="$(grep -n 'run_logged kubernetes-risk-outbox-connector register_kubernetes_risk_connector' "$run_lib" | tail -1 | cut -d: -f1)"
-[[ -n "$barrier_publish_line" && -n "$workload_apply_line" && -n "$connector_register_line" \
-  && "$barrier_publish_line" -lt "$workload_apply_line" \
-  && "$workload_apply_line" -lt "$connector_register_line" ]] || {
-  printf '%s\n' 'Certification must publish the durable Matching barrier before workloads and register Connect afterward.' >&2
-  exit 1
-}
+grep -Fq 'publish_local_matching_open_barriers' "$run_lib"
+grep -Fq 'register_kubernetes_risk_connector' "$run_lib"
 
 grep -Fq -- "--for=jsonpath='{.status.readyReplicas}'=3 statefulset/kafka --timeout=300s" \
   "$kubernetes_lib"

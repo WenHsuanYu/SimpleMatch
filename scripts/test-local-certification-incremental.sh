@@ -315,13 +315,13 @@ registry_evidence="$(certification_evidence_publish \
 certification_registry_digest_available() {
   [[ "$1" == "$registry_location" ]]
 }
-certification_phase_revalidate \
+certification_image_phase_revalidate \
   registry-publish/quickfix-gateway "$registry_evidence" || \
   fail 'addressable registry digest did not revalidate'
 certification_registry_digest_available() {
   return 1
 }
-if certification_phase_revalidate \
+if certification_image_phase_revalidate \
     registry-publish/quickfix-gateway "$registry_evidence"; then
   fail 'missing registry digest was accepted during revalidation'
 fi
@@ -359,6 +359,13 @@ skip_compose=false
 skip_kubernetes=false
 certification_trading_day=2026-08-28
 source_signature=planner-source
+zero_timing="$(certification_execution_timing_json \
+  2026-08-28T00:00:00Z 2026-08-28T00:00:00Z 0)" || \
+  fail 'zero-duration execution metadata could not be built'
+one_second_timing="$(certification_execution_timing_json \
+  2026-08-28T00:00:00Z 2026-08-28T00:00:01Z 1000)" || \
+  fail 'one-second execution metadata could not be built'
+
 run_id=planner-one
 evidence_dir="$fixture_root/run-one"
 certification_plan_initialize "$evidence_dir" || \
@@ -369,8 +376,7 @@ source_plan="$(certification_plan_phase source-preflight)" || \
 IFS='|' read -r source_decision source_input _ source_reason <<<"$source_plan"
 assert_eq EXECUTE "$source_decision" 'fresh phase did not execute'
 certification_plan_record_execution \
-  source-preflight "$source_input" "$source_reason" \
-  2026-08-28T00:00:00Z 2026-08-28T00:00:00Z 0 || \
+  source-preflight "$source_input" "$source_reason" "$zero_timing" || \
   fail 'fresh phase result could not be recorded'
 
 static_plan="$(certification_plan_phase static-kubernetes-overlays)" || \
@@ -380,7 +386,7 @@ assert_eq EXECUTE "$static_decision" \
   'cold static phase unexpectedly reused evidence'
 certification_plan_record_execution \
   static-kubernetes-overlays "$static_input" "$static_reason" \
-  2026-08-28T00:00:00Z 2026-08-28T00:00:01Z 1000 || \
+  "$one_second_timing" || \
   fail 'static phase execution evidence could not be recorded'
 certification_plan_finalize || fail 'first plan did not finalize'
 
@@ -393,8 +399,7 @@ source_plan="$(certification_plan_phase source-preflight)" || \
 IFS='|' read -r source_decision source_input _ source_reason <<<"$source_plan"
 assert_eq EXECUTE "$source_decision" 'fresh phase reused cross-run evidence'
 certification_plan_record_execution \
-  source-preflight "$source_input" "$source_reason" \
-  2026-08-28T00:00:00Z 2026-08-28T00:00:00Z 0 || \
+  source-preflight "$source_input" "$source_reason" "$zero_timing" || \
   fail 'second fresh phase result could not be recorded'
 
 static_plan="$(certification_plan_phase static-kubernetes-overlays)" || \
@@ -407,8 +412,7 @@ assert_eq REUSE "$static_decision" \
   fail 'reuse decision omitted evidence identity'
 certification_plan_record_reuse \
   static-kubernetes-overlays "$static_decision" "$static_input" \
-  "$static_evidence" "$static_reason" \
-  2026-08-28T00:00:00Z 2026-08-28T00:00:00Z 0 || \
+  "$static_evidence" "$static_reason" "$zero_timing" || \
   fail 'reused phase evidence could not be materialized'
 certification_plan_finalize || fail 'second plan did not finalize'
 
@@ -431,8 +435,7 @@ source_plan="$(certification_plan_phase source-preflight)" || \
   fail 'incomplete run could not plan source preflight'
 IFS='|' read -r source_decision source_input _ source_reason <<<"$source_plan"
 certification_plan_record_execution \
-  source-preflight "$source_input" "$source_reason" \
-  2026-08-28T00:00:00Z 2026-08-28T00:00:00Z 0 || \
+  source-preflight "$source_input" "$source_reason" "$zero_timing" || \
   fail 'incomplete run could not record source preflight'
 if certification_plan_finalize >/dev/null 2>&1; then
   fail 'plan finalization accepted a missing required phase'

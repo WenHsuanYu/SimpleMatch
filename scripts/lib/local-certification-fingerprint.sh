@@ -1,8 +1,8 @@
 #!/usr/bin/env bash
 
-# Deterministic effective-input fingerprints for local certification phases.
-# This module calculates identity only; it does not execute phases or mutate
-# reusable evidence.
+# Deterministic effective-input manifests and fingerprints for local
+# certification phases. This module calculates identity only; it does not
+# execute phases or mutate reusable evidence.
 
 _fingerprint_dir="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
 # shellcheck source=scripts/lib/local-image-inventory.sh
@@ -10,6 +10,9 @@ source "$_fingerprint_dir/local-image-inventory.sh"
 unset _fingerprint_dir
 
 SIMPLEMATCH_BOOT_BUILDER_IMAGE_DEFAULT="paketobuildpacks/builder-noble-java-tiny:latest"
+# Retained for compatibility with focused contracts that explicitly clear the
+# previous implementation caches. Canonical manifests are now the source of
+# truth and these values are not used for correctness.
 _certification_spring_common_fingerprint=""
 _certification_spring_toolchain_fingerprint=""
 _certification_docker_context_fingerprint=""
@@ -70,7 +73,7 @@ certification_fingerprint_paths() {
   done <<<"$input_output"
 }
 
-_certification_hash_paths_and_values() {
+_certification_paths_and_values_manifest() {
   local in_values=false
   local argument value_index=0
   local -a paths=() values=()
@@ -85,36 +88,90 @@ _certification_hash_paths_and_values() {
     fi
   done
 
-  {
-    if ((${#paths[@]} > 0)); then
-      certification_fingerprint_paths "${paths[@]}" || exit 1
-    fi
-    for argument in "${values[@]}"; do
-      printf 'value\t%06d\t%s\n' "$value_index" "$argument"
-      value_index=$((value_index + 1))
-    done
-  } | certification_sha256_stream
+  if ((${#paths[@]} > 0)); then
+    certification_fingerprint_paths "${paths[@]}" || return 1
+  fi
+  for argument in "${values[@]}"; do
+    printf 'value\t%06d\t%s\n' "$value_index" "$argument"
+    value_index=$((value_index + 1))
+  done
 }
 
-certification_resolve_image_identity() {
+_certification_local_image_identity() {
   local image_reference="$1"
   local identity
 
   command -v docker >/dev/null 2>&1 || return 1
-  identity="$(docker image inspect --format '{{.Id}}' "$image_reference" 2>/dev/null || true)"
-  if [[ "$identity" =~ ^sha256:[0-9a-f]{64}$ ]]; then
-    printf '%s\n' "$identity"
-    return 0
-  fi
+  identity="$(docker image inspect --format '{{.Id}}' "$image_reference" 2>/dev/null)" || \
+    return 1
+  [[ "$identity" =~ ^sha256:[0-9a-f]{64}$ ]] || return 1
+  printf '%s\n' "$identity"
+}
 
+_certification_remote_image_identity() {
+  local image_reference="$1"
+  local identity
+
+  command -v docker >/dev/null 2>&1 || return 1
   docker buildx version >/dev/null 2>&1 || return 1
   identity="$(
     docker buildx imagetools inspect "$image_reference" 2>/dev/null |
       sed -nE 's/^Digest:[[:space:]]+(sha256:[0-9a-f]{64})$/\1/p' |
       head -1
-  )"
+  )" || return 1
   [[ "$identity" =~ ^sha256:[0-9a-f]{64}$ ]] || return 1
   printf '%s\n' "$identity"
+}
+
+certification_resolve_image_identity() {
+  local image_reference="$1"
+  local pull_policy="${2:-IF_NOT_PRESENT}"
+  local identity
+
+  case "$pull_policy" in
+    ALWAYS)
+      _certification_remote_image_identity "$image_reference"
+      ;;
+    IF_NOT_PRESENT)
+      if identity="$(_certification_local_image_identity "$image_reference" 2>/dev/null)"; then
+        printf '%s\n' "$identity"
+      else
+        _certification_remote_image_identity "$image_reference"
+      fi
+      ;;
+    NEVER)
+      _certification_local_image_identity "$image_reference"
+      ;;
+    *)
+      printf 'unsupported image pull policy for certification fingerprint: %s\n' \
+        "$pull_policy" >&2
+      return 1
+      ;;
+  esac
+}
+
+_certification_effective_boot_pull_policy() {
+  if [[ -n "${SIMPLEMATCH_BOOT_PULL_POLICY:-}" ]]; then
+    case "$SIMPLEMATCH_BOOT_PULL_POLICY" in
+      ALWAYS|IF_NOT_PRESENT|NEVER)
+        printf '%s\n' "$SIMPLEMATCH_BOOT_PULL_POLICY"
+        return 0
+        ;;
+      *)
+        printf 'unsupported SIMPLEMATCH_BOOT_PULL_POLICY: %s\n' \
+          "$SIMPLEMATCH_BOOT_PULL_POLICY" >&2
+        return 1
+        ;;
+    esac
+  fi
+
+  if [[ -n "${SIMPLEMATCH_BOOT_RUN_IMAGE:-}" ]]; then
+    printf '%s\n' IF_NOT_PRESENT
+  else
+    # BootBuildImage defaults to ALWAYS when the build does not override the
+    # pull policy, so mutable builder/run-image tags must be resolved remotely.
+    printf '%s\n' ALWAYS
+  fi
 }
 
 _certification_remote_image_config() {
@@ -136,16 +193,21 @@ _certification_remote_image_config() {
 
 _certification_boot_builder_metadata() {
   local builder_reference="$1"
-  local metadata image_json
+  local pull_policy="$2"
+  local metadata image_json local_identity
 
-  metadata="$(
-    docker image inspect --format \
-      '{{ index .Config.Labels "io.buildpacks.builder.metadata" }}' \
-      "$builder_reference" 2>/dev/null || true
-  )"
-  if [[ -n "$metadata" && "$metadata" != '<no value>' ]]; then
-    printf '%s\n' "$metadata"
-    return 0
+  if [[ "$pull_policy" != ALWAYS ]]; then
+    if local_identity="$(_certification_local_image_identity "$builder_reference" 2>/dev/null)"; then
+      metadata="$(
+        docker image inspect --format \
+          '{{ index .Config.Labels "io.buildpacks.builder.metadata" }}' \
+          "$builder_reference" 2>/dev/null
+      )" || return 1
+      [[ -n "$metadata" && "$metadata" != '<no value>' ]] || return 1
+      printf '%s\n' "$metadata"
+      return 0
+    fi
+    [[ "$pull_policy" != NEVER ]] || return 1
   fi
 
   image_json="$(_certification_remote_image_config "$builder_reference")" || return 1
@@ -159,6 +221,7 @@ _certification_boot_builder_metadata() {
 
 _certification_boot_run_image_reference() {
   local builder_reference="$1"
+  local pull_policy="$2"
   local metadata run_image
 
   if [[ -n "${SIMPLEMATCH_BOOT_RUN_IMAGE:-}" ]]; then
@@ -166,7 +229,8 @@ _certification_boot_run_image_reference() {
     return 0
   fi
 
-  metadata="$(_certification_boot_builder_metadata "$builder_reference")" || return 1
+  metadata="$(_certification_boot_builder_metadata \
+    "$builder_reference" "$pull_policy")" || return 1
   run_image="$(
     jq -r '
       .images[0].image //
@@ -182,56 +246,24 @@ _certification_boot_run_image_reference() {
 
 _certification_spring_toolchain_identity() {
   local builder_reference builder_identity run_image_reference run_image_identity
+  local pull_policy
 
+  pull_policy="$(_certification_effective_boot_pull_policy)" || return 1
   builder_reference="${SIMPLEMATCH_BOOT_BUILDER_IMAGE:-$SIMPLEMATCH_BOOT_BUILDER_IMAGE_DEFAULT}"
-  builder_identity="$(certification_resolve_image_identity "$builder_reference")" || return 1
-  run_image_reference="$(_certification_boot_run_image_reference "$builder_reference")" || return 1
-  run_image_identity="$(certification_resolve_image_identity "$run_image_reference")" || return 1
+  builder_identity="$(certification_resolve_image_identity \
+    "$builder_reference" "$pull_policy")" || return 1
+  run_image_reference="$(_certification_boot_run_image_reference \
+    "$builder_reference" "$pull_policy")" || return 1
+  run_image_identity="$(certification_resolve_image_identity \
+    "$run_image_reference" "$pull_policy")" || return 1
 
-  printf 'builder=%s@%s\n' "$builder_reference" "$builder_identity"
-  printf 'runImage=%s@%s\n' "$run_image_reference" "$run_image_identity"
-  printf 'pullPolicy=%s\n' "${SIMPLEMATCH_BOOT_PULL_POLICY:-DEFAULT}"
-}
-
-_certification_spring_toolchain_fingerprint_value() {
-  if [[ -n "$_certification_spring_toolchain_fingerprint" ]]; then
-    printf '%s\n' "$_certification_spring_toolchain_fingerprint"
-    return 0
-  fi
-  _certification_spring_toolchain_fingerprint="$(
-    _certification_spring_toolchain_identity | certification_sha256_stream
-  )" || return 1
-  printf '%s\n' "$_certification_spring_toolchain_fingerprint"
-}
-
-_certification_spring_common_identity() {
-  if [[ -n "$_certification_spring_common_fingerprint" ]]; then
-    printf '%s\n' "$_certification_spring_common_fingerprint"
-    return 0
-  fi
-  _certification_spring_common_fingerprint="$(
-    _certification_hash_paths_and_values \
-      build-logic shared-java proto gradle \
-      settings.gradle.kts build.gradle.kts gradlew gradlew.bat \
-      scripts/build-local-images.sh scripts/lib/local-image-inventory.sh \
-      -- 'springBoot=4.1.0' 'gradle=9.7.0'
-  )" || return 1
-  printf '%s\n' "$_certification_spring_common_fingerprint"
+  printf 'builder\t%s@%s\n' "$builder_reference" "$builder_identity"
+  printf 'runImage\t%s@%s\n' "$run_image_reference" "$run_image_identity"
+  printf 'pullPolicy\t%s\n' "$pull_policy"
 }
 
 _certification_repository_docker_context_identity() {
-  if [[ -n "$_certification_docker_context_fingerprint" ]]; then
-    printf '%s\n' "$_certification_docker_context_fingerprint"
-    return 0
-  fi
-  _certification_docker_context_fingerprint="$(
-    {
-      certification_fingerprint_paths . || exit 1
-      printf 'dockerignore\t'
-      sha256sum "$repo_root/.dockerignore" | awk '{print $1}'
-    } | certification_sha256_stream
-  )" || return 1
-  printf '%s\n' "$_certification_docker_context_fingerprint"
+  certification_fingerprint_paths . | certification_sha256_stream
 }
 
 _certification_dockerfile_base_identities() {
@@ -250,44 +282,51 @@ _certification_dockerfile_base_identities() {
         "$dockerfile" "$reference" >&2
       return 1
     }
-    identity="$(certification_resolve_image_identity "$reference")" || {
+    identity="$(certification_resolve_image_identity "$reference" ALWAYS)" || {
       printf 'cannot resolve immutable Docker base image for %s: %s\n' \
         "$dockerfile" "$reference" >&2
       return 1
     }
-    printf '%s@%s\n' "$reference" "$identity"
+    printf 'baseImage\t%s@%s\n' "$reference" "$identity"
   done <<<"$reference_output"
 }
 
-certification_image_input_fingerprint() {
+certification_image_input_manifest() {
   local service="$1"
-  local entry image_class build_source repository
-  local common_identity context_identity toolchain_identity
+  local entry image_class build_source repository phase_version context_identity
 
   entry="$(simplematch_local_image_inventory_entry "$service")" || return 1
   IFS='|' read -r image_class _ build_source repository <<<"$entry"
+  phase_version="$(certification_phase_definition_version \
+    "local-image-build/$service")" || return 1
 
+  printf 'phase\tlocal-image-build/%s\n' "$service"
+  printf 'version\t%s\n' "$phase_version"
   case "$image_class" in
     spring)
-      common_identity="$(_certification_spring_common_identity)" || return 1
-      toolchain_identity="$(_certification_spring_toolchain_fingerprint_value)" || return 1
-      {
-        printf 'phase\tlocal-image-build/%s\n' "$service"
-        printf 'common\t%s\n' "$common_identity"
-        printf 'toolchain\t%s\n' "$toolchain_identity"
-        certification_fingerprint_paths "services/$service" || exit 1
-        printf 'repository\t%s\n' "$repository"
-      } | certification_sha256_stream
+      certification_fingerprint_paths \
+        build-logic shared-java proto gradle \
+        settings.gradle.kts build.gradle.kts gradlew gradlew.bat \
+        scripts/build-local-images.sh scripts/lib/local-image-inventory.sh \
+        scripts/lib/local-certification-images.sh \
+        scripts/lib/local-certification-artifacts.sh \
+        scripts/lib/local-certification-fingerprint.sh || return 1
+      certification_fingerprint_paths "services/$service" || return 1
+      _certification_spring_toolchain_identity || return 1
+      printf 'repository\t%s\n' "$repository"
       ;;
     flyway|verification|native)
       context_identity="$(_certification_repository_docker_context_identity)" || return 1
-      {
-        printf 'phase\tlocal-image-build/%s\n' "$service"
-        printf 'context\t%s\n' "$context_identity"
-        _certification_dockerfile_base_identities "$build_source" || exit 1
-        printf 'repository\t%s\n' "$repository"
-        [[ "$image_class" != native ]] || printf 'vcpkg\t2026.07.29\n'
-      } | certification_sha256_stream
+      printf 'dockerContext\t%s\n' "$context_identity"
+      certification_fingerprint_paths \
+        "$build_source" scripts/build-local-images.sh \
+        scripts/lib/local-image-inventory.sh \
+        scripts/lib/local-certification-images.sh \
+        scripts/lib/local-certification-artifacts.sh \
+        scripts/lib/local-certification-fingerprint.sh || return 1
+      _certification_dockerfile_base_identities "$build_source" || return 1
+      printf 'repository\t%s\n' "$repository"
+      [[ "$image_class" != native ]] || printf 'vcpkg\t2026.07.29\n'
       ;;
     *)
       printf 'unsupported image class for fingerprinting: %s\n' "$image_class" >&2
@@ -296,44 +335,61 @@ certification_image_input_fingerprint() {
   esac
 }
 
-_certification_registry_publish_fingerprint() {
+certification_image_input_fingerprint() {
+  local service="$1"
+  certification_image_input_manifest "$service" | certification_sha256_stream
+}
+
+_certification_registry_publish_manifest() {
   local phase_id="$1"
   local phase_version="$2"
   local service source_image source_identity endpoint
 
   service="${phase_id#registry-publish/}"
-  source_image="$(simplematch_local_image_inventory_source_image "$service" "$image_tag")" || return 1
+  source_image="$(simplematch_local_image_inventory_source_image \
+    "$service" "$image_tag")" || return 1
   source_identity="$(certification_source_image_identity "$service")" || return 1
   endpoint="$(simplematch_registry_endpoint)" || return 1
-  {
-    printf 'phase\t%s\n' "$phase_id"
-    printf 'version\t%s\n' "$phase_version"
-    printf 'service\t%s\n' "$service"
-    printf 'sourceImage\t%s\n' "$source_image"
-    printf 'sourceIdentity\t%s\n' "$source_identity"
-    printf 'registry\t%s\n' "$endpoint"
-  } | certification_sha256_stream
+
+  certification_fingerprint_paths \
+    scripts/publish-local-images.sh \
+    scripts/lib/local-registry.sh \
+    scripts/lib/local-image-inventory.sh \
+    scripts/lib/local-image-transport.sh \
+    scripts/lib/local-certification-images.sh \
+    scripts/lib/local-certification-artifacts.sh \
+    scripts/lib/local-certification-fingerprint.sh || return 1
+  printf 'phase\t%s\n' "$phase_id"
+  printf 'version\t%s\n' "$phase_version"
+  printf 'service\t%s\n' "$service"
+  printf 'sourceImage\t%s\n' "$source_image"
+  printf 'sourceIdentity\t%s\n' "$source_identity"
+  printf 'registry\t%s\n' "$endpoint"
 }
 
-_certification_registry_lock_fingerprint() {
+_certification_registry_lock_manifest() {
   local phase_version="$1"
   local service fragment_file entry selected_services
 
   [[ -n "${registry_fragment_directory:-}" ]] || return 1
   selected_services="$(certification_selected_image_services)" || return 1
-  {
-    printf 'phase\tregistry-image-lock\n'
-    printf 'version\t%s\n' "$phase_version"
-    while IFS= read -r service; do
-      [[ -n "$service" ]] || continue
-      fragment_file="$registry_fragment_directory/${service}.lock"
-      entry="$(simplematch_local_image_lock_entry "$fragment_file" "$service")" || exit 1
-      printf 'entry\t%s\n' "$entry"
-    done <<<"$selected_services"
-  } | certification_sha256_stream
+  certification_fingerprint_paths \
+    scripts/lib/local-image-inventory.sh \
+    scripts/lib/local-image-transport.sh \
+    scripts/lib/local-certification-images.sh \
+    scripts/lib/local-certification-artifacts.sh \
+    scripts/lib/local-certification-fingerprint.sh || return 1
+  printf 'phase\tregistry-image-lock\n'
+  printf 'version\t%s\n' "$phase_version"
+  while IFS= read -r service; do
+    [[ -n "$service" ]] || continue
+    fragment_file="$registry_fragment_directory/${service}.lock"
+    entry="$(simplematch_local_image_lock_entry "$fragment_file" "$service")" || return 1
+    printf 'entry\t%s\n' "$entry"
+  done <<<"$selected_services"
 }
 
-certification_phase_fingerprint() {
+certification_phase_input_manifest() {
   local phase_id="$1"
   shift
   local phase_version service value_index=0 value
@@ -341,39 +397,39 @@ certification_phase_fingerprint() {
   phase_version="$(certification_phase_definition_version "$phase_id")" || return 1
   case "$phase_id" in
     static-kubernetes-overlays)
-      _certification_hash_paths_and_values \
+      _certification_paths_and_values_manifest \
         scripts/test-kubernetes-overlays.sh deploy/k8s \
         scripts/lib/local-certification-fingerprint.sh \
         -- "phase=$phase_id" "version=$phase_version"
       ;;
     static-kubernetes-dependencies)
-      _certification_hash_paths_and_values \
+      _certification_paths_and_values_manifest \
         scripts/test-local-kubernetes-dependencies.sh deploy/k8s \
         scripts/lib/local-image-inventory.sh scripts/lib/local-image-transport.sh \
         scripts/lib/local-certification-fingerprint.sh \
         -- "phase=$phase_id" "version=$phase_version"
       ;;
     static-matching-manifests)
-      _certification_hash_paths_and_values \
+      _certification_paths_and_values_manifest \
         scripts/test-matching-kubernetes-manifests.sh deploy/k8s \
         scripts/lib/local-certification-fingerprint.sh \
         -- "phase=$phase_id" "version=$phase_version"
       ;;
     static-matching-profile)
-      _certification_hash_paths_and_values \
+      _certification_paths_and_values_manifest \
         scripts/test-matching-topic-profile.sh scripts/validate-matching-topic-profile.sh \
         scripts/lib/matching-topic-profile.sh scripts/testdata/matching-topic-profile \
         scripts/lib/local-certification-fingerprint.sh \
         -- "phase=$phase_id" "version=$phase_version"
       ;;
     static-flyway-services)
-      _certification_hash_paths_and_values \
+      _certification_paths_and_values_manifest \
         scripts/test-flyway-services.sh build-logic services \
         scripts/lib/local-certification-fingerprint.sh \
         -- "phase=$phase_id" "version=$phase_version"
       ;;
     compose-config)
-      _certification_hash_paths_and_values \
+      _certification_paths_and_values_manifest \
         deploy/compose/kafka-connect.production-like.yml \
         scripts/lib/local-certification-fingerprint.sh \
         -- "phase=$phase_id" "version=$phase_version" \
@@ -382,43 +438,49 @@ certification_phase_fingerprint() {
         "networkExternal=${SIMPLEMATCH_PRODUCTION_LIKE_NETWORK_EXTERNAL:-true}"
       ;;
     local-image-inventory)
-      _certification_hash_paths_and_values \
+      _certification_paths_and_values_manifest \
         scripts/build-local-images.sh scripts/lib/local-image-inventory.sh \
         scripts/lib/local-certification-fingerprint.sh \
         -- "phase=$phase_id" "version=$phase_version"
       ;;
     kafka-producer-contract)
-      _certification_hash_paths_and_values \
-        scripts/validate-matching-producer-contract.sh scripts/lib/matching-topic-profile.sh \
+      _certification_paths_and_values_manifest \
+        scripts/validate-matching-producer-contract.sh \
+        scripts/lib/matching-topic-profile.sh \
+        scripts/lib/local-certification-kafka.sh \
+        scripts/lib/local-certification-artifacts.sh \
         scripts/testdata/matching-topic-profile config/kafka \
         scripts/lib/local-certification-fingerprint.sh \
         -- "phase=$phase_id" "version=$phase_version"
       ;;
     local-image-build/*)
       service="${phase_id#local-image-build/}"
-      certification_image_input_fingerprint "$service"
+      certification_image_input_manifest "$service"
       ;;
     registry-publish/*)
-      _certification_registry_publish_fingerprint "$phase_id" "$phase_version"
+      _certification_registry_publish_manifest "$phase_id" "$phase_version"
       ;;
     registry-image-lock)
-      _certification_registry_lock_fingerprint "$phase_version"
+      _certification_registry_lock_manifest "$phase_version"
       ;;
     *)
-      # Fresh runtime phases receive a run-specific identity for current-run
-      # evidence. Command arguments are audit inputs only here because these
-      # phases are never eligible for cross-run reuse.
-      {
-        printf 'phase\t%s\n' "$phase_id"
-        printf 'version\t%s\n' "$phase_version"
-        printf 'run\t%s\n' "${run_id:-unknown}"
-        printf 'source\t%s\n' "${source_signature:-unknown}"
-        printf 'tradingDay\t%s\n' "${certification_trading_day:-unknown}"
-        for value in "$@"; do
-          printf 'input\t%06d\t%s\n' "$value_index" "$value"
-          value_index=$((value_index + 1))
-        done
-      } | certification_sha256_stream
+      printf 'phase\t%s\n' "$phase_id"
+      printf 'version\t%s\n' "$phase_version"
+      printf 'inputKinds\t%s\n' "$(certification_phase_input_kinds "$phase_id")"
+      printf 'outputKinds\t%s\n' "$(certification_phase_output_kinds "$phase_id")"
+      printf 'run\t%s\n' "${run_id:-unknown}"
+      printf 'source\t%s\n' "${source_signature:-unknown}"
+      printf 'tradingDay\t%s\n' "${certification_trading_day:-unknown}"
+      for value in "$@"; do
+        printf 'input\t%06d\t%s\n' "$value_index" "$value"
+        value_index=$((value_index + 1))
+      done
       ;;
   esac
+}
+
+certification_phase_fingerprint() {
+  local phase_id="$1"
+  shift
+  certification_phase_input_manifest "$phase_id" "$@" | certification_sha256_stream
 }

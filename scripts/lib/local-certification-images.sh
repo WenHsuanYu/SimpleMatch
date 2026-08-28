@@ -1,8 +1,8 @@
 #!/usr/bin/env bash
 
 # Image build/publication adapters used by incremental certification. Reuse
-# policy remains in the planner; this module validates and materializes
-# Docker/registry outputs behind the canonical image inventory.
+# policy remains in the planner; this module validates and materializes only
+# Docker, registry, and image-lock outputs.
 
 _certification_images_dir="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
 # shellcheck source=scripts/lib/local-image-inventory.sh
@@ -77,7 +77,18 @@ _certification_image_lock_payload_valid() {
   rm -f -- "$temp_lock"
 }
 
-certification_phase_cached_outputs_valid() {
+_certification_image_current_result_output() {
+  local result_path="$1"
+  local kind="$2"
+  local name="$3"
+
+  jq -er --arg kind "$kind" --arg name "$name" '
+    [.outputs[] | select(.kind == $kind and .name == $name)] as $matches |
+    if ($matches | length) == 1 then $matches[0] else error("image output mismatch") end
+  ' "$result_path"
+}
+
+certification_image_phase_cached_outputs_valid() {
   local phase_id="$1"
   local evidence_digest="$2"
   local service identity location expected_location actual_identity object_path
@@ -107,7 +118,42 @@ certification_phase_cached_outputs_valid() {
   esac
 }
 
-certification_phase_revalidate() {
+certification_image_phase_current_outputs_valid() {
+  local phase_id="$1"
+  local result_path="$2"
+  local service payload identity location expected_location actual_identity
+
+  case "$phase_id" in
+    local-image-build/*)
+      service="${phase_id#local-image-build/}"
+      payload="$(_certification_image_current_result_output \
+        "$result_path" docker-image "$service")" || return 1
+      identity="$(jq -r '.identity' <<<"$payload")" || return 1
+      location="$(jq -r '.location' <<<"$payload")" || return 1
+      expected_location="$(
+        simplematch_local_image_inventory_source_image "$service" "$image_tag"
+      )" || return 1
+      [[ "$location" == "$expected_location" ]] || return 1
+      actual_identity="$(docker image inspect --format '{{.Id}}' "$location" 2>/dev/null)" || return 1
+      [[ "$actual_identity" == "$identity" ]]
+      ;;
+    registry-image-lock)
+      [[ -f "$image_lock" ]] || return 1
+      payload="$(_certification_image_current_result_output \
+        "$result_path" image-lock local-images)" || return 1
+      identity="$(jq -r '.identity' <<<"$payload")" || return 1
+      [[ "$identity" =~ ^sha256:[0-9a-f]{64}$ ]] || return 1
+      simplematch_local_image_lock_validate_file "$image_lock" || return 1
+      actual_identity="$(sha256sum "$image_lock" | awk '{print "sha256:" $1}')" || return 1
+      [[ "$actual_identity" == "$identity" ]]
+      ;;
+    *)
+      return 0
+      ;;
+  esac
+}
+
+certification_image_phase_revalidate() {
   local phase_id="$1"
   local evidence_digest="$2"
   local service identity location
@@ -162,9 +208,8 @@ _certification_image_lock_output() {
     '[{kind:"image-lock",name:"local-images",identity:$identity,location:$location,contentBase64:$contentBase64}]'
 }
 
-certification_phase_outputs_json() {
+certification_image_phase_outputs_json() {
   local phase_id="$1"
-  shift
   local service source_image identity
 
   case "$phase_id" in
@@ -188,7 +233,7 @@ certification_phase_outputs_json() {
   esac
 }
 
-certification_phase_materialize_reused_outputs() {
+certification_image_phase_materialize_reused_outputs() {
   local phase_id="$1"
   local evidence_digest="$2"
   local object_path service entry content_base64 temp_path destination

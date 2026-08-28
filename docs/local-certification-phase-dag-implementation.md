@@ -1,54 +1,60 @@
 # Local Certification Phase DAG Implementation
 
-Status: Implemented; exact final-head validation pending
+Status: Implemented; acceptance requires exact-head CI and the completion gates
+listed below.
 
-This document is the implementation specification for Issue #185 and
-`docs/local-certification-phase-dag.md`. It describes the current repository
-behavior rather than the sequence in which the implementation was developed.
+This is the implementation specification for Issue #185 and
+`docs/local-certification-phase-dag.md`. The architecture specification explains
+why Phase DAG execution and content-addressed evidence are used. This document
+explains the current shell interfaces, ownership of behavior, failure semantics,
+and verification seams.
 
-The change affects local certification infrastructure only. It does not change
-trading-domain terminology, application behavior, or Kubernetes ownership
-rules. `run-local-production-like-certification.sh` remains the normal operator
-entry point; there is no second or fast certification pipeline.
+The normal operator entry point remains:
 
-## 1. Design
+```bash
+scripts/run-local-production-like-certification.sh --keep-resources
+```
 
-Repeated production-like certification may reuse proof only when the work is
-independent of fresh runtime state and its effective inputs and immutable
-outputs can still be verified.
+There is no separate fast certification pipeline. Verified reuse is part of the
+normal full runner.
 
-The implementation places four responsibilities behind narrow shell interfaces:
+## 1. Module ownership
 
-1. `PhaseGraph` owns phase identity, dependencies, active-profile selection,
-   definition versions, and reuse policy.
-2. `PhaseFingerprint` owns deterministic effective-input identity.
-3. `EvidenceStore` owns immutable cross-run reusable PASS evidence.
-4. `CertificationPlanner` owns planning decisions and complete current-run
-   evidence.
+The certification workflow concentrates policy in four modules and keeps
+external state behind adapters.
 
-Docker and registry operations remain behind the certification image adapter.
-Command execution, timing, same-run markers, and reporting remain behind the
-certification execution adapter. The top-level runner coordinates these modules
-without reproducing their policy.
-
-## 2. PhaseGraph
+### PhaseGraph
 
 File: `scripts/lib/local-certification-phase-graph.sh`
+
+Owns:
+
+- phase identity;
+- dependency edges;
+- active-profile selection;
+- reuse policy;
+- same-run resume policy;
+- declared input/output kinds;
+- definition versions;
+- topological execution order.
 
 Public interface:
 
 ```text
 certification_phase_ids
 certification_phase_policy PHASE_ID
+certification_phase_resume_mode PHASE_ID
 certification_phase_dependencies PHASE_ID
 certification_phase_definition_version PHASE_ID
+certification_phase_input_kinds PHASE_ID
+certification_phase_output_kinds PHASE_ID
 certification_selected_image_services
 certification_required_phase_ids
 certification_explicit_skip_entries
 certification_phase_validate_graph
 ```
 
-Every registered phase has exactly one policy:
+Every phase declares exactly one reuse policy:
 
 ```text
 FRESH
@@ -56,29 +62,263 @@ CONTENT_ADDRESSED
 REVALIDATE
 ```
 
-The graph rejects unknown and filesystem-unsafe phase identifiers, duplicate
-phase identifiers, invalid definition versions, unknown dependencies, and
-cycles.
-
-The active required set is derived from a small set of profile roots plus the
-transitive dependency closure. The implementation does not maintain a second
-complete runtime-phase list. This keeps dependency ordering and required-phase
-completeness in one place.
-
-Selection-producing functions distinguish a valid empty or partial selection
-from an actual producer failure. Normal filtering therefore returns success
-even when the final registered phase is not selected.
-
-### Explicit omissions
-
-`certification_explicit_skip_entries` compares the active profile with the work
-that would be required as operator-selected restrictions are restored. It emits:
+Every phase also declares one same-run resume mode:
 
 ```text
-PHASE_ID|REASON
+REEXECUTE
+REUSE_RESULT
+VALIDATE
+FORBID
 ```
 
-for work deliberately omitted by:
+The graph rejects duplicate or invalid phase identifiers, invalid definition
+versions, unknown dependencies, and dependency cycles.
+
+`certification_required_phase_ids` starts from the active profile roots, walks
+the dependency closure, and emits a topological sequence. Registration order is
+not execution order. Callers do not maintain a second ordered phase list.
+
+### PhaseFingerprint
+
+File: `scripts/lib/local-certification-fingerprint.sh`
+
+Owns deterministic effective-input identity.
+
+Public interface:
+
+```text
+certification_phase_input_manifest PHASE_ID [PHASE_ARGUMENTS...]
+certification_phase_fingerprint PHASE_ID [PHASE_ARGUMENTS...]
+certification_image_input_manifest SERVICE
+certification_image_input_fingerprint SERVICE
+```
+
+The canonical input manifest is the explainable source of truth. A fingerprint
+is:
+
+```text
+SHA-256(canonical input manifest)
+```
+
+Manifests use repository-relative paths, file contents, executable mode when
+relevant, normalized scalar configuration, toolchain identities, upstream
+immutable artifact identities, and implementation files that can change the
+phase output or its evidence interpretation. Absolute workspace paths and mtimes
+are not effective inputs.
+
+### EvidenceStore
+
+File: `scripts/lib/local-certification-evidence.sh`
+
+Owns immutable cross-run PASS evidence.
+
+Public interface:
+
+```text
+certification_evidence_probe PHASE_ID INPUT_FINGERPRINT
+certification_evidence_find_valid PHASE_ID INPUT_FINGERPRINT
+certification_evidence_publish PHASE_ID INPUT_FINGERPRINT RESULT_FILE
+certification_evidence_materialize EVIDENCE_DIGEST DESTINATION
+certification_evidence_output_identity EVIDENCE_DIGEST KIND NAME
+certification_evidence_output_location EVIDENCE_DIGEST KIND NAME
+```
+
+The reusable cache defaults to:
+
+```text
+out/certification-cache/
+```
+
+and may be overridden by `SIMPLEMATCH_CERTIFICATION_CACHE_DIR`.
+
+The cache is not a trust root. Candidate evidence is accepted only after current
+validation of object digest, schema, phase identity, definition version, exact
+input fingerprint, PASS status, and declared output identities.
+
+`certification_evidence_probe` reports:
+
+```text
+HIT
+MISS
+REJECTED
+```
+
+`MISS` means no candidate exists. `REJECTED` means a candidate or index existed
+but could not be trusted. The planner preserves this distinction in run evidence.
+
+### CertificationPlanner
+
+File: `scripts/lib/local-certification-planner.sh`
+
+Owns execution/reuse decisions, graph traversal, planning diagnostics, and
+current-run evidence completeness.
+
+Public interface:
+
+```text
+certification_plan_initialize RUN_EVIDENCE_DIR
+certification_plan_execute DISPATCHER
+certification_plan_phase PHASE_ID [PHASE_ARGUMENTS...]
+certification_plan_record_execution PHASE INPUT REASON EXECUTION_JSON [COMMAND...]
+certification_plan_record_failure PHASE INPUT REASON EXECUTION_JSON
+certification_plan_record_reuse PHASE DECISION INPUT EVIDENCE REASON EXECUTION_JSON
+certification_phase_resume_result_valid PHASE_ID
+certification_phase_resume_decision PHASE_ID [REQUIRED_OUTPUT]
+certification_plan_finalize
+```
+
+For an active phase, planning returns:
+
+```text
+DECISION|INPUT_FINGERPRINT|EVIDENCE_DIGEST|REASON
+```
+
+where `DECISION` is `EXECUTE`, `REUSE`, or `REVALIDATE`.
+
+`FRESH` always executes in a new production-like run. `CONTENT_ADDRESSED` reuses
+only exact evidence whose outputs still validate. `REVALIDATE` accepts prior
+evidence only after its current external check succeeds.
+
+Every plan entry records cache lookup and revalidation time separately from
+command execution duration:
+
+```text
+lookupDurationMillis
+revalidationDurationMillis
+```
+
+Cache rejection reasons remain specific instead of being reduced to a generic
+cache miss.
+
+## 2. Adapter seams
+
+Policy modules do not know Docker, registry, Kafka, or Kubernetes command
+syntax.
+
+### Artifact adapter
+
+File: `scripts/lib/local-certification-artifacts.sh`
+
+This is the small seam used by `CertificationPlanner` for reusable output
+behavior. It dispatches to concrete image or Kafka adapters.
+
+Interface:
+
+```text
+certification_phase_cached_outputs_valid
+certification_phase_current_outputs_valid
+certification_phase_revalidate
+certification_phase_outputs_json
+certification_phase_materialize_reused_outputs
+```
+
+Because this seam can change evidence capture, validation, and materialization,
+its implementation is part of the effective input closure for affected reusable
+phases.
+
+### Image adapter
+
+File: `scripts/lib/local-certification-images.sh`
+
+Owns Docker image output identity, registry digest validation, image-lock
+materialization, and complete lock construction.
+
+Each canonical image has one content-addressed phase:
+
+```text
+local-image-build/<service>
+```
+
+A cached local image is reusable only when both the requested image location and
+immutable Docker image ID match prior evidence.
+
+Registry publication uses:
+
+```text
+registry-publish/<service>
+```
+
+and is `REVALIDATE`. The exact digest-qualified registry reference must still be
+addressable. A missing digest causes execution rather than stale reuse.
+
+`registry-image-lock` reconstructs one complete canonical `local-images.lock`
+from validated per-service fragments. Deployment rendering continues to consume
+the existing lock format.
+
+### Kafka adapter
+
+File: `scripts/lib/local-certification-kafka.sh`
+
+The reusable producer contract treats the generated producer configuration as a
+real content-addressed file artifact. Evidence contains the file identity and
+content needed to materialize it into the current run. Same-run validation
+rejects a missing or changed producer configuration.
+
+### Execution adapter
+
+Files:
+
+```text
+scripts/lib/local-certification-framework.sh
+scripts/lib/local-certification-run.sh
+```
+
+`run_logged` and `run_capture` remain separate because their output contracts
+are different: one writes a command log, while the other treats captured stdout
+as the phase artifact.
+
+Their shared lifecycle is concentrated in one internal phase context that owns:
+
+- resume evaluation;
+- planner decision retrieval;
+- start/completion timing;
+- structured execution metadata;
+- result recording;
+- completion markers.
+
+`local-certification-run.sh` maps phase identifiers to concrete execution
+adapters. It does not select execution order. `CertificationPlanner` iterates the
+PhaseGraph sequence and calls that dispatcher.
+
+## 3. Image input identity
+
+Spring application image fingerprints include:
+
+- the owning service source;
+- shared Java and protobuf inputs;
+- Gradle build logic and configuration;
+- the Gradle wrapper;
+- local image build/inventory logic;
+- concrete and generic artifact-adapter implementations;
+- immutable buildpack builder and run-image identities.
+
+Builder and run-image resolution follows the effective `BootBuildImage` pull
+policy used by `scripts/build-local-images.sh`:
+
+- `ALWAYS` resolves the registry identity;
+- `IF_NOT_PRESENT` uses a local identity when available, otherwise registry;
+- `NEVER` requires a local identity.
+
+Without an override, the effective policy is `ALWAYS`. Therefore a mutable
+upstream builder tag changing in the registry invalidates prior image evidence
+even when an older image with the same tag remains locally.
+
+Dockerfile image fingerprints conservatively include the effective repository
+build context, Dockerfile/build inputs, artifact-adapter implementation, and
+remotely resolved immutable base-image identities.
+
+Registry publication and image-lock fingerprints include the implementation
+files responsible for publication, transport, output validation, and
+materialization. Kafka producer evidence likewise includes the Kafka adapter and
+generic artifact seam. An implementation-only change therefore cannot silently
+accept evidence created under older output semantics.
+
+## 4. Explicit SKIP
+
+Operator-selected omission is not reuse.
+
+`certification_explicit_skip_entries` derives omitted phases from the PhaseGraph
+by cumulatively restoring:
 
 ```text
 --skip-build
@@ -87,248 +327,17 @@ for work deliberately omitted by:
 --matching-fleet-only
 ```
 
-Restoration is cumulative so interacting flags cannot hide an omitted phase.
-Each full-profile requirement omitted by the active profile receives one
-explainable SKIP reason.
+The planner records each omitted requirement as `SKIP` with no input fingerprint,
+evidence digest, or PASS result. Any explicit skip/profile restriction keeps the
+human-readable certification result `PARTIAL`.
 
-## 3. PhaseFingerprint
+## 5. Same-run resume
 
-File: `scripts/lib/local-certification-fingerprint.sh`
-
-Public interface:
-
-```text
-certification_phase_fingerprint PHASE_ID [PHASE_ARGUMENTS...]
-certification_image_input_fingerprint SERVICE
-```
-
-Successful calls return one `sha256:<64 lowercase hex>` value. Fingerprints use
-repository-relative paths, file content, executable mode where relevant,
-normalized scalar inputs, required toolchain identities, and upstream artifact
-identities. Absolute workspace paths and mtimes do not affect identity.
-
-### Spring application images
-
-A Spring application image fingerprint includes:
-
-- the owning `services/<service>` directory;
-- `shared-java/**` and `proto/**`;
-- build logic and Gradle configuration;
-- the Gradle wrapper;
-- local image build and inventory logic;
-- immutable buildpack builder and run-image identities.
-
-A source-only change in another application service does not invalidate the
-image. Trading-day and Kubernetes deployment-only changes also do not invalidate
-an unrelated Spring application image.
-
-### Dockerfile images
-
-Current Flyway, verifier, and Matching Dockerfiles use a broad Docker build
-context. Their fingerprints therefore conservatively include the effective
-repository Docker context, Dockerfile/build inputs, and immutable base-image
-identities. This may over-invalidate, but it does not knowingly under-invalidate
-relative to the actual build context.
-
-## 4. EvidenceStore
-
-File: `scripts/lib/local-certification-evidence.sh`
-
-Public interface:
+`--resume` continues one retained run. It does not enable cross-run cache reuse.
+The run context includes:
 
 ```text
-certification_evidence_find_valid PHASE_ID INPUT_FINGERPRINT
-certification_evidence_publish PHASE_ID INPUT_FINGERPRINT RESULT_FILE
-certification_evidence_materialize EVIDENCE_DIGEST DESTINATION
-certification_evidence_output_identity EVIDENCE_DIGEST KIND NAME
-certification_evidence_output_location EVIDENCE_DIGEST KIND NAME
-```
-
-The default reusable store is:
-
-```text
-out/certification-cache/
-```
-
-and may be overridden with `SIMPLEMATCH_CERTIFICATION_CACHE_DIR`.
-
-The cache is untrusted. A candidate object is reusable only after validating its
-content digest, schema, phase identity, current definition version, exact input
-fingerprint, PASS status, and required output identities.
-
-Malformed indexes, missing objects, corrupt objects, old phase definitions,
-wrong fingerprints, missing outputs, or output mismatches become cache misses.
-They never manufacture a PASS.
-
-Only PASS results enter the reusable store. Publication installs immutable
-content-addressed evidence before atomically updating the `(phase,input)` lookup
-reference.
-
-## 5. CertificationPlanner
-
-File: `scripts/lib/local-certification-planner.sh`
-
-Public interface:
-
-```text
-certification_plan_initialize RUN_EVIDENCE_DIR
-certification_plan_phase PHASE_ID [PHASE_ARGUMENTS...]
-certification_plan_record_execution ...
-certification_plan_record_failure ...
-certification_plan_record_reuse ...
-certification_phase_resume_result_valid PHASE_ID
-certification_plan_finalize
-```
-
-For an active phase, `certification_plan_phase` returns:
-
-```text
-DECISION|INPUT_FINGERPRINT|EVIDENCE_DIGEST|REASON
-```
-
-where the decision is `EXECUTE`, `REUSE`, or `REVALIDATE`.
-
-`FRESH` always resolves to `EXECUTE`. `CONTENT_ADDRESSED` resolves to `REUSE`
-only when exact prior evidence and reusable outputs validate. `REVALIDATE`
-resolves to `REVALIDATE` only when prior evidence exists and the current
-external check succeeds.
-
-### SKIP representation
-
-During plan initialization the Planner records PhaseGraph omissions as plan
-entries with:
-
-```json
-{
-  "decision": "SKIP",
-  "inputFingerprint": null,
-  "evidenceDigest": null
-}
-```
-
-A SKIP entry is explanation, not proof. It creates no phase result, no PASS
-status, and no reusable evidence. The report retains `PARTIAL` status whenever
-an operator-selected skip/profile restriction is active.
-
-Verified `REUSE` is therefore semantically different from `SKIP`: reuse proves
-the current requirement from validated immutable evidence, while skip records
-that the requirement was deliberately not proven in this run.
-
-### Finalization
-
-Before a non-dry-run plan finalizes, every active required phase must have
-exactly one plan entry and one current valid PASS result using the current phase
-definition version.
-
-After those checks succeed, the Planner atomically writes:
-
-```text
-<run-evidence>/evidence-manifest.json
-```
-
-The manifest contains the active required phase decisions, timing, input and
-evidence identities, outputs, and run-relative `resultPath` values. It contains
-no reusable-cache path.
-
-## 6. Execution adapter
-
-File: `scripts/lib/local-certification-framework.sh`
-
-`run_logged` and `run_capture` remain the command-execution seam. They own
-bounded execution, timing, current-run result creation, completion reporting,
-and same-run markers.
-
-`run_logged` can execute, reuse, or revalidate according to Planner output.
-`run_capture` retains stricter output semantics because captured stdout is the
-phase artifact; it does not silently reuse a phase without an output
-materialization adapter.
-
-The two functions intentionally remain distinct. Combining them behind mode
-flags would enlarge the interface and obscure the different output contract.
-
-Meaningful failures are propagated explicitly instead of relying on Bash
-`errexit` inside conditional call contexts. Producer functions likewise return
-nonzero only for actual failures, not because a normal selection condition was
-false on their final iteration.
-
-## 7. Image adapter
-
-File: `scripts/lib/local-certification-images.sh`
-
-Each canonical local image has one content-addressed build phase:
-
-```text
-local-image-build/<service>
-```
-
-Build reuse requires both the requested source-image location and the immutable
-Docker image ID to match prior evidence. An identical image ID under another tag
-is insufficient because later publication consumes the requested tag.
-
-Each selected registry image has one revalidated publication phase:
-
-```text
-registry-publish/<service>
-```
-
-The exact digest-qualified registry reference must remain addressable. A missing
-digest causes that service to publish again; it is never accepted as stale
-reuse.
-
-`registry-image-lock` reconstructs one complete canonical `local-images.lock`
-from validated per-service fragments. Deployment rendering continues to consume
-that existing lock format.
-
-## 8. Fresh runtime policy
-
-Runtime-state-dependent verification remains `FRESH`. This includes the source
-preflight, Compose runtime, Kafka runtime state and fault observation,
-registry-connectivity observation, kind import, namespace creation, Kubernetes
-inputs/platform application, migrations, topic provisioning, Open Barriers,
-workload application/readiness, Matching fleet verification, and retained-run
-provenance.
-
-Neither a full profile nor Matching-only profile changes a selected runtime
-phase from `FRESH` to reusable.
-
-The reusable cache does not contain PostgreSQL data, Kafka offsets, Gateway
-state, Matching ownership, critical-consumer progress, or namespace state.
-
-## 9. Current-run evidence
-
-Each active planned phase writes:
-
-```text
-<run-evidence>/phases/<phase-id>/result.json
-```
-
-Current-run result decisions are:
-
-```text
-EXECUTED
-REUSED
-REVALIDATED
-```
-
-A result records the phase and definition version, PASS/FAIL status, effective
-input fingerprint, reusable evidence digest where applicable, decision reason,
-source revision, start/end time, duration, and output identities.
-
-`plan.json` contains active planning decisions plus explicit `SKIP` entries.
-`evidence-manifest.json` contains the validated active required phase results.
-The human-readable report renders both completion status and the phase plan.
-
-When reusable evidence is consumed, source evidence and any required reusable
-outputs are materialized into the current run. Deleting
-`out/certification-cache` after a retained PASS therefore does not remove the
-run-local provenance required by dependent certification.
-
-## 10. Same-run resume
-
-`--resume` means continuation of one retained run, not cross-run cache access.
-Its run context must match:
-
-```text
+run_id
 namespace
 cluster
 trading_day
@@ -341,77 +350,165 @@ skip_kubernetes
 matching_fleet_only
 ```
 
-The four profile values prevent an evidence directory from being resumed under
-a different proof scope.
+Resume restores the original `run_id`; a new ID is not generated for the same
+run.
 
-A same-run phase marker is accepted only when the command signature matches and
-the corresponding current-run PASS result still uses the current phase
-definition version. Cross-run content-addressed reuse does not depend on these
-markers.
+A completion marker is only a resume candidate. PhaseGraph resume policy then
+decides what is safe:
 
-## 11. Failure semantics
+- `REUSE_RESULT` accepts a current-run PASS only when its definition and
+  run-local outputs still validate;
+- `REEXECUTE` runs the current check again;
+- `VALIDATE` requires an explicit current-state validator;
+- `FORBID` rejects continuation where the available evidence cannot prove a
+  side effect safe to replay or accept.
 
-The implementation fails closed when:
+The retained Kubernetes namespace validator checks repository-owned disposable
+identity and the original `run_id`. Kubernetes input continuation validates the
+immutable Market Reference and FIX dictionary ConfigMaps, session/trading-day
+identity, Matching image digest, and required local secrets.
 
-- graph validation or dependency production fails;
-- a required fingerprint or immutable tool/image identity cannot be established;
+### Non-replayable side effects
+
+A `FORBID` phase writes a run-local `.started` marker before executing its side
+effect. The marker is removed only after successful current-run evidence and the
+normal completion marker are durable.
+
+If the process dies in that interval, later `--resume` cannot know whether the
+side effect occurred and fails closed. `kubernetes-open-barriers` uses this
+policy so an ambiguous interruption cannot publish a second Open Barrier.
+
+## 6. Fresh runtime proof
+
+The following remain runtime-state-dependent and are not reused across runs:
+
+- source preflight;
+- Compose startup, readiness, status, and teardown;
+- Kafka capacity, topic/runtime inspection, and broker-failure observation;
+- registry connectivity;
+- kind node image import;
+- namespace and runtime inputs;
+- migrations and topic provisioning;
+- Open Barriers;
+- workload deployment/readiness;
+- Matching fleet verification;
+- retained-run provenance.
+
+The reusable cache does not contain PostgreSQL data, Kafka offsets, Gateway
+state, Matching ownership, critical-consumer progress, or namespace state.
+
+## 7. Current-run evidence
+
+Each active phase writes:
+
+```text
+<run-evidence>/phases/<phase-id>/result.json
+```
+
+Current-run decisions are:
+
+```text
+EXECUTED
+REUSED
+REVALIDATED
+```
+
+Result recording receives one execution metadata object:
+
+```json
+{
+  "startedAtUtc": "...",
+  "completedAtUtc": "...",
+  "durationMillis": 123
+}
+```
+
+The result also records planning timing, source revision, effective input
+fingerprint, reusable evidence digest where applicable, decision reason, and
+output identities.
+
+`plan.json` records active planning decisions plus explicit `SKIP` entries.
+`evidence-manifest.json` contains the validated active required phase results and
+run-relative result paths. Reused source evidence and reusable outputs are
+materialized into the current run.
+
+Deleting the reusable cache after a retained PASS therefore does not remove the
+run-local evidence required by dependent certification.
+
+## 8. Failure semantics
+
+The workflow fails closed when, among other cases:
+
+- PhaseGraph validation or dependency production fails;
+- an effective input cannot be read or canonicalized;
+- a mutable upstream image cannot be resolved according to effective pull
+  policy;
 - a phase command fails;
+- structured execution metadata is malformed;
 - successful execution cannot produce valid current-run evidence;
-- reusable PASS evidence cannot be published atomically;
-- cached outputs no longer match their required immutable identity/location;
-- registry revalidation fails and fresh publication also fails;
+- reusable evidence cannot be published atomically;
+- cached outputs no longer match their immutable identity or location;
+- current registry revalidation fails and fresh publication also fails;
 - complete image-lock construction is incomplete or invalid;
-- a plan contains duplicate or unknown phases;
-- an active required phase is missing, failed, or has an old definition version;
+- an active required phase is missing, failed, duplicated, unknown, or uses an
+  old definition version;
+- retained runtime state fails its resume validator;
+- a non-replayable phase has an ambiguous started-but-not-completed marker;
 - final retained evidence cannot be written atomically.
 
-A corrupt reusable object is a cache miss rather than a PASS. The requirement
-executes normally; if that execution fails, the run fails.
+A rejected cache object is not a PASS. The planner records why it was rejected
+and executes the requirement normally. If that execution fails, the run fails.
 
-## 12. Verification seams
+## 9. Verification seams
 
-`test-local-certification-incremental.sh` verifies graph policy, profile
-selection, deterministic fingerprints, QuickFIX-only and shared-input
-invalidation, trading-day independence, corrupt/old evidence rejection,
-registry revalidation, image-lock construction, cold execution, warm reuse, and
-required-phase completeness.
+Focused contracts exercise behavior through the same seams used by the runner:
 
-`test-local-certification-reuse-safety.sh` verifies producer failure propagation,
-conditional-context failure behavior, image location plus immutable identity,
-deployment-only build independence, run-local materialization, and retained-run
-operation after the reusable cache is removed.
+- `test-local-certification-incremental.sh` — graph policy/profile selection,
+  deterministic fingerprints, narrow/shared invalidation, cache integrity,
+  registry revalidation, cold execution, warm reuse, and result completeness;
+- `test-local-certification-reuse-safety.sh` — producer failure propagation,
+  image location/identity, deployment-only independence, and retained-run
+  operation after cache deletion;
+- `test-local-certification-skip-semantics.sh` — explicit SKIP representation
+  and proof-profile resume identity;
+- `test-local-certification-review-hardening.sh` — topological ordering,
+  declarative metadata, resume modes, pull-policy identity, cache diagnostics,
+  validation timing, and producer output materialization;
+- `test-local-certification-output-lineage.sh` — run-local producer output
+  validation and materialization;
+- `test-local-certification-artifact-fingerprint.sh` — generic artifact-adapter
+  changes invalidate image, registry, and Kafka reusable evidence;
+- `test-local-production-like.sh` — broad orchestration behavior using
+  PhaseGraph rather than source-line ordering.
 
-`test-local-certification-skip-semantics.sh` verifies that every full-profile
-requirement omitted by explicit operator choices has exactly one SKIP plan
-entry, representative reasons remain stable, Matching-only keeps its required
-Matching image, SKIP creates no PASS result, and resume context includes the
-proof-profile flags.
+Local Resource Lifecycle CI executes the focused contracts and a live kind
+registry/resource lifecycle smoke test. Other workflows triggered by the final
+tree must also pass.
 
-`test-local-production-like.sh` remains the broad orchestration contract. Local
-Resource Lifecycle CI executes these focused contracts and the live kind
-registry/resource lifecycle smoke test.
+## 10. Acceptance mapping
 
-## 13. Acceptance mapping
-
-| Issue #185 criterion | Repository verification |
+| Issue #185 requirement | Verification |
 | --- | --- |
-| Cold run keeps existing proof | Same operator runner; FRESH runtime policy; broad contract and live kind smoke |
-| Unchanged warm run can reuse valid work | Planner cold/warm contract |
-| FRESH executes for each new run | PhaseGraph and Planner contracts |
-| QuickFIX-only change has narrow invalidation | Per-service fingerprint contract |
-| Shared-contract change invalidates affected images | Shared Spring-input contract |
-| Trading-day/deployment-only change avoids unrelated builds | Fingerprint contracts |
+| Cold full run retains existing proof | Same operator runner; FRESH runtime policy; broad contracts/live smoke |
+| Warm unchanged work is reused safely | Planner cold/warm contract |
+| FRESH remains fresh across runs | PhaseGraph/Planner contracts |
+| QuickFIX-only change is narrow | Per-service image fingerprint contract |
+| Shared input invalidates affected images | Shared Spring-input contract |
+| Trading-day/deployment-only change avoids unrelated rebuilds | Fingerprint contracts |
+| Mutable builder/run image changes invalidate proof | Pull-policy identity contract |
+| Publication implementation changes invalidate proof | Implementation-sensitive fingerprint contracts |
+| Artifact dispatch changes invalidate proof | Artifact-adapter fingerprint contract |
 | Missing registry digest is not stale reuse | Registry revalidation contract |
-| Corrupt or wrong cache cannot false-PASS | EvidenceStore and definition-version contracts |
-| Explicit skip differs from reuse | SKIP plan contract and PARTIAL report semantics |
-| `--resume` remains same-run | Profile-bound run context and marker/result validation |
+| Corrupt/wrong cache cannot false-PASS | Evidence probe and definition-version contracts |
+| Explicit SKIP differs from reuse | SKIP contract and PARTIAL report semantics |
+| Resume is same-run and fail closed | Run identity, resume mode, current-state, and crash-window contracts |
 | Retained PASS survives cache deletion | Reuse-safety retained-evidence contract |
-| Decisions and timing are explainable | `plan.json`, result JSON, report, and evidence manifest |
-| Relevant lifecycle CI passes | Exact-final-head Local Resource Lifecycle CI |
+| Phase ordering has one source of truth | Topological PhaseGraph + planner dispatcher contract |
+| Decisions and timing are explainable | Plan/result/report/evidence-manifest contracts |
 
-## 14. Deferred work
+## 11. Deferred work
 
-The following remain out of scope:
+Still out of scope:
 
 - remote or distributed reusable cache;
 - reuse of database, Kafka, Gateway, Matching ownership, or critical-consumer
@@ -421,22 +518,21 @@ The following remain out of scope:
 - unbounded parallel image builds or Kubernetes mutations;
 - a second certification pipeline.
 
-Bounded parallel scheduling should be considered only if real cold/warm timing
-shows that remaining independent phases dominate wall-clock time.
+Bounded parallel scheduling should be considered only if measured cold/warm runs
+show remaining independent phases dominate wall-clock time.
 
-## 15. Completion gate
+## 12. Completion gate
 
-Issue #185 reaches the repository implementation gate when the final rewritten
-branch head has:
+Repository implementation is accepted only when the exact final branch head has:
 
 1. architecture and implementation specifications aligned with code;
-2. incremental, reuse-safety, skip-semantics, and broad contracts passing;
-3. Local Resource Lifecycle CI passing, including the live kind smoke;
+2. focused incremental/reuse/resume/artifact contracts passing;
+3. Local Resource Lifecycle CI passing, including live kind smoke;
 4. every additional workflow triggered by the final tree passing;
-5. a diff review finding no duplicated cache policy, hidden second pipeline,
-   reusable runtime-state phase, or shell failure path that can report success
-   after a required operation fails;
-6. milestone-oriented commit history following repository commit conventions.
+5. a final diff review with no unresolved Critical, High, or Medium Standards or
+   Spec finding;
+6. milestone-oriented commit history whose messages follow repository
+   conventions.
 
-Actual workstation cold/warm wall-clock measurements remain operational evidence;
-the CI contracts do not fabricate those measurements.
+Actual workstation cold/warm wall-clock measurements are operational evidence.
+CI contracts do not fabricate those measurements.

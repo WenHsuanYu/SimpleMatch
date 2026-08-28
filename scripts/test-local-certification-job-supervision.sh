@@ -9,29 +9,59 @@ job_lib="$script_dir/lib/local-certification-job.sh"
 kubernetes_lib="$script_dir/lib/local-certification-kubernetes.sh"
 bootstrap_lib="$script_dir/lib/local-certification-bootstrap.sh"
 run_lib="$script_dir/lib/local-certification-run.sh"
+phase_graph_lib="$script_dir/lib/local-certification-phase-graph.sh"
 kafka_manifest="$repo_root/deploy/k8s/kafka-kraft.yaml"
+# shellcheck source=scripts/lib/local-certification-phase-graph.sh
+source "$phase_graph_lib"
 
-for file in "$runner" "$job_lib" "$kubernetes_lib" "$bootstrap_lib" "$run_lib"; do
+fail() {
+  printf 'Local certification Job supervision contract: %s\n' "$*" >&2
+  exit 1
+}
+
+for file in \
+    "$runner" "$job_lib" "$kubernetes_lib" "$bootstrap_lib" "$run_lib" \
+    "$phase_graph_lib"; do
   bash -n "$file"
 done
 
-grep -Fq 'SIMPLEMATCH_KUBERNETES_JOB_EVIDENCE_INTERVAL_SECONDS:-10' "$runner"
-grep -Fq 'SIMPLEMATCH_KAFKA_TOPIC_PROVISIONING_SUPERVISOR_SECONDS:-270' "$runner"
-grep -Fq 'local-certification-job.sh' "$runner" "$bootstrap_lib"
-grep -Fq 'supervise_kubernetes_job()' "$job_lib"
-grep -Fq '^Complete=True:' "$job_lib"
-grep -Fq '^(Failed|FailureTarget)=True:' "$job_lib"
-grep -Fq 'collect_kubernetes_job_evidence' "$job_lib"
-grep -Fq 'collect_kafka_provisioning_evidence' "$kubernetes_lib"
-grep -Fq 'kafka-endpointslices.yaml' "$kubernetes_lib"
-grep -Fq 'assert_certification_namespace_exclusive' "$kubernetes_lib" "$bootstrap_lib"
-grep -Fq 'simplematch.io/managed-by=local-production-like-certification' "$kubernetes_lib"
-grep -Fq 'run_logged compose-down-before-kubernetes' "$run_lib"
-grep -Fq 'down --volumes --remove-orphans' "$run_lib"
+grep -Fq 'SIMPLEMATCH_KUBERNETES_JOB_EVIDENCE_INTERVAL_SECONDS:-10' "$runner" ||
+  fail 'runner must retain the Job evidence interval default'
+grep -Fq 'SIMPLEMATCH_KAFKA_TOPIC_PROVISIONING_SUPERVISOR_SECONDS:-270' "$runner" ||
+  fail 'runner must retain the Kafka provisioning supervisor default'
+grep -Fq 'local-certification-job.sh' "$runner" "$bootstrap_lib" ||
+  fail 'runner must load the shared Job supervision module'
+grep -Fq 'supervise_kubernetes_job()' "$job_lib" ||
+  fail 'Job supervisor function is missing'
+grep -Fq '^Complete=True:' "$job_lib" ||
+  fail 'Job supervisor no longer recognizes successful completion'
+grep -Fq '^(Failed|FailureTarget)=True:' "$job_lib" ||
+  fail 'Job supervisor no longer recognizes terminal failure'
+grep -Fq 'collect_kubernetes_job_evidence' "$job_lib" ||
+  fail 'Job supervisor no longer collects diagnostic evidence'
+grep -Fq 'collect_kafka_provisioning_evidence' "$kubernetes_lib" ||
+  fail 'Kafka provisioning evidence collector is missing'
+grep -Fq 'kafka-endpointslices.yaml' "$kubernetes_lib" ||
+  fail 'Kafka provisioning evidence no longer includes EndpointSlices'
+grep -Fq 'assert_certification_namespace_exclusive' "$kubernetes_lib" "$bootstrap_lib" ||
+  fail 'certification namespace exclusivity check is missing'
+grep -Fq 'simplematch.io/managed-by=local-production-like-certification' "$kubernetes_lib" ||
+  fail 'certification namespace ownership label is missing'
+grep -Fq 'down --volumes --remove-orphans' "$run_lib" ||
+  fail 'Compose fixture shutdown no longer removes run-owned volumes'
+
+skip_build=false
+skip_compose=false
+skip_kubernetes=false
+matching_fleet_only=false
+image_transport=registry
+namespace_dependencies="$(certification_phase_dependencies kubernetes-namespace)" ||
+  fail 'Kubernetes namespace dependencies could not be resolved'
+grep -Fxq compose-down-before-kubernetes <<<"$namespace_dependencies" ||
+  fail 'Kubernetes execution must depend on Compose fixture shutdown'
 
 if grep -Fq 'job/kafka-topic-provisioning --timeout=300s' "$kubernetes_lib"; then
-  printf '%s\n' 'Kafka provisioning still has the legacy 300s outer Job wait.' >&2
-  exit 1
+  fail 'Kafka provisioning still has the legacy 300s outer Job wait'
 fi
 
 mapfile -t hierarchy < <(ruby -ryaml - "$kafka_manifest" "$runner" <<'RUBY'
@@ -58,8 +88,7 @@ supervisor_deadline="${hierarchy[3]}"
   exit 1
 }
 [[ "$admin_timeout" == 15 && "$retry_budget" == 90 && "$job_deadline" == 240 && "$supervisor_deadline" == 270 ]] || {
-  printf '%s\n' 'Kafka certification timeout defaults changed without updating the contract.' >&2
-  exit 1
+  fail 'Kafka certification timeout defaults changed without updating the contract'
 }
 
 ruby -ryaml - "$kafka_manifest" <<'RUBY'

@@ -79,18 +79,69 @@ certification_evidence_validate_object() {
   [[ "$definition_version" == "$current_definition_version" ]]
 }
 
-certification_evidence_find_valid() {
+_certification_evidence_probe_result() {
+  local status="$1"
+  local reason="$2"
+  local evidence_digest="${3:-}"
+
+  jq -cn \
+    --arg status "$status" \
+    --arg reason "$reason" \
+    --arg evidence "$evidence_digest" '{
+      status: $status,
+      reason: $reason,
+      evidenceDigest: (if $evidence == "" then null else $evidence end)
+    }'
+}
+
+certification_evidence_probe() {
   local phase_id="$1"
   local input_fingerprint="$2"
   local index_path evidence_digest object_path
 
-  index_path="$(_certification_evidence_index_path "$phase_id" "$input_fingerprint")" || return 1
-  [[ -f "$index_path" ]] || return 1
-  evidence_digest="$(tr -d '\r\n' <"$index_path")"
-  _certification_evidence_validate_identity "$evidence_digest" || return 1
+  index_path="$(_certification_evidence_index_path \
+    "$phase_id" "$input_fingerprint")" || return 1
+  if [[ ! -f "$index_path" ]]; then
+    _certification_evidence_probe_result MISS 'cache index is missing'
+    return 0
+  fi
+
+  evidence_digest="$(tr -d '\r\n' <"$index_path")" || return 1
+  if ! _certification_evidence_validate_identity "$evidence_digest"; then
+    _certification_evidence_probe_result \
+      REJECTED 'cache index contains an invalid evidence digest'
+    return 0
+  fi
+
   object_path="$(_certification_evidence_object_path "$evidence_digest")" || return 1
-  certification_evidence_validate_object \
-    "$object_path" "$evidence_digest" "$phase_id" "$input_fingerprint" || return 1
+  if [[ ! -f "$object_path" ]]; then
+    _certification_evidence_probe_result \
+      REJECTED 'indexed evidence object is missing' "$evidence_digest"
+    return 0
+  fi
+  if ! certification_evidence_validate_object \
+      "$object_path" "$evidence_digest" "$phase_id" "$input_fingerprint"; then
+    _certification_evidence_probe_result \
+      REJECTED \
+      'evidence object failed integrity, schema, phase, definition, or input validation' \
+      "$evidence_digest"
+    return 0
+  fi
+
+  _certification_evidence_probe_result HIT 'valid reusable evidence' "$evidence_digest"
+}
+
+certification_evidence_find_valid() {
+  local phase_id="$1"
+  local input_fingerprint="$2"
+  local probe_json status evidence_digest
+
+  probe_json="$(certification_evidence_probe \
+    "$phase_id" "$input_fingerprint")" || return 1
+  status="$(jq -r '.status' <<<"$probe_json")" || return 1
+  [[ "$status" == HIT ]] || return 1
+  evidence_digest="$(jq -r '.evidenceDigest' <<<"$probe_json")" || return 1
+  _certification_evidence_validate_identity "$evidence_digest" || return 1
   printf '%s\n' "$evidence_digest"
 }
 
@@ -99,9 +150,6 @@ _certification_evidence_install_object() {
   local object_path="$2"
   local evidence_digest="$3"
 
-  # A hard link provides create-if-absent semantics on the same filesystem. If
-  # another process wins the race, validate its immutable object before using
-  # it; never overwrite an existing content-addressed object.
   if ln -- "$object_temp" "$object_path" 2>/dev/null; then
     rm -f -- "$object_temp"
     return 0
