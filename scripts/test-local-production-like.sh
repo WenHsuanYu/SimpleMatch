@@ -13,11 +13,21 @@ workloads_lib="$script_dir/lib/local-certification-workloads.sh"
 bootstrap_lib="$script_dir/lib/local-certification-bootstrap.sh"
 run_lib="$script_dir/lib/local-certification-run.sh"
 transport_lib="$script_dir/lib/local-image-transport.sh"
+phase_graph_lib="$script_dir/lib/local-certification-phase-graph.sh"
+fingerprint_lib="$script_dir/lib/local-certification-fingerprint.sh"
+evidence_lib="$script_dir/lib/local-certification-evidence.sh"
+planner_lib="$script_dir/lib/local-certification-planner.sh"
+images_lib="$script_dir/lib/local-certification-images.sh"
 normalizer="$script_dir/normalize-local-images-for-kind.sh"
 normalizer_dockerfile="$repo_root/deploy/docker/Dockerfile.kind-normalized"
 
-for file in "$runner" "$framework_lib" "$kafka_lib" "$kubernetes_lib" "$connect_lib" \
-  "$workloads_lib" "$bootstrap_lib" "$run_lib" "$transport_lib"; do
+trap 'status=$?; printf "Local production-like contract failed at line %s: %s\n" "$LINENO" "$BASH_COMMAND" >&2; exit "$status"' ERR
+
+for file in \
+  "$runner" "$framework_lib" "$kafka_lib" "$kubernetes_lib" \
+  "$connect_lib" "$workloads_lib" "$bootstrap_lib" "$run_lib" \
+  "$transport_lib" "$phase_graph_lib" "$fingerprint_lib" \
+  "$evidence_lib" "$planner_lib" "$images_lib"; do
   bash -n "$file"
 done
 
@@ -52,6 +62,7 @@ expected_images=(
   'simplematch/marketdata-streamer:local'
   'simplematch/query-service:local'
   'simplematch/flyway-runner:local'
+  'simplematch/risk-matching-e2e-verifier:local'
   'simplematch-matching:local'
   'quickfix-gateway:local'
 )
@@ -74,9 +85,8 @@ grep -Fq 'verify-local-boot-run-image.sh' <<<"$boot_override_dry_run"
 bash -n "$repo_root/scripts/verify-local-boot-run-image.sh"
 grep -Fq 'docker image save --platform' "$repo_root/scripts/verify-local-boot-run-image.sh"
 
-# Image delivery is staged: registry is the default and immutable runtime path;
-# kind-load remains an explicit compatibility fallback while the local registry
-# path proves stable. Both use one canonical inventory.
+# Image delivery remains dual-transport. Registry is the default immutable
+# deployment path; kind-load is a fresh compatibility fallback.
 bash -n "$script_dir/prepare-local-kubernetes-images.sh"
 bash -n "$script_dir/publish-local-images.sh"
 bash -n "$script_dir/render-local-kubernetes-manifest.sh"
@@ -102,7 +112,8 @@ grep -Fq -- '--image-transport' "$framework_lib" "$bootstrap_lib"
 grep -Fq 'simplematch_local_image_transport_validate "$image_transport"' "$bootstrap_lib"
 grep -Fq 'image_transport=%s' "$bootstrap_lib"
 grep -Fq 'phase_marker_directory' "$framework_lib" "$bootstrap_lib"
-grep -Fq 'SIMPLEMATCH_CERTIFICATION_TIMEOUT_SECONDS' "$runner" "$framework_lib" "$bootstrap_lib"
+grep -Fq 'SIMPLEMATCH_CERTIFICATION_TIMEOUT_SECONDS' \
+  "$runner" "$framework_lib" "$bootstrap_lib"
 grep -Fq 'SIMPLEMATCH_KAFKA_CAPACITY_WORKLOAD_FILE' "$runner"
 grep -Fq 'scripts/testdata/matching-topic-profile/local/capacity.properties' "$runner"
 grep -Fq 'workload.commands.per.day=10000' \
@@ -129,27 +140,29 @@ grep -Fq 'Certification namespace already exists' "$kubernetes_lib"
 grep -Fq 'simplematch_kind_namespace_is_disposable' "$bootstrap_lib"
 grep -Fq 'simplematch_kind_delete_disposable_namespace' "$framework_lib"
 
-# Default certification must use registry publication/rendering and must not
-# execute the legacy direct-import path.
+# Default certification must expose incremental registry work instead of the
+# old all-at-once image-preparation command. Artifact rendering stays behind the
+# Kubernetes manifest phase adapter and is tested independently below.
 certification_dry_run="$($runner --dry-run --skip-build --skip-compose)"
 grep -Fq 'test-kubernetes-overlays.sh' <<<"$certification_dry_run"
 grep -Fq 'test-local-kubernetes-dependencies.sh' <<<"$certification_dry_run"
 grep -Fq 'test-matching-topic-profile.sh' <<<"$certification_dry_run"
-grep -Fq 'prepare-local-kubernetes-images.sh' <<<"$certification_dry_run"
-grep -Fq 'render-local-kubernetes-manifest.sh' <<<"$certification_dry_run"
+grep -Fq 'publish-local-images.sh' <<<"$certification_dry_run"
+grep -Fq -- '--service account-service' <<<"$certification_dry_run"
+grep -Fq 'certification_construct_registry_image_lock' <<<"$certification_dry_run"
+grep -Fq '_certification_render_and_split_kubernetes_manifest' <<<"$certification_dry_run"
+grep -Fq 'render_local_kubernetes_manifest' "$run_lib"
 if grep -Fq 'kind load docker-image' <<<"$certification_dry_run"; then
   printf '%s\n' 'Default certification dry-run unexpectedly imports images directly into kind.' >&2
   exit 1
 fi
 
-# Explicit fallback must remain reachable without leaking direct-import details
-# into the top-level runner implementation. The runner dry-run only prints the
-# delegated preparation command; direct `kind load` execution belongs to that
-# preparation boundary and is covered by test-local-image-transport.sh.
-fallback_dry_run="$($runner --image-transport kind-load --matching-fleet-only --dry-run --skip-build --skip-compose)"
+# Explicit fallback remains behind the existing preparation adapter.
+fallback_dry_run="$($runner --image-transport kind-load --matching-fleet-only \
+  --dry-run --skip-build --skip-compose)"
 grep -Fq 'prepare-local-kubernetes-images.sh' <<<"$fallback_dry_run"
 grep -Fq -- '--transport kind-load' <<<"$fallback_dry_run"
-grep -Fq -- '--allow-local-image simplematch-matching:local' <<<"$fallback_dry_run"
+grep -Fq -- '--matching-only' <<<"$fallback_dry_run"
 if grep -Fq 'kind load docker-image' <<<"$fallback_dry_run"; then
   printf '%s\n' 'Top-level certification dry-run leaks direct kind-load implementation details.' >&2
   exit 1
@@ -159,22 +172,36 @@ if grep -Fq 'normalize-local-images-for-kind.sh' "$runner"; then
   exit 1
 fi
 
-# Migrations, durable barrier, workloads, then connector registration remain ordered.
+# Ordering is owned by PhaseGraph rather than by source-file line order.
+# Concrete command adapters remain separately visible in the run module.
+# shellcheck source=scripts/lib/local-certification-phase-graph.sh
+source "$phase_graph_lib"
+skip_build=false
+skip_compose=false
+skip_kubernetes=false
+matching_fleet_only=false
+image_transport=registry
+unset SIMPLEMATCH_KAFKA_PRODUCER_CONFIG_FILE || true
+
+grep -Fxq kubernetes-open-barriers \
+  <<<"$(certification_phase_dependencies kubernetes-workload-apply)" || {
+  printf '%s\n' 'Workload application must depend on the durable Matching barrier.' >&2
+  exit 1
+}
+grep -Fxq kubernetes-workload-apply \
+  <<<"$(certification_phase_dependencies kubernetes-risk-outbox-connector)" || {
+  printf '%s\n' 'Connector registration must depend on workload application.' >&2
+  exit 1
+}
 grep -Fq 'apply_kubernetes_migrations' "$kubernetes_lib" "$run_lib"
 grep -Fq 'apply_kubernetes_topic_provisioning' "$kubernetes_lib" "$run_lib"
 grep -Fq 'local-kubernetes-migrations.yaml' "$run_lib"
 grep -Fq 'local-kubernetes-workloads.yaml' "$run_lib"
-barrier_publish_line="$(grep -n 'run_logged kubernetes-open-barriers publish_local_matching_open_barriers' "$run_lib" | tail -1 | cut -d: -f1)"
-workload_apply_line="$(grep -n 'run_logged kubernetes-workload-apply kubectl apply -f "$workload_manifest"' "$run_lib" | tail -1 | cut -d: -f1)"
-connector_register_line="$(grep -n 'run_logged kubernetes-risk-outbox-connector register_kubernetes_risk_connector' "$run_lib" | tail -1 | cut -d: -f1)"
-[[ -n "$barrier_publish_line" && -n "$workload_apply_line" && -n "$connector_register_line" && \
-  "$barrier_publish_line" -lt "$workload_apply_line" && \
-  "$workload_apply_line" -lt "$connector_register_line" ]] || {
-  printf '%s\n' 'Certification must publish the durable Matching barrier before workloads and register Connect afterward.' >&2
-  exit 1
-}
+grep -Fq 'publish_local_matching_open_barriers' "$run_lib"
+grep -Fq 'register_kubernetes_risk_connector' "$run_lib"
 
-grep -Fq -- "--for=jsonpath='{.status.readyReplicas}'=3 statefulset/kafka --timeout=300s" "$kubernetes_lib"
+grep -Fq -- "--for=jsonpath='{.status.readyReplicas}'=3 statefulset/kafka --timeout=300s" \
+  "$kubernetes_lib"
 grep -Fq 'register_kubernetes_risk_connector' "$connect_lib" "$run_lib"
 grep -Fq 'local-kubernetes-inputs.yaml' "$run_lib"
 if grep -Fq 'prepare_kubernetes_bridge' "$runner" "$kubernetes_lib" "$run_lib"; then
@@ -195,15 +222,16 @@ grep -Fq -- '--matching-fleet-only' "$framework_lib" "$bootstrap_lib"
 grep -Fq 'select_matching_workload' "$workloads_lib" "$run_lib"
 grep -Fq 'simplematch_local_image_transport_matching_digest' "$run_lib"
 grep -Fq 'simplematch_local_image_transport_matching_reference' "$run_lib"
-grep -Fq -- '--transport "$image_transport"' "$run_lib"
 grep -Fq 'trading_session_id=${trading_day}-regular' "$kubernetes_lib"
 grep -Fq -- '--allow-shared-node' "$workloads_lib"
 grep -Fq -- '--allow-local-image' "$workloads_lib"
 
-# Modularity is itself a contract: orchestration stays small and implementation lives by domain.
+# Modularity is itself a contract: orchestration stays small and policy remains
+# in the dedicated modules rather than individual phase call sites.
 runner_lines="$(wc -l <"$runner")"
 (( runner_lines < 150 )) || {
-  printf 'Certification orchestrator grew past its intended boundary: %s lines.\n' "$runner_lines" >&2
+  printf 'Certification orchestrator grew past its intended boundary: %s lines.\n' \
+    "$runner_lines" >&2
   exit 1
 }
 grep -Fq 'wait_for_compose()' "$kafka_lib"
@@ -211,14 +239,22 @@ grep -Fq 'render_local_kubernetes_manifest()' "$kubernetes_lib"
 grep -Fq 'register_kubernetes_risk_connector()' "$connect_lib"
 grep -Fq 'verify_local_matching_fleet()' "$workloads_lib"
 grep -Fq 'write_report()' "$framework_lib"
+grep -Fq 'certification_phase_policy()' "$phase_graph_lib"
+grep -Fq 'certification_phase_fingerprint()' "$fingerprint_lib"
+grep -Fq 'certification_evidence_find_valid()' "$evidence_lib"
+grep -Fq 'certification_plan_phase()' "$planner_lib"
+grep -Fq 'certification_publish_registry_images()' "$images_lib"
 
 bash "$repo_root/scripts/validate-matching-producer-contract.sh"
 "$repo_root/scripts/run-matching-kafka-failure-check.sh" --help >/dev/null
 
-for service in account-service risk-service persistence market-data-projection marketdata-publisher marketdata-streamer; do
+for service in \
+  account-service risk-service persistence market-data-projection \
+  marketdata-publisher marketdata-streamer; do
   grep -Fq 'implementation("org.springframework.boot:spring-boot-starter-web")' \
     "$repo_root/services/$service/build.gradle.kts" || {
-    printf '%s does not provide the HTTP management runtime required by Kubernetes probes.\n' "$service" >&2
+    printf '%s does not provide the HTTP management runtime required by Kubernetes probes.\n' \
+      "$service" >&2
     exit 1
   }
 done
@@ -226,4 +262,5 @@ done
 ruby -r yaml -e 'YAML.load_file(ARGV.fetch(0), aliases: true)' \
   "$repo_root/deploy/compose/kafka-connect.production-like.yml" >/dev/null
 
-printf '%s\n' 'Local production-like staged image transport and certification contracts are valid.'
+printf '%s\n' \
+  'Local production-like incremental image and certification contracts are valid.'

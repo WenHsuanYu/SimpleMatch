@@ -423,7 +423,10 @@ metadata:
     app.kubernetes.io/component: topic-provisioning
     app.kubernetes.io/part-of: simplematch
 spec:
-  activeDeadlineSeconds: 240
+  # Six topics each require bounded describe/create/configuration operations.
+  # The 10-minute Job deadline leaves room for kind scheduling and broker
+  # startup while keeping the provisioning attempt finite.
+  activeDeadlineSeconds: 600
   backoffLimit: 0
   ttlSecondsAfterFinished: 86400
   template:

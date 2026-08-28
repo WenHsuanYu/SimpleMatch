@@ -1,8 +1,8 @@
 #!/usr/bin/env bash
 
-# Local production-like certification execution framework.
-# Sourced by run-local-production-like-certification.sh; shared run state is owned
-# by the top-level orchestrator. This file defines behavior only and has no entry point.
+# Local production-like certification execution framework. The top-level runner
+# owns shared run state; this module owns command execution, timing, current-run
+# phase evidence, reporting, and cleanup.
 
 usage() {
   cat <<'EOF'
@@ -12,36 +12,19 @@ Usage:
 Options:
   --tag TAG               Local image tag (default: SIMPLEMATCH_LOCAL_IMAGE_TAG or local).
   --image-transport MODE  Kubernetes image transport: registry (default) or kind-load fallback.
-  --skip-build            Reuse local images instead of running the image build workflow.
+  --skip-build            Reuse local images without proving the image-build requirement.
   --skip-compose          Skip PostgreSQL, Redis, Kafka, and Kafka Connect runtime checks.
-  --skip-kubernetes        Skip the live Kubernetes deployment and Matching fleet checks.
+  --skip-kubernetes       Skip the live Kubernetes deployment and Matching fleet checks.
   --matching-fleet-only    Run a clean local Kafka plus Matching fleet gate; skip Flyway and other
                            runtime workloads. The report is intentionally PARTIAL.
   --keep-resources         Keep only this run's Compose project and Kubernetes namespace.
-  --resume                 Reuse successful phases from the supplied evidence directory and
-                           namespace; requires SIMPLEMATCH_CERTIFICATION_EVIDENCE_DIR and
-                           SIMPLEMATCH_CERTIFICATION_NAMESPACE.
+  --resume                 Continue the same evidence directory and retained namespace.
   --dry-run                Print planned commands without changing external state.
   --help                   Show this help.
 
-The local gate owns only the Compose project named by
-SIMPLEMATCH_CERTIFICATION_COMPOSE_PROJECT and a generated Kubernetes namespace.
-Generated namespaces are labeled simplematch.io/lifecycle=disposable; that label
-is the authoritative routine-cleanup boundary. registry is the default image
-transport and publishes only to the configured local registry, rendering runtime
-images by immutable digest. kind-load remains an explicit compatibility fallback
-that imports the local image inventory into kind without using registry digest
-substitution. Neither path publishes to staging, production, or a remote registry.
-The Kubernetes gate uses the approved delivery manifest for
-SIMPLEMATCH_CERTIFICATION_TRADING_DAY (default: current UTC day) under
-tools/market-reference-builder/data, or the path supplied by
-SIMPLEMATCH_MARKET_REFERENCE_DELIVERY_MANIFEST.
-The Kafka profile gate generates source-backed producer evidence and measures free Docker
-filesystem capacity for the local brokers. The default workload envelope is the bounded local
-side-project scenario under scripts/testdata/matching-topic-profile/local/capacity.properties;
-override it with SIMPLEMATCH_KAFKA_CAPACITY_WORKLOAD_FILE when a different explicitly documented
-workload envelope is required. Override producer or capacity evidence with
-SIMPLEMATCH_KAFKA_PRODUCER_CONFIG_FILE or SIMPLEMATCH_KAFKA_CAPACITY_EVIDENCE_FILE.
+Verified cross-run reuse is automatic and independent of --resume. Reusable
+phase evidence must match exact effective inputs and immutable output identity.
+Runtime-state-dependent phases still execute fresh for every new full run.
 EOF
 }
 
@@ -57,33 +40,205 @@ print_command() {
   printf '\n'
 }
 
-run_logged() {
+_certification_now_utc() {
+  date -u +%Y-%m-%dT%H:%M:%S.%3NZ
+}
+
+_certification_now_millis() {
+  date +%s%3N
+}
+
+declare -gA SIMPLEMATCH_CERTIFICATION_ACTIVE_PHASE=()
+
+_certification_phase_signature() {
   local phase="$1"
-  shift
-  local log_path="$evidence_dir/${phase}.log"
-  local marker_path="$phase_marker_directory/${phase}.ok"
-  local phase_signature
+  local required_output="$2"
+  shift 2
+  printf '%s\0' "$source_signature" "$phase" "$required_output" "$@" |
+    sha256sum | awk '{print $1}'
+}
 
-  phase_signature="$(printf '%s\0' "$source_signature" "$phase" "$@" | sha256sum | awk '{print $1}')"
+_certification_mark_phase_complete() {
+  local marker_path="$1"
+  local phase_signature="$2"
 
-  if [[ "$resume" == true && -f "$marker_path" && "$(<"$marker_path")" == "$phase_signature" ]]; then
-    completed_phases+=("$phase (reused)")
-    printf 'REUSE %-32s (%s)\n' "$phase" "$marker_path"
+  mkdir -p "$(dirname -- "$marker_path")" || return 1
+  printf '%s\n' "$phase_signature" >"$marker_path"
+}
+
+_certification_mark_phase_started_if_needed() {
+  local started_marker
+
+  [[ "${SIMPLEMATCH_CERTIFICATION_ACTIVE_PHASE[resumeMode]}" == FORBID ]] || \
     return 0
+  started_marker="${SIMPLEMATCH_CERTIFICATION_ACTIVE_PHASE[startedMarker]}"
+  mkdir -p "$(dirname -- "$started_marker")" || return 1
+  printf '%s\n' "${SIMPLEMATCH_CERTIFICATION_ACTIVE_PHASE[signature]}" \
+    >"$started_marker"
+}
+
+_certification_clear_phase_started_if_needed() {
+  [[ "${SIMPLEMATCH_CERTIFICATION_ACTIVE_PHASE[resumeMode]}" == FORBID ]] || \
+    return 0
+  rm -f -- "${SIMPLEMATCH_CERTIFICATION_ACTIVE_PHASE[startedMarker]}"
+}
+
+_certification_prepare_phase_context() {
+  local phase="$1"
+  local required_output="$2"
+  shift 2
+  local marker_path started_marker phase_signature resume_decision resume_mode plan
+
+  SIMPLEMATCH_CERTIFICATION_ACTIVE_PHASE=()
+  marker_path="$phase_marker_directory/${phase}.ok"
+  started_marker="$phase_marker_directory/${phase}.started"
+  phase_signature="$(_certification_phase_signature \
+    "$phase" "$required_output" "$@")" || return 1
+  resume_mode="$(certification_phase_resume_mode "$phase")" || return 1
+  SIMPLEMATCH_CERTIFICATION_ACTIVE_PHASE[phase]="$phase"
+  SIMPLEMATCH_CERTIFICATION_ACTIVE_PHASE[markerPath]="$marker_path"
+  SIMPLEMATCH_CERTIFICATION_ACTIVE_PHASE[startedMarker]="$started_marker"
+  SIMPLEMATCH_CERTIFICATION_ACTIVE_PHASE[signature]="$phase_signature"
+  SIMPLEMATCH_CERTIFICATION_ACTIVE_PHASE[requiredOutput]="$required_output"
+  SIMPLEMATCH_CERTIFICATION_ACTIVE_PHASE[resumeMode]="$resume_mode"
+
+  if [[ "$resume" == true && "$resume_mode" == FORBID && \
+      -f "$started_marker" ]]; then
+    printf 'same-run resume cannot determine whether non-replayable phase %s already produced side effects; start a fresh production-like run\n' \
+      "$phase" >&2
+    return 2
+  fi
+
+  if [[ "$resume" == true && -f "$marker_path" && \
+      "$(<"$marker_path")" == "$phase_signature" ]]; then
+    resume_decision="$(certification_phase_resume_decision \
+      "$phase" "$required_output")" || return 1
+    case "$resume_decision" in
+      RESUME)
+        SIMPLEMATCH_CERTIFICATION_ACTIVE_PHASE[action]=RESUME
+        return 0
+        ;;
+      REEXECUTE)
+        ;;
+      REJECT)
+        printf 'same-run resume cannot safely accept completed phase %s; start a fresh production-like run\n' \
+          "$phase" >&2
+        return 2
+        ;;
+      *)
+        printf 'unsupported same-run resume decision for %s: %s\n' \
+          "$phase" "$resume_decision" >&2
+        return 1
+        ;;
+    esac
   fi
 
   check_certification_deadline
-
   if [[ "$dry_run" == true ]]; then
-    print_command "$@"
+    certification_plan_phase "$phase" "$@" >/dev/null || return 1
+    SIMPLEMATCH_CERTIFICATION_ACTIVE_PHASE[action]=DRY_RUN
     return 0
   fi
 
-  mkdir -p "$evidence_dir"
-  printf '$' >"$log_path"
-  printf ' %q' "$@" >>"$log_path"
-  printf '\n' >>"$log_path"
-  local command_status
+  SIMPLEMATCH_CERTIFICATION_ACTIVE_PHASE[startedAtUtc]="$(_certification_now_utc)"
+  SIMPLEMATCH_CERTIFICATION_ACTIVE_PHASE[startedMillis]="$(_certification_now_millis)"
+  plan="$(certification_plan_phase "$phase" "$@")" || return 1
+  IFS='|' read -r \
+    SIMPLEMATCH_CERTIFICATION_ACTIVE_PHASE[decision] \
+    SIMPLEMATCH_CERTIFICATION_ACTIVE_PHASE[inputFingerprint] \
+    SIMPLEMATCH_CERTIFICATION_ACTIVE_PHASE[evidenceDigest] \
+    SIMPLEMATCH_CERTIFICATION_ACTIVE_PHASE[reason] <<<"$plan"
+  SIMPLEMATCH_CERTIFICATION_ACTIVE_PHASE[action]=PLANNED
+}
+
+_certification_finish_phase_context() {
+  local completed_millis duration_millis execution_json
+
+  SIMPLEMATCH_CERTIFICATION_ACTIVE_PHASE[completedAtUtc]="$(_certification_now_utc)"
+  completed_millis="$(_certification_now_millis)"
+  duration_millis=$((
+    completed_millis - SIMPLEMATCH_CERTIFICATION_ACTIVE_PHASE[startedMillis]
+  ))
+  SIMPLEMATCH_CERTIFICATION_ACTIVE_PHASE[durationMillis]="$duration_millis"
+  execution_json="$(certification_execution_timing_json \
+    "${SIMPLEMATCH_CERTIFICATION_ACTIVE_PHASE[startedAtUtc]}" \
+    "${SIMPLEMATCH_CERTIFICATION_ACTIVE_PHASE[completedAtUtc]}" \
+    "$duration_millis")" || return 1
+  SIMPLEMATCH_CERTIFICATION_ACTIVE_PHASE[executionJson]="$execution_json"
+}
+
+_certification_record_execution_success() {
+  certification_plan_record_execution \
+    "${SIMPLEMATCH_CERTIFICATION_ACTIVE_PHASE[phase]}" \
+    "${SIMPLEMATCH_CERTIFICATION_ACTIVE_PHASE[inputFingerprint]}" \
+    "${SIMPLEMATCH_CERTIFICATION_ACTIVE_PHASE[reason]}" \
+    "${SIMPLEMATCH_CERTIFICATION_ACTIVE_PHASE[executionJson]}" \
+    "$@" || return 1
+  _certification_mark_phase_complete \
+    "${SIMPLEMATCH_CERTIFICATION_ACTIVE_PHASE[markerPath]}" \
+    "${SIMPLEMATCH_CERTIFICATION_ACTIVE_PHASE[signature]}" || return 1
+  _certification_clear_phase_started_if_needed
+}
+
+_certification_record_execution_failure() {
+  local command_status="$1"
+
+  certification_plan_record_failure \
+    "${SIMPLEMATCH_CERTIFICATION_ACTIVE_PHASE[phase]}" \
+    "${SIMPLEMATCH_CERTIFICATION_ACTIVE_PHASE[inputFingerprint]}" \
+    "command exited with status $command_status" \
+    "${SIMPLEMATCH_CERTIFICATION_ACTIVE_PHASE[executionJson]}" || true
+}
+
+run_logged() {
+  local phase="$1"
+  shift
+  local log_path="$evidence_dir/logs/${phase}.log"
+  local prepare_status=0 command_status decision duration_millis
+
+  _certification_prepare_phase_context "$phase" "" "$@" || prepare_status=$?
+  [[ "$prepare_status" -eq 0 ]] || return "$prepare_status"
+  case "${SIMPLEMATCH_CERTIFICATION_ACTIVE_PHASE[action]}" in
+    RESUME)
+      completed_phases+=("$phase (same-run resume)")
+      printf 'RESUME %-30s (%s)\n' \
+        "$phase" "${SIMPLEMATCH_CERTIFICATION_ACTIVE_PHASE[markerPath]}"
+      return 0
+      ;;
+    DRY_RUN)
+      print_command "$@"
+      return 0
+      ;;
+  esac
+
+  decision="${SIMPLEMATCH_CERTIFICATION_ACTIVE_PHASE[decision]}"
+  if [[ "$decision" == REUSE || "$decision" == REVALIDATE ]]; then
+    _certification_finish_phase_context || return 1
+    certification_plan_record_reuse \
+      "$phase" "$decision" \
+      "${SIMPLEMATCH_CERTIFICATION_ACTIVE_PHASE[inputFingerprint]}" \
+      "${SIMPLEMATCH_CERTIFICATION_ACTIVE_PHASE[evidenceDigest]}" \
+      "${SIMPLEMATCH_CERTIFICATION_ACTIVE_PHASE[reason]}" \
+      "${SIMPLEMATCH_CERTIFICATION_ACTIVE_PHASE[executionJson]}" || return 1
+    _certification_mark_phase_complete \
+      "${SIMPLEMATCH_CERTIFICATION_ACTIVE_PHASE[markerPath]}" \
+      "${SIMPLEMATCH_CERTIFICATION_ACTIVE_PHASE[signature]}" || return 1
+    duration_millis="${SIMPLEMATCH_CERTIFICATION_ACTIVE_PHASE[durationMillis]}"
+    completed_phases+=("$phase (${decision,,})")
+    printf '%-10s %-28s (%s ms)\n' "$decision" "$phase" "$duration_millis"
+    return 0
+  fi
+  [[ "$decision" == EXECUTE ]] || {
+    printf 'unsupported certification planner decision for %s: %s\n' \
+      "$phase" "$decision" >&2
+    return 1
+  }
+
+  _certification_mark_phase_started_if_needed || return 1
+  mkdir -p "$(dirname -- "$log_path")" || return 1
+  printf '$' >"$log_path" || return 1
+  printf ' %q' "$@" >>"$log_path" || return 1
+  printf '\n' >>"$log_path" || return 1
   set +e
   (
     set -e
@@ -91,14 +246,21 @@ run_logged() {
   ) >>"$log_path" 2>&1
   command_status=$?
   set -e
+  _certification_finish_phase_context || return 1
+
   if [[ "$command_status" -eq 0 ]]; then
-    mkdir -p "$phase_marker_directory"
-    printf '%s\n' "$phase_signature" >"$marker_path"
+    _certification_record_execution_success "$@" || {
+      failed_phase="$phase"
+      failure_reason="Phase passed but valid evidence could not be recorded: $phase"
+      return 1
+    }
+    duration_millis="${SIMPLEMATCH_CERTIFICATION_ACTIVE_PHASE[durationMillis]}"
     completed_phases+=("$phase")
-    printf 'PASS %-32s (%s)\n' "$phase" "$log_path"
+    printf 'PASS %-31s (%s ms, %s)\n' "$phase" "$duration_millis" "$log_path"
     return 0
   fi
 
+  _certification_record_execution_failure "$command_status"
   failed_phase="$phase"
   failure_reason="Phase failed: $phase"
   cat "$log_path" >&2
@@ -117,26 +279,32 @@ run_capture() {
   local phase="$1"
   local output_path="$2"
   shift 2
-  local marker_path="$phase_marker_directory/${phase}.ok"
-  local phase_signature
+  local prepare_status=0 command_status decision duration_millis
 
-  phase_signature="$(printf '%s\0' "$source_signature" "$phase" "$output_path" "$@" | sha256sum | awk '{print $1}')"
+  _certification_prepare_phase_context "$phase" "$output_path" "$@" || \
+    prepare_status=$?
+  [[ "$prepare_status" -eq 0 ]] || return "$prepare_status"
+  case "${SIMPLEMATCH_CERTIFICATION_ACTIVE_PHASE[action]}" in
+    RESUME)
+      completed_phases+=("$phase (same-run resume)")
+      printf 'RESUME %-30s (%s)\n' "$phase" "$output_path"
+      return 0
+      ;;
+    DRY_RUN)
+      print_command "$@"
+      return 0
+      ;;
+  esac
 
-  if [[ "$resume" == true && -f "$marker_path" && "$(<"$marker_path")" == "$phase_signature" ]]; then
-    completed_phases+=("$phase (reused)")
-    printf 'REUSE %-32s (%s)\n' "$phase" "$output_path"
-    return 0
-  fi
+  decision="${SIMPLEMATCH_CERTIFICATION_ACTIVE_PHASE[decision]}"
+  [[ "$decision" == EXECUTE ]] || {
+    printf 'capture phase %s is not eligible for %s without an output adapter\n' \
+      "$phase" "$decision" >&2
+    return 1
+  }
 
-  check_certification_deadline
-
-  if [[ "$dry_run" == true ]]; then
-    print_command "$@"
-    return 0
-  fi
-
-  mkdir -p "$(dirname -- "$output_path")" "$evidence_dir"
-  local command_status
+  _certification_mark_phase_started_if_needed || return 1
+  mkdir -p "$(dirname -- "$output_path")" || return 1
   set +e
   (
     set -e
@@ -144,14 +312,17 @@ run_capture() {
   ) >"$output_path" 2>&1
   command_status=$?
   set -e
+  _certification_finish_phase_context || return 1
+
   if [[ "$command_status" -eq 0 ]]; then
-    mkdir -p "$phase_marker_directory"
-    printf '%s\n' "$phase_signature" >"$marker_path"
+    _certification_record_execution_success "$@" || return 1
+    duration_millis="${SIMPLEMATCH_CERTIFICATION_ACTIVE_PHASE[durationMillis]}"
     completed_phases+=("$phase")
-    printf 'PASS %-32s (%s)\n' "$phase" "$output_path"
+    printf 'PASS %-31s (%s ms, %s)\n' "$phase" "$duration_millis" "$output_path"
     return 0
   fi
 
+  _certification_record_execution_failure "$command_status"
   failed_phase="$phase"
   failure_reason="Phase failed: $phase"
   cat "$output_path" >&2
@@ -201,7 +372,8 @@ write_report() {
   mkdir -p "$evidence_dir"
   if [[ "$exit_code" -ne 0 ]]; then
     completion_status="FAILED"
-  elif [[ "$skip_build" == true || "$skip_compose" == true || "$skip_kubernetes" == true || "$matching_fleet_only" == true ]]; then
+  elif [[ "$skip_build" == true || "$skip_compose" == true || \
+      "$skip_kubernetes" == true || "$matching_fleet_only" == true ]]; then
     completion_status="PARTIAL"
     failure_reason="One or more certification phases were explicitly skipped."
   else
@@ -221,14 +393,6 @@ write_report() {
     printf '%s\n' "- compose_file: ${compose_file#$repo_root/}"
     printf '%s\n' "- kubernetes_namespace: ${namespace:-not-run}"
     printf '%s\n' "- trading_day: $certification_trading_day"
-    printf '%s\n' "- gradle: 9.7.0"
-    printf '%s\n' "- spring_boot: 4.1.0"
-    printf '%s\n' "- vcpkg: 2026.07.29"
-    printf '%s\n' "- matching_base: ubuntu:26.04"
-    printf '%s\n' "- kafka: 4.3.1"
-    printf '%s\n' "- postgresql: 18.4"
-    printf '%s\n' "- redis: 8.8.1-alpine"
-    printf '%s\n' "- debezium: 3.6.0.Final"
     if [[ -n "$failed_phase" ]]; then
       printf '%s\n' "- failed_phase: $failed_phase"
     fi
@@ -241,6 +405,15 @@ write_report() {
     else
       printf '%s\n' "${completed_phases[@]}" | sed 's/^/- /'
     fi
+    if [[ -f "$certification_plan_file" ]]; then
+      printf '\n%s\n\n' '## Phase plan'
+      jq -r '
+        .phases[] |
+        "- \(.decision) \(.phaseId): \(.reason) " +
+        "[lookup=\(.lookupDurationMillis)ms, " +
+        "revalidation=\(.revalidationDurationMillis)ms]"
+      ' "$certification_plan_file"
+    fi
   } >"$evidence_dir/report.md"
 }
 
@@ -252,7 +425,7 @@ cleanup() {
     if [[ "$compose_started" == true ]]; then
       "${compose_command[@]}" down --volumes --remove-orphans >/dev/null 2>&1 || true
     fi
-    if [[ "$kubernetes_namespace_created" == true && -n "$namespace" ]]; then
+    if [[ -n "$namespace" ]] && _certification_namespace_cleanup_owned; then
       if ! simplematch_kind_delete_disposable_namespace \
           "$kind_context" "$namespace" "$namespace_cleanup_timeout" >/dev/null 2>&1; then
         namespace_cleanup_failed=true

@@ -95,7 +95,7 @@ require_value(
 )
 require_value(kafka_service.dig("spec", "ports", 0, "port") == 9092, "Kafka bootstrap Service must expose 9092")
 require_value(kafka_headless.dig("spec", "clusterIP") == "None", "Kafka broker DNS must use a headless Service")
-require_value(topic_job.dig("spec", "activeDeadlineSeconds") == 240, "Kafka topic provisioning must use the 240-second Job deadline")
+require_value(topic_job.dig("spec", "activeDeadlineSeconds") == 600, "Kafka topic provisioning must use the 600-second Job deadline")
 topic_container = topic_job.dig("spec", "template", "spec", "containers", 0)
 require_value(topic_container&.dig("resources", "requests") && topic_container.dig("resources", "limits"), "Kafka topic provisioning must define resources")
 

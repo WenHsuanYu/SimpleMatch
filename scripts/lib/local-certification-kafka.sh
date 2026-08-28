@@ -4,6 +4,151 @@
 # Sourced by run-local-production-like-certification.sh; shared run state is owned
 # by the top-level orchestrator. This file defines behavior only and has no entry point.
 
+_certification_kafka_producer_payload() {
+  local object_path="$1"
+
+  jq -er '
+    [.outputs[] |
+      select(.kind == "file-content" and .name == "matching-producer-config")
+    ] as $matches |
+    if ($matches | length) == 1 then
+      $matches[0]
+    else
+      error("matching producer configuration output mismatch")
+    end
+  ' "$object_path"
+}
+
+_certification_kafka_producer_payload_valid() {
+  local object_path="$1"
+  local payload identity content_base64 temp_file actual_identity
+
+  payload="$(_certification_kafka_producer_payload "$object_path")" || return 1
+  identity="$(jq -r '.identity' <<<"$payload")" || return 1
+  content_base64="$(jq -r '.contentBase64 // empty' <<<"$payload")" || return 1
+  [[ "$identity" =~ ^sha256:[0-9a-f]{64}$ && -n "$content_base64" ]] || return 1
+
+  temp_file="$(mktemp)" || return 1
+  if ! printf '%s' "$content_base64" | base64 --decode >"$temp_file" 2>/dev/null; then
+    rm -f -- "$temp_file"
+    return 1
+  fi
+  actual_identity="$(sha256sum "$temp_file" | awk '{print "sha256:" $1}')" || {
+    rm -f -- "$temp_file"
+    return 1
+  }
+  rm -f -- "$temp_file"
+  [[ "$actual_identity" == "$identity" ]]
+}
+
+certification_kafka_phase_outputs_json() {
+  local phase_id="$1"
+  local identity content_base64
+
+  case "$phase_id" in
+    kafka-producer-contract)
+      [[ -f "$matching_producer_config_file" ]] || return 1
+      identity="$(sha256sum "$matching_producer_config_file" |
+        awk '{print "sha256:" $1}')" || return 1
+      content_base64="$(base64 <"$matching_producer_config_file" | tr -d '\n')" || \
+        return 1
+      [[ -n "$content_base64" ]] || return 1
+      jq -cn \
+        --arg identity "$identity" \
+        --arg contentBase64 "$content_base64" '[{
+          kind: "file-content",
+          name: "matching-producer-config",
+          identity: $identity,
+          location: "matching-producer.config.txt",
+          contentBase64: $contentBase64
+        }]'
+      ;;
+    *)
+      printf '%s\n' '[]'
+      ;;
+  esac
+}
+
+certification_kafka_phase_cached_outputs_valid() {
+  local phase_id="$1"
+  local evidence_digest="$2"
+  local object_path
+
+  case "$phase_id" in
+    kafka-producer-contract)
+      object_path="$(_certification_evidence_object_path "$evidence_digest")" || return 1
+      certification_evidence_validate_object \
+        "$object_path" "$evidence_digest" || return 1
+      _certification_kafka_producer_payload_valid "$object_path"
+      ;;
+    *)
+      return 0
+      ;;
+  esac
+}
+
+certification_kafka_phase_current_outputs_valid() {
+  local phase_id="$1"
+  local result_path="$2"
+  local payload identity actual_identity
+
+  case "$phase_id" in
+    kafka-producer-contract)
+      [[ -f "$result_path" && -f "$matching_producer_config_file" ]] || return 1
+      payload="$(_certification_kafka_producer_payload "$result_path")" || return 1
+      identity="$(jq -r '.identity' <<<"$payload")" || return 1
+      [[ "$identity" =~ ^sha256:[0-9a-f]{64}$ ]] || return 1
+      actual_identity="$(sha256sum "$matching_producer_config_file" |
+        awk '{print "sha256:" $1}')" || return 1
+      [[ "$actual_identity" == "$identity" ]]
+      ;;
+    *)
+      return 0
+      ;;
+  esac
+}
+
+certification_kafka_phase_materialize_reused_outputs() {
+  local phase_id="$1"
+  local evidence_digest="$2"
+  local object_path payload content_base64 identity temp_file actual_identity
+
+  case "$phase_id" in
+    kafka-producer-contract)
+      object_path="$(_certification_evidence_object_path "$evidence_digest")" || return 1
+      certification_evidence_validate_object \
+        "$object_path" "$evidence_digest" || return 1
+      _certification_kafka_producer_payload_valid "$object_path" || return 1
+      payload="$(_certification_kafka_producer_payload "$object_path")" || return 1
+      content_base64="$(jq -r '.contentBase64' <<<"$payload")" || return 1
+      identity="$(jq -r '.identity' <<<"$payload")" || return 1
+
+      mkdir -p "$(dirname -- "$matching_producer_config_file")" || return 1
+      temp_file="$(mktemp "${matching_producer_config_file}.tmp.XXXXXX")" || return 1
+      if ! printf '%s' "$content_base64" | base64 --decode >"$temp_file" 2>/dev/null; then
+        rm -f -- "$temp_file"
+        return 1
+      fi
+      actual_identity="$(sha256sum "$temp_file" |
+        awk '{print "sha256:" $1}')" || {
+        rm -f -- "$temp_file"
+        return 1
+      }
+      [[ "$actual_identity" == "$identity" ]] || {
+        rm -f -- "$temp_file"
+        return 1
+      }
+      mv -f -- "$temp_file" "$matching_producer_config_file" || {
+        rm -f -- "$temp_file"
+        return 1
+      }
+      ;;
+    *)
+      return 0
+      ;;
+  esac
+}
+
 wait_for_compose() {
   local services service container_id state health ready attempt
   mapfile -t services < <("${compose_command[@]}" config --services)

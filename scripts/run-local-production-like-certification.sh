@@ -48,7 +48,7 @@ completed_phases=()
 certification_timeout_seconds="${SIMPLEMATCH_CERTIFICATION_TIMEOUT_SECONDS:-7200}"
 namespace_cleanup_timeout="${SIMPLEMATCH_NAMESPACE_CLEANUP_TIMEOUT_SECONDS:-180}"
 kubernetes_job_evidence_interval_seconds="${SIMPLEMATCH_KUBERNETES_JOB_EVIDENCE_INTERVAL_SECONDS:-10}"
-kafka_topic_provisioning_supervisor_seconds="${SIMPLEMATCH_KAFKA_TOPIC_PROVISIONING_SUPERVISOR_SECONDS:-270}"
+kafka_topic_provisioning_supervisor_seconds="${SIMPLEMATCH_KAFKA_TOPIC_PROVISIONING_SUPERVISOR_SECONDS:-630}"
 certification_deadline_epoch=0
 phase_marker_directory=""
 run_context_file=""
@@ -57,12 +57,19 @@ matching_image_reference=""
 compose_prefix=()
 compose_command=()
 
-# Certification domain behavior is split by responsibility. The top-level script
-# owns configuration, phase ordering, and lifecycle only.
+# Policy modules load before concrete artifact adapters. The generic artifact
+# seam is loaded after image and Kafka adapters so Planner calls one interface
+# without either adapter depending on the other.
 for certification_lib in \
+  local-certification-phase-graph.sh \
+  local-certification-fingerprint.sh \
+  local-certification-evidence.sh \
+  local-certification-planner.sh \
+  local-certification-images.sh \
+  local-certification-kafka.sh \
+  local-certification-artifacts.sh \
   local-certification-framework.sh \
   local-certification-job.sh \
-  local-certification-kafka.sh \
   local-certification-kubernetes.sh \
   local-certification-connect.sh \
   local-certification-workloads.sh; do
@@ -71,19 +78,13 @@ for certification_lib in \
 done
 unset certification_lib
 
-# Bootstrap validates configuration and static prerequisites; run owns phase ordering.
+# Bootstrap validates configuration and runtime preconditions only. The run
+# module maps phase IDs to adapters and the planner owns dependency order.
 # shellcheck source=/dev/null
 source "$script_dir/lib/local-certification-bootstrap.sh"
-# CLI selection is shared with sourced helpers and child image scripts.
 export SIMPLEMATCH_LOCAL_IMAGE_TRANSPORT="$image_transport"
 # shellcheck source=/dev/null
 source "$script_dir/lib/local-certification-run.sh"
 
-if [[ "$dry_run" == false \
-      && "$skip_kubernetes" == false \
-      && "$matching_fleet_only" == false ]]; then
-  simplematch_record_certification_provenance \
-    "$repo_root" "$evidence_dir" "$namespace" \
-    "$image_transport" "$image_tag" "$image_lock" || die \
-    'Failed to record production-like source and verifier image provenance.'
-fi
+certification_plan_finalize || die \
+  'Certification plan does not have complete successful phase evidence.'

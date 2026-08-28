@@ -120,7 +120,7 @@ require_value(
 )
 require_value(
   job.dig("spec", "activeDeadlineSeconds").is_a?(Integer) &&
-    job.dig("spec", "activeDeadlineSeconds").between?(1, 300),
+    job.dig("spec", "activeDeadlineSeconds").between?(1, 900),
   "Kafka topic provisioning must have a bounded active deadline"
 )
 job_container = job.dig("spec", "template", "spec", "containers", 0)

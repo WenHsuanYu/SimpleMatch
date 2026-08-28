@@ -1,7 +1,8 @@
 #!/usr/bin/env bash
 
 # Sourced by run-local-production-like-certification.sh. This file owns
-# certification bootstrap/configuration but is not an independent entry point.
+# certification bootstrap/configuration but does not execute certification
+# phases and is not an independent entry point.
 
 while [[ $# -gt 0 ]]; do
   case "$1" in
@@ -57,7 +58,6 @@ simplematch_local_image_transport_validate "$image_transport" || die \
   "SIMPLEMATCH_LOCAL_IMAGE_TRANSPORT/--image-transport must be registry or kind-load: $image_transport"
 [[ "$certification_trading_day" =~ ^[0-9]{4}-[0-9]{2}-[0-9]{2}$ ]] || die \
   "SIMPLEMATCH_CERTIFICATION_TRADING_DAY must use YYYY-MM-DD: $certification_trading_day"
-
 [[ -f "$compose_file" ]] || die "Production-like Compose file does not exist: $compose_file"
 
 [[ "$certification_timeout_seconds" =~ ^[1-9][0-9]*$ ]] || die \
@@ -68,10 +68,13 @@ simplematch_local_image_transport_validate "$image_transport" || die \
   "SIMPLEMATCH_KUBERNETES_JOB_EVIDENCE_INTERVAL_SECONDS must be a positive integer: $kubernetes_job_evidence_interval_seconds"
 [[ "$kafka_topic_provisioning_supervisor_seconds" =~ ^[1-9][0-9]*$ ]] || die \
   "SIMPLEMATCH_KAFKA_TOPIC_PROVISIONING_SUPERVISOR_SECONDS must be a positive integer: $kafka_topic_provisioning_supervisor_seconds"
-(( kafka_topic_provisioning_supervisor_seconds > 240 )) || die \
-  'Kafka topic provisioning supervisor deadline must exceed the 240s Job deadline.'
+(( kafka_topic_provisioning_supervisor_seconds > 600 )) || die \
+  'Kafka topic provisioning supervisor deadline must exceed the 600s Job deadline.'
 if [[ "$dry_run" == false ]]; then
-  command -v timeout >/dev/null 2>&1 || die 'timeout is required for bounded certification commands.'
+  command -v timeout >/dev/null 2>&1 || die \
+    'timeout is required for bounded certification commands.'
+  command -v jq >/dev/null 2>&1 || die \
+    'jq is required for certification plan and evidence records.'
 fi
 
 if [[ "$dry_run" == true ]]; then
@@ -85,30 +88,37 @@ else
 fi
 compose_command=("${compose_prefix[@]}" --project-name "$compose_project" --file "$compose_file")
 
-run_id="$(date -u +%Y%m%d-%H%M%S)-$$"
+generated_run_id="$(date -u +%Y%m%d-%H%M%S)-$$"
+run_id="$generated_run_id"
 namespace="${SIMPLEMATCH_CERTIFICATION_NAMESPACE:-simplematch-local-cert-${run_id}}"
-phase_marker_directory="$evidence_dir/phases"
+phase_marker_directory="$evidence_dir/phase-markers"
 run_context_file="$evidence_dir/run-context"
 certification_deadline_epoch=$(( $(date +%s) + certification_timeout_seconds ))
 source_signature="$({
-  git rev-parse HEAD
-  git ls-files -co --exclude-standard -- \
-    AGENTS.md deploy/k8s deploy/docker/run-flyway deploy/docker/Dockerfile.kind-normalized \
+  git -C "$repo_root" rev-parse HEAD
+  git -C "$repo_root" ls-files -co --exclude-standard -- \
+    AGENTS.md deploy/k8s deploy/docker \
     scripts/run-local-production-like-certification.sh \
-    scripts/lib/local-common.sh scripts/lib/local-kind.sh scripts/lib/local-image-transport.sh \
-    scripts/lib/local-certification-framework.sh scripts/lib/local-certification-job.sh \
-    scripts/lib/local-certification-kafka.sh scripts/lib/local-certification-kubernetes.sh \
-    scripts/lib/local-certification-connect.sh scripts/lib/local-certification-workloads.sh \
-    scripts/lib/local-certification-bootstrap.sh scripts/lib/local-certification-run.sh \
-    scripts/prepare-local-kubernetes-images.sh scripts/normalize-local-images-for-kind.sh \
-    scripts/publish-local-images.sh scripts/render-local-kubernetes-manifest.sh \
+    scripts/lib/local-common.sh scripts/lib/local-kind.sh \
+    scripts/lib/local-image-inventory.sh scripts/lib/local-image-transport.sh \
+    scripts/lib/local-registry.sh scripts/lib/local-certification-*.sh \
+    scripts/build-local-images.sh scripts/prepare-local-kubernetes-images.sh \
+    scripts/normalize-local-images-for-kind.sh scripts/publish-local-images.sh \
+    scripts/render-local-kubernetes-manifest.sh \
     scripts/test-kubernetes-overlays.sh scripts/test-local-kubernetes-dependencies.sh \
-    scripts/test-postgresql-redis-manifests.sh scripts/test-flyway-services.sh |
-    sort -u |
+    scripts/test-matching-kubernetes-manifests.sh scripts/test-matching-topic-profile.sh \
+    scripts/test-flyway-services.sh | LC_ALL=C sort -u |
     while IFS= read -r path; do
-      sha256sum "$path"
+      [[ -n "$path" ]] && sha256sum "$repo_root/$path"
     done
 } | sha256sum | awk '{print $1}')"
+
+_certification_run_context() {
+  printf 'run_id=%s\nnamespace=%s\ncluster=%s\ntrading_day=%s\nimage_tag=%s\nimage_transport=%s\nsource_signature=%s\nskip_build=%s\nskip_compose=%s\nskip_kubernetes=%s\nmatching_fleet_only=%s\n' \
+    "$run_id" "$namespace" "$kind_cluster" "$certification_trading_day" \
+    "$image_tag" "$image_transport" "$source_signature" \
+    "$skip_build" "$skip_compose" "$skip_kubernetes" "$matching_fleet_only"
+}
 
 if [[ "$resume" == true ]]; then
   [[ -n "${SIMPLEMATCH_CERTIFICATION_EVIDENCE_DIR:-}" ]] || die \
@@ -116,31 +126,43 @@ if [[ "$resume" == true ]]; then
   [[ -n "${SIMPLEMATCH_CERTIFICATION_NAMESPACE:-}" ]] || die \
     '--resume requires SIMPLEMATCH_CERTIFICATION_NAMESPACE.'
   [[ -f "$run_context_file" ]] || die "Resume context is missing: $run_context_file"
-  expected_context="$(printf 'namespace=%s\ncluster=%s\ntrading_day=%s\nimage_tag=%s\nimage_transport=%s\nsource_signature=%s\n' \
-    "$namespace" "$kind_cluster" "$certification_trading_day" "$image_tag" "$image_transport" "$source_signature")"
+  retained_run_id="$(awk -F= '$1 == "run_id" { print substr($0, index($0, "=") + 1); exit }' \
+    "$run_context_file")"
+  [[ "$retained_run_id" =~ ^[0-9]{8}-[0-9]{6}-[0-9]+$ ]] || die \
+    "Resume context has an invalid run identity: ${retained_run_id:-<missing>}"
+  run_id="$retained_run_id"
+  expected_context="$(_certification_run_context)"
   actual_context="$(cat "$run_context_file")"
   [[ "$actual_context" == "$expected_context" ]] || die \
-    "Resume context does not match the current cluster, trading day, namespace, image tag, image transport, or source."
+    'Resume context does not match the current run identity, namespace, cluster, trading day, image identity, source, or proof profile.'
   if [[ "$dry_run" == false ]]; then
     kubectl --context "$kind_context" get namespace "$namespace" >/dev/null 2>&1 || die \
       "Resume namespace does not exist: $namespace"
     simplematch_kind_namespace_is_disposable \
       "$kind_context" "$namespace" local-production-like-certification || die \
       "Resume namespace is not owned as a disposable local certification namespace: $namespace"
+    namespace_run_id="$(kubectl --context "$kind_context" get namespace "$namespace" \
+      -o jsonpath='{.metadata.labels.simplematch\.io/run-id}')" || die \
+      "Unable to read resume namespace run identity: $namespace"
+    [[ "$namespace_run_id" == "$run_id" ]] || die \
+      "Resume namespace belongs to run ${namespace_run_id:-<missing>}, expected $run_id"
   fi
   kubernetes_namespace_created=true
 else
   if [[ "$dry_run" == false ]]; then
-    mkdir -p "$evidence_dir"
-    printf 'namespace=%s\ncluster=%s\ntrading_day=%s\nimage_tag=%s\nimage_transport=%s\nsource_signature=%s\n' \
-      "$namespace" "$kind_cluster" "$certification_trading_day" "$image_tag" "$image_transport" "$source_signature" >"$run_context_file"
+    mkdir -p "$evidence_dir" || die \
+      "Unable to create certification evidence directory: $evidence_dir"
+    _certification_run_context >"$run_context_file" || die \
+      "Unable to write certification run context: $run_context_file"
   fi
 fi
 
 if [[ "$skip_kubernetes" == false ]]; then
   if [[ "$dry_run" == false ]]; then
-    command -v kubectl >/dev/null 2>&1 || die 'kubectl is required for the local Kubernetes gate.'
-    command -v kind >/dev/null 2>&1 || die 'kind is required for the local Kubernetes gate; install kind or use --skip-kubernetes.'
+    command -v kubectl >/dev/null 2>&1 || die \
+      'kubectl is required for the local Kubernetes gate.'
+    command -v kind >/dev/null 2>&1 || die \
+      'kind is required for the local Kubernetes gate; install kind or use --skip-kubernetes.'
     kind get clusters | grep -Fxq "$kind_cluster" || die \
       "kind cluster '$kind_cluster' does not exist; create it before running this gate."
     current_context="$(kubectl config current-context)"
@@ -156,14 +178,5 @@ else
   export SIMPLEMATCH_PRODUCTION_LIKE_NETWORK_EXTERNAL="${SIMPLEMATCH_PRODUCTION_LIKE_NETWORK_EXTERNAL:-false}"
 fi
 
-run_logged static-kubernetes-overlays bash "$repo_root/scripts/test-kubernetes-overlays.sh"
-run_logged static-kubernetes-dependencies bash "$repo_root/scripts/test-local-kubernetes-dependencies.sh"
-run_logged static-matching-manifests bash "$repo_root/scripts/test-matching-kubernetes-manifests.sh"
-run_logged static-matching-profile bash "$repo_root/scripts/test-matching-topic-profile.sh"
-run_logged static-flyway-services bash "$repo_root/scripts/test-flyway-services.sh"
-run_logged compose-config "${compose_command[@]}" config
-run_logged local-image-inventory bash "$repo_root/scripts/build-local-images.sh" --list
-
-if [[ "$skip_build" == false ]]; then
-  run_logged local-image-build bash "$repo_root/scripts/build-local-images.sh" --tag "$image_tag"
-fi
+certification_plan_initialize "$evidence_dir" || die \
+  'Certification phase graph or plan initialization failed.'

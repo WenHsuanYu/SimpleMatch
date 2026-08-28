@@ -4,10 +4,14 @@ set -euo pipefail
 script_dir="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
 repo_root="$(cd -- "$script_dir/../../../.." && pwd)"
 production_runner="$repo_root/scripts/run-local-production-like-certification.sh"
+phase_graph="$repo_root/scripts/lib/local-certification-phase-graph.sh"
+production_run="$repo_root/scripts/lib/local-certification-run.sh"
 failure_support="$repo_root/scripts/end-to-end/critical-consumers/lib/failure-support.sh"
 kafka_observation_interface="$repo_root/scripts/end-to-end/critical-consumers/lib/kafka-observation-interface.sh"
 # shellcheck source=scripts/lib/local-certification-provenance.sh
 source "$repo_root/scripts/lib/local-certification-provenance.sh"
+# shellcheck source=scripts/lib/local-certification-phase-graph.sh
+source "$phase_graph"
 
 fail() {
   printf 'Verifier helper contract: %s\n' "$*" >&2
@@ -16,10 +20,25 @@ fail() {
 
 grep -Fq 'local-certification-provenance.sh' "$production_runner" ||
   fail 'production-like runner must load the shared provenance module'
-grep -Fq 'simplematch_record_certification_provenance' "$production_runner" ||
-  fail 'completed production-like runs must record dependent-test provenance'
+grep -Fq 'simplematch_record_certification_provenance' "$production_run" ||
+  fail 'production-like phase dispatcher must provide retained provenance'
 grep -Fq 'local-certification-provenance.sh' "$failure_support" ||
   fail 'failure certification must load the same provenance module'
+
+skip_build=false
+skip_compose=false
+skip_kubernetes=false
+matching_fleet_only=false
+image_transport=registry
+required_phases="$(certification_required_phase_ids)" ||
+  fail 'full production-like Phase DAG must resolve'
+grep -Fxq retained-run-provenance <<<"$required_phases" ||
+  fail 'completed full production-like runs must require retained provenance'
+provenance_dependencies="$(
+  certification_phase_dependencies retained-run-provenance
+)" || fail 'retained provenance dependencies must resolve'
+grep -Fxq kubernetes-fleet <<<"$provenance_dependencies" ||
+  fail 'retained provenance must depend on the completed Kubernetes fleet proof'
 
 tmp="$(mktemp -d)"
 untracked_probe="$repo_root/scripts/.certification-provenance-untracked-$$"
