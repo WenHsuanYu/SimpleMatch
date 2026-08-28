@@ -124,7 +124,7 @@ certification_benchmark_write_report benchmark_context ||
 jq -e '
   .schemaVersion == 2 and
   .acceptanceVerdict == "PASS" and
-  .acceptanceCriterion == "REUSABLE_WORK_NOT_DOMINANT" and
+  .acceptanceCriterion == "NON_FRESH_WALL_CLOCK_NOT_DOMINANT" and
   .wallClock.observation == "IMPROVED" and
   .wallClock.savedMillis == 800 and
   .wallClock.reductionPercent == 40 and
@@ -134,9 +134,11 @@ jq -e '
   .warm.decisionCounts.EXECUTE == 3 and
   .warm.decisionCounts.REUSE == 1 and
   .warm.decisionCounts.REVALIDATE == 1 and
-  .warm.freshExecutionMillis == 900 and
-  .warm.reusablePhaseMillis == 15 and
-  .warm.reusableWorkDominates == false and
+  .warm.freshPhaseMillis == 900 and
+  .warm.recordedReusablePhaseMillis == 15 and
+  .warm.nonFreshWallClockMillis == 300 and
+  .warm.nonFreshWallClockSharePercent == 25 and
+  .warm.nonFreshWallClockDominates == false and
   .environmentFault.rankAmongFreshPhases == 1 and
   .environmentFault.shareOfFreshExecutionPercent == 55.55 and
   .environmentFault.dominatesFreshExecution == true and
@@ -173,41 +175,40 @@ jq -e '
 ' "$largest_only_summary" >/dev/null ||
   fail 'largest FRESH phase was incorrectly treated as dominant'
 
-# A faster warm wall-clock cannot hide reusable work dominating recorded phases.
-dominated_phases="$fixture_root/dominated-phases.json"
+# A faster warm sample cannot hide non-FRESH wall-clock overhead that still
+# dominates the warm run.
 dominated_summary="$fixture_root/dominated-summary.json"
-jq '
-  map(
-    if .phaseId == "static-kubernetes-overlays" then .durationMillis = 500
-    elif .phaseId == "registry-publish/quickfix-gateway" then .durationMillis = 500
-    else .
-    end
-  )
-' "$warm_phases" >"$dominated_phases"
-benchmark_context[warmPhases]="$dominated_phases"
+benchmark_context[coldElapsedMillis]=2500
+benchmark_context[warmElapsedMillis]=1900
+benchmark_context[warmPhases]="$warm_phases"
 benchmark_context[summaryFile]="$dominated_summary"
 certification_benchmark_build_summary benchmark_context ||
-  fail 'dominated reusable-work summary could not be built'
+  fail 'dominated non-FRESH wall-clock summary could not be built'
 jq -e '
   .wallClock.observation == "IMPROVED" and
-  .warm.reusableWorkDominates == true and
+  .warm.freshPhaseMillis == 900 and
+  .warm.nonFreshWallClockMillis == 1000 and
+  .warm.nonFreshWallClockDominates == true and
   .acceptanceVerdict == "FAIL"
 ' "$dominated_summary" >/dev/null ||
-  fail 'wall-clock improvement hid dominant reusable work'
+  fail 'wall-clock improvement hid dominant non-FRESH overhead'
 
-# One noisy wall-clock pair is an observation, not the acceptance verdict.
+# One cold/warm pair remains an observation rather than a statistical claim.
+# A small wall-clock regression does not redefine the composition criterion.
 regressed_summary="$fixture_root/regressed-summary.json"
-benchmark_context[warmPhases]="$warm_phases"
-benchmark_context[warmElapsedMillis]=2200
+benchmark_context[coldElapsedMillis]=1500
+benchmark_context[warmElapsedMillis]=1600
 benchmark_context[summaryFile]="$regressed_summary"
 certification_benchmark_build_summary benchmark_context ||
   fail 'regressed wall-clock summary could not be built'
 jq -e '
   .acceptanceVerdict == "PASS" and
+  .warm.nonFreshWallClockMillis == 700 and
+  .warm.nonFreshWallClockDominates == false and
   .wallClock.observation == "REGRESSED" and
   .wallClock.statisticalClaim == false
 ' "$regressed_summary" >/dev/null ||
-  fail 'single-pair wall-clock noise was treated as a performance verdict'
+  fail 'single-pair wall-clock noise was treated as a statistical verdict'
 
 # The run adapter receives one measurement context instead of ten positional
 # arguments, and ambient Kafka evidence paths cannot leak into measured runs.

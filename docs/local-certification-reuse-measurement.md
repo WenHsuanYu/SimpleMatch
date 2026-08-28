@@ -77,29 +77,37 @@ measurement.
 The measurement has one machine-checkable acceptance criterion:
 
 ```text
-REUSABLE_WORK_NOT_DOMINANT
+NON_FRESH_WALL_CLOCK_NOT_DOMINANT
 ```
 
-The current scheduler executes phases serially. For that execution model,
-recorded warm phase time is divided into:
+The current scheduler executes phases serially. Recorded phase timers end before
+all reuse materialization, result persistence, reporting, and orchestration work
+has necessarily completed, so summing reusable phase timers alone can
+underestimate actual warm-run overhead.
 
-- **fresh execution time** — phase duration for `FRESH` phases;
-- **reusable phase time** — phase duration for `CONTENT_ADDRESSED` and
-  `REVALIDATE` phases, including lookup, revalidation, materialization, and
-  result-recording work that occurs inside the phase lifecycle.
-
-Reusable work is considered **dominant** when:
+The measurement therefore computes a conservative upper bound for non-FRESH
+wall-clock work:
 
 ```text
-warm reusable phase time >= warm fresh execution time
+non-fresh wall-clock = max(warm wall-clock - recorded FRESH phase time, 0)
 ```
 
-Equivalently, reusable work occupies at least half of recorded warm phase time.
+This residual includes reusable lookup/revalidation/materialization work plus
+other orchestration time not attributed to recorded FRESH phase execution.
 
-`acceptanceVerdict` is `PASS` only when fresh execution time is present and
-reusable work does not dominate. This directly evaluates the architecture
-requirement that unchanged reusable work must not dominate the warm-run
-critical path.
+Non-FRESH work is considered **dominant** when:
+
+```text
+non-fresh wall-clock >= recorded FRESH phase time
+```
+
+Equivalently, non-FRESH work occupies at least half of the observed warm
+wall-clock represented by those two categories.
+
+`acceptanceVerdict` is `PASS` only when recorded FRESH execution is present and
+non-FRESH wall-clock work does not dominate. This directly evaluates the
+architecture requirement that unchanged reusable work must not dominate the
+warm-run critical path without relying on incomplete reusable phase timers.
 
 ## Wall-clock observation
 
@@ -126,7 +134,7 @@ This is an operational observation, not a statistical performance claim.
 
 The acceptance verdict does not become `PASS` merely because one warm sample is
 faster than one cold sample. Conversely, scheduler or host noise in one pair
-does not redefine the Phase-DAG acceptance criterion.
+does not redefine the Phase-DAG composition criterion.
 
 For host-level performance conclusions, repeat the measurement under comparable
 machine load and compare the resulting observations. A separate statistical
@@ -155,10 +163,10 @@ report.md               human-readable comparison
 - cold and warm wall-clock milliseconds;
 - wall-clock observation, saved milliseconds, and reduction percentage;
 - planner decision counts;
-- warm fresh execution milliseconds;
-- warm reusable phase and planning milliseconds;
-- reusable share of recorded warm phase time;
-- whether reusable work dominates;
+- recorded warm FRESH phase milliseconds;
+- recorded reusable phase and planning milliseconds for diagnostics;
+- conservative non-FRESH wall-clock residual and its warm-run share;
+- whether non-FRESH wall-clock work dominates;
 - warm FRESH phases ranked by duration;
 - the rank and FRESH-execution share of `kafka-broker-failure-live`.
 

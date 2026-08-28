@@ -352,10 +352,15 @@ certification_benchmark_build_summary() {
       ($warmPhases[0] | map(select(.policy != "FRESH"))) as $warmReusable |
       ($warmFresh | sort_by(.durationMillis) | reverse) as $warmFreshRanked |
       (duration_sum($warmFresh)) as $warmFreshTotal |
-      (duration_sum($warmReusable)) as $warmReusableTotal |
-      ($warmFreshTotal + $warmReusableTotal) as $warmRecordedTotal |
+      (duration_sum($warmReusable)) as $warmReusableRecorded |
       (planning_sum($warmReusable)) as $warmReusablePlanning |
-      ($warmReusableTotal >= $warmFreshTotal) as $reusableDominates |
+      (
+        if $warmElapsedMillis > $warmFreshTotal
+        then ($warmElapsedMillis - $warmFreshTotal)
+        else 0
+        end
+      ) as $warmNonFreshWallClock |
+      ($warmNonFreshWallClock >= $warmFreshTotal) as $nonFreshDominates |
       ($warmFreshRanked | map(.phaseId) | index("kafka-broker-failure-live")) as $faultIndex |
       ($warmFreshRanked |
         map(select(.phaseId == "kafka-broker-failure-live")) |
@@ -375,10 +380,10 @@ certification_benchmark_build_summary() {
       {
         schemaVersion: 2,
         acceptanceVerdict: (
-          if $warmFreshTotal > 0 and ($reusableDominates | not)
+          if $warmFreshTotal > 0 and ($nonFreshDominates | not)
           then "PASS" else "FAIL" end
         ),
-        acceptanceCriterion: "REUSABLE_WORK_NOT_DOMINANT",
+        acceptanceCriterion: "NON_FRESH_WALL_CLOCK_NOT_DOMINANT",
         sourceRevision: $sourceRevision,
         tradingDay: $tradingDay,
         imageTag: $imageTag,
@@ -390,12 +395,13 @@ certification_benchmark_build_summary() {
         },
         warm: {
           elapsedMillis: $warmElapsedMillis,
-          recordedPhaseMillis: $warmRecordedTotal,
-          freshExecutionMillis: $warmFreshTotal,
-          reusablePhaseMillis: $warmReusableTotal,
+          freshPhaseMillis: $warmFreshTotal,
+          recordedReusablePhaseMillis: $warmReusableRecorded,
           reusablePlanningMillis: $warmReusablePlanning,
-          reusableSharePercent: percent($warmReusableTotal; $warmRecordedTotal),
-          reusableWorkDominates: $reusableDominates,
+          nonFreshWallClockMillis: $warmNonFreshWallClock,
+          nonFreshWallClockSharePercent:
+            percent($warmNonFreshWallClock; $warmElapsedMillis),
+          nonFreshWallClockDominates: $nonFreshDominates,
           decisionCounts: decision_counts($warmPhases[0])
         },
         wallClock: {
@@ -450,10 +456,11 @@ certification_benchmark_write_report() {
       "- saved_ms: \(.wallClock.savedMillis)",
       "- reduction_percent: \(.wallClock.reductionPercent)",
       "- statistical_claim: \(.wallClock.statisticalClaim)",
-      "- warm_fresh_execution_ms: \(.warm.freshExecutionMillis)",
-      "- warm_reusable_phase_ms: \(.warm.reusablePhaseMillis)",
-      "- warm_reusable_share_percent: \(.warm.reusableSharePercent)",
-      "- warm_reusable_dominates: \(.warm.reusableWorkDominates)",
+      "- warm_fresh_phase_ms: \(.warm.freshPhaseMillis)",
+      "- warm_recorded_reusable_phase_ms: \(.warm.recordedReusablePhaseMillis)",
+      "- warm_non_fresh_wall_clock_ms: \(.warm.nonFreshWallClockMillis)",
+      "- warm_non_fresh_wall_clock_share_percent: \(.warm.nonFreshWallClockSharePercent)",
+      "- warm_non_fresh_wall_clock_dominates: \(.warm.nonFreshWallClockDominates)",
       "- environment_fault_rank: \($faultRank)",
       "- environment_fault_share_percent: \($faultShare)",
       "- environment_fault_dominates: \(.environmentFault.dominatesFreshExecution)",
@@ -472,9 +479,9 @@ certification_benchmark_write_report() {
     printf '\n%s\n\n' '## Interpretation'
     jq -r '
       if .acceptanceVerdict == "PASS" then
-        "Reusable and revalidated work did not dominate recorded warm phase time."
+        "Non-FRESH wall-clock overhead did not dominate the warm run."
       else
-        "Reusable and revalidated work dominated recorded warm phase time; the incremental certification acceptance criterion is not met."
+        "Non-FRESH wall-clock overhead dominated the warm run; the incremental certification acceptance criterion is not met."
       end,
       "The wall-clock result is a single-pair observation (\(.wallClock.observation)), not a statistical performance claim.",
       if .environmentFault.followUpIdentitySpecificationRecommended then
