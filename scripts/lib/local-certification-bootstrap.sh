@@ -68,8 +68,8 @@ simplematch_local_image_transport_validate "$image_transport" || die \
   "SIMPLEMATCH_KUBERNETES_JOB_EVIDENCE_INTERVAL_SECONDS must be a positive integer: $kubernetes_job_evidence_interval_seconds"
 [[ "$kafka_topic_provisioning_supervisor_seconds" =~ ^[1-9][0-9]*$ ]] || die \
   "SIMPLEMATCH_KAFKA_TOPIC_PROVISIONING_SUPERVISOR_SECONDS must be a positive integer: $kafka_topic_provisioning_supervisor_seconds"
-(( kafka_topic_provisioning_supervisor_seconds > 240 )) || die \
-  'Kafka topic provisioning supervisor deadline must exceed the 240s Job deadline.'
+(( kafka_topic_provisioning_supervisor_seconds > 600 )) || die \
+  'Kafka topic provisioning supervisor deadline must exceed the 600s Job deadline.'
 if [[ "$dry_run" == false ]]; then
   command -v timeout >/dev/null 2>&1 || die \
     'timeout is required for bounded certification commands.'

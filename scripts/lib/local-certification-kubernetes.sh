@@ -151,6 +151,19 @@ create_certification_namespace() {
   kubernetes_namespace_created=true
 }
 
+_certification_namespace_cleanup_owned() {
+  local namespace_run_id
+
+  [[ "${kubernetes_namespace_created:-false}" == true ]] && return 0
+  [[ -n "${namespace:-}" && -n "${run_id:-}" ]] || return 1
+  kubectl --context "$kind_context" get namespace "$namespace" >/dev/null 2>&1 || return 1
+  simplematch_kind_namespace_is_disposable \
+    "$kind_context" "$namespace" local-production-like-certification || return 1
+  namespace_run_id="$(kubectl --context "$kind_context" get namespace "$namespace" \
+    -o jsonpath='{.metadata.labels.simplematch\\.io/run-id}')" || return 1
+  [[ "$namespace_run_id" == "$run_id" ]]
+}
+
 require_kubernetes_job_complete() {
   local job_name="$1"
   local conditions
@@ -202,35 +215,36 @@ publish_local_matching_open_barriers() {
   [[ -n "$routing_version" ]] || die 'Approved Market Reference routing algorithm version is missing.'
 
   if [[ ! -x "$fixture_publisher" ]]; then
-    cmake --preset full-native-dev
+    cmake --preset full-native-dev || return 1
   fi
-  cmake --build --preset full-native-dev --target simplematch-matching-kafka-fixture-publisher --parallel
+  cmake --build --preset full-native-dev \
+    --target simplematch-matching-kafka-fixture-publisher --parallel || return 1
   kubectl -n "$namespace" wait \
-    --for=jsonpath='{.status.readyReplicas}'=3 statefulset/kafka --timeout=300s
-  require_kubernetes_job_complete kafka-topic-provisioning
-  kubectl -n "$namespace" delete pod "$fixture_pod" --ignore-not-found --wait=true >/dev/null
+    --for=jsonpath='{.status.readyReplicas}'=3 statefulset/kafka --timeout=300s || return 1
+  require_kubernetes_job_complete kafka-topic-provisioning || return 1
+  kubectl -n "$namespace" delete pod "$fixture_pod" --ignore-not-found --wait=true >/dev/null || return 1
   kubectl -n "$namespace" run "$fixture_pod" \
     --image="$matching_runtime_image" --image-pull-policy=IfNotPresent \
-    --restart=Never --command -- sleep 300 >/dev/null
-  kubectl -n "$namespace" wait --for=condition=Ready "pod/$fixture_pod" --timeout=120s
+    --restart=Never --command -- sleep 300 >/dev/null || return 1
+  kubectl -n "$namespace" wait --for=condition=Ready "pod/$fixture_pod" --timeout=120s || return 1
   base64 "$fixture_publisher" | kubectl -n "$namespace" exec -i "$fixture_pod" -- \
-    sh -c 'base64 -d >/tmp/simplematch-matching-kafka-fixture-publisher && chmod 755 /tmp/simplematch-matching-kafka-fixture-publisher'
+    sh -c 'base64 -d >/tmp/simplematch-matching-kafka-fixture-publisher && chmod 755 /tmp/simplematch-matching-kafka-fixture-publisher' || return 1
   kubectl -n "$namespace" exec "$fixture_pod" -- \
     /tmp/simplematch-matching-kafka-fixture-publisher kafka:9092 matching.commands \
     "$certification_trading_day" "${certification_trading_day}-regular" "$artifact_sha256" \
-    "$routing_version" "$matching_digest"
-  kubectl -n "$namespace" delete pod "$fixture_pod" --ignore-not-found --wait=true >/dev/null
+    "$routing_version" "$matching_digest" || return 1
+  kubectl -n "$namespace" delete pod "$fixture_pod" --ignore-not-found --wait=true >/dev/null || return 1
 }
 
 apply_kubernetes_migrations() {
   local migration_manifest="$1"
   local workload
-  apply_kubernetes_topic_provisioning "$migration_manifest"
+  apply_kubernetes_topic_provisioning "$migration_manifest" || return 1
   for workload in account-service risk-service persistence market-data-projection marketdata-publisher query-service quickfix-gateway; do
     kubectl apply -f "$migration_manifest" \
-      --selector "app.kubernetes.io/name=${workload}-flyway"
+      --selector "app.kubernetes.io/name=${workload}-flyway" || return 1
     kubectl -n "$namespace" wait --for=condition=complete \
-      "job/${workload}-flyway" --timeout=300s
+      "job/${workload}-flyway" --timeout=300s || return 1
   done
 }
 
@@ -239,9 +253,9 @@ apply_kubernetes_topic_provisioning() {
   local job_evidence_dir="$evidence_dir/kubernetes-jobs/kafka-topic-provisioning"
 
   kubectl -n "$namespace" wait \
-    --for=jsonpath='{.status.readyReplicas}'=3 statefulset/kafka --timeout=300s
+    --for=jsonpath='{.status.readyReplicas}'=3 statefulset/kafka --timeout=300s || return 1
   kubectl apply -f "$migration_manifest" \
-    --selector 'app.kubernetes.io/component=topic-provisioning'
+    --selector 'app.kubernetes.io/component=topic-provisioning' || return 1
   if ! supervise_kubernetes_job kafka-topic-provisioning \
       "$kafka_topic_provisioning_supervisor_seconds" "$job_evidence_dir"; then
     collect_kafka_provisioning_evidence "$job_evidence_dir/kafka"

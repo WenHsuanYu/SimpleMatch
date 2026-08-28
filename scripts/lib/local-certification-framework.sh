@@ -425,7 +425,7 @@ cleanup() {
     if [[ "$compose_started" == true ]]; then
       "${compose_command[@]}" down --volumes --remove-orphans >/dev/null 2>&1 || true
     fi
-    if [[ "$kubernetes_namespace_created" == true && -n "$namespace" ]]; then
+    if [[ -n "$namespace" ]] && _certification_namespace_cleanup_owned; then
       if ! simplematch_kind_delete_disposable_namespace \
           "$kind_context" "$namespace" "$namespace_cleanup_timeout" >/dev/null 2>&1; then
         namespace_cleanup_failed=true

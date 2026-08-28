@@ -27,7 +27,7 @@ done
 
 grep -Fq 'SIMPLEMATCH_KUBERNETES_JOB_EVIDENCE_INTERVAL_SECONDS:-10' "$runner" ||
   fail 'runner must retain the Job evidence interval default'
-grep -Fq 'SIMPLEMATCH_KAFKA_TOPIC_PROVISIONING_SUPERVISOR_SECONDS:-270' "$runner" ||
+grep -Fq 'SIMPLEMATCH_KAFKA_TOPIC_PROVISIONING_SUPERVISOR_SECONDS:-630' "$runner" ||
   fail 'runner must retain the Kafka provisioning supervisor default'
 grep -Fq 'local-certification-job.sh' "$runner" "$bootstrap_lib" ||
   fail 'runner must load the shared Job supervision module'
@@ -87,7 +87,7 @@ supervisor_deadline="${hierarchy[3]}"
     "$admin_timeout" "$retry_budget" "$job_deadline" "$supervisor_deadline" >&2
   exit 1
 }
-[[ "$admin_timeout" == 15 && "$retry_budget" == 90 && "$job_deadline" == 240 && "$supervisor_deadline" == 270 ]] || {
+[[ "$admin_timeout" == 15 && "$retry_budget" == 90 && "$job_deadline" == 600 && "$supervisor_deadline" == 630 ]] || {
   fail 'Kafka certification timeout defaults changed without updating the contract'
 }
 
@@ -108,5 +108,90 @@ script = config.dig("data", "topic-provision.sh")
 raise "Kafka Admin operations are not individually bounded" unless script.include?("timeout --foreground")
 raise "Legacy 60x5 bootstrap retry loop remains" if script.include?('attempts" -lt 60')
 RUBY
+
+propagation_fixture="$(mktemp -d "${TMPDIR:-/tmp}/simplematch-certification-propagation.XXXXXX")"
+trap 'rm -rf "$propagation_fixture"' EXIT
+
+if ! (
+  set -Eeuo pipefail
+  namespace=certification-test
+  evidence_dir="$propagation_fixture/evidence"
+  calls_file="$propagation_fixture/migrations.calls"
+  touch "$calls_file"
+  # shellcheck source=/dev/null
+  source "$kubernetes_lib"
+  apply_kubernetes_topic_provisioning() {
+    printf '%s\n' topic-provisioning >>"$calls_file"
+    return 1
+  }
+  kubectl() {
+    printf '%s\n' "$*" >>"$calls_file"
+    return 0
+  }
+  set +e
+  apply_kubernetes_migrations "$propagation_fixture/migrations.yaml"
+  status=$?
+  set -e
+  [[ "$status" -ne 0 ]]
+  ! grep -Fq -- '--selector app.kubernetes.io/name=account-service-flyway' "$calls_file"
+); then
+  fail 'a failed topic-provisioning Job must abort Kubernetes migrations before Flyway Jobs are applied'
+fi
+
+if ! (
+  set -Eeuo pipefail
+  namespace=certification-test
+  repo_root="$propagation_fixture"
+  certification_trading_day=2026-08-27
+  matching_fixture="$propagation_fixture/out/build/full-native-dev/simplematch-matching-kafka-fixture-publisher"
+  mkdir -p "$(dirname -- "$matching_fixture")" "$propagation_fixture/market-reference/delivery"
+  printf '#!/bin/sh\n' >"$matching_fixture"
+  chmod 755 "$matching_fixture"
+  printf '%s\n' 'name: market-reference-20260827-approved' >"$propagation_fixture/market-reference/delivery/manifest.yaml"
+  printf '%s\n' '{"metadata":{"routingAlgorithmVersion":"test"}}' >"$propagation_fixture/market-reference/market_reference.json"
+  printf '%064d\n' 0 >"$propagation_fixture/market-reference/market_reference.sha256"
+  SIMPLEMATCH_MARKET_REFERENCE_DELIVERY_MANIFEST="$propagation_fixture/market-reference/delivery/manifest.yaml"
+  evidence_dir="$propagation_fixture/evidence"
+  calls_file="$propagation_fixture/barriers.calls"
+  touch "$calls_file"
+  # shellcheck source=/dev/null
+  source "$kubernetes_lib"
+  require_kubernetes_job_complete() {
+    printf '%s\n' topic-check >>"$calls_file"
+    return 1
+  }
+  kubectl() {
+    printf '%s\n' "$*" >>"$calls_file"
+    return 0
+  }
+  set +e
+  publish_local_matching_open_barriers sha256:test matching:test
+  status=$?
+  set -e
+  [[ "$status" -ne 0 ]]
+  ! grep -Fq -- ' run matching-fixture-publisher' "$calls_file"
+); then
+  fail 'a failed topic-provisioning Job check must abort Matching open-barrier publication'
+fi
+
+if (
+  set -Eeuo pipefail
+  namespace=certification-test
+  run_id=run-123
+  kind_context=kind-simplematch-live
+  kubernetes_namespace_created=false
+  # shellcheck source=/dev/null
+  source "$kubernetes_lib"
+  kubectl() {
+    printf '%s' "$run_id"
+    return 0
+  }
+  simplematch_kind_namespace_is_disposable() { return 0; }
+  _certification_namespace_cleanup_owned
+); then
+  :
+else
+  fail 'cleanup must recognize an owned namespace even when creation state crossed a phase subshell'
+fi
 
 printf '%s\n' 'Local certification Job supervision contracts are valid.'
