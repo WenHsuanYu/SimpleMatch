@@ -102,34 +102,115 @@ certification_benchmark_build_phase_table \
 certification_benchmark_build_phase_table \
   "$warm_plan" "$warm_manifest" "$warm_phases" ||
   fail 'warm phase table could not be built'
-certification_benchmark_build_summary \
-  0123456789abcdef0123456789abcdef01234567 2026-08-27 local registry \
-  2000 1200 "$cold_phases" "$warm_phases" "$summary" ||
+
+declare -A benchmark_context=(
+  [sourceRevision]=0123456789abcdef0123456789abcdef01234567
+  [tradingDay]=2026-08-27
+  [imageTag]=local
+  [imageTransport]=registry
+  [coldElapsedMillis]=2000
+  [warmElapsedMillis]=1200
+  [coldPhases]="$cold_phases"
+  [warmPhases]="$warm_phases"
+  [summaryFile]="$summary"
+  [reportFile]="$report"
+)
+
+certification_benchmark_build_summary benchmark_context ||
   fail 'measurement summary could not be built'
-certification_benchmark_write_report "$summary" "$report" ||
+certification_benchmark_write_report benchmark_context ||
   fail 'measurement report could not be written'
 
 jq -e '
-  .verdict == "PASS" and
+  .schemaVersion == 2 and
+  .acceptanceVerdict == "PASS" and
+  .acceptanceCriterion == "REUSABLE_WORK_NOT_DOMINANT" and
+  .wallClock.observation == "IMPROVED" and
   .wallClock.savedMillis == 800 and
   .wallClock.reductionPercent == 40 and
+  .wallClock.samplePairs == 1 and
+  .wallClock.statisticalClaim == false and
   .cold.decisionCounts.EXECUTE == 5 and
   .warm.decisionCounts.EXECUTE == 3 and
   .warm.decisionCounts.REUSE == 1 and
   .warm.decisionCounts.REVALIDATE == 1 and
+  .warm.freshExecutionMillis == 900 and
+  .warm.reusablePhaseMillis == 15 and
+  .warm.reusableWorkDominates == false and
   .environmentFault.rankAmongFreshPhases == 1 and
-  .environmentFault.largestFreshPhase == "kafka-broker-failure-live" and
+  .environmentFault.shareOfFreshExecutionPercent == 55.55 and
+  .environmentFault.dominatesFreshExecution == true and
   .environmentFault.followUpIdentitySpecificationRecommended == true
 ' "$summary" >/dev/null || fail 'measurement summary has incorrect semantics'
 
-grep -Fxq -- '- reduction_percent: 40' "$report" ||
-  fail 'measurement report omitted wall-clock reduction'
-grep -Fq 'Kafka broker-failure verification was the largest recorded fresh phase.' \
-  "$report" || fail 'measurement report omitted environment-fault interpretation'
+grep -Fxq -- '- acceptance_verdict: PASS' "$report" ||
+  fail 'measurement report omitted acceptance verdict'
+grep -Fxq -- '- wall_clock_observation: IMPROVED' "$report" ||
+  fail 'measurement report omitted wall-clock observation'
+grep -Fq 'single-pair observation' "$report" ||
+  fail 'measurement report overstated one wall-clock pair as statistical proof'
 
-# The wrapper owns the experiment inputs. Ambient paths that tell the normal
-# runner to consume externally supplied Kafka evidence must not leak into a
-# measured run, while the selected Market Reference manifest must be pinned.
+# Being the largest FRESH phase is not sufficient to justify environment reuse.
+largest_only_phases="$fixture_root/largest-only-phases.json"
+largest_only_summary="$fixture_root/largest-only-summary.json"
+jq '
+  map(
+    if .phaseId == "source-preflight" then .durationMillis = 280
+    elif .phaseId == "kafka-broker-failure-live" then .durationMillis = 300
+    elif .phaseId == "kubernetes-workloads" then .durationMillis = 290
+    else .
+    end
+  )
+' "$warm_phases" >"$largest_only_phases"
+benchmark_context[warmPhases]="$largest_only_phases"
+benchmark_context[summaryFile]="$largest_only_summary"
+certification_benchmark_build_summary benchmark_context ||
+  fail 'largest-only environment summary could not be built'
+jq -e '
+  .environmentFault.rankAmongFreshPhases == 1 and
+  .environmentFault.dominatesFreshExecution == false and
+  .environmentFault.followUpIdentitySpecificationRecommended == false
+' "$largest_only_summary" >/dev/null ||
+  fail 'largest FRESH phase was incorrectly treated as dominant'
+
+# A faster warm wall-clock cannot hide reusable work dominating recorded phases.
+dominated_phases="$fixture_root/dominated-phases.json"
+dominated_summary="$fixture_root/dominated-summary.json"
+jq '
+  map(
+    if .phaseId == "static-kubernetes-overlays" then .durationMillis = 500
+    elif .phaseId == "registry-publish/quickfix-gateway" then .durationMillis = 500
+    else .
+    end
+  )
+' "$warm_phases" >"$dominated_phases"
+benchmark_context[warmPhases]="$dominated_phases"
+benchmark_context[summaryFile]="$dominated_summary"
+certification_benchmark_build_summary benchmark_context ||
+  fail 'dominated reusable-work summary could not be built'
+jq -e '
+  .wallClock.observation == "IMPROVED" and
+  .warm.reusableWorkDominates == true and
+  .acceptanceVerdict == "FAIL"
+' "$dominated_summary" >/dev/null ||
+  fail 'wall-clock improvement hid dominant reusable work'
+
+# One noisy wall-clock pair is an observation, not the acceptance verdict.
+regressed_summary="$fixture_root/regressed-summary.json"
+benchmark_context[warmPhases]="$warm_phases"
+benchmark_context[warmElapsedMillis]=2200
+benchmark_context[summaryFile]="$regressed_summary"
+certification_benchmark_build_summary benchmark_context ||
+  fail 'regressed wall-clock summary could not be built'
+jq -e '
+  .acceptanceVerdict == "PASS" and
+  .wallClock.observation == "REGRESSED" and
+  .wallClock.statisticalClaim == false
+' "$regressed_summary" >/dev/null ||
+  fail 'single-pair wall-clock noise was treated as a performance verdict'
+
+# The run adapter receives one measurement context instead of ten positional
+# arguments, and ambient Kafka evidence paths cannot leak into measured runs.
 fake_runner="$fixture_root/fake-certification-runner.sh"
 capture_file="$fixture_root/runner-environment.txt"
 fake_evidence="$fixture_root/fake-evidence"
@@ -147,13 +228,21 @@ printf '%s|%s|%s\n' \
 SH
 chmod 0755 "$fake_runner"
 certification_runner="$fake_runner"
+declare -A fixture_context=(
+  [cacheDir]="$fixture_root/fake-cache"
+  [fixtureEvidenceDir]="$fake_evidence"
+  [fixtureNamespace]=fixture-namespace
+  [fixtureComposeProject]=fixture-compose
+  [fixtureLog]="$fixture_root/fake.log"
+  [tradingDay]=2026-08-27
+  [deliveryManifest]=/approved/market-reference.yaml
+  [imageTag]=local
+  [imageTransport]=registry
+)
 export TEST_CAPTURE_FILE="$capture_file"
 export SIMPLEMATCH_KAFKA_PRODUCER_CONFIG_FILE="$fixture_root/ambient-producer.txt"
 export SIMPLEMATCH_KAFKA_CAPACITY_EVIDENCE_FILE="$fixture_root/ambient-capacity.txt"
-certification_benchmark_run_once \
-  fixture "$fake_evidence" fixture-namespace fixture-compose \
-  "$fixture_root/fake-cache" 2026-08-27 local registry \
-  "$fixture_root/fake.log" /approved/market-reference.yaml ||
+certification_benchmark_run_once fixture_context fixture ||
   fail 'fixture measured run failed'
 unset SIMPLEMATCH_KAFKA_PRODUCER_CONFIG_FILE
 unset SIMPLEMATCH_KAFKA_CAPACITY_EVIDENCE_FILE
