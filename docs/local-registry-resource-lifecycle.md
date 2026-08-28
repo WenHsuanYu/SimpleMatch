@@ -79,19 +79,23 @@ A same-named registry container is reused only after verifying its configured im
 
 The fallback remains available through:
 
-```text
+```bash
 bash scripts/run-local-production-like-certification.sh \
   --image-transport kind-load
 ```
 
 or:
 
-```text
+```bash
 SIMPLEMATCH_LOCAL_IMAGE_TRANSPORT=kind-load \
   bash scripts/run-local-production-like-certification.sh
 ```
 
-The top-level certification runner does not implement registry publication or direct kind import itself. It selects the transport and delegates to the image-preparation boundary.
+The top-level certification runner does not implement registry publication or direct kind import itself. `PhaseGraph` selects the required transport phases and `CertificationPlanner` owns reuse/revalidation decisions. Concrete Docker, registry, and kind behavior remains behind the existing image adapters.
+
+For a new full run, local image builds are `CONTENT_ADDRESSED`: an unchanged image may be reused only when its effective inputs and immutable OCI identity validate. Registry publication is `REVALIDATE`: the expected digest must still be addressable, otherwise the verified source image is published again. `kind-load` node import remains `FRESH` because node-local containerd state is mutable.
+
+The public `prepare-local-kubernetes-images.sh` command remains useful for explicit image-transport preparation and debugging. The certification runner no longer treats complete image preparation as one all-or-nothing reusable phase.
 
 ## 4. Publication and digest lock
 
@@ -105,7 +109,7 @@ scripts/lib/local-image-transport.sh
     transport policy, digest-lock semantics, rendering profiles
 
 scripts/prepare-local-kubernetes-images.sh
-    registry publication OR legacy kind-load preparation
+    explicit registry or legacy kind-load preparation
 
 scripts/publish-local-images.sh
     tag/push canonical images and atomically publish a digest lock
@@ -131,6 +135,8 @@ Publication tags each selected local image under `localhost:<port>/<repository>:
 
 Lock validation binds every entry to the canonical inventory: service identity, source repository, source/registry tag agreement, registry tag/digest repository agreement, configured local registry endpoint, uniqueness, and lowercase `sha256` digest shape are checked before use.
 
+During certification, per-image publication results are combined into one complete immutable `local-images.lock`. Deployment consumes the complete lock and does not need to know which individual images were rebuilt, reused, or republished.
+
 ## 5. Digest-based Kustomize rendering
 
 Registry rendering uses a transient outer Kustomization rather than modifying the tracked local overlay. It injects `images:` transformations that replace local application image names with exact registry digest references:
@@ -152,19 +158,44 @@ For Matching, registry mode uses the registry OCI manifest digest as runtime/ses
 
 ## Certification runner boundary
 
-`run-local-production-like-certification.sh` owns shared configuration and phase composition. Domain behavior is separated into:
+`run-local-production-like-certification.sh` remains the only normal full-certification entry point. The current implementation separates policy from external behavior:
 
 ```text
+local-certification-phase-graph.sh
+    phase identity, dependencies, policy, resume mode, topological order
+
+local-certification-fingerprint.sh
+    canonical effective-input manifests and fingerprints
+
+local-certification-evidence.sh
+    content-addressed PASS evidence and cache validation
+
+local-certification-planner.sh
+    execute/reuse/revalidate decisions and current-run completeness
+
+local-certification-images.sh
+    image build/publication identity adapters
+
+local-certification-artifacts.sh
+    generic output validation/materialization seam
+
 local-certification-framework.sh
+    common execution, timing, resume, and result lifecycle
+
 local-certification-kafka.sh
 local-certification-kubernetes.sh
 local-certification-connect.sh
 local-certification-workloads.sh
-local-certification-bootstrap.sh
-local-certification-run.sh
+    concrete runtime adapters
 ```
 
-These files are sourced modules, not public entry points. Resume state includes the selected image transport so evidence from a registry run cannot be silently reused as kind-load evidence, or vice versa. Image preparation is refreshable because a phase marker cannot prove that mutable external registry/node-cache state still exists.
+These files are sourced modules, not public entry points. Cross-run evidence reuse is automatic and independent of `--resume`. `--resume` continues only one retained run and is bound to the original run identity, namespace, cluster, trading day, image identity, source signature, and proof profile.
+
+A same-run completion marker is only a resume candidate. The PhaseGraph resume policy decides whether a phase may reuse its run-local result, must re-execute, must validate current state, or must reject continuation because a side effect cannot be safely replayed. Ambiguous non-replayable phases fail closed.
+
+The reusable cache defaults to `out/certification-cache/`. Required evidence and immutable artifact identity are materialized into each retained run, so dependent certification does not require that cache directory to survive.
+
+See `docs/local-certification-phase-dag.md` for the architecture and `docs/local-certification-phase-dag-implementation.md` for the current module/interface contract.
 
 ## 6. Kubelet image-cache policy
 
@@ -219,8 +250,8 @@ Deterministic validation covers:
 - legacy normalizer isolation from the registry path;
 - semantic digest locks and atomic publication;
 - registry digest rendering and kind-load rendering;
-- certification transport propagation and resume identity;
+- Phase-DAG transport propagation, per-image reuse/revalidation, and resume identity;
 - kubelet image-GC configuration;
 - hard-reset manager delegation and aggressive-mode boundaries.
 
-The live kind smoke then proves real registry publication, digest rendering, on-demand node pull, baseline behavior, and cleanup. CDC CI remains a regression boundary for the certification runner and Kafka Connect behavior.
+The live kind smoke then proves real registry publication, digest rendering, on-demand node pull, baseline behavior, and cleanup. Local Resource Lifecycle CI protects the local certification contracts; CDC CI remains a regression boundary for the certification runner and Kafka Connect behavior.

@@ -13,6 +13,10 @@ The command runs two independent full certifications:
 Both runs create fresh runtime state and execute every phase whose policy is
 `FRESH`.
 
+For the normal local-certification workflow, `--resume`, and cleanup guidance,
+see `docs/operation-manual.zh-TW.md`. This document is limited to reuse
+measurement and interpretation.
+
 ## Preconditions
 
 The measurement requires:
@@ -33,8 +37,7 @@ rather than a machine-cold build.
 Use an approved trading day:
 
 ```bash
-scripts/measure-local-certification-reuse.sh \
-  --trading-day YYYY-MM-DD
+scripts/measure-local-certification-reuse.sh --trading-day YYYY-MM-DD
 ```
 
 The wrapper also accepts:
