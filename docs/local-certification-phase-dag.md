@@ -1,6 +1,6 @@
 # Local Certification Phase DAG and Content-Addressed Evidence
 
-Status: Proposed
+Status: Implemented
 
 This specification defines an incremental execution model for
 `run-local-production-like-certification.sh`. The goal is to reduce repeated
