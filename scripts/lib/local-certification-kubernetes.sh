@@ -160,7 +160,7 @@ _certification_namespace_cleanup_owned() {
   simplematch_kind_namespace_is_disposable \
     "$kind_context" "$namespace" local-production-like-certification || return 1
   namespace_run_id="$(kubectl --context "$kind_context" get namespace "$namespace" \
-    -o jsonpath='{.metadata.labels.simplematch\\.io/run-id}')" || return 1
+    -o jsonpath='{.metadata.labels.simplematch\.io/run-id}')" || return 1
   [[ "$namespace_run_id" == "$run_id" ]]
 }
 

@@ -183,7 +183,10 @@ if (
   # shellcheck source=/dev/null
   source "$kubernetes_lib"
   kubectl() {
-    printf '%s' "$run_id"
+    if [[ "$*" == *run-id* ]]; then
+      [[ "$*" == *'simplematch\.io/run-id'* ]] || return 1
+      printf '%s' "$run_id"
+    fi
     return 0
   }
   simplematch_kind_namespace_is_disposable() { return 0; }
