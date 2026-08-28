@@ -21,6 +21,7 @@ on:
       - 'scripts/lib/critical-consumer-certification-*.sh'
       - 'scripts/manage-local-registry.sh'
       - 'scripts/manage-simplematch-live.sh'
+      - 'scripts/measure-local-certification-reuse.sh'
       - 'scripts/normalize-local-images-for-kind.sh'
       - 'scripts/prepare-local-kubernetes-images.sh'
       - 'scripts/simplematch-clean-local-disk.sh'
@@ -43,6 +44,7 @@ on:
       - 'scripts/test-local-certification-review-hardening.sh'
       - 'scripts/test-local-certification-output-lineage.sh'
       - 'scripts/test-local-certification-artifact-fingerprint.sh'
+      - 'scripts/test-local-certification-reuse-measurement.sh'
       - 'scripts/test-local-certification-job-supervision.sh'
       - 'scripts/test-local-certification-trading-day.sh'
       - 'scripts/test-local-kubernetes-dependencies.sh'
@@ -100,6 +102,7 @@ jobs:
           bash scripts/test-local-certification-review-hardening.sh
           bash scripts/test-local-certification-output-lineage.sh
           bash scripts/test-local-certification-artifact-fingerprint.sh
+          bash scripts/test-local-certification-reuse-measurement.sh
           bash scripts/test-local-production-like.sh
           bash scripts/test-local-resource-report.sh
           bash scripts/test-local-resilience.sh
