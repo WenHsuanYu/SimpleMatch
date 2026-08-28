@@ -449,9 +449,7 @@ Matching-only 是 renderer 明確支援的 partial profile。不要假設任意�
 通常由 image preparation 或 certification runner 呼叫；需要獨立 debug 時可執行：
 
 ```bash
-bash scripts/publish-local-images.sh \
-  --tag local \
-  --output out/local-images.lock
+bash scripts/publish-local-images.sh --tag local --output out/local-images.lock
 ```
 
 Lock 格式：
@@ -659,8 +657,7 @@ bash scripts/local-resource-report.sh --json
 ### 14.3 保存 snapshot
 
 ```bash
-bash scripts/local-resource-report.sh \
-  --output out/local-resource-current.json
+bash scripts/local-resource-report.sh --output out/local-resource-current.json
 ```
 
 ### 14.4 建立 baseline
