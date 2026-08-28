@@ -7,8 +7,8 @@ import java.util.Objects;
  * Provides bounded Kafka state observations for critical-consumer certification.
  *
  * <p>The interface deliberately hides Kafka client lifecycle, metadata discovery, consumer-group
- * lookup, and result normalization. Callers only request the two state snapshots required by the
- * certification protocol.
+ * lookup, and result normalization. Callers request bounded state snapshots and exact payload
+ * evidence required by the certification protocol.
  */
 public interface KafkaObservationSession extends AutoCloseable {
   int EXPECTED_PARTITION_COUNT = 15;
@@ -18,6 +18,9 @@ public interface KafkaObservationSession extends AutoCloseable {
 
   /** Captures durable matching.commands positions for all Matching consumer groups. */
   MatchingCommittedPositions captureMatchingCommittedPositions();
+
+  /** Verifies the exact Close Barrier payload inside each frozen command offset range. */
+  CloseBarrierEvidence verifyCloseBarriers(CloseBarrierExpectation expectation);
 
   /** Closes the underlying Kafka resources. */
   @Override
@@ -72,6 +75,58 @@ public interface KafkaObservationSession extends AutoCloseable {
     }
   }
 
+  /** Expected session identity and immutable observation boundaries for Close Barriers. */
+  record CloseBarrierExpectation(
+      String tradingSessionId,
+      String tradingDay,
+      String artifactContentSha256,
+      String routingAlgorithmVersion,
+      TopicEndPositions before,
+      TopicEndPositions after) {
+    public CloseBarrierExpectation {
+      tradingSessionId = requireText(tradingSessionId, "trading session id");
+      tradingDay = requireText(tradingDay, "trading day");
+      artifactContentSha256 =
+          requireText(artifactContentSha256, "artifact content sha256");
+      routingAlgorithmVersion =
+          requireText(routingAlgorithmVersion, "routing algorithm version");
+      Objects.requireNonNull(before, "baseline positions are required");
+      Objects.requireNonNull(after, "terminal positions are required");
+      if (!before.topic().equals(after.topic())) {
+        throw new IllegalArgumentException("offset boundaries must use the same topic");
+      }
+      for (int partition = 0; partition < EXPECTED_PARTITION_COUNT; partition++) {
+        final long baseline = before.partitions().get(partition).offset();
+        final long terminal = after.partitions().get(partition).offset();
+        if (terminal != baseline + 1) {
+          throw new IllegalArgumentException(
+              "each Close Barrier range must contain exactly one record");
+        }
+      }
+    }
+  }
+
+  /** Decoded physical Close Barrier identities retained as certification evidence. */
+  record CloseBarrierEvidence(String topic, List<CloseBarrierRecord> records) {
+    public CloseBarrierEvidence {
+      topic = requireText(topic, "topic");
+      records = List.copyOf(Objects.requireNonNull(records, "records are required"));
+      requireCompletePartitionSet(
+          records.stream().map(CloseBarrierRecord::partition).toList(), topic);
+    }
+  }
+
+  /** One decoded Close Barrier and its physical Kafka location. */
+  record CloseBarrierRecord(int partition, long offset, String commandId) {
+    public CloseBarrierRecord {
+      requirePartition(partition);
+      if (offset < 0) {
+        throw new IllegalArgumentException("offset must not be negative");
+      }
+      commandId = requireText(commandId, "command id");
+    }
+  }
+
   private static void requirePartition(int partition) {
     if (partition < 0 || partition >= EXPECTED_PARTITION_COUNT) {
       throw new IllegalArgumentException(
@@ -99,4 +154,5 @@ public interface KafkaObservationSession extends AutoCloseable {
     }
     return value;
   }
+
 }

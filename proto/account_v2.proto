@@ -35,6 +35,8 @@ message ReservationCommand {
   simplematch.orders.v2.ShareQuantity quantity = 9;
   simplematch.common.v2.TwdNotional notional = 10;
   simplematch.common.v2.TwdPrice limit_price = 11;
+  // Business trading day selected by the upstream admission authority.
+  simplematch.common.v2.TradingDay trading_day = 12;
 }
 
 message AccountLifecycleEvent {

@@ -9,6 +9,7 @@ import com.simplematch.accountservice.authority.ReservationOwnership;
 import com.simplematch.contracts.common.v1.ReservationStatus;
 import com.simplematch.contracts.common.v1.Side;
 import java.math.BigDecimal;
+import java.time.LocalDate;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 
@@ -30,6 +31,7 @@ class ReservationRecordTest {
                 Side.SIDE_BUY,
                 new ReservationTerms.ReservationQuantity(new BigDecimal("10")),
                 new ReservationTerms.LimitPrice(new BigDecimal("100"))),
+            LocalDate.of(2026, 7, 28),
             new BigDecimal("1000"),
             100L);
 

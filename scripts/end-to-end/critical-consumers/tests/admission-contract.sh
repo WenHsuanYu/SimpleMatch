@@ -68,6 +68,12 @@ labels = quickfix.fetch("spec").fetch("template").fetch("metadata").fetch("label
 abort "QuickFIX Pod must identify itself as part of simplematch" unless
   labels["app.kubernetes.io/part-of"] == "simplematch"
 
+environment = quickfix.fetch("spec").fetch("template").fetch("spec").fetch("containers").first.fetch("env")
+  .to_h { |entry| [entry.fetch("name"), entry] }
+trading_day_reference = environment.fetch("SIMPLEMATCH_TRADING_DAY").fetch("valueFrom").fetch("configMapKeyRef")
+abort "QuickFIX trading day must share matching-session-config authority" unless
+  trading_day_reference == { "name" => "matching-session-config", "key" => "trading_day" }
+
 network_policy = resources.fetch(["NetworkPolicy", "simplematch-java-services"])
 authorized = network_policy.fetch("spec").fetch("ingress").any? do |rule|
   permits_source = rule.fetch("from", []).any? do |source|
@@ -164,6 +170,9 @@ YAML
       'jsonpath={.data.matching_image_digest}')
         printf '%s\n' 'sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa'
         ;;
+      'jsonpath={.immutable}')
+        printf '%s\n' 'true'
+        ;;
       *)
         return 1
         ;;
@@ -184,6 +193,27 @@ YAML
 (
   # shellcheck source=scripts/end-to-end/critical-consumers/lib/cluster-data.sh
   source "$cluster_module"
+  reason="$temporary_directory/mutable-session-reason.txt"
+
+  die() {
+    printf '%s\n' "$*" >"$reason"
+    return 1
+  }
+
+  kns() {
+    [[ "${5:-}" == 'jsonpath={.immutable}' ]] && printf '%s\n' 'false'
+  }
+
+  if select_market_input; then
+    fail 'mutable matching-session-config must be rejected'
+  fi
+  grep -F 'matching-session-config must be immutable' "$reason" >/dev/null ||
+    fail 'mutable session identity must retain a specific failure reason'
+)
+
+(
+  # shellcheck source=scripts/end-to-end/critical-consumers/lib/cluster-data.sh
+  source "$cluster_module"
   reason="$temporary_directory/trading-day-reason.txt"
 
   die() {
@@ -195,16 +225,38 @@ YAML
     printf '%s\n' '2026-08-27'
   }
 
+  unset SIMPLEMATCH_CERTIFICATION_TRADING_DAY
   require_live_fix_trading_day '2026-08-27' ||
-    fail 'current Taipei trading day must be accepted'
+    fail 'current Taipei trading day must remain the default'
 
   if require_live_fix_trading_day '2026-08-26'; then
-    fail 'stale retained namespace trading day must be rejected'
+    fail 'stale retained namespace trading day must be rejected by default'
   fi
   grep -F \
-    'retained namespace trading day 2026-08-26 does not match current Asia/Taipei date 2026-08-27' \
+    'retained namespace trading day 2026-08-26 does not match expected certification trading day 2026-08-27' \
     "$reason" >/dev/null ||
-    fail 'trading-day mismatch must retain configured and current dates'
+    fail 'default trading-day mismatch must retain configured and expected dates'
+
+  export SIMPLEMATCH_CERTIFICATION_TRADING_DAY=2026-08-26
+  require_live_fix_trading_day '2026-08-26' ||
+    fail 'explicit historical certification trading day must be accepted'
+
+  if require_live_fix_trading_day '2026-08-27'; then
+    fail 'retained namespace must still match the explicit certification trading day'
+  fi
+  grep -F \
+    'retained namespace trading day 2026-08-27 does not match expected certification trading day 2026-08-26' \
+    "$reason" >/dev/null ||
+    fail 'explicit trading-day mismatch must retain configured and expected dates'
+
+  export SIMPLEMATCH_CERTIFICATION_TRADING_DAY=20260826
+  if require_live_fix_trading_day '2026-08-26'; then
+    fail 'malformed explicit certification trading day must be rejected'
+  fi
+  grep -F \
+    'SIMPLEMATCH_CERTIFICATION_TRADING_DAY must use YYYY-MM-DD: 20260826' \
+    "$reason" >/dev/null ||
+    fail 'malformed certification trading day must retain the invalid value'
 )
 
 (

@@ -17,6 +17,7 @@ import com.simplematch.quickfixgateway.matching.FinalMatchingEventFixDeliveryApp
 import com.simplematch.quickfixgateway.matching.FinalMatchingEventFixDeliveryHandler;
 import com.simplematch.quickfixgateway.matching.FinalMatchingEventFixDeliveryOutcome;
 import com.simplematch.quickfixgateway.matching.FinalMatchingEventFixDeliveryPlanner;
+import com.simplematch.quickfixgateway.risk.RiskOrderIdentityDeriver;
 import com.simplematch.quickfixgateway.risk.RiskSubmissionClient;
 import com.simplematch.quickfixgateway.risk.RiskSubmissionResult;
 import com.simplematch.quickfixgateway.store.JdbcFinalFixDeliveryStore;
@@ -25,6 +26,7 @@ import java.nio.charset.StandardCharsets;
 import java.nio.file.Path;
 import java.time.Clock;
 import java.time.Instant;
+import java.time.LocalDate;
 import java.time.ZoneOffset;
 import java.util.ArrayList;
 import java.util.List;
@@ -53,17 +55,18 @@ import quickfix.fix44.NewOrderSingle;
 /** Verifies accepted FIX orders remain addressable by final Matching Event order identity. */
 class FinalMatchingEventFixAdmissionIntegrationTest {
   private static final Clock CLOCK =
-      Clock.fixed(Instant.parse("2026-08-11T00:00:00Z"), ZoneOffset.UTC);
+      Clock.fixed(Instant.parse("2026-08-28T00:00:00Z"), ZoneOffset.UTC);
+  private static final LocalDate TRADING_DAY = LocalDate.of(2026, 8, 27);
   private static final String ACCOUNT_ID = "0198a001-0000-7000-8000-0000000000aa";
   private static final String CLIENT_ORDER_ID = "FINAL-1";
   private static final SessionID SESSION_ID =
       new SessionID("FIX.4.4", "SIMPLEMATCH", "CLIENT");
   private static final ArtifactIdentity ARTIFACT =
       ArtifactIdentity.newBuilder()
-          .setTradingDay("2026-08-11")
+          .setTradingDay(TRADING_DAY.toString())
           .setContentSha256("7cd06c51691bcde248e606ed1adfaddc4bd10ece582a6803fd2f04155a032943")
           .build();
-  private static final String TRADING_SESSION_ID = "2026-08-11-regular";
+  private static final String TRADING_SESSION_ID = "2026-08-27-regular";
   private static final int PARTITION_ID = 0;
   private static final UUID SOURCE_COMMAND_ID =
       UUID.fromString("0198a001-0000-7000-8000-000000000001");
@@ -106,7 +109,9 @@ class FinalMatchingEventFixAdmissionIntegrationTest {
 
   @Test
   void acceptedRiskOrderIdentityResolvesTheOwningFixSessionForFinalEvents() throws Exception {
-    final OrderSessionRegistry registry = new OrderSessionRegistry();
+    final RiskOrderIdentityDeriver orderIdentityDeriver =
+        new RiskOrderIdentityDeriver(TRADING_DAY);
+    final OrderSessionRegistry registry = new OrderSessionRegistry(orderIdentityDeriver);
     final CapturingAcceptedRiskClient risk = new CapturingAcceptedRiskClient();
     final List<Message> admissionMessages = new ArrayList<>();
     final InboundFixMessageHandler inbound =
@@ -116,7 +121,8 @@ class FinalMatchingEventFixAdmissionIntegrationTest {
             (sessionId, message) -> admissionMessages.add(message),
             registry,
             new FixMessageMapper(CLOCK),
-            CLOCK);
+            CLOCK,
+            orderIdentityDeriver);
 
     inbound.handle(newOrder(), SESSION_ID);
 
@@ -152,7 +158,7 @@ class FinalMatchingEventFixAdmissionIntegrationTest {
     order.setChar(OrdType.FIELD, '2');
     order.setString(Price.FIELD, "100");
     order.setChar(HandlInst.FIELD, '1');
-    order.setString(TransactTime.FIELD, "20260811-00:00:00.000");
+    order.setString(TransactTime.FIELD, "20260828-00:00:00.000");
     order.setString(Account.FIELD, ACCOUNT_ID);
     return order;
   }

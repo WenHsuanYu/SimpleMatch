@@ -7,6 +7,8 @@ import com.simplematch.contracts.account.v2.ReservationAction;
 import com.simplematch.contracts.account.v2.ReservationCommand;
 import com.simplematch.contracts.v2.V2ContractValidator;
 import java.math.BigDecimal;
+import java.time.LocalDate;
+import java.time.format.DateTimeParseException;
 import java.util.UUID;
 
 /** Converts and validates the typed v2 reservation command at the RPC boundary. */
@@ -18,7 +20,20 @@ final class AccountReservationV2CommandAdapter {
 
   static ReserveOperation toReserveOperation(ReservationCommand request) {
     validateCommand(request);
-    return new ReserveOperation(toRequestIdentity(request), toReservationTerms(request));
+    return new ReserveOperation(
+        toRequestIdentity(request), toReservationTerms(request), toTradingDay(request));
+  }
+
+  private static LocalDate toTradingDay(ReservationCommand request) {
+    final String isoDate = request.getTradingDay().getIsoDate();
+    if (isoDate.isBlank()) {
+      throw new IllegalArgumentException("trading_day.iso_date must not be blank");
+    }
+    try {
+      return LocalDate.parse(isoDate);
+    } catch (DateTimeParseException invalid) {
+      throw new IllegalArgumentException("trading_day.iso_date must be a valid ISO date", invalid);
+    }
   }
 
   private static void validateCommand(ReservationCommand request) {

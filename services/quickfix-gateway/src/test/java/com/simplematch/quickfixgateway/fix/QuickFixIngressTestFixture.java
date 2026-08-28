@@ -1,5 +1,6 @@
 package com.simplematch.quickfixgateway.fix;
 
+import com.simplematch.quickfixgateway.risk.RiskOrderIdentityDeriver;
 import com.simplematch.quickfixgateway.risk.RiskSubmissionClient;
 import com.simplematch.quickfixgateway.risk.RiskTestSupport;
 import com.simplematch.quickfixgateway.wal.WalAppender;
@@ -28,7 +29,29 @@ final class QuickFixIngressTestFixture {
         registry,
         mapper,
         clock,
-        admissionGate);
+        admissionGate,
+        new RiskOrderIdentityDeriver());
+  }
+
+  static InboundFixMessageHandler compose(
+      WalAppender walAppender,
+      RiskSubmissionClient riskSubmissionClient,
+      FixSessionMessageSender sender,
+      OrderSessionRegistry registry,
+      FixMessageMapper mapper,
+      Clock clock,
+      RiskOrderIdentityDeriver orderIdentityDeriver) {
+    final GatewayAdmissionGate admissionGate = new GatewayAdmissionGate();
+    admissionGate.open();
+    return compose(
+        walAppender,
+        riskSubmissionClient,
+        sender,
+        registry,
+        mapper,
+        clock,
+        admissionGate,
+        orderIdentityDeriver);
   }
 
   static InboundFixMessageHandler compose(
@@ -39,6 +62,26 @@ final class QuickFixIngressTestFixture {
       FixMessageMapper mapper,
       Clock clock,
       GatewayAdmissionGate admissionGate) {
+    return compose(
+        walAppender,
+        riskSubmissionClient,
+        sender,
+        registry,
+        mapper,
+        clock,
+        admissionGate,
+        new RiskOrderIdentityDeriver());
+  }
+
+  static InboundFixMessageHandler compose(
+      WalAppender walAppender,
+      RiskSubmissionClient riskSubmissionClient,
+      FixSessionMessageSender sender,
+      OrderSessionRegistry registry,
+      FixMessageMapper mapper,
+      Clock clock,
+      GatewayAdmissionGate admissionGate,
+      RiskOrderIdentityDeriver orderIdentityDeriver) {
     final CommandIdGenerator commandIdGenerator = new CommandIdGenerator();
     final WalRecoveryJournal recoveryJournal =
         new WalRecoveryJournal(WalRecoveryJournal.pathFor(walAppender.walPath()));
@@ -46,7 +89,10 @@ final class QuickFixIngressTestFixture {
         new WalDurableCommandWriter(walAppender, recoveryJournal);
     final RiskSubmissionResponder riskSubmissionResponder =
         new RiskSubmissionResponder(
-            RiskTestSupport.submitter(riskSubmissionClient), sender, mapper, recoveryJournal);
+            RiskTestSupport.submitter(riskSubmissionClient, orderIdentityDeriver),
+            sender,
+            mapper,
+            recoveryJournal);
     return new InboundFixMessageHandler(
         new NewOrderFixMessageHandler(
             new NewOrderCommandPreparer(commandIdGenerator, clock),

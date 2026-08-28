@@ -32,7 +32,8 @@ canonical across services.
 
 The account domain exposes three use-case commands rather than transport-shaped parameter lists:
 
-- `ReserveOperation` combines `ReservationRequestIdentity` with `ReservationTerms`.
+- `ReserveOperation` combines `ReservationRequestIdentity`, `ReservationTerms`, and the explicit
+  business trading day for v2 calls.
 - `ReleaseReservationOperation` combines the locked `ReservationIdentity` with a release reason.
 - `ApplyFillOperation` combines `ReservationIdentity` with one `ExecutionFill`.
 
@@ -46,7 +47,8 @@ equality and `fill quantity <= remaining quantity`.
 
 The account domain exposes three use-case commands rather than transport-shaped parameter lists:
 
-- `ReserveOperation` combines `ReservationRequestIdentity` with `ReservationTerms`.
+- `ReserveOperation` combines `ReservationRequestIdentity`, `ReservationTerms`, and the explicit
+  business trading day for v2 calls.
 - `ReleaseReservationOperation` combines the locked `ReservationIdentity` with a release reason.
 - `ApplyFillOperation` combines `ReservationIdentity` with one `ExecutionFill`.
 

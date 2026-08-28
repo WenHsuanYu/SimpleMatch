@@ -3,6 +3,7 @@ package com.simplematch.accountservice.reservation;
 import com.simplematch.accountservice.authority.AccountId;
 import com.simplematch.contracts.common.v1.Side;
 import java.math.BigDecimal;
+import java.time.LocalDate;
 import java.util.Objects;
 
 /**
@@ -14,8 +15,15 @@ import java.util.Objects;
  *
  * @param identity the request, order, and account identity
  * @param terms the instrument, side, quantity, and optional limit price
+ * @param tradingDay the explicit business day, or {@code null} for legacy v1 callers
  */
-public record ReserveOperation(ReservationRequestIdentity identity, ReservationTerms terms) {
+public record ReserveOperation(
+    ReservationRequestIdentity identity, ReservationTerms terms, LocalDate tradingDay) {
+  /** Preserves the legacy v1 command shape; the application service resolves today's day. */
+  public ReserveOperation(ReservationRequestIdentity identity, ReservationTerms terms) {
+    this(identity, terms, null);
+  }
+
   /** Requires a complete reserve operation. */
   public ReserveOperation {
     Objects.requireNonNull(identity, "identity");

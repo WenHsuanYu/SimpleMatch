@@ -48,6 +48,13 @@ required_deployments.each do |name|
   end
 end
 
+quickfix = resources.fetch(["StatefulSet", "quickfix-gateway"])
+quickfix_environment = quickfix.fetch("spec").fetch("template").fetch("spec").fetch("containers").first.fetch("env")
+  .to_h { |entry| [entry.fetch("name"), entry] }
+abort "#{overlay}: QuickFIX Gateway trading day must come from matching-session-config" unless
+  quickfix_environment.fetch("SIMPLEMATCH_TRADING_DAY").fetch("valueFrom").fetch("configMapKeyRef") ==
+    { "name" => "matching-session-config", "key" => "trading_day" }
+
 %w[
   account-service
   risk-service
@@ -94,7 +101,6 @@ end
 end
 
 if overlay == "local"
-  quickfix = resources.fetch(["StatefulSet", "quickfix-gateway"])
   quickfix_claim = quickfix.fetch("spec").fetch("volumeClaimTemplates").fetch(0)
   abort "local: QuickFIX must use the node-local StorageClass" unless
     quickfix_claim.dig("spec", "storageClassName") == "simplematch-rwo-pod" &&

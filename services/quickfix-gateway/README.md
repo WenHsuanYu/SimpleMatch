@@ -112,9 +112,11 @@ details.
 The external FIX/WAL order id remains deterministic `OrderID = O-<ClOrdID>`.
 
 At the Risk v2 boundary, `RiskOrderIdentityDeriver` derives a separate opaque internal order UUID
-from FIX session identity, the Asia/Taipei trading day, and the original client `ClOrdID`. New and
-cancel commands for the same FIX order on the same trading day therefore map to the same internal
-Risk order identity without changing the FIX-facing `OrderID` contract.
+from FIX session identity, the deployment-owned trading day, and the original client `ClOrdID`.
+That configured day must identify the same session as the approved Market Reference artifact; it is
+not inferred from the wall clock or WAL timestamp. New and cancel commands for the same FIX order
+on the same trading day therefore map to the same internal Risk order identity without changing the
+FIX-facing `OrderID` contract.
 
 Canonical account identity is owned by Account Service. FIX `Account(1)` carries the canonical UUID;
 the Gateway validates and preserves it. The Gateway does not derive an account UUID from a human-
@@ -178,6 +180,9 @@ Important Spring properties:
   default is on;
 - `simplematch.quickfix-gateway.owner-id`: stable logical gateway owner identity; the default Kafka
   consumer group for `matching.executions` follows this owner id;
+- `simplematch.quickfix-gateway.ingress.trading-day`: required deployment-owned trading day used by
+  new orders, cancels, replay, and accepted-order session identity; production-like Kubernetes
+  wiring reads it from the immutable `matching-session-config` shared with Risk and Matching;
 - `simplematch.grpc.targets.risk-service`: gRPC target used for Risk submission and reconciliation;
   and
 - `simplematch.quickfix-gateway.risk-client.*`: deadline, bounded retry, and breaker settings for
@@ -197,19 +202,22 @@ Default paths from `QuickFixGatewayFileProperties` include:
 Start the service normally:
 
 ```bash
-./gradlew :services:quickfix-gateway:bootRun
+SIMPLEMATCH_QUICKFIX_GATEWAY_INGRESS_TRADING_DAY=YYYY-MM-DD \
+  ./gradlew :services:quickfix-gateway:bootRun
 ```
 
 Start it without opening the FIX acceptor socket:
 
 ```bash
-./gradlew :services:quickfix-gateway:bootRun --args='--spring.main.web-application-type=none --simplematch.quickfix-gateway.acceptor-enabled=false'
+SIMPLEMATCH_QUICKFIX_GATEWAY_INGRESS_TRADING_DAY=YYYY-MM-DD \
+  ./gradlew :services:quickfix-gateway:bootRun --args='--spring.main.web-application-type=none --simplematch.quickfix-gateway.acceptor-enabled=false'
 ```
 
 Start it with the acceptor and matching-execution consume path disabled for a dry run:
 
 ```bash
-./gradlew :services:quickfix-gateway:bootRun --args='--spring.main.web-application-type=none --simplematch.quickfix-gateway.acceptor-enabled=false --simplematch.quickfix-gateway.data-plane-enabled=false'
+SIMPLEMATCH_QUICKFIX_GATEWAY_INGRESS_TRADING_DAY=YYYY-MM-DD \
+  ./gradlew :services:quickfix-gateway:bootRun --args='--spring.main.web-application-type=none --simplematch.quickfix-gateway.acceptor-enabled=false --simplematch.quickfix-gateway.data-plane-enabled=false'
 ```
 
 Disabling `replay-enabled` disables startup WAL recovery and should not be treated as a normal

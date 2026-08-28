@@ -37,6 +37,11 @@ spec:
               valueFrom:
                 fieldRef:
                   fieldPath: metadata.name
+            - name: SIMPLEMATCH_TRADING_DAY
+              valueFrom:
+                configMapKeyRef:
+                  name: matching-session-config
+                  key: trading_day
           ports:
             - name: fix
               containerPort: 5001

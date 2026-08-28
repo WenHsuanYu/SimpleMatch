@@ -285,26 +285,43 @@ required_workloads_are_ready() {
 capture_matching_partition_sample() {
   local partition="$1"
   local samples_dir="$2"
+  local require_ready="${3:-true}"
   local pod="matching-$partition"
   local before="$samples_dir/partition-$partition-pod-before.json"
   local after="$samples_dir/partition-$partition-pod-after.json"
   local metrics="$samples_dir/partition-$partition-runtime.json"
 
+  [[ "$require_ready" == true || "$require_ready" == false ]] || return 1
+
   kns get pod "$pod" -o json >"$before" || return 1
-  jq -e '
-    [.status.containerStatuses[]? | select(.name == "matching")] as $containers
-    | ($containers | length) == 1 and $containers[0].ready == true
-  ' "$before" >/dev/null || return 1
+  if [[ "$require_ready" == true ]]; then
+    jq -e '
+      [.status.containerStatuses[]? | select(.name == "matching")] as $containers
+      | ($containers | length) == 1 and $containers[0].ready == true
+    ' "$before" >/dev/null || return 1
+  else
+    jq -e '
+      [.status.containerStatuses[]? | select(.name == "matching")] as $containers
+      | ($containers | length) == 1 and ($containers[0].state.running | type) == "object"
+    ' "$before" >/dev/null || return 1
+  fi
 
   kns exec "$pod" -c matching -- \
     cat /var/lib/simplematch/matching/runtime-metrics.json >"$metrics" || return 1
   jq -e 'type == "object"' "$metrics" >/dev/null || return 1
 
   kns get pod "$pod" -o json >"$after" || return 1
-  jq -e '
-    [.status.containerStatuses[]? | select(.name == "matching")] as $containers
-    | ($containers | length) == 1 and $containers[0].ready == true
-  ' "$after" >/dev/null || return 1
+  if [[ "$require_ready" == true ]]; then
+    jq -e '
+      [.status.containerStatuses[]? | select(.name == "matching")] as $containers
+      | ($containers | length) == 1 and $containers[0].ready == true
+    ' "$after" >/dev/null || return 1
+  else
+    jq -e '
+      [.status.containerStatuses[]? | select(.name == "matching")] as $containers
+      | ($containers | length) == 1 and ($containers[0].state.running | type) == "object"
+    ' "$after" >/dev/null || return 1
+  fi
 
   local before_uid after_uid
   before_uid="$(jq -r '.metadata.uid // empty' "$before")"

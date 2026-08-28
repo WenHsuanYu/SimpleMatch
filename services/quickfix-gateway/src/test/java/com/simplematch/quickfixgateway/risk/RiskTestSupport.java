@@ -8,8 +8,14 @@ public final class RiskTestSupport {
 
   /** Wraps one test Risk transport with the same direct v2 mapper used by production. */
   public static RiskCommandSubmitter submitter(RiskSubmissionClient submissionClient) {
+    return submitter(submissionClient, new RiskOrderIdentityDeriver());
+  }
+
+  /** Wraps one test Risk transport with an explicitly shared order identity authority. */
+  public static RiskCommandSubmitter submitter(
+      RiskSubmissionClient submissionClient, RiskOrderIdentityDeriver orderIdentityDeriver) {
     return new RiskCommandSubmitter(
-        new RiskCommandMapper(VenueMic.parse("XTAI"), new RiskOrderIdentityDeriver()),
+        new RiskCommandMapper(VenueMic.parse("XTAI"), orderIdentityDeriver),
         submissionClient);
   }
 }

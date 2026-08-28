@@ -14,6 +14,7 @@ import org.springframework.test.context.ActiveProfiles;
       "simplematch.quickfix-gateway.acceptor-enabled=false",
       "simplematch.quickfix-gateway.data-plane-enabled=false",
       "simplematch.quickfix-gateway.replay-enabled=false",
+      "simplematch.quickfix-gateway.ingress.trading-day=2026-08-11",
       "spring.flyway.enabled=false",
       "spring.kafka.listener.auto-startup=false",
       "spring.task.scheduling.enabled=false",

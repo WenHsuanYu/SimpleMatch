@@ -100,7 +100,9 @@ apply_local_kubernetes_inputs() {
     --from-literal="trading_session_id=${trading_day}-regular" \
     --from-literal="trading_day=${trading_day}" \
     --from-literal="matching_image_digest=${matching_digest}" \
-    --dry-run=client -o yaml | kubectl apply -f - >/dev/null
+    --dry-run=client -o json \
+    | jq '.immutable = true' \
+    | kubectl apply -f - >/dev/null
 
   kubectl -n "$namespace" create secret generic simplematch-flyway-secrets \
     --from-literal=postgres_dsn="$local_postgres_dsn" \

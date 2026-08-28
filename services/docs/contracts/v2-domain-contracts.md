@@ -24,11 +24,11 @@ A rejection is a domain fact, not a transport failure or dead-letter record.
 - `TwdPrice` and `TwdNotional` use signed 64-bit units of `0.0001 TWD`.
 - Account reservation uses the typed `AccountReservationService.Reserve` RPC. Its command carries
   UUID-backed request/order/account identity, a venue-qualified instrument, side, whole-share
-  quantity, fixed-point limit price, and fixed-point notional. The response is an authoritative
-  `AccountLifecycleEvent` projection; the durable event remains written by Account Authority in
-  the same transaction as the reservation. Account persists the venue MIC with the reservation, so
-  a repeated command with a different venue is a stable request conflict rather than an equivalent
-  replay.
+  quantity, fixed-point limit price, fixed-point notional, and the explicit business `TradingDay`.
+  The response is an authoritative `AccountLifecycleEvent` projection; the durable event remains
+  written by Account Authority in the same transaction as the reservation. Account persists the
+  venue MIC and business trading day with the reservation, so a repeated command with different
+  request facts is a stable request conflict rather than an equivalent replay.
   `ShareQuantity` uses signed 64-bit whole shares.
 - The only v2 currency is `TWD`; phase-one venues are `XTAI` and `ROCO`.
 - Absolute times are UTC milliseconds. `TradingDay` is an ISO date interpreted in `Asia/Taipei`, and

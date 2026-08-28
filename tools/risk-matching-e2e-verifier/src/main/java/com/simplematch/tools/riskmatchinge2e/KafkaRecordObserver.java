@@ -61,25 +61,26 @@ final class KafkaRecordObserver implements AutoCloseable {
 
     consumer = new KafkaConsumer<>(properties);
 
-    final List<PartitionInfo> metadata =
-        consumer.partitionsFor(this.topic, METADATA_TIMEOUT);
-
-    if (metadata.size() != EXPECTED_PARTITION_COUNT) {
+    try {
+      final List<PartitionInfo> metadata =
+          consumer.partitionsFor(this.topic, METADATA_TIMEOUT);
+      if (metadata.size() != EXPECTED_PARTITION_COUNT) {
+        throw new IllegalStateException(
+            this.topic
+                + " exposes "
+                + metadata.size()
+                + " partitions; expected "
+                + EXPECTED_PARTITION_COUNT);
+      }
+      partitions =
+          metadata.stream()
+              .map(info -> new TopicPartition(this.topic, info.partition()))
+              .sorted(Comparator.comparingInt(TopicPartition::partition))
+              .toList();
+    } catch (RuntimeException failure) {
       consumer.close();
-
-      throw new IllegalStateException(
-          this.topic
-              + " exposes "
-              + metadata.size()
-              + " partitions; expected "
-              + EXPECTED_PARTITION_COUNT);
+      throw failure;
     }
-
-    partitions =
-        metadata.stream()
-            .map(info -> new TopicPartition(this.topic, info.partition()))
-            .sorted(Comparator.comparingInt(TopicPartition::partition))
-            .toList();
   }
 
   /** Captures the current end offset of every expected partition. */
@@ -148,6 +149,44 @@ final class KafkaRecordObserver implements AutoCloseable {
     return List.copyOf(matches);
   }
 
+  /** Collects every physical record inside one caller-frozen offset range. */
+  List<ObservedRecord> collectRange(
+      Map<Integer, Long> offsetsBefore,
+      Map<Integer, Long> offsetsAfter,
+      Duration timeout) {
+    Objects.requireNonNull(offsetsBefore, "baseline offset boundary is required");
+    Objects.requireNonNull(offsetsAfter, "terminal offset boundary is required");
+    Objects.requireNonNull(timeout, "timeout is required");
+    requireCompleteBoundary(offsetsBefore, "baseline");
+    requireCompleteBoundary(offsetsAfter, "terminal");
+
+    seekToBoundary(offsetsBefore);
+    final Map<TopicPartition, Long> terminalOffsets = new LinkedHashMap<>();
+    for (TopicPartition partition : partitions) {
+      final long before = offsetsBefore.get(partition.partition());
+      final long after = offsetsAfter.get(partition.partition());
+      if (after < before) {
+        throw new IllegalArgumentException("terminal offset precedes baseline offset");
+      }
+      terminalOffsets.put(partition, after);
+    }
+
+    final Instant deadline = Instant.now().plus(timeout);
+    final List<ObservedRecord> records = new ArrayList<>();
+    while (Instant.now().isBefore(deadline)) {
+      if (reachedAll(terminalOffsets)) {
+        return List.copyOf(records);
+      }
+      for (ConsumerRecord<String, byte[]> record : consumer.poll(POLL_INTERVAL)) {
+        final long terminal = offsetsAfter.get(record.partition());
+        if (record.offset() < terminal) {
+          records.add(toObservedRecord(record));
+        }
+      }
+    }
+    throw new IllegalStateException("timed out draining requested record range on " + topic);
+  }
+
   /** Polls once and appends records whose key matches the expected command identity. */
   private void pollMatches(String commandId, List<ObservedRecord> matches) {
     for (ConsumerRecord<String, byte[]> record : consumer.poll(POLL_INTERVAL)) {
@@ -175,10 +214,7 @@ final class KafkaRecordObserver implements AutoCloseable {
 
   /** Assigns all expected partitions and seeks to the supplied observation boundary. */
   private void seekToBoundary(Map<Integer, Long> offsetsBefore) {
-    if (offsetsBefore.size() != EXPECTED_PARTITION_COUNT) {
-      throw new IllegalArgumentException(
-          "offset boundary must cover all 15 partitions");
-    }
+    requireCompleteBoundary(offsetsBefore, "offset");
 
     consumer.assign(partitions);
 
@@ -192,6 +228,19 @@ final class KafkaRecordObserver implements AutoCloseable {
       }
 
       consumer.seek(partition, offset);
+    }
+  }
+
+  private void requireCompleteBoundary(Map<Integer, Long> offsets, String name) {
+    if (offsets.size() != EXPECTED_PARTITION_COUNT) {
+      throw new IllegalArgumentException(name + " boundary must cover all 15 partitions");
+    }
+    for (TopicPartition partition : partitions) {
+      final Long offset = offsets.get(partition.partition());
+      if (offset == null || offset < 0) {
+        throw new IllegalArgumentException(
+            "missing or invalid " + name + " offset for partition " + partition.partition());
+      }
     }
   }
 

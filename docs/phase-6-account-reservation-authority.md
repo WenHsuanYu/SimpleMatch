@@ -14,6 +14,8 @@ Phase 6 is implemented in `account-service` as a local, database-authoritative t
   mechanics.
 - Account limits, positions, and reservations persist `account_id` as the same native PostgreSQL UUID
   carried through the Account domain and service boundary.
+- V2 reservations persist the upstream admission `trading_day` and reuse it for release and fill
+  authority mutations; legacy V1 operations retain their wall-clock compatibility fallback.
 - `account_service.inbox` makes execution delivery idempotent and records optional aggregate sequence
   claims.
 - Reservation decisions and lifecycle changes write binary account outbox events in the same

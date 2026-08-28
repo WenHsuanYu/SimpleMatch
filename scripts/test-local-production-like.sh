@@ -96,6 +96,7 @@ grep -Fq 'digest: %s' "$script_dir/render-local-kubernetes-manifest.sh"
 
 "$runner" --help >/dev/null
 grep -Fq 'SIMPLEMATCH_CERTIFICATION_TRADING_DAY' "$bootstrap_lib"
+grep -Fq "jq '.immutable = true'" "$kubernetes_lib"
 grep -Fq -- '--resume' "$bootstrap_lib"
 grep -Fq -- '--image-transport' "$framework_lib" "$bootstrap_lib"
 grep -Fq 'simplematch_local_image_transport_validate "$image_transport"' "$bootstrap_lib"

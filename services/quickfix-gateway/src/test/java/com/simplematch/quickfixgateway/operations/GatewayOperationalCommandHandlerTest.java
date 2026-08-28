@@ -30,12 +30,14 @@ class GatewayOperationalCommandHandlerTest {
                 LocalTime.of(13, 30),
                 false),
             new InMemoryAuditStore(),
+            tradingSessionId -> {},
             Clock.fixed(Instant.parse("2026-08-11T01:00:00Z"), ZoneId.of("UTC")));
     final GatewayOperationalCommandHandler handler =
         new GatewayOperationalCommandHandler(controller);
 
     final GatewayOperationResult status =
-        handler.execute(new GatewayOperationalCommand(GatewayOperation.STATUS, "operator-1", "inspect"));
+        handler.execute(
+            new GatewayOperationalCommand(GatewayOperation.STATUS, "operator-1", "inspect"));
     final GatewayOperationResult pause =
         handler.execute(
             new GatewayOperationalCommand(
@@ -54,7 +56,8 @@ class GatewayOperationalCommandHandlerTest {
     assertThat(close.gateState()).isEqualTo(GatewayAdmissionGate.State.CLOSED);
     assertThat(
             handler.execute(
-                    new GatewayOperationalCommand(GatewayOperation.OPEN, "operator-1", "late reopen"))
+                    new GatewayOperationalCommand(
+                        GatewayOperation.OPEN, "operator-1", "late reopen"))
                 .accepted())
         .isFalse();
   }
