@@ -4,7 +4,7 @@ import com.simplematch.riskservice.outbox.OutboxRepository;
 import java.util.Objects;
 import org.springframework.transaction.support.TransactionTemplate;
 
-/** Persists all daily barrier commands through the Risk outbox in independently retryable steps. */
+/** Persists each complete daily barrier set through Risk's local transaction boundary. */
 public final class TradingSessionBarrierService {
   private final MatchingBarrierOutboxFactory barriers;
   private final OutboxRepository outbox;
@@ -33,13 +33,17 @@ public final class TradingSessionBarrierService {
   }
 
   private int publish(java.util.List<com.simplematch.riskservice.outbox.OutboxRecord> records) {
-    int inserted = 0;
-    for (var record : records) {
-      final Boolean result = transactionTemplate.execute(status -> outbox.insertIfAbsent(record));
-      if (Boolean.TRUE.equals(result)) {
-        inserted++;
-      }
-    }
-    return inserted;
+    final Integer inserted =
+        transactionTemplate.execute(
+            status -> {
+              int count = 0;
+              for (var record : records) {
+                if (outbox.insertIfAbsent(record)) {
+                  count++;
+                }
+              }
+              return count;
+            });
+    return Objects.requireNonNull(inserted, "barrier transaction result");
   }
 }

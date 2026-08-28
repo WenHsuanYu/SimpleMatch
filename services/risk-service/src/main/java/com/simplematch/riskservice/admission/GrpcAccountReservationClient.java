@@ -7,6 +7,7 @@ import com.simplematch.contracts.account.v2.ReservationAction;
 import com.simplematch.contracts.account.v2.ReservationCommand;
 import com.simplematch.contracts.common.v2.EventMetadata;
 import com.simplematch.contracts.common.v2.Side;
+import com.simplematch.contracts.common.v2.TradingDay;
 import com.simplematch.contracts.common.v2.TwdNotional;
 import com.simplematch.contracts.common.v2.TwdPrice;
 import com.simplematch.contracts.common.v2.VenueInstrument;
@@ -76,6 +77,10 @@ public final class GrpcAccountReservationClient implements AccountReservationCli
             .setNotional(
                 TwdNotional.newBuilder()
                     .setUnits(notionalUnits(limitPriceUnits, characteristics.quantity().value()))
+                    .build())
+            .setTradingDay(
+                TradingDay.newBuilder()
+                    .setIsoDate(order.tradingDay().toString())
                     .build())
             .build();
     final var response = reserve(request);

@@ -211,9 +211,11 @@ enable_gateway_operations() {
   kns set env statefulset/quickfix-gateway \
     SIMPLEMATCH_QUICKFIX_GATEWAY_OPERATIONS_HTTP_ENABLED=true \
     SIMPLEMATCH_QUICKFIX_GATEWAY_OPERATIONS_AUTOMATIC_CLOSE_ENABLED=false \
-    SIMPLEMATCH_QUICKFIX_GATEWAY_OPERATIONS_OPERATOR_TOKEN="$gateway_operator_token" >/dev/null
+    SIMPLEMATCH_QUICKFIX_GATEWAY_OPERATIONS_OPERATOR_TOKEN="$gateway_operator_token" >/dev/null ||
+    die 'QuickFIX Gateway certification overrides could not be applied'
   gateway_env_modified=true
-  kns rollout status statefulset/quickfix-gateway --timeout="${timeout_seconds}s" >/dev/null
+  kns rollout status statefulset/quickfix-gateway --timeout="${timeout_seconds}s" >/dev/null ||
+    die 'QuickFIX Gateway did not become ready with certification overrides'
 }
 
 restore_gateway_environment() {
@@ -226,6 +228,8 @@ restore_gateway_environment() {
       return 0
     }
   gateway_env_modified=false
+  kns rollout status statefulset/quickfix-gateway \
+    --timeout="${timeout_seconds}s" >/dev/null 2>&1 || restoration_failed=true
 }
 
 start_gateway_port_forward() {

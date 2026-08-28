@@ -10,27 +10,69 @@ import com.simplematch.accountservice.authority.AccountReservation;
 import com.simplematch.contracts.common.v1.ReservationStatus;
 import com.simplematch.contracts.common.v1.Side;
 import java.math.BigDecimal;
-import java.time.Clock;
 import java.time.LocalDate;
-import java.time.ZoneId;
 
 /** Applies authoritative balance changes within the reservation transaction. */
 final class AccountAuthorityTransitions {
-  private static final ZoneId TAIPEI = ZoneId.of("Asia/Taipei");
-
   private AccountAuthorityTransitions() {}
+
+  static boolean reserve(
+      AccountAuthorityReader authorityReader,
+      AccountAuthorityLifecycleWriter authorityWriter,
+      ReserveOperation operation,
+      LocalDate tradingDay,
+      BigDecimal notional,
+      long now) {
+    if (operation.side() == Side.SIDE_BUY) {
+      final AccountLimit limit =
+          authorityReader.findLimitForUpdate(operation.accountIdentity(), tradingDay).orElse(null);
+      if (limit == null || limit.availableNotional().compareTo(notional) < 0) {
+        return false;
+      }
+      final AccountLimit changed =
+          limit.withLedger(
+              new AccountLimitLedger(
+                  limit.limitTotalNotional(),
+                  limit.reservedNotional().add(notional),
+                  limit.utilizedNotional(),
+                  limit.availableNotional().subtract(notional)),
+              limit.revision().next(now));
+      authorityWriter.updateLimit(changed, limit.version());
+      return true;
+    }
+    final AccountPosition position =
+        authorityReader
+            .findPositionForUpdate(operation.accountIdentity(), operation.symbol())
+            .orElse(null);
+    if (position == null
+        || position
+                .longQuantity()
+                .subtract(position.reservedLongQuantity())
+                .compareTo(operation.quantity())
+            < 0) {
+      return false;
+    }
+    final AccountPosition changed =
+        position.withInventory(
+            new AccountPositionInventory(
+                position.longQuantity(),
+                position.shortQuantity(),
+                position.reservedLongQuantity().add(operation.quantity()),
+                position.reservedShortQuantity()),
+            position.revision().next(now));
+    authorityWriter.updatePosition(changed, position.version());
+    return true;
+  }
 
   static void releaseCancelledAuthority(
       AccountAuthorityReader authorityReader,
       AccountAuthorityLifecycleWriter authorityWriter,
-      Clock clock,
       AccountReservation reservation,
       long now) {
-    final LocalDate tradingDay = clock.instant().atZone(TAIPEI).toLocalDate();
     if (reservation.side() == Side.SIDE_BUY) {
       final AccountLimit limit =
           authorityReader
-              .findLimitForUpdate(reservation.accountIdentity(), tradingDay)
+              .findLimitForUpdate(reservation.accountIdentity(), reservation.tradingDay())
               .orElseThrow(
                   () ->
                       new AccountReservationInvariantException("account limit is not provisioned"));
@@ -69,16 +111,14 @@ final class AccountAuthorityTransitions {
   static void applyFilledAuthority(
       AccountAuthorityReader authorityReader,
       AccountAuthorityLifecycleWriter authorityWriter,
-      Clock clock,
       AccountReservation reservation,
       ExecutionFill fill,
       BigDecimal releasedNotional,
       long now) {
-    final LocalDate tradingDay = clock.instant().atZone(TAIPEI).toLocalDate();
     if (reservation.side() == Side.SIDE_BUY) {
       final AccountLimit limit =
           authorityReader
-              .findLimitForUpdate(reservation.accountIdentity(), tradingDay)
+              .findLimitForUpdate(reservation.accountIdentity(), reservation.tradingDay())
               .orElseThrow(
                   () ->
                       new AccountReservationInvariantException("account limit is not provisioned"));

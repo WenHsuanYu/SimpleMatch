@@ -4,8 +4,10 @@ import com.simplematch.config.GrpcProperties;
 import com.simplematch.contracts.v2.VenueMic;
 import com.simplematch.quickfixgateway.fix.FixMessageMapper;
 import com.simplematch.quickfixgateway.fix.OrderSessionRegistry;
+import com.simplematch.quickfixgateway.operations.TradingSessionClosePort;
 import com.simplematch.quickfixgateway.risk.GrpcRiskReconciliationClient;
 import com.simplematch.quickfixgateway.risk.GrpcRiskSubmissionClient;
+import com.simplematch.quickfixgateway.risk.GrpcTradingSessionCloseClient;
 import com.simplematch.quickfixgateway.risk.ResilientRiskSubmissionClient;
 import com.simplematch.quickfixgateway.risk.RiskCommandMapper;
 import com.simplematch.quickfixgateway.risk.RiskCommandSubmitter;
@@ -37,8 +39,9 @@ public class QuickFixGatewayIntegrationConfiguration {
   }
 
   @Bean
-  RiskOrderIdentityDeriver riskOrderIdentityDeriver() {
-    return new RiskOrderIdentityDeriver();
+  RiskOrderIdentityDeriver riskOrderIdentityDeriver(
+      QuickFixGatewayIngressProperties ingressProperties) {
+    return new RiskOrderIdentityDeriver(ingressProperties.tradingDay());
   }
 
   @Bean
@@ -75,6 +78,13 @@ public class QuickFixGatewayIntegrationConfiguration {
   RiskReconciliationClient riskReconciliationClient(
       ManagedChannel riskServiceChannel, QuickFixGatewayRiskClientProperties riskClient) {
     return new GrpcRiskReconciliationClient(riskServiceChannel, riskClient.deadlineMillis());
+  }
+
+  /** Reuses the Risk channel for idempotent trading-session Close Barrier publication. */
+  @Bean
+  TradingSessionClosePort tradingSessionClosePort(
+      ManagedChannel riskServiceChannel, QuickFixGatewayRiskClientProperties riskClient) {
+    return new GrpcTradingSessionCloseClient(riskServiceChannel, riskClient.deadlineMillis());
   }
 
   @Bean

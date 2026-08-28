@@ -26,7 +26,8 @@ public class GrpcServerConfiguration {
   SmartLifecycle grpcServerLifecycle(
       RiskServiceRuntime runtime,
       GrpcProperties grpcProperties,
-      OrderAdmissionGrpcService admissionService) {
+      OrderAdmissionGrpcService admissionService,
+      TradingSessionOperationsGrpcService tradingSessionOperationsService) {
     return new SmartLifecycle() {
       private Server server;
       private volatile boolean running;
@@ -41,6 +42,7 @@ public class GrpcServerConfiguration {
           server =
               builder
                   .addService((BindableService) admissionService)
+                  .addService((BindableService) tradingSessionOperationsService)
                   .build()
                   .start();
           running = true;

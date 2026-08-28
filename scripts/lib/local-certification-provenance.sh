@@ -2,7 +2,7 @@
 
 # Provenance helpers shared by the production-like runner and dependent
 # certification workflows. A retained namespace is valid evidence only when the
-# verifier process and repository revision come from the same completed run.
+# verifier process and repository revision come from the same clean source tree.
 
 _provenance_dir="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
 # shellcheck source=scripts/lib/local-image-transport.sh
@@ -11,29 +11,61 @@ unset _provenance_dir
 
 simplematch_certification_source_revision() {
   local repo_root="$1"
-  local untracked
+  local untracked_source
 
-  git -C "$repo_root" diff --quiet -- . ':(exclude)graphify-out/**' || {
+  if ! git -C "$repo_root" diff --quiet --ignore-submodules -- \
+        . ':(exclude)graphify-out/**' ||
+     ! git -C "$repo_root" diff --cached --quiet --ignore-submodules -- \
+        . ':(exclude)graphify-out/**'; then
     printf '%s\n' \
-      'certification source has tracked working-tree changes; commit or restore them before certification.' >&2
+      'certification source has tracked working-tree changes; commit or restore them before certification.' \
+      >&2
     return 1
-  }
-  git -C "$repo_root" diff --cached --quiet -- . ':(exclude)graphify-out/**' || {
-    printf '%s\n' \
-      'certification source has staged changes; commit or restore them before certification.' >&2
-    return 1
-  }
-  untracked="$(
-    git -C "$repo_root" ls-files --others --exclude-standard -- . \
-      ':(exclude)graphify-out/**'
+  fi
+
+  untracked_source="$(
+    git -C "$repo_root" ls-files --others --exclude-standard -- \
+      . ':(exclude)graphify-out/**'
   )" || return 1
-  [[ -z "$untracked" ]] || {
+  if [[ -n "$untracked_source" ]]; then
     printf '%s\n' \
-      'certification source has untracked repository files; remove or ignore them before certification.' >&2
-    printf '%s\n' "$untracked" >&2
+      'certification source has untracked repository files; commit, ignore, or remove them before certification.' \
+      >&2
+    printf '%s\n' "$untracked_source" >&2
+    return 1
+  fi
+
+  git -C "$repo_root" rev-parse HEAD
+}
+
+simplematch_certification_verifier_image_identity() {
+  local production_like_evidence_dir="$1"
+  local identity_file="$production_like_evidence_dir/verifier-image-identity"
+  local identity
+
+  [[ -f "$identity_file" ]] || {
+    printf '%s\n' 'production-like verifier image identity is missing; create a fresh retained run.' >&2
     return 1
   }
-  git -C "$repo_root" rev-parse HEAD
+  identity="$(tr -d '\r\n' <"$identity_file")" || return 1
+  [[ "$identity" =~ ^sha256:[0-9a-f]{64}$ ]] || {
+    printf '%s\n' 'retained verifier image identity is malformed' >&2
+    return 1
+  }
+  printf '%s\n' "$identity"
+}
+
+simplematch_certification_image_transport() {
+  local production_like_evidence_dir="$1"
+  local run_context="$production_like_evidence_dir/run-context"
+  local image_transport
+
+  image_transport="$(
+    awk -F= '$1 == "image_transport" {print substr($0, index($0, "=") + 1)}' \
+      "$run_context"
+  )" || return 1
+  simplematch_local_image_transport_validate "$image_transport" || return 1
+  printf '%s\n' "$image_transport"
 }
 
 simplematch_record_certification_provenance() {
@@ -43,7 +75,7 @@ simplematch_record_certification_provenance() {
   local image_transport="$4"
   local image_tag="$5"
   local image_lock="$6"
-  local source_revision verifier_image_reference
+  local source_revision verifier_image_reference verifier_image_identity
 
   source_revision="$(simplematch_certification_source_revision "$repo_root")" || return 1
   case "$image_transport" in
@@ -52,11 +84,15 @@ simplematch_record_certification_provenance() {
         simplematch_local_image_lock_digest_reference \
           "$image_lock" risk-matching-e2e-verifier
       )" || return 1
+      verifier_image_identity="${verifier_image_reference##*@}"
       ;;
     kind-load)
       verifier_image_reference="$(
         simplematch_local_image_inventory_source_image \
           risk-matching-e2e-verifier "$image_tag"
+      )" || return 1
+      verifier_image_identity="$(
+        docker image inspect --format '{{.Id}}' "$verifier_image_reference"
       )" || return 1
       ;;
     *)
@@ -65,10 +101,17 @@ simplematch_record_certification_provenance() {
       return 1
       ;;
   esac
+  [[ "$verifier_image_identity" =~ ^sha256:[0-9a-f]{64}$ ]] || {
+    printf 'verifier image does not expose an immutable OCI identity: %s\n' \
+      "$verifier_image_reference" >&2
+    return 1
+  }
 
   printf '%s\n' "$source_revision" >"$evidence_dir/source-revision" || return 1
   printf '%s\n' "$verifier_image_reference" \
     >"$evidence_dir/verifier-image-reference" || return 1
+  printf '%s\n' "$verifier_image_identity" \
+    >"$evidence_dir/verifier-image-identity" || return 1
   printf '%s\n' "$namespace" >"$evidence_dir/retained-namespace" || return 1
 }
 
@@ -81,10 +124,13 @@ simplematch_production_like_evidence_dir() {
 simplematch_certification_verifier_image() {
   local repo_root="$1"
   local expected_namespace="$2"
-  local production_like_evidence_dir run_context
-  local retained_namespace source_revision current_revision verifier_image_reference
+  local production_like_evidence_dir="${3:-}"
+  local run_context retained_namespace source_revision current_revision
+  local verifier_image_reference verifier_image_identity image_transport
 
-  production_like_evidence_dir="$(simplematch_production_like_evidence_dir "$repo_root")"
+  if [[ -z "$production_like_evidence_dir" ]]; then
+    production_like_evidence_dir="$(simplematch_production_like_evidence_dir "$repo_root")" || return 1
+  fi
   run_context="$production_like_evidence_dir/run-context"
 
   [[ -f "$run_context" ]] || {
@@ -102,15 +148,18 @@ simplematch_certification_verifier_image() {
     return 1
   }
 
-  retained_namespace="$(awk -F= '$1 == "namespace" {print substr($0, index($0, "=") + 1)}' "$run_context")"
+  retained_namespace="$(
+    awk -F= '$1 == "namespace" {print substr($0, index($0, "=") + 1)}' \
+      "$run_context"
+  )" || return 1
   [[ -n "$retained_namespace" && "$retained_namespace" == "$expected_namespace" ]] || {
     printf 'production-like evidence belongs to namespace %s, not %s\n' \
       "${retained_namespace:-<unknown>}" "$expected_namespace" >&2
     return 1
   }
 
-  source_revision="$(tr -d '\r\n' <"$production_like_evidence_dir/source-revision")"
-  current_revision="$(git -C "$repo_root" rev-parse HEAD)" || return 1
+  source_revision="$(tr -d '\r\n' <"$production_like_evidence_dir/source-revision")" || return 1
+  current_revision="$(simplematch_certification_source_revision "$repo_root")" || return 1
   [[ "$source_revision" == "$current_revision" ]] || {
     printf 'retained production-like source revision %s does not match current revision %s\n' \
       "${source_revision:-<missing>}" "$current_revision" >&2
@@ -121,11 +170,23 @@ simplematch_certification_verifier_image() {
 
   verifier_image_reference="$(
     tr -d '\r\n' <"$production_like_evidence_dir/verifier-image-reference"
-  )"
+  )" || return 1
   [[ -n "$verifier_image_reference" && "$verifier_image_reference" != *[[:space:]]* ]] || {
     printf '%s\n' 'retained verifier image reference is missing or malformed' >&2
     return 1
   }
+  verifier_image_identity="$(
+    simplematch_certification_verifier_image_identity "$production_like_evidence_dir"
+  )" || return 1
+  image_transport="$(
+    simplematch_certification_image_transport "$production_like_evidence_dir"
+  )" || return 1
+  if [[ "$image_transport" == registry \
+        && "$verifier_image_reference" != *@"$verifier_image_identity" ]]; then
+    printf '%s\n' 'registry verifier reference does not match its retained digest identity' >&2
+    return 1
+  fi
+
   printf '%s\n' "$verifier_image_reference"
 }
 

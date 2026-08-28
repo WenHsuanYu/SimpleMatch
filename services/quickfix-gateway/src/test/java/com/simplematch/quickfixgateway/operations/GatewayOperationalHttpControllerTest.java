@@ -75,6 +75,7 @@ class GatewayOperationalHttpControllerTest {
                 java.time.LocalTime.of(13, 30),
                 true),
             new TestAuditStore(),
+            tradingSessionId -> {},
             Clock.fixed(NOW, ZoneId.of("UTC")));
     final QuickFixGatewayOperationsProperties properties =
         new QuickFixGatewayOperationsProperties(

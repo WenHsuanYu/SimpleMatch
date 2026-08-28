@@ -21,6 +21,25 @@ own them.
 the gateway may send the first successful client acknowledgement. A rejected or unavailable
 admission must not be represented as a successful acknowledgement.
 
+## Trading-session close API
+
+`quickfix-gateway` requests final trading-session closure from `risk-service` through
+`TradingSessionOperationsService.CloseTradingSession` in
+[`risk_v2.proto`](../../../proto/risk_v2.proto). The request carries the deterministic
+`trading_session_id`; Risk owns construction and durable outbox insertion of the complete Close
+Barrier set.
+
+A successful response means Risk has accepted durable publication responsibility for the idempotent
+Close Barrier set. A repeated request has the same successful response once that responsibility is
+already durable. The response does not imply that Kafka publication, Matching consumption, or
+downstream consumer drain has completed.
+
+Gateway closes local admission before making this call and never reopens admission because the Risk
+call failed. Risk returns `INVALID_ARGUMENT` for a malformed or mismatched trading-session identity,
+`UNAVAILABLE` for a temporary persistence/transaction availability failure, and `INTERNAL` for an
+unexpected server failure. Gateway may retry only the explicitly retryable transport outcomes, with
+a bounded attempt count, while preserving the original trading-session identity.
+
 ## Time, retries, and failure handling
 
 - Every outbound call sets a finite deadline. The caller budgets that deadline within its own

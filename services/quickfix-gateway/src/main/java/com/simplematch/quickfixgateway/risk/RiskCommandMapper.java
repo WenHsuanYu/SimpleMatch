@@ -15,20 +15,15 @@ import com.simplematch.contracts.v2.VenueMic;
 import com.simplematch.quickfixgateway.wal.WalCommand;
 import com.simplematch.quickfixgateway.wal.WalOrderTerms;
 import com.simplematch.quickfixgateway.wal.WalRecord;
-import java.time.Instant;
-import java.time.LocalDate;
-import java.time.ZoneId;
 import java.util.Objects;
 
 /** Maps durable Gateway commands directly to the production v2 Risk admission contract. */
 public final class RiskCommandMapper {
-  private static final ZoneId TAIPEI = ZoneId.of("Asia/Taipei");
-
   private final VenueMic ingressVenue;
   private final RiskOrderIdentityDeriver orderIdentityDeriver;
   private final V2ContractValidator validator;
 
-  /** Creates a direct WAL-to-v2 mapper for the configured ingress venue. */
+  /** Creates a direct WAL-to-v2 mapper for the configured ingress session. */
   public RiskCommandMapper(VenueMic ingressVenue, RiskOrderIdentityDeriver orderIdentityDeriver) {
     this(ingressVenue, orderIdentityDeriver, new V2ContractValidator());
   }
@@ -48,14 +43,14 @@ public final class RiskCommandMapper {
     if (!(record.command() instanceof WalCommand.NewOrder newOrder)) {
       throw new DomainValidationException("WAL command must be a new order");
     }
-    final LocalDate tradingDay = tradingDay(record);
+    final var tradingDay = orderIdentityDeriver.tradingDay(record);
     final WalOrderTerms terms = newOrder.terms();
     final ShareQuantity quantity = ShareQuantity.parse(terms.quantity());
     final NewOrderCommand.Builder builder =
         NewOrderCommand.newBuilder()
             .setMetadata(metadata(record))
             .setCommandId(record.recordId())
-            .setOrderId(orderIdentityDeriver.derive(record, tradingDay))
+            .setOrderId(orderIdentityDeriver.derive(record))
             .setAccountId(record.accountId())
             .setInstrument(instrument(record.symbol()))
             .setSide(record.side())
@@ -92,12 +87,12 @@ public final class RiskCommandMapper {
     if (!cancel.hasOrderContext()) {
       throw new DomainValidationException("cancel WAL requires symbol and side for v2 admission");
     }
-    final LocalDate tradingDay = tradingDay(record);
+    final var tradingDay = orderIdentityDeriver.tradingDay(record);
     final CancelOrderCommand mapped =
         CancelOrderCommand.newBuilder()
             .setMetadata(metadata(record))
             .setCommandId(record.recordId())
-            .setOrderId(orderIdentityDeriver.derive(record, tradingDay))
+            .setOrderId(orderIdentityDeriver.derive(record))
             .setAccountId(record.accountId())
             .setInstrument(instrument(record.symbol()))
             .setTradingDay(TradingDay.newBuilder().setIsoDate(tradingDay.toString()))
@@ -124,13 +119,6 @@ public final class RiskCommandMapper {
 
   private VenueInstrument instrument(String symbol) {
     return VenueInstrument.newBuilder().setSymbol(symbol).setVenueMic(ingressVenue.name()).build();
-  }
-
-  private LocalDate tradingDay(WalRecord record) {
-    if (record.createdAtUnixMs() <= 0) {
-      throw new DomainValidationException("created_at_unix_ms must be positive");
-    }
-    return Instant.ofEpochMilli(record.createdAtUnixMs()).atZone(TAIPEI).toLocalDate();
   }
 
   private long estimatedNotional(TwdPrice price, ShareQuantity quantity) {

@@ -476,6 +476,36 @@ class AccountReservationApplicationServiceTransactionTest {
         .isEqualByComparingTo("10000");
   }
 
+  @DisplayName("historical reservations release authority on their persisted trading day")
+  @Test
+  void releasesHistoricalReservationOnItsTradingDay() {
+    final LocalDate historicalDay = LocalDate.of(2026, 7, 27);
+    service.provisionLimit(ACCOUNT_ID, historicalDay, new BigDecimal("10000"));
+    final ReservationRecord reservation =
+        service.reserve(operation(Side.SIDE_BUY, "10", "100", historicalDay));
+    final ReservationIdentity identity =
+        new ReservationIdentity(
+            new ReservationIdentity.RequestId(reservation.requestId()),
+            new ReservationIdentity.ReservationId(reservation.reservationId()),
+            new ReservationIdentity.OrderId(reservation.orderId()));
+
+    service.release(
+        new ReleaseReservationOperation(
+            identity, new ReleaseReservationOperation.ReleaseReason("IOC_REMAINDER")));
+
+    assertThat(
+            jdbcTemplate.queryForObject(
+                "SELECT available_notional FROM account_service.account_limits "
+                    + "WHERE trading_day = ?",
+                BigDecimal.class,
+                historicalDay))
+        .isEqualByComparingTo("10000");
+    assertThat(
+            jdbcTemplate.queryForObject(
+                "SELECT trading_day FROM account_service.account_reservations", LocalDate.class))
+        .isEqualTo(historicalDay);
+  }
+
   @DisplayName("concurrent reservations cannot overspend the same cash limit")
   @Test
   void serializesConcurrentCashReservations()
@@ -505,6 +535,11 @@ class AccountReservationApplicationServiceTransactionTest {
   }
 
   private ReserveOperation operation(Side side, String quantity, String price) {
+    return operation(side, quantity, price, null);
+  }
+
+  private ReserveOperation operation(
+      Side side, String quantity, String price, LocalDate tradingDay) {
     return new ReserveOperation(
         new ReservationRequestIdentity(
             new ReservationRequestIdentity.RequestId(UUID.randomUUID().toString()),
@@ -514,7 +549,8 @@ class AccountReservationApplicationServiceTransactionTest {
             new ReservationTerms.InstrumentSymbol("2330"),
             side,
             new ReservationTerms.ReservationQuantity(new BigDecimal(quantity)),
-            new ReservationTerms.LimitPrice(new BigDecimal(price))));
+            new ReservationTerms.LimitPrice(new BigDecimal(price))),
+        tradingDay);
   }
 
   private ExecutionEvent matchingEvent(

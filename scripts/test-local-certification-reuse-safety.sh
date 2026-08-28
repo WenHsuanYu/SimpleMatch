@@ -227,6 +227,7 @@ fi
   retained_run="$fixture_root/retained-warm"
   namespace=simplematch-local-cert-retained-test
   verifier_reference="localhost:5001/risk-matching-e2e-verifier@sha256:ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff"
+  verifier_identity="${verifier_reference##*@}"
   export SIMPLEMATCH_CERTIFICATION_CACHE_DIR="$retained_cache"
   zero_timing="$(certification_execution_timing_json \
     2026-08-28T00:00:00Z 2026-08-28T00:00:00Z 0)" || return 1
@@ -280,10 +281,15 @@ fi
   certification_plan_finalize || return 1
 
   current_revision="$(git -C "$repo_root" rev-parse HEAD)" || return 1
-  printf 'namespace=%s\n' "$namespace" >"$retained_run/run-context"
+  {
+    printf 'namespace=%s\n' "$namespace"
+    printf '%s\n' 'image_transport=registry'
+  } >"$retained_run/run-context"
   printf '%s\n' "$current_revision" >"$retained_run/source-revision"
   printf '%s\n' "$verifier_reference" \
     >"$retained_run/verifier-image-reference"
+  printf '%s\n' "$verifier_identity" \
+    >"$retained_run/verifier-image-identity"
   printf '%s\n' "$namespace" >"$retained_run/retained-namespace"
 
   rm -rf -- "$retained_cache"

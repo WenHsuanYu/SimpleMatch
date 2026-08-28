@@ -7,6 +7,7 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Properties;
+import java.util.UUID;
 import java.util.concurrent.ExecutionException;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.TimeoutException;
@@ -29,6 +30,7 @@ final class AdminKafkaObservationSession implements KafkaObservationSession {
   private static final Duration CLOSE_TIMEOUT = Duration.ofSeconds(2);
 
   private final Admin admin;
+  private final KafkaRecordObserver commandObserver;
   private final String commandsTopic;
   private final String eventsTopic;
   private final int queryTimeoutMillis;
@@ -62,6 +64,9 @@ final class AdminKafkaObservationSession implements KafkaObservationSession {
                   .allTopicNames());
       commandPartitions = requireExpectedPartitions(descriptions.get(this.commandsTopic));
       eventPartitions = requireExpectedPartitions(descriptions.get(this.eventsTopic));
+      commandObserver =
+          new KafkaRecordObserver(
+              bootstrapServers, this.commandsTopic, "close-barriers-" + UUID.randomUUID());
     } catch (RuntimeException failure) {
       admin.close(CLOSE_TIMEOUT);
       throw failure;
@@ -121,8 +126,29 @@ final class AdminKafkaObservationSession implements KafkaObservationSession {
   }
 
   @Override
+  public synchronized CloseBarrierEvidence verifyCloseBarriers(
+      CloseBarrierExpectation expectation) {
+    if (!commandsTopic.equals(expectation.before().topic())) {
+      throw new IllegalArgumentException("Close Barrier offsets must use " + commandsTopic);
+    }
+    final List<ObservedRecord> observed =
+        commandObserver.collectRange(
+            toOffsetMap(expectation.before()),
+            toOffsetMap(expectation.after()),
+            Duration.ofMillis(queryTimeoutMillis));
+    return KafkaMatchingCommandProbe.validateCloseBarriers(commandsTopic, expectation, observed);
+  }
+
+  @Override
   public void close() {
+    commandObserver.close();
     admin.close(CLOSE_TIMEOUT);
+  }
+
+  private static Map<Integer, Long> toOffsetMap(TopicEndPositions positions) {
+    final Map<Integer, Long> offsets = new LinkedHashMap<>();
+    positions.partitions().forEach(row -> offsets.put(row.partition(), row.offset()));
+    return Map.copyOf(offsets);
   }
 
   private static TopicEndPositions toTopicEndPositions(

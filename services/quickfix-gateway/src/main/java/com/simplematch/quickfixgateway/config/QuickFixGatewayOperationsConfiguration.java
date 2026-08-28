@@ -6,6 +6,7 @@ import com.simplematch.quickfixgateway.operations.GatewayOperationalCommandHandl
 import com.simplematch.quickfixgateway.operations.GatewayOperationalController;
 import com.simplematch.quickfixgateway.operations.GatewayOperationalMonitor;
 import com.simplematch.quickfixgateway.operations.GatewayOperationalPolicy;
+import com.simplematch.quickfixgateway.operations.TradingSessionClosePort;
 import com.simplematch.quickfixgateway.operations.TradingSystemStatusEvaluator;
 import com.simplematch.quickfixgateway.store.JdbcGatewayOperationAuditStore;
 import java.time.Clock;
@@ -59,9 +60,15 @@ public class QuickFixGatewayOperationsConfiguration {
       TradingSystemStatusEvaluator statusEvaluator,
       GatewayOperationalPolicy policy,
       GatewayOperationAuditStore auditStore,
+      TradingSessionClosePort tradingSessionClosePort,
       Clock quickFixGatewayClock) {
     return new GatewayOperationalController(
-        admissionGate, statusEvaluator, policy, auditStore, quickFixGatewayClock);
+        admissionGate,
+        statusEvaluator,
+        policy,
+        auditStore,
+        tradingSessionClosePort,
+        quickFixGatewayClock);
   }
 
   /** Creates the sole transport-neutral command boundary for Gateway admission operations. */
