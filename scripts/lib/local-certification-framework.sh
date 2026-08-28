@@ -1,8 +1,8 @@
 #!/usr/bin/env bash
 
-# Local production-like certification execution framework.
-# Sourced by run-local-production-like-certification.sh; shared run state is owned
-# by the top-level orchestrator. This file defines behavior only and has no entry point.
+# Local production-like certification execution framework. The top-level runner
+# owns shared run state; this module owns command execution, timing, current-run
+# phase evidence, reporting, and cleanup.
 
 usage() {
   cat <<'EOF'
@@ -12,36 +12,19 @@ Usage:
 Options:
   --tag TAG               Local image tag (default: SIMPLEMATCH_LOCAL_IMAGE_TAG or local).
   --image-transport MODE  Kubernetes image transport: registry (default) or kind-load fallback.
-  --skip-build            Reuse local images instead of running the image build workflow.
+  --skip-build            Reuse local images without proving the image-build requirement.
   --skip-compose          Skip PostgreSQL, Redis, Kafka, and Kafka Connect runtime checks.
-  --skip-kubernetes        Skip the live Kubernetes deployment and Matching fleet checks.
+  --skip-kubernetes       Skip the live Kubernetes deployment and Matching fleet checks.
   --matching-fleet-only    Run a clean local Kafka plus Matching fleet gate; skip Flyway and other
                            runtime workloads. The report is intentionally PARTIAL.
   --keep-resources         Keep only this run's Compose project and Kubernetes namespace.
-  --resume                 Reuse successful phases from the supplied evidence directory and
-                           namespace; requires SIMPLEMATCH_CERTIFICATION_EVIDENCE_DIR and
-                           SIMPLEMATCH_CERTIFICATION_NAMESPACE.
+  --resume                 Continue the same evidence directory and retained namespace.
   --dry-run                Print planned commands without changing external state.
   --help                   Show this help.
 
-The local gate owns only the Compose project named by
-SIMPLEMATCH_CERTIFICATION_COMPOSE_PROJECT and a generated Kubernetes namespace.
-Generated namespaces are labeled simplematch.io/lifecycle=disposable; that label
-is the authoritative routine-cleanup boundary. registry is the default image
-transport and publishes only to the configured local registry, rendering runtime
-images by immutable digest. kind-load remains an explicit compatibility fallback
-that imports the local image inventory into kind without using registry digest
-substitution. Neither path publishes to staging, production, or a remote registry.
-The Kubernetes gate uses the approved delivery manifest for
-SIMPLEMATCH_CERTIFICATION_TRADING_DAY (default: current UTC day) under
-tools/market-reference-builder/data, or the path supplied by
-SIMPLEMATCH_MARKET_REFERENCE_DELIVERY_MANIFEST.
-The Kafka profile gate generates source-backed producer evidence and measures free Docker
-filesystem capacity for the local brokers. The default workload envelope is the bounded local
-side-project scenario under scripts/testdata/matching-topic-profile/local/capacity.properties;
-override it with SIMPLEMATCH_KAFKA_CAPACITY_WORKLOAD_FILE when a different explicitly documented
-workload envelope is required. Override producer or capacity evidence with
-SIMPLEMATCH_KAFKA_PRODUCER_CONFIG_FILE or SIMPLEMATCH_KAFKA_CAPACITY_EVIDENCE_FILE.
+Verified cross-run reuse is automatic and independent of --resume. Reusable
+phase evidence must match exact effective inputs and immutable output identity.
+Runtime-state-dependent phases still execute fresh for every new full run.
 EOF
 }
 
@@ -57,33 +40,84 @@ print_command() {
   printf '\n'
 }
 
+_certification_now_utc() {
+  date -u +%Y-%m-%dT%H:%M:%S.%3NZ
+}
+
+_certification_now_millis() {
+  date +%s%3N
+}
+
+_certification_resume_marker_valid() {
+  local phase="$1"
+  local marker_path="$2"
+  local phase_signature="$3"
+  local required_output="${4:-}"
+
+  [[ "$resume" == true && -f "$marker_path" ]] || return 1
+  [[ "$(<"$marker_path")" == "$phase_signature" ]] || return 1
+  certification_phase_resume_result_valid "$phase" || return 1
+  [[ -z "$required_output" || -f "$required_output" ]]
+}
+
+_certification_mark_phase_complete() {
+  local marker_path="$1"
+  local phase_signature="$2"
+
+  mkdir -p "$(dirname -- "$marker_path")" || return 1
+  printf '%s\n' "$phase_signature" >"$marker_path"
+}
+
 run_logged() {
   local phase="$1"
   shift
-  local log_path="$evidence_dir/${phase}.log"
+  local log_path="$evidence_dir/logs/${phase}.log"
   local marker_path="$phase_marker_directory/${phase}.ok"
-  local phase_signature
+  local phase_signature plan decision input_fingerprint evidence_digest reason
+  local started_at_utc completed_at_utc started_millis completed_millis duration_millis
+  local command_status
 
   phase_signature="$(printf '%s\0' "$source_signature" "$phase" "$@" | sha256sum | awk '{print $1}')"
-
-  if [[ "$resume" == true && -f "$marker_path" && "$(<"$marker_path")" == "$phase_signature" ]]; then
-    completed_phases+=("$phase (reused)")
-    printf 'REUSE %-32s (%s)\n' "$phase" "$marker_path"
+  if _certification_resume_marker_valid "$phase" "$marker_path" "$phase_signature"; then
+    completed_phases+=("$phase (same-run resume)")
+    printf 'RESUME %-30s (%s)\n' "$phase" "$marker_path"
     return 0
   fi
 
   check_certification_deadline
-
   if [[ "$dry_run" == true ]]; then
+    certification_plan_phase "$phase" "$@" >/dev/null || return 1
     print_command "$@"
     return 0
   fi
 
-  mkdir -p "$evidence_dir"
-  printf '$' >"$log_path"
-  printf ' %q' "$@" >>"$log_path"
-  printf '\n' >>"$log_path"
-  local command_status
+  started_at_utc="$(_certification_now_utc)"
+  started_millis="$(_certification_now_millis)"
+  plan="$(certification_plan_phase "$phase" "$@")" || return 1
+  IFS='|' read -r decision input_fingerprint evidence_digest reason <<<"$plan"
+
+  if [[ "$decision" == REUSE || "$decision" == REVALIDATE ]]; then
+    completed_at_utc="$(_certification_now_utc)"
+    completed_millis="$(_certification_now_millis)"
+    duration_millis=$((completed_millis - started_millis))
+    certification_plan_record_reuse \
+      "$phase" "$decision" "$input_fingerprint" "$evidence_digest" "$reason" \
+      "$started_at_utc" "$completed_at_utc" "$duration_millis" || return 1
+    _certification_mark_phase_complete "$marker_path" "$phase_signature" || return 1
+    completed_phases+=("$phase (${decision,,})")
+    printf '%-10s %-28s (%s ms)\n' "$decision" "$phase" "$duration_millis"
+    return 0
+  fi
+  [[ "$decision" == EXECUTE ]] || {
+    printf 'unsupported certification planner decision for %s: %s\n' \
+      "$phase" "$decision" >&2
+    return 1
+  }
+
+  mkdir -p "$(dirname -- "$log_path")" || return 1
+  printf '$' >"$log_path" || return 1
+  printf ' %q' "$@" >>"$log_path" || return 1
+  printf '\n' >>"$log_path" || return 1
   set +e
   (
     set -e
@@ -91,14 +125,27 @@ run_logged() {
   ) >>"$log_path" 2>&1
   command_status=$?
   set -e
+
+  completed_at_utc="$(_certification_now_utc)"
+  completed_millis="$(_certification_now_millis)"
+  duration_millis=$((completed_millis - started_millis))
   if [[ "$command_status" -eq 0 ]]; then
-    mkdir -p "$phase_marker_directory"
-    printf '%s\n' "$phase_signature" >"$marker_path"
+    certification_plan_record_execution \
+      "$phase" "$input_fingerprint" "$reason" \
+      "$started_at_utc" "$completed_at_utc" "$duration_millis" "$@" || {
+      failed_phase="$phase"
+      failure_reason="Phase passed but valid evidence could not be recorded: $phase"
+      return 1
+    }
+    _certification_mark_phase_complete "$marker_path" "$phase_signature" || return 1
     completed_phases+=("$phase")
-    printf 'PASS %-32s (%s)\n' "$phase" "$log_path"
+    printf 'PASS %-31s (%s ms, %s)\n' "$phase" "$duration_millis" "$log_path"
     return 0
   fi
 
+  certification_plan_record_failure \
+    "$phase" "$input_fingerprint" "command exited with status $command_status" \
+    "$started_at_utc" "$completed_at_utc" "$duration_millis" || true
   failed_phase="$phase"
   failure_reason="Phase failed: $phase"
   cat "$log_path" >&2
@@ -118,25 +165,36 @@ run_capture() {
   local output_path="$2"
   shift 2
   local marker_path="$phase_marker_directory/${phase}.ok"
-  local phase_signature
+  local phase_signature plan decision input_fingerprint evidence_digest reason
+  local started_at_utc completed_at_utc started_millis completed_millis duration_millis
+  local command_status
 
   phase_signature="$(printf '%s\0' "$source_signature" "$phase" "$output_path" "$@" | sha256sum | awk '{print $1}')"
-
-  if [[ "$resume" == true && -f "$marker_path" && "$(<"$marker_path")" == "$phase_signature" ]]; then
-    completed_phases+=("$phase (reused)")
-    printf 'REUSE %-32s (%s)\n' "$phase" "$output_path"
+  if _certification_resume_marker_valid \
+      "$phase" "$marker_path" "$phase_signature" "$output_path"; then
+    completed_phases+=("$phase (same-run resume)")
+    printf 'RESUME %-30s (%s)\n' "$phase" "$output_path"
     return 0
   fi
 
   check_certification_deadline
-
   if [[ "$dry_run" == true ]]; then
+    certification_plan_phase "$phase" "$@" >/dev/null || return 1
     print_command "$@"
     return 0
   fi
 
-  mkdir -p "$(dirname -- "$output_path")" "$evidence_dir"
-  local command_status
+  started_at_utc="$(_certification_now_utc)"
+  started_millis="$(_certification_now_millis)"
+  plan="$(certification_plan_phase "$phase" "$@")" || return 1
+  IFS='|' read -r decision input_fingerprint evidence_digest reason <<<"$plan"
+  [[ "$decision" == EXECUTE ]] || {
+    printf 'capture phase %s is not eligible for %s without an output adapter\n' \
+      "$phase" "$decision" >&2
+    return 1
+  }
+
+  mkdir -p "$(dirname -- "$output_path")" || return 1
   set +e
   (
     set -e
@@ -144,14 +202,23 @@ run_capture() {
   ) >"$output_path" 2>&1
   command_status=$?
   set -e
+  completed_at_utc="$(_certification_now_utc)"
+  completed_millis="$(_certification_now_millis)"
+  duration_millis=$((completed_millis - started_millis))
+
   if [[ "$command_status" -eq 0 ]]; then
-    mkdir -p "$phase_marker_directory"
-    printf '%s\n' "$phase_signature" >"$marker_path"
+    certification_plan_record_execution \
+      "$phase" "$input_fingerprint" "$reason" \
+      "$started_at_utc" "$completed_at_utc" "$duration_millis" "$@" || return 1
+    _certification_mark_phase_complete "$marker_path" "$phase_signature" || return 1
     completed_phases+=("$phase")
-    printf 'PASS %-32s (%s)\n' "$phase" "$output_path"
+    printf 'PASS %-31s (%s ms, %s)\n' "$phase" "$duration_millis" "$output_path"
     return 0
   fi
 
+  certification_plan_record_failure \
+    "$phase" "$input_fingerprint" "command exited with status $command_status" \
+    "$started_at_utc" "$completed_at_utc" "$duration_millis" || true
   failed_phase="$phase"
   failure_reason="Phase failed: $phase"
   cat "$output_path" >&2
@@ -221,14 +288,6 @@ write_report() {
     printf '%s\n' "- compose_file: ${compose_file#$repo_root/}"
     printf '%s\n' "- kubernetes_namespace: ${namespace:-not-run}"
     printf '%s\n' "- trading_day: $certification_trading_day"
-    printf '%s\n' "- gradle: 9.7.0"
-    printf '%s\n' "- spring_boot: 4.1.0"
-    printf '%s\n' "- vcpkg: 2026.07.29"
-    printf '%s\n' "- matching_base: ubuntu:26.04"
-    printf '%s\n' "- kafka: 4.3.1"
-    printf '%s\n' "- postgresql: 18.4"
-    printf '%s\n' "- redis: 8.8.1-alpine"
-    printf '%s\n' "- debezium: 3.6.0.Final"
     if [[ -n "$failed_phase" ]]; then
       printf '%s\n' "- failed_phase: $failed_phase"
     fi
@@ -240,6 +299,11 @@ write_report() {
       printf '%s\n' '- none'
     else
       printf '%s\n' "${completed_phases[@]}" | sed 's/^/- /'
+    fi
+    if [[ -f "$certification_plan_file" ]]; then
+      printf '\n%s\n\n' '## Phase plan'
+      jq -r '.phases[] | "- \(.decision) \(.phaseId): \(.reason)"' \
+        "$certification_plan_file"
     fi
   } >"$evidence_dir/report.md"
 }

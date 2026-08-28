@@ -57,7 +57,6 @@ simplematch_local_image_transport_validate "$image_transport" || die \
   "SIMPLEMATCH_LOCAL_IMAGE_TRANSPORT/--image-transport must be registry or kind-load: $image_transport"
 [[ "$certification_trading_day" =~ ^[0-9]{4}-[0-9]{2}-[0-9]{2}$ ]] || die \
   "SIMPLEMATCH_CERTIFICATION_TRADING_DAY must use YYYY-MM-DD: $certification_trading_day"
-
 [[ -f "$compose_file" ]] || die "Production-like Compose file does not exist: $compose_file"
 
 [[ "$certification_timeout_seconds" =~ ^[1-9][0-9]*$ ]] || die \
@@ -71,7 +70,10 @@ simplematch_local_image_transport_validate "$image_transport" || die \
 (( kafka_topic_provisioning_supervisor_seconds > 240 )) || die \
   'Kafka topic provisioning supervisor deadline must exceed the 240s Job deadline.'
 if [[ "$dry_run" == false ]]; then
-  command -v timeout >/dev/null 2>&1 || die 'timeout is required for bounded certification commands.'
+  command -v timeout >/dev/null 2>&1 || die \
+    'timeout is required for bounded certification commands.'
+  command -v jq >/dev/null 2>&1 || die \
+    'jq is required for certification plan and evidence records.'
 fi
 
 if [[ "$dry_run" == true ]]; then
@@ -87,28 +89,34 @@ compose_command=("${compose_prefix[@]}" --project-name "$compose_project" --file
 
 run_id="$(date -u +%Y%m%d-%H%M%S)-$$"
 namespace="${SIMPLEMATCH_CERTIFICATION_NAMESPACE:-simplematch-local-cert-${run_id}}"
-phase_marker_directory="$evidence_dir/phases"
+phase_marker_directory="$evidence_dir/phase-markers"
 run_context_file="$evidence_dir/run-context"
 certification_deadline_epoch=$(( $(date +%s) + certification_timeout_seconds ))
 source_signature="$({
-  git rev-parse HEAD
-  git ls-files -co --exclude-standard -- \
-    AGENTS.md deploy/k8s deploy/docker/run-flyway deploy/docker/Dockerfile.kind-normalized \
+  git -C "$repo_root" rev-parse HEAD
+  git -C "$repo_root" ls-files -co --exclude-standard -- \
+    AGENTS.md deploy/k8s deploy/docker \
     scripts/run-local-production-like-certification.sh \
-    scripts/lib/local-common.sh scripts/lib/local-kind.sh scripts/lib/local-image-transport.sh \
-    scripts/lib/local-certification-framework.sh scripts/lib/local-certification-job.sh \
-    scripts/lib/local-certification-kafka.sh scripts/lib/local-certification-kubernetes.sh \
-    scripts/lib/local-certification-connect.sh scripts/lib/local-certification-workloads.sh \
-    scripts/lib/local-certification-bootstrap.sh scripts/lib/local-certification-run.sh \
-    scripts/prepare-local-kubernetes-images.sh scripts/normalize-local-images-for-kind.sh \
-    scripts/publish-local-images.sh scripts/render-local-kubernetes-manifest.sh \
+    scripts/lib/local-common.sh scripts/lib/local-kind.sh \
+    scripts/lib/local-image-inventory.sh scripts/lib/local-image-transport.sh \
+    scripts/lib/local-registry.sh scripts/lib/local-certification-*.sh \
+    scripts/build-local-images.sh scripts/prepare-local-kubernetes-images.sh \
+    scripts/normalize-local-images-for-kind.sh scripts/publish-local-images.sh \
+    scripts/render-local-kubernetes-manifest.sh \
     scripts/test-kubernetes-overlays.sh scripts/test-local-kubernetes-dependencies.sh \
-    scripts/test-postgresql-redis-manifests.sh scripts/test-flyway-services.sh |
-    sort -u |
+    scripts/test-matching-kubernetes-manifests.sh scripts/test-matching-topic-profile.sh \
+    scripts/test-flyway-services.sh | LC_ALL=C sort -u |
     while IFS= read -r path; do
-      sha256sum "$path"
+      [[ -n "$path" ]] && sha256sum "$repo_root/$path"
     done
 } | sha256sum | awk '{print $1}')"
+
+_certification_run_context() {
+  printf 'namespace=%s\ncluster=%s\ntrading_day=%s\nimage_tag=%s\nimage_transport=%s\nsource_signature=%s\nskip_build=%s\nskip_compose=%s\nskip_kubernetes=%s\nmatching_fleet_only=%s\n' \
+    "$namespace" "$kind_cluster" "$certification_trading_day" \
+    "$image_tag" "$image_transport" "$source_signature" \
+    "$skip_build" "$skip_compose" "$skip_kubernetes" "$matching_fleet_only"
+}
 
 if [[ "$resume" == true ]]; then
   [[ -n "${SIMPLEMATCH_CERTIFICATION_EVIDENCE_DIR:-}" ]] || die \
@@ -116,11 +124,10 @@ if [[ "$resume" == true ]]; then
   [[ -n "${SIMPLEMATCH_CERTIFICATION_NAMESPACE:-}" ]] || die \
     '--resume requires SIMPLEMATCH_CERTIFICATION_NAMESPACE.'
   [[ -f "$run_context_file" ]] || die "Resume context is missing: $run_context_file"
-  expected_context="$(printf 'namespace=%s\ncluster=%s\ntrading_day=%s\nimage_tag=%s\nimage_transport=%s\nsource_signature=%s\n' \
-    "$namespace" "$kind_cluster" "$certification_trading_day" "$image_tag" "$image_transport" "$source_signature")"
+  expected_context="$(_certification_run_context)"
   actual_context="$(cat "$run_context_file")"
   [[ "$actual_context" == "$expected_context" ]] || die \
-    "Resume context does not match the current cluster, trading day, namespace, image tag, image transport, or source."
+    'Resume context does not match the current namespace, cluster, trading day, image identity, source, or proof profile.'
   if [[ "$dry_run" == false ]]; then
     kubectl --context "$kind_context" get namespace "$namespace" >/dev/null 2>&1 || die \
       "Resume namespace does not exist: $namespace"
@@ -131,16 +138,19 @@ if [[ "$resume" == true ]]; then
   kubernetes_namespace_created=true
 else
   if [[ "$dry_run" == false ]]; then
-    mkdir -p "$evidence_dir"
-    printf 'namespace=%s\ncluster=%s\ntrading_day=%s\nimage_tag=%s\nimage_transport=%s\nsource_signature=%s\n' \
-      "$namespace" "$kind_cluster" "$certification_trading_day" "$image_tag" "$image_transport" "$source_signature" >"$run_context_file"
+    mkdir -p "$evidence_dir" || die \
+      "Unable to create certification evidence directory: $evidence_dir"
+    _certification_run_context >"$run_context_file" || die \
+      "Unable to write certification run context: $run_context_file"
   fi
 fi
 
 if [[ "$skip_kubernetes" == false ]]; then
   if [[ "$dry_run" == false ]]; then
-    command -v kubectl >/dev/null 2>&1 || die 'kubectl is required for the local Kubernetes gate.'
-    command -v kind >/dev/null 2>&1 || die 'kind is required for the local Kubernetes gate; install kind or use --skip-kubernetes.'
+    command -v kubectl >/dev/null 2>&1 || die \
+      'kubectl is required for the local Kubernetes gate.'
+    command -v kind >/dev/null 2>&1 || die \
+      'kind is required for the local Kubernetes gate; install kind or use --skip-kubernetes.'
     kind get clusters | grep -Fxq "$kind_cluster" || die \
       "kind cluster '$kind_cluster' does not exist; create it before running this gate."
     current_context="$(kubectl config current-context)"
@@ -156,6 +166,9 @@ else
   export SIMPLEMATCH_PRODUCTION_LIKE_NETWORK_EXTERNAL="${SIMPLEMATCH_PRODUCTION_LIKE_NETWORK_EXTERNAL:-false}"
 fi
 
+certification_plan_initialize "$evidence_dir" || die \
+  'Certification phase graph or plan initialization failed.'
+run_logged source-preflight simplematch_certification_source_revision "$repo_root"
 run_logged static-kubernetes-overlays bash "$repo_root/scripts/test-kubernetes-overlays.sh"
 run_logged static-kubernetes-dependencies bash "$repo_root/scripts/test-local-kubernetes-dependencies.sh"
 run_logged static-matching-manifests bash "$repo_root/scripts/test-matching-kubernetes-manifests.sh"
@@ -165,5 +178,7 @@ run_logged compose-config "${compose_command[@]}" config
 run_logged local-image-inventory bash "$repo_root/scripts/build-local-images.sh" --list
 
 if [[ "$skip_build" == false ]]; then
-  run_logged local-image-build bash "$repo_root/scripts/build-local-images.sh" --tag "$image_tag"
+  certification_build_local_images || die 'Local image preparation failed.'
+else
+  printf '%s\n' 'Local image build requirement explicitly skipped.'
 fi

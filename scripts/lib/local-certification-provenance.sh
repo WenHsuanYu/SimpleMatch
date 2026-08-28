@@ -9,6 +9,33 @@ _provenance_dir="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
 source "$_provenance_dir/local-image-transport.sh"
 unset _provenance_dir
 
+simplematch_certification_source_revision() {
+  local repo_root="$1"
+  local untracked
+
+  git -C "$repo_root" diff --quiet -- . ':(exclude)graphify-out/**' || {
+    printf '%s\n' \
+      'certification source has tracked working-tree changes; commit or restore them before certification.' >&2
+    return 1
+  }
+  git -C "$repo_root" diff --cached --quiet -- . ':(exclude)graphify-out/**' || {
+    printf '%s\n' \
+      'certification source has staged changes; commit or restore them before certification.' >&2
+    return 1
+  }
+  untracked="$(
+    git -C "$repo_root" ls-files --others --exclude-standard -- . \
+      ':(exclude)graphify-out/**'
+  )" || return 1
+  [[ -z "$untracked" ]] || {
+    printf '%s\n' \
+      'certification source has untracked repository files; remove or ignore them before certification.' >&2
+    printf '%s\n' "$untracked" >&2
+    return 1
+  }
+  git -C "$repo_root" rev-parse HEAD
+}
+
 simplematch_record_certification_provenance() {
   local repo_root="$1"
   local evidence_dir="$2"
@@ -18,7 +45,7 @@ simplematch_record_certification_provenance() {
   local image_lock="$6"
   local source_revision verifier_image_reference
 
-  source_revision="$(git -C "$repo_root" rev-parse HEAD)" || return 1
+  source_revision="$(simplematch_certification_source_revision "$repo_root")" || return 1
   case "$image_transport" in
     registry)
       verifier_image_reference="$(
@@ -39,10 +66,10 @@ simplematch_record_certification_provenance() {
       ;;
   esac
 
-  printf '%s\n' "$source_revision" >"$evidence_dir/source-revision"
+  printf '%s\n' "$source_revision" >"$evidence_dir/source-revision" || return 1
   printf '%s\n' "$verifier_image_reference" \
-    >"$evidence_dir/verifier-image-reference"
-  printf '%s\n' "$namespace" >"$evidence_dir/retained-namespace"
+    >"$evidence_dir/verifier-image-reference" || return 1
+  printf '%s\n' "$namespace" >"$evidence_dir/retained-namespace" || return 1
 }
 
 simplematch_production_like_evidence_dir() {
@@ -88,7 +115,7 @@ simplematch_certification_verifier_image() {
     printf 'retained production-like source revision %s does not match current revision %s\n' \
       "${source_revision:-<missing>}" "$current_revision" >&2
     printf '%s\n' \
-      'Create a fresh production-like certification with --keep-resources before failure certification.' >&2
+      'Create a fresh production-like certification with --keep-resources before dependent certification.' >&2
     return 1
   }
 

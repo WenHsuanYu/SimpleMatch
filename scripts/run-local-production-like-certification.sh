@@ -57,9 +57,15 @@ matching_image_reference=""
 compose_prefix=()
 compose_command=()
 
-# Certification domain behavior is split by responsibility. The top-level script
-# owns configuration, phase ordering, and lifecycle only.
+# Policy and evidence modules are sourced before execution adapters so every
+# phase crosses one planner/execution seam instead of implementing cache rules
+# at individual call sites.
 for certification_lib in \
+  local-certification-phase-graph.sh \
+  local-certification-fingerprint.sh \
+  local-certification-evidence.sh \
+  local-certification-planner.sh \
+  local-certification-images.sh \
   local-certification-framework.sh \
   local-certification-job.sh \
   local-certification-kafka.sh \
@@ -74,16 +80,16 @@ unset certification_lib
 # Bootstrap validates configuration and static prerequisites; run owns phase ordering.
 # shellcheck source=/dev/null
 source "$script_dir/lib/local-certification-bootstrap.sh"
-# CLI selection is shared with sourced helpers and child image scripts.
 export SIMPLEMATCH_LOCAL_IMAGE_TRANSPORT="$image_transport"
 # shellcheck source=/dev/null
 source "$script_dir/lib/local-certification-run.sh"
 
-if [[ "$dry_run" == false \
-      && "$skip_kubernetes" == false \
-      && "$matching_fleet_only" == false ]]; then
-  simplematch_record_certification_provenance \
+if [[ "$skip_kubernetes" == false && "$matching_fleet_only" == false ]]; then
+  run_logged retained-run-provenance \
+    simplematch_record_certification_provenance \
     "$repo_root" "$evidence_dir" "$namespace" \
-    "$image_transport" "$image_tag" "$image_lock" || die \
-    'Failed to record production-like source and verifier image provenance.'
+    "$image_transport" "$image_tag" "$image_lock"
 fi
+
+certification_plan_finalize || die \
+  'Certification plan does not have complete successful phase evidence.'
