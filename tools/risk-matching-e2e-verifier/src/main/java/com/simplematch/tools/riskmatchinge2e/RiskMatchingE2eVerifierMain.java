@@ -57,7 +57,7 @@ public final class RiskMatchingE2eVerifierMain {
         new MarketReferenceArtifactStartupValidator(json)
             .validate(artifactBytes, checksum, arguments.run().tradingDay());
     final RiskMatchingScenario.Scenario scenario =
-        RiskMatchingScenario.create(verified, arguments.run(), Instant.now());
+        RiskMatchingScenario.create(verified, arguments.run(), Instant.now(), arguments.side());
 
     evidence.writeSelectedInstrument(scenario);
     evidence.writeRequest(scenario.request());

@@ -4,17 +4,24 @@
 # Sourced by run-local-production-like-certification.sh; shared run state is owned
 # by the top-level orchestrator. This file defines behavior only and has no entry point.
 
-register_kubernetes_risk_connector() (
+register_kubernetes_outbox_connector() (
+  local connector_name="${1:-}"
+  local configmap_name="${2:-}"
+  [[ -n "$connector_name" && -n "$configmap_name" ]] || {
+    printf '%s\n' 'connector name and ConfigMap name are required.' >&2
+    exit 1
+  }
+
   local requested_forward_port="${SIMPLEMATCH_KAFKA_CONNECT_FORWARD_PORT:-}"
   local forward_port=""
   local connector_url=""
-  local connector_json="$evidence_dir/risk-service-outbox-connector.json"
-  local connector_config="$evidence_dir/risk-service-outbox-connector-config.json"
-  local response_file="$evidence_dir/risk-service-outbox-connector-response.json"
-  local update_response_file="$evidence_dir/risk-service-outbox-connector-update-response.json"
-  local status_file="$evidence_dir/risk-service-outbox-status.json"
+  local connector_json="$evidence_dir/${connector_name}-connector.json"
+  local connector_config="$evidence_dir/${connector_name}-connector-config.json"
+  local response_file="$evidence_dir/${connector_name}-connector-response.json"
+  local update_response_file="$evidence_dir/${connector_name}-connector-update-response.json"
+  local status_file="$evidence_dir/${connector_name}-status.json"
   local connectors_file="$evidence_dir/kafka-connect-connectors.json"
-  local port_forward_log="$evidence_dir/kafka-connect-port-forward.log"
+  local port_forward_log="$evidence_dir/kafka-connect-${connector_name}-port-forward.log"
   local port_forward_pid
   local status_code
   local provider_retry_count=0
@@ -49,11 +56,12 @@ register_kubernetes_risk_connector() (
 
   dump_connect_diagnostics() {
     request_to_file GET /connectors "$connectors_file" >/dev/null 2>&1 || true
-    request_to_file GET /connectors/risk-service-outbox/status "$status_file" >/dev/null 2>&1 || true
+    request_to_file GET "/connectors/${connector_name}/status" "$status_file" \
+      >/dev/null 2>&1 || true
     print_evidence 'Kafka Connect connectors' "$connectors_file"
-    print_evidence 'risk-service-outbox registration response' "$response_file"
-    print_evidence 'risk-service-outbox update response' "$update_response_file"
-    print_evidence 'risk-service-outbox status' "$status_file"
+    print_evidence "${connector_name} registration response" "$response_file"
+    print_evidence "${connector_name} update response" "$update_response_file"
+    print_evidence "${connector_name} status" "$status_file"
     printf '\n=== Kafka Connect port-forward ===\n' >&2
     cat "$port_forward_log" >&2 || true
   }
@@ -92,9 +100,10 @@ register_kubernetes_risk_connector() (
   }
 
   kubectl -n "$namespace" rollout status deployment/kafka-connect --timeout=300s
-  kubectl -n "$namespace" get configmap risk-service-outbox-connector \
+  kubectl -n "$namespace" get configmap "$configmap_name" \
     -o jsonpath='{.data.connector\.json}' >"$connector_json"
-  jq -e '.name == "risk-service-outbox" and (.config | type == "object")' "$connector_json" >/dev/null
+  jq -e --arg connector "$connector_name" \
+    '.name == $connector and (.config | type == "object")' "$connector_json" >/dev/null
 
   local forward_spec="${requested_forward_port}:8083"
   kubectl -n "$namespace" port-forward service/kafka-connect "$forward_spec" \
@@ -160,12 +169,12 @@ register_kubernetes_risk_connector() (
         ;;
       409)
         jq -c '.config' "$connector_json" >"$connector_config"
-        if ! status_code="$(request_to_file PUT /connectors/risk-service-outbox/config \
+        if ! status_code="$(request_to_file PUT "/connectors/${connector_name}/config" \
           "$update_response_file" "$connector_config")"; then
           fail_with_diagnostics 'Kafka Connect REST update request failed before receiving a response.'
         fi
         [[ "$status_code" == 2?? ]] || fail_with_diagnostics \
-          "Kafka Connect rejected risk-service-outbox update with HTTP ${status_code}."
+          "Kafka Connect rejected ${connector_name} update with HTTP ${status_code}."
         break
         ;;
       400)
@@ -173,7 +182,8 @@ register_kubernetes_risk_connector() (
           (.message // "")
           | test("\\$\\{envvarprovider:[A-Za-z0-9_]+\\}")
         ' "$response_file" >/dev/null 2>&1; then
-          fail_with_diagnostics 'Kafka Connect rejected risk-service-outbox registration with HTTP 400.'
+          fail_with_diagnostics \
+            "Kafka Connect rejected ${connector_name} registration with HTTP 400."
         fi
         provider_retry_count=$((provider_retry_count + 1))
         if (( provider_retry_count >= provider_retry_limit )); then
@@ -186,23 +196,24 @@ register_kubernetes_risk_connector() (
         ;;
       *)
         fail_with_diagnostics \
-          "Kafka Connect rejected risk-service-outbox registration with HTTP ${status_code}."
+          "Kafka Connect rejected ${connector_name} registration with HTTP ${status_code}."
         ;;
     esac
   done
 
   for _ in $(seq 1 90); do
     check_certification_deadline
-    if ! status_code="$(request_to_file GET /connectors/risk-service-outbox/status "$status_file")"; then
+    if ! status_code="$(request_to_file GET \
+      "/connectors/${connector_name}/status" "$status_file")"; then
       fail_with_diagnostics 'Kafka Connect status request failed before receiving a response.'
     fi
 
     case "$status_code" in
       200)
         status_response_is_valid || fail_with_diagnostics \
-          'Kafka Connect returned a malformed risk-service-outbox status response.'
+          "Kafka Connect returned a malformed ${connector_name} status response."
         status_response_has_failure && fail_with_diagnostics \
-          'risk-service-outbox entered FAILED state.'
+          "${connector_name} entered FAILED state."
         if status_response_is_running; then
           exit 0
         fi
@@ -213,11 +224,20 @@ register_kubernetes_risk_connector() (
         ;;
       *)
         fail_with_diagnostics \
-          "Kafka Connect returned unexpected HTTP ${status_code} for risk-service-outbox status."
+          "Kafka Connect returned unexpected HTTP ${status_code} for ${connector_name} status."
         ;;
     esac
     sleep 2
   done
 
-  fail_with_diagnostics 'risk-service-outbox did not reach RUNNING state before the status deadline.'
+  fail_with_diagnostics \
+    "${connector_name} did not reach RUNNING state before the status deadline."
 )
+
+register_kubernetes_risk_connector() {
+  register_kubernetes_outbox_connector risk-service-outbox risk-service-outbox-connector
+}
+
+register_kubernetes_account_connector() {
+  register_kubernetes_outbox_connector account-service-outbox account-service-outbox-connector
+}

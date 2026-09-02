@@ -14,6 +14,8 @@ namespace=""
 trading_day=""
 evidence_dir=""
 account_id=""
+side="BUY"
+retained_evidence_dir=""
 timeout_seconds="${SIMPLEMATCH_RM1_VERIFIER_TIMEOUT_SECONDS:-90}"
 keep_helper=false
 
@@ -30,7 +32,9 @@ Usage:
     --trading-day YYYY-MM-DD \
     --evidence-dir PATH \
     [--account-id UUID] \
+    [--side BUY|SELL] \
     [--verifier-image IMAGE] \
+    --retained-evidence-dir PATH \
     [--timeout-seconds N] \
     [--keep-helper]
 
@@ -46,6 +50,12 @@ The verifier uses the repository-owned Job manifest:
 --verifier-image selects the immutable image reference for this run. Pass the reference recorded by
 the retained production-like image lock when the namespace uses registry transport; the default
 local tag is kept for kind-load runs.
+
+--side selects the order side. BUY provisions an account-wide cash limit; SELL provisions the
+selected instrument's long position. Both fixtures enter through the public Risk -> Account path.
+
+--retained-evidence-dir is required. It supplies the current source revision, image transport, and
+immutable verifier digest used to validate the selected image before creating the Job.
 
 --keep-helper preserves the verifier Job and its immutable run ConfigMap for inspection. A later run
 in the same namespace will intentionally refuse to start until those retained helper resources are
@@ -64,7 +74,12 @@ while [[ $# -gt 0 ]]; do
     --trading-day) trading_day="${2:?--trading-day requires a value}"; shift 2 ;;
     --evidence-dir) evidence_dir="${2:?--evidence-dir requires a value}"; shift 2 ;;
     --account-id) account_id="${2:?--account-id requires a value}"; shift 2 ;;
+    --side) side="${2:?--side requires a value}"; shift 2 ;;
     --verifier-image) verifier_image="${2:?--verifier-image requires a value}"; shift 2 ;;
+    --retained-evidence-dir)
+      retained_evidence_dir="${2:?--retained-evidence-dir requires a value}"
+      shift 2
+      ;;
     --timeout-seconds) timeout_seconds="${2:?--timeout-seconds requires a value}"; shift 2 ;;
     --keep-helper) keep_helper=true; shift ;;
     --help|-h) usage; exit 0 ;;
@@ -76,17 +91,23 @@ done
 [[ "$trading_day" =~ ^[0-9]{4}-[0-9]{2}-[0-9]{2}$ ]] || die \
   '--trading-day must use YYYY-MM-DD'
 [[ -n "$evidence_dir" ]] || { usage >&2; die '--evidence-dir is required'; }
+case "${side^^}" in
+  BUY|SIDE_BUY) side=BUY ;;
+  SELL|SIDE_SELL) side=SELL ;;
+  *) die '--side must be BUY or SELL' ;;
+esac
 if [[ -n "$account_id" &&
       ! "$account_id" =~ ^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$ ]]; then
   die '--account-id must be a canonical lowercase UUID'
 fi
+[[ -n "$retained_evidence_dir" ]] || die '--retained-evidence-dir is required'
 [[ "$timeout_seconds" =~ ^[1-9][0-9]*$ ]] || die '--timeout-seconds must be a positive integer'
 (( timeout_seconds <= 300 )) || die \
   '--timeout-seconds must not exceed 300; the verifier Job has a separate 600-second active deadline'
 [[ -n "$verifier_image" && "$verifier_image" != *[[:space:]]* ]] || die \
   '--verifier-image must be a non-empty image reference without whitespace'
 
-for tool in kubectl jq curl awk sed grep date seq sleep tail base64; do
+for tool in kubectl jq curl awk sed grep date seq sleep tail base64 cat git docker; do
   command -v "$tool" >/dev/null 2>&1 || die "$tool is required"
 done
 [[ -f "$job_manifest" ]] || die "verifier Job manifest does not exist: $job_manifest"
@@ -180,6 +201,18 @@ current_context="$(kubectl config current-context)"
   "current Kubernetes context=$current_context, expected canonical $expected_context"
 kubectl get namespace "$namespace" >/dev/null 2>&1 || die "namespace does not exist: $namespace"
 
+retained_evidence_dir="$(cd -- "$retained_evidence_dir" && pwd)" || die \
+  "cannot resolve retained evidence directory: $retained_evidence_dir"
+retained_verifier_image="$(
+  simplematch_certification_verifier_image \
+    "$repo_root" "$namespace" "$retained_evidence_dir"
+)" || die 'retained production-like source or image provenance is invalid'
+[[ "$verifier_image" == "$retained_verifier_image" ]] || die \
+  "selected verifier image does not match retained image: $retained_verifier_image"
+simplematch_verify_kind_loaded_verifier_image_execution \
+  "$repo_root" "$namespace" "$retained_evidence_dir" || die \
+  'retained verifier image is not executable on every eligible kind node'
+
 # Fixed helper identities deliberately serialize this verification within one disposable namespace.
 # Silent replacement would destroy failure evidence and could make two concurrent orders appear to
 # belong to one run, so stale or retained resources require an explicit operator decision.
@@ -207,6 +240,28 @@ artifact_day="$(
 )"
 [[ "$artifact_day" == "$trading_day" ]] || die \
   "matching-session-config trading_day=$artifact_day, expected $trading_day"
+artifact_instrument="$(
+  jq -er '
+    .data["market_reference.json"] | fromjson
+    | [.marketSnapshot.instruments[]
+       | select(.eligibility == "ELIGIBLE"
+           and .referencePriceUnits != null
+           and .lowerPriceLimitUnits != null
+           and .upperPriceLimitUnits != null)]
+    | sort_by([.venueMic, .symbol])
+    | .[0]
+  ' "$evidence_dir/market-reference-configmap.json"
+)" || die 'mounted Market Reference has no eligible final-price instrument'
+artifact_symbol="$(jq -er '.symbol' <<<"$artifact_instrument")" || die \
+  'selected Market Reference instrument has no symbol'
+artifact_rule_id="$(jq -er '.marketRuleId' <<<"$artifact_instrument")" || die \
+  'selected Market Reference instrument has no market rule'
+artifact_quantity="$(
+  jq -er --arg rule "$artifact_rule_id" '
+    .data["market_reference.json"] | fromjson
+    | .marketRules.rules[] | select(.ruleId == $rule) | .boardLotShares
+  ' "$evidence_dir/market-reference-configmap.json"
+)" || die 'selected Market Reference instrument has no board lot quantity'
 
 # Verify the retained Risk connector, rather than merely checking that Kafka Connect Pods are Ready.
 # A Ready worker with a FAILED connector/task cannot satisfy the Risk outbox -> Kafka behavior.
@@ -256,9 +311,8 @@ postgres_pod="$(
 # looks up the ACCOUNT/* limit on that business day, so the fixture must use the same value rather
 # than the host wall-clock date.
 now_ms="$(( $(date +%s) * 1000 ))"
-kubectl -n "$namespace" exec -i "$postgres_pod" -- \
-  psql -U simplematch -d simplematch -v ON_ERROR_STOP=1 \
-  >"$evidence_dir/account-fixture.log" 2>&1 <<SQL
+if [[ "$side" == BUY ]]; then
+  account_fixture_sql="$(cat <<SQL
 INSERT INTO account_service.account_limits (
   account_id,
   scope_type,
@@ -285,15 +339,47 @@ INSERT INTO account_service.account_limits (
   0
 );
 SQL
+)"
+else
+  account_fixture_sql="$(cat <<SQL
+INSERT INTO account_service.account_positions (
+  account_id,
+  symbol,
+  long_qty,
+  short_qty,
+  reserved_long_qty,
+  reserved_short_qty,
+  updated_at_unix_ms,
+  version
+) VALUES (
+  '$account_id',
+  '$artifact_symbol',
+  $artifact_quantity,
+  0,
+  0,
+  0,
+  $now_ms,
+  0
+);
+SQL
+)"
+fi
+kubectl -n "$namespace" exec -i "$postgres_pod" -- \
+  psql -U simplematch -d simplematch -v ON_ERROR_STOP=1 \
+  -c "$account_fixture_sql" >"$evidence_dir/account-fixture.log" 2>&1
 
 jq -n \
   --arg runId "$run_id" \
   --arg namespace "$namespace" \
   --arg tradingDay "$trading_day" \
   --arg accountId "$account_id" \
+  --arg side "$side" \
+  --arg symbol "$artifact_symbol" \
+  --argjson quantity "$artifact_quantity" \
   --arg verifierImage "$verifier_image" \
   '{runId:$runId, namespace:$namespace, tradingDay:$tradingDay,
-    accountLimitTradingDay:$tradingDay, accountId:$accountId, verifierImage:$verifierImage}' \
+    accountFixture:{side:$side,symbol:$symbol,quantity:$quantity},
+    accountId:$accountId, verifierImage:$verifierImage}' \
   >"$evidence_dir/run-metadata.json"
 
 # Run-specific values are data, not deployment policy. Keep them in one immutable ConfigMap rather
@@ -301,6 +387,7 @@ jq -n \
 kubectl -n "$namespace" create configmap "$run_config_name" \
   --from-literal="SIMPLEMATCH_RM1_TRADING_DAY=$trading_day" \
   --from-literal="SIMPLEMATCH_RM1_ACCOUNT_ID=$account_id" \
+  --from-literal="SIMPLEMATCH_RM1_SIDE=$side" \
   --from-literal="SIMPLEMATCH_RM1_RUN_ID=$run_id" \
   --from-literal="SIMPLEMATCH_RM1_TIMEOUT_SECONDS=$timeout_seconds" \
   --dry-run=client -o json \

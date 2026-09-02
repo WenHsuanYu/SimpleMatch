@@ -114,7 +114,9 @@ From the repository root, use a new or empty evidence directory:
 scripts/run-risk-matching-command-e2e.sh \
   --namespace simplematch-rm1-20260817 \
   --trading-day 2026-08-17 \
-  --evidence-dir out/certification/rm1-20260817/rm1-02
+  --evidence-dir out/certification/rm1-20260817/rm1-02 \
+  --retained-evidence-dir out/certification/rm1-20260817 \
+  --verifier-image "$(tr -d '\\r\\n' < out/certification/rm1-20260817/verifier-image-reference)"
 ```
 
 A non-empty evidence directory is rejected. Certification artifacts from separate runs must never be
@@ -128,9 +130,12 @@ Job/risk-matching-e2e-verifier
 ConfigMap/risk-matching-e2e-run
 ```
 
-The ConfigMap is immutable and contains only run data: trading day, run-scoped account UUID, run ID,
-and timeout. A second invocation refuses to replace retained helper resources because doing so could
-destroy failure evidence or correlate two commands to one run.
+The ConfigMap is immutable and contains only run data: trading day, run-scoped account UUID, order
+side, run ID, and timeout. A second invocation refuses to replace retained helper resources because
+doing so could destroy failure evidence or correlate two commands to one run. The required retained
+evidence directory is also the provenance authority: the selected image must be the exact retained
+digest/reference for the namespace, and kind-load runs probe that image through every schedulable
+kind worker before the verifier Job is created.
 
 `--keep-helper` preserves the Job and ConfigMap after the run. Remove them explicitly before a later
 run:
@@ -148,7 +153,8 @@ The harness performs these checks:
 1. verifies the canonical `kind-simplematch-live` context and retained namespace;
 2. waits for Risk, Account, Kafka Connect, PostgreSQL, and the Matching fleet;
 3. verifies the retained `risk-service-outbox` connector and its task are `RUNNING`;
-4. creates a run-scoped Account UUID and provisions only an `ACCOUNT/*` daily cash limit;
+4. creates a run-scoped Account UUID and provisions either an `ACCOUNT/*` daily cash limit for BUY
+   or the selected instrument's long position for SELL;
 5. creates the immutable `risk-matching-e2e-run` ConfigMap;
 6. creates the repository-owned verifier Job without rendering YAML in shell;
 7. validates the exact mounted Market Reference bytes and external checksum with the shared startup
@@ -156,7 +162,7 @@ The harness performs these checks:
 8. deterministically selects the first eligible `(venueMic, symbol)` instrument with final price
    facts and reads its explicit artifact partition;
 9. snapshots all 15 `matching.commands` end offsets before submission;
-10. submits a real BUY/LIMIT/ROD board-lot order through
+10. submits a real BUY or SELL/LIMIT/ROD board-lot order through
     `simplematch.risk.v2.OrderAdmissionService/SubmitNewOrder`;
 11. accepts either a validated synchronous Risk acceptance or an `UNAVAILABLE` submission that
     subsequently reaches durable `ACCEPTED` through Risk-owned recovery and `GetAdmissionOutcome`;

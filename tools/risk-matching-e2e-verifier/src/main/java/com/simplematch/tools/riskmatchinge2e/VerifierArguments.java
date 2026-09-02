@@ -1,5 +1,6 @@
 package com.simplematch.tools.riskmatchinge2e;
 
+import com.simplematch.contracts.common.v2.Side;
 import java.nio.file.Path;
 import java.time.Duration;
 import java.time.LocalDate;
@@ -14,6 +15,7 @@ record VerifierArguments(
     ArtifactFiles artifact,
     RiskMatchingScenario.RunIdentity run,
     ServiceEndpoints services,
+    Side side,
     ExecutionOptions execution) {
   private static final Duration MAX_TIMEOUT = Duration.ofMinutes(5);
 
@@ -21,6 +23,9 @@ record VerifierArguments(
     Objects.requireNonNull(artifact, "artifact files are required");
     Objects.requireNonNull(run, "run identity is required");
     Objects.requireNonNull(services, "service endpoints are required");
+    if (side != Side.SIDE_BUY && side != Side.SIDE_SELL) {
+      throw new IllegalArgumentException("side must be BUY or SELL");
+    }
     Objects.requireNonNull(execution, "execution options are required");
   }
 
@@ -46,9 +51,10 @@ record VerifierArguments(
       throw usage("--timeout-seconds must not exceed 300");
     }
     final VerificationMode mode = parseMode(values.getOrDefault("--mode", "INITIAL"));
+    final Side side = parseSide(values.getOrDefault("--side", "BUY"));
     final ExecutionOptions execution =
         new ExecutionOptions(timeout, Path.of(required(values, "--evidence-dir")), mode);
-    return new VerifierArguments(artifact, run, services, execution);
+    return new VerifierArguments(artifact, run, services, side, execution);
   }
 
   private static VerificationMode parseMode(String value) {
@@ -57,6 +63,17 @@ record VerifierArguments(
     } catch (IllegalArgumentException invalid) {
       throw usage("--mode must be INITIAL or REPLAY");
     }
+  }
+
+  private static Side parseSide(String value) {
+    if (value == null || value.isBlank()) {
+      throw usage("--side must be BUY or SELL");
+    }
+    return switch (value.toUpperCase(Locale.ROOT)) {
+      case "BUY", "SIDE_BUY" -> Side.SIDE_BUY;
+      case "SELL", "SIDE_SELL" -> Side.SIDE_SELL;
+      default -> throw usage("--side must be BUY or SELL");
+    };
   }
 
   private static Map<String, String> parsePairs(String[] args) {
@@ -88,6 +105,7 @@ record VerifierArguments(
             + "Usage: --artifact-path PATH --checksum-path PATH "
             + "--trading-day YYYY-MM-DD --account-id UUID "
             + "--run-id ID --evidence-dir PATH "
+            + "[--side BUY|SELL] "
             + "[--risk-target HOST:PORT] "
             + "[--kafka-bootstrap HOST:PORT] "
             + "[--topic matching.commands] "

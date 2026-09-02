@@ -353,6 +353,9 @@ certification_execute_phase() {
     kubernetes-risk-outbox-connector)
       run_logged "$phase_id" register_kubernetes_risk_connector
       ;;
+    kubernetes-account-outbox-connector)
+      run_logged "$phase_id" register_kubernetes_account_connector
+      ;;
     kubernetes-workloads)
       run_logged "$phase_id" wait_for_kubernetes_workloads
       ;;

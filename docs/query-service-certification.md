@@ -7,9 +7,10 @@ clean repository revision and immutable verifier image.
 
 ## Evidence contract
 
-The retained Kafka stream must already contain an execution-backed order whose Account summary and
-active Market Reference row are queryable. The runner rejects an empty execution set; a resting
-order alone is not trade-view evidence. It selects one such fixture from query-owned PostgreSQL,
+The retained Kafka stream must contain an execution-backed order whose Account summary and active
+Market Reference row are queryable after the runner establishes its fixture. The runner rejects an
+empty execution set; a resting order alone is not trade-view evidence. It selects one such fixture
+from query-owned PostgreSQL,
 then reads all business data through the public versioned API:
 
 - order state and executions;
@@ -17,19 +18,42 @@ then reads all business data through the public versioned API:
 - active Market Reference trading day and artifact identity;
 - source-topic partition offsets and recovery state.
 
+The public runner establishes that prerequisite itself before selecting the fixture. It invokes the
+repository-owned RM-1 verifier twice through the public Risk gRPC boundary: a BUY order provisions
+an account cash limit and rests, then a SELL order provisions the same instrument's long position
+and crosses the resting order. Both commands use the same retained artifact-selected instrument,
+price, board lot, and partition; only their accounts and sides differ. The resulting evidence is
+kept under `matching-fixture/buy/` and `matching-fixture/sell/`, and the runner waits for the final
+Matching execution, Account lifecycle summary, and Market Reference joins to become visible in
+query PostgreSQL. A caller therefore does not need to run a separate Matching script or hand-seed
+an Account reservation row first; the only administrative fixture writes are the existing
+account-authority cash-limit and long-position seeds required by the public reservation use case.
+
 It captures the baseline, scales Redis to zero, and requires the same business view from the
-query-owned PostgreSQL fallback. It then restores Redis, reduces query-service to one consumer
-owner, enables the normally disabled authenticated reset adapter, and clears only query-owned
-rebuildable state. The runner resets these two groups to the retained boundary:
+query-owned PostgreSQL fallback. It then restores Redis, scales query-service to zero, records
+that no query Pod exists, and captures the Risk admission, Account reservation, Persistence,
+QuickFIX, and market-data projection state while the query API is actually unavailable. The
+critical snapshot must remain unchanged through this fault window. Query-service is restored before
+the normally disabled authenticated reset adapter is enabled and only query-owned rebuildable state
+is cleared. Immediately before the reset, it records the 15-partition Kafka high-water
+offset for each source in `replay-boundary/manifest.json`. The reset input starts each partition at
+the captured earliest offset and the rebuilt run must commit exactly the recorded high-water offset;
+this prevents a moving `--to-earliest` replay from silently consuming events added after the
+certification boundary. The runner resets these two groups to the retained boundary:
 
 - `query-service-matching-events` on `matching.events`;
 - `query-service-account-lifecycle` on `account.lifecycle`.
 
 No critical consumer offset is changed. A rebuilt snapshot is eligible for comparison only after
-both query groups report zero lag and every disclosed checkpoint is `READY`. Public reads must then
+both query groups reach their captured offsets exactly and every disclosed checkpoint is `READY`.
+Public reads must then
 recreate the four exact versioned Redis keys selected by the fixture. The final verdict also
-requires the critical Persistence, Account, and QuickFIX state snapshots to remain identical and
-all 15 Matching partitions to remain ready.
+requires the expanded critical snapshots to remain identical before, during, and after the query
+outage, all 15 Matching partitions to remain ready, and the query deployment to be restored.
+
+The deterministic-rebuild comparison covers business fields only. Projection observation and
+artifact-install timestamps are operational metadata and may change during replay; the separate
+freshness response still proves that every source checkpoint is present, contiguous, and `READY`.
 
 ## Run the gate
 

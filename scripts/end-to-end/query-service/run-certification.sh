@@ -34,8 +34,10 @@ restoration_failed=false
 certification_succeeded=false
 query_port_forward_pid=""
 query_port=""
+replay_boundary_dir=""
 original_query_replicas=""
 original_redis_replicas=""
+verifier_image_reference=""
 query_environment_modified=false
 query_scaled=false
 redis_scaled=false
@@ -85,6 +87,50 @@ start_query_port_forward() {
     die "query-service port-forward did not become ready"
 }
 
+run_matching_fixture() {
+  local trading_day buy_account_id sell_account_id
+  local fixture_dir="$evidence_dir/matching-fixture"
+  trading_day="$(kns get configmap matching-session-config -o jsonpath='{.data.trading_day}')"
+  [[ "$trading_day" =~ ^[0-9]{4}-[0-9]{2}-[0-9]{2}$ ]] || return 1
+  [[ -r /proc/sys/kernel/random/uuid ]] || return 1
+  buy_account_id="$(cat /proc/sys/kernel/random/uuid)"
+  sell_account_id="$(cat /proc/sys/kernel/random/uuid)"
+  mkdir -p "$fixture_dir"
+
+  # Two public RM-1 orders share the artifact-selected instrument and price. The BUY rests with a
+  # cash reservation; the SELL reserves a long position and crosses it, producing final matching
+  # and Account lifecycle events without direct writes to either service's reservation tables.
+  bash "$repo_root/scripts/run-risk-matching-command-e2e.sh" \
+    --namespace "$namespace" \
+    --trading-day "$trading_day" \
+    --evidence-dir "$fixture_dir/buy" \
+    --account-id "$buy_account_id" \
+    --side BUY \
+    --verifier-image "$verifier_image_reference" \
+    --retained-evidence-dir "$retained_evidence_dir"
+  wait_for_rm1_helper_cleanup || return 1
+  bash "$repo_root/scripts/run-risk-matching-command-e2e.sh" \
+    --namespace "$namespace" \
+    --trading-day "$trading_day" \
+    --evidence-dir "$fixture_dir/sell" \
+    --account-id "$sell_account_id" \
+    --side SELL \
+    --verifier-image "$verifier_image_reference" \
+    --retained-evidence-dir "$retained_evidence_dir"
+  wait_for_rm1_helper_cleanup
+}
+
+wait_for_rm1_helper_cleanup() {
+  for _ in $(seq 1 60); do
+    if ! kns get job/risk-matching-e2e-verifier >/dev/null 2>&1 &&
+      ! kns get configmap/risk-matching-e2e-run >/dev/null 2>&1; then
+      return 0
+    fi
+    sleep 1
+  done
+  return 1
+}
+
 reset_query_state() {
   local response="$evidence_dir/reset-response.json"
   local status
@@ -117,7 +163,7 @@ done
 [[ -n "$evidence_dir" ]] || die "--evidence-dir is required"
 [[ "$timeout_seconds" =~ ^[1-9][0-9]*$ ]] || die "--timeout-seconds must be positive"
 (( timeout_seconds <= 300 )) || die "--timeout-seconds must not exceed 300"
-for tool in kubectl docker jq curl git awk sed grep date seq sleep tr cp mv; do
+for tool in kubectl docker jq curl git awk sed grep date seq sleep tr cp mv cat wc; do
   command -v "$tool" >/dev/null 2>&1 || die "$tool is required"
 done
 [[ "$(kubectl config current-context)" == "$context" ]] ||
@@ -138,18 +184,25 @@ evidence_initialized=true
 current_stage="validate retained production-like provenance"
 retained_evidence_dir="$(cd -- "$retained_evidence_dir" && pwd)" ||
   die "cannot resolve retained evidence directory"
-simplematch_certification_verifier_image \
-  "$repo_root" "$namespace" "$retained_evidence_dir" >/dev/null ||
+verifier_image_reference="$(simplematch_certification_verifier_image \
+  "$repo_root" "$namespace" "$retained_evidence_dir")" ||
   die "retained production-like source or image provenance is invalid"
 
-current_stage="capture baseline"
+current_stage="validate query runtime"
 original_query_replicas="$(workload_replicas deployment query-service)"
 original_redis_replicas="$(workload_replicas deployment redis)"
 (( original_query_replicas > 0 )) || die "query-service must be running"
 (( original_redis_replicas == 1 )) || die "expected one Redis replica"
+
+current_stage="establish execution-backed query fixture"
+run_matching_fixture || die "Matching execution fixture could not be established"
+wait_for_query_fixture || die "query projection did not expose the Matching fixture"
+
+current_stage="capture baseline"
 capture_consumer_state "$evidence_dir/critical-before.json" ||
   die "cannot capture critical consumer baseline"
-select_query_fixture || die "query projection has no execution-backed retained fixture"
+require_clean_baseline "$evidence_dir/critical-before.json" ||
+  die "critical consumer baseline is not clean"
 order_id="$(jq -er '.orderId | select(length > 0)' "$evidence_dir/selected-fixture.json")"
 account_id="$(jq -er '.accountId | select(length > 0)' "$evidence_dir/selected-fixture.json")"
 trading_day="$(jq -er '.tradingDay | select(length == 10)' "$evidence_dir/selected-fixture.json")"
@@ -166,12 +219,26 @@ start_query_port_forward
 capture_query_snapshot "$evidence_dir/baseline.json" || die "cannot capture baseline query views"
 
 current_stage="verify PostgreSQL fallback during Redis outage"
-scale_deployment redis 0
 redis_scaled=true
+scale_deployment redis 0 || die "Redis could not be scaled down for fallback verification"
 capture_query_snapshot "$evidence_dir/redis-outage.json" ||
   die "query APIs did not fall back to PostgreSQL while Redis was unavailable"
-scale_deployment redis "$original_redis_replicas"
+scale_deployment redis "$original_redis_replicas" ||
+  die "Redis could not be restored after fallback verification"
 redis_scaled=false
+
+current_stage="verify critical paths during query-service outage"
+stop_query_port_forward
+query_scaled=true
+scale_deployment query-service 0 || die "query-service could not be stopped for isolation verification"
+capture_query_service_outage_state "$evidence_dir/query-outage.json" ||
+  die "query-service outage was not observed"
+capture_consumer_state "$evidence_dir/critical-during-query-outage.json" ||
+  die "cannot capture critical state while query-service is unavailable"
+scale_deployment query-service "$original_query_replicas" ||
+  die "query-service could not be restored after isolation verification"
+query_scaled=false
+start_query_port_forward
 
 current_stage="enable bounded query replay"
 existing_override_count="$(
@@ -182,21 +249,26 @@ existing_override_count="$(
 )"
 (( existing_override_count == 0 )) || die "query-service already defines rebuild overrides"
 operator_token="$(tr -d '-' </proc/sys/kernel/random/uuid)"
-scale_deployment query-service 1
 query_scaled=true
+scale_deployment query-service 1 || die "query-service could not be scaled for rebuild"
+query_environment_modified=true
 kns set env deployment/query-service \
   SIMPLEMATCH_QUERY_SERVICE_REBUILD_HTTP_ENABLED=true \
   SIMPLEMATCH_QUERY_SERVICE_REBUILD_OPERATOR_TOKEN="$operator_token" >/dev/null
-query_environment_modified=true
 wait_deployment_replicas query-service 1 || die "query rebuild adapter is not ready"
 stop_query_port_forward
 start_query_port_forward
 
 current_stage="reset and replay retained query sources"
+replay_boundary_dir="$evidence_dir/replay-boundary"
+capture_query_replay_boundary "$replay_boundary_dir" ||
+  die "query topic replay boundaries could not be captured"
 reset_query_state || die "query projection reset failed"
-reset_query_consumer_group query-service-matching-events matching.events ||
+reset_query_consumer_group query-service-matching-events matching.events \
+  "$replay_boundary_dir/matching.events.start.json" ||
   die "matching.events query offsets could not be reset"
-reset_query_consumer_group query-service-account-lifecycle account.lifecycle ||
+reset_query_consumer_group query-service-account-lifecycle account.lifecycle \
+  "$replay_boundary_dir/account.lifecycle.start.json" ||
   die "account.lifecycle query offsets could not be reset"
 kns rollout restart deployment/query-service >/dev/null
 wait_deployment_replicas query-service 1 || die "query-service did not restart"
@@ -218,11 +290,16 @@ critical_ready="$(jq -e '
   .persistenceQuarantines == 0
   and .accountQuarantines == 0
   and .quickfixQuarantines == 0
+  and .riskQuarantines == 0
+  and .marketDataDeadLetters == 0
 ' "$evidence_dir/critical-after.json" >/dev/null && echo true || echo false)"
+jq -e '.queryPodCount == 0' "$evidence_dir/query-outage.json" >/dev/null ||
+  die "query-service outage evidence is invalid"
 jq -n \
   --argjson matchingReady "$matching_ready" \
   --argjson criticalConsumersReady "$critical_ready" \
-  '{redisKeysPresent:true,queryServiceReady:true,
+  --argjson queryOutageObserved true \
+  '{redisKeysPresent:true,queryServiceReady:true,queryOutageObserved:$queryOutageObserved,
     matchingReady:$matchingReady,criticalConsumersReady:$criticalConsumersReady}' \
   >"$evidence_dir/restoration.json"
 

@@ -88,12 +88,24 @@ class RiskMatchingScenarioTest {
                 scenario, response));
   }
 
+  @Test
+  void acceptsMatchingCommandForSellScenario() {
+    final RiskMatchingScenario.Scenario scenario = scenario(Side.SIDE_SELL);
+
+    assertDoesNotThrow(() -> RiskMatchingScenario.validateMatchingCommand(scenario,
+        matchingCommand(scenario, HASH, scenario.market().expectedPartition())));
+  }
+
   /**
    * Creates one complete expected scenario using the grouped verifier domain model.
    *
    * @return the scenario used by the contract assertions
    */
   private static RiskMatchingScenario.Scenario scenario() {
+    return scenario(Side.SIDE_BUY);
+  }
+
+  private static RiskMatchingScenario.Scenario scenario(Side side) {
     final RunIdentity run = new RunIdentity(RUN_ID,TRADING_DAY, ACCOUNT_ID);
 
     final InstrumentRef ref = new InstrumentRef("XTAI", "2330");
@@ -116,6 +128,7 @@ class RiskMatchingScenarioTest {
                 command.orderId().toString())
             .setAccountId(
                 run.accountId().toString())
+            .setSide(side)
             .build();
 
     return new Scenario(run, market, command, request);
@@ -172,7 +185,7 @@ class RiskMatchingScenarioTest {
                             market.instrument()
                                 .instrument()
                                 .symbol()))
-                .setSide(Side.SIDE_BUY)
+                .setSide(scenario.request().getSide())
                 .setQuantityShares(
                     market.rule().boardLotShares())
                 .setLimitPriceUnits(

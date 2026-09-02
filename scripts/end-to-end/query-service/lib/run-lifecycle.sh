@@ -11,19 +11,27 @@ restore_query_certification_environment() {
   set +e
   stop_query_port_forward
   if [[ "$redis_scaled" == true && -n "$original_redis_replicas" ]]; then
-    scale_deployment redis "$original_redis_replicas" || restoration_failed=true
-    redis_scaled=false
+    if scale_deployment redis "$original_redis_replicas"; then
+      redis_scaled=false
+    else
+      restoration_failed=true
+    fi
   fi
   if [[ "$query_environment_modified" == true ]]; then
-    kns set env deployment/query-service \
-      SIMPLEMATCH_QUERY_SERVICE_REBUILD_HTTP_ENABLED- \
-      SIMPLEMATCH_QUERY_SERVICE_REBUILD_OPERATOR_TOKEN- >/dev/null 2>&1 ||
+    if kns set env deployment/query-service \
+        SIMPLEMATCH_QUERY_SERVICE_REBUILD_HTTP_ENABLED- \
+        SIMPLEMATCH_QUERY_SERVICE_REBUILD_OPERATOR_TOKEN- >/dev/null 2>&1; then
+      query_environment_modified=false
+    else
       restoration_failed=true
-    query_environment_modified=false
+    fi
   fi
   if [[ "$query_scaled" == true && -n "$original_query_replicas" ]]; then
-    scale_deployment query-service "$original_query_replicas" || restoration_failed=true
-    query_scaled=false
+    if scale_deployment query-service "$original_query_replicas"; then
+      query_scaled=false
+    else
+      restoration_failed=true
+    fi
   elif [[ -n "$original_query_replicas" ]]; then
     kns rollout status deployment/query-service \
       --timeout="${timeout_seconds}s" >/dev/null 2>&1 || restoration_failed=true

@@ -44,6 +44,28 @@ grep -Fq -- '--verifier-image' "$orchestrator" || {
   printf '%s\n' 'RM-1 orchestrator must accept the retained verifier image reference.' >&2
   exit 1
 }
+grep -Fq -- '--retained-evidence-dir' "$orchestrator" || {
+  printf '%s\n' 'RM-1 orchestrator must require retained provenance before creating a verifier Job.' >&2
+  exit 1
+}
+grep -Fq 'simplematch_verify_kind_loaded_verifier_image_execution' "$orchestrator" || {
+  printf '%s\n' 'RM-1 orchestrator must probe the retained kind-loaded image before Job creation.' >&2
+  exit 1
+}
+grep -Fq 'simplematch_verify_kind_loaded_verifier_image_execution' \
+  "$repo_root/scripts/lib/local-certification-provenance.sh" || {
+  printf '%s\n' 'RM-1 provenance module must own the kind-loaded execution probe.' >&2
+  exit 1
+}
+grep -Fq 'ctr -n k8s.io run --rm' \
+  "$repo_root/scripts/lib/local-certification-provenance.sh" || {
+  printf '%s\n' 'RM-1 kind-loaded probe must execute the image through node containerd.' >&2
+  exit 1
+}
+grep -Fq -- '--side' "$orchestrator" || {
+  printf '%s\n' 'RM-1 orchestrator must select BUY or SELL for the public fixture.' >&2
+  exit 1
+}
 grep -Fq 'simplematch_render_verifier_helper_manifest' "$orchestrator" || {
   printf '%s\n' 'RM-1 orchestrator must render the verifier Job with its retained image reference.' >&2
   exit 1
@@ -147,6 +169,7 @@ expected_args = [
   "--checksum-path", "/etc/simplematch/market-reference/market_reference.sha256",
   "--trading-day", "$(SIMPLEMATCH_RM1_TRADING_DAY)",
   "--account-id", "$(SIMPLEMATCH_RM1_ACCOUNT_ID)",
+  "--side", "$(SIMPLEMATCH_RM1_SIDE)",
   "--run-id", "$(SIMPLEMATCH_RM1_RUN_ID)",
   "--evidence-dir", "/tmp/evidence",
   "--timeout-seconds", "$(SIMPLEMATCH_RM1_TIMEOUT_SECONDS)"

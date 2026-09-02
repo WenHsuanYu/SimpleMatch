@@ -51,6 +51,8 @@ spec:
             - $(SIMPLEMATCH_RM1_TRADING_DAY)
             - --account-id
             - $(SIMPLEMATCH_RM1_ACCOUNT_ID)
+            - --side
+            - $(SIMPLEMATCH_RM1_SIDE)
             - --run-id
             - $(SIMPLEMATCH_RM1_RUN_ID)
             - --evidence-dir

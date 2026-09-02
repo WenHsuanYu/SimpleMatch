@@ -31,12 +31,18 @@ Run-specific facts are not templated into this file. The orchestration script cr
 
 - `SIMPLEMATCH_RM1_TRADING_DAY`;
 - `SIMPLEMATCH_RM1_ACCOUNT_ID`;
+- `SIMPLEMATCH_RM1_SIDE`;
 - `SIMPLEMATCH_RM1_RUN_ID`;
 - `SIMPLEMATCH_RM1_TIMEOUT_SECONDS`.
 
 The Job consumes that ConfigMap through `envFrom`, and its argument list references those variables.
 This keeps deployment policy reviewable while preserving a strict boundary between static Kubernetes
 configuration and per-run test data.
+
+Before creating the Job, the RM-1 script requires the retained production-like evidence directory
+and verifies that the selected verifier image has the same source revision, transport, and immutable
+digest. In a `kind-load` run it also checks the digest and executes a minimal shell probe through
+each schedulable kind worker's containerd.
 
 Validate the manifest contract with:
 

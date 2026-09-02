@@ -13,8 +13,8 @@ Matching fleet wiring, but it does not replace the full cross-service certificat
 production certification.
 
 The fresh in-cluster cross-service run `kubernetes-resume-20260815-9` also completed the Kubernetes
-runtime phases: all seven Flyway Jobs, workload apply, Kafka Connect connector registration, Open
-Barriers, seven Java rollouts, QuickFIX, and the 15-pod Matching fleet. Its report remains
+runtime phases: all seven Flyway Jobs, workload apply, Risk and Account Kafka Connect connector
+registration, Open Barriers, seven Java rollouts, QuickFIX, and the 15-pod Matching fleet. Its report remains
 `PARTIAL` because image build and Compose phases were intentionally skipped and the namespace was
 kept for evidence collection. This is deployment/runtime evidence, not completion of the native
 Matching ring/replay/performance work in #127, #128, and #136.

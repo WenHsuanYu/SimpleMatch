@@ -7,6 +7,7 @@ evaluate_query_service_verdict() {
 
   jq -n \
     --slurpfile criticalBefore "$evidence_dir/critical-before.json" \
+    --slurpfile criticalDuring "$evidence_dir/critical-during-query-outage.json" \
     --slurpfile criticalAfter "$evidence_dir/critical-after.json" \
     --slurpfile baseline "$evidence_dir/baseline.json" \
     --slurpfile fallback "$evidence_dir/redis-outage.json" \
@@ -14,10 +15,10 @@ evaluate_query_service_verdict() {
     --slurpfile restoration "$evidence_dir/restoration.json" '
       def business_view:
         {
-          order:.order.data,
-          executions:.executions.data,
-          accountSummary:.accountSummary.data,
-          marketReference:.marketReference.data
+          order:(.order.data | del(.updatedAtUnixMs)),
+          executions:(.executions.data | map(del(.executedAtUnixMs))),
+          accountSummary:(.accountSummary.data | del(.updatedAtUnixMs)),
+          marketReference:(.marketReference.data | del(.updatedAtUnixMs))
         };
       def healthy_freshness:
         (.freshness.partitions | length) > 0
@@ -60,6 +61,8 @@ evaluate_query_service_verdict() {
           name:"criticalPathIsolation",
           passed:(
             $criticalBefore[0] == $criticalAfter[0]
+            and $criticalBefore[0] == $criticalDuring[0]
+            and $restoration[0].queryOutageObserved == true
             and $restoration[0].matchingReady == 15
             and $restoration[0].criticalConsumersReady == true
           )

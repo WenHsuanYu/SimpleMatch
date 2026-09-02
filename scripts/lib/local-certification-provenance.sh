@@ -190,6 +190,47 @@ simplematch_certification_verifier_image() {
   printf '%s\n' "$verifier_image_reference"
 }
 
+simplematch_verify_kind_loaded_verifier_image_execution() {
+  local repo_root="$1"
+  local expected_namespace="$2"
+  local retained_evidence_dir="$3"
+  local image_transport expected_identity verifier_image_reference nodes node actual_identity probe_name
+
+  image_transport="$(simplematch_certification_image_transport "$retained_evidence_dir")" || return 1
+  [[ "$image_transport" == kind-load ]] || return 0
+  command -v docker >/dev/null 2>&1 || return 1
+  command -v kubectl >/dev/null 2>&1 || return 1
+
+  expected_identity="$(
+    simplematch_certification_verifier_image_identity "$retained_evidence_dir"
+  )" || return 1
+  verifier_image_reference="$(
+    simplematch_certification_verifier_image \
+      "$repo_root" "$expected_namespace" "$retained_evidence_dir"
+  )" || return 1
+  nodes="$(
+    kubectl get nodes -o json | jq -r '
+      .items[]
+      | select(.spec.unschedulable != true)
+      | select(([.spec.taints[]?.effect] | index("NoSchedule")) == null)
+      | .metadata.name
+    '
+  )" || return 1
+  [[ -n "$nodes" ]] || return 1
+
+  while IFS= read -r node; do
+    [[ -n "$node" ]] || continue
+    actual_identity="$(
+      docker exec "$node" crictl inspecti "$verifier_image_reference" |
+        jq -er '.status.id | select(type == "string" and test("^sha256:[0-9a-f]{64}$"))'
+    )" || return 1
+    [[ "$actual_identity" == "$expected_identity" ]] || return 1
+    probe_name="simplematch-verifier-image-probe-$RANDOM-$$"
+    docker exec "$node" ctr -n k8s.io run --rm --net-host \
+      "$verifier_image_reference" "$probe_name" /bin/sh -c true || return 1
+  done <<<"$nodes"
+}
+
 simplematch_render_verifier_helper_manifest() {
   local source_manifest="$1"
   local verifier_image_reference="$2"

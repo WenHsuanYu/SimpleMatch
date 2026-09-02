@@ -89,7 +89,7 @@ class QueryProjectionRebuildControllerTest {
   }
 
   @Test
-  void rollsBackDurableResetWhenCacheClearingFails() {
+  void reportsCacheFailureAfterDurableResetCommits() {
     final QueryProjectionStore store = mock(QueryProjectionStore.class);
     final QueryReadCache cache = mock(QueryReadCache.class);
     final QueryProjectionConsumerControl consumerControl =
@@ -103,6 +103,28 @@ class QueryProjectionRebuildControllerTest {
     assertThatThrownBy(() -> controller.reset(TOKEN))
         .isInstanceOf(IllegalStateException.class)
         .hasMessage("redis unavailable");
+    assertThat(transactionManager.commits).isEqualTo(1);
+    assertThat(transactionManager.rollbacks).isZero();
+  }
+
+  @Test
+  void doesNotClearCacheWhenDurableResetFails() {
+    final QueryProjectionStore store = mock(QueryProjectionStore.class);
+    final QueryReadCache cache = mock(QueryReadCache.class);
+    final QueryProjectionConsumerControl consumerControl =
+        mock(QueryProjectionConsumerControl.class);
+    doThrow(new IllegalStateException("database unavailable"))
+        .when(store)
+        .resetForReplay();
+    final RecordingTransactionManager transactionManager =
+        new RecordingTransactionManager();
+    final QueryProjectionRebuildController controller =
+        controller(store, cache, consumerControl, transactionManager);
+
+    assertThatThrownBy(() -> controller.reset(TOKEN))
+        .isInstanceOf(IllegalStateException.class)
+        .hasMessage("database unavailable");
+    verifyNoInteractions(cache);
     assertThat(transactionManager.commits).isZero();
     assertThat(transactionManager.rollbacks).isEqualTo(1);
   }

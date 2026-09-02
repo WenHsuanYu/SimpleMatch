@@ -29,6 +29,17 @@ def require_value(condition, message)
   exit 1
 end
 
+def postgres_credentials_from_secret?(environment, owner_prefix)
+  %w[USER PASSWORD].all? do |credential|
+    environment.dig(
+      "#{owner_prefix}_POSTGRES_#{credential}",
+      "valueFrom",
+      "secretKeyRef",
+      "name"
+    ) == "simplematch-postgres-secrets"
+  end
+end
+
 postgres = resources.fetch(["StatefulSet", "postgres"])
 postgres_spec = postgres.fetch("spec").fetch("template").fetch("spec")
 postgres_container = postgres_spec.fetch("containers").find { |container| container.fetch("name") == "postgres" }
@@ -109,6 +120,9 @@ connect_config = resources.fetch(["ConfigMap", "simplematch-kafka-connect-config
 connector_configmap = resources.fetch(["ConfigMap", "risk-service-outbox-connector"])
 connector_document = JSON.parse(connector_configmap.dig("data", "connector.json"))
 connector_values = connector_document.fetch("config")
+account_connector_configmap = resources.fetch(["ConfigMap", "account-service-outbox-connector"])
+account_connector_document = JSON.parse(account_connector_configmap.dig("data", "connector.json"))
+account_connector_values = account_connector_document.fetch("config")
 connect_volume_mounts = connect_container.fetch("volumeMounts")
 connect_volumes = connect_spec.fetch("volumes")
 
@@ -139,15 +153,18 @@ require_value(
     connector_values["database.hostname"] == "${envvarprovider:SIMPLEMATCH_POSTGRES_HOSTNAME}",
   "Local Kafka Connect must configure EnvVarConfigProvider on the worker and use its placeholders"
 )
+[["RISK_SERVICE", "Risk"], ["ACCOUNT_SERVICE", "Account"]].each do |owner_prefix, owner_name|
+  require_value(
+    postgres_credentials_from_secret?(connect_environment, owner_prefix),
+    "Local Kafka Connect must receive #{owner_name} database credentials from the local Secret"
+  )
+end
 require_value(
-  connect_environment.dig("RISK_SERVICE_POSTGRES_USER", "valueFrom", "secretKeyRef", "name") == "simplematch-postgres-secrets" &&
-    connect_environment.dig("RISK_SERVICE_POSTGRES_PASSWORD", "valueFrom", "secretKeyRef", "name") == "simplematch-postgres-secrets",
-  "Local Kafka Connect must receive Risk database credentials from the local Secret"
-)
-require_value(
-  connect_environment.dig("ACCOUNT_SERVICE_POSTGRES_USER", "valueFrom", "secretKeyRef", "name") == "simplematch-postgres-secrets" &&
-    connect_environment.dig("ACCOUNT_SERVICE_POSTGRES_PASSWORD", "valueFrom", "secretKeyRef", "name") == "simplematch-postgres-secrets",
-  "Local Kafka Connect must receive Account database credentials from the local Secret"
+  connector_document["name"] == "risk-service-outbox" &&
+    connector_values["table.include.list"] == "risk_service.outbox" &&
+    account_connector_document["name"] == "account-service-outbox" &&
+    account_connector_values["table.include.list"] == "account_service.outbox",
+  "Local Kafka Connect must retain owner-scoped Risk and Account connectors"
 )
 require_value(connect_container&.dig("resources", "requests") && connect_container.dig("resources", "limits"), "Local Kafka Connect must define resources")
 require_value(connect_container&.key?("readinessProbe") && connect_container.key?("startupProbe"), "Local Kafka Connect must define bounded probes")

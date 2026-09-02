@@ -78,6 +78,15 @@ Useful canonical keys include:
 - `simplematch.quickfix-gateway.wal-path`
 - `simplematch.risk-service.scheduling-enabled` (defaults to `true`; set to `false` only when
   background admission recovery must be disabled, such as a narrow context test)
+- `simplematch.query-service.rebuild.http-enabled` (defaults to `false`; enables only the
+  authenticated operator reset seam)
+- `simplematch.query-service.rebuild.operator-token` (required when the reset seam is enabled;
+  never commit or persist the token)
+
+The query-service rebuild adapter is disabled by default. A bounded local or CI certification run
+may enable it with `SIMPLEMATCH_QUERY_SERVICE_REBUILD_HTTP_ENABLED=true` and supply the transient
+`SIMPLEMATCH_QUERY_SERVICE_REBUILD_OPERATOR_TOKEN`; both variables are Spring `Environment`
+overrides, and the token must be generated and removed by the run rather than stored in a manifest.
 
 ## Kubernetes
 
@@ -100,9 +109,10 @@ The complete cross-service base/overlay contract and external Secret keys are do
 [`deploy/k8s/README.md`](../deploy/k8s/README.md#cross-service-base-and-overlays), with a local
 rendering gate in `scripts/test-kubernetes-overlays.sh`.
 
-The risk-service Debezium connector template resolves its database username and password from Kafka
-Connect environment variables. Those environment variables must be injected from a Kubernetes
-Secret.
+The Risk and Account Debezium connector templates resolve their database usernames and passwords
+from Kafka Connect environment variables. Those environment variables must be injected from a
+Kubernetes Secret, and the local production-like certification registers both owner-scoped
+connectors before declaring the Java workloads ready.
 
 ## Local CDC verification harness
 

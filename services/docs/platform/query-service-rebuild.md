@@ -13,8 +13,10 @@ Use this bounded procedure:
 
 1. Reduce `query-service` to one replica so one process owns both consumer groups. Call
    `POST /internal/query/rebuild` with the operator header. The adapter stops the Matching and
-   Account listeners before one local transaction clears the query-owned inbox, checkpoints, read
-   models, active Market Reference rows, and Redis namespace.
+   Account listeners before one local transaction clears the query-owned PostgreSQL inbox,
+   checkpoints, read models, and active Market Reference rows. After that commit it clears the
+   disposable Redis namespace; a Redis failure is an operator retry/reconciliation outcome and
+   does not roll back the durable reset.
 2. Verify both listeners are stopped. Reset only `query-service-matching-events` on
    `matching.events` and `query-service-account-lifecycle` on `account.lifecycle` to the retained
    replay boundary. Do not change any critical consumer group.

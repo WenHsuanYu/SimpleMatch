@@ -58,9 +58,32 @@ public final class RiskMatchingScenario {
       VerifiedMarketReferenceArtifact verified,
       RunIdentity run,
       Instant now) {
+    return create(verified, run, now, Side.SIDE_BUY);
+  }
+
+  /**
+   * Builds one deterministic, valid LIMIT/ROD order for the requested side.
+   *
+   * <p>The side is the only scenario fact that varies between the two public RM-1 fixture orders:
+   * a BUY can reserve the account's daily cash limit and a SELL can reserve its long position.
+   * Both orders still derive instrument, price, quantity, and routing from the same verified
+   * artifact so Matching can produce one execution without bypassing Risk or Account.
+   *
+   * @param verified the verified market-reference artifact
+   * @param run the identity shared by this verifier run
+   * @param now the timestamp used for generated event metadata
+   * @param side the supported order side
+   * @return a complete scenario for Risk admission and Kafka verification
+   */
+  public static Scenario create(
+      VerifiedMarketReferenceArtifact verified,
+      RunIdentity run,
+      Instant now,
+      Side side) {
     Objects.requireNonNull(verified, "verified artifact is required");
     Objects.requireNonNull(run, "run identity is required");
     Objects.requireNonNull(now, "clock instant is required");
+    requireSupportedSide(side);
 
     final MarketReferenceArtifact artifact = verified.artifact();
     if (!artifact.metadata().tradingDay().equals(run.tradingDay())) {
@@ -132,7 +155,7 @@ public final class RiskMatchingScenario {
                     .setSymbol(instrument.instrument().symbol())
                     .setVenueMic(instrument.instrument().venueMic())
                     .build())
-            .setSide(Side.SIDE_BUY)
+            .setSide(side)
             .setQuantity(
                 ShareQuantity.newBuilder()
                     .setShares(quantityShares)
@@ -306,7 +329,7 @@ public final class RiskMatchingScenario {
         order.getInstrument().getVenueMic(),
         "new-order venue_mic");
     requireEquals(
-        Side.SIDE_BUY,
+        scenario.request().getSide(),
         order.getSide(),
         "new-order side");
     requireLongEquals(
@@ -372,6 +395,12 @@ public final class RiskMatchingScenario {
               + expected
               + ", actual="
               + actual);
+    }
+  }
+
+  private static void requireSupportedSide(Side side) {
+    if (side != Side.SIDE_BUY && side != Side.SIDE_SELL) {
+      throw new IllegalArgumentException("side must be BUY or SELL");
     }
   }
 

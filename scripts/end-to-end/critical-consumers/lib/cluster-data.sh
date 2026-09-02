@@ -46,9 +46,8 @@ wait_statefulset_replicas() {
 scale_deployment() {
   local name="$1"
   local replicas="$2"
-  kns scale "deployment/$name" --replicas="$replicas" >/dev/null
-  wait_deployment_replicas "$name" "$replicas" ||
-    die "deployment/$name did not reach $replicas replicas"
+  kns scale "deployment/$name" --replicas="$replicas" >/dev/null || return 1
+  wait_deployment_replicas "$name" "$replicas" || return 1
 }
 
 scale_statefulset() {
@@ -75,13 +74,15 @@ capture_topic_offsets() {
   local topic="$1"
   local destination="$2"
   local stderr_path="${3:-${destination%.json}.stderr.log}"
+  local offset_time="${4:-}"
+  local -a offset_args=(--bootstrap-server kafka:9092 --topic "$topic")
   local broker
   broker="$(kafka_pod)"
   [[ -n "$broker" ]] || return 1
+  [[ -n "$offset_time" ]] && offset_args+=(--time "$offset_time")
 
   kns exec "$broker" -c kafka -- /opt/kafka/bin/kafka-get-offsets.sh \
-      --bootstrap-server kafka:9092 \
-      --topic "$topic" 2>"$stderr_path" |
+      "${offset_args[@]}" 2>"$stderr_path" |
     jq -eRn --arg topic "$topic" '
       [inputs
         | select(length > 0)
@@ -186,12 +187,53 @@ capture_consumer_state() {
           SELECT COUNT(*) FROM quickfix_gateway.fix_delivery_intents
           WHERE status = 'PENDING'
         ),
+        'admissionStateCounts', COALESCE((
+          SELECT json_agg(row_to_json(admission) ORDER BY admission.state)
+          FROM (
+            SELECT state, COUNT(*) AS count
+            FROM risk_service.admission_journal
+            GROUP BY state
+          ) admission
+        ), '[]'::json),
+        'riskQuarantines', (
+          SELECT COUNT(*) FROM risk_service.consumer_quarantines
+          WHERE status = 'QUARANTINED'
+        ),
+        'accountReservationStateCounts', COALESCE((
+          SELECT json_agg(row_to_json(reservation) ORDER BY reservation.status)
+          FROM (
+            SELECT status, COUNT(*) AS count
+            FROM account_service.account_reservations
+            GROUP BY status
+          ) reservation
+        ), '[]'::json),
+        'marketDataProgress', COALESCE((
+          SELECT json_agg(row_to_json(market_data) ORDER BY market_data.partition_id)
+          FROM (
+            SELECT partition_id, recovery_state
+            FROM market_data_projection.partition_projection_progress
+          ) market_data
+        ), '[]'::json),
+        'marketDataInstrumentCount', (
+          SELECT COUNT(*) FROM market_data_projection.instrument_market_data
+        ),
+        'marketDataDeadLetters', (
+          SELECT COUNT(*) FROM market_data_projection.matching_event_dead_letters
+        ),
         'activeMatchingOrders', (
           SELECT COUNT(*) FROM persistence.matching_order_projections
           WHERE status IN ('RESTING', 'PARTIALLY_FILLED')
         )
       )::text;
     " | jq -e . >"$destination"
+}
+
+capture_query_service_outage_state() {
+  local destination="$1"
+  kns get pods -l app.kubernetes.io/name=query-service -o json |
+    jq '{queryPodCount:(.items | length), queryPodNames:[.items[].metadata.name]}' \
+      >"$destination"
+  jq -e '.queryPodCount == 0' "$destination" >/dev/null
 }
 
 require_clean_baseline() {
@@ -203,7 +245,9 @@ require_clean_baseline() {
     and .persistenceQuarantineHistory == 0
     and .accountQuarantineHistory == 0
     and .quickfixQuarantineHistory == 0
+    and .riskQuarantines == 0
     and .quickfixPendingIntents == 0
+    and .marketDataDeadLetters == 0
     and .activeMatchingOrders == 0
   ' "$state" >/dev/null ||
     die 'baseline contains quarantine history, pending FIX delivery, or active Matching orders'

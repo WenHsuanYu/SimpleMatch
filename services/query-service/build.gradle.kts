@@ -5,6 +5,7 @@ plugins {
 
 dependencies {
     implementation(project(":shared-java:market-reference-contract"))
+    implementation("com.fasterxml.jackson.datatype:jackson-datatype-jsr310")
     implementation("org.springframework.boot:spring-boot-starter-jdbc")
     implementation("org.springframework.boot:spring-boot-starter-kafka")
     implementation("org.springframework.boot:spring-boot-starter-data-redis")

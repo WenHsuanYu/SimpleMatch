@@ -1,6 +1,7 @@
 package com.simplematch.queryservice.config;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.fasterxml.jackson.databind.SerializationFeature;
 import com.simplematch.config.RedisProperties;
 import com.simplematch.queryservice.runtime.NoopQueryReadCache;
 import com.simplematch.queryservice.runtime.QueryMarketReferenceArtifactLoader;
@@ -22,14 +23,16 @@ import org.springframework.data.redis.core.RedisTemplate;
 import org.springframework.data.redis.serializer.RedisSerializer;
 import org.springframework.data.redis.serializer.StringRedisSerializer;
 
-/** Wires independent Kafka consumers and the optional Redis acceleration layer. */
+/** Wires artifact installation and the optional Redis acceleration layer. */
 @Configuration(proxyBeanMethods = false)
 @EnableConfigurationProperties(QueryServiceProperties.class)
 public class QueryServiceRuntimeConfiguration {
-  /** Supplies the Jackson 2 mapper required by the shared artifact codec and cache adapter. */
+  /** Supplies a module-aware Jackson mapper for the shared artifact codec and cache adapter. */
   @Bean
   ObjectMapper queryServiceObjectMapper() {
-    return new ObjectMapper();
+    return new ObjectMapper()
+        .findAndRegisterModules()
+        .disable(SerializationFeature.WRITE_DATES_AS_TIMESTAMPS);
   }
 
   /** Creates the verified mounted-artifact loader used by the active reference model. */
