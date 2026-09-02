@@ -12,8 +12,9 @@ manifest="$repo_root/deploy/k8s/verification/risk-matching-e2e-verifier-job.yaml
 dockerfile="$repo_root/deploy/docker/Dockerfile.risk-matching-e2e-verifier"
 wrapper="$repo_root/deploy/docker/run-risk-matching-e2e-verifier"
 orchestrator="$repo_root/scripts/run-risk-matching-command-e2e.sh"
+cluster_data="$repo_root/scripts/end-to-end/critical-consumers/lib/cluster-data.sh"
 
-for path in "$dockerfile" "$wrapper" "$orchestrator"; do
+for path in "$dockerfile" "$wrapper" "$orchestrator" "$cluster_data"; do
   [[ -f "$path" ]] || {
     printf 'RM-1 verifier support file does not exist: %s\n' "$path" >&2
     exit 1
@@ -22,6 +23,39 @@ done
 
 bash -n "$wrapper"
 bash -n "$orchestrator"
+
+grep -Fq 'critical-consumers/lib/cluster-data.sh' "$orchestrator" || {
+  printf '%s\n' 'RM-1 orchestrator must decode the mounted artifact through the shared ConfigMap seam.' >&2
+  exit 1
+}
+
+(
+  # shellcheck source=scripts/end-to-end/critical-consumers/lib/cluster-data.sh
+  source "$cluster_data"
+  binary_payload='{"marketSnapshot":{"instruments":[{"venueMic":"XTAI","symbol":"2330","eligibility":"ELIGIBLE","referencePriceUnits":10000000,"lowerPriceLimitUnits":9000000,"upperPriceLimitUnits":11000000}]}}'
+
+  for configmap_field in binaryData data; do
+    kns() {
+      [[ "${1:-}" == get && "${2:-}" == configmap/matching-daily-artifact ]] || return 1
+      if [[ "$configmap_field" == binaryData ]]; then
+        jq -n --arg payload "$binary_payload" \
+          '{binaryData:{"market_reference.json":($payload|@base64)}}'
+      else
+        jq -n --arg payload "$binary_payload" \
+          '{data:{"market_reference.json":$payload}}'
+      fi
+    }
+
+    kns get configmap/matching-daily-artifact -o json >/dev/null
+    decoded_artifact="$(decode_configmap_file matching-daily-artifact market_reference.json)"
+    jq -e '.marketSnapshot.instruments[0].referencePriceUnits == 10000000' \
+      <<<"$decoded_artifact" >/dev/null || {
+      printf 'RM-1 shared ConfigMap seam must decode %s market_reference.json.\n' \
+        "$configmap_field" >&2
+      exit 1
+    }
+  done
+)
 
 grep -Fq "command_id=\"\$(jq -r '.commandId' \"\$evidence_dir/request.json\")\"" \
   "$orchestrator" || {

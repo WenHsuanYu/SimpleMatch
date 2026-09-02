@@ -260,6 +260,31 @@ tools/market-reference-builder/data/2026-08-11/delivery/manifest.yaml
 
 Canonical cluster 名稱是 `simplematch-live`，Kubernetes context 是 `kind-simplematch-live`。
 
+### 7.0 使用指定的 Docker Desktop disk image
+
+若 local lab 必須使用外接 ext4 磁碟上的 Docker Desktop backend，所有 kind、registry
+與 cleanup 命令都要明確指向 Desktop socket，不要依賴 Docker CLI 的 current context：
+
+```bash
+export DOCKER_HOST=unix:///home/alexyu/.docker/desktop/docker.sock
+export KUBECONFIG=/tmp/simplematch-kind-desktop.kubeconfig
+export SIMPLEMATCH_LOCAL_REGISTRY_PORT=5002
+```
+
+目前 Desktop VM 的 QEMU disk argument 應指向：
+`/media/alexyu/250g_ext4/.docker/desktop/vms/0/data/DockerDesktop/Docker.raw`。
+`docker info` 顯示的 `/var/lib/docker` 是 VM 內部路徑，不代表另一個 host backend。
+建立或清理前可用以下唯讀檢查確認實際 endpoint 與 disk image：
+
+```bash
+docker info --format 'Name={{.Name}} Root={{.DockerRootDir}} Driver={{.Driver}}'
+ps -eo pid,args | rg 'qemu-system-x86_64.*Docker.raw'
+```
+
+同一個 `simplematch-live` 名稱可能同時存在於不同 Docker daemon；因此 reset、create、
+verify 與 cleanup 都必須保留上述 `DOCKER_HOST`。若要操作 native `/var/run/docker.sock`，
+請另行明確設定該 endpoint 並先完成 inventory，不能用 `env -u DOCKER_HOST` 猜測目標。
+
 ### 7.1 首次建立
 
 ```bash

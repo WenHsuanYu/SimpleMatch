@@ -5,6 +5,11 @@ script_dir="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
 repo_root="$(cd -- "$script_dir/.." && pwd)"
 manifest="$repo_root/deploy/k8s/kafka-kraft.yaml"
 
+fail_test() {
+  printf 'Kafka KRaft manifest and lifecycle contract: %s\n' "$*" >&2
+  exit 1
+}
+
 command -v ruby >/dev/null 2>&1 || {
   printf '%s\n' 'ruby is required.' >&2
   exit 1
@@ -14,6 +19,10 @@ broker_init="$(mktemp "${TMPDIR:-/tmp}/simplematch-kafka-kraft-init.XXXXXX")"
 topic_provision="$(mktemp "${TMPDIR:-/tmp}/simplematch-kafka-kraft-topic.XXXXXX")"
 fake_storage="$(mktemp "${TMPDIR:-/tmp}/simplematch-kafka-kraft-storage.XXXXXX")"
 format_log="$(mktemp "${TMPDIR:-/tmp}/simplematch-kafka-kraft-format.XXXXXX")"
+fake_topics="$(mktemp "${TMPDIR:-/tmp}/simplematch-kafka-kraft-topics.XXXXXX")"
+fake_configs="$(mktemp "${TMPDIR:-/tmp}/simplematch-kafka-kraft-configs.XXXXXX")"
+topic_state="$(mktemp "${TMPDIR:-/tmp}/simplematch-kafka-kraft-topic-state.XXXXXX")"
+topic_output="$(mktemp "${TMPDIR:-/tmp}/simplematch-kafka-kraft-topic-output.XXXXXX")"
 fresh_data="$(mktemp -d "${TMPDIR:-/tmp}/simplematch-kafka-kraft-fresh.XXXXXX")"
 fresh_config="$(mktemp -d "${TMPDIR:-/tmp}/simplematch-kafka-kraft-config.XXXXXX")"
 mismatch_data="$(mktemp -d "${TMPDIR:-/tmp}/simplematch-kafka-kraft-mismatch.XXXXXX")"
@@ -22,7 +31,7 @@ node_mismatch_data="$(mktemp -d "${TMPDIR:-/tmp}/simplematch-kafka-kraft-node-mi
 node_mismatch_config="$(mktemp -d "${TMPDIR:-/tmp}/simplematch-kafka-kraft-node-mismatch-config.XXXXXX")"
 dirty_data="$(mktemp -d "${TMPDIR:-/tmp}/simplematch-kafka-kraft-dirty.XXXXXX")"
 dirty_config="$(mktemp -d "${TMPDIR:-/tmp}/simplematch-kafka-kraft-dirty-config.XXXXXX")"
-trap 'rm -f "$broker_init" "$topic_provision" "$fake_storage" "$format_log"; rm -rf "$fresh_data" "$fresh_config" "$mismatch_data" "$mismatch_config" "$node_mismatch_data" "$node_mismatch_config" "$dirty_data" "$dirty_config"' EXIT
+trap 'rm -f "$broker_init" "$topic_provision" "$fake_storage" "$format_log" "$fake_topics" "$fake_configs" "$topic_state" "$topic_output"; rm -rf "$fresh_data" "$fresh_config" "$mismatch_data" "$mismatch_config" "$node_mismatch_data" "$node_mismatch_config" "$dirty_data" "$dirty_config"' EXIT
 
 ruby -rjson -ryaml - "$manifest" "$broker_init" "$topic_provision" <<'RUBY'
 manifest_path, broker_init_path, topic_provision_path = ARGV
@@ -218,6 +227,74 @@ File.write(topic_provision_path, topic_provision)
 RUBY
 
 chmod +x "$broker_init" "$topic_provision"
+
+printf '%s\n' \
+  "#!/bin/sh" \
+  "set -eu" \
+  "operation=" \
+  "topic=" \
+  "while [ \"\$#\" -gt 0 ]; do" \
+  "  case \"\$1\" in" \
+  "    --list) operation=list ;;" \
+  "    --describe) operation=describe ;;" \
+  "    --create) operation=create ;;" \
+  "    --topic) topic=\"\$2\"; shift ;;" \
+  "  esac" \
+  "  shift" \
+  "done" \
+  "state=\"\${KAFKA_FAKE_TOPIC_STATE:?}\"" \
+  "case \"\$operation\" in" \
+  "  list) exit 0 ;;" \
+  "  create)" \
+  "    grep -Fqx \"created:\$topic\" \"\$state\" 2>/dev/null || printf \"%s\\n\" \"created:\$topic\" >>\"\$state\"" \
+  "    exit 0" \
+  "    ;;" \
+  "  describe)" \
+  "    grep -Fqx \"created:\$topic\" \"\$state\" 2>/dev/null || exit 1" \
+  "    count=\"\$(grep -Fc \"described:\$topic\" \"\$state\" 2>/dev/null || true)\"" \
+  "    printf \"%s\\n\" \"described:\$topic\" >>\"\$state\"" \
+  "    if [ \"\$topic\" = matching.events ] && [ \"\$count\" -lt 1 ]; then exit 1; fi" \
+  "    case \"\$topic\" in" \
+  "      simplematch-connect-offsets) partitions=25 ;;" \
+  "      simplematch-connect-configs) partitions=1 ;;" \
+  "      simplematch-connect-status) partitions=3 ;;" \
+  "      *) partitions=15 ;;" \
+  "    esac" \
+  "    printf \"Topic: %s\\tPartitionCount: %s\\tReplicationFactor: 3\\n\" \"\$topic\" \"\$partitions\"" \
+  "    ;;" \
+  "  *) exit 2 ;;" \
+  "esac" \
+  >"$fake_topics"
+chmod +x "$fake_topics"
+
+printf '%s\n' \
+  "#!/bin/sh" \
+  "set -eu" \
+  "topic=" \
+  "while [ \"\$#\" -gt 0 ]; do" \
+  "  if [ \"\$1\" = --entity-name ]; then topic=\"\$2\"; shift; fi" \
+  "  shift" \
+  "done" \
+  "case \"\$topic\" in" \
+  "  simplematch-connect-*) cleanup=compact ;;" \
+  "  *) cleanup=delete ;;" \
+  "esac" \
+  "printf \"cleanup.policy=%s retention.ms=2592000000 min.insync.replicas=2\\n\" \"\$cleanup\"" \
+  >"$fake_configs"
+chmod +x "$fake_configs"
+
+: >"$topic_state"
+if ! env \
+    KAFKA_TOPICS_BIN="$fake_topics" \
+    KAFKA_CONFIGS_BIN="$fake_configs" \
+    KAFKA_FAKE_TOPIC_STATE="$topic_state" \
+    "$topic_provision" >"$topic_output" 2>&1; then
+  fail_test 'topic provisioning must tolerate transient post-create metadata failures'
+fi
+grep -Fq 'Kafka KRaft topic contract provisioned' "$topic_output" ||
+  fail_test 'topic provisioning fixture did not complete the topic contract'
+[[ "$(grep -Fc 'described:matching.events' "$topic_state")" -eq 2 ]] ||
+  fail_test 'topic provisioning fixture did not exercise a retry after creating matching.events'
 
 printf '%s\n' \
   '#!/bin/sh' \

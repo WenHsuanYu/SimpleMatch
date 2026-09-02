@@ -530,7 +530,13 @@ and must not be interpreted as a requirement to push images or obtain external c
   inbox/checkpoint/read-model schema, asynchronous final Matching and Account lifecycle consumers,
   versioned read APIs, active-artifact installation seam, freshness metadata, replay reset, and
   optional Redis read-through fallback. Cache read and write failures fall back to the durable
-  PostgreSQL projection. Focused H2 projection and cache-fallback tests pass.
+  PostgreSQL projection. Focused H2 projection and cache-fallback tests pass. The current source
+  revision also passes the query-service, certification, Kafka, Kubernetes, and critical-consumer
+  contract suites. Fresh Desktop attempts are retained separately: r5 stopped before deployment
+  when the verifier image build hit a Gradle distribution read timeout, and r6 stopped at the
+  preflight after kube-controller-manager and kube-scheduler re-entered CrashLoopBackOff during
+  etcd lease starvation (`out/certification/issue-137-query-20260831-desktop-r5/report.md`,
+  `out/certification/issue-137-query-20260831-desktop-r6-preflight/`).
 - **Missing behavior:** Local production-like Kafka/PostgreSQL/Redis deployment and a fresh
   retained outage/replay certification remain part of PD-1 and the repository release gate. The
   query outage runner now includes a controlled public IOC order while Query is down and fails

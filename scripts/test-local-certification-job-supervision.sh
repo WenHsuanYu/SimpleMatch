@@ -87,7 +87,7 @@ supervisor_deadline="${hierarchy[3]}"
     "$admin_timeout" "$retry_budget" "$job_deadline" "$supervisor_deadline" >&2
   exit 1
 }
-[[ "$admin_timeout" == 15 && "$retry_budget" == 90 && "$job_deadline" == 600 && "$supervisor_deadline" == 630 ]] || {
+[[ "$admin_timeout" == 15 && "$retry_budget" == 180 && "$job_deadline" == 600 && "$supervisor_deadline" == 630 ]] || {
   fail 'Kafka certification timeout defaults changed without updating the contract'
 }
 

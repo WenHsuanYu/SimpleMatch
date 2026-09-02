@@ -144,7 +144,7 @@ data:
     topics_bin="${KAFKA_TOPICS_BIN:-/opt/kafka/bin/kafka-topics.sh}"
     configs_bin="${KAFKA_CONFIGS_BIN:-/opt/kafka/bin/kafka-configs.sh}"
     admin_operation_timeout_seconds="${KAFKA_ADMIN_OPERATION_TIMEOUT_SECONDS:-15}"
-    bootstrap_retry_seconds="${KAFKA_BOOTSTRAP_RETRY_SECONDS:-90}"
+    bootstrap_retry_seconds="${KAFKA_BOOTSTRAP_RETRY_SECONDS:-180}"
     retry_sleep_seconds=5
 
     case "$admin_operation_timeout_seconds" in
@@ -168,44 +168,80 @@ data:
         "$configs_bin" --bootstrap-server "$bootstrap" "$@"
     }
 
+    retry_before_deadline() {
+      retry_now="$(date +%s)"
+      retry_remaining=$(( bootstrap_deadline - retry_now ))
+      [ "$retry_remaining" -gt "$admin_operation_timeout_seconds" ] || return 1
+      retry_sleep_for="$retry_sleep_seconds"
+      retry_max_sleep=$(( retry_remaining - admin_operation_timeout_seconds ))
+      [ "$retry_sleep_for" -le "$retry_max_sleep" ] || retry_sleep_for="$retry_max_sleep"
+      sleep "$retry_sleep_for"
+    }
+
     bootstrap_deadline=$(( $(date +%s) + bootstrap_retry_seconds ))
     while ! run_topics --list >/dev/null 2>&1; do
-      now="$(date +%s)"
-      remaining=$(( bootstrap_deadline - now ))
-      [ "$remaining" -gt "$admin_operation_timeout_seconds" ] ||
+      retry_before_deadline ||
         fail "Kafka bootstrap $bootstrap did not become available within ${bootstrap_retry_seconds}s"
-      sleep_for="$retry_sleep_seconds"
-      max_sleep=$(( remaining - admin_operation_timeout_seconds ))
-      [ "$sleep_for" -le "$max_sleep" ] || sleep_for="$max_sleep"
-      sleep "$sleep_for"
     done
 
-    temporary_output="$(mktemp)"
-    trap 'rm -f "$temporary_output"' EXIT
+    wait_for_topic_description() {
+      topic_name="$1"
+      while :; do
+        if description="$(run_topics --describe --topic "$topic_name" 2>&1)"; then
+          printf '%s\n' "$description"
+          return 0
+        fi
+        retry_before_deadline || return 1
+      done
+    }
+
+    wait_for_topic_configuration() {
+      topic_name="$1"
+      while :; do
+        if topic_config="$(run_configs \
+          --entity-type topics --entity-name "$topic_name" --describe --all 2>&1)"; then
+          printf '%s\n' "$topic_config"
+          return 0
+        fi
+        retry_before_deadline || return 1
+      done
+    }
+
+    create_topic_until_available() {
+      topic_name="$1"
+      topic_partitions="$2"
+      topic_cleanup_policy="$3"
+      while :; do
+        if run_topics --create --if-not-exists \
+            --topic "$topic_name" \
+            --partitions "$topic_partitions" \
+            --replication-factor 3 \
+            --config "cleanup.policy=$topic_cleanup_policy" \
+            --config retention.ms=2592000000 \
+            --config min.insync.replicas=2; then
+          return 0
+        fi
+        retry_before_deadline || return 1
+      done
+    }
 
     ensure_topic() {
       name="$1"
       partitions="$2"
       cleanup_policy="$3"
-      if ! run_topics --describe --topic "$name" >"$temporary_output" 2>&1; then
-        run_topics --create --if-not-exists \
-          --topic "$name" \
-          --partitions "$partitions" \
-          --replication-factor 3 \
-          --config "cleanup.policy=$cleanup_policy" \
-          --config retention.ms=2592000000 \
-          --config min.insync.replicas=2 || fail "cannot create topic $name"
+      if ! run_topics --describe --topic "$name" >/dev/null 2>&1; then
+        create_topic_until_available "$name" "$partitions" "$cleanup_policy" ||
+          fail "cannot create topic $name"
       fi
 
-      description="$(run_topics --describe --topic "$name" 2>&1)" ||
+      description="$(wait_for_topic_description "$name")" ||
         fail "cannot describe topic $name"
       printf '%s\n' "$description" | grep -Fq "PartitionCount: $partitions" ||
         fail "topic $name has the wrong partition count"
       printf '%s\n' "$description" | grep -Fq 'ReplicationFactor: 3' ||
         fail "topic $name has the wrong replication factor"
 
-      topic_config="$(run_configs \
-        --entity-type topics --entity-name "$name" --describe --all 2>&1)" ||
+      topic_config="$(wait_for_topic_configuration "$name")" ||
         fail "cannot describe configuration for topic $name"
       printf '%s\n' "$topic_config" | grep -Fq "cleanup.policy=$cleanup_policy" ||
         fail "topic $name has the wrong cleanup policy"
@@ -457,7 +493,7 @@ spec:
             - name: KAFKA_ADMIN_OPERATION_TIMEOUT_SECONDS
               value: "15"
             - name: KAFKA_BOOTSTRAP_RETRY_SECONDS
-              value: "90"
+              value: "180"
           resources:
             requests:
               cpu: 100m

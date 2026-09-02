@@ -5,6 +5,8 @@ script_dir="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
 repo_root="$(cd -- "$script_dir/.." && pwd)"
 # shellcheck source=scripts/lib/local-certification-provenance.sh
 source "$script_dir/lib/local-certification-provenance.sh"
+# shellcheck source=scripts/end-to-end/critical-consumers/lib/cluster-data.sh
+source "$script_dir/end-to-end/critical-consumers/lib/cluster-data.sh"
 
 # RM-1 deployed verification intentionally reuses an already-running local production-like
 # namespace. Kubernetes execution policy lives in the repository-owned Job manifest; this shell
@@ -201,6 +203,10 @@ current_context="$(kubectl config current-context)"
   "current Kubernetes context=$current_context, expected canonical $expected_context"
 kubectl get namespace "$namespace" >/dev/null 2>&1 || die "namespace does not exist: $namespace"
 
+kns() {
+  kubectl --context "$expected_context" -n "$namespace" "$@"
+}
+
 retained_evidence_dir="$(cd -- "$retained_evidence_dir" && pwd)" || die \
   "cannot resolve retained evidence directory: $retained_evidence_dir"
 retained_verifier_image="$(
@@ -240,17 +246,20 @@ artifact_day="$(
 )"
 [[ "$artifact_day" == "$trading_day" ]] || die \
   "matching-session-config trading_day=$artifact_day, expected $trading_day"
+artifact_json="$(
+  decode_configmap_file matching-daily-artifact market_reference.json
+)" || die 'mounted Market Reference could not be decoded'
+[[ -n "$artifact_json" ]] || die 'mounted Market Reference has no market_reference.json'
 artifact_instrument="$(
   jq -er '
-    .data["market_reference.json"] | fromjson
-    | [.marketSnapshot.instruments[]
+    [.marketSnapshot.instruments[]
        | select(.eligibility == "ELIGIBLE"
            and .referencePriceUnits != null
            and .lowerPriceLimitUnits != null
            and .upperPriceLimitUnits != null)]
     | sort_by([.venueMic, .symbol])
     | .[0]
-  ' "$evidence_dir/market-reference-configmap.json"
+  ' <<<"$artifact_json"
 )" || die 'mounted Market Reference has no eligible final-price instrument'
 artifact_symbol="$(jq -er '.symbol | strings | select(test("^[A-Z0-9]{1,12}$"))' \
   <<<"$artifact_instrument")" || die \
@@ -261,10 +270,9 @@ artifact_rule_id="$(jq -er '.marketRuleId' <<<"$artifact_instrument")" || die \
   'selected Market Reference instrument has no market rule'
 artifact_quantity="$(
   jq -er --arg rule "$artifact_rule_id" '
-    .data["market_reference.json"] | fromjson
-    | .marketRules.rules[] | select(.ruleId == $rule)
+    .marketRules.rules[] | select(.ruleId == $rule)
     | .boardLotShares | select(type == "number" and floor == .)
-  ' "$evidence_dir/market-reference-configmap.json"
+  ' <<<"$artifact_json"
 )" || die 'selected Market Reference instrument has no board lot quantity'
 [[ "$artifact_quantity" =~ ^[1-9][0-9]*$ ]] || die \
   'selected Market Reference board lot quantity is not a safe positive integer'

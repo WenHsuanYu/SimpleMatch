@@ -93,11 +93,11 @@ docker info >/dev/null 2>&1 || simplematch_die 'Docker daemon is not reachable'
 kind_clusters=("$canonical_kind_cluster")
 compose_projects=("$default_compose_project")
 
-for cluster in "${extra_kind_clusters[@]:-}"; do
+for cluster in "${extra_kind_clusters[@]}"; do
   [[ "$cluster" == simplematch* ]] || simplematch_die "refusing non-SimpleMatch kind cluster: $cluster"
   simplematch_append_unique kind_clusters "$cluster"
 done
-for project in "${extra_compose_projects[@]:-}"; do
+for project in "${extra_compose_projects[@]}"; do
   [[ "$project" == simplematch* ]] || simplematch_die "refusing non-SimpleMatch Compose project: $project"
   simplematch_append_unique compose_projects "$project"
 done
