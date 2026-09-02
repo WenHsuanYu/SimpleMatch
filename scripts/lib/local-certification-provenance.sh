@@ -2,34 +2,47 @@
 
 # Provenance helpers shared by the production-like runner and dependent
 # certification workflows. A retained namespace is valid evidence only when the
-# verifier process and repository revision come from the same clean source tree.
+# verifier process and repository revision come from the same clean runtime
+# source inputs.
 
 _provenance_dir="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
 # shellcheck source=scripts/lib/local-image-transport.sh
 source "$_provenance_dir/local-image-transport.sh"
 unset _provenance_dir
 
+simplematch_certification_runtime_source_paths() {
+  printf '%s\n' \
+    . \
+    ':(exclude)graphify-out/**' \
+    ':(exclude)docs/**' \
+    ':(exclude)*.md' \
+    ':(exclude)**/*.md'
+}
+
 simplematch_certification_source_revision() {
   local repo_root="$1"
   local untracked_source
+  local -a runtime_source_paths
+
+  mapfile -t runtime_source_paths < <(simplematch_certification_runtime_source_paths)
 
   if ! git -C "$repo_root" diff --quiet --ignore-submodules -- \
-        . ':(exclude)graphify-out/**' ||
+        "${runtime_source_paths[@]}" ||
      ! git -C "$repo_root" diff --cached --quiet --ignore-submodules -- \
-        . ':(exclude)graphify-out/**'; then
+        "${runtime_source_paths[@]}"; then
     printf '%s\n' \
-      'certification source has tracked working-tree changes; commit or restore them before certification.' \
+      'certification runtime source has tracked changes; commit or restore them before certification.' \
       >&2
     return 1
   fi
 
   untracked_source="$(
     git -C "$repo_root" ls-files --others --exclude-standard -- \
-      . ':(exclude)graphify-out/**'
+      "${runtime_source_paths[@]}"
   )" || return 1
   if [[ -n "$untracked_source" ]]; then
     printf '%s\n' \
-      'certification source has untracked repository files; commit, ignore, or remove them before certification.' \
+      'certification runtime source has untracked files; commit, ignore, or remove them before certification.' \
       >&2
     printf '%s\n' "$untracked_source" >&2
     return 1

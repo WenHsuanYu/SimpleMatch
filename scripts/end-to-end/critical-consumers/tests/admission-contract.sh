@@ -49,6 +49,9 @@ source = File.read(path, encoding: "UTF-8")
 abort "prepared FIX client must retain structured ExecutionReport evidence" unless
   source.include?("writeEvidence(") &&
   source.include?("accountId, timeInForce, terminalReport")
+abort "prepared FIX client must accept the explicit order side" unless
+  source.include?("SIMPLEMATCH_LIVE_FIX_SIDE") &&
+  source.include?("order.setChar(quickfix.field.Side.FIELD, side.charAt(0))")
 abort "prepared FIX client must not classify admission semantics inside JUnit" if
   source.include?("assertThat(actualExecType)") || source.include?("assertThat(actualOrdStatus)")
 RUBY
@@ -189,6 +192,41 @@ YAML
   jq -e '.venueMic == "XTAI" and .symbol == "2330"' \
     "$evidence_dir/submission/selected-instrument.json" >/dev/null ||
     fail 'selected-instrument evidence does not preserve the Gateway venue identity'
+)
+
+(
+  # shellcheck source=scripts/end-to-end/critical-consumers/lib/cluster-data.sh
+  source "$cluster_module"
+  evidence_dir="$temporary_directory/position-evidence"
+  mkdir -p "$evidence_dir/submission"
+  account_id='account-with-quote'
+  symbol="O'Reilly"
+  quantity=1000
+  position_postgres_pod=postgres-0
+  captured_args="$temporary_directory/position-args.txt"
+  captured_sql="$temporary_directory/position.sql"
+
+  postgres_pod() {
+    printf '%s\n' "$position_postgres_pod"
+  }
+
+  kns() {
+    printf '%s\n' "$@" >"$captured_args"
+    cat >"$captured_sql"
+  }
+
+  seed_account_position
+  grep -Fx -- '-v' "$captured_args" >/dev/null ||
+    fail 'position fixture must pass psql variables explicitly'
+  grep -Fx -- "account_id=$account_id" "$captured_args" >/dev/null ||
+    fail 'position fixture must bind account_id as a psql variable'
+  grep -Fx -- "symbol=$symbol" "$captured_args" >/dev/null ||
+    fail 'position fixture must bind symbol as a psql variable'
+  grep -Fq ":'account_id', :'symbol', :long_quantity" "$captured_sql" ||
+    fail 'position fixture SQL must use escaped psql string variables'
+  if grep -Fq "'$account_id', '$symbol'" "$captured_sql"; then
+    fail 'position fixture SQL must not interpolate artifact/account text directly'
+  fi
 )
 
 (

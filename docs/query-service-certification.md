@@ -35,9 +35,14 @@ that no query Pod exists, and captures the Risk admission, Account reservation, 
 QuickFIX, and market-data projection state while the query API is actually unavailable. The
 critical snapshot must remain unchanged through the quiet portion of this fault window. During the
 outage it first runs a bounded quiescent-isolation probe (configurable with
-`SIMPLEMATCH_QUERY_ISOLATION_PROBE_SECONDS`, maximum 30 seconds) and a per-command timeout
-(configured by `SIMPLEMATCH_QUERY_ISOLATION_COMMAND_TIMEOUT_SECONDS`, maximum 30 seconds). The
-evidence records the probe wall-clock start, completion, elapsed milliseconds, and sample indexes.
+`SIMPLEMATCH_QUERY_ISOLATION_PROBE_SECONDS`, maximum 30 complete samples) and a per-command
+timeout (configured by `SIMPLEMATCH_QUERY_ISOLATION_COMMAND_TIMEOUT_SECONDS`, maximum 30 seconds).
+The configured probe value requests complete samples with one-second gaps; it is not a hard
+deadline for the shell collector. Kubernetes fault handling, Kafka committed-offset inspection,
+and evidence materialization can legitimately make wall-clock elapsed time longer. Every external
+command remains individually bounded, every requested sample must still pass all fail-closed
+checks, and the evidence records the actual probe start, completion, elapsed milliseconds, and
+sample indexes.
 Each sample also records the exact Matching fleet topology: ordinals 0 through 14, current
 StatefulSet revision and owner, Pod UID and node, the matching PVC and bound PV, and the PV
 node-affinity mapping. Unowned or extra Matching Pods fail the probe before a verdict is produced.
@@ -48,16 +53,24 @@ non-decreasing. This repeated operational observation proves that the outage cau
 health regression while the system was quiescent.
 
 The runner then releases one prepared public FIX NewOrderSingle with `TimeInForce=IOC` while the
-query deployment still has zero Pods. The Gateway is opened from three fresh system observations
-before the fault, and the submitted order uses a newly seeded account limit and the immutable
-artifact-selected instrument. The active evidence must correlate the FIX acceptance, durable Risk
-admission, routed partition, exact `MATCHING_EVENT_TYPE_ORDER_CANCELLED`, terminal Persistence
+query deployment still has zero Pods. The FIX client is held at its ready barrier while the
+quiescent outage probe runs; immediately before release, the Gateway is opened from three fresh
+system observations. This placement keeps the final observation inside the five-second
+`stale-status-after` window instead of allowing the probe to race the fail-closed safety monitor.
+The submitted order uses a newly seeded account limit and the immutable artifact-selected
+instrument. The active evidence must correlate the FIX acceptance, durable Risk admission, routed
+partition, exact `MATCHING_EVENT_TYPE_ORDER_CANCELLED`, terminal Persistence
 projection, market-data projection progress and inbox, all three critical-consumer inboxes, and a
 sent QuickFIX terminal delivery intent. It also requires zero quarantine history, zero pending FIX
 intents, and zero active Matching orders after the event. The IOC shape is intentional: with no
 opposite resting order it creates one deterministic terminal event without leaving state that would
 contaminate the later replay comparison. The active check fails closed when any identity, event
-offset, terminal status, inbox count, or query-outage assertion is absent. Query-service is restored
+offset, terminal status, inbox count, or query-outage assertion is absent. The Matching Event
+observer records both the configured Kafka seek start offset and the matched record offset, so the
+verdict can prove that the event came from the intended observation range. The critical-consumer
+snapshot also carries each market-data partition's `last_processed_offset` and `recovery_state`,
+so active progress is compared with the observed event offset rather than inferred from a summary
+counter. Query-service is restored
 only after this active proof and before the normally disabled authenticated reset adapter is enabled;
 the reset clears only query-owned rebuildable state. Immediately before the reset, it records the
 15-partition Kafka high-water

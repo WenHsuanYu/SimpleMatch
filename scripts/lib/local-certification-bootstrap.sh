@@ -95,19 +95,13 @@ phase_marker_directory="$evidence_dir/phase-markers"
 run_context_file="$evidence_dir/run-context"
 certification_deadline_epoch=$(( $(date +%s) + certification_timeout_seconds ))
 source_signature="$({
+  certification_source_paths=()
+
   git -C "$repo_root" rev-parse HEAD
+  mapfile -t certification_source_paths \
+    < <(simplematch_certification_runtime_source_paths)
   git -C "$repo_root" ls-files -co --exclude-standard -- \
-    AGENTS.md deploy/k8s deploy/docker \
-    scripts/run-local-production-like-certification.sh \
-    scripts/lib/local-common.sh scripts/lib/local-kind.sh \
-    scripts/lib/local-image-inventory.sh scripts/lib/local-image-transport.sh \
-    scripts/lib/local-registry.sh scripts/lib/local-certification-*.sh \
-    scripts/build-local-images.sh scripts/prepare-local-kubernetes-images.sh \
-    scripts/normalize-local-images-for-kind.sh scripts/publish-local-images.sh \
-    scripts/render-local-kubernetes-manifest.sh \
-    scripts/test-kubernetes-overlays.sh scripts/test-local-kubernetes-dependencies.sh \
-    scripts/test-matching-kubernetes-manifests.sh scripts/test-matching-topic-profile.sh \
-    scripts/test-flyway-services.sh | LC_ALL=C sort -u |
+    "${certification_source_paths[@]}" | LC_ALL=C sort -u |
     while IFS= read -r path; do
       [[ -n "$path" ]] && sha256sum "$repo_root/$path"
     done

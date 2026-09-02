@@ -12,6 +12,19 @@ restore_query_certification_environment() {
   if declare -F restore_query_active_liveness >/dev/null 2>&1; then
     restore_query_active_liveness
   fi
+  if declare -F stop_background_process >/dev/null 2>&1; then
+    stop_background_process "${fix_submit_pid:-}"
+  fi
+  fix_submit_pid=""
+  if declare -F stop_fix_port_forward >/dev/null 2>&1; then
+    stop_fix_port_forward
+  fi
+  if declare -F stop_gateway_port_forward >/dev/null 2>&1; then
+    stop_gateway_port_forward
+  fi
+  if declare -F restore_gateway_environment >/dev/null 2>&1; then
+    restore_gateway_environment
+  fi
   stop_query_port_forward
   if [[ "$redis_scaled" == true && -n "$original_redis_replicas" ]]; then
     if scale_deployment redis "$original_redis_replicas"; then

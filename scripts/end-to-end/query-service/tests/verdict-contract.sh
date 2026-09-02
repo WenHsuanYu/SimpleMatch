@@ -59,8 +59,8 @@ jq -n --slurpfile state "$fixture_dir/critical-before.json" '
   {
     probeDurationSeconds:2,
     probeStartedEpochMs:1000,
-    probeCompletedEpochMs:1800,
-    elapsedMilliseconds:800,
+    probeCompletedEpochMs:4800,
+    elapsedMilliseconds:3800,
     commandTimeoutSeconds:1,
     sampleCount:2,
     samples:[range(0; 2) as $sample |

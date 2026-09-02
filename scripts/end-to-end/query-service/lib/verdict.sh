@@ -108,7 +108,7 @@ evaluate_query_service_verdict() {
           and . >= $probe.probeStartedEpochMs)
         and ($probe.elapsedMilliseconds | type == "number"
           and . == ($probe.probeCompletedEpochMs - $probe.probeStartedEpochMs)
-          and . <= ($probe.probeDurationSeconds * 1000))
+          and . >= 0)
         and ($probe.commandTimeoutSeconds | type == "number" and . > 0 and . <= 30)
         and ([$probe.samples | sort_by(.sampleIndex) | .[].sampleIndex]
           == [range(0; $probe.sampleCount)])

@@ -701,9 +701,15 @@ validate_kafka_position_stability() {
 capture_gateway_observation_once() {
   local attempt_dir="$1"
   local destination="$2"
+  local expected_active_matching_orders="${3:-0}"
   mkdir -p "$attempt_dir/matching"
   observation_failure_reason=""
   observation_failure_classification=""
+  [[ "$expected_active_matching_orders" =~ ^[0-9]+$ ]] || {
+    set_observation_failure INVALID_CONFIGURATION \
+      "expected active Matching order count is invalid"
+    return 1
+  }
   date +%s%3N >"$attempt_dir/attempt-started-at"
 
   local command_after="$attempt_dir/matching-commands-after.json"
@@ -775,7 +781,7 @@ capture_gateway_observation_once() {
     return 2
   }
 
-  jq -e '
+  jq -e --argjson expectedActiveMatchingOrders "$expected_active_matching_orders" '
     .persistenceQuarantines == 0
     and .accountQuarantines == 0
     and .quickfixQuarantines == 0
@@ -783,7 +789,7 @@ capture_gateway_observation_once() {
     and .accountQuarantineHistory == 0
     and .quickfixQuarantineHistory == 0
     and .quickfixPendingIntents == 0
-    and .activeMatchingOrders == 0
+    and .activeMatchingOrders == $expectedActiveMatchingOrders
   ' "$consumer_state" >/dev/null || {
     set_observation_failure INVALID_BASELINE \
       "baseline contains quarantine history, pending FIX delivery, or active orders"
@@ -995,6 +1001,7 @@ gateway_response_is_retryable_stale() {
 capture_gateway_observation() {
   local label="$1"
   local destination="$2"
+  local expected_active_matching_orders="${3:-0}"
   local attempt
   local status
   local collection_expiration_streak=0
@@ -1005,7 +1012,8 @@ capture_gateway_observation() {
     observation_failure_reason=""
     observation_failure_classification=""
     status=0
-    capture_gateway_observation_once "$attempt_dir" "$destination" || status="$?"
+    capture_gateway_observation_once \
+      "$attempt_dir" "$destination" "$expected_active_matching_orders" || status="$?"
     date +%s%3N >"$attempt_dir/attempt-completed-at"
     write_observation_timing "$attempt_dir"
 

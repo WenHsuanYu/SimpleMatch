@@ -49,6 +49,9 @@ out/
 .gradle/
 vcpkg_installed/
 
+# Kotlin compiler daemon diagnostics and liveness markers
+**/.kotlin/
+
 # Local runtime config (do not commit secrets)
 config/simplematch.json
 

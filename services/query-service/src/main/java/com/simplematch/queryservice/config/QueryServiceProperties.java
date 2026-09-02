@@ -1,6 +1,8 @@
 package com.simplematch.queryservice.config;
 
+import java.time.Duration;
 import org.springframework.boot.context.properties.ConfigurationProperties;
+import org.springframework.boot.context.properties.bind.ConstructorBinding;
 
 /** Runtime ownership and delivery settings for the rebuildable query projections. */
 @ConfigurationProperties("simplematch.query-service")
@@ -46,14 +48,46 @@ public record QueryServiceProperties(
   }
 
   /** Defines optional Redis read-through cache ownership. */
-  public record Redis(boolean enabled, String keyPrefix) {
-    /** Validates the cache namespace. */
+  public record Redis(
+      boolean enabled, String keyPrefix, Duration commandTimeout, Duration connectTimeout) {
+    private static final Duration DEFAULT_COMMAND_TIMEOUT = Duration.ofSeconds(2);
+    private static final Duration DEFAULT_CONNECT_TIMEOUT = Duration.ofMillis(500);
+    private static final Duration MAX_FAILURE_TIMEOUT = Duration.ofSeconds(10);
+
+    /** Keeps the original two-value construction seam while applying bounded client defaults. */
+    public Redis(boolean enabled, String keyPrefix) {
+      this(enabled, keyPrefix, null, null);
+    }
+
+    /** Validates the cache namespace and bounds each Redis failure wait. */
+    @ConstructorBinding
     public Redis {
       requireText(keyPrefix, "query Redis key prefix");
+      commandTimeout =
+          positiveOrDefault(commandTimeout, DEFAULT_COMMAND_TIMEOUT, "commandTimeout");
+      connectTimeout =
+          positiveOrDefault(connectTimeout, DEFAULT_CONNECT_TIMEOUT, "connectTimeout");
     }
 
     private static Redis defaults() {
-      return new Redis(false, "query:v1");
+      return new Redis(false, "query:v1", DEFAULT_COMMAND_TIMEOUT, DEFAULT_CONNECT_TIMEOUT);
+    }
+
+    private static Duration positiveOrDefault(
+        Duration value, Duration defaultValue, String name) {
+      if (value == null) {
+        return defaultValue;
+      }
+      if (value.isNegative() || value.isZero()) {
+        throw new IllegalArgumentException("query Redis " + name + " must be positive");
+      }
+      if (value.compareTo(MAX_FAILURE_TIMEOUT) > 0) {
+        throw new IllegalArgumentException("query Redis " + name + " must not exceed 10 seconds");
+      }
+      if (value.toMillis() <= 0) {
+        throw new IllegalArgumentException("query Redis " + name + " must be at least 1ms");
+      }
+      return value;
     }
   }
 

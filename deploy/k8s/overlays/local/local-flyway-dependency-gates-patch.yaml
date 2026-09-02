@@ -48,3 +48,8 @@
   value:
     name: SIMPLEMATCH_KOTLIN_COMPILER_EXECUTION_STRATEGY
     value: in-process
+- op: add
+  path: /spec/template/spec/containers/0/env/-
+  value:
+    name: SIMPLEMATCH_GRADLE_MAX_WORKERS
+    value: "1"

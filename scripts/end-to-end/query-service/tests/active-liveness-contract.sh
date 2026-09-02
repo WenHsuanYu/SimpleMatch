@@ -19,6 +19,18 @@ grep -Fq 'wait_market_data_through' "$active_module"
 grep -Fq 'wait_fix_intent_status SENT' "$active_module"
 grep -Fq 'RESERVATION_STATUS_RELEASED' "$active_module"
 
+active_function_start="$(grep -n '^run_query_active_liveness()' "$active_module" | cut -d: -f1)"
+active_function_end="$(grep -n '^restore_query_active_liveness()' "$active_module" | cut -d: -f1)"
+active_function_body="$temporary_directory/active-liveness-body.sh"
+sed -n "${active_function_start},$((active_function_end - 1))p" \
+  "$active_module" >"$active_function_body"
+fresh_open_line="$(grep -n 'open_query_active_gateway' "$active_function_body" | head -n 1 | cut -d: -f1)"
+release_line="$(grep -n 'release_fix_submit_client' "$active_function_body" | head -n 1 | cut -d: -f1)"
+(( fresh_open_line > 0 && release_line > fresh_open_line )) || {
+  printf '%s\n' 'Active liveness must refresh Gateway observations before FIX release.' >&2
+  exit 1
+}
+
 prepare_line="$(grep -n '^prepare_query_active_liveness$' "$runner" | cut -d: -f1)"
 scale_zero_line="$(grep -n 'scale_deployment query-service 0' "$runner" | head -n 1 | cut -d: -f1)"
 active_line="$(grep -n '^run_query_active_liveness$' "$runner" | cut -d: -f1)"

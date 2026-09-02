@@ -3,15 +3,20 @@
 # Public event liveness probe used while query-service is scaled to zero.
 # The caller provides the shared critical-consumer interfaces and run state.
 
-query_active_submit_open_eligible_observation() {
-  local check="$1"
-  local observation="$evidence_dir/baseline/gateway-observation-query-active-$check.json"
-  local final_response="$evidence_dir/baseline/gateway-observation-query-active-$check-response.json"
+submit_gateway_open_eligible_observation() {
+  local label="$1"
+  local check="$2"
+  local destination_dir="$3"
+  local expected_active_matching_orders="${4:-0}"
+  local observation="$evidence_dir/baseline/gateway-observation-${label}-${check}.json"
+  local final_response="$evidence_dir/${destination_dir}/observation-${check}.json"
+  mkdir -p "$evidence_dir/baseline" "$evidence_dir/${destination_dir}"
 
   for gateway_attempt in 1 2 3; do
     local response
-    response="$evidence_dir/baseline/gateway-observation-query-active-${check}-gateway-attempt-${gateway_attempt}.json"
-    capture_gateway_observation "query-active-$check" "$observation" || return 1
+    response="$evidence_dir/baseline/gateway-observation-${label}-${check}-gateway-attempt-${gateway_attempt}.json"
+    capture_gateway_observation \
+      "${label}-${check}" "$observation" "$expected_active_matching_orders" || return 1
     gateway_request POST /operations/observations "$response" "$observation" || return 1
     if jq -e '.readiness == "OPEN_ELIGIBLE"' "$response" >/dev/null; then
       cp "$response" "$final_response"
@@ -27,20 +32,31 @@ query_active_submit_open_eligible_observation() {
   return 1
 }
 
-open_query_active_gateway() {
-  local open_request="$evidence_dir/active-liveness/gateway-open-request.json"
-  local open_response="$evidence_dir/active-liveness/gateway-open-response.json"
+open_gateway_from_fresh_observations() {
+  local label="$1"
+  local destination_dir="$2"
+  local reason="$3"
+  local expected_active_matching_orders="${4:-0}"
+  local open_request="$evidence_dir/${destination_dir}/gateway-open-request.json"
+  local open_response="$evidence_dir/${destination_dir}/gateway-open-response.json"
+  mkdir -p "$evidence_dir/${destination_dir}"
 
   for check in 1 2 3; do
-    query_active_submit_open_eligible_observation "$check" || return 1
+    submit_gateway_open_eligible_observation \
+      "$label" "$check" "$destination_dir" "$expected_active_matching_orders" || return 1
     sleep 0.2
   done
 
-  jq -n '{actor:"query-service-certification",reason:"active processing liveness probe"}' \
+  jq -n --arg reason "$reason" '{actor:"query-service-certification",reason:$reason}' \
     >"$open_request"
   gateway_request POST /operations/open "$open_response" "$open_request" || return 1
   jq -e '.accepted == true and .gateState == "OPEN" and (.occurredAt | type == "string")' \
     "$open_response" >/dev/null
+}
+
+open_query_active_gateway() {
+  open_gateway_from_fresh_observations \
+    query-active active-liveness "active processing liveness probe"
 }
 
 capture_query_active_account_reservation() {
@@ -155,6 +171,10 @@ run_query_active_liveness() {
     die 'active liveness release requires query-service to have zero Pods'
 
   active_liveness_started_epoch_ms="$(date +%s%3N)"
+  # The isolation probe can outlive Gateway's freshness window. Re-open from
+  # observations collected at the release barrier while the FIX client is
+  # still paused, so the public order cannot race a stale safety decision.
+  open_query_active_gateway || die 'Gateway did not reopen for active liveness release'
   release_fix_submit_client
   wait_fix_submit_client || die 'active liveness FIX submission client failed'
   cp "$evidence_dir/fix/submit.json" \

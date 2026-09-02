@@ -41,7 +41,7 @@ grep -Fxq kubernetes-fleet <<<"$provenance_dependencies" ||
   fail 'retained provenance must depend on the completed Kubernetes fleet proof'
 
 tmp="$(mktemp -d)"
-untracked_probe="$repo_root/scripts/.certification-provenance-untracked-$$"
+untracked_probe="$repo_root/scripts/lib/local-certification-provenance-untracked-$$.sh"
 trap 'rm -rf "$tmp"; rm -f "$untracked_probe"' EXIT
 production_evidence="$tmp/production-like"
 mkdir -p "$production_evidence"
@@ -98,6 +98,47 @@ if simplematch_certification_verifier_image \
   fail 'untracked repository source must reject retained production-like evidence'
 fi
 rm -f "$untracked_probe"
+
+# Gradle's Kotlin compiler daemon may leave local diagnostics and liveness
+# markers under .kotlin/. They are generated build state, not certification
+# runtime inputs, and must remain covered by the repository ignore contract.
+generated_probe="$repo_root/build-logic/.kotlin/errors/local-certification-provenance-$$.log"
+mkdir -p "$(dirname -- "$generated_probe")"
+printf '%s\n' 'generated compiler diagnostic' >"$generated_probe"
+simplematch_certification_source_revision "$repo_root" >/dev/null ||
+  fail 'generated Kotlin compiler state must not block runtime provenance'
+rm -f "$generated_probe"
+
+# Documentation is not copied into the runtime images or manifests. A
+# documentation-only change must therefore not block runtime provenance, while
+# a change under the runtime source paths must remain fail-closed.
+provenance_repo="$tmp/provenance-repo"
+mkdir -p "$provenance_repo/docs" "$provenance_repo/deploy/k8s" \
+  "$provenance_repo/deploy/compose" "$provenance_repo/config/quickfix/fix-spec" \
+  "$provenance_repo/scripts/end-to-end"
+git -C "$provenance_repo" init -q
+git -C "$provenance_repo" config user.email certification-contract@example.invalid
+git -C "$provenance_repo" config user.name certification-contract
+printf '%s\n' documentation >"$provenance_repo/docs/README.md"
+printf '%s\n' runtime >"$provenance_repo/deploy/k8s/runtime.yaml"
+printf '%s\n' runtime >"$provenance_repo/deploy/compose/runtime.yml"
+printf '%s\n' runtime >"$provenance_repo/config/quickfix/fix-spec/FIX44.xml"
+printf '%s\n' runtime >"$provenance_repo/scripts/end-to-end/query.sh"
+git -C "$provenance_repo" add -- .
+git -C "$provenance_repo" commit -qm initial
+printf '%s\n' changed >"$provenance_repo/docs/README.md"
+simplematch_certification_source_revision "$provenance_repo" >/dev/null ||
+  fail 'documentation-only changes must not block runtime provenance'
+git -C "$provenance_repo" restore --worktree -- .
+for runtime_file in \
+  deploy/k8s/runtime.yaml deploy/compose/runtime.yml \
+  config/quickfix/fix-spec/FIX44.xml scripts/end-to-end/query.sh; do
+  printf '%s\n' changed >"$provenance_repo/$runtime_file"
+  if simplematch_certification_source_revision "$provenance_repo" >/dev/null 2>&1; then
+    fail "runtime source changes must still block certification provenance: $runtime_file"
+  fi
+  git -C "$provenance_repo" restore --worktree -- "$runtime_file"
+done
 
 for manifest in \
   "$repo_root/deploy/k8s/verification/critical-consumer-kafka-observer-pod.yaml" \

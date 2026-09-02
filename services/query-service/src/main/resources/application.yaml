@@ -48,6 +48,8 @@ simplematch:
     redis:
       enabled: false
       key-prefix: query:v1
+      command-timeout: 2s
+      connect-timeout: 500ms
     market-reference:
       artifact-location: /etc/simplematch/market-reference/market_reference.json
       checksum-location: /etc/simplematch/market-reference/market_reference.sha256

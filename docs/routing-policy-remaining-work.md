@@ -46,6 +46,16 @@ and must not be interpreted as a requirement to push images or obtain external c
 | Implementation or capability-specific local verification pending | GO-1, PD-1 | The repository implementation and structural gates now exist, and the complete local gate has passed; capability-specific collector, connector, security, and outage evidence is still required. |
 | Compatibility or legacy cleanup | MR-5, CL-1 | Superseded runtime paths and migration-only seams still require source/configuration removal; local certification alone cannot close them. |
 
+## Non-blocking future improvements
+
+The following item is an efficiency improvement, not a correctness or release gate. It must not
+replace the fresh, service-scoped Flyway Job or weaken the proof that every certification run applies
+migrations against its own database state.
+
+| Improvement | Current observation | Safe follow-up |
+| --- | --- | --- |
+| Avoid repeated Gradle distribution downloads in one-shot migration Pods | Each service-scoped Flyway Pod initializes its own ephemeral runner and downloads the pinned Gradle distribution before running the migration task. The current run is correct but pays that startup cost once per service. | Bake the pinned Gradle distribution into the Flyway runner image, or provide a content-addressed read-only distribution cache shared by the run. Keep dependency resolution and migration execution run-scoped, verify the Gradle version at startup, and retain the existing Job completion/error evidence. |
+
 ## Latest verification evidence (2026-08-16)
 
 - Native CTest now passes all 75 tests, including the pinned-writer startup gate, terminal alert,

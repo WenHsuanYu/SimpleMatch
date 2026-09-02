@@ -82,6 +82,10 @@ Useful canonical keys include:
   authenticated operator reset seam)
 - `simplematch.query-service.rebuild.operator-token` (required when the reset seam is enabled;
   never commit or persist the token)
+- `simplematch.query-service.redis.command-timeout` (defaults to `2s`; maximum `10s`; bounds one
+  Redis command before the durable PostgreSQL fallback runs)
+- `simplematch.query-service.redis.connect-timeout` (defaults to `500ms`; maximum `10s`; bounds
+  establishing a Redis connection)
 
 The query-service rebuild adapter is disabled by default. A bounded local or CI certification run
 may enable it with `SIMPLEMATCH_QUERY_SERVICE_REBUILD_HTTP_ENABLED=true` and supply the transient
@@ -91,9 +95,13 @@ overrides, and the token must be generated and removed by the run rather than st
 The operator replay reset owns an eight-second PostgreSQL transaction timeout; a timeout rolls
 back the durable reset and the HTTP operation fails closed.
 
-The query-service outage probe accepts `SIMPLEMATCH_QUERY_ISOLATION_PROBE_SECONDS` (maximum 30)
-and `SIMPLEMATCH_QUERY_ISOLATION_COMMAND_TIMEOUT_SECONDS` (maximum 30) to bound its repeated
-Kubernetes observations. After that quiescent window, the certification runner releases one
+The query-service outage probe accepts `SIMPLEMATCH_QUERY_ISOLATION_PROBE_SECONDS` (maximum 30
+complete samples) and `SIMPLEMATCH_QUERY_ISOLATION_COMMAND_TIMEOUT_SECONDS` (maximum 30) to bound
+its repeated Kubernetes observations. The probe value is a nominal one-second sampling
+interval/count rather than a hard wall-clock deadline; Kubernetes fault handling, Kafka committed
+offset inspection, and evidence materialization may make the recorded elapsed time longer. Each
+external command remains individually bounded and every requested sample remains fail-closed.
+After that quiescent window, the certification runner releases one
 public FIX IOC order while query-service is scaled to zero and requires correlated Risk,
 Matching, Persistence, Account, QuickFIX, and market-data evidence before it reports active
 processing liveness.

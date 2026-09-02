@@ -18,7 +18,9 @@ The versioned API is rooted at `/api/v1`:
 Every data response carries the durable checkpoint freshness metadata. PostgreSQL is written first;
 Redis is an optional 30-second read-through cache with keys shaped as
 `query:v1:{order|executions|account-summary|market-reference}:...`. A missing, expired, or invalid
-Redis entry reads PostgreSQL and repopulates only that cache entry.
+Redis entry reads PostgreSQL and repopulates only that cache entry. Redis connections use bounded
+connect and command timeouts (`500ms` and `2s` by default), so an unavailable cache returns the
+durable PostgreSQL view instead of holding a public read until the client reconnect loop expires.
 
 ## Projection and rebuild contract
 

@@ -95,6 +95,11 @@ abort "#{overlay}: QuickFIX Gateway trading day must come from matching-session-
         "name" => "SIMPLEMATCH_KOTLIN_COMPILER_EXECUTION_STRATEGY",
         "value" => "in-process"
       }
+    abort "local: #{name} Flyway Job must bound Gradle workers" unless
+      gradle_environment.fetch("SIMPLEMATCH_GRADLE_MAX_WORKERS") == {
+        "name" => "SIMPLEMATCH_GRADLE_MAX_WORKERS",
+        "value" => "1"
+      }
     abort "local: #{name} Flyway Job must use the local Gradle memory budget" unless
       container.fetch("resources") == expected_resources
   end

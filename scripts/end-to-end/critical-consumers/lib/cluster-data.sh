@@ -145,20 +145,26 @@ matching_ready_replicas() {
 capture_matching_fleet_topology() {
   local destination="$1"
   local statefulset_name="${SIMPLEMATCH_MATCHING_STATEFULSET:-matching}"
-  local statefulset_json pods_json pvcs_json pvs_json all_pods_json
+  local diagnostics_dir="${evidence_dir:-$(dirname -- "$destination")}/diagnostics"
+  local input_dir
 
-  statefulset_json="$(kns get "statefulset/$statefulset_name" -o json)" || return 1
-  pods_json="$(kns get pods -l app.kubernetes.io/name=matching -o json)" || return 1
-  pvcs_json="$(kns get pvc -o json)" || return 1
-  pvs_json="$(kns get pv -o json)" || return 1
-  all_pods_json="$(kns get pods -o json)" || return 1
+  mkdir -p -- "$diagnostics_dir" || return 1
+  input_dir="$(mktemp -d "$diagnostics_dir/matching-topology-input.XXXXXX")" || return 1
+  if ! kns get "statefulset/$statefulset_name" -o json >"$input_dir/statefulset.json" ||
+    ! kns get pods -l app.kubernetes.io/name=matching -o json >"$input_dir/pods.json" ||
+    ! kns get pvc -o json >"$input_dir/pvcs.json" ||
+    ! kns get pv -o json >"$input_dir/pvs.json" ||
+    ! kns get pods -o json >"$input_dir/all-pods.json"; then
+    rm -rf -- "$input_dir"
+    return 1
+  fi
 
-  jq -n \
-    --argjson statefulset "$statefulset_json" \
-    --argjson pods "$pods_json" \
-    --argjson pvcs "$pvcs_json" \
-    --argjson pvs "$pvs_json" \
-    --argjson allPods "$all_pods_json" '
+  if ! jq -n \
+    --slurpfile statefulset "$input_dir/statefulset.json" \
+    --slurpfile pods "$input_dir/pods.json" \
+    --slurpfile pvcs "$input_dir/pvcs.json" \
+    --slurpfile pvs "$input_dir/pvs.json" \
+    --slurpfile allPods "$input_dir/all-pods.json" '
       def items($resource): ($resource.items // []);
       def ready:
         any(.status.conditions[]?; .type == "Ready" and .status == "True");
@@ -166,7 +172,12 @@ capture_matching_fleet_topology() {
         [.spec.nodeAffinity.required.nodeSelectorTerms[]?.matchExpressions[]?
           | select(.key == "kubernetes.io/hostname") | .values[]?];
 
-      ($statefulset.metadata.name // "") as $statefulsetName
+      ($statefulset[0]) as $statefulset
+      | ($pods[0]) as $pods
+      | ($pvcs[0]) as $pvcs
+      | ($pvs[0]) as $pvs
+      | ($allPods[0]) as $allPods
+      | ($statefulset.metadata.name // "") as $statefulsetName
       | ([range(0; 15) | tostring]) as $expectedOrdinals
       | ([range(0; 15) | ($statefulsetName + "-" + tostring)]) as $expectedPodNames
       | (items($pvcs) | map({key:(.metadata.name // ""),value:.}) | from_entries) as $pvcByName
@@ -222,7 +233,11 @@ capture_matching_fleet_topology() {
                 and (($expectedPodNames | index($name)) == null)))
           )
         }
-    ' >"$destination"
+    ' >"$destination"; then
+    rm -rf -- "$input_dir"
+    return 1
+  fi
+  rm -rf -- "$input_dir"
 }
 
 matching_fleet_topology_is_healthy() {
@@ -266,7 +281,8 @@ capture_critical_path_health() {
   local destination="$1"
   local records_file="${destination%.json}.ndjson"
   local topology_file="${destination%.json}.matching-topology.json"
-  local path resource kind name resource_spec workload_json pods_json
+  local path resource kind name resource_spec workload_json pods_file
+  local diagnostics_dir="${evidence_dir:-$(dirname -- "$records_file")}/diagnostics"
   local desired_replicas ready_replicas
   local -a path_resources=(
     'admission:deployment/risk-service'
@@ -279,23 +295,34 @@ capture_critical_path_health() {
   )
 
   : >"$records_file" || return 1
+  mkdir -p -- "$diagnostics_dir" || return 1
   for resource_spec in "${path_resources[@]}"; do
     path="${resource_spec%%:*}"
     resource="${resource_spec#*:}"
     kind="${resource%%/*}"
     name="${resource#*/}"
     workload_json="$(kns get "$resource" -o json)" || return 1
-    pods_json="$(kns get pods -l "app.kubernetes.io/name=$name" -o json)" || return 1
-    desired_replicas="$(jq -er '.spec.replicas | numbers' <<<"$workload_json")" || return 1
-    ready_replicas="$(jq -er '.status.readyReplicas // 0 | numbers' <<<"$workload_json")" ||
+    pods_file="$(mktemp "$diagnostics_dir/critical-path-${path}-pods.XXXXXX")" ||
       return 1
-    jq -n \
+    if ! kns get pods -l "app.kubernetes.io/name=$name" -o json >"$pods_file"; then
+      rm -f -- "$pods_file"
+      return 1
+    fi
+    if ! desired_replicas="$(jq -er '.spec.replicas | numbers' <<<"$workload_json")"; then
+      rm -f -- "$pods_file"
+      return 1
+    fi
+    if ! ready_replicas="$(jq -er '.status.readyReplicas // 0 | numbers' <<<"$workload_json")"; then
+      rm -f -- "$pods_file"
+      return 1
+    fi
+    if ! jq -n \
       --arg path "$path" \
       --arg resource "$kind/$name" \
       --argjson desiredReplicas "$desired_replicas" \
       --argjson readyReplicas "$ready_replicas" \
-      --argjson pods "$pods_json" '
-        [$pods.items[]? | {
+      --slurpfile pods "$pods_file" '
+        [$pods[0].items[]? | {
           name:(.metadata.name // ""),
           uid:(.metadata.uid // ""),
           phase:(.status.phase // ""),
@@ -313,7 +340,11 @@ capture_critical_path_health() {
             restartCount:($podStates | map(.restartCount) | add // 0),
             pods:$podStates
           }
-      ' >>"$records_file" || return 1
+      ' >>"$records_file"; then
+      rm -f -- "$pods_file"
+      return 1
+    fi
+    rm -f -- "$pods_file"
   done
 
   capture_matching_fleet_topology "$topology_file" || return 1
@@ -377,21 +408,18 @@ capture_query_isolation_probe() {
   local command_timeout_seconds="${query_isolation_command_timeout_seconds:-5}"
   local samples_dir="${destination%.json}.samples"
   local samples_file="$samples_dir/samples.ndjson"
-  local sample probe_started_epoch_ms probe_deadline_epoch_ms now_epoch_ms remaining_ms
+  local sample probe_started_epoch_ms probe_completed_epoch_ms elapsed_milliseconds
 
   [[ "$probe_seconds" =~ ^[1-9][0-9]*$ ]] || return 1
   (( probe_seconds <= 30 )) || return 1
   [[ "$command_timeout_seconds" =~ ^[1-9][0-9]*$ ]] || return 1
   (( command_timeout_seconds <= 30 )) || return 1
   probe_started_epoch_ms="$(date +%s%3N)" || return 1
-  probe_deadline_epoch_ms=$((probe_started_epoch_ms + probe_seconds * 1000))
   mkdir -p "$samples_dir" || return 1
   : >"$samples_file" || return 1
 
   local kubernetes_request_timeout_seconds="$command_timeout_seconds"
   for ((sample = 0; sample < probe_seconds; sample += 1)); do
-    now_epoch_ms="$(date +%s%3N)" || return 1
-    (( now_epoch_ms <= probe_deadline_epoch_ms )) || return 1
     local state_file="$samples_dir/consumer-state-$sample.json"
     local outage_file="$samples_dir/query-outage-$sample.json"
     local offsets_file="$samples_dir/matching-committed-$sample.json"
@@ -411,8 +439,6 @@ capture_query_isolation_probe() {
     (( matching_ready == 15 )) || return 1
     capture_matching_committed_offsets "$offsets_file" || return 1
     critical_ready=true
-    now_epoch_ms="$(date +%s%3N)" || return 1
-    (( now_epoch_ms <= probe_deadline_epoch_ms )) || return 1
     jq -n \
       --argjson sampleIndex "$sample" \
       --argjson queryPodCount "$query_pod_count" \
@@ -426,21 +452,11 @@ capture_query_isolation_probe() {
         consumerState:$consumerState[0],criticalPathHealth:$criticalPathHealth[0],
         matchingCommittedOffsets:$matchingCommitted[0]}' \
       >>"$samples_file" || return 1
-    if (( sample + 1 < probe_seconds )); then
-      now_epoch_ms="$(date +%s%3N)" || return 1
-      remaining_ms=$((probe_deadline_epoch_ms - now_epoch_ms))
-      (( remaining_ms > 0 )) || return 1
-      if (( remaining_ms >= 1000 )); then
-        sleep 1
-      else
-        sleep "0.$(printf '%03d' "$remaining_ms")"
-      fi
-    fi
+    (( sample + 1 < probe_seconds )) && sleep 1
   done
 
-  local probe_completed_epoch_ms elapsed_milliseconds
   probe_completed_epoch_ms="$(date +%s%3N)" || return 1
-  (( probe_completed_epoch_ms <= probe_deadline_epoch_ms )) || return 1
+  (( probe_completed_epoch_ms >= probe_started_epoch_ms )) || return 1
   elapsed_milliseconds=$((probe_completed_epoch_ms - probe_started_epoch_ms))
   jq -n \
     --argjson probeDurationSeconds "$probe_seconds" \
@@ -537,7 +553,7 @@ capture_consumer_state() {
         'marketDataProgress', COALESCE((
           SELECT json_agg(row_to_json(market_data) ORDER BY market_data.partition_id)
           FROM (
-            SELECT partition_id, recovery_state
+            SELECT partition_id, last_processed_offset, recovery_state
             FROM market_data_projection.partition_projection_progress
           ) market_data
         ), '[]'::json),
@@ -724,6 +740,30 @@ INSERT INTO account_service.account_limits (
   '$account_id', 'ACCOUNT', '*', DATE '$trading_day', 'TWD',
   99999999999999999999.00000000, 0, 0,
   99999999999999999999.00000000, $now_ms, 0
+);
+SQL
+}
+
+seed_account_position() {
+  local destination="${1:-$evidence_dir/submission/account-position-fixture.log}"
+  local long_quantity="${2:-$quantity}"
+  local postgres
+  postgres="$(postgres_pod)"
+  [[ -n "$postgres" ]] || die 'cannot resolve PostgreSQL Pod for account position fixture'
+  [[ "$long_quantity" =~ ^[0-9]+$ ]] || die 'account position quantity must be a non-negative integer'
+  local now_ms
+  now_ms="$(( $(date +%s) * 1000 ))"
+  kns exec -i "$postgres" -c postgres -- psql -U simplematch -d simplematch \
+    -v ON_ERROR_STOP=1 \
+    -v account_id="$account_id" \
+    -v symbol="$symbol" \
+    -v long_quantity="$long_quantity" \
+    -v now_ms="$now_ms" >"$destination" 2>&1 <<SQL
+INSERT INTO account_service.account_positions (
+  account_id, symbol, long_qty, short_qty, reserved_long_qty,
+  reserved_short_qty, updated_at_unix_ms, version
+) VALUES (
+  :'account_id', :'symbol', :long_quantity, 0, 0, 0, :now_ms, 0
 );
 SQL
 }

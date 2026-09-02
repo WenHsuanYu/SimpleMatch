@@ -267,9 +267,12 @@ attempts=0
 capture_gateway_observation_once() {
   local attempt_dir="$1"
   local destination="$2"
+  local expected_active_matching_orders="${3:-0}"
   attempts="$((attempts + 1))"
   mkdir -p "$attempt_dir"
   date +%s%3N >"$attempt_dir/attempt-started-at"
+  [[ "$expected_active_matching_orders" == 0 ]] ||
+    fail 'default observation guard must not accept active Matching orders'
   if (( attempts == 1 )); then
     set_observation_failure KAFKA_POSITION_CHANGED \
       'Kafka positions changed during observation'
@@ -332,6 +335,21 @@ jq -e '
   and .reason == "invalid source identity"
 ' "$evidence_dir/baseline/observation-fatal-attempt-1/result.json" >/dev/null ||
   fail 'semantic failure must retain its diagnostic classification and reason'
+
+expected_active_matching_orders_seen=missing
+capture_gateway_observation_once() {
+  local attempt_dir="$1"
+  local destination="$2"
+  expected_active_matching_orders_seen="${3:-missing}"
+  mkdir -p "$attempt_dir"
+  date +%s%3N >"$attempt_dir/attempt-started-at"
+  printf '{"status":"expected-active"}\n' >"$destination"
+}
+observation_max_attempts=1
+capture_gateway_observation expected-active "$tmp/expected-active.json" 1 ||
+  fail 'expected active Matching order count must reach the observation collector'
+[[ "$expected_active_matching_orders_seen" == 1 ]] ||
+  fail 'expected active Matching order count was not forwarded'
 
 cat >"$tmp/stale-response.json" <<'JSON'
 {"openEligible":false,"reasons":["MATCHING_PARTITION_0_STATUS_STALE","RISK_STATUS_STALE"]}

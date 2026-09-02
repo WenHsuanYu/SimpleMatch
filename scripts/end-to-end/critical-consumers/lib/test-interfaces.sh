@@ -11,6 +11,7 @@ start_port_forward() {
   local pid
   local port=""
 
+  mkdir -p "$(dirname -- "$log_path")"
   : >"$log_path"
   kns port-forward "$resource" ":$remote_port" >"$log_path" 2>&1 &
   pid="$!"
@@ -62,6 +63,7 @@ run_fix_phase() {
     SIMPLEMATCH_LIVE_FIX_HOST=127.0.0.1 \
     SIMPLEMATCH_LIVE_FIX_PORT="$fix_port" \
     SIMPLEMATCH_LIVE_FIX_ACCOUNT_ID="$account_id" \
+    SIMPLEMATCH_LIVE_FIX_SIDE="${live_fix_side:-1}" \
     SIMPLEMATCH_LIVE_FIX_SYMBOL="$symbol" \
     SIMPLEMATCH_LIVE_FIX_QUANTITY="$quantity" \
     SIMPLEMATCH_LIVE_FIX_PRICE="$price" \
@@ -85,6 +87,7 @@ start_fix_submit_client() {
     SIMPLEMATCH_LIVE_FIX_HOST=127.0.0.1 \
     SIMPLEMATCH_LIVE_FIX_PORT="$fix_port" \
     SIMPLEMATCH_LIVE_FIX_ACCOUNT_ID="$account_id" \
+    SIMPLEMATCH_LIVE_FIX_SIDE="${live_fix_side:-1}" \
     SIMPLEMATCH_LIVE_FIX_SYMBOL="$symbol" \
     SIMPLEMATCH_LIVE_FIX_QUANTITY="$quantity" \
     SIMPLEMATCH_LIVE_FIX_PRICE="$price" \

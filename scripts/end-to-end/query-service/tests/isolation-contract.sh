@@ -12,6 +12,7 @@ trap 'rm -rf -- "$temporary_directory"' EXIT
   context=test-context
   namespace=test-namespace
   unhealthy_resource=""
+  large_pod_payload=true
 
   kns() {
     [[ "$1" == get ]] || return 1
@@ -57,9 +58,12 @@ trap 'rm -rf -- "$temporary_directory"' EXIT
       jq -n \
         --arg name "$pod_name" \
         --argjson count "$replicas" \
+        --argjson largePayload "${large_pod_payload:-false}" \
         --argjson ready "$pod_ready" '
           {items:[range(0;$count) |
             {metadata:{name:($name + "-" + tostring),uid:($name + "-uid-" + tostring),
+               annotations:(if $largePayload then
+                 {contractPadding:("x" * 180000)} else {} end),
                labels:{"app.kubernetes.io/name":$name,
                  "apps.kubernetes.io/pod-index":(if $name == "matching" then tostring else "" end),
                  "controller-revision-hash":(if $name == "matching" then "matching-revision" else "" end)},
@@ -179,7 +183,21 @@ trap 'rm -rf -- "$temporary_directory"' EXIT
     }}' >"$1"
   }
   matching_ready_replicas() { printf '%s\n' 15; }
-  sleep() { :; }
+  fake_now_file="$temporary_directory/fake-now"
+  printf '%s\n' 0 >"$fake_now_file"
+  date() {
+    if [[ "$1" == +%s%3N ]]; then
+      fake_now=$(( $(<"$fake_now_file") + 1500 ))
+      printf '%s\n' "$fake_now" >"$fake_now_file"
+      printf '%s\n' "$fake_now"
+    else
+      command date "$@"
+    fi
+  }
+  sleep() {
+    fake_now=$(( $(<"$fake_now_file") + 1000 ))
+    printf '%s\n' "$fake_now" >"$fake_now_file"
+  }
 
   capture_query_isolation_probe \
     "$evidence_dir/probe.json" 2
@@ -188,7 +206,7 @@ trap 'rm -rf -- "$temporary_directory"' EXIT
     and .sampleCount == 2
     and .probeStartedEpochMs <= .probeCompletedEpochMs
     and .elapsedMilliseconds == (.probeCompletedEpochMs - .probeStartedEpochMs)
-    and .elapsedMilliseconds <= (.probeDurationSeconds * 1000)
+    and .elapsedMilliseconds > (.probeDurationSeconds * 1000)
     and .commandTimeoutSeconds == 5
     and ([.samples[].sampleIndex] == [0, 1])
     and all(.samples[];

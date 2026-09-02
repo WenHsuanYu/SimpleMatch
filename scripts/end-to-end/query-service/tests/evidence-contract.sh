@@ -52,6 +52,12 @@ grep -Fq "query:v1:market-reference:\$trading_day:\$venue_mic:\$symbol" "$eviden
 grep -Fq "'admissionStateCounts'" "$cluster_data_module"
 grep -Fq "'accountReservationStateCounts'" "$cluster_data_module"
 grep -Fq "'marketDataProgress'" "$cluster_data_module"
+grep -Fq 'SELECT partition_id, last_processed_offset, recovery_state' \
+  "$cluster_data_module" || {
+  printf '%s\n' \
+    'Market-data progress evidence must include last_processed_offset.' >&2
+  exit 1
+}
 grep -Fq "capture_query_service_outage_state" "$cluster_data_module"
 
 printf 'Query-service evidence collector contract is valid.\n'

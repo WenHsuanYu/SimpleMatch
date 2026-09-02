@@ -7,14 +7,23 @@ gradle_user_home="${GRADLE_USER_HOME:-/tmp/gradle}"
 project_cache_dir="${SIMPLEMATCH_GRADLE_PROJECT_CACHE_DIR:-/tmp/gradle-project}"
 gradle_jvm_args="${SIMPLEMATCH_GRADLE_JVM_ARGS:-}"
 kotlin_compiler_execution_strategy="${SIMPLEMATCH_KOTLIN_COMPILER_EXECUTION_STRATEGY:-}"
+gradle_max_workers="${SIMPLEMATCH_GRADLE_MAX_WORKERS:-}"
 work_dir="${SIMPLEMATCH_FLYWAY_WORK_DIR:-/tmp/simplematch-workspace}"
 gradle_jvm_options=()
+gradle_execution_options=()
 
 if [[ -n "$gradle_jvm_args" ]]; then
   gradle_jvm_options+=("-Dorg.gradle.jvmargs=$gradle_jvm_args")
 fi
 if [[ -n "$kotlin_compiler_execution_strategy" ]]; then
   gradle_jvm_options+=("-Dkotlin.compiler.execution.strategy=$kotlin_compiler_execution_strategy")
+fi
+if [[ -n "$gradle_max_workers" ]]; then
+  [[ "$gradle_max_workers" =~ ^[1-9][0-9]*$ ]] || {
+    printf 'SIMPLEMATCH_GRADLE_MAX_WORKERS must be a positive integer\n' >&2
+    exit 2
+  }
+  gradle_execution_options+=("--max-workers=$gradle_max_workers")
 fi
 
 mkdir -p "$work_dir"
@@ -38,6 +47,7 @@ cd "$work_dir"
 
 exec "$work_dir/gradlew" --no-daemon \
   "${gradle_jvm_options[@]}" \
+  "${gradle_execution_options[@]}" \
   --gradle-user-home "$gradle_user_home" \
   --project-cache-dir "$project_cache_dir" \
   --stacktrace "$task"

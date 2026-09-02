@@ -24,6 +24,8 @@ source "$repo_root/scripts/end-to-end/critical-consumers/lib/system-observation.
 source "$repo_root/scripts/end-to-end/critical-consumers/lib/gateway-close-verification.sh"
 # shellcheck source=scripts/end-to-end/query-service/lib/active-liveness.sh
 source "$script_dir/lib/active-liveness.sh"
+# shellcheck source=scripts/end-to-end/query-service/lib/execution-fixture.sh
+source "$script_dir/lib/execution-fixture.sh"
 # shellcheck source=scripts/end-to-end/query-service/lib/verdict.sh
 source "$script_dir/lib/verdict.sh"
 # shellcheck source=scripts/end-to-end/query-service/lib/evidence.sh
@@ -73,6 +75,7 @@ observer_pod=""
 observer_manifest=""
 observer_created=false
 live_fix_time_in_force=0
+live_fix_side=1
 active_liveness_prepared=false
 active_liveness_evidence_dir=""
 active_liveness_originals_saved=false
@@ -92,9 +95,9 @@ Usage:
     [--timeout-seconds N]
 
 Certifies deterministic query-service replay, PostgreSQL fallback, Redis
-rebuild, freshness metadata, quiescent critical-path isolation, and one
-controlled public IOC FIX event while query-service has zero Pods in a
-retained production-like namespace.
+rebuild, freshness metadata, quiescent critical-path isolation, a public FIX
+execution-backed cross fixture, and one controlled public IOC FIX event while
+query-service has zero Pods in a retained production-like namespace.
 EOF_USAGE
 }
 
@@ -123,47 +126,7 @@ start_query_port_forward() {
 }
 
 run_matching_fixture() {
-  local trading_day buy_account_id sell_account_id
-  local fixture_dir="$evidence_dir/matching-fixture"
-  trading_day="$(kns get configmap matching-session-config -o jsonpath='{.data.trading_day}')"
-  [[ "$trading_day" =~ ^[0-9]{4}-[0-9]{2}-[0-9]{2}$ ]] || return 1
-  [[ -r /proc/sys/kernel/random/uuid ]] || return 1
-  buy_account_id="$(cat /proc/sys/kernel/random/uuid)"
-  sell_account_id="$(cat /proc/sys/kernel/random/uuid)"
-  mkdir -p "$fixture_dir"
-
-  # Two public RM-1 orders share the artifact-selected instrument and price. The BUY rests with a
-  # cash reservation; the SELL reserves a long position and crosses it, producing final matching
-  # and Account lifecycle events without direct writes to either service's reservation tables.
-  bash "$repo_root/scripts/run-risk-matching-command-e2e.sh" \
-    --namespace "$namespace" \
-    --trading-day "$trading_day" \
-    --evidence-dir "$fixture_dir/buy" \
-    --account-id "$buy_account_id" \
-    --side BUY \
-    --verifier-image "$verifier_image_reference" \
-    --retained-evidence-dir "$retained_evidence_dir"
-  wait_for_rm1_helper_cleanup || return 1
-  bash "$repo_root/scripts/run-risk-matching-command-e2e.sh" \
-    --namespace "$namespace" \
-    --trading-day "$trading_day" \
-    --evidence-dir "$fixture_dir/sell" \
-    --account-id "$sell_account_id" \
-    --side SELL \
-    --verifier-image "$verifier_image_reference" \
-    --retained-evidence-dir "$retained_evidence_dir"
-  wait_for_rm1_helper_cleanup
-}
-
-wait_for_rm1_helper_cleanup() {
-  for _ in $(seq 1 60); do
-    if ! kns get job/risk-matching-e2e-verifier >/dev/null 2>&1 &&
-      ! kns get configmap/risk-matching-e2e-run >/dev/null 2>&1; then
-      return 0
-    fi
-    sleep 1
-  done
-  return 1
+  run_query_execution_fixture
 }
 
 reset_query_state() {
