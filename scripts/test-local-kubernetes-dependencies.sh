@@ -144,6 +144,11 @@ require_value(
     connect_environment.dig("RISK_SERVICE_POSTGRES_PASSWORD", "valueFrom", "secretKeyRef", "name") == "simplematch-postgres-secrets",
   "Local Kafka Connect must receive Risk database credentials from the local Secret"
 )
+require_value(
+  connect_environment.dig("ACCOUNT_SERVICE_POSTGRES_USER", "valueFrom", "secretKeyRef", "name") == "simplematch-postgres-secrets" &&
+    connect_environment.dig("ACCOUNT_SERVICE_POSTGRES_PASSWORD", "valueFrom", "secretKeyRef", "name") == "simplematch-postgres-secrets",
+  "Local Kafka Connect must receive Account database credentials from the local Secret"
+)
 require_value(connect_container&.dig("resources", "requests") && connect_container.dig("resources", "limits"), "Local Kafka Connect must define resources")
 require_value(connect_container&.key?("readinessProbe") && connect_container.key?("startupProbe"), "Local Kafka Connect must define bounded probes")
 require_value(

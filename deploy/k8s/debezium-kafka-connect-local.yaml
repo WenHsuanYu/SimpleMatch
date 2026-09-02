@@ -155,6 +155,16 @@ spec:
                 secretKeyRef:
                   name: simplematch-postgres-secrets
                   key: postgres_password
+            - name: ACCOUNT_SERVICE_POSTGRES_USER
+              valueFrom:
+                secretKeyRef:
+                  name: simplematch-postgres-secrets
+                  key: postgres_user
+            - name: ACCOUNT_SERVICE_POSTGRES_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: simplematch-postgres-secrets
+                  key: postgres_password
             - name: KAFKA_HEAP_OPTS
               value: -Xms512m -Xmx1g
           ports:

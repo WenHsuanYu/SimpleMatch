@@ -3,6 +3,8 @@ set -euo pipefail
 
 script_dir="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
 repo_root="$(cd -- "$script_dir/.." && pwd)"
+# shellcheck source=scripts/lib/local-certification-provenance.sh
+source "$script_dir/lib/local-certification-provenance.sh"
 
 # RM-1 deployed verification intentionally reuses an already-running local production-like
 # namespace. Kubernetes execution policy lives in the repository-owned Job manifest; this shell
@@ -11,13 +13,14 @@ repo_root="$(cd -- "$script_dir/.." && pwd)"
 namespace=""
 trading_day=""
 evidence_dir=""
+account_id=""
 timeout_seconds="${SIMPLEMATCH_RM1_VERIFIER_TIMEOUT_SECONDS:-90}"
 keep_helper=false
 
 job_name="risk-matching-e2e-verifier"
 run_config_name="risk-matching-e2e-run"
 job_manifest="$repo_root/deploy/k8s/verification/risk-matching-e2e-verifier-job.yaml"
-verifier_image="simplematch/risk-matching-e2e-verifier:local"
+verifier_image="${SIMPLEMATCH_RM1_VERIFIER_IMAGE:-simplematch/risk-matching-e2e-verifier:local}"
 
 usage() {
   cat <<'EOF'
@@ -26,6 +29,8 @@ Usage:
     --namespace NAME \
     --trading-day YYYY-MM-DD \
     --evidence-dir PATH \
+    [--account-id UUID] \
+    [--verifier-image IMAGE] \
     [--timeout-seconds N] \
     [--keep-helper]
 
@@ -37,6 +42,10 @@ The script does not create the kind cluster and does not delete application reso
 
 The verifier uses the repository-owned Job manifest:
   deploy/k8s/verification/risk-matching-e2e-verifier-job.yaml
+
+--verifier-image selects the immutable image reference for this run. Pass the reference recorded by
+the retained production-like image lock when the namespace uses registry transport; the default
+local tag is kept for kind-load runs.
 
 --keep-helper preserves the verifier Job and its immutable run ConfigMap for inspection. A later run
 in the same namespace will intentionally refuse to start until those retained helper resources are
@@ -54,6 +63,8 @@ while [[ $# -gt 0 ]]; do
     --namespace) namespace="${2:?--namespace requires a value}"; shift 2 ;;
     --trading-day) trading_day="${2:?--trading-day requires a value}"; shift 2 ;;
     --evidence-dir) evidence_dir="${2:?--evidence-dir requires a value}"; shift 2 ;;
+    --account-id) account_id="${2:?--account-id requires a value}"; shift 2 ;;
+    --verifier-image) verifier_image="${2:?--verifier-image requires a value}"; shift 2 ;;
     --timeout-seconds) timeout_seconds="${2:?--timeout-seconds requires a value}"; shift 2 ;;
     --keep-helper) keep_helper=true; shift ;;
     --help|-h) usage; exit 0 ;;
@@ -65,9 +76,15 @@ done
 [[ "$trading_day" =~ ^[0-9]{4}-[0-9]{2}-[0-9]{2}$ ]] || die \
   '--trading-day must use YYYY-MM-DD'
 [[ -n "$evidence_dir" ]] || { usage >&2; die '--evidence-dir is required'; }
+if [[ -n "$account_id" &&
+      ! "$account_id" =~ ^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$ ]]; then
+  die '--account-id must be a canonical lowercase UUID'
+fi
 [[ "$timeout_seconds" =~ ^[1-9][0-9]*$ ]] || die '--timeout-seconds must be a positive integer'
 (( timeout_seconds <= 300 )) || die \
   '--timeout-seconds must not exceed 300; the verifier Job has a separate 600-second active deadline'
+[[ -n "$verifier_image" && "$verifier_image" != *[[:space:]]* ]] || die \
+  '--verifier-image must be a non-empty image reference without whitespace'
 
 for tool in kubectl jq curl awk sed grep date seq sleep tail base64; do
   command -v "$tool" >/dev/null 2>&1 || die "$tool is required"
@@ -81,12 +98,18 @@ existing_evidence=("$evidence_dir"/*)
 shopt -u nullglob dotglob
 ((${#existing_evidence[@]} == 0)) || die \
   "evidence directory must be empty before verification: $evidence_dir"
+rendered_job_manifest="$evidence_dir/risk-matching-e2e-verifier-job.yaml"
+simplematch_render_verifier_helper_manifest \
+  "$job_manifest" "$verifier_image" "$rendered_job_manifest" || die \
+  'could not render the verifier Job with the selected image reference'
 
-# A unique account prevents one run's reservation state from changing another run's available
-# notional. /proc/sys/kernel/random/uuid is available on the Linux environment required by kind and
-# avoids making uuidgen an otherwise unnecessary host dependency.
-[[ -r /proc/sys/kernel/random/uuid ]] || die '/proc/sys/kernel/random/uuid is required'
-account_id="$(cat /proc/sys/kernel/random/uuid)"
+# A unique default prevents one run's reservation state from changing another run's available
+# notional. A caller-supplied UUID is reserved for deterministic cross-certification fixtures that
+# need the same public Account lifecycle identity. The override remains explicit and fail-closed.
+if [[ -z "$account_id" ]]; then
+  [[ -r /proc/sys/kernel/random/uuid ]] || die '/proc/sys/kernel/random/uuid is required'
+  account_id="$(cat /proc/sys/kernel/random/uuid)"
+fi
 run_id="rm1-$(date -u +%Y%m%d-%H%M%S)-$$"
 port_forward_pid=""
 port_forward_log="$evidence_dir/kafka-connect-port-forward.log"
@@ -229,10 +252,9 @@ postgres_pod="$(
 )"
 [[ -n "$postgres_pod" ]] || die 'cannot resolve PostgreSQL Pod'
 
-# Account Service looks up the ACCOUNT/* limit using its own Asia/Taipei clock. This can differ from
-# an explicitly selected historical certification artifact, so seed the date Account will actually
-# query rather than silently assuming the command trading day and wall-clock day are identical.
-account_limit_day="$(TZ=Asia/Taipei date +%F)"
+# The reservation operation carries the explicit certification trading day. Account authority
+# looks up the ACCOUNT/* limit on that business day, so the fixture must use the same value rather
+# than the host wall-clock date.
 now_ms="$(( $(date +%s) * 1000 ))"
 kubectl -n "$namespace" exec -i "$postgres_pod" -- \
   psql -U simplematch -d simplematch -v ON_ERROR_STOP=1 \
@@ -253,7 +275,7 @@ INSERT INTO account_service.account_limits (
   '$account_id',
   'ACCOUNT',
   '*',
-  DATE '$account_limit_day',
+  DATE '$trading_day',
   'TWD',
   99999999999999999999.00000000,
   0,
@@ -268,11 +290,10 @@ jq -n \
   --arg runId "$run_id" \
   --arg namespace "$namespace" \
   --arg tradingDay "$trading_day" \
-  --arg accountLimitDay "$account_limit_day" \
   --arg accountId "$account_id" \
   --arg verifierImage "$verifier_image" \
   '{runId:$runId, namespace:$namespace, tradingDay:$tradingDay,
-    accountLimitDay:$accountLimitDay, accountId:$accountId, verifierImage:$verifierImage}' \
+    accountLimitTradingDay:$tradingDay, accountId:$accountId, verifierImage:$verifierImage}' \
   >"$evidence_dir/run-metadata.json"
 
 # Run-specific values are data, not deployment policy. Keep them in one immutable ConfigMap rather
@@ -299,7 +320,7 @@ kubectl -n "$namespace" get configmap "$run_config_name" -o json \
 # The Job manifest owns the Pod security/resources/volumes and the dedicated verifier image.
 # No inline YAML, repository copy, or runtime Gradle invocation is permitted in this orchestration
 # path.
-kubectl -n "$namespace" create -f "$job_manifest" >/dev/null
+kubectl -n "$namespace" create -f "$rendered_job_manifest" >/dev/null
 job_created=true
 
 # Resolve the controller-created Pod once. The fixed Job name and one-run-at-a-time preflight make

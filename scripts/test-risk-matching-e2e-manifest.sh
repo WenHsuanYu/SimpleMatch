@@ -23,7 +23,7 @@ done
 bash -n "$wrapper"
 bash -n "$orchestrator"
 
-grep -Fq 'command_id="$(jq -r '\''.commandId'\'' "$evidence_dir/request.json")"' \
+grep -Fq "command_id=\"\$(jq -r '.commandId' \"\$evidence_dir/request.json\")\"" \
   "$orchestrator" || {
     printf '%s\n' 'RM-1 orchestrator must derive commandId from the submitted request evidence.' >&2
     exit 1
@@ -40,6 +40,38 @@ grep -Fq 'evidence directory must be empty before verification' "$orchestrator" 
   printf '%s\n' 'RM-1 orchestrator must fail closed when the evidence directory is non-empty.' >&2
   exit 1
 }
+grep -Fq -- '--verifier-image' "$orchestrator" || {
+  printf '%s\n' 'RM-1 orchestrator must accept the retained verifier image reference.' >&2
+  exit 1
+}
+grep -Fq 'simplematch_render_verifier_helper_manifest' "$orchestrator" || {
+  printf '%s\n' 'RM-1 orchestrator must render the verifier Job with its retained image reference.' >&2
+  exit 1
+}
+grep -Fq "DATE '\$trading_day'" "$orchestrator" || {
+  printf '%s\n' 'RM-1 Account fixture must use the explicit certification trading day.' >&2
+  exit 1
+}
+if grep -Fq 'account_limit_day' "$orchestrator"; then
+  printf '%s\n' 'RM-1 Account fixture must not derive its limit day from the host wall clock.' >&2
+  exit 1
+fi
+
+invalid_account_evidence="$(mktemp -d)"
+trap 'rm -rf -- "$invalid_account_evidence"' EXIT
+if invalid_account_output="$($orchestrator \
+  --namespace simplematch-test \
+  --trading-day 2026-08-27 \
+  --evidence-dir "$invalid_account_evidence" \
+  --account-id not-a-uuid 2>&1)"; then
+  printf '%s\n' 'RM-1 orchestrator accepted an invalid deterministic account UUID.' >&2
+  exit 1
+fi
+grep -Fq -- '--account-id must be a canonical lowercase UUID' \
+  <<<"$invalid_account_output" || {
+    printf '%s\n' 'RM-1 orchestrator did not fail closed on an invalid account UUID.' >&2
+    exit 1
+  }
 
 image_inventory="$("$repo_root/scripts/build-local-images.sh" --list)"
 grep -Fq \
