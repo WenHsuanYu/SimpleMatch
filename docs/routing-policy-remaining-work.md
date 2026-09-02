@@ -304,8 +304,8 @@ and must not be interpreted as a requirement to push images or obtain external c
   PostgreSQL/Kafka Connect/Kafka CDC contract also passes, including connector pause/resume and
   exact record delivery. A separate native fixture has verified the local `matching.commands` to
   `matching.events` broker path. The local Kubernetes overlay now contains two in-cluster Debezium
-  workers, and the certification runner registers `risk-service-outbox` only after Flyway completes,
-  then requires the connector and task to report `RUNNING`.
+  workers, and the certification runner registers the Risk and Account outbox connectors only after
+  Flyway completes, then requires both connectors and their tasks to report `RUNNING`.
 - **Missing behavior:** A full local production-like run still needs to execute that deployed Risk
   connector against the repository-owned three-broker Kafka profile and prove a real accepted
   command reaches `matching.commands`; the static deployment and registration contract is now in
@@ -532,9 +532,13 @@ and must not be interpreted as a requirement to push images or obtain external c
   optional Redis read-through fallback. Cache read and write failures fall back to the durable
   PostgreSQL projection. Focused H2 projection and cache-fallback tests pass.
 - **Missing behavior:** Local production-like Kafka/PostgreSQL/Redis deployment and
-  outage/replay certification remain part of PD-1 and the repository release gate. The
-  service-context test also proves the shared canonical-DSN/pool adapter and no competing
-  `spring.datasource.*` source. External production certification is not a prerequisite.
+  outage/replay certification remain part of PD-1 and the repository release gate. The query
+  outage runner now proves no observed health regression during a bounded quiescent window, but
+  it does not yet submit a controlled public order while Query is down; active liveness of
+  admission, reservation, Matching, Persistence, Account, QuickFIX, and market-data projection
+  therefore remains unproven. The service-context test also proves the shared canonical-DSN/pool
+  adapter and no competing `spring.datasource.*` source. External production certification is not
+  a prerequisite.
 - **Acceptance criteria:** Query never reads another service's database or scans Kafka synchronously.
   Redis can be deleted and rebuilt; misses/outages fall back to PostgreSQL; responses disclose
   freshness; and Query failure cannot pause any critical trading component.

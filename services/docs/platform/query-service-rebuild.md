@@ -9,6 +9,9 @@ The reset HTTP adapter is disabled by default. Enable it only for a controlled o
 `simplematch.query-service.rebuild.operator-token`. The
 `X-SimpleMatch-Query-Token` header protects the adapter.
 
+The durable reset transaction has an explicit eight-second timeout; timeout or database failure
+rolls back the PostgreSQL reset and fails the operation before Redis cleanup.
+
 Use this bounded procedure:
 
 1. Reduce `query-service` to one replica so one process owns both consumer groups. Call

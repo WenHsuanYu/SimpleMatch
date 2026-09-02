@@ -18,6 +18,8 @@ import org.springframework.transaction.support.TransactionTemplate;
 /** Composes the query service's isolated DataSource, JDBC adapters, and local transactions. */
 @Configuration(proxyBeanMethods = false)
 public class QueryServicePersistenceConfiguration {
+  private static final int REBUILD_TRANSACTION_TIMEOUT_SECONDS = 8;
+
   /** Supplies timestamps for source checkpoints and read-model freshness. */
   @Bean
   Clock queryServiceClock() {
@@ -61,9 +63,10 @@ public class QueryServicePersistenceConfiguration {
       QueryProjectionStore queryProjectionStore,
       PlatformTransactionManager queryServiceTransactionManager,
       QueryReadCache queryReadCache) {
+    final TransactionTemplate rebuildTransaction =
+        new TransactionTemplate(queryServiceTransactionManager);
+    rebuildTransaction.setTimeout(REBUILD_TRANSACTION_TIMEOUT_SECONDS);
     return new QueryProjectionRebuildService(
-        queryProjectionStore,
-        new TransactionTemplate(queryServiceTransactionManager),
-        queryReadCache);
+        queryProjectionStore, rebuildTransaction, queryReadCache);
   }
 }

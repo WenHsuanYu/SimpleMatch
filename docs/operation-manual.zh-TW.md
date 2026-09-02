@@ -993,4 +993,10 @@ test -w "$VCPKG_ROOT" && echo writable || echo read-only
 - `docs/rm1-risk-matching-restart-replay.md`：restart / equivalent replay evidence。
 - `docs/cdc-publication-verification.md`：transactional outbox 與 CDC publication verification。
 
+新增的 query-service certification 入口：[query-service certification](query-service-certification.md)。
+它涵蓋 replay、Redis fallback 與 quiescent critical-path isolation，並明確標示 active
+processing liveness 尚未由此 probe 證明。
+
+延伸文件也包含 query-service certification runbook，供操作員依 retained evidence 入口執行。
+
 本手冊應保持「操作入口與安全邊界」導向；若 script interface 或 lifecycle ownership 改變，應同步更新本文件，而不是保留已失效的命令範例。

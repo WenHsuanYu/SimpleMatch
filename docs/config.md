@@ -88,6 +88,13 @@ may enable it with `SIMPLEMATCH_QUERY_SERVICE_REBUILD_HTTP_ENABLED=true` and sup
 `SIMPLEMATCH_QUERY_SERVICE_REBUILD_OPERATOR_TOKEN`; both variables are Spring `Environment`
 overrides, and the token must be generated and removed by the run rather than stored in a manifest.
 
+The operator replay reset owns an eight-second PostgreSQL transaction timeout; a timeout rolls
+back the durable reset and the HTTP operation fails closed.
+
+The query-service outage probe accepts `SIMPLEMATCH_QUERY_ISOLATION_PROBE_SECONDS` (maximum 30)
+and `SIMPLEMATCH_QUERY_ISOLATION_COMMAND_TIMEOUT_SECONDS` (maximum 30) to bound its repeated
+Kubernetes observations. The probe is quiescent and does not prove active order processing.
+
 ## Kubernetes
 
 Each Spring service defaults to `optional:kubernetes:` through Config Data for local use. A

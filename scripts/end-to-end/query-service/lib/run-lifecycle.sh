@@ -42,7 +42,6 @@ restore_query_certification_environment() {
 write_query_failure_verdict() {
   local status="$1"
   [[ "$evidence_initialized" == true ]] || return 0
-  [[ -f "$evidence_dir/verdict.json" ]] && return 0
   jq -n \
     --arg namespace "$namespace" \
     --arg stage "$current_stage" \

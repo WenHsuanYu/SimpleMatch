@@ -4,7 +4,14 @@
 # The caller provides context, namespace, evidence_dir, timeout_seconds, and repo_root.
 
 kns() {
-  kubectl --context "$context" -n "$namespace" "$@"
+  local -a kubectl_args=(--context "$context" -n "$namespace")
+  if [[ "${kubernetes_request_timeout_seconds:-}" =~ ^[1-9][0-9]*$ ]]; then
+    kubectl_args+=(--request-timeout="${kubernetes_request_timeout_seconds}s")
+    timeout --foreground --signal=TERM --kill-after=2s \
+      "${kubernetes_request_timeout_seconds}s" kubectl "${kubectl_args[@]}" "$@"
+  else
+    kubectl "${kubectl_args[@]}" "$@"
+  fi
 }
 
 workload_replicas() {
@@ -127,6 +134,326 @@ capture_matching_committed_offsets() {
     and ([.partitions[].partition] == [range(0; 15)])
     and all(.partitions[]; .committedOffset >= 0)
   ' "$destination" >/dev/null
+}
+
+matching_ready_replicas() {
+  kns get pods -l app.kubernetes.io/name=matching -o json |
+    jq '[.items[] | select(any(.status.conditions[]?;
+      .type == "Ready" and .status == "True"))] | length'
+}
+
+capture_matching_fleet_topology() {
+  local destination="$1"
+  local statefulset_name="${SIMPLEMATCH_MATCHING_STATEFULSET:-matching}"
+  local statefulset_json pods_json pvcs_json pvs_json all_pods_json
+
+  statefulset_json="$(kns get "statefulset/$statefulset_name" -o json)" || return 1
+  pods_json="$(kns get pods -l app.kubernetes.io/name=matching -o json)" || return 1
+  pvcs_json="$(kns get pvc -o json)" || return 1
+  pvs_json="$(kns get pv -o json)" || return 1
+  all_pods_json="$(kns get pods -o json)" || return 1
+
+  jq -n \
+    --argjson statefulset "$statefulset_json" \
+    --argjson pods "$pods_json" \
+    --argjson pvcs "$pvcs_json" \
+    --argjson pvs "$pvs_json" \
+    --argjson allPods "$all_pods_json" '
+      def items($resource): ($resource.items // []);
+      def ready:
+        any(.status.conditions[]?; .type == "Ready" and .status == "True");
+      def node_affinity_nodes:
+        [.spec.nodeAffinity.required.nodeSelectorTerms[]?.matchExpressions[]?
+          | select(.key == "kubernetes.io/hostname") | .values[]?];
+
+      ($statefulset.metadata.name // "") as $statefulsetName
+      | ([range(0; 15) | tostring]) as $expectedOrdinals
+      | ([range(0; 15) | ($statefulsetName + "-" + tostring)]) as $expectedPodNames
+      | (items($pvcs) | map({key:(.metadata.name // ""),value:.}) | from_entries) as $pvcByName
+      | (items($pvs) | map({key:(.metadata.name // ""),value:.}) | from_entries) as $pvByName
+      | (items($pods) | map(select(.metadata.labels["app.kubernetes.io/name"] == "matching"))) as $matchingPods
+      | {
+          statefulset:{
+            name:$statefulsetName,
+            uid:($statefulset.metadata.uid // ""),
+            desiredReplicas:($statefulset.spec.replicas // 0),
+            readyReplicas:($statefulset.status.readyReplicas // 0),
+            currentRevision:($statefulset.status.currentRevision // ""),
+            updateRevision:($statefulset.status.updateRevision // "")
+          },
+          expectedOrdinals:$expectedOrdinals,
+          expectedPodNames:$expectedPodNames,
+          pods:($matchingPods | map(
+            . as $pod
+            | ([.spec.volumes[]? | select(.name == "matching-baseline")
+                | .persistentVolumeClaim.claimName] | .[0] // "") as $pvcName
+            | ($pvcByName[$pvcName] // {}) as $pvc
+            | ($pvByName[($pvc.spec.volumeName // "")] // {}) as $pv
+            | {
+                name:($pod.metadata.name // ""),
+                uid:($pod.metadata.uid // ""),
+                ordinal:($pod.metadata.labels["apps.kubernetes.io/pod-index"] // ""),
+                node:($pod.spec.nodeName // ""),
+                ready:($pod | ready),
+                ownerStatefulSet:(any(($pod.metadata.ownerReferences // [])[];
+                  .kind == "StatefulSet" and .name == $statefulsetName and .controller == true)),
+                controllerRevisionHash:($pod.metadata.labels["controller-revision-hash"] // ""),
+                pvc:$pvcName,
+                pvcPhase:($pvc.status.phase // ""),
+                pvcAccessModes:($pvc.spec.accessModes // []),
+                pv:($pvc.spec.volumeName // ""),
+                pvNodeAffinityNodes:($pv | node_affinity_nodes)
+              }
+          )),
+          unownedMatchingPods:(
+            items($allPods)
+            | map(select(.metadata.labels["app.kubernetes.io/name"] == "matching"))
+            | map(select(
+                (any((.metadata.ownerReferences // [])[];
+                  .kind == "StatefulSet" and .name == $statefulsetName and .controller == true)
+                | not)
+              ) | (.metadata.name // ""))
+          ),
+          unexpectedMatchingPods:(
+            items($allPods)
+            | map(.metadata.name // "")
+            | map(. as $name
+              | select(startswith($statefulsetName + "-")
+                and (($expectedPodNames | index($name)) == null)))
+          )
+        }
+    ' >"$destination"
+}
+
+matching_fleet_topology_is_healthy() {
+  local topology="$1"
+  jq -e '
+    (.matchingTopology // .) as $topology
+    | ($topology.statefulset) as $statefulset
+    | ([range(0; 15) | tostring]) as $expectedOrdinals
+    | ([range(0; 15) | ($statefulset.name + "-" + tostring)]) as $expectedPodNames
+    | ($statefulset.name | type == "string" and length > 0)
+      and ($statefulset.uid | type == "string" and length > 0)
+      and $statefulset.desiredReplicas == 15
+      and $statefulset.readyReplicas == 15
+      and ($statefulset.currentRevision | type == "string" and length > 0)
+      and $statefulset.currentRevision == $statefulset.updateRevision
+      and $topology.expectedOrdinals == $expectedOrdinals
+      and ($topology.pods | type == "array" and length == 15)
+      and ([$topology.pods[].name] | sort) == ($expectedPodNames | sort)
+      and ([$topology.pods[].ordinal] | sort_by(tonumber)) == $expectedOrdinals
+      and ([$topology.pods[].uid] | unique | length) == 15
+      and all($topology.pods[]; . as $pod
+        | ($pod.ready == true)
+        and ($pod.uid | type == "string" and length > 0)
+        and ($pod.node | type == "string" and length > 0)
+        and $pod.ownerStatefulSet == true
+        and $pod.controllerRevisionHash == $statefulset.currentRevision
+        and $pod.pvc == ("matching-baseline-" + $statefulset.name + "-" + $pod.ordinal)
+        and $pod.pvcPhase == "Bound"
+        and (($pod.pvcAccessModes | type == "array")
+          and (($pod.pvcAccessModes | index("ReadWriteOncePod")) != null))
+        and ($pod.pv | type == "string" and length > 0)
+        and (($pod.pvNodeAffinityNodes | type == "array")
+          and (($pod.pvNodeAffinityNodes | index($pod.node)) != null))
+      )
+      and ($topology.unownedMatchingPods | type == "array" and length == 0)
+      and ($topology.unexpectedMatchingPods | type == "array" and length == 0)
+  ' "$topology" >/dev/null
+}
+
+capture_critical_path_health() {
+  local destination="$1"
+  local records_file="${destination%.json}.ndjson"
+  local topology_file="${destination%.json}.matching-topology.json"
+  local path resource kind name resource_spec workload_json pods_json
+  local desired_replicas ready_replicas
+  local -a path_resources=(
+    'admission:deployment/risk-service'
+    'reservation:deployment/account-service'
+    'matching:statefulset/matching'
+    'persistence:deployment/persistence'
+    'account:deployment/account-service'
+    'quickfix:statefulset/quickfix-gateway'
+    'marketData:deployment/market-data-projection'
+  )
+
+  : >"$records_file" || return 1
+  for resource_spec in "${path_resources[@]}"; do
+    path="${resource_spec%%:*}"
+    resource="${resource_spec#*:}"
+    kind="${resource%%/*}"
+    name="${resource#*/}"
+    workload_json="$(kns get "$resource" -o json)" || return 1
+    pods_json="$(kns get pods -l "app.kubernetes.io/name=$name" -o json)" || return 1
+    desired_replicas="$(jq -er '.spec.replicas | numbers' <<<"$workload_json")" || return 1
+    ready_replicas="$(jq -er '.status.readyReplicas // 0 | numbers' <<<"$workload_json")" ||
+      return 1
+    jq -n \
+      --arg path "$path" \
+      --arg resource "$kind/$name" \
+      --argjson desiredReplicas "$desired_replicas" \
+      --argjson readyReplicas "$ready_replicas" \
+      --argjson pods "$pods_json" '
+        [$pods.items[]? | {
+          name:(.metadata.name // ""),
+          uid:(.metadata.uid // ""),
+          phase:(.status.phase // ""),
+          ready:any(.status.conditions[]?;
+            .type == "Ready" and .status == "True"),
+          restartCount:([.status.containerStatuses[]?.restartCount] | add // 0)
+        }] as $podStates
+        | {
+            path:$path,
+            resource:$resource,
+            desiredReplicas:$desiredReplicas,
+            readyReplicas:$readyReplicas,
+            podCount:($podStates | length),
+            readyPodCount:($podStates | map(select(.ready)) | length),
+            restartCount:($podStates | map(.restartCount) | add // 0),
+            pods:$podStates
+          }
+      ' >>"$records_file" || return 1
+  done
+
+  capture_matching_fleet_topology "$topology_file" || return 1
+  matching_fleet_topology_is_healthy "$topology_file" || return 1
+  jq -s --slurpfile matchingTopology "$topology_file" \
+    '{paths:.,matchingTopology:$matchingTopology[0]}' "$records_file" >"$destination"
+}
+
+critical_path_health_is_healthy() {
+  local health="$1"
+  jq -e '
+    (.paths | type == "array" and length == 7) as $hasExpectedShape
+    | .paths as $paths
+    | $hasExpectedShape
+      and ([ $paths[].path ] | sort) ==
+        ["account", "admission", "marketData", "matching", "persistence", "quickfix", "reservation"]
+      and ([ $paths[] | {path,resource}] | sort_by(.path)) == [
+        {path:"account",resource:"deployment/account-service"},
+        {path:"admission",resource:"deployment/risk-service"},
+        {path:"marketData",resource:"deployment/market-data-projection"},
+        {path:"matching",resource:"statefulset/matching"},
+        {path:"persistence",resource:"deployment/persistence"},
+        {path:"quickfix",resource:"statefulset/quickfix-gateway"},
+        {path:"reservation",resource:"deployment/account-service"}
+      ]
+      and all($paths[];
+        (.desiredReplicas | type == "number" and . > 0)
+        and (.readyReplicas == .desiredReplicas)
+        and (.podCount == .desiredReplicas)
+        and (.readyPodCount == .desiredReplicas)
+        and ((.pods | length) == .desiredReplicas)
+        and all(.pods[];
+          .phase == "Running"
+          and .ready == true
+          and (.uid | type == "string" and length > 0)
+          and ((.restartCount | type) == "number" and .restartCount >= 0)
+        )
+      )
+      and ([ $paths[] | select(.path == "matching") | .desiredReplicas] == [15])
+  ' "$health" >/dev/null || return 1
+  matching_fleet_topology_is_healthy "$health"
+}
+
+critical_consumer_state_is_healthy() {
+  local state="$1"
+  jq -e '
+    .persistenceQuarantines == 0
+    and .accountQuarantines == 0
+    and .quickfixQuarantines == 0
+    and .riskQuarantines == 0
+    and .quickfixPendingIntents == 0
+    and .marketDataDeadLetters == 0
+    and (.marketDataProgress | length) > 0
+    and all(.marketDataProgress[]; .recovery_state == "READY")
+  ' "$state" >/dev/null
+}
+
+capture_query_isolation_probe() {
+  local destination="$1"
+  local probe_seconds="${2:-5}"
+  local command_timeout_seconds="${query_isolation_command_timeout_seconds:-5}"
+  local samples_dir="${destination%.json}.samples"
+  local samples_file="$samples_dir/samples.ndjson"
+  local sample probe_started_epoch_ms probe_deadline_epoch_ms now_epoch_ms remaining_ms
+
+  [[ "$probe_seconds" =~ ^[1-9][0-9]*$ ]] || return 1
+  (( probe_seconds <= 30 )) || return 1
+  [[ "$command_timeout_seconds" =~ ^[1-9][0-9]*$ ]] || return 1
+  (( command_timeout_seconds <= 30 )) || return 1
+  probe_started_epoch_ms="$(date +%s%3N)" || return 1
+  probe_deadline_epoch_ms=$((probe_started_epoch_ms + probe_seconds * 1000))
+  mkdir -p "$samples_dir" || return 1
+  : >"$samples_file" || return 1
+
+  local kubernetes_request_timeout_seconds="$command_timeout_seconds"
+  for ((sample = 0; sample < probe_seconds; sample += 1)); do
+    now_epoch_ms="$(date +%s%3N)" || return 1
+    (( now_epoch_ms <= probe_deadline_epoch_ms )) || return 1
+    local state_file="$samples_dir/consumer-state-$sample.json"
+    local outage_file="$samples_dir/query-outage-$sample.json"
+    local offsets_file="$samples_dir/matching-committed-$sample.json"
+    local health_file="$samples_dir/critical-path-health-$sample.json"
+    local matching_ready critical_ready query_pod_count
+
+    capture_consumer_state "$state_file" || return 1
+    critical_consumer_state_is_healthy "$state_file" || return 1
+    capture_critical_path_health "$health_file" || return 1
+    critical_path_health_is_healthy "$health_file" || return 1
+    capture_query_service_outage_state "$outage_file" || return 1
+    query_pod_count="$(jq -er '.queryPodCount | select(type == "number")' "$outage_file")" ||
+      return 1
+    (( query_pod_count == 0 )) || return 1
+    matching_ready="$(matching_ready_replicas)" || return 1
+    [[ "$matching_ready" =~ ^[0-9]+$ ]] || return 1
+    (( matching_ready == 15 )) || return 1
+    capture_matching_committed_offsets "$offsets_file" || return 1
+    critical_ready=true
+    now_epoch_ms="$(date +%s%3N)" || return 1
+    (( now_epoch_ms <= probe_deadline_epoch_ms )) || return 1
+    jq -n \
+      --argjson sampleIndex "$sample" \
+      --argjson queryPodCount "$query_pod_count" \
+      --argjson matchingReady "$matching_ready" \
+      --argjson criticalConsumersReady "$critical_ready" \
+      --slurpfile consumerState "$state_file" \
+      --slurpfile criticalPathHealth "$health_file" \
+      --slurpfile matchingCommitted "$offsets_file" \
+      '{sampleIndex:$sampleIndex,queryPodCount:$queryPodCount,
+        matchingReady:$matchingReady,criticalConsumersReady:$criticalConsumersReady,
+        consumerState:$consumerState[0],criticalPathHealth:$criticalPathHealth[0],
+        matchingCommittedOffsets:$matchingCommitted[0]}' \
+      >>"$samples_file" || return 1
+    if (( sample + 1 < probe_seconds )); then
+      now_epoch_ms="$(date +%s%3N)" || return 1
+      remaining_ms=$((probe_deadline_epoch_ms - now_epoch_ms))
+      (( remaining_ms > 0 )) || return 1
+      if (( remaining_ms >= 1000 )); then
+        sleep 1
+      else
+        sleep "0.$(printf '%03d' "$remaining_ms")"
+      fi
+    fi
+  done
+
+  local probe_completed_epoch_ms elapsed_milliseconds
+  probe_completed_epoch_ms="$(date +%s%3N)" || return 1
+  (( probe_completed_epoch_ms <= probe_deadline_epoch_ms )) || return 1
+  elapsed_milliseconds=$((probe_completed_epoch_ms - probe_started_epoch_ms))
+  jq -n \
+    --argjson probeDurationSeconds "$probe_seconds" \
+    --argjson probeStartedEpochMs "$probe_started_epoch_ms" \
+    --argjson probeCompletedEpochMs "$probe_completed_epoch_ms" \
+    --argjson elapsedMilliseconds "$elapsed_milliseconds" \
+    --argjson commandTimeoutSeconds "$command_timeout_seconds" \
+    --slurpfile samples "$samples_file" \
+    '{probeDurationSeconds:$probeDurationSeconds,
+      probeStartedEpochMs:$probeStartedEpochMs,probeCompletedEpochMs:$probeCompletedEpochMs,
+      elapsedMilliseconds:$elapsedMilliseconds,commandTimeoutSeconds:$commandTimeoutSeconds,
+      sampleCount:($samples | length),
+      samples:$samples}' >"$destination"
 }
 
 capture_consumer_state() {

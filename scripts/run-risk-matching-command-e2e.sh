@@ -252,16 +252,22 @@ artifact_instrument="$(
     | .[0]
   ' "$evidence_dir/market-reference-configmap.json"
 )" || die 'mounted Market Reference has no eligible final-price instrument'
-artifact_symbol="$(jq -er '.symbol' <<<"$artifact_instrument")" || die \
+artifact_symbol="$(jq -er '.symbol | strings | select(test("^[A-Z0-9]{1,12}$"))' \
+  <<<"$artifact_instrument")" || die \
   'selected Market Reference instrument has no symbol'
+[[ "$artifact_symbol" =~ ^[A-Z0-9]{1,12}$ ]] || die \
+  'selected Market Reference symbol is not a safe alphanumeric identifier'
 artifact_rule_id="$(jq -er '.marketRuleId' <<<"$artifact_instrument")" || die \
   'selected Market Reference instrument has no market rule'
 artifact_quantity="$(
   jq -er --arg rule "$artifact_rule_id" '
     .data["market_reference.json"] | fromjson
-    | .marketRules.rules[] | select(.ruleId == $rule) | .boardLotShares
+    | .marketRules.rules[] | select(.ruleId == $rule)
+    | .boardLotShares | select(type == "number" and floor == .)
   ' "$evidence_dir/market-reference-configmap.json"
 )" || die 'selected Market Reference instrument has no board lot quantity'
+[[ "$artifact_quantity" =~ ^[1-9][0-9]*$ ]] || die \
+  'selected Market Reference board lot quantity is not a safe positive integer'
 
 # Verify the retained Risk connector, rather than merely checking that Kafka Connect Pods are Ready.
 # A Ready worker with a FAILED connector/task cannot satisfy the Risk outbox -> Kafka behavior.

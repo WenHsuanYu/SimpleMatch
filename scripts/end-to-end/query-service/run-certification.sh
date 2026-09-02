@@ -12,6 +12,8 @@ source "$repo_root/scripts/lib/local-kind.sh"
 source "$repo_root/scripts/lib/local-certification-provenance.sh"
 # shellcheck source=scripts/end-to-end/critical-consumers/lib/cluster-data.sh
 source "$repo_root/scripts/end-to-end/critical-consumers/lib/cluster-data.sh"
+# shellcheck source=scripts/end-to-end/critical-consumers/lib/matching-status.sh
+source "$repo_root/scripts/end-to-end/critical-consumers/lib/matching-status.sh"
 # shellcheck source=scripts/end-to-end/critical-consumers/lib/test-interfaces.sh
 source "$repo_root/scripts/end-to-end/critical-consumers/lib/test-interfaces.sh"
 # shellcheck source=scripts/end-to-end/query-service/lib/verdict.sh
@@ -27,6 +29,8 @@ namespace=""
 evidence_dir=""
 retained_evidence_dir=""
 timeout_seconds="${SIMPLEMATCH_QUERY_CERTIFICATION_TIMEOUT_SECONDS:-180}"
+query_isolation_probe_seconds="${SIMPLEMATCH_QUERY_ISOLATION_PROBE_SECONDS:-5}"
+query_isolation_command_timeout_seconds="${SIMPLEMATCH_QUERY_ISOLATION_COMMAND_TIMEOUT_SECONDS:-5}"
 current_stage="preflight"
 failure_reason=""
 evidence_initialized=false
@@ -58,8 +62,9 @@ Usage:
     [--timeout-seconds N]
 
 Certifies deterministic query-service replay, PostgreSQL fallback, Redis
-rebuild, freshness metadata, and critical-path isolation in a retained
-production-like namespace.
+rebuild, freshness metadata, and quiescent critical-path isolation in a
+retained production-like namespace. The isolation probe submits no new
+public event; active processing liveness is reported separately.
 EOF_USAGE
 }
 
@@ -163,7 +168,15 @@ done
 [[ -n "$evidence_dir" ]] || die "--evidence-dir is required"
 [[ "$timeout_seconds" =~ ^[1-9][0-9]*$ ]] || die "--timeout-seconds must be positive"
 (( timeout_seconds <= 300 )) || die "--timeout-seconds must not exceed 300"
-for tool in kubectl docker jq curl git awk sed grep date seq sleep tr cp mv cat wc; do
+[[ "$query_isolation_probe_seconds" =~ ^[1-9][0-9]*$ ]] ||
+  die "SIMPLEMATCH_QUERY_ISOLATION_PROBE_SECONDS must be positive"
+(( query_isolation_probe_seconds <= 30 )) ||
+  die "SIMPLEMATCH_QUERY_ISOLATION_PROBE_SECONDS must not exceed 30"
+[[ "$query_isolation_command_timeout_seconds" =~ ^[1-9][0-9]*$ ]] ||
+  die "SIMPLEMATCH_QUERY_ISOLATION_COMMAND_TIMEOUT_SECONDS must be positive"
+(( query_isolation_command_timeout_seconds <= 30 )) ||
+  die "SIMPLEMATCH_QUERY_ISOLATION_COMMAND_TIMEOUT_SECONDS must not exceed 30"
+for tool in kubectl docker jq curl git awk sed grep date seq sleep timeout tr cp mv cat wc; do
   command -v "$tool" >/dev/null 2>&1 || die "$tool is required"
 done
 [[ "$(kubectl config current-context)" == "$context" ]] ||
@@ -235,6 +248,10 @@ capture_query_service_outage_state "$evidence_dir/query-outage.json" ||
   die "query-service outage was not observed"
 capture_consumer_state "$evidence_dir/critical-during-query-outage.json" ||
   die "cannot capture critical state while query-service is unavailable"
+capture_query_isolation_probe \
+  "$evidence_dir/critical-query-isolation-probe.json" \
+  "$query_isolation_probe_seconds" ||
+  die "quiescent critical-path isolation probe failed during query-service outage"
 scale_deployment query-service "$original_query_replicas" ||
   die "query-service could not be restored after isolation verification"
 query_scaled=false
@@ -281,11 +298,7 @@ current_stage="verify Redis rebuild and failure isolation"
 query_redis_keys_present || die "public reads did not rebuild the selected Redis keys"
 capture_consumer_state "$evidence_dir/critical-after.json" ||
   die "cannot capture critical consumer state after query replay"
-matching_ready="$(
-  kns get pods -l app.kubernetes.io/name=matching -o json |
-    jq '[.items[] | select(any(.status.conditions[]?;
-      .type == "Ready" and .status == "True"))] | length'
-)"
+matching_ready="$(matching_ready_replicas)"
 critical_ready="$(jq -e '
   .persistenceQuarantines == 0
   and .accountQuarantines == 0

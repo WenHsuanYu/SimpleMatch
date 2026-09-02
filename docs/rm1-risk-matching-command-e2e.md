@@ -116,7 +116,7 @@ scripts/run-risk-matching-command-e2e.sh \
   --trading-day 2026-08-17 \
   --evidence-dir out/certification/rm1-20260817/rm1-02 \
   --retained-evidence-dir out/certification/rm1-20260817 \
-  --verifier-image "$(tr -d '\\r\\n' < out/certification/rm1-20260817/verifier-image-reference)"
+  --verifier-image "$(tr -d '\r\n' < out/certification/rm1-20260817/verifier-image-reference)"
 ```
 
 A non-empty evidence directory is rejected. Certification artifacts from separate runs must never be

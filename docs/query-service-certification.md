@@ -33,7 +33,21 @@ It captures the baseline, scales Redis to zero, and requires the same business v
 query-owned PostgreSQL fallback. It then restores Redis, scales query-service to zero, records
 that no query Pod exists, and captures the Risk admission, Account reservation, Persistence,
 QuickFIX, and market-data projection state while the query API is actually unavailable. The
-critical snapshot must remain unchanged through this fault window. Query-service is restored before
+critical snapshot must remain unchanged through this fault window. During the outage it also runs a
+bounded quiescent-isolation probe (configurable with `SIMPLEMATCH_QUERY_ISOLATION_PROBE_SECONDS`,
+maximum 30 seconds) and a per-command timeout (configured by
+`SIMPLEMATCH_QUERY_ISOLATION_COMMAND_TIMEOUT_SECONDS`, maximum 30 seconds). The evidence records
+the probe wall-clock start, completion, elapsed milliseconds, and sample indexes. Each sample also
+records the exact Matching fleet topology: ordinals 0 through 14, current StatefulSet revision
+and owner, Pod UID and node, the matching PVC and bound PV, and the PV node-affinity mapping.
+Unowned or extra Matching Pods fail the probe before a verdict is produced. Each sample confirms
+that query-service still has zero Pods, all 15 Matching partitions remain Ready, every
+critical-path workload remains Ready with stable Pod identities and restart counts, the
+critical-consumer state is healthy, and Matching committed offsets are present and non-decreasing.
+This repeated operational observation complements the before/during/after snapshot comparison
+without creating new orders or mutating authoritative state. It proves that the query outage caused
+no observed health regression while the system was quiescent; it does not by itself prove that a
+new admission or reservation would complete during the outage. Query-service is restored before
 the normally disabled authenticated reset adapter is enabled and only query-owned rebuildable state
 is cleared. Immediately before the reset, it records the 15-partition Kafka high-water
 offset for each source in `replay-boundary/manifest.json`. The reset input starts each partition at
@@ -49,7 +63,9 @@ both query groups reach their captured offsets exactly and every disclosed check
 Public reads must then
 recreate the four exact versioned Redis keys selected by the fixture. The final verdict also
 requires the expanded critical snapshots to remain identical before, during, and after the query
-outage, all 15 Matching partitions to remain ready, and the query deployment to be restored.
+outage, all 15 Matching partitions to remain ready, all critical-path workload health samples to
+remain stable, and the query deployment to be restored. Active processing liveness under a new
+order remains a separate evidence gap for QS-1 and is not represented as a passing check here.
 
 The deterministic-rebuild comparison covers business fields only. Projection observation and
 artifact-install timestamps are operational metadata and may change during replay; the separate
@@ -74,8 +90,9 @@ bash scripts/run-query-service-certification.sh \
 
 The output directory must be empty. On success, `verdict.json` contains a `PASS` result and the
 individual deterministic-rebuild, PostgreSQL-fallback, freshness, market-identity, Redis-rebuild,
-service-restoration, and critical-path-isolation checks. Baseline, outage, rebuilt, consumer-state,
-offset-reset, provenance, deployment, and diagnostic evidence remain beside it.
+service-restoration, quiescent-critical-path-isolation, and critical-path-isolation checks. Baseline, outage,
+probe samples, rebuilt, consumer-state, offset-reset, provenance, deployment, and diagnostic
+evidence remain beside it.
 
 ## Safety and restoration
 

@@ -74,6 +74,14 @@ grep -Fq "DATE '\$trading_day'" "$orchestrator" || {
   printf '%s\n' 'RM-1 Account fixture must use the explicit certification trading day.' >&2
   exit 1
 }
+grep -Fq 'selected Market Reference symbol is not a safe alphanumeric identifier' "$orchestrator" || {
+  printf '%s\n' 'RM-1 fixture must validate the selected symbol before SQL construction.' >&2
+  exit 1
+}
+grep -Fq 'selected Market Reference board lot quantity is not a safe positive integer' "$orchestrator" || {
+  printf '%s\n' 'RM-1 fixture must validate the selected quantity before SQL construction.' >&2
+  exit 1
+}
 if grep -Fq 'account_limit_day' "$orchestrator"; then
   printf '%s\n' 'RM-1 Account fixture must not derive its limit day from the host wall clock.' >&2
   exit 1
