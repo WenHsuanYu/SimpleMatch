@@ -27,3 +27,14 @@ The endpoint response proves only that the service-owned reset transaction compl
 reset, source retention, replay boundaries, deterministic responses, Redis convergence, and final
 lag remain operator-owned evidence. Use the repository production-like certification workflow to
 retain that evidence; never treat the HTTP response alone as a completed replay.
+
+The repository-owned completion gate is
+[`docs/query-service-certification.md`](../../../docs/query-service-certification.md). It requires
+an explicit fresh retained production-like evidence directory:
+
+```bash
+bash scripts/run-query-service-certification.sh \
+  --namespace "${SIMPLEMATCH_CERTIFICATION_NAMESPACE}" \
+  --retained-evidence-dir "${SIMPLEMATCH_PRODUCTION_LIKE_EVIDENCE_DIR}" \
+  --evidence-dir "${SIMPLEMATCH_QUERY_CERTIFICATION_EVIDENCE_DIR}"
+```
