@@ -27,7 +27,9 @@ class QuickFixGatewayFlywayMigrationTest {
     assertThat(hasTable(jdbcTemplate, "EVENT_LOG")).isTrue();
     assertThat(hasTable(jdbcTemplate, "MESSAGES_LOG")).isTrue();
     assertThat(hasTable(jdbcTemplate, "GATEWAY_OPERATION_AUDIT")).isTrue();
-    assertThat(appliedMigrationCount(jdbcTemplate)).isEqualTo(2);
+    assertThat(appliedMigrationCount(jdbcTemplate)).isEqualTo(3);
+    assertThat(columnLength(jdbcTemplate, "FIX_DELIVERY_INTENTS", "ORDER_ID"))
+        .isEqualTo(66);
   }
 
   @Test
@@ -67,6 +69,21 @@ class QuickFixGatewayFlywayMigrationTest {
         WHERE "success" AND "version" IS NOT NULL
         """,
         Integer.class);
+  }
+
+  private int columnLength(JdbcTemplate jdbcTemplate, String tableName, String columnName) {
+    return jdbcTemplate.queryForObject(
+        """
+        SELECT CHARACTER_MAXIMUM_LENGTH
+        FROM INFORMATION_SCHEMA.COLUMNS
+        WHERE UPPER(TABLE_SCHEMA) = ?
+          AND UPPER(TABLE_NAME) = ?
+          AND UPPER(COLUMN_NAME) = ?
+        """,
+        Integer.class,
+        SCHEMA_NAME,
+        tableName,
+        columnName);
   }
 
   private boolean hasTable(JdbcTemplate jdbcTemplate, String tableName) {

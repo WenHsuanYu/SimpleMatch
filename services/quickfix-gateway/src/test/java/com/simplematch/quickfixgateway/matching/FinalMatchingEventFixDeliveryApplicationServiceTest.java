@@ -18,6 +18,7 @@ import com.simplematch.contracts.matching.runtime.v1.TradeExecuted;
 import com.simplematch.contracts.matching.runtime.v1.TradeLeg;
 import com.simplematch.contracts.matching.runtime.v1.TradeLegState;
 import com.simplematch.quickfixgateway.fix.OrderSessionRegistry;
+import com.simplematch.quickfixgateway.risk.RiskOrderIdentityDeriver;
 import com.simplematch.quickfixgateway.store.JdbcFinalFixDeliveryStore;
 import com.simplematch.quickfixgateway.wal.FixSessionIdentity;
 import com.simplematch.quickfixgateway.wal.RawFixMessage;
@@ -28,12 +29,14 @@ import com.simplematch.quickfixgateway.wal.WalOrderTerms;
 import com.simplematch.quickfixgateway.wal.WalRecord;
 import java.time.Clock;
 import java.time.Instant;
+import java.time.LocalDate;
 import java.time.ZoneOffset;
 import java.util.HexFormat;
 import java.util.UUID;
 import org.flywaydb.core.Flyway;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.jdbc.datasource.DataSourceTransactionManager;
@@ -109,6 +112,69 @@ class FinalMatchingEventFixDeliveryApplicationServiceTest {
     assertThat(store.findPending(10))
         .extracting(intent -> intent.report().executionId())
         .containsExactly(TRADE_ID + "-maker", TRADE_ID + "-taker");
+    assertThat(store.findPending(10))
+        .allSatisfy(
+            intent -> {
+              assertThat(intent.report().executionType()).isEqualTo('F');
+              assertThat(intent.report().orderStatus()).isEqualTo('2');
+            });
+  }
+
+  @DisplayName("Partial trade intents use the FIX trade execution type and partial status")
+  @Test
+  void partialTradeIntentsUsePartialFillExecutionTypeAndStatus() throws Exception {
+    final FinalMatchingEventFixDeliveryApplicationService service = service(completeRegistry());
+
+    assertThat(
+            persist(
+                service,
+                tradeEnvelope(
+                    1_000_000L,
+                    MAKER_ORDER_ID,
+                    TAKER_ORDER_ID,
+                    TradeLegState.TRADE_LEG_STATE_PARTIALLY_FILLED)))
+        .isEqualTo(FinalMatchingEventFixDeliveryOutcome.APPLIED);
+
+    assertThat(store.findPending(10))
+        .allSatisfy(
+            intent -> {
+              assertThat(intent.report().executionType()).isEqualTo('F');
+              assertThat(intent.report().orderStatus()).isEqualTo('1');
+            });
+  }
+
+  @Test
+  void storesFixOrderIdsAtTheMaximumClientOrderIdBoundary() throws Exception {
+    final RiskOrderIdentityDeriver identityDeriver =
+        new RiskOrderIdentityDeriver(LocalDate.of(1970, 1, 1));
+    final String makerClientOrderId = "M".repeat(64);
+    final String takerClientOrderId = "T".repeat(64);
+    final String makerFixOrderId = "O-" + makerClientOrderId;
+    final String takerFixOrderId = "O-" + takerClientOrderId;
+    final WalRecord makerRecord =
+        walRecord(makerFixOrderId, makerClientOrderId, MAKER_ACCOUNT_ID);
+    final WalRecord takerRecord =
+        walRecord(takerFixOrderId, takerClientOrderId, TAKER_ACCOUNT_ID, Side.SIDE_BUY);
+    final OrderSessionRegistry registry = new OrderSessionRegistry(identityDeriver);
+    final SessionID sessionId = new SessionID("FIX.4.4", "SIMPLEMATCH", "CLIENT");
+    registry.registerAcceptedOrder(sessionId, makerRecord, 'A');
+    registry.registerAcceptedOrder(sessionId, takerRecord, 'A');
+
+    final FinalMatchingEventFixDeliveryApplicationService service = service(registry);
+    assertThat(
+            persist(
+                service,
+                tradeEnvelope(
+                    1_000_000L,
+                    identityDeriver.derive(makerRecord),
+                    identityDeriver.derive(takerRecord))))
+        .isEqualTo(FinalMatchingEventFixDeliveryOutcome.APPLIED);
+
+    assertThat(
+            jdbcTemplate.queryForList(
+                "SELECT order_id FROM quickfix_gateway.fix_delivery_intents ORDER BY order_id",
+                String.class))
+        .containsExactly(makerFixOrderId, takerFixOrderId);
   }
 
   @Test
@@ -169,20 +235,29 @@ class FinalMatchingEventFixDeliveryApplicationServiceTest {
       OrderSessionRegistry registry, String orderId, String accountId, Side side, String clientOrderId) {
     registry.registerAcceptedOrder(
         new SessionID("FIX.4.4", "SIMPLEMATCH", "CLIENT"),
-        new WalRecord(
-            new WalMetadata("v1", UUID.randomUUID().toString(), 1L, "quickfix-gateway"),
-            new FixSessionIdentity("CLIENT", "SIMPLEMATCH"),
-            new WalOrderReference(orderId, clientOrderId, "", accountId),
-            new WalCommand.NewOrder(
-                new WalOrderTerms(
-                    "2330",
-                    side,
-                    "100",
-                    "100",
-                    OrderType.ORDER_TYPE_LIMIT,
-                    TimeInForce.TIME_IN_FORCE_ROD)),
-            new RawFixMessage("raw")),
+        walRecord(orderId, clientOrderId, accountId, side),
         'A');
+  }
+
+  private WalRecord walRecord(String orderId, String clientOrderId, String accountId) {
+    return walRecord(orderId, clientOrderId, accountId, Side.SIDE_SELL);
+  }
+
+  private WalRecord walRecord(
+      String orderId, String clientOrderId, String accountId, Side side) {
+    return new WalRecord(
+        new WalMetadata("v1", UUID.randomUUID().toString(), 1L, "quickfix-gateway"),
+        new FixSessionIdentity("CLIENT", "SIMPLEMATCH"),
+        new WalOrderReference(orderId, clientOrderId, "", accountId),
+        new WalCommand.NewOrder(
+            new WalOrderTerms(
+                "2330",
+                side,
+                "100",
+                "100",
+                OrderType.ORDER_TYPE_LIMIT,
+                TimeInForce.TIME_IN_FORCE_ROD)),
+        new RawFixMessage("raw"));
   }
 
   private int count(String table) {
@@ -191,8 +266,41 @@ class FinalMatchingEventFixDeliveryApplicationServiceTest {
   }
 
   private FinalMatchingEventEnvelope tradeEnvelope(long priceUnits) throws Exception {
-    final TradeLeg maker = leg(MAKER_ORDER_ID, MAKER_ACCOUNT_ID, Side.SIDE_SELL);
-    final TradeLeg taker = leg(TAKER_ORDER_ID, TAKER_ACCOUNT_ID, Side.SIDE_BUY);
+    return tradeEnvelope(priceUnits, MAKER_ORDER_ID, TAKER_ORDER_ID);
+  }
+
+  private FinalMatchingEventEnvelope tradeEnvelope(
+      long priceUnits, String makerOrderId, String takerOrderId) throws Exception {
+    return tradeEnvelope(
+        priceUnits, makerOrderId, takerOrderId, TradeLegState.TRADE_LEG_STATE_FILLED);
+  }
+
+  private FinalMatchingEventEnvelope tradeEnvelope(
+      long priceUnits,
+      String makerOrderId,
+      String takerOrderId,
+      TradeLegState resultingState)
+      throws Exception {
+    final long quantityShares =
+        resultingState == TradeLegState.TRADE_LEG_STATE_FILLED ? 100L : 40L;
+    final long cumulativeQuantityShares = quantityShares;
+    final long leavesQuantityShares = 100L - cumulativeQuantityShares;
+    final TradeLeg maker =
+        leg(
+            makerOrderId,
+            MAKER_ACCOUNT_ID,
+            Side.SIDE_SELL,
+            resultingState,
+            cumulativeQuantityShares,
+            leavesQuantityShares);
+    final TradeLeg taker =
+        leg(
+            takerOrderId,
+            TAKER_ACCOUNT_ID,
+            Side.SIDE_BUY,
+            resultingState,
+            cumulativeQuantityShares,
+            leavesQuantityShares);
     return FinalMatchingEventEnvelope.parse(
         MatchingEvent.newBuilder()
             .setSchemaVersion(1)
@@ -212,7 +320,7 @@ class FinalMatchingEventFixDeliveryApplicationServiceTest {
                     .setMatchIndex(0)
                     .setInstrument(VenueInstrument.newBuilder().setVenueMic("XTAI").setSymbol("2330"))
                     .setAggressorSide(Side.SIDE_BUY)
-                    .setQuantityShares(100L)
+                    .setQuantityShares(quantityShares)
                     .setPriceUnits(priceUnits)
                     .setMaker(maker)
                     .setTaker(taker))
@@ -220,15 +328,21 @@ class FinalMatchingEventFixDeliveryApplicationServiceTest {
             .toByteArray());
   }
 
-  private TradeLeg leg(String orderId, String accountId, Side side) {
+  private TradeLeg leg(
+      String orderId,
+      String accountId,
+      Side side,
+      TradeLegState resultingState,
+      long cumulativeQuantityShares,
+      long leavesQuantityShares) {
     return TradeLeg.newBuilder()
         .setOrderId(orderId)
         .setAccountId(accountId)
         .setSide(side)
         .setAveragePriceUnits(1_000_000L)
-        .setCumulativeQuantityShares(100L)
-        .setLeavesQuantityShares(0L)
-        .setResultingState(TradeLegState.TRADE_LEG_STATE_FILLED)
+        .setCumulativeQuantityShares(cumulativeQuantityShares)
+        .setLeavesQuantityShares(leavesQuantityShares)
+        .setResultingState(resultingState)
         .build();
   }
 }

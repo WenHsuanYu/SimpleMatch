@@ -71,6 +71,8 @@ class QuickFixPreparedSubmissionLiveCertificationTest {
     final String clOrdId = requiredEnvironment("SIMPLEMATCH_LIVE_FIX_CL_ORD_ID");
     final String accountId =
         canonicalAccountId(requiredEnvironment("SIMPLEMATCH_LIVE_FIX_ACCOUNT_ID"));
+    final String side = environmentOrDefault("SIMPLEMATCH_LIVE_FIX_SIDE", "1");
+    assertThat(side).as("FIX Side").isIn("1", "2");
     final String symbol = requiredEnvironment("SIMPLEMATCH_LIVE_FIX_SYMBOL");
     final String quantity = requiredEnvironment("SIMPLEMATCH_LIVE_FIX_QUANTITY");
     final String price = requiredEnvironment("SIMPLEMATCH_LIVE_FIX_PRICE");
@@ -110,9 +112,11 @@ class QuickFixPreparedSubmissionLiveCertificationTest {
       awaitRelease(releaseFile, timeoutSeconds);
 
       final long sentAtEpochMs = Instant.now().toEpochMilli();
+      final NewOrderSingle order =
+          newOrder(clOrdId, symbol, quantity, price, accountId, timeInForce);
+      order.setChar(quickfix.field.Side.FIELD, side.charAt(0));
       assertThat(
-              Session.sendToTarget(
-                  newOrder(clOrdId, symbol, quantity, price, accountId, timeInForce), sessionId))
+              Session.sendToTarget(order, sessionId))
           .isTrue();
 
       final ExecutionReport report =
@@ -123,7 +127,10 @@ class QuickFixPreparedSubmissionLiveCertificationTest {
                   clOrdId,
                   timeoutSeconds,
                   this::isTerminalCancellation)
-              : null;
+              : isMatchingLifecycle(report)
+                  ? report
+                  : application.awaitExecutionReport(
+                      clOrdId, timeoutSeconds, this::isMatchingLifecycle);
       writeEvidence(
           evidencePath, report, sentAtEpochMs, accountId, timeInForce, terminalReport);
     } finally {
@@ -152,7 +159,6 @@ class QuickFixPreparedSubmissionLiveCertificationTest {
     final NewOrderSingle order = new NewOrderSingle();
     order.setString(ClOrdID.FIELD, clOrdId);
     order.setString(Symbol.FIELD, symbol);
-    order.setChar(quickfix.field.Side.FIELD, '1');
     order.setString(OrderQty.FIELD, quantity);
     order.setChar(OrdType.FIELD, '2');
     order.setString(Price.FIELD, price);
@@ -269,6 +275,14 @@ class QuickFixPreparedSubmissionLiveCertificationTest {
     try {
       return "4".equals(report.getString(ExecType.FIELD))
           && "4".equals(report.getString(OrdStatus.FIELD));
+    } catch (FieldNotFound missingField) {
+      return false;
+    }
+  }
+
+  private boolean isMatchingLifecycle(ExecutionReport report) {
+    try {
+      return !"A".equals(report.getString(ExecType.FIELD));
     } catch (FieldNotFound missingField) {
       return false;
     }

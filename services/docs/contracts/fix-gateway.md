@@ -37,6 +37,8 @@ SenderCompID + TargetCompID + TradingDay + MsgType + ClOrdID
 
 Equivalent retransmission resolves to the same internal `commandId`; differing content for the same
 identity is rejected as a conflict. A cancel has its own `ClOrdID` and references `OrigClOrdID`.
+The Gateway accepts each client identity up to 64 characters; because the external `OrderID` is
+`O-<ClOrdID>`, durable delivery state reserves 66 characters for that prefixed value.
 
 ## Admission state machine
 
@@ -104,7 +106,8 @@ the same business `ExecID` and FIX session resend semantics so the peer can dedu
 | --- | --- | --- |
 | Durable admission pending Matching | `ExecutionReport` | `ExecType=PendingNew`, `OrdStatus=PendingNew` |
 | Order resting | `ExecutionReport` | `ExecType=New`, `OrdStatus=New`, current cumulative/leaves values |
-| Partial/full trade leg | `ExecutionReport` | `PartialFill`/`Fill`, stable `ExecID`, last/cumulative/leaves/average values |
+| Partial trade leg | `ExecutionReport` | `ExecType=F` (`Trade`), `OrdStatus=1` (`PartiallyFilled`), stable `ExecID`, last/cumulative/leaves/average values |
+| Full trade leg | `ExecutionReport` | `ExecType=F` (`Trade`), `OrdStatus=2` (`Filled`), stable `ExecID`, last/cumulative/leaves/average values |
 | New-order rejection | `ExecutionReport` | `ExecType=Rejected`, `OrdStatus=Rejected`, stable reason |
 | Successful cancel or expiry | `ExecutionReport` | `Canceled` or terminal status with original and current identities |
 | Cancel rejection | `OrderCancelReject` | `ClOrdID`, `OrigClOrdID`, current `OrdStatus`, response type, reason, and text |
@@ -112,6 +115,9 @@ the same business `ExecID` and FIX session resend semantics so the peer can dedu
 Maker/taker are Matching roles for one trade; Gateway maps each leg to the session that owns its
 order. A repeated Matching Event with the same raw bytes creates no second delivery intent. The same
 event identity with different bytes is quarantined and interrupts admission.
+
+FIX 4.4 does not define `ExecType=1`; a partial trade is represented by the standard `Trade`
+execution type together with `OrdStatus=1` and the cumulative, leaves, and average quantity fields.
 
 ## Compatibility
 

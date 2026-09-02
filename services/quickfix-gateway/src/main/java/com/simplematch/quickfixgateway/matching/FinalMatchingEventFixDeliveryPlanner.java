@@ -147,6 +147,7 @@ public final class FinalMatchingEventFixDeliveryPlanner {
           case TRADE_LEG_STATE_UNSPECIFIED, UNRECOGNIZED ->
               throw new IllegalArgumentException("validated trade leg state is required");
         };
+    final char executionType = 'F';
     return intent(
         envelope,
         state,
@@ -154,7 +155,7 @@ public final class FinalMatchingEventFixDeliveryPlanner {
         deliveryIndex,
         new FinalFixDeliveryReport(
             tradeId + "-" + role,
-            status,
+            executionType,
             status,
             event.getTradeExecuted().getQuantityShares(),
             event.getTradeExecuted().getPriceUnits(),

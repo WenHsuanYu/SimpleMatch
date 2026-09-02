@@ -121,7 +121,9 @@ Before any Gateway, FIX, or Kafka helper state is changed, the runner verifies:
 
 - the retained `run-context` names the requested namespace;
 - the retained `source-revision` equals the current repository `HEAD`;
-- the current repository has no tracked, staged, or untracked non-ignored source changes; and
+- the current repository has no tracked, staged, or untracked non-ignored changes under the
+  certification runtime source paths; an uncommitted documentation-only change outside those paths
+  does not change this run's runtime source identity and does not block provenance; and
 - the retained verifier image reference and immutable image identity are present and well formed.
 
 Registry transport retains the digest-qualified verifier reference. The `kind-load` compatibility
@@ -131,14 +133,24 @@ the retained image identity with the CRI image identity on that node. This one-t
 mutable-tag ambiguity without treating the Pod `imageID` as an equivalent digest or adding a
 recurring observation loop.
 
+The runtime source scope is deliberately broad: it includes all non-documentation, non-generated
+repository inputs that can affect images, manifests, configuration, or certification harnesses,
+including Compose, FIX dictionaries, and dependent Query/critical-consumer runners. The shared
+provenance helper excludes Markdown/documentation and `graphify-out/`, so an uncommitted editorial
+change does not block the current runtime certification. A documentation-only commit still changes
+Git `HEAD`, so a retained run must be recreated after that commit before dependent certification;
+the boundary concerns runtime semantics and source identity, not byte-for-byte image layers, because
+Docker build contexts may still contain documentation files.
+
 The close runner initializes its own empty evidence directory before retained-run validation. A
 provenance or namespace preflight failure therefore still produces the same machine-readable
 `verdict.json` shape as later certification failures, while no application or helper state has yet
 been mutated.
 
 This prevents a custom production-like evidence path from being confused with the default evidence
-directory, and prevents an uncommitted or untracked harness change from being presented as evidence
-for the recorded revision.
+directory, and prevents an uncommitted or untracked runtime harness change from being presented as
+evidence for the recorded revision without coupling runtime certification to unrelated documentation
+edits.
 
 ## Deployment close certification
 

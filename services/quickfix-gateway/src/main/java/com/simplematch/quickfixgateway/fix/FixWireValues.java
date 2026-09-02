@@ -36,8 +36,7 @@ final class FixWireValues {
     return switch (executionType) {
       case EXECUTION_TYPE_PENDING_NEW -> 'A';
       case EXECUTION_TYPE_NEW -> '0';
-      case EXECUTION_TYPE_PARTIAL_FILL -> '1';
-      case EXECUTION_TYPE_FILL -> '2';
+      case EXECUTION_TYPE_PARTIAL_FILL, EXECUTION_TYPE_FILL -> 'F';
       case EXECUTION_TYPE_CANCELED -> '4';
       case EXECUTION_TYPE_REJECTED, EXECUTION_TYPE_CANCEL_REJECTED, EXECUTION_TYPE_UNSPECIFIED ->
           '8';
@@ -46,7 +45,11 @@ final class FixWireValues {
   }
 
   static char mapOrdStatus(ExecutionType executionType) {
-    return mapExecType(executionType);
+    return switch (executionType) {
+      case EXECUTION_TYPE_PARTIAL_FILL -> '1';
+      case EXECUTION_TYPE_FILL -> '2';
+      default -> mapExecType(executionType);
+    };
   }
 
   static int mapCancelRejectReason(String text) {

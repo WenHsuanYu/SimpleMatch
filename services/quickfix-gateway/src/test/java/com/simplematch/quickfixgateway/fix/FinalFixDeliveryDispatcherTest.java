@@ -106,7 +106,7 @@ class FinalFixDeliveryDispatcherTest {
     assertThat(store.pendingIntentCount()).isZero();
     assertThat(attempts[0]).isEqualTo(2);
     assertThat(FixMessageSnapshot.snapshot(sent.getFirst(), 35, 17, 150, 39, 151, 14, 6, 32, 31))
-        .isEqualTo("35=8|17=trade-id-maker|150=2|39=2|151=0|14=100|6=100|32=100|31=100");
+        .isEqualTo("35=8|17=trade-id-maker|150=F|39=2|151=0|14=100|6=100|32=100|31=100");
     assertThat(registry.find(ORDER_ID.toString()).orElseThrow().lifecycle().currentOrdStatus())
         .isEqualTo('2');
   }
@@ -123,7 +123,7 @@ class FinalFixDeliveryDispatcherTest {
         new FinalFixDeliveryIdentity("d".repeat(64), "e".repeat(64), 0),
         new FinalFixDeliveryRecipient(ORDER_ID, sessionId(), order),
         new FinalFixDeliveryReport(
-            "trade-id-maker", '2', '2', 100, 1_000_000, 100, 0, 1_000_000, ""),
+            "trade-id-maker", 'F', '2', 100, 1_000_000, 100, 0, 1_000_000, ""),
         0,
         42L,
         CLOCK.millis());

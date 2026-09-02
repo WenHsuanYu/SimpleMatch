@@ -90,7 +90,19 @@ public final class MatchingEventObservationMain {
             + "before the observation deadline");
   }
 
-  private static Observation matchingObservation(
+  /**
+   * Correlates one consumed record with the requested command and order.
+   *
+   * <p>The returned evidence preserves the configured Kafka seek lower bound as {@code
+   * startOffset}; a non-matching record returns {@code null} so callers can continue observing.
+   *
+   * @param record consumed Kafka record to inspect
+   * @param arguments requested observation boundary and correlation identifiers
+   * @return correlated evidence, or {@code null} when the record is outside the requested range or
+   *     does not match
+   * @throws IllegalStateException when a record contains an invalid Matching Event payload
+   */
+  static Observation matchingObservation(
       ConsumerRecord<byte[], byte[]> record, ObservationArguments arguments) {
     if (record.offset() < arguments.startOffset()) {
       return null;
@@ -106,6 +118,7 @@ public final class MatchingEventObservationMain {
     return new Observation(
         record.topic(),
         record.partition(),
+        arguments.startOffset(),
         record.offset(),
         envelope.eventIdHex(),
         envelope.payloadSha256Hex(),
@@ -158,9 +171,11 @@ public final class MatchingEventObservationMain {
     return properties;
   }
 
+  /** Evidence written for one correlated Matching Event record. */
   record Observation(
       String topic,
       int partition,
+      long startOffset,
       long offset,
       String eventId,
       String payloadSha256,
@@ -168,7 +183,8 @@ public final class MatchingEventObservationMain {
       String sourceCommandId,
       String orderId) {}
 
-  private record ObservationArguments(
+  /** Parsed observer inputs used to establish the event correlation boundary. */
+  record ObservationArguments(
       String bootstrap,
       String topic,
       int partition,

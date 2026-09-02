@@ -6,17 +6,27 @@ import java.util.Objects;
 /** Shared validation rules for gateway-local WAL values. */
 final class WalValidation {
   private static final int MAX_TEXT_LENGTH = 64;
+  private static final int MAX_ORDER_ID_LENGTH = MAX_TEXT_LENGTH + 2;
 
   private WalValidation() {}
 
   static String requiredText(String value, String fieldName) {
+    return requiredText(value, fieldName, MAX_TEXT_LENGTH);
+  }
+
+  private static String requiredText(String value, String fieldName, int maximumLength) {
     if (value == null || value.isBlank()) {
       throw new IllegalArgumentException(fieldName + " must not be blank");
     }
-    if (value.length() > MAX_TEXT_LENGTH) {
-      throw new IllegalArgumentException(fieldName + " must be <= 64 characters");
+    if (value.length() > maximumLength) {
+      throw new IllegalArgumentException(
+          fieldName + " must be <= " + maximumLength + " characters");
     }
     return value;
+  }
+
+  static String requiredOrderId(String value) {
+    return requiredText(value, "order_id", MAX_ORDER_ID_LENGTH);
   }
 
   static String nonBlankText(String value, String fieldName) {

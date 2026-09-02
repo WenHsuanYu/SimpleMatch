@@ -111,6 +111,10 @@ details.
 
 The external FIX/WAL order id remains deterministic `OrderID = O-<ClOrdID>`.
 
+The Gateway accepts `ClOrdID` values up to 64 characters, so the durable FIX delivery ledger stores
+the prefixed external `OrderID` in a `VARCHAR(66)` column. This keeps the WAL, FIX mapper, and
+versioned Flyway schema aligned at the maximum supported identity length.
+
 At the Risk v2 boundary, `RiskOrderIdentityDeriver` derives a separate opaque internal order UUID
 from FIX session identity, the deployment-owned trading day, and the original client `ClOrdID`.
 That configured day must identify the same session as the approved Market Reference artifact; it is
