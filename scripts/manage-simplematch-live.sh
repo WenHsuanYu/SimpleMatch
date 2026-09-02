@@ -165,6 +165,14 @@ verify_pv_affinity() {
   simplematch_kind_create_disposable_namespace \
     "$context" "$namespace" kind-manager-storage-probe "$probe_run_id" ||
     simplematch_die "failed to create storage verification namespace: $namespace"
+  kubectl --context "$context" -n "$namespace" create serviceaccount default \
+    --dry-run=client -o yaml \
+    | kubectl --context "$context" apply -f - >/dev/null ||
+    simplematch_die "failed to create default ServiceAccount in storage verification namespace: $namespace"
+  kubectl --context "$context" -n "$namespace" wait \
+    --for=jsonpath='{.metadata.name}'=default serviceaccount/default \
+    --timeout=30s >/dev/null ||
+    simplematch_die "default ServiceAccount did not become ready in storage verification namespace: $namespace"
   kubectl --context "$context" apply -f - >/dev/null <<EOF_PROBE
 apiVersion: v1
 kind: PersistentVolumeClaim

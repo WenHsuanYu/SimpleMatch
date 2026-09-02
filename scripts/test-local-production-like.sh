@@ -107,6 +107,16 @@ grep -Fq 'digest: %s' "$script_dir/render-local-kubernetes-manifest.sh"
 "$runner" --help >/dev/null
 grep -Fq 'SIMPLEMATCH_CERTIFICATION_TRADING_DAY' "$bootstrap_lib"
 grep -Fq "jq '.immutable = true'" "$kubernetes_lib"
+ruby - "$kubernetes_lib" <<'RUBY'
+path = ARGV.fetch(0)
+source = File.read(path, encoding: "UTF-8")
+body = source[/^apply_local_kubernetes_inputs\(\).*?^\}/m]
+abort "Kubernetes input helper is missing" unless body
+abort "QuickFIX input must be rendered immutable before create" unless
+  body.match?(/create -f "\$input_manifest"\s+--dry-run=client -o json.*?jq '\.immutable = true'.*?kubectl --context "\$kind_context" -n "\$namespace" create -f -/m)
+abort "QuickFIX input must not use client-side apply" if
+  body.match?(/create -f "\$input_manifest"\s+--dry-run=client -o json\s+\|\s+jq '\.immutable = true'\s+\|\s+kubectl .*? apply -f -/m)
+RUBY
 grep -Fq -- '--resume' "$bootstrap_lib"
 grep -Fq -- '--image-transport' "$framework_lib" "$bootstrap_lib"
 grep -Fq 'simplematch_local_image_transport_validate "$image_transport"' "$bootstrap_lib"

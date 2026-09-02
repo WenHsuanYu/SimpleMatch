@@ -91,7 +91,10 @@ apply_local_kubernetes_inputs() {
     printf 'Failed to create the immutable Market Reference artifact ConfigMap.\n' >&2
     return 1
   fi
-  if ! kubectl create -f "$input_manifest" >/dev/null; then
+  if ! kubectl --context "$kind_context" -n "$namespace" \
+      create -f "$input_manifest" --dry-run=client -o json \
+      | jq '.immutable = true' \
+      | kubectl --context "$kind_context" -n "$namespace" create -f - >/dev/null; then
     printf 'Failed to create the immutable QuickFIX FIX44 dictionary ConfigMap.\n' >&2
     return 1
   fi

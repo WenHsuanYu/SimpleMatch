@@ -47,7 +47,8 @@ ruby - "$prepared_test" <<'RUBY'
 path = ARGV.fetch(0)
 source = File.read(path, encoding: "UTF-8")
 abort "prepared FIX client must retain structured ExecutionReport evidence" unless
-  source.include?("writeEvidence(evidencePath, report, sentAtEpochMs);")
+  source.include?("writeEvidence(") &&
+  source.include?("accountId, timeInForce, terminalReport")
 abort "prepared FIX client must not classify admission semantics inside JUnit" if
   source.include?("assertThat(actualExecType)") || source.include?("assertThat(actualOrdStatus)")
 RUBY
