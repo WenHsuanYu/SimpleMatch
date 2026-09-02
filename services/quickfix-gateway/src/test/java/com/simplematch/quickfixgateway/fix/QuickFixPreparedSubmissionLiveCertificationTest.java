@@ -13,6 +13,7 @@ import java.util.UUID;
 import java.util.concurrent.LinkedBlockingQueue;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicReference;
+import java.util.function.Predicate;
 import org.junit.jupiter.api.Test;
 import quickfix.Application;
 import quickfix.DefaultMessageFactory;
@@ -73,6 +74,8 @@ class QuickFixPreparedSubmissionLiveCertificationTest {
     final String symbol = requiredEnvironment("SIMPLEMATCH_LIVE_FIX_SYMBOL");
     final String quantity = requiredEnvironment("SIMPLEMATCH_LIVE_FIX_QUANTITY");
     final String price = requiredEnvironment("SIMPLEMATCH_LIVE_FIX_PRICE");
+    final String timeInForce = environmentOrDefault("SIMPLEMATCH_LIVE_FIX_TIME_IN_FORCE", "0");
+    assertThat(timeInForce).as("FIX TimeInForce").isIn("0", "3", "4");
     final int timeoutSeconds =
         integerEnvironment("SIMPLEMATCH_RETAINED_FIX_TIMEOUT_SECONDS", "60", 1, 300);
 
@@ -109,12 +112,20 @@ class QuickFixPreparedSubmissionLiveCertificationTest {
       final long sentAtEpochMs = Instant.now().toEpochMilli();
       assertThat(
               Session.sendToTarget(
-                  newOrder(clOrdId, symbol, quantity, price, accountId), sessionId))
+                  newOrder(clOrdId, symbol, quantity, price, accountId, timeInForce), sessionId))
           .isTrue();
 
       final ExecutionReport report =
           application.awaitExecutionReport(clOrdId, timeoutSeconds);
-      writeEvidence(evidencePath, report, sentAtEpochMs);
+      final ExecutionReport terminalReport =
+          "3".equals(timeInForce)
+              ? application.awaitExecutionReport(
+                  clOrdId,
+                  timeoutSeconds,
+                  this::isTerminalCancellation)
+              : null;
+      writeEvidence(
+          evidencePath, report, sentAtEpochMs, accountId, timeInForce, terminalReport);
     } finally {
       initiator.stop(true);
     }
@@ -132,7 +143,12 @@ class QuickFixPreparedSubmissionLiveCertificationTest {
   }
 
   private NewOrderSingle newOrder(
-      String clOrdId, String symbol, String quantity, String price, String accountId) {
+      String clOrdId,
+      String symbol,
+      String quantity,
+      String price,
+      String accountId,
+      String timeInForce) {
     final NewOrderSingle order = new NewOrderSingle();
     order.setString(ClOrdID.FIELD, clOrdId);
     order.setString(Symbol.FIELD, symbol);
@@ -140,6 +156,7 @@ class QuickFixPreparedSubmissionLiveCertificationTest {
     order.setString(OrderQty.FIELD, quantity);
     order.setChar(OrdType.FIELD, '2');
     order.setString(Price.FIELD, price);
+    order.setChar(quickfix.field.TimeInForce.FIELD, timeInForce.charAt(0));
     order.setChar(HandlInst.FIELD, '1');
     order.setString(TransactTime.FIELD, FIX_TIMESTAMP.format(Instant.now()));
     order.setString(Account.FIELD, accountId);
@@ -193,13 +210,22 @@ class QuickFixPreparedSubmissionLiveCertificationTest {
     return configPath;
   }
 
-  private void writeEvidence(Path path, ExecutionReport report, long sentAtEpochMs)
+  private void writeEvidence(
+      Path path,
+      ExecutionReport report,
+      long sentAtEpochMs,
+      String accountId,
+      String timeInForce,
+      ExecutionReport terminalReport)
       throws Exception {
     final String json =
         "{\n"
             + "  \"phase\":\"SUBMIT\",\n"
             + "  \"clOrdId\":\""
             + jsonEscape(report.getString(ClOrdID.FIELD))
+            + "\",\n"
+            + "  \"accountId\":\""
+            + jsonEscape(accountId)
             + "\",\n"
             + "  \"orderId\":\""
             + jsonEscape(report.getString(OrderID.FIELD))
@@ -212,6 +238,15 @@ class QuickFixPreparedSubmissionLiveCertificationTest {
             + "\",\n"
             + "  \"ordStatus\":\""
             + jsonEscape(report.getString(OrdStatus.FIELD))
+            + "\",\n"
+            + "  \"timeInForce\":\""
+            + jsonEscape(timeInForce)
+            + "\",\n"
+            + "  \"terminalExecType\":\""
+            + jsonEscape(terminalReport == null ? "" : terminalReport.getString(ExecType.FIELD))
+            + "\",\n"
+            + "  \"terminalOrdStatus\":\""
+            + jsonEscape(terminalReport == null ? "" : terminalReport.getString(OrdStatus.FIELD))
             + "\",\n"
             + "  \"text\":\""
             + jsonEscape(optionalText(report))
@@ -228,6 +263,15 @@ class QuickFixPreparedSubmissionLiveCertificationTest {
 
   private String optionalText(ExecutionReport report) throws FieldNotFound {
     return report.isSetField(Text.FIELD) ? report.getString(Text.FIELD) : "";
+  }
+
+  private boolean isTerminalCancellation(ExecutionReport report) {
+    try {
+      return "4".equals(report.getString(ExecType.FIELD))
+          && "4".equals(report.getString(OrdStatus.FIELD));
+    } catch (FieldNotFound missingField) {
+      return false;
+    }
   }
 
   private Path dictionaryPath() {
@@ -332,6 +376,11 @@ class QuickFixPreparedSubmissionLiveCertificationTest {
     }
 
     ExecutionReport awaitExecutionReport(String clOrdId, int timeoutSeconds) throws Exception {
+      return awaitExecutionReport(clOrdId, timeoutSeconds, ignored -> true);
+    }
+
+    ExecutionReport awaitExecutionReport(
+        String clOrdId, int timeoutSeconds, Predicate<ExecutionReport> predicate) throws Exception {
       final long deadlineNanos = System.nanoTime() + TimeUnit.SECONDS.toNanos(timeoutSeconds);
       while (System.nanoTime() < deadlineNanos) {
         final long remainingNanos = deadlineNanos - System.nanoTime();
@@ -346,7 +395,7 @@ class QuickFixPreparedSubmissionLiveCertificationTest {
           continue;
         }
         final ExecutionReport report = (ExecutionReport) message;
-        if (report.getString(ClOrdID.FIELD).equals(clOrdId)) {
+        if (report.getString(ClOrdID.FIELD).equals(clOrdId) && predicate.test(report)) {
           return report;
         }
       }

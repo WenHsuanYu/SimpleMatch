@@ -4,16 +4,21 @@
 evaluate_query_service_verdict() {
   local evidence_dir="$1"
   local destination="$2"
+  local active_evidence_args=(--argjson activeEvidence '[]')
+  if [[ -s "$evidence_dir/active-processing-liveness.json" ]]; then
+    active_evidence_args=(--slurpfile activeEvidence "$evidence_dir/active-processing-liveness.json")
+  fi
 
   jq -n \
     --slurpfile criticalBefore "$evidence_dir/critical-before.json" \
     --slurpfile criticalDuring "$evidence_dir/critical-during-query-outage.json" \
-    --slurpfile criticalAfter "$evidence_dir/critical-after.json" \
+    --slurpfile queryOutage "$evidence_dir/query-outage.json" \
     --slurpfile isolationProbe "$evidence_dir/critical-query-isolation-probe.json" \
     --slurpfile baseline "$evidence_dir/baseline.json" \
     --slurpfile fallback "$evidence_dir/redis-outage.json" \
     --slurpfile rebuilt "$evidence_dir/rebuilt.json" \
-    --slurpfile restoration "$evidence_dir/restoration.json" '
+    --slurpfile restoration "$evidence_dir/restoration.json" \
+    "${active_evidence_args[@]}" '
       def business_view:
         {
           order:(.order.data | del(.updatedAtUnixMs)),
@@ -143,7 +148,85 @@ evaluate_query_service_verdict() {
                 | select(.partition == $partition) ][0].committedOffset)
           )
         );
-      [
+
+      def healthy_active_liveness($query_outage):
+        . as $active
+        | ($active.status == "PROVEN")
+        and ($query_outage.queryPodCount == 0)
+        and ($active.queryOutage.queryPodCount == 0)
+        and ($active.gatewayOpen.accepted == true)
+        and ($active.gatewayOpen.gateState == "OPEN")
+        and ($active.timeInForce == "3")
+        and ($active.startedAtEpochMs | type == "number" and . >= 0)
+        and ($active.completedAtEpochMs | type == "number"
+          and . >= $active.startedAtEpochMs)
+        and ($active.elapsedMilliseconds | type == "number"
+          and . == ($active.completedAtEpochMs - $active.startedAtEpochMs)
+          and . >= 0
+          and . <= ($active.timeoutSeconds * 1000))
+        and ($active.timeoutSeconds | type == "number" and . > 0 and . <= 300)
+        and ($active.fixSubmission.timeInForce == "3")
+        and ($active.fixSubmission.execType == "A")
+        and ($active.fixSubmission.ordStatus == "A")
+        and ($active.fixSubmission.terminalExecType == "4")
+        and ($active.fixSubmission.terminalOrdStatus == "4")
+        and ($active.fixSubmission.sentAtEpochMs | type == "number"
+          and . >= $active.startedAtEpochMs
+          and . <= $active.completedAtEpochMs)
+        and ($active.fixSubmission.accountId == $active.riskAdmission.accountId)
+        and ($active.fixSubmission.clOrdId == $active.riskAdmission.clOrdId)
+        and ($active.fixSubmission.orderId | type == "string" and startswith("O-"))
+        and ($active.riskAdmission.state == "ACCEPTED")
+        and ($active.riskAdmission.routingPartition | type == "number"
+          and . >= 0 and . <= 14)
+        and ($active.matchingEvent.topic == "matching.events")
+        and ($active.matchingEvent.partition == $active.riskAdmission.routingPartition)
+        and ($active.matchingEvent.startOffset | type == "number" and . >= 0)
+        and ($active.matchingEvent.offset | type == "number"
+          and . >= $active.matchingEvent.startOffset)
+        and ($active.matchingEvent.eventId | type == "string"
+          and test("^[0-9a-f]{64}$"))
+        and ($active.matchingEvent.eventType == "MATCHING_EVENT_TYPE_ORDER_CANCELLED")
+        and ($active.matchingEvent.sourceCommandId == $active.riskAdmission.commandId)
+        and ($active.matchingEvent.orderId == $active.riskAdmission.orderId)
+        and ($active.observerVerdict.status == "PASS")
+        and ($active.orderProjection.orderId == $active.riskAdmission.orderId)
+        and ($active.orderProjection.status == "CANCELLED")
+        and ($active.orderProjection.lastEventId == $active.matchingEvent.eventId)
+        and ($active.accountReservation.orderId == $active.riskAdmission.orderId)
+        and ($active.accountReservation.accountId == $active.riskAdmission.accountId)
+        and ($active.accountReservation.status == "RESERVATION_STATUS_RELEASED")
+        and ($active.accountReservation.remainingQuantity == 0)
+        and ($active.accountReservation.reservedNotional == 0)
+        and ($active.fixDeliveryIntent.status == "SENT")
+        and ($active.fixDeliveryIntent.eventId == $active.matchingEvent.eventId)
+        and ($active.fixDeliveryIntent.execType == "4")
+        and ($active.fixDeliveryIntent.ordStatus == "4")
+        and ($active.marketData.partition == $active.matchingEvent.partition)
+        and ($active.marketData.lastProcessedOffset >= $active.matchingEvent.offset)
+        and ($active.marketData.recoveryState == "READY")
+        and ($active.marketData.inboxCount == 1)
+        and ($active.exactInboxCounts.persistence == 1)
+        and ($active.exactInboxCounts.account == 1)
+        and ($active.exactInboxCounts.quickfix == 1)
+        and ($active.exactInboxCounts.marketData == 1)
+        and ($active.consumerState.persistenceQuarantines == 0)
+        and ($active.consumerState.accountQuarantines == 0)
+        and ($active.consumerState.quickfixQuarantines == 0)
+        and ($active.consumerState.persistenceQuarantineHistory == 0)
+        and ($active.consumerState.accountQuarantineHistory == 0)
+        and ($active.consumerState.quickfixQuarantineHistory == 0)
+        and ($active.consumerState.quickfixPendingIntents == 0)
+        and ($active.consumerState.activeMatchingOrders == 0)
+        and ($active.consumerState.marketDataDeadLetters == 0)
+        and any(($active.consumerState.marketDataProgress // [])[];
+          .partition_id == $active.matchingEvent.partition
+          and .last_processed_offset >= $active.matchingEvent.offset
+          and .recovery_state == "READY");
+      ($activeEvidence
+        | if type == "array" and length > 0 then .[0] else {} end) as $active
+      | ($active | healthy_active_liveness($queryOutage[0])) as $activePassed
+      | [
         {
           name:"deterministicRebuild",
           passed:(
@@ -175,14 +258,17 @@ evaluate_query_service_verdict() {
           passed:($restoration[0].queryServiceReady == true)
         },
         {
+          name:"activeProcessingLiveness",
+          passed:$activePassed
+        },
+        {
           name:"criticalPathIsolationUnderQuiescence",
           passed:($isolationProbe[0] | healthy_quiescent_isolation_probe($criticalBefore[0]))
         },
         {
           name:"criticalPathIsolation",
           passed:(
-            $criticalBefore[0] == $criticalAfter[0]
-            and $criticalBefore[0] == $criticalDuring[0]
+            $criticalBefore[0] == $criticalDuring[0]
             and $restoration[0].queryOutageObserved == true
             and $restoration[0].matchingReady == 15
             and $restoration[0].criticalConsumersReady == true
@@ -192,8 +278,11 @@ evaluate_query_service_verdict() {
       | {
           status:(if all($checks[]; .passed) then "PASS" else "FAIL" end),
           activeProcessingLiveness:{
-            status:"NOT_PROVEN",
-            reason:"the outage probe is deliberately quiescent and submits no new public event"
+            status:(if $activePassed then "PROVEN" else "NOT_PROVEN" end),
+            reason:(if $activePassed
+              then "a public IOC FIX order was admitted and processed while query-service had zero Pods"
+              else "active processing evidence is missing or does not prove the public IOC event path"
+              end)
           },
           checks:$checks
         }

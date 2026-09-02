@@ -14,6 +14,9 @@ cat >"$fixture_dir/critical-before.json" <<'JSON'
 JSON
 cp "$fixture_dir/critical-before.json" "$fixture_dir/critical-after.json"
 cp "$fixture_dir/critical-before.json" "$fixture_dir/critical-during-query-outage.json"
+cat >"$fixture_dir/query-outage.json" <<'JSON'
+{"queryPodCount":0,"queryPodNames":[]}
+JSON
 jq -n --slurpfile state "$fixture_dir/critical-before.json" '
   def offsets($base): [range(0; 15) |
     {partition:., committedOffset:($base + .)}];
@@ -78,11 +81,126 @@ cat >"$fixture_dir/restoration.json" <<'JSON'
 {"redisKeysPresent":true,"queryServiceReady":true,"queryOutageObserved":true,"matchingReady":15,"criticalConsumersReady":true}
 JSON
 
+cat >"$fixture_dir/active-processing-liveness.json" <<'JSON'
+{
+  "status":"PROVEN",
+  "startedAtEpochMs":1000,
+  "completedAtEpochMs":1600,
+  "elapsedMilliseconds":600,
+  "timeoutSeconds":30,
+  "queryOutage":{"queryPodCount":0,"queryPodNames":[]},
+  "gatewayOpen":{"accepted":true,"gateState":"OPEN","occurredAt":"2026-08-31T00:00:00Z"},
+  "timeInForce":"3",
+  "fixSubmission":{
+    "accountId":"00000000-0000-0000-0000-000000000001",
+    "clOrdId":"QUERY-LIVE-1",
+    "orderId":"O-QUERY-LIVE-1",
+    "execType":"A",
+    "ordStatus":"A",
+    "timeInForce":"3",
+    "terminalExecType":"4",
+    "terminalOrdStatus":"4",
+    "sentAtEpochMs":1100
+  },
+  "riskAdmission":{
+    "commandId":"00000000-0000-0000-0000-000000000003",
+    "orderId":"00000000-0000-0000-0000-000000000002",
+    "accountId":"00000000-0000-0000-0000-000000000001",
+    "clOrdId":"QUERY-LIVE-1",
+    "state":"ACCEPTED",
+    "routingPartition":4
+  },
+  "matchingEvent":{
+    "topic":"matching.events",
+    "partition":4,
+    "startOffset":100,
+    "offset":101,
+    "eventId":"0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef",
+    "eventType":"MATCHING_EVENT_TYPE_ORDER_CANCELLED",
+    "sourceCommandId":"00000000-0000-0000-0000-000000000003",
+    "orderId":"00000000-0000-0000-0000-000000000002"
+  },
+  "observerVerdict":{"status":"PASS"},
+  "orderProjection":{
+    "orderId":"00000000-0000-0000-0000-000000000002",
+    "status":"CANCELLED",
+    "lastEventId":"0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+  },
+  "accountReservation":{
+    "orderId":"00000000-0000-0000-0000-000000000002",
+    "accountId":"00000000-0000-0000-0000-000000000001",
+    "status":"RESERVATION_STATUS_RELEASED",
+    "remainingQuantity":0,
+    "filledQuantity":0,
+    "reservedNotional":0
+  },
+  "fixDeliveryIntent":{
+    "eventId":"0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef",
+    "execType":"4",
+    "ordStatus":"4",
+    "status":"SENT"
+  },
+  "marketData":{
+    "partition":4,
+    "lastProcessedOffset":101,
+    "recoveryState":"READY",
+    "inboxCount":1
+  },
+  "consumerState":{
+    "persistenceQuarantines":0,
+    "accountQuarantines":0,
+    "quickfixQuarantines":0,
+    "persistenceQuarantineHistory":0,
+    "accountQuarantineHistory":0,
+    "quickfixQuarantineHistory":0,
+    "quickfixPendingIntents":0,
+    "activeMatchingOrders":0,
+    "marketDataDeadLetters":0,
+    "marketDataProgress":[{"partition_id":4,"last_processed_offset":101,"recovery_state":"READY"}]
+  },
+  "exactInboxCounts":{"persistence":1,"account":1,"quickfix":1,"marketData":1}
+}
+JSON
+
 evaluate_query_service_verdict "$fixture_dir" "$fixture_dir/verdict.json"
 jq -e '.status == "PASS" and (.checks | all(.passed == true))' \
   "$fixture_dir/verdict.json" >/dev/null
-jq -e '.activeProcessingLiveness.status == "NOT_PROVEN"' \
+jq -e '.activeProcessingLiveness.status == "PROVEN"' \
   "$fixture_dir/verdict.json" >/dev/null
+
+jq '{postActiveEvent:true}' "$fixture_dir/critical-before.json" \
+  >"$fixture_dir/critical-after.json"
+if ! evaluate_query_service_verdict "$fixture_dir" "$fixture_dir/after-mutation-verdict.json"; then
+  printf 'query-service verdict incorrectly required critical-after equality after active event\n' >&2
+  exit 1
+fi
+jq -e '.checks[] | select(.name == "criticalPathIsolation") | .passed == true' \
+  "$fixture_dir/after-mutation-verdict.json" >/dev/null
+
+jq '.matchingEvent.eventType = "MATCHING_EVENT_TYPE_TRADE_EXECUTED"' \
+  "$fixture_dir/active-processing-liveness.json" \
+  >"$fixture_dir/active-invalid-event.json"
+mv "$fixture_dir/active-invalid-event.json" "$fixture_dir/active-processing-liveness.json"
+if evaluate_query_service_verdict "$fixture_dir" "$fixture_dir/active-event-failure.json"; then
+  printf 'query-service verdict accepted a non-terminal active Matching Event\n' >&2
+  exit 1
+fi
+jq -e '.status == "FAIL"
+  and .activeProcessingLiveness.status == "NOT_PROVEN"
+  and any(.checks[]; .name == "activeProcessingLiveness" and .passed == false)' \
+  "$fixture_dir/active-event-failure.json" >/dev/null
+
+jq '.matchingEvent.eventType = "MATCHING_EVENT_TYPE_ORDER_CANCELLED"' \
+  "$fixture_dir/active-processing-liveness.json" \
+  >"$fixture_dir/active-valid-again.json"
+rm "$fixture_dir/active-processing-liveness.json"
+if evaluate_query_service_verdict "$fixture_dir" "$fixture_dir/active-missing-failure.json"; then
+  printf 'query-service verdict accepted missing active liveness evidence\n' >&2
+  exit 1
+fi
+jq -e '.status == "FAIL" and .activeProcessingLiveness.status == "NOT_PROVEN"' \
+  "$fixture_dir/active-missing-failure.json" >/dev/null
+mv "$fixture_dir/active-valid-again.json" "$fixture_dir/active-processing-liveness.json"
 
 jq '.samples[1].sampleIndex = 0' \
   "$fixture_dir/critical-query-isolation-probe.json" \

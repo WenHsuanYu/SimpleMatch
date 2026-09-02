@@ -9,6 +9,9 @@ stop_query_port_forward() {
 
 restore_query_certification_environment() {
   set +e
+  if declare -F restore_query_active_liveness >/dev/null 2>&1; then
+    restore_query_active_liveness
+  fi
   stop_query_port_forward
   if [[ "$redis_scaled" == true && -n "$original_redis_replicas" ]]; then
     if scale_deployment redis "$original_redis_replicas"; then

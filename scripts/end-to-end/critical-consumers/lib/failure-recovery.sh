@@ -115,6 +115,7 @@ create_observer_pod() {
   kns get pod "$observer_pod" >/dev/null 2>&1 &&
     die "observer Pod already exists: $observer_pod"
   kns create -f "$observer_manifest" >/dev/null
+  observer_created=true
   kns wait --for=condition=Ready "pod/$observer_pod" --timeout="${timeout_seconds}s" >/dev/null
 }
 
@@ -209,6 +210,92 @@ require_exact_event_once() {
   )"
   [[ "$counts" == '1|1|1' ]] ||
     die "exact Matching Event was not processed once by all critical consumers: $counts"
+}
+
+capture_exact_event_counts() {
+  local event_id="$1"
+  local destination="$2"
+  local postgres
+  postgres="$(postgres_pod)"
+  [[ -n "$postgres" ]] || return 1
+
+  local counts
+  counts="$(
+    kns exec "$postgres" -c postgres -- psql -U simplematch -d simplematch -At \
+      -v ON_ERROR_STOP=1 -c "
+        SELECT json_build_object(
+          'persistence', (SELECT COUNT(*) FROM persistence.matching_event_inbox
+            WHERE consumer_name = 'persistence-matching-events'
+              AND event_id = decode('$event_id', 'hex')),
+          'account', (SELECT COUNT(*) FROM account_service.matching_event_inbox
+            WHERE consumer_name = 'account-final-matching-events'
+              AND event_id = decode('$event_id', 'hex')),
+          'quickfix', (SELECT COUNT(*) FROM quickfix_gateway.matching_event_inbox
+            WHERE consumer_name = 'quickfix-final-matching-events'
+              AND event_id = decode('$event_id', 'hex')),
+          'marketData', (SELECT COUNT(*) FROM market_data_projection.matching_event_inbox
+            WHERE event_id = decode('$event_id', 'hex'))
+        )::text;
+      "
+  )" || return 1
+  [[ -n "$counts" ]] || return 1
+  printf '%s\n' "$counts" | jq -e . >"$destination"
+}
+
+require_exact_event_once_with_market_data() {
+  local event_id="$1"
+  local destination="${2:-$evidence_dir/submission/exact-inbox-counts.json}"
+  capture_exact_event_counts "$event_id" "$destination" ||
+    die 'cannot capture exact Matching Event inbox counts'
+  jq -e '
+    .persistence == 1
+    and .account == 1
+    and .quickfix == 1
+    and .marketData == 1
+  ' "$destination" >/dev/null ||
+    die 'exact Matching Event was not processed once by all critical consumers'
+}
+
+capture_market_data_progress() {
+  local partition="$1"
+  local destination="$2"
+  local postgres
+  postgres="$(postgres_pod)"
+  [[ -n "$postgres" ]] || return 1
+
+  local progress
+  progress="$(
+    kns exec "$postgres" -c postgres -- psql -U simplematch -d simplematch -At \
+      -v ON_ERROR_STOP=1 -c "
+        SELECT json_build_object(
+          'partition', $partition,
+          'lastProcessedOffset', COALESCE(last_processed_offset, -1),
+          'recoveryState', COALESCE(recovery_state, 'MISSING')
+        )::text
+        FROM market_data_projection.partition_projection_progress
+        WHERE partition_id = $partition;
+      "
+  )" || return 1
+  [[ -n "$progress" ]] || return 1
+  printf '%s\n' "$progress" | jq -e . >"$destination"
+}
+
+wait_market_data_through() {
+  local partition="$1"
+  local offset="$2"
+  local destination="$3"
+  for _ in $(seq 1 "$timeout_seconds"); do
+    if capture_market_data_progress "$partition" "$destination" \
+        && jq -e --argjson offset "$offset" '
+          .partition >= 0
+          and .lastProcessedOffset >= $offset
+          and .recoveryState == "READY"
+        ' "$destination" >/dev/null 2>&1; then
+      return 0
+    fi
+    sleep 1
+  done
+  return 1
 }
 
 capture_fix_intent() {

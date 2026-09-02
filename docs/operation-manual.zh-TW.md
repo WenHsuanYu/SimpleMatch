@@ -994,8 +994,8 @@ test -w "$VCPKG_ROOT" && echo writable || echo read-only
 - `docs/cdc-publication-verification.md`：transactional outbox 與 CDC publication verification。
 
 新增的 query-service certification 入口：[query-service certification](query-service-certification.md)。
-它涵蓋 replay、Redis fallback 與 quiescent critical-path isolation，並明確標示 active
-processing liveness 尚未由此 probe 證明。
+它涵蓋 replay、Redis fallback、quiescent critical-path isolation，以及 query-service 為零副本
+期間的一筆公開 FIX IOC active-processing liveness；`PASS` 必須同時具備各階段的結構化證據。
 
 延伸文件也包含 query-service certification runbook，供操作員依 retained evidence 入口執行。
 

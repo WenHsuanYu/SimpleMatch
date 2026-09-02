@@ -93,7 +93,10 @@ back the durable reset and the HTTP operation fails closed.
 
 The query-service outage probe accepts `SIMPLEMATCH_QUERY_ISOLATION_PROBE_SECONDS` (maximum 30)
 and `SIMPLEMATCH_QUERY_ISOLATION_COMMAND_TIMEOUT_SECONDS` (maximum 30) to bound its repeated
-Kubernetes observations. The probe is quiescent and does not prove active order processing.
+Kubernetes observations. After that quiescent window, the certification runner releases one
+public FIX IOC order while query-service is scaled to zero and requires correlated Risk,
+Matching, Persistence, Account, QuickFIX, and market-data evidence before it reports active
+processing liveness.
 
 ## Kubernetes
 

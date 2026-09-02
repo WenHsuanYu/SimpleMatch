@@ -708,13 +708,14 @@ select_market_input() {
 }
 
 seed_account_limit() {
+  local destination="${1:-$evidence_dir/submission/account-fixture.log}"
   local postgres
   postgres="$(postgres_pod)"
   [[ -n "$postgres" ]] || die 'cannot resolve PostgreSQL Pod for account fixture'
   local now_ms
   now_ms="$(( $(date +%s) * 1000 ))"
   kns exec -i "$postgres" -c postgres -- psql -U simplematch -d simplematch \
-    -v ON_ERROR_STOP=1 >"$evidence_dir/submission/account-fixture.log" 2>&1 <<SQL
+    -v ON_ERROR_STOP=1 >"$destination" 2>&1 <<SQL
 INSERT INTO account_service.account_limits (
   account_id, scope_type, scope_key, trading_day, currency,
   limit_total_notional, reserved_notional, utilized_notional,

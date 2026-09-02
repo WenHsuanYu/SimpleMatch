@@ -66,6 +66,7 @@ run_fix_phase() {
     SIMPLEMATCH_LIVE_FIX_QUANTITY="$quantity" \
     SIMPLEMATCH_LIVE_FIX_PRICE="$price" \
     SIMPLEMATCH_LIVE_FIX_CL_ORD_ID="$cl_ord_id" \
+    SIMPLEMATCH_LIVE_FIX_TIME_IN_FORCE="${live_fix_time_in_force:-0}" \
     SIMPLEMATCH_RETAINED_FIX_STATE_DIR="$evidence_dir/client-state" \
     SIMPLEMATCH_RETAINED_FIX_EVIDENCE="$evidence" \
     SIMPLEMATCH_RETAINED_FIX_TIMEOUT_SECONDS="$timeout_seconds" \
@@ -88,6 +89,7 @@ start_fix_submit_client() {
     SIMPLEMATCH_LIVE_FIX_QUANTITY="$quantity" \
     SIMPLEMATCH_LIVE_FIX_PRICE="$price" \
     SIMPLEMATCH_LIVE_FIX_CL_ORD_ID="$cl_ord_id" \
+    SIMPLEMATCH_LIVE_FIX_TIME_IN_FORCE="${live_fix_time_in_force:-0}" \
     SIMPLEMATCH_RETAINED_FIX_STATE_DIR="$evidence_dir/client-state" \
     SIMPLEMATCH_RETAINED_FIX_EVIDENCE="$evidence_dir/fix/submit.json" \
     SIMPLEMATCH_RETAINED_FIX_READY_FILE="$fix_ready_file" \

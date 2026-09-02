@@ -16,6 +16,14 @@ source "$repo_root/scripts/end-to-end/critical-consumers/lib/cluster-data.sh"
 source "$repo_root/scripts/end-to-end/critical-consumers/lib/matching-status.sh"
 # shellcheck source=scripts/end-to-end/critical-consumers/lib/test-interfaces.sh
 source "$repo_root/scripts/end-to-end/critical-consumers/lib/test-interfaces.sh"
+# shellcheck source=scripts/end-to-end/critical-consumers/lib/failure-support.sh
+source "$repo_root/scripts/end-to-end/critical-consumers/lib/failure-support.sh"
+# shellcheck source=scripts/end-to-end/critical-consumers/lib/system-observation.sh
+source "$repo_root/scripts/end-to-end/critical-consumers/lib/system-observation.sh"
+# shellcheck source=scripts/end-to-end/critical-consumers/lib/gateway-close-verification.sh
+source "$repo_root/scripts/end-to-end/critical-consumers/lib/gateway-close-verification.sh"
+# shellcheck source=scripts/end-to-end/query-service/lib/active-liveness.sh
+source "$script_dir/lib/active-liveness.sh"
 # shellcheck source=scripts/end-to-end/query-service/lib/verdict.sh
 source "$script_dir/lib/verdict.sh"
 # shellcheck source=scripts/end-to-end/query-service/lib/evidence.sh
@@ -46,6 +54,28 @@ query_environment_modified=false
 query_scaled=false
 redis_scaled=false
 operator_token=""
+fix_port_forward_pid=""
+fix_port=""
+fix_submit_pid=""
+fix_ready_file=""
+fix_release_file=""
+fix_submit_log=""
+gateway_port_forward_pid=""
+gateway_port=""
+gateway_operator_token=""
+gateway_env_modified=false
+kafka_observer_pod=""
+kafka_observer_manifest=""
+kafka_observer_port_forward_pid=""
+kafka_observer_port=""
+kafka_observer_created=false
+observer_pod=""
+observer_manifest=""
+observer_created=false
+live_fix_time_in_force=0
+active_liveness_prepared=false
+active_liveness_evidence_dir=""
+active_liveness_originals_saved=false
 order_id=""
 account_id=""
 trading_day=""
@@ -62,9 +92,9 @@ Usage:
     [--timeout-seconds N]
 
 Certifies deterministic query-service replay, PostgreSQL fallback, Redis
-rebuild, freshness metadata, and quiescent critical-path isolation in a
-retained production-like namespace. The isolation probe submits no new
-public event; active processing liveness is reported separately.
+rebuild, freshness metadata, quiescent critical-path isolation, and one
+controlled public IOC FIX event while query-service has zero Pods in a
+retained production-like namespace.
 EOF_USAGE
 }
 
@@ -240,6 +270,9 @@ scale_deployment redis "$original_redis_replicas" ||
   die "Redis could not be restored after fallback verification"
 redis_scaled=false
 
+current_stage="prepare public active-processing liveness"
+prepare_query_active_liveness
+
 current_stage="verify critical paths during query-service outage"
 stop_query_port_forward
 query_scaled=true
@@ -252,6 +285,11 @@ capture_query_isolation_probe \
   "$evidence_dir/critical-query-isolation-probe.json" \
   "$query_isolation_probe_seconds" ||
   die "quiescent critical-path isolation probe failed during query-service outage"
+
+current_stage="prove active processing during query-service outage"
+run_query_active_liveness
+restore_query_active_liveness
+
 scale_deployment query-service "$original_query_replicas" ||
   die "query-service could not be restored after isolation verification"
 query_scaled=false

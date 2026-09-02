@@ -31,9 +31,12 @@ grep -Fq 'SIMPLEMATCH_QUERY_ISOLATION_COMMAND_TIMEOUT_SECONDS' "$runner"
 grep -Fq 'matching_ready_replicas' "$runner"
 grep -Fq 'query-outage.json' "$runner"
 grep -Fq 'quiescent critical-path isolation' "$runner"
-grep -Fq 'active processing liveness is reported separately' "$runner"
-if grep -Fq 'critical paths did not remain live throughout' "$runner"; then
-  printf '%s\n' 'Runner must not claim active liveness from a quiescent probe.' >&2
+grep -Fq 'active-liveness.sh' "$runner"
+grep -Fq 'prepare_query_active_liveness' "$runner"
+grep -Fq 'run_query_active_liveness' "$runner"
+grep -Fq 'restore_query_active_liveness' "$runner"
+if grep -Fq 'active processing liveness is reported separately' "$runner"; then
+  printf '%s\n' 'Runner must execute the active liveness probe.' >&2
   exit 1
 fi
 grep -Fq 'scale_deployment query-service 1' "$runner"

@@ -33,23 +33,34 @@ It captures the baseline, scales Redis to zero, and requires the same business v
 query-owned PostgreSQL fallback. It then restores Redis, scales query-service to zero, records
 that no query Pod exists, and captures the Risk admission, Account reservation, Persistence,
 QuickFIX, and market-data projection state while the query API is actually unavailable. The
-critical snapshot must remain unchanged through this fault window. During the outage it also runs a
-bounded quiescent-isolation probe (configurable with `SIMPLEMATCH_QUERY_ISOLATION_PROBE_SECONDS`,
-maximum 30 seconds) and a per-command timeout (configured by
-`SIMPLEMATCH_QUERY_ISOLATION_COMMAND_TIMEOUT_SECONDS`, maximum 30 seconds). The evidence records
-the probe wall-clock start, completion, elapsed milliseconds, and sample indexes. Each sample also
-records the exact Matching fleet topology: ordinals 0 through 14, current StatefulSet revision
-and owner, Pod UID and node, the matching PVC and bound PV, and the PV node-affinity mapping.
-Unowned or extra Matching Pods fail the probe before a verdict is produced. Each sample confirms
-that query-service still has zero Pods, all 15 Matching partitions remain Ready, every
-critical-path workload remains Ready with stable Pod identities and restart counts, the
-critical-consumer state is healthy, and Matching committed offsets are present and non-decreasing.
-This repeated operational observation complements the before/during/after snapshot comparison
-without creating new orders or mutating authoritative state. It proves that the query outage caused
-no observed health regression while the system was quiescent; it does not by itself prove that a
-new admission or reservation would complete during the outage. Query-service is restored before
-the normally disabled authenticated reset adapter is enabled and only query-owned rebuildable state
-is cleared. Immediately before the reset, it records the 15-partition Kafka high-water
+critical snapshot must remain unchanged through the quiet portion of this fault window. During the
+outage it first runs a bounded quiescent-isolation probe (configurable with
+`SIMPLEMATCH_QUERY_ISOLATION_PROBE_SECONDS`, maximum 30 seconds) and a per-command timeout
+(configured by `SIMPLEMATCH_QUERY_ISOLATION_COMMAND_TIMEOUT_SECONDS`, maximum 30 seconds). The
+evidence records the probe wall-clock start, completion, elapsed milliseconds, and sample indexes.
+Each sample also records the exact Matching fleet topology: ordinals 0 through 14, current
+StatefulSet revision and owner, Pod UID and node, the matching PVC and bound PV, and the PV
+node-affinity mapping. Unowned or extra Matching Pods fail the probe before a verdict is produced.
+Each sample confirms that query-service still has zero Pods, all 15 Matching partitions remain
+Ready, every critical-path workload remains Ready with stable Pod identities and restart counts,
+the critical-consumer state is healthy, and Matching committed offsets are present and
+non-decreasing. This repeated operational observation proves that the outage caused no observed
+health regression while the system was quiescent.
+
+The runner then releases one prepared public FIX NewOrderSingle with `TimeInForce=IOC` while the
+query deployment still has zero Pods. The Gateway is opened from three fresh system observations
+before the fault, and the submitted order uses a newly seeded account limit and the immutable
+artifact-selected instrument. The active evidence must correlate the FIX acceptance, durable Risk
+admission, routed partition, exact `MATCHING_EVENT_TYPE_ORDER_CANCELLED`, terminal Persistence
+projection, market-data projection progress and inbox, all three critical-consumer inboxes, and a
+sent QuickFIX terminal delivery intent. It also requires zero quarantine history, zero pending FIX
+intents, and zero active Matching orders after the event. The IOC shape is intentional: with no
+opposite resting order it creates one deterministic terminal event without leaving state that would
+contaminate the later replay comparison. The active check fails closed when any identity, event
+offset, terminal status, inbox count, or query-outage assertion is absent. Query-service is restored
+only after this active proof and before the normally disabled authenticated reset adapter is enabled;
+the reset clears only query-owned rebuildable state. Immediately before the reset, it records the
+15-partition Kafka high-water
 offset for each source in `replay-boundary/manifest.json`. The reset input starts each partition at
 the captured earliest offset and the rebuilt run must commit exactly the recorded high-water offset;
 this prevents a moving `--to-earliest` replay from silently consuming events added after the
@@ -60,12 +71,13 @@ certification boundary. The runner resets these two groups to the retained bound
 
 No critical consumer offset is changed. A rebuilt snapshot is eligible for comparison only after
 both query groups reach their captured offsets exactly and every disclosed checkpoint is `READY`.
-Public reads must then
-recreate the four exact versioned Redis keys selected by the fixture. The final verdict also
-requires the expanded critical snapshots to remain identical before, during, and after the query
-outage, all 15 Matching partitions to remain ready, all critical-path workload health samples to
-remain stable, and the query deployment to be restored. Active processing liveness under a new
-order remains a separate evidence gap for QS-1 and is not represented as a passing check here.
+Public reads must then recreate the four exact versioned Redis keys selected by the fixture. The
+final verdict requires the expanded critical snapshots to remain identical before and during the
+quiescent portion of the query outage, all 15 Matching partitions to remain ready, all
+critical-path workload health samples to remain stable, the active public IOC event proof to pass,
+and the query deployment to be restored. The active event is allowed to change authoritative
+consumer counters after the quiescent snapshot; those post-event changes are checked through the
+correlated active evidence instead of being misclassified as query-service isolation failure.
 
 The deterministic-rebuild comparison covers business fields only. Projection observation and
 artifact-install timestamps are operational metadata and may change during replay; the separate
@@ -90,17 +102,19 @@ bash scripts/run-query-service-certification.sh \
 
 The output directory must be empty. On success, `verdict.json` contains a `PASS` result and the
 individual deterministic-rebuild, PostgreSQL-fallback, freshness, market-identity, Redis-rebuild,
-service-restoration, quiescent-critical-path-isolation, and critical-path-isolation checks. Baseline, outage,
-probe samples, rebuilt, consumer-state, offset-reset, provenance, deployment, and diagnostic
-evidence remain beside it.
+service-restoration, active-processing-liveness, quiescent-critical-path-isolation, and
+critical-path-isolation checks. Baseline, active-event, outage, probe samples, rebuilt,
+consumer-state, offset-reset, provenance, deployment, and diagnostic evidence remain beside it.
 
 ## Safety and restoration
 
 The runner refuses the Docker Desktop context, an ordinary namespace, stale source provenance, a
 different retained namespace, or pre-existing rebuild environment overrides. It restores the
 original Redis and query-service replica counts, removes only the two temporary query rebuild
-environment variables, and stops its port-forward. A command failure or restoration failure emits
-a failing verdict instead of silently accepting partial evidence.
+environment variables, stops the public FIX/Gateway/Kafka observer clients, removes only the
+run-owned observer Pods, restores the Gateway environment, and stops its port-forwards. A command
+failure or restoration failure emits a failing verdict instead of silently accepting partial
+evidence.
 
 Retained resources still belong to the production-like lifecycle. Clean them up with that
 workflow's repository helper; do not delete the namespace directly and do not use broad Docker or

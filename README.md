@@ -81,10 +81,10 @@ transactional-outbox publication, outage recovery, duplicate delivery, and exact
 evidence are mapped in the
 [CDC publication verification guide](docs/cdc-publication-verification.md).
 
-The query-service replay, PostgreSQL fallback, Redis rebuild, and quiescent critical-path isolation
-gate is documented in the query-service certification runbook at
-docs/query-service-certification.md. Its active processing liveness probe remains a separate
-acceptance item.
+The query-service replay, PostgreSQL fallback, Redis rebuild, quiescent critical-path isolation,
+and controlled public IOC active-processing liveness gate is documented in the query-service
+certification runbook at docs/query-service-certification.md. A `PASS` requires the active event
+evidence as well as the replay and outage checks.
 
 The exact release scope is defined by the
 [Phase 1 Trading Release system boundary](services/docs/architecture/system-boundaries.md#phase-1-trading-release-boundary).

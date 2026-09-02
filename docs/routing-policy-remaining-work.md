@@ -531,14 +531,14 @@ and must not be interpreted as a requirement to push images or obtain external c
   versioned read APIs, active-artifact installation seam, freshness metadata, replay reset, and
   optional Redis read-through fallback. Cache read and write failures fall back to the durable
   PostgreSQL projection. Focused H2 projection and cache-fallback tests pass.
-- **Missing behavior:** Local production-like Kafka/PostgreSQL/Redis deployment and
-  outage/replay certification remain part of PD-1 and the repository release gate. The query
-  outage runner now proves no observed health regression during a bounded quiescent window, but
-  it does not yet submit a controlled public order while Query is down; active liveness of
-  admission, reservation, Matching, Persistence, Account, QuickFIX, and market-data projection
-  therefore remains unproven. The service-context test also proves the shared canonical-DSN/pool
-  adapter and no competing `spring.datasource.*` source. External production certification is not
-  a prerequisite.
+- **Missing behavior:** Local production-like Kafka/PostgreSQL/Redis deployment and a fresh
+  retained outage/replay certification remain part of PD-1 and the repository release gate. The
+  query outage runner now includes a controlled public IOC order while Query is down and fails
+  closed unless admission, reservation, Matching, Persistence, Account, QuickFIX, and market-data
+  evidence correlate through one terminal event. A fresh retained run at the final source revision
+  is still required before this implementation evidence can close QS-1. The service-context test
+  also proves the shared canonical-DSN/pool adapter and no competing `spring.datasource.*` source.
+  External production certification is not a prerequisite.
 - **Acceptance criteria:** Query never reads another service's database or scans Kafka synchronously.
   Redis can be deleted and rebuilt; misses/outages fall back to PostgreSQL; responses disclose
   freshness; and Query failure cannot pause any critical trading component.
