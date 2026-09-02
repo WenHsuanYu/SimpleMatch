@@ -16,6 +16,8 @@ from repository execution plans, phase gates, task tracking, and certification e
   the normal no-force-delete recovery procedure.
 - [Gateway admission operations](gateway-admission-operations.md) — five-state admission control,
   operator commands, audit records, and operational-status boundaries.
+- [Query-service projection replay](query-service-rebuild.md) — authenticated reset, dual consumer
+  group replay, Redis rebuild, and convergence evidence.
 - [Observability](observability.md) — traces, logs, metrics, dashboards, and alerts.
 - [Testing](testing.md) — layered verification and certification posture.
 - [Troubleshooting](troubleshooting.md) — first diagnostic checks for common operating failures.

@@ -6,6 +6,7 @@ import com.simplematch.contracts.matching.runtime.v1.FinalMatchingEventEnvelope;
 import com.simplematch.contracts.matching.runtime.v1.FinalMatchingEventTransportValidator;
 import com.simplematch.queryservice.runtime.QueryProjectionApplicationService;
 import com.simplematch.queryservice.store.QueryProjectionGapException;
+import com.simplematch.queryservice.store.QueryProjectionSource;
 import com.simplematch.queryservice.store.QueryProjectionStore;
 import java.time.Clock;
 import java.util.Objects;
@@ -17,6 +18,12 @@ import org.springframework.kafka.support.Acknowledgment;
 
 /** Runs independent asynchronous consumers for final Matching and Account lifecycle facts. */
 public final class QueryProjectionKafkaConsumer {
+  /** Listener identity used to stop the Matching projection before a rebuild. */
+  public static final String MATCHING_LISTENER_ID = "query-service-matching-events";
+
+  /** Listener identity used to stop the Account projection before a rebuild. */
+  public static final String ACCOUNT_LISTENER_ID = "query-service-account-lifecycle";
+
   private static final Logger LOGGER =
       LoggerFactory.getLogger(QueryProjectionKafkaConsumer.class);
   private final QueryProjectionApplicationService projectionService;
@@ -36,6 +43,7 @@ public final class QueryProjectionKafkaConsumer {
 
   /** Applies a final Matching Event only after the local PostgreSQL transaction succeeds. */
   @KafkaListener(
+      id = MATCHING_LISTENER_ID,
       topics =
           "${simplematch.query-service.matching-events.topic:matching.events}",
       groupId =
@@ -55,14 +63,10 @@ public final class QueryProjectionKafkaConsumer {
       FinalMatchingEventTransportValidator.requireKafkaRecord(
           record.key(), record.partition(), envelope);
       projectionService.projectMatching(
-          envelope, record.partition(), record.offset(), clock.millis());
+          envelope, source(record));
       acknowledgment.acknowledge();
     } catch (QueryProjectionGapException gap) {
-      store.markRecoveryRequired(
-          "matching.events",
-          record.partition(),
-          record.offset(),
-          clock.millis());
+      store.markRecoveryRequired(source(record));
       LOGGER.warn(
           "query Matching projection paused for replay at {}-{}",
           record.partition(),
@@ -82,6 +86,7 @@ public final class QueryProjectionKafkaConsumer {
 
   /** Applies an Account lifecycle fact only after the local PostgreSQL transaction succeeds. */
   @KafkaListener(
+      id = ACCOUNT_LISTENER_ID,
       topics =
           "${simplematch.query-service.account-lifecycle.topic:account.lifecycle}",
       groupId =
@@ -97,16 +102,10 @@ public final class QueryProjectionKafkaConsumer {
       projectionService.projectAccountLifecycle(
           AccountLifecycleEvent.parseFrom(rawPayload),
           rawPayload,
-          record.partition(),
-          record.offset(),
-          clock.millis());
+          source(record));
       acknowledgment.acknowledge();
     } catch (QueryProjectionGapException gap) {
-      store.markRecoveryRequired(
-          "account.lifecycle",
-          record.partition(),
-          record.offset(),
-          clock.millis());
+      store.markRecoveryRequired(source(record));
       LOGGER.warn(
           "query Account projection paused for replay at {}-{}",
           record.partition(),
@@ -122,5 +121,10 @@ public final class QueryProjectionKafkaConsumer {
       throw new IllegalStateException(
           "query Account projection failed", failure);
     }
+  }
+
+  private QueryProjectionSource source(ConsumerRecord<?, ?> record) {
+    return new QueryProjectionSource(
+        record.topic(), record.partition(), record.offset(), clock.millis());
   }
 }

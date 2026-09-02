@@ -53,6 +53,9 @@ simplematch:
       checksum-location: /etc/simplematch/market-reference/market_reference.sha256
       trading-day: ${SIMPLEMATCH_TRADING_DAY:}
       install-on-startup: false
+    rebuild:
+      http-enabled: ${SIMPLEMATCH_QUERY_SERVICE_REBUILD_HTTP_ENABLED:false}
+      operator-token: ${SIMPLEMATCH_QUERY_SERVICE_REBUILD_OPERATOR_TOKEN:}
 
 server:
   port: ${SIMPLEMATCH_QUERY_SERVICE_HTTP_PORT:8086}

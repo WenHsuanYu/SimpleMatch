@@ -59,9 +59,10 @@ class JdbcQueryProjectionStoreTest {
   void projectsMatchingAndAccountFactsWithDurableFreshness() {
     final FinalMatchingEventEnvelope matching =
         matchingEvent(FIRST_COMMAND_ID, 0L);
-    store.projectMatching(matching, 0, 0, 100L);
+    store.projectMatching(matching, source("matching.events", 0, 0L, 100L));
     final AccountLifecycleEvent account = accountEvent();
-    store.projectAccountLifecycle(account, account.toByteArray(), 0, 0, 200L);
+    store.projectAccountLifecycle(
+        account, account.toByteArray(), source("account.lifecycle", 0, 0L, 200L));
 
     assertThat(store.findOrder(ORDER_ID))
         .isPresent()
@@ -81,9 +82,11 @@ class JdbcQueryProjectionStoreTest {
   @Test
   void equivalentAccountDuplicateAdvancesTransportProgressWithoutSecondProjection() {
     final AccountLifecycleEvent first = accountEvent();
-    store.projectAccountLifecycle(first, first.toByteArray(), 0, 0, 200L);
+    store.projectAccountLifecycle(
+        first, first.toByteArray(), source("account.lifecycle", 0, 0L, 200L));
 
-    store.projectAccountLifecycle(first, first.toByteArray(), 0, 1, 201L);
+    store.projectAccountLifecycle(
+        first, first.toByteArray(), source("account.lifecycle", 0, 1L, 201L));
 
     final AccountLifecycleEvent next =
         first.toBuilder()
@@ -94,7 +97,8 @@ class JdbcQueryProjectionStoreTest {
             .setReservedNotional(
                 TwdNotional.newBuilder().setUnits(2_000L))
             .build();
-    store.projectAccountLifecycle(next, next.toByteArray(), 0, 2, 202L);
+    store.projectAccountLifecycle(
+        next, next.toByteArray(), source("account.lifecycle", 0, 2L, 202L));
 
     assertThat(store.findAccountSummary(ACCOUNT_ID))
         .isPresent()
@@ -111,28 +115,88 @@ class JdbcQueryProjectionStoreTest {
   void conflictingAccountDuplicateFailsClosed() {
     final AccountLifecycleEvent first = accountEvent();
     final byte[] firstPayload = first.toByteArray();
-    store.projectAccountLifecycle(first, firstPayload, 0, 0, 200L);
+    store.projectAccountLifecycle(
+        first, firstPayload, source("account.lifecycle", 0, 0L, 200L));
     final byte[] conflictingPayload = firstPayload.clone();
     conflictingPayload[conflictingPayload.length - 1] ^= 0x01;
 
     assertThatThrownBy(
             () ->
                 store.projectAccountLifecycle(
-                    first, conflictingPayload, 0, 1, 201L))
+                    first,
+                    conflictingPayload,
+                    source("account.lifecycle", 0, 1L, 201L)))
         .isInstanceOf(IllegalStateException.class)
         .hasMessageContaining(first.getMetadata().getEventId());
   }
 
   @Test
+  void equivalentAccountDuplicateFromDifferentTopicFailsClosed() {
+    final AccountLifecycleEvent first = accountEvent();
+    final byte[] payload = first.toByteArray();
+    store.projectAccountLifecycle(
+        first, payload, source("account.lifecycle", 0, 0L, 200L));
+
+    assertThatThrownBy(
+            () ->
+                store.projectAccountLifecycle(
+                    first,
+                    payload,
+                    source("account.lifecycle.replayed", 0, 1L, 201L)))
+        .isInstanceOf(IllegalStateException.class)
+        .hasMessageContaining("changed source topic")
+        .hasMessageContaining(first.getMetadata().getEventId());
+  }
+
+  @Test
+  void equivalentAccountDuplicateFromDifferentPartitionFailsClosed() {
+    final AccountLifecycleEvent first = accountEvent();
+    final byte[] payload = first.toByteArray();
+    store.projectAccountLifecycle(
+        first, payload, source("account.lifecycle", 0, 0L, 200L));
+
+    assertThatThrownBy(
+            () ->
+                store.projectAccountLifecycle(
+                    first,
+                    payload,
+                    source("account.lifecycle", 1, 1L, 201L)))
+        .isInstanceOf(IllegalStateException.class)
+        .hasMessageContaining("changed Kafka partition")
+        .hasMessageContaining(first.getMetadata().getEventId());
+  }
+
+  @Test
+  void equivalentAccountDuplicateBeforeOriginalOffsetFailsClosed() {
+    final AccountLifecycleEvent first = accountEvent();
+    final byte[] payload = first.toByteArray();
+    store.projectAccountLifecycle(
+        first, payload, source("account.lifecycle", 0, 5L, 200L));
+
+    assertThatThrownBy(
+            () ->
+                store.projectAccountLifecycle(
+                    first,
+                    payload,
+                    source("account.lifecycle", 0, 4L, 201L)))
+        .isInstanceOf(IllegalStateException.class)
+        .hasMessageContaining("before original Kafka offset")
+        .hasMessageContaining(first.getMetadata().getEventId());
+  }
+
+  @Test
   void recordsGapAndRequiresReplayBeforeApplyingLaterOffset() {
-    store.projectMatching(matchingEvent(FIRST_COMMAND_ID, 0L), 0, 0, 100L);
+    store.projectMatching(
+        matchingEvent(FIRST_COMMAND_ID, 0L), source("matching.events", 0, 0L, 100L));
     final FinalMatchingEventEnvelope laterEnvelope =
         matchingEvent(LATER_COMMAND_ID, 2L);
 
     assertThatThrownBy(
-            () -> store.projectMatching(laterEnvelope, 0, 2, 300L))
+            () ->
+                store.projectMatching(
+                    laterEnvelope, source("matching.events", 0, 2L, 300L)))
         .isInstanceOf(QueryProjectionGapException.class);
-    store.markRecoveryRequired("matching.events", 0, 2, 300L);
+    store.markRecoveryRequired(source("matching.events", 0, 2L, 300L));
     assertThat(store.freshness().partitions().getFirst().recoveryState())
         .isEqualTo("GAP_DETECTED");
 
@@ -185,6 +249,11 @@ class JdbcQueryProjectionStoreTest {
       throw new AssertionError(
           "test Matching Event fixture must be valid", invalidFixture);
     }
+  }
+
+  private QueryProjectionSource source(
+      String topic, int partition, long offset, long observedAtUnixMs) {
+    return new QueryProjectionSource(topic, partition, offset, observedAtUnixMs);
   }
 
   private AccountLifecycleEvent accountEvent() {

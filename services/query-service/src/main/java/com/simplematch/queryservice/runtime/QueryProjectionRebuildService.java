@@ -23,8 +23,11 @@ public final class QueryProjectionRebuildService {
 
   /** Clears reconstructible projections and checkpoints before an operator resets Kafka offsets. */
   public void resetForReplay() {
-    transactionTemplate.executeWithoutResult(ignored -> store.resetForReplay());
-    cache.clear();
+    transactionTemplate.executeWithoutResult(
+        ignored -> {
+          store.resetForReplay();
+          cache.clear();
+        });
   }
 
   /** Installs a checked final artifact after a replay reset or a trading-day cutover. */

@@ -8,13 +8,15 @@ public record QueryServiceProperties(
     MatchingEvents matchingEvents,
     AccountLifecycle accountLifecycle,
     Redis redis,
-    MarketReference marketReference) {
+    MarketReference marketReference,
+    Rebuild rebuild) {
   /** Applies safe local defaults while keeping each source independently configurable. */
   public QueryServiceProperties {
     matchingEvents = matchingEvents == null ? MatchingEvents.defaults() : matchingEvents;
     accountLifecycle = accountLifecycle == null ? AccountLifecycle.defaults() : accountLifecycle;
     redis = redis == null ? Redis.defaults() : redis;
     marketReference = marketReference == null ? MarketReference.defaults() : marketReference;
+    rebuild = rebuild == null ? Rebuild.defaults() : rebuild;
   }
 
   /** Defines the final Matching Event consumer group. */
@@ -74,6 +76,22 @@ public record QueryServiceProperties(
           "/etc/simplematch/market-reference/market_reference.sha256",
           "",
           false);
+    }
+  }
+
+  /** Defines the separately authenticated operator seam for a projection replay reset. */
+  public record Rebuild(boolean httpEnabled, String operatorToken) {
+    /** Rejects an enabled reset endpoint without an externally supplied token. */
+    public Rebuild {
+      if (httpEnabled && (operatorToken == null || operatorToken.isBlank())) {
+        throw new IllegalArgumentException(
+            "query rebuild operatorToken is required when rebuild HTTP is enabled");
+      }
+      operatorToken = operatorToken == null ? "" : operatorToken;
+    }
+
+    private static Rebuild defaults() {
+      return new Rebuild(false, "");
     }
   }
 

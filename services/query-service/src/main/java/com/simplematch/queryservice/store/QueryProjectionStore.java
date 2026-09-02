@@ -14,23 +14,17 @@ import java.util.Optional;
 /** Durable PostgreSQL port for rebuildable query read models and source checkpoints. */
 public interface QueryProjectionStore {
   /** Applies one final Matching Event and its exact source position. */
-  void projectMatching(
-      FinalMatchingEventEnvelope envelope, int partition, long offset, long observedAtUnixMs);
+  void projectMatching(FinalMatchingEventEnvelope envelope, QueryProjectionSource source);
 
   /** Applies one Account lifecycle fact and its exact source position. */
   void projectAccountLifecycle(
-      AccountLifecycleEvent event,
-      byte[] rawPayload,
-      int partition,
-      long offset,
-      long observedAtUnixMs);
+      AccountLifecycleEvent event, byte[] rawPayload, QueryProjectionSource source);
 
   /** Replaces the active market-reference rows for one verified artifact. */
   void installMarketReference(VerifiedMarketReferenceArtifact artifact, long installedAtUnixMs);
 
   /** Records a durable source gap so operators can reset and replay the affected projection. */
-  void markRecoveryRequired(
-      String sourceTopic, int partition, long failedOffset, long observedAtUnixMs);
+  void markRecoveryRequired(QueryProjectionSource source);
 
   /** Reads the durable order projection. */
   Optional<QueryOrderView> findOrder(String orderId);

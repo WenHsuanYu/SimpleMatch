@@ -3,6 +3,7 @@ package com.simplematch.queryservice.runtime;
 import com.simplematch.contracts.account.v2.AccountLifecycleEvent;
 import com.simplematch.contracts.matching.runtime.v1.FinalMatchingEventEnvelope;
 import com.simplematch.marketreference.VerifiedMarketReferenceArtifact;
+import com.simplematch.queryservice.store.QueryProjectionSource;
 import com.simplematch.queryservice.store.QueryProjectionStore;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -19,8 +20,8 @@ public class QueryProjectionApplicationService {
   /** Projects one final Matching Event, inbox claim, model update, and checkpoint atomically. */
   @Transactional(timeout = TRANSACTION_TIMEOUT_SECONDS)
   public void projectMatching(
-      FinalMatchingEventEnvelope envelope, int partition, long offset, long observedAtUnixMs) {
-    store.projectMatching(envelope, partition, offset, observedAtUnixMs);
+      FinalMatchingEventEnvelope envelope, QueryProjectionSource source) {
+    store.projectMatching(envelope, source);
   }
 
   /** Projects one Account lifecycle fact, model update, and checkpoint atomically. */
@@ -28,10 +29,8 @@ public class QueryProjectionApplicationService {
   public void projectAccountLifecycle(
       AccountLifecycleEvent event,
       byte[] rawPayload,
-      int partition,
-      long offset,
-      long observedAtUnixMs) {
-    store.projectAccountLifecycle(event, rawPayload, partition, offset, observedAtUnixMs);
+      QueryProjectionSource source) {
+    store.projectAccountLifecycle(event, rawPayload, source);
   }
 
   /** Installs a verified immutable market-reference artifact in one local transaction. */

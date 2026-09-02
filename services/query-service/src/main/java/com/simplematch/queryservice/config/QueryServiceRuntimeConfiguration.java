@@ -2,16 +2,13 @@ package com.simplematch.queryservice.config;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.simplematch.config.RedisProperties;
-import com.simplematch.queryservice.kafka.QueryProjectionKafkaConsumer;
 import com.simplematch.queryservice.runtime.NoopQueryReadCache;
 import com.simplematch.queryservice.runtime.QueryMarketReferenceArtifactLoader;
 import com.simplematch.queryservice.runtime.QueryMarketReferenceInstallationService;
 import com.simplematch.queryservice.runtime.QueryMarketReferenceStartupInstaller;
-import com.simplematch.queryservice.runtime.QueryProjectionApplicationService;
 import com.simplematch.queryservice.runtime.QueryProjectionRebuildService;
 import com.simplematch.queryservice.runtime.QueryReadCache;
 import com.simplematch.queryservice.runtime.RedisQueryReadCache;
-import com.simplematch.queryservice.store.QueryProjectionStore;
 import java.time.Clock;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.boot.context.properties.EnableConfigurationProperties;
@@ -24,26 +21,15 @@ import org.springframework.data.redis.connection.lettuce.LettuceConnectionFactor
 import org.springframework.data.redis.core.RedisTemplate;
 import org.springframework.data.redis.serializer.RedisSerializer;
 import org.springframework.data.redis.serializer.StringRedisSerializer;
-import org.springframework.kafka.annotation.EnableKafka;
 
 /** Wires independent Kafka consumers and the optional Redis acceleration layer. */
 @Configuration(proxyBeanMethods = false)
-@EnableKafka
 @EnableConfigurationProperties(QueryServiceProperties.class)
 public class QueryServiceRuntimeConfiguration {
   /** Supplies the Jackson 2 mapper required by the shared artifact codec and cache adapter. */
   @Bean
   ObjectMapper queryServiceObjectMapper() {
     return new ObjectMapper();
-  }
-
-  /** Creates the two independent query consumer groups. */
-  @Bean
-  QueryProjectionKafkaConsumer queryProjectionKafkaConsumer(
-      QueryProjectionApplicationService projectionService,
-      QueryProjectionStore projectionStore,
-      Clock queryServiceClock) {
-    return new QueryProjectionKafkaConsumer(projectionService, projectionStore, queryServiceClock);
   }
 
   /** Creates the verified mounted-artifact loader used by the active reference model. */

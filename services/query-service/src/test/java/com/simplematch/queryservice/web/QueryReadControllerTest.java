@@ -52,7 +52,7 @@ class QueryReadControllerTest {
   }
 
   private QueryServiceProperties properties() {
-    return new QueryServiceProperties(null, null, null, null);
+    return new QueryServiceProperties(null, null, null, null, null);
   }
 
   private ObjectProvider<QueryReadCache> provider(QueryReadCache cache) {
