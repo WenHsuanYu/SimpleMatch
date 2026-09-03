@@ -1,3 +1,17 @@
+# syntax=docker/dockerfile:1
+
+FROM eclipse-temurin:25-jdk AS gradle-cache
+
+WORKDIR /workspace
+COPY gradlew /workspace/gradlew
+COPY gradle/wrapper /workspace/gradle/wrapper
+
+RUN --mount=type=cache,target=/root/.gradle,sharing=locked \
+    chmod 0555 /workspace/gradlew \
+    && /workspace/gradlew --no-daemon --version \
+    && mkdir -p /opt/simplematch/gradle-cache/wrapper/dists \
+    && cp -a /root/.gradle/wrapper/dists/. /opt/simplematch/gradle-cache/wrapper/dists/
+
 FROM eclipse-temurin:25-jdk
 
 RUN apt-get update \
@@ -6,17 +20,20 @@ RUN apt-get update \
 
 WORKDIR /workspace
 
+COPY --from=gradle-cache /opt/simplematch/gradle-cache/ /opt/simplematch/gradle-cache/
 COPY . /workspace/
 COPY deploy/docker/run-flyway /app/run-flyway
 
 RUN chmod 0555 /app/run-flyway /workspace/gradlew \
     && useradd --system --uid 10001 --home-dir /nonexistent --shell /usr/sbin/nologin simplematch \
     && chown -R 10001:10001 /workspace /app \
+    && chown -R 10001:10001 /opt/simplematch \
     && mkdir -p /tmp/gradle \
     && chown 10001:10001 /tmp/gradle
 
 ENV HOME=/tmp
 ENV GRADLE_USER_HOME=/tmp/gradle
+ENV SIMPLEMATCH_GRADLE_CACHE_SEED_DIR=/opt/simplematch/gradle-cache
 ENV SIMPLEMATCH_GRADLE_PROJECT_CACHE_DIR=/tmp/gradle-project
 
 USER 10001:10001

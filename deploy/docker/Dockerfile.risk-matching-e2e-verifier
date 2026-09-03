@@ -1,3 +1,5 @@
+# syntax=docker/dockerfile:1
+
 # Build the verifier once and ship only its runnable application distribution.
 # Runtime verification must not depend on downloading Gradle, compiling build-logic, or copying the
 # repository into a writable Pod filesystem.
@@ -6,7 +8,8 @@ FROM eclipse-temurin:25-jdk AS build
 WORKDIR /workspace
 COPY . /workspace/
 
-RUN ./gradlew --no-daemon :tools:risk-matching-e2e-verifier:installDist
+RUN --mount=type=cache,target=/root/.gradle,sharing=locked \
+    ./gradlew --no-daemon :tools:risk-matching-e2e-verifier:installDist
 
 FROM eclipse-temurin:25-jre
 

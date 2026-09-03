@@ -59,6 +59,40 @@ grep -Fq '  --project-cache-dir "$project_cache_dir" \' \
   exit 1
 }
 
+grep -Fq 'gradle_cache_seed_dir="${SIMPLEMATCH_GRADLE_CACHE_SEED_DIR:-/opt/simplematch/gradle-cache}"' \
+  "$repo_root/deploy/docker/run-flyway" &&
+grep -Fq 'gradle_seed_marker="$gradle_user_home/.simplematch-gradle-seeded"' \
+  "$repo_root/deploy/docker/run-flyway" &&
+grep -Fq 'cp -a "$gradle_cache_seed_dir/wrapper/dists/." "$gradle_user_home/wrapper/dists/"' \
+  "$repo_root/deploy/docker/run-flyway" || {
+  echo "Flyway runner does not seed its writable Gradle cache." >&2
+  exit 1
+}
+
+grep -Fq '# syntax=docker/dockerfile:1' "$repo_root/deploy/docker/Dockerfile.flyway-runner" &&
+grep -Fq 'FROM eclipse-temurin:25-jdk AS gradle-cache' \
+  "$repo_root/deploy/docker/Dockerfile.flyway-runner" &&
+grep -Fq 'RUN --mount=type=cache,target=/root/.gradle,sharing=locked' \
+  "$repo_root/deploy/docker/Dockerfile.flyway-runner" &&
+grep -Fq 'COPY --from=gradle-cache /opt/simplematch/gradle-cache/' \
+  "$repo_root/deploy/docker/Dockerfile.flyway-runner" || {
+  echo "Flyway image does not prewarm the pinned Gradle distribution." >&2
+  exit 1
+}
+grep -Fq 'ENV SIMPLEMATCH_GRADLE_CACHE_SEED_DIR=/opt/simplematch/gradle-cache' \
+  "$repo_root/deploy/docker/Dockerfile.flyway-runner" || {
+  echo "Flyway image does not expose its Gradle cache seed path." >&2
+  exit 1
+}
+
+grep -Fq '# syntax=docker/dockerfile:1' \
+  "$repo_root/deploy/docker/Dockerfile.risk-matching-e2e-verifier" &&
+grep -Fq 'RUN --mount=type=cache,target=/root/.gradle,sharing=locked' \
+  "$repo_root/deploy/docker/Dockerfile.risk-matching-e2e-verifier" || {
+  echo "Verifier image does not use a persistent BuildKit Gradle cache." >&2
+  exit 1
+}
+
 grep -Fq 'work_dir="${SIMPLEMATCH_FLYWAY_WORK_DIR:-/tmp/simplematch-workspace}"' \
   "$repo_root/deploy/docker/run-flyway" &&
 grep -Fq 'cp -a /workspace/. "$work_dir/"' \
