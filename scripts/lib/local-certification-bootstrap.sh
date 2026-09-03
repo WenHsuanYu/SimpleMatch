@@ -94,18 +94,7 @@ namespace="${SIMPLEMATCH_CERTIFICATION_NAMESPACE:-simplematch-local-cert-${run_i
 phase_marker_directory="$evidence_dir/phase-markers"
 run_context_file="$evidence_dir/run-context"
 certification_deadline_epoch=$(( $(date +%s) + certification_timeout_seconds ))
-source_signature="$({
-  certification_source_paths=()
-
-  git -C "$repo_root" rev-parse HEAD
-  mapfile -t certification_source_paths \
-    < <(simplematch_certification_runtime_source_paths)
-  git -C "$repo_root" ls-files -co --exclude-standard -- \
-    "${certification_source_paths[@]}" | LC_ALL=C sort -u |
-    while IFS= read -r path; do
-      [[ -n "$path" ]] && sha256sum "$repo_root/$path"
-    done
-} | sha256sum | awk '{print $1}')"
+source_signature="$(simplematch_certification_source_signature "$repo_root")"
 
 _certification_run_context() {
   printf 'run_id=%s\nnamespace=%s\ncluster=%s\ntrading_day=%s\nimage_tag=%s\nimage_transport=%s\nsource_signature=%s\nskip_build=%s\nskip_compose=%s\nskip_kubernetes=%s\nmatching_fleet_only=%s\n' \

@@ -51,6 +51,25 @@ simplematch_certification_source_revision() {
   git -C "$repo_root" rev-parse HEAD
 }
 
+simplematch_certification_source_signature() {
+  local repo_root="$1"
+  local path
+  local -a runtime_source_paths=()
+
+  mapfile -t runtime_source_paths < <(
+    simplematch_certification_runtime_source_paths
+  )
+  {
+    git -C "$repo_root" rev-parse HEAD
+    git -C "$repo_root" ls-files -co --exclude-standard -- \
+      "${runtime_source_paths[@]}" | LC_ALL=C sort -u |
+      while IFS= read -r path; do
+        [[ -n "$path" ]] || continue
+        sha256sum "$repo_root/$path"
+      done
+  } | sha256sum | awk '{print $1}'
+}
+
 simplematch_certification_verifier_image_identity() {
   local production_like_evidence_dir="$1"
   local identity_file="$production_like_evidence_dir/verifier-image-identity"

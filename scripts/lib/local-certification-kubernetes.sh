@@ -242,10 +242,25 @@ publish_local_matching_open_barriers() {
 apply_kubernetes_migrations() {
   local migration_manifest="$1"
   local workload
+  local -a flyway_workloads=(
+    account-service
+    risk-service
+    persistence
+    market-data-projection
+    marketdata-publisher
+    query-service
+    quickfix-gateway
+  )
+
   apply_kubernetes_topic_provisioning "$migration_manifest" || return 1
-  for workload in account-service risk-service persistence market-data-projection marketdata-publisher query-service quickfix-gateway; do
+  # Submit every migration Job before waiting. Kubernetes can then schedule the
+  # independent schema owners concurrently, while each bounded wait below still
+  # preserves the existing fail-closed completion contract.
+  for workload in "${flyway_workloads[@]}"; do
     kubectl apply -f "$migration_manifest" \
       --selector "app.kubernetes.io/name=${workload}-flyway" || return 1
+  done
+  for workload in "${flyway_workloads[@]}"; do
     kubectl -n "$namespace" wait --for=condition=complete \
       "job/${workload}-flyway" --timeout=300s || return 1
   done

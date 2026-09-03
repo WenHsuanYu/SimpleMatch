@@ -141,6 +141,30 @@ fi
 if ! (
   set -Eeuo pipefail
   namespace=certification-test
+  calls_file="$propagation_fixture/migrations-order.calls"
+  touch "$calls_file"
+  # shellcheck source=/dev/null
+  source "$kubernetes_lib"
+  apply_kubernetes_topic_provisioning() {
+    printf '%s\n' topic-provisioning >>"$calls_file"
+  }
+  kubectl() {
+    printf '%s\n' "$*" >>"$calls_file"
+  }
+  apply_kubernetes_migrations "$propagation_fixture/migrations.yaml"
+  mapfile -t apply_lines < <(grep -n -- '--selector app.kubernetes.io/name=' "$calls_file" | cut -d: -f1)
+  mapfile -t wait_lines < <(grep -n -- '--for=condition=complete' "$calls_file" | cut -d: -f1)
+  [[ "${#apply_lines[@]}" -eq 7 && "${#wait_lines[@]}" -eq 7 ]]
+  for line in "${apply_lines[@]}"; do
+    (( line < wait_lines[0] ))
+  done
+); then
+  fail 'Flyway migration Jobs must all be submitted before any completion wait'
+fi
+
+if ! (
+  set -Eeuo pipefail
+  namespace=certification-test
   repo_root="$propagation_fixture"
   certification_trading_day=2026-08-27
   matching_fixture="$propagation_fixture/out/build/full-native-dev/simplematch-matching-kafka-fixture-publisher"

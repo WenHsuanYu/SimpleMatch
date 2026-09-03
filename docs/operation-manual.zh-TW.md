@@ -534,6 +534,16 @@ bash scripts/run-local-production-like-certification.sh
 
 Compose phase 與 Kubernetes local overlay 是不同驗證邊界；Kubernetes workloads 不應被理解為依賴已淘汰的 Compose bridge。
 
+如果完整 run 的前置 phase 都是 PASS，只有 Risk CDC observer 因暫時性 runtime 問題失敗，可對同一份 retained evidence 執行 focused diagnostic：
+
+```bash
+bash scripts/run-local-cdc-delivery-focused-diagnostic.sh \
+  --evidence-dir out/certification/<retained-run> \
+  --timeout-seconds 180
+```
+
+它只接受 full proof profile，並從 `run-context` 驗證 source signature、namespace/run-id、依賴 phase、immutable image lock、實際 workload image、session ConfigMap 與 PostgreSQL Secret。成功結果會標示 `FOCUSED_DIAGNOSTIC` 且 `fullCertification=false`；source、namespace、image、input 或 dependency 任一漂移都會在 observer side effect 前拒絕，必須重新建立完整 certification run。
+
 ### 12.1 計畫與決策
 
 常用選項：

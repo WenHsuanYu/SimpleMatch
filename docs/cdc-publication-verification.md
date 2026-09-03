@@ -183,6 +183,24 @@ run-owned Compose project. An explicitly supplied `SIMPLEMATCH_CDC_COMPOSE_PROJE
 existing container, network, or volume. Cleanup removes only resources with that exact project label,
 removes its disposable volumes, and fails the run if any run-owned resource remains.
 
+When a retained full production-like run has already passed every predecessor of the Risk CDC
+observer but that observer ended with a transient failure, use the focused diagnostic instead of
+starting another full deployment:
+
+```bash
+bash scripts/run-local-cdc-delivery-focused-diagnostic.sh \
+  --evidence-dir out/certification/<retained-run> \
+  --timeout-seconds 180
+```
+
+The command reads the retained `run-context`, verifies that the current source signature, full proof
+profile, disposable namespace/run-id, executed dependency results, immutable image lock, deployed
+workload images, session ConfigMaps, and PostgreSQL secrets still agree, and only then invokes the
+existing observer. It writes a `FOCUSED_DIAGNOSTIC` verdict below the retained run's
+`focused-diagnostics/cdc-delivery/` directory. That verdict is deliberately not a phase result and
+cannot close or upgrade the full certification. Any source, namespace, image, input, or dependency
+drift fails closed before the observer can change runtime state; create a fresh full run in that case.
+
 Finally run the repository Java quality gate:
 
 ```bash

@@ -106,7 +106,10 @@ flowchart TD
 ```
 
 The important ordering is `platform resources -> Flyway -> runtime workloads`. The application
-Pods are not merely checked later; they are created only after the migration Jobs complete.
+Pods are not merely checked later; they are created only after the migration Jobs complete. Within
+the Flyway step, the adapter submits all seven independent Jobs first and then supervises each
+bounded completion. This preserves the schema barrier while avoiding seven serial Job-startup
+delays; a failed or timed-out Job still collects the same diagnostic evidence and fails the phase.
 
 ## Root causes and selected repairs
 
@@ -120,7 +123,7 @@ Pods are not merely checked later; they are created only after the migration Job
 | Gradle project cache remained under the source tree | The same failure persisted after the user cache change | Select `/tmp/gradle-project` with `--project-cache-dir` | Separates project cache from source and keeps the root filesystem read-only |
 | Gradle problem reports/build outputs remained under `/workspace/build` | `Could not create problems-report directory '/workspace/build/reports/problems'` | Mount `/workspace/build` as a writable `emptyDir` | Keeps generated build output out of the image layer |
 | Gradle validates multi-project directories as writable | `configured projectDirectory ... can't be written to` | Copy the image source into `/tmp/simplematch-workspace` and execute Gradle there | Keeps the image source immutable while satisfying Gradle's project-directory contract |
-| Migrations and runtime Pods were created together | Flyway and Java Pods competed for memory; Flyway Pods were `OOMKilled` | Split the rendered manifest into platform, migration, and workload documents; apply and wait sequentially | Establishes a real dependency boundary instead of a post-hoc wait |
+| Migrations and runtime Pods were created together | Flyway and Java Pods competed for memory; Flyway Pods were `OOMKilled` | Split the rendered manifest into platform, migration, and workload documents; submit the seven Flyway Jobs together, supervise their bounded completion, then apply workloads | Establishes a real dependency boundary without serial migration startup overhead |
 | Matching startup waited for Open Barriers | Matching remained Running but did not become Ready, then failed its startup probe | Publish one valid barrier for every partition from the approved artifact, current image identity, and session | Preserves the readiness contract instead of weakening the probe |
 | Full 4 GiB local fleet exceeded prior node capacity | Scheduler emitted `Insufficient memory` | Keep the production-shaped request in templates; use the documented 2 GiB local override for a focused fleet gate | Keeps local scheduling accommodation explicit and avoids mislabelling scheduler pressure as an OOM |
 | Docker restart left a stale Kafka endpoint address | Pods connected to the prior bridge IP and got `connection refused` | Recreate the scoped namespace and Compose project for the rerun | Does not reuse state that no longer names the running Docker network |

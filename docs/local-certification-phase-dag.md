@@ -713,6 +713,15 @@ must state the rejection reason and resulting execution decision.
 The DAG makes parallel execution possible but concurrency is not required for
 the first implementation.
 
+The Kubernetes migration adapter uses a bounded form of concurrency without
+changing the phase policy: after Kafka topic provisioning succeeds, it submits
+all seven independent Flyway Jobs and only then supervises their completion one
+by one. Each Job still has its existing 300-second Kubernetes wait and the same
+terminal-condition/evidence behavior, while the wall clock is bounded by the
+slowest submitted Job rather than the sum of seven serial startup delays.
+Application workloads remain blocked until every migration Job completes, so
+schema correctness and the `FRESH` runtime requirement are unchanged.
+
 When introduced:
 
 - concurrency MUST be bounded;

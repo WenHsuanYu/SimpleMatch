@@ -20,6 +20,10 @@ planner_lib="$script_dir/lib/local-certification-planner.sh"
 images_lib="$script_dir/lib/local-certification-images.sh"
 cdc_fixture_lib="$script_dir/lib/cdc-observer-fixture.sh"
 cdc_fixture_test="$script_dir/test-cdc-observer-fixture-contract.sh"
+focused_diagnostic_lib="$script_dir/lib/local-certification-focused-diagnostic.sh"
+focused_diagnostic_script="$script_dir/run-local-cdc-delivery-focused-diagnostic.sh"
+focused_diagnostic_test="$script_dir/test-local-certification-focused-diagnostic.sh"
+job_supervision_test="$script_dir/test-local-certification-job-supervision.sh"
 normalizer="$script_dir/normalize-local-images-for-kind.sh"
 normalizer_dockerfile="$repo_root/deploy/docker/Dockerfile.kind-normalized"
 
@@ -29,10 +33,12 @@ for file in \
   "$runner" "$framework_lib" "$kafka_lib" "$kubernetes_lib" \
   "$connect_lib" "$workloads_lib" "$bootstrap_lib" "$run_lib" \
   "$transport_lib" "$phase_graph_lib" "$fingerprint_lib" \
-  "$evidence_lib" "$planner_lib" "$images_lib" "$cdc_fixture_lib"; do
+  "$evidence_lib" "$planner_lib" "$images_lib" "$cdc_fixture_lib" \
+  "$focused_diagnostic_lib"; do
   bash -n "$file"
 done
 bash -n "$cdc_fixture_test"
+bash -n "$focused_diagnostic_script" "$focused_diagnostic_test" "$job_supervision_test"
 
 for version_contract in \
   'gradle-9.7.0-bin.zip' \
@@ -92,6 +98,8 @@ bash -n "$repo_root/scripts/lib/local-kind.sh"
 observer_script="$repo_root/scripts/run-risk-cdc-delivery-observer-check.sh"
 grep -Fq 'current_epoch_millis()' "$observer_script"
 bash "$cdc_fixture_test"
+bash "$focused_diagnostic_test"
+bash "$job_supervision_test"
 grep -Fq 'baseline_age_ms="$(( $(current_epoch_millis) - baseline_updated ))"' \
   "$observer_script"
 grep -Fq 'zero_traffic_age_ms="$(( $(current_epoch_millis) - zero_traffic_updated ))"' \
@@ -183,6 +191,12 @@ grep -Fq 'run-risk-cdc-delivery-observer-check.sh' "$run_lib"
 grep -Fq 'cdc-observer-fixture.sh' "$observer_script"
 grep -Fq 'test-cdc-observer-fixture-contract.sh' \
   "$repo_root/scripts/test-phase1-deployment-contracts.sh"
+grep -Fq 'test-local-certification-focused-diagnostic.sh' \
+  "$repo_root/scripts/test-phase1-deployment-contracts.sh"
+grep -Fq 'FOCUSED_DIAGNOSTIC' "$focused_diagnostic_script"
+grep -Fq 'simplematch_focused_preflight' "$focused_diagnostic_script"
+grep -Fq 'all seven independent Flyway Jobs' \
+  "$repo_root/docs/local-certification-phase-dag.md"
 grep -Fq 'simplematch.delivery.observations' \
   "$repo_root/scripts/run-risk-cdc-delivery-observer-check.sh"
 grep -Fq 'risk_service.cdc_delivery_observation' \
