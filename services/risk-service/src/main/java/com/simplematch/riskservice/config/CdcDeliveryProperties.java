@@ -13,6 +13,7 @@ public record CdcDeliveryProperties(
     @DefaultValue("5s") Duration refreshInterval,
     @DefaultValue("5s") Duration queryTimeout) {
 
+  private static final Duration MINIMUM_QUERY_TIMEOUT = Duration.ofMillis(1);
   private static final Duration MAXIMUM_QUERY_TIMEOUT = Duration.ofSeconds(10);
 
   /** Validates the bounded observer settings. */
@@ -32,6 +33,9 @@ public record CdcDeliveryProperties(
 
   private static void requireBoundedQueryTimeout(Duration value) {
     requirePositive(value, "queryTimeout");
+    if (value.compareTo(MINIMUM_QUERY_TIMEOUT) < 0) {
+      throw new IllegalArgumentException("queryTimeout must be at least 1 millisecond");
+    }
     if (value.compareTo(MAXIMUM_QUERY_TIMEOUT) > 0) {
       throw new IllegalArgumentException("queryTimeout must not exceed 10 seconds");
     }

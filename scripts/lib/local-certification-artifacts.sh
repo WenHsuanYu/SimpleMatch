@@ -95,11 +95,16 @@ certification_kubernetes_cdc_delivery_outputs_json() {
     health-readiness.json
     metric-before-lag.json
     metric-before-age.json
+    metric-before-updated-at.json
     metric-baseline-age.txt
+    metric-baseline-updated-at.json
+    metric-zero-traffic-updated-at.json
     metric-paused-lag.json
     metric-paused-age.json
+    metric-paused-updated-at.json
     metric-recovered-lag.json
     metric-recovered-age.json
+    metric-recovered-updated-at.json
     metric-paused-row.txt
     metric-recovered-row.txt
     observation-row.txt

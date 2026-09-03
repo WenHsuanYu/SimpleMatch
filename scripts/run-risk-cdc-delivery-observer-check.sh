@@ -33,6 +33,7 @@ connector_paused=false
 cleanup_resume_status=not-needed
 postgres_pod=""
 kafka_pod=""
+risk_pod=""
 event_id=""
 
 usage() {
@@ -194,7 +195,7 @@ cleanup_resume_connector() {
       return 0
     fi
     if ! bounded_sleep 1; then
-      cleanup_resume_status=deadline-exceeded
+      cleanup_resume_status='deadline-exceeded'
       return 1
     fi
   done
@@ -415,9 +416,13 @@ wait_for_metric_row() {
 }
 
 metric_json() {
-  local metric="$1" output="$2" expected="$3" metric_url response
+  local metric="$1" output="$2" expected="$3" minimum_value="${4:-0}" metric_url response
   case "$expected" in
     zero|positive|nonnegative) ;;
+    at-least)
+      [[ "$minimum_value" =~ ^[0-9]+$ ]] || die \
+        "minimum Actuator metric value must be a non-negative integer: $minimum_value"
+      ;;
     *) die "unsupported Actuator metric expectation: $expected" ;;
   esac
   metric_url="$risk_base_url/actuator/metrics/simplematch.delivery.observations"
@@ -425,14 +430,15 @@ metric_json() {
   while :; do
     remaining_seconds >/dev/null || die "Actuator metric is missing for $metric"
     response="$(curl_with_deadline "$metric_url" 2>/dev/null || true)"
-    if jq -e --arg expected "$expected" '
+    if jq -e --arg expected "$expected" --arg minimum "$minimum_value" '
         .name == "simplematch.delivery.observations" and
         (.measurements | length) > 0 and
         (.measurements | all(.[];
           (.value | type == "number") and
           ($expected == "nonnegative" or
             ($expected == "zero" and .value == 0) or
-            ($expected == "positive" and .value >= 1))))
+            ($expected == "positive" and .value >= 1) or
+            ($expected == "at-least" and .value >= ($minimum | tonumber)))))
       ' >/dev/null 2>&1 <<<"$response"; then
       printf '%s\n' "$response" >"$output"
       return 0
@@ -481,7 +487,10 @@ postgres_pod="$(kns get pods -l app.kubernetes.io/name=postgres \
   -o jsonpath='{.items[0].metadata.name}')"
 kafka_pod="$(kns get pods -l app.kubernetes.io/name=kafka \
   -o jsonpath='{.items[0].metadata.name}')"
-[[ -n "$postgres_pod" && -n "$kafka_pod" ]] || die 'Risk CDC observer prerequisites are missing'
+risk_pod="$(kns get pods -l app.kubernetes.io/name=risk-service \
+  -o jsonpath='{.items[0].metadata.name}')"
+[[ -n "$postgres_pod" && -n "$kafka_pod" && -n "$risk_pod" ]] || die \
+  'Risk CDC observer prerequisites are missing'
 
 start_port_forward service/kafka-connect 8083 "$evidence_dir/connect-port-forward.log" \
   connect_port_forward_pid connect_port
@@ -491,7 +500,7 @@ wait_for_connector_state risk-service-outbox RUNNING \
 capture_retained_connector_states "$evidence_dir/connectors-running-before.json" \
   "$evidence_dir/connector-running-before.json"
 
-start_port_forward service/risk-service 8080 "$evidence_dir/risk-port-forward.log" \
+start_port_forward "pod/$risk_pod" 8080 "$evidence_dir/risk-port-forward.log" \
   risk_port_forward_pid risk_port
 risk_base_url="http://127.0.0.1:${risk_port}"
 curl_with_deadline "$risk_base_url/actuator/health/liveness" \
@@ -500,8 +509,11 @@ curl_with_deadline "$risk_base_url/actuator/health/readiness" \
   >"$evidence_dir/health-readiness.json"
 metric_json connector_lag_events "$evidence_dir/metric-before-lag.json" zero
 metric_json outbox_age_millis "$evidence_dir/metric-before-age.json" nonnegative
+metric_json observation_updated_at_unix_ms \
+  "$evidence_dir/metric-before-updated-at.json" nonnegative
 assert_metric_measurement_is_nonnegative "$evidence_dir/metric-before-lag.json"
 assert_metric_measurement_is_nonnegative "$evidence_dir/metric-before-age.json"
+assert_metric_measurement_is_nonnegative "$evidence_dir/metric-before-updated-at.json"
 jq -e '.measurements[0].value == 0' "$evidence_dir/metric-before-lag.json" \
   >/dev/null || die 'Risk CDC lag gauge is not zero before outage'
 
@@ -515,6 +527,8 @@ baseline_age_ms="$(( $(date +%s) * 1000 - baseline_updated ))"
 (( baseline_age_ms >= 0 &&
   baseline_age_ms <= maximum_metric_age_seconds * 1000 )) || die \
   "Risk CDC baseline metric is stale or from the future: age_ms=$baseline_age_ms"
+metric_json observation_updated_at_unix_ms \
+  "$evidence_dir/metric-baseline-updated-at.json" at-least "$baseline_updated"
 zero_traffic_row="$(wait_for_metric_row zero "$baseline_updated" \
   'Risk CDC metric did not remain fresh and zero without traffic')"
 zero_traffic_updated="${zero_traffic_row#*|}"
@@ -522,6 +536,8 @@ zero_traffic_age_ms="$(( $(date +%s) * 1000 - zero_traffic_updated ))"
 (( zero_traffic_age_ms >= 0 &&
   zero_traffic_age_ms <= maximum_metric_age_seconds * 1000 )) || die \
   "Risk CDC zero-traffic metric is stale or from the future: age_ms=$zero_traffic_age_ms"
+metric_json observation_updated_at_unix_ms \
+  "$evidence_dir/metric-zero-traffic-updated-at.json" at-least "$zero_traffic_updated"
 printf 'baseline_age_ms=%s\nzero_traffic_row=%s\nzero_traffic_age_ms=%s\n' \
   "$baseline_age_ms" "$zero_traffic_row" "$zero_traffic_age_ms" \
   >"$evidence_dir/metric-baseline-age.txt"
@@ -613,6 +629,8 @@ paused_updated="${paused_row#*|}"
 printf '%s\n' "$paused_row" >"$evidence_dir/metric-paused-row.txt"
 metric_json connector_lag_events "$evidence_dir/metric-paused-lag.json" positive
 metric_json outbox_age_millis "$evidence_dir/metric-paused-age.json" nonnegative
+metric_json observation_updated_at_unix_ms \
+  "$evidence_dir/metric-paused-updated-at.json" at-least "$paused_updated"
 assert_metric_measurement_is_nonnegative "$evidence_dir/metric-paused-lag.json"
 assert_metric_measurement_is_nonnegative "$evidence_dir/metric-paused-age.json"
 jq -e '.measurements[0].value >= 1' "$evidence_dir/metric-paused-lag.json" \
@@ -628,10 +646,13 @@ capture_retained_connector_states "$evidence_dir/connectors-running-recovered.js
 observation_row="$(wait_for_observation)"
 recovered_row="$(wait_for_metric_row zero "$paused_updated" \
   'Risk CDC metric did not return to zero after connector recovery')"
+recovered_updated="${recovered_row#*|}"
 printf '%s\n' "$observation_row" >"$evidence_dir/observation-row.txt"
 printf '%s\n' "$recovered_row" >"$evidence_dir/metric-recovered-row.txt"
 metric_json connector_lag_events "$evidence_dir/metric-recovered-lag.json" zero
 metric_json outbox_age_millis "$evidence_dir/metric-recovered-age.json" nonnegative
+metric_json observation_updated_at_unix_ms \
+  "$evidence_dir/metric-recovered-updated-at.json" at-least "$recovered_updated"
 assert_metric_measurement_is_nonnegative "$evidence_dir/metric-recovered-lag.json"
 assert_metric_measurement_is_nonnegative "$evidence_dir/metric-recovered-age.json"
 jq -e '.measurements[0].value == 0' "$evidence_dir/metric-recovered-lag.json" \
@@ -686,6 +707,7 @@ jq -n \
       "pending matching.commands outbox raised durable lag while connector was paused",
       "exact event_id observation was persisted only after Kafka recovery",
       "durable matching.commands lag returned to zero with a newer timestamp",
+      "Actuator lag and age gauges were read from one Risk pod and correlated with durable refresh timestamps",
       "baseline durable CDC metric was fresh and not from the future",
       "fresh zero-traffic matching.commands metric remained at zero",
       "all active Phase 1 workload logs passed the sensitive-log safety contract"

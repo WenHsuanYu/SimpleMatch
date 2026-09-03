@@ -6,6 +6,8 @@ public enum DeliveryMetric {
   CONNECTOR_LAG_EVENTS,
   /** Age in milliseconds of the oldest retained outbox row that is being observed. */
   OUTBOX_AGE_MILLIS,
+  /** Unix-millisecond timestamp of the latest durable delivery refresh exported by the process. */
+  OBSERVATION_UPDATED_AT_UNIX_MS,
   /** Number of events between a consumer position and its partition head. */
   CONSUMER_LAG_EVENTS,
   /** Number of duplicate deliveries recognized by a consumer. */

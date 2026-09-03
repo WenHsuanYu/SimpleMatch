@@ -129,8 +129,41 @@ class EnvironmentConfigurationValidatorTest {
             new MapPropertySource(
                 "kubernetes-secrets: simplematch-runtime-secrets",
                 Map.of("postgres_dsn", SECURE_POSTGRES_DSN)));
+    environment
+        .getPropertySources()
+        .addFirst(
+            new MapPropertySource(
+                "environment", Map.of("simplematch.postgres.dsn", SECURE_POSTGRES_DSN)));
 
     validator.validate(environment, "production");
+  }
+
+  @Test
+  void rejectsAnEffectivePostgresDsnThatDiffersFromTheSecret() {
+    final MockEnvironment environment = new MockEnvironment();
+    environment.setActiveProfiles("staging");
+    environment
+        .getPropertySources()
+        .addFirst(
+            new MapPropertySource(
+                "kubernetes-configmap: simplematch-platform-config",
+                Map.of("simplematch.kafka.brokers", "kafka:9092")));
+    environment
+        .getPropertySources()
+        .addFirst(
+            new MapPropertySource(
+                "kubernetes-secrets: simplematch-runtime-secrets",
+                Map.of("postgres_dsn", SECURE_POSTGRES_DSN)));
+    environment
+        .getPropertySources()
+        .addFirst(
+            new MapPropertySource(
+                "environment",
+                Map.of("simplematch.postgres.dsn", "jdbc:postgresql://untrusted/simplematch")));
+
+    assertThatThrownBy(() -> validator.validate(environment, "staging"))
+        .isInstanceOf(IllegalStateException.class)
+        .hasMessageContaining("must exactly match the Kubernetes Secret value");
   }
 
   @Test

@@ -222,11 +222,13 @@ normalize_network_policy_rule = lambda do |rule, destination_key|
     selector_kind = %w[podSelector namespaceSelector ipBlock].find { |kind| destination.key?(kind) }
     [selector_kind, destination.fetch(selector_kind)]
   end
-  ports = rule.fetch("ports", []).map { |entry| [entry.fetch("protocol"), entry.fetch("port")] }.sort
+  ports = rule.fetch("ports", []).map do |entry|
+    [entry.fetch("protocol"), entry.fetch("port"), entry.fetch("endPort", nil)]
+  end.sort
   [destinations, ports]
 end
 expected_ingress_rules = [
-  [["podSelector", {"matchLabels" => connect_labels}], [["TCP", 8083]]]
+  [["podSelector", {"matchLabels" => connect_labels}], [["TCP", 8083, nil]]]
 ].map do |destination, ports|
   [[destination], ports]
 end
@@ -238,10 +240,10 @@ require_value(
   "Local Kafka Connect NetworkPolicy ingress rules must match the exact TCP and destination contract"
 )
 expected_egress_rules = [
-  [["podSelector", {"matchLabels" => connect_labels}], [["TCP", 8083]]],
-  [["podSelector", {"matchLabels" => postgres_labels}], [["TCP", 5432]]],
-  [["podSelector", {"matchLabels" => kafka_labels}], [["TCP", 9092]]],
-  [["namespaceSelector", {"matchLabels" => dns_labels}], [["TCP", 53], ["UDP", 53]]]
+  [["podSelector", {"matchLabels" => connect_labels}], [["TCP", 8083, nil]]],
+  [["podSelector", {"matchLabels" => postgres_labels}], [["TCP", 5432, nil]]],
+  [["podSelector", {"matchLabels" => kafka_labels}], [["TCP", 9092, nil]]],
+  [["namespaceSelector", {"matchLabels" => dns_labels}], [["TCP", 53, nil], ["UDP", 53, nil]]]
 ].map do |destination, ports|
   [[destination], ports]
 end

@@ -1,6 +1,7 @@
 package com.simplematch.riskservice.cdc;
 
 import static com.simplematch.config.delivery.DeliveryMetric.CONNECTOR_LAG_EVENTS;
+import static com.simplematch.config.delivery.DeliveryMetric.OBSERVATION_UPDATED_AT_UNIX_MS;
 import static com.simplematch.config.delivery.DeliveryMetric.OUTBOX_AGE_MILLIS;
 import static org.assertj.core.api.Assertions.assertThat;
 
@@ -33,9 +34,7 @@ class CdcDeliveryMonitorTest {
             store,
             topic -> true,
             metrics,
-            "matching.commands",
-            "matching.commands",
-            CLOCK,
+            new CdcDeliveryMonitorContext("matching.commands", "matching.commands", CLOCK),
             new TransactionTemplate(new NoOpTransactionManager()));
 
     monitor.refresh();
@@ -45,6 +44,8 @@ class CdcDeliveryMonitorTest {
         .isEqualTo(7L);
     assertThat(metrics.observation(OUTBOX_AGE_MILLIS, "risk-cdc-delivery"))
         .isEqualTo(1_250L);
+    assertThat(metrics.observation(OBSERVATION_UPDATED_AT_UNIX_MS, "risk-cdc-delivery"))
+        .isEqualTo(1_788_307_205_000L);
   }
 
   @Test
@@ -57,9 +58,7 @@ class CdcDeliveryMonitorTest {
             store,
             topic -> false,
             metrics,
-            "matching.commands",
-            "matching.commands",
-            CLOCK,
+            new CdcDeliveryMonitorContext("matching.commands", "matching.commands", CLOCK),
             new TransactionTemplate(new NoOpTransactionManager()));
 
     monitor.refresh();
@@ -72,7 +71,7 @@ class CdcDeliveryMonitorTest {
     private final List<String> refreshes = new ArrayList<>();
 
     @Override
-    public void observe(CdcDeliveryObservation observation) {
+    public CdcDeliveryObservationResult observe(CdcDeliveryObservation observation) {
       throw new UnsupportedOperationException("not used by this test");
     }
 

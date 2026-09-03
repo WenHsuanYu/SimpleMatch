@@ -176,6 +176,16 @@ grep -Fq 'metric_json connector_lag_events "$evidence_dir/metric-paused-lag.json
   "$repo_root/scripts/run-risk-cdc-delivery-observer-check.sh"
 grep -Fq 'metric_json connector_lag_events "$evidence_dir/metric-recovered-lag.json" zero' \
   "$repo_root/scripts/run-risk-cdc-delivery-observer-check.sh"
+grep -Fq 'metric_json observation_updated_at_unix_ms' \
+  "$repo_root/scripts/run-risk-cdc-delivery-observer-check.sh"
+grep -Fq 'at-least "$baseline_updated"' \
+  "$repo_root/scripts/run-risk-cdc-delivery-observer-check.sh"
+grep -Fq 'at-least "$paused_updated"' \
+  "$repo_root/scripts/run-risk-cdc-delivery-observer-check.sh"
+grep -Fq 'at-least "$recovered_updated"' \
+  "$repo_root/scripts/run-risk-cdc-delivery-observer-check.sh"
+grep -Fq 'start_port_forward "pod/$risk_pod"' \
+  "$repo_root/scripts/run-risk-cdc-delivery-observer-check.sh"
 grep -Fq 'metadata.labels["simplematch.io/lifecycle"]' \
   "$repo_root/scripts/run-risk-cdc-delivery-observer-check.sh"
 grep -Fq 'metadata.labels["simplematch.io/managed-by"]' \

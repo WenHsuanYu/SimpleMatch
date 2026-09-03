@@ -86,6 +86,11 @@ The live transport check uses the same `cdc_assert_probe_publication` Interface 
   source-offset flush, and requires the same probe event to appear again after restart. One Kafka
   record therefore cannot satisfy both delivery assertions.
 
+The Kubernetes Risk observer reads lag, age, and the refresh timestamp from one pinned Risk Pod.
+It accepts a gauge only when the exported timestamp is at least as new as the corresponding durable
+`cdc_delivery_lag.updated_at_unix_ms` row, so a stale zero from another replica cannot satisfy
+recovery.
+
 Connector `RUNNING` is only prerequisite/diagnostic evidence. A scenario succeeds only when the
 expected durable change passes the Kafka record verification.
 

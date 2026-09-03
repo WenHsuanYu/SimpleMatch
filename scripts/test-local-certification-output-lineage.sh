@@ -96,9 +96,12 @@ for cdc_file in \
   verdict.json event.json connector-running-before.json connector-paused.json \
   connectors-running-before.json connector-recovered.json \
   connectors-running-recovered.json health-liveness.json health-readiness.json \
-  metric-before-lag.json metric-before-age.json metric-baseline-age.txt \
+  metric-before-lag.json metric-before-age.json metric-before-updated-at.json \
+  metric-baseline-age.txt metric-baseline-updated-at.json \
+  metric-zero-traffic-updated-at.json \
   metric-paused-lag.json \
-  metric-paused-age.json metric-recovered-lag.json metric-recovered-age.json \
+  metric-paused-age.json metric-paused-updated-at.json \
+  metric-recovered-lag.json metric-recovered-age.json metric-recovered-updated-at.json \
   metric-paused-row.txt metric-recovered-row.txt observation-row.txt \
   account-service.log persistence.log market-data-projection.log \
   marketdata-streamer.log query-service.log quickfix-gateway.log risk-service.log; do
@@ -107,7 +110,7 @@ done
 cdc_outputs="$(certification_phase_outputs_json kubernetes-cdc-delivery)" || \
   fail 'Risk CDC evidence output could not be described'
 jq -e '
-  length == 26 and
+  length == 31 and
   all(.[];
     .kind == "file-content" and
     (.name | startswith("risk-cdc-delivery-")) and

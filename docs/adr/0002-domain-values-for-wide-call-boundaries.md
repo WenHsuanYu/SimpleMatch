@@ -79,6 +79,21 @@ source and binary compatibility break; SQL, protobuf, FIX, WAL, Kafka, and confi
 remain compatible through their adapters. PMD is the only automated parameter-count gate; a
 deprecated overload is never a semantic-boundary exception.
 
+### CDC delivery semantic composition
+
+`CdcDeliveryEnvelope` composes the six immutable Debezium values that must be compared with the
+authoritative Risk outbox: event identity, message key, payload bytes, event type, serialized
+headers, and publication time. `CdcDeliveryObservation` then combines that envelope with the exact
+Kafka position and observation time, reducing the public observation boundary to three named
+values. The store can therefore keep its exact-match invariant without a positional eight-field
+constructor.
+
+`CdcDeliveryMonitorContext` composes the metric identity, topic, and durable refresh clock used by
+one monitor. `CdcDeliveryMonitor` accepts that context with its three behavior ports and
+transaction boundary, reducing its constructor to five parameters while keeping storage,
+progress, telemetry, and transaction ownership explicit. These carriers add stable CDC vocabulary
+and validation; they are not generic parameter bags or exceptions to PMD's existing rule.
+
 ## Market Reference publication representation
 
 `PublishedMarketSnapshot` remains a durable publication representation rather than a domain

@@ -42,7 +42,10 @@ current topic head. That offset proof keeps healthy zero-traffic periods fresh w
 timestamp blindly. Missing Kafka progress leaves the previous row untouched so the admission gate
 ages out and fails closed; an unpublished Risk outbox row raises connector lag until its exact event
 identity is observed. The exported component is `risk-cdc-delivery`, using
-`connector_lag_events` and `outbox_age_millis` observations.
+`connector_lag_events`, `outbox_age_millis`, and `observation_updated_at_unix_ms` observations.
+The timestamp is the durable refresh time; the local certification accepts the three gauges only
+when they are read from one Risk Pod and the timestamp is at least the corresponding durable row
+update.
 
 The full local Kubernetes certification phase exercises this owner through the public runtime
 seams: it pauses and resumes the retained Risk connector, records the durable lag transition and

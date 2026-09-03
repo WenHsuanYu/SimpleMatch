@@ -13,8 +13,11 @@ import java.time.Instant;
 import java.time.ZoneOffset;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Optional;
 import java.util.UUID;
 import org.apache.kafka.clients.consumer.ConsumerRecord;
+import org.apache.kafka.common.header.internals.RecordHeaders;
+import org.apache.kafka.common.record.TimestampType;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.springframework.kafka.support.Acknowledgment;
@@ -32,29 +35,21 @@ class KafkaCdcDeliveryListenerTest {
     final RecordingProgressStore store = new RecordingProgressStore();
     final KafkaCdcDeliveryListener listener = new KafkaCdcDeliveryListener(store, CLOCK);
     final Acknowledgment acknowledgment = mock(Acknowledgment.class);
-    final ConsumerRecord<String, byte[]> record =
-        new ConsumerRecord<>(
-            "matching.commands", 3, 41L, PUBLISHED_AT_UNIX_MS, "key", new byte[] {1});
-    record.headers().add("id", EVENT_ID.toString().getBytes(StandardCharsets.UTF_8));
-    record.headers().add(
-        "eventType",
-        "simplematch.matching.runtime.v1.MatchingCommand"
-            .getBytes(StandardCharsets.UTF_8));
-    record.headers().add(
-        "headers_json", "{\"trace-id\":\"cdc-test\"}".getBytes(StandardCharsets.UTF_8));
+    final ConsumerRecord<String, byte[]> record = validRecord();
 
     listener.onDelivery(record, acknowledgment);
 
     assertThat(store.observations)
         .containsExactly(
             new CdcDeliveryObservation(
-                EVENT_ID,
+                new CdcDeliveryEnvelope(
+                    EVENT_ID,
+                    "key",
+                    new byte[] {1},
+                    "simplematch.matching.runtime.v1.MatchingCommand",
+                    "{\"trace-id\":\"cdc-test\"}",
+                    PUBLISHED_AT_UNIX_MS),
                 new DeliveryPosition("matching.commands", 3, 41L),
-                "key",
-                new byte[] {1},
-                "simplematch.matching.runtime.v1.MatchingCommand",
-                "{\"trace-id\":\"cdc-test\"}",
-                PUBLISHED_AT_UNIX_MS,
                 1788307205000L));
     verify(acknowledgment).acknowledge();
   }
@@ -127,12 +122,80 @@ class KafkaCdcDeliveryListenerTest {
     verify(acknowledgment, never()).acknowledge();
   }
 
+  @Test
+  @DisplayName("does not acknowledge an event that is absent from the Risk outbox")
+  void doesNotAcknowledgeAnEventThatIsAbsentFromTheRiskOutbox() {
+    final RecordingProgressStore store = new RecordingProgressStore();
+    store.result = CdcDeliveryObservationResult.NOT_CORRELATED;
+    final KafkaCdcDeliveryListener listener = new KafkaCdcDeliveryListener(store, CLOCK);
+    final Acknowledgment acknowledgment = mock(Acknowledgment.class);
+    final ConsumerRecord<String, byte[]> record = validRecord();
+
+    assertThatThrownBy(() -> listener.onDelivery(record, acknowledgment))
+        .isInstanceOf(IllegalStateException.class)
+        .hasMessageContaining("did not correlate with the Risk outbox");
+    verify(acknowledgment, never()).acknowledge();
+  }
+
+  @Test
+  @DisplayName("acknowledges an event already recorded by an earlier delivery")
+  void acknowledgesAnEventAlreadyRecordedByAnEarlierDelivery() {
+    final RecordingProgressStore store = new RecordingProgressStore();
+    store.result = CdcDeliveryObservationResult.ALREADY_RECORDED;
+    final KafkaCdcDeliveryListener listener = new KafkaCdcDeliveryListener(store, CLOCK);
+    final Acknowledgment acknowledgment = mock(Acknowledgment.class);
+
+    listener.onDelivery(validRecord(), acknowledgment);
+
+    verify(acknowledgment).acknowledge();
+  }
+
+  @Test
+  @DisplayName("does not acknowledge a duplicate event with conflicting metadata")
+  void doesNotAcknowledgeADuplicateEventWithConflictingMetadata() {
+    final RecordingProgressStore store = new RecordingProgressStore();
+    store.result = CdcDeliveryObservationResult.CONFLICT;
+    final KafkaCdcDeliveryListener listener = new KafkaCdcDeliveryListener(store, CLOCK);
+    final Acknowledgment acknowledgment = mock(Acknowledgment.class);
+
+    assertThatThrownBy(() -> listener.onDelivery(validRecord(), acknowledgment))
+        .isInstanceOf(IllegalStateException.class)
+        .hasMessageContaining("did not correlate with the Risk outbox");
+    verify(acknowledgment, never()).acknowledge();
+  }
+
+  private static ConsumerRecord<String, byte[]> validRecord() {
+    final ConsumerRecord<String, byte[]> record =
+        new ConsumerRecord<String, byte[]>(
+            "matching.commands",
+            3,
+            41L,
+            PUBLISHED_AT_UNIX_MS,
+            TimestampType.CREATE_TIME,
+            0,
+            1,
+            "key",
+            new byte[] {1},
+            new RecordHeaders(),
+            Optional.empty());
+    record.headers().add("id", EVENT_ID.toString().getBytes(StandardCharsets.UTF_8));
+    record.headers().add(
+        "eventType",
+        "simplematch.matching.runtime.v1.MatchingCommand"
+            .getBytes(StandardCharsets.UTF_8));
+    record.headers().add(
+        "headers_json", "{\"trace-id\":\"cdc-test\"}".getBytes(StandardCharsets.UTF_8));
+    return record;
+  }
+
   private static final class RecordingProgressStore implements CdcDeliveryProgressStore {
     private final List<CdcDeliveryObservation> observations = new ArrayList<>();
+    private CdcDeliveryObservationResult result = CdcDeliveryObservationResult.RECORDED;
 
     @Override
-    public void observe(CdcDeliveryObservation observation) {
+    public CdcDeliveryObservationResult observe(CdcDeliveryObservation observation) {
       observations.add(observation);
+      return result;
     }
 
     @Override

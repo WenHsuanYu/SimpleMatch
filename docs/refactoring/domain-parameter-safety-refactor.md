@@ -40,6 +40,13 @@ intentional exceptions to the policy.
 | 4. QuickFIX ingress and WAL state | raw FIX message, WAL row, and session correlation | the adapter contains protocol fields; durable intent is composed from session/command identity, order terms, and audit groups. |
 | 5. QuickFIX configuration and runtime policy | configuration namespace and runtime values | capability and resilience policy groups compose the Java model; configuration binding maps the unchanged namespace. |
 
+CDC delivery uses semantic composition rather than a wide positional boundary. The six-field
+`CdcDeliveryEnvelope` owns the immutable Debezium values compared with the Risk outbox, while the
+three-field `CdcDeliveryObservation` combines that envelope with Kafka position and observation
+time. `CdcDeliveryMonitorContext` groups one metric target, topic, and refresh clock, so the
+monitor constructor has five parameters and still keeps its ports and transaction owner explicit.
+These carriers add CDC vocabulary and validation; they do not hide parameters in a generic bag.
+
 ## Verification boundary for Issues #39 and #44
 
 The completed verification boundary is deliberately limited to the two slices named by the parent

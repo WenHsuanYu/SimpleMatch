@@ -4,7 +4,9 @@ import static com.simplematch.riskservice.testsupport.H2TestDatabaseUrl.uniqueRi
 import static org.assertj.core.api.Assertions.assertThat;
 
 import com.simplematch.config.delivery.DeliveryPosition;
+import com.simplematch.riskservice.cdc.CdcDeliveryEnvelope;
 import com.simplematch.riskservice.cdc.CdcDeliveryObservation;
+import com.simplematch.riskservice.cdc.CdcDeliveryObservationResult;
 import java.util.UUID;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
@@ -54,7 +56,8 @@ class JdbcCdcDeliveryProgressStoreTest {
   void derivesLagFromRiskOutboxRowsMissingAnExactKafkaObservation() {
     insertOutbox(DELIVERED, 1_000L, 2);
     insertOutbox(PENDING, 2_000L, 4);
-    store.observe(observation(DELIVERED, 2, 14, 1_000L, 3_000L));
+    assertThat(store.observe(observation(DELIVERED, 2, 14, 1_000L, 3_000L)))
+        .isEqualTo(CdcDeliveryObservationResult.RECORDED);
 
     final var snapshot = store.refresh("matching.commands", "matching.commands", 5_000L);
 
@@ -74,7 +77,8 @@ class JdbcCdcDeliveryProgressStoreTest {
     assertThat(store.refresh("matching.commands", "matching.commands", 5_000L).lagEvents())
         .isEqualTo(1);
 
-    store.observe(observation(PENDING, 4, 18, 2_000L, 5_500L));
+    assertThat(store.observe(observation(PENDING, 4, 18, 2_000L, 5_500L)))
+        .isEqualTo(CdcDeliveryObservationResult.RECORDED);
 
     final var recovered = store.refresh("matching.commands", "matching.commands", 6_000L);
     assertThat(recovered.lagEvents()).isZero();
@@ -95,16 +99,19 @@ class JdbcCdcDeliveryProgressStoreTest {
   @Test
   @DisplayName("ignores Kafka records that do not belong to the Risk outbox")
   void ignoresKafkaRecordsThatDoNotBelongToTheRiskOutbox() {
-    store.observe(
-        new CdcDeliveryObservation(
-            UUID.fromString("01990f4a-ff80-7c2c-b71c-33caa9b271d4"),
-            new DeliveryPosition("matching.commands", 1, 9),
-            "unknown-key",
-            PAYLOAD,
-            PAYLOAD_TYPE,
-            HEADERS_JSON,
-            3_000,
-            3_000));
+    assertThat(
+            store.observe(
+                new CdcDeliveryObservation(
+                    new CdcDeliveryEnvelope(
+                        UUID.fromString("01990f4a-ff80-7c2c-b71c-33caa9b271d4"),
+                        "unknown-key",
+                        PAYLOAD,
+                        PAYLOAD_TYPE,
+                        HEADERS_JSON,
+                        3_000),
+                    new DeliveryPosition("matching.commands", 1, 9),
+                    3_000)))
+        .isEqualTo(CdcDeliveryObservationResult.NOT_CORRELATED);
 
     assertThat(jdbc.queryForObject(
             "SELECT COUNT(*) FROM risk_service.cdc_delivery_observation", Long.class))
@@ -117,8 +124,37 @@ class JdbcCdcDeliveryProgressStoreTest {
     insertOutbox(DELIVERED, 1_000L, 2);
     final CdcDeliveryObservation observation = observation(DELIVERED, 2, 14, 1_000L, 3_000L);
 
-    store.observe(observation);
-    store.observe(observation);
+    assertThat(store.observe(observation)).isEqualTo(CdcDeliveryObservationResult.RECORDED);
+    assertThat(store.observe(observation))
+        .isEqualTo(CdcDeliveryObservationResult.ALREADY_RECORDED);
+
+    assertThat(jdbc.queryForObject(
+            "SELECT COUNT(*) FROM risk_service.cdc_delivery_observation WHERE event_id = ?",
+            Long.class,
+            DELIVERED))
+        .isEqualTo(1);
+  }
+
+  @Test
+  @DisplayName("rejects a duplicate event whose payload or Kafka position changed")
+  void rejectsDuplicateEventWhosePayloadOrKafkaPositionChanged() {
+    insertOutbox(DELIVERED, 1_000L, 2);
+    assertThat(store.observe(observation(DELIVERED, 2, 14, 1_000L, 3_000L)))
+        .isEqualTo(CdcDeliveryObservationResult.RECORDED);
+
+    assertThat(
+            store.observe(
+                new CdcDeliveryObservation(
+                    new CdcDeliveryEnvelope(
+                        DELIVERED,
+                        DELIVERED.toString(),
+                        new byte[] {9},
+                        PAYLOAD_TYPE,
+                        HEADERS_JSON,
+                        1_000L),
+                    new DeliveryPosition("matching.commands", 2, 15),
+                    4_000L)))
+        .isEqualTo(CdcDeliveryObservationResult.CONFLICT);
 
     assertThat(jdbc.queryForObject(
             "SELECT COUNT(*) FROM risk_service.cdc_delivery_observation WHERE event_id = ?",
@@ -132,16 +168,19 @@ class JdbcCdcDeliveryProgressStoreTest {
   void doesNotClearLagWhenIdentityCarriesMismatchedEventMetadata() {
     insertOutbox(DELIVERED, 1_000L, 2);
 
-    store.observe(
-        new CdcDeliveryObservation(
-            DELIVERED,
-            new DeliveryPosition("matching.commands", 2, 14),
-            "wrong-key",
-            new byte[] {9},
-            "wrong.type",
-            "{\"wrong\":true}",
-            9_000L,
-            3_000L));
+    assertThat(
+            store.observe(
+                new CdcDeliveryObservation(
+                    new CdcDeliveryEnvelope(
+                        DELIVERED,
+                        "wrong-key",
+                        new byte[] {9},
+                        "wrong.type",
+                        "{\"wrong\":true}",
+                        9_000L),
+                    new DeliveryPosition("matching.commands", 2, 14),
+                    3_000L)))
+        .isEqualTo(CdcDeliveryObservationResult.NOT_CORRELATED);
 
     assertThat(jdbc.queryForObject(
             "SELECT COUNT(*) FROM risk_service.cdc_delivery_observation", Long.class))
@@ -153,13 +192,14 @@ class JdbcCdcDeliveryProgressStoreTest {
   private CdcDeliveryObservation observation(
       UUID eventId, int partition, long offset, long publishedAtUnixMs, long observedAtUnixMs) {
     return new CdcDeliveryObservation(
-        eventId,
+        new CdcDeliveryEnvelope(
+            eventId,
+            eventId.toString(),
+            PAYLOAD,
+            PAYLOAD_TYPE,
+            HEADERS_JSON,
+            publishedAtUnixMs),
         new DeliveryPosition("matching.commands", partition, offset),
-        eventId.toString(),
-        PAYLOAD,
-        PAYLOAD_TYPE,
-        HEADERS_JSON,
-        publishedAtUnixMs,
         observedAtUnixMs);
   }
 

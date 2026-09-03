@@ -1,6 +1,7 @@
 package com.simplematch.riskservice.cdc;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyCollection;
 import static org.mockito.ArgumentMatchers.eq;
@@ -78,6 +79,32 @@ class KafkaCdcDeliveryProgressProbeTest {
             .isCaughtUp(TOPIC);
 
     assertThat(caughtUp).isFalse();
+  }
+
+  @Test
+  @DisplayName("rejects a timeout that would truncate to zero milliseconds")
+  void rejectsTimeoutThatWouldTruncateToZeroMilliseconds() {
+    final Admin admin = mock(Admin.class);
+
+    assertThatThrownBy(
+            () ->
+                new KafkaCdcDeliveryProgressProbe(
+                    admin, GROUP, Duration.ofNanos(999_999)))
+        .isInstanceOf(IllegalArgumentException.class)
+        .hasMessage("timeout must be at least 1 millisecond");
+  }
+
+  @Test
+  @DisplayName("rejects a timeout that cannot be represented by Kafka's integer API")
+  void rejectsTimeoutThatCannotBeRepresentedByKafkasIntegerApi() {
+    final Admin admin = mock(Admin.class);
+
+    assertThatThrownBy(
+            () ->
+                new KafkaCdcDeliveryProgressProbe(
+                    admin, GROUP, Duration.ofMillis((long) Integer.MAX_VALUE + 1)))
+        .isInstanceOf(IllegalArgumentException.class)
+        .hasMessage("timeout must not exceed 2147483647 milliseconds");
   }
 
   private Admin adminWithOffsets(Map<TopicPartition, Long> committedOffsets) {

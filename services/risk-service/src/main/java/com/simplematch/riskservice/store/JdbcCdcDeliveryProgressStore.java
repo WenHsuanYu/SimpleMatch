@@ -1,11 +1,15 @@
 package com.simplematch.riskservice.store;
 
+import com.simplematch.config.delivery.DeliveryPosition;
 import com.simplematch.riskservice.cdc.CdcDeliveryObservation;
+import com.simplematch.riskservice.cdc.CdcDeliveryObservationResult;
 import com.simplematch.riskservice.cdc.CdcDeliveryProgressStore;
 import com.simplematch.riskservice.cdc.CdcDeliverySnapshot;
 import java.util.Objects;
+import java.util.UUID;
 import org.springframework.jdbc.core.ConnectionCallback;
 import org.springframework.jdbc.core.JdbcTemplate;
+import org.springframework.jdbc.core.ResultSetExtractor;
 
 /** JDBC persistence adapter for Risk-owned CDC delivery evidence. */
 public final class JdbcCdcDeliveryProgressStore implements CdcDeliveryProgressStore {
@@ -22,38 +26,91 @@ public final class JdbcCdcDeliveryProgressStore implements CdcDeliveryProgressSt
   }
 
   @Override
-  public void observe(CdcDeliveryObservation observation) {
+  public CdcDeliveryObservationResult observe(CdcDeliveryObservation observation) {
     Objects.requireNonNull(observation, "observation");
+    final DeliveryPosition position = observation.position();
     final String conflictClause = isPostgres() ? " ON CONFLICT (event_id) DO NOTHING" : "";
-    jdbc.update(
-        """
-        INSERT INTO risk_service.cdc_delivery_observation
-          (event_id, topic, partition_id, kafka_offset, observed_at_unix_ms)
-        SELECT event_id, ?, ?, ?, ?
-        FROM risk_service.outbox
-        WHERE event_id = ? AND topic = ?
-          AND message_key = ?
-          AND payload = ?
-          AND payload_type = ?
-          AND headers_json = ?
-          AND (kafka_partition_id IS NULL OR kafka_partition_id = ?)
-          AND created_at_unix_ms = ?
-          AND NOT EXISTS (
-            SELECT 1 FROM risk_service.cdc_delivery_observation WHERE event_id = ?)
-        """ + conflictClause,
-        observation.topic(),
-        observation.partition(),
-        observation.offset(),
-        observation.observedAtUnixMs(),
-        observation.eventId(),
-        observation.topic(),
-        observation.messageKey(),
-        observation.payload(),
-        observation.payloadType(),
-        observation.headersJson(),
-        observation.partition(),
-        observation.publishedAtUnixMs(),
-        observation.eventId());
+    final int insertedRows =
+        jdbc.update(
+            """
+            INSERT INTO risk_service.cdc_delivery_observation
+              (event_id, topic, partition_id, kafka_offset, observed_at_unix_ms)
+            SELECT event_id, ?, ?, ?, ?
+            FROM risk_service.outbox
+            WHERE event_id = ? AND topic = ?
+              AND message_key = ?
+              AND payload = ?
+              AND payload_type = ?
+              AND headers_json = ?
+              AND (kafka_partition_id IS NULL OR kafka_partition_id = ?)
+              AND created_at_unix_ms = ?
+              AND NOT EXISTS (
+                SELECT 1 FROM risk_service.cdc_delivery_observation WHERE event_id = ?)
+            """ + conflictClause,
+            position.topic(),
+            position.partition(),
+            position.offset(),
+            observation.observedAtUnixMs(),
+            observation.eventId(),
+            position.topic(),
+            observation.messageKey(),
+            observation.payload(),
+            observation.payloadType(),
+            observation.headersJson(),
+            position.partition(),
+            observation.publishedAtUnixMs(),
+            observation.eventId());
+    if (insertedRows > 0) {
+      return CdcDeliveryObservationResult.RECORDED;
+    }
+    if (!observationExists(observation.eventId())) {
+      return CdcDeliveryObservationResult.NOT_CORRELATED;
+    }
+    return exactObservationExists(observation)
+        ? CdcDeliveryObservationResult.ALREADY_RECORDED
+        : CdcDeliveryObservationResult.CONFLICT;
+  }
+
+  private boolean observationExists(UUID eventId) {
+    return Boolean.TRUE.equals(
+        jdbc.query(
+            "SELECT 1 FROM risk_service.cdc_delivery_observation WHERE event_id = ?",
+            (ResultSetExtractor<Boolean>) resultSet -> resultSet.next(),
+            eventId));
+  }
+
+  private boolean exactObservationExists(CdcDeliveryObservation observation) {
+    final DeliveryPosition position = observation.position();
+    return Boolean.TRUE.equals(
+        jdbc.query(
+            """
+            SELECT 1
+            FROM risk_service.cdc_delivery_observation d
+            JOIN risk_service.outbox o ON o.event_id = d.event_id
+            WHERE d.event_id = ?
+              AND d.topic = ?
+              AND d.partition_id = ?
+              AND d.kafka_offset = ?
+              AND o.topic = ?
+              AND o.message_key = ?
+              AND o.payload = ?
+              AND o.payload_type = ?
+              AND o.headers_json = ?
+              AND (o.kafka_partition_id IS NULL OR o.kafka_partition_id = ?)
+              AND o.created_at_unix_ms = ?
+            """,
+            (ResultSetExtractor<Boolean>) resultSet -> resultSet.next(),
+            observation.eventId(),
+            position.topic(),
+            position.partition(),
+            position.offset(),
+            position.topic(),
+            observation.messageKey(),
+            observation.payload(),
+            observation.payloadType(),
+            observation.headersJson(),
+            position.partition(),
+            observation.publishedAtUnixMs()));
   }
 
   private boolean isPostgres() {

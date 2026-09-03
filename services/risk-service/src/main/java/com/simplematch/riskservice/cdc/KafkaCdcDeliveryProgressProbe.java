@@ -21,6 +21,9 @@ import org.apache.kafka.common.TopicPartition;
 
 /** Kafka Admin adapter that compares committed observer offsets with topic heads. */
 public final class KafkaCdcDeliveryProgressProbe implements CdcDeliveryProgressProbe {
+  private static final Duration MINIMUM_TIMEOUT = Duration.ofMillis(1);
+  private static final Duration MAXIMUM_TIMEOUT = Duration.ofMillis(Integer.MAX_VALUE);
+
   private final Admin admin;
   private final String consumerGroup;
   private final Duration timeout;
@@ -32,18 +35,13 @@ public final class KafkaCdcDeliveryProgressProbe implements CdcDeliveryProgressP
    * @param consumerGroup durable observer consumer-group identity
    * @param timeout maximum duration for each Kafka progress request
    * @throws NullPointerException if {@code admin} or {@code timeout} is {@code null}
-   * @throws IllegalArgumentException if the group is blank or the timeout is non-positive
+   * @throws IllegalArgumentException if the group is blank or the timeout is outside the
+   *     representable range of 1 ms through {@link Integer#MAX_VALUE} ms
    */
   public KafkaCdcDeliveryProgressProbe(Admin admin, String consumerGroup, Duration timeout) {
     this.admin = Objects.requireNonNull(admin, "admin");
-    if (consumerGroup == null || consumerGroup.isBlank()) {
-      throw new IllegalArgumentException("consumerGroup must not be blank");
-    }
-    this.consumerGroup = consumerGroup;
-    this.timeout = Objects.requireNonNull(timeout, "timeout");
-    if (timeout.isZero() || timeout.isNegative()) {
-      throw new IllegalArgumentException("timeout must be positive");
-    }
+    this.consumerGroup = requireConsumerGroup(consumerGroup);
+    this.timeout = requireTimeout(timeout);
   }
 
   /**
@@ -96,6 +94,28 @@ public final class KafkaCdcDeliveryProgressProbe implements CdcDeliveryProgressP
 
   private int timeoutMillis() {
     return Math.toIntExact(timeout.toMillis());
+  }
+
+  private static String requireConsumerGroup(String value) {
+    if (value == null || value.isBlank()) {
+      throw new IllegalArgumentException("consumerGroup must not be blank");
+    }
+    return value;
+  }
+
+  private static Duration requireTimeout(Duration value) {
+    final Duration resolved = Objects.requireNonNull(value, "timeout");
+    if (resolved.isZero() || resolved.isNegative()) {
+      throw new IllegalArgumentException("timeout must be positive");
+    }
+    if (resolved.compareTo(MINIMUM_TIMEOUT) < 0) {
+      throw new IllegalArgumentException("timeout must be at least 1 millisecond");
+    }
+    if (resolved.compareTo(MAXIMUM_TIMEOUT) > 0) {
+      throw new IllegalArgumentException(
+          "timeout must not exceed " + Integer.MAX_VALUE + " milliseconds");
+    }
+    return resolved;
   }
 
   private <T> T await(KafkaFuture<T> future) {

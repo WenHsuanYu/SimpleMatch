@@ -87,8 +87,11 @@ Useful canonical keys include:
   durable Kafka group whose committed offsets gate metric refresh)
 - `simplematch.risk-service.cdc-delivery.refresh-interval` (defaults to `5s`; controls bounded
   durable lag refresh scheduling)
-- `simplematch.risk-service.cdc-delivery.query-timeout` (defaults to `5s`, maximum `10s`; bounds
-  Kafka Admin progress queries)
+- `simplematch.risk-service.cdc-delivery.query-timeout` (defaults to `5s`, range `1ms` through
+  `10s`; bounds Kafka Admin progress queries)
+  The `1ms` floor prevents a positive sub-millisecond duration from truncating to an immediate
+  timeout; it is not a latency SLO, so deployments should retain the `5s` default unless a shorter
+  budget is justified by measured environment latency.
 - `simplematch.risk-service.admission.maximum-metric-age` (defaults to `30s`; stale CDC evidence
   fails closed for new Risk admission)
 - `simplematch.query-service.rebuild.http-enabled` (defaults to `false`; enables only the
@@ -133,8 +136,10 @@ reads and least-privilege RBAC.
 both present.
 `simplematch.postgres.dsn` must come from the Secret in those environments. The external service
 Secret uses the `postgres_dsn` key, which the workload maps through `SIMPLEMATCH_POSTGRES_DSN` to
-that canonical property. Secrets are externally provisioned; no Secret value, DSN credential, token,
-or password is committed to this repository.
+that canonical property. Startup compares the effective resolved property with the Secret value
+exactly, so a higher-precedence environment override cannot replace the Secret transport contract.
+Secrets are externally provisioned; no Secret value, DSN credential, token, or password is committed
+to this repository.
 `deploy/k8s/quickfix-gateway-configuration-rbac.yaml` is the reference RBAC shape, and
 `deploy/k8s/simplematch-platform-configmap.yaml`
 contains only non-sensitive data.

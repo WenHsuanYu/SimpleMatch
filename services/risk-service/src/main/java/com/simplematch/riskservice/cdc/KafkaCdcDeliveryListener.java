@@ -55,7 +55,10 @@ public final class KafkaCdcDeliveryListener {
    *
    * @param record delivered Kafka record carrying Debezium outbox metadata
    * @param acknowledgment acknowledgement handle for the consumed Kafka offset
-   * @throws IllegalArgumentException if the record has no valid Debezium event identity
+   * @throws NullPointerException if {@code record} or {@code acknowledgment} is {@code null}
+   * @throws IllegalArgumentException if the record has an invalid Debezium identity or envelope
+   * @throws IllegalStateException if the durable store reports an unmatched or conflicting event;
+   *     the Kafka offset remains unacknowledged
    */
   @KafkaListener(
       topics = "${simplematch.kafka.topics.matching-commands:matching.commands}",
@@ -69,32 +72,10 @@ public final class KafkaCdcDeliveryListener {
       acknowledgment.acknowledge();
       return;
     }
-    final Header identity = record.headers().lastHeader(EVENT_ID_HEADER);
-    if (identity == null || identity.value() == null) {
-      throw new IllegalArgumentException("Debezium delivery must carry an id header");
-    }
-    final UUID eventId = parseEventId(identity.value());
-    if (record.key() == null || record.key().isBlank()) {
-      throw new IllegalArgumentException("Debezium delivery must carry a message key");
-    }
-    if (record.value() == null || record.value().length == 0) {
-      throw new IllegalArgumentException("Debezium delivery must carry a non-empty payload");
-    }
-    final String eventType = requiredHeader(record, EVENT_TYPE_HEADER);
-    final String headersJson = requiredHeader(record, HEADERS_JSON_HEADER);
-    if (record.timestamp() < 0) {
-      throw new IllegalArgumentException("Debezium delivery must carry a publication timestamp");
-    }
-    store.observe(
-        new CdcDeliveryObservation(
-            eventId,
-            new DeliveryPosition(record.topic(), record.partition(), record.offset()),
-            record.key(),
-            record.value(),
-            eventType,
-            headersJson,
-            record.timestamp(),
-            clock.millis()));
+    final CdcDeliveryObservation observation = toObservation(record);
+    final CdcDeliveryObservationResult result =
+        Objects.requireNonNull(store.observe(observation), "observation result");
+    requireCorrelated(result, observation.eventId());
     acknowledgment.acknowledge();
   }
 
@@ -106,6 +87,11 @@ public final class KafkaCdcDeliveryListener {
     if (!fixtureRecordsAllowed || !Arrays.equals(fixture.value(), FIXTURE_HEADER_VALUE)) {
       throw new IllegalArgumentException("unapproved CDC fixture marker");
     }
+    validateFixtureRecord(record);
+    return true;
+  }
+
+  private static void validateFixtureRecord(ConsumerRecord<String, byte[]> record) {
     if (record.headers().lastHeader(EVENT_ID_HEADER) != null) {
       throw new IllegalArgumentException("CDC fixture record must not carry an id header");
     }
@@ -113,7 +99,51 @@ public final class KafkaCdcDeliveryListener {
         || record.value() == null || record.value().length == 0) {
       throw new IllegalArgumentException("CDC fixture record must carry a key and payload");
     }
-    return true;
+  }
+
+  private CdcDeliveryObservation toObservation(ConsumerRecord<String, byte[]> record) {
+    final UUID eventId = requireEventId(record);
+    requireMessageKeyAndPayload(record);
+    final String eventType = requiredHeader(record, EVENT_TYPE_HEADER);
+    final String headersJson = requiredHeader(record, HEADERS_JSON_HEADER);
+    if (record.timestamp() < 0) {
+      throw new IllegalArgumentException("Debezium delivery must carry a publication timestamp");
+    }
+    return new CdcDeliveryObservation(
+        new CdcDeliveryEnvelope(
+            eventId,
+            record.key(),
+            record.value(),
+            eventType,
+            headersJson,
+            record.timestamp()),
+        new DeliveryPosition(record.topic(), record.partition(), record.offset()),
+        clock.millis());
+  }
+
+  private static UUID requireEventId(ConsumerRecord<String, byte[]> record) {
+    final Header identity = record.headers().lastHeader(EVENT_ID_HEADER);
+    if (identity == null || identity.value() == null) {
+      throw new IllegalArgumentException("Debezium delivery must carry an id header");
+    }
+    return parseEventId(identity.value());
+  }
+
+  private static void requireMessageKeyAndPayload(ConsumerRecord<String, byte[]> record) {
+    if (record.key() == null || record.key().isBlank()) {
+      throw new IllegalArgumentException("Debezium delivery must carry a message key");
+    }
+    if (record.value() == null || record.value().length == 0) {
+      throw new IllegalArgumentException("Debezium delivery must carry a non-empty payload");
+    }
+  }
+
+  private static void requireCorrelated(CdcDeliveryObservationResult result, UUID eventId) {
+    if (result == CdcDeliveryObservationResult.NOT_CORRELATED
+        || result == CdcDeliveryObservationResult.CONFLICT) {
+      throw new IllegalStateException(
+          "Debezium delivery did not correlate with the Risk outbox: " + eventId);
+    }
   }
 
   private static UUID parseEventId(byte[] value) {

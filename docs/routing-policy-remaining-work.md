@@ -639,9 +639,10 @@ migrations against its own database state.
   URI TLS parameters are preserved by the shared adapter.
   Risk now owns a durable `matching.commands` delivery observer that correlates exact Debezium
   event identities, proves its Kafka consumer group is caught up before refreshing admission lag,
-  and exports backlog and oldest-event-age gauges. The retained local gate registers all three
-  service-owned connectors, executes the disposable connector outage/recovery check before the
-  main Compose phases. Its full Kubernetes profile also pauses and resumes the Risk connector while
+  and exports backlog, oldest-event-age, and durable-refresh-timestamp gauges. The retained local
+  gate registers all three service-owned connectors and executes the disposable connector
+  outage/recovery check before the main Compose phases. Its full Kubernetes profile also pauses and
+  resumes the Risk connector while
   checking durable lag, Actuator gauges, exact event observation, health endpoints, and sensitive
   ECS logs. The overlays structurally require ECS service/environment logging.
 - **Missing behavior:** A retained two-replica Debezium Connect worker, endpoint/secret/TLS contract,

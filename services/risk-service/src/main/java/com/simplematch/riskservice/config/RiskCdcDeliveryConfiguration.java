@@ -4,6 +4,7 @@ import com.simplematch.config.KafkaProperties;
 import com.simplematch.config.delivery.DeliveryMetrics;
 import com.simplematch.config.delivery.MicrometerDeliveryMetrics;
 import com.simplematch.riskservice.cdc.CdcDeliveryMonitor;
+import com.simplematch.riskservice.cdc.CdcDeliveryMonitorContext;
 import com.simplematch.riskservice.cdc.CdcDeliveryProgressProbe;
 import com.simplematch.riskservice.cdc.CdcDeliveryProgressStore;
 import com.simplematch.riskservice.cdc.KafkaCdcDeliveryListener;
@@ -55,6 +56,13 @@ class RiskCdcDeliveryConfiguration {
   }
 
   @Bean
+  CdcDeliveryMonitorContext cdcDeliveryMonitorContext(
+      RiskServiceProperties risk, KafkaProperties kafka, Clock riskServiceClock) {
+    return new CdcDeliveryMonitorContext(
+        risk.admission().cdcMetricName(), kafka.topics().matchingCommands(), riskServiceClock);
+  }
+
+  @Bean
   KafkaCdcDeliveryListener kafkaCdcDeliveryListener(
       CdcDeliveryProgressStore store,
       Clock riskServiceClock,
@@ -68,9 +76,7 @@ class RiskCdcDeliveryConfiguration {
       CdcDeliveryProgressStore store,
       CdcDeliveryProgressProbe probe,
       ObjectProvider<MeterRegistry> registryProvider,
-      RiskServiceProperties risk,
-      KafkaProperties kafka,
-      Clock riskServiceClock,
+      CdcDeliveryMonitorContext context,
       TransactionTemplate riskTransactionTemplate) {
     final MeterRegistry registry = registryProvider.getIfAvailable();
     final DeliveryMetrics metrics =
@@ -79,9 +85,7 @@ class RiskCdcDeliveryConfiguration {
         store,
         probe,
         metrics,
-        risk.admission().cdcMetricName(),
-        kafka.topics().matchingCommands(),
-        riskServiceClock,
+        context,
         riskTransactionTemplate);
   }
 }

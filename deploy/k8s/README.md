@@ -139,7 +139,8 @@ and production values must use PostgreSQL TLS, for example a JDBC DSN with
 `sslmode=verify-full` and `sslrootcert=/etc/simplematch/postgres-tls/ca.crt`. The secure overlay
 mounts `simplematch-postgres-tls` with a required `ca.crt` at that path, so a missing CA fails pod
 startup. The canonical `simplematch.postgres.dsn` property is supplied through
-`SIMPLEMATCH_POSTGRES_DSN`; no `spring.datasource.*` key is used.
+`SIMPLEMATCH_POSTGRES_DSN`; startup requires that effective property to exactly match the Secret's
+`postgres_dsn` value, and no `spring.datasource.*` key is used.
 
 `account-service-tls`, `risk-service-tls`, `marketdata-streamer-tls`, and `quickfix-gateway-tls`
 contain `tls.crt`, `tls.key`, and `ca.crt`. The staging/production overlay enables mTLS and
