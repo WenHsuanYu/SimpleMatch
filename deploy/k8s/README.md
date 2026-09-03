@@ -7,8 +7,9 @@ Secret outside Git and grant its service account only `get` access to named Conf
 
 For `staging` and `production`, the Secret must contain
 `simplematch.postgres.dsn`; no ConfigMap may define that key. The quickfix-gateway StatefulSet is
-the reference deployment: it enables the non-optional Kubernetes Config Data import, selects
-`production`, and uses the narrowly scoped RBAC manifest.
+the reference deployment: it enables the non-optional Kubernetes Config Data import and uses the
+narrowly scoped RBAC manifest. The base manifest defaults to the `local` profile; the `test`,
+`staging`, and `production` overlays own their explicit Spring profile selection.
 
 The staging/production overlays include a retained Debezium Kafka Connect worker. The worker's
 connector ConfigMaps contain only non-sensitive connector settings; the worker itself receives

@@ -79,8 +79,8 @@ The live transport check uses the same `cdc_assert_probe_publication` Interface 
   outbox probe while unavailable, resumes the connector, verifies exact publication, rereads the
   outbox, and asserts the same identity/payload survived.
 - Kafka producer unavailability stops Kafka while PostgreSQL remains writable, captures the durable
-  Risk and Account probes, restores Kafka/Connect, verifies exact publication, and asserts the same
-  durable probes remained unchanged.
+  Risk, Account, and Marketdata probes, restores Kafka/Connect, verifies exact publication, and
+  asserts the same durable probes remained unchanged.
 - Publication-level duplicate delivery first verifies a new durable event, captures Kafka end
   offsets after that publication, terminates Connect with `SIGKILL` before its next configured
   source-offset flush, and requires the same probe event to appear again after restart. One Kafka

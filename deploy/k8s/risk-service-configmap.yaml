@@ -8,6 +8,7 @@ data:
       risk-service:
         cdc-delivery:
           enabled: true
+          fixture-records-allowed: false
           consumer-group: risk-cdc-delivery
           refresh-interval: 5s
           query-timeout: 5s

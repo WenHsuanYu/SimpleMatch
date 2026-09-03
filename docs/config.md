@@ -80,12 +80,15 @@ Useful canonical keys include:
   background admission recovery must be disabled, such as a narrow context test)
 - `simplematch.risk-service.cdc-delivery.enabled` (defaults to `false`; the local Kubernetes
   profile enables the Risk-owned Kafka delivery observer)
+- `simplematch.risk-service.cdc-delivery.fixture-records-allowed` (defaults to `false`; only the
+  disposable local Kubernetes certification overlay enables this to acknowledge the explicitly
+  marked native Matching fixture records; never enable it in staging or production)
 - `simplematch.risk-service.cdc-delivery.consumer-group` (defaults to `risk-cdc-delivery`; the
   durable Kafka group whose committed offsets gate metric refresh)
 - `simplematch.risk-service.cdc-delivery.refresh-interval` (defaults to `5s`; controls bounded
   durable lag refresh scheduling)
-- `simplematch.risk-service.cdc-delivery.query-timeout` (defaults to `5s`; bounds Kafka Admin
-  progress queries)
+- `simplematch.risk-service.cdc-delivery.query-timeout` (defaults to `5s`, maximum `10s`; bounds
+  Kafka Admin progress queries)
 - `simplematch.risk-service.admission.maximum-metric-age` (defaults to `30s`; stale CDC evidence
   fails closed for new Risk admission)
 - `simplematch.query-service.rebuild.http-enabled` (defaults to `false`; enables only the

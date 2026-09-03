@@ -24,6 +24,8 @@ constexpr std::string_view kArtifactSha256 =
 constexpr std::string_view kRoutingVersion = "stable-least-loaded-v1";
 constexpr std::string_view kImageDigest =
     "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa";
+constexpr std::string_view kFixtureHeaderName = "simplematch.fixture";
+constexpr std::string_view kFixtureHeaderValue = "matching-kafka-fixture-v1";
 
 struct DeliveryState {
   bool failed{};
@@ -184,6 +186,22 @@ void set_configuration(rd_kafka_conf_t *configuration, const char *name,
   }
 }
 
+rd_kafka_headers_t *fixture_headers() {
+  auto *headers = rd_kafka_headers_new(1);
+  if (headers == nullptr) {
+    throw std::runtime_error("unable to allocate fixture Kafka headers");
+  }
+  const auto error = rd_kafka_header_add(
+      headers, kFixtureHeaderName.data(), kFixtureHeaderName.size(),
+      kFixtureHeaderValue.data(), kFixtureHeaderValue.size());
+  if (error != RD_KAFKA_RESP_ERR_NO_ERROR) {
+    rd_kafka_headers_destroy(headers);
+    throw std::runtime_error(std::string("unable to create fixture Kafka header: ") +
+                             rd_kafka_err2str(error));
+  }
+  return headers;
+}
+
 simplematch::matching::runtime::v1::MatchingCommand
 base_command(std::string_view command_id) {
   simplematch::matching::runtime::v1::MatchingCommand command;
@@ -262,12 +280,15 @@ void publish(
     const simplematch::matching::runtime::v1::MatchingCommand &command) {
   const std::string key = command.header().command_id();
   const std::string value = command.SerializeAsString();
+  auto *headers = fixture_headers();
   const auto error = rd_kafka_producev(
       producer, RD_KAFKA_V_TOPIC(topic.data()), RD_KAFKA_V_PARTITION(0),
       RD_KAFKA_V_KEY(key.data(), key.size()),
       RD_KAFKA_V_VALUE(const_cast<char *>(value.data()), value.size()),
+      RD_KAFKA_V_HEADERS(headers),
       RD_KAFKA_V_MSGFLAGS(RD_KAFKA_MSG_F_COPY), RD_KAFKA_V_END);
   if (error != RD_KAFKA_RESP_ERR_NO_ERROR) {
+    rd_kafka_headers_destroy(headers);
     throw std::runtime_error(
         std::string("fixture command publication failed: ") +
         rd_kafka_err2str(error));
@@ -279,12 +300,15 @@ void publish_to_partition(
     const simplematch::matching::runtime::v1::MatchingCommand &command) {
   const std::string key = command.header().command_id();
   const std::string value = command.SerializeAsString();
+  auto *headers = fixture_headers();
   const auto error = rd_kafka_producev(
       producer, RD_KAFKA_V_TOPIC(topic.data()), RD_KAFKA_V_PARTITION(partition),
       RD_KAFKA_V_KEY(key.data(), key.size()),
       RD_KAFKA_V_VALUE(const_cast<char *>(value.data()), value.size()),
+      RD_KAFKA_V_HEADERS(headers),
       RD_KAFKA_V_MSGFLAGS(RD_KAFKA_MSG_F_COPY), RD_KAFKA_V_END);
   if (error != RD_KAFKA_RESP_ERR_NO_ERROR) {
+    rd_kafka_headers_destroy(headers);
     throw std::runtime_error(
         std::string("barrier command publication failed: ") +
         rd_kafka_err2str(error));

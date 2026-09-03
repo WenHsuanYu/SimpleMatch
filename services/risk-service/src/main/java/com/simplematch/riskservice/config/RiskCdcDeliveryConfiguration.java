@@ -56,8 +56,11 @@ class RiskCdcDeliveryConfiguration {
 
   @Bean
   KafkaCdcDeliveryListener kafkaCdcDeliveryListener(
-      CdcDeliveryProgressStore store, Clock riskServiceClock) {
-    return new KafkaCdcDeliveryListener(store, riskServiceClock);
+      CdcDeliveryProgressStore store,
+      Clock riskServiceClock,
+      CdcDeliveryProperties properties) {
+    return new KafkaCdcDeliveryListener(
+        store, riskServiceClock, properties.fixtureRecordsAllowed());
   }
 
   @Bean

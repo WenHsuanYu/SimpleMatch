@@ -23,6 +23,8 @@ spec:
                 configMapKeyRef:
                   name: matching-session-config
                   key: matching_image_digest
+            - name: SIMPLEMATCH_RISK_SERVICE_CDC_DELIVERY_FIXTURE_RECORDS_ALLOWED
+              value: "true"
       volumes:
         - name: market-reference
           configMap:

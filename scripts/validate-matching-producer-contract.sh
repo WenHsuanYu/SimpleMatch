@@ -54,6 +54,12 @@ require_pattern matching-engine/tests/matching_kafka_fixture_publisher.cpp \
 require_pattern matching-engine/tests/matching_kafka_fixture_publisher.cpp \
   '"acks", "all"' \
   'Matching fixture producer acknowledgements'
+require_pattern matching-engine/tests/matching_kafka_fixture_publisher.cpp \
+  'kFixtureHeaderName[[:space:]]*=[[:space:]]*"simplematch\.fixture"' \
+  'explicit local fixture marker name'
+require_pattern matching-engine/tests/matching_kafka_fixture_publisher.cpp \
+  'kFixtureHeaderValue[[:space:]]*=[[:space:]]*"matching-kafka-fixture-v1"' \
+  'explicit local fixture marker value'
 
 if [[ -n "${output_file}" ]]; then
   mkdir -p "$(dirname -- "${output_file}")"
@@ -61,6 +67,7 @@ if [[ -n "${output_file}" ]]; then
     printf '%s\n' '# Source-backed Matching producer evidence.'
     printf '%s\n' 'acks=all'
     printf '%s\n' 'enable.idempotence=true'
+    printf '%s\n' 'fixture.marker=matching-kafka-fixture-v1'
     printf '%s\n' 'evidence.source=repository-producer-config-and-code'
   } >"${output_file}"
 fi

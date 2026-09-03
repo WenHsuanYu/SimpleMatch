@@ -453,16 +453,44 @@ assert_probe_unchanged account_service account_reservation account-reservation-2
 
 echo "Verified Risk and Account connector outage recovery."
 
+pause_connector marketdata-publisher-outbox
+market_recovery_baseline="$TMP_DIR/market-recovery-baseline.tsv"
+market_recovery_probe="$TMP_DIR/market-recovery-probe.json"
+market_recovery_after="$TMP_DIR/market-recovery-after.json"
+cdc_capture_topic_end_offsets market-reference.routing-policies "$market_recovery_baseline"
+psql_query <<SQL
+INSERT INTO marketdata_publisher.outbox (
+  id, event_id, topic, message_key, kafka_partition_id, payload, payload_type, headers_json,
+  aggregate_type, aggregate_id, created_at_unix_ms, created_at
+) VALUES
+  (2, '00000000-0000-0000-0000-00000000000a', 'market-reference.routing-policies', '2331', 1,
+   decode('6d61726b65742d7265636f766572792d7631', 'hex'), 'routing-policy.v1',
+   '{"trace-id":"market-recovery"}', 'RoutingPolicy', 'routing-policy-recovery-1', $((EVENT_BASE_MS + 2500)),
+   to_timestamp($((EVENT_BASE_MS + 2500)) / 1000.0) AT TIME ZONE 'UTC');
+SQL
+capture_probe marketdata_publisher RoutingPolicy routing-policy-recovery-1 "$market_recovery_probe"
+resume_connector marketdata-publisher-outbox
+verify_probe_publication "$market_recovery_probe" "$market_recovery_baseline" marketdata_publisher
+assert_probe_unchanged marketdata_publisher RoutingPolicy routing-policy-recovery-1 \
+  "$market_recovery_probe" "$market_recovery_after"
+
+echo "Verified Risk, Account, and Marketdata connector outage recovery."
+
 risk_offsets_before_broker_failure="$(connector_offsets risk-service-outbox)"
 account_offsets_before_broker_failure="$(connector_offsets account-service-outbox)"
+market_offsets_before_broker_failure="$(connector_offsets marketdata-publisher-outbox)"
 risk_broker_baseline="$TMP_DIR/risk-broker-baseline.tsv"
 account_broker_baseline="$TMP_DIR/account-broker-baseline.tsv"
+market_broker_baseline="$TMP_DIR/market-broker-baseline.tsv"
 risk_broker_probe="$TMP_DIR/risk-broker-probe.json"
 account_broker_probe="$TMP_DIR/account-broker-probe.json"
+market_broker_probe="$TMP_DIR/market-broker-probe.json"
 risk_broker_after="$TMP_DIR/risk-broker-after.json"
 account_broker_after="$TMP_DIR/account-broker-after.json"
+market_broker_after="$TMP_DIR/market-broker-after.json"
 cdc_capture_topic_end_offsets orders.validated "$risk_broker_baseline"
 cdc_capture_topic_end_offsets account.lifecycle "$account_broker_baseline"
+cdc_capture_topic_end_offsets market-reference.routing-policies "$market_broker_baseline"
 "${COMPOSE[@]}" stop kafka >/dev/null
 
 psql_query <<SQL
@@ -482,9 +510,18 @@ INSERT INTO account_service.outbox (
    decode('6163636f756e742d70726f64756365722d6661696c757265', 'hex'), 'account.v1',
    '{"trace-id":"account-producer-failure"}', 'account_reservation', 'account-reservation-3', $((EVENT_BASE_MS + 6000)),
    to_timestamp($((EVENT_BASE_MS + 6000)) / 1000.0) AT TIME ZONE 'UTC');
+INSERT INTO marketdata_publisher.outbox (
+  id, event_id, topic, message_key, kafka_partition_id, payload, payload_type, headers_json,
+  aggregate_type, aggregate_id, created_at_unix_ms, created_at
+) VALUES
+  (3, '00000000-0000-0000-0000-00000000000b', 'market-reference.routing-policies', '2332', 1,
+   decode('6d61726b65742d70726f64756365722d6661696c757265', 'hex'), 'routing-policy.v1',
+   '{"trace-id":"marketdata-producer-failure"}', 'RoutingPolicy', 'routing-policy-3', $((EVENT_BASE_MS + 6500)),
+   to_timestamp($((EVENT_BASE_MS + 6500)) / 1000.0) AT TIME ZONE 'UTC');
 SQL
 capture_probe risk_service Admission risk-order-3 "$risk_broker_probe"
 capture_probe account_service account_reservation account-reservation-3 "$account_broker_probe"
+capture_probe marketdata_publisher RoutingPolicy routing-policy-3 "$market_broker_probe"
 
 "${COMPOSE[@]}" start kafka >/dev/null
 wait_for_kafka
@@ -493,24 +530,32 @@ wait_for_connect
 wait_for_all_connectors
 verify_probe_publication "$risk_broker_probe" "$risk_broker_baseline" risk_service
 verify_probe_publication "$account_broker_probe" "$account_broker_baseline" account_service
+verify_probe_publication "$market_broker_probe" "$market_broker_baseline" marketdata_publisher
 assert_probe_unchanged risk_service Admission risk-order-3 \
   "$risk_broker_probe" "$risk_broker_after"
 assert_probe_unchanged account_service account_reservation account-reservation-3 \
   "$account_broker_probe" "$account_broker_after"
+assert_probe_unchanged marketdata_publisher RoutingPolicy routing-policy-3 \
+  "$market_broker_probe" "$market_broker_after"
 
-echo "Verified Risk and Account recovery from Kafka producer unavailability."
+echo "Verified Risk, Account, and Marketdata recovery from Kafka producer unavailability."
 
 wait_for_connector_offset_change risk-service-outbox "$risk_offsets_before_broker_failure"
 wait_for_connector_offset_change account-service-outbox "$account_offsets_before_broker_failure"
+wait_for_connector_offset_change marketdata-publisher-outbox "$market_offsets_before_broker_failure"
 
 risk_duplicate_event_id='00000000-0000-0000-0000-000000000008'
 account_duplicate_event_id='00000000-0000-0000-0000-000000000009'
+market_duplicate_event_id='00000000-0000-0000-0000-00000000000c'
 risk_duplicate_first_baseline="$TMP_DIR/risk-duplicate-first-baseline.tsv"
 account_duplicate_first_baseline="$TMP_DIR/account-duplicate-first-baseline.tsv"
+market_duplicate_first_baseline="$TMP_DIR/market-duplicate-first-baseline.tsv"
 risk_duplicate_probe="$TMP_DIR/risk-duplicate-probe.json"
 account_duplicate_probe="$TMP_DIR/account-duplicate-probe.json"
+market_duplicate_probe="$TMP_DIR/market-duplicate-probe.json"
 cdc_capture_topic_end_offsets orders.validated "$risk_duplicate_first_baseline"
 cdc_capture_topic_end_offsets account.lifecycle "$account_duplicate_first_baseline"
+cdc_capture_topic_end_offsets market-reference.routing-policies "$market_duplicate_first_baseline"
 psql_query <<SQL
 INSERT INTO risk_service.outbox (
   id, event_id, topic, message_key, kafka_partition_id, payload, payload_type, headers_json,
@@ -528,27 +573,43 @@ INSERT INTO account_service.outbox (
    decode('6163636f756e742d6475706c69636174652d7631', 'hex'), 'account.v1',
    '{"trace-id":"account-duplicate"}', 'account_reservation', 'account-reservation-duplicate', $((EVENT_BASE_MS + 8000)),
    to_timestamp($((EVENT_BASE_MS + 8000)) / 1000.0) AT TIME ZONE 'UTC');
+INSERT INTO marketdata_publisher.outbox (
+  id, event_id, topic, message_key, kafka_partition_id, payload, payload_type, headers_json,
+  aggregate_type, aggregate_id, created_at_unix_ms, created_at
+) VALUES
+  (4, '${market_duplicate_event_id}', 'market-reference.routing-policies', '2333', 1,
+   decode('6d61726b65742d6475706c69636174652d7631', 'hex'), 'routing-policy.v1',
+   '{"trace-id":"marketdata-duplicate"}', 'RoutingPolicy', 'routing-policy-duplicate', $((EVENT_BASE_MS + 8500)),
+   to_timestamp($((EVENT_BASE_MS + 8500)) / 1000.0) AT TIME ZONE 'UTC');
 SQL
 capture_probe risk_service Admission risk-order-duplicate "$risk_duplicate_probe"
 capture_probe account_service account_reservation account-reservation-duplicate "$account_duplicate_probe"
+capture_probe marketdata_publisher RoutingPolicy routing-policy-duplicate "$market_duplicate_probe"
 verify_probe_publication "$risk_duplicate_probe" "$risk_duplicate_first_baseline" risk_service
 verify_probe_publication "$account_duplicate_probe" "$account_duplicate_first_baseline" account_service
+verify_probe_publication "$market_duplicate_probe" "$market_duplicate_first_baseline" marketdata_publisher
 
 risk_duplicate_redelivery_baseline="$TMP_DIR/risk-duplicate-redelivery-baseline.tsv"
 account_duplicate_redelivery_baseline="$TMP_DIR/account-duplicate-redelivery-baseline.tsv"
+market_duplicate_redelivery_baseline="$TMP_DIR/market-duplicate-redelivery-baseline.tsv"
 risk_duplicate_after="$TMP_DIR/risk-duplicate-after.json"
 account_duplicate_after="$TMP_DIR/account-duplicate-after.json"
+market_duplicate_after="$TMP_DIR/market-duplicate-after.json"
 cdc_capture_topic_end_offsets orders.validated "$risk_duplicate_redelivery_baseline"
 cdc_capture_topic_end_offsets account.lifecycle "$account_duplicate_redelivery_baseline"
+cdc_capture_topic_end_offsets market-reference.routing-policies "$market_duplicate_redelivery_baseline"
 crash_connect_process
 wait_for_connect
 wait_for_all_connectors
 verify_probe_publication "$risk_duplicate_probe" "$risk_duplicate_redelivery_baseline" risk_service
 verify_probe_publication "$account_duplicate_probe" "$account_duplicate_redelivery_baseline" account_service
+verify_probe_publication "$market_duplicate_probe" "$market_duplicate_redelivery_baseline" marketdata_publisher
 assert_probe_unchanged risk_service Admission risk-order-duplicate \
   "$risk_duplicate_probe" "$risk_duplicate_after"
 assert_probe_unchanged account_service account_reservation account-reservation-duplicate \
   "$account_duplicate_probe" "$account_duplicate_after"
+assert_probe_unchanged marketdata_publisher RoutingPolicy routing-policy-duplicate \
+  "$market_duplicate_probe" "$market_duplicate_after"
 
-echo "Verified Risk and Account publication-level duplicate delivery after an abrupt Connect crash."
+echo "Verified Risk, Account, and Marketdata publication-level duplicate delivery after an abrupt Connect crash."
 echo "Outbox CDC contract check passed."
