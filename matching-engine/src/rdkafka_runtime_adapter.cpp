@@ -7,6 +7,7 @@
 #include <algorithm>
 #include <limits>
 #include <stdexcept>
+#include <thread>
 #include <utility>
 #include <vector>
 
@@ -64,6 +65,40 @@ namespace detail {
 
 std::chrono::milliseconds kafka_offset_query_timeout(std::chrono::milliseconds poll_timeout) {
   return std::max(poll_timeout, std::chrono::milliseconds(1000));
+}
+
+std::size_t kafka_offset_query_max_attempts() noexcept {
+  return 5;
+}
+
+bool kafka_offset_query_should_retry(rd_kafka_resp_err_t error) noexcept {
+  return error == RD_KAFKA_RESP_ERR_NOT_COORDINATOR;
+}
+
+std::chrono::milliseconds kafka_offset_query_backoff(std::size_t retry_index) noexcept {
+  constexpr auto initial_backoff = std::chrono::milliseconds(100);
+  constexpr auto maximum_backoff = std::chrono::milliseconds(800);
+  const auto multiplier = retry_index < 3 ? (std::size_t{1} << retry_index) : std::size_t{8};
+  const auto backoff = initial_backoff * static_cast<std::int64_t>(multiplier);
+  return std::min(backoff, maximum_backoff);
+}
+
+KafkaOffsetQueryAttempt kafka_offset_query_with_retry(
+    const std::function<KafkaOffsetQueryAttempt()> &attempt) {
+  if (!attempt) {
+    throw std::invalid_argument("Matching Kafka offset query attempt is required");
+  }
+  const auto max_attempts = kafka_offset_query_max_attempts();
+  for (std::size_t retry_index = 0; retry_index < max_attempts; ++retry_index) {
+    KafkaOffsetQueryAttempt result = attempt();
+    if (result.error == RD_KAFKA_RESP_ERR_NO_ERROR ||
+        !kafka_offset_query_should_retry(result.error) ||
+        retry_index + 1 >= max_attempts) {
+      return result;
+    }
+    std::this_thread::sleep_for(kafka_offset_query_backoff(retry_index));
+  }
+  throw std::logic_error("Matching Kafka committed offset retry policy did not terminate");
 }
 
 } // namespace detail
@@ -193,29 +228,38 @@ DirectKafkaPartitionOffsets RdkafkaDirectPartitionKafkaConsumer::offsets() {
         "unable to query Matching Kafka retained offsets: " + kafka_error(watermark_error));
   }
 
-  rd_kafka_topic_partition_list_t *partitions = rd_kafka_topic_partition_list_new(1);
-  auto *entry = rd_kafka_topic_partition_list_add(
-      partitions, assignment_->topic.c_str(), checked_partition(assignment_->partition));
-  entry->offset = RD_KAFKA_OFFSET_INVALID;
-  const auto committed_error = rd_kafka_committed(
-      implementation_->consumer, partitions, query_timeout_millis);
-  if (committed_error != RD_KAFKA_RESP_ERR_NO_ERROR) {
-    rd_kafka_topic_partition_list_destroy(partitions);
-    throw std::runtime_error(
-        "unable to query Matching Kafka committed offset: " + kafka_error(committed_error));
-  }
-  std::optional<std::int64_t> committed;
-  if (entry->err != RD_KAFKA_RESP_ERR_NO_ERROR && entry->err != RD_KAFKA_RESP_ERR__NO_OFFSET) {
+  const auto result = detail::kafka_offset_query_with_retry([&] {
+    rd_kafka_topic_partition_list_t *partitions = rd_kafka_topic_partition_list_new(1);
+    auto *entry = rd_kafka_topic_partition_list_add(
+        partitions, assignment_->topic.c_str(), checked_partition(assignment_->partition));
+    entry->offset = RD_KAFKA_OFFSET_INVALID;
+    const auto committed_error = rd_kafka_committed(
+        implementation_->consumer, partitions, query_timeout_millis);
+    const bool query_failed = committed_error != RD_KAFKA_RESP_ERR_NO_ERROR;
     const auto entry_error = entry->err;
+    const bool entry_failed = !query_failed && entry_error != RD_KAFKA_RESP_ERR_NO_ERROR &&
+                              entry_error != RD_KAFKA_RESP_ERR__NO_OFFSET;
+    detail::KafkaOffsetQueryAttempt result;
+    if (query_failed) {
+      result.error = committed_error;
+      result.error_from_query = true;
+    } else if (entry_failed) {
+      result.error = entry_error;
+    } else if (entry->offset != RD_KAFKA_OFFSET_INVALID && entry->offset >= 0) {
+      result.committed_offset = entry->offset;
+    }
     rd_kafka_topic_partition_list_destroy(partitions);
+    return result;
+  });
+  if (result.error != RD_KAFKA_RESP_ERR_NO_ERROR) {
+    if (result.error_from_query) {
+      throw std::runtime_error(
+          "unable to query Matching Kafka committed offset: " + kafka_error(result.error));
+    }
     throw std::runtime_error(
-        "unable to read Matching Kafka committed offset: " + kafka_error(entry_error));
+        "unable to read Matching Kafka committed offset: " + kafka_error(result.error));
   }
-  if (entry->offset != RD_KAFKA_OFFSET_INVALID && entry->offset >= 0) {
-    committed = entry->offset;
-  }
-  rd_kafka_topic_partition_list_destroy(partitions);
-  return {earliest, end, committed};
+  return {earliest, end, result.committed_offset};
 }
 
 std::vector<AssignedCommandRecord> RdkafkaDirectPartitionKafkaConsumer::read_retained_batch(

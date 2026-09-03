@@ -2,8 +2,11 @@
 
 #include "simplematch/matching/runtime/matching_partition_runtime_driver.hpp"
 
+#include <librdkafka/rdkafka.h>
+
 #include <chrono>
 #include <cstdint>
+#include <functional>
 #include <memory>
 #include <cstddef>
 #include <optional>
@@ -15,6 +18,26 @@ namespace detail {
 
 /** Keeps Kafka recovery metadata requests from inheriting the hot-path poll timeout. */
 std::chrono::milliseconds kafka_offset_query_timeout(std::chrono::milliseconds poll_timeout);
+
+/** Returns the bounded number of committed-offset attempts allowed during startup. */
+std::size_t kafka_offset_query_max_attempts() noexcept;
+
+/** Retries only a broker coordinator transition; all other errors remain fail-closed. */
+bool kafka_offset_query_should_retry(rd_kafka_resp_err_t error) noexcept;
+
+/** Returns the bounded exponential delay before a retry, indexed from zero. */
+std::chrono::milliseconds kafka_offset_query_backoff(std::size_t retry_index) noexcept;
+
+/** One committed-offset attempt, retaining whether its error came from the request or entry. */
+struct KafkaOffsetQueryAttempt {
+  rd_kafka_resp_err_t error{RD_KAFKA_RESP_ERR_NO_ERROR};
+  std::optional<std::int64_t> committed_offset;
+  bool error_from_query{};
+};
+
+/** Runs a committed-offset operation with the bounded coordinator-transition retry policy. */
+KafkaOffsetQueryAttempt kafka_offset_query_with_retry(
+    const std::function<KafkaOffsetQueryAttempt()> &attempt);
 
 } // namespace detail
 
