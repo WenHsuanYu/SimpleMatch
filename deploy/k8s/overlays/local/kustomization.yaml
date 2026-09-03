@@ -8,6 +8,7 @@ resources:
   - ../../kafka-kraft.yaml
   - ../../debezium-kafka-connect-local.yaml
   - kubernetes-api-network-policy.yaml
+  - kafka-connect-network-policy.yaml
 configMapGenerator:
   - name: quickfix-gateway-fix-spec
     files:

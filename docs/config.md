@@ -159,7 +159,8 @@ Risk or Account services:
   `scripts/run-outbox-cdc-contract-check.sh`. If unset, the script generates a unique name from the
   GitHub run identity (when present), wall-clock epoch, and process ID. An explicitly selected name
   must not already own Compose resources; collision is a preflight failure, never a cleanup signal.
-- `SIMPLEMATCH_CDC_OBSERVER_TIMEOUT_SECONDS` bounds the Kubernetes Risk CDC outage/recovery observer
+- `SIMPLEMATCH_CDC_OBSERVER_TIMEOUT_SECONDS` is the single end-to-end deadline for the Kubernetes
+  Risk CDC outage/recovery observer, including rollout, port-forward, polling, and bounded cleanup
   (default `180`, maximum `600`).
 The Kubernetes CDC observer reads the effective `maximum-metric-age` from the deployed
 `risk-service-config` ConfigMap rather than accepting a second age setting. A baseline older than

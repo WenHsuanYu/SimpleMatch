@@ -12,11 +12,13 @@ namespace=""
 expected_namespace_run_id=""
 evidence_dir=""
 timeout_seconds="${SIMPLEMATCH_CDC_OBSERVER_TIMEOUT_SECONDS:-180}"
+observer_deadline_epoch=0
 maximum_metric_age_seconds=""
 kind_cluster="${SIMPLEMATCH_KIND_CLUSTER_NAME:-simplematch-live}"
 kind_context="kind-${kind_cluster}"
 matching_fixture_default="$script_dir/../out/build/full-native-dev/simplematch-matching-kafka-fixture-publisher"
 matching_fixture_validator="${SIMPLEMATCH_MATCHING_FIXTURE_PUBLISHER_BIN:-$matching_fixture_default}"
+matching_fixture_validator_sha256=""
 matching_trading_day=""
 matching_trading_session_id=""
 matching_image_digest=""
@@ -28,6 +30,7 @@ risk_port_forward_pid=""
 connect_port=""
 risk_port=""
 connector_paused=false
+cleanup_resume_status=not-needed
 postgres_pod=""
 kafka_pod=""
 event_id=""
@@ -80,26 +83,60 @@ done
 [[ "$timeout_seconds" =~ ^[1-9][0-9]*$ ]] || die \
   '--timeout-seconds must be a positive integer'
 (( timeout_seconds <= 600 )) || die '--timeout-seconds must not exceed 600'
+observer_deadline_epoch=$(( $(date +%s) + timeout_seconds ))
 
-for tool in kubectl jq curl date seq sleep od tr grep sed tail cat sha256sum; do
+for tool in kubectl jq curl date seq sleep od tr grep sed tail cat sha256sum awk timeout; do
   command -v "$tool" >/dev/null 2>&1 || die "$tool is required"
 done
 
 [[ -x "$matching_fixture_validator" ]] || die \
   "Matching Open Barrier validator is missing or not executable: $matching_fixture_validator"
+matching_fixture_validator_sha256="$(sha256sum "$matching_fixture_validator" | awk '{print $1}')" || die \
+  "could not fingerprint the Matching Open Barrier validator: $matching_fixture_validator"
+[[ "$matching_fixture_validator_sha256" =~ ^[0-9a-f]{64}$ ]] || die \
+  "Matching Open Barrier validator fingerprint is not canonical: $matching_fixture_validator"
 
 mkdir -p "$evidence_dir"
 evidence_dir="$(cd -- "$evidence_dir" && pwd)"
 run_id="cdc-observer-$(date -u +%Y%m%d-%H%M%S)-$$"
 connector_base_url=""
 risk_base_url=""
-curl_options=(--connect-timeout 3 --max-time 10)
 command_partition=""
 command_key=""
 payload_hex=""
 
+remaining_seconds() {
+  local remaining
+  remaining=$((observer_deadline_epoch - $(date +%s)))
+  (( remaining > 0 )) || return 1
+  printf '%s\n' "$remaining"
+}
+
+bounded_sleep() {
+  local requested="$1" remaining
+  remaining="$(remaining_seconds)" || return 1
+  (( remaining > 1 )) || return 1
+  (( requested < remaining )) || requested=$((remaining - 1))
+  sleep "$requested"
+}
+
+curl_with_deadline() {
+  local remaining connect_timeout
+  remaining="$(remaining_seconds)" || return 124
+  connect_timeout=3
+  (( connect_timeout < remaining )) || connect_timeout=$remaining
+  curl --connect-timeout "$connect_timeout" --max-time "$remaining" -fsS "$@"
+}
+
+kubectl_with_deadline() {
+  local remaining
+  remaining="$(remaining_seconds)" || return 124
+  timeout "$remaining" kubectl --request-timeout="${remaining}s" \
+    "$@"
+}
+
 kns() {
-  kubectl --context "$kind_context" -n "$namespace" "$@"
+  kubectl_with_deadline --context "$kind_context" -n "$namespace" "$@"
 }
 
 capture_safe_diagnostic_log() {
@@ -123,21 +160,61 @@ collect_diagnostics() {
     -l app.kubernetes.io/name=kafka-connect --all-containers=true \
     --prefix=true --tail=200
   if [[ -n "$connector_base_url" ]]; then
-    curl "${curl_options[@]}" -fsS \
+    curl_with_deadline \
       "$connector_base_url/connectors/risk-service-outbox/status" \
       >"$evidence_dir/diagnostics-connector-status.json" 2>&1 || true
   fi
   if [[ -n "$risk_base_url" ]]; then
-    curl "${curl_options[@]}" -fsS "$risk_base_url/actuator/health" \
+    curl_with_deadline "$risk_base_url/actuator/health" \
       >"$evidence_dir/diagnostics-risk-health.json" 2>&1 || true
   fi
 }
 
+cleanup_resume_connector() {
+  local output
+  cleanup_resume_status=resume-requested
+  if ! curl_with_deadline -X PUT \
+      "$connector_base_url/connectors/risk-service-outbox/resume" >/dev/null 2>&1; then
+    cleanup_resume_status=resume-request-failed
+    return 1
+  fi
+  while :; do
+    output="$(curl_with_deadline \
+      "$connector_base_url/connectors/risk-service-outbox/status" \
+      2>/dev/null || true)"
+    if jq -e '
+        .connector.state == "RUNNING" and
+        (.tasks | length) > 0 and ([.tasks[].state] | all(. == "RUNNING"))
+      ' >/dev/null 2>&1 <<<"$output"; then
+      cleanup_resume_status=running
+      connector_paused=false
+      return 0
+    fi
+    if ! bounded_sleep 1; then
+      cleanup_resume_status=deadline-exceeded
+      return 1
+    fi
+  done
+}
+
 cleanup() {
   local exit_code="$?"
-  if [[ "$connector_paused" == true && -n "$connector_base_url" ]]; then
-    curl "${curl_options[@]}" -fsS -X PUT \
-      "$connector_base_url/connectors/risk-service-outbox/resume" >/dev/null 2>&1 || true
+  local failure_reason='Risk CDC observer phase failed; inspect diagnostics'
+  if [[ "$connector_paused" == true ]]; then
+    if [[ -n "$connector_base_url" ]]; then
+      cleanup_resume_connector || true
+    else
+      cleanup_resume_status=endpoint-unavailable
+    fi
+  fi
+  if [[ "$exit_code" -ne 0 ]]; then
+    if [[ "$cleanup_resume_status" != running &&
+      "$cleanup_resume_status" != not-needed ]]; then
+      failure_reason+="; connector cleanup status=$cleanup_resume_status"
+    fi
+    # Capture HTTP and workload diagnostics while port-forwards are still
+    # available. They are terminated only after this bounded best effort.
+    collect_diagnostics
   fi
   if [[ -n "$connect_port_forward_pid" ]]; then
     kill "$connect_port_forward_pid" >/dev/null 2>&1 || true
@@ -148,11 +225,12 @@ cleanup() {
     wait "$risk_port_forward_pid" >/dev/null 2>&1 || true
   fi
   if [[ "$exit_code" -ne 0 ]]; then
-    collect_diagnostics
     if [[ ! -f "$evidence_dir/verdict.json" ]]; then
       jq -n --arg status FAIL --arg runId "$run_id" \
+        --arg cleanupResumeStatus "$cleanup_resume_status" \
+        --arg reason "$failure_reason" \
         '{status:$status,runId:$runId,
-          reason:"Risk CDC observer phase failed; inspect diagnostics"}' \
+          cleanupResumeStatus:$cleanupResumeStatus,reason:$reason}' \
         >"$evidence_dir/verdict.json" || true
     fi
   fi
@@ -161,15 +239,18 @@ cleanup() {
 }
 trap cleanup EXIT
 
-current_context="$(kubectl config current-context)"
+remaining_seconds >/dev/null || die \
+  'observer deadline expired before Kubernetes context validation'
+current_context="$(kubectl_with_deadline config current-context)" || die \
+  'could not read the current Kubernetes context'
 [[ "$current_context" == "$kind_context" ]] || die \
   "current Kubernetes context=$current_context, expected $kind_context"
-kubectl --context "$kind_context" get namespace "$namespace" >/dev/null \
+kubectl_with_deadline --context "$kind_context" get namespace "$namespace" >/dev/null \
   || die "namespace does not exist: $namespace"
 simplematch_kind_namespace_is_disposable \
   "$kind_context" "$namespace" local-production-like-certification || die \
   "namespace is not an owned disposable local certification namespace: $namespace"
-namespace_run_id="$(kubectl --context "$kind_context" get namespace "$namespace" \
+namespace_run_id="$(kubectl_with_deadline --context "$kind_context" get namespace "$namespace" \
   -o jsonpath='{.metadata.labels.simplematch\.io/run-id}')" || die \
   "could not read certification namespace ownership: $namespace"
 [[ -n "$namespace_run_id" ]] || die \
@@ -234,7 +315,9 @@ start_port_forward() {
   # startup, including the path where port-forward exits before returning.
   printf -v "$pid_variable" '%s' "$pid"
   printf -v "$port_variable" '%s' ''
-  for _ in $(seq 1 60); do
+  while :; do
+    remaining_seconds >/dev/null || die \
+      "port-forward startup exceeded the observer deadline for $target"
     kill -0 "$pid" >/dev/null 2>&1 || {
       cat "$log_path" >&2
       die "port-forward exited for $target"
@@ -244,18 +327,19 @@ start_port_forward() {
       printf -v "$port_variable" '%s' "$output"
       return 0
     fi
-    sleep 1
+    bounded_sleep 1 || die \
+      "port-forward startup exceeded the observer deadline for $target"
   done
-  die "could not resolve port-forward for $target"
 }
 
 wait_for_connector_state() {
-  local connector="$1" expected="$2" output deadline
+  local connector="$1" expected="$2" output
   [[ -n "$connector" && -n "$expected" ]] || die \
     'connector name and expected state are required'
-  deadline=$(( $(date +%s) + timeout_seconds ))
   while :; do
-    output="$(curl "${curl_options[@]}" -fsS \
+    remaining_seconds >/dev/null || die \
+      "$connector did not become $expected before the observer deadline"
+    output="$(curl_with_deadline \
       "$connector_base_url/connectors/$connector/status" \
       2>/dev/null || true)"
     if jq -e --arg expected "$expected" '
@@ -265,15 +349,14 @@ wait_for_connector_state() {
       printf '%s\n' "$output"
       return 0
     fi
-    (( $(date +%s) < deadline )) || die \
-      "$connector did not become $expected before timeout"
-    sleep 1
+    bounded_sleep 1 || die \
+      "$connector did not become $expected before the observer deadline"
   done
 }
 
 capture_retained_connector_states() {
-  local output="$1" risk_status account_status marketdata_status
-  risk_status="$(wait_for_connector_state risk-service-outbox RUNNING)"
+  local output="$1" risk_status_file="$2" risk_status account_status marketdata_status
+  risk_status="$(cat "$risk_status_file")"
   account_status="$(wait_for_connector_state account-service-outbox RUNNING)"
   marketdata_status="$(wait_for_connector_state marketdata-publisher-outbox RUNNING)"
   jq -n \
@@ -300,18 +383,17 @@ read_metric_row() {
 
 wait_for_metric_row() {
   local expected_lag="$1" minimum_updated_at="$2" failure_message="$3"
-  local output lag updated deadline lag_matches
+  local output lag updated lag_matches
   case "$expected_lag" in
     zero|positive) ;;
     *) die "unsupported CDC metric lag expectation: $expected_lag" ;;
   esac
-  deadline=$(( $(date +%s) + timeout_seconds ))
   while :; do
+    remaining_seconds >/dev/null || die "$failure_message"
     output="$(read_metric_row 2>/dev/null || true)"
     IFS='|' read -r lag updated <<<"$output"
     lag_matches=false
     case "$expected_lag" in
-      any) lag_matches=true ;;
       zero) [[ "$lag" == 0 ]] && lag_matches=true ;;
       positive) [[ "$lag" =~ ^[1-9][0-9]*$ ]] && lag_matches=true ;;
     esac
@@ -320,25 +402,23 @@ wait_for_metric_row() {
       printf '%s\n' "$output"
       return 0
     fi
-    (( $(date +%s) < deadline )) || die "$failure_message"
-    sleep 2
+    bounded_sleep 2 || die "$failure_message"
   done
 }
 
 metric_json() {
-  local metric="$1" output="$2" metric_url response deadline
+  local metric="$1" output="$2" metric_url response
   metric_url="$risk_base_url/actuator/metrics/simplematch.delivery.observations"
   metric_url+="?tag=component:risk-cdc-delivery&tag=metric:${metric}"
-  deadline=$(( $(date +%s) + timeout_seconds ))
   while :; do
-    response="$(curl "${curl_options[@]}" -fsS "$metric_url" 2>/dev/null || true)"
+    remaining_seconds >/dev/null || die "Actuator metric is missing for $metric"
+    response="$(curl_with_deadline "$metric_url" 2>/dev/null || true)"
     if jq -e '.name == "simplematch.delivery.observations"
         and (.measurements | length) > 0' >/dev/null 2>&1 <<<"$response"; then
       printf '%s\n' "$response" >"$output"
       return 0
     fi
-    (( $(date +%s) < deadline )) || die "Actuator metric is missing for $metric"
-    sleep 2
+    bounded_sleep 2 || die "Actuator metric is missing for $metric"
   done
 }
 
@@ -352,9 +432,10 @@ assert_metric_measurement_is_nonnegative() {
 }
 
 wait_for_observation() {
-  local output deadline
-  deadline=$(( $(date +%s) + timeout_seconds ))
+  local output
   while :; do
+    remaining_seconds >/dev/null || die \
+      'Risk CDC observation row did not appear before the observer deadline'
     output="$(sql "
       SELECT topic || '|' || partition_id || '|' || kafka_offset || '|'
           || observed_at_unix_ms
@@ -365,15 +446,18 @@ wait_for_observation() {
       printf '%s\n' "$output"
       return 0
     fi
-    (( $(date +%s) < deadline )) || die \
-      'Risk CDC observation row did not appear after connector recovery'
-    sleep 2
+    bounded_sleep 2 || die \
+      'Risk CDC observation row did not appear before the observer deadline'
   done
 }
 
-kns rollout status deployment/risk-service --timeout=300s >/dev/null
-kns rollout status deployment/kafka-connect --timeout=300s >/dev/null
-kns rollout status statefulset/postgres --timeout=300s >/dev/null
+for rollout_target in \
+  deployment/risk-service deployment/kafka-connect statefulset/postgres; do
+  rollout_remaining="$(remaining_seconds)" || die \
+    "rollout exceeded the observer deadline: $rollout_target"
+  kns rollout status "$rollout_target" --timeout="${rollout_remaining}s" >/dev/null || die \
+    "rollout did not complete before the observer deadline: $rollout_target"
+done
 postgres_pod="$(kns get pods -l app.kubernetes.io/name=postgres \
   -o jsonpath='{.items[0].metadata.name}')"
 kafka_pod="$(kns get pods -l app.kubernetes.io/name=kafka \
@@ -385,14 +469,15 @@ start_port_forward service/kafka-connect 8083 "$evidence_dir/connect-port-forwar
 connector_base_url="http://127.0.0.1:${connect_port}"
 wait_for_connector_state risk-service-outbox RUNNING \
   >"$evidence_dir/connector-running-before.json"
-capture_retained_connector_states "$evidence_dir/connectors-running-before.json"
+capture_retained_connector_states "$evidence_dir/connectors-running-before.json" \
+  "$evidence_dir/connector-running-before.json"
 
 start_port_forward service/risk-service 8080 "$evidence_dir/risk-port-forward.log" \
   risk_port_forward_pid risk_port
 risk_base_url="http://127.0.0.1:${risk_port}"
-curl "${curl_options[@]}" -fsS "$risk_base_url/actuator/health/liveness" \
+curl_with_deadline "$risk_base_url/actuator/health/liveness" \
   >"$evidence_dir/health-liveness.json"
-curl "${curl_options[@]}" -fsS "$risk_base_url/actuator/health/readiness" \
+curl_with_deadline "$risk_base_url/actuator/health/readiness" \
   >"$evidence_dir/health-readiness.json"
 metric_json connector_lag_events "$evidence_dir/metric-before-lag.json"
 metric_json outbox_age_millis "$evidence_dir/metric-before-age.json"
@@ -422,7 +507,7 @@ printf 'baseline_age_ms=%s\nzero_traffic_row=%s\nzero_traffic_age_ms=%s\n' \
   "$baseline_age_ms" "$zero_traffic_row" "$zero_traffic_age_ms" \
   >"$evidence_dir/metric-baseline-age.txt"
 
-curl "${curl_options[@]}" -fsS -X PUT \
+curl_with_deadline -X PUT \
   "$connector_base_url/connectors/risk-service-outbox/pause" >/dev/null
 connector_paused=true
 wait_for_connector_state risk-service-outbox PAUSED \
@@ -491,12 +576,15 @@ jq -n --arg runId "$run_id" --arg eventId "$event_id" --arg topic matching.comma
   --arg artifactSha256 "$artifact_sha256" \
   --arg routingAlgorithmVersion "$artifact_routing_version" \
   --arg matchingImageDigest "$matching_image_digest" \
+  --arg validatorPath "$matching_fixture_validator" \
+  --arg validatorSha256 "$matching_fixture_validator_sha256" \
   '{runId:$runId,eventId:$eventId,topic:$topic,commandKey:$commandKey,
     commandPartition:$commandPartition,
     createdAtUnixMs:$createdAtUnixMs,tradingDay:$tradingDay,
     tradingSessionId:$tradingSessionId,artifactSha256:$artifactSha256,
     routingAlgorithmVersion:$routingAlgorithmVersion,
     matchingImageDigest:$matchingImageDigest,
+    validatorPath:$validatorPath,validatorSha256:$validatorSha256,
     openBarrierValidated:true}' \
   >"$evidence_dir/event.json"
 
@@ -511,12 +599,13 @@ assert_metric_measurement_is_nonnegative "$evidence_dir/metric-paused-age.json"
 jq -e '.measurements[0].value >= 1' "$evidence_dir/metric-paused-lag.json" \
   >/dev/null || die 'Risk CDC lag gauge did not increase during outage'
 
-curl "${curl_options[@]}" -fsS -X PUT \
+curl_with_deadline -X PUT \
   "$connector_base_url/connectors/risk-service-outbox/resume" >/dev/null
 wait_for_connector_state risk-service-outbox RUNNING \
   >"$evidence_dir/connector-recovered.json"
 connector_paused=false
-capture_retained_connector_states "$evidence_dir/connectors-running-recovered.json"
+capture_retained_connector_states "$evidence_dir/connectors-running-recovered.json" \
+  "$evidence_dir/connector-recovered.json"
 observation_row="$(wait_for_observation)"
 recovered_row="$(wait_for_metric_row zero "$paused_updated" \
   'Risk CDC metric did not return to zero after connector recovery')"
@@ -545,11 +634,21 @@ capture_active_workload_logs() {
       "could not list pods for $workload"
     [[ -n "$pods" ]] || die "no ready workload pod exists for $workload"
     output="$evidence_dir/$workload.log"
-    kns logs -l "app.kubernetes.io/name=$workload" --all-containers=true \
-      --prefix=true --tail=400 >"$output" 2>&1 || die \
-      "could not capture logs for $workload"
-    resilience_log_is_safe "$output" || die \
-      "$workload logs contain a prohibited secret or raw payload pattern"
+    if ! kns logs -l "app.kubernetes.io/name=$workload" --all-containers=true \
+        --prefix=true --tail=400 >"$output" 2>&1; then
+      if ! resilience_log_is_safe "$output"; then
+        printf '%s\n' \
+          'active workload log omitted after the sensitive-log safety check failed' \
+          >"$output"
+      fi
+      die "could not capture logs for $workload"
+    fi
+    if ! resilience_log_is_safe "$output"; then
+      printf '%s\n' \
+        'active workload log omitted after the sensitive-log safety check failed' \
+        >"$output"
+      die "$workload logs contain a prohibited secret or raw payload pattern"
+    fi
   done
 }
 

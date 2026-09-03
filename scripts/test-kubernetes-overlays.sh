@@ -173,6 +173,14 @@ if overlay == "local"
     .fetch("spec").fetch("template").fetch("spec").fetch("containers").first.fetch("env")
   abort "local: Risk admission backpressure is explicitly disabled" if
     risk_env.any? { |entry| entry["name"] == "SIMPLEMATCH_RISK_SERVICE_ADMISSION_CDC_BACKPRESSURE_ENABLED" }
+  fixture_records_entry = risk_env.find do |entry|
+    entry["name"] == "SIMPLEMATCH_RISK_SERVICE_CDC_DELIVERY_FIXTURE_RECORDS_ALLOWED"
+  end
+  abort "local: Risk CDC fixture records must be explicitly enabled only in the local overlay" unless
+    fixture_records_entry == {
+      "name" => "SIMPLEMATCH_RISK_SERVICE_CDC_DELIVERY_FIXTURE_RECORDS_ALLOWED",
+      "value" => "true"
+    }
 
   matching = resources.fetch(["StatefulSet", "matching"])
   matching_pod_spec = matching.fetch("spec").fetch("template").fetch("spec")

@@ -32,6 +32,12 @@ public final class JdbcCdcDeliveryProgressStore implements CdcDeliveryProgressSt
         SELECT event_id, ?, ?, ?, ?
         FROM risk_service.outbox
         WHERE event_id = ? AND topic = ?
+          AND message_key = ?
+          AND payload = ?
+          AND payload_type = ?
+          AND headers_json = ?
+          AND (kafka_partition_id IS NULL OR kafka_partition_id = ?)
+          AND created_at_unix_ms = ?
           AND NOT EXISTS (
             SELECT 1 FROM risk_service.cdc_delivery_observation WHERE event_id = ?)
         """ + conflictClause,
@@ -41,6 +47,12 @@ public final class JdbcCdcDeliveryProgressStore implements CdcDeliveryProgressSt
         observation.observedAtUnixMs(),
         observation.eventId(),
         observation.topic(),
+        observation.messageKey(),
+        observation.payload(),
+        observation.payloadType(),
+        observation.headersJson(),
+        observation.partition(),
+        observation.publishedAtUnixMs(),
         observation.eventId());
   }
 

@@ -137,17 +137,22 @@ ctest --preset dev-debug --output-on-failure
 bash scripts/test-matching-kubernetes-manifests.sh
 bash scripts/test-matching-topic-profile.sh
 bash scripts/test-phase1-deployment-contracts.sh
-bash scripts/verify-outbox-connector-contracts.sh
 bash scripts/run-outbox-cdc-contract-check.sh
 
 # The following phase is normally invoked by the full local certification runner after the
 # Kubernetes workloads and retained connectors are Ready. It is shown separately for operators
 # resuming a retained, lifecycle-owned namespace. Read the run id from the retained run context:
 certification_evidence_dir="${SIMPLEMATCH_CERTIFICATION_EVIDENCE_DIR:-out/certification/local-production-like}"
+certification_namespace="$(awk -F= '$1 == "namespace" { print substr($0, index($0, "=") + 1); exit }' \
+  "$certification_evidence_dir/run-context")"
 namespace_run_id="$(awk -F= '$1 == "run_id" { print substr($0, index($0, "=") + 1); exit }' \
   "$certification_evidence_dir/run-context")"
+[[ -n "$certification_namespace" && -n "$namespace_run_id" ]] || {
+  printf '%s\n' 'run-context must contain namespace and run_id' >&2
+  exit 1
+}
 bash scripts/run-risk-cdc-delivery-observer-check.sh \
-  --namespace "$SIMPLEMATCH_CERTIFICATION_NAMESPACE" \
+  --namespace "$certification_namespace" \
   --namespace-run-id "$namespace_run_id" \
   --evidence-dir out/certification/local-production-like/cdc-delivery
 

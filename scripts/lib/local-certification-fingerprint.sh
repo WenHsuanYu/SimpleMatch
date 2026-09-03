@@ -389,6 +389,21 @@ _certification_registry_lock_manifest() {
   done <<<"$selected_services"
 }
 
+_certification_fixture_validator_identity_manifest() {
+  local configured_path absolute_path digest=missing
+
+  configured_path="${SIMPLEMATCH_MATCHING_FIXTURE_PUBLISHER_BIN:-$repo_root/out/build/full-native-dev/simplematch-matching-kafka-fixture-publisher}"
+  absolute_path="$configured_path"
+  if [[ "$absolute_path" != /* ]]; then
+    absolute_path="$repo_root/$absolute_path"
+  fi
+  if [[ -f "$absolute_path" ]]; then
+    digest="$(sha256sum "$absolute_path" | awk '{print $1}')" || digest=invalid
+  fi
+  printf 'validatorPath\t%s\nvalidatorSha256\t%s\n' \
+    "$configured_path" "$digest"
+}
+
 certification_phase_input_manifest() {
   local phase_id="$1"
   shift
@@ -453,6 +468,10 @@ certification_phase_input_manifest() {
         deploy/compose/apply-risk-service-outbox-connector.sh \
         deploy/compose/apply-account-service-outbox-connector.sh \
         deploy/compose/apply-marketdata-publisher-outbox-connector.sh \
+        deploy/compose/apply-outbox-connector.sh \
+        deploy/compose/risk-service-outbox-connector.json \
+        deploy/compose/account-service-outbox-connector.json \
+        deploy/compose/marketdata-publisher-outbox-connector.json \
         deploy/compose/kafka-connect.local.yml \
         scripts/lib/local-certification-fingerprint.sh \
         -- "phase=$phase_id" "version=$phase_version"
@@ -474,13 +493,17 @@ certification_phase_input_manifest() {
         services/risk-service/src/main/resources/db/migration/risk-service/V10__record_cdc_delivery_observations.sql \
         services/risk-service/src/main/resources/application.yaml \
         deploy/k8s/simplematch-platform-configmap.yaml deploy/k8s/risk-service-configmap.yaml \
-        deploy/k8s/overlays/local/local-runtime-patch.yaml deploy/k8s/debezium-kafka-connect-local.yaml \
+        deploy/k8s/overlays/local/local-runtime-patch.yaml \
+        deploy/k8s/overlays/local/kafka-connect-network-policy.yaml \
+        deploy/k8s/debezium-kafka-connect-local.yaml \
         deploy/k8s/risk-service-outbox-connector-configmap.yaml \
         deploy/k8s/account-service-outbox-connector-configmap.yaml \
         deploy/k8s/marketdata-publisher-outbox-connector-configmap.yaml \
+        scripts/test-kubernetes-overlays.sh scripts/test-local-kubernetes-dependencies.sh \
         scripts/lib/local-certification-artifacts.sh \
         scripts/lib/local-certification-fingerprint.sh \
         -- "phase=$phase_id" "version=$phase_version"
+      _certification_fixture_validator_identity_manifest
       ;;
     local-image-inventory)
       _certification_paths_and_values_manifest \

@@ -115,6 +115,7 @@ connect_pdb = resources.fetch(["PodDisruptionBudget", "kafka-connect"])
 connect_spec = connect.fetch("spec").fetch("template").fetch("spec")
 connect_container = connect_spec.fetch("containers").find { |container| container.fetch("name") == "kafka-connect" }
 connect_service = resources.fetch(["Service", "kafka-connect"])
+connect_network_policy = resources.fetch(["NetworkPolicy", "simplematch-kafka-connect"])
 connect_environment = connect_container.fetch("env").to_h { |entry| [entry.fetch("name"), entry] }
 connect_config = resources.fetch(["ConfigMap", "simplematch-kafka-connect-config"])
 connector_configmap = resources.fetch(["ConfigMap", "risk-service-outbox-connector"])
@@ -193,6 +194,31 @@ end
   )
 end
 require_value(connect_service.dig("spec", "ports", 0, "port") == 8083, "Kafka Connect Service must expose 8083")
+require_value(
+  connect_network_policy.dig("spec", "podSelector", "matchLabels") == {
+    "app.kubernetes.io/name" => "kafka-connect",
+    "app.kubernetes.io/component" => "connector"
+  },
+  "Local Kafka Connect must have a connector-specific NetworkPolicy selector"
+)
+require_value(
+  connect_network_policy.dig("spec", "ingress", 0, "ports")&.any? {
+    |port| port == {"protocol" => "TCP", "port" => 8083}
+  },
+  "Local Kafka Connect NetworkPolicy must permit its REST port"
+)
+connect_egress_ports = connect_network_policy.dig("spec", "egress", 0, "ports") || []
+require_value(
+  [8083, 5432, 9092, 9093].all? { |port| connect_egress_ports.any? { |entry| entry["port"] == port } },
+  "Local Kafka Connect NetworkPolicy must permit worker, PostgreSQL, and Kafka egress"
+)
+dns_egress = connect_network_policy.dig("spec", "egress", 1)
+require_value(
+  dns_egress&.dig("to", 0, "namespaceSelector", "matchLabels",
+                  "kubernetes.io/metadata.name") == "kube-system" &&
+    [53].all? { |port| dns_egress.fetch("ports", []).any? { |entry| entry["port"] == port } },
+  "Local Kafka Connect NetworkPolicy must permit kube-system DNS"
+)
 require_value(
   connect_spec.fetch("volumes", []).none? { |volume| volume.dig("name") == "postgres-tls" || volume.dig("name") == "kafka-tls" },
   "Local Kafka Connect must not require external TLS volumes"
