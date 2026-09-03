@@ -47,10 +47,12 @@ write_lock() {
 write_workload_json() {
   local lock_file="$1"
   local output_file="$2"
-  local service reference items='[]'
+  local service reference workload_name items='[]'
 
   while IFS='|' read -r service _ _ reference; do
-    items="$(jq --arg name "$service" --arg image "$reference" \
+    workload_name="$service"
+    [[ "$service" == flyway-runner ]] && workload_name=account-service-flyway
+    items="$(jq --arg name "$workload_name" --arg image "$reference" \
       '. + [{kind:"Deployment", metadata:{name:$name},
         spec:{template:{spec:{containers:[{name:$name,image:$image}]}}}}]' \
       <<<"$items")"
@@ -126,6 +128,16 @@ EOF_OBSERVER
   chmod 755 "$fake_bin"
 }
 
+write_fake_verifier_contract() {
+  local fake_bin="$1"
+  cat >"$fake_bin" <<'EOF_CONTRACT'
+#!/usr/bin/env bash
+set -Eeuo pipefail
+printf '%s\n' invoked >"${FAKE_VERIFIER_CONTRACT_MARKER:?FAKE_VERIFIER_CONTRACT_MARKER is required}"
+EOF_CONTRACT
+  chmod 755 "$fake_bin"
+}
+
 write_dependencies() {
   local evidence_dir="$1"
   local dependency
@@ -159,7 +171,9 @@ write_dependencies() {
 write_fixture() {
   local evidence_dir="$1"
   local source_signature="$2"
-  local profile_override="${3:-}"
+  local runtime_signature="${3:-$current_runtime_signature}"
+  local verifier_signature="${4:-$current_verifier_signature}"
+  local profile_override="${5:-}"
   local image_lock matching_digest
 
   mkdir -p "$evidence_dir"
@@ -178,6 +192,8 @@ write_fixture() {
     'image_tag=focused' \
     'image_transport=registry' \
     "source_signature=$source_signature" \
+    "cdc_runtime_signature=$runtime_signature" \
+    "cdc_verifier_signature=$verifier_signature" \
     "skip_build=${profile_override:-false}" \
     'skip_compose=false' \
     'skip_kubernetes=false' \
@@ -196,10 +212,18 @@ write_fixture() {
 
 fake_kubectl="$fixture_root/fake-kubectl"
 fake_observer="$fixture_root/fake-observer"
+fake_verifier_contract="$fixture_root/fake-verifier-contract"
 write_fake_kubectl "$fake_kubectl"
 write_fake_observer "$fake_observer"
+write_fake_verifier_contract "$fake_verifier_contract"
 
 source_signature="$(simplematch_certification_source_signature "$repo_root")"
+current_runtime_signature="$(
+  simplematch_certification_cdc_runtime_signature "$repo_root"
+)"
+current_verifier_signature="$(
+  simplematch_certification_cdc_verifier_signature "$repo_root"
+)"
 
 run_expect_failure_without_observer() {
   local evidence_dir="$1"
@@ -207,8 +231,10 @@ run_expect_failure_without_observer() {
   rm -f -- "$marker"
   if FAKE_KUBECTL_ROOT="$evidence_dir" \
       FAKE_OBSERVER_MARKER="$marker" \
+      FAKE_VERIFIER_CONTRACT_MARKER="$fixture_root/verifier-contract-marker" \
       SIMPLEMATCH_FOCUSED_KUBECTL_BIN="$fake_kubectl" \
       SIMPLEMATCH_CDC_OBSERVER_SCRIPT="$fake_observer" \
+      SIMPLEMATCH_CDC_OBSERVER_CONTRACT_SCRIPT="$fake_verifier_contract" \
       "$runner" --evidence-dir "$evidence_dir" --timeout-seconds 31 \
       >/dev/null 2>&1; then
     fail "invalid focused diagnostic unexpectedly passed: $evidence_dir"
@@ -222,38 +248,103 @@ mkdir -p "$missing_context"
 run_expect_failure_without_observer "$missing_context"
 
 profile_fixture="$fixture_root/profile"
-write_fixture "$profile_fixture" "$source_signature" true
+write_fixture "$profile_fixture" "$source_signature" \
+  "$current_runtime_signature" "$current_verifier_signature" true
 run_expect_failure_without_observer "$profile_fixture"
 
 dependency_fixture="$fixture_root/dependency"
-write_fixture "$dependency_fixture" "$source_signature"
+write_fixture "$dependency_fixture" "$source_signature" \
+  "$current_runtime_signature" "$current_verifier_signature"
 dependency_result="$dependency_fixture/phases/kubernetes-workloads/result.json"
 jq '.status = "FAIL"' "$dependency_result" >"$dependency_result.tmp"
 mv -f -- "$dependency_result.tmp" "$dependency_result"
 run_expect_failure_without_observer "$dependency_fixture"
 
-source_fixture="$fixture_root/source-drift"
-write_fixture "$source_fixture" \
+runtime_fixture="$fixture_root/runtime-drift"
+write_fixture "$runtime_fixture" \
+  0000000000000000000000000000000000000000000000000000000000000000 \
+  0000000000000000000000000000000000000000000000000000000000000000 \
+  "$current_verifier_signature"
+run_expect_failure_without_observer "$runtime_fixture"
+
+swapped_image_fixture="$fixture_root/swapped-image"
+write_fixture "$swapped_image_fixture" "$source_signature" \
+  "$current_runtime_signature" "$current_verifier_signature"
+account_image="$(jq -r '.items[] | select(.metadata.name == "account-service") |
+  .spec.template.spec.containers[0].image' "$swapped_image_fixture/workloads.json")"
+risk_image="$(jq -r '.items[] | select(.metadata.name == "risk-service") |
+  .spec.template.spec.containers[0].image' "$swapped_image_fixture/workloads.json")"
+jq --arg account "$account_image" --arg risk "$risk_image" '
+  (.items[] | select(.metadata.name == "account-service") |
+    .spec.template.spec.containers[0].image) = $risk |
+  (.items[] | select(.metadata.name == "risk-service") |
+    .spec.template.spec.containers[0].image) = $account
+' "$swapped_image_fixture/workloads.json" \
+  >"$swapped_image_fixture/workloads.json.tmp"
+mv -f -- "$swapped_image_fixture/workloads.json.tmp" \
+  "$swapped_image_fixture/workloads.json"
+run_expect_failure_without_observer "$swapped_image_fixture"
+
+unrelated_fixture="$fixture_root/unrelated-source-drift"
+write_fixture "$unrelated_fixture" \
+  0000000000000000000000000000000000000000000000000000000000000000 \
+  "$current_runtime_signature" "$current_verifier_signature"
+unrelated_marker="$fixture_root/unrelated-observer-marker"
+if ! FAKE_KUBECTL_ROOT="$unrelated_fixture" \
+    FAKE_OBSERVER_MARKER="$unrelated_marker" \
+    FAKE_VERIFIER_CONTRACT_MARKER="$fixture_root/unrelated-verifier-contract-marker" \
+    SIMPLEMATCH_FOCUSED_KUBECTL_BIN="$fake_kubectl" \
+    SIMPLEMATCH_CDC_OBSERVER_SCRIPT="$fake_observer" \
+    SIMPLEMATCH_CDC_OBSERVER_CONTRACT_SCRIPT="$fake_verifier_contract" \
+    "$runner" --evidence-dir "$unrelated_fixture" --timeout-seconds 31 \
+    >/dev/null; then
+  fail 'unrelated source drift incorrectly invalidated the CDC diagnostic'
+fi
+[[ -f "$unrelated_marker" ]] || fail \
+  'unrelated source drift did not reach the observer'
+
+verifier_fixture="$fixture_root/verifier-drift"
+write_fixture "$verifier_fixture" "$source_signature" \
+  "$current_runtime_signature" \
   0000000000000000000000000000000000000000000000000000000000000000
-run_expect_failure_without_observer "$source_fixture"
+verifier_marker="$fixture_root/verifier-observer-marker"
+if ! FAKE_KUBECTL_ROOT="$verifier_fixture" \
+    FAKE_OBSERVER_MARKER="$verifier_marker" \
+    FAKE_VERIFIER_CONTRACT_MARKER="$fixture_root/verifier-contract-marker" \
+    SIMPLEMATCH_FOCUSED_KUBECTL_BIN="$fake_kubectl" \
+    SIMPLEMATCH_CDC_OBSERVER_SCRIPT="$fake_observer" \
+    SIMPLEMATCH_CDC_OBSERVER_CONTRACT_SCRIPT="$fake_verifier_contract" \
+    "$runner" --evidence-dir "$verifier_fixture" --timeout-seconds 31 \
+    >/dev/null; then
+  fail 'verifier-only drift incorrectly required a full certification run'
+fi
+[[ -f "$verifier_marker" ]] || fail \
+  'verifier-only drift did not reach the observer'
 
 valid_fixture="$fixture_root/valid"
-write_fixture "$valid_fixture" "$source_signature"
+write_fixture "$valid_fixture" "$source_signature" \
+  "$current_runtime_signature" "$current_verifier_signature"
 marker="$fixture_root/observer-marker"
 if ! FAKE_KUBECTL_ROOT="$valid_fixture" \
     FAKE_OBSERVER_MARKER="$marker" \
+    FAKE_VERIFIER_CONTRACT_MARKER="$fixture_root/valid-verifier-contract-marker" \
     SIMPLEMATCH_FOCUSED_KUBECTL_BIN="$fake_kubectl" \
     SIMPLEMATCH_CDC_OBSERVER_SCRIPT="$fake_observer" \
+    SIMPLEMATCH_CDC_OBSERVER_CONTRACT_SCRIPT="$fake_verifier_contract" \
     "$runner" --evidence-dir "$valid_fixture" --timeout-seconds 31 \
     >/dev/null; then
   fail 'valid retained run did not reach the observer'
 fi
 [[ -f "$marker" ]] || fail 'valid retained run did not invoke the observer'
+[[ -f "$fixture_root/valid-verifier-contract-marker" ]] || fail \
+  'valid retained run did not invoke the verifier contract'
 top_level_verdict="$(find "$valid_fixture/focused-diagnostics/cdc-delivery" \
   -mindepth 2 -maxdepth 2 -name verdict.json ! -path '*/observer/*' -print -quit)"
 [[ -f "$top_level_verdict" ]] || fail 'focused diagnostic verdict was not materialized'
 jq -e '.status == "PASS" and .mode == "FOCUSED_DIAGNOSTIC" and
-  .fullCertification == false and .targetPhase == "kubernetes-cdc-delivery"' \
+  .fullCertification == false and .targetPhase == "kubernetes-cdc-delivery" and
+  .verifierChanged == false and
+  (.cdcRuntimeSignature | test("^[0-9a-f]{64}$"))' \
   "$top_level_verdict" >/dev/null || fail 'focused diagnostic verdict is not diagnostic-only PASS'
 
 printf '%s\n' 'Local focused CDC diagnostic contracts are valid.'

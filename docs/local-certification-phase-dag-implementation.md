@@ -477,7 +477,11 @@ Focused contracts exercise behavior through the same seams used by the runner:
 - `test-local-certification-output-lineage.sh` — run-local producer output
   validation and materialization;
 - `test-local-certification-artifact-fingerprint.sh` — generic artifact-adapter
-  changes invalidate image, registry, and Kafka reusable evidence;
+  changes leave image, registry, and Kafka execution fingerprints unchanged;
+  `test-local-certification-output-lineage.sh` separately verifies that large
+  producer output remains safe to materialize into phase results;
+- `test-local-certification-provenance.sh` — declared scoped inputs must exist,
+  and executable-mode changes must alter the provenance signature;
 - `test-local-production-like.sh` — broad orchestration behavior using
   PhaseGraph rather than source-line ordering.
 

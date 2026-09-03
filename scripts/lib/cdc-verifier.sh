@@ -114,6 +114,7 @@ _cdc_validate_probe() {
       (.topic | type == "string" and length > 0) and
       (.payload_hex | type == "string" and length > 0) and
       (.payload_sha256 | type == "string" and test("^[0-9a-f]{64}$")) and
+      (.payload_type | type == "string" and length > 0) and
       (.created_at_unix_ms | type == "number" and . >= 0) and
       (.headers_json | type == "string" and length > 0) and
       ((.explicit_partition == null) or (.explicit_partition | type == "number" and . >= 0))
@@ -197,7 +198,7 @@ cdc_wait_for_connector_state() {
 
 cdc_read_outbox_probe() {
   local schema="$1" aggregate_type="$2" aggregate_id="$3" output="$4" sql raw row_count
-  local event_id topic message_key partition payload_hex timestamp_ms headers_json
+  local event_id topic message_key partition payload_hex payload_type timestamp_ms headers_json
   local observed_aggregate_type observed_aggregate_id payload_sha reservation_id='' account_id=''
   local partition_json='null'
 
@@ -212,7 +213,7 @@ cdc_read_outbox_probe() {
     || return 1
   [[ -n "$output" ]] || _cdc_fail 'probe output path is required' || return 1
 
-  sql="SELECT event_id::text, topic, message_key, COALESCE(kafka_partition_id::text, 'NULL'), encode(payload, 'hex'), round(extract(epoch from created_at) * 1000)::bigint, headers_json, aggregate_type, aggregate_id FROM ${schema}.outbox WHERE aggregate_type = '${aggregate_type}' AND aggregate_id = '${aggregate_id}'"
+  sql="SELECT event_id::text, topic, message_key, COALESCE(kafka_partition_id::text, 'NULL'), encode(payload, 'hex'), payload_type, round(extract(epoch from created_at) * 1000)::bigint, headers_json, aggregate_type, aggregate_id FROM ${schema}.outbox WHERE aggregate_type = '${aggregate_type}' AND aggregate_id = '${aggregate_id}'"
   raw="$(_cdc_outbox "$sql")" || {
     _cdc_fail \
       "failed to read durable ${aggregate_type} outbox event for business identity $aggregate_id from ${schema}.outbox"
@@ -224,7 +225,7 @@ cdc_read_outbox_probe() {
       "durable ${aggregate_type} outbox event for business identity $aggregate_id in ${schema}.outbox: expected exactly one row, observed $row_count" \
     || return 1
 
-  IFS=$'\t' read -r event_id topic message_key partition payload_hex timestamp_ms headers_json \
+  IFS=$'\t' read -r event_id topic message_key partition payload_hex payload_type timestamp_ms headers_json \
     observed_aggregate_type observed_aggregate_id <<<"$raw"
   _cdc_is_uuid "$event_id" \
     || _cdc_fail \
@@ -234,7 +235,7 @@ cdc_read_outbox_probe() {
     || _cdc_fail \
       "outbox business identity mismatch for event $event_id: expected ${aggregate_type}/$aggregate_id observed ${observed_aggregate_type}/${observed_aggregate_id}" \
     || return 1
-  [[ -n "$topic" && -n "$message_key" && -n "$headers_json" ]] \
+  [[ -n "$topic" && -n "$message_key" && -n "$payload_type" && -n "$headers_json" ]] \
     || _cdc_fail "outbox event $event_id has an incomplete publication contract" \
     || return 1
   _cdc_is_uint "$timestamp_ms" \
@@ -266,6 +267,7 @@ cdc_read_outbox_probe() {
     --arg topic "$topic" \
     --arg payload_hex "${payload_hex,,}" \
     --arg payload_sha256 "$payload_sha" \
+    --arg payload_type "$payload_type" \
     --argjson created_at_unix_ms "$timestamp_ms" \
     --arg headers_json "$headers_json" \
     --arg aggregate_type "$aggregate_type" \
@@ -279,6 +281,7 @@ cdc_read_outbox_probe() {
       topic: $topic,
       payload_hex: $payload_hex,
       payload_sha256: $payload_sha256,
+      payload_type: $payload_type,
       created_at_unix_ms: $created_at_unix_ms,
       headers_json: $headers_json,
       aggregate_type: $aggregate_type,
@@ -295,7 +298,7 @@ cdc_assert_same_probe() {
   event_id="$(_cdc_probe_field "$expected_probe" event_id)"
 
   for field in event_id business_identity reservation_id account_id message_key topic \
-      created_at_unix_ms headers_json aggregate_type explicit_partition; do
+      payload_type created_at_unix_ms headers_json aggregate_type explicit_partition; do
     expected="$(_cdc_probe_field "$expected_probe" "$field")"
     observed="$(_cdc_probe_field "$observed_probe" "$field")"
     if [[ "$expected" != "$observed" ]]; then
@@ -516,8 +519,9 @@ _cdc_read_record_headers() {
 
 _cdc_assert_exact_record_headers() {
   local topic="$1" partition="$2" offset="$3" event_id="$4" expected_header="$5"
+  local expected_event_type="$6"
   local headers remaining token logical_name run_id
-  local event_id_count=0 expected_count=0 logical_name_count=0 task_id_count=0 connector_name_count=0
+  local event_id_count=0 expected_count=0 event_type_count=0 logical_name_count=0 task_id_count=0 connector_name_count=0
   local run_id_count=0 header_count=0
 
   headers="$(_cdc_read_record_headers "$topic" "$partition" "$offset")" || return 1
@@ -530,6 +534,7 @@ _cdc_assert_exact_record_headers() {
     case "$token" in
       "id:${event_id}") event_id_count=$((event_id_count + 1)) ;;
       "$expected_header") expected_count=$((expected_count + 1)) ;;
+      "$expected_event_type") event_type_count=$((event_type_count + 1)) ;;
       __debezium.context.connectorLogicalName:*)
         logical_name="${token#__debezium.context.connectorLogicalName:}"
         [[ -n "$logical_name" ]] \
@@ -553,9 +558,10 @@ _cdc_assert_exact_record_headers() {
     esac
   done
 
-  if (( header_count != 6
+  if (( header_count != 7
       || event_id_count != 1
       || expected_count != 1
+      || event_type_count != 1
       || logical_name_count != 1
       || task_id_count != 1
       || connector_name_count != 1
@@ -597,12 +603,14 @@ _cdc_assert_record_key() {
 
 _cdc_assert_record_metadata() {
   local topic="$1" partition="$2" offset="$3" event_id="$4" expected_key="$5"
-  local expected_timestamp="$6" expected_header="$7" expected_partition="${8:-}"
+  local expected_timestamp="$6" expected_header="$7" expected_event_type="$8"
+  local expected_partition="${9:-}"
   local metadata observed_partition observed_offset
 
   metadata="$(_cdc_read_record_metadata "$topic" "$partition" "$offset")" || return 1
   _cdc_assert_exact_record_headers \
-    "$topic" "$partition" "$offset" "$event_id" "$expected_header" || return 1
+    "$topic" "$partition" "$offset" "$event_id" "$expected_header" \
+    "$expected_event_type" || return 1
   _cdc_assert_record_key "$topic" "$partition" "$offset" "$event_id" "$expected_key" || return 1
   _cdc_tokens_contain "$metadata" "CreateTime:${expected_timestamp}" \
     || _cdc_fail \
@@ -672,8 +680,9 @@ _cdc_assert_record_value_hex() {
 
 _cdc_assert_record_contract() {
   local topic="$1" event_id="$2" baseline_snapshot="$3" expected_key="$4"
-  local expected_timestamp="$5" expected_header="$6" expected_payload_hex="$7"
-  local expected_payload_sha="$8" expected_partition="${9:-}" result_file partition offset
+  local expected_timestamp="$5" expected_header="$6" expected_event_type="$7"
+  local expected_payload_hex="$8" expected_payload_sha="$9"
+  local expected_partition="${10:-}" result_file partition offset
 
   result_file="$(mktemp)"
   if ! _cdc_wait_for_event_after_snapshot \
@@ -684,7 +693,8 @@ _cdc_assert_record_contract() {
   IFS=$'\t' read -r partition offset <"$result_file"
   if ! _cdc_assert_record_metadata \
       "$topic" "$partition" "$offset" "$event_id" "$expected_key" \
-      "$expected_timestamp" "$expected_header" "$expected_partition"; then
+      "$expected_timestamp" "$expected_header" "$expected_event_type" \
+      "$expected_partition"; then
     rm -f "$result_file"
     return 1
   fi
@@ -699,13 +709,14 @@ _cdc_assert_record_contract() {
 
 cdc_assert_probe_publication() {
   local probe="$1" baseline_snapshot="$2"
-  local event_id topic message_key timestamp_ms headers_json payload_hex payload_sha partition
+  local event_id topic message_key timestamp_ms headers_json payload_type payload_hex payload_sha partition
   _cdc_validate_probe "$probe" || return 1
   event_id="$(_cdc_probe_field "$probe" event_id)"
   topic="$(_cdc_probe_field "$probe" topic)"
   message_key="$(_cdc_probe_field "$probe" message_key)"
   timestamp_ms="$(_cdc_probe_field "$probe" created_at_unix_ms)"
   headers_json="$(_cdc_probe_field "$probe" headers_json)"
+  payload_type="$(_cdc_probe_field "$probe" payload_type)"
   payload_hex="$(_cdc_probe_field "$probe" payload_hex)"
   payload_sha="$(_cdc_probe_field "$probe" payload_sha256)"
   partition="$(_cdc_probe_field "$probe" explicit_partition)"
@@ -713,5 +724,6 @@ cdc_assert_probe_publication() {
 
   _cdc_assert_record_contract \
     "$topic" "$event_id" "$baseline_snapshot" "$message_key" "$timestamp_ms" \
-    "headers_json:${headers_json}" "$payload_hex" "$payload_sha" "$partition"
+    "headers_json:${headers_json}" "eventType:${payload_type}" \
+    "$payload_hex" "$payload_sha" "$partition"
 }

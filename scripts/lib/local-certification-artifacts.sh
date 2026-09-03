@@ -82,7 +82,7 @@ certification_phase_outputs_json() {
 }
 
 certification_kubernetes_cdc_delivery_outputs_json() {
-  local file identity content_base64 path
+  local file identity path
   local -a files=(
     verdict.json
     event.json
@@ -121,14 +121,13 @@ certification_kubernetes_cdc_delivery_outputs_json() {
     path="$evidence_dir/cdc-delivery/$file"
     [[ -f "$path" ]] || return 1
     identity="$(sha256sum "$path" | awk '{print "sha256:" $1}')" || return 1
-    content_base64="$(base64 <"$path" | tr -d '\n')" || return 1
     jq -cn \
       --arg identity "$identity" \
       --arg name "risk-cdc-delivery-$file" \
       --arg location "cdc-delivery/$file" \
-      --arg contentBase64 "$content_base64" \
+      --rawfile content "$path" \
       '{kind:"file-content",name:$name,identity:$identity,
-        location:$location,contentBase64:$contentBase64}'
+        location:$location,contentBase64:($content | @base64)}'
   done | jq -s .
 }
 

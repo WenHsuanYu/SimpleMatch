@@ -10,6 +10,11 @@ declare -ga SIMPLEMATCH_FOCUSED_DEPENDENCIES=()
 declare -g SIMPLEMATCH_FOCUSED_FAILURE_REASON=""
 declare -g SIMPLEMATCH_FOCUSED_KIND_CONTEXT=""
 declare -g SIMPLEMATCH_FOCUSED_SOURCE_SIGNATURE=""
+declare -g SIMPLEMATCH_FOCUSED_RETAINED_CDC_RUNTIME_SIGNATURE=""
+declare -g SIMPLEMATCH_FOCUSED_RETAINED_CDC_VERIFIER_SIGNATURE=""
+declare -g SIMPLEMATCH_FOCUSED_CURRENT_CDC_RUNTIME_SIGNATURE=""
+declare -g SIMPLEMATCH_FOCUSED_CURRENT_CDC_VERIFIER_SIGNATURE=""
+declare -g SIMPLEMATCH_FOCUSED_VERIFIER_CHANGED=false
 declare -g SIMPLEMATCH_FOCUSED_CURRENT_REVISION=""
 declare -g SIMPLEMATCH_FOCUSED_IMAGE_LOCK_DIGEST=""
 
@@ -21,9 +26,27 @@ declare -g SIMPLEMATCH_FOCUSED_IMAGE_LOCK_DIGEST=""
 : "${focused_preflight_deadline_epoch:=0}"
 : "${focused_image_transport:=}"
 : "${focused_image_lock:=}"
+: "${focused_verifier_contract_script:=}"
+: "${focused_verifier_contract_output:=}"
 
 simplematch_focused_failure_reason() {
   printf '%s\n' "$SIMPLEMATCH_FOCUSED_FAILURE_REASON"
+}
+
+simplematch_focused_source_signature() {
+  printf '%s\n' "$SIMPLEMATCH_FOCUSED_SOURCE_SIGNATURE"
+}
+
+simplematch_focused_current_cdc_runtime_signature() {
+  printf '%s\n' "$SIMPLEMATCH_FOCUSED_CURRENT_CDC_RUNTIME_SIGNATURE"
+}
+
+simplematch_focused_current_cdc_verifier_signature() {
+  printf '%s\n' "$SIMPLEMATCH_FOCUSED_CURRENT_CDC_VERIFIER_SIGNATURE"
+}
+
+simplematch_focused_verifier_changed() {
+  printf '%s\n' "$SIMPLEMATCH_FOCUSED_VERIFIER_CHANGED"
 }
 
 simplematch_focused_fail() {
@@ -53,6 +76,7 @@ simplematch_focused_load_context() {
     value="${line#*=}"
     case "$key" in
       run_id|namespace|cluster|trading_day|image_tag|image_transport|source_signature|\
+      cdc_runtime_signature|cdc_verifier_signature|\
       skip_build|skip_compose|skip_kubernetes|matching_fleet_only)
         ;;
       *)
@@ -71,6 +95,7 @@ simplematch_focused_load_context() {
 
   for key in \
       run_id namespace cluster trading_day image_tag image_transport source_signature \
+      cdc_runtime_signature cdc_verifier_signature \
       skip_build skip_compose skip_kubernetes matching_fleet_only; do
     [[ -n "${SIMPLEMATCH_FOCUSED_CONTEXT[$key]+x}" ]] || \
       simplematch_focused_fail "retained run context is missing $key" || return 1
@@ -79,6 +104,7 @@ simplematch_focused_load_context() {
 
 simplematch_focused_validate_context() {
   local run_id namespace cluster trading_day image_tag image_transport source_signature
+  local cdc_runtime_signature cdc_verifier_signature
   local skip_build skip_compose skip_kubernetes matching_fleet_only
 
   run_id="$(simplematch_focused_context_value run_id)"
@@ -88,6 +114,8 @@ simplematch_focused_validate_context() {
   image_tag="$(simplematch_focused_context_value image_tag)"
   image_transport="$(simplematch_focused_context_value image_transport)"
   source_signature="$(simplematch_focused_context_value source_signature)"
+  cdc_runtime_signature="$(simplematch_focused_context_value cdc_runtime_signature)"
+  cdc_verifier_signature="$(simplematch_focused_context_value cdc_verifier_signature)"
   skip_build="$(simplematch_focused_context_value skip_build)"
   skip_compose="$(simplematch_focused_context_value skip_compose)"
   skip_kubernetes="$(simplematch_focused_context_value skip_kubernetes)"
@@ -108,6 +136,14 @@ simplematch_focused_validate_context() {
   [[ "$source_signature" =~ ^[0-9a-f]{64}$ ]] || \
     simplematch_focused_fail 'retained source signature is not a canonical SHA-256' ||
     return 1
+  [[ "$cdc_runtime_signature" =~ ^[0-9a-f]{64}$ ]] || \
+    simplematch_focused_fail \
+      'retained CDC runtime signature is not a canonical SHA-256; create a fresh full run' ||
+    return 1
+  [[ "$cdc_verifier_signature" =~ ^[0-9a-f]{64}$ ]] || \
+    simplematch_focused_fail \
+      'retained CDC verifier signature is not a canonical SHA-256; create a fresh full run' ||
+    return 1
   [[ "$skip_build" == false && "$skip_compose" == false &&
     "$skip_kubernetes" == false && "$matching_fleet_only" == false ]] ||
     simplematch_focused_fail \
@@ -115,6 +151,8 @@ simplematch_focused_validate_context() {
 
   SIMPLEMATCH_FOCUSED_KIND_CONTEXT="kind-$cluster"
   SIMPLEMATCH_FOCUSED_SOURCE_SIGNATURE="$source_signature"
+  SIMPLEMATCH_FOCUSED_RETAINED_CDC_RUNTIME_SIGNATURE="$cdc_runtime_signature"
+  SIMPLEMATCH_FOCUSED_RETAINED_CDC_VERIFIER_SIGNATURE="$cdc_verifier_signature"
   focused_image_transport="$image_transport"
 }
 
@@ -292,6 +330,35 @@ simplematch_focused_validate_kubernetes_inputs() {
   done
 }
 
+simplematch_focused_validate_workload_image_binding() {
+  local workload_json="$1"
+  local service="$2"
+  local expected_image="$3"
+
+  case "$service" in
+    flyway-runner)
+      jq -e --arg image "$expected_image" '
+        [.items[]?
+          | select((.metadata.name // "") | endswith("-flyway"))
+          | .spec.template.spec.containers[]?.image] as $images
+        | ($images | length > 0) and all($images[]; . == $image)
+      ' <<<"$workload_json" >/dev/null || simplematch_focused_fail \
+        'retained Flyway workloads are not all bound to the flyway image' || return 1
+      ;;
+    *)
+      jq -e --arg name "$service" --arg image "$expected_image" '
+        any(.items[]?;
+          .metadata.name == $name and
+          ([.spec.template.spec.containers[]?.image] as $images
+            | ($images | length > 0) and all($images[]; . == $image))
+        )
+      ' <<<"$workload_json" >/dev/null || simplematch_focused_fail \
+        "retained workload image binding does not match the immutable lock for $service" ||
+        return 1
+      ;;
+  esac
+}
+
 simplematch_focused_validate_image_inputs() {
   local namespace="$1"
   local workload_json workload_images expected_image service entry
@@ -324,12 +391,59 @@ simplematch_focused_validate_image_inputs() {
     entry="$(simplematch_local_image_lock_entry "$focused_image_lock" "$service")" ||
       simplematch_focused_fail "retained image lock has no entry for $service" || return 1
     expected_image="${entry##*|}"
-    grep -Fxq "$expected_image" <<<"$workload_images" || simplematch_focused_fail \
-      "retained workload image for $service does not match its immutable lock digest" || return 1
+    simplematch_focused_validate_workload_image_binding \
+      "$workload_json" "$service" "$expected_image" || return 1
   done
   grep -Fxq 'quay.io/debezium/connect:3.6.0.Final' <<<"$workload_images" ||
     simplematch_focused_fail \
       'retained Kafka Connect workload does not use the pinned Debezium 3.6 image' || return 1
+}
+
+simplematch_focused_validate_scoped_provenance() {
+  local current_runtime_signature current_verifier_signature
+
+  current_runtime_signature="$(
+    simplematch_certification_cdc_runtime_signature "$focused_repo_root"
+  )" || simplematch_focused_fail \
+    'could not calculate the current CDC runtime signature' || return 1
+  [[ "$current_runtime_signature" =~ ^[0-9a-f]{64}$ ]] || \
+    simplematch_focused_fail \
+      'current CDC runtime signature is not a canonical SHA-256' || return 1
+  SIMPLEMATCH_FOCUSED_CURRENT_CDC_RUNTIME_SIGNATURE="$current_runtime_signature"
+  [[ "$current_runtime_signature" == \
+    "$SIMPLEMATCH_FOCUSED_RETAINED_CDC_RUNTIME_SIGNATURE" ]] || \
+    simplematch_focused_fail \
+      'retained CDC runtime signature differs; create a fresh full run' || return 1
+
+  current_verifier_signature="$(
+    simplematch_certification_cdc_verifier_signature "$focused_repo_root"
+  )" || simplematch_focused_fail \
+    'could not calculate the current CDC verifier signature' || return 1
+  [[ "$current_verifier_signature" =~ ^[0-9a-f]{64}$ ]] || \
+    simplematch_focused_fail \
+      'current CDC verifier signature is not a canonical SHA-256' || return 1
+  SIMPLEMATCH_FOCUSED_CURRENT_CDC_VERIFIER_SIGNATURE="$current_verifier_signature"
+  if [[ "$current_verifier_signature" != \
+    "$SIMPLEMATCH_FOCUSED_RETAINED_CDC_VERIFIER_SIGNATURE" ]]; then
+    SIMPLEMATCH_FOCUSED_VERIFIER_CHANGED=true
+  fi
+}
+
+simplematch_focused_validate_verifier_contract() {
+  local remaining
+
+  [[ -x "$focused_verifier_contract_script" ]] || simplematch_focused_fail \
+    "CDC verifier contract script is missing or not executable: $focused_verifier_contract_script" ||
+    return 1
+  [[ -n "$focused_verifier_contract_output" ]] || simplematch_focused_fail \
+    'CDC verifier contract output path is not configured' || return 1
+  remaining="$(simplematch_focused_remaining_seconds)" || simplematch_focused_fail \
+    'focused preflight deadline expired before the CDC verifier contract' || return 1
+  if ! timeout "$remaining" "$focused_verifier_contract_script" \
+      >"$focused_verifier_contract_output" 2>&1; then
+    simplematch_focused_fail \
+      "CDC verifier contract failed; inspect $focused_verifier_contract_output" || return 1
+  fi
 }
 
 simplematch_focused_preflight() {
@@ -342,13 +456,12 @@ simplematch_focused_preflight() {
   )" || simplematch_focused_fail 'current certification source is not clean' || return 1
   [[ -n "$SIMPLEMATCH_FOCUSED_CURRENT_REVISION" ]] || simplematch_focused_fail \
     'current certification source revision is empty' || return 1
-  [[ "$(simplematch_certification_source_signature "$focused_repo_root")" == \
-    "$SIMPLEMATCH_FOCUSED_SOURCE_SIGNATURE" ]] || simplematch_focused_fail \
-    'retained source signature does not match the current certification source' || return 1
+  simplematch_focused_validate_scoped_provenance || return 1
 
   namespace="$(simplematch_focused_context_value namespace)"
   simplematch_focused_validate_namespace "$namespace" || return 1
   simplematch_focused_validate_dependencies || return 1
   simplematch_focused_validate_image_inputs "$namespace" || return 1
   simplematch_focused_validate_kubernetes_inputs "$namespace" || return 1
+  simplematch_focused_validate_verifier_contract || return 1
 }

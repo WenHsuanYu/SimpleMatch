@@ -318,7 +318,7 @@ certification_write_phase_result() {
   local reason="$6"
   local execution_json="$7"
   local outputs_json="$8"
-  local result_path temp_path source_revision definition_version planning_json
+  local result_path temp_path outputs_temp source_revision definition_version planning_json
 
   _certification_validate_execution_json "$execution_json" || return 1
   jq -e 'type == "array"' <<<"$outputs_json" >/dev/null 2>&1 || return 1
@@ -328,6 +328,14 @@ certification_write_phase_result() {
   planning_json="$(certification_plan_phase_planning_json "$phase_id")" || return 1
   mkdir -p "$(dirname -- "$result_path")" || return 1
   temp_path="$(mktemp "${result_path}.tmp.XXXXXX")" || return 1
+  outputs_temp="$(mktemp "${result_path}.outputs.XXXXXX")" || {
+    rm -f -- "$temp_path"
+    return 1
+  }
+  printf '%s\n' "$outputs_json" >"$outputs_temp" || {
+    rm -f -- "$temp_path" "$outputs_temp"
+    return 1
+  }
 
   jq -n \
     --arg phase "$phase_id" \
@@ -340,7 +348,7 @@ certification_write_phase_result() {
     --arg sourceRevision "$source_revision" \
     --argjson execution "$execution_json" \
     --argjson planning "$planning_json" \
-    --argjson outputs "$outputs_json" '
+    --slurpfile outputs "$outputs_temp" '
       {
         schemaVersion: 1,
         phaseId: $phase,
@@ -352,12 +360,16 @@ certification_write_phase_result() {
         reason: $reason,
         planning: $planning,
         execution: ($execution + {sourceRevision: $sourceRevision}),
-        outputs: $outputs
+        outputs: $outputs[0]
       }
     ' >"$temp_path" || {
-      rm -f -- "$temp_path"
-      return 1
-    }
+    rm -f -- "$temp_path" "$outputs_temp"
+    return 1
+  }
+  rm -f -- "$outputs_temp" || {
+    rm -f -- "$temp_path"
+    return 1
+  }
   mv -f -- "$temp_path" "$result_path" || {
     rm -f -- "$temp_path"
     return 1

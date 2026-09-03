@@ -48,6 +48,7 @@ MOCK_KAFKA_PAYLOAD='account-payload-v1'
 MOCK_KEY='account-42'
 MOCK_TIMESTAMP='2000'
 MOCK_RUN_ID='11111111-2222-4333-8444-555555555555'
+MOCK_PAYLOAD_TYPE='account.v1'
 MOCK_EXTRA_HEADER=''
 MOCK_CONNECTOR_STATE='RUNNING'
 MOCK_MODE='locator'
@@ -59,6 +60,7 @@ reset_mock() {
   MOCK_KEY='account-42'
   MOCK_TIMESTAMP='2000'
   MOCK_RUN_ID='11111111-2222-4333-8444-555555555555'
+  MOCK_PAYLOAD_TYPE='account.v1'
   MOCK_EXTRA_HEADER=''
   MOCK_CONNECTOR_STATE='RUNNING'
   printf '0\n' >"$MOCK_OFFSET_CALL_FILE"
@@ -73,12 +75,13 @@ mock_outbox_exec() {
   [[ "$sql" == *"aggregate_id = 'reservation-42'"* ]] \
     || fail "outbox adapter did not receive business identity: $sql"
   payload_hex="$(printf '%s' "$MOCK_OUTBOX_PAYLOAD" | od -An -tx1 | tr -d ' \n')"
-  printf '%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\n' \
+  printf '%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\n' \
     "$MOCK_TARGET_EVENT" \
     'account.lifecycle' \
     'account-42' \
     'NULL' \
     "$payload_hex" \
+    "$MOCK_PAYLOAD_TYPE" \
     '2000' \
     '{"trace-id":"account-42"}' \
     'account_reservation' \
@@ -179,8 +182,10 @@ mock_kafka_exec() {
       if [[ "$print_headers" == true && "$print_key" == false && "$print_partition" == false && "$print_offset" == false && "$print_timestamp" == false ]]; then
         [[ "$partition" == 1 && "$offset" == 2 && "$max_messages" == 1 ]] \
           || fail "header read used unexpected location $partition:$offset max=$max_messages"
-        printf 'id:%s%sheaders_json:{"trace-id":"account-42"}%s__debezium.context.connectorLogicalName:simplematch-account-service%s__debezium.context.taskId:0%s__debezium.context.connectorName:postgresql%s__debezium.context.runId:%s' \
+        printf 'id:%s%seventType:%s%sheaders_json:{"trace-id":"account-42"}%s__debezium.context.connectorLogicalName:simplematch-account-service%s__debezium.context.taskId:0%s__debezium.context.connectorName:postgresql%s__debezium.context.runId:%s' \
           "$MOCK_TARGET_EVENT" \
+          "$CDC_VERIFIER_HEADER_SEPARATOR" \
+          "$MOCK_PAYLOAD_TYPE" \
           "$CDC_VERIFIER_HEADER_SEPARATOR" \
           "$CDC_VERIFIER_HEADER_SEPARATOR" \
           "$CDC_VERIFIER_HEADER_SEPARATOR" \
@@ -233,6 +238,7 @@ assert_equal "$(jq -r '.payload_sha256' "$probe")" \
   'c09d6057ae3b359e92ee548380b7ad736e39b62c439e8ce8d9fd83ac7d2a3791' \
   'probe payload digest'
 assert_equal "$(jq -r '.created_at_unix_ms' "$probe")" '2000' 'probe timestamp'
+assert_equal "$(jq -r '.payload_type' "$probe")" 'account.v1' 'probe payload type'
 assert_equal "$(jq -r '.explicit_partition' "$probe")" 'null' 'probe nullable partition'
 
 cdc_wait_for_connector_state account-service-outbox RUNNING

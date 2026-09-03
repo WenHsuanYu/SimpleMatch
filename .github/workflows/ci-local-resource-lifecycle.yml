@@ -46,6 +46,7 @@ on:
       - 'scripts/test-local-certification-review-hardening.sh'
       - 'scripts/test-local-certification-output-lineage.sh'
       - 'scripts/test-local-certification-artifact-fingerprint.sh'
+      - 'scripts/test-local-certification-provenance.sh'
       - 'scripts/test-local-certification-reuse-measurement.sh'
       - 'scripts/test-local-certification-job-supervision.sh'
       - 'scripts/test-local-certification-trading-day.sh'
@@ -110,6 +111,7 @@ jobs:
           bash scripts/test-local-certification-review-hardening.sh
           bash scripts/test-local-certification-output-lineage.sh
           bash scripts/test-local-certification-artifact-fingerprint.sh
+          bash scripts/test-local-certification-provenance.sh
           bash scripts/test-local-certification-reuse-measurement.sh
           bash scripts/test-local-production-like.sh
           bash scripts/test-local-resource-report.sh

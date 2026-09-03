@@ -309,7 +309,6 @@ certification_image_input_manifest() {
         settings.gradle.kts build.gradle.kts gradlew gradlew.bat \
         scripts/build-local-images.sh scripts/lib/local-image-inventory.sh \
         scripts/lib/local-certification-images.sh \
-        scripts/lib/local-certification-artifacts.sh \
         scripts/lib/local-certification-fingerprint.sh || return 1
       certification_fingerprint_paths "services/$service" || return 1
       _certification_spring_toolchain_identity || return 1
@@ -322,7 +321,6 @@ certification_image_input_manifest() {
         "$build_source" scripts/build-local-images.sh \
         scripts/lib/local-image-inventory.sh \
         scripts/lib/local-certification-images.sh \
-        scripts/lib/local-certification-artifacts.sh \
         scripts/lib/local-certification-fingerprint.sh || return 1
       _certification_dockerfile_base_identities "$build_source" || return 1
       printf 'repository\t%s\n' "$repository"
@@ -357,7 +355,6 @@ _certification_registry_publish_manifest() {
     scripts/lib/local-image-inventory.sh \
     scripts/lib/local-image-transport.sh \
     scripts/lib/local-certification-images.sh \
-    scripts/lib/local-certification-artifacts.sh \
     scripts/lib/local-certification-fingerprint.sh || return 1
   printf 'phase\t%s\n' "$phase_id"
   printf 'version\t%s\n' "$phase_version"
@@ -377,7 +374,6 @@ _certification_registry_lock_manifest() {
     scripts/lib/local-image-inventory.sh \
     scripts/lib/local-image-transport.sh \
     scripts/lib/local-certification-images.sh \
-    scripts/lib/local-certification-artifacts.sh \
     scripts/lib/local-certification-fingerprint.sh || return 1
   printf 'phase\tregistry-image-lock\n'
   printf 'version\t%s\n' "$phase_version"
@@ -390,18 +386,50 @@ _certification_registry_lock_manifest() {
 }
 
 _certification_fixture_validator_identity_manifest() {
-  local configured_path absolute_path digest=missing
+  local configured_path absolute_path relative_path digest
 
   configured_path="${SIMPLEMATCH_MATCHING_FIXTURE_PUBLISHER_BIN:-$repo_root/out/build/full-native-dev/simplematch-matching-kafka-fixture-publisher}"
-  absolute_path="$configured_path"
-  if [[ "$absolute_path" != /* ]]; then
-    absolute_path="$repo_root/$absolute_path"
+  if [[ "$configured_path" == /* ]]; then
+    case "$configured_path" in
+      "$repo_root"/*)
+        relative_path="${configured_path#"$repo_root/"}"
+        ;;
+      *)
+        printf 'fixture validator path is outside repository: %s\n' \
+          "$configured_path" >&2
+        return 1
+        ;;
+    esac
+  else
+    relative_path="${configured_path#./}"
   fi
-  if [[ -f "$absolute_path" ]]; then
-    digest="$(sha256sum "$absolute_path" | awk '{print $1}')" || digest=invalid
-  fi
+
+  case "/$relative_path/" in
+    */../*)
+      printf 'fixture validator path contains traversal: %s\n' \
+        "$configured_path" >&2
+      return 1
+      ;;
+  esac
+  [[ -n "$relative_path" && "$relative_path" != /* ]] || {
+    printf 'fixture validator path is not repository-relative: %s\n' \
+      "$configured_path" >&2
+    return 1
+  }
+
+  absolute_path="$repo_root/$relative_path"
+  [[ -f "$absolute_path" && -x "$absolute_path" ]] || {
+    printf 'fixture validator is missing or not executable: %s\n' \
+      "$relative_path" >&2
+    return 1
+  }
+  digest="$(sha256sum "$absolute_path" | awk '{print $1}')" || return 1
+  [[ "$digest" =~ ^[0-9a-f]{64}$ ]] || {
+    printf 'fixture validator digest is invalid: %s\n' "$relative_path" >&2
+    return 1
+  }
   printf 'validatorPath\t%s\nvalidatorSha256\t%s\n' \
-    "$configured_path" "$digest"
+    "$relative_path" "$digest"
 }
 
 certification_phase_input_manifest() {
@@ -501,7 +529,6 @@ certification_phase_input_manifest() {
         deploy/k8s/account-service-outbox-connector-configmap.yaml \
         deploy/k8s/marketdata-publisher-outbox-connector-configmap.yaml \
         scripts/test-kubernetes-overlays.sh scripts/test-local-kubernetes-dependencies.sh \
-        scripts/lib/local-certification-artifacts.sh \
         scripts/lib/local-certification-fingerprint.sh \
         -- "phase=$phase_id" "version=$phase_version" \
         "observerTimeoutSeconds=${SIMPLEMATCH_CDC_OBSERVER_TIMEOUT_SECONDS:-180}" \
@@ -519,7 +546,6 @@ certification_phase_input_manifest() {
         scripts/validate-matching-producer-contract.sh \
         scripts/lib/matching-topic-profile.sh \
         scripts/lib/local-certification-kafka.sh \
-        scripts/lib/local-certification-artifacts.sh \
         scripts/testdata/matching-topic-profile config/kafka \
         scripts/lib/local-certification-fingerprint.sh \
         -- "phase=$phase_id" "version=$phase_version"

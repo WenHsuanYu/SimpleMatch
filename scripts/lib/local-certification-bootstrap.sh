@@ -95,11 +95,14 @@ phase_marker_directory="$evidence_dir/phase-markers"
 run_context_file="$evidence_dir/run-context"
 certification_deadline_epoch=$(( $(date +%s) + certification_timeout_seconds ))
 source_signature="$(simplematch_certification_source_signature "$repo_root")"
+cdc_runtime_signature="$(simplematch_certification_cdc_runtime_signature "$repo_root")"
+cdc_verifier_signature="$(simplematch_certification_cdc_verifier_signature "$repo_root")"
 
 _certification_run_context() {
-  printf 'run_id=%s\nnamespace=%s\ncluster=%s\ntrading_day=%s\nimage_tag=%s\nimage_transport=%s\nsource_signature=%s\nskip_build=%s\nskip_compose=%s\nskip_kubernetes=%s\nmatching_fleet_only=%s\n' \
+  printf 'run_id=%s\nnamespace=%s\ncluster=%s\ntrading_day=%s\nimage_tag=%s\nimage_transport=%s\nsource_signature=%s\ncdc_runtime_signature=%s\ncdc_verifier_signature=%s\nskip_build=%s\nskip_compose=%s\nskip_kubernetes=%s\nmatching_fleet_only=%s\n' \
     "$run_id" "$namespace" "$kind_cluster" "$certification_trading_day" \
     "$image_tag" "$image_transport" "$source_signature" \
+    "$cdc_runtime_signature" "$cdc_verifier_signature" \
     "$skip_build" "$skip_compose" "$skip_kubernetes" "$matching_fleet_only"
 }
 

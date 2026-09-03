@@ -118,6 +118,39 @@ jq -e '
     (.location | startswith("cdc-delivery/")) and
     (.contentBase64 | type == "string" and length > 0))
 ' <<<"$cdc_outputs" >/dev/null || fail 'Risk CDC evidence output is incomplete'
+
+# Keep the adapter bounded by jq's file input path rather than argv.  Real
+# observer logs can exceed the host argument-size limit even though the
+# individual evidence files are valid and should remain materializable.
+dd if=/dev/zero bs=1024 count=2048 status=none | tr '\0' x \
+  >"$cdc_evidence_dir/risk-service.log"
+large_cdc_outputs="$(certification_phase_outputs_json kubernetes-cdc-delivery)" || \
+  fail 'Risk CDC evidence output rejected a large safe-log report'
+jq -e '
+  map(select(.name == "risk-cdc-delivery-risk-service.log")) |
+  (length == 1 and (.[0].contentBase64 | length > 2000000))
+' <<<"$large_cdc_outputs" >/dev/null || \
+  fail 'Risk CDC evidence output did not preserve a large safe-log report'
+
+certification_plan_file="$evidence_dir/plan.json"
+jq -n '{schemaVersion:1,phases:[{
+  phaseId:"kubernetes-cdc-delivery",
+  planning:{lookupDurationMillis:0,revalidationDurationMillis:0}
+}]}' >"$certification_plan_file"
+certification_write_phase_result \
+  kubernetes-cdc-delivery EXECUTED PASS \
+  "sha256:$(printf cdc-input | sha256sum | awk '{print $1}')" '' \
+  'large output test' \
+  '{"startedAtUtc":"2026-08-28T00:00:00Z","completedAtUtc":"2026-08-28T00:00:01Z","durationMillis":1000}' \
+  "$large_cdc_outputs" >/dev/null || \
+  fail 'Risk CDC phase result could not materialize large outputs'
+jq -e '
+  .status == "PASS" and (.outputs | length) == 31 and
+  any(.outputs[]; .name == "risk-cdc-delivery-risk-service.log" and
+    (.contentBase64 | length > 2000000))
+' "$evidence_dir/phases/kubernetes-cdc-delivery/result.json" >/dev/null || \
+  fail 'Risk CDC phase result lost large output content'
+
 rm -f -- "$cdc_evidence_dir/risk-service.log"
 if certification_phase_outputs_json kubernetes-cdc-delivery >/dev/null; then
   fail 'Risk CDC evidence output accepted a missing safe-log report'

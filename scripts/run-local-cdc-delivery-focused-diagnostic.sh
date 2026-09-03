@@ -23,6 +23,8 @@ focused_preflight_deadline_epoch=0
 focused_image_transport=""
 focused_image_lock=""
 focused_observer_script="${SIMPLEMATCH_CDC_OBSERVER_SCRIPT:-$script_dir/run-risk-cdc-delivery-observer-check.sh}"
+focused_verifier_contract_script="${SIMPLEMATCH_CDC_OBSERVER_CONTRACT_SCRIPT:-$script_dir/test-cdc-observer-fixture-contract.sh}"
+focused_verifier_contract_output=""
 focused_observer_status=""
 
 usage() {
@@ -33,9 +35,11 @@ Usage:
 
 Validate one retained full production-like run, then run only the Risk CDC
 delivery observer. The run-context is the sole source of namespace, run-id,
-cluster, source, image, and proof-profile identity. The command writes a
-diagnostic-only verdict below the retained evidence directory and never edits
-the full certification plan or phase result.
+cluster, image, and proof-profile identity. The retained CDC runtime signature
+must match the current CDC deployment inputs; verifier-only changes are checked
+by the fast observer contract before the command writes a diagnostic-only
+verdict below the retained evidence directory. It never edits the full
+certification plan or phase result.
 EOF_USAGE
 }
 
@@ -49,7 +53,8 @@ write_verdict() {
   local reason="$2"
   local observer_status_json=null
   local dependencies_json='[]'
-  local namespace='' run_id='' source_signature=''
+  local namespace='' run_id='' source_signature='' runtime_signature=''
+  local verifier_signature='' current_verifier_signature='' verifier_changed='null'
 
   if [[ -n "${focused_observer_status:-}" &&
     "$focused_observer_status" =~ ^[0-9]+$ ]]; then
@@ -62,7 +67,14 @@ write_verdict() {
   fi
   namespace="${SIMPLEMATCH_FOCUSED_CONTEXT[namespace]:-}"
   run_id="${SIMPLEMATCH_FOCUSED_CONTEXT[run_id]:-}"
-  source_signature="${SIMPLEMATCH_FOCUSED_CONTEXT[source_signature]:-}"
+  source_signature="$(simplematch_focused_source_signature)"
+  runtime_signature="${SIMPLEMATCH_FOCUSED_CONTEXT[cdc_runtime_signature]:-}"
+  verifier_signature="${SIMPLEMATCH_FOCUSED_CONTEXT[cdc_verifier_signature]:-}"
+  current_verifier_signature="$(simplematch_focused_current_cdc_verifier_signature)"
+  if [[ "$current_verifier_signature" =~ ^[0-9a-f]{64}$ ]]; then
+    verifier_changed="$([[ "$(simplematch_focused_verifier_changed)" == true ]] &&
+      printf true || printf false)"
+  fi
   jq -n \
     --arg status "$status" \
     --arg mode FOCUSED_DIAGNOSTIC \
@@ -70,6 +82,10 @@ write_verdict() {
     --arg namespace "$namespace" \
     --arg runId "$run_id" \
     --arg sourceSignature "$source_signature" \
+    --arg cdcRuntimeSignature "$runtime_signature" \
+    --arg cdcVerifierSignature "$verifier_signature" \
+    --arg currentCdcVerifierSignature "$current_verifier_signature" \
+    --argjson verifierChanged "$verifier_changed" \
     --arg reason "$reason" \
     --arg createdAtUtc "$(date -u +%Y-%m-%dT%H:%M:%S.%3NZ)" \
     --argjson dependencies "$dependencies_json" \
@@ -80,6 +96,10 @@ write_verdict() {
       fullCertification: false, targetPhase: $targetPhase,
       namespace: $namespace, runId: $runId,
       sourceSignature: $sourceSignature,
+      cdcRuntimeSignature: $cdcRuntimeSignature,
+      retainedCdcVerifierSignature: $cdcVerifierSignature,
+      currentCdcVerifierSignature: $currentCdcVerifierSignature,
+      verifierChanged: $verifierChanged,
       dependencies: $dependencies, imageLockDigest:
         (if $imageLockDigest == "" then null else ("sha256:" + $imageLockDigest) end),
       observerStatus: $observerStatus,
@@ -131,12 +151,15 @@ command -v "$focused_kubectl_bin" >/dev/null 2>&1 || die \
   "kubectl executable is missing: $focused_kubectl_bin"
 [[ -x "$focused_observer_script" ]] || die \
   "CDC observer script is missing or not executable: $focused_observer_script"
+[[ -x "$focused_verifier_contract_script" ]] || die \
+  "CDC verifier contract script is missing or not executable: $focused_verifier_contract_script"
 
 focused_evidence_dir="$(cd -- "$focused_evidence_dir" && pwd)"
 focused_image_lock="$focused_evidence_dir/local-images.lock"
 focused_preflight_deadline_epoch=$(( $(date +%s) + 60 ))
 focused_output_dir="$focused_evidence_dir/focused-diagnostics/cdc-delivery/$(date -u +%Y%m%d-%H%M%S)-$$"
 mkdir -p "$focused_output_dir/observer"
+focused_verifier_contract_output="$focused_output_dir/verifier-contract.log"
 
 if ! simplematch_focused_preflight; then
   failure_reason="$(simplematch_focused_failure_reason)"
@@ -148,7 +171,15 @@ cat >"$focused_output_dir/preflight.json" <<EOF_PREFLIGHT
 $(jq -n \
   --arg status PASS \
   --arg sourceRevision "$SIMPLEMATCH_FOCUSED_CURRENT_REVISION" \
-  --arg sourceSignature "$SIMPLEMATCH_FOCUSED_SOURCE_SIGNATURE" \
+  --arg sourceSignature "$(simplematch_focused_source_signature)" \
+  --arg cdcRuntimeSignature \
+    "$(simplematch_focused_current_cdc_runtime_signature)" \
+  --arg retainedCdcVerifierSignature \
+    "$SIMPLEMATCH_FOCUSED_RETAINED_CDC_VERIFIER_SIGNATURE" \
+  --arg currentCdcVerifierSignature \
+    "$(simplematch_focused_current_cdc_verifier_signature)" \
+  --argjson verifierChanged \
+    "$([[ "$(simplematch_focused_verifier_changed)" == true ]] && printf true || printf false)" \
   --arg imageLockDigest "sha256:$SIMPLEMATCH_FOCUSED_IMAGE_LOCK_DIGEST" \
   --arg namespace "${SIMPLEMATCH_FOCUSED_CONTEXT[namespace]}" \
   --arg runId "${SIMPLEMATCH_FOCUSED_CONTEXT[run_id]}" \
@@ -159,6 +190,10 @@ $(jq -n \
   '{schemaVersion: 1, status: $status, namespace: $namespace,
     runId: $runId, kubernetesContext: $context,
     sourceRevision: $sourceRevision, sourceSignature: $sourceSignature,
+    cdcRuntimeSignature: $cdcRuntimeSignature,
+    retainedCdcVerifierSignature: $retainedCdcVerifierSignature,
+    currentCdcVerifierSignature: $currentCdcVerifierSignature,
+    verifierChanged: $verifierChanged,
     imageLockDigest: $imageLockDigest, dependencies: $dependencies}')
 EOF_PREFLIGHT
 

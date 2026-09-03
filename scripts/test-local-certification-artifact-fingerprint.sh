@@ -50,10 +50,27 @@ for path in \
   write_fixture_file "$path"
 done
 chmod 0755 "$fixture_root/gradlew"
+mkdir -p "$fixture_root/out/build/full-native-dev"
+printf '%s\n' '#!/usr/bin/env bash' 'exit 0' \
+  >"$fixture_root/out/build/full-native-dev/simplematch-matching-kafka-fixture-publisher"
+chmod 0755 "$fixture_root/out/build/full-native-dev/simplematch-matching-kafka-fixture-publisher"
 git -C "$fixture_root" init -q
 git -C "$fixture_root" add .
 repo_root="$fixture_root"
 image_tag=local
+
+validator_manifest="$(_certification_fixture_validator_identity_manifest)" || \
+  fail 'fixture validator identity could not be calculated'
+[[ "$validator_manifest" == *$'validatorPath\tout/build/full-native-dev/simplematch-matching-kafka-fixture-publisher'* ]] || \
+  fail 'fixture validator identity exposed an absolute path'
+if SIMPLEMATCH_MATCHING_FIXTURE_PUBLISHER_BIN="$fixture_root/missing-validator" \
+    _certification_fixture_validator_identity_manifest >/dev/null 2>&1; then
+  fail 'missing fixture validator unexpectedly passed'
+fi
+if SIMPLEMATCH_MATCHING_FIXTURE_PUBLISHER_BIN=/tmp/simplematch-validator-outside \
+    _certification_fixture_validator_identity_manifest >/dev/null 2>&1; then
+  fail 'outside-repository fixture validator unexpectedly passed'
+fi
 
 _certification_spring_toolchain_identity() {
   printf '%s\n' \
@@ -90,6 +107,8 @@ registry_before="$(certification_phase_fingerprint registry-publish/account-serv
 kafka_before="$(certification_phase_fingerprint kafka-producer-contract)" ||
   fail 'Kafka producer fingerprint could not be calculated'
 
+# The artifact adapter records or materializes a completed result; it is not an
+# input to the build, publication, or producer-contract commands themselves.
 printf '%s\n' 'fixture:artifact-seam:v2' \
   >"$fixture_root/scripts/lib/local-certification-artifacts.sh"
 
@@ -100,11 +119,11 @@ registry_after="$(certification_phase_fingerprint registry-publish/account-servi
 kafka_after="$(certification_phase_fingerprint kafka-producer-contract)" ||
   fail 'Kafka producer fingerprint could not be recalculated'
 
-[[ "$image_before" != "$image_after" ]] ||
-  fail 'artifact seam change did not invalidate application image evidence'
-[[ "$registry_before" != "$registry_after" ]] ||
-  fail 'artifact seam change did not invalidate registry publication evidence'
-[[ "$kafka_before" != "$kafka_after" ]] ||
-  fail 'artifact seam change did not invalidate Kafka producer evidence'
+[[ "$image_before" == "$image_after" ]] ||
+  fail 'artifact-only change unnecessarily invalidated application image evidence'
+[[ "$registry_before" == "$registry_after" ]] ||
+  fail 'artifact-only change unnecessarily invalidated registry publication evidence'
+[[ "$kafka_before" == "$kafka_after" ]] ||
+  fail 'artifact-only change unnecessarily invalidated Kafka producer evidence'
 
 printf '%s\n' 'Artifact adapter fingerprint contracts are valid.'

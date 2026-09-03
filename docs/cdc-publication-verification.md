@@ -193,13 +193,22 @@ bash scripts/run-local-cdc-delivery-focused-diagnostic.sh \
   --timeout-seconds 180
 ```
 
-The command reads the retained `run-context`, verifies that the current source signature, full proof
-profile, disposable namespace/run-id, executed dependency results, immutable image lock, deployed
-workload images, session ConfigMaps, and PostgreSQL secrets still agree, and only then invokes the
-existing observer. It writes a `FOCUSED_DIAGNOSTIC` verdict below the retained run's
+The command reads the retained `run-context`, verifies the full proof profile, disposable
+namespace/run-id, executed dependency results, immutable image lock, deployed workload images,
+session ConfigMaps, and PostgreSQL secrets, and only then invokes the existing observer. The
+run-context records two scoped identities for this continuation: `cdc_runtime_signature` covers
+the manifests, Risk CDC runtime, image/fingerprint, and orchestration inputs that created the
+retained namespace; `cdc_verifier_signature` covers the observer, fixture, and focused verifier
+code. An unrelated source commit does not change the runtime signature and therefore does not
+force a new deployment. If only the verifier signature changes, the fast
+`test-cdc-observer-fixture-contract.sh` check runs before the observer. A runtime-signature drift,
+namespace/input/image/dependency drift, or a retained context from before these scoped identities
+were recorded fails closed and requires a fresh full run.
+
+The command writes a `FOCUSED_DIAGNOSTIC` verdict below the retained run's
 `focused-diagnostics/cdc-delivery/` directory. That verdict is deliberately not a phase result and
-cannot close or upgrade the full certification. Any source, namespace, image, input, or dependency
-drift fails closed before the observer can change runtime state; create a fresh full run in that case.
+cannot close or upgrade the full certification; even a PASS proves only the observer against the
+retained runtime and current verifier, not a new full source revision.
 
 Finally run the repository Java quality gate:
 

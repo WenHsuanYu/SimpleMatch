@@ -171,6 +171,21 @@ schema, phase identity, input identity, and required outputs. Corruption or
 missing data causes cache rejection and phase execution, not certification
 success.
 
+### 5.6 Focused continuation uses a phase-scoped identity
+
+The full-run `source_signature` remains audit provenance for the complete
+certification source, but it is not a universal key for a focused diagnostic.
+The retained CDC run-context therefore records two narrower identities:
+`cdc_runtime_signature` covers the deployment, Risk CDC, image/fingerprint, and
+orchestration inputs that created the retained namespace, while
+`cdc_verifier_signature` covers the observer, fixture, and focused verifier.
+
+An unrelated source change may reuse the retained runtime. A verifier-only
+change must pass the fast observer contract before the observer is invoked. Any
+runtime-signature, namespace, image, input, or dependency drift fails closed and
+requires a new full run. Focused output is always diagnostic-only and cannot
+replace or upgrade the retained phase result.
+
 ## 6. Module design
 
 The external interface remains the existing certification command:

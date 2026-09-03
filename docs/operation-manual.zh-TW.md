@@ -542,7 +542,9 @@ bash scripts/run-local-cdc-delivery-focused-diagnostic.sh \
   --timeout-seconds 180
 ```
 
-它只接受 full proof profile，並從 `run-context` 驗證 source signature、namespace/run-id、依賴 phase、immutable image lock、實際 workload image、session ConfigMap 與 PostgreSQL Secret。成功結果會標示 `FOCUSED_DIAGNOSTIC` 且 `fullCertification=false`；source、namespace、image、input 或 dependency 任一漂移都會在 observer side effect 前拒絕，必須重新建立完整 certification run。
+它只接受 full proof profile，並從 `run-context` 驗證 namespace/run-id、依賴 phase、immutable image lock、實際 workload image、session ConfigMap 與 PostgreSQL Secret。`run-context` 另外保存兩個 scoped identity：`cdc_runtime_signature` 涵蓋建立保留 namespace 所需的 manifest、Risk CDC runtime、image/fingerprint 與 orchestration 輸入；`cdc_verifier_signature` 涵蓋 observer、fixture 與 focused verifier。無關 source commit 不會改變 runtime signature，因此不必重建 deployment；若只有 verifier signature 改變，會先執行快速 `test-cdc-observer-fixture-contract.sh`，再對同一個 retained runtime 執行 observer。runtime signature、namespace、image、input 或 dependency 任一漂移，或舊 `run-context` 沒有 scoped identity，都會在 observer side effect 前 fail-closed，必須重新建立完整 certification run。
+
+成功結果會標示 `FOCUSED_DIAGNOSTIC` 且 `fullCertification=false`；即使 PASS，也只證明目前 verifier 對 retained runtime 的 CDC observer 結果，不能關閉或升級完整 certification，也不會改寫原本的 phase evidence。
 
 ### 12.1 計畫與決策
 
