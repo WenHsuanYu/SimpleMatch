@@ -3,6 +3,9 @@ kind: Kustomization
 namespace: simplematch-test
 resources:
   - ../../base
+patches:
+  - path: environment-patch.yaml
+  - path: platform-config-patch.yaml
 images:
   - name: simplematch/account-service
     newTag: test

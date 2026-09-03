@@ -15,6 +15,13 @@ timeout_seconds="${SIMPLEMATCH_CDC_OBSERVER_TIMEOUT_SECONDS:-180}"
 maximum_metric_age_seconds=""
 kind_cluster="${SIMPLEMATCH_KIND_CLUSTER_NAME:-simplematch-live}"
 kind_context="kind-${kind_cluster}"
+matching_fixture_default="$script_dir/../out/build/full-native-dev/simplematch-matching-kafka-fixture-publisher"
+matching_fixture_validator="${SIMPLEMATCH_MATCHING_FIXTURE_PUBLISHER_BIN:-$matching_fixture_default}"
+matching_trading_day=""
+matching_trading_session_id=""
+matching_image_digest=""
+artifact_sha256=""
+artifact_routing_version=""
 
 connect_port_forward_pid=""
 risk_port_forward_pid=""
@@ -40,6 +47,8 @@ observed after connector recovery. The namespace and its Flyway/workload resourc
 must already have been created by the local production-like certification workflow. The
 observer accepts only a disposable namespace managed by that workflow whose run-id label
 exactly matches --namespace-run-id.
+The native fixture publisher must already be built; set
+SIMPLEMATCH_MATCHING_FIXTURE_PUBLISHER_BIN to override its default path.
 EOF
 }
 
@@ -72,9 +81,12 @@ done
   '--timeout-seconds must be a positive integer'
 (( timeout_seconds <= 600 )) || die '--timeout-seconds must not exceed 600'
 
-for tool in kubectl jq curl date seq sleep od tr grep sed tail cat; do
+for tool in kubectl jq curl date seq sleep od tr grep sed tail cat sha256sum; do
   command -v "$tool" >/dev/null 2>&1 || die "$tool is required"
 done
+
+[[ -x "$matching_fixture_validator" ]] || die \
+  "Matching Open Barrier validator is missing or not executable: $matching_fixture_validator"
 
 mkdir -p "$evidence_dir"
 evidence_dir="$(cd -- "$evidence_dir" && pwd)"
@@ -90,13 +102,26 @@ kns() {
   kubectl --context "$kind_context" -n "$namespace" "$@"
 }
 
+capture_safe_diagnostic_log() {
+  local output="$1"
+  shift
+  kns logs "$@" >"$output" 2>&1 || true
+  if ! resilience_log_is_safe "$output"; then
+    printf '%s\n' \
+      'diagnostic log omitted after the sensitive-log safety check failed' \
+      >"$output"
+  fi
+}
+
 collect_diagnostics() {
   kns get pods -o wide >"$evidence_dir/diagnostics-pods.txt" 2>&1 || true
   kns get deployments,statefulsets,jobs >"$evidence_dir/diagnostics-workloads.txt" 2>&1 || true
-  kns logs -l app.kubernetes.io/name=risk-service --all-containers=true \
-    --prefix=true --tail=300 >"$evidence_dir/diagnostics-risk.log" 2>&1 || true
-  kns logs -l app.kubernetes.io/name=kafka-connect --all-containers=true \
-    --prefix=true --tail=200 >"$evidence_dir/diagnostics-connect.log" 2>&1 || true
+  capture_safe_diagnostic_log "$evidence_dir/diagnostics-risk.log" \
+    -l app.kubernetes.io/name=risk-service --all-containers=true \
+    --prefix=true --tail=300
+  capture_safe_diagnostic_log "$evidence_dir/diagnostics-connect.log" \
+    -l app.kubernetes.io/name=kafka-connect --all-containers=true \
+    --prefix=true --tail=200
   if [[ -n "$connector_base_url" ]]; then
     curl "${curl_options[@]}" -fsS \
       "$connector_base_url/connectors/risk-service-outbox/status" \
@@ -151,6 +176,47 @@ namespace_run_id="$(kubectl --context "$kind_context" get namespace "$namespace"
   "certification namespace has no non-empty run-id label: $namespace"
 [[ "$namespace_run_id" == "$expected_namespace_run_id" ]] || die \
   "certification namespace run-id does not match the requested run: $namespace"
+matching_session_config_json="$(kns get configmap matching-session-config -o json)" || die \
+  'could not read the deployed Matching session configuration'
+matching_trading_day="$(jq -er \
+  '.data.trading_day | strings | select(length > 0)' \
+  <<<"$matching_session_config_json")" || die \
+  'deployed Matching session configuration has no trading day'
+matching_trading_session_id="$(jq -er \
+  '.data.trading_session_id | strings | select(length > 0)' \
+  <<<"$matching_session_config_json")" || die \
+  'deployed Matching session configuration has no trading session'
+matching_image_digest="$(jq -er \
+  '.data.matching_image_digest | strings | select(length > 0)' \
+  <<<"$matching_session_config_json")" || die \
+  'deployed Matching session configuration has no image digest'
+[[ "$matching_image_digest" =~ ^sha256:[0-9a-f]{64}$ ]] || die \
+  'deployed Matching image digest is not canonical'
+matching_artifact_config_json="$(kns get configmap matching-daily-artifact -o json)" || die \
+  'could not read the deployed Matching artifact configuration'
+artifact_json="$(jq -j -er \
+  '.binaryData["market_reference.json"] | strings | @base64d' \
+  <<<"$matching_artifact_config_json")" || die \
+  'deployed Matching artifact JSON is missing or invalid'
+artifact_sha256="$(jq -j -er \
+  '.binaryData["market_reference.sha256"] | strings | @base64d' \
+  <<<"$matching_artifact_config_json" | tr -d '[:space:]')" || die \
+  'deployed Matching artifact checksum is missing or invalid'
+[[ "$artifact_sha256" =~ ^[0-9a-f]{64}$ ]] || die \
+  'deployed Matching artifact checksum is not canonical'
+artifact_computed_sha256="$(printf '%s' "$artifact_json" | sha256sum)"
+artifact_computed_sha256="${artifact_computed_sha256%% *}"
+[[ "$artifact_computed_sha256" == "$artifact_sha256" ]] || die \
+  'deployed Matching artifact checksum does not match its content'
+artifact_trading_day="$(jq -er \
+  '.metadata.tradingDay | strings | select(length > 0)' <<<"$artifact_json")" || die \
+  'deployed Matching artifact has no trading day metadata'
+[[ "$artifact_trading_day" == "$matching_trading_day" ]] || die \
+  'deployed Matching artifact trading day does not match the session configuration'
+artifact_routing_version="$(jq -er \
+  '.metadata.routingAlgorithmVersion | strings | select(length > 0)' \
+  <<<"$artifact_json")" || die \
+  'deployed Matching artifact has no routing algorithm version'
 maximum_metric_age_seconds="$(kns get configmap risk-service-config -o json |
   jq -er '.data["application.yaml"] | capture("maximum-metric-age: (?<seconds>[0-9]+)s").seconds')" || die \
   'could not read the deployed Risk maximum-metric-age configuration'
@@ -160,18 +226,22 @@ maximum_metric_age_seconds="$(kns get configmap risk-service-config -o json |
   'deployed Risk maximum-metric-age must not exceed 600 seconds'
 
 start_port_forward() {
-  local target="$1" remote_port="$2" log_path="$3" output
+  local target="$1" remote_port="$2" log_path="$3" pid_variable="$4"
+  local port_variable="$5" output pid
   kns port-forward "$target" ":$remote_port" >"$log_path" 2>&1 &
-  PORT_FORWARD_PID="$!"
-  PORT_FORWARD_PORT=""
+  pid="$!"
+  # Publish the child PID before polling so EXIT cleanup can reap a failed
+  # startup, including the path where port-forward exits before returning.
+  printf -v "$pid_variable" '%s' "$pid"
+  printf -v "$port_variable" '%s' ''
   for _ in $(seq 1 60); do
-    kill -0 "$PORT_FORWARD_PID" >/dev/null 2>&1 || {
+    kill -0 "$pid" >/dev/null 2>&1 || {
       cat "$log_path" >&2
       die "port-forward exited for $target"
     }
     output="$(sed -nE 's/.*127\.0\.0\.1:([0-9]+) -> [0-9]+.*/\1/p' "$log_path" | tail -n 1)"
     if [[ "$output" =~ ^[0-9]+$ ]]; then
-      PORT_FORWARD_PORT="$output"
+      printf -v "$port_variable" '%s' "$output"
       return 0
     fi
     sleep 1
@@ -272,6 +342,15 @@ metric_json() {
   done
 }
 
+assert_metric_measurement_is_nonnegative() {
+  local output="$1"
+  jq -e '
+    (.measurements | length > 0) and
+    (.measurements | all(.[]; (.value | type == "number" and . >= 0)))
+  ' "$output" >/dev/null || die \
+    "Actuator metric contains no numeric non-negative measurement: $output"
+}
+
 wait_for_observation() {
   local output deadline
   deadline=$(( $(date +%s) + timeout_seconds ))
@@ -301,17 +380,15 @@ kafka_pod="$(kns get pods -l app.kubernetes.io/name=kafka \
   -o jsonpath='{.items[0].metadata.name}')"
 [[ -n "$postgres_pod" && -n "$kafka_pod" ]] || die 'Risk CDC observer prerequisites are missing'
 
-start_port_forward service/kafka-connect 8083 "$evidence_dir/connect-port-forward.log"
-connect_port_forward_pid="$PORT_FORWARD_PID"
-connect_port="$PORT_FORWARD_PORT"
+start_port_forward service/kafka-connect 8083 "$evidence_dir/connect-port-forward.log" \
+  connect_port_forward_pid connect_port
 connector_base_url="http://127.0.0.1:${connect_port}"
 wait_for_connector_state risk-service-outbox RUNNING \
   >"$evidence_dir/connector-running-before.json"
 capture_retained_connector_states "$evidence_dir/connectors-running-before.json"
 
-start_port_forward service/risk-service 8080 "$evidence_dir/risk-port-forward.log"
-risk_port_forward_pid="$PORT_FORWARD_PID"
-risk_port="$PORT_FORWARD_PORT"
+start_port_forward service/risk-service 8080 "$evidence_dir/risk-port-forward.log" \
+  risk_port_forward_pid risk_port
 risk_base_url="http://127.0.0.1:${risk_port}"
 curl "${curl_options[@]}" -fsS "$risk_base_url/actuator/health/liveness" \
   >"$evidence_dir/health-liveness.json"
@@ -319,6 +396,8 @@ curl "${curl_options[@]}" -fsS "$risk_base_url/actuator/health/readiness" \
   >"$evidence_dir/health-readiness.json"
 metric_json connector_lag_events "$evidence_dir/metric-before-lag.json"
 metric_json outbox_age_millis "$evidence_dir/metric-before-age.json"
+assert_metric_measurement_is_nonnegative "$evidence_dir/metric-before-lag.json"
+assert_metric_measurement_is_nonnegative "$evidence_dir/metric-before-age.json"
 jq -e '.measurements[0].value == 0' "$evidence_dir/metric-before-lag.json" \
   >/dev/null || die 'Risk CDC lag gauge is not zero before outage'
 
@@ -332,7 +411,16 @@ baseline_age_ms="$(( $(date +%s) * 1000 - baseline_updated ))"
 (( baseline_age_ms >= 0 &&
   baseline_age_ms <= maximum_metric_age_seconds * 1000 )) || die \
   "Risk CDC baseline metric is stale or from the future: age_ms=$baseline_age_ms"
-printf '%s\n' "$baseline_age_ms" >"$evidence_dir/metric-baseline-age.txt"
+zero_traffic_row="$(wait_for_metric_row zero "$baseline_updated" \
+  'Risk CDC metric did not remain fresh and zero without traffic')"
+zero_traffic_updated="${zero_traffic_row#*|}"
+zero_traffic_age_ms="$(( $(date +%s) * 1000 - zero_traffic_updated ))"
+(( zero_traffic_age_ms >= 0 &&
+  zero_traffic_age_ms <= maximum_metric_age_seconds * 1000 )) || die \
+  "Risk CDC zero-traffic metric is stale or from the future: age_ms=$zero_traffic_age_ms"
+printf 'baseline_age_ms=%s\nzero_traffic_row=%s\nzero_traffic_age_ms=%s\n' \
+  "$baseline_age_ms" "$zero_traffic_row" "$zero_traffic_age_ms" \
+  >"$evidence_dir/metric-baseline-age.txt"
 
 curl "${curl_options[@]}" -fsS -X PUT \
   "$connector_base_url/connectors/risk-service-outbox/pause" >/dev/null
@@ -372,7 +460,17 @@ resolve_seeded_matching_command() {
   die 'could not resolve a valid seeded Matching command payload from any partition'
 }
 
+validate_selected_matching_open_barrier() {
+  printf '%s' "$payload_hex" |
+    "$matching_fixture_validator" --validate-open-barrier \
+      "$matching_trading_day" "$matching_trading_session_id" \
+      "$artifact_sha256" "$artifact_routing_version" "$matching_image_digest" \
+      "$command_partition" "$command_key" >/dev/null || die \
+        'selected retained Matching command is not the current Open Barrier'
+}
+
 resolve_seeded_matching_command
+validate_selected_matching_open_barrier
 created_at_ms="$(( $(date +%s) * 1000 ))"
 aggregate_id="${run_id}-${event_id}"
 sql "INSERT INTO risk_service.outbox (
@@ -388,9 +486,18 @@ sql "INSERT INTO risk_service.outbox (
 jq -n --arg runId "$run_id" --arg eventId "$event_id" --arg topic matching.commands \
   --arg commandKey "$command_key" --argjson commandPartition "$command_partition" \
   --argjson createdAtUnixMs "$created_at_ms" \
+  --arg tradingDay "$matching_trading_day" \
+  --arg tradingSessionId "$matching_trading_session_id" \
+  --arg artifactSha256 "$artifact_sha256" \
+  --arg routingAlgorithmVersion "$artifact_routing_version" \
+  --arg matchingImageDigest "$matching_image_digest" \
   '{runId:$runId,eventId:$eventId,topic:$topic,commandKey:$commandKey,
     commandPartition:$commandPartition,
-    createdAtUnixMs:$createdAtUnixMs}' \
+    createdAtUnixMs:$createdAtUnixMs,tradingDay:$tradingDay,
+    tradingSessionId:$tradingSessionId,artifactSha256:$artifactSha256,
+    routingAlgorithmVersion:$routingAlgorithmVersion,
+    matchingImageDigest:$matchingImageDigest,
+    openBarrierValidated:true}' \
   >"$evidence_dir/event.json"
 
 paused_row="$(wait_for_metric_row positive "$baseline_updated" \
@@ -399,14 +506,16 @@ paused_updated="${paused_row#*|}"
 printf '%s\n' "$paused_row" >"$evidence_dir/metric-paused-row.txt"
 metric_json connector_lag_events "$evidence_dir/metric-paused-lag.json"
 metric_json outbox_age_millis "$evidence_dir/metric-paused-age.json"
+assert_metric_measurement_is_nonnegative "$evidence_dir/metric-paused-lag.json"
+assert_metric_measurement_is_nonnegative "$evidence_dir/metric-paused-age.json"
 jq -e '.measurements[0].value >= 1' "$evidence_dir/metric-paused-lag.json" \
   >/dev/null || die 'Risk CDC lag gauge did not increase during outage'
 
 curl "${curl_options[@]}" -fsS -X PUT \
   "$connector_base_url/connectors/risk-service-outbox/resume" >/dev/null
-connector_paused=false
 wait_for_connector_state risk-service-outbox RUNNING \
   >"$evidence_dir/connector-recovered.json"
+connector_paused=false
 capture_retained_connector_states "$evidence_dir/connectors-running-recovered.json"
 observation_row="$(wait_for_observation)"
 recovered_row="$(wait_for_metric_row zero "$paused_updated" \
@@ -415,6 +524,8 @@ printf '%s\n' "$observation_row" >"$evidence_dir/observation-row.txt"
 printf '%s\n' "$recovered_row" >"$evidence_dir/metric-recovered-row.txt"
 metric_json connector_lag_events "$evidence_dir/metric-recovered-lag.json"
 metric_json outbox_age_millis "$evidence_dir/metric-recovered-age.json"
+assert_metric_measurement_is_nonnegative "$evidence_dir/metric-recovered-lag.json"
+assert_metric_measurement_is_nonnegative "$evidence_dir/metric-recovered-age.json"
 jq -e '.measurements[0].value == 0' "$evidence_dir/metric-recovered-lag.json" \
   >/dev/null || die 'Risk CDC lag gauge did not recover to zero'
 
@@ -458,6 +569,7 @@ jq -n \
       "exact event_id observation was persisted only after Kafka recovery",
       "durable matching.commands lag returned to zero with a newer timestamp",
       "baseline durable CDC metric was fresh and not from the future",
+      "fresh zero-traffic matching.commands metric remained at zero",
       "all active Phase 1 workload logs passed the sensitive-log safety contract"
     ]}' >"$evidence_dir/verdict.json"
 

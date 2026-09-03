@@ -13,6 +13,12 @@ for overlay in local test staging production; do
 require "yaml"
 
 rendered_path, overlay = ARGV
+expected_environment = {
+  "local" => "local",
+  "test" => "test",
+  "staging" => "staging",
+  "production" => "production"
+}.fetch(overlay)
 visitor = Psych::Visitors::ToRuby.create
 documents = Psych.parse_stream(File.read(rendered_path, encoding: "UTF-8")).children.map { |document| visitor.accept(document) }.compact
 resources = documents.to_h { |document| [[document.fetch("kind"), document.fetch("metadata").fetch("name")], document] }
@@ -25,6 +31,8 @@ abort "#{overlay}: Java workloads do not use ECS structured console logs" unless
 abort "#{overlay}: structured logs do not identify the deployment environment" unless
   platform_application.dig("logging", "structured", "ecs", "service", "environment") ==
     "${simplematch.environment}"
+abort "#{overlay}: platform environment does not match the overlay" unless
+  platform_application.dig("simplematch", "environment") == expected_environment
 
 required_deployments = %w[
   account-service
@@ -48,6 +56,9 @@ required_deployments.each do |name|
   abort "#{overlay}: #{name} is not read-only root" unless security.fetch("readOnlyRootFilesystem")
 
   env = container.fetch("env").to_h { |entry| [entry.fetch("name"), entry] }
+  profile_entries = container.fetch("env").select { |entry| entry["name"] == "SPRING_PROFILES_ACTIVE" }
+  abort "#{overlay}: #{name} does not use the #{expected_environment} Spring profile" unless
+    profile_entries.one? && profile_entries.first["value"] == expected_environment
   %w[
     SPRING_CLOUD_KUBERNETES_CONFIG_INCLUDE_PROFILE_SPECIFIC_SOURCES
     SPRING_CLOUD_KUBERNETES_SECRETS_INCLUDE_PROFILE_SPECIFIC_SOURCES
@@ -58,8 +69,12 @@ required_deployments.each do |name|
 end
 
 quickfix = resources.fetch(["StatefulSet", "quickfix-gateway"])
-quickfix_environment = quickfix.fetch("spec").fetch("template").fetch("spec").fetch("containers").first.fetch("env")
-  .to_h { |entry| [entry.fetch("name"), entry] }
+quickfix_container = quickfix.fetch("spec").fetch("template").fetch("spec").fetch("containers").first
+quickfix_environment = quickfix_container.fetch("env").to_h { |entry| [entry.fetch("name"), entry] }
+quickfix_profile_entries = quickfix_container.fetch("env")
+  .select { |entry| entry["name"] == "SPRING_PROFILES_ACTIVE" }
+abort "#{overlay}: QuickFIX Gateway does not use the #{expected_environment} Spring profile" unless
+  quickfix_profile_entries.one? && quickfix_profile_entries.first["value"] == expected_environment
 abort "#{overlay}: QuickFIX Gateway trading day must come from matching-session-config" unless
   quickfix_environment.fetch("SIMPLEMATCH_TRADING_DAY").fetch("valueFrom").fetch("configMapKeyRef") ==
     { "name" => "matching-session-config", "key" => "trading_day" }
@@ -120,10 +135,7 @@ if overlay == "local"
     quickfix_claim.dig("spec", "storageClassName") == "simplematch-rwo-pod" &&
       quickfix_claim.dig("spec", "accessModes") == ["ReadWriteOnce"] &&
       quickfix_claim.dig("spec", "resources", "requests", "storage") == "2Gi"
-  quickfix_container = quickfix.fetch("spec").fetch("template").fetch("spec").fetch("containers").first
   quickfix_env = quickfix_container.fetch("env").to_h { |entry| [entry.fetch("name"), entry] }
-  abort "local: QuickFIX Gateway must use the local Spring profile" unless
-    quickfix_env.dig("SPRING_PROFILES_ACTIVE", "value") == "local"
 
   {
     "account-service" => ["SIMPLEMATCH_POSTGRES_DSN"],

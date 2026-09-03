@@ -6,6 +6,7 @@ resources:
   - ../network-policy-external.yaml
   - ../../debezium-kafka-connect.yaml
 patches:
+  - path: environment-patch.yaml
   - path: ../secure-java-services-patch.yaml
   - path: platform-config-patch.yaml
   - path: kafka-connect-config-patch.yaml

@@ -8,8 +8,6 @@ spec:
       containers:
         - name: account-service
           env:
-            - name: SPRING_PROFILES_ACTIVE
-              value: production
             - name: SIMPLEMATCH_POSTGRES_DSN
               valueFrom:
                 secretKeyRef:
@@ -126,8 +124,6 @@ spec:
       containers:
         - name: risk-service
           env:
-            - name: SPRING_PROFILES_ACTIVE
-              value: production
             - name: SIMPLEMATCH_POSTGRES_DSN
               valueFrom:
                 secretKeyRef:
@@ -185,8 +181,6 @@ spec:
       containers:
         - name: persistence
           env:
-            - name: SPRING_PROFILES_ACTIVE
-              value: production
             - name: SIMPLEMATCH_POSTGRES_DSN
               valueFrom:
                 secretKeyRef:
@@ -232,8 +226,6 @@ spec:
       containers:
         - name: market-data-projection
           env:
-            - name: SPRING_PROFILES_ACTIVE
-              value: production
             - name: SIMPLEMATCH_POSTGRES_DSN
               valueFrom:
                 secretKeyRef:
@@ -308,8 +300,6 @@ spec:
       containers:
         - name: marketdata-publisher
           env:
-            - name: SPRING_PROFILES_ACTIVE
-              value: production
             - name: SIMPLEMATCH_POSTGRES_DSN
               valueFrom:
                 secretKeyRef:
@@ -335,8 +325,6 @@ spec:
       containers:
         - name: marketdata-streamer
           env:
-            - name: SPRING_PROFILES_ACTIVE
-              value: production
             - name: SIMPLEMATCH_MARKETDATA_STREAMER_ENABLED
               value: "true"
             - name: SPRING_KAFKA_PROPERTIES_SECURITY_PROTOCOL
@@ -381,8 +369,6 @@ spec:
       containers:
         - name: query-service
           env:
-            - name: SPRING_PROFILES_ACTIVE
-              value: production
             - name: SIMPLEMATCH_POSTGRES_DSN
               valueFrom:
                 secretKeyRef:

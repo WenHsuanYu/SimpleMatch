@@ -12,6 +12,7 @@ data:
           service:
             environment: ${simplematch.environment}
     simplematch:
+      environment: local
       kafka:
         brokers: kafka:9092
         topics:

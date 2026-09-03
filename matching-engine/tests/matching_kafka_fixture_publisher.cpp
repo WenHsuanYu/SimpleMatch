@@ -1,14 +1,19 @@
+#include <charconv>
 #include <cstddef>
+#include <cstdint>
 #include <iomanip>
 #include <iostream>
+#include <iterator>
 #include <sstream>
 #include <stdexcept>
 #include <string>
 #include <string_view>
+#include <system_error>
 
 #include <librdkafka/rdkafka.h>
 
 #include "matching_runtime_v1.pb.h"
+#include "simplematch/matching/core/deterministic_matching_core.hpp"
 
 namespace {
 
@@ -32,6 +37,133 @@ struct BarrierBootstrapConfiguration {
   std::string_view routing_version;
   std::string_view image_digest;
 };
+
+struct BarrierValidationConfiguration {
+  std::string_view trading_day;
+  std::string_view trading_session;
+  std::string_view artifact_sha256;
+  std::string_view routing_version;
+  std::string_view image_digest;
+  std::int32_t partition;
+  std::string_view key;
+};
+
+[[noreturn]] void validation_failure(std::string_view reason) {
+  throw std::invalid_argument(std::string("Open Barrier validation failed: ") +
+                              std::string(reason));
+}
+
+int hex_value(unsigned char value) {
+  if (value >= '0' && value <= '9') {
+    return value - '0';
+  }
+  if (value >= 'a' && value <= 'f') {
+    return value - 'a' + 10;
+  }
+  if (value >= 'A' && value <= 'F') {
+    return value - 'A' + 10;
+  }
+  return -1;
+}
+
+bool canonical_sha256(std::string_view value) {
+  if (value.size() != 64) {
+    return false;
+  }
+  for (const unsigned char character : value) {
+    if (!((character >= '0' && character <= '9') ||
+          (character >= 'a' && character <= 'f'))) {
+      return false;
+    }
+  }
+  return true;
+}
+
+bool canonical_image_digest(std::string_view value) {
+  return value.starts_with("sha256:") && canonical_sha256(value.substr(7));
+}
+
+std::string decode_hex(std::string_view encoded) {
+  if (encoded.empty() || encoded.size() % 2 != 0) {
+    validation_failure("payload is not a non-empty hexadecimal byte sequence");
+  }
+  std::string decoded;
+  decoded.resize(encoded.size() / 2);
+  for (std::size_t index = 0; index < encoded.size(); index += 2) {
+    const int high = hex_value(static_cast<unsigned char>(encoded[index]));
+    const int low = hex_value(static_cast<unsigned char>(encoded[index + 1]));
+    if (high < 0 || low < 0) {
+      validation_failure("payload contains a non-hexadecimal byte");
+    }
+    decoded[index / 2] = static_cast<char>((high << 4) | low);
+  }
+  return decoded;
+}
+
+std::int32_t parse_partition(std::string_view value) {
+  if (value.empty()) {
+    validation_failure("partition is outside the matching.commands range");
+  }
+  std::int32_t partition{};
+  const auto result =
+      std::from_chars(value.data(), value.data() + value.size(), partition);
+  if (result.ec != std::errc{} || result.ptr != value.data() + value.size() ||
+      partition < 0 || partition >= 15) {
+    validation_failure("partition is outside the matching.commands range");
+  }
+  return partition;
+}
+
+void validate_open_barrier(std::istream &payload_stream,
+                           const BarrierValidationConfiguration &configuration) {
+  if (configuration.trading_day.empty() || configuration.trading_session.empty() ||
+      !canonical_sha256(configuration.artifact_sha256) ||
+      configuration.routing_version.empty() ||
+      !canonical_image_digest(configuration.image_digest) ||
+      configuration.partition < 0 || configuration.partition >= 15 ||
+      configuration.key.empty()) {
+    validation_failure("current session or artifact identity is incomplete");
+  }
+  if (!simplematch::matching::CoreUuid::parse(configuration.key).has_value()) {
+    validation_failure("Kafka key is not a valid command identity");
+  }
+
+  const std::string encoded_payload(
+      std::istreambuf_iterator<char>(payload_stream),
+      std::istreambuf_iterator<char>());
+  if (payload_stream.bad()) {
+    validation_failure("payload could not be read");
+  }
+  const std::string payload = decode_hex(encoded_payload);
+  simplematch::matching::runtime::v1::MatchingCommand command;
+  if (!command.ParseFromString(payload) || !command.has_header() ||
+      command.command_case() !=
+          simplematch::matching::runtime::v1::MatchingCommand::kOpenBarrier) {
+    validation_failure("payload is not an Open Barrier protobuf");
+  }
+
+  const auto &header = command.header();
+  if (!header.has_artifact_identity()) {
+    validation_failure("Open Barrier header has no artifact identity");
+  }
+  const auto &artifact = header.artifact_identity();
+  const auto &barrier = command.open_barrier();
+  if (header.schema_version() != 1 ||
+      std::string_view(header.command_id()) != configuration.key ||
+      std::string_view(header.trading_session_id()) != configuration.trading_session ||
+      header.partition_id() != configuration.partition ||
+      std::string_view(artifact.trading_day()) != configuration.trading_day ||
+      std::string_view(artifact.content_sha256()) != configuration.artifact_sha256 ||
+      std::string_view(header.routing_algorithm_version()) !=
+          configuration.routing_version) {
+    validation_failure("Open Barrier header does not match the current run");
+  }
+  if (barrier.expected_partition_count() != 15 || barrier.event_schema_version() != 1 ||
+      barrier.event_identity_version() != 1 ||
+      barrier.matching_image_digest() != configuration.image_digest) {
+    validation_failure("Open Barrier fields do not match the current run");
+  }
+}
 
 void delivery_report(rd_kafka_t *, const rd_kafka_message_t *message,
                      void *opaque) {
@@ -246,11 +378,28 @@ void publish_open_barriers(std::string_view brokers, std::string_view topic,
 } // namespace
 
 int main(int argc, char **argv) {
+  if (argc == 9 && std::string_view(argv[1]) == "--validate-open-barrier") {
+    try {
+      validate_open_barrier(
+          std::cin,
+          BarrierValidationConfiguration{
+              argv[2], argv[3], argv[4], argv[5], argv[6],
+              parse_partition(argv[7]), argv[8]});
+      return 0;
+    } catch (const std::exception &failure) {
+      std::cerr << failure.what() << '\n';
+      return 1;
+    }
+  }
   if (argc != 3 && argc != 8) {
     std::cerr << "usage: simplematch-matching-kafka-fixture-publisher BROKERS "
                  "TOPIC [TRADING_DAY "
                  "TRADING_SESSION ARTIFACT_SHA256 ROUTING_VERSION "
-                 "MATCHING_IMAGE_DIGEST]\n";
+                 "MATCHING_IMAGE_DIGEST]\n"
+                 "       simplematch-matching-kafka-fixture-publisher "
+                 "--validate-open-barrier TRADING_DAY TRADING_SESSION "
+                 "ARTIFACT_SHA256 ROUTING_VERSION MATCHING_IMAGE_DIGEST "
+                 "PARTITION KEY < PAYLOAD_HEX\n";
     return 2;
   }
   try {

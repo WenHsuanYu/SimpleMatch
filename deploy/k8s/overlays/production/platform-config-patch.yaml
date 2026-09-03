@@ -12,6 +12,7 @@ data:
           service:
             environment: ${simplematch.environment}
     simplematch:
+      environment: production
       kafka:
         brokers: kafka.production.example.invalid:9093
         topics:

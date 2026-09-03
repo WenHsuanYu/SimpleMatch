@@ -406,8 +406,9 @@ certification_phase_input_manifest() {
       _certification_paths_and_values_manifest \
         scripts/test-phase1-deployment-contracts.sh \
         scripts/verify-outbox-connector-contracts.sh \
-        scripts/test-local-resilience.sh scripts/lib/local-resilience.sh \
-        deploy/k8s services \
+        scripts/test-local-resilience.sh scripts/validate-local-resilience-contract.sh \
+        scripts/lib/local-resilience.sh deploy/compose/*-outbox-connector.json \
+        services/risk-service/src/main/java services/account-service/src/main/java \
         scripts/lib/local-certification-fingerprint.sh \
         -- "phase=$phase_id" "version=$phase_version"
       ;;
@@ -452,7 +453,7 @@ certification_phase_input_manifest() {
         deploy/compose/apply-risk-service-outbox-connector.sh \
         deploy/compose/apply-account-service-outbox-connector.sh \
         deploy/compose/apply-marketdata-publisher-outbox-connector.sh \
-        deploy/compose/kafka-connect.production-like.yml \
+        deploy/compose/kafka-connect.local.yml \
         scripts/lib/local-certification-fingerprint.sh \
         -- "phase=$phase_id" "version=$phase_version"
       ;;
@@ -460,8 +461,11 @@ certification_phase_input_manifest() {
       _certification_paths_and_values_manifest \
         scripts/run-risk-cdc-delivery-observer-check.sh \
         scripts/lib/local-resilience.sh scripts/lib/local-certification-connect.sh \
-        scripts/lib/local-certification-run.sh \
+        scripts/lib/local-certification-run.sh scripts/lib/local-certification-kubernetes.sh \
         scripts/lib/local-kind.sh \
+        CMakeLists.txt CMakePresets.json vcpkg.json triplets proto \
+        matching-engine/include matching-engine/src \
+        matching-engine/tests/matching_kafka_fixture_publisher.cpp \
         services/risk-service/src/main/java/com/simplematch/riskservice/cdc \
         services/risk-service/src/main/java/com/simplematch/riskservice/store \
         services/risk-service/src/main/java/com/simplematch/riskservice/config/RiskCdcDeliveryConfiguration.java \

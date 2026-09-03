@@ -1,0 +1,103 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: account-service
+spec:
+  template:
+    spec:
+      containers:
+        - name: account-service
+          env:
+            - name: SPRING_PROFILES_ACTIVE
+              value: production
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: risk-service
+spec:
+  template:
+    spec:
+      containers:
+        - name: risk-service
+          env:
+            - name: SPRING_PROFILES_ACTIVE
+              value: production
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: persistence
+spec:
+  template:
+    spec:
+      containers:
+        - name: persistence
+          env:
+            - name: SPRING_PROFILES_ACTIVE
+              value: production
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: market-data-projection
+spec:
+  template:
+    spec:
+      containers:
+        - name: market-data-projection
+          env:
+            - name: SPRING_PROFILES_ACTIVE
+              value: production
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: marketdata-publisher
+spec:
+  template:
+    spec:
+      containers:
+        - name: marketdata-publisher
+          env:
+            - name: SPRING_PROFILES_ACTIVE
+              value: production
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: marketdata-streamer
+spec:
+  template:
+    spec:
+      containers:
+        - name: marketdata-streamer
+          env:
+            - name: SPRING_PROFILES_ACTIVE
+              value: production
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: query-service
+spec:
+  template:
+    spec:
+      containers:
+        - name: query-service
+          env:
+            - name: SPRING_PROFILES_ACTIVE
+              value: production
+---
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: quickfix-gateway
+spec:
+  template:
+    spec:
+      containers:
+        - name: quickfix-gateway
+          env:
+            - name: SPRING_PROFILES_ACTIVE
+              value: production

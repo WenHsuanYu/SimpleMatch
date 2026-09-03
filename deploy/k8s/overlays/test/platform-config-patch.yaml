@@ -12,19 +12,14 @@ data:
           service:
             environment: ${simplematch.environment}
     simplematch:
-      environment: staging
+      environment: test
       kafka:
-        brokers: kafka.staging.example.invalid:9093
+        brokers: kafka:9092
         topics:
-          orders-validated: orders.validated
-          matching-executions: matching.executions
           matching-commands: matching.commands
           matching-events: matching.events
           marketdata-events: marketdata.events
-          audit-events: audit.events
         partitions:
-          orders-validated: 15
-          matching-executions: 15
           matching-commands: 15
           matching-events: 15
       grpc:
@@ -35,7 +30,4 @@ data:
         currency: TWD
         time-zone: Asia/Taipei
       redis:
-        endpoints: redis.staging.example.invalid:6379
-      observability:
-        otel:
-          exporter-otlp-endpoint: https://otel.staging.example.invalid:4318
+        endpoints: redis:6379
