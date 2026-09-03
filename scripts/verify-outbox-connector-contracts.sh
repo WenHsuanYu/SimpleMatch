@@ -29,6 +29,17 @@ assert_contains() {
   fi
 }
 
+assert_absent() {
+  local config="$1"
+  local option="$2"
+  local description="$3"
+
+  if jq -e --arg option "$option" '.config | has($option)' "$config" >/dev/null; then
+    echo "${description}: unsupported option '${option}' is present" >&2
+    exit 1
+  fi
+}
+
 verify_connector() {
   local service="$1"
   local config_name="$2"
@@ -55,11 +66,13 @@ verify_connector() {
     "payload" "${service} payload mapping"
   assert_equal "$(jq -r '.config["transforms.outbox.table.field.event.timestamp"]' "${config}")" \
     "created_at" "${service} logical timestamp mapping"
-  assert_equal "$(jq -r '.config["transforms.outbox.table.field.event.type"]' "${config}")" \
-    "payload_type" "${service} payload type mapping"
+  assert_absent "${config}" "transforms.outbox.table.field.event.type" \
+    "${service} payload type mapping"
   placement="$(jq -r '.config["transforms.outbox.table.fields.additional.placement"]' "${config}")"
   assert_contains "${placement}" "kafka_partition_id:partition" "${service} partition mapping"
   assert_contains "${placement}" "headers_json:header:headers_json" "${service} header mapping"
+  assert_contains "${placement}" "payload_type:header:eventType" \
+    "${service} event type header mapping"
   if jq -e --arg other "${4:-unused}" \
       '.config["table.include.list"] == $other' "${config}" >/dev/null; then
     echo "${service} connector crosses service ownership" >&2

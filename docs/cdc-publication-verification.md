@@ -18,8 +18,12 @@ application-to-Kafka E2E.
 - `OrderAdmissionApplicationServiceTransactionTest` proves terminal Risk admission state and its
   outbox row share one transaction.
 - `scripts/verify-outbox-connector-contracts.sh` verifies each retained connector reads only its
-  owning outbox table and rejects current direct Kafka producer types in Risk and Account production
+  owning outbox table, publishes `payload_type` as the Debezium `eventType` header together with
+  `headers_json`, and rejects current direct Kafka producer types in Risk and Account production
   Java sources.
+- `scripts/test-cdc-observer-fixture-contract.sh` verifies that the Kubernetes CDC observer fixture
+  writes the same `event_id`, `content_type`, and `payload_type` header shape as a normal outbox
+  event. It runs as part of the Phase 1 preflight, before migrations or workload startup.
 - `scripts/run-outbox-cdc-contract-check.sh` owns Compose lifecycle and fault injection only. It
   provides environment-specific Adapters to the shared verification Module.
 

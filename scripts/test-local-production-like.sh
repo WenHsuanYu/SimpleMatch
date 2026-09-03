@@ -18,6 +18,8 @@ fingerprint_lib="$script_dir/lib/local-certification-fingerprint.sh"
 evidence_lib="$script_dir/lib/local-certification-evidence.sh"
 planner_lib="$script_dir/lib/local-certification-planner.sh"
 images_lib="$script_dir/lib/local-certification-images.sh"
+cdc_fixture_lib="$script_dir/lib/cdc-observer-fixture.sh"
+cdc_fixture_test="$script_dir/test-cdc-observer-fixture-contract.sh"
 normalizer="$script_dir/normalize-local-images-for-kind.sh"
 normalizer_dockerfile="$repo_root/deploy/docker/Dockerfile.kind-normalized"
 
@@ -27,9 +29,10 @@ for file in \
   "$runner" "$framework_lib" "$kafka_lib" "$kubernetes_lib" \
   "$connect_lib" "$workloads_lib" "$bootstrap_lib" "$run_lib" \
   "$transport_lib" "$phase_graph_lib" "$fingerprint_lib" \
-  "$evidence_lib" "$planner_lib" "$images_lib"; do
+  "$evidence_lib" "$planner_lib" "$images_lib" "$cdc_fixture_lib"; do
   bash -n "$file"
 done
+bash -n "$cdc_fixture_test"
 
 for version_contract in \
   'gradle-9.7.0-bin.zip' \
@@ -86,6 +89,17 @@ bash -n "$repo_root/scripts/verify-local-boot-run-image.sh"
 grep -Fq 'docker image save --platform' "$repo_root/scripts/verify-local-boot-run-image.sh"
 bash -n "$repo_root/scripts/run-risk-cdc-delivery-observer-check.sh"
 bash -n "$repo_root/scripts/lib/local-kind.sh"
+observer_script="$repo_root/scripts/run-risk-cdc-delivery-observer-check.sh"
+grep -Fq 'current_epoch_millis()' "$observer_script"
+bash "$cdc_fixture_test"
+grep -Fq 'baseline_age_ms="$(( $(current_epoch_millis) - baseline_updated ))"' \
+  "$observer_script"
+grep -Fq 'zero_traffic_age_ms="$(( $(current_epoch_millis) - zero_traffic_updated ))"' \
+  "$observer_script"
+if grep -Fq '$(date +%s) * 1000' "$observer_script"; then
+  printf '%s\n' 'CDC observer must preserve millisecond precision for metric ages.' >&2
+  exit 1
+fi
 grep -Fq 'kubernetes-cdc-delivery' "$phase_graph_lib" "$run_lib" \
   "$fingerprint_lib"
 grep -Fq 'certification_kubernetes_cdc_delivery_outputs_json' \
@@ -166,6 +180,9 @@ grep -Fq 'run-outbox-cdc-contract-check.sh' "$run_lib"
 grep -Fq 'ack-mode: manual_immediate' \
   "$repo_root/services/risk-service/src/main/resources/application.yaml"
 grep -Fq 'run-risk-cdc-delivery-observer-check.sh' "$run_lib"
+grep -Fq 'cdc-observer-fixture.sh' "$observer_script"
+grep -Fq 'test-cdc-observer-fixture-contract.sh' \
+  "$repo_root/scripts/test-phase1-deployment-contracts.sh"
 grep -Fq 'simplematch.delivery.observations' \
   "$repo_root/scripts/run-risk-cdc-delivery-observer-check.sh"
 grep -Fq 'risk_service.cdc_delivery_observation' \

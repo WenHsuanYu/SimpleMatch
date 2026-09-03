@@ -29,6 +29,23 @@ def require_value(condition, message)
   exit 1
 end
 
+def require_outbox_header_contract(values, owner_name)
+  placement = values.fetch("transforms.outbox.table.fields.additional.placement", "")
+  fields = placement.split(",")
+  require_value(
+    !values.key?("transforms.outbox.table.field.event.type"),
+    "#{owner_name} connector must not use the unsupported event type mapping"
+  )
+  require_value(
+    fields.include?("headers_json:header:headers_json"),
+    "#{owner_name} connector must publish headers_json as a Kafka header"
+  )
+  require_value(
+    fields.include?("payload_type:header:eventType"),
+    "#{owner_name} connector must publish payload_type as the eventType header"
+  )
+end
+
 def postgres_credentials_from_secret?(environment, owner_prefix)
   %w[USER PASSWORD].all? do |credential|
     environment.dig(
@@ -173,6 +190,9 @@ require_value(
     marketdata_connector_values["table.include.list"] == "marketdata_publisher.outbox",
   "Local Kafka Connect must retain owner-scoped Risk, Account, and marketdata connectors"
 )
+require_outbox_header_contract(connector_values, "Risk")
+require_outbox_header_contract(account_connector_values, "Account")
+require_outbox_header_contract(marketdata_connector_values, "Marketdata")
 require_value(connect_container&.dig("resources", "requests") && connect_container.dig("resources", "limits"), "Local Kafka Connect must define resources")
 require_value(connect_container&.key?("readinessProbe") && connect_container.key?("startupProbe"), "Local Kafka Connect must define bounded probes")
 require_value(

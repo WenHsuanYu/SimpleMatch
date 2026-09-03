@@ -34,7 +34,6 @@ data:
         "transforms.outbox.table.field.event.key": "message_key",
         "transforms.outbox.table.field.event.payload": "payload",
         "transforms.outbox.table.field.event.timestamp": "created_at",
-        "transforms.outbox.table.field.event.type": "payload_type",
-        "transforms.outbox.table.fields.additional.placement": "kafka_partition_id:partition,headers_json:header:headers_json"
+        "transforms.outbox.table.fields.additional.placement": "kafka_partition_id:partition,headers_json:header:headers_json,payload_type:header:eventType"
       }
     }

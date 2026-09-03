@@ -5,6 +5,8 @@ IFS=$'\n\t'
 script_dir="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
 # shellcheck source=scripts/lib/local-resilience.sh
 source "$script_dir/lib/local-resilience.sh"
+# shellcheck source=scripts/lib/cdc-observer-fixture.sh
+source "$script_dir/lib/cdc-observer-fixture.sh"
 
 namespace=""
 expected_namespace_run_id=""
@@ -35,6 +37,8 @@ postgres_pod=""
 kafka_pod=""
 risk_pod=""
 event_id=""
+headers_json=""
+headers_json_sql=""
 
 usage() {
   cat <<'EOF'
@@ -108,6 +112,10 @@ risk_base_url=""
 command_partition=""
 command_key=""
 payload_hex=""
+
+current_epoch_millis() {
+  date +%s%3N
+}
 
 remaining_seconds() {
   local remaining
@@ -517,13 +525,13 @@ assert_metric_measurement_is_nonnegative "$evidence_dir/metric-before-updated-at
 jq -e '.measurements[0].value == 0' "$evidence_dir/metric-before-lag.json" \
   >/dev/null || die 'Risk CDC lag gauge is not zero before outage'
 
-baseline_started_at_ms="$(( $(date +%s) * 1000 ))"
+baseline_started_at_ms="$(current_epoch_millis)"
 baseline_row="$(wait_for_metric_row zero "$baseline_started_at_ms" \
   'Risk CDC metric row did not become fresh before timeout')"
 IFS='|' read -r baseline_lag baseline_updated <<<"$baseline_row"
 [[ "$baseline_lag" == 0 ]] || die \
   "Risk CDC metric is not healthy before outage: lag=$baseline_lag"
-baseline_age_ms="$(( $(date +%s) * 1000 - baseline_updated ))"
+baseline_age_ms="$(( $(current_epoch_millis) - baseline_updated ))"
 (( baseline_age_ms >= 0 &&
   baseline_age_ms <= maximum_metric_age_seconds * 1000 )) || die \
   "Risk CDC baseline metric is stale or from the future: age_ms=$baseline_age_ms"
@@ -532,7 +540,7 @@ metric_json observation_updated_at_unix_ms \
 zero_traffic_row="$(wait_for_metric_row zero "$baseline_updated" \
   'Risk CDC metric did not remain fresh and zero without traffic')"
 zero_traffic_updated="${zero_traffic_row#*|}"
-zero_traffic_age_ms="$(( $(date +%s) * 1000 - zero_traffic_updated ))"
+zero_traffic_age_ms="$(( $(current_epoch_millis) - zero_traffic_updated ))"
 (( zero_traffic_age_ms >= 0 &&
   zero_traffic_age_ms <= maximum_metric_age_seconds * 1000 )) || die \
   "Risk CDC zero-traffic metric is stale or from the future: age_ms=$zero_traffic_age_ms"
@@ -591,15 +599,18 @@ validate_selected_matching_open_barrier() {
 
 resolve_seeded_matching_command
 validate_selected_matching_open_barrier
-created_at_ms="$(( $(date +%s) * 1000 ))"
+created_at_ms="$(current_epoch_millis)"
 aggregate_id="${run_id}-${event_id}"
+headers_json="$(cdc_observer_headers_json "$event_id")" || die \
+  'could not construct the CDC observer outbox headers'
+headers_json_sql="$(printf '%s' "$headers_json" | sed "s/'/''/g")"
 sql "INSERT INTO risk_service.outbox (
     event_id, topic, message_key, kafka_partition_id, payload, payload_type, headers_json,
     aggregate_type, aggregate_id, created_at_unix_ms, created_at
   ) VALUES (
     '$event_id'::uuid, 'matching.commands', '$command_key', $command_partition,
     decode('$payload_hex', 'hex'),
-    'simplematch.matching.runtime.v1.MatchingCommand', '{}', 'cdc_delivery_observer',
+    '$(cdc_observer_payload_type)', '$headers_json_sql', 'cdc_delivery_observer',
     '$aggregate_id', $created_at_ms,
     to_timestamp($created_at_ms / 1000.0) AT TIME ZONE 'UTC'
   );" >"$evidence_dir/outbox-insert.log"
@@ -611,6 +622,7 @@ jq -n --arg runId "$run_id" --arg eventId "$event_id" --arg topic matching.comma
   --arg artifactSha256 "$artifact_sha256" \
   --arg routingAlgorithmVersion "$artifact_routing_version" \
   --arg matchingImageDigest "$matching_image_digest" \
+  --arg headersJson "$headers_json" \
   --arg validatorPath "$matching_fixture_validator" \
   --arg validatorSha256 "$matching_fixture_validator_sha256" \
   '{runId:$runId,eventId:$eventId,topic:$topic,commandKey:$commandKey,
@@ -619,6 +631,7 @@ jq -n --arg runId "$run_id" --arg eventId "$event_id" --arg topic matching.comma
     tradingSessionId:$tradingSessionId,artifactSha256:$artifactSha256,
     routingAlgorithmVersion:$routingAlgorithmVersion,
     matchingImageDigest:$matchingImageDigest,
+    headersJson:$headersJson,
     validatorPath:$validatorPath,validatorSha256:$validatorSha256,
     openBarrierValidated:true}' \
   >"$evidence_dir/event.json"

@@ -130,9 +130,9 @@ void validate_open_barrier(std::istream &payload_stream,
     validation_failure("Kafka key is not a valid command identity");
   }
 
-  const std::string encoded_payload(
+  const std::string encoded_payload{
       std::istreambuf_iterator<char>(payload_stream),
-      std::istreambuf_iterator<char>());
+      std::istreambuf_iterator<char>()};
   if (payload_stream.bad()) {
     validation_failure("payload could not be read");
   }
