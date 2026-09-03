@@ -5,7 +5,6 @@ set -euo pipefail
 service_id="${SIMPLEMATCH_FLYWAY_SERVICE_ID:?SIMPLEMATCH_FLYWAY_SERVICE_ID is required}"
 gradle_user_home="${GRADLE_USER_HOME:-/tmp/gradle}"
 gradle_cache_seed_dir="${SIMPLEMATCH_GRADLE_CACHE_SEED_DIR:-/opt/simplematch/gradle-cache}"
-gradle_seed_marker="$gradle_user_home/.simplematch-gradle-seeded"
 project_cache_dir="${SIMPLEMATCH_GRADLE_PROJECT_CACHE_DIR:-/tmp/gradle-project}"
 gradle_jvm_args="${SIMPLEMATCH_GRADLE_JVM_ARGS:-}"
 kotlin_compiler_execution_strategy="${SIMPLEMATCH_KOTLIN_COMPILER_EXECUTION_STRATEGY:-}"
@@ -31,10 +30,9 @@ fi
 mkdir -p "$work_dir"
 cp -a /workspace/. "$work_dir/"
 
-if [[ ! -e "$gradle_seed_marker" && -d "$gradle_cache_seed_dir/wrapper/dists" ]]; then
+if [[ -d "$gradle_cache_seed_dir/wrapper/dists" ]]; then
   mkdir -p "$gradle_user_home/wrapper/dists"
   cp -a "$gradle_cache_seed_dir/wrapper/dists/." "$gradle_user_home/wrapper/dists/"
-  : >"$gradle_seed_marker"
 fi
 
 case "$service_id" in

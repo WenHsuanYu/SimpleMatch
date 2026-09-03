@@ -61,7 +61,7 @@ grep -Fq '  --project-cache-dir "$project_cache_dir" \' \
 
 grep -Fq 'gradle_cache_seed_dir="${SIMPLEMATCH_GRADLE_CACHE_SEED_DIR:-/opt/simplematch/gradle-cache}"' \
   "$repo_root/deploy/docker/run-flyway" &&
-grep -Fq 'gradle_seed_marker="$gradle_user_home/.simplematch-gradle-seeded"' \
+grep -Fq 'if [[ -d "$gradle_cache_seed_dir/wrapper/dists" ]]; then' \
   "$repo_root/deploy/docker/run-flyway" &&
 grep -Fq 'cp -a "$gradle_cache_seed_dir/wrapper/dists/." "$gradle_user_home/wrapper/dists/"' \
   "$repo_root/deploy/docker/run-flyway" || {
