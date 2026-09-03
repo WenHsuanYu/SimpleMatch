@@ -241,3 +241,8 @@ register_kubernetes_risk_connector() {
 register_kubernetes_account_connector() {
   register_kubernetes_outbox_connector account-service-outbox account-service-outbox-connector
 }
+
+register_kubernetes_marketdata_connector() {
+  register_kubernetes_outbox_connector \
+    marketdata-publisher-outbox marketdata-publisher-outbox-connector
+}

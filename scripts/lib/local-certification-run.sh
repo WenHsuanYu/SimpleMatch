@@ -356,6 +356,9 @@ certification_execute_phase() {
     kubernetes-account-outbox-connector)
       run_logged "$phase_id" register_kubernetes_account_connector
       ;;
+    kubernetes-marketdata-outbox-connector)
+      run_logged "$phase_id" register_kubernetes_marketdata_connector
+      ;;
     kubernetes-workloads)
       run_logged "$phase_id" wait_for_kubernetes_workloads
       ;;

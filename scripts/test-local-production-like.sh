@@ -208,6 +208,11 @@ grep -Fxq kubernetes-workload-apply \
   printf '%s\n' 'Account connector registration must depend on workload application.' >&2
   exit 1
 }
+grep -Fxq kubernetes-workload-apply \
+  <<<"$(certification_phase_dependencies kubernetes-marketdata-outbox-connector)" || {
+  printf '%s\n' 'Marketdata connector registration must depend on workload application.' >&2
+  exit 1
+}
 grep -Fxq kubernetes-risk-outbox-connector \
   <<<"$(certification_phase_dependencies kubernetes-workloads)" || {
   printf '%s\n' 'Workload readiness must wait for the Risk connector.' >&2
@@ -218,6 +223,11 @@ grep -Fxq kubernetes-account-outbox-connector \
   printf '%s\n' 'Workload readiness must wait for the Account connector.' >&2
   exit 1
 }
+grep -Fxq kubernetes-marketdata-outbox-connector \
+  <<<"$(certification_phase_dependencies kubernetes-workloads)" || {
+  printf '%s\n' 'Workload readiness must wait for the Marketdata connector.' >&2
+  exit 1
+}
 grep -Fq 'apply_kubernetes_migrations' "$kubernetes_lib" "$run_lib"
 grep -Fq 'apply_kubernetes_topic_provisioning' "$kubernetes_lib" "$run_lib"
 grep -Fq 'local-kubernetes-migrations.yaml' "$run_lib"
@@ -225,11 +235,13 @@ grep -Fq 'local-kubernetes-workloads.yaml' "$run_lib"
 grep -Fq 'publish_local_matching_open_barriers' "$run_lib"
 grep -Fq 'register_kubernetes_risk_connector' "$run_lib"
 grep -Fq 'register_kubernetes_account_connector' "$run_lib"
+grep -Fq 'register_kubernetes_marketdata_connector' "$run_lib"
 
 grep -Fq -- "--for=jsonpath='{.status.readyReplicas}'=3 statefulset/kafka --timeout=300s" \
   "$kubernetes_lib"
 grep -Fq 'register_kubernetes_risk_connector' "$connect_lib" "$run_lib"
 grep -Fq 'register_kubernetes_account_connector' "$connect_lib" "$run_lib"
+grep -Fq 'register_kubernetes_marketdata_connector' "$connect_lib" "$run_lib"
 grep -Fq 'local-kubernetes-inputs.yaml' "$run_lib"
 if grep -Fq 'prepare_kubernetes_bridge' "$runner" "$kubernetes_lib" "$run_lib"; then
   printf '%s\n' 'Certification still depends on the obsolete Compose-to-Kubernetes bridge.' >&2

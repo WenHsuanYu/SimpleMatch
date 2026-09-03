@@ -135,7 +135,8 @@ kubernetes-workload-apply|FRESH|REEXECUTE|manifest runtime-state|runtime-state|k
 kubernetes-matching-apply|FRESH|REEXECUTE|manifest runtime-state|runtime-state|kubernetes-open-barriers|1
 kubernetes-risk-outbox-connector|FRESH|REEXECUTE|runtime-state configuration|runtime-state|kubernetes-workload-apply|1
 kubernetes-account-outbox-connector|FRESH|REEXECUTE|runtime-state configuration|runtime-state|kubernetes-workload-apply|1
-kubernetes-workloads|FRESH|REEXECUTE|runtime-state|runtime-proof|kubernetes-risk-outbox-connector kubernetes-account-outbox-connector|1
+kubernetes-marketdata-outbox-connector|FRESH|REEXECUTE|runtime-state configuration|runtime-state|kubernetes-workload-apply|1
+kubernetes-workloads|FRESH|REEXECUTE|runtime-state|runtime-proof|kubernetes-risk-outbox-connector kubernetes-account-outbox-connector kubernetes-marketdata-outbox-connector|1
 kubernetes-matching-workloads|FRESH|REEXECUTE|runtime-state|runtime-proof|kubernetes-matching-apply|1
 kubernetes-fleet|FRESH|REEXECUTE|runtime-state|runtime-proof||1
 retained-run-provenance|FRESH|REEXECUTE|runtime-proof source image-lock|provenance|kubernetes-fleet|1

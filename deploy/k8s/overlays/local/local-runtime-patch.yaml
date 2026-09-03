@@ -23,8 +23,6 @@ spec:
                 configMapKeyRef:
                   name: matching-session-config
                   key: matching_image_digest
-            - name: SIMPLEMATCH_RISK_SERVICE_ADMISSION_CDC_BACKPRESSURE_ENABLED
-              value: "false"
       volumes:
         - name: market-reference
           configMap:

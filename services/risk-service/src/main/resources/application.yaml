@@ -37,10 +37,14 @@ spring:
       enable-auto-commit: false
       key-deserializer: org.apache.kafka.common.serialization.StringDeserializer
       value-deserializer: org.apache.kafka.common.serialization.ByteArrayDeserializer
+    listener:
+      ack-mode: manual_immediate
 
 simplematch:
   risk-service:
     scheduling-enabled: true
+    cdc-delivery:
+      enabled: false
     market-reference:
       matching-image-digest: ${SIMPLEMATCH_MATCHING_IMAGE_DIGEST:}
     admission:

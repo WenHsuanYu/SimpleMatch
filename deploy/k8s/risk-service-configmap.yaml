@@ -6,6 +6,11 @@ data:
   application.yaml: |
     simplematch:
       risk-service:
+        cdc-delivery:
+          enabled: true
+          consumer-group: risk-cdc-delivery
+          refresh-interval: 5s
+          query-timeout: 5s
         market-reference:
           artifact-location: file:/etc/simplematch/market-reference/market_reference.json
           checksum-location: file:/etc/simplematch/market-reference/market_reference.sha256
