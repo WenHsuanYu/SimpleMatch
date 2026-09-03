@@ -109,8 +109,13 @@ cross-node storage HA or production certification.
 
 The local overlay also runs two Debezium Kafka Connect workers against the in-cluster Kafka and
 PostgreSQL Services. The certification runner waits for all Flyway Jobs to complete, then registers
-the Risk outbox connector through the Connect REST API and records its `RUNNING` connector/task
-status before creating the application workloads. This is a local plaintext/Secret-backed lab
+each retained service-owned connector (Risk, Account, and marketdata-publisher) through the Connect
+REST API and records its `RUNNING` connector/task status before waiting for application workloads.
+Risk additionally runs a dedicated Kafka observer group: it persists exact Debezium `id` headers,
+proves committed offsets reached every current `matching.commands` partition head, and only then
+refreshes the durable admission-lag row. The full Kubernetes gate pauses the Risk connector,
+proves a pending outbox row raises the durable lag and Actuator gauges, resumes the connector, and
+checks exact observation plus zero-lag recovery. This is a local plaintext/Secret-backed lab
 profile; staging and production keep the separate TLS/SASL template.
 
 The base deliberately reuses the reviewed flat Matching and QuickFIX manifests. The renderer uses

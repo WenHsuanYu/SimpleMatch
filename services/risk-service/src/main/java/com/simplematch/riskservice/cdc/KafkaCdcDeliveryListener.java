@@ -1,5 +1,6 @@
 package com.simplematch.riskservice.cdc;
 
+import com.simplematch.config.delivery.DeliveryPosition;
 import java.nio.charset.StandardCharsets;
 import java.time.Clock;
 import java.util.Objects;
@@ -14,13 +15,25 @@ public final class KafkaCdcDeliveryListener {
   private final CdcDeliveryProgressStore store;
   private final Clock clock;
 
-  /** Creates the listener over the durable Risk delivery store. */
+  /**
+   * Creates the listener over the durable Risk delivery store.
+   *
+   * @param store durable Risk delivery observation store
+   * @param clock clock used for observation timestamps
+   * @throws NullPointerException if {@code store} or {@code clock} is {@code null}
+   */
   public KafkaCdcDeliveryListener(CdcDeliveryProgressStore store, Clock clock) {
     this.store = Objects.requireNonNull(store, "store");
     this.clock = Objects.requireNonNull(clock, "clock");
   }
 
-  /** Persists one exact observation before acknowledging its Kafka offset. */
+  /**
+   * Persists one exact observation before acknowledging its Kafka offset.
+   *
+   * @param record delivered Kafka record carrying the Debezium {@code id} header
+   * @param acknowledgment acknowledgement handle for the consumed Kafka offset
+   * @throws IllegalArgumentException if the record has no valid Debezium event identity
+   */
   @KafkaListener(
       topics = "${simplematch.kafka.topics.matching-commands:matching.commands}",
       groupId = "${simplematch.risk-service.cdc-delivery.consumer-group:risk-cdc-delivery}",
@@ -35,7 +48,9 @@ public final class KafkaCdcDeliveryListener {
         UUID.fromString(new String(identity.value(), StandardCharsets.UTF_8));
     store.observe(
         new CdcDeliveryObservation(
-            eventId, record.topic(), record.partition(), record.offset(), clock.millis()));
+            eventId,
+            new DeliveryPosition(record.topic(), record.partition(), record.offset()),
+            clock.millis()));
     acknowledgment.acknowledge();
   }
 }

@@ -6,6 +6,7 @@ import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 
+import com.simplematch.config.delivery.DeliveryPosition;
 import java.nio.charset.StandardCharsets;
 import java.time.Clock;
 import java.time.Instant;
@@ -14,6 +15,7 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.UUID;
 import org.apache.kafka.clients.consumer.ConsumerRecord;
+import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.springframework.kafka.support.Acknowledgment;
 
@@ -24,6 +26,7 @@ class KafkaCdcDeliveryListenerTest {
       Clock.fixed(Instant.parse("2026-09-02T00:00:05Z"), ZoneOffset.UTC);
 
   @Test
+  @DisplayName("records the Debezium event id before acknowledging")
   void recordsTheDebeziumEventIdHeaderBeforeAcknowledging() {
     final RecordingProgressStore store = new RecordingProgressStore();
     final KafkaCdcDeliveryListener listener = new KafkaCdcDeliveryListener(store, CLOCK);
@@ -35,11 +38,16 @@ class KafkaCdcDeliveryListenerTest {
     listener.onDelivery(record, acknowledgment);
 
     assertThat(store.observations)
-        .containsExactly(new CdcDeliveryObservation(EVENT_ID, "matching.commands", 3, 41L, 1788307205000L));
+        .containsExactly(
+            new CdcDeliveryObservation(
+                EVENT_ID,
+                new DeliveryPosition("matching.commands", 3, 41L),
+                1788307205000L));
     verify(acknowledgment).acknowledge();
   }
 
   @Test
+  @DisplayName("rejects a record without the outbox identity")
   void rejectsARecordWithoutTheOutboxIdentityAndDoesNotAcknowledgeIt() {
     final KafkaCdcDeliveryListener listener =
         new KafkaCdcDeliveryListener(new RecordingProgressStore(), CLOCK);

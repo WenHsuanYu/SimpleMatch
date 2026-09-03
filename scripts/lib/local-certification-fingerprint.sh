@@ -402,6 +402,15 @@ certification_phase_input_manifest() {
         scripts/lib/local-certification-fingerprint.sh \
         -- "phase=$phase_id" "version=$phase_version"
       ;;
+    static-phase1-deployment-contracts)
+      _certification_paths_and_values_manifest \
+        scripts/test-phase1-deployment-contracts.sh \
+        scripts/verify-outbox-connector-contracts.sh \
+        scripts/test-local-resilience.sh scripts/lib/local-resilience.sh \
+        deploy/k8s services \
+        scripts/lib/local-certification-fingerprint.sh \
+        -- "phase=$phase_id" "version=$phase_version"
+      ;;
     static-kubernetes-dependencies)
       _certification_paths_and_values_manifest \
         scripts/test-local-kubernetes-dependencies.sh deploy/k8s \
@@ -436,6 +445,38 @@ certification_phase_input_manifest() {
         "postgresPassword=${local_postgres_password:-}" \
         "network=${SIMPLEMATCH_PRODUCTION_LIKE_NETWORK:-kind}" \
         "networkExternal=${SIMPLEMATCH_PRODUCTION_LIKE_NETWORK_EXTERNAL:-true}"
+      ;;
+    cdc-outbox-failure-live)
+      _certification_paths_and_values_manifest \
+        scripts/run-outbox-cdc-contract-check.sh scripts/lib/cdc-verifier.sh \
+        deploy/compose/apply-risk-service-outbox-connector.sh \
+        deploy/compose/apply-account-service-outbox-connector.sh \
+        deploy/compose/apply-marketdata-publisher-outbox-connector.sh \
+        deploy/compose/kafka-connect.production-like.yml \
+        scripts/lib/local-certification-fingerprint.sh \
+        -- "phase=$phase_id" "version=$phase_version"
+      ;;
+    kubernetes-cdc-delivery)
+      _certification_paths_and_values_manifest \
+        scripts/run-risk-cdc-delivery-observer-check.sh \
+        scripts/lib/local-resilience.sh scripts/lib/local-certification-connect.sh \
+        scripts/lib/local-certification-run.sh \
+        scripts/lib/local-kind.sh \
+        services/risk-service/src/main/java/com/simplematch/riskservice/cdc \
+        services/risk-service/src/main/java/com/simplematch/riskservice/store \
+        services/risk-service/src/main/java/com/simplematch/riskservice/config/RiskCdcDeliveryConfiguration.java \
+        services/risk-service/src/main/java/com/simplematch/riskservice/config/CdcDeliveryProperties.java \
+        services/risk-service/src/main/java/com/simplematch/riskservice/config/RiskServiceProperties.java \
+        services/risk-service/src/main/resources/db/migration/risk-service/V10__record_cdc_delivery_observations.sql \
+        services/risk-service/src/main/resources/application.yaml \
+        deploy/k8s/simplematch-platform-configmap.yaml deploy/k8s/risk-service-configmap.yaml \
+        deploy/k8s/overlays/local/local-runtime-patch.yaml deploy/k8s/debezium-kafka-connect-local.yaml \
+        deploy/k8s/risk-service-outbox-connector-configmap.yaml \
+        deploy/k8s/account-service-outbox-connector-configmap.yaml \
+        deploy/k8s/marketdata-publisher-outbox-connector-configmap.yaml \
+        scripts/lib/local-certification-artifacts.sh \
+        scripts/lib/local-certification-fingerprint.sh \
+        -- "phase=$phase_id" "version=$phase_version"
       ;;
     local-image-inventory)
       _certification_paths_and_values_manifest \

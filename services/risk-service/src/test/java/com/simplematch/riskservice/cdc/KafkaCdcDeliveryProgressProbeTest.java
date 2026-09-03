@@ -25,6 +25,7 @@ import org.apache.kafka.common.KafkaFuture;
 import org.apache.kafka.common.Node;
 import org.apache.kafka.common.TopicPartition;
 import org.apache.kafka.common.TopicPartitionInfo;
+import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 
 class KafkaCdcDeliveryProgressProbeTest {
@@ -32,6 +33,7 @@ class KafkaCdcDeliveryProgressProbeTest {
   private static final String GROUP = "risk-cdc-delivery";
 
   @Test
+  @DisplayName("reports caught up only when every committed offset reaches its topic head")
   void reportsCaughtUpOnlyWhenEveryCommittedOffsetReachedItsTopicHead() {
     final Admin admin = adminWithOffsets(Map.of(partition(0), 12L, partition(1), 9L));
 
@@ -43,6 +45,7 @@ class KafkaCdcDeliveryProgressProbeTest {
   }
 
   @Test
+  @DisplayName("reports behind when a topic head has no committed observer offset")
   void reportsBehindWhenAHeadHasNoCommittedObserverOffset() {
     final Admin admin = adminWithOffsets(Map.of(partition(0), 12L));
 
@@ -54,6 +57,7 @@ class KafkaCdcDeliveryProgressProbeTest {
   }
 
   @Test
+  @DisplayName("treats an empty topic with no committed offsets as healthy zero traffic")
   void treatsAnEmptyTopicWithNoCommittedOffsetsAsHealthyZeroTraffic() {
     final Admin admin = adminWithOffsets(Map.of(), Map.of(partition(0), 0L, partition(1), 0L));
 
@@ -62,6 +66,18 @@ class KafkaCdcDeliveryProgressProbeTest {
             .isCaughtUp(TOPIC);
 
     assertThat(caughtUp).isTrue();
+  }
+
+  @Test
+  @DisplayName("keeps a non-empty partition behind when its observer offset is missing")
+  void keepsANonEmptyPartitionBehindWhenItsObserverOffsetIsMissing() {
+    final Admin admin = adminWithOffsets(Map.of(), Map.of(partition(0), 0L, partition(1), 1L));
+
+    final boolean caughtUp =
+        new KafkaCdcDeliveryProgressProbe(admin, GROUP, Duration.ofSeconds(1))
+            .isCaughtUp(TOPIC);
+
+    assertThat(caughtUp).isFalse();
   }
 
   private Admin adminWithOffsets(Map<TopicPartition, Long> committedOffsets) {

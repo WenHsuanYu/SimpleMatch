@@ -16,6 +16,15 @@ rendered_path, overlay = ARGV
 visitor = Psych::Visitors::ToRuby.create
 documents = Psych.parse_stream(File.read(rendered_path, encoding: "UTF-8")).children.map { |document| visitor.accept(document) }.compact
 resources = documents.to_h { |document| [[document.fetch("kind"), document.fetch("metadata").fetch("name")], document] }
+platform_application = YAML.safe_load(
+  resources.fetch(["ConfigMap", "simplematch-platform-config"])
+    .fetch("data").fetch("application.yaml")
+)
+abort "#{overlay}: Java workloads do not use ECS structured console logs" unless
+  platform_application.dig("logging", "structured", "format", "console") == "ecs"
+abort "#{overlay}: structured logs do not identify the deployment environment" unless
+  platform_application.dig("logging", "structured", "ecs", "service", "environment") ==
+    "${simplematch.environment}"
 
 required_deployments = %w[
   account-service
@@ -142,6 +151,17 @@ if overlay == "local"
     end
   end
 
+  risk_config = YAML.safe_load(
+    resources.fetch(["ConfigMap", "risk-service-config"])
+      .fetch("data").fetch("application.yaml")
+  )
+  abort "local: Risk CDC delivery observer is not enabled" unless
+    risk_config.dig("simplematch", "risk-service", "cdc-delivery", "enabled") == true
+  risk_env = resources.fetch(["Deployment", "risk-service"])
+    .fetch("spec").fetch("template").fetch("spec").fetch("containers").first.fetch("env")
+  abort "local: Risk admission backpressure is explicitly disabled" if
+    risk_env.any? { |entry| entry["name"] == "SIMPLEMATCH_RISK_SERVICE_ADMISSION_CDC_BACKPRESSURE_ENABLED" }
+
   matching = resources.fetch(["StatefulSet", "matching"])
   matching_pod_spec = matching.fetch("spec").fetch("template").fetch("spec")
   abort "local: Matching must not require a CPU Manager label in the local lab" if
@@ -209,6 +229,17 @@ if overlay == "local"
   publisher = resources.fetch(["Deployment", "marketdata-publisher"])
   abort "local: superseded marketdata-publisher runtime must be disabled" unless
     publisher.fetch("spec").fetch("replicas") == 0
+
+  local_connector = resources.fetch(["Deployment", "kafka-connect"])
+  local_connector_env = local_connector.fetch("spec").fetch("template").fetch("spec")
+    .fetch("containers").first.fetch("env").to_h { |entry| [entry.fetch("name"), entry] }
+  {
+    "MARKETDATA_PUBLISHER_POSTGRES_USER" => {"name" => "simplematch-postgres-secrets", "key" => "postgres_user"},
+    "MARKETDATA_PUBLISHER_POSTGRES_PASSWORD" => {"name" => "simplematch-postgres-secrets", "key" => "postgres_password"}
+  }.each do |name, expected_reference|
+    abort "local: Kafka Connect marketdata credential #{name} is not Secret-backed" unless
+      local_connector_env.fetch(name).fetch("valueFrom").fetch("secretKeyRef") == expected_reference
+  end
 end
 
 network_policy = resources.fetch(["NetworkPolicy", "simplematch-java-services"])

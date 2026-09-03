@@ -136,8 +136,23 @@ ctest --preset dev-debug --output-on-failure
 
 bash scripts/test-matching-kubernetes-manifests.sh
 bash scripts/test-matching-topic-profile.sh
+bash scripts/test-phase1-deployment-contracts.sh
 bash scripts/verify-outbox-connector-contracts.sh
 bash scripts/run-outbox-cdc-contract-check.sh
+
+# The following phase is normally invoked by the full local certification runner after the
+# Kubernetes workloads and retained connectors are Ready. It is shown separately for operators
+# resuming a retained, lifecycle-owned namespace. Read the run id from the retained run context:
+certification_evidence_dir="${SIMPLEMATCH_CERTIFICATION_EVIDENCE_DIR:-out/certification/local-production-like}"
+namespace_run_id="$(awk -F= '$1 == "run_id" { print substr($0, index($0, "=") + 1); exit }' \
+  "$certification_evidence_dir/run-context")"
+bash scripts/run-risk-cdc-delivery-observer-check.sh \
+  --namespace "$SIMPLEMATCH_CERTIFICATION_NAMESPACE" \
+  --namespace-run-id "$namespace_run_id" \
+  --evidence-dir out/certification/local-production-like/cdc-delivery
+
+# The observer accepts only a namespace labeled disposable and managed by
+# local-production-like-certification, and --namespace-run-id must match its run-id label.
 
 ./gradlew --no-daemon :services:persistence:test :services:account-service:test :services:quickfix-gateway:test :services:quickfix-gateway:certificationTest :services:market-data-projection:test
 

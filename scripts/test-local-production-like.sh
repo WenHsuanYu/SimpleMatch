@@ -84,6 +84,12 @@ grep -Fq -- '--pullPolicy=IF_NOT_PRESENT' <<<"$boot_override_dry_run"
 grep -Fq 'verify-local-boot-run-image.sh' <<<"$boot_override_dry_run"
 bash -n "$repo_root/scripts/verify-local-boot-run-image.sh"
 grep -Fq 'docker image save --platform' "$repo_root/scripts/verify-local-boot-run-image.sh"
+bash -n "$repo_root/scripts/run-risk-cdc-delivery-observer-check.sh"
+bash -n "$repo_root/scripts/lib/local-kind.sh"
+grep -Fq 'kubernetes-cdc-delivery' "$phase_graph_lib" "$run_lib" \
+  "$fingerprint_lib"
+grep -Fq 'certification_kubernetes_cdc_delivery_outputs_json' \
+  "$repo_root/scripts/lib/local-certification-artifacts.sh"
 
 # Image delivery remains dual-transport. Registry is the default immutable
 # deployment path; kind-load is a fresh compatibility fallback.
@@ -155,6 +161,26 @@ grep -Fq 'simplematch_kind_delete_disposable_namespace' "$framework_lib"
 # Kubernetes manifest phase adapter and is tested independently below.
 certification_dry_run="$($runner --dry-run --skip-build --skip-compose)"
 grep -Fq 'test-kubernetes-overlays.sh' <<<"$certification_dry_run"
+grep -Fq 'test-phase1-deployment-contracts.sh' <<<"$certification_dry_run"
+grep -Fq 'run-outbox-cdc-contract-check.sh' "$run_lib"
+grep -Fq 'ack-mode: manual_immediate' \
+  "$repo_root/services/risk-service/src/main/resources/application.yaml"
+grep -Fq 'run-risk-cdc-delivery-observer-check.sh' "$run_lib"
+grep -Fq 'simplematch.delivery.observations' \
+  "$repo_root/scripts/run-risk-cdc-delivery-observer-check.sh"
+grep -Fq 'risk_service.cdc_delivery_observation' \
+  "$repo_root/scripts/run-risk-cdc-delivery-observer-check.sh"
+grep -Fq 'simplematch_kind_namespace_is_disposable' \
+  "$repo_root/scripts/run-risk-cdc-delivery-observer-check.sh"
+grep -Fq -- '--namespace-run-id' "$repo_root/scripts/run-risk-cdc-delivery-observer-check.sh"
+grep -Fq 'risk-service-config' "$repo_root/scripts/run-risk-cdc-delivery-observer-check.sh"
+for workload in account-service risk-service persistence market-data-projection \
+  marketdata-streamer query-service quickfix-gateway; do
+  grep -Fq "$workload" "$repo_root/scripts/run-risk-cdc-delivery-observer-check.sh" || {
+    printf 'CDC observer does not capture the %s workload log.\n' "$workload" >&2
+    exit 1
+  }
+done
 grep -Fq 'test-local-kubernetes-dependencies.sh' <<<"$certification_dry_run"
 grep -Fq 'test-matching-topic-profile.sh' <<<"$certification_dry_run"
 grep -Fq 'publish-local-images.sh' <<<"$certification_dry_run"
@@ -226,6 +252,16 @@ grep -Fxq kubernetes-account-outbox-connector \
 grep -Fxq kubernetes-marketdata-outbox-connector \
   <<<"$(certification_phase_dependencies kubernetes-workloads)" || {
   printf '%s\n' 'Workload readiness must wait for the Marketdata connector.' >&2
+  exit 1
+}
+grep -Fxq kubernetes-workloads \
+  <<<"$(certification_phase_dependencies kubernetes-cdc-delivery)" || {
+  printf '%s\n' 'Risk CDC evidence must wait for all retained connectors and workloads.' >&2
+  exit 1
+}
+grep -Fxq kubernetes-cdc-delivery \
+  <<<"$(certification_phase_dependencies kubernetes-fleet)" || {
+  printf '%s\n' 'Full Kubernetes certification must include Risk CDC evidence.' >&2
   exit 1
 }
 grep -Fq 'apply_kubernetes_migrations' "$kubernetes_lib" "$run_lib"

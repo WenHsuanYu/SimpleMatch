@@ -25,7 +25,15 @@ public final class KafkaCdcDeliveryProgressProbe implements CdcDeliveryProgressP
   private final String consumerGroup;
   private final Duration timeout;
 
-  /** Creates the adapter for one durable observer group. */
+  /**
+   * Creates the adapter for one durable observer group.
+   *
+   * @param admin Kafka Admin client used to read topic and group progress
+   * @param consumerGroup durable observer consumer-group identity
+   * @param timeout maximum duration for each Kafka progress request
+   * @throws NullPointerException if {@code admin} or {@code timeout} is {@code null}
+   * @throws IllegalArgumentException if the group is blank or the timeout is non-positive
+   */
   public KafkaCdcDeliveryProgressProbe(Admin admin, String consumerGroup, Duration timeout) {
     this.admin = Objects.requireNonNull(admin, "admin");
     if (consumerGroup == null || consumerGroup.isBlank()) {
@@ -38,6 +46,13 @@ public final class KafkaCdcDeliveryProgressProbe implements CdcDeliveryProgressP
     }
   }
 
+  /**
+   * Reports whether the observer group has reached every current topic head.
+   *
+   * @param topic Kafka topic whose partition heads are compared with committed offsets
+   * @return whether every non-empty partition has a committed observer offset at its head
+   * @throws IllegalStateException if Kafka progress cannot be read before the configured timeout
+   */
   @Override
   public boolean isCaughtUp(String topic) {
     final TopicDescription description =

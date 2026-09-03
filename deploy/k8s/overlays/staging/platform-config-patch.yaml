@@ -4,6 +4,13 @@ metadata:
   name: simplematch-platform-config
 data:
   application.yaml: |
+    logging:
+      structured:
+        format:
+          console: ecs
+        ecs:
+          service:
+            environment: ${simplematch.environment}
     simplematch:
       kafka:
         brokers: kafka.staging.example.invalid:9093

@@ -87,4 +87,37 @@ assert_eq RESUME \
   "$(certification_phase_resume_decision kafka-producer-contract)" \
   'materialized producer configuration did not restore same-run validity'
 
+# Runtime CDC evidence is also a content-addressed phase output.  Every file
+# required by the observer must be present and represented with a digest and
+# materialized content; a partial outage report must fail closed.
+cdc_evidence_dir="$evidence_dir/cdc-delivery"
+mkdir -p "$cdc_evidence_dir"
+for cdc_file in \
+  verdict.json event.json connector-running-before.json connector-paused.json \
+  connectors-running-before.json connector-recovered.json \
+  connectors-running-recovered.json health-liveness.json health-readiness.json \
+  metric-before-lag.json metric-before-age.json metric-baseline-age.txt \
+  metric-paused-lag.json \
+  metric-paused-age.json metric-recovered-lag.json metric-recovered-age.json \
+  metric-paused-row.txt metric-recovered-row.txt observation-row.txt \
+  account-service.log persistence.log market-data-projection.log \
+  marketdata-streamer.log query-service.log quickfix-gateway.log risk-service.log; do
+  printf 'evidence:%s\n' "$cdc_file" >"$cdc_evidence_dir/$cdc_file"
+done
+cdc_outputs="$(certification_phase_outputs_json kubernetes-cdc-delivery)" || \
+  fail 'Risk CDC evidence output could not be described'
+jq -e '
+  length == 26 and
+  all(.[];
+    .kind == "file-content" and
+    (.name | startswith("risk-cdc-delivery-")) and
+    (.identity | test("^sha256:[0-9a-f]{64}$")) and
+    (.location | startswith("cdc-delivery/")) and
+    (.contentBase64 | type == "string" and length > 0))
+' <<<"$cdc_outputs" >/dev/null || fail 'Risk CDC evidence output is incomplete'
+rm -f -- "$cdc_evidence_dir/risk-service.log"
+if certification_phase_outputs_json kubernetes-cdc-delivery >/dev/null; then
+  fail 'Risk CDC evidence output accepted a missing safe-log report'
+fi
+
 printf '%s\n' 'Local certification output lineage contracts are valid.'

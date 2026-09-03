@@ -71,7 +71,7 @@ resilience_select_unique_target() {
 resilience_log_is_safe() {
   local path="$1"
   [[ -f "$path" ]] || return 1
-  ! grep -Eiq '8=FIX|(^|[^[:alnum:]_])(35|49|56|55|54|38|44)=[^[:space:]]+|password[=:]|secret[=:]|credentials?[=:]|raw[_ -]?fix|complete[_ -]?account[_ -]?payload' "$path"
+  ! grep -Eiq '8=FIX|(^|[^[:alnum:]_])(35|49|56|55|54|38|44)=[^[:space:]]+|password[=:]|secret[=:]|credentials?[=:]|raw[_ -]?fix|complete[_ -]?account[_ -]?payload|"?(password|secret|credentials?|token|access[_ -]?token|refresh[_ -]?token|private[_ -]?key|client[_ -]?secret)"?[[:space:]]*:[[:space:]]*"?[^"[:space:],}]+|Bearer[[:space:]]+[A-Za-z0-9._~+/-]+=*' "$path"
 }
 
 resilience_owned_namespace() {

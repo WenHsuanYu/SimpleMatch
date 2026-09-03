@@ -4,23 +4,27 @@ import com.simplematch.riskservice.cdc.CdcDeliveryObservation;
 import com.simplematch.riskservice.cdc.CdcDeliveryProgressStore;
 import com.simplematch.riskservice.cdc.CdcDeliverySnapshot;
 import java.util.Objects;
+import org.springframework.jdbc.core.ConnectionCallback;
 import org.springframework.jdbc.core.JdbcTemplate;
-import org.springframework.transaction.support.TransactionTemplate;
 
 /** JDBC persistence adapter for Risk-owned CDC delivery evidence. */
 public final class JdbcCdcDeliveryProgressStore implements CdcDeliveryProgressStore {
   private final JdbcTemplate jdbc;
-  private final TransactionTemplate transactions;
 
-  /** Creates the adapter with the Risk datasource and transaction boundary. */
-  public JdbcCdcDeliveryProgressStore(JdbcTemplate jdbc, TransactionTemplate transactions) {
+  /**
+   * Creates the thin adapter over the Risk datasource.
+   *
+   * @param jdbc Risk-owned JDBC template
+   * @throws NullPointerException if {@code jdbc} is {@code null}
+   */
+  public JdbcCdcDeliveryProgressStore(JdbcTemplate jdbc) {
     this.jdbc = Objects.requireNonNull(jdbc, "jdbc");
-    this.transactions = Objects.requireNonNull(transactions, "transactions");
   }
 
   @Override
   public void observe(CdcDeliveryObservation observation) {
     Objects.requireNonNull(observation, "observation");
+    final String conflictClause = isPostgres() ? " ON CONFLICT (event_id) DO NOTHING" : "";
     jdbc.update(
         """
         INSERT INTO risk_service.cdc_delivery_observation
@@ -30,7 +34,7 @@ public final class JdbcCdcDeliveryProgressStore implements CdcDeliveryProgressSt
         WHERE event_id = ? AND topic = ?
           AND NOT EXISTS (
             SELECT 1 FROM risk_service.cdc_delivery_observation WHERE event_id = ?)
-        """,
+        """ + conflictClause,
         observation.topic(),
         observation.partition(),
         observation.offset(),
@@ -40,6 +44,15 @@ public final class JdbcCdcDeliveryProgressStore implements CdcDeliveryProgressSt
         observation.eventId());
   }
 
+  private boolean isPostgres() {
+    return Objects.requireNonNull(
+        jdbc.execute(
+            (ConnectionCallback<Boolean>)
+                connection ->
+                    connection.getMetaData().getDatabaseProductName().contains("PostgreSQL")),
+        "database product name");
+  }
+
   @Override
   public CdcDeliverySnapshot refresh(String metricName, String topic, long measuredAtUnixMs) {
     requireText(metricName, "metricName");
@@ -47,30 +60,21 @@ public final class JdbcCdcDeliveryProgressStore implements CdcDeliveryProgressSt
     if (measuredAtUnixMs < 0) {
       throw new IllegalArgumentException("measuredAtUnixMs must not be negative");
     }
-    final CdcDeliverySnapshot snapshot =
-        transactions.execute(
-            status -> {
-              final CdcDeliverySnapshot measured = measureBacklog(topic, measuredAtUnixMs);
-              final int updatedRows =
-                  jdbc.update(
-                      """
-                      UPDATE risk_service.cdc_delivery_lag
-                      SET lag_events = ?, updated_at_unix_ms = ?
-                      WHERE metric_name = ?
-                      """,
-                      measured.lagEvents(),
-                      measuredAtUnixMs,
-                      metricName);
-              if (updatedRows != 1) {
-                throw new IllegalStateException(
-                    "CDC delivery metric row is missing: " + metricName);
-              }
-              return measured;
-            });
-    if (snapshot == null) {
-      throw new IllegalStateException("CDC delivery transaction returned no result");
+    final CdcDeliverySnapshot measured = measureBacklog(topic, measuredAtUnixMs);
+    final int updatedRows =
+        jdbc.update(
+            """
+            UPDATE risk_service.cdc_delivery_lag
+            SET lag_events = ?, updated_at_unix_ms = ?
+            WHERE metric_name = ?
+            """,
+            measured.lagEvents(),
+            measuredAtUnixMs,
+            metricName);
+    if (updatedRows != 1) {
+      throw new IllegalStateException("CDC delivery metric row is missing: " + metricName);
     }
-    return snapshot;
+    return measured;
   }
 
   private CdcDeliverySnapshot measureBacklog(String topic, long measuredAtUnixMs) {

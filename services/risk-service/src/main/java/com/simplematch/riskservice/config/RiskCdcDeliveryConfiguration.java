@@ -43,9 +43,8 @@ class RiskCdcDeliveryConfiguration {
   }
 
   @Bean
-  CdcDeliveryProgressStore cdcDeliveryProgressStore(
-      JdbcTemplate riskJdbcTemplate, TransactionTemplate riskTransactionTemplate) {
-    return new JdbcCdcDeliveryProgressStore(riskJdbcTemplate, riskTransactionTemplate);
+  CdcDeliveryProgressStore cdcDeliveryProgressStore(JdbcTemplate riskJdbcTemplate) {
+    return new JdbcCdcDeliveryProgressStore(riskJdbcTemplate);
   }
 
   @Bean
@@ -68,7 +67,8 @@ class RiskCdcDeliveryConfiguration {
       ObjectProvider<MeterRegistry> registryProvider,
       RiskServiceProperties risk,
       KafkaProperties kafka,
-      Clock riskServiceClock) {
+      Clock riskServiceClock,
+      TransactionTemplate riskTransactionTemplate) {
     final MeterRegistry registry = registryProvider.getIfAvailable();
     final DeliveryMetrics metrics =
         registry == null ? DeliveryMetrics.noop() : new MicrometerDeliveryMetrics(registry);
@@ -78,6 +78,7 @@ class RiskCdcDeliveryConfiguration {
         metrics,
         risk.admission().cdcMetricName(),
         kafka.topics().matchingCommands(),
-        riskServiceClock);
+        riskServiceClock,
+        riskTransactionTemplate);
   }
 }

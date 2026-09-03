@@ -314,8 +314,9 @@ migrations against its own database state.
   PostgreSQL/Kafka Connect/Kafka CDC contract also passes, including connector pause/resume and
   exact record delivery. A separate native fixture has verified the local `matching.commands` to
   `matching.events` broker path. The local Kubernetes overlay now contains two in-cluster Debezium
-  workers, and the certification runner registers the Risk and Account outbox connectors only after
-  Flyway completes, then requires both connectors and their tasks to report `RUNNING`.
+  workers, and the certification runner registers the Risk, Account, and marketdata-publisher
+  outbox connectors only after Flyway completes, then requires all three connectors and their tasks
+  to report `RUNNING`.
 - **Missing behavior:** A full local production-like run still needs to execute that deployed Risk
   connector against the repository-owned three-broker Kafka profile and prove a real accepted
   command reaches `matching.commands`; the static deployment and registration contract is now in
@@ -636,10 +637,17 @@ migrations against its own database state.
   singleton, disposable Redis cache, three-broker KRaft StatefulSet, bounded Flyway/PostgreSQL
   readiness gates, and explicit Kafka topic provisioning; focused manifest tests pass. PostgreSQL
   URI TLS parameters are preserved by the shared adapter.
+  Risk now owns a durable `matching.commands` delivery observer that correlates exact Debezium
+  event identities, proves its Kafka consumer group is caught up before refreshing admission lag,
+  and exports backlog and oldest-event-age gauges. The retained local gate registers all three
+  service-owned connectors, executes the disposable connector outage/recovery check before the
+  main Compose phases. Its full Kubernetes profile also pauses and resumes the Risk connector while
+  checking durable lag, Actuator gauges, exact event observation, health endpoints, and sensitive
+  ECS logs. The overlays structurally require ECS service/environment logging.
 - **Missing behavior:** A retained two-replica Debezium Connect worker, endpoint/secret/TLS contract,
-  and staging/production overlay template are now represented. Local connector registration,
-  local dependency-outage smoke, consistent structured log fields, and key metric assertions still
-  require completion.
+  and staging/production overlay template are now represented. The new final-head local outage,
+  rollout, health/metrics, and sensitive-log evidence must pass before PD-1 can move from
+  `PARTIAL` to `COMPLETED`.
   Complete OpenTelemetry propagation/collection, a Prometheus server, dashboards, external alerts,
   and a tracing backend are future observability work rather than side-project completion blockers.
   Real registry digests/endpoints/CIDRs, environment-owned Secrets, external Flyway runners, and

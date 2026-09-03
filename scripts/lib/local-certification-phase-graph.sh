@@ -97,14 +97,16 @@ _certification_register_fixed_phases() {
   done <<'EOF_PHASES'
 source-preflight|FRESH|REEXECUTE|source|source-revision||1
 static-kubernetes-overlays|CONTENT_ADDRESSED|REUSE_RESULT|source configuration|validation-result|source-preflight|1
+static-phase1-deployment-contracts|CONTENT_ADDRESSED|REUSE_RESULT|source configuration|validation-result|source-preflight|1
 static-kubernetes-dependencies|CONTENT_ADDRESSED|REUSE_RESULT|source configuration|validation-result|source-preflight|1
 static-matching-manifests|CONTENT_ADDRESSED|REUSE_RESULT|source configuration|validation-result|source-preflight|1
 static-matching-profile|CONTENT_ADDRESSED|REUSE_RESULT|source configuration|validation-result|source-preflight|1
 static-flyway-services|CONTENT_ADDRESSED|REUSE_RESULT|source configuration|validation-result|source-preflight|1
 compose-config|CONTENT_ADDRESSED|REUSE_RESULT|source configuration|validation-result|source-preflight|1
+cdc-outbox-failure-live|FRESH|REEXECUTE|runtime-state configuration|fault-proof|static-phase1-deployment-contracts compose-config|1
 local-image-inventory|CONTENT_ADDRESSED|REUSE_RESULT|source configuration|image-inventory|source-preflight|1
 kafka-producer-contract|CONTENT_ADDRESSED|REUSE_RESULT|source configuration|producer-config|static-matching-profile|1
-compose-up|FRESH|REEXECUTE|configuration runtime|runtime-state|compose-config|1
+compose-up|FRESH|REEXECUTE|configuration runtime|runtime-state|compose-config cdc-outbox-failure-live|1
 compose-wait|FRESH|REEXECUTE|runtime-state|runtime-proof|compose-up|1
 compose-status|FRESH|REEXECUTE|runtime-state|runtime-proof|compose-wait|1
 kafka-capacity-evidence|FRESH|REEXECUTE|runtime-state workload|capacity-evidence|compose-wait|1
@@ -137,6 +139,7 @@ kubernetes-risk-outbox-connector|FRESH|REEXECUTE|runtime-state configuration|run
 kubernetes-account-outbox-connector|FRESH|REEXECUTE|runtime-state configuration|runtime-state|kubernetes-workload-apply|1
 kubernetes-marketdata-outbox-connector|FRESH|REEXECUTE|runtime-state configuration|runtime-state|kubernetes-workload-apply|1
 kubernetes-workloads|FRESH|REEXECUTE|runtime-state|runtime-proof|kubernetes-risk-outbox-connector kubernetes-account-outbox-connector kubernetes-marketdata-outbox-connector|1
+kubernetes-cdc-delivery|FRESH|REEXECUTE|runtime-state configuration|runtime-proof|kubernetes-workloads|1
 kubernetes-matching-workloads|FRESH|REEXECUTE|runtime-state|runtime-proof|kubernetes-matching-apply|1
 kubernetes-fleet|FRESH|REEXECUTE|runtime-state|runtime-proof||1
 retained-run-provenance|FRESH|REEXECUTE|runtime-proof source image-lock|provenance|kubernetes-fleet|1
@@ -302,7 +305,7 @@ certification_phase_dependencies() {
       if [[ "${matching_fleet_only:-false}" == true ]]; then
         printf '%s\n' kubernetes-matching-workloads
       else
-        printf '%s\n' kubernetes-workloads
+        printf '%s\n' kubernetes-workloads kubernetes-cdc-delivery
       fi
       return 0
       ;;
@@ -318,6 +321,7 @@ _certification_profile_root_phase_ids() {
 
   printf '%s\n' \
     static-kubernetes-overlays \
+    static-phase1-deployment-contracts \
     static-kubernetes-dependencies \
     static-matching-manifests \
     static-matching-profile \

@@ -78,6 +78,16 @@ Useful canonical keys include:
 - `simplematch.quickfix-gateway.wal-path`
 - `simplematch.risk-service.scheduling-enabled` (defaults to `true`; set to `false` only when
   background admission recovery must be disabled, such as a narrow context test)
+- `simplematch.risk-service.cdc-delivery.enabled` (defaults to `false`; the local Kubernetes
+  profile enables the Risk-owned Kafka delivery observer)
+- `simplematch.risk-service.cdc-delivery.consumer-group` (defaults to `risk-cdc-delivery`; the
+  durable Kafka group whose committed offsets gate metric refresh)
+- `simplematch.risk-service.cdc-delivery.refresh-interval` (defaults to `5s`; controls bounded
+  durable lag refresh scheduling)
+- `simplematch.risk-service.cdc-delivery.query-timeout` (defaults to `5s`; bounds Kafka Admin
+  progress queries)
+- `simplematch.risk-service.admission.maximum-metric-age` (defaults to `30s`; stale CDC evidence
+  fails closed for new Risk admission)
 - `simplematch.query-service.rebuild.http-enabled` (defaults to `false`; enables only the
   authenticated operator reset seam)
 - `simplematch.query-service.rebuild.operator-token` (required when the reset seam is enabled;
@@ -127,10 +137,10 @@ The complete cross-service base/overlay contract and external Secret keys are do
 [`deploy/k8s/README.md`](../deploy/k8s/README.md#cross-service-base-and-overlays), with a local
 rendering gate in `scripts/test-kubernetes-overlays.sh`.
 
-The Risk and Account Debezium connector templates resolve their database usernames and passwords
-from Kafka Connect environment variables. Those environment variables must be injected from a
-Kubernetes Secret, and the local production-like certification registers both owner-scoped
-connectors before declaring the Java workloads ready.
+The Risk, Account, and marketdata-publisher Debezium connector templates resolve their database
+usernames and passwords from Kafka Connect environment variables. Those environment variables must
+be injected from a Kubernetes Secret, and the local production-like certification registers all
+three owner-scoped connectors before declaring the Java workloads ready.
 
 ## Local CDC verification harness
 
@@ -146,6 +156,11 @@ Risk or Account services:
   `scripts/run-outbox-cdc-contract-check.sh`. If unset, the script generates a unique name from the
   GitHub run identity (when present), wall-clock epoch, and process ID. An explicitly selected name
   must not already own Compose resources; collision is a preflight failure, never a cleanup signal.
+- `SIMPLEMATCH_CDC_OBSERVER_TIMEOUT_SECONDS` bounds the Kubernetes Risk CDC outage/recovery observer
+  (default `180`, maximum `600`).
+The Kubernetes CDC observer reads the effective `maximum-metric-age` from the deployed
+`risk-service-config` ConfigMap rather than accepting a second age setting. A baseline older than
+that runtime bound, or updated in the future, fails closed before the connector is paused.
 
 ## Change Policy
 

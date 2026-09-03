@@ -40,6 +40,10 @@ printf '%s\n' 'event=consumer_recovered correlation_id=abc-123' >"$safe_log"
 printf '%s\n' 'fromApp session=FIX.4.4 msg=8=FIX.4.4|35=D|55=2330 secret=value credentials=secret complete_account_payload=redacted' >"$unsafe_log"
 resilience_log_is_safe "$safe_log"
 if resilience_log_is_safe "$unsafe_log"; then exit 1; fi
+printf '%s\n' '{"event":"connection","password":"secret-value","token":"bearer-value","privateKey":"key-material"}' >"$unsafe_log"
+if resilience_log_is_safe "$unsafe_log"; then exit 1; fi
+printf '%s\n' 'authorization=Bearer eyJhbGciOiJIUzI1NiJ9.safe-token' >"$unsafe_log"
+if resilience_log_is_safe "$unsafe_log"; then exit 1; fi
 
 resilience_write_case_json "$case_file" pod-replacement NOT_IMPLEMENTED NOT_IMPLEMENTED NOT_EVALUATED NOT_EVALUATED NOT_EVALUATED \
   'scenario is not implemented' '' ''

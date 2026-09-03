@@ -9,6 +9,7 @@ import java.util.Objects;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.scheduling.annotation.Scheduled;
+import org.springframework.transaction.support.TransactionTemplate;
 
 /** Refreshes admission safety evidence only after Kafka delivery progress is current. */
 public final class CdcDeliveryMonitor {
@@ -21,21 +22,34 @@ public final class CdcDeliveryMonitor {
   private final String metricName;
   private final String topic;
   private final Clock clock;
+  private final TransactionTemplate transactions;
 
-  /** Creates the monitor over durable storage, Kafka progress, and telemetry ports. */
+  /**
+   * Creates the monitor over durable storage, Kafka progress, and telemetry ports.
+   *
+   * @param store durable observation and lag storage
+   * @param probe Kafka progress probe for the observer consumer group
+   * @param metrics delivery metric sink
+   * @param metricName durable lag metric identity
+   * @param topic Kafka topic whose delivery progress is observed
+   * @param clock clock used for durable refresh timestamps
+   * @param transactions transaction boundary owned by this application monitor
+   */
   public CdcDeliveryMonitor(
       CdcDeliveryProgressStore store,
       CdcDeliveryProgressProbe probe,
       DeliveryMetrics metrics,
       String metricName,
       String topic,
-      Clock clock) {
+      Clock clock,
+      TransactionTemplate transactions) {
     this.store = Objects.requireNonNull(store, "store");
     this.probe = Objects.requireNonNull(probe, "probe");
     this.metrics = Objects.requireNonNull(metrics, "metrics");
     this.metricName = requireText(metricName, "metricName");
     this.topic = requireText(topic, "topic");
     this.clock = Objects.requireNonNull(clock, "clock");
+    this.transactions = Objects.requireNonNull(transactions, "transactions");
   }
 
   /** Refreshes durable lag and metrics, or preserves fail-closed staleness while behind. */
@@ -63,7 +77,9 @@ public final class CdcDeliveryMonitor {
           .log("CDC delivery metric not refreshed because observer group is behind");
       return;
     }
-    final CdcDeliverySnapshot snapshot = store.refresh(metricName, topic, clock.millis());
+    final CdcDeliverySnapshot snapshot =
+        requireSnapshot(
+            transactions.execute(status -> store.refresh(metricName, topic, clock.millis())));
     metrics.observe(CONNECTOR_LAG_EVENTS, COMPONENT, snapshot.lagEvents());
     metrics.observe(OUTBOX_AGE_MILLIS, COMPONENT, snapshot.oldestUndeliveredAgeMillis());
     LOGGER.atInfo()
@@ -80,5 +96,12 @@ public final class CdcDeliveryMonitor {
       throw new IllegalArgumentException(name + " must not be blank");
     }
     return value;
+  }
+
+  private static CdcDeliverySnapshot requireSnapshot(CdcDeliverySnapshot snapshot) {
+    if (snapshot == null) {
+      throw new IllegalStateException("CDC delivery transaction returned no result");
+    }
+    return snapshot;
   }
 }

@@ -35,6 +35,25 @@ lag, outbox age, and consumer lag. Component, topic, and partition labels identi
 delivery boundary. Services without a registry use the no-op port; they do not change business
 delivery semantics when telemetry is unavailable.
 
+Risk owns the `matching.commands` CDC measurement consumed by admission backpressure. Its observer
+persists the exact Debezium outbox `id` header before acknowledging Kafka, then refreshes
+`risk_service.cdc_delivery_lag` only when the observer group's committed offsets have reached every
+current topic head. That offset proof keeps healthy zero-traffic periods fresh without rewriting a
+timestamp blindly. Missing Kafka progress leaves the previous row untouched so the admission gate
+ages out and fails closed; an unpublished Risk outbox row raises connector lag until its exact event
+identity is observed. The exported component is `risk-cdc-delivery`, using
+`connector_lag_events` and `outbox_age_millis` observations.
+
+The full local Kubernetes certification phase exercises this owner through the public runtime
+seams: it pauses and resumes the retained Risk connector, records the durable lag transition and
+exact event observation, queries both Actuator gauges and liveness/readiness, and checks the
+captured Risk log with the repository sensitive-log contract.
+
+Kubernetes Java workloads use Spring Boot's ECS console format. `spring.application.name` supplies
+the service identity and `simplematch.environment` supplies the ECS service environment. Runtime
+events add safe structured operation/outcome fields; command or correlation identities may be
+added when required, but Secrets, full account payloads, and raw FIX payloads remain prohibited.
+
 ## Dashboards and alerts
 
 Dashboards make the ordered execution path, outbox health, matching progress, synchronous dependency

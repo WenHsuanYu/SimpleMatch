@@ -232,6 +232,10 @@ certification_execute_phase() {
     static-kubernetes-overlays)
       run_logged "$phase_id" bash "$repo_root/scripts/test-kubernetes-overlays.sh"
       ;;
+    static-phase1-deployment-contracts)
+      run_logged "$phase_id" bash \
+        "$repo_root/scripts/test-phase1-deployment-contracts.sh"
+      ;;
     static-kubernetes-dependencies)
       run_logged "$phase_id" bash \
         "$repo_root/scripts/test-local-kubernetes-dependencies.sh"
@@ -248,6 +252,10 @@ certification_execute_phase() {
       ;;
     compose-config)
       run_logged "$phase_id" "${compose_command[@]}" config
+      ;;
+    cdc-outbox-failure-live)
+      run_logged "$phase_id" bash \
+        "$repo_root/scripts/run-outbox-cdc-contract-check.sh"
       ;;
     local-image-inventory)
       run_logged "$phase_id" bash "$repo_root/scripts/build-local-images.sh" --list
@@ -361,6 +369,12 @@ certification_execute_phase() {
       ;;
     kubernetes-workloads)
       run_logged "$phase_id" wait_for_kubernetes_workloads
+      ;;
+    kubernetes-cdc-delivery)
+      run_logged "$phase_id" bash \
+        "$repo_root/scripts/run-risk-cdc-delivery-observer-check.sh" \
+        --namespace "$namespace" --namespace-run-id "$run_id" \
+        --evidence-dir "$evidence_dir/cdc-delivery"
       ;;
     kubernetes-matching-workloads)
       run_logged "$phase_id" wait_for_local_matching_fleet
