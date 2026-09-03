@@ -179,6 +179,16 @@ for required_input in \
   grep -Fq $'file\t'"$required_input"$'\t' <<<"$cdc_manifest" || \
     fail "CDC phase manifest omitted ${required_input}"
 done
+unset SIMPLEMATCH_CONNECT_OFFSET_FLUSH_INTERVAL_MS \
+  SIMPLEMATCH_CDC_OBSERVER_TIMEOUT_SECONDS SIMPLEMATCH_KIND_CLUSTER_NAME || true
+assert_contains "$cdc_manifest" 'offsetFlushIntervalMs=120000' \
+  'CDC phase manifest omitted the effective Connect offset-flush interval'
+kubernetes_cdc_manifest="$(certification_phase_input_manifest kubernetes-cdc-delivery)" || \
+  fail 'Kubernetes CDC phase input manifest could not be calculated'
+assert_contains "$kubernetes_cdc_manifest" 'observerTimeoutSeconds=180' \
+  'Kubernetes CDC phase manifest omitted the effective observer timeout'
+assert_contains "$kubernetes_cdc_manifest" 'kindCluster=simplematch-live' \
+  'Kubernetes CDC phase manifest omitted the effective kind cluster'
 
 # Evidence lookup returns a diagnostic MISS instead of forcing the planner to
 # collapse every rejection into one generic reason.

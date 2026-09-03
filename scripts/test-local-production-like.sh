@@ -170,7 +170,15 @@ grep -Fq 'simplematch.delivery.observations' \
   "$repo_root/scripts/run-risk-cdc-delivery-observer-check.sh"
 grep -Fq 'risk_service.cdc_delivery_observation' \
   "$repo_root/scripts/run-risk-cdc-delivery-observer-check.sh"
-grep -Fq 'simplematch_kind_namespace_is_disposable' \
+grep -Fq 'metric_json connector_lag_events "$evidence_dir/metric-before-lag.json" zero' \
+  "$repo_root/scripts/run-risk-cdc-delivery-observer-check.sh"
+grep -Fq 'metric_json connector_lag_events "$evidence_dir/metric-paused-lag.json" positive' \
+  "$repo_root/scripts/run-risk-cdc-delivery-observer-check.sh"
+grep -Fq 'metric_json connector_lag_events "$evidence_dir/metric-recovered-lag.json" zero' \
+  "$repo_root/scripts/run-risk-cdc-delivery-observer-check.sh"
+grep -Fq 'metadata.labels["simplematch.io/lifecycle"]' \
+  "$repo_root/scripts/run-risk-cdc-delivery-observer-check.sh"
+grep -Fq 'metadata.labels["simplematch.io/managed-by"]' \
   "$repo_root/scripts/run-risk-cdc-delivery-observer-check.sh"
 grep -Fq -- '--namespace-run-id' "$repo_root/scripts/run-risk-cdc-delivery-observer-check.sh"
 grep -Fq 'risk-service-config' "$repo_root/scripts/run-risk-cdc-delivery-observer-check.sh"

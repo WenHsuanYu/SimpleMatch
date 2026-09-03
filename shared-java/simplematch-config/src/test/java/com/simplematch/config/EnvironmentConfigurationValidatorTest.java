@@ -8,6 +8,8 @@ import org.springframework.core.env.MapPropertySource;
 import org.springframework.mock.env.MockEnvironment;
 
 class EnvironmentConfigurationValidatorTest {
+  private static final String SECURE_POSTGRES_DSN =
+      "jdbc:postgresql://postgres/simplematch?sslmode=verify-full&sslrootcert=/etc/simplematch/postgres-tls/ca.crt";
   private final EnvironmentConfigurationValidator validator =
       new EnvironmentConfigurationValidator();
 
@@ -64,7 +66,7 @@ class EnvironmentConfigurationValidatorTest {
                 "kubernetes-secrets: simplematch-runtime-secrets",
                 Map.of(
                     "simplematch.kafka.brokers", "secret-kafka:9092",
-                    "simplematch.postgres.dsn", "jdbc:postgresql://postgres/simplematch")));
+                    "simplematch.postgres.dsn", SECURE_POSTGRES_DSN)));
 
     assertThatThrownBy(() -> validator.validate(environment, "staging"))
         .isInstanceOf(IllegalStateException.class)
@@ -86,7 +88,7 @@ class EnvironmentConfigurationValidatorTest {
         .addFirst(
             new MapPropertySource(
                 "kubernetes-secrets: simplematch-runtime-secrets",
-                Map.of("simplematch.postgres.dsn", "jdbc:postgresql://postgres/simplematch")));
+                Map.of("simplematch.postgres.dsn", SECURE_POSTGRES_DSN)));
 
     validator.validate(environment, "staging");
   }
@@ -106,9 +108,51 @@ class EnvironmentConfigurationValidatorTest {
         .addFirst(
             new KubernetesSecretSource(
                 "applicationConfig: [classpath:/application-secrets.yaml]",
-                Map.of("simplematch.postgres.dsn", "jdbc:postgresql://postgres/simplematch")));
+                Map.of("simplematch.postgres.dsn", SECURE_POSTGRES_DSN)));
 
     validator.validate(environment, "staging");
+  }
+
+  @Test
+  void acceptsTheDocumentedPostgresDsnSecretKey() {
+    final MockEnvironment environment = new MockEnvironment();
+    environment.setActiveProfiles("production");
+    environment
+        .getPropertySources()
+        .addFirst(
+            new MapPropertySource(
+                "kubernetes-configmap: simplematch-platform-config",
+                Map.of("simplematch.kafka.brokers", "kafka:9092")));
+    environment
+        .getPropertySources()
+        .addFirst(
+            new MapPropertySource(
+                "kubernetes-secrets: simplematch-runtime-secrets",
+                Map.of("postgres_dsn", SECURE_POSTGRES_DSN)));
+
+    validator.validate(environment, "production");
+  }
+
+  @Test
+  void rejectsStagingDsnWithoutVerifiedPostgresTls() {
+    final MockEnvironment environment = new MockEnvironment();
+    environment.setActiveProfiles("staging");
+    environment
+        .getPropertySources()
+        .addFirst(
+            new MapPropertySource(
+                "kubernetes-configmap: simplematch-platform-config",
+                Map.of("simplematch.kafka.brokers", "kafka:9092")));
+    environment
+        .getPropertySources()
+        .addFirst(
+            new MapPropertySource(
+                "kubernetes-secrets: simplematch-runtime-secrets",
+                Map.of("simplematch.postgres.dsn", "jdbc:postgresql://postgres/simplematch")));
+
+    assertThatThrownBy(() -> validator.validate(environment, "staging"))
+        .isInstanceOf(IllegalStateException.class)
+        .hasMessageContaining("sslmode=verify-full");
   }
 
   @Test

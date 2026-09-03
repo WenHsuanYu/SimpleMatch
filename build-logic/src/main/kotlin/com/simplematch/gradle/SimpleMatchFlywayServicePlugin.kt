@@ -9,8 +9,6 @@ import org.gradle.api.provider.Property
 import org.gradle.api.provider.ProviderFactory
 import org.gradle.kotlin.dsl.create
 import java.io.File
-import java.net.URI
-import java.net.URISyntaxException
 import java.util.*
 import javax.inject.Inject
 
@@ -208,7 +206,7 @@ class SimpleMatchFlywayServicePlugin : Plugin<Project> {
             propertyOrEnv(providers, "${serviceTaskPrefix}FlywayDsn", "${envPrefix}_FLYWAY_DSN")
                 ?: propertyOrEnv(providers, "flywayDsn", "SIMPLEMATCH_POSTGRES_DSN")
         if (dsn != null) {
-            return parseDsn(dsn)
+            return FlywayDsnParser.parse(dsn)
         }
 
         val jdbcUrl =
@@ -277,47 +275,8 @@ class SimpleMatchFlywayServicePlugin : Plugin<Project> {
         providers.gradleProperty(propertyName).orNull
             ?: providers.environmentVariable(envName).orNull
 
-    private fun parseDsn(rawValue: String): FlywayConnection {
-        if (rawValue.startsWith("jdbc:")) {
-            return FlywayConnection(rawValue, null, null)
-        }
-
-        try {
-            val uri = URI(rawValue)
-            val scheme = uri.scheme.orEmpty()
-            if (scheme != "postgresql" && scheme != "postgres") {
-                throw IllegalStateException("Unsupported Flyway DSN scheme: $rawValue")
-            }
-
-            val userInfo = uri.userInfo.orEmpty()
-            val userParts = userInfo.split(":", limit = 2)
-            val username = userParts.firstOrNull()?.takeIf { it.isNotBlank() }
-            val password = userParts.getOrNull(1)?.takeIf { it.isNotBlank() }
-            val host =
-                uri.host ?: throw IllegalStateException("Flyway DSN host is missing: $rawValue")
-            val port = if (uri.port > 0) uri.port else 5432
-            val path =
-                uri.path?.takeIf { it.isNotBlank() }
-                    ?: throw IllegalStateException("Flyway DSN database is missing: $rawValue")
-
-            return FlywayConnection(
-                jdbcUrl = "jdbc:postgresql://$host:$port$path",
-                username = username,
-                password = password
-            )
-        } catch (syntaxException: URISyntaxException) {
-            throw IllegalStateException("Failed to parse Flyway DSN: $rawValue", syntaxException)
-        }
-    }
-
     private fun serviceIdToEnvPrefix(serviceId: String): String =
         serviceId.replace('-', '_').uppercase(Locale.ROOT)
-
-    private data class FlywayConnection(
-        val jdbcUrl: String,
-        val username: String?,
-        val password: String?
-    )
 
     private data class TaskMapping(
         val projectTaskName: String,

@@ -201,23 +201,54 @@ require_value(
   },
   "Local Kafka Connect must have a connector-specific NetworkPolicy selector"
 )
+egress_rules = connect_network_policy.dig("spec", "egress") || []
+connect_labels = {
+  "app.kubernetes.io/name" => "kafka-connect",
+  "app.kubernetes.io/component" => "connector"
+}
+postgres_labels = {
+  "app.kubernetes.io/name" => "postgres",
+  "app.kubernetes.io/component" => "database",
+  "app.kubernetes.io/part-of" => "simplematch"
+}
+kafka_labels = {
+  "app.kubernetes.io/name" => "kafka",
+  "app.kubernetes.io/component" => "broker",
+  "app.kubernetes.io/part-of" => "simplematch"
+}
+dns_labels = {"kubernetes.io/metadata.name" => "kube-system"}
+normalize_network_policy_rule = lambda do |rule, destination_key|
+  destinations = rule.fetch(destination_key, []).map do |destination|
+    selector_kind = %w[podSelector namespaceSelector ipBlock].find { |kind| destination.key?(kind) }
+    [selector_kind, destination.fetch(selector_kind)]
+  end
+  ports = rule.fetch("ports", []).map { |entry| [entry.fetch("protocol"), entry.fetch("port")] }.sort
+  [destinations, ports]
+end
+expected_ingress_rules = [
+  [["podSelector", {"matchLabels" => connect_labels}], [["TCP", 8083]]]
+].map do |destination, ports|
+  [[destination], ports]
+end
+actual_ingress_rules = connect_network_policy.dig("spec", "ingress").map {
+  |rule| normalize_network_policy_rule.call(rule, "from")
+}
 require_value(
-  connect_network_policy.dig("spec", "ingress", 0, "ports")&.any? {
-    |port| port == {"protocol" => "TCP", "port" => 8083}
-  },
-  "Local Kafka Connect NetworkPolicy must permit its REST port"
+  actual_ingress_rules == expected_ingress_rules,
+  "Local Kafka Connect NetworkPolicy ingress rules must match the exact TCP and destination contract"
 )
-connect_egress_ports = connect_network_policy.dig("spec", "egress", 0, "ports") || []
+expected_egress_rules = [
+  [["podSelector", {"matchLabels" => connect_labels}], [["TCP", 8083]]],
+  [["podSelector", {"matchLabels" => postgres_labels}], [["TCP", 5432]]],
+  [["podSelector", {"matchLabels" => kafka_labels}], [["TCP", 9092]]],
+  [["namespaceSelector", {"matchLabels" => dns_labels}], [["TCP", 53], ["UDP", 53]]]
+].map do |destination, ports|
+  [[destination], ports]
+end
+actual_egress_rules = egress_rules.map { |rule| normalize_network_policy_rule.call(rule, "to") }
 require_value(
-  [8083, 5432, 9092, 9093].all? { |port| connect_egress_ports.any? { |entry| entry["port"] == port } },
-  "Local Kafka Connect NetworkPolicy must permit worker, PostgreSQL, and Kafka egress"
-)
-dns_egress = connect_network_policy.dig("spec", "egress", 1)
-require_value(
-  dns_egress&.dig("to", 0, "namespaceSelector", "matchLabels",
-                  "kubernetes.io/metadata.name") == "kube-system" &&
-    [53].all? { |port| dns_egress.fetch("ports", []).any? { |entry| entry["port"] == port } },
-  "Local Kafka Connect NetworkPolicy must permit kube-system DNS"
+  actual_egress_rules == expected_egress_rules,
+  "Local Kafka Connect NetworkPolicy egress rules must match the exact TCP, UDP, and destination contract"
 )
 require_value(
   connect_spec.fetch("volumes", []).none? { |volume| volume.dig("name") == "postgres-tls" || volume.dig("name") == "kafka-tls" },

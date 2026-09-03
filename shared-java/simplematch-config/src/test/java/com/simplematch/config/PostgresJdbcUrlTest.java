@@ -48,6 +48,53 @@ class PostgresJdbcUrlTest {
   }
 
   @Test
+  void acceptsOnlyVerifiedTlsForSecurePostgresSettings() {
+    final PostgresJdbcUrl settings =
+        PostgresJdbcUrl.parseSecure(
+            "postgresql://db.example:5433/simplematch?sslmode=verify-full&sslrootcert=/etc/tls/ca.crt");
+
+    assertThat(settings.jdbcUrl())
+        .isEqualTo(
+            "jdbc:postgresql://db.example:5433/simplematch?sslmode=verify-full&sslrootcert=/etc/tls/ca.crt");
+  }
+
+  @Test
+  void rejectsNonPostgresOrUnverifiedSecureSettings() {
+    assertThatIllegalStateException()
+        .isThrownBy(
+            () ->
+                PostgresJdbcUrl.parseSecure(
+                    "jdbc:h2:mem:local;MODE=PostgreSQL;DB_CLOSE_DELAY=-1"))
+        .withMessageContaining("requires a PostgreSQL JDBC URL");
+    assertThatIllegalStateException()
+        .isThrownBy(
+            () -> PostgresJdbcUrl.parseSecure("jdbc:postgresql://db.example/simplematch"))
+        .withMessageContaining("sslmode=verify-full");
+    assertThatIllegalStateException()
+        .isThrownBy(
+            () ->
+                PostgresJdbcUrl.parseSecure(
+                    "jdbc:postgresql://db.example/simplematch?sslmode=require&sslrootcert=/etc/tls/ca.crt"))
+        .withMessageContaining("sslmode=verify-full");
+    assertThatIllegalStateException()
+        .isThrownBy(
+            () ->
+                PostgresJdbcUrl.parseSecure(
+                    "jdbc:postgresql://db.example/simplematch?sslmode=verify-full"))
+        .withMessageContaining("sslrootcert");
+  }
+
+  @Test
+  void rejectsDuplicateSecureTlsParameters() {
+    assertThatIllegalStateException()
+        .isThrownBy(
+            () ->
+                PostgresJdbcUrl.parseSecure(
+                    "jdbc:postgresql://db.example/simplematch?sslmode=verify-full&sslmode=require&sslrootcert=/etc/tls/ca.crt"))
+        .withMessageContaining("must not repeat");
+  }
+
+  @Test
   void rejectsBlankAndUnsupportedDataSources() {
     assertThatIllegalStateException().isThrownBy(() -> PostgresJdbcUrl.parse(" "));
     assertThatIllegalStateException()

@@ -12,6 +12,9 @@ import org.springframework.core.env.MapPropertySource;
 import org.springframework.core.env.StandardEnvironment;
 
 class CapabilityPropertiesPrecedenceTest {
+  private static final String SECURE_POSTGRES_DSN =
+      "jdbc:postgresql://staging/simplematch?sslmode=verify-full&sslrootcert=/etc/simplematch/postgres-tls/ca.crt";
+
   @Test
   void profileYamlOverridesBaseYaml() {
     try (ConfigurableApplicationContext context = start(Map.of())) {
@@ -73,13 +76,15 @@ class CapabilityPropertiesPrecedenceTest {
                 Map.of(),
                 "staging",
                 Map.of("simplematch.kafka.brokers", "staging-kafka:9092"),
-                Map.of("simplematch.postgres.dsn", "jdbc:postgresql://staging/simplematch"));
+                Map.of("simplematch.postgres.dsn", SECURE_POSTGRES_DSN));
         ConfigurableApplicationContext production =
             start(
                 Map.of(),
                 "production",
                 Map.of("simplematch.kafka.brokers", "production-kafka:9092"),
-                Map.of("simplematch.postgres.dsn", "jdbc:postgresql://production/simplematch"))) {
+                Map.of(
+                    "simplematch.postgres.dsn",
+                    SECURE_POSTGRES_DSN.replace("staging", "production")))) {
       assertThat(local.getBean(EnvironmentProperties.class).environment()).isEqualTo("local");
       assertThat(test.getBean(EnvironmentProperties.class).environment()).isEqualTo("test");
       assertThat(staging.getBean(EnvironmentProperties.class).environment())

@@ -1,0 +1,13 @@
+- op: add
+  path: /spec/template/spec/containers/0/volumeMounts/-
+  value:
+    name: postgres-tls
+    mountPath: /etc/simplematch/postgres-tls
+    readOnly: true
+- op: add
+  path: /spec/template/spec/volumes/-
+  value:
+    name: postgres-tls
+    secret:
+      secretName: simplematch-postgres-tls
+      optional: false

@@ -128,8 +128,11 @@ regressions.
 `CDC CI` checks `git diff --check`, Markdown links, connector ownership/no-direct-producer contracts,
 the shared verifier Interface, Matching Kafka contracts, and the live Compose CDC scenarios.
 
-`Flyway CI` remains required because the affected services are Flyway-managed even though this
-change adds no migration.
+`Flyway CI` remains required because this change adds the Risk migration
+`V10__record_cdc_delivery_observations.sql` under the shared Flyway service convention. The
+migration contract gate must pass `bash scripts/test-flyway-services.sh`; the PostgreSQL smoke
+gate must run `bash scripts/run-flyway-ci-checks.sh`, and Java CI must pass
+`com.simplematch.riskservice.store.RiskServiceFlywayMigrationTest`.
 
 The PR is not ready until the latest head has successful Java CI, CDC CI, and Flyway CI results.
 

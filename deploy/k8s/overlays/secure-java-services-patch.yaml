@@ -44,6 +44,14 @@ spec:
           secret:
             secretName: simplematch-postgres-tls
             optional: false
+        - name: grpc-tls
+          secret:
+            secretName: account-service-tls
+            optional: false
+        - name: kafka-tls
+          secret:
+            secretName: simplematch-kafka-tls
+            optional: false
 ---
 apiVersion: apps/v1
 kind: StatefulSet
@@ -88,12 +96,23 @@ spec:
               value: PKCS12
             - name: SPRING_KAFKA_PROPERTIES_SSL_ENDPOINT_IDENTIFICATION_ALGORITHM
               value: HTTPS
+            - name: SIMPLEMATCH_GRPC_SECURITY_TLS_ENABLED
+              value: "true"
+            - name: SIMPLEMATCH_GRPC_SECURITY_CERTIFICATE_PATH
+              value: /etc/simplematch/grpc-tls/tls.crt
+            - name: SIMPLEMATCH_GRPC_SECURITY_PRIVATE_KEY_PATH
+              value: /etc/simplematch/grpc-tls/tls.key
+            - name: SIMPLEMATCH_GRPC_SECURITY_TRUST_CERTIFICATE_PATH
+              value: /etc/simplematch/grpc-tls/ca.crt
           volumeMounts:
             - name: kafka-tls
               mountPath: /etc/simplematch/kafka-tls
               readOnly: true
             - name: http-tls
               mountPath: /etc/simplematch/http-tls
+              readOnly: true
+            - name: grpc-tls
+              mountPath: /etc/simplematch/grpc-tls
               readOnly: true
           startupProbe:
             httpGet:
@@ -112,6 +131,10 @@ spec:
         - name: http-tls
           secret:
             secretName: quickfix-gateway-http-tls
+            optional: false
+        - name: grpc-tls
+          secret:
+            secretName: quickfix-gateway-tls
             optional: false
 ---
 apiVersion: apps/v1
@@ -170,6 +193,14 @@ spec:
           secret:
             secretName: simplematch-postgres-tls
             optional: false
+        - name: grpc-tls
+          secret:
+            secretName: risk-service-tls
+            optional: false
+        - name: kafka-tls
+          secret:
+            secretName: simplematch-kafka-tls
+            optional: false
 ---
 apiVersion: apps/v1
 kind: Deployment
@@ -214,6 +245,10 @@ spec:
         - name: postgres-tls
           secret:
             secretName: simplematch-postgres-tls
+            optional: false
+        - name: kafka-tls
+          secret:
+            secretName: simplematch-kafka-tls
             optional: false
 ---
 apiVersion: apps/v1
@@ -289,6 +324,10 @@ spec:
           secret:
             secretName: market-data-projection-http-tls
             optional: false
+        - name: kafka-tls
+          secret:
+            secretName: simplematch-kafka-tls
+            optional: false
 ---
 apiVersion: apps/v1
 kind: Deployment
@@ -358,6 +397,10 @@ spec:
           secret:
             secretName: marketdata-streamer-tls
             optional: false
+        - name: kafka-tls
+          secret:
+            secretName: simplematch-kafka-tls
+            optional: false
 ---
 apiVersion: apps/v1
 kind: Deployment
@@ -407,4 +450,8 @@ spec:
         - name: postgres-tls
           secret:
             secretName: simplematch-postgres-tls
+            optional: false
+        - name: kafka-tls
+          secret:
+            secretName: simplematch-kafka-tls
             optional: false

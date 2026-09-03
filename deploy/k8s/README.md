@@ -5,8 +5,10 @@ Secret through Spring Cloud Kubernetes Config Data. Apply the ConfigMaps before 
 Provision each `{service}-secrets`
 Secret outside Git and grant its service account only `get` access to named ConfigMaps and Secrets.
 
-For `staging` and `production`, the Secret must contain
-`simplematch.postgres.dsn`; no ConfigMap may define that key. The quickfix-gateway StatefulSet is
+For `staging` and `production`, each service Secret must contain the `postgres_dsn` key; no
+ConfigMap may define the canonical `simplematch.postgres.dsn` property. The service's
+`SIMPLEMATCH_POSTGRES_DSN` reference maps that Secret key to the canonical property. The
+quickfix-gateway StatefulSet is
 the reference deployment: it enables the non-optional Kubernetes Config Data import and uses the
 narrowly scoped RBAC manifest. The base manifest defaults to the `local` profile; the `test`,
 `staging`, and `production` overlays own their explicit Spring profile selection.
@@ -139,9 +141,9 @@ mounts `simplematch-postgres-tls` with a required `ca.crt` at that path, so a mi
 startup. The canonical `simplematch.postgres.dsn` property is supplied through
 `SIMPLEMATCH_POSTGRES_DSN`; no `spring.datasource.*` key is used.
 
-`account-service-tls`, `risk-service-tls`, and `marketdata-streamer-tls` contain `tls.crt`,
-`tls.key`, and `ca.crt`. The
-staging/production overlay enables mTLS and requires all three paths. `simplematch-kafka-tls`
+`account-service-tls`, `risk-service-tls`, `marketdata-streamer-tls`, and `quickfix-gateway-tls`
+contain `tls.crt`, `tls.key`, and `ca.crt`. The staging/production overlay enables mTLS and
+requires all three paths. `simplematch-kafka-tls`
 contains `ca.p12`; `simplematch-kafka-secrets` contains `sasl_jaas_config` and
 `truststore_password`. `risk-service-secrets` additionally supplies `trading_day` and
 `matching_image_digest`; `query-service-secrets` supplies `trading_day`.
@@ -157,9 +159,12 @@ endpoint.
 `kafka_sasl_jaas_config` and `kafka_truststore_password`, and is required by the retained Debezium
 worker. `simplematch-flyway-secrets` supplies the TLS-enabled
 `postgres_dsn` consumed by the external
-`simplematch/flyway-runner` image. Each Job passes one service ID and schema to that runner, so
-Flyway history remains service-local. Jobs are intentionally one-shot: delete and recreate the
-named Job for a later migration release, and apply migrations before rolling the Deployments.
+`simplematch/flyway-runner` image. Staging and production mount the required
+`simplematch-postgres-tls` CA Secret into every Flyway Job at
+`/etc/simplematch/postgres-tls`; the DSN's `sslrootcert` must point to its `ca.crt`. Each Job passes
+one service ID and schema to that runner, so Flyway history remains service-local. Jobs are
+intentionally one-shot: delete and recreate the named Job for a later migration release, and apply
+migrations before rolling the Deployments.
 
 The service accounts can read only their named ConfigMaps and service Secret through the included
 Roles. NetworkPolicy permits same-namespace service traffic and DNS by default; staging and

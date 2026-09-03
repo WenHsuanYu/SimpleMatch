@@ -32,6 +32,26 @@ class RiskServiceFlywayMigrationTest {
     assertThat(appliedMigrationCount(jdbcTemplate)).isEqualTo(10);
   }
 
+  @DisplayName("CDC observation columns preserve Kafka and epoch value widths")
+  @Test
+  void cdcObservationColumnsPreserveKafkaAndEpochValueWidths() {
+    final JdbcTemplate jdbcTemplate = new JdbcTemplate(newDataSource());
+
+    migrate(jdbcTemplate.getDataSource());
+
+    assertThat(columnDataType(jdbcTemplate, "CDC_DELIVERY_OBSERVATION", "EVENT_ID"))
+        .isEqualTo("UUID");
+    assertThat(columnDataType(jdbcTemplate, "CDC_DELIVERY_OBSERVATION", "TOPIC"))
+        .isEqualTo("CHARACTER VARYING");
+    assertThat(columnLength(jdbcTemplate, "CDC_DELIVERY_OBSERVATION", "TOPIC")).isEqualTo(255);
+    assertThat(columnDataType(jdbcTemplate, "CDC_DELIVERY_OBSERVATION", "PARTITION_ID"))
+        .isEqualTo("INTEGER");
+    assertThat(columnDataType(jdbcTemplate, "CDC_DELIVERY_OBSERVATION", "KAFKA_OFFSET"))
+        .isEqualTo("BIGINT");
+    assertThat(columnDataType(jdbcTemplate, "CDC_DELIVERY_OBSERVATION", "OBSERVED_AT_UNIX_MS"))
+        .isEqualTo("BIGINT");
+  }
+
   @DisplayName("a second risk-service migration is a no-op")
   @Test
   void repeatedMigrateIsNoOp() {
@@ -137,5 +157,35 @@ class RiskServiceFlywayMigrationTest {
             tableName,
             columnName)
         > 0;
+  }
+
+  private String columnDataType(JdbcTemplate jdbcTemplate, String tableName, String columnName) {
+    return jdbcTemplate.queryForObject(
+        """
+                        SELECT UPPER(DATA_TYPE)
+                        FROM INFORMATION_SCHEMA.COLUMNS
+                        WHERE UPPER(TABLE_SCHEMA) = ?
+                          AND UPPER(TABLE_NAME) = ?
+                          AND UPPER(COLUMN_NAME) = ?
+                        """,
+        String.class,
+        SCHEMA_NAME,
+        tableName,
+        columnName);
+  }
+
+  private int columnLength(JdbcTemplate jdbcTemplate, String tableName, String columnName) {
+    return jdbcTemplate.queryForObject(
+        """
+                        SELECT CHARACTER_MAXIMUM_LENGTH
+                        FROM INFORMATION_SCHEMA.COLUMNS
+                        WHERE UPPER(TABLE_SCHEMA) = ?
+                          AND UPPER(TABLE_NAME) = ?
+                          AND UPPER(COLUMN_NAME) = ?
+                        """,
+        Integer.class,
+        SCHEMA_NAME,
+        tableName,
+        columnName);
   }
 }

@@ -131,8 +131,10 @@ reads and least-privilege RBAC.
 
 `staging` and `production` fail startup unless a Kubernetes ConfigMap and a Kubernetes Secret are
 both present.
-`simplematch.postgres.dsn` must come from the Secret in those environments. Secrets are externally
-provisioned; no Secret value, DSN credential, token, or password is committed to this repository.
+`simplematch.postgres.dsn` must come from the Secret in those environments. The external service
+Secret uses the `postgres_dsn` key, which the workload maps through `SIMPLEMATCH_POSTGRES_DSN` to
+that canonical property. Secrets are externally provisioned; no Secret value, DSN credential, token,
+or password is committed to this repository.
 `deploy/k8s/quickfix-gateway-configuration-rbac.yaml` is the reference RBAC shape, and
 `deploy/k8s/simplematch-platform-configmap.yaml`
 contains only non-sensitive data.
@@ -160,8 +162,9 @@ Risk or Account services:
   GitHub run identity (when present), wall-clock epoch, and process ID. An explicitly selected name
   must not already own Compose resources; collision is a preflight failure, never a cleanup signal.
 - `SIMPLEMATCH_CDC_OBSERVER_TIMEOUT_SECONDS` is the single end-to-end deadline for the Kubernetes
-  Risk CDC outage/recovery observer, including rollout, port-forward, polling, and bounded cleanup
-  (default `180`, maximum `600`).
+  Risk CDC outage/recovery observer, including rollout, port-forward, polling, and bounded cleanup.
+  The observer reserves 30 seconds of that budget for connector recovery and diagnostics (default
+  `180`, minimum `31`, maximum `600`).
 The Kubernetes CDC observer reads the effective `maximum-metric-age` from the deployed
 `risk-service-config` ConfigMap rather than accepting a second age setting. A baseline older than
 that runtime bound, or updated in the future, fails closed before the connector is paused.

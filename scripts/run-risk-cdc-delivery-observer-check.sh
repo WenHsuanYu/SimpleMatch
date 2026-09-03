@@ -5,14 +5,14 @@ IFS=$'\n\t'
 script_dir="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
 # shellcheck source=scripts/lib/local-resilience.sh
 source "$script_dir/lib/local-resilience.sh"
-# shellcheck source=scripts/lib/local-kind.sh
-source "$script_dir/lib/local-kind.sh"
 
 namespace=""
 expected_namespace_run_id=""
 evidence_dir=""
 timeout_seconds="${SIMPLEMATCH_CDC_OBSERVER_TIMEOUT_SECONDS:-180}"
+cleanup_reserve_seconds=30
 observer_deadline_epoch=0
+active_deadline_epoch=0
 maximum_metric_age_seconds=""
 kind_cluster="${SIMPLEMATCH_KIND_CLUSTER_NAME:-simplematch-live}"
 kind_context="kind-${kind_cluster}"
@@ -82,8 +82,11 @@ done
 [[ -n "$evidence_dir" ]] || { usage >&2; die '--evidence-dir is required'; }
 [[ "$timeout_seconds" =~ ^[1-9][0-9]*$ ]] || die \
   '--timeout-seconds must be a positive integer'
+(( timeout_seconds > cleanup_reserve_seconds )) || die \
+  "--timeout-seconds must exceed ${cleanup_reserve_seconds}s cleanup reserve"
 (( timeout_seconds <= 600 )) || die '--timeout-seconds must not exceed 600'
 observer_deadline_epoch=$(( $(date +%s) + timeout_seconds ))
+active_deadline_epoch=$(( observer_deadline_epoch - cleanup_reserve_seconds ))
 
 for tool in kubectl jq curl date seq sleep od tr grep sed tail cat sha256sum awk timeout; do
   command -v "$tool" >/dev/null 2>&1 || die "$tool is required"
@@ -107,7 +110,7 @@ payload_hex=""
 
 remaining_seconds() {
   local remaining
-  remaining=$((observer_deadline_epoch - $(date +%s)))
+  remaining=$((active_deadline_epoch - $(date +%s)))
   (( remaining > 0 )) || return 1
   printf '%s\n' "$remaining"
 }
@@ -200,6 +203,10 @@ cleanup_resume_connector() {
 cleanup() {
   local exit_code="$?"
   local failure_reason='Risk CDC observer phase failed; inspect diagnostics'
+  # Normal work stops before this reserved window. Switch to the total
+  # deadline so connector recovery and diagnostics retain bounded time even
+  # when the observer failed at the end of its operational budget.
+  active_deadline_epoch="$observer_deadline_epoch"
   if [[ "$connector_paused" == true ]]; then
     if [[ -n "$connector_base_url" ]]; then
       cleanup_resume_connector || true
@@ -245,15 +252,16 @@ current_context="$(kubectl_with_deadline config current-context)" || die \
   'could not read the current Kubernetes context'
 [[ "$current_context" == "$kind_context" ]] || die \
   "current Kubernetes context=$current_context, expected $kind_context"
-kubectl_with_deadline --context "$kind_context" get namespace "$namespace" >/dev/null \
-  || die "namespace does not exist: $namespace"
-simplematch_kind_namespace_is_disposable \
-  "$kind_context" "$namespace" local-production-like-certification || die \
+namespace_json="$(kubectl_with_deadline --context "$kind_context" get namespace "$namespace" \
+  -o json)" || die "namespace does not exist: $namespace"
+jq -e --arg expected local-production-like-certification '
+  .metadata.labels["simplematch.io/lifecycle"] == "disposable" and
+  .metadata.labels["simplematch.io/managed-by"] == $expected
+' <<<"$namespace_json" >/dev/null || die \
   "namespace is not an owned disposable local certification namespace: $namespace"
-namespace_run_id="$(kubectl_with_deadline --context "$kind_context" get namespace "$namespace" \
-  -o jsonpath='{.metadata.labels.simplematch\.io/run-id}')" || die \
-  "could not read certification namespace ownership: $namespace"
-[[ -n "$namespace_run_id" ]] || die \
+namespace_run_id="$(jq -er \
+  '.metadata.labels["simplematch.io/run-id"] | strings | select(length > 0)' \
+  <<<"$namespace_json")" || die \
   "certification namespace has no non-empty run-id label: $namespace"
 [[ "$namespace_run_id" == "$expected_namespace_run_id" ]] || die \
   "certification namespace run-id does not match the requested run: $namespace"
@@ -407,14 +415,25 @@ wait_for_metric_row() {
 }
 
 metric_json() {
-  local metric="$1" output="$2" metric_url response
+  local metric="$1" output="$2" expected="$3" metric_url response
+  case "$expected" in
+    zero|positive|nonnegative) ;;
+    *) die "unsupported Actuator metric expectation: $expected" ;;
+  esac
   metric_url="$risk_base_url/actuator/metrics/simplematch.delivery.observations"
   metric_url+="?tag=component:risk-cdc-delivery&tag=metric:${metric}"
   while :; do
     remaining_seconds >/dev/null || die "Actuator metric is missing for $metric"
     response="$(curl_with_deadline "$metric_url" 2>/dev/null || true)"
-    if jq -e '.name == "simplematch.delivery.observations"
-        and (.measurements | length) > 0' >/dev/null 2>&1 <<<"$response"; then
+    if jq -e --arg expected "$expected" '
+        .name == "simplematch.delivery.observations" and
+        (.measurements | length) > 0 and
+        (.measurements | all(.[];
+          (.value | type == "number") and
+          ($expected == "nonnegative" or
+            ($expected == "zero" and .value == 0) or
+            ($expected == "positive" and .value >= 1))))
+      ' >/dev/null 2>&1 <<<"$response"; then
       printf '%s\n' "$response" >"$output"
       return 0
     fi
@@ -479,8 +498,8 @@ curl_with_deadline "$risk_base_url/actuator/health/liveness" \
   >"$evidence_dir/health-liveness.json"
 curl_with_deadline "$risk_base_url/actuator/health/readiness" \
   >"$evidence_dir/health-readiness.json"
-metric_json connector_lag_events "$evidence_dir/metric-before-lag.json"
-metric_json outbox_age_millis "$evidence_dir/metric-before-age.json"
+metric_json connector_lag_events "$evidence_dir/metric-before-lag.json" zero
+metric_json outbox_age_millis "$evidence_dir/metric-before-age.json" nonnegative
 assert_metric_measurement_is_nonnegative "$evidence_dir/metric-before-lag.json"
 assert_metric_measurement_is_nonnegative "$evidence_dir/metric-before-age.json"
 jq -e '.measurements[0].value == 0' "$evidence_dir/metric-before-lag.json" \
@@ -592,8 +611,8 @@ paused_row="$(wait_for_metric_row positive "$baseline_updated" \
   'Risk CDC metric did not expose pending outbox lag while connector was paused')"
 paused_updated="${paused_row#*|}"
 printf '%s\n' "$paused_row" >"$evidence_dir/metric-paused-row.txt"
-metric_json connector_lag_events "$evidence_dir/metric-paused-lag.json"
-metric_json outbox_age_millis "$evidence_dir/metric-paused-age.json"
+metric_json connector_lag_events "$evidence_dir/metric-paused-lag.json" positive
+metric_json outbox_age_millis "$evidence_dir/metric-paused-age.json" nonnegative
 assert_metric_measurement_is_nonnegative "$evidence_dir/metric-paused-lag.json"
 assert_metric_measurement_is_nonnegative "$evidence_dir/metric-paused-age.json"
 jq -e '.measurements[0].value >= 1' "$evidence_dir/metric-paused-lag.json" \
@@ -611,8 +630,8 @@ recovered_row="$(wait_for_metric_row zero "$paused_updated" \
   'Risk CDC metric did not return to zero after connector recovery')"
 printf '%s\n' "$observation_row" >"$evidence_dir/observation-row.txt"
 printf '%s\n' "$recovered_row" >"$evidence_dir/metric-recovered-row.txt"
-metric_json connector_lag_events "$evidence_dir/metric-recovered-lag.json"
-metric_json outbox_age_millis "$evidence_dir/metric-recovered-age.json"
+metric_json connector_lag_events "$evidence_dir/metric-recovered-lag.json" zero
+metric_json outbox_age_millis "$evidence_dir/metric-recovered-age.json" nonnegative
 assert_metric_measurement_is_nonnegative "$evidence_dir/metric-recovered-lag.json"
 assert_metric_measurement_is_nonnegative "$evidence_dir/metric-recovered-age.json"
 jq -e '.measurements[0].value == 0' "$evidence_dir/metric-recovered-lag.json" \

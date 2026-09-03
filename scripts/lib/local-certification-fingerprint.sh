@@ -474,7 +474,8 @@ certification_phase_input_manifest() {
         deploy/compose/marketdata-publisher-outbox-connector.json \
         deploy/compose/kafka-connect.local.yml \
         scripts/lib/local-certification-fingerprint.sh \
-        -- "phase=$phase_id" "version=$phase_version"
+        -- "phase=$phase_id" "version=$phase_version" \
+        "offsetFlushIntervalMs=${SIMPLEMATCH_CONNECT_OFFSET_FLUSH_INTERVAL_MS:-120000}"
       ;;
     kubernetes-cdc-delivery)
       _certification_paths_and_values_manifest \
@@ -502,7 +503,9 @@ certification_phase_input_manifest() {
         scripts/test-kubernetes-overlays.sh scripts/test-local-kubernetes-dependencies.sh \
         scripts/lib/local-certification-artifacts.sh \
         scripts/lib/local-certification-fingerprint.sh \
-        -- "phase=$phase_id" "version=$phase_version"
+        -- "phase=$phase_id" "version=$phase_version" \
+        "observerTimeoutSeconds=${SIMPLEMATCH_CDC_OBSERVER_TIMEOUT_SECONDS:-180}" \
+        "kindCluster=${SIMPLEMATCH_KIND_CLUSTER_NAME:-simplematch-live}"
       _certification_fixture_validator_identity_manifest
       ;;
     local-image-inventory)

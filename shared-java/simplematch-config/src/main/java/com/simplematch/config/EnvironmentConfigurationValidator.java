@@ -80,6 +80,32 @@ public final class EnvironmentConfigurationValidator {
       throw new IllegalStateException(
           "Staging and production require " + POSTGRES_DSN + " from a Kubernetes Secret.");
     }
+    try {
+      PostgresJdbcUrl.parseSecure(postgresDsnFromSecret(environment));
+    } catch (IllegalStateException failure) {
+      throw new IllegalStateException(
+          "Staging and production require a PostgreSQL DSN with "
+              + "sslmode=verify-full and sslrootcert.",
+          failure);
+    }
+  }
+
+  private String postgresDsnFromSecret(ConfigurableEnvironment environment) {
+    for (PropertySource<?> propertySource : environment.getPropertySources()) {
+      if (!isKubernetesSource(propertySource, "secret")
+          || !(propertySource instanceof EnumerablePropertySource<?> enumerableSource)) {
+        continue;
+      }
+      for (String propertyName : enumerableSource.getPropertyNames()) {
+        if (POSTGRES_DSN.equals(canonicalKey(propertyName))) {
+          final Object value = propertySource.getProperty(propertyName);
+          if (value != null) {
+            return value.toString();
+          }
+        }
+      }
+    }
+    return null;
   }
 
   private Set<String> keysFrom(ConfigurableEnvironment environment, String sourceKind) {
@@ -104,6 +130,8 @@ public final class EnvironmentConfigurationValidator {
   }
 
   private String canonicalKey(String propertyName) {
-    return propertyName.toLowerCase(Locale.ROOT).replace('_', '.').replace('-', '.');
+    final String canonical =
+        propertyName.toLowerCase(Locale.ROOT).replace('_', '.').replace('-', '.');
+    return "postgres.dsn".equals(canonical) ? POSTGRES_DSN : canonical;
   }
 }

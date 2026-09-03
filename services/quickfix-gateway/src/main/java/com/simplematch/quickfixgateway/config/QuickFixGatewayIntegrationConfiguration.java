@@ -19,6 +19,10 @@ import com.simplematch.quickfixgateway.wal.WalRecoveryJournal;
 import com.simplematch.quickfixgateway.wal.WalReplayService;
 import io.grpc.ManagedChannel;
 import io.grpc.ManagedChannelBuilder;
+import io.grpc.netty.shaded.io.grpc.netty.GrpcSslContexts;
+import io.grpc.netty.shaded.io.grpc.netty.NettyChannelBuilder;
+import java.io.File;
+import java.io.IOException;
 import java.time.Clock;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
@@ -33,9 +37,24 @@ public class QuickFixGatewayIntegrationConfiguration {
 
   @Bean(destroyMethod = "shutdownNow")
   ManagedChannel riskServiceChannel(GrpcProperties grpcProperties) {
-    return ManagedChannelBuilder.forTarget(grpcProperties.targets().riskService())
-        .usePlaintext()
-        .build();
+    final String target = grpcProperties.targets().riskService();
+    final GrpcProperties.SecurityProperties security = grpcProperties.security();
+    if (!security.tlsEnabled()) {
+      return ManagedChannelBuilder.forTarget(target).usePlaintext().build();
+    }
+    try {
+      return NettyChannelBuilder.forTarget(target)
+          .sslContext(
+              GrpcSslContexts.forClient()
+                  .trustManager(new File(security.trustCertificatePath()))
+                  .keyManager(
+                      new File(security.certificatePath()), new File(security.privateKeyPath()))
+                  .build())
+          .useTransportSecurity()
+          .build();
+    } catch (IOException failure) {
+      throw new IllegalStateException("failed to configure risk-service gRPC TLS", failure);
+    }
   }
 
   @Bean

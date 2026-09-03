@@ -287,27 +287,86 @@ if %w[staging production].include?(overlay)
     image = resources.fetch(["Deployment", name]).fetch("spec").fetch("template").fetch("spec").fetch("containers").first.fetch("image")
     abort "#{overlay}: #{name} image is not digest pinned" unless image.match?(/@sha256:[0-9a-f]{64}\z/)
   end
-  %w[account-service risk-service persistence market-data-projection query-service].each do |name|
+  %w[account-service risk-service persistence market-data-projection marketdata-publisher query-service].each do |name|
     pod_spec = resources.fetch(["Deployment", name]).fetch("spec").fetch("template").fetch("spec")
     container = pod_spec.fetch("containers").first
     postgres_dsn = container.fetch("env").find { |entry| entry["name"] == "SIMPLEMATCH_POSTGRES_DSN" }
-    abort "#{overlay}: #{name} has no secret-backed PostgreSQL DSN" unless postgres_dsn&.dig("valueFrom", "secretKeyRef")
+    abort "#{overlay}: #{name} has no canonical Secret-backed PostgreSQL DSN" unless
+      postgres_dsn&.dig("valueFrom", "secretKeyRef") == {
+        "name" => "#{name}-secrets",
+        "key" => "postgres_dsn"
+      }
     postgres_mount = container.fetch("volumeMounts").find { |entry| entry["name"] == "postgres-tls" }
     abort "#{overlay}: #{name} has no PostgreSQL CA mount" unless postgres_mount&.fetch("mountPath") == "/etc/simplematch/postgres-tls"
     postgres_volume = pod_spec.fetch("volumes").find { |entry| entry["name"] == "postgres-tls" }
     postgres_secret = postgres_volume&.dig("secret")
     abort "#{overlay}: #{name} does not require the PostgreSQL CA Secret" unless postgres_secret&.fetch("secretName") == "simplematch-postgres-tls" && postgres_secret.fetch("optional") == false
   end
-  %w[account-service risk-service persistence market-data-projection query-service].each do |name|
-    env = resources.fetch(["Deployment", name]).fetch("spec").fetch("template").fetch("spec").fetch("containers").first.fetch("env")
+  %w[account-service risk-service persistence market-data-projection marketdata-publisher query-service quickfix-gateway].each do |name|
+    job = resources.fetch(["Job", "#{name}-flyway"])
+    pod_spec = job.fetch("spec").fetch("template").fetch("spec")
+    container = pod_spec.fetch("containers").first
+    postgres_mount = container.fetch("volumeMounts").find { |entry| entry["name"] == "postgres-tls" }
+    abort "#{overlay}: #{name} Flyway Job has no PostgreSQL CA mount" unless
+      postgres_mount == {
+        "name" => "postgres-tls",
+        "mountPath" => "/etc/simplematch/postgres-tls",
+        "readOnly" => true
+      }
+    postgres_volume = pod_spec.fetch("volumes").find { |entry| entry["name"] == "postgres-tls" }
+    abort "#{overlay}: #{name} Flyway Job does not require the PostgreSQL CA Secret" unless
+      postgres_volume == {
+        "name" => "postgres-tls",
+        "secret" => {
+          "secretName" => "simplematch-postgres-tls",
+          "optional" => false
+        }
+      }
+  end
+  {
+    "account-service" => "Deployment",
+    "risk-service" => "Deployment",
+    "persistence" => "Deployment",
+    "market-data-projection" => "Deployment",
+    "marketdata-streamer" => "Deployment",
+    "query-service" => "Deployment",
+    "quickfix-gateway" => "StatefulSet"
+  }.each do |name, kind|
+    env = resources.fetch([kind, name]).fetch("spec").fetch("template").fetch("spec").fetch("containers").first.fetch("env")
     protocol = env.find { |entry| entry["name"] == "SPRING_KAFKA_PROPERTIES_SECURITY_PROTOCOL" }
     abort "#{overlay}: #{name} does not require SASL_SSL" unless protocol.fetch("value") == "SASL_SSL"
   end
   streamer_env = resources.fetch(["Deployment", "marketdata-streamer"]).fetch("spec").fetch("template").fetch("spec").fetch("containers").first.fetch("env")
-  streamer_protocol = streamer_env.find { |entry| entry["name"] == "SPRING_KAFKA_PROPERTIES_SECURITY_PROTOCOL" }
-  abort "#{overlay}: marketdata-streamer does not require SASL_SSL" unless streamer_protocol.fetch("value") == "SASL_SSL"
   streamer_tls = streamer_env.find { |entry| entry["name"] == "SIMPLEMATCH_GRPC_SECURITY_TLS_ENABLED" }
   abort "#{overlay}: marketdata-streamer does not require gRPC TLS" unless streamer_tls.fetch("value") == "true"
+  kafka_workloads = {
+    "account-service" => "Deployment",
+    "risk-service" => "Deployment",
+    "persistence" => "Deployment",
+    "market-data-projection" => "Deployment",
+    "marketdata-streamer" => "Deployment",
+    "query-service" => "Deployment",
+    "quickfix-gateway" => "StatefulSet"
+  }
+  kafka_workloads.each do |name, kind|
+    pod_spec = resources.fetch([kind, name]).fetch("spec").fetch("template").fetch("spec")
+    kafka_volume = pod_spec.fetch("volumes").find { |volume| volume["name"] == "kafka-tls" }
+    abort "#{overlay}: #{name} does not require the Kafka TLS Secret" unless
+      kafka_volume&.dig("secret", "secretName") == "simplematch-kafka-tls" &&
+        kafka_volume.dig("secret", "optional") == false
+  end
+  {
+    "account-service" => ["account-service-tls", "Deployment"],
+    "risk-service" => ["risk-service-tls", "Deployment"],
+    "marketdata-streamer" => ["marketdata-streamer-tls", "Deployment"],
+    "quickfix-gateway" => ["quickfix-gateway-tls", "StatefulSet"]
+  }.each do |name, (secret_name, kind)|
+    pod_spec = resources.fetch([kind, name]).fetch("spec").fetch("template").fetch("spec")
+    grpc_volume = pod_spec.fetch("volumes").find { |volume| volume["name"] == "grpc-tls" }
+    abort "#{overlay}: #{name} does not require its gRPC TLS Secret" unless
+      grpc_volume&.dig("secret", "secretName") == secret_name &&
+        grpc_volume.dig("secret", "optional") == false
+  end
   {
     "quickfix-gateway" => "quickfix-gateway-http-tls",
     "market-data-projection" => "market-data-projection-http-tls"
@@ -350,6 +409,16 @@ if %w[staging production].include?(overlay)
     env = resources.fetch(["Deployment", name]).fetch("spec").fetch("template").fetch("spec").fetch("containers").first.fetch("env")
     tls = env.find { |entry| entry["name"] == "SIMPLEMATCH_GRPC_SECURITY_TLS_ENABLED" }
     abort "#{overlay}: #{name} does not require gRPC TLS" unless tls.fetch("value") == "true"
+  end
+  quickfix_security = quickfix_container.fetch("env").to_h { |entry| [entry.fetch("name"), entry] }
+  {
+    "SIMPLEMATCH_GRPC_SECURITY_TLS_ENABLED" => "true",
+    "SIMPLEMATCH_GRPC_SECURITY_CERTIFICATE_PATH" => "/etc/simplematch/grpc-tls/tls.crt",
+    "SIMPLEMATCH_GRPC_SECURITY_PRIVATE_KEY_PATH" => "/etc/simplematch/grpc-tls/tls.key",
+    "SIMPLEMATCH_GRPC_SECURITY_TRUST_CERTIFICATE_PATH" => "/etc/simplematch/grpc-tls/ca.crt"
+  }.each do |name, value|
+    abort "#{overlay}: QuickFIX Gateway is missing #{name}" unless
+      quickfix_security.dig(name, "value") == value
   end
   abort "#{overlay}: external NetworkPolicy missing" unless resources.key?(["NetworkPolicy", "simplematch-java-services-external"])
 end

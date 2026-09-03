@@ -8,6 +8,12 @@ resources:
 patches:
   - path: environment-patch.yaml
   - path: ../secure-java-services-patch.yaml
+  - path: ../secure-flyway-jobs-patch.yaml
+    target:
+      group: batch
+      version: v1
+      kind: Job
+      name: .*-flyway
   - path: platform-config-patch.yaml
   - path: kafka-connect-config-patch.yaml
 images:

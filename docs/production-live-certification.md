@@ -127,6 +127,12 @@ PostgreSQL production connectivity, or external FIX interoperability.
 Run these in order from the repository root. GRADLE_USER_HOME is only needed when the normal
 Gradle cache is read-only or unsuitable; it is not a production setting.
 
+Before applying any Compose or Kubernetes resources, or injecting a deployment fault, complete the
+mandatory preflight in [Deployment Test Lessons](agents/deployment-test-lessons.md). Confirm the
+Docker daemon, canonical kind context and worker topology, observed runtime identities, isolated
+namespace/evidence directory, and before/after resource inventory. Stop before fault injection if
+any preflight check fails.
+
 ~~~bash
 cmake --build --preset full-native-dev --parallel
 ctest --preset full-native-dev --output-on-failure
@@ -137,16 +143,16 @@ ctest --preset dev-debug --output-on-failure
 bash scripts/test-matching-kubernetes-manifests.sh
 bash scripts/test-matching-topic-profile.sh
 bash scripts/test-phase1-deployment-contracts.sh
+bash scripts/test-flyway-services.sh
 bash scripts/run-outbox-cdc-contract-check.sh
 
 # The following phase is normally invoked by the full local certification runner after the
 # Kubernetes workloads and retained connectors are Ready. It is shown separately for operators
 # resuming a retained, lifecycle-owned namespace. Read the run id from the retained run context:
 certification_evidence_dir="${SIMPLEMATCH_CERTIFICATION_EVIDENCE_DIR:-out/certification/local-production-like}"
-certification_namespace="$(awk -F= '$1 == "namespace" { print substr($0, index($0, "=") + 1); exit }' \
-  "$certification_evidence_dir/run-context")"
-namespace_run_id="$(awk -F= '$1 == "run_id" { print substr($0, index($0, "=") + 1); exit }' \
-  "$certification_evidence_dir/run-context")"
+run_context_file="$certification_evidence_dir/run-context"
+certification_namespace="$(sed -n 's/^namespace=//p' "$run_context_file")"
+namespace_run_id="$(sed -n 's/^run_id=//p' "$run_context_file")"
 [[ -n "$certification_namespace" && -n "$namespace_run_id" ]] || {
   printf '%s\n' 'run-context must contain namespace and run_id' >&2
   exit 1
@@ -154,12 +160,15 @@ namespace_run_id="$(awk -F= '$1 == "run_id" { print substr($0, index($0, "=") + 
 bash scripts/run-risk-cdc-delivery-observer-check.sh \
   --namespace "$certification_namespace" \
   --namespace-run-id "$namespace_run_id" \
-  --evidence-dir out/certification/local-production-like/cdc-delivery
+  --evidence-dir "$certification_evidence_dir/cdc-delivery"
 
 # The observer accepts only a namespace labeled disposable and managed by
 # local-production-like-certification, and --namespace-run-id must match its run-id label.
 
 ./gradlew --no-daemon :services:persistence:test :services:account-service:test :services:quickfix-gateway:test :services:quickfix-gateway:certificationTest :services:market-data-projection:test
+
+./gradlew --no-daemon :services:risk-service:test \
+  --tests 'com.simplematch.riskservice.store.RiskServiceFlywayMigrationTest'
 
 ./gradlew --no-daemon -q staticAnalysis
 ~~~

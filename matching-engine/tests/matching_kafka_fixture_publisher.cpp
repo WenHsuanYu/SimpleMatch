@@ -402,7 +402,11 @@ void publish_open_barriers(std::string_view brokers, std::string_view topic,
 } // namespace
 
 int main(int argc, char **argv) {
-  if (argc == 9 && std::string_view(argv[1]) == "--validate-open-barrier") {
+  if (argc > 1 && std::string_view(argv[1]) == "--validate-open-barrier") {
+    if (argc != 9) {
+      std::cerr << "--validate-open-barrier requires 7 arguments\n";
+      return 2;
+    }
     try {
       validate_open_barrier(
           std::cin,
