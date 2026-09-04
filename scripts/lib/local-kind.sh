@@ -11,6 +11,21 @@ simplematch_kind_nodes() {
   kind get nodes --name "$cluster_name" 2>/dev/null
 }
 
+simplematch_kind_node_readiness_state() {
+  local node_json="$1"
+
+  jq -er '
+    .status.conditions // error("Ready condition is missing")
+    | map(select(.type == "Ready"))
+    | if length != 1 then error("Ready condition is ambiguous")
+      elif .[0].status == "True" then "true"
+      elif .[0].status == "False" then "false"
+      elif .[0].status == "Unknown" then "unknown"
+      else error("Ready condition has an unsupported status")
+      end
+  ' <<<"$node_json"
+}
+
 simplematch_kind_create_disposable_namespace() {
   local context="$1"
   local namespace="$2"

@@ -10,6 +10,8 @@ script_dir="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
 repo_root="$(cd -- "$script_dir/.." && pwd)"
 # shellcheck source=scripts/lib/local-common.sh
 source "$script_dir/lib/local-common.sh"
+# shellcheck source=scripts/lib/local-kind.sh
+source "$script_dir/lib/local-kind.sh"
 # shellcheck source=scripts/lib/local-resilience-dependencies.sh
 source "$script_dir/lib/local-resilience-dependencies.sh"
 
@@ -308,18 +310,10 @@ wait_for_node_not_ready() {
     if ! node_json="$(kube get node "$node" -o json)"; then
       die "could not read readiness for worker $node"
     fi
-    if ! ready="$(jq -er '
-      .status.conditions // error("Ready condition is missing")
-      | map(select(.type == "Ready"))
-      | if length != 1 then error("Ready condition is ambiguous")
-        elif .[0].status == "True" then "true"
-        elif .[0].status == "False" then "false"
-        else error("Ready condition is neither True nor False")
-        end
-    ' <<<"$node_json")"; then
+    if ! ready="$(simplematch_kind_node_readiness_state "$node_json")"; then
       die "worker readiness JSON is invalid: $node"
     fi
-    if [[ "$ready" == false ]]; then
+    if [[ "$ready" == false || "$ready" == unknown ]]; then
       worker_not_ready_observed=true
       return 0
     fi

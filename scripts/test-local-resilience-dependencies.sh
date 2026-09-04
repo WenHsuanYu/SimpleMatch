@@ -3,6 +3,8 @@ set -Eeuo pipefail
 IFS=$'\n\t'
 
 script_dir="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
+# shellcheck source=scripts/lib/local-kind.sh
+source "$script_dir/lib/local-kind.sh"
 # shellcheck source=scripts/lib/local-resilience-dependencies.sh
 source "$script_dir/lib/local-resilience-dependencies.sh"
 
@@ -13,6 +15,28 @@ fail() {
 
 fixture_dir="$(mktemp -d "${TMPDIR:-/tmp}/simplematch-dependency-resilience.XXXXXX")"
 trap 'rm -rf -- "$fixture_dir"' EXIT
+
+ready_true='{"status":{"conditions":[{"type":"Ready","status":"True"}]}}'
+ready_false='{"status":{"conditions":[{"type":"Ready","status":"False"}]}}'
+ready_unknown='{"status":{"conditions":[{"type":"Ready","status":"Unknown"}]}}'
+ready_missing='{"status":{"conditions":[{"type":"MemoryPressure","status":"False"}]}}'
+ready_ambiguous='{"status":{"conditions":[{"type":"Ready","status":"False"},{"type":"Ready","status":"Unknown"}]}}'
+ready_unsupported='{"status":{"conditions":[{"type":"Ready","status":"Maybe"}]}}'
+[[ "$(simplematch_kind_node_readiness_state "$ready_true")" == true ]] ||
+  fail 'Ready=True was not parsed as healthy'
+[[ "$(simplematch_kind_node_readiness_state "$ready_false")" == false ]] ||
+  fail 'Ready=False was not parsed as unavailable'
+[[ "$(simplematch_kind_node_readiness_state "$ready_unknown")" == unknown ]] ||
+  fail 'Ready=Unknown was not parsed as unavailable'
+if simplematch_kind_node_readiness_state "$ready_missing" >/dev/null 2>&1; then
+  fail 'missing Ready condition unexpectedly passed'
+fi
+if simplematch_kind_node_readiness_state "$ready_ambiguous" >/dev/null 2>&1; then
+  fail 'ambiguous Ready condition unexpectedly passed'
+fi
+if simplematch_kind_node_readiness_state "$ready_unsupported" >/dev/null 2>&1; then
+  fail 'unsupported Ready status unexpectedly passed'
+fi
 
 worker_stop='{"node":"simplematch-live-worker","container_id":"0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef","container_id_after":"0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef","node_not_ready_observed":true,"same_container_restarted":true}'
 
@@ -181,6 +205,7 @@ if resilience_dependency_report_is_passed kafka "$unsupported"; then
 fi
 
 runtime_script="$script_dir/run-local-resilience-dependencies.sh"
+readiness_lib="$script_dir/lib/local-kind.sh"
 bash -n "$runtime_script"
 dry_run="$("$runtime_script" --component postgresql --namespace simplematch-resilience-test --dry-run)"
 grep -Fq 'capture exact identity' <<<"$dry_run" || fail 'runtime diagnostic dry-run is incomplete'
@@ -202,14 +227,16 @@ grep -Fq 'timeout --foreground' "$runtime_script" ||
   fail 'dependency diagnostic must bound external commands'
 grep -Fq 'run_bounded' "$runtime_script" ||
   fail 'dependency diagnostic lacks its bounded command seam'
-grep -Fq 'jq -er' "$runtime_script" ||
+grep -Fq 'simplematch_kind_node_readiness_state' "$runtime_script" ||
+  fail 'dependency diagnostic does not use the shared node readiness parser'
+grep -Fq 'jq -er' "$readiness_lib" ||
   fail 'dependency diagnostic must fail closed on malformed node readiness evidence'
-grep -Fq 'Ready condition is missing' "$runtime_script" ||
+grep -Fq 'Ready condition is missing' "$readiness_lib" ||
   fail 'node readiness guard does not reject missing readiness conditions'
-grep -Fq 'Ready condition is neither True nor False' "$runtime_script" ||
-  fail 'node readiness guard does not reject ambiguous readiness conditions'
-grep -Fq '== false ]]' "$runtime_script" ||
-  fail 'node readiness guard does not require explicit Ready=false evidence'
+grep -Fq 'Ready condition has an unsupported status' "$readiness_lib" ||
+  fail 'node readiness guard does not reject unsupported readiness conditions'
+grep -Fq "[[ \"\$ready\" == false || \"\$ready\" == unknown ]]" "$runtime_script" ||
+  fail 'node readiness guard does not accept kubelet Unknown as unavailable'
 grep -Fq 'kafka_marker_topic_absent' "$runtime_script" ||
   fail 'dependency diagnostic must verify Kafka marker deletion'
 grep -Fq 'could not read Redis marker after recovery' "$runtime_script" ||
