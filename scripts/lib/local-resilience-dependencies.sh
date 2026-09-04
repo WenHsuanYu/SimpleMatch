@@ -109,6 +109,8 @@ resilience_dependency_report_is_valid() {
           else (.target.before.pod_uid != .target.after.pod_uid) end) and
           (.recovery | type == "object") and
           (.recovery.ready == true) and (.recovery.portable == true) and
+          (.recovery.rescheduled_after_worker_loss ==
+            (if .fault_mode == "worker-stop" then true else false end)) and
           (.recovery.disposable_state == true) and
           (.recovery.marker_before == true) and (.recovery.marker_after | type == "boolean") and
           (.recovery.marker_required_after == false)

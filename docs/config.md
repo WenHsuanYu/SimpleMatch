@@ -193,8 +193,9 @@ The focused command also accepts `--cluster`, `--context`, `--fault-mode`, `--de
 and `--evidence-dir` as explicit invocation options. The default canonical cluster is
 `simplematch-live`, the default context is `kind-simplematch-live`, and the deadline may not exceed
 300 seconds. It never applies manifests or deletes the caller namespace; only a run-owned Kafka
-marker topic is cleaned after a successful Kafka check. Its report is diagnostic evidence and cannot
-be promoted to the parent #151 aggregate certification verdict.
+marker topic is cleaned and verified after a successful Kafka check, with the same cleanup attempted
+under a shared 30-second failure budget when the check aborts. Its report is diagnostic evidence and
+cannot be promoted to the parent #151 aggregate certification verdict.
 
 ## Change Policy
 

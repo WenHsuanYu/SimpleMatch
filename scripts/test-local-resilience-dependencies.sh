@@ -89,13 +89,17 @@ jq -n --argjson worker_stop "$worker_stop" '
       after: {pod:"redis-def",pod_uid:"redis-after",node:"simplematch-live-worker3",worker_slot:"1",pvc:null}
     },
     worker_stop: ($worker_stop | .node = "simplematch-live-worker2"),
-    recovery: {ready:true, portable:true, disposable_state:true, marker_before:true, marker_after:false, marker_required_after:false},
+    recovery: {ready:true, portable:true, rescheduled_after_worker_loss:true, disposable_state:true, marker_before:true, marker_after:false, marker_required_after:false},
     failure_reason: null,
     claim_boundary: ["local Redis readiness after portable worker recovery", "Redis state is disposable"]
   }
 ' >"$redis_report"
 resilience_dependency_report_is_valid redis "$redis_report" || fail 'valid Redis report was rejected'
 resilience_dependency_report_is_passed redis "$redis_report" || fail 'valid Redis report did not pass'
+jq '.recovery.rescheduled_after_worker_loss = false' "$redis_report" >"$fixture_dir/redis-no-reschedule.json"
+if resilience_dependency_report_is_passed redis "$fixture_dir/redis-no-reschedule.json"; then
+  fail 'Redis worker-loss evidence without rescheduling unexpectedly passed'
+fi
 jq '.target.after.pvc = "unexpected-pvc"' "$redis_report" >"$fixture_dir/redis-pvc.json"
 if resilience_dependency_report_is_valid redis "$fixture_dir/redis-pvc.json"; then
   fail 'Redis PVC report unexpectedly passed validation'
@@ -198,6 +202,10 @@ grep -Fq 'could not read Redis marker after recovery' "$runtime_script" ||
   fail 'Redis marker read failures must fail closed'
 grep -Fq 'Redis marker returned an unexpected value' "$runtime_script" ||
   fail 'Redis marker output must be validated after recovery'
+grep -Fq 'wait_for_redis_reschedule' "$runtime_script" ||
+  fail 'Redis worker-loss diagnostic must observe portable rescheduling'
+grep -Fq 'rescheduled_after_worker_loss' "$runtime_script" ||
+  fail 'Redis report must record worker-loss rescheduling evidence'
 grep -Fq 'could not list Kafka topics before marker creation' "$runtime_script" ||
   fail 'Kafka marker creation must prove topic-list availability'
 grep -Fq 'kafka-log-dirs.sh' "$runtime_script" || fail 'Kafka diagnostic lacks a follower catch-up probe'

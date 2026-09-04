@@ -24,6 +24,7 @@ fault_mode=worker-stop
 deadline_seconds=300
 preflight_timeout_seconds=60
 cleanup_timeout_seconds=30
+redis_reschedule_timeout_seconds=90
 evidence_dir="${SIMPLEMATCH_RESILIENCE_DEPENDENCY_EVIDENCE_DIR:-}"
 dry_run=false
 
@@ -355,6 +356,27 @@ wait_for_redis_pod_ready() {
   done
 }
 
+wait_for_redis_reschedule() {
+  local previous_uid="$1" previous_node="$2"
+  local reschedule_deadline=$((SECONDS + redis_reschedule_timeout_seconds))
+  local pods_json candidate
+
+  while (( SECONDS < reschedule_deadline )); do
+    check_deadline
+    pods_json="$(kns get pods -l app.kubernetes.io/name=redis -o json 2>/dev/null || true)"
+    candidate="$(jq -c --arg previous_uid "$previous_uid" --arg previous_node "$previous_node" '
+      [.items[]
+       | select(any(.status.conditions[]?; .type == "Ready" and .status == "True"))
+       | select((.metadata.uid // "") != $previous_uid)
+       | select((.spec.nodeName // "") != $previous_node)]
+      | if length == 1 then .[0] else empty end
+    ' <<<"$pods_json" 2>/dev/null || true)"
+    [[ -n "$candidate" ]] && return 0
+    bounded_sleep 2
+  done
+  die "Redis did not reschedule to a different worker within ${redis_reschedule_timeout_seconds}s"
+}
+
 wait_for_kafka_set_ready() {
   local previous_uid="$1" pods_json ready_count target_uid
   while true; do
@@ -538,18 +560,23 @@ capture_redis_identity() {
 
 run_redis() {
   local before after target_pod target_node marker_before marker_after
-  local marker_after_bool=false worker_json report_json previous_uid=""
+  local marker_after_bool=false rescheduled_after_worker_loss=false
+  local worker_json report_json previous_uid
 
   wait_for_redis_pod_ready ""
   capture_redis_identity before
   target_pod="$(jq -r '.pod' <<<"$before")"
   target_node="$(jq -r '.node' <<<"$before")"
+  previous_uid="$(jq -r '.pod_uid' <<<"$before")"
   marker_before="$(redis_command "$target_pod" redis-cli SET "$marker_key" "$marker_value" EX 600 2>/dev/null | tr -d '[:space:]')" ||
     die 'could not write Redis disposable marker'
   [[ "$marker_before" == OK ]] || die 'Redis disposable marker was not accepted'
   inject_fault "$target_pod" "$target_node"
+  if [[ "$fault_mode" == worker-stop ]]; then
+    wait_for_redis_reschedule "$previous_uid" "$target_node"
+    rescheduled_after_worker_loss=true
+  fi
   restore_worker
-  [[ "$fault_mode" == pod-restart ]] && previous_uid="$(jq -r '.pod_uid' <<<"$before")"
   wait_for_redis_pod_ready "$previous_uid"
   capture_redis_identity after
   if ! marker_after="$(redis_command "$redis_pod" redis-cli GET "$marker_key" 2>/dev/null | tr -d '\r')"; then
@@ -567,13 +594,15 @@ run_redis() {
   fi
   report_json="$(jq -n \
     --argjson before "$before" --argjson after "$after" --argjson worker_stop "$worker_json" \
+    --argjson rescheduled_after_worker_loss "$rescheduled_after_worker_loss" \
     --argjson marker_before true --argjson marker_after "$marker_after_bool" \
     --arg cluster "$cluster_name" --arg context "$context" --arg namespace "$namespace" \
     --arg run_id "$run_id" --arg fault_mode "$fault_mode" --argjson deadline "$deadline_seconds" \
     '{schema_version:1,profile:"dependency-recovery",component:"redis",status:"PASSED",
       cluster:$cluster,context:$context,namespace:$namespace,run_id:$run_id,fault_mode:$fault_mode,
       deadline_seconds:$deadline,target:{before:$before,after:$after},worker_stop:$worker_stop,
-      recovery:{ready:true,portable:true,disposable_state:true,marker_before:$marker_before,
+      recovery:{ready:true,portable:true,rescheduled_after_worker_loss:$rescheduled_after_worker_loss,
+        disposable_state:true,marker_before:$marker_before,
         marker_after:$marker_after,marker_required_after:false},failure_reason:null,
       claim_boundary:["local Redis readiness after portable worker recovery","Redis state is disposable"]}')"
   write_validated_report redis "$report_json"

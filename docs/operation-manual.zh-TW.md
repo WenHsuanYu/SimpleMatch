@@ -694,7 +694,8 @@ bash scripts/run-local-resilience-dependencies.sh \
 都保留；該 marker 與 observer-owned 的 `risk_service.cdc_delivery_lag` 分離，不可用來偽造
 CDC 健康資料。Kafka 報告必須證明
 三個固定 ordinal 的 cluster/node identity、RF3 marker、兩個存活 broker 與恢復後 ISR3；
-Redis 只證明 portable singleton 回到 Ready，並明確標示 `emptyDir` state 可遺失。Namespace、
+Redis worker-stop 報告必須觀察到新的 Ready Pod 已移到另一個 worker；pod-restart 則要求新的
+Pod UID，並明確標示 `emptyDir` state 可遺失。Namespace、
 kind cluster、worker container identity 或上述資料契約不一致時會 fail closed，且 cleanup 只
 刪除本次 Kafka marker topic。
 

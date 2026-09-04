@@ -119,7 +119,8 @@ PostgreSQL must return with its original node-local PVC and the Flyway-owned
 `risk_service.cdc_delivery_lag` health row. Kafka must retain its RF3 marker, two-broker availability
 during the fault, and all three ISR after rejoin; Redis is expected
 to be rebuildable because its `emptyDir` state is disposable. Namespace, worker-container, cluster
-identity, or data mismatches fail closed. This focused report cannot be promoted to a full-local
+identity, or data mismatches fail closed. A Redis worker-stop report also requires a new Ready Pod
+on a different worker; this focused report cannot be promoted to a full-local
 certification PASS; the parent #151 runner still owns the aggregate baseline and fault-family verdict.
 
 The local overlay also runs two Debezium Kafka Connect workers against the in-cluster Kafka and
