@@ -73,7 +73,9 @@ die() {
 }
 
 now_epoch() {
-  date +%s
+  # Bash's SECONDS counter is elapsed process time; unlike wall-clock date it
+  # cannot move backwards when the host clock is adjusted during a recovery.
+  printf '%s\n' "$SECONDS"
 }
 
 check_deadline() {

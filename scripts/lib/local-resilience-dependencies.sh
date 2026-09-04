@@ -40,15 +40,18 @@ resilience_dependency_report_is_valid() {
           (.target | type == "object") and
           (.claim_boundary | type == "array") and
           (.failure_reason == null or (.failure_reason | text));
+        def docker_id: type == "string" and test("^[0-9a-f]{64}$");
         def worker_stop:
           (.worker_stop | type == "object") and
           (.worker_stop.node | text) and
-          (.worker_stop.container_id | text) and
+          (.worker_stop.container_id | docker_id) and
+          (.worker_stop.container_id_after | docker_id) and
           (.worker_stop.container_id_after == .worker_stop.container_id) and
           (.worker_stop.node_not_ready_observed == true) and
           (.worker_stop.same_container_restarted == true);
         common and
         (if .status == "PASSED" then
+          (.failure_reason == null) and
           (.target.before | type == "object") and (.target.after | type == "object") and
           (.target.before.pod == "postgres-0") and (.target.after.pod == "postgres-0") and
           (.target.before.pod_uid | text) and (.target.after.pod_uid | text) and
@@ -81,15 +84,18 @@ resilience_dependency_report_is_valid() {
           (.target | type == "object") and
           (.claim_boundary | type == "array") and
           (.failure_reason == null or (.failure_reason | text));
+        def docker_id: type == "string" and test("^[0-9a-f]{64}$");
         def worker_stop:
           (.worker_stop | type == "object") and
           (.worker_stop.node | text) and
-          (.worker_stop.container_id | text) and
+          (.worker_stop.container_id | docker_id) and
+          (.worker_stop.container_id_after | docker_id) and
           (.worker_stop.container_id_after == .worker_stop.container_id) and
           (.worker_stop.node_not_ready_observed == true) and
           (.worker_stop.same_container_restarted == true);
         common and
         (if .status == "PASSED" then
+          (.failure_reason == null) and
           (.target.before | type == "object") and (.target.after | type == "object") and
           (.target.before.pod | text) and (.target.after.pod | text) and
           (.target.before.pod_uid | text) and (.target.after.pod_uid | text) and
@@ -119,16 +125,19 @@ resilience_dependency_report_is_valid() {
           (.target | type == "object") and
           (.claim_boundary | type == "array") and
           (.failure_reason == null or (.failure_reason | text));
+        def docker_id: type == "string" and test("^[0-9a-f]{64}$");
         def worker_stop:
           (.worker_stop | type == "object") and
           (.worker_stop.node | text) and
-          (.worker_stop.container_id | text) and
+          (.worker_stop.container_id | docker_id) and
+          (.worker_stop.container_id_after | docker_id) and
           (.worker_stop.container_id_after == .worker_stop.container_id) and
           (.worker_stop.node_not_ready_observed == true) and
           (.worker_stop.same_container_restarted == true);
         def broker_set:
           type == "array" and length == 3 and
           ([.[].node_id] | sort) == [0, 1, 2] and
+          ([.[].node] | unique | length) == 3 and
           all(.[];
             (.pod == ("kafka-" + (.node_id | tostring))) and
             (.pod_uid | text) and (.node | text) and (.worker_slot | text) and
@@ -137,6 +146,7 @@ resilience_dependency_report_is_valid() {
           );
         common and
         (if .status == "PASSED" then
+          (.failure_reason == null) and
           (.target.ordinal | type == "number" and floor == . and . >= 0 and . <= 2) and
           (.target.before | type == "object") and (.target.after | type == "object") and
           (.target.before.pod == ("kafka-" + (.target.ordinal | tostring))) and
@@ -145,6 +155,7 @@ resilience_dependency_report_is_valid() {
           (.target.before.node | text) and (.target.after.node | text) and
           (.target.before.node == .target.after.node) and
           (.target.before.worker_slot | text) and (.target.after.worker_slot | text) and
+          (.target.before.worker_slot == .target.after.worker_slot) and
           (.target.before.pvc | text) and (.target.after.pvc | text) and
           (.target.before.pvc == .target.after.pvc) and
           (.target.before.pv | text) and (.target.after.pv | text) and

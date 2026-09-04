@@ -14,7 +14,7 @@ fail() {
 fixture_dir="$(mktemp -d "${TMPDIR:-/tmp}/simplematch-dependency-resilience.XXXXXX")"
 trap 'rm -rf -- "$fixture_dir"' EXIT
 
-worker_stop='{"node":"simplematch-live-worker","container_id":"worker-container-id","container_id_after":"worker-container-id","node_not_ready_observed":true,"same_container_restarted":true}'
+worker_stop='{"node":"simplematch-live-worker","container_id":"0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef","container_id_after":"0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef","node_not_ready_observed":true,"same_container_restarted":true}'
 
 postgres_report="$fixture_dir/postgresql.json"
 jq -n --argjson worker_stop "$worker_stop" '
@@ -41,6 +41,18 @@ jq -n --argjson worker_stop "$worker_stop" '
 ' >"$postgres_report"
 resilience_dependency_report_is_valid postgresql "$postgres_report" || fail 'valid PostgreSQL report was rejected'
 resilience_dependency_report_is_passed postgresql "$postgres_report" || fail 'valid PostgreSQL report did not pass'
+resilience_dependency_valid_component postgresql || fail 'PostgreSQL component was rejected'
+if resilience_dependency_valid_component unknown; then fail 'unknown component was accepted'; fi
+[[ "$(resilience_dependency_report_status "$postgres_report")" == PASSED ]] || fail 'report status was not exposed'
+[[ -z "$(resilience_dependency_report_failure_reason "$postgres_report")" ]] || fail 'successful report exposed a failure reason'
+jq '.worker_stop.container_id = "short-id"' "$postgres_report" >"$fixture_dir/postgresql-short-worker-id.json"
+if resilience_dependency_report_is_passed postgresql "$fixture_dir/postgresql-short-worker-id.json"; then
+  fail 'short worker container identity unexpectedly passed'
+fi
+jq '.failure_reason = "misleading pass reason"' "$postgres_report" >"$fixture_dir/postgresql-pass-reason.json"
+if resilience_dependency_report_is_passed postgresql "$fixture_dir/postgresql-pass-reason.json"; then
+  fail 'successful report with a failure reason unexpectedly passed'
+fi
 
 jq '.target.after.node = "simplematch-live-worker2"' "$postgres_report" >"$fixture_dir/postgresql-cross-node.json"
 if resilience_dependency_report_is_passed postgresql "$fixture_dir/postgresql-cross-node.json"; then
