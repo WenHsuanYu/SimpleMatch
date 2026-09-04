@@ -62,7 +62,9 @@ resilience_dependency_report_is_valid() {
           (.target.before.pvc == .target.after.pvc) and
           (.target.before.pv | text) and (.target.after.pv | text) and
           (.target.before.pv == .target.after.pv) and
-          (if .fault_mode == "worker-stop" then worker_stop else true end) and
+          (if .fault_mode == "worker-stop" then
+            (worker_stop and .worker_stop.node == .target.before.node)
+          else (.target.before.pod_uid != .target.after.pod_uid) end) and
           (.recovery | type == "object") and
           (.recovery.ready == true) and (.recovery.durable_marker | text) and
           (.recovery.durable_before == true) and (.recovery.durable_after == true) and
@@ -102,7 +104,9 @@ resilience_dependency_report_is_valid() {
           (.target.before.node | text) and (.target.after.node | text) and
           (.target.before.worker_slot | text) and (.target.after.worker_slot | text) and
           (.target.before.pvc == null) and (.target.after.pvc == null) and
-          (if .fault_mode == "worker-stop" then worker_stop else true end) and
+          (if .fault_mode == "worker-stop" then
+            (worker_stop and .worker_stop.node == .target.before.node)
+          else (.target.before.pod_uid != .target.after.pod_uid) end) and
           (.recovery | type == "object") and
           (.recovery.ready == true) and (.recovery.portable == true) and
           (.recovery.disposable_state == true) and
@@ -164,7 +168,9 @@ resilience_dependency_report_is_valid() {
           (.target.before.cluster_id == $cluster_id) and (.target.after.cluster_id == $cluster_id) and
           (.target.before.node_id == .target.ordinal) and (.target.after.node_id == .target.ordinal) and
           (.brokers_before | broker_set) and (.brokers_after | broker_set) and
-          (if .fault_mode == "worker-stop" then worker_stop else true end) and
+          (if .fault_mode == "worker-stop" then
+            (worker_stop and .worker_stop.node == .target.before.node)
+          else (.target.before.pod_uid != .target.after.pod_uid) end) and
           (.quorum | type == "object") and (.quorum.ready_before == true) and
           (.quorum.available_during | type == "number" and floor == . and . >= 2) and
           (.quorum.isr_before == 3) and (.quorum.isr_after == 3) and (.quorum.restored == true) and

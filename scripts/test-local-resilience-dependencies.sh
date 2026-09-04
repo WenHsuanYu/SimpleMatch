@@ -49,6 +49,14 @@ jq '.worker_stop.container_id = "short-id"' "$postgres_report" >"$fixture_dir/po
 if resilience_dependency_report_is_passed postgresql "$fixture_dir/postgresql-short-worker-id.json"; then
   fail 'short worker container identity unexpectedly passed'
 fi
+jq '.worker_stop.node = "simplematch-live-worker2"' "$postgres_report" >"$fixture_dir/postgresql-unrelated-worker.json"
+if resilience_dependency_report_is_passed postgresql "$fixture_dir/postgresql-unrelated-worker.json"; then
+  fail 'unrelated worker evidence unexpectedly passed'
+fi
+jq '.fault_mode = "pod-restart" | .worker_stop = null | .target.after.pod_uid = .target.before.pod_uid' "$postgres_report" >"$fixture_dir/postgresql-unchanged-pod-restart.json"
+if resilience_dependency_report_is_passed postgresql "$fixture_dir/postgresql-unchanged-pod-restart.json"; then
+  fail 'unchanged Pod restart evidence unexpectedly passed'
+fi
 jq '.failure_reason = "misleading pass reason"' "$postgres_report" >"$fixture_dir/postgresql-pass-reason.json"
 if resilience_dependency_report_is_passed postgresql "$fixture_dir/postgresql-pass-reason.json"; then
   fail 'successful report with a failure reason unexpectedly passed'
@@ -80,7 +88,7 @@ jq -n --argjson worker_stop "$worker_stop" '
       before: {pod:"redis-abc",pod_uid:"redis-before",node:"simplematch-live-worker2",worker_slot:"2",pvc:null},
       after: {pod:"redis-def",pod_uid:"redis-after",node:"simplematch-live-worker3",worker_slot:"1",pvc:null}
     },
-    worker_stop: $worker_stop,
+    worker_stop: ($worker_stop | .node = "simplematch-live-worker2"),
     recovery: {ready:true, portable:true, disposable_state:true, marker_before:true, marker_after:false, marker_required_after:false},
     failure_reason: null,
     claim_boundary: ["local Redis readiness after portable worker recovery", "Redis state is disposable"]
