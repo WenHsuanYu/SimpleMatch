@@ -1,8 +1,8 @@
 package com.simplematch.tools.riskmatchinge2e;
 
+import com.simplematch.contracts.marketdata.runtime.v1.MarketDataServiceGrpc;
 import com.simplematch.contracts.marketdata.runtime.v1.MarketDataSnapshot;
-import com.simplematch.contracts.marketdata.v1.MarketDataServiceGrpc;
-import com.simplematch.contracts.marketdata.v1.SubscribeMarketDataRequest;
+import com.simplematch.contracts.marketdata.runtime.v1.SubscribeMarketDataRequest;
 import io.grpc.ManagedChannel;
 import io.grpc.ManagedChannelBuilder;
 import java.time.Duration;

@@ -18,11 +18,9 @@ blockers.
 The latest retained Query evidence is source-aligned to the certified pre-squash tree recorded in
 `out/certification/issue-137-query-20260902-start-offset-query2/provenance.json`; the latest integrated
 deployment evidence is source-aligned to `0d5f1737691dda104b5f5d878e0d61f644d0772a` in
-`out/certification/issue-138-20260904-post-squash/evidence-manifest.json`. The current worktree adds
-post-certification Matching coordinator retry and Gradle distribution-cache hardening, plus the
-#119 pre-release cleanup. These changes have passed focused repository checks and are recorded
-below, but the retained production-like run remains source-aligned to the pre-cleanup tree; no new
-deployment claim is made until a fresh run is retained.
+`out/certification/issue-138-20260904-post-squash/evidence-manifest.json`. A fresh source-aligned
+production-like run for the #119 cleanup was retained on 2026-09-04 at source revision
+`93815beb11a8569bae5bcb10235a9d865ea9a27a`; its evidence and boundaries are recorded below.
 
 ## Status vocabulary
 
@@ -52,7 +50,7 @@ and must not be interpreted as a requirement to push images or obtain external c
 
 | Class | Current entries | Meaning |
 | --- | --- | --- |
-| Compatibility or legacy cleanup | CL-1 (`PARTIAL`) | Pre-release runtime and migration-only seams are removed in source/configuration; a fresh source-aligned local production-like gate is still required before completion. |
+| Compatibility or legacy cleanup | None | The #119 source/configuration cutover and its fresh source-aligned local production-like gate are complete. |
 
 ## Non-blocking hardening and efficiency improvements
 
@@ -82,10 +80,19 @@ reuse a runtime namespace whose source or image identity changed.
   freshness, sensitive-log checks, and retained-run provenance. Evidence is under
   `out/certification/issue-138-20260904-post-squash/`; its manifest records source revision
   `0d5f1737691dda104b5f5d878e0d61f644d0772a`.
+- The fresh #119 source-aligned production-like run passed all 59/59 phases in namespace
+  `simplematch-local-cert-20260904-114743-479272`, using the approved 2026-08-27 Market Reference
+  delivery artifact and registry transport. It includes the v2-only runtime/deployment contract,
+  seven service-scoped Flyway Jobs, Risk and Account outbox connector registration, the CDC
+  pause/recovery and zero-traffic freshness observations, the 15-pod Matching fleet, and retained
+  run provenance. Evidence is under
+  `out/certification/issue-119-20260904-r2/`; its report is `PASSED` and its manifest records source
+  revision `93815beb11a8569bae5bcb10235a9d865ea9a27a`.
 - The current worktree's post-certification hardening passed the focused native Matching suite,
   the full 80-test/15-suite native ingress executable, Flyway shell contract/grammar checks, and
-  Docker BuildKit Dockerfile checks. These checks validate the new retry/cache code paths locally;
-  they do not upgrade the retained Kubernetes evidence to the current HEAD.
+  Docker BuildKit Dockerfile checks. The fresh #119 run now also validates the current source
+  revision; the hardening remains non-blocking and does not replace the service-scoped migration or
+  retained-provenance gates.
 
 ## Verification evidence history (through 2026-08-16)
 
@@ -217,7 +224,7 @@ reuse a runtime namespace whose source or image identity changed.
 | Candidate/final artifact workflow and approval evidence | `COMPLETED` | [#124](https://github.com/WenHsuanYu/SimpleMatch/issues/124) |
 | Canonical artifact schema, identity, and packaging | `COMPLETED` | [#122](https://github.com/WenHsuanYu/SimpleMatch/issues/122) |
 | Stable 15-partition routing assignment | `COMPLETED` | [#123](https://github.com/WenHsuanYu/SimpleMatch/issues/123) |
-| Runtime Market Reference publication stack (retired) | `PARTIAL` | [#119](https://github.com/WenHsuanYu/SimpleMatch/issues/119) |
+| Runtime Market Reference publication stack (retired) | `COMPLETED` | [#119](https://github.com/WenHsuanYu/SimpleMatch/issues/119) |
 | Risk artifact loading and `matching.commands` publication | `COMPLETED` | [#126](https://github.com/WenHsuanYu/SimpleMatch/issues/126) |
 | Native deterministic Matching runtime | `COMPLETED` | [#127](https://github.com/WenHsuanYu/SimpleMatch/issues/127) |
 | Kafka journal recovery and trading-day barriers | `COMPLETED` | [#128](https://github.com/WenHsuanYu/SimpleMatch/issues/128) |
@@ -234,7 +241,7 @@ reuse a runtime namespace whose source or image identity changed.
 | Cross-service deployment, security, and observability | `COMPLETED` | [#138](https://github.com/WenHsuanYu/SimpleMatch/issues/138) |
 | Production-shaped Kafka topic profile | `COMPLETED` | [#125](https://github.com/WenHsuanYu/SimpleMatch/issues/125) |
 | Performance and recovery certification | `COMPLETED` | [#136](https://github.com/WenHsuanYu/SimpleMatch/issues/136) |
-| Pre-release compatibility and legacy cleanup | `PARTIAL` | [#119](https://github.com/WenHsuanYu/SimpleMatch/issues/119) (with completed [#120](https://github.com/WenHsuanYu/SimpleMatch/issues/120)) |
+| Pre-release compatibility and legacy cleanup | `COMPLETED` | [#119](https://github.com/WenHsuanYu/SimpleMatch/issues/119) (with completed [#120](https://github.com/WenHsuanYu/SimpleMatch/issues/120)) |
 
 ## Detailed inventory
 
@@ -315,7 +322,7 @@ reuse a runtime namespace whose source or image identity changed.
 
 ### MR-5: Remove the runtime Market Reference stack
 
-- **Current status:** `PARTIAL`
+- **Current status:** `COMPLETED`
 - **Target behavior:** No runtime Market Reference process, PostgreSQL snapshot/routing tables,
   outbox, Debezium connector, Kafka topic, Risk projection consumer, or Matching routing-policy
   ingress remains.
@@ -323,13 +330,13 @@ reuse a runtime namespace whose source or image identity changed.
   module, Flyway jobs/migrations, Debezium connector, Kubernetes runtime/configuration, Risk
   routing projection/resolver, native policy ingress, and obsolete routing-policy protobuf were
   removed. Risk and Matching use the shared startup artifact identity and final command envelope.
-- **Missing behavior:** Repository implementation is complete; a fresh source-aligned local
-  production-like run is required before this capability can be marked `COMPLETED`.
+- **Missing behavior:** None for the repository-owned project target. The fresh #119 run passed the
+  rendered Kubernetes, migration, workload, connector, CDC, fleet, and retained-provenance gates.
 - **Acceptance criteria:** Repository search finds no runtime publication or consumption of
   `market-reference.snapshots` or `market-reference.routing-policies`; Risk and Matching readiness
   prove the mounted artifact identity instead.
-- **Blocking dependencies:** Fresh source-aligned local production-like verification; MR-1 through
-  MR-4, RM-1, and ME-1 are complete.
+- **Blocking dependencies:** None. MR-1 through MR-4, RM-1, and ME-1 are complete, and the fresh
+  source-aligned local production-like verification passed.
 - **GitHub issue:** [#119](https://github.com/WenHsuanYu/SimpleMatch/issues/119), section B; its
   native blockers are the replacement issues above.
 
@@ -768,7 +775,7 @@ reuse a runtime namespace whose source or image identity changed.
 
 ### CL-1: Retire pre-release compatibility and superseded runtime seams
 
-- **Current status:** `PARTIAL`
+- **Current status:** `COMPLETED`
 - **Target behavior:** Remove migration-only v1 order/Risk/Matching seams and every superseded
   runtime Market Reference path after replacement consumers are ready. Preserve FIX
   anti-corruption, WAL-to-Risk mapping, persistence mapping, and Java/C++ wire fixtures.
@@ -776,12 +783,14 @@ reuse a runtime namespace whose source or image identity changed.
   storage/outbox seams, Account v1 transport, obsolete Matching contracts and topic settings,
   runtime Market Reference publication/projection, and migration-only schemas/jobs. Final Java and
   native fixtures, Flyway checks, rendered Kubernetes contracts, and focused service tests pass.
-- **Missing behavior:** Source/configuration cutover is complete; a fresh source-aligned local
-  production-like run remains before the cleanup can be marked `COMPLETED`.
+- **Missing behavior:** None for the repository-owned pre-release target. The fresh #119 run passed
+  all 59 phases, including the v2-only deployment contract, service-scoped Flyway jobs, CDC
+  delivery, 15-pod fleet, and retained-run provenance.
 - **Acceptance criteria:** No production caller, persisted required state, external consumer, or
   recovery path depends on a removed seam. All replacement paths preserve identity, ordering,
   retry, recovery, and error semantics. Repository validation remains truthful.
-- **Blocking dependencies:** All replacement capabilities above.
+- **Blocking dependencies:** None. All replacement capabilities above and the #119 source-aligned
+  local production-like gate are complete.
 - **GitHub issue:** [#119](https://github.com/WenHsuanYu/SimpleMatch/issues/119); completed
   predecessor work is recorded in [#120](https://github.com/WenHsuanYu/SimpleMatch/issues/120) and
   [#139](https://github.com/WenHsuanYu/SimpleMatch/issues/139).

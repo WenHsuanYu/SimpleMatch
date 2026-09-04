@@ -3,8 +3,8 @@ package com.simplematch.tools.riskmatchinge2e;
 import static org.assertj.core.api.Assertions.assertThat;
 
 import com.simplematch.contracts.marketdata.runtime.v1.MarketDataSnapshot;
-import com.simplematch.contracts.marketdata.v1.MarketDataServiceGrpc;
-import com.simplematch.contracts.marketdata.v1.SubscribeMarketDataRequest;
+import com.simplematch.contracts.marketdata.runtime.v1.MarketDataServiceGrpc;
+import com.simplematch.contracts.marketdata.runtime.v1.SubscribeMarketDataRequest;
 import io.grpc.Server;
 import io.grpc.ServerBuilder;
 import io.grpc.stub.StreamObserver;

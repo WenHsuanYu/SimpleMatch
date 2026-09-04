@@ -8,7 +8,7 @@ import org.springframework.boot.context.properties.ConfigurationProperties;
  * @param brokers comma-separated Kafka bootstrap servers
  * @param topics canonical topic names
  * @param partitions desired partition counts for ordered event streams
-   */
+ */
 @ConfigurationProperties("simplematch.kafka")
 public record KafkaProperties(
     String brokers, TopicsProperties topics, PartitionsProperties partitions) {
@@ -54,7 +54,7 @@ public record KafkaProperties(
    *
    * @param matchingCommands partition count for the final Matching command journal
    * @param matchingEvents partition count for the final Matching event journal
-  */
+   */
   public record PartitionsProperties(
       Integer matchingCommands,
       Integer matchingEvents) {
