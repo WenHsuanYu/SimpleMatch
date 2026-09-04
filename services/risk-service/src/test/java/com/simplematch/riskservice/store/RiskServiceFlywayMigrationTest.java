@@ -38,6 +38,22 @@ class RiskServiceFlywayMigrationTest {
             jdbcTemplate.queryForObject(
                 "SELECT metric_name FROM risk_service.cdc_delivery_lag", String.class))
         .isEqualTo("matching.commands");
+    assertThat(hasTable(jdbcTemplate, "LOCAL_RESILIENCE_MARKER")).isTrue();
+    assertThat(columnDataType(jdbcTemplate, "LOCAL_RESILIENCE_MARKER", "RUN_ID"))
+        .isEqualTo("CHARACTER VARYING");
+    assertThat(columnLength(jdbcTemplate, "LOCAL_RESILIENCE_MARKER", "RUN_ID")).isEqualTo(128);
+    assertThat(columnDataType(jdbcTemplate, "LOCAL_RESILIENCE_MARKER", "MARKER_VALUE"))
+        .isEqualTo("CHARACTER VARYING");
+    assertThat(columnLength(jdbcTemplate, "LOCAL_RESILIENCE_MARKER", "MARKER_VALUE"))
+        .isEqualTo(128);
+    assertThat(columnDataType(jdbcTemplate, "LOCAL_RESILIENCE_MARKER", "CREATED_AT_UNIX_MS"))
+        .isEqualTo("BIGINT");
+    assertThat(columnNullable(jdbcTemplate, "LOCAL_RESILIENCE_MARKER", "RUN_ID"))
+        .isEqualTo("NO");
+    assertThat(columnNullable(jdbcTemplate, "LOCAL_RESILIENCE_MARKER", "MARKER_VALUE"))
+        .isEqualTo("NO");
+    assertThat(columnNullable(jdbcTemplate, "LOCAL_RESILIENCE_MARKER", "CREATED_AT_UNIX_MS"))
+        .isEqualTo("NO");
     assertThat(columnNullable(jdbcTemplate, "ADMISSION_JOURNAL", "ROUTING_PARTITION"))
         .isEqualTo("NO");
     assertThat(columnNullable(jdbcTemplate, "ADMISSION_JOURNAL", "ARTIFACT_TRADING_DAY"))
@@ -46,7 +62,34 @@ class RiskServiceFlywayMigrationTest {
         .isEqualTo("NO");
     assertThat(columnNullable(jdbcTemplate, "ADMISSION_JOURNAL", "ROUTING_ALGORITHM_VERSION"))
         .isEqualTo("NO");
-    assertThat(appliedMigrationCount(jdbcTemplate)).isEqualTo(7);
+    assertThat(appliedMigrationCount(jdbcTemplate)).isEqualTo(8);
+  }
+
+  @DisplayName("local resilience markers reject blank values and negative timestamps")
+  @Test
+  void localResilienceMarkerConstraintsRejectInvalidValues() {
+    final JdbcTemplate jdbcTemplate = new JdbcTemplate(newDataSource());
+
+    migrate(jdbcTemplate.getDataSource());
+
+    assertThatThrownBy(
+            () ->
+                jdbcTemplate.update(
+                    "INSERT INTO risk_service.local_resilience_marker "
+                        + "(run_id, marker_value, created_at_unix_ms) VALUES (?, ?, ?)",
+                    " ",
+                    "marker",
+                    1L))
+        .isInstanceOf(RuntimeException.class);
+    assertThatThrownBy(
+            ()
+                -> jdbcTemplate.update(
+                    "INSERT INTO risk_service.local_resilience_marker "
+                        + "(run_id, marker_value, created_at_unix_ms) VALUES (?, ?, ?)",
+                    "run-1",
+                    "marker",
+                    -1L))
+        .isInstanceOf(RuntimeException.class);
   }
 
   @DisplayName("CDC observation columns preserve Kafka and epoch value widths")

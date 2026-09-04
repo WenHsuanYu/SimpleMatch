@@ -686,9 +686,13 @@ bash scripts/run-local-resilience-dependencies.sh \
   --component kafka --namespace <run-namespace>
 ```
 
-每次執行只注入一個明確的 fault，使用單一 300 秒 monotonic deadline，並在
+每次執行只注入一個明確的 fault，使用單一 300 秒 monotonic deadline；所有可能阻塞的
+`kubectl`、`docker`、`kind`、Pod exec 與等待命令都套用剩餘 deadline 的 bounded timeout；失敗
+清理則另有 30 秒 best-effort 上限，並在
 `out/resilience/dependencies-<run-id>/` 保存一份 component report。PostgreSQL 報告必須證明
-原本的 worker slot、Pod、RWO PVC/PV 與 durable marker row 都保留；Kafka 報告必須證明
+原本的 worker slot、Pod、RWO PVC/PV 與 Flyway 管理的 `risk_service.local_resilience_marker` row
+都保留；該 marker 與 observer-owned 的 `risk_service.cdc_delivery_lag` 分離，不可用來偽造
+CDC 健康資料。Kafka 報告必須證明
 三個固定 ordinal 的 cluster/node identity、RF3 marker、兩個存活 broker 與恢復後 ISR3；
 Redis 只證明 portable singleton 回到 Ready，並明確標示 `emptyDir` state 可遺失。Namespace、
 kind cluster、worker container identity 或上述資料契約不一致時會 fail closed，且 cleanup 只

@@ -257,7 +257,8 @@ lifecycle contracts pass. The focused seam is
 `scripts/run-local-resilience-dependencies.sh`; it accepts only an existing disposable namespace,
 captures exact runtime identity, and writes diagnostic-only evidence without rerunning the complete
 production-like runner. PostgreSQL evidence requires the original slot-0 Pod, RWO PVC/PV, and a
-durable marker row after worker return. Kafka evidence requires all three fixed ordinal identities,
+durable row in Flyway-owned `risk_service.local_resilience_marker` after worker return; it must not
+write observer-owned `risk_service.cdc_delivery_lag`. Kafka evidence requires all three fixed ordinal identities,
 RF3 marker data, two available brokers during one worker fault, and ISR3 after rejoin. Redis evidence
 only requires portable singleton readiness and records that `emptyDir` cache state is disposable.
 

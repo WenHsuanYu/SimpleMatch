@@ -175,7 +175,25 @@ grep -Fq 'wait_for_kafka_set_ready ""' "$runtime_script" || fail 'runtime diagno
 if grep -Fq 'CREATE TABLE' "$runtime_script"; then
   fail 'dependency diagnostic must not perform runtime PostgreSQL DDL'
 fi
-grep -Fq 'risk_service.cdc_delivery_lag' "$runtime_script" || fail 'PostgreSQL marker must use a Flyway-owned table'
+if grep -Fq 'risk_service.cdc_delivery_lag' "$runtime_script"; then
+  fail 'dependency diagnostic must not write observer-owned CDC lag data'
+fi
+grep -Fq 'risk_service.local_resilience_marker' "$runtime_script" ||
+  fail 'PostgreSQL marker must use the dedicated Flyway-owned table'
+grep -Fq 'timeout --foreground' "$runtime_script" ||
+  fail 'dependency diagnostic must bound external commands'
+grep -Fq 'run_bounded' "$runtime_script" ||
+  fail 'dependency diagnostic lacks its bounded command seam'
+grep -Fq 'jq -er' "$runtime_script" ||
+  fail 'dependency diagnostic must fail closed on malformed node readiness evidence'
+grep -Fq 'Ready condition is missing' "$runtime_script" ||
+  fail 'node readiness guard does not reject missing readiness conditions'
+grep -Fq 'Ready condition is neither True nor False' "$runtime_script" ||
+  fail 'node readiness guard does not reject ambiguous readiness conditions'
+grep -Fq '[[ "$ready" == false ]]' "$runtime_script" ||
+  fail 'node readiness guard does not require explicit Ready=false evidence'
+grep -Fq 'kafka_marker_topic_absent' "$runtime_script" ||
+  fail 'dependency diagnostic must verify Kafka marker deletion'
 grep -Fq 'kafka-log-dirs.sh' "$runtime_script" || fail 'Kafka diagnostic lacks a follower catch-up probe'
 grep -Fq -- '--producer-property acks=all' "$runtime_script" || fail 'Kafka marker producer lacks a durable acknowledgement contract'
 grep -Fq 'matching.commands' "$runtime_script" || fail 'Kafka diagnostic lacks topic contract verification'

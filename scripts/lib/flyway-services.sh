@@ -154,7 +154,7 @@ flyway_service_smoke_tables() {
       printf '%s\n' matching_event_inbox fix_delivery_intents gateway_operation_audit
       ;;
     risk-service)
-      printf '%s\n' admission_journal outbox
+      printf '%s\n' admission_journal outbox local_resilience_marker
       ;;
     *)
       return 1

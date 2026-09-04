@@ -22,13 +22,15 @@ namespace_run_id="${SIMPLEMATCH_RESILIENCE_NAMESPACE_RUN_ID:-}"
 component=""
 fault_mode=worker-stop
 deadline_seconds=300
+preflight_timeout_seconds=60
+cleanup_timeout_seconds=30
 evidence_dir="${SIMPLEMATCH_RESILIENCE_DEPENDENCY_EVIDENCE_DIR:-}"
 dry_run=false
 
 run_id="$(date -u +%Y%m%dt%H%M%sz)-$$"
 report_path=""
-started_at_epoch=0
-deadline_epoch=0
+started_at_seconds=0
+deadline_at_seconds=0
 failure_reason=""
 worker_node=""
 worker_container_id=""
@@ -41,7 +43,7 @@ marker_topic_created=false
 kafka_marker_pod=""
 marker_key=""
 marker_value=""
-postgres_marker_metric=""
+postgres_marker_run_id=""
 emergency_cleanup_running=false
 
 usage() {
@@ -73,35 +75,54 @@ die() {
   exit 1
 }
 
-now_epoch() {
-  # Bash's SECONDS counter is elapsed process time; unlike wall-clock date it
-  # cannot move backwards when the host clock is adjusted during a recovery.
-  printf '%s\n' "$SECONDS"
+check_deadline() {
+  [[ "$deadline_at_seconds" -gt 0 ]] || return 0
+  (( SECONDS < deadline_at_seconds )) || die "dynamic case exceeded the ${deadline_seconds}s deadline"
 }
 
-check_deadline() {
-  local now
-  [[ "$deadline_epoch" -gt 0 ]] || return 0
-  now="$(now_epoch)"
-  (( now < deadline_epoch )) || die "dynamic case exceeded the ${deadline_seconds}s deadline"
+run_bounded() {
+  local remaining status command_name="${1:-command}"
+
+  check_deadline
+  if (( deadline_at_seconds > 0 )); then
+    remaining=$((deadline_at_seconds - SECONDS))
+  else
+    remaining="$preflight_timeout_seconds"
+  fi
+  (( remaining > 0 )) || {
+    failure_reason="dynamic case exceeded the ${deadline_seconds}s deadline"
+    return 124
+  }
+  if timeout --foreground "${remaining}s" "$@"; then
+    return 0
+  fi
+  status="$?"
+  if (( status == 124 )); then
+    failure_reason="bounded command timed out: $command_name"
+  fi
+  return "$status"
+}
+
+run_cleanup_bounded() {
+  timeout --foreground "${cleanup_timeout_seconds}s" "$@"
+}
+
+bounded_sleep() {
+  run_bounded sleep "$1"
 }
 
 kube() {
   check_deadline
-  kubectl --context "$context" "$@"
+  run_bounded kubectl --context "$context" "$@"
 }
 
 kns() {
   check_deadline
-  kubectl --context "$context" -n "$namespace" "$@"
-}
-
-cleanup_kube() {
-  kubectl --context "$context" "$@"
+  run_bounded kubectl --context "$context" -n "$namespace" "$@"
 }
 
 cleanup_kns() {
-  kubectl --context "$context" -n "$namespace" "$@"
+  run_cleanup_bounded kubectl --context "$context" -n "$namespace" "$@"
 }
 
 write_failure_report() {
@@ -127,12 +148,14 @@ emergency_cleanup() {
   emergency_cleanup_running=true
   set +e
   if [[ "$worker_stopped" == true && -n "$worker_node" ]]; then
-    docker start "$worker_node" >/dev/null 2>&1 || true
+    run_cleanup_bounded docker start "$worker_node" >/dev/null 2>&1 ||
+      failure_reason="${failure_reason:-could not restore worker during cleanup}"
   fi
   if [[ "$marker_topic_created" == true && -n "$marker_topic" && -n "$kafka_marker_pod" ]]; then
     cleanup_kns exec "$kafka_marker_pod" -c kafka -- \
       /opt/kafka/bin/kafka-topics.sh --bootstrap-server kafka:9092 \
-      --delete --if-exists --topic "$marker_topic" >/dev/null 2>&1 || true
+      --delete --if-exists --topic "$marker_topic" >/dev/null 2>&1 ||
+      failure_reason="${failure_reason:-could not clean up Kafka marker during cleanup}"
   fi
   if [[ -n "$report_path" && ! -f "$report_path" ]]; then
     write_failure_report FAILED
@@ -143,10 +166,10 @@ emergency_cleanup() {
 
 require_tools() {
   local tool
-  for tool in docker kind kubectl jq; do
+  for tool in docker kind kubectl jq timeout; do
     command -v "$tool" >/dev/null 2>&1 || die "$tool is required"
   done
-  docker info >/dev/null 2>&1 || die 'Docker daemon is not reachable'
+  run_bounded docker info >/dev/null 2>&1 || die 'Docker daemon is not reachable'
 }
 
 validate_namespace() {
@@ -178,10 +201,10 @@ validate_namespace() {
 validate_cluster_preflight() {
   local nodes_json current_context worker_count ready_workers control_plane_count
 
-  current_context="$(kubectl config current-context 2>/dev/null || true)"
+  current_context="$(run_bounded kubectl config current-context 2>/dev/null || true)"
   [[ "$current_context" == "$context" ]] ||
     die "current Kubernetes context=$current_context, expected $context"
-  kind get clusters | grep -Fxq "$cluster_name" ||
+  run_bounded kind get clusters | grep -Fxq "$cluster_name" ||
     die "canonical kind cluster is not available: $cluster_name"
   nodes_json="$(kube get nodes -o json)" || die 'could not read canonical kind nodes'
   worker_count="$(jq '[.items[] | select(.metadata.labels["simplematch.io/node-pool"] == "local-resilience")] | length' <<<"$nodes_json")"
@@ -229,8 +252,8 @@ assert_worker_node() {
   [[ "$node_pool" == local-resilience ]] || die "target node is outside local-resilience: $node"
   [[ -z "$expected_slot" || "$slot" == "$expected_slot" ]] ||
     die "target node $node has slot $slot, expected $expected_slot"
-  cluster="$(docker inspect --format '{{index .Config.Labels "io.x-k8s.kind.cluster"}}' "$node" 2>/dev/null || true)"
-  role="$(docker inspect --format '{{index .Config.Labels "io.x-k8s.kind.role"}}' "$node" 2>/dev/null || true)"
+  cluster="$(run_bounded docker inspect --format '{{index .Config.Labels "io.x-k8s.kind.cluster"}}' "$node" 2>/dev/null || true)"
+  role="$(run_bounded docker inspect --format '{{index .Config.Labels "io.x-k8s.kind.role"}}' "$node" 2>/dev/null || true)"
   [[ "$cluster" == "$cluster_name" && "$role" == worker ]] ||
     die "target node is not a worker owned by $cluster_name: $node"
 }
@@ -241,20 +264,33 @@ wait_for_node_ready() {
     check_deadline
     ready="$(kube get node "$node" -o json 2>/dev/null | jq -r 'any(.status.conditions[]?; .type == "Ready" and .status == "True")' 2>/dev/null || true)"
     [[ "$ready" == true ]] && return 0
-    sleep 2
+    bounded_sleep 2
   done
 }
 
 wait_for_node_not_ready() {
-  local node="$1" ready
+  local node="$1" node_json ready
   while true; do
     check_deadline
-    ready="$(kube get node "$node" -o json 2>/dev/null | jq -r 'any(.status.conditions[]?; .type == "Ready" and .status == "True")' 2>/dev/null || true)"
-    if [[ "$ready" != true ]]; then
+    if ! node_json="$(kube get node "$node" -o json)"; then
+      die "could not read readiness for worker $node"
+    fi
+    if ! ready="$(jq -er '
+      .status.conditions // error("Ready condition is missing")
+      | map(select(.type == "Ready"))
+      | if length != 1 then error("Ready condition is ambiguous")
+        elif .[0].status == "True" then "true"
+        elif .[0].status == "False" then "false"
+        else error("Ready condition is neither True nor False")
+        end
+    ' <<<"$node_json")"; then
+      die "worker readiness JSON is invalid: $node"
+    fi
+    if [[ "$ready" == false ]]; then
       worker_not_ready_observed=true
       return 0
     fi
-    sleep 2
+    bounded_sleep 2
   done
 }
 
@@ -268,7 +304,7 @@ wait_for_postgres_pod_ready() {
     if [[ "$ready" == true && -n "$uid" && ( -z "$previous_uid" || "$uid" != "$previous_uid" ) ]]; then
       return 0
     fi
-    sleep 2
+    bounded_sleep 2
   done
 }
 
@@ -283,7 +319,7 @@ wait_for_redis_pod_ready() {
     if [[ "$ready" == true && -n "$uid" && ( -z "$previous_uid" || "$uid" != "$previous_uid" ) ]]; then
       return 0
     fi
-    sleep 2
+    bounded_sleep 2
   done
 }
 
@@ -297,7 +333,7 @@ wait_for_kafka_set_ready() {
     if [[ "$ready_count" == 3 && -n "$target_uid" && ( -z "$previous_uid" || "$target_uid" != "$previous_uid" ) ]]; then
       return 0
     fi
-    sleep 2
+    bounded_sleep 2
   done
 }
 
@@ -324,18 +360,18 @@ inject_fault() {
 
   worker_node="$target_node"
   assert_worker_node "$worker_node"
-  worker_container_id="$(docker inspect --format '{{.Id}}' "$worker_node" 2>/dev/null || true)"
+  worker_container_id="$(run_bounded docker inspect --format '{{.Id}}' "$worker_node" 2>/dev/null || true)"
   [[ "$worker_container_id" =~ ^[0-9a-f]{64}$ ]] ||
     die "worker container identity is incomplete: $worker_node"
-  docker stop --time 0 "$worker_node" >/dev/null || die "could not stop worker $worker_node"
+  run_bounded docker stop --time 0 "$worker_node" >/dev/null || die "could not stop worker $worker_node"
   worker_stopped=true
   wait_for_node_not_ready "$worker_node"
 }
 
 restore_worker() {
   [[ "$worker_stopped" == true ]] || return 0
-  docker start "$worker_node" >/dev/null || die "could not restart worker $worker_node"
-  worker_container_id_after="$(docker inspect --format '{{.Id}}' "$worker_node" 2>/dev/null || true)"
+  run_bounded docker start "$worker_node" >/dev/null || die "could not restart worker $worker_node"
+  worker_container_id_after="$(run_bounded docker inspect --format '{{.Id}}' "$worker_node" 2>/dev/null || true)"
   [[ "$worker_container_id_after" == "$worker_container_id" ]] ||
     die 'worker restart returned a different Docker container identity'
   same_container_restarted=true
@@ -387,8 +423,13 @@ run_postgresql() {
   capture_postgres_identity before
   target_pod="$(jq -r '.pod' <<<"$before")"
   target_node="$(jq -r '.node' <<<"$before")"
-  postgres_marker_metric="local_resilience_${run_id}"
-  sql="INSERT INTO risk_service.cdc_delivery_lag(metric_name, lag_events, updated_at_unix_ms) VALUES ('$postgres_marker_metric', 1, (EXTRACT(EPOCH FROM clock_timestamp()) * 1000)::bigint) ON CONFLICT (metric_name) DO UPDATE SET lag_events = EXCLUDED.lag_events, updated_at_unix_ms = EXCLUDED.updated_at_unix_ms; SELECT count(*) FROM risk_service.cdc_delivery_lag WHERE metric_name = '$postgres_marker_metric' AND lag_events = 1;"
+  postgres_marker_run_id="$run_id"
+  sql="INSERT INTO risk_service.local_resilience_marker(run_id, marker_value, created_at_unix_ms)
+VALUES ('$postgres_marker_run_id', '$marker_value', (EXTRACT(EPOCH FROM clock_timestamp()) * 1000)::bigint)
+ON CONFLICT (run_id) DO UPDATE SET marker_value = EXCLUDED.marker_value,
+                                    created_at_unix_ms = EXCLUDED.created_at_unix_ms;
+SELECT count(*) FROM risk_service.local_resilience_marker
+WHERE run_id = '$postgres_marker_run_id' AND marker_value = '$marker_value';"
   marker_before="$(postgres_query "$sql" | tail -n 1 | tr -d '[:space:]')" || die 'could not write PostgreSQL durable marker'
   [[ "$marker_before" == 1 ]] || die 'PostgreSQL durable marker was not committed'
   durable_before=true
@@ -398,7 +439,7 @@ run_postgresql() {
   [[ "$fault_mode" == pod-restart ]] && previous_uid="$(jq -r '.pod_uid' <<<"$before")"
   wait_for_postgres_pod_ready "$previous_uid"
   capture_postgres_identity after
-  marker_after="$(postgres_query "SELECT count(*) FROM risk_service.cdc_delivery_lag WHERE metric_name = '$postgres_marker_metric' AND lag_events = 1;" | tr -d '[:space:]')" ||
+  marker_after="$(postgres_query "SELECT count(*) FROM risk_service.local_resilience_marker WHERE run_id = '$postgres_marker_run_id' AND marker_value = '$marker_value';" | tr -d '[:space:]')" ||
     die 'could not read PostgreSQL durable marker after recovery'
   durable_after=false
   [[ "$marker_after" == 1 ]] && durable_after=true
@@ -416,7 +457,7 @@ run_postgresql() {
   fi
   report_json="$(jq -n \
     --argjson before "$before" --argjson after "$after" \
-    --argjson worker_stop "$worker_json" --arg marker "$postgres_marker_metric" \
+    --argjson worker_stop "$worker_json" --arg marker "$postgres_marker_run_id" \
     --argjson durable_before "$durable_before" --argjson durable_after "$durable_after" \
     --arg cluster "$cluster_name" --arg context "$context" --arg namespace "$namespace" \
     --arg run_id "$run_id" --arg fault_mode "$fault_mode" --argjson deadline "$deadline_seconds" \
@@ -567,6 +608,13 @@ kafka_marker_count() {
   grep -Fxc "$marker_key|$marker_value" <<<"$output" || true
 }
 
+kafka_marker_topic_absent() {
+  local pod="$1" topics
+  topics="$(kafka_command "$pod" /opt/kafka/bin/kafka-topics.sh \
+    --bootstrap-server kafka:9092 --list)" || return 1
+  ! grep -Fxq "$marker_topic" <<<"$topics"
+}
+
 kafka_topic_contract_check() {
   local pod="$1" topic="$2" partitions="$3" cleanup_policy="$4" retention_ms="$5"
   local description configuration
@@ -648,7 +696,7 @@ create_kafka_marker() {
       created=true
       break
     fi
-    sleep 2
+    bounded_sleep 2
   done
   [[ "$created" == true ]] || die "could not create Kafka marker topic $marker_topic"
   marker_topic_created=true
@@ -663,7 +711,7 @@ create_kafka_marker() {
   for _ in $(seq 1 30); do
     check_deadline
     [[ "$(kafka_marker_count "$pod")" -ge 1 ]] && return 0
-    sleep 2
+    bounded_sleep 2
   done
   die 'Kafka marker record was not visible before fault injection'
 }
@@ -671,12 +719,15 @@ create_kafka_marker() {
 delete_kafka_marker() {
   local pod="$1" deleted=false
   for _ in $(seq 1 15); do
+    check_deadline
     if kafka_command "$pod" /opt/kafka/bin/kafka-topics.sh --bootstrap-server kafka:9092 \
       --delete --if-exists --topic "$marker_topic" >/dev/null 2>&1; then
-      deleted=true
-      break
+      if kafka_marker_topic_absent "$pod"; then
+        deleted=true
+        break
+      fi
     fi
-    sleep 1
+    bounded_sleep 1
   done
   [[ "$deleted" == true ]] || die "could not clean up run-owned Kafka topic $marker_topic"
   marker_topic_created=false
@@ -709,7 +760,7 @@ run_kafka() {
     if [[ "$isr_during" == 2 && "$available_during" == 2 ]]; then
       break
     fi
-    sleep 2
+    bounded_sleep 2
   done
   restore_worker
   [[ "$fault_mode" == pod-restart ]] && previous_uid="$(jq -r '.pod_uid' <<<"$target_before")"
@@ -733,7 +784,7 @@ run_kafka() {
       catch_up_complete=true
       break
     fi
-    sleep 2
+    bounded_sleep 2
   done
   [[ "$catch_up_complete" == true ]] || die 'Kafka target broker catch-up was not observed'
   delete_kafka_marker "$(jq -r '.[0].pod' <<<"$after")"
@@ -811,8 +862,8 @@ prepare_evidence_dir
 require_tools
 validate_cluster_preflight
 validate_namespace
-started_at_epoch="$(now_epoch)"
-deadline_epoch=$((started_at_epoch + deadline_seconds))
+started_at_seconds="$SECONDS"
+deadline_at_seconds=$((started_at_seconds + deadline_seconds))
 
 case "$component" in
   postgresql) run_postgresql ;;

@@ -134,7 +134,7 @@ market-data-projection|:services:market-data-projection|marketDataProjection|MAR
 persistence|:services:persistence|persistence|PERSISTENCE|persistence|services/persistence/src/main/resources/db/migration/persistence|orders\nexecutions\ninbox
 query-service|:services:query-service|queryService|QUERY_SERVICE|query_service|services/query-service/src/main/resources/db/migration/query-service|order_read_model\nexecution_read_model\naccount_summary_read_model\nactive_market_reference
 quickfix-gateway|:services:quickfix-gateway|quickFixGateway|QUICKFIX_GATEWAY|quickfix_gateway|services/quickfix-gateway/src/main/resources/db/migration/quickfix-gateway|matching_event_inbox\nfix_delivery_intents\ngateway_operation_audit
-risk-service|:services:risk-service|riskService|RISK_SERVICE|risk_service|services/risk-service/src/main/resources/db/migration/risk-service|admission_journal\noutbox
+risk-service|:services:risk-service|riskService|RISK_SERVICE|risk_service|services/risk-service/src/main/resources/db/migration/risk-service|admission_journal\noutbox\nlocal_resilience_marker
 MAPPINGS
 
 echo "Flyway service mapping functions are valid."
