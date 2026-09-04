@@ -5,7 +5,13 @@ script_dir="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
 # shellcheck source=scripts/lib/local-resilience.sh
 source "$script_dir/lib/local-resilience.sh"
 
-bash -n "$script_dir/lib/local-resilience.sh" "$script_dir/run-local-resilience.sh" "$script_dir/validate-local-resilience-contract.sh"
+bash -n "$script_dir/lib/local-resilience.sh" \
+  "$script_dir/lib/local-resilience-dependencies.sh" \
+  "$script_dir/run-local-resilience.sh" \
+  "$script_dir/run-local-resilience-dependencies.sh" \
+  "$script_dir/validate-local-resilience-contract.sh"
+
+bash "$script_dir/test-local-resilience-dependencies.sh"
 
 [[ "$(resilience_deadline 100 300)" == 400 ]]
 [[ "$RESILIENCE_DEFAULT_DEADLINE_SECONDS" == 300 ]]

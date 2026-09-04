@@ -110,6 +110,16 @@ toleration. Kafka is a fixed three-member KRaft StatefulSet with one broker/cont
 RF3/minimum ISR 2 topic durability, and a two-available PDB. These are local lab contracts, not
 cross-node storage HA or production certification.
 
+The dependency lifecycle seam is available without rerunning the full local runner:
+`scripts/run-local-resilience-dependencies.sh --component postgresql|redis|kafka --namespace NAME`
+consumes an existing lifecycle-labelled disposable namespace, captures exact Pod/Node/PVC/PV and
+data identity, injects one bounded worker-stop (or Pod restart), and writes a diagnostic-only report.
+PostgreSQL must return with its original node-local PVC and durable marker; Kafka must retain its RF3
+marker, two-broker availability during the fault, and all three ISR after rejoin; Redis is expected
+to be rebuildable because its `emptyDir` state is disposable. Namespace, worker-container, cluster
+identity, or data mismatches fail closed. This focused report cannot be promoted to a full-local
+certification PASS; the parent #151 runner still owns the aggregate baseline and fault-family verdict.
+
 The local overlay also runs two Debezium Kafka Connect workers against the in-cluster Kafka and
 PostgreSQL Services. The certification runner waits for all Flyway Jobs to complete, then registers
 each retained service-owned connector (Risk and Account) through the Connect REST API and records

@@ -671,6 +671,33 @@ Evidence 預設寫入：
 out/resilience/<run-id>/
 ```
 
+### 13.3 依賴生命週期 focused diagnostic
+
+當只需要驗證 PostgreSQL/Redis/Kafka 的 worker-loss 或 Pod restart 行為時，不必重跑完整
+`full-local` runner。對一個已存在、具 `disposable` ownership label 的 namespace 執行下列
+其中一個 focused diagnostic：
+
+```bash
+bash scripts/run-local-resilience-dependencies.sh \
+  --component postgresql --namespace <run-namespace>
+bash scripts/run-local-resilience-dependencies.sh \
+  --component redis --namespace <run-namespace>
+bash scripts/run-local-resilience-dependencies.sh \
+  --component kafka --namespace <run-namespace>
+```
+
+每次執行只注入一個明確的 fault，使用單一 300 秒 monotonic deadline，並在
+`out/resilience/dependencies-<run-id>/` 保存一份 component report。PostgreSQL 報告必須證明
+原本的 worker slot、Pod、RWO PVC/PV 與 durable marker row 都保留；Kafka 報告必須證明
+三個固定 ordinal 的 cluster/node identity、RF3 marker、兩個存活 broker 與恢復後 ISR3；
+Redis 只證明 portable singleton 回到 Ready，並明確標示 `emptyDir` state 可遺失。Namespace、
+kind cluster、worker container identity 或上述資料契約不一致時會 fail closed，且 cleanup 只
+刪除本次 Kafka marker topic。
+
+這是針對 #154/#155 的 focused local diagnostic，不是 `full-local` certification PASS，也
+不宣稱跨節點 PVC takeover、production HA 或外部環境認證。完整 baseline、fault-family
+編排與 parent #151 的聚合 verdict 仍由後續 runner issues 負責。
+
 ---
 
 ## 14. Read-only resource report

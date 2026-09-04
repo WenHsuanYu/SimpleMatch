@@ -34,11 +34,13 @@ for file in \
   "$connect_lib" "$workloads_lib" "$bootstrap_lib" "$run_lib" \
   "$transport_lib" "$phase_graph_lib" "$fingerprint_lib" \
   "$evidence_lib" "$planner_lib" "$images_lib" "$cdc_fixture_lib" \
-  "$focused_diagnostic_lib"; do
+  "$focused_diagnostic_lib" "$script_dir/lib/local-resilience-dependencies.sh"; do
   bash -n "$file"
 done
 bash -n "$cdc_fixture_test"
 bash -n "$focused_diagnostic_script" "$focused_diagnostic_test" "$job_supervision_test"
+bash -n "$script_dir/run-local-resilience-dependencies.sh" \
+  "$script_dir/test-local-resilience-dependencies.sh"
 
 for version_contract in \
   'gradle-9.7.0-bin.zip' \

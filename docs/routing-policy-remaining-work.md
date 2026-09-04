@@ -250,6 +250,26 @@ reuse a runtime namespace whose source or image identity changed.
 | Performance and recovery certification | `COMPLETED` | [#136](https://github.com/WenHsuanYu/SimpleMatch/issues/136) |
 | Pre-release compatibility and legacy cleanup | `COMPLETED` | [#119](https://github.com/WenHsuanYu/SimpleMatch/issues/119) (with completed [#120](https://github.com/WenHsuanYu/SimpleMatch/issues/120)) |
 
+### Local resilience dependency issues #154 and #155
+
+The local PostgreSQL/Redis and Kafka KRaft manifests are implemented and their static/fake
+lifecycle contracts pass. The focused seam is
+`scripts/run-local-resilience-dependencies.sh`; it accepts only an existing disposable namespace,
+captures exact runtime identity, and writes diagnostic-only evidence without rerunning the complete
+production-like runner. PostgreSQL evidence requires the original slot-0 Pod, RWO PVC/PV, and a
+durable marker row after worker return. Kafka evidence requires all three fixed ordinal identities,
+RF3 marker data, two available brokers during one worker fault, and ISR3 after rejoin. Redis evidence
+only requires portable singleton readiness and records that `emptyDir` cache state is disposable.
+
+| Issue | Current status | Remaining completion gate |
+| --- | --- | --- |
+| [#154](https://github.com/WenHsuanYu/SimpleMatch/issues/154) PostgreSQL and Redis in Kubernetes | `PARTIAL` | Run the focused PostgreSQL and Redis diagnostics in a fresh run-owned namespace and retain valid reports; parent #151 must still consume them in its aggregate baseline/fault-family evidence. |
+| [#155](https://github.com/WenHsuanYu/SimpleMatch/issues/155) Durable Kafka KRaft cluster | `PARTIAL` | Run the focused Kafka worker-loss diagnostic and retain valid RF3/identity/PVC/rejoin evidence; parent #151 must still consume it in its aggregate baseline/fault-family evidence. |
+
+These reports do not close #151 by themselves and do not claim cross-node storage takeover,
+production HA, or external certification. The later #162–#167 issues own full-local orchestration,
+worker-stop coverage across every workload family, and the final aggregate verdict.
+
 ## Detailed inventory
 
 ### MR-1: Acquire and normalize official market facts

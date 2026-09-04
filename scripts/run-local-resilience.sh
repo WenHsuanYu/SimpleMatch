@@ -33,10 +33,13 @@ usage() {
 Usage:
   scripts/run-local-resilience.sh --profile contract [--dry-run]
   scripts/run-local-resilience.sh --profile full-local [--keep-resources] [--dry-run]
+  scripts/run-local-resilience-dependencies.sh --component COMPONENT --namespace NAME
 
 contract validates repository-rendered targets without stopping a kind worker.
 full-local owns one generated namespace and reports live scenario families;
 unimplemented scenarios remain INCOMPLETE and cannot become a resilience pass.
+The dependency command is a focused diagnostic for an existing disposable
+namespace; its report cannot be promoted to a full-local certification pass.
 EOF
 }
 
@@ -150,6 +153,7 @@ if [[ "$profile" == contract ]]; then
     "$script_dir/test-local-kubernetes-dependencies.sh"
     "$script_dir/test-postgresql-redis-manifests.sh"
     "$script_dir/test-kafka-kraft-manifests.sh"
+    "$script_dir/test-local-resilience-dependencies.sh"
     "$script_dir/test-matching-kubernetes-manifests.sh"
     "$script_dir/validate-local-resilience-contract.sh"
   )
