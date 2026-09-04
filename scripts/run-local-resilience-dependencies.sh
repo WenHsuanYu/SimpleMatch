@@ -45,6 +45,7 @@ marker_key=""
 marker_value=""
 postgres_marker_run_id=""
 emergency_cleanup_running=false
+cleanup_deadline_at_seconds=0
 
 usage() {
   cat <<'EOF_USAGE'
@@ -95,8 +96,9 @@ run_bounded() {
   }
   if timeout --foreground "${remaining}s" "$@"; then
     return 0
+  else
+    status="$?"
   fi
-  status="$?"
   if (( status == 124 )); then
     failure_reason="bounded command timed out: $command_name"
   fi
@@ -104,7 +106,13 @@ run_bounded() {
 }
 
 run_cleanup_bounded() {
-  timeout --foreground "${cleanup_timeout_seconds}s" "$@"
+  local remaining
+  if (( cleanup_deadline_at_seconds == 0 )); then
+    cleanup_deadline_at_seconds=$((SECONDS + cleanup_timeout_seconds))
+  fi
+  remaining=$((cleanup_deadline_at_seconds - SECONDS))
+  (( remaining > 0 )) || return 124
+  timeout --foreground "${remaining}s" "$@"
 }
 
 bounded_sleep() {
@@ -142,19 +150,43 @@ write_failure_report() {
     >"$report_path"
 }
 
+write_validated_report() {
+  local report_component="$1" report_json="$2"
+  local temporary_report_path="${report_path}.tmp.$$"
+
+  printf '%s\n' "$report_json" >"$temporary_report_path" ||
+    die "could not write $report_component diagnostic report"
+  if ! resilience_dependency_report_is_passed "$report_component" "$temporary_report_path"; then
+    rm -f -- "$temporary_report_path"
+    die "$report_component report failed its evidence contract"
+  fi
+  mv -- "$temporary_report_path" "$report_path" ||
+    die "could not publish $report_component diagnostic report"
+}
+
+cleanup_kafka_marker() {
+  local topics
+
+  cleanup_kns exec "$kafka_marker_pod" -c kafka -- \
+    /opt/kafka/bin/kafka-topics.sh --bootstrap-server kafka:9092 \
+    --delete --if-exists --topic "$marker_topic" >/dev/null 2>&1 || return 1
+  topics="$(cleanup_kns exec "$kafka_marker_pod" -c kafka -- \
+    /opt/kafka/bin/kafka-topics.sh --bootstrap-server kafka:9092 --list)" || return 1
+  ! grep -Fxq "$marker_topic" <<<"$topics"
+}
+
 emergency_cleanup() {
   local status="$?"
   [[ "$emergency_cleanup_running" == false ]] || exit "$status"
   emergency_cleanup_running=true
   set +e
+  cleanup_deadline_at_seconds=$((SECONDS + cleanup_timeout_seconds))
   if [[ "$worker_stopped" == true && -n "$worker_node" ]]; then
     run_cleanup_bounded docker start "$worker_node" >/dev/null 2>&1 ||
       failure_reason="${failure_reason:-could not restore worker during cleanup}"
   fi
   if [[ "$marker_topic_created" == true && -n "$marker_topic" && -n "$kafka_marker_pod" ]]; then
-    cleanup_kns exec "$kafka_marker_pod" -c kafka -- \
-      /opt/kafka/bin/kafka-topics.sh --bootstrap-server kafka:9092 \
-      --delete --if-exists --topic "$marker_topic" >/dev/null 2>&1 ||
+    cleanup_kafka_marker ||
       failure_reason="${failure_reason:-could not clean up Kafka marker during cleanup}"
   fi
   if [[ -n "$report_path" && ! -f "$report_path" ]]; then
@@ -468,8 +500,7 @@ WHERE run_id = '$postgres_marker_run_id' AND marker_value = '$marker_value';"
       recovery:{ready:true,durable_marker:$marker,durable_before:$durable_before,
         durable_after:$durable_after,data_preserved:true},failure_reason:null,
       claim_boundary:["local PostgreSQL same-worker PVC and durable-row recovery"]}')"
-  printf '%s\n' "$report_json" >"$report_path"
-  resilience_dependency_report_is_passed postgresql "$report_path" || die 'PostgreSQL report failed its evidence contract'
+  write_validated_report postgresql "$report_json"
 }
 
 redis_command() {
@@ -539,8 +570,7 @@ run_redis() {
       recovery:{ready:true,portable:true,disposable_state:true,marker_before:$marker_before,
         marker_after:$marker_after,marker_required_after:false},failure_reason:null,
       claim_boundary:["local Redis readiness after portable worker recovery","Redis state is disposable"]}')"
-  printf '%s\n' "$report_json" >"$report_path"
-  resilience_dependency_report_is_passed redis "$report_path" || die 'Redis report failed its evidence contract'
+  write_validated_report redis "$report_json"
 }
 
 kafka_command() {
@@ -814,8 +844,7 @@ run_kafka() {
       topic_contract:{verified:true,topics:["matching.commands", "matching.events", "account.lifecycle", "marketdata.events", "simplematch-connect-configs", "simplematch-connect-offsets", "simplematch-connect-status"],producer_acks:"all",producer_idempotence:true},
       recovery:{ready:true,rejoined:true,formatted_again:false,catch_up_complete:$catch_up_complete,catch_up_probe:"log-dirs-offset-lag-zero"},
       failure_reason:null,claim_boundary:["local Kafka RF3 committed-marker recovery after one worker stop"]}')"
-  printf '%s\n' "$report_json" >"$report_path"
-  resilience_dependency_report_is_passed kafka "$report_path" || die 'Kafka report failed its evidence contract'
+  write_validated_report kafka "$report_json"
 }
 
 while [[ $# -gt 0 ]]; do

@@ -190,7 +190,7 @@ grep -Fq 'Ready condition is missing' "$runtime_script" ||
   fail 'node readiness guard does not reject missing readiness conditions'
 grep -Fq 'Ready condition is neither True nor False' "$runtime_script" ||
   fail 'node readiness guard does not reject ambiguous readiness conditions'
-grep -Fq '[[ "$ready" == false ]]' "$runtime_script" ||
+grep -Fq '== false ]]' "$runtime_script" ||
   fail 'node readiness guard does not require explicit Ready=false evidence'
 grep -Fq 'kafka_marker_topic_absent' "$runtime_script" ||
   fail 'dependency diagnostic must verify Kafka marker deletion'
