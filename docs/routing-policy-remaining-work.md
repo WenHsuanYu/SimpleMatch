@@ -8,7 +8,7 @@ canonical release-scope definition lives in
 Architecture documents describe the accepted target. This document alone distinguishes that target
 from the repository's current implementation state.
 
-Status was reconciled against the current worktree on 2026-09-04. An accepted design is not
+Status was reconciled against the current worktree on 2026-09-05. An accepted design is not
 `COMPLETED` until the repository contains its implementation and source-aligned local
 production-like verification evidence. External production certification and live
 staging/production promotion are not goals of this project. Their deployment values and run
@@ -268,12 +268,21 @@ to 150 seconds for the replacement.
 
 | Issue | Current status | Remaining completion gate |
 | --- | --- | --- |
-| [#154](https://github.com/WenHsuanYu/SimpleMatch/issues/154) PostgreSQL and Redis in Kubernetes | `PARTIAL` | Run the focused PostgreSQL and Redis diagnostics in a fresh run-owned namespace and retain valid reports; parent #151 must still consume them in its aggregate baseline/fault-family evidence. |
-| [#155](https://github.com/WenHsuanYu/SimpleMatch/issues/155) Durable Kafka KRaft cluster | `PARTIAL` | Run the focused Kafka worker-loss diagnostic and retain valid RF3/identity/PVC/rejoin evidence; parent #151 must still consume it in its aggregate baseline/fault-family evidence. |
+| [#154](https://github.com/WenHsuanYu/SimpleMatch/issues/154) PostgreSQL and Redis in Kubernetes | `PARTIAL` | Focused PostgreSQL and Redis worker-loss reports now pass in retained namespace `simplematch-local-cert-20260905-154155-r2` (`out/resilience/dependencies-154-155-20260905-r2/postgresql-fixed/postgresql.json`, `out/resilience/dependencies-154-155-20260905-r2/redis-fixed-r2/redis.json`); parent #151 must still consume them in its aggregate baseline/fault-family evidence. |
+| [#155](https://github.com/WenHsuanYu/SimpleMatch/issues/155) Durable Kafka KRaft cluster | `PARTIAL` | Focused Kafka worker-loss report now passes in the same retained namespace (`out/resilience/dependencies-154-155-20260905-r2/kafka-fixed-r1/kafka.json`); parent #151 must still consume it in its aggregate baseline/fault-family evidence. |
 
 These reports do not close #151 by themselves and do not claim cross-node storage takeover,
 production HA, or external certification. The later #162–#167 issues own full-local orchestration,
 worker-stop coverage across every workload family, and the final aggregate verdict.
+
+The 2026-09-05 focused reports are source-aligned to the retained production-like run's namespace
+run-id `20260904-175915-1205891`. PostgreSQL preserved the slot-0 Pod, RWO PVC/PV, and Flyway
+marker row without a cross-worker replacement; Redis rescheduled to a different worker and lost
+only its disposable `emptyDir` marker; Kafka retained the fixed ordinal/PVC/cluster identities,
+RF3 marker, ISR3, and log-dirs catch-up after one worker stop. The first Redis attempt is retained
+as a failed diagnostic because non-interactive `redis-cli GET` returned an empty line for a missing
+key; the reviewed classifier fix is recorded in `docs/agents/deployment-test-lessons.md` and the
+successful rerun is the report used above.
 
 ## Detailed inventory
 
