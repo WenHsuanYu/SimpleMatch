@@ -3,8 +3,8 @@
 set -euo pipefail
 
 script_dir="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
-repo_root="$(cd -- "$script_dir/.." && pwd)"
-plan="$repo_root/docs/taiwan-event-driven-refactor-plan.md"
+repo_root="$(cd -- "$script_dir/../.." && pwd)"
+plan="$repo_root/docs/archive/taiwan-event-driven-refactor-plan.md"
 
 phase_block="$(sed -n '/### Phase 6:/,/### Phase 8:/p' "$plan")"
 if rg -n -- '- \[ \] Commit 6\.|- \[ \] Concurrent reserves|- \[ \] Duplicate reserve|- \[ \] Account state' <<<"$phase_block"; then

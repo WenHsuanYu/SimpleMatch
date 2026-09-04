@@ -1,5 +1,8 @@
 # Phase 5 Market Reference Publisher Evidence
 
+> Archived on 2026-09-04. This runtime publisher design is superseded and is retained only as
+> historical evidence. See [`docs/archive/README.md`](README.md) for the active replacements.
+
 > Superseded by the offline daily-artifact design. This page preserves the historical decision and
 > verification boundary for the former runtime publisher; it is not an executable runbook.
 
@@ -12,7 +15,7 @@ idempotency behavior, but it introduced a runtime database, outbox, connector, a
 between artifact approval and session startup.
 
 The accepted replacement is the repository-owned offline builder documented at
-[`config/market-reference/README.md`](../config/market-reference/README.md), implemented in
+[`config/market-reference/README.md`](../../config/market-reference/README.md), implemented in
 `tools/market-reference-builder`. It retains the
 pure normalization, calendar, eligibility, tick, codec, checksum, and source-provenance logic and
 emits one reviewed daily artifact. Risk and Matching load the same immutable artifact before the

@@ -4,7 +4,7 @@ set -euo pipefail
 
 script_dir="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
 repo_root="$(cd -- "$script_dir/.." && pwd)"
-plan_file="$repo_root/docs/taiwan-event-driven-refactor-plan.md"
+plan_file="$repo_root/docs/archive/taiwan-event-driven-refactor-plan.md"
 policy_file="$repo_root/docs/cross-cutting-transaction-and-consistency-policy.md"
 
 if [[ "${1:-}" == "--plan" ]]; then

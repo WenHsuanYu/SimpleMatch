@@ -17,7 +17,7 @@ Use the repository documents for these distinct questions:
 | What exactly is included in the Phase 1 Trading Release? | [System boundaries](services/docs/architecture/system-boundaries.md#phase-1-trading-release-boundary) |
 | What Phase 1 capability exists or remains, and what evidence supports that status? | [Phase 1 Trading Release remaining work](docs/routing-policy-remaining-work.md) |
 | What architecture was accepted? | [Accepted Phase 1 ADRs](docs/adr/0008-offline-market-reference-artifact.md), [domain language](CONTEXT.md), and [target specifications](services/docs/README.md) |
-| What is the long-lived phase, transaction, rollback, and final-gate plan? | [Taiwan event-driven refactor plan](docs/taiwan-event-driven-refactor-plan.md) |
+| What is the historical phase, transaction, rollback, and final-gate plan? | [Archived Taiwan event-driven refactor plan](docs/archive/taiwan-event-driven-refactor-plan.md) |
 | What was implemented historically? | This file and Git history |
 
 An accepted design or checked historical milestone is not evidence that a current GitHub Issue is

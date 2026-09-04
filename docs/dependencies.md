@@ -4,7 +4,7 @@
 
 This repo's Java dependencies use an explicit ownership model.
 
-- [gradle/libs.versions.toml](/home/alexyu/SimpleMatch/gradle/libs.versions.toml) owns plugin
+- [gradle/libs.versions.toml](../gradle/libs.versions.toml) owns plugin
   versions, BOM coordinates, and non-BOM dependency versions. Libraries managed by Spring Boot or
   Spring Cloud use versionless catalog aliases; their version is resolved only through the applied
   BOM.

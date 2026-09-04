@@ -229,4 +229,4 @@ resources, runs Flyway Jobs before registering the retained Risk and Account out
 creating runtime workloads, and then verifies the Java, QuickFIX, and Matching rollouts. Risk and
 Query receive their local session identity from `matching-session-config`. The investigation and
 troubleshooting record is in
-[Local production-like Kubernetes workload startup](../../docs/local-production-like-kubernetes-workload-startup.md).
+[Historical local production-like Kubernetes workload startup investigation](../../docs/archive/local-production-like-kubernetes-workload-startup.md).

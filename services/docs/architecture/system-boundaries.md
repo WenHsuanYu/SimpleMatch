@@ -18,7 +18,7 @@ deployment/security, certification, and pre-release cleanup paths.
 
 A projection or query capability may be non-critical to order admission and Matching without being
 optional for release completion. The excluded market products and business capabilities are listed
-in the [Taiwan event-driven refactor plan](../../../docs/taiwan-event-driven-refactor-plan.md#out-of-scope).
+in the [archived Taiwan event-driven refactor plan](../../../docs/archive/taiwan-event-driven-refactor-plan.md#out-of-scope).
 
 ## Planes and ownership
 

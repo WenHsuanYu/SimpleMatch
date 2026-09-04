@@ -1,5 +1,8 @@
 # Phase 1 Build and Dependency Policy Gate
 
+> Archived on 2026-09-04. This is a completed historical gate, not the current dependency policy.
+> See [`docs/archive/README.md`](README.md) for the active replacements.
+
 Phase 1 completed the build-policy refactor without changing service behavior or the declared
 resolved versions.
 

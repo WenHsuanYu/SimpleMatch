@@ -1,5 +1,8 @@
 # Risk Service Submission Refactor Plan（已完成）
 
+> Archived on 2026-09-04. This completed plan is retained as refactoring history, not as a live
+> work queue. See [`docs/archive/README.md`](README.md) for the active replacements.
+
 ## 目前進度
 
 - ~~已收斂驗證順序~~

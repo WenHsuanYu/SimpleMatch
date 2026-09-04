@@ -1,5 +1,8 @@
 # README and Target Documentation Refactor Audit
 
+> Archived on 2026-09-04. This is a completed documentation audit, not a current navigation
+> authority. See [`docs/archive/README.md`](README.md) for the active replacements.
+
 This execution-side audit records the completion criteria for GitHub issue #9. It is not a target
 specification.
 

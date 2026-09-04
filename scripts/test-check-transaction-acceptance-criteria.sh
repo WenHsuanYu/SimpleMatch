@@ -43,7 +43,7 @@ assert_fails_with() {
 assert_succeeds 'the repository refactoring plan' bash "$checker"
 
 broken_plan="$fixture_root/taiwan-event-driven-refactor-plan.md"
-cp "$repo_root/docs/taiwan-event-driven-refactor-plan.md" "$broken_plan"
+cp "$repo_root/docs/archive/taiwan-event-driven-refactor-plan.md" "$broken_plan"
 sed -i '/^##### Timeout policy$/d' "$broken_plan"
 assert_fails_with 'a missing required transaction field' 'Missing transaction acceptance field' \
   bash "$checker" --plan "$broken_plan"

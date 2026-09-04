@@ -1,8 +1,11 @@
 # Phase 4 Data Dictionary and Index Review
 
+> Archived on 2026-09-04. This is a historical clean-install schema record, not the current data
+> model authority. See [`docs/archive/README.md`](README.md) for the active replacements.
+
 This execution record defines the clean-install V1 schemas delivered by Phase 4. The target topology
 and ownership rules remain in the
-[platform database architecture](../services/docs/platform/database-architecture.md).
+[platform database architecture](../../services/docs/platform/database-architecture.md).
 
 ## Ownership and representation
 

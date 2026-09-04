@@ -1,5 +1,8 @@
 # Four-analyzer quality-ratchet verification
 
+> Archived on 2026-09-04. This is point-in-time analyzer evidence, not the current quality gate.
+> See [`docs/archive/README.md`](README.md) for the active replacements.
+
 Verified on 2026-08-03 after the #21/#22 closure slice. The preceding
 four-analyzer baseline was recorded in commit `94fdaa356d4ea28e6492c82f336717f1d206c214`.
 

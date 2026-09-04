@@ -1,5 +1,8 @@
 # README and Target Documentation Refactor
 
+> Archived on 2026-09-04. This completed reorganization specification is retained for history;
+> current navigation follows the documentation indexes. See [`docs/archive/README.md`](README.md).
+
 ## Problem Statement
 
 SimpleMatch's root README currently combines a project introduction with a large set of

@@ -1,5 +1,8 @@
 # Phase 0 Baseline Evidence
 
+> Archived on 2026-09-04. This is historical execution evidence, not a current status authority.
+> See [`docs/archive/README.md`](README.md) for the active replacements.
+
 This is an execution-state record for the Taiwan event-driven refactor. It is not
 target-architecture documentation.
 
