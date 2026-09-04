@@ -698,7 +698,10 @@ CDC 健康資料。Kafka 報告必須證明
 Redis worker-stop 報告必須觀察到新的 Ready Pod 已移到另一個 worker。Redis 同時明確容忍
 自訂 `simplematch.io/portable-workload` 與 Kubernetes node controller 實際使用的
 `node.kubernetes.io/not-ready`/`node.kubernetes.io/unreachable` `NoExecute` taint，三者均為
-30 秒；診斷最多等待 150 秒觀察跨 worker 的新 Pod。pod-restart 則要求新的 Pod UID，並明確標示
+30 秒；診斷最多等待 150 秒觀察跨 worker 的新 Pod。worker-stop 後 kubelet 可能將被停止的
+worker 回報為 `Ready=Unknown`，這與 `Ready=False` 同樣表示該 worker 不可用，只能作為已注入
+worker-stop 的故障證據；健康基線與 worker 恢復仍要求唯一且嚴格的 `Ready=True`，缺少、重複或
+未知的 Ready condition 一律 fail closed。pod-restart 則要求新的 Pod UID，並明確標示
 `emptyDir` state 可遺失。Namespace、
 kind cluster、worker container identity 或上述資料契約不一致時會 fail closed，且 cleanup 只
 刪除本次 Kafka marker topic。
