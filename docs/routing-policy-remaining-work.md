@@ -13,14 +13,20 @@ Status was reconciled against the current worktree on 2026-09-04. An accepted de
 production-like verification evidence. External production certification and live
 staging/production promotion are not goals of this project. Their deployment values and run
 sequence remain template work with placeholders and are neither current completion criteria nor
-blockers.
+blockers. Aggregate issue [#10](https://github.com/WenHsuanYu/SimpleMatch/issues/10) and cleanup
+issue [#119](https://github.com/WenHsuanYu/SimpleMatch/issues/119) were closed as `completed` on
+2026-09-04 after the required Phase 1 child issues were completed and the fresh #119 gate passed.
 
 The latest retained Query evidence is source-aligned to the certified pre-squash tree recorded in
 `out/certification/issue-137-query-20260902-start-offset-query2/provenance.json`; the latest integrated
 deployment evidence is source-aligned to `0d5f1737691dda104b5f5d878e0d61f644d0772a` in
 `out/certification/issue-138-20260904-post-squash/evidence-manifest.json`. A fresh source-aligned
 production-like run for the #119 cleanup was retained on 2026-09-04 at source revision
-`93815beb11a8569bae5bcb10235a9d865ea9a27a`; its evidence and boundaries are recorded below.
+`93815beb11a8569bae5bcb10235a9d865ea9a27a`; its evidence and boundaries are recorded below. The
+subsequent three-commit history-only squash preserved the exact validated runtime tree and was
+pushed to `origin/master`. Retained evidence is therefore tree-aligned, while the existing
+exact-commit-ID provenance helper remains a non-blocking workflow follow-up for future dependent
+certifications.
 
 ## Status vocabulary
 
@@ -63,6 +69,7 @@ reuse a runtime namespace whose source or image identity changed.
 | --- | --- | --- |
 | Avoid repeated Gradle distribution downloads in one-shot migration Pods | The Flyway image prewarms the pinned wrapper distribution with a locked BuildKit cache, carries an immutable seed, and refreshes each Pod's writable cache on every invocation. The verifier image also uses a locked BuildKit Gradle cache (`53e990e`, `fe12230`). | This removes repeated distribution downloads without sharing mutable runtime state. Dependency resolution, migration execution, Job completion, and error evidence remain run-scoped. |
 | Absorb a transient Matching Kafka coordinator race | The direct Kafka consumer retries only `RD_KAFKA_RESP_ERR_NOT_COORDINATOR`, for at most five attempts with `100/200/400/800 ms` backoff (`b2af17c`). | Non-retryable errors and exhausted retries remain fatal; no unknown recovery boundary is accepted and no certification phase is skipped. |
+| Preserve evidence across a history-only squash | The pre-squash certification evidence is retained after verifying that the squash produced the exact same runtime tree. | Evidence is not relabeled as exact-HEAD provenance; the existing commit-ID check may require a future refinement before dependent evidence is reused. |
 
 ## Latest verification evidence (2026-09-04)
 
@@ -90,9 +97,9 @@ reuse a runtime namespace whose source or image identity changed.
   revision `93815beb11a8569bae5bcb10235a9d865ea9a27a`.
 - The current worktree's post-certification hardening passed the focused native Matching suite,
   the full 80-test/15-suite native ingress executable, Flyway shell contract/grammar checks, and
-  Docker BuildKit Dockerfile checks. The fresh #119 run now also validates the current source
-  revision; the hardening remains non-blocking and does not replace the service-scoped migration or
-  retained-provenance gates.
+  Docker BuildKit Dockerfile checks. The fresh #119 run validates the pre-squash tree whose exact
+  runtime contents were preserved by the subsequent history-only squash; the hardening remains
+  non-blocking and does not replace the service-scoped migration or retained-provenance gates.
 
 ## Verification evidence history (through 2026-08-16)
 
@@ -798,7 +805,8 @@ reuse a runtime namespace whose source or image identity changed.
 ## Delivery order and issue mapping
 
 GitHub Issues are the executable task source of truth. The accepted native sub-issue hierarchy under
-[#10](https://github.com/WenHsuanYu/SimpleMatch/issues/10) encodes this dependency order:
+[#10](https://github.com/WenHsuanYu/SimpleMatch/issues/10) records the historical dependency order;
+all Phase 1 issues in this inventory are now completed:
 
 1. [#121](https://github.com/WenHsuanYu/SimpleMatch/issues/121),
    [#122](https://github.com/WenHsuanYu/SimpleMatch/issues/122),
@@ -820,12 +828,11 @@ GitHub Issues are the executable task source of truth. The accepted native sub-i
    [#135](https://github.com/WenHsuanYu/SimpleMatch/issues/135), then the integrated cross-service
    deployment/security gate in [#138](https://github.com/WenHsuanYu/SimpleMatch/issues/138).
 7. [#136](https://github.com/WenHsuanYu/SimpleMatch/issues/136).
-8. [#119](https://github.com/WenHsuanYu/SimpleMatch/issues/119) cleanup only after its native
-   blockers pass.
+8. [#119](https://github.com/WenHsuanYu/SimpleMatch/issues/119) cleanup completed after its native
+   blockers passed.
 
-The parent architecture program remains
-[#10](https://github.com/WenHsuanYu/SimpleMatch/issues/10). Existing delivery-policy issue
-[#92](https://github.com/WenHsuanYu/SimpleMatch/issues/92) remains the retained Risk/Account outbox
-foundation. [#87](https://github.com/WenHsuanYu/SimpleMatch/issues/87) and #93-#99 are closed
-historical records for the superseded runtime Market Reference/legacy delivery program; they do not
-prove the new Matching path complete.
+The parent architecture program [#10](https://github.com/WenHsuanYu/SimpleMatch/issues/10) is closed
+as completed. Existing delivery-policy issue [#92](https://github.com/WenHsuanYu/SimpleMatch/issues/92)
+remains the retained Risk/Account outbox foundation. [#87](https://github.com/WenHsuanYu/SimpleMatch/issues/87)
+and #93-#99 are closed historical records for the superseded runtime Market Reference/legacy
+delivery program; they do not prove the new Matching path complete.
