@@ -552,8 +552,14 @@ run_redis() {
   [[ "$fault_mode" == pod-restart ]] && previous_uid="$(jq -r '.pod_uid' <<<"$before")"
   wait_for_redis_pod_ready "$previous_uid"
   capture_redis_identity after
-  marker_after="$(redis_command "$redis_pod" redis-cli GET "$marker_key" 2>/dev/null | tr -d '\r')" || true
-  [[ "$marker_after" == "$marker_value" ]] && marker_after_bool=true
+  if ! marker_after="$(redis_command "$redis_pod" redis-cli GET "$marker_key" 2>/dev/null | tr -d '\r')"; then
+    die 'could not read Redis marker after recovery'
+  fi
+  case "$marker_after" in
+    "$marker_value") marker_after_bool=true ;;
+    '(nil)') ;;
+    *) die 'Redis marker returned an unexpected value after recovery' ;;
+  esac
   if [[ "$fault_mode" == worker-stop ]]; then
     worker_json="$(worker_stop_evidence_json)"
   else
@@ -713,9 +719,11 @@ kafka_ready_brokers_excluding() {
 }
 
 create_kafka_marker() {
-  local pod="$1" created=false
-  if kafka_command "$pod" /opt/kafka/bin/kafka-topics.sh --bootstrap-server kafka:9092 \
-    --describe --topic "$marker_topic" >/dev/null 2>&1; then
+  local pod="$1" created=false topics
+  topics="$(kafka_command "$pod" /opt/kafka/bin/kafka-topics.sh \
+    --bootstrap-server kafka:9092 --list)" ||
+    die 'could not list Kafka topics before marker creation'
+  if grep -Fxq "$marker_topic" <<<"$topics"; then
     die "run-owned Kafka marker topic already exists: $marker_topic"
   fi
   for _ in $(seq 1 30); do

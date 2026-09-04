@@ -194,6 +194,12 @@ grep -Fq '== false ]]' "$runtime_script" ||
   fail 'node readiness guard does not require explicit Ready=false evidence'
 grep -Fq 'kafka_marker_topic_absent' "$runtime_script" ||
   fail 'dependency diagnostic must verify Kafka marker deletion'
+grep -Fq 'could not read Redis marker after recovery' "$runtime_script" ||
+  fail 'Redis marker read failures must fail closed'
+grep -Fq 'Redis marker returned an unexpected value' "$runtime_script" ||
+  fail 'Redis marker output must be validated after recovery'
+grep -Fq 'could not list Kafka topics before marker creation' "$runtime_script" ||
+  fail 'Kafka marker creation must prove topic-list availability'
 grep -Fq 'kafka-log-dirs.sh' "$runtime_script" || fail 'Kafka diagnostic lacks a follower catch-up probe'
 grep -Fq -- '--producer-property acks=all' "$runtime_script" || fail 'Kafka marker producer lacks a durable acknowledgement contract'
 grep -Fq 'matching.commands' "$runtime_script" || fail 'Kafka diagnostic lacks topic contract verification'
