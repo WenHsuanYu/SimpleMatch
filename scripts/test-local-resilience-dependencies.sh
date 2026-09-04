@@ -154,6 +154,7 @@ grep -Fq 'capture exact identity' <<<"$dry_run" || fail 'runtime diagnostic dry-
 grep -Fq 'simplematch.io/lifecycle' "$runtime_script" || fail 'runtime diagnostic lacks namespace ownership guard'
 grep -Fq 'PVC/PV' "$runtime_script" || fail 'runtime diagnostic lacks storage continuity guard'
 grep -Fq 'container identity' "$runtime_script" || fail 'runtime diagnostic lacks worker identity guard'
+grep -Fq 'wait_for_kafka_set_ready ""' "$runtime_script" || fail 'runtime diagnostic lacks a stable Kafka baseline wait'
 if grep -Fq 'kubectl delete namespace' "$runtime_script"; then
   fail 'dependency diagnostic must not delete the caller namespace'
 fi

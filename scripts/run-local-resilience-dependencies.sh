@@ -382,6 +382,7 @@ run_postgresql() {
   local target_node target_pod worker_json report_json previous_uid=""
   local sql
 
+  wait_for_postgres_pod_ready ""
   capture_postgres_identity before
   target_pod="$(jq -r '.pod' <<<"$before")"
   target_node="$(jq -r '.node' <<<"$before")"
@@ -465,6 +466,7 @@ run_redis() {
   local before after target_pod target_node marker_before marker_after
   local marker_after_bool=false worker_json report_json previous_uid=""
 
+  wait_for_redis_pod_ready ""
   capture_redis_identity before
   target_pod="$(jq -r '.pod' <<<"$before")"
   target_node="$(jq -r '.node' <<<"$before")"
@@ -619,6 +621,7 @@ run_kafka() {
   local before after target_pod target_node marker_count_before marker_count_after
   local isr_before isr_during isr_after available_during worker_json report_json
   local target_before target_after previous_uid=""
+  wait_for_kafka_set_ready ""
   capture_kafka_set before
   target_pod=kafka-1
   target_before="$(jq -e --arg pod "$target_pod" '.[] | select(.pod == $pod)' <<<"$before")" ||
