@@ -14,8 +14,8 @@ Issues and PRDs for this repo live as GitHub issues. Use the `gh` CLI for all op
   rollback, and decision plan; its acceptance sections remain a static CI contract, not a current
   task, status, or release-evidence authority.
 - `tasks.md` is historical navigation. File or update an issue instead of adding a live checkbox.
-- The Taiwan architecture program is #10. Add accepted implementation slices as native sub-issues
-  and encode real prerequisites with GitHub `blocked by` dependencies.
+- The Taiwan architecture program is #10 and is completed. Future work should use a new issue (or a
+  clearly scoped follow-up), with real prerequisites encoded through GitHub `blocked by` dependencies.
 
 ## Conventions
 
