@@ -13,23 +13,32 @@ import org.springframework.jdbc.datasource.DriverManagerDataSource;
 class RiskServiceFlywayMigrationTest {
   private static final String SCHEMA_NAME = "RISK_SERVICE";
 
-  @DisplayName("an empty database receives the complete risk-service V1 schema")
+  @DisplayName("an empty database receives only the active risk-service schema")
   @Test
-  void migrateEmptyDatabaseCreatesSubmissionAndOutboxTables() {
+  void migrateEmptyDatabaseCreatesOnlyActiveTables() {
     final JdbcTemplate jdbcTemplate = new JdbcTemplate(newDataSource());
 
     migrate(jdbcTemplate.getDataSource());
 
-    assertThat(hasTable(jdbcTemplate, "RISK_SUBMISSIONS")).isTrue();
+    assertThat(hasTable(jdbcTemplate, "RISK_SUBMISSIONS")).isFalse();
     assertThat(hasTable(jdbcTemplate, "OUTBOX")).isTrue();
-    assertThat(hasTable(jdbcTemplate, "ROUTING_POLICIES")).isTrue();
-    assertThat(hasTable(jdbcTemplate, "ROUTING_POLICY_ASSIGNMENTS")).isTrue();
-    assertThat(hasTable(jdbcTemplate, "CONSUMER_QUARANTINES")).isTrue();
+    assertThat(hasTable(jdbcTemplate, "ROUTING_POLICIES")).isFalse();
+    assertThat(hasTable(jdbcTemplate, "ROUTING_POLICY_ASSIGNMENTS")).isFalse();
+    assertThat(hasTable(jdbcTemplate, "CONSUMER_QUARANTINES")).isFalse();
     assertThat(hasColumn(jdbcTemplate, "OUTBOX", "CREATED_AT")).isTrue();
     assertThat(hasTable(jdbcTemplate, "CDC_DELIVERY_OBSERVATION")).isTrue();
     assertThat(hasColumn(jdbcTemplate, "ADMISSION_JOURNAL", "ARTIFACT_TRADING_DAY")).isTrue();
     assertThat(hasColumn(jdbcTemplate, "ADMISSION_JOURNAL", "ARTIFACT_CONTENT_SHA256")).isTrue();
-    assertThat(appliedMigrationCount(jdbcTemplate)).isEqualTo(10);
+    assertThat(hasColumn(jdbcTemplate, "ADMISSION_JOURNAL", "ROUTING_POLICY_ID")).isFalse();
+    assertThat(
+            jdbcTemplate.queryForObject(
+                "SELECT COUNT(*) FROM risk_service.cdc_delivery_lag", Integer.class))
+        .isEqualTo(1);
+    assertThat(
+            jdbcTemplate.queryForObject(
+                "SELECT metric_name FROM risk_service.cdc_delivery_lag", String.class))
+        .isEqualTo("matching.commands");
+    assertThat(appliedMigrationCount(jdbcTemplate)).isEqualTo(6);
   }
 
   @DisplayName("CDC observation columns preserve Kafka and epoch value widths")
@@ -64,27 +73,6 @@ class RiskServiceFlywayMigrationTest {
     assertThat(appliedMigrationCount(jdbcTemplate)).isEqualTo(migrationsAfterFirstRun);
   }
 
-  @DisplayName("risk submission constraints reject unsupported commands")
-  @Test
-  void constraintsRejectUnsupportedCommand() {
-    final JdbcTemplate jdbcTemplate = new JdbcTemplate(newDataSource());
-    migrate(jdbcTemplate.getDataSource());
-
-    assertThatThrownBy(
-            () ->
-                jdbcTemplate.update(
-                    """
-                                        INSERT INTO risk_service.risk_submissions (
-                                          request_id, sender_comp_id, target_comp_id, trading_day, order_id, cl_ord_id,
-                                          orig_cl_ord_id, raw_cl_ord_id, raw_orig_cl_ord_id, command_type, accepted,
-                                          reason_code, reason_text, business_key_surrogated, created_at_unix_ms, outbox_event_id
-                                        ) VALUES ('request-1', 'CLIENT', 'SIMPLEMATCH', DATE '2026-07-27', 'order-1',
-                                          'clord-1', '', 'clord-1', '', 'NOT_A_COMMAND', TRUE, '', '', FALSE,
-                                          1, RANDOM_UUID())
-                                        """))
-        .isInstanceOf(RuntimeException.class);
-  }
-
   @DisplayName("risk outbox constraints reject a negative Kafka partition")
   @Test
   void constraintsRejectNegativeOutboxPartition() {
@@ -98,7 +86,7 @@ class RiskServiceFlywayMigrationTest {
                                         INSERT INTO risk_service.outbox (
                                           event_id, topic, message_key, kafka_partition_id, payload, payload_type, headers_json,
                                           aggregate_type, aggregate_id, created_at_unix_ms
-                                        ) VALUES (RANDOM_UUID(), 'orders.validated', 'order-1', -1, X'01', 'event', '{}',
+                                        ) VALUES (RANDOM_UUID(), 'matching.commands', 'order-1', -1, X'01', 'event', '{}',
                                           'risk_submission', 'order-1', 1)
                                         """))
         .isInstanceOf(RuntimeException.class);

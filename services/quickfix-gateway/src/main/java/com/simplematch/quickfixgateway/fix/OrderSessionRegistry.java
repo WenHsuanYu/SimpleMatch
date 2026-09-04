@@ -1,6 +1,5 @@
 package com.simplematch.quickfixgateway.fix;
 
-import com.simplematch.contracts.matching.v1.ExecutionEvent;
 import com.simplematch.quickfixgateway.risk.RiskOrderIdentityDeriver;
 import com.simplematch.quickfixgateway.wal.WalRecord;
 import java.util.Objects;
@@ -16,14 +15,13 @@ import quickfix.SessionID;
  * same in-memory session state. Canonical Risk/Matching order identity is the authoritative lookup
  * key, while FIX-facing OrderID remains available for session-scoped ingress correlation.
  */
-public final class OrderSessionRegistry implements ExecutionSessionResolver {
+public final class OrderSessionRegistry {
   private final RiskOrderIdentityDeriver orderIdentityDeriver;
   private final ConcurrentHashMap<String, OrderSessionState> statesByCanonicalOrderId =
       new ConcurrentHashMap<>();
   private final ConcurrentHashMap<String, WalRecord> admittedOrdersByCanonicalOrderId =
       new ConcurrentHashMap<>();
   private final OrderIdentityIndex identityIndex = new OrderIdentityIndex();
-  private final Set<String> seenExecIds = ConcurrentHashMap.newKeySet();
 
   /** Creates a registry with the canonical Gateway-to-Risk order identity policy. */
   public OrderSessionRegistry() {
@@ -110,44 +108,6 @@ public final class OrderSessionRegistry implements ExecutionSessionResolver {
       return Optional.of(canonical);
     }
     return identityIndex.resolveUnambiguous(orderId).map(statesByCanonicalOrderId::get);
-  }
-
-  @Override
-  public Optional<SessionID> resolveSessionId(ExecutionEvent executionEvent) {
-    return find(executionEvent.getOrderId()).map(OrderSessionState::sessionId);
-  }
-
-  /** Returns whether an execution identifier has already produced a client-facing effect. */
-  public boolean hasExecutionBeenSeen(String execId) {
-    return seenExecIds.contains(execId);
-  }
-
-  /** Returns whether an execution can advance the tracked order lifecycle. */
-  public boolean acceptsExecution(ExecutionEvent executionEvent) {
-    return find(executionEvent.getOrderId())
-        .map(state -> state.lifecycle().accepts(executionEvent.getExecutionType()))
-        .orElse(false);
-  }
-
-  /** Records a successfully delivered execution and its resulting local lifecycle. */
-  public void recordExecution(ExecutionEvent executionEvent) {
-    final String orderId = executionEvent.getOrderId();
-    final Optional<String> canonicalOrderId =
-        statesByCanonicalOrderId.containsKey(orderId)
-            ? Optional.of(orderId)
-            : identityIndex.resolveUnambiguous(orderId);
-    canonicalOrderId.ifPresent(
-        resolvedOrderId ->
-            statesByCanonicalOrderId.computeIfPresent(
-                resolvedOrderId,
-                (ignored, state) -> {
-                  if (!state.lifecycle().accepts(executionEvent.getExecutionType())) {
-                    return state;
-                  }
-                  return state.withLifecycle(
-                      state.lifecycle().after(executionEvent.getExecutionType()));
-                }));
-    seenExecIds.add(executionEvent.getExecId());
   }
 
   /**

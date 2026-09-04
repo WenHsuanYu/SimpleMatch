@@ -120,7 +120,7 @@ class FinalMatchingEventFixAdmissionIntegrationTest {
             risk,
             (sessionId, message) -> admissionMessages.add(message),
             registry,
-            new FixMessageMapper(CLOCK),
+            new FixMessageMapper(),
             CLOCK,
             orderIdentityDeriver);
 

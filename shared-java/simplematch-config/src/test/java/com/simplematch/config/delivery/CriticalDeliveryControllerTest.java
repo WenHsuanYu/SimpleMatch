@@ -59,7 +59,7 @@ class CriticalDeliveryControllerTest {
     final InMemoryDeliveryMetrics metrics = new InMemoryDeliveryMetrics();
     final CriticalDeliveryController controller =
         new CriticalDeliveryController(
-            "risk-routing-policy",
+            "risk-cdc-delivery",
             2,
             "Correct the policy, then resume the same partition and offset.",
             Clock.fixed(NOW, ZoneOffset.UTC),
@@ -73,17 +73,17 @@ class CriticalDeliveryControllerTest {
         .isEqualTo(DeliveryDecision.QUARANTINED);
     controller.recordDuplicate(record);
 
-    assertThat(metrics.count(DeliveryMetric.RETRY, "risk-routing-policy", record.position()))
+    assertThat(metrics.count(DeliveryMetric.RETRY, "risk-cdc-delivery", record.position()))
         .isEqualTo(1);
-    assertThat(metrics.count(DeliveryMetric.QUARANTINE, "risk-routing-policy", record.position()))
+    assertThat(metrics.count(DeliveryMetric.QUARANTINE, "risk-cdc-delivery", record.position()))
         .isEqualTo(1);
-    assertThat(metrics.count(DeliveryMetric.DUPLICATE, "risk-routing-policy", record.position()))
+    assertThat(metrics.count(DeliveryMetric.DUPLICATE, "risk-cdc-delivery", record.position()))
         .isEqualTo(1);
   }
 
   private CriticalDeliveryController controller(RecordingQuarantineStore store, int attempts) {
     return new CriticalDeliveryController(
-        "risk-routing-policy",
+        "risk-cdc-delivery",
         attempts,
         "Correct the policy, then resume the same partition and offset.",
         Clock.fixed(NOW, ZoneOffset.UTC),

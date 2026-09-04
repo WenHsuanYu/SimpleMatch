@@ -4,7 +4,6 @@ flyway_known_services() {
   printf '%s\n' \
     'account-service' \
     'market-data-projection' \
-    'marketdata-publisher' \
     'persistence' \
     'query-service' \
     'quickfix-gateway' \
@@ -13,7 +12,7 @@ flyway_known_services() {
 
 flyway_service_exists() {
   case "$1" in
-    account-service|market-data-projection|marketdata-publisher|persistence|query-service|quickfix-gateway|risk-service)
+    account-service|market-data-projection|persistence|query-service|quickfix-gateway|risk-service)
       return 0
       ;;
     *)
@@ -29,9 +28,6 @@ flyway_service_project_path() {
       ;;
     market-data-projection)
       printf '%s\n' ':services:market-data-projection'
-      ;;
-    marketdata-publisher)
-      printf '%s\n' ':services:marketdata-publisher'
       ;;
     persistence)
       printf '%s\n' ':services:persistence'
@@ -59,9 +55,6 @@ flyway_service_task_prefix() {
     market-data-projection)
       printf '%s\n' 'marketDataProjection'
       ;;
-    marketdata-publisher)
-      printf '%s\n' 'marketdataPublisher'
-      ;;
     persistence)
       printf '%s\n' 'persistence'
       ;;
@@ -87,9 +80,6 @@ flyway_service_env_prefix() {
       ;;
     market-data-projection)
       printf '%s\n' 'MARKET_DATA_PROJECTION'
-      ;;
-    marketdata-publisher)
-      printf '%s\n' 'MARKETDATA_PUBLISHER'
       ;;
     persistence)
       printf '%s\n' 'PERSISTENCE'
@@ -117,9 +107,6 @@ flyway_service_schema() {
     market-data-projection)
       printf '%s\n' 'market_data_projection'
       ;;
-    marketdata-publisher)
-      printf '%s\n' 'marketdata_publisher'
-      ;;
     persistence)
       printf '%s\n' 'persistence'
       ;;
@@ -140,7 +127,7 @@ flyway_service_schema() {
 
 flyway_service_migration_dir() {
   case "$1" in
-    account-service|market-data-projection|marketdata-publisher|persistence|query-service|quickfix-gateway|risk-service)
+    account-service|market-data-projection|persistence|query-service|quickfix-gateway|risk-service)
       printf '%s\n' "services/$1/src/main/resources/db/migration/$1"
       ;;
     *)
@@ -157,9 +144,6 @@ flyway_service_smoke_tables() {
     market-data-projection)
       printf '%s\n' matching_event_inbox instrument_market_data market_data_events_outbox
       ;;
-    marketdata-publisher)
-      printf '%s\n' market_snapshots outbox routing_policies routing_policy_assignments
-      ;;
     persistence)
       printf '%s\n' orders executions inbox
       ;;
@@ -170,7 +154,7 @@ flyway_service_smoke_tables() {
       printf '%s\n' matching_event_inbox fix_delivery_intents gateway_operation_audit
       ;;
     risk-service)
-      printf '%s\n' outbox risk_submissions
+      printf '%s\n' admission_journal outbox
       ;;
     *)
       return 1

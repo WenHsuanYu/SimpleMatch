@@ -1,6 +1,5 @@
 package com.simplematch.quickfixgateway.fix;
 
-import com.simplematch.contracts.matching.v1.ExecutionEvent;
 import quickfix.field.ClOrdID;
 import quickfix.field.CxlRejReason;
 import quickfix.field.CxlRejResponseTo;
@@ -10,23 +9,8 @@ import quickfix.field.OrigClOrdID;
 import quickfix.field.Text;
 import quickfix.fix44.OrderCancelReject;
 
-/** Renders cancel rejections from matching outcomes and inbound request correlation values. */
+/** Renders cancel rejections from explicit inbound request correlation values. */
 final class FixCancelRejectMapper {
-  OrderCancelReject buildOrderCancelReject(ExecutionEvent executionEvent, OrderSessionState state) {
-    final String cancelClientOrderId = executionEvent.getCancelClOrdId();
-    final String originalClientOrderId = executionEvent.getOrigClOrdId();
-    if (cancelClientOrderId.isBlank() || originalClientOrderId.isBlank()) {
-      throw new IllegalStateException(
-          "missing cancel request context for order " + state.orderId());
-    }
-    return build(
-        executionEvent.getOrderId(),
-        cancelClientOrderId,
-        originalClientOrderId,
-        state.lifecycle().currentOrdStatus(),
-        executionEvent.getText());
-  }
-
   OrderCancelReject buildOrderCancelReject(
       String orderId,
       String cancelClientOrderId,

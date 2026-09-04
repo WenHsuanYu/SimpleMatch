@@ -26,7 +26,6 @@ public class GrpcServerConfiguration {
   SmartLifecycle grpcServerLifecycle(
       AccountServiceRuntime runtime,
       GrpcProperties grpcProperties,
-      AccountGrpcService service,
       AccountReservationV2GrpcService v2Service) {
     return new SmartLifecycle() {
       private Server server;
@@ -41,7 +40,6 @@ public class GrpcServerConfiguration {
           final ServerBuilder<?> builder = serverBuilder(runtime.grpcPort(), grpcProperties);
           server =
               builder
-                  .addService((BindableService) service)
                   .addService((BindableService) v2Service)
                   .build()
                   .start();

@@ -1,26 +1,17 @@
 syntax = "proto3";
 
-package simplematch.marketdata.v1;
+package simplematch.marketdata.runtime.v1;
 
 option java_multiple_files = true;
-option java_package = "com.simplematch.contracts.marketdata.v1";
+option java_package = "com.simplematch.contracts.marketdata.runtime.v1";
 
-import "marketdata.proto";
 import "marketdata_runtime_v1.proto";
-import "matching.proto";
 
 service MarketDataService {
-  // Compatibility RPC retained for existing MarketDataEvent consumers.
-  rpc SubscribeMarketData(SubscribeMarketDataRequest) returns (stream MarketDataEvent);
   rpc SubscribeMarketDataSnapshots(SubscribeMarketDataRequest)
       returns (stream simplematch.marketdata.runtime.v1.MarketDataSnapshot);
-  rpc SubscribePrivateNotifications(SubscribePrivateNotificationsRequest) returns (stream simplematch.matching.v1.ExecutionEvent);
 }
 
 message SubscribeMarketDataRequest {
   repeated string symbols = 1;
-}
-
-message SubscribePrivateNotificationsRequest {
-  string account_id = 1;
 }

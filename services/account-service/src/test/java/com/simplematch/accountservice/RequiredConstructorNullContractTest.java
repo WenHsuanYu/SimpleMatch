@@ -2,7 +2,7 @@ package com.simplematch.accountservice;
 
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
-import com.simplematch.accountservice.grpc.AccountGrpcService;
+import com.simplematch.accountservice.grpc.AccountReservationV2GrpcService;
 import com.simplematch.accountservice.reservation.AccountReservationApplicationService;
 import com.simplematch.accountservice.store.JdbcAccountAuthorityLifecycleWriter;
 import com.simplematch.accountservice.store.JdbcAccountAuthorityReader;
@@ -13,7 +13,8 @@ class RequiredConstructorNullContractTest {
 
   @Test
   void rejectsNullRequiredDependenciesAtConstruction() {
-    assertThatThrownBy(() -> new AccountGrpcService(null)).isInstanceOf(NullPointerException.class);
+    assertThatThrownBy(() -> new AccountReservationV2GrpcService(null))
+        .isInstanceOf(NullPointerException.class);
     assertThatThrownBy(() -> new AccountReservationApplicationService(null, null, null, null))
         .isInstanceOf(NullPointerException.class);
     assertThatThrownBy(() -> new JdbcAccountAuthorityReader(null))

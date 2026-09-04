@@ -24,7 +24,7 @@ spring:
   kafka:
     bootstrap-servers: ${simplematch.kafka.brokers:localhost:9092}
     consumer:
-      group-id: account-lifecycle
+      group-id: account-final-matching-events
       auto-offset-reset: earliest
       enable-auto-commit: false
       key-deserializer: org.apache.kafka.common.serialization.StringDeserializer
@@ -34,10 +34,6 @@ spring:
 
 simplematch:
   account-service:
-    execution-topic: matching.executions
-    lifecycle-consumer:
-      enabled: false
-      maximum-attempts: 3
     final-matching-events:
       enabled: false
       topic: matching.events

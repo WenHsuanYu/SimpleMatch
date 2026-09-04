@@ -78,7 +78,8 @@ message OrderAdmissionAccepted {
   simplematch.common.v2.VenueInstrument instrument = 5;
   string routing_snapshot_id = 6;
   int32 routing_partition = 7;
-  string routing_policy_id = 8;
+  reserved 8;
+  reserved "routing_policy_id";
 }
 
 message OrderAdmissionRejected {

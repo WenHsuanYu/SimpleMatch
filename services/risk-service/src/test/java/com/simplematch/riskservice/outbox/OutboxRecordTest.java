@@ -10,7 +10,7 @@ class OutboxRecordTest {
   void exposesSemanticGroupsForPersistenceAdapters() {
     final OutboxRecord.EventInfo eventInfo = new OutboxRecord.EventInfo("event-1", 100L);
     final OutboxRecord.Routing routing =
-        OutboxRecord.Routing.withPartition("orders.validated", "AAPL", 7);
+        OutboxRecord.Routing.withPartition("matching.commands", "2330", 7);
     final OutboxRecord.PayloadEnvelope payloadEnvelope =
         new OutboxRecord.PayloadEnvelope(new byte[] {1, 2, 3}, "type", "{}");
     final OutboxRecord.AggregateRef aggregateReference =
@@ -40,21 +40,21 @@ class OutboxRecordTest {
 
   @Test
   void routingRejectsBlankTopic() {
-    assertThatThrownBy(() -> OutboxRecord.Routing.withPartition(" ", "AAPL", 7))
+    assertThatThrownBy(() -> OutboxRecord.Routing.withPartition(" ", "2330", 7))
         .isInstanceOf(IllegalArgumentException.class)
         .hasMessageContaining("topic must not be blank");
   }
 
   @Test
   void routingRejectsBlankMessageKey() {
-    assertThatThrownBy(() -> OutboxRecord.Routing.withoutPartition("orders.validated", ""))
+    assertThatThrownBy(() -> OutboxRecord.Routing.withoutPartition("matching.commands", ""))
         .isInstanceOf(IllegalArgumentException.class)
         .hasMessageContaining("messageKey must not be blank");
   }
 
   @Test
   void routingRejectsNegativePartition() {
-    assertThatThrownBy(() -> OutboxRecord.Routing.withPartition("orders.validated", "AAPL", -1))
+    assertThatThrownBy(() -> OutboxRecord.Routing.withPartition("matching.commands", "2330", -1))
         .isInstanceOf(IllegalArgumentException.class)
         .hasMessageContaining("kafkaPartitionId must be >= 0");
   }

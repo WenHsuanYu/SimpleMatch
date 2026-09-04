@@ -37,7 +37,7 @@ class JdbcCdcLagReaderTest {
       when(jdbcTemplate.queryForObject(
               anyString(),
               ArgumentMatchers.<RowMapper<CdcLagSnapshot>>any(),
-              eq("orders.validated")))
+              eq("matching.commands")))
           .thenAnswer(
               invocation -> {
                 final RowMapper<CdcLagSnapshot> mapper = invocation.getArgument(1);
@@ -48,7 +48,7 @@ class JdbcCdcLagReaderTest {
 
     final JdbcCdcLagReader reader = new JdbcCdcLagReader(jdbcTemplate);
 
-    final CdcLagSnapshot snapshot = reader.read("orders.validated");
+    final CdcLagSnapshot snapshot = reader.read("matching.commands");
 
     assertThat(snapshot.lagEvents()).isEqualTo(12L);
 
@@ -65,7 +65,7 @@ class JdbcCdcLagReaderTest {
 
       when(resultSet.getObject("updated_at_unix_ms", Long.class)).thenReturn(1_000L);
 
-      when(jdbcTemplate.queryForObject(anyString(), getAny(), eq("orders.validated")))
+      when(jdbcTemplate.queryForObject(anyString(), getAny(), eq("matching.commands")))
           .thenAnswer(
               invocation -> {
                 final RowMapper<CdcLagSnapshot> mapper = invocation.getArgument(1);
@@ -76,7 +76,7 @@ class JdbcCdcLagReaderTest {
 
     final JdbcCdcLagReader reader = new JdbcCdcLagReader(jdbcTemplate);
 
-    assertThatThrownBy(() -> reader.read("orders.validated"))
+    assertThatThrownBy(() -> reader.read("matching.commands"))
         .isInstanceOf(AdmissionBackpressureException.class)
         .satisfies(
             error -> {
@@ -90,12 +90,12 @@ class JdbcCdcLagReaderTest {
   void mapsMissingMetricToStableFailure() {
     final JdbcTemplate jdbcTemplate = mock(JdbcTemplate.class);
 
-    when(jdbcTemplate.queryForObject(anyString(), getAny(), eq("orders.validated")))
+    when(jdbcTemplate.queryForObject(anyString(), getAny(), eq("matching.commands")))
         .thenThrow(new EmptyResultDataAccessException(1));
 
     final JdbcCdcLagReader reader = new JdbcCdcLagReader(jdbcTemplate);
 
-    assertThatThrownBy(() -> reader.read("orders.validated"))
+    assertThatThrownBy(() -> reader.read("matching.commands"))
         .isInstanceOf(AdmissionBackpressureException.class)
         .satisfies(
             error -> {
@@ -113,12 +113,12 @@ class JdbcCdcLagReaderTest {
   void mapsDatabaseFailureToUnavailable() {
     final JdbcTemplate jdbcTemplate = mock(JdbcTemplate.class);
 
-    when(jdbcTemplate.queryForObject(anyString(), getAny(), eq("orders.validated")))
+    when(jdbcTemplate.queryForObject(anyString(), getAny(), eq("matching.commands")))
         .thenThrow(new DataAccessResourceFailureException("database unavailable"));
 
     final JdbcCdcLagReader reader = new JdbcCdcLagReader(jdbcTemplate);
 
-    assertThatThrownBy(() -> reader.read("orders.validated"))
+    assertThatThrownBy(() -> reader.read("matching.commands"))
         .isInstanceOf(AdmissionBackpressureException.class)
         .satisfies(
             error -> {

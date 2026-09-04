@@ -24,7 +24,8 @@ This README describes the Gateway-specific implementation of that policy.
 - reconciling indeterminate Risk outcomes against Risk's durable admission journal;
 - returning terminal FIX acceptance or rejection only when the authoritative Risk outcome is known;
 - keeping unknown new-order outcomes non-terminal rather than fabricating a business rejection; and
-- consuming `matching.executions` and mapping them back to outbound FIX responses.
+- consuming final `matching.events` through a durable delivery ledger and mapping them to outbound
+  FIX responses.
 
 The former `orders.commands` compatibility publisher is retired. The Gateway has no runtime switch
 that can re-enable that Kafka publication path.
@@ -137,13 +138,12 @@ Gateway WAL
   -> v2 NewOrderCommand / CancelOrderCommand
   -> Risk v2 admission journal
   -> Risk terminal journal + transactional outbox
-  -> CDC / Kafka orders.validated
+  -> CDC / Kafka matching.commands
   -> matching-engine
 ```
 
-The production Gateway-to-Risk admission path no longer constructs the v1 `OrderCommand` message.
-A shared v1 adapter may remain elsewhere as an explicit compatibility utility, but it is not part of
-QuickFIX live submission, WAL recovery, or Kafka routing.
+The production Gateway-to-Risk admission path does not construct the retired v1 `OrderCommand`
+message.
 
 ## Implemented Behavior
 
@@ -159,7 +159,7 @@ The Java gateway includes:
 - Risk admission reconciliation during startup recovery;
 - canonical Account UUID validation before durable admission;
 - deterministic FIX `OrderID = O-<ClOrdID>` plus a separate internal Risk order UUID;
-- `matching.executions` consumption and outbound FIX mapping; and
+- final `matching.events` consumption with durable FIX delivery planning and dispatch; and
 - `/healthz`, `/healthz/liveness`, `/readyz`, and `/metrics` management endpoints.
 
 Two intentional Java-specific differences from the historical C++ gateway baseline are documented
@@ -178,12 +178,11 @@ legacy `SIMPLEMATCH_FIX_*` aliases are not supported.
 Important Spring properties:
 
 - `simplematch.quickfix-gateway.acceptor-enabled`: start or skip the QuickFix/J acceptor;
-- `simplematch.quickfix-gateway.data-plane-enabled`: enable or skip `matching.executions` consume
-  wiring;
+- `simplematch.quickfix-gateway.data-plane-enabled`: enable or skip final `matching.events`
+  consumption and delivery wiring;
 - `simplematch.quickfix-gateway.replay-enabled`: run state-aware WAL recovery before readiness;
   default is on;
-- `simplematch.quickfix-gateway.owner-id`: stable logical gateway owner identity; the default Kafka
-  consumer group for `matching.executions` follows this owner id;
+- `simplematch.quickfix-gateway.owner-id`: stable logical gateway owner identity;
 - `simplematch.quickfix-gateway.ingress.trading-day`: required deployment-owned trading day used by
   new orders, cancels, replay, and accepted-order session identity; production-like Kubernetes
   wiring reads it from the immutable `matching-session-config` shared with Risk and Matching;

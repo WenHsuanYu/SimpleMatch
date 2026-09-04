@@ -18,7 +18,7 @@ import java.time.LocalDate;
 import java.util.UUID;
 import org.springframework.jdbc.core.RowMapper;
 
-/** Rehydrates semantic admission values from the legacy wide journal row. */
+/** Rehydrates semantic admission values from the durable journal row. */
 final class AdmissionJournalRowMapper {
   static final RowMapper<AdmissionJournalEntry> MAPPER = (resultSet, row) -> fromRow(resultSet);
 
@@ -31,7 +31,6 @@ final class AdmissionJournalRowMapper {
         command,
         new AdmissionDeliveryRoute(
             resultSet.getObject("routing_partition", Integer.class),
-            resultSet.getObject("routing_policy_id", UUID.class),
             artifactIdentity(resultSet),
             resultSet.getString("routing_algorithm_version")),
         new AdmissionLifecycle(

@@ -7,8 +7,7 @@ that matching has completed.
 ## Owned responsibilities
 
 - Validate submit and cancel commands and return a stable acceptance or rejection decision.
-- Persist accepted and rejected submission records in the `risk_service`
-  schema.
+- Persist accepted and rejected admissions in the `risk_service` schema.
 - Write the corresponding outbox record in the same business transaction as a durable accepted
   decision.
 - Preserve idempotent command handling through the command's stable business identity.
@@ -16,8 +15,7 @@ that matching has completed.
 ## Boundary
 
 The service exposes the synchronous RPCs in
-[`risk_service.proto`](../../../proto/risk_service.proto). It is the first durable business boundary
-behind
+[`risk_v2.proto`](../../../proto/risk_v2.proto). It is the first durable business boundary behind
 `quickfix-gateway`.
 
 After durable admission, the outbox supplies the integration boundary for ordered downstream work.
@@ -38,33 +36,13 @@ normalized decision facts, the FIX business-key idempotency identity, and the `P
 their owning contexts rather than embedded in this root.
 
 `AdmissionCommand` is composed from typed identity, order facts, FIX identity, and an optional
-routing reference. Its canonical constructor cannot exchange command/order/account UUIDs or
-sender/target/client-order strings. A durable submission result is likewise composed instead of
-represented as one flat primitive record:
+routing reference:
 
-- `SubmissionReference` identifies the request, order, and normalized command type.
-- `FixSubmissionIdentity` carries the FIX-facing business identity and trading day.
-- `PersistedFixIdentity` carries storage-safe client-order identifiers and the surrogate decision.
-- `SubmissionOutcome` is either accepted or contains one `SubmissionRejection`.
+- `AdmissionIdentity` identifies the command, order, account, and trading day.
+- `AdmissionOrder` owns the typed symbol, venue, side, quantity, price, order type, and time in force.
+- `AdmissionFixIdentity` carries the FIX-facing sender, target, and client-order identities.
 - `AdmissionFailure` represents a transport-independent reason that v2 admission cannot continue.
 
-`SubmissionValidator` creates these values after normalization. JDBC and gRPC adapters translate
-them to storage and protobuf fields; they do not define the business meaning. A business rejection
-remains a durable domain outcome rather than an infrastructure exception or dead-letter event.
-
-## Domain model
-
-`AdmissionCommand` is composed from typed identity, order facts, FIX identity, and an optional
-routing reference. Its canonical constructor cannot exchange command/order/account UUIDs or
-sender/target/client-order strings. A durable submission result is likewise composed instead of
-represented as one flat primitive record:
-
-- `SubmissionReference` identifies the request, order, and normalized command type.
-- `FixSubmissionIdentity` carries the FIX-facing business identity and trading day.
-- `PersistedFixIdentity` carries storage-safe client-order identifiers and the surrogate decision.
-- `SubmissionOutcome` is either accepted or contains one `SubmissionRejection`.
-- `AdmissionFailure` represents a transport-independent reason that v2 admission cannot continue.
-
-`SubmissionValidator` creates these values after normalization. JDBC and gRPC adapters translate
-them to storage and protobuf fields; they do not define the business meaning. A business rejection
-remains a durable domain outcome rather than an infrastructure exception or dead-letter event.
+`Admission` owns the state transition after normalization. JDBC and gRPC adapters translate the
+aggregate to storage and protobuf fields; they do not define the business meaning. A business
+rejection remains a durable domain outcome rather than an infrastructure exception.

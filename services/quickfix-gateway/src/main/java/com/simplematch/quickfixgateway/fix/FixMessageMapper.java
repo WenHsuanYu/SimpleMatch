@@ -1,7 +1,5 @@
 package com.simplematch.quickfixgateway.fix;
 
-import com.simplematch.contracts.matching.v1.ExecutionEvent;
-import java.time.Clock;
 import quickfix.FieldNotFound;
 import quickfix.Message;
 import quickfix.fix44.ExecutionReport;
@@ -12,9 +10,9 @@ public final class FixMessageMapper {
   private final FixExecutionReportMapper executionReportMapper;
   private final FixCancelRejectMapper cancelRejectMapper;
 
-  /** Creates a mapper whose fallback timestamps are supplied by the given clock. */
-  public FixMessageMapper(Clock clock) {
-    executionReportMapper = new FixExecutionReportMapper(clock);
+  /** Creates the FIX outcome mapper. */
+  public FixMessageMapper() {
+    executionReportMapper = new FixExecutionReportMapper();
     cancelRejectMapper = new FixCancelRejectMapper();
   }
 
@@ -40,17 +38,6 @@ public final class FixMessageMapper {
       Message message, FixExecutionIdentity execution, String text) throws FieldNotFound {
     return executionReportMapper.buildRejected(
         FixInboundOrderRejection.from(message), execution, text);
-  }
-
-  /** Renders an execution report from matching's execution event and session state. */
-  public Message buildExecutionReport(ExecutionEvent executionEvent, OrderSessionState state) {
-    return executionReportMapper.buildExecutionReport(executionEvent, state);
-  }
-
-  /** Renders a cancel rejection from a matching execution event and its session state. */
-  public OrderCancelReject buildOrderCancelReject(
-      ExecutionEvent executionEvent, OrderSessionState state) {
-    return cancelRejectMapper.buildOrderCancelReject(executionEvent, state);
   }
 
   /** Renders a cancel rejection from the explicit FIX correlation fields. */

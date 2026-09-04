@@ -22,7 +22,7 @@ class AbstractOutboxEventFactoryTest {
 
     assertThat(orderRecord.aggregateReference().aggregateType()).isEqualTo("order");
     assertThat(orderRecord.aggregateReference().aggregateId()).isEqualTo("ORD-1");
-    assertThat(orderRecord.routing().topic()).isEqualTo("orders.validated");
+    assertThat(orderRecord.routing().topic()).isEqualTo("matching.commands");
     assertThat(orderRecord.payloadEnvelope().payloadType()).isEqualTo("test.OrderPayload");
 
     assertThat(reservationRecord.aggregateReference().aggregateType()).isEqualTo("reservation");
@@ -59,7 +59,7 @@ class AbstractOutboxEventFactoryTest {
     protected OutboxEvent buildEvent(OrderAggregate source) {
       return new OutboxEvent(
           new OutboxRecord.EventInfo("evt-order-1", source.createdAtUnixMs()),
-          OutboxRecord.Routing.withPartition("orders.validated", source.orderId(), 0),
+          OutboxRecord.Routing.withPartition("matching.commands", source.orderId(), 0),
           new SerializedPayload(
               ("order:" + source.orderId()).getBytes(StandardCharsets.UTF_8),
               "test.OrderPayload"),

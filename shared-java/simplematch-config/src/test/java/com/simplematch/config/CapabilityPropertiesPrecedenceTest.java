@@ -51,8 +51,8 @@ class CapabilityPropertiesPrecedenceTest {
       assertThat(context.getBean(EnvironmentProperties.class).environment()).isEqualTo("test");
       assertThat(context.getBean(KafkaProperties.class).brokers())
           .isEqualTo("environment-broker:9092");
-      assertThat(context.getBean(KafkaProperties.class).topics().ordersValidated())
-          .isEqualTo("orders.validated");
+      assertThat(context.getBean(KafkaProperties.class).topics().matchingCommands())
+          .isEqualTo("matching.commands");
       assertThat(context.getBean(PostgresProperties.class).dsn())
           .isEqualTo("jdbc:postgresql://localhost:5432/simplematch");
       assertThat(context.getBean(MarketProperties.class).currency()).isEqualTo("TWD");

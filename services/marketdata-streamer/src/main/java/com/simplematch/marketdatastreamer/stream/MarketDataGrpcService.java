@@ -1,8 +1,8 @@
 package com.simplematch.marketdatastreamer.stream;
 
 import com.simplematch.contracts.marketdata.runtime.v1.MarketDataSnapshot;
-import com.simplematch.contracts.marketdata.v1.MarketDataServiceGrpc;
-import com.simplematch.contracts.marketdata.v1.SubscribeMarketDataRequest;
+import com.simplematch.contracts.marketdata.runtime.v1.MarketDataServiceGrpc;
+import com.simplematch.contracts.marketdata.runtime.v1.SubscribeMarketDataRequest;
 import io.grpc.Context;
 import io.grpc.stub.StreamObserver;
 import java.util.HashSet;

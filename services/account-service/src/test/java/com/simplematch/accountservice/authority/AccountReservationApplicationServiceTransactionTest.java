@@ -4,7 +4,6 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 import com.google.protobuf.InvalidProtocolBufferException;
-import com.simplematch.accountservice.reservation.AccountMatchingExecutionApplicationService;
 import com.simplematch.accountservice.reservation.AccountReservationApplicationService;
 import com.simplematch.accountservice.reservation.ApplyFillOperation;
 import com.simplematch.accountservice.reservation.ExecutionFill;
@@ -22,8 +21,6 @@ import com.simplematch.contracts.account.v2.AccountLifecycleEvent;
 import com.simplematch.contracts.account.v2.AccountLifecycleState;
 import com.simplematch.contracts.common.v1.ReservationStatus;
 import com.simplematch.contracts.common.v1.Side;
-import com.simplematch.contracts.matching.v1.ExecutionEvent;
-import com.simplematch.contracts.matching.v1.ExecutionType;
 import java.math.BigDecimal;
 import java.time.Clock;
 import java.time.Instant;
@@ -60,17 +57,14 @@ class AccountReservationApplicationServiceTransactionTest {
   private static final String ACCOUNT_ID = "0194a8f0-7c77-7b38-9e2d-2a5fdd0f7c13";
   private final JdbcTemplate jdbcTemplate;
   private final AccountReservationApplicationService service;
-  private final AccountMatchingExecutionApplicationService matchingExecutionService;
   private final FailingOutboxRepository outboxRepository;
 
   AccountReservationApplicationServiceTransactionTest(
       JdbcTemplate jdbcTemplate,
       AccountReservationApplicationService service,
-      AccountMatchingExecutionApplicationService matchingExecutionService,
       FailingOutboxRepository outboxRepository) {
     this.jdbcTemplate = jdbcTemplate;
     this.service = service;
-    this.matchingExecutionService = matchingExecutionService;
     this.outboxRepository = outboxRepository;
   }
 
@@ -357,54 +351,6 @@ class AccountReservationApplicationServiceTransactionTest {
     assertThat(service.getLimits(ACCOUNT_ID).availableNotional()).isEqualByComparingTo("9004");
   }
 
-  @DisplayName("matching execution fills use the public account boundary and inbox deduplication")
-  @Test
-  void appliesMatchingFillOnceThroughAccountBoundary() {
-    final ReservationRecord reservation = service.reserve(operation(Side.SIDE_BUY, "10", "100"));
-    final ExecutionEvent event =
-        matchingEvent(
-            reservation,
-            "00000000-0000-0000-0000-000000000101",
-            ExecutionType.EXECUTION_TYPE_PARTIAL_FILL,
-            "4",
-            "99");
-
-    final ReservationRecord applied = matchingExecutionService.applyMatchingExecution(event);
-    final ReservationRecord duplicate = matchingExecutionService.applyMatchingExecution(event);
-
-    assertThat(applied.reservedNotional()).isEqualByComparingTo("600");
-    assertThat(duplicate.reservedNotional()).isEqualByComparingTo("600");
-    assertThat(service.getLimits(ACCOUNT_ID).utilizedNotional()).isEqualByComparingTo("396");
-    assertThat(
-            jdbcTemplate.queryForObject(
-                "SELECT COUNT(*) FROM account_service.inbox", Integer.class))
-        .isEqualTo(1);
-  }
-
-  @DisplayName("matching terminal events release remaining authority exactly once")
-  @Test
-  void appliesMatchingCancellationOnceThroughAccountBoundary() {
-    final ReservationRecord reservation = service.reserve(operation(Side.SIDE_BUY, "10", "100"));
-    final ExecutionEvent event =
-        matchingEvent(
-            reservation,
-            "00000000-0000-0000-0000-000000000102",
-            ExecutionType.EXECUTION_TYPE_CANCELED,
-            "",
-            "");
-
-    final ReservationRecord released = matchingExecutionService.applyMatchingExecution(event);
-    final ReservationRecord duplicate = matchingExecutionService.applyMatchingExecution(event);
-
-    assertThat(released.status()).isEqualTo(ReservationStatus.RESERVATION_STATUS_RELEASED);
-    assertThat(duplicate.status()).isEqualTo(ReservationStatus.RESERVATION_STATUS_RELEASED);
-    assertThat(service.getLimits(ACCOUNT_ID).availableNotional()).isEqualByComparingTo("10000");
-    assertThat(
-            jdbcTemplate.queryForObject(
-                "SELECT COUNT(*) FROM account_service.inbox", Integer.class))
-        .isEqualTo(1);
-  }
-
   @DisplayName("release after partial fill returns only the remaining authority")
   @Test
   void releasesOnlyRemainingAuthorityAfterPartialFill() {
@@ -553,24 +499,6 @@ class AccountReservationApplicationServiceTransactionTest {
         tradingDay);
   }
 
-  private ExecutionEvent matchingEvent(
-      ReservationRecord reservation,
-      String executionId,
-      ExecutionType executionType,
-      String fillQuantity,
-      String fillPrice) {
-    return ExecutionEvent.newBuilder()
-        .setExecId(executionId)
-        .setOrderId(reservation.orderId())
-        .setAccountId(reservation.accountId())
-        .setSymbol(reservation.symbol())
-        .setExecutionType(executionType)
-        .setFillQty(fillQuantity)
-        .setFillPx(fillPrice)
-        .setText("matching-terminal")
-        .build();
-  }
-
   @Configuration
   @EnableTransactionManagement(proxyTargetClass = true)
   static class TestConfiguration {
@@ -629,12 +557,6 @@ class AccountReservationApplicationServiceTransactionTest {
           authorityReader, authorityLifecycleWriter, outboxRepository, clock);
     }
 
-    @Bean
-    AccountMatchingExecutionApplicationService matchingExecutionService(
-        AccountAuthorityReader authorityReader,
-        AccountReservationApplicationService reservationService) {
-      return new AccountMatchingExecutionApplicationService(authorityReader, reservationService);
-    }
   }
 
   static final class FailingOutboxRepository implements AccountOutboxRepository {

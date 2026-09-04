@@ -8,17 +8,17 @@ own them.
 
 `quickfix-gateway` synchronously submits new and cancel commands to
 `risk-service`. The authoritative protobuf service is
-[`risk_service.proto`](../../../proto/risk_service.proto), using the command types in [
-`orders.proto`](../../../proto/orders.proto):
+[`risk_v2.proto`](../../../proto/risk_v2.proto), using the command types in
+[`orders_v2.proto`](../../../proto/orders_v2.proto):
 
-| RPC           | Request                                                            | Successful response meaning                                                                          |
-|---------------|--------------------------------------------------------------------|------------------------------------------------------------------------------------------------------|
-| `SubmitOrder` | `OrderCommand`                                                     | The request was accepted or rejected after the risk-service decision and durable admission boundary. |
-| `CancelOrder` | `OrderCommand` with cancel type and original client order identity | The cancellation request was accepted or rejected at the same boundary.                              |
+| RPC              | Request              | Successful response meaning                                                                          |
+|------------------|----------------------|------------------------------------------------------------------------------------------------------|
+| `SubmitNewOrder` | `NewOrderCommand`    | The request was accepted or rejected after the risk-service decision and durable admission boundary. |
+| `SubmitCancel`   | `CancelOrderCommand` | The cancellation request was accepted or rejected at the same boundary.                              |
 
-`request_id` in each response is the synchronous name for the supplied
-`command_id`; both name the same operation. A successful `SubmitOrder` is the boundary after which
-the gateway may send the first successful client acknowledgement. A rejected or unavailable
+`command_id` is the stable operation identity supplied by the caller. A successful
+`SubmitNewOrder` is the boundary after which the gateway may send the first successful client
+acknowledgement. A rejected or unavailable
 admission must not be represented as a successful acknowledgement.
 
 ## Trading-session close API

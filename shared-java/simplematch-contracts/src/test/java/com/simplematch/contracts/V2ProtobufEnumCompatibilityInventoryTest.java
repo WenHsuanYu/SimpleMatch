@@ -6,7 +6,6 @@ import com.simplematch.contracts.account.v2.AccountV2;
 import com.simplematch.contracts.common.v2.CommonV2;
 import com.simplematch.contracts.matching.v2.MatchingV2;
 import com.simplematch.contracts.orders.v2.OrdersV2;
-import com.simplematch.contracts.routing.v2.RoutingPolicyV2;
 import java.io.IOException;
 import java.util.List;
 import org.junit.jupiter.api.DisplayName;
@@ -25,7 +24,6 @@ class V2ProtobufEnumCompatibilityInventoryTest {
                 AccountV2.getDescriptor(),
                 CommonV2.getDescriptor(),
                 MatchingV2.getDescriptor(),
-                OrdersV2.getDescriptor(),
-                RoutingPolicyV2.getDescriptor())));
+                OrdersV2.getDescriptor())));
   }
 }

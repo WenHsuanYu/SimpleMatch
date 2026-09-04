@@ -2,19 +2,16 @@ package com.simplematch.riskservice.admission;
 
 import com.simplematch.marketreference.ArtifactIdentity;
 import java.util.Objects;
-import java.util.UUID;
 
 /**
  * Persisted delivery route associated with one admission journal entry.
  *
  * @param routingPartition explicit Kafka partition, or {@code null} when the producer assigns it
- * @param routingPolicyId retired Routing Policy identity retained only for historical rows
  * @param artifactIdentity immutable daily artifact identity, or {@code null} for a historical row
  * @param routingAlgorithmVersion artifact-declared routing algorithm, paired with artifact identity
  */
 public record AdmissionDeliveryRoute(
     Integer routingPartition,
-    UUID routingPolicyId,
     ArtifactIdentity artifactIdentity,
     String routingAlgorithmVersion) {
   /** Validates an optional non-negative partition and internally consistent route provenance. */
@@ -31,30 +28,19 @@ public record AdmissionDeliveryRoute(
     }
   }
 
-  /** Preserves the one-field constructor used by legacy journal fixtures. */
+  /** Creates a route with an optional explicit partition and no artifact provenance. */
   public AdmissionDeliveryRoute(Integer routingPartition) {
-    this(routingPartition, null, null, null);
-  }
-
-  /** Preserves rehydration of an old Routing Policy-backed journal row. */
-  public AdmissionDeliveryRoute(Integer routingPartition, UUID routingPolicyId) {
-    this(routingPartition, routingPolicyId, null, null);
+    this(routingPartition, null, null);
   }
 
   /** Returns a route without an explicit partition assignment. */
   public static AdmissionDeliveryRoute unassigned() {
-    return new AdmissionDeliveryRoute(null, null, null, null);
+    return new AdmissionDeliveryRoute(null, null, null);
   }
 
   /** Returns a route with an explicit partition assignment. */
   public static AdmissionDeliveryRoute assigned(int routingPartition) {
-    return new AdmissionDeliveryRoute(routingPartition, null, null, null);
-  }
-
-  /** Returns a route selected by an authoritative policy. */
-  public static AdmissionDeliveryRoute assigned(UUID routingPolicyId, int routingPartition) {
-    return new AdmissionDeliveryRoute(
-        routingPartition, Objects.requireNonNull(routingPolicyId, "routingPolicyId"), null, null);
+    return new AdmissionDeliveryRoute(routingPartition, null, null);
   }
 
   /** Returns the final artifact-backed route required for all new Matching deliveries. */
@@ -62,7 +48,6 @@ public record AdmissionDeliveryRoute(
       ArtifactIdentity artifactIdentity, String routingAlgorithmVersion, int routingPartition) {
     return new AdmissionDeliveryRoute(
         routingPartition,
-        null,
         Objects.requireNonNull(artifactIdentity, "artifactIdentity"),
         Objects.requireNonNull(routingAlgorithmVersion, "routingAlgorithmVersion"));
   }
@@ -80,7 +65,7 @@ public record AdmissionDeliveryRoute(
     return routingPartition;
   }
 
-  /** Returns the final daily artifact identity or fails closed for an obsolete journal row. */
+  /** Returns the final daily artifact identity or fails closed for an incomplete journal row. */
   public ArtifactIdentity requireArtifactIdentity() {
     if (artifactIdentity == null) {
       throw new IllegalStateException("matching command requires a persisted artifact identity");

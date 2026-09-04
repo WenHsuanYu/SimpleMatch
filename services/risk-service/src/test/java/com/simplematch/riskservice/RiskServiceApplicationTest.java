@@ -10,7 +10,6 @@ import com.simplematch.riskservice.admission.AdmissionOutboxFactory;
 import com.simplematch.riskservice.admission.OrderAdmissionApplicationService;
 import com.simplematch.riskservice.bootstrap.RiskServiceRuntime;
 import com.simplematch.riskservice.outbox.OutboxRepository;
-import com.simplematch.riskservice.submission.SubmissionService;
 import com.simplematch.marketreference.VerifiedMarketReferenceArtifact;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
@@ -72,7 +71,6 @@ class RiskServiceApplicationTest {
     assertThat(applicationContext.getBean(AdmissionOutboxFactory.class)).isNotNull();
     assertThat(applicationContext.getBean(VerifiedMarketReferenceArtifact.class)).isNotNull();
     assertThat(applicationContext.getBean(OrderAdmissionApplicationService.class)).isNotNull();
-    assertThat(applicationContext.getBeansOfType(SubmissionService.class)).isEmpty();
     assertThat(applicationContext.getBean(OutboxRepository.class)).isNotNull();
     assertThat(applicationContext.getBean(TransactionTemplate.class)).isNotNull();
   }

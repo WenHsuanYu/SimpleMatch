@@ -29,9 +29,32 @@ application = YAML.safe_load(account.fetch("data").fetch("application.yaml"))
 config = application.fetch("simplematch").fetch("account-service")
 legacy = config.dig("lifecycle-consumer", "enabled")
 abort "production-shaped Account must not enable the legacy matching.executions consumer" if legacy == true
+abort "production-shaped Account must not retain legacy lifecycle-consumer configuration" unless legacy.nil?
 abort "production-shaped Account must enable the final matching.events consumer" unless
   config.dig("final-matching-events", "enabled") == true
 RUBY
+
+if rg -n 'matching\.executions|contracts\.matching\.v1' \
+  "$repo_root/services/account-service/src/main"; then
+  printf '%s\n' 'Account production source still contains the legacy matching execution path.' >&2
+  exit 1
+fi
+
+if rg -n 'matching\.executions|contracts\.matching\.v1' \
+  "$repo_root/services/quickfix-gateway/src/main"; then
+  printf '%s\n' 'QuickFIX production source still contains the legacy matching execution path.' >&2
+  exit 1
+fi
+
+for retired_path in \
+  "$repo_root/proto/orders.proto" \
+  "$repo_root/proto/matching.proto" \
+  "$repo_root/shared-java/simplematch-contracts/src/main/java/com/simplematch/contracts/v2/V1OrderCommandAdapter.java"; do
+  if [[ -e "$retired_path" ]]; then
+    printf 'Retired Matching contract still exists: %s\n' "$retired_path" >&2
+    exit 1
+  fi
+done
 
 for topic in matching.commands matching.events; do
   grep -Fq "$topic" "$matching_provisioner" || {

@@ -72,11 +72,6 @@ fields are append-only: a field number must never be reused or assigned a differ
 change that needs incompatible semantics creates a new message or versioned contract rather than
 modifying an existing field.
 
-`V1OrderCommandAdapter` remains a shared compatibility utility for explicitly representable legacy
-commands and contract tests. It is not part of QuickFIX live submission, WAL recovery, or the
-production Risk v2 admission path. New production code must not route through it merely because a
-legacy message type remains available in the repository.
-
-Its v1-to-v2 and v2-to-v1 field-family mapping collaborators are package-private implementation
-details. Removing the utility itself is a separate shared-contract cleanup once no remaining
-compatibility or inventory use requires it.
+The retired v1 order-command adapter and legacy order/execution messages are no longer part of the
+shared contract surface. Production ingress uses typed v2 commands, while Matching transport uses
+the deterministic runtime command and final-event contracts.

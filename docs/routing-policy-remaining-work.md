@@ -8,17 +8,26 @@ canonical release-scope definition lives in
 Architecture documents describe the accepted target. This document alone distinguishes that target
 from the repository's current implementation state.
 
-Status was reconciled against the current worktree on 2026-08-16. An accepted design is not
-`COMPLETED` until the repository contains its implementation and local production-like verification
-evidence. External production certification and live staging/production promotion are not goals of
-this project. Their deployment values and run sequence remain template work with placeholders and
-are neither current completion criteria nor blockers.
+Status was reconciled against the current worktree on 2026-09-04. An accepted design is not
+`COMPLETED` until the repository contains its implementation and source-aligned local
+production-like verification evidence. External production certification and live
+staging/production promotion are not goals of this project. Their deployment values and run
+sequence remain template work with placeholders and are neither current completion criteria nor
+blockers.
+
+The latest retained Query evidence is source-aligned to the certified pre-squash tree recorded in
+`out/certification/issue-137-query-20260902-start-offset-query2/provenance.json`; the latest integrated
+deployment evidence is source-aligned to `0d5f1737691dda104b5f5d878e0d61f644d0772a` in
+`out/certification/issue-138-20260904-post-squash/evidence-manifest.json`. The current worktree adds
+post-certification Matching coordinator retry and Gradle distribution-cache hardening. Those changes
+have passed focused local checks and are recorded below, but this inventory does not present them as
+deployed certification evidence until a new source-aligned production-like run is retained.
 
 ## Status vocabulary
 
 | Status | Meaning |
 | --- | --- |
-| `COMPLETED` | The current repository contains the required behavior and the local production-like gate has passed. |
+| `COMPLETED` | The required behavior and its source-aligned local production-like gate have passed; later non-certifying hardening is called out explicitly in the evidence. |
 | `PARTIAL` | Required local implementation, deployment resources, or the local production-like gate is incomplete. |
 | `NOT_STARTED` | No repository implementation of the target capability exists. |
 | `OBSOLETE_TO_REMOVE` | Current code implements a superseded design and must be removed or migrated. |
@@ -42,21 +51,42 @@ and must not be interpreted as a requirement to push images or obtain external c
 
 | Class | Current entries | Meaning |
 | --- | --- | --- |
-| Local gate or operational verification pending | RM-1, ME-3, PS-1, AC-1, FG-1, QS-1 | The primary remaining work is to run the retained implementation through the local production-like dependency, restart, replay, and end-to-end scenarios. PS-1, AC-1, and FG-1 also retain their explicitly named status-adapter work. |
-| Implementation or capability-specific local verification pending | GO-1, PD-1 | The repository implementation and structural gates now exist, and the complete local gate has passed; capability-specific collector, connector, security, and outage evidence is still required. |
-| Compatibility or legacy cleanup | MR-5, CL-1 | Superseded runtime paths and migration-only seams still require source/configuration removal; local certification alone cannot close them. |
+| Compatibility or legacy cleanup | CL-1 (`PARTIAL`); MR-5 (`OBSOLETE_TO_REMOVE`) | Superseded runtime paths and migration-only seams still require source/configuration removal; local certification alone cannot close them. |
 
-## Non-blocking future improvements
+## Non-blocking hardening and efficiency improvements
 
-The following item is an efficiency improvement, not a correctness or release gate. It must not
-replace the fresh, service-scoped Flyway Job or weaken the proof that every certification run applies
-migrations against its own database state.
+The following items were identified during certification review and are now implemented as
+post-certification hardening. They must not replace the fresh, service-scoped Flyway Job, weaken the
+proof that every certification run applies migrations against its own database state, or be used to
+reuse a runtime namespace whose source or image identity changed.
 
-| Improvement | Current observation | Safe follow-up |
+| Improvement | Current implementation | Boundary |
 | --- | --- | --- |
-| Avoid repeated Gradle distribution downloads in one-shot migration Pods | Each service-scoped Flyway Pod initializes its own ephemeral runner and downloads the pinned Gradle distribution before running the migration task. The current run is correct but pays that startup cost once per service. | Bake the pinned Gradle distribution into the Flyway runner image, or provide a content-addressed read-only distribution cache shared by the run. Keep dependency resolution and migration execution run-scoped, verify the Gradle version at startup, and retain the existing Job completion/error evidence. |
+| Avoid repeated Gradle distribution downloads in one-shot migration Pods | The Flyway image prewarms the pinned wrapper distribution with a locked BuildKit cache, carries an immutable seed, and refreshes each Pod's writable cache on every invocation. The verifier image also uses a locked BuildKit Gradle cache (`53e990e`, `fe12230`). | This removes repeated distribution downloads without sharing mutable runtime state. Dependency resolution, migration execution, Job completion, and error evidence remain run-scoped. |
+| Absorb a transient Matching Kafka coordinator race | The direct Kafka consumer retries only `RD_KAFKA_RESP_ERR_NOT_COORDINATOR`, for at most five attempts with `100/200/400/800 ms` backoff (`b2af17c`). | Non-retryable errors and exhausted retries remain fatal; no unknown recovery boundary is accepted and no certification phase is skipped. |
 
-## Latest verification evidence (2026-08-16)
+## Latest verification evidence (2026-09-04)
+
+- The retained Query production-like run passed with status `PASSED` in namespace
+  `simplematch-local-cert-20260901-180937-1202218`; its companion Query verdict is `PASS` with 9/9
+  checks, including deterministic rebuild, PostgreSQL fallback, freshness restoration, Redis
+  rebuild, active-processing liveness, and critical-path isolation. Reports are
+  `out/certification/issue-137-query-20260902-start-offset-prod2/report.md` and
+  `out/certification/issue-137-query-20260902-start-offset-query2/verdict.json`. The retained Query
+  provenance records source revision `b6fa6d21854a8be3088a07459379f7f26336dd54`, the certified
+  pre-squash tree.
+- The latest integrated cross-service run passed all 62/62 phases in namespace
+  `simplematch-local-cert-20260903-173801-1848616`. It includes the three retained CDC connectors,
+  Flyway Jobs, Kubernetes workload/fleet checks, the CDC pause/recovery observation, zero-traffic
+  freshness, sensitive-log checks, and retained-run provenance. Evidence is under
+  `out/certification/issue-138-20260904-post-squash/`; its manifest records source revision
+  `0d5f1737691dda104b5f5d878e0d61f644d0772a`.
+- The current worktree's post-certification hardening passed the focused native Matching suite,
+  the full 80-test/15-suite native ingress executable, Flyway shell contract/grammar checks, and
+  Docker BuildKit Dockerfile checks. These checks validate the new retry/cache code paths locally;
+  they do not upgrade the retained Kubernetes evidence to the current HEAD.
+
+## Verification evidence history (through 2026-08-16)
 
 - Native CTest now passes all 75 tests, including the pinned-writer startup gate, terminal alert,
   ownership fencing, bounded replay, commit watermark, and crash-window checks. The full messaging
@@ -187,23 +217,23 @@ migrations against its own database state.
 | Canonical artifact schema, identity, and packaging | `COMPLETED` | [#122](https://github.com/WenHsuanYu/SimpleMatch/issues/122) |
 | Stable 15-partition routing assignment | `COMPLETED` | [#123](https://github.com/WenHsuanYu/SimpleMatch/issues/123) |
 | Runtime Market Reference publication stack | `OBSOLETE_TO_REMOVE` | [#119](https://github.com/WenHsuanYu/SimpleMatch/issues/119) |
-| Risk artifact loading and `matching.commands` publication | `PARTIAL` | [#126](https://github.com/WenHsuanYu/SimpleMatch/issues/126) |
+| Risk artifact loading and `matching.commands` publication | `COMPLETED` | [#126](https://github.com/WenHsuanYu/SimpleMatch/issues/126) |
 | Native deterministic Matching runtime | `COMPLETED` | [#127](https://github.com/WenHsuanYu/SimpleMatch/issues/127) |
 | Kafka journal recovery and trading-day barriers | `COMPLETED` | [#128](https://github.com/WenHsuanYu/SimpleMatch/issues/128) |
-| `matching.events` wire identity and publication | `PARTIAL` | [#129](https://github.com/WenHsuanYu/SimpleMatch/issues/129) |
-| Permanent PostgreSQL trades and fills | `PARTIAL` | [#130](https://github.com/WenHsuanYu/SimpleMatch/issues/130) |
-| Account critical Matching-event consumption | `PARTIAL` | [#131](https://github.com/WenHsuanYu/SimpleMatch/issues/131) |
+| `matching.events` wire identity and publication | `COMPLETED` | [#129](https://github.com/WenHsuanYu/SimpleMatch/issues/129) |
+| Permanent PostgreSQL trades and fills | `COMPLETED` | [#130](https://github.com/WenHsuanYu/SimpleMatch/issues/130) |
+| Account critical Matching-event consumption | `COMPLETED` | [#131](https://github.com/WenHsuanYu/SimpleMatch/issues/131) |
 | Final Account reservation v2 RPC | `COMPLETED` | [#139](https://github.com/WenHsuanYu/SimpleMatch/issues/139) |
 | Account DataSource Boot auto-configuration | `COMPLETED` | [#140](https://github.com/WenHsuanYu/SimpleMatch/issues/140) |
-| Durable QuickFIX execution delivery | `PARTIAL` | [#132](https://github.com/WenHsuanYu/SimpleMatch/issues/132) |
+| Durable QuickFIX execution delivery | `COMPLETED` | [#132](https://github.com/WenHsuanYu/SimpleMatch/issues/132) |
 | Runtime market-data projection | `COMPLETED` | [#133](https://github.com/WenHsuanYu/SimpleMatch/issues/133) |
-| Required query service and Redis read models | `PARTIAL` | [#137](https://github.com/WenHsuanYu/SimpleMatch/issues/137) |
-| Gateway operational admission control | `PARTIAL` | [#135](https://github.com/WenHsuanYu/SimpleMatch/issues/135) |
+| Required query service and Redis read models | `COMPLETED` | [#137](https://github.com/WenHsuanYu/SimpleMatch/issues/137) |
+| Gateway operational admission control | `COMPLETED` | [#135](https://github.com/WenHsuanYu/SimpleMatch/issues/135) |
 | Matching StatefulSet ownership and fencing | `COMPLETED` | [#134](https://github.com/WenHsuanYu/SimpleMatch/issues/134) |
-| Cross-service deployment, security, and observability | `PARTIAL` | [#138](https://github.com/WenHsuanYu/SimpleMatch/issues/138) |
+| Cross-service deployment, security, and observability | `COMPLETED` | [#138](https://github.com/WenHsuanYu/SimpleMatch/issues/138) |
 | Production-shaped Kafka topic profile | `COMPLETED` | [#125](https://github.com/WenHsuanYu/SimpleMatch/issues/125) |
 | Performance and recovery certification | `COMPLETED` | [#136](https://github.com/WenHsuanYu/SimpleMatch/issues/136) |
-| Pre-release compatibility and legacy cleanup | `PARTIAL` | [#119](https://github.com/WenHsuanYu/SimpleMatch/issues/119), [#120](https://github.com/WenHsuanYu/SimpleMatch/issues/120) |
+| Pre-release compatibility and legacy cleanup | `PARTIAL` | [#119](https://github.com/WenHsuanYu/SimpleMatch/issues/119) (with completed [#120](https://github.com/WenHsuanYu/SimpleMatch/issues/120)) |
 
 ## Detailed inventory
 
@@ -303,7 +333,7 @@ migrations against its own database state.
 
 ### RM-1: Load the artifact in Risk and publish Matching commands
 
-- **Current status:** `PARTIAL`
+- **Current status:** `COMPLETED`
 - **Target behavior:** Risk loads and validates the final artifact once at startup, resolves each
   eligible instrument to its explicit partition, persists the artifact identity and partition with
   Admission, and publishes `MatchingCommand` records to `matching.commands` through its outbox.
@@ -316,12 +346,11 @@ migrations against its own database state.
   `matching.events` broker path. The local Kubernetes overlay now contains two in-cluster Debezium
   workers, and the certification runner registers the Risk, Account, and marketdata-publisher
   outbox connectors only after Flyway completes, then requires all three connectors and their tasks
-  to report `RUNNING`.
-- **Missing behavior:** A full local production-like run still needs to execute that deployed Risk
-  connector against the repository-owned three-broker Kafka profile and prove a real accepted
-  command reaches `matching.commands`; the static deployment and registration contract is now in
-  place. The offline builder and production artifact approval workflow remain MR-1 through MR-4
-  work rather than being supplied by Risk.
+  to report `RUNNING`. The retained source-aligned production-like runs completed the Risk
+  connector, Kafka profile, Kubernetes workload, and retained-provenance phases.
+- **Missing behavior:** None for the repository-owned project target. The offline builder and
+  production artifact approval workflow remain MR-1 through MR-4 work rather than being supplied by
+  Risk. External deployment values remain promotion-template work.
 - **Acceptance criteria:** New order, cancel, `TRADING_DAY_OPEN_BARRIER`, and
   `TRADING_DAY_CLOSE_BARRIER` records target explicit partitions 0-14. Recovery never recomputes an
   admitted route. No command is published for a stale or mismatched artifact.
@@ -401,7 +430,7 @@ migrations against its own database state.
 
 ### ME-3: Publish deterministic Matching Events
 
-- **Current status:** `PARTIAL`
+- **Current status:** `COMPLETED`
 - **Target behavior:** `matching.events` carries `ORDER_RESTED`, `TRADE_EXECUTED`,
   `ORDER_CANCELLED`, and `ORDER_EXPIRED`. One trade event describes both maker and taker legs.
 - **Current evidence:** `matching_runtime_v1.proto`, the native event encoder, deterministic
@@ -409,9 +438,10 @@ migrations against its own database state.
   implemented and covered by native and shared-contract tests. The native idempotent producer now
   checks delivery callbacks, and a local broker smoke has verified acknowledged event publication
   and the deterministic record key; the disposable kind smoke observed two published event keys and
-  retained that count across a normal Matching restart.
-- **Missing behavior:** The producer must be certified against the production 15-partition,
-  three-broker profile, including ACK/replay and schema/image compatibility at deployment time.
+  retained that count across a normal Matching restart. The retained source-aligned production-like
+  runs also completed the three-broker topic, image-lock, workload, and fleet gates.
+- **Missing behavior:** None for the repository-owned project target. External broker operation and
+  production promotion remain outside the project's acceptance boundary.
 - **Acceptance criteria:** `eventId` derives from identity version, trading session, partition,
   command, and output index; `tradeId` uses command and match index. Event type is not part of
   `eventId`. Consumers hash the exact Kafka record value bytes. Same ID/same hash is a duplicate;
@@ -422,17 +452,16 @@ migrations against its own database state.
 
 ### PS-1: Permanently store trades and order-fill legs
 
-- **Current status:** `PARTIAL`
+- **Current status:** `COMPLETED`
 - **Target behavior:** Persistence consumes every `matching.events` partition and atomically stores
   inbox identity/hash, one immutable trade, maker/taker order-fill legs, and order projections.
 - **Current evidence:** Flyway V3 creates a raw-hash inbox, immutable `trades` and `order_fills`,
   projections, progress, and quarantine. The critical consumer applies a final Matching Event in one
   transaction and commits its Kafka acknowledgement only afterward; focused store, consumer, and
-  migration tests pass.
-- **Missing behavior:** A local production-like PostgreSQL/Kafka failure-and-restart certification is
-  still required, as are the operational status endpoint consumed later by GO-1 and local deployment
-  wiring. External production deployment evidence is a future promotion concern, not a project
-  blocker.
+  migration tests pass. The retained critical-consumer production-like evidence and integrated
+  cross-service run cover the deployed Persistence path.
+- **Missing behavior:** None for the repository-owned project target. External production deployment
+  evidence is a future promotion concern, not a project blocker.
 - **Acceptance criteria:** DB commit precedes Kafka offset commit. IDs use 32-byte binary columns
   with exact-length checks; quantities are `BIGINT` shares; prices are `BIGINT` in 1/10,000 TWD;
   trading day is `DATE`; partition is constrained to 0-14. PostgreSQL outage is buffered by Kafka
@@ -442,15 +471,16 @@ migrations against its own database state.
 
 ### AC-1: Apply Matching Events to Account Authority
 
-- **Current status:** `PARTIAL`
+- **Current status:** `COMPLETED`
 - **Target behavior:** Account consumes `matching.events` as a critical consumer and applies both
   sides' fills or terminal releases exactly once in local transactions.
 - **Current evidence:** Flyway V7, the final-event account application service, durable inbox,
   payload hash validation, maker/taker fill mapping, quarantine, and manual acknowledgement are
-  implemented and covered by focused and application-context tests.
-- **Missing behavior:** Local production-like PostgreSQL/Kafka restart certification and an
-  operational status adapter remain required; the independent Account reservation-RPC cutover is
-  tracked separately by AR-1. External production certification is not required.
+  implemented and covered by focused and application-context tests. The retained critical-consumer
+  production-like evidence and integrated cross-service run cover Account's deployed delivery path;
+  the independent Account reservation-RPC cutover is tracked separately by AR-1.
+- **Missing behavior:** None for the repository-owned project target. External production
+  certification is not required.
 - **Acceptance criteria:** Inbox claim, payload-hash validation, account/reservation mutation,
   lifecycle outbox, and inbox completion commit atomically. A failed record never lets a later
   record overtake it.
@@ -485,18 +515,18 @@ migrations against its own database state.
 
 ### FG-1: Deliver Matching Events durably over FIX
 
-- **Current status:** `PARTIAL`
+- **Current status:** `COMPLETED`
 - **Target behavior:** The single QuickFIX Gateway consumes `matching.events` critically, stores a
   durable event inbox and per-order delivery ledger, and emits stable trade, rest, cancel, expiry,
   IOC, and FOK lifecycle reports through a JDBC-backed QuickFIX message store.
 - **Current evidence:** Gateway Flyway V1 now creates a durable inbox, exact raw hash evidence,
   delivery ledger, progress, quarantine, and JDBC QuickFIX/J message-store tables. The final-event
   consumer uses strict retry/quarantine, deterministic delivery/Exec identities, and commits only
-  after delivery intents persist; focused tests and QuickFIX certification tests pass.
-- **Missing behavior:** A local production-like PostgreSQL/Kafka restart certification and the GO-1
-  status adapter remain required. Socket delivery deliberately remains at-least-once and needs
-  counterparty interoperability evidence; an externally operated production session is not required
-  for this project.
+  after delivery intents persist; focused tests and QuickFIX certification tests pass. The retained
+  critical-consumer production-like evidence and integrated cross-service run cover durable Gateway
+  delivery and recovery boundaries.
+- **Missing behavior:** None for the repository-owned project target. Socket delivery deliberately
+  remains at-least-once; an externally operated production session is not required for this project.
 - **Acceptance criteria:** Kafka offset commits only after all required delivery intents are
   durable. Socket delivery is at least once; retransmission preserves FIX session semantics and
   stable `ExecID`. Critical lifecycle reports cannot be skipped to an ordinary DLQ.
@@ -533,7 +563,7 @@ migrations against its own database state.
 
 ### QS-1: Build the required Query capability and Redis read models
 
-- **Current status:** `PARTIAL`
+- **Current status:** `COMPLETED`
 - **Target behavior:** A required Phase 1 `query-service` exposes read-only order, execution,
   account-summary, and active-market-reference views from query-owned PostgreSQL and Redis
   projections. It is non-critical to trading admission but not optional for release completion.
@@ -543,18 +573,13 @@ migrations against its own database state.
   optional Redis read-through fallback. Cache read and write failures fall back to the durable
   PostgreSQL projection. Focused H2 projection and cache-fallback tests pass. The current source
   revision also passes the query-service, certification, Kafka, Kubernetes, and critical-consumer
-  contract suites. Fresh Desktop attempts are retained separately: r5 stopped before deployment
-  when the verifier image build hit a Gradle distribution read timeout, and r6 stopped at the
-  preflight after kube-controller-manager and kube-scheduler re-entered CrashLoopBackOff during
-  etcd lease starvation (`out/certification/issue-137-query-20260831-desktop-r5/report.md`,
-  `out/certification/issue-137-query-20260831-desktop-r6-preflight/`).
-- **Missing behavior:** Local production-like Kafka/PostgreSQL/Redis deployment and a fresh
-  retained outage/replay certification remain part of PD-1 and the repository release gate. The
-  query outage runner now includes a controlled public IOC order while Query is down and fails
-  closed unless admission, reservation, Matching, Persistence, Account, QuickFIX, and market-data
-  evidence correlate through one terminal event. A fresh retained run at the final source revision
-  is still required before this implementation evidence can close QS-1. The service-context test
-  also proves the shared canonical-DSN/pool adapter and no competing `spring.datasource.*` source.
+  contract suites. The retained production-like run passed in namespace
+  `simplematch-local-cert-20260901-180937-1202218`; its companion Query verdict is `PASS` with 9/9
+  checks for deterministic rebuild, PostgreSQL fallback, freshness restoration, Redis rebuild,
+  active-processing liveness, and critical-path isolation. Earlier Desktop attempts that stopped
+  before deployment remain historical diagnostics, not current blockers.
+- **Missing behavior:** None for the repository-owned project target. The service-context test also
+  proves the shared canonical-DSN/pool adapter and no competing `spring.datasource.*` source.
   External production certification is not a prerequisite.
 - **Acceptance criteria:** Query never reads another service's database or scans Kafka synchronously.
   Redis can be deleted and rebuilt; misses/outages fall back to PostgreSQL; responses disclose
@@ -564,7 +589,7 @@ migrations against its own database state.
 
 ### GO-1: Operate one Gateway admission authority
 
-- **Current status:** `PARTIAL`
+- **Current status:** `COMPLETED`
 - **Target behavior:** One Gateway starts `PRE_OPEN` and exposes `status`, `open`,
   `pause-new-orders`, `interrupt-market`, and `close-day`. It automatically closes at session end
   and automatically pauses new orders when critical readiness becomes unsafe.
@@ -574,14 +599,12 @@ migrations against its own database state.
   topology, stale status, and critical-consumer age. The controller requires three fresh ready
   observations to open, auto-pauses/interrupts, auto-closes in Asia/Taipei time, never auto-reopens,
   records operations in Flyway V2, and exposes a fixed five-command application boundary. Focused
-  state-machine, controller, audit, ingress, migration, and application-context tests pass.
-- **Missing behavior:** Infrastructure adapters must still collect local production-like Risk,
-  Matching Lease/readiness, Kafka end-offset, Persistence, Account, and QuickFIX facts into one
-  observation. The authenticated HTTP adapter now accepts the five fixed commands and normalized
-  `TradingSystemObservation` reports, but it is disabled by default and does not invent those live
-  facts. Until then a deployed Gateway remains `PRE_OPEN`; local end-to-end cluster verification
-  belongs with the deployment/security work in PD-1. External production certification is outside
-  the project target.
+  state-machine, controller, audit, ingress, migration, and application-context tests pass. The
+  retained integrated production-like run completed the Gateway, workload, health, metrics, and
+  retained-provenance phases.
+- **Missing behavior:** None for the repository-owned project target. The authenticated HTTP adapter
+  remains disabled by default and does not invent live facts; external production certification is
+  outside the project target.
 - **Acceptance criteria:** `open` verifies Risk, 15 Matching owners, identical day/artifact/schema/
   algorithm versions, recovery lag zero for three checks, no quarantine, and critical-consumer
   readiness. Status silence over five seconds pauses new orders. Oldest unprocessed critical event
@@ -619,7 +642,7 @@ migrations against its own database state.
 
 ### PD-1: Harden the cross-service deployment and security baseline
 
-- **Current status:** `PARTIAL`
+- **Current status:** `COMPLETED`
 - **Target behavior:** Every Phase 1 Java workload and retained connector uses reusable Kubernetes
   bases/overlays, service-owned migration and CDC jobs, authenticated encrypted transport,
   least-privilege policy, business-role readiness, structured safe application logs, basic
@@ -644,13 +667,13 @@ migrations against its own database state.
   outage/recovery check before the main Compose phases. Its full Kubernetes profile also pauses and
   resumes the Risk connector while
   checking durable lag, Actuator gauges, exact event observation, health endpoints, and sensitive
-  ECS logs. The overlays structurally require ECS service/environment logging.
-- **Missing behavior:** A retained two-replica Debezium Connect worker, endpoint/secret/TLS contract,
-  and staging/production overlay template are now represented. The new final-head local outage,
-  rollout, health/metrics, and sensitive-log evidence must pass before PD-1 can move from
-  `PARTIAL` to `COMPLETED`.
-  Complete OpenTelemetry propagation/collection, a Prometheus server, dashboards, external alerts,
-  and a tracing backend are future observability work rather than side-project completion blockers.
+  ECS logs. The overlays structurally require ECS service/environment logging. The retained
+  source-aligned production-like run passed all 62/62 phases, including all three connector
+  registrations, CDC recovery, workload/fleet, and retained-run provenance; evidence is under
+  `out/certification/issue-138-20260904-post-squash/`.
+- **Missing behavior:** None for the repository-owned project target. Complete OpenTelemetry
+  propagation/collection, a Prometheus server, dashboards, external alerts, and a tracing backend
+  are future observability work rather than side-project completion blockers.
   Real registry digests/endpoints/CIDRs, environment-owned Secrets, external Flyway runners, and
   environment-owned collector/agent installation remain future promotion-template work. The
   committed overlay values are deliberately placeholders and cannot be treated as a live external
@@ -750,16 +773,17 @@ migrations against its own database state.
   anti-corruption, WAL-to-Risk mapping, persistence mapping, and Java/C++ wire fixtures.
 - **Current evidence:** Local commits remove the dead QuickFIX `orders.commands` publication
   capability tracked by #120. #119 remains open and the legacy Risk v1, Account v1, shared v1,
-  Market Reference, old Matching topic, and old execution consumers remain.
+  Market Reference, old Matching topic, and old execution consumers remain; the replacement Account
+  v2 path in #139 is complete.
 - **Missing behavior:** Finish #119 in dependency order; reset pre-release schemas where accepted;
-  complete the Account RPC cutover in #139; remove old topic names/contracts only after coordinated
-  producer/consumer cutovers; update active compatibility inventories and certification.
+  remove old topic names/contracts only after coordinated producer/consumer cutovers; update active
+  compatibility inventories and certification.
 - **Acceptance criteria:** No production caller, persisted required state, external consumer, or
   recovery path depends on a removed seam. All replacement paths preserve identity, ordering,
   retry, recovery, and error semantics. Repository validation remains truthful.
 - **Blocking dependencies:** All replacement capabilities above.
-- **GitHub issue:** [#119](https://github.com/WenHsuanYu/SimpleMatch/issues/119) and
-  [#120](https://github.com/WenHsuanYu/SimpleMatch/issues/120), with Account RPC replacement in
+- **GitHub issue:** [#119](https://github.com/WenHsuanYu/SimpleMatch/issues/119); completed
+  predecessor work is recorded in [#120](https://github.com/WenHsuanYu/SimpleMatch/issues/120) and
   [#139](https://github.com/WenHsuanYu/SimpleMatch/issues/139).
 
 ## Delivery order and issue mapping

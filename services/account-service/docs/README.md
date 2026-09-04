@@ -13,8 +13,8 @@ delivery.
 
 ## Boundary
 
-The service exposes the account RPCs defined in
-[`account_service.proto`](../../../proto/account_service.proto). Callers supply a stable
+The service exposes the account reservation RPCs defined in
+[`account_v2.proto`](../../../proto/account_v2.proto). Callers supply a stable
 `request_id` for every mutating operation. A repeated request must not create a second reservation
 or apply a fill twice.
 
@@ -38,22 +38,8 @@ The account domain exposes three use-case commands rather than transport-shaped 
 - `ApplyFillOperation` combines `ReservationIdentity` with one `ExecutionFill`.
 
 Each request, reservation, order, account, execution, quantity, and price role has a distinct Java
-type. Transport parsing remains in `AccountGrpcService`; `AccountReservationApplicationService`
-remains the transaction owner. Context-free invariants are checked while the command is created,
-while state-dependent invariants are checked after locking account-owned state, including identity
-equality and `fill quantity <= remaining quantity`.
-
-## Domain language and lifecycle commands
-
-The account domain exposes three use-case commands rather than transport-shaped parameter lists:
-
-- `ReserveOperation` combines `ReservationRequestIdentity`, `ReservationTerms`, and the explicit
-  business trading day for v2 calls.
-- `ReleaseReservationOperation` combines the locked `ReservationIdentity` with a release reason.
-- `ApplyFillOperation` combines `ReservationIdentity` with one `ExecutionFill`.
-
-Each request, reservation, order, account, execution, quantity, and price role has a distinct Java
-type. Transport parsing remains in `AccountGrpcService`; `AccountReservationApplicationService`
+type. Transport parsing remains in `AccountReservationV2GrpcService`;
+`AccountReservationApplicationService`
 remains the transaction owner. Context-free invariants are checked while the command is created,
 while state-dependent invariants are checked after locking account-owned state, including identity
 equality and `fill quantity <= remaining quantity`.

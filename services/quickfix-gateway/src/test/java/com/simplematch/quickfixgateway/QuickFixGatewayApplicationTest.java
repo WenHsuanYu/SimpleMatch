@@ -52,7 +52,7 @@ class QuickFixGatewayApplicationTest {
     assertThat(runtimeProperties.ownerId()).isEqualTo("quickfix-gateway-0");
     assertThat(runtime.ownerId()).isEqualTo("quickfix-gateway-0");
     assertThat(grpcProperties.targets().riskService()).isEqualTo("dns:///risk-service:50052");
-    assertThat(kafkaProperties.topics().ordersValidated()).isEqualTo("orders.validated");
+    assertThat(kafkaProperties.topics().matchingEvents()).isEqualTo("matching.events");
     assertThat(environment.getProperty("simplematch.postgres.dsn"))
         .contains("jdbc:h2:mem:quickfixcontext");
     assertThat(environment.getProperty("spring.kafka.consumer.group-id"))

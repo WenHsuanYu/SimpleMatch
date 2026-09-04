@@ -22,7 +22,7 @@ import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.jdbc.core.JdbcTemplate;
 
-/** Wires Account's raw-hash final Matching Event consumer alongside the legacy consumer. */
+/** Wires Account's raw-hash final Matching Event consumer. */
 @Configuration(proxyBeanMethods = false)
 @EnableConfigurationProperties(AccountFinalMatchingEventConsumerProperties.class)
 public class AccountFinalMatchingEventConsumerConfiguration {

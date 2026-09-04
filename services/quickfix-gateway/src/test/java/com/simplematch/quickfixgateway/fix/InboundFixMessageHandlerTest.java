@@ -75,7 +75,7 @@ class InboundFixMessageHandlerTest {
               return new RiskSubmissionResult("internal-order", true, "", "");
             });
     final FixSessionMessageSender sender = mock(FixSessionMessageSender.class);
-    final FixMessageMapper mapper = new FixMessageMapper(FIXED_CLOCK);
+    final FixMessageMapper mapper = new FixMessageMapper();
     final InboundFixMessageHandler handler =
         QuickFixIngressTestFixture.compose(
             walAppender, riskSubmissionClient, sender, registry, mapper, FIXED_CLOCK);
@@ -191,7 +191,7 @@ class InboundFixMessageHandlerTest {
             riskSubmissionClient,
             sender,
             registry,
-            new FixMessageMapper(FIXED_CLOCK),
+            new FixMessageMapper(),
             FIXED_CLOCK);
 
     final SessionID sessionId = new SessionID("FIX.4.4", "SIMPLEMATCH", "CLIENT1");
@@ -250,7 +250,7 @@ class InboundFixMessageHandlerTest {
             riskSubmissionClient,
             sender,
             new OrderSessionRegistry(),
-            new FixMessageMapper(FIXED_CLOCK),
+            new FixMessageMapper(),
             FIXED_CLOCK);
 
     handler.handle(
@@ -289,7 +289,7 @@ class InboundFixMessageHandlerTest {
               riskSubmissionClient,
               sender,
               new OrderSessionRegistry(),
-              new FixMessageMapper(FIXED_CLOCK),
+              new FixMessageMapper(),
               FIXED_CLOCK);
 
       handler.handle(
@@ -362,7 +362,7 @@ class InboundFixMessageHandlerTest {
               riskSubmissionClient,
               sender,
               new OrderSessionRegistry(),
-              new FixMessageMapper(FIXED_CLOCK),
+              new FixMessageMapper(),
               FIXED_CLOCK);
 
       final NewOrderSingle order =
@@ -396,7 +396,7 @@ class InboundFixMessageHandlerTest {
               riskSubmissionClient,
               sender,
               new OrderSessionRegistry(),
-              new FixMessageMapper(FIXED_CLOCK),
+              new FixMessageMapper(),
               FIXED_CLOCK);
       final SessionID sessionId = new SessionID("FIX.4.4", "SIMPLEMATCH", "CLIENT1");
       final NewOrderSingle order =
@@ -425,7 +425,7 @@ class InboundFixMessageHandlerTest {
               riskSubmissionClient,
               sender,
               new OrderSessionRegistry(),
-              new FixMessageMapper(FIXED_CLOCK),
+              new FixMessageMapper(),
               FIXED_CLOCK,
               admissionGate);
 
@@ -457,7 +457,7 @@ class InboundFixMessageHandlerTest {
               riskSubmissionClient,
               sender,
               new OrderSessionRegistry(),
-              new FixMessageMapper(FIXED_CLOCK),
+              new FixMessageMapper(),
               FIXED_CLOCK,
               admissionGate);
       final SessionID sessionId = new SessionID("FIX.4.4", "SIMPLEMATCH", "CLIENT1");
@@ -486,7 +486,7 @@ class InboundFixMessageHandlerTest {
             riskSubmissionClient,
             sender,
             new OrderSessionRegistry(),
-            new FixMessageMapper(FIXED_CLOCK),
+            new FixMessageMapper(),
             FIXED_CLOCK);
 
     handler.handle(
@@ -518,7 +518,7 @@ class InboundFixMessageHandlerTest {
             riskSubmissionClient,
             sender,
             new OrderSessionRegistry(),
-            new FixMessageMapper(FIXED_CLOCK),
+            new FixMessageMapper(),
             FIXED_CLOCK);
 
     handler.handle(
@@ -547,7 +547,7 @@ class InboundFixMessageHandlerTest {
             riskSubmissionClient,
             sender,
             new OrderSessionRegistry(),
-            new FixMessageMapper(FIXED_CLOCK),
+            new FixMessageMapper(),
             FIXED_CLOCK);
 
     handler.handle(
@@ -575,7 +575,7 @@ class InboundFixMessageHandlerTest {
             riskSubmissionClient,
             sender,
             new OrderSessionRegistry(),
-            new FixMessageMapper(FIXED_CLOCK),
+            new FixMessageMapper(),
             FIXED_CLOCK);
     final NewOrderSingle order = newNewOrder("C1", "AAPL", '1', "10", "101.25", ACCOUNT_ID);
     order.removeField(Symbol.FIELD);
@@ -604,7 +604,7 @@ class InboundFixMessageHandlerTest {
             riskSubmissionClient,
             sender,
             new OrderSessionRegistry(),
-            new FixMessageMapper(FIXED_CLOCK),
+            new FixMessageMapper(),
             FIXED_CLOCK);
 
     handler.handle(
@@ -633,7 +633,7 @@ class InboundFixMessageHandlerTest {
             riskSubmissionClient,
             sender,
             new OrderSessionRegistry(),
-            new FixMessageMapper(FIXED_CLOCK),
+            new FixMessageMapper(),
             FIXED_CLOCK);
 
     final OrderCancelRequest cancel = newCancelRequest("C1", "CXL-1", ACCOUNT_ID);
@@ -662,7 +662,7 @@ class InboundFixMessageHandlerTest {
             riskSubmissionClient,
             sender,
             new OrderSessionRegistry(),
-            new FixMessageMapper(FIXED_CLOCK),
+            new FixMessageMapper(),
             FIXED_CLOCK);
 
     handler.handle(
@@ -691,7 +691,7 @@ class InboundFixMessageHandlerTest {
             riskSubmissionClient,
             sender,
             new OrderSessionRegistry(),
-            new FixMessageMapper(FIXED_CLOCK),
+            new FixMessageMapper(),
             FIXED_CLOCK);
 
     handler.handle(
@@ -720,7 +720,7 @@ class InboundFixMessageHandlerTest {
             riskSubmissionClient,
             sender,
             new OrderSessionRegistry(),
-            new FixMessageMapper(FIXED_CLOCK),
+            new FixMessageMapper(),
             FIXED_CLOCK);
 
     handler.handle(
@@ -749,7 +749,7 @@ class InboundFixMessageHandlerTest {
             riskSubmissionClient,
             sender,
             new OrderSessionRegistry(),
-            new FixMessageMapper(FIXED_CLOCK),
+            new FixMessageMapper(),
             FIXED_CLOCK);
     final Message unsupported = new Message();
     unsupported.getHeader().setString(MsgType.FIELD, "X");

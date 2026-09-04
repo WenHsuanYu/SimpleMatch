@@ -31,8 +31,8 @@ import org.springframework.context.annotation.Configuration;
 @Configuration
 public class QuickFixGatewayIntegrationConfiguration {
   @Bean
-  FixMessageMapper fixMessageMapper(Clock clock) {
-    return new FixMessageMapper(clock);
+  FixMessageMapper fixMessageMapper() {
+    return new FixMessageMapper();
   }
 
   @Bean(destroyMethod = "shutdownNow")

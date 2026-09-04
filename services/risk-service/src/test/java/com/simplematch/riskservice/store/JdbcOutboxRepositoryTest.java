@@ -4,6 +4,7 @@ import static com.simplematch.riskservice.testsupport.H2TestDatabaseUrl.uniqueRi
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
+import com.simplematch.contracts.matching.runtime.v1.MatchingCommand;
 import com.simplematch.riskservice.outbox.OutboxRecord;
 import com.simplematch.riskservice.outbox.OutboxRepository;
 import java.util.UUID;
@@ -85,12 +86,12 @@ class JdbcOutboxRepositoryTest {
   private OutboxRecord outboxRecord(String eventId) {
     return OutboxRecord.create(
         new OutboxRecord.EventInfo(eventId, 100L),
-        OutboxRecord.Routing.withPartition("orders.validated", "AAPL", 7),
+        OutboxRecord.Routing.withPartition("matching.commands", "2330", 7),
         new OutboxRecord.PayloadEnvelope(
             new byte[] {1, 2, 3},
-            "com.simplematch.contracts.orders.v1.OrderValidated",
+            MatchingCommand.getDescriptor().getFullName(),
             "{\"event_id\":\"" + eventId + "\"}"),
-        new OutboxRecord.AggregateRef("risk_submission", "O-C1"));
+        new OutboxRecord.AggregateRef("order_admission", "O-C1"));
   }
 
   private int countRows(String tableName) {

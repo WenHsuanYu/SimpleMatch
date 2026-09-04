@@ -11,7 +11,7 @@ decisions or matching order.
 - Append inbound traffic to the local write-ahead log before the first business-level
   acknowledgement.
 - Return `PendingNew` only after `risk-service` has accepted durable admission.
-- Map `matching.executions` back to outbound FIX responses for the owning session.
+- Map final `matching.events` to restart-safe outbound FIX delivery for the owning session.
 
 ## Session ownership and interruption behavior
 

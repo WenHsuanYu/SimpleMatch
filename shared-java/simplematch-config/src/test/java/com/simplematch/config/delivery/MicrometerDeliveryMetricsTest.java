@@ -10,7 +10,7 @@ class MicrometerDeliveryMetricsTest {
   void exposesStableOutcomeLabelsAndOperationalObservations() {
     final SimpleMeterRegistry registry = new SimpleMeterRegistry();
     final MicrometerDeliveryMetrics metrics = new MicrometerDeliveryMetrics(registry);
-    final DeliveryPosition position = new DeliveryPosition("matching.executions", 2, 17);
+    final DeliveryPosition position = new DeliveryPosition("matching.events", 2, 17);
 
     metrics.increment(DeliveryMetric.RETRY, "quickfix-execution-projection", position);
     metrics.observe(DeliveryMetric.CONSUMER_LAG_EVENTS, "quickfix-execution-projection", 4);
@@ -20,7 +20,7 @@ class MicrometerDeliveryMetricsTest {
                 .get("simplematch.delivery.events")
                 .tag("metric", "retry")
                 .tag("component", "quickfix-execution-projection")
-                .tag("topic", "matching.executions")
+                .tag("topic", "matching.events")
                 .tag("partition", "2")
                 .counter()
                 .count())

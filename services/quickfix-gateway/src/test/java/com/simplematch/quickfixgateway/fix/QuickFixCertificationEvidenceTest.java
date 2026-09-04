@@ -2,14 +2,9 @@ package com.simplematch.quickfixgateway.fix;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
-import com.simplematch.contracts.common.v1.EventMetadata;
-import com.simplematch.contracts.common.v1.Side;
-import com.simplematch.contracts.matching.v1.ExecutionEvent;
-import com.simplematch.contracts.matching.v1.ExecutionType;
 import com.simplematch.contracts.orders.v2.CancelOrderCommand;
 import com.simplematch.contracts.orders.v2.NewOrderCommand;
 import com.simplematch.quickfixgateway.config.QuickFixGatewayRuntime;
-import com.simplematch.quickfixgateway.kafka.MatchingExecutionConsumer;
 import com.simplematch.quickfixgateway.risk.RiskSubmissionClient;
 import com.simplematch.quickfixgateway.risk.RiskSubmissionResult;
 import com.simplematch.quickfixgateway.risk.RiskTestSupport;
@@ -96,7 +91,7 @@ class QuickFixCertificationEvidenceTest {
                     new AcceptingRiskSubmissionClient(),
                     new QuickFixSessionMessageSender(),
                     new OrderSessionRegistry(),
-                    new FixMessageMapper(FIXED_CLOCK),
+                    new FixMessageMapper(),
                     FIXED_CLOCK)),
             new QuickFixGatewayRuntime("test", acceptorConfigPath, walPath),
             new QuickFixJdbcAcceptorFactory(() -> quickFixDataSource));
@@ -176,7 +171,7 @@ class QuickFixCertificationEvidenceTest {
                     new RejectingRiskSubmissionClient(),
                     new QuickFixSessionMessageSender(),
                     new OrderSessionRegistry(),
-                    new FixMessageMapper(FIXED_CLOCK),
+                    new FixMessageMapper(),
                     FIXED_CLOCK)),
             new QuickFixGatewayRuntime("test", acceptorConfigPath, walPath),
             new QuickFixJdbcAcceptorFactory(() -> quickFixDataSource));
@@ -220,9 +215,9 @@ class QuickFixCertificationEvidenceTest {
     }
   }
 
-  @DisplayName("the public gateway certifies duplicate new, cancel, lifecycle, and WAL recovery")
+  @DisplayName("the public gateway certifies duplicate new, cancel, and WAL recovery")
   @Test
-  void publicGatewayCertifiesDuplicateCancelLifecycleAndRecovery() throws Exception {
+  void publicGatewayCertifiesDuplicateCancelAndRecovery() throws Exception {
     final Path walPath = tempDir.resolve("certification").resolve("inbound.wal");
     final IdempotentRiskSubmissionClient risk = new IdempotentRiskSubmissionClient();
     final RecordingFixSessionMessageSender sender = new RecordingFixSessionMessageSender();
@@ -237,7 +232,7 @@ class QuickFixCertificationEvidenceTest {
                   risk,
                   sender,
                   registry,
-                  new FixMessageMapper(FIXED_CLOCK),
+                  new FixMessageMapper(),
                   FIXED_CLOCK));
       adapter.onLogon(sessionId);
       adapter.fromApp(newOrder("C1", "AAPL", "10", "101.25", ACCOUNT_ID), sessionId);
@@ -248,18 +243,6 @@ class QuickFixCertificationEvidenceTest {
       assertThat(risk.cancelDecisionCount()).isEqualTo(1);
       assertThat(walAppender.readAll()).hasSize(2);
       assertThat(sender.messages()).hasSize(1);
-
-      final MatchingExecutionConsumer executionConsumer =
-          new MatchingExecutionConsumer(
-              registry, registry, new FixMessageMapper(FIXED_CLOCK), sender);
-      executionConsumer.onExecution(cancelledExecution().toByteArray());
-      assertThat(sender.messages()).hasSize(2);
-      assertThat(
-              FixMessageSnapshot.snapshot(
-                  sender.messages().getLast(), 35, 37, 17, 150, 39, 54, 151, 14, 6, 11, 41, 55))
-          .isEqualTo(
-              "35=8|37=O-C1|17=E-CXL-1|150=4|39=4|54=1|151=10|14=0|6=0|"
-                  + "11=CXL-1|41=C1|55=AAPL");
 
       final WalReplayService replayService =
           new WalReplayService(walAppender, RiskTestSupport.submitter(risk));
@@ -277,26 +260,6 @@ class QuickFixCertificationEvidenceTest {
     cancel.setString(Account.FIELD, account);
     cancel.setString(TransactTime.FIELD, "20240327-08:09:10.123");
     return cancel;
-  }
-
-  private ExecutionEvent cancelledExecution() {
-    return ExecutionEvent.newBuilder()
-        .setMetadata(
-            EventMetadata.newBuilder()
-                .setSchemaVersion("v1")
-                .setEventId("evt-cancelled")
-                .setCreatedAtUnixMs(1711526950123L)
-                .setSourceService("matching-engine")
-                .build())
-        .setExecId("E-CXL-1")
-        .setOrderId("O-C1")
-        .setSymbol("AAPL")
-        .setExecutionType(ExecutionType.EXECUTION_TYPE_CANCELED)
-        .setClOrdId("C1")
-        .setOrigClOrdId("C1")
-        .setCancelClOrdId("CXL-1")
-        .setSide(Side.SIDE_BUY)
-        .build();
   }
 
   private Path writeAcceptorConfig(int port, Path dictionaryPath) throws IOException {

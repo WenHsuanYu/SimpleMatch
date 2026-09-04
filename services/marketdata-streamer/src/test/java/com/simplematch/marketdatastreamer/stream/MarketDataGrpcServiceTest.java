@@ -3,7 +3,7 @@ package com.simplematch.marketdatastreamer.stream;
 import static org.assertj.core.api.Assertions.assertThat;
 
 import com.simplematch.contracts.marketdata.runtime.v1.MarketDataSnapshot;
-import com.simplematch.contracts.marketdata.v1.SubscribeMarketDataRequest;
+import com.simplematch.contracts.marketdata.runtime.v1.SubscribeMarketDataRequest;
 import io.grpc.stub.StreamObserver;
 import java.util.Set;
 import java.util.concurrent.atomic.AtomicBoolean;

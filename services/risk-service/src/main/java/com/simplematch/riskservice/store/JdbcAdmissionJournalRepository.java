@@ -64,13 +64,14 @@ public class JdbcAdmissionJournalRepository implements AdmissionJournalRepositor
             INSERT INTO risk_service.admission_journal (
               command_id, order_id, account_id, symbol, venue_mic, side, quantity,
               limit_price_units, order_type, tif, trading_day, sender_comp_id,
-              target_comp_id, cl_ord_id, routing_snapshot_id, routing_policy_id,
+              target_comp_id, cl_ord_id, routing_snapshot_id,
               artifact_trading_day, artifact_content_sha256, routing_algorithm_version,
               routing_partition,
               state,
               reservation_id, reason_code, reason_detail, version,
               created_at_unix_ms, updated_at_unix_ms)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?,
+                    ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """
                 + suffix,
             identity.commandId().value(),
@@ -88,7 +89,6 @@ public class JdbcAdmissionJournalRepository implements AdmissionJournalRepositor
             fixIdentity.targetCompId().value(),
             fixIdentity.clOrdId().value(),
             command.routing().snapshotId().value(),
-            entry.route().routingPolicyId(),
             entry.route().artifactIdentity() == null
                 ? null
                 : entry.route().artifactIdentity().tradingDay(),
@@ -145,7 +145,7 @@ public class JdbcAdmissionJournalRepository implements AdmissionJournalRepositor
         """
         SELECT command_id, order_id, account_id, symbol, venue_mic, side, quantity,
           limit_price_units, order_type, tif, trading_day, sender_comp_id, target_comp_id,
-          cl_ord_id, routing_snapshot_id, routing_policy_id, artifact_trading_day,
+          cl_ord_id, routing_snapshot_id, artifact_trading_day,
           artifact_content_sha256, routing_algorithm_version, routing_partition, state, reservation_id,
           reason_code, reason_detail, version, created_at_unix_ms, updated_at_unix_ms
         FROM risk_service.admission_journal

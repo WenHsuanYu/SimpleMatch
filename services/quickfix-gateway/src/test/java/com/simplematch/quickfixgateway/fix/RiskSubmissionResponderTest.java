@@ -25,9 +25,7 @@ import com.simplematch.quickfixgateway.wal.WalRecord;
 import com.simplematch.quickfixgateway.wal.WalRecoveryJournal;
 import com.simplematch.quickfixgateway.wal.WalRecoveryState;
 import java.nio.file.Path;
-import java.time.Clock;
 import java.time.Instant;
-import java.time.ZoneOffset;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
@@ -40,7 +38,6 @@ import quickfix.field.Text;
 
 class RiskSubmissionResponderTest {
   private static final Instant NOW = Instant.parse("2024-03-27T08:09:10.123Z");
-  private static final Clock CLOCK = Clock.fixed(NOW, ZoneOffset.UTC);
   private static final SessionID SESSION_ID =
       new SessionID("FIX.4.4", "SIMPLEMATCH", "CLIENT1");
   private static final String ACCOUNT_ID = "0194a8f0-7c77-7b38-9e2d-2a5fdd0f7c13";
@@ -138,7 +135,7 @@ class RiskSubmissionResponderTest {
       FixSessionMessageSender sender,
       WalRecoveryJournal recoveryJournal) {
     return new RiskSubmissionResponder(
-        RiskTestSupport.submitter(risk), sender, new FixMessageMapper(CLOCK), recoveryJournal);
+        RiskTestSupport.submitter(risk), sender, new FixMessageMapper(), recoveryJournal);
   }
 
   private WalRecoveryJournal recoveryJournal() {

@@ -117,8 +117,6 @@ public final class OrderAdmissionGrpcService
                   .setOrderId(result.orderId().toString())
                   .setAccountId(result.accountId().toString())
                   .setRoutingSnapshotId(result.routingSnapshotId())
-                  .setRoutingPolicyId(
-                      result.routingPolicyId() == null ? "" : result.routingPolicyId().toString())
                   .setRoutingPartition(
                       result.routingPartition() == null ? 0 : result.routingPartition())
                   .build())

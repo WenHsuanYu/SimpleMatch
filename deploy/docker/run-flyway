@@ -38,7 +38,6 @@ fi
 case "$service_id" in
   account-service) task="accountServiceFlywayMigrate" ;;
   market-data-projection) task="marketDataProjectionFlywayMigrate" ;;
-  marketdata-publisher) task="marketdataPublisherFlywayMigrate" ;;
   persistence) task="persistenceFlywayMigrate" ;;
   query-service) task="queryServiceFlywayMigrate" ;;
   quickfix-gateway) task="quickFixGatewayFlywayMigrate" ;;

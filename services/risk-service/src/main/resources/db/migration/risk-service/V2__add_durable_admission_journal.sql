@@ -42,6 +42,3 @@ CREATE TABLE risk_service.cdc_delivery_lag
     updated_at_unix_ms BIGINT NOT NULL,
     CONSTRAINT ck_cdc_delivery_lag_non_negative CHECK (lag_events >= 0 AND updated_at_unix_ms >= 0)
 );
-
-INSERT INTO risk_service.cdc_delivery_lag (metric_name, lag_events, updated_at_unix_ms)
-VALUES ('orders.validated', 0, 0);

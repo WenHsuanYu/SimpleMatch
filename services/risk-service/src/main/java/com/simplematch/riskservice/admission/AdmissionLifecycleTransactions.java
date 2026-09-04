@@ -23,7 +23,7 @@ public final class AdmissionLifecycleTransactions {
    * @param journal durable Admission journal adapter
    * @param outbox durable Admission outbox adapter
    * @param events terminal Admission event factory
-   * @param routingPolicyResolver local authoritative Routing Policy selector
+   * @param routingPolicyResolver startup-loaded daily artifact route selector
    * @param clock source of journal and event timestamps
    * @param transactionTemplate bounded local transaction template
    */

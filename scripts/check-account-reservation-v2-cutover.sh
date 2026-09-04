@@ -13,7 +13,6 @@ production_caller_paths=(
   services/query-service/src/main
 )
 
-# Account keeps its v1 server for the deferred #119 deletion, but no production caller may use it.
 if rg -n \
   --glob '*.java' \
   --glob '*.kt' \
@@ -22,6 +21,19 @@ if rg -n \
   'com\.simplematch\.contracts\.account\.v1|AccountServiceGrpc\.new' \
   "${production_caller_paths[@]}"; then
   echo "A non-Account production path still calls the Account v1 RPC." >&2
+  exit 1
+fi
+
+if rg -n \
+  --glob '*.java' \
+  'AccountGrpcService|com\.simplematch\.contracts\.account\.v1' \
+  services/account-service/src/main; then
+  echo "Account production source still exposes the retired v1 RPC." >&2
+  exit 1
+fi
+
+if [[ -e proto/account_service.proto ]]; then
+  echo "The retired Account v1 protobuf contract still exists." >&2
   exit 1
 fi
 

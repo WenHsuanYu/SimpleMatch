@@ -1,17 +1,3 @@
-ALTER TABLE risk_service.risk_submissions
-    DROP CONSTRAINT ck_risk_submissions_command_type;
-
-ALTER TABLE risk_service.risk_submissions
-    ADD CONSTRAINT ck_risk_submissions_command_type
-        CHECK (
-            CASE command_type
-                WHEN 'COMMAND_TYPE_UNSPECIFIED' THEN TRUE
-                WHEN 'COMMAND_TYPE_NEW' THEN TRUE
-                WHEN 'COMMAND_TYPE_CANCEL' THEN TRUE
-                ELSE FALSE
-                END
-            );
-
 ALTER TABLE risk_service.admission_journal
     DROP CONSTRAINT ck_admission_side;
 
@@ -38,4 +24,3 @@ ALTER TABLE risk_service.admission_journal
                 ELSE FALSE
                 END
             );
-

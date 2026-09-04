@@ -55,12 +55,6 @@ case "$service_name" in
       "market_data_events_outbox_pending_idx" \
       "SELECT event_id FROM market_data_projection.market_data_events_outbox WHERE published_at_unix_ms IS NULL ORDER BY created_at_unix_ms LIMIT 1"
     ;;
-  marketdata-publisher)
-    assert_index_plan \
-      "routing policy source snapshot lookup" \
-      "routing_policies_source_snapshot_idx" \
-      "SELECT routing_policy_id FROM marketdata_publisher.routing_policies WHERE source_market_snapshot_id = '00000000-0000-0000-0000-000000000000'"
-    ;;
   query-service)
     assert_index_plan \
       "query order history by account" \
@@ -77,9 +71,9 @@ case "$service_name" in
     ;;
   risk-service)
     assert_index_plan \
-      "risk submission business-key lookup" \
-      "risk_submissions_business_key_key" \
-      "SELECT request_id FROM risk_service.risk_submissions WHERE sender_comp_id = 'sender' AND target_comp_id = 'target' AND trading_day = DATE '2026-07-27' AND command_type = 'COMMAND_TYPE_NEW' AND cl_ord_id = 'clord' AND business_key_surrogated = FALSE"
+      "risk admission business-key lookup" \
+      "uq_admission_business_key" \
+      "SELECT command_id FROM risk_service.admission_journal WHERE sender_comp_id = 'sender' AND target_comp_id = 'target' AND trading_day = DATE '2026-07-27' AND cl_ord_id = 'clord'"
     assert_index_plan \
       "risk outbox chronological CDC scan" \
       "idx_outbox_created_at" \

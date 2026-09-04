@@ -100,6 +100,6 @@ class CdcLagBackpressurePolicyTest {
   private CdcLagBackpressurePolicy policy(CdcLagReader reader, long maximumLag) {
 
     return new CdcLagBackpressurePolicy(
-        reader, "orders.validated", maximumLag, MAXIMUM_METRIC_AGE, CLOCK);
+        reader, "matching.commands", maximumLag, MAXIMUM_METRIC_AGE, CLOCK);
   }
 }
