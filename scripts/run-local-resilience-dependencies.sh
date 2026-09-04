@@ -235,6 +235,7 @@ validate_namespace() {
 
 validate_cluster_preflight() {
   local nodes_json current_context worker_count ready_workers control_plane_count
+  local worker_nodes_json worker_index node_json node_name ready_state
 
   current_context="$(run_bounded kubectl config current-context 2>/dev/null || true)"
   [[ "$current_context" == "$context" ]] ||
@@ -242,8 +243,20 @@ validate_cluster_preflight() {
   run_bounded kind get clusters | grep -Fxq "$cluster_name" ||
     die "canonical kind cluster is not available: $cluster_name"
   nodes_json="$(kube get nodes -o json)" || die 'could not read canonical kind nodes'
-  worker_count="$(jq '[.items[] | select(.metadata.labels["simplematch.io/node-pool"] == "local-resilience")] | length' <<<"$nodes_json")"
-  ready_workers="$(jq '[.items[] | select(.metadata.labels["simplematch.io/node-pool"] == "local-resilience") | select(any(.status.conditions[]?; .type == "Ready" and .status == "True"))] | length' <<<"$nodes_json")"
+  worker_nodes_json="$(jq -c '[.items[] | select(.metadata.labels["simplematch.io/node-pool"] == "local-resilience")]' <<<"$nodes_json")" ||
+    die 'canonical kind node JSON is invalid'
+  worker_count="$(jq 'length' <<<"$worker_nodes_json")"
+  ready_workers=0
+  for ((worker_index = 0; worker_index < worker_count; worker_index++)); do
+    node_json="$(jq -c --argjson index "$worker_index" '.[$index]' <<<"$worker_nodes_json")" ||
+      die 'canonical worker JSON is invalid'
+    node_name="$(jq -er '.metadata.name // error("node name is missing")' <<<"$node_json")" ||
+      die 'canonical worker JSON is missing a node name'
+    if ! ready_state="$(simplematch_kind_node_readiness_state "$node_json")"; then
+      die "worker readiness JSON is invalid: $node_name"
+    fi
+    [[ "$ready_state" == true ]] && ((ready_workers += 1))
+  done
   control_plane_count="$(jq '[.items[] | select(.metadata.labels["node-role.kubernetes.io/control-plane"] == "")] | length' <<<"$nodes_json")"
   [[ "$(jq '.items | length' <<<"$nodes_json")" == 4 && "$worker_count" == 3 &&
     "$ready_workers" == 3 && "$control_plane_count" == 1 ]] ||
@@ -294,10 +307,17 @@ assert_worker_node() {
 }
 
 wait_for_node_ready() {
-  local node="$1" ready
+  local node="$1" node_json ready
   while true; do
     check_deadline
-    ready="$(kube get node "$node" -o json 2>/dev/null | jq -r 'any(.status.conditions[]?; .type == "Ready" and .status == "True")' 2>/dev/null || true)"
+    node_json="$(kube get node "$node" -o json 2>/dev/null || true)"
+    if [[ -z "$node_json" ]]; then
+      bounded_sleep 2
+      continue
+    fi
+    if ! ready="$(simplematch_kind_node_readiness_state "$node_json")"; then
+      die "worker readiness JSON is invalid: $node"
+    fi
     [[ "$ready" == true ]] && return 0
     bounded_sleep 2
   done

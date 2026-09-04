@@ -21,6 +21,7 @@ ready_false='{"status":{"conditions":[{"type":"Ready","status":"False"}]}}'
 ready_unknown='{"status":{"conditions":[{"type":"Ready","status":"Unknown"}]}}'
 ready_missing='{"status":{"conditions":[{"type":"MemoryPressure","status":"False"}]}}'
 ready_ambiguous='{"status":{"conditions":[{"type":"Ready","status":"False"},{"type":"Ready","status":"Unknown"}]}}'
+ready_conflicting='{"status":{"conditions":[{"type":"Ready","status":"True"},{"type":"Ready","status":"Unknown"}]}}'
 ready_unsupported='{"status":{"conditions":[{"type":"Ready","status":"Maybe"}]}}'
 [[ "$(simplematch_kind_node_readiness_state "$ready_true")" == true ]] ||
   fail 'Ready=True was not parsed as healthy'
@@ -33,6 +34,9 @@ if simplematch_kind_node_readiness_state "$ready_missing" >/dev/null 2>&1; then
 fi
 if simplematch_kind_node_readiness_state "$ready_ambiguous" >/dev/null 2>&1; then
   fail 'ambiguous Ready condition unexpectedly passed'
+fi
+if simplematch_kind_node_readiness_state "$ready_conflicting" >/dev/null 2>&1; then
+  fail 'conflicting Ready conditions unexpectedly passed'
 fi
 if simplematch_kind_node_readiness_state "$ready_unsupported" >/dev/null 2>&1; then
   fail 'unsupported Ready status unexpectedly passed'
@@ -229,6 +233,8 @@ grep -Fq 'run_bounded' "$runtime_script" ||
   fail 'dependency diagnostic lacks its bounded command seam'
 grep -Fq 'simplematch_kind_node_readiness_state' "$runtime_script" ||
   fail 'dependency diagnostic does not use the shared node readiness parser'
+[[ "$(grep -Fc "simplematch_kind_node_readiness_state \"\$node_json\"" "$runtime_script")" -ge 3 ]] ||
+  fail 'all node readiness callers must use the shared strict parser'
 grep -Fq 'jq -er' "$readiness_lib" ||
   fail 'dependency diagnostic must fail closed on malformed node readiness evidence'
 grep -Fq 'Ready condition is missing' "$readiness_lib" ||
