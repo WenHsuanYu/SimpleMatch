@@ -174,6 +174,28 @@ The Kubernetes CDC observer reads the effective `maximum-metric-age` from the de
 `risk-service-config` ConfigMap rather than accepting a second age setting. A baseline older than
 that runtime bound, or updated in the future, fails closed before the connector is paused.
 
+## Local dependency resilience harness
+
+These variables belong only to the focused PostgreSQL, Redis, and Kafka recovery diagnostic. They
+are command-line harness inputs, not Spring properties or workload configuration:
+
+- `SIMPLEMATCH_RESILIENCE_NAMESPACE` optionally selects an existing disposable namespace owned by
+  `local-resilience` or `local-production-like-certification`; the command still validates its
+  ownership labels and refuses an unowned or missing namespace.
+- `SIMPLEMATCH_RESILIENCE_NAMESPACE_RUN_ID` optionally requires an exact match with the selected
+  namespace's `simplematch.io/run-id` label. It has no default so an omitted value uses the label
+  read during the ownership preflight.
+- `SIMPLEMATCH_RESILIENCE_DEPENDENCY_EVIDENCE_DIR` optionally selects an empty output directory;
+  otherwise the diagnostic writes one report below
+  `out/resilience/dependencies-<diagnostic-run-id>/`.
+
+The focused command also accepts `--cluster`, `--context`, `--fault-mode`, `--deadline-seconds`,
+and `--evidence-dir` as explicit invocation options. The default canonical cluster is
+`simplematch-live`, the default context is `kind-simplematch-live`, and the deadline may not exceed
+300 seconds. It never applies manifests or deletes the caller namespace; only a run-owned Kafka
+marker topic is cleaned after a successful Kafka check. Its report is diagnostic evidence and cannot
+be promoted to the parent #151 aggregate certification verdict.
+
 ## Change Policy
 
 Configuration is startup-only in staging and production. Apply a validated ConfigMap or Secret

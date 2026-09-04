@@ -138,6 +138,7 @@ resilience_dependency_report_is_valid() {
           type == "array" and length == 3 and
           ([.[].node_id] | sort) == [0, 1, 2] and
           ([.[].node] | unique | length) == 3 and
+          ([.[].worker_slot] | sort) == ["0", "1", "2"] and
           all(.[];
             (.pod == ("kafka-" + (.node_id | tostring))) and
             (.pod_uid | text) and (.node | text) and (.worker_slot | text) and
@@ -171,9 +172,14 @@ resilience_dependency_report_is_valid() {
           (.marker.committed_before == true) and (.marker.preserved_after == true) and
           (.marker.record_count_before | type == "number" and . >= 1) and
           (.marker.record_count_after | type == "number" and . >= 1) and
+          (.topic_contract | type == "object") and (.topic_contract.verified == true) and
+          (.topic_contract.topics == ["matching.commands", "matching.events", "account.lifecycle", "marketdata.events", "simplematch-connect-configs", "simplematch-connect-offsets", "simplematch-connect-status"]) and
+          (.topic_contract.producer_acks == "all") and
+          (.topic_contract.producer_idempotence == true) and
           (.recovery | type == "object") and (.recovery.ready == true) and
           (.recovery.rejoined == true) and (.recovery.formatted_again == false) and
-          (.recovery.catch_up_complete == true)
+          (.recovery.catch_up_complete == true) and
+          (.recovery.catch_up_probe == "log-dirs-offset-lag-zero")
         else (.failure_reason | text) end)
       ' "$report_path" >/dev/null
       ;;

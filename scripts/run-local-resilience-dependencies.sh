@@ -41,6 +41,7 @@ marker_topic_created=false
 kafka_marker_pod=""
 marker_key=""
 marker_value=""
+postgres_marker_metric=""
 emergency_cleanup_running=false
 
 usage() {
@@ -386,7 +387,8 @@ run_postgresql() {
   capture_postgres_identity before
   target_pod="$(jq -r '.pod' <<<"$before")"
   target_node="$(jq -r '.node' <<<"$before")"
-  sql="CREATE TABLE IF NOT EXISTS simplematch_local_resilience_marker (run_id text PRIMARY KEY, created_at timestamptz NOT NULL DEFAULT now()); INSERT INTO simplematch_local_resilience_marker(run_id) VALUES ('$marker_value') ON CONFLICT (run_id) DO NOTHING; SELECT count(*) FROM simplematch_local_resilience_marker WHERE run_id = '$marker_value';"
+  postgres_marker_metric="local_resilience_${run_id}"
+  sql="INSERT INTO risk_service.cdc_delivery_lag(metric_name, lag_events, updated_at_unix_ms) VALUES ('$postgres_marker_metric', 1, (EXTRACT(EPOCH FROM clock_timestamp()) * 1000)::bigint) ON CONFLICT (metric_name) DO UPDATE SET lag_events = EXCLUDED.lag_events, updated_at_unix_ms = EXCLUDED.updated_at_unix_ms; SELECT count(*) FROM risk_service.cdc_delivery_lag WHERE metric_name = '$postgres_marker_metric' AND lag_events = 1;"
   marker_before="$(postgres_query "$sql" | tail -n 1 | tr -d '[:space:]')" || die 'could not write PostgreSQL durable marker'
   [[ "$marker_before" == 1 ]] || die 'PostgreSQL durable marker was not committed'
   durable_before=true
@@ -396,7 +398,7 @@ run_postgresql() {
   [[ "$fault_mode" == pod-restart ]] && previous_uid="$(jq -r '.pod_uid' <<<"$before")"
   wait_for_postgres_pod_ready "$previous_uid"
   capture_postgres_identity after
-  marker_after="$(postgres_query "SELECT count(*) FROM simplematch_local_resilience_marker WHERE run_id = '$marker_value';" | tr -d '[:space:]')" ||
+  marker_after="$(postgres_query "SELECT count(*) FROM risk_service.cdc_delivery_lag WHERE metric_name = '$postgres_marker_metric' AND lag_events = 1;" | tr -d '[:space:]')" ||
     die 'could not read PostgreSQL durable marker after recovery'
   durable_after=false
   [[ "$marker_after" == 1 ]] && durable_after=true
@@ -414,7 +416,7 @@ run_postgresql() {
   fi
   report_json="$(jq -n \
     --argjson before "$before" --argjson after "$after" \
-    --argjson worker_stop "$worker_json" --arg marker "$marker_value" \
+    --argjson worker_stop "$worker_json" --arg marker "$postgres_marker_metric" \
     --argjson durable_before "$durable_before" --argjson durable_after "$durable_after" \
     --arg cluster "$cluster_name" --arg context "$context" --arg namespace "$namespace" \
     --arg run_id "$run_id" --arg fault_mode "$fault_mode" --argjson deadline "$deadline_seconds" \
@@ -565,6 +567,67 @@ kafka_marker_count() {
   grep -Fxc "$marker_key|$marker_value" <<<"$output" || true
 }
 
+kafka_topic_contract_check() {
+  local pod="$1" topic="$2" partitions="$3" cleanup_policy="$4" retention_ms="$5"
+  local description configuration
+
+  description="$(kafka_command "$pod" /opt/kafka/bin/kafka-topics.sh \
+    --bootstrap-server kafka:9092 --describe --topic "$topic")" ||
+    die "could not describe Kafka topic $topic"
+  grep -Fq "PartitionCount: $partitions" <<<"$description" ||
+    die "Kafka topic $topic has the wrong partition count"
+  grep -Fq 'ReplicationFactor: 3' <<<"$description" ||
+    die "Kafka topic $topic has the wrong replication factor"
+  grep -Fq 'unclean.leader.election.enable=false' <<<"$description" ||
+    die "Kafka topic $topic permits unclean leader election"
+
+  configuration="$(kafka_command "$pod" /opt/kafka/bin/kafka-configs.sh \
+    --bootstrap-server kafka:9092 --entity-type topics --entity-name "$topic" \
+    --describe --all)" || die "could not read Kafka topic configuration $topic"
+  grep -Fq "cleanup.policy=$cleanup_policy" <<<"$configuration" ||
+    die "Kafka topic $topic has the wrong cleanup policy"
+  grep -Fq 'min.insync.replicas=2' <<<"$configuration" ||
+    die "Kafka topic $topic has the wrong minimum ISR"
+  grep -Fq "retention.ms=$retention_ms" <<<"$configuration" ||
+    die "Kafka topic $topic has the wrong retention"
+}
+
+verify_kafka_topic_contracts() {
+  local pod="$1" topic partitions cleanup_policy retention_ms
+  while IFS=$'\t' read -r topic partitions cleanup_policy retention_ms; do
+    [[ -n "$topic" ]] || continue
+    check_deadline
+    kafka_topic_contract_check "$pod" "$topic" "$partitions" "$cleanup_policy" "$retention_ms"
+  done <<'EOF_TOPIC_CONTRACTS'
+matching.commands	15	delete	2592000000
+matching.events	15	delete	2592000000
+account.lifecycle	15	delete	2592000000
+marketdata.events	15	delete	2592000000
+simplematch-connect-configs	1	compact	2592000000
+simplematch-connect-offsets	25	compact	2592000000
+simplematch-connect-status	3	compact	2592000000
+EOF_TOPIC_CONTRACTS
+}
+
+kafka_marker_topic_contract_check() {
+  local pod="$1"
+  kafka_topic_contract_check "$pod" "$marker_topic" 1 delete 600000
+}
+
+kafka_target_catch_up() {
+  local pod="$1" raw json
+  raw="$(kafka_command "$pod" /opt/kafka/bin/kafka-log-dirs.sh \
+    --bootstrap-server kafka:9092 --describe --broker-list 1 \
+    --topic-list "$marker_topic" 2>/dev/null || true)"
+  json="$(sed -n '/^{/,$p' <<<"$raw")"
+  jq -e --arg partition "${marker_topic}-0" '
+    any(.brokers[]?;
+      (.broker | tostring) == "1" and
+      any(.logDirs[]?.partitions[]?;
+        .partition == $partition and .offsetLag == 0 and .isFuture == false))
+  ' <<<"$json" >/dev/null
+}
+
 kafka_ready_brokers_excluding() {
   local excluded_node="$1"
   kns get pods -l app.kubernetes.io/name=kafka,app.kubernetes.io/component=broker -o json |
@@ -590,9 +653,11 @@ create_kafka_marker() {
   [[ "$created" == true ]] || die "could not create Kafka marker topic $marker_topic"
   marker_topic_created=true
   kafka_marker_pod="$pod"
+  kafka_marker_topic_contract_check "$pod"
   printf '%s|%s\n' "$marker_key" "$marker_value" |
     kns exec -i "$pod" -c kafka -- /opt/kafka/bin/kafka-console-producer.sh \
       --bootstrap-server kafka:9092 --topic "$marker_topic" \
+      --producer-property acks=all --producer-property enable.idempotence=true \
       --property parse.key=true --property key.separator='|' >/dev/null ||
     die 'could not commit Kafka marker record'
   for _ in $(seq 1 30); do
@@ -620,13 +685,14 @@ delete_kafka_marker() {
 run_kafka() {
   local before after target_pod target_node marker_count_before marker_count_after
   local isr_before isr_during isr_after available_during worker_json report_json
-  local target_before target_after previous_uid=""
+  local target_before target_after previous_uid="" catch_up_complete=false
   wait_for_kafka_set_ready ""
   capture_kafka_set before
   target_pod=kafka-1
   target_before="$(jq -e --arg pod "$target_pod" '.[] | select(.pod == $pod)' <<<"$before")" ||
     die 'Kafka target broker kafka-1 is missing from baseline'
   target_node="$(jq -r '.node' <<<"$target_before")"
+  verify_kafka_topic_contracts "$(jq -r '.[0].pod' <<<"$before")"
   create_kafka_marker "$(jq -r '.[0].pod' <<<"$before")"
   marker_count_before="$(kafka_marker_count "$(jq -r '.[0].pod' <<<"$before")")"
   [[ "$marker_count_before" =~ ^[1-9][0-9]*$ ]] || die 'Kafka marker count before fault is invalid'
@@ -661,6 +727,15 @@ run_kafka() {
   [[ "$isr_after" == 3 ]] || die "Kafka marker topic ISR after recovery is $isr_after, expected 3"
   marker_count_after="$(kafka_marker_count "$(jq -r '.[0].pod' <<<"$after")")"
   [[ "$marker_count_after" =~ ^[1-9][0-9]*$ ]] || die 'Kafka marker record disappeared after recovery'
+  for _ in $(seq 1 15); do
+    check_deadline
+    if kafka_target_catch_up "$(jq -r '.[0].pod' <<<"$after")"; then
+      catch_up_complete=true
+      break
+    fi
+    sleep 2
+  done
+  [[ "$catch_up_complete" == true ]] || die 'Kafka target broker catch-up was not observed'
   delete_kafka_marker "$(jq -r '.[0].pod' <<<"$after")"
   if [[ "$fault_mode" == worker-stop ]]; then
     worker_json="$(worker_stop_evidence_json)"
@@ -673,7 +748,8 @@ run_kafka() {
     --argjson worker_stop "$worker_json" \
     --argjson available_during "$available_during" --argjson isr_before "$isr_before" \
     --argjson isr_after "$isr_after" --argjson marker_count_before "$marker_count_before" \
-    --argjson marker_count_after "$marker_count_after" --arg topic "$marker_topic" --arg key "$marker_key" \
+    --argjson marker_count_after "$marker_count_after" --argjson catch_up_complete "$catch_up_complete" \
+    --arg topic "$marker_topic" --arg key "$marker_key" \
     --arg cluster "$cluster_name" --arg context "$context" --arg namespace "$namespace" \
     --arg run_id "$run_id" --arg fault_mode "$fault_mode" --argjson deadline "$deadline_seconds" \
     '{schema_version:1,profile:"dependency-recovery",component:"kafka",status:"PASSED",
@@ -684,7 +760,8 @@ run_kafka() {
         isr_after:$isr_after,restored:true},
       marker:{topic:$topic,key:$key,committed_before:true,preserved_after:true,
         record_count_before:$marker_count_before,record_count_after:$marker_count_after},
-      recovery:{ready:true,rejoined:true,formatted_again:false,catch_up_complete:true},
+      topic_contract:{verified:true,topics:["matching.commands", "matching.events", "account.lifecycle", "marketdata.events", "simplematch-connect-configs", "simplematch-connect-offsets", "simplematch-connect-status"],producer_acks:"all",producer_idempotence:true},
+      recovery:{ready:true,rejoined:true,formatted_again:false,catch_up_complete:$catch_up_complete,catch_up_probe:"log-dirs-offset-lag-zero"},
       failure_reason:null,claim_boundary:["local Kafka RF3 committed-marker recovery after one worker stop"]}')"
   printf '%s\n' "$report_json" >"$report_path"
   resilience_dependency_report_is_passed kafka "$report_path" || die 'Kafka report failed its evidence contract'

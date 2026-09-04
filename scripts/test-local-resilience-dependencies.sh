@@ -124,7 +124,8 @@ jq -n --argjson worker_stop "$worker_stop" '
     worker_stop: $worker_stop,
     quorum: {ready_before:true, available_during:2, isr_before:3, isr_after:3, restored:true},
     marker: {topic:"simplematch-resilience-run-1",key:"marker-1",committed_before:true,preserved_after:true,record_count_before:1,record_count_after:1},
-    recovery: {ready:true, rejoined:true, formatted_again:false, catch_up_complete:true},
+    topic_contract: {verified:true, topics:["matching.commands", "matching.events", "account.lifecycle", "marketdata.events", "simplematch-connect-configs", "simplematch-connect-offsets", "simplematch-connect-status"], producer_acks:"all", producer_idempotence:true},
+    recovery: {ready:true, rejoined:true, formatted_again:false, catch_up_complete:true, catch_up_probe:"log-dirs-offset-lag-zero"},
     failure_reason: null,
     claim_boundary: ["local Kafka RF3 committed-marker recovery after one worker stop"]
   }
@@ -138,6 +139,14 @@ fi
 jq 'del(.worker_stop)' "$kafka_report" >"$fixture_dir/kafka-missing-worker-evidence.json"
 if resilience_dependency_report_is_passed kafka "$fixture_dir/kafka-missing-worker-evidence.json"; then
   fail 'Kafka missing worker evidence unexpectedly passed'
+fi
+jq '.recovery.catch_up_probe = "ready-only"' "$kafka_report" >"$fixture_dir/kafka-unobserved-catch-up.json"
+if resilience_dependency_report_is_passed kafka "$fixture_dir/kafka-unobserved-catch-up.json"; then
+  fail 'Kafka unobserved catch-up unexpectedly passed'
+fi
+jq '.brokers_after[2].worker_slot = "0"' "$kafka_report" >"$fixture_dir/kafka-duplicate-worker-slot.json"
+if resilience_dependency_report_is_passed kafka "$fixture_dir/kafka-duplicate-worker-slot.json"; then
+  fail 'Kafka duplicate worker slot unexpectedly passed'
 fi
 
 unsupported="$fixture_dir/unsupported.json"
@@ -155,6 +164,13 @@ grep -Fq 'simplematch.io/lifecycle' "$runtime_script" || fail 'runtime diagnosti
 grep -Fq 'PVC/PV' "$runtime_script" || fail 'runtime diagnostic lacks storage continuity guard'
 grep -Fq 'container identity' "$runtime_script" || fail 'runtime diagnostic lacks worker identity guard'
 grep -Fq 'wait_for_kafka_set_ready ""' "$runtime_script" || fail 'runtime diagnostic lacks a stable Kafka baseline wait'
+if grep -Fq 'CREATE TABLE' "$runtime_script"; then
+  fail 'dependency diagnostic must not perform runtime PostgreSQL DDL'
+fi
+grep -Fq 'risk_service.cdc_delivery_lag' "$runtime_script" || fail 'PostgreSQL marker must use a Flyway-owned table'
+grep -Fq 'kafka-log-dirs.sh' "$runtime_script" || fail 'Kafka diagnostic lacks a follower catch-up probe'
+grep -Fq -- '--producer-property acks=all' "$runtime_script" || fail 'Kafka marker producer lacks a durable acknowledgement contract'
+grep -Fq 'matching.commands' "$runtime_script" || fail 'Kafka diagnostic lacks topic contract verification'
 if grep -Fq 'kubectl delete namespace' "$runtime_script"; then
   fail 'dependency diagnostic must not delete the caller namespace'
 fi
