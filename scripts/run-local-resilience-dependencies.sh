@@ -767,7 +767,7 @@ kafka_ready_brokers_excluding() {
 }
 
 create_kafka_marker() {
-  local pod="$1" created=false topics
+  local pod="$1" created=false topics topics_after
   topics="$(kafka_command "$pod" /opt/kafka/bin/kafka-topics.sh \
     --bootstrap-server kafka:9092 --list)" ||
     die 'could not list Kafka topics before marker creation'
@@ -781,6 +781,12 @@ create_kafka_marker() {
       --config cleanup.policy=delete --config retention.ms=600000 --config min.insync.replicas=2 >/dev/null 2>&1; then
       created=true
       break
+    fi
+    topics_after="$(kafka_command "$pod" /opt/kafka/bin/kafka-topics.sh \
+      --bootstrap-server kafka:9092 --list)" ||
+      die 'could not resolve Kafka marker creation outcome'
+    if grep -Fxq "$marker_topic" <<<"$topics_after"; then
+      die "Kafka marker creation outcome is ambiguous; topic exists without proven ownership: $marker_topic"
     fi
     bounded_sleep 2
   done

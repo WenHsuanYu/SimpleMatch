@@ -225,6 +225,10 @@ grep -Fq 'could not list Kafka topics before marker creation' "$runtime_script" 
 if grep -Fq -- '--create --if-not-exists' "$runtime_script"; then
   fail 'Kafka marker creation must reject a topic-created race instead of adopting it'
 fi
+grep -Fq 'could not resolve Kafka marker creation outcome' "$runtime_script" ||
+  fail 'Kafka marker creation must resolve uncertain command side effects'
+grep -Fq 'Kafka marker creation outcome is ambiguous' "$runtime_script" ||
+  fail 'Kafka marker creation must fail closed when ownership is uncertain'
 grep -Fq 'kafka-log-dirs.sh' "$runtime_script" || fail 'Kafka diagnostic lacks a follower catch-up probe'
 grep -Fq -- '--producer-property acks=all' "$runtime_script" || fail 'Kafka marker producer lacks a durable acknowledgement contract'
 grep -Fq 'matching.commands' "$runtime_script" || fail 'Kafka diagnostic lacks topic contract verification'

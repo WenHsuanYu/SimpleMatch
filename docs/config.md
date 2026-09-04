@@ -194,7 +194,9 @@ and `--evidence-dir` as explicit invocation options. The default canonical clust
 `simplematch-live`, the default context is `kind-simplematch-live`, and the deadline may not exceed
 300 seconds. It never applies manifests or deletes the caller namespace; only a run-owned Kafka
 marker topic is cleaned and verified after a successful Kafka check, with the same cleanup attempted
-under a shared 30-second failure budget when the check aborts. Its report is diagnostic evidence and
+under a shared 30-second failure budget when the check aborts. If Kafka reports an uncertain marker
+creation outcome, the diagnostic fails closed and does not delete the topic because ownership cannot
+be proven; inspect that exact topic before any manual cleanup. Its report is diagnostic evidence and
 cannot be promoted to the parent #151 aggregate certification verdict.
 
 ## Change Policy
