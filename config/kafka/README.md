@@ -12,9 +12,9 @@ ineligible for the local RF3 durability gate.
 
 Use `scripts/provision-matching-topics.sh` to create the two topics and
 `scripts/validate-matching-topic-profile.sh` to fail closed on profile drift. The production-shaped
-Matching profile does not provision the legacy `matching.executions` stream; deployed consumers are
-expected to use the final `matching.events` contract. Legacy code may remain temporarily for a
-coordinated cleanup, but it is not part of this topic profile.
+The production-shaped Matching profile provisions only the final `matching.commands` and
+`matching.events` streams. The retired `matching.executions` stream is not part of this topic
+profile or any active deployment.
 
 The validation script requires the effective broker configuration to expose
 `auto.create.topics.enable=false` and `unclean.leader.election.enable=false`; the local certification

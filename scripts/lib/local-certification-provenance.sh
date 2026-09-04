@@ -102,6 +102,7 @@ simplematch_certification_cdc_runtime_source_paths() {
     services/risk-service/src/main/java/com/simplematch/riskservice/config/CdcDeliveryProperties.java \
     services/risk-service/src/main/java/com/simplematch/riskservice/config/RiskServiceProperties.java \
     services/risk-service/src/main/resources/db/migration/risk-service/V10__record_cdc_delivery_observations.sql \
+    services/risk-service/src/main/resources/db/migration/risk-service/V11__require_admission_artifact_route.sql \
     services/risk-service/src/main/resources/application.yaml \
     scripts/test-kubernetes-overlays.sh \
     scripts/test-local-kubernetes-dependencies.sh

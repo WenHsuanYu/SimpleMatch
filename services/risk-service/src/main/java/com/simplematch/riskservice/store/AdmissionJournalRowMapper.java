@@ -26,13 +26,24 @@ final class AdmissionJournalRowMapper {
 
   private static AdmissionJournalEntry fromRow(ResultSet resultSet) throws SQLException {
     final AdmissionCommand command = command(resultSet);
+    final Integer routingPartition =
+        resultSet.getObject("routing_partition", Integer.class);
+    if (routingPartition == null) {
+      throw new IllegalStateException("admission journal row is missing its routing partition");
+    }
+    final String routingAlgorithmVersion =
+        resultSet.getString("routing_algorithm_version");
+    if (routingAlgorithmVersion == null || routingAlgorithmVersion.isBlank()) {
+      throw new IllegalStateException(
+          "admission journal row is missing its routing algorithm version");
+    }
     final AdmissionDecision decision = decision(resultSet, command);
     return new AdmissionJournalEntry(
         command,
         new AdmissionDeliveryRoute(
-            resultSet.getObject("routing_partition", Integer.class),
+            routingPartition,
             artifactIdentity(resultSet),
-            resultSet.getString("routing_algorithm_version")),
+            routingAlgorithmVersion),
         new AdmissionLifecycle(
             decision,
             resultSet.getLong("version"),
@@ -43,11 +54,8 @@ final class AdmissionJournalRowMapper {
   private static ArtifactIdentity artifactIdentity(ResultSet resultSet) throws SQLException {
     final LocalDate tradingDay = resultSet.getObject("artifact_trading_day", LocalDate.class);
     final String checksum = resultSet.getString("artifact_content_sha256");
-    if (tradingDay == null && checksum == null) {
-      return null;
-    }
     if (tradingDay == null || checksum == null) {
-      throw new IllegalArgumentException("admission artifact identity is incomplete");
+      throw new IllegalStateException("admission journal row is missing its artifact identity");
     }
     return new ArtifactIdentity(tradingDay, checksum);
   }

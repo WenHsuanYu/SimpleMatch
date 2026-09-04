@@ -174,8 +174,7 @@ cdc_manifest="$(certification_phase_input_manifest cdc-outbox-failure-live)" || 
 for required_input in \
   deploy/compose/apply-outbox-connector.sh \
   deploy/compose/risk-service-outbox-connector.json \
-  deploy/compose/account-service-outbox-connector.json \
-  deploy/compose/marketdata-publisher-outbox-connector.json; do
+  deploy/compose/account-service-outbox-connector.json; do
   grep -Fq $'file\t'"$required_input"$'\t' <<<"$cdc_manifest" || \
     fail "CDC phase manifest omitted ${required_input}"
 done

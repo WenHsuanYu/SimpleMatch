@@ -41,12 +41,11 @@ GRADLE_USER_HOME=/tmp/simplematch-gradle-home ./gradlew --no-daemon \
 GRADLE_USER_HOME=/tmp/simplematch-gradle-home ./gradlew --no-daemon -q staticAnalysis
 ```
 
-The caller guard intentionally permits the Account v1 server to remain until #119. It rejects v1
-client construction in every other production service, requires Risk's v2 stub and Account's v2
-server wiring, and checks the secure Kubernetes target contract. The first focused test uses the
-real Account v2 gRPC adapter and independent Account/Risk database transactions; it forces Risk's
-local terminal transaction to fail after Account succeeds, then verifies pending recovery replays
-the same typed request without a second reservation.
+The caller guard rejects any Account v1 server or client surface after the #119 cutover. It requires
+Risk's v2 stub and Account's v2 server wiring, and checks the secure Kubernetes target contract. The
+first focused test uses the real Account v2 gRPC adapter and independent Account/Risk database
+transactions; it forces Risk's local terminal transaction to fail after Account succeeds, then
+verifies pending recovery replays the same typed request without a second reservation.
 
 ## Repository-local recovery scenario
 

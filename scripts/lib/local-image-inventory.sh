@@ -15,7 +15,6 @@ SIMPLEMATCH_LOCAL_IMAGE_INVENTORY=(
   'spring|risk-service|:services:risk-service|simplematch/risk-service'
   'spring|persistence|:services:persistence|simplematch/persistence'
   'spring|market-data-projection|:services:market-data-projection|simplematch/market-data-projection'
-  'spring|marketdata-publisher|:services:marketdata-publisher|simplematch/marketdata-publisher'
   'spring|marketdata-streamer|:services:marketdata-streamer|simplematch/marketdata-streamer'
   'spring|query-service|:services:query-service|simplematch/query-service'
   'spring|quickfix-gateway|:services:quickfix-gateway|quickfix-gateway'

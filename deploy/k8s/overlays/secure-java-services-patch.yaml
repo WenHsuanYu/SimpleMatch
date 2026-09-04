@@ -332,31 +332,6 @@ spec:
 apiVersion: apps/v1
 kind: Deployment
 metadata:
-  name: marketdata-publisher
-spec:
-  template:
-    spec:
-      containers:
-        - name: marketdata-publisher
-          env:
-            - name: SIMPLEMATCH_POSTGRES_DSN
-              valueFrom:
-                secretKeyRef:
-                  name: marketdata-publisher-secrets
-                  key: postgres_dsn
-          volumeMounts:
-            - name: postgres-tls
-              mountPath: /etc/simplematch/postgres-tls
-              readOnly: true
-      volumes:
-        - name: postgres-tls
-          secret:
-            secretName: simplematch-postgres-tls
-            optional: false
----
-apiVersion: apps/v1
-kind: Deployment
-metadata:
   name: marketdata-streamer
 spec:
   template:

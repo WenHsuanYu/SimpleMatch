@@ -96,9 +96,10 @@ rebuildable and non-critical.
 | `marketdata-streamer` | Java, Spring | Public market-data and authorized private streams |
 | `query-service` | Java, Spring | Required read-only PostgreSQL/Redis projection API for order, execution, account-summary, and active-market-reference views |
 
-`marketdata-publisher` is not a target runtime service. Its pure Market Reference normalization and
-validation logic may move into the offline builder; its database, outbox, connector, and Market
-Reference topics are superseded.
+Market Reference is not a target runtime service. The offline
+`tools/market-reference-builder` owns normalization and validation; Risk and Matching consume the
+approved daily artifact. There is no runtime database, outbox, connector, or Market Reference
+topic.
 
 ## Operational admission
 

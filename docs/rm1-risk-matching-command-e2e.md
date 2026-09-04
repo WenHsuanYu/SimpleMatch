@@ -63,9 +63,8 @@ bash scripts/test-matching-topic-cutover.sh
 The manifest test protects the verifier's Job type, no-retry behavior, security context, image,
 resource budget, Market Reference mount, run-ConfigMap argument contract, normalized Admission
 evidence contract, and fail-closed evidence-directory behavior. The topic cutover test protects the
-production-shaped `matching.commands` / `matching.events` contract and prevents the legacy
-`matching.executions` consumer/topic from being re-enabled by deployment or local certification
-configuration.
+production-shaped `matching.commands` / `matching.events` contract and prevents retired execution
+topic configuration from being re-enabled by deployment or local certification.
 
 ## Build the dedicated verifier image
 

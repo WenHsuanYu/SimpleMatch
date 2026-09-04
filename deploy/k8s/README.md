@@ -22,7 +22,7 @@ and re-apply the connector definitions. Configuration reload is intentionally di
 ## Cross-service base and overlays
 
 `base/` contains the Java service Deployments for Account, Risk, Persistence, Market Data
-Projection, Marketdata Publisher, Marketdata Streamer, and Query Service, plus the existing
+Projection, Marketdata Streamer, and Query Service, plus the existing
 QuickFIX/Matching resources, service-local ConfigMaps, read-only configuration RBAC, migration Jobs,
 probes, and NetworkPolicy.
 The four overlays are `local`, `test`, `staging`, and `production`.
@@ -32,7 +32,7 @@ The four overlays are `local`, `test`, `staging`, and `production`.
 `local` is the executable repository-owned environment. It uses locally built images with the
 `local` tag and is the deployment surface used by the local production-like certification gate.
 The local image set currently includes Account, Risk, Persistence, Market Data Projection,
-Marketdata Publisher, Marketdata Streamer, Query Service, Flyway Runner, Matching, and QuickFIX
+Marketdata Streamer, Query Service, Flyway Runner, Matching, and QuickFIX
 Gateway. PostgreSQL, Redis, and Kafka are separate Kubernetes workloads in the local overlay; they
 are not reached through the retired Compose bridge.
 
@@ -112,8 +112,8 @@ cross-node storage HA or production certification.
 
 The local overlay also runs two Debezium Kafka Connect workers against the in-cluster Kafka and
 PostgreSQL Services. The certification runner waits for all Flyway Jobs to complete, then registers
-each retained service-owned connector (Risk, Account, and marketdata-publisher) through the Connect
-REST API and records its `RUNNING` connector/task status before waiting for application workloads.
+each retained service-owned connector (Risk and Account) through the Connect REST API and records
+its `RUNNING` connector/task status before waiting for application workloads.
 Risk additionally runs a dedicated Kafka observer group: it persists exact Debezium `id` headers,
 proves committed offsets reached every current `matching.commands` partition head, and only then
 refreshes the durable admission-lag row. The full Kubernetes gate pauses the Risk connector,
@@ -156,7 +156,7 @@ Kubernetes probes to HTTPS; the operator token remains required at the applicati
 `market-data-projection-secrets` supplies `rebuild_operator_token` to the projection reset
 endpoint.
 
-`simplematch-kafka-connect-secrets` supplies the three connector user/password pairs plus
+`simplematch-kafka-connect-secrets` supplies the two retained connector user/password pairs plus
 `kafka_sasl_jaas_config` and `kafka_truststore_password`, and is required by the retained Debezium
 worker. `simplematch-flyway-secrets` supplies the TLS-enabled
 `postgres_dsn` consumed by the external
@@ -225,8 +225,8 @@ The local production-like gate is
 Lease, PVC, Kafka, and restart/replay contracts with local images and disposable infrastructure;
 it does not require 15 physical nodes or real registry digests. The gate applies the approved
 immutable Market Reference under the local `matching-daily-artifact` name, creates the platform
-resources, runs Flyway Jobs before registering the Risk outbox connector and creating runtime
-workloads, and then verifies the Java, QuickFIX, and Matching rollouts. Risk and Query receive their local session identity from
-`matching-session-config`; the superseded `marketdata-publisher` runtime is disabled only in the
-local overlay. The investigation and troubleshooting record is in
+resources, runs Flyway Jobs before registering the retained Risk and Account outbox connectors and
+creating runtime workloads, and then verifies the Java, QuickFIX, and Matching rollouts. Risk and
+Query receive their local session identity from `matching-session-config`. The investigation and
+troubleshooting record is in
 [Local production-like Kubernetes workload startup](../../docs/local-production-like-kubernetes-workload-startup.md).

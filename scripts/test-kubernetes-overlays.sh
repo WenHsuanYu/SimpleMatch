@@ -39,7 +39,6 @@ required_deployments = %w[
   risk-service
   persistence
   market-data-projection
-  marketdata-publisher
   marketdata-streamer
   query-service
 ]
@@ -84,7 +83,6 @@ abort "#{overlay}: QuickFIX Gateway trading day must come from matching-session-
   risk-service
   persistence
   market-data-projection
-  marketdata-publisher
   query-service
   quickfix-gateway
 ].each do |name|
@@ -142,7 +140,6 @@ if overlay == "local"
     "risk-service" => ["SIMPLEMATCH_POSTGRES_DSN", "SIMPLEMATCH_TRADING_DAY", "SIMPLEMATCH_MATCHING_IMAGE_DIGEST"],
     "persistence" => ["SIMPLEMATCH_POSTGRES_DSN"],
     "market-data-projection" => ["SIMPLEMATCH_POSTGRES_DSN"],
-    "marketdata-publisher" => ["SIMPLEMATCH_POSTGRES_DSN"],
     "query-service" => ["SIMPLEMATCH_POSTGRES_DSN", "SIMPLEMATCH_TRADING_DAY"]
   }.each do |deployment_name, environment_names|
     deployment = resources.fetch(["Deployment", deployment_name])
@@ -246,20 +243,6 @@ if overlay == "local"
       "readOnly" => true
     )
 
-  publisher = resources.fetch(["Deployment", "marketdata-publisher"])
-  abort "local: superseded marketdata-publisher runtime must be disabled" unless
-    publisher.fetch("spec").fetch("replicas") == 0
-
-  local_connector = resources.fetch(["Deployment", "kafka-connect"])
-  local_connector_env = local_connector.fetch("spec").fetch("template").fetch("spec")
-    .fetch("containers").first.fetch("env").to_h { |entry| [entry.fetch("name"), entry] }
-  {
-    "MARKETDATA_PUBLISHER_POSTGRES_USER" => {"name" => "simplematch-postgres-secrets", "key" => "postgres_user"},
-    "MARKETDATA_PUBLISHER_POSTGRES_PASSWORD" => {"name" => "simplematch-postgres-secrets", "key" => "postgres_password"}
-  }.each do |name, expected_reference|
-    abort "local: Kafka Connect marketdata credential #{name} is not Secret-backed" unless
-      local_connector_env.fetch(name).fetch("valueFrom").fetch("secretKeyRef") == expected_reference
-  end
 end
 
 network_policy = resources.fetch(["NetworkPolicy", "simplematch-java-services"])
@@ -274,7 +257,7 @@ network_policy.fetch("spec").fetch("egress").each do |rule|
   end
 end
 
-%w[account-service risk-service persistence market-data-projection marketdata-publisher marketdata-streamer query-service].each do |name|
+%w[account-service risk-service persistence market-data-projection marketdata-streamer query-service].each do |name|
   config = resources.fetch(["ConfigMap", "#{name}-config"], nil)
   next unless config
   application = config.fetch("data").fetch("application.yaml")
@@ -287,7 +270,7 @@ if %w[staging production].include?(overlay)
     image = resources.fetch(["Deployment", name]).fetch("spec").fetch("template").fetch("spec").fetch("containers").first.fetch("image")
     abort "#{overlay}: #{name} image is not digest pinned" unless image.match?(/@sha256:[0-9a-f]{64}\z/)
   end
-  %w[account-service risk-service persistence market-data-projection marketdata-publisher query-service].each do |name|
+  %w[account-service risk-service persistence market-data-projection query-service].each do |name|
     pod_spec = resources.fetch(["Deployment", name]).fetch("spec").fetch("template").fetch("spec")
     container = pod_spec.fetch("containers").first
     postgres_dsn = container.fetch("env").find { |entry| entry["name"] == "SIMPLEMATCH_POSTGRES_DSN" }
@@ -302,7 +285,7 @@ if %w[staging production].include?(overlay)
     postgres_secret = postgres_volume&.dig("secret")
     abort "#{overlay}: #{name} does not require the PostgreSQL CA Secret" unless postgres_secret&.fetch("secretName") == "simplematch-postgres-tls" && postgres_secret.fetch("optional") == false
   end
-  %w[account-service risk-service persistence market-data-projection marketdata-publisher query-service quickfix-gateway].each do |name|
+  %w[account-service risk-service persistence market-data-projection query-service quickfix-gateway].each do |name|
     job = resources.fetch(["Job", "#{name}-flyway"])
     pod_spec = job.fetch("spec").fetch("template").fetch("spec")
     container = pod_spec.fetch("containers").first

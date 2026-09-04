@@ -16,15 +16,11 @@ data:
       kafka:
         brokers: kafka.production.example.invalid:9093
         topics:
-          orders-validated: orders.validated
-          matching-executions: matching.executions
           matching-commands: matching.commands
           matching-events: matching.events
           marketdata-events: marketdata.events
           audit-events: audit.events
         partitions:
-          orders-validated: 15
-          matching-executions: 15
           matching-commands: 15
           matching-events: 15
       grpc:

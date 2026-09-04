@@ -495,11 +495,9 @@ certification_phase_input_manifest() {
         scripts/run-outbox-cdc-contract-check.sh scripts/lib/cdc-verifier.sh \
         deploy/compose/apply-risk-service-outbox-connector.sh \
         deploy/compose/apply-account-service-outbox-connector.sh \
-        deploy/compose/apply-marketdata-publisher-outbox-connector.sh \
         deploy/compose/apply-outbox-connector.sh \
         deploy/compose/risk-service-outbox-connector.json \
         deploy/compose/account-service-outbox-connector.json \
-        deploy/compose/marketdata-publisher-outbox-connector.json \
         deploy/compose/kafka-connect.local.yml \
         scripts/lib/local-certification-fingerprint.sh \
         -- "phase=$phase_id" "version=$phase_version" \
@@ -520,6 +518,7 @@ certification_phase_input_manifest() {
         services/risk-service/src/main/java/com/simplematch/riskservice/config/CdcDeliveryProperties.java \
         services/risk-service/src/main/java/com/simplematch/riskservice/config/RiskServiceProperties.java \
         services/risk-service/src/main/resources/db/migration/risk-service/V10__record_cdc_delivery_observations.sql \
+        services/risk-service/src/main/resources/db/migration/risk-service/V11__require_admission_artifact_route.sql \
         services/risk-service/src/main/resources/application.yaml \
         deploy/k8s/simplematch-platform-configmap.yaml deploy/k8s/risk-service-configmap.yaml \
         deploy/k8s/overlays/local/local-runtime-patch.yaml \
@@ -527,7 +526,6 @@ certification_phase_input_manifest() {
         deploy/k8s/debezium-kafka-connect-local.yaml \
         deploy/k8s/risk-service-outbox-connector-configmap.yaml \
         deploy/k8s/account-service-outbox-connector-configmap.yaml \
-        deploy/k8s/marketdata-publisher-outbox-connector-configmap.yaml \
         scripts/test-kubernetes-overlays.sh scripts/test-local-kubernetes-dependencies.sh \
         scripts/lib/local-certification-fingerprint.sh \
         -- "phase=$phase_id" "version=$phase_version" \

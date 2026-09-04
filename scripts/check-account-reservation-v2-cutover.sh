@@ -9,7 +9,6 @@ production_caller_paths=(
   services/quickfix-gateway/src/main
   services/persistence/src/main
   services/market-data-projection/src/main
-  services/marketdata-publisher/src/main
   services/query-service/src/main
 )
 
@@ -42,7 +41,7 @@ if rg -n \
   --glob '*.kt' \
   'AccountServiceGrpc|com\.simplematch\.contracts\.account\.v1' \
   services/risk-service/src/main; then
-  echo "Risk production source still references the retained Account v1 RPC." >&2
+  echo "Risk production source still references the retired Account v1 RPC." >&2
   exit 1
 fi
 

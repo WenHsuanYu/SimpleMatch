@@ -116,7 +116,7 @@ apply_local_kubernetes_inputs() {
     --from-literal=postgres_password="$local_postgres_password" \
     --dry-run=client -o yaml | kubectl apply -f - >/dev/null
 
-  for service in account-service risk-service persistence market-data-projection marketdata-publisher query-service quickfix-gateway; do
+  for service in account-service risk-service persistence market-data-projection query-service quickfix-gateway; do
     kubectl -n "$namespace" create secret generic "${service}-secrets" \
       --from-literal=postgres_dsn="$local_postgres_dsn" \
       --dry-run=client -o yaml | kubectl apply -f - >/dev/null
@@ -247,7 +247,6 @@ apply_kubernetes_migrations() {
     risk-service
     persistence
     market-data-projection
-    marketdata-publisher
     query-service
     quickfix-gateway
   )

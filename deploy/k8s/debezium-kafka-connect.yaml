@@ -154,16 +154,6 @@ spec:
                 secretKeyRef:
                   name: simplematch-kafka-connect-secrets
                   key: risk_service_postgres_password
-            - name: MARKETDATA_PUBLISHER_POSTGRES_USER
-              valueFrom:
-                secretKeyRef:
-                  name: simplematch-kafka-connect-secrets
-                  key: marketdata_publisher_postgres_user
-            - name: MARKETDATA_PUBLISHER_POSTGRES_PASSWORD
-              valueFrom:
-                secretKeyRef:
-                  name: simplematch-kafka-connect-secrets
-                  key: marketdata_publisher_postgres_password
             - name: KAFKA_HEAP_OPTS
               value: -Xms512m -Xmx1g
             - name: OTEL_SERVICE_NAME

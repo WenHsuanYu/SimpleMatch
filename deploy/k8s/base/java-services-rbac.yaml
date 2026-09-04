@@ -21,11 +21,6 @@ metadata:
 apiVersion: v1
 kind: ServiceAccount
 metadata:
-  name: marketdata-publisher
----
-apiVersion: v1
-kind: ServiceAccount
-metadata:
   name: query-service
 ---
 apiVersion: v1
@@ -87,20 +82,6 @@ rules:
   - apiGroups: [""]
     resources: ["secrets"]
     resourceNames: ["market-data-projection-secrets"]
-    verbs: ["get"]
----
-apiVersion: rbac.authorization.k8s.io/v1
-kind: Role
-metadata:
-  name: marketdata-publisher-configuration-reader
-rules:
-  - apiGroups: [""]
-    resources: ["configmaps"]
-    resourceNames: ["simplematch-platform-config", "marketdata-publisher-config"]
-    verbs: ["get"]
-  - apiGroups: [""]
-    resources: ["secrets"]
-    resourceNames: ["marketdata-publisher-secrets"]
     verbs: ["get"]
 ---
 apiVersion: rbac.authorization.k8s.io/v1
@@ -178,18 +159,6 @@ roleRef:
   apiGroup: rbac.authorization.k8s.io
   kind: Role
   name: market-data-projection-configuration-reader
----
-apiVersion: rbac.authorization.k8s.io/v1
-kind: RoleBinding
-metadata:
-  name: marketdata-publisher-configuration-reader
-subjects:
-  - kind: ServiceAccount
-    name: marketdata-publisher
-roleRef:
-  apiGroup: rbac.authorization.k8s.io
-  kind: Role
-  name: marketdata-publisher-configuration-reader
 ---
 apiVersion: rbac.authorization.k8s.io/v1
 kind: RoleBinding

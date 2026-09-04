@@ -34,8 +34,6 @@ images:
     newTag: local
   - name: simplematch/market-data-projection
     newTag: local
-  - name: simplematch/marketdata-publisher
-    newTag: local
   - name: simplematch/marketdata-streamer
     newTag: local
   - name: simplematch/query-service

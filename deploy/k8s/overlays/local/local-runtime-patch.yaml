@@ -58,13 +58,6 @@ spec:
             optional: false
 ---
 apiVersion: apps/v1
-kind: Deployment
-metadata:
-  name: marketdata-publisher
-spec:
-  replicas: 0
----
-apiVersion: apps/v1
 kind: StatefulSet
 metadata:
   name: quickfix-gateway
@@ -156,20 +149,4 @@ spec:
               valueFrom:
                 secretKeyRef:
                   name: market-data-projection-secrets
-                  key: postgres_dsn
----
-apiVersion: apps/v1
-kind: Deployment
-metadata:
-  name: marketdata-publisher
-spec:
-  template:
-    spec:
-      containers:
-        - name: marketdata-publisher
-          env:
-            - name: SIMPLEMATCH_POSTGRES_DSN
-              valueFrom:
-                secretKeyRef:
-                  name: marketdata-publisher-secrets
                   key: postgres_dsn

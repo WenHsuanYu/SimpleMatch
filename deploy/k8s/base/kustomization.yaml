@@ -5,7 +5,6 @@ resources:
   - ../risk-service-configmap.yaml
   - ../risk-service-outbox-connector-configmap.yaml
   - ../account-service-outbox-connector-configmap.yaml
-  - ../marketdata-publisher-outbox-connector-configmap.yaml
   - ../matching-headless-service.yaml
   - ../matching-lease-rbac.yaml
   - ../matching-partition-leases.yaml

@@ -322,7 +322,7 @@ simplematch_focused_validate_kubernetes_inputs() {
     return 1
   for service in \
       account-service risk-service persistence market-data-projection \
-      marketdata-publisher query-service quickfix-gateway; do
+      query-service quickfix-gateway; do
     [[ "$(simplematch_focused_secret_value "$secrets_json" \
       "${service}-secrets" postgres_dsn)" == "$expected_dsn" ]] ||
       simplematch_focused_fail \

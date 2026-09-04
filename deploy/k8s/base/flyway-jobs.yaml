@@ -233,64 +233,6 @@ spec:
 apiVersion: batch/v1
 kind: Job
 metadata:
-  name: marketdata-publisher-flyway
-  labels:
-    app.kubernetes.io/name: marketdata-publisher-flyway
-    app.kubernetes.io/component: migration
-    app.kubernetes.io/part-of: simplematch
-spec:
-  backoffLimit: 2
-  ttlSecondsAfterFinished: 86400
-  template:
-    metadata:
-      labels:
-        app.kubernetes.io/name: marketdata-publisher-flyway
-        app.kubernetes.io/component: migration
-    spec:
-      serviceAccountName: marketdata-publisher
-      restartPolicy: Never
-      securityContext:
-        seccompProfile:
-          type: RuntimeDefault
-      containers:
-        - name: flyway
-          image: simplematch/flyway-runner:base
-          imagePullPolicy: IfNotPresent
-          command: ["/app/run-flyway"]
-          env:
-            - name: SIMPLEMATCH_FLYWAY_SERVICE_ID
-              value: marketdata-publisher
-            - name: SIMPLEMATCH_FLYWAY_SCHEMA
-              value: marketdata_publisher
-            - name: GRADLE_USER_HOME
-              value: /tmp/gradle
-            - name: SIMPLEMATCH_GRADLE_PROJECT_CACHE_DIR
-              value: /tmp/gradle-project
-            - name: SIMPLEMATCH_POSTGRES_DSN
-              valueFrom:
-                secretKeyRef:
-                  name: simplematch-flyway-secrets
-                  key: postgres_dsn
-          securityContext:
-            allowPrivilegeEscalation: false
-            capabilities:
-              drop: ["ALL"]
-            readOnlyRootFilesystem: true
-            runAsNonRoot: true
-          volumeMounts:
-            - name: runtime-tmp
-              mountPath: /tmp
-            - name: build-output
-              mountPath: /workspace/build
-      volumes:
-        - name: runtime-tmp
-          emptyDir: {}
-        - name: build-output
-          emptyDir: {}
----
-apiVersion: batch/v1
-kind: Job
-metadata:
   name: query-service-flyway
   labels:
     app.kubernetes.io/name: query-service-flyway

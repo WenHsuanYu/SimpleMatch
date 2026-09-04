@@ -50,9 +50,9 @@ ordering, eventing, and reliability decisions are in the
 | `marketdata-streamer` | Java, Spring Cloud | Public and authorized private streaming views |
 | `query-service` | Java, Spring Cloud | Required Phase 1 PostgreSQL/Redis read API for order, execution, account-summary, and active-artifact views |
 
-`marketdata-publisher` is a legacy implementation name, not a target runtime service. Reusable pure
-Market Reference logic moves to the offline builder; its runtime database/outbox/Kafka stack is
-removed after the replacement path passes.
+The former `marketdata-publisher` implementation is retired. Reusable pure Market Reference logic
+lives in the offline builder; its runtime database/outbox/Kafka stack is absent from the target
+deployment.
 
 ## Market Reference builder
 

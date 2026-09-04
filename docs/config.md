@@ -147,10 +147,10 @@ The complete cross-service base/overlay contract and external Secret keys are do
 [`deploy/k8s/README.md`](../deploy/k8s/README.md#cross-service-base-and-overlays), with a local
 rendering gate in `scripts/test-kubernetes-overlays.sh`.
 
-The Risk, Account, and marketdata-publisher Debezium connector templates resolve their database
-usernames and passwords from Kafka Connect environment variables. Those environment variables must
-be injected from a Kubernetes Secret, and the local production-like certification registers all
-three owner-scoped connectors before declaring the Java workloads ready.
+The Risk and Account Debezium connector templates resolve their database usernames and passwords
+from Kafka Connect environment variables. Those environment variables must be injected from a
+Kubernetes Secret, and the local production-like certification registers both owner-scoped
+connectors before declaring the Java workloads ready.
 
 ## Local CDC verification harness
 
@@ -189,6 +189,7 @@ and Matching will load the same mounted file at startup; #126 and #127 own that 
 There is no target Market Reference Kafka topic, outbox, runtime API, or Spring configuration key.
 
 The source-compatible v1 submission adapter is not registered as a production Spring service while
-its wire contract lacks the venue and authoritative policy identity. v2 policy-aware Admission is
-the production ingress; legacy pending v2 Admissions still recover from their persisted partition
-and nullable policy identity during the compatibility window.
+its wire contract lacks the venue and authoritative artifact route. The v2 artifact-backed
+Admission path is the only production ingress; every accepted route persists its artifact identity,
+routing algorithm version, and explicit partition. There is no nullable policy-identity compatibility
+window in the current pre-release schema.

@@ -20,7 +20,7 @@ select_matching_workload() {
 
 wait_for_kubernetes_workloads() {
   local workload
-  for workload in account-service risk-service persistence market-data-projection marketdata-publisher marketdata-streamer query-service; do
+  for workload in account-service risk-service persistence market-data-projection marketdata-streamer query-service; do
     check_certification_deadline
     kubectl -n "$namespace" rollout status "deployment/${workload}" --timeout=300s
   done

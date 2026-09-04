@@ -15,8 +15,6 @@ images:
     newTag: test
   - name: simplematch/market-data-projection
     newTag: test
-  - name: simplematch/marketdata-publisher
-    newTag: test
   - name: simplematch/marketdata-streamer
     newTag: test
   - name: simplematch/query-service

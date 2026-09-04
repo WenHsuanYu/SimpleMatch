@@ -31,7 +31,7 @@ refactor checkpoint. A clean `git status -sb` is required before each subsequent
 | `services/quickfix-gateway`         | Spring Boot QuickFIX/J gateway with gRPC risk submission and WAL support     | Implemented module                 |
 | `services/risk-service`             | Spring Boot durable admission service with an outbox owner schema            | Implemented module                 |
 | `matching-engine`                   | No native target or source directory is registered by `CMakeLists.txt`       | Target capability, not implemented |
-| `marketdata-publisher`              | Listed in the README service landscape but absent from Gradle settings       | Target capability, not implemented |
+| `marketdata-publisher`              | Historical README-only runtime name; later retired by #119                 | Superseded capability |
 | `marketdata-streamer`               | Listed in the README service landscape but absent from Gradle settings       | Target capability, not implemented |
 | `query-service`                     | Listed in the README service landscape but absent from Gradle settings       | Target capability, not implemented |
 

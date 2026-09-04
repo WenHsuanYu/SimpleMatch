@@ -77,7 +77,7 @@ write_secrets_json() {
       data:{postgres_user:$user,postgres_password:$password}}]' <<<"$secrets")"
   for service in \
       account-service risk-service persistence market-data-projection \
-      marketdata-publisher query-service quickfix-gateway; do
+      query-service quickfix-gateway; do
     secrets="$(jq --arg name "${service}-secrets" \
       --arg dsn "$(encode "$dsn")" \
       '. + [{metadata:{name:$name},data:{postgres_dsn:$dsn}}]' <<<"$secrets")"

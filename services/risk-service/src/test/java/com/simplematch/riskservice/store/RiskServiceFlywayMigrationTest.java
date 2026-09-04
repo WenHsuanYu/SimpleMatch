@@ -38,7 +38,15 @@ class RiskServiceFlywayMigrationTest {
             jdbcTemplate.queryForObject(
                 "SELECT metric_name FROM risk_service.cdc_delivery_lag", String.class))
         .isEqualTo("matching.commands");
-    assertThat(appliedMigrationCount(jdbcTemplate)).isEqualTo(6);
+    assertThat(columnNullable(jdbcTemplate, "ADMISSION_JOURNAL", "ROUTING_PARTITION"))
+        .isEqualTo("NO");
+    assertThat(columnNullable(jdbcTemplate, "ADMISSION_JOURNAL", "ARTIFACT_TRADING_DAY"))
+        .isEqualTo("NO");
+    assertThat(columnNullable(jdbcTemplate, "ADMISSION_JOURNAL", "ARTIFACT_CONTENT_SHA256"))
+        .isEqualTo("NO");
+    assertThat(columnNullable(jdbcTemplate, "ADMISSION_JOURNAL", "ROUTING_ALGORITHM_VERSION"))
+        .isEqualTo("NO");
+    assertThat(appliedMigrationCount(jdbcTemplate)).isEqualTo(7);
   }
 
   @DisplayName("CDC observation columns preserve Kafka and epoch value widths")
@@ -172,6 +180,21 @@ class RiskServiceFlywayMigrationTest {
                           AND UPPER(COLUMN_NAME) = ?
                         """,
         Integer.class,
+        SCHEMA_NAME,
+        tableName,
+        columnName);
+  }
+
+  private String columnNullable(JdbcTemplate jdbcTemplate, String tableName, String columnName) {
+    return jdbcTemplate.queryForObject(
+        """
+                        SELECT UPPER(IS_NULLABLE)
+                        FROM INFORMATION_SCHEMA.COLUMNS
+                        WHERE UPPER(TABLE_SCHEMA) = ?
+                          AND UPPER(TABLE_NAME) = ?
+                          AND UPPER(COLUMN_NAME) = ?
+                        """,
+        String.class,
         SCHEMA_NAME,
         tableName,
         columnName);

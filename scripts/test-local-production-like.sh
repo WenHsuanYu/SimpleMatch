@@ -67,7 +67,6 @@ expected_images=(
   'simplematch/risk-service:local'
   'simplematch/persistence:local'
   'simplematch/market-data-projection:local'
-  'simplematch/marketdata-publisher:local'
   'simplematch/marketdata-streamer:local'
   'simplematch/query-service:local'
   'simplematch/flyway-runner:local'
@@ -283,11 +282,6 @@ grep -Fxq kubernetes-workload-apply \
   printf '%s\n' 'Account connector registration must depend on workload application.' >&2
   exit 1
 }
-grep -Fxq kubernetes-workload-apply \
-  <<<"$(certification_phase_dependencies kubernetes-marketdata-outbox-connector)" || {
-  printf '%s\n' 'Marketdata connector registration must depend on workload application.' >&2
-  exit 1
-}
 grep -Fxq kubernetes-risk-outbox-connector \
   <<<"$(certification_phase_dependencies kubernetes-workloads)" || {
   printf '%s\n' 'Workload readiness must wait for the Risk connector.' >&2
@@ -296,11 +290,6 @@ grep -Fxq kubernetes-risk-outbox-connector \
 grep -Fxq kubernetes-account-outbox-connector \
   <<<"$(certification_phase_dependencies kubernetes-workloads)" || {
   printf '%s\n' 'Workload readiness must wait for the Account connector.' >&2
-  exit 1
-}
-grep -Fxq kubernetes-marketdata-outbox-connector \
-  <<<"$(certification_phase_dependencies kubernetes-workloads)" || {
-  printf '%s\n' 'Workload readiness must wait for the Marketdata connector.' >&2
   exit 1
 }
 grep -Fxq kubernetes-workloads \
@@ -320,13 +309,11 @@ grep -Fq 'local-kubernetes-workloads.yaml' "$run_lib"
 grep -Fq 'publish_local_matching_open_barriers' "$run_lib"
 grep -Fq 'register_kubernetes_risk_connector' "$run_lib"
 grep -Fq 'register_kubernetes_account_connector' "$run_lib"
-grep -Fq 'register_kubernetes_marketdata_connector' "$run_lib"
 
 grep -Fq -- "--for=jsonpath='{.status.readyReplicas}'=3 statefulset/kafka --timeout=300s" \
   "$kubernetes_lib"
 grep -Fq 'register_kubernetes_risk_connector' "$connect_lib" "$run_lib"
 grep -Fq 'register_kubernetes_account_connector' "$connect_lib" "$run_lib"
-grep -Fq 'register_kubernetes_marketdata_connector' "$connect_lib" "$run_lib"
 grep -Fq 'local-kubernetes-inputs.yaml' "$run_lib"
 if grep -Fq 'prepare_kubernetes_bridge' "$runner" "$kubernetes_lib" "$run_lib"; then
   printf '%s\n' 'Certification still depends on the obsolete Compose-to-Kubernetes bridge.' >&2
@@ -375,7 +362,7 @@ bash "$repo_root/scripts/validate-matching-producer-contract.sh"
 
 for service in \
   account-service risk-service persistence market-data-projection \
-  marketdata-publisher marketdata-streamer; do
+  marketdata-streamer; do
   grep -Fq 'implementation("org.springframework.boot:spring-boot-starter-web")' \
     "$repo_root/services/$service/build.gradle.kts" || {
     printf '%s does not provide the HTTP management runtime required by Kubernetes probes.\n' \

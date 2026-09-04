@@ -82,8 +82,9 @@ This repo is primarily a Gradle/Java workspace today.
 - Spring Boot services carry Actuator and the deployed services carry the web runtime required for
   Kubernetes management probes. Query uses port 8086; the other Java workloads expose Actuator on
   port 8080. QuickFIX retains its application-specific `/healthz` and `/readyz` endpoints.
-- The root CMake project now builds the policy-aware `matching-engine` ingress seam; the order book,
-  matching algorithm, and execution publisher remain future capabilities.
+- The root CMake project builds the deterministic `matching-engine` core, command/event codecs,
+  partition runtime, replay coordinator, and optional Kafka adapters; the active target does not
+  include the retired runtime routing-policy ingress.
 - Native dependencies are installed through **vcpkg** using the manifest at `vcpkg.json`.
 - The manifest keeps Protobuf as the native core dependency and groups optional capabilities into
   `tests`, `rpc`, `messaging`, `postgres`, `redis`, `json-config`, and `observability` features.

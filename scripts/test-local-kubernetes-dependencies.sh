@@ -141,9 +141,6 @@ connector_values = connector_document.fetch("config")
 account_connector_configmap = resources.fetch(["ConfigMap", "account-service-outbox-connector"])
 account_connector_document = JSON.parse(account_connector_configmap.dig("data", "connector.json"))
 account_connector_values = account_connector_document.fetch("config")
-marketdata_connector_configmap = resources.fetch(["ConfigMap", "marketdata-publisher-outbox-connector"])
-marketdata_connector_document = JSON.parse(marketdata_connector_configmap.dig("data", "connector.json"))
-marketdata_connector_values = marketdata_connector_document.fetch("config")
 connect_volume_mounts = connect_container.fetch("volumeMounts")
 connect_volumes = connect_spec.fetch("volumes")
 
@@ -174,8 +171,7 @@ require_value(
     connector_values["database.hostname"] == "${envvarprovider:SIMPLEMATCH_POSTGRES_HOSTNAME}",
   "Local Kafka Connect must configure EnvVarConfigProvider on the worker and use its placeholders"
 )
-[["RISK_SERVICE", "Risk"], ["ACCOUNT_SERVICE", "Account"],
- ["MARKETDATA_PUBLISHER", "marketdata-publisher"]].each do |owner_prefix, owner_name|
+[["RISK_SERVICE", "Risk"], ["ACCOUNT_SERVICE", "Account"]].each do |owner_prefix, owner_name|
   require_value(
     postgres_credentials_from_secret?(connect_environment, owner_prefix),
     "Local Kafka Connect must receive #{owner_name} database credentials from the local Secret"
@@ -185,14 +181,11 @@ require_value(
   connector_document["name"] == "risk-service-outbox" &&
     connector_values["table.include.list"] == "risk_service.outbox" &&
     account_connector_document["name"] == "account-service-outbox" &&
-    account_connector_values["table.include.list"] == "account_service.outbox" &&
-    marketdata_connector_document["name"] == "marketdata-publisher-outbox" &&
-    marketdata_connector_values["table.include.list"] == "marketdata_publisher.outbox",
-  "Local Kafka Connect must retain owner-scoped Risk, Account, and marketdata connectors"
+    account_connector_values["table.include.list"] == "account_service.outbox",
+  "Local Kafka Connect must retain owner-scoped Risk and Account connectors"
 )
 require_outbox_header_contract(connector_values, "Risk")
 require_outbox_header_contract(account_connector_values, "Account")
-require_outbox_header_contract(marketdata_connector_values, "Marketdata")
 require_value(connect_container&.dig("resources", "requests") && connect_container.dig("resources", "limits"), "Local Kafka Connect must define resources")
 require_value(connect_container&.key?("readinessProbe") && connect_container.key?("startupProbe"), "Local Kafka Connect must define bounded probes")
 require_value(
@@ -280,7 +273,7 @@ require_value(
 flyway_jobs = resources.values.select do |resource|
   resource["kind"] == "Job" && resource.dig("metadata", "name")&.end_with?("-flyway")
 end
-require_value(flyway_jobs.length == 7, "Local overlay must contain all seven Flyway Jobs")
+require_value(flyway_jobs.length == 6, "Local overlay must contain all six Flyway Jobs")
 flyway_jobs.each do |job|
   job_name = job.fetch("metadata").fetch("name")
   job_spec = job.fetch("spec")

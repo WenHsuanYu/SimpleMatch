@@ -372,16 +372,13 @@ wait_for_connector_state() {
 }
 
 capture_retained_connector_states() {
-  local output="$1" risk_status_file="$2" risk_status account_status marketdata_status
+  local output="$1" risk_status_file="$2" risk_status account_status
   risk_status="$(cat "$risk_status_file")"
   account_status="$(wait_for_connector_state account-service-outbox RUNNING)"
-  marketdata_status="$(wait_for_connector_state marketdata-publisher-outbox RUNNING)"
   jq -n \
     --argjson risk "$risk_status" \
     --argjson account "$account_status" \
-    --argjson marketdata "$marketdata_status" \
-    '{riskServiceOutbox:$risk,accountServiceOutbox:$account,
-      marketdataPublisherOutbox:$marketdata}' >"$output"
+    '{riskServiceOutbox:$risk,accountServiceOutbox:$account}' >"$output"
 }
 
 sql() {

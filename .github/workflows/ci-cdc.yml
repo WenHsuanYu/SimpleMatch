@@ -25,7 +25,6 @@ on:
       - 'shared-java/**'
       - 'proto/**'
       - 'services/account-service/**'
-      - 'services/marketdata-publisher/**'
       - 'services/risk-service/**'
   pull_request:
     paths:
@@ -48,7 +47,6 @@ on:
       - 'shared-java/**'
       - 'proto/**'
       - 'services/account-service/**'
-      - 'services/marketdata-publisher/**'
       - 'services/risk-service/**'
   workflow_dispatch:
 

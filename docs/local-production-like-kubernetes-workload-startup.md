@@ -40,9 +40,10 @@ startup gate still failed. The failures appeared in dependency order rather than
 5. Query and Risk were missing the local session trading-day/image-digest inputs, and QuickFIX
    inherited the production profile. They therefore failed their own startup validators even
    though Kubernetes had scheduled the Pods.
-6. The superseded `marketdata-publisher` runtime exited normally. Kubernetes treated that clean
-   exit as a Deployment restart loop; keeping it alive with a fake process would hide the intended
-   architecture.
+6. The historical `marketdata-publisher` runtime exited normally. Kubernetes treated that clean
+   exit as a Deployment restart loop; keeping it alive with a fake process would have hidden the
+   intended architecture. #119 subsequently removed the runtime rather than retaining a disabled
+   Deployment.
 7. A full local fleet with a temporary 4 GiB request per Matching pod could not fit alongside the
    Java workloads on the previous 32 GiB kind node. The scheduler correctly reported
    `Insufficient memory`; this was capacity pressure, not an engine out-of-memory diagnosis.
@@ -132,7 +133,7 @@ delays; a failed or timed-out Job still collects the same diagnostic evidence an
 | Fleet verifier used lexical pod sorting and production-only image acceptance | All 15 Pods were Ready, yet the verifier rejected the result | Sort ordinal/partition values numerically and permit only the exact local tag under an explicit local flag | Retains strict production digest validation while making the local gate evaluate its documented input |
 | Local session inputs were absent | Query reported `query market-reference trading day is required`; Risk lacked the matching digest/day | Local overlay reads the values from `matching-session-config` | Keeps local identity explicit and aligns Risk, Query, and Matching |
 | QuickFIX inherited `production` | Validator rejected a production profile without the production ConfigMap source | Local overlay sets `SPRING_PROFILES_ACTIVE=local` and constrains local resources | Uses the local contract without weakening staging/production templates |
-| Superseded publisher runtime exited cleanly | Deployment restarted an intentionally completed process | Local overlay sets `marketdata-publisher` replicas to zero | Represents the accepted removal target instead of adding a keepalive workaround |
+| Superseded publisher runtime exited cleanly | Deployment restarted an intentionally completed process | #119 removes the obsolete Deployment, image, and connector | Keeps the offline artifact architecture explicit instead of adding a keepalive workaround |
 | Diagnostic resources consumed node capacity | Scheduler reported `Insufficient memory` | Delete only certification namespaces created by the investigation; preserve `default` resources; use a sufficiently sized Docker limit | Cleans the scoped test environment without changing production-shaped requests |
 | Matching local output bound was smaller than the mathematical burst | `matching output ring must hold one worst-case event burst and its end marker` | Increase the local power-of-two output and pending-publication capacities to 524,288 | Keeps the 1,024-order local functional bound honest instead of weakening the runtime check |
 | Java API traffic was blocked after kind Service translation | Spring Cloud Kubernetes ConfigMap reads ended in `SocketTimeoutException` | Add a local-only API egress policy for the kind network and Kubernetes API port | Restores the required local ConfigMap/Lease path without widening staging or production policy |

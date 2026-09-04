@@ -159,30 +159,26 @@ existing SQL and account lifecycle event shapes remain compatible.
 
 `AdmissionJournalEntry` composes a validated `AdmissionCommand`, an `AdmissionDeliveryRoute`, and
 an `AdmissionLifecycle`. The command retains order facts, FIX business identity, and the opaque
-routing-policy reference supplied at ingress. The delivery route owns the partition resolved for
-the validated-order topic. The lifecycle uses state-specific decisions rather than a state enum plus
-unrelated nullable fields: pending has no decision, accepted new orders have a reservation
-reference, accepted cancellations explicitly require none, and rejection has a stable nonblank code
-and detail. Revision and timestamps belong to that lifecycle.
+`routingSnapshotId` supplied at ingress. The delivery route owns the explicit partition, artifact
+identity, and routing-algorithm version resolved from the approved daily artifact. The lifecycle
+uses state-specific decisions rather than a state enum plus unrelated nullable fields: pending has
+no decision, accepted new orders have a reservation reference, accepted cancellations explicitly
+require none, and rejection has a stable nonblank code and detail. Revision and timestamps belong
+to that lifecycle.
 
-`AdmissionResult` is a separate projection of Admission identity, decision, routing-policy
-provenance, and delivery route; it does not copy journal revision history or full order facts. The
-JDBC adapter alone flattens and rehydrates the journal row. When an admission begins, risk-service
-selects the active local Routing Policy exactly once, records its authoritative policy identity and
-resolved partition with the pending journal entry, and publishes with the normalized
-venue-qualified instrument key and that explicit outbox partition. Finalization and pending
-recovery reuse the recorded route rather than re-resolving it. The route may have a null policy
-identity only for a legacy pending row created before the additive migration; that row's persisted
-partition is still authoritative during recovery.
+`AdmissionResult` is a separate projection of Admission identity, decision, artifact provenance,
+and delivery route; it does not copy journal revision history or full order facts. The JDBC adapter
+alone flattens and rehydrates the journal row. When an admission begins, risk-service resolves the
+approved daily artifact exactly once, records its identity, algorithm version, and explicit
+partition with the pending journal entry, and publishes with the normalized venue-qualified
+instrument key and that partition. Finalization and pending recovery reuse the recorded route
+rather than re-resolving it.
 
-The ingress `routingSnapshotId` remains optional and opaque. Its UUID cannot be treated as the
-authoritative Routing Policy identity. The additive journal `routing_policy_id` column is nullable
-only for compatibility with legacy pending rows; new Admissions require a complete active local
-policy and persist the policy identity before Account Authority work. This slice is complete only
-when journal and result positional constructors are removed, pending/accepted/rejected JDBC
-round-trips and recovery retain policy identity and partition, accepted outbox records use the
-normalized venue-qualified key and explicit partition, and the SQL and protobuf field shapes
-remain compatible.
+The ingress `routingSnapshotId` remains optional and opaque; it is never an authority for routing.
+The retired nullable `routing_policy_id` compatibility column and policy projection are absent from
+the current schema. This slice is complete when journal and result constructors remain semantic,
+pending/accepted/rejected JDBC round-trips and recovery retain artifact identity and partition, and
+accepted outbox records use the normalized venue-qualified key and explicit partition.
 
 ## Risk Admission application modules
 

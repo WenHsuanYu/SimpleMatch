@@ -83,8 +83,8 @@ The live transport check uses the same `cdc_assert_probe_publication` Interface 
   outbox probe while unavailable, resumes the connector, verifies exact publication, rereads the
   outbox, and asserts the same identity/payload survived.
 - Kafka producer unavailability stops Kafka while PostgreSQL remains writable, captures the durable
-  Risk, Account, and Marketdata probes, restores Kafka/Connect, verifies exact publication, and
-  asserts the same durable probes remained unchanged.
+  Risk and Account probes, restores Kafka/Connect, verifies exact publication, and asserts the same
+  durable probes remained unchanged.
 - Publication-level duplicate delivery first verifies a new durable event, captures Kafka end
   offsets after that publication, terminates Connect with `SIGKILL` before its next configured
   source-offset flush, and requires the same probe event to appear again after restart. One Kafka
@@ -138,9 +138,10 @@ regressions.
 the shared verifier Interface, Matching Kafka contracts, and the live Compose CDC scenarios.
 
 `Flyway CI` remains required because this change adds the Risk migration
-`V10__record_cdc_delivery_observations.sql` under the shared Flyway service convention. The
-migration contract gate must pass `bash scripts/test-flyway-services.sh`; the PostgreSQL smoke
-gate must run `bash scripts/run-flyway-ci-checks.sh`, and Java CI must pass
+`V10__record_cdc_delivery_observations.sql` and the strict artifact-route `V11__require_admission_artifact_route.sql`
+under the shared Flyway service convention. The migration contract gate must pass
+`bash scripts/test-flyway-services.sh`; the PostgreSQL smoke gate must run
+`bash scripts/run-flyway-ci-checks.sh`, and Java CI must pass
 `com.simplematch.riskservice.store.RiskServiceFlywayMigrationTest`.
 
 The PR is not ready until the latest head has successful Java CI, CDC CI, and Flyway CI results.

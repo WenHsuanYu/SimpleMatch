@@ -19,9 +19,10 @@ The latest retained Query evidence is source-aligned to the certified pre-squash
 `out/certification/issue-137-query-20260902-start-offset-query2/provenance.json`; the latest integrated
 deployment evidence is source-aligned to `0d5f1737691dda104b5f5d878e0d61f644d0772a` in
 `out/certification/issue-138-20260904-post-squash/evidence-manifest.json`. The current worktree adds
-post-certification Matching coordinator retry and Gradle distribution-cache hardening. Those changes
-have passed focused local checks and are recorded below, but this inventory does not present them as
-deployed certification evidence until a new source-aligned production-like run is retained.
+post-certification Matching coordinator retry and Gradle distribution-cache hardening, plus the
+#119 pre-release cleanup. These changes have passed focused repository checks and are recorded
+below, but the retained production-like run remains source-aligned to the pre-cleanup tree; no new
+deployment claim is made until a fresh run is retained.
 
 ## Status vocabulary
 
@@ -51,7 +52,7 @@ and must not be interpreted as a requirement to push images or obtain external c
 
 | Class | Current entries | Meaning |
 | --- | --- | --- |
-| Compatibility or legacy cleanup | CL-1 (`PARTIAL`); MR-5 (`OBSOLETE_TO_REMOVE`) | Superseded runtime paths and migration-only seams still require source/configuration removal; local certification alone cannot close them. |
+| Compatibility or legacy cleanup | CL-1 (`PARTIAL`) | Pre-release runtime and migration-only seams are removed in source/configuration; a fresh source-aligned local production-like gate is still required before completion. |
 
 ## Non-blocking hardening and efficiency improvements
 
@@ -198,7 +199,7 @@ reuse a runtime namespace whose source or image identity changed.
   order books.
 - The required Query capability owns rebuildable PostgreSQL and Redis projections and never reads a
   different service's database. Query failure degrades reads but cannot pause the trading path.
-- Risk and Account use one final typed v2 reservation RPC before Account v1 transport is removed.
+- Risk and Account now use one final typed v2 reservation RPC; Account v1 transport is removed.
 - One QuickFIX Gateway owns Phase 1 FIX sessions. It starts `PRE_OPEN`; admission opens only after
   the accepted readiness checks pass.
 - Every Phase 1 workload passes the accepted local production-like overlay, Secret,
@@ -216,7 +217,7 @@ reuse a runtime namespace whose source or image identity changed.
 | Candidate/final artifact workflow and approval evidence | `COMPLETED` | [#124](https://github.com/WenHsuanYu/SimpleMatch/issues/124) |
 | Canonical artifact schema, identity, and packaging | `COMPLETED` | [#122](https://github.com/WenHsuanYu/SimpleMatch/issues/122) |
 | Stable 15-partition routing assignment | `COMPLETED` | [#123](https://github.com/WenHsuanYu/SimpleMatch/issues/123) |
-| Runtime Market Reference publication stack | `OBSOLETE_TO_REMOVE` | [#119](https://github.com/WenHsuanYu/SimpleMatch/issues/119) |
+| Runtime Market Reference publication stack (retired) | `PARTIAL` | [#119](https://github.com/WenHsuanYu/SimpleMatch/issues/119) |
 | Risk artifact loading and `matching.commands` publication | `COMPLETED` | [#126](https://github.com/WenHsuanYu/SimpleMatch/issues/126) |
 | Native deterministic Matching runtime | `COMPLETED` | [#127](https://github.com/WenHsuanYu/SimpleMatch/issues/127) |
 | Kafka journal recovery and trading-day barriers | `COMPLETED` | [#128](https://github.com/WenHsuanYu/SimpleMatch/issues/128) |
@@ -314,20 +315,21 @@ reuse a runtime namespace whose source or image identity changed.
 
 ### MR-5: Remove the runtime Market Reference stack
 
-- **Current status:** `OBSOLETE_TO_REMOVE`
+- **Current status:** `PARTIAL`
 - **Target behavior:** No runtime Market Reference process, PostgreSQL snapshot/routing tables,
   outbox, Debezium connector, Kafka topic, Risk projection consumer, or Matching routing-policy
   ingress remains.
-- **Current evidence:** `services/marketdata-publisher`, its Flyway migrations and outboxes,
-  `deploy/*marketdata-publisher-outbox*`, Risk's `routing` package, and native
-  `routing_policy_ingress` implement the superseded design.
-- **Missing behavior:** Preserve reusable pure normalization/validation code in the offline builder,
-  migrate consumers to startup artifact loading, then remove runtime wiring, configuration,
-  manifests, contracts, tests, and documentation.
+- **Current evidence:** The offline builder remains the artifact authority. The former publisher
+  module, Flyway jobs/migrations, Debezium connector, Kubernetes runtime/configuration, Risk
+  routing projection/resolver, native policy ingress, and obsolete routing-policy protobuf were
+  removed. Risk and Matching use the shared startup artifact identity and final command envelope.
+- **Missing behavior:** Repository implementation is complete; a fresh source-aligned local
+  production-like run is required before this capability can be marked `COMPLETED`.
 - **Acceptance criteria:** Repository search finds no runtime publication or consumption of
   `market-reference.snapshots` or `market-reference.routing-policies`; Risk and Matching readiness
   prove the mounted artifact identity instead.
-- **Blocking dependencies:** MR-1 through MR-4, RM-1, and ME-1.
+- **Blocking dependencies:** Fresh source-aligned local production-like verification; MR-1 through
+  MR-4, RM-1, and ME-1 are complete.
 - **GitHub issue:** [#119](https://github.com/WenHsuanYu/SimpleMatch/issues/119), section B; its
   native blockers are the replacement issues above.
 
@@ -344,9 +346,9 @@ reuse a runtime namespace whose source or image identity changed.
   PostgreSQL/Kafka Connect/Kafka CDC contract also passes, including connector pause/resume and
   exact record delivery. A separate native fixture has verified the local `matching.commands` to
   `matching.events` broker path. The local Kubernetes overlay now contains two in-cluster Debezium
-  workers, and the certification runner registers the Risk, Account, and marketdata-publisher
-  outbox connectors only after Flyway completes, then requires all three connectors and their tasks
-  to report `RUNNING`. The retained source-aligned production-like runs completed the Risk
+  workers, and the certification runner registers the Risk and Account outbox connectors only
+  after Flyway completes, then requires both connectors and their tasks to report `RUNNING`. The
+  retained source-aligned production-like runs completed the Risk
   connector, Kafka profile, Kubernetes workload, and retained-provenance phases.
 - **Missing behavior:** None for the repository-owned project target. The offline builder and
   production artifact approval workflow remain MR-1 through MR-4 work rather than being supplied by
@@ -503,9 +505,8 @@ reuse a runtime namespace whose source or image identity changed.
   caller guard proves non-Account production services do not construct the v1 RPC client. Focused
   contract, Account transaction, Risk gRPC-boundary, Risk identity, and repository-local saga
   recovery tests pass.
-- **Missing behavior:** None for the repository-owned project target. The retained Account v1 server
-  remains intentionally available until #119 performs the later compatibility cleanup; external
-  production deployment proof and staging/production configuration are promotion-template work.
+- **Missing behavior:** None for the repository-owned project target. External production deployment
+  proof and staging/production configuration are promotion-template work.
 - **Acceptance criteria:** The Account transaction remains service-owned and no Risk transaction is
   held across the RPC. Equivalent retries preserve one reservation outcome; conflicting retries are
   typed conflicts; remote success followed by Risk failure recovers without reserving twice.
@@ -771,13 +772,12 @@ reuse a runtime namespace whose source or image identity changed.
 - **Target behavior:** Remove migration-only v1 order/Risk/Matching seams and every superseded
   runtime Market Reference path after replacement consumers are ready. Preserve FIX
   anti-corruption, WAL-to-Risk mapping, persistence mapping, and Java/C++ wire fixtures.
-- **Current evidence:** Local commits remove the dead QuickFIX `orders.commands` publication
-  capability tracked by #120. #119 remains open and the legacy Risk v1, Account v1, shared v1,
-  Market Reference, old Matching topic, and old execution consumers remain; the replacement Account
-  v2 path in #139 is complete.
-- **Missing behavior:** Finish #119 in dependency order; reset pre-release schemas where accepted;
-  remove old topic names/contracts only after coordinated producer/consumer cutovers; update active
-  compatibility inventories and certification.
+- **Current evidence:** #120 and #139 are complete. The implementation removes Risk v1 admission
+  storage/outbox seams, Account v1 transport, obsolete Matching contracts and topic settings,
+  runtime Market Reference publication/projection, and migration-only schemas/jobs. Final Java and
+  native fixtures, Flyway checks, rendered Kubernetes contracts, and focused service tests pass.
+- **Missing behavior:** Source/configuration cutover is complete; a fresh source-aligned local
+  production-like run remains before the cleanup can be marked `COMPLETED`.
 - **Acceptance criteria:** No production caller, persisted required state, external consumer, or
   recovery path depends on a removed seam. All replacement paths preserve identity, ordering,
   retry, recovery, and error semantics. Repository validation remains truthful.

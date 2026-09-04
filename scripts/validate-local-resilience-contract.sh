@@ -94,7 +94,7 @@ abort "Kafka must have bounded resources and probes" unless
     kafka_container.key?("readinessProbe")
 abort "Kafka topic provisioning Job is missing" unless resources.key?(["Job", "kafka-topic-provisioning"])
 
-flyway_services = %w[account-service market-data-projection marketdata-publisher persistence query-service quickfix-gateway risk-service]
+flyway_services = %w[account-service market-data-projection persistence query-service quickfix-gateway risk-service]
 flyway_services.each do |name|
   job = resources.fetch(["Job", "#{name}-flyway"])
   container = job.dig("spec", "template", "spec", "containers", 0)

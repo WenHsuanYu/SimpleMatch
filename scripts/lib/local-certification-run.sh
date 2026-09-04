@@ -102,7 +102,7 @@ _certification_kubernetes_inputs_valid() {
     "$local_postgres_password" ]] || return 1
   for service in \
       account-service risk-service persistence market-data-projection \
-      marketdata-publisher query-service quickfix-gateway; do
+      query-service quickfix-gateway; do
     [[ "$(_certification_secret_value "${service}-secrets" postgres_dsn)" == \
       "$local_postgres_dsn" ]] || return 1
   done
@@ -363,9 +363,6 @@ certification_execute_phase() {
       ;;
     kubernetes-account-outbox-connector)
       run_logged "$phase_id" register_kubernetes_account_connector
-      ;;
-    kubernetes-marketdata-outbox-connector)
-      run_logged "$phase_id" register_kubernetes_marketdata_connector
       ;;
     kubernetes-workloads)
       run_logged "$phase_id" wait_for_kubernetes_workloads

@@ -14,7 +14,7 @@
 - QuickFIX/J session lifecycle 與本機 FileStore/FileLog
 - inbound WAL
 - `OrderSessionRegistry` 內的 order/session mapping 與 execution dedup
-- 對 `matching.executions` 的 outbound FIX 回報責任
+- 對 `matching.events` 的 outbound FIX 回報責任
 
 因此水平擴展應採 `StatefulSet + 固定 owner + 固定 endpoint`，而不是共享 round-robin Service。
 
@@ -46,7 +46,7 @@
     - `order_id -> SenderCompID / TargetCompID / gatewayOwnerId`
     - cancel context
     - execution dedup 基線
-- 重新定義 `matching.executions` 的 consume 模型
+- 以 `matching.events` 重新定義多 owner consume 模型
 - 短期採每個 owner 獨立 consumer group、全量 consume + 本地過濾
 - 長期可把 `gatewayOwnerId` 帶入 contracts，讓 gateway 只收自己的 execution
 - 規劃 owner lease / fencing 所需的 state store
@@ -79,7 +79,7 @@
 本次先落第一個可驗證切片：
 
 - 新增 `quickfixGateway.ownerId` 配置
-- 將 `matching.executions` 的 Kafka consumer group 預設改為 owner-aware
+- 將 `matching.events` 的 Kafka consumer group 預設改為 owner-aware
 - 將 ownerId 接進 runtime 與 acceptor 啟動日志
 - 補齊文件與測試，作為後續 StatefulSet / endpoint / recovery 實作的骨架
 - 新增 StatefulSet / owner Service / PVC / continuity config map 的 K8s scaffolding
@@ -111,7 +111,7 @@
 - [ ] 定義 `OrderSessionRegistry` 可恢復狀態模型
 - [ ] 決定 state store 策略：owner-local only / Redis / Postgres
 - [ ] 設計 execution dedup 持久化策略
-- [ ] 設計 `matching.executions` 多 owner consume 策略
+- [ ] 設計 `matching.events` 多 owner consume 策略
 - [ ] 定義 owner lease / fencing 基礎資料模型
 - [ ] 驗證 recovery 後 outbound execution 仍可正確送出
 

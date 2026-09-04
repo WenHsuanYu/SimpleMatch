@@ -29,9 +29,6 @@ images:
   - name: simplematch/market-data-projection
     newName: registry.example.invalid/simplematch/market-data-projection
     digest: sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
-  - name: simplematch/marketdata-publisher
-    newName: registry.example.invalid/simplematch/marketdata-publisher
-    digest: sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
   - name: simplematch/marketdata-streamer
     newName: registry.example.invalid/simplematch/marketdata-streamer
     digest: sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa

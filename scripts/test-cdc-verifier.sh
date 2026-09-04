@@ -43,24 +43,24 @@ trap 'rm -rf "$TMP_DIR"' EXIT
 
 MOCK_OFFSET_CALL_FILE="$TMP_DIR/offset-call"
 MOCK_TARGET_EVENT='00000000-0000-0000-0000-000000000042'
-MOCK_OUTBOX_PAYLOAD='account-payload-v1'
-MOCK_KAFKA_PAYLOAD='account-payload-v1'
+MOCK_OUTBOX_PAYLOAD='account-payload-v2'
+MOCK_KAFKA_PAYLOAD='account-payload-v2'
 MOCK_KEY='account-42'
 MOCK_TIMESTAMP='2000'
 MOCK_RUN_ID='11111111-2222-4333-8444-555555555555'
-MOCK_PAYLOAD_TYPE='account.v1'
+MOCK_PAYLOAD_TYPE='simplematch.account.v2.AccountLifecycleEvent'
 MOCK_EXTRA_HEADER=''
 MOCK_CONNECTOR_STATE='RUNNING'
 MOCK_MODE='locator'
 
 reset_mock() {
   MOCK_MODE="$1"
-  MOCK_OUTBOX_PAYLOAD='account-payload-v1'
-  MOCK_KAFKA_PAYLOAD='account-payload-v1'
+  MOCK_OUTBOX_PAYLOAD='account-payload-v2'
+  MOCK_KAFKA_PAYLOAD='account-payload-v2'
   MOCK_KEY='account-42'
   MOCK_TIMESTAMP='2000'
   MOCK_RUN_ID='11111111-2222-4333-8444-555555555555'
-  MOCK_PAYLOAD_TYPE='account.v1'
+  MOCK_PAYLOAD_TYPE='simplematch.account.v2.AccountLifecycleEvent'
   MOCK_EXTRA_HEADER=''
   MOCK_CONNECTOR_STATE='RUNNING'
   printf '0\n' >"$MOCK_OFFSET_CALL_FILE"
@@ -235,10 +235,11 @@ assert_equal "$(jq -r '.account_id' "$probe")" 'account-42' 'probe account ident
 assert_equal "$(jq -r '.message_key' "$probe")" 'account-42' 'probe message key'
 assert_equal "$(jq -r '.topic' "$probe")" 'account.lifecycle' 'probe topic'
 assert_equal "$(jq -r '.payload_sha256' "$probe")" \
-  'c09d6057ae3b359e92ee548380b7ad736e39b62c439e8ce8d9fd83ac7d2a3791' \
+  'f560b43be9b0078ff515e74219966d50a1d025a0063ff405cf3b551459f0aec6' \
   'probe payload digest'
 assert_equal "$(jq -r '.created_at_unix_ms' "$probe")" '2000' 'probe timestamp'
-assert_equal "$(jq -r '.payload_type' "$probe")" 'account.v1' 'probe payload type'
+assert_equal "$(jq -r '.payload_type' "$probe")" \
+  'simplematch.account.v2.AccountLifecycleEvent' 'probe payload type'
 assert_equal "$(jq -r '.explicit_partition' "$probe")" 'null' 'probe nullable partition'
 
 cdc_wait_for_connector_state account-service-outbox RUNNING

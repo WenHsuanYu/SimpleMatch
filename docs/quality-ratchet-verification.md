@@ -37,7 +37,7 @@ is part of each handwritten-source `compileJava` task, and
 ordinary `staticAnalysis` lifecycle. Generated-source compilation remains
 outside that gate.
 
-The seven intended modules are:
+The seven intended modules at the 2026-08-03 historical baseline were:
 
 - `services/account-service`
 - `services/marketdata-publisher`
@@ -46,6 +46,10 @@ The seven intended modules are:
 - `services/risk-service`
 - `shared-java/simplematch-config`
 - `shared-java/simplematch-contracts`
+
+That baseline predates #119's retirement of the runtime Market Reference publisher. The current
+quality gate therefore covers the six retained Java modules and does not reference a deleted
+publisher project.
 
 The full Java suite and QuickFIX certification also passed:
 

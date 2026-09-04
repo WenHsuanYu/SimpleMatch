@@ -109,17 +109,16 @@ transaction tests; outbox payload compatibility tests; and unchanged account SQL
 new orders have a reservation reference, accepted cancellations explicitly require none, and
 rejections have a stable code and detail. Its revision owns version and timestamps.
 
-At begin admission, risk-service resolves the partition for the command symbol using the existing
-configured routing policy, persists the value with the pending journal entry, and later publishes to
-`orders.validated` using the symbol as message key and the recorded explicit partition. Recovery
-uses the recorded partition rather than recomputing it. `AdmissionResult` is a separate projection
-of admission identity, decision, opaque routing-policy provenance, and delivery route.
+At begin admission, risk-service resolves the partition for the command symbol from the approved
+daily artifact, persists the artifact identity and explicit partition with the pending journal
+entry, and later publishes to `matching.commands` using the durable command identity as message key.
+Recovery uses the recorded route rather than recomputing it. `AdmissionResult` is a separate
+projection of admission identity, decision, artifact provenance, and delivery route.
 
-The existing optional ingress `routingSnapshotId` is not the local routing JSON version and remains
-opaque. Moving symbol-to-partition assignment into Market Reference is a deferred cross-service
-change; it needs its own versioned contract, schema migration, and consumer rollout. Completion
-requires semantic journal/result constructors, journal and recovery route round-trips, symbol-keyed
-explicit-partition outbox tests, and unchanged SQL/protobuf shapes.
+The existing optional ingress `routingSnapshotId` remains opaque and is not an authority for route
+selection. Completion requires semantic journal/result constructors, journal and recovery route
+round-trips, command-identity keyed explicit-partition outbox tests, and the final artifact identity
+in the SQL/protobuf shapes.
 
 ## Risk Submission outbox event descriptor
 

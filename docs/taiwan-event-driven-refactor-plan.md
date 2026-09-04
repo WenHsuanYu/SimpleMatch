@@ -36,7 +36,13 @@ readiness without being optional for release completion.
 
 The exclusions in this document's [Out of Scope](#out-of-scope) section bound this release.
 
-## Current Implementation Status
+## Historical Implementation Snapshot (2026-08-11)
+
+This table is a frozen plan snapshot from 2026-08-11. It is retained to explain the original phase
+sequence and does not describe the current source tree. For current status, use the
+[Phase 1 Trading Release remaining-work inventory](routing-policy-remaining-work.md), which is
+updated after source-aligned verification. The phase-15 checklist below records the later cleanup
+commit boundaries but does not by itself certify a deployment.
 
 Status as of 2026-08-11, reconciled against the source tree, GitHub issues, and the
 remaining issue graph:
@@ -1090,13 +1096,13 @@ Rollback:
 publication removal, and [#139](https://github.com/WenHsuanYu/SimpleMatch/issues/139) owns the Account
 reservation v2 RPC replacement required before Account v1 deletion.
 
-- [ ] Commit 15.1: Remove runtime Market Reference service/database/outbox/Kafka paths after the
+- [x] Commit 15.1: Remove runtime Market Reference service/database/outbox/Kafka paths after the
   offline builder and artifact loaders pass acceptance.
-- [ ] Commit 15.2: Cut all in-repository producers and consumers to `matching.commands` and
-  `matching.events`, then delete `orders.validated` and `matching.executions` contracts/config.
-- [ ] Commit 15.3: Remove v1 adapters, obsolete string price/quantity representations, and custom
+- [x] Commit 15.2: Cut all in-repository producers and consumers to `matching.commands` and
+  `matching.events`, then delete the retired topic contracts/config.
+- [x] Commit 15.3: Remove v1 adapters, obsolete string price/quantity representations, and custom
   configuration compatibility types after the coordinated cutover.
-- [ ] Commit 15.4: Remove unused dependencies, aliases, dead wiring, and non-critical QuickFIX
+- [x] Commit 15.4: Remove unused dependencies, aliases, dead wiring, and non-critical QuickFIX
   execution projection/DLQ paths.
 - [ ] Commit 15.5: Run the deletion test against new interfaces and remove pass-through modules.
 - [ ] Commit 15.6: Update the event catalog, data dictionary, configuration matrix, deployment
