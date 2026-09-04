@@ -42,6 +42,17 @@ if simplematch_kind_node_readiness_state "$ready_unsupported" >/dev/null 2>&1; t
   fail 'unsupported Ready status unexpectedly passed'
 fi
 
+redis_marker_value='run-redis-marker'
+[[ "$(resilience_dependency_redis_marker_state "$redis_marker_value" "$redis_marker_value")" == present ]] ||
+  fail 'matching Redis marker response was not classified as present'
+[[ "$(resilience_dependency_redis_marker_state '' "$redis_marker_value")" == absent ]] ||
+  fail 'empty Redis marker response was not classified as absent'
+[[ "$(resilience_dependency_redis_marker_state '(nil)' "$redis_marker_value")" == absent ]] ||
+  fail 'Redis nil marker response was not classified as absent'
+if resilience_dependency_redis_marker_state unexpected "$redis_marker_value" >/dev/null 2>&1; then
+  fail 'unexpected Redis marker response was accepted'
+fi
+
 worker_stop='{"node":"simplematch-live-worker","container_id":"0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef","container_id_after":"0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef","node_not_ready_observed":true,"same_container_restarted":true}'
 
 postgres_report="$fixture_dir/postgresql.json"

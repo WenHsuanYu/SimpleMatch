@@ -593,7 +593,7 @@ capture_redis_identity() {
 
 run_redis() {
   local before after target_pod target_node marker_before marker_after
-  local marker_after_bool=false rescheduled_after_worker_loss=false
+  local marker_after_bool=false marker_state rescheduled_after_worker_loss=false
   local worker_json report_json previous_uid
 
   wait_for_redis_pod_ready ""
@@ -615,11 +615,9 @@ run_redis() {
   if ! marker_after="$(redis_command "$redis_pod" redis-cli GET "$marker_key" 2>/dev/null | tr -d '\r')"; then
     die 'could not read Redis marker after recovery'
   fi
-  case "$marker_after" in
-    "$marker_value") marker_after_bool=true ;;
-    '(nil)') ;;
-    *) die 'Redis marker returned an unexpected value after recovery' ;;
-  esac
+  marker_state="$(resilience_dependency_redis_marker_state "$marker_after" "$marker_value")" ||
+    die 'Redis marker returned an unexpected value after recovery'
+  [[ "$marker_state" == present ]] && marker_after_bool=true
   if [[ "$fault_mode" == worker-stop ]]; then
     worker_json="$(worker_stop_evidence_json)"
   else

@@ -18,6 +18,18 @@ resilience_dependency_valid_component() {
   esac
 }
 
+resilience_dependency_redis_marker_state() {
+  local marker_response="$1"
+  local expected_value="$2"
+
+  [[ -n "$expected_value" ]] || return 1
+  case "$marker_response" in
+    "$expected_value") printf 'present\n' ;;
+    ''|'(nil)') printf 'absent\n' ;;
+    *) return 1 ;;
+  esac
+}
+
 resilience_dependency_report_is_valid() {
   local component="$1"
   local report_path="$2"
