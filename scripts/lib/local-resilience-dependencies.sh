@@ -105,7 +105,9 @@ resilience_dependency_report_is_valid() {
           (.target.before.worker_slot | text) and (.target.after.worker_slot | text) and
           (.target.before.pvc == null) and (.target.after.pvc == null) and
           (if .fault_mode == "worker-stop" then
-            (worker_stop and .worker_stop.node == .target.before.node)
+            (worker_stop and .worker_stop.node == .target.before.node) and
+            (.target.before.pod_uid != .target.after.pod_uid) and
+            (.target.before.node != .target.after.node)
           else (.target.before.pod_uid != .target.after.pod_uid) end) and
           (.recovery | type == "object") and
           (.recovery.ready == true) and (.recovery.portable == true) and

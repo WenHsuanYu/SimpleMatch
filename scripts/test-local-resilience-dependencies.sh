@@ -100,6 +100,10 @@ jq '.recovery.rescheduled_after_worker_loss = false' "$redis_report" >"$fixture_
 if resilience_dependency_report_is_passed redis "$fixture_dir/redis-no-reschedule.json"; then
   fail 'Redis worker-loss evidence without rescheduling unexpectedly passed'
 fi
+jq '.target.after.node = .target.before.node' "$redis_report" >"$fixture_dir/redis-same-worker.json"
+if resilience_dependency_report_is_passed redis "$fixture_dir/redis-same-worker.json"; then
+  fail 'Redis worker-loss evidence on the original worker unexpectedly passed'
+fi
 jq '.target.after.pvc = "unexpected-pvc"' "$redis_report" >"$fixture_dir/redis-pvc.json"
 if resilience_dependency_report_is_valid redis "$fixture_dir/redis-pvc.json"; then
   fail 'Redis PVC report unexpectedly passed validation'
@@ -208,6 +212,9 @@ grep -Fq 'rescheduled_after_worker_loss' "$runtime_script" ||
   fail 'Redis report must record worker-loss rescheduling evidence'
 grep -Fq 'could not list Kafka topics before marker creation' "$runtime_script" ||
   fail 'Kafka marker creation must prove topic-list availability'
+if grep -Fq -- '--create --if-not-exists' "$runtime_script"; then
+  fail 'Kafka marker creation must reject a topic-created race instead of adopting it'
+fi
 grep -Fq 'kafka-log-dirs.sh' "$runtime_script" || fail 'Kafka diagnostic lacks a follower catch-up probe'
 grep -Fq -- '--producer-property acks=all' "$runtime_script" || fail 'Kafka marker producer lacks a durable acknowledgement contract'
 grep -Fq 'matching.commands' "$runtime_script" || fail 'Kafka diagnostic lacks topic contract verification'

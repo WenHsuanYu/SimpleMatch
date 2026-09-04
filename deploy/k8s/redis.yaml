@@ -59,6 +59,17 @@ spec:
           operator: Exists
           effect: NoExecute
           tolerationSeconds: 30
+        # A stopped kind worker is marked by the node controller with one of
+        # these standard NoExecute taints; keep the eviction budget explicit
+        # instead of inheriting Kubernetes' longer default toleration.
+        - key: node.kubernetes.io/not-ready
+          operator: Exists
+          effect: NoExecute
+          tolerationSeconds: 30
+        - key: node.kubernetes.io/unreachable
+          operator: Exists
+          effect: NoExecute
+          tolerationSeconds: 30
       terminationGracePeriodSeconds: 30
       containers:
         - name: redis

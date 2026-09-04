@@ -106,7 +106,8 @@ bash scripts/test-local-kubernetes-dependencies.sh
 The local dependency contract is deliberately small. PostgreSQL is a node-local singleton on worker
 slot 0 with one RWO PVC and a protective PDB; its worker loss is fail-closed until the required
 storage returns. Redis is a portable disposable cache with no PDB and a 30-second portable-workload
-toleration. Kafka is a fixed three-member KRaft StatefulSet with one broker/controller per worker,
+toleration plus explicit 30-second tolerations for Kubernetes' `not-ready` and `unreachable`
+`NoExecute` taints. Kafka is a fixed three-member KRaft StatefulSet with one broker/controller per worker,
 RF3/minimum ISR 2 topic durability, and a two-available PDB. These are local lab contracts, not
 cross-node storage HA or production certification.
 
@@ -119,8 +120,9 @@ PostgreSQL must return with its original node-local PVC and the Flyway-owned
 `risk_service.cdc_delivery_lag` health row. Kafka must retain its RF3 marker, two-broker availability
 during the fault, and all three ISR after rejoin; Redis is expected
 to be rebuildable because its `emptyDir` state is disposable. Namespace, worker-container, cluster
-identity, or data mismatches fail closed. A Redis worker-stop report also requires a new Ready Pod
-on a different worker; this focused report cannot be promoted to a full-local
+identity, or data mismatches fail closed. A Redis worker-stop report waits for the node-controller
+taint path and allows up to 150 seconds for a new Ready Pod on a different worker; this focused report
+cannot be promoted to a full-local
 certification PASS; the parent #151 runner still owns the aggregate baseline and fault-family verdict.
 
 The local overlay also runs two Debezium Kafka Connect workers against the in-cluster Kafka and

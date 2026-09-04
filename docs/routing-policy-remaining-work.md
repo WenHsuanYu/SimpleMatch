@@ -261,7 +261,9 @@ durable row in Flyway-owned `risk_service.local_resilience_marker` after worker 
 write observer-owned `risk_service.cdc_delivery_lag`. Kafka evidence requires all three fixed ordinal identities,
 RF3 marker data, two available brokers during one worker fault, and ISR3 after rejoin. Redis worker-stop
 evidence requires a new Ready Pod on a different worker and records that `emptyDir` cache state is
-disposable.
+disposable. Its manifest covers both the custom portable-workload taint and the node-controller
+`not-ready`/`unreachable` taints with explicit 30-second tolerations; the focused diagnostic waits up
+to 150 seconds for the replacement.
 
 | Issue | Current status | Remaining completion gate |
 | --- | --- | --- |

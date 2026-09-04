@@ -85,12 +85,19 @@ redis_container = redis_spec.fetch("containers").find { |container| container.fe
 redis_toleration = redis_spec.fetch("tolerations", []).find do |toleration|
   toleration.dig("effect") == "NoExecute" && toleration.dig("tolerationSeconds") == 30
 end
+redis_tolerations = redis_spec.fetch("tolerations", [])
 redis_service = resources.fetch(["Service", "redis"])
 
 require_value(redis.fetch("spec").fetch("replicas") == 1, "Redis must be a singleton")
 require_value(redis_spec.dig("nodeSelector", "simplematch.io/node-pool") == "local-resilience", "Redis must use local-resilience workers")
 require_value(!redis_spec.dig("nodeSelector", "simplematch.io/worker-slot"), "Redis must remain portable across worker slots")
 require_value(redis_toleration, "Redis must have the 30-second portable-workload toleration")
+%w[node.kubernetes.io/not-ready node.kubernetes.io/unreachable].each do |key|
+  require_value(
+    redis_tolerations.include?({"key" => key, "operator" => "Exists", "effect" => "NoExecute", "tolerationSeconds" => 30}),
+    "Redis must tolerate the 30-second Kubernetes #{key} taint"
+  )
+end
 require_value(!resources.key?(["PodDisruptionBudget", "redis"]), "Redis must not have a PDB")
 require_value(redis_container&.dig("resources", "requests") && redis_container.dig("resources", "limits"), "Redis must define resources")
 require_value(redis_container&.key?("readinessProbe"), "Redis must define a readiness probe")

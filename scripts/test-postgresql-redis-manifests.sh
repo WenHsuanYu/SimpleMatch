@@ -163,6 +163,19 @@ abort_unless(
   },
   "Redis must use the accepted 30-second portable-workload toleration"
 )
+%w[node.kubernetes.io/not-ready node.kubernetes.io/unreachable].each do |key|
+  abort_unless(
+    redis_spec.fetch("tolerations").include?(
+      {
+        "key" => key,
+        "operator" => "Exists",
+        "effect" => "NoExecute",
+        "tolerationSeconds" => 30
+      }
+    ),
+    "Redis must tolerate the 30-second Kubernetes #{key} taint"
+  )
+end
 
 redis_resources = redis_container.fetch("resources")
 abort_unless(

@@ -24,7 +24,7 @@ fault_mode=worker-stop
 deadline_seconds=300
 preflight_timeout_seconds=60
 cleanup_timeout_seconds=30
-redis_reschedule_timeout_seconds=90
+redis_reschedule_timeout_seconds=150
 evidence_dir="${SIMPLEMATCH_RESILIENCE_DEPENDENCY_EVIDENCE_DIR:-}"
 dry_run=false
 
@@ -417,8 +417,8 @@ inject_fault() {
   worker_container_id="$(run_bounded docker inspect --format '{{.Id}}' "$worker_node" 2>/dev/null || true)"
   [[ "$worker_container_id" =~ ^[0-9a-f]{64}$ ]] ||
     die "worker container identity is incomplete: $worker_node"
-  run_bounded docker stop --time 0 "$worker_node" >/dev/null || die "could not stop worker $worker_node"
   worker_stopped=true
+  run_bounded docker stop --time 0 "$worker_node" >/dev/null || die "could not stop worker $worker_node"
   wait_for_node_not_ready "$worker_node"
 }
 
@@ -758,7 +758,7 @@ create_kafka_marker() {
   for _ in $(seq 1 30); do
     check_deadline
     if kafka_command "$pod" /opt/kafka/bin/kafka-topics.sh --bootstrap-server kafka:9092 \
-      --create --if-not-exists --topic "$marker_topic" --partitions 1 --replication-factor 3 \
+      --create --topic "$marker_topic" --partitions 1 --replication-factor 3 \
       --config cleanup.policy=delete --config retention.ms=600000 --config min.insync.replicas=2 >/dev/null 2>&1; then
       created=true
       break
