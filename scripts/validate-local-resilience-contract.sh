@@ -67,8 +67,13 @@ abort "Redis must be a portable singleton" unless
   redis.dig("spec", "replicas") == 1 &&
     redis_spec.dig("nodeSelector", "simplematch.io/node-pool") == "local-resilience" &&
     !redis_spec.dig("nodeSelector", "simplematch.io/worker-slot")
-abort "Redis must use the accepted portable toleration" unless
-  redis_spec.fetch("tolerations", []).any? { |toleration| toleration.dig("effect") == "NoExecute" && toleration.dig("tolerationSeconds") == 30 }
+redis_tolerations = redis_spec.fetch("tolerations", [])
+abort "Redis must use the accepted portable tolerations" unless
+  [
+    {"key" => "simplematch.io/portable-workload", "operator" => "Exists", "effect" => "NoExecute", "tolerationSeconds" => 30},
+    {"key" => "node.kubernetes.io/not-ready", "operator" => "Exists", "effect" => "NoExecute", "tolerationSeconds" => 30},
+    {"key" => "node.kubernetes.io/unreachable", "operator" => "Exists", "effect" => "NoExecute", "tolerationSeconds" => 30}
+  ].all? { |expected| redis_tolerations.include?(expected) }
 abort "Redis must not have a PDB" if resources.key?(["PodDisruptionBudget", "redis"])
 abort "Redis must have resources and readiness" unless
   redis_container.dig("resources", "requests") &&

@@ -468,9 +468,22 @@ capture_postgres_identity() {
   postgres_pod="$pod"
 }
 
+assert_postgres_no_cross_node_replacement() {
+  local owner_node="$1" pods_json
+
+  pods_json="$(kns get pods -l app.kubernetes.io/name=postgres -o json)" ||
+    die 'could not inspect PostgreSQL Pods during owner-worker loss'
+  jq -e --arg owner_node "$owner_node" '
+    (.items | type == "array") and
+    all(.items[]?; ((.spec.nodeName // "") == "" or .spec.nodeName == $owner_node))
+  ' <<<"$pods_json" >/dev/null ||
+    die 'PostgreSQL produced a Pod assigned to another worker during owner-worker loss'
+}
+
 run_postgresql() {
   local before after marker_before marker_after durable_before durable_after
   local target_node target_pod worker_json report_json previous_uid=""
+  local owner_worker_replacement_absent=false
   local sql
 
   wait_for_postgres_pod_ready ""
@@ -489,6 +502,10 @@ WHERE run_id = '$postgres_marker_run_id' AND marker_value = '$marker_value';"
   durable_before=true
 
   inject_fault "$target_pod" "$target_node"
+  if [[ "$fault_mode" == worker-stop ]]; then
+    assert_postgres_no_cross_node_replacement "$target_node"
+    owner_worker_replacement_absent=true
+  fi
   restore_worker
   [[ "$fault_mode" == pod-restart ]] && previous_uid="$(jq -r '.pod_uid' <<<"$before")"
   wait_for_postgres_pod_ready "$previous_uid"
@@ -513,6 +530,7 @@ WHERE run_id = '$postgres_marker_run_id' AND marker_value = '$marker_value';"
     --argjson before "$before" --argjson after "$after" \
     --argjson worker_stop "$worker_json" --arg marker "$postgres_marker_run_id" \
     --argjson durable_before "$durable_before" --argjson durable_after "$durable_after" \
+    --argjson owner_worker_replacement_absent "$owner_worker_replacement_absent" \
     --arg cluster "$cluster_name" --arg context "$context" --arg namespace "$namespace" \
     --arg run_id "$run_id" --arg fault_mode "$fault_mode" --argjson deadline "$deadline_seconds" \
     '{schema_version:1,profile:"dependency-recovery",component:"postgresql",status:"PASSED",
@@ -520,7 +538,8 @@ WHERE run_id = '$postgres_marker_run_id' AND marker_value = '$marker_value';"
       deadline_seconds:$deadline,target:{before:$before,after:$after},
       worker_stop:$worker_stop,
       recovery:{ready:true,durable_marker:$marker,durable_before:$durable_before,
-        durable_after:$durable_after,data_preserved:true},failure_reason:null,
+        durable_after:$durable_after,data_preserved:true,
+        owner_worker_replacement_absent:$owner_worker_replacement_absent},failure_reason:null,
       claim_boundary:["local PostgreSQL same-worker PVC and durable-row recovery"]}')"
   write_validated_report postgresql "$report_json"
 }

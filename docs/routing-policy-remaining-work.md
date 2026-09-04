@@ -257,8 +257,9 @@ lifecycle contracts pass. The focused seam is
 `scripts/run-local-resilience-dependencies.sh`; it accepts only an existing disposable namespace,
 captures exact runtime identity, and writes diagnostic-only evidence without rerunning the complete
 production-like runner. PostgreSQL evidence requires the original slot-0 Pod, RWO PVC/PV, and a
-durable row in Flyway-owned `risk_service.local_resilience_marker` after worker return; it must not
-write observer-owned `risk_service.cdc_delivery_lag`. Kafka evidence requires all three fixed ordinal identities,
+durable row in Flyway-owned `risk_service.local_resilience_marker` after worker return; worker-stop
+also records that no PostgreSQL replacement Pod was assigned to another worker before return, and it
+must not write observer-owned `risk_service.cdc_delivery_lag`. Kafka evidence requires all three fixed ordinal identities,
 RF3 marker data, two available brokers during one worker fault, and ISR3 after rejoin. Redis worker-stop
 evidence requires a new Ready Pod on a different worker and records that `emptyDir` cache state is
 disposable. Its manifest covers both the custom portable-workload taint and the node-controller

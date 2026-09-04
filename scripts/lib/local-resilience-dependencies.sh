@@ -63,7 +63,8 @@ resilience_dependency_report_is_valid() {
           (.target.before.pv | text) and (.target.after.pv | text) and
           (.target.before.pv == .target.after.pv) and
           (if .fault_mode == "worker-stop" then
-            (worker_stop and .worker_stop.node == .target.before.node)
+            (worker_stop and .worker_stop.node == .target.before.node) and
+            (.recovery.owner_worker_replacement_absent == true)
           else (.target.before.pod_uid != .target.after.pod_uid) end) and
           (.recovery | type == "object") and
           (.recovery.ready == true) and (.recovery.durable_marker | text) and

@@ -691,7 +691,8 @@ bash scripts/run-local-resilience-dependencies.sh \
 清理則另有 30 秒 best-effort 上限，並在
 `out/resilience/dependencies-<run-id>/` 保存一份 component report。PostgreSQL 報告必須證明
 原本的 worker slot、Pod、RWO PVC/PV 與 Flyway 管理的 `risk_service.local_resilience_marker` row
-都保留；該 marker 與 observer-owned 的 `risk_service.cdc_delivery_lag` 分離，不可用來偽造
+都保留；worker-stop 期間並確認沒有 PostgreSQL replacement Pod 被指派到其他 worker；該 marker
+與 observer-owned 的 `risk_service.cdc_delivery_lag` 分離，不可用來偽造
 CDC 健康資料。Kafka 報告必須證明
 三個固定 ordinal 的 cluster/node identity、RF3 marker、兩個存活 broker 與恢復後 ISR3；
 Redis worker-stop 報告必須觀察到新的 Ready Pod 已移到另一個 worker。Redis 同時明確容忍

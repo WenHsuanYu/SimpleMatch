@@ -34,7 +34,7 @@ jq -n --argjson worker_stop "$worker_stop" '
       after: {pod:"postgres-0",pod_uid:"postgres-after",node:"simplematch-live-worker",worker_slot:"0",pvc:"postgres-data-postgres-0",pv:"postgres-pv"}
     },
     worker_stop: $worker_stop,
-    recovery: {ready:true, durable_marker:"marker-1", durable_before:true, durable_after:true, data_preserved:true},
+    recovery: {ready:true, durable_marker:"marker-1", durable_before:true, durable_after:true, data_preserved:true, owner_worker_replacement_absent:true},
     failure_reason: null,
     claim_boundary: ["local PostgreSQL same-worker PVC and durable-row recovery"]
   }
@@ -69,6 +69,14 @@ fi
 jq '.recovery.durable_after = false | .recovery.data_preserved = false' "$postgres_report" >"$fixture_dir/postgresql-empty.json"
 if resilience_dependency_report_is_passed postgresql "$fixture_dir/postgresql-empty.json"; then
   fail 'PostgreSQL empty replacement unexpectedly passed'
+fi
+jq 'del(.recovery.owner_worker_replacement_absent)' "$postgres_report" >"$fixture_dir/postgresql-missing-replacement-probe.json"
+if resilience_dependency_report_is_passed postgresql "$fixture_dir/postgresql-missing-replacement-probe.json"; then
+  fail 'PostgreSQL missing owner-worker replacement evidence unexpectedly passed'
+fi
+jq '.recovery.owner_worker_replacement_absent = false' "$postgres_report" >"$fixture_dir/postgresql-replacement-probe-failed.json"
+if resilience_dependency_report_is_passed postgresql "$fixture_dir/postgresql-replacement-probe-failed.json"; then
+  fail 'PostgreSQL failed owner-worker replacement evidence unexpectedly passed'
 fi
 
 redis_report="$fixture_dir/redis.json"
@@ -188,6 +196,8 @@ if grep -Fq 'risk_service.cdc_delivery_lag' "$runtime_script"; then
 fi
 grep -Fq 'risk_service.local_resilience_marker' "$runtime_script" ||
   fail 'PostgreSQL marker must use the dedicated Flyway-owned table'
+grep -Fq 'owner_worker_replacement_absent' "$runtime_script" ||
+  fail 'PostgreSQL diagnostic must record owner-worker replacement absence'
 grep -Fq 'timeout --foreground' "$runtime_script" ||
   fail 'dependency diagnostic must bound external commands'
 grep -Fq 'run_bounded' "$runtime_script" ||

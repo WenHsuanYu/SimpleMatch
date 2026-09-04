@@ -118,7 +118,9 @@ data identity, injects one bounded worker-stop (or Pod restart), and writes a di
 PostgreSQL must return with its original node-local PVC and the Flyway-owned
 `risk_service.local_resilience_marker` row; this diagnostic marker is separate from the observer-owned
 `risk_service.cdc_delivery_lag` health row. Kafka must retain its RF3 marker, two-broker availability
-during the fault, and all three ISR after rejoin; Redis is expected
+during the fault, and all three ISR after rejoin; during a PostgreSQL worker-stop, the diagnostic also
+checks that no replacement Pod is assigned to another worker before the original worker returns.
+Redis is expected
 to be rebuildable because its `emptyDir` state is disposable. Namespace, worker-container, cluster
 identity, or data mismatches fail closed. A Redis worker-stop report waits for the node-controller
 taint path and allows up to 150 seconds for a new Ready Pod on a different worker; this focused report
