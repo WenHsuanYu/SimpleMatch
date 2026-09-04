@@ -30,6 +30,24 @@ Use the current documents for implementation and verification:
 | `readme-documentation-refactor-spec.md` | Completed documentation reorganization specification. | The current documentation indexes and repository workflow rules. |
 | `taiwan-event-driven-refactor-plan.md` | Historical master plan whose status and phase checklist no longer describe the completed Phase 1 release. | Remaining-work inventory, cross-cutting transaction policy, ADRs, and certification runbook. |
 | `local-production-like-kubernetes-workload-startup.md` | Historical startup investigation; prevention checks and executable runbooks now own the workflow. | [Production-like certification runbook](../production-live-certification.md), [deployment lessons](../agents/deployment-test-lessons.md), and [registry lifecycle](../local-registry-resource-lifecycle.md). |
+| `research-pmd-static-analysis.md` | Completed PMD adoption research; its proposed rollout is now implemented by the blocking PMD policy. | [PMD quality policy](../pmd-quality-policy.md) and [development workflow](../development-workflow.md). |
+
+## Documentation review — 2026-09-05
+
+The active `docs/` tree was reviewed against repository references, current implementation status,
+and the documentation authority rules. The following documents were intentionally retained:
+
+| Active document | Why it remains active |
+| --- | --- |
+| `field-typing-phase2-gates.md` | Contains conditional, failed, and blocked type-migration gates with no completed replacement. |
+| `quickfix-gateway-session-scale-plan.md` | Contains unchecked same-owner restart, shared-state, and standby-failover work and is linked by the Gateway documentation. |
+| `local-certification-phase-dag*.md`, certification runbooks, and deployment guides | Define current executable interfaces, acceptance boundaries, or retained evidence requirements. |
+| `phase-6-account-reservation-authority.md` and `phase-7-durable-risk-admission.md` | Remain concise implementation/domain records referenced by current service and transaction documentation. |
+
+The review moved only the PMD research document because its own status says it is a pre-rollout
+proposal and the current PMD policy has superseded its implementation guidance. Forwarding pages
+and already-archived documents remain unchanged so historical links and static contract checks keep
+working.
 
 The archive is not a second source of truth for implementation status or release evidence. The
 transaction-criteria scripts intentionally read the archived plan to check that its historical
