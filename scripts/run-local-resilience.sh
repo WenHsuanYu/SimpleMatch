@@ -33,7 +33,7 @@ usage() {
 Usage:
   scripts/run-local-resilience.sh --profile contract [--dry-run]
   scripts/run-local-resilience.sh --profile full-local [--keep-resources] [--dry-run]
-  scripts/run-local-resilience-dependencies.sh --component COMPONENT --namespace NAME
+  scripts/run-local-resilience-dependencies.sh --component COMPONENT --namespace NAME --namespace-run-id ID
 
 contract validates repository-rendered targets without stopping a kind worker.
 full-local owns one generated namespace and reports live scenario families;

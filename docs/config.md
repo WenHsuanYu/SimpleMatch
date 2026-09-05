@@ -182,22 +182,23 @@ are command-line harness inputs, not Spring properties or workload configuration
 - `SIMPLEMATCH_RESILIENCE_NAMESPACE` optionally selects an existing disposable namespace owned by
   `local-resilience` or `local-production-like-certification`; the command still validates its
   ownership labels and refuses an unowned or missing namespace.
-- `SIMPLEMATCH_RESILIENCE_NAMESPACE_RUN_ID` optionally requires an exact match with the selected
-  namespace's `simplematch.io/run-id` label. It has no default so an omitted value uses the label
-  read during the ownership preflight.
+- `SIMPLEMATCH_RESILIENCE_NAMESPACE_RUN_ID` is required for a state-changing diagnostic and must
+  exactly match the selected namespace's `simplematch.io/run-id` label. It is optional only for
+  `--dry-run`, which performs no namespace or workload inspection.
 - `SIMPLEMATCH_RESILIENCE_DEPENDENCY_EVIDENCE_DIR` optionally selects an empty output directory;
   otherwise the diagnostic writes one report below
   `out/resilience/dependencies-<diagnostic-run-id>/`.
 
-The focused command also accepts `--cluster`, `--context`, `--fault-mode`, `--deadline-seconds`,
-and `--evidence-dir` as explicit invocation options. The default canonical cluster is
+The focused command also accepts `--cluster`, `--context`, `--namespace-run-id`, `--fault-mode`,
+`--deadline-seconds`, and `--evidence-dir` as explicit invocation options. The default canonical cluster is
 `simplematch-live`, the default context is `kind-simplematch-live`, and the deadline may not exceed
-300 seconds. It never applies manifests or deletes the caller namespace; only a run-owned Kafka
-marker topic is cleaned and verified after a successful Kafka check, with the same cleanup attempted
-under a shared 30-second failure budget when the check aborts. If Kafka reports an uncertain marker
-creation outcome, the diagnostic fails closed and does not delete the topic because ownership cannot
-be proven; inspect that exact topic before any manual cleanup. Its report is diagnostic evidence and
-cannot be promoted to the parent #151 aggregate certification verdict.
+300 seconds. It never applies manifests or deletes the caller namespace; PostgreSQL's durable marker
+row and Kafka's run-owned marker topic are cleaned only after their observations are captured, with
+cleanup attempted under a shared 30-second failure budget. Cleanup failure makes the diagnostic fail
+closed. If Kafka reports an uncertain marker creation outcome, the diagnostic does not delete the
+topic because ownership cannot be proven; inspect that exact topic before any manual cleanup. Its
+report is diagnostic evidence and cannot be promoted to the parent #151 aggregate certification
+verdict.
 
 ## Change Policy
 

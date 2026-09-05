@@ -92,6 +92,10 @@ jq '.worker_stop.node = "simplematch-live-worker2"' "$postgres_report" >"$fixtur
 if resilience_dependency_report_is_passed postgresql "$fixture_dir/postgresql-unrelated-worker.json"; then
   fail 'unrelated worker evidence unexpectedly passed'
 fi
+jq '.claim_boundary = []' "$postgres_report" >"$fixture_dir/postgresql-empty-claim-boundary.json"
+if resilience_dependency_report_is_passed postgresql "$fixture_dir/postgresql-empty-claim-boundary.json"; then
+  fail 'PostgreSQL PASS with an empty claim boundary unexpectedly passed'
+fi
 jq '.fault_mode = "pod-restart" | .worker_stop = null | .target.after.pod_uid = .target.before.pod_uid' "$postgres_report" >"$fixture_dir/postgresql-unchanged-pod-restart.json"
 if resilience_dependency_report_is_passed postgresql "$fixture_dir/postgresql-unchanged-pod-restart.json"; then
   fail 'unchanged Pod restart evidence unexpectedly passed'
@@ -147,6 +151,10 @@ jq '.recovery.rescheduled_after_worker_loss = false' "$redis_report" >"$fixture_
 if resilience_dependency_report_is_passed redis "$fixture_dir/redis-no-reschedule.json"; then
   fail 'Redis worker-loss evidence without rescheduling unexpectedly passed'
 fi
+jq '.claim_boundary = []' "$redis_report" >"$fixture_dir/redis-empty-claim-boundary.json"
+if resilience_dependency_report_is_passed redis "$fixture_dir/redis-empty-claim-boundary.json"; then
+  fail 'Redis PASS with an empty claim boundary unexpectedly passed'
+fi
 jq '.target.after.node = .target.before.node' "$redis_report" >"$fixture_dir/redis-same-worker.json"
 if resilience_dependency_report_is_passed redis "$fixture_dir/redis-same-worker.json"; then
   fail 'Redis worker-loss evidence on the original worker unexpectedly passed'
@@ -199,6 +207,10 @@ jq '.target.after.cluster_id = "wrong-cluster"' "$kafka_report" >"$fixture_dir/k
 if resilience_dependency_report_is_passed kafka "$fixture_dir/kafka-cluster-mismatch.json"; then
   fail 'Kafka cluster identity mismatch unexpectedly passed'
 fi
+jq '.claim_boundary = []' "$kafka_report" >"$fixture_dir/kafka-empty-claim-boundary.json"
+if resilience_dependency_report_is_passed kafka "$fixture_dir/kafka-empty-claim-boundary.json"; then
+  fail 'Kafka PASS with an empty claim boundary unexpectedly passed'
+fi
 jq 'del(.worker_stop)' "$kafka_report" >"$fixture_dir/kafka-missing-worker-evidence.json"
 if resilience_dependency_report_is_passed kafka "$fixture_dir/kafka-missing-worker-evidence.json"; then
   fail 'Kafka missing worker evidence unexpectedly passed'
@@ -222,12 +234,28 @@ fi
 runtime_script="$script_dir/run-local-resilience-dependencies.sh"
 readiness_lib="$script_dir/lib/local-kind.sh"
 bash -n "$runtime_script"
+missing_run_id_output="$fixture_dir/missing-run-id.txt"
+if "$runtime_script" --component postgresql --namespace simplematch-resilience-test \
+    >"$missing_run_id_output" 2>&1; then
+  fail 'fault injection without an exact namespace run-id unexpectedly passed'
+fi
+grep -Fq 'namespace-run-id is required for fault injection' "$missing_run_id_output" ||
+  fail 'fault injection did not require an exact namespace run-id'
 dry_run="$("$runtime_script" --component postgresql --namespace simplematch-resilience-test --dry-run)"
 grep -Fq 'capture exact identity' <<<"$dry_run" || fail 'runtime diagnostic dry-run is incomplete'
 grep -Fq 'simplematch.io/lifecycle' "$runtime_script" || fail 'runtime diagnostic lacks namespace ownership guard'
 grep -Fq 'PVC/PV' "$runtime_script" || fail 'runtime diagnostic lacks storage continuity guard'
 grep -Fq 'container identity' "$runtime_script" || fail 'runtime diagnostic lacks worker identity guard'
 grep -Fq 'wait_for_kafka_set_ready ""' "$runtime_script" || fail 'runtime diagnostic lacks a stable Kafka baseline wait'
+grep -Fq 'validate_control_plane_stability' "$runtime_script" || fail 'runtime diagnostic lacks control-plane stability preflight'
+grep -Fq 'restart_count' "$runtime_script" || fail 'control-plane stability preflight lacks restart-count continuity'
+grep -Fq 'kube-controller-manager-' "$runtime_script" || fail 'control-plane stability preflight lacks controller-manager coverage'
+grep -Fq 'kube-scheduler-' "$runtime_script" || fail 'control-plane stability preflight lacks scheduler coverage'
+grep -Fq 'etcd-' "$runtime_script" || fail 'control-plane stability preflight lacks etcd coverage'
+grep -Fq 'DELETE FROM risk_service.local_resilience_marker' "$runtime_script" ||
+  fail 'PostgreSQL marker cleanup is missing'
+grep -Fq 'cleanup_status=1' "$runtime_script" ||
+  fail 'cleanup failures are not propagated to the diagnostic result'
 if grep -Fq 'CREATE TABLE' "$runtime_script"; then
   fail 'dependency diagnostic must not perform runtime PostgreSQL DDL'
 fi

@@ -25,6 +25,7 @@ component=""
 fault_mode=worker-stop
 deadline_seconds=300
 preflight_timeout_seconds=60
+control_plane_stability_window_seconds=5
 cleanup_timeout_seconds=30
 redis_reschedule_timeout_seconds=150
 evidence_dir="${SIMPLEMATCH_RESILIENCE_DEPENDENCY_EVIDENCE_DIR:-}"
@@ -47,8 +48,10 @@ kafka_marker_pod=""
 marker_key=""
 marker_value=""
 postgres_marker_run_id=""
+postgres_pod=""
 emergency_cleanup_running=false
 cleanup_deadline_at_seconds=0
+preflight_stability_deadline=0
 
 usage() {
   cat <<'EOF_USAGE'
@@ -118,6 +121,22 @@ run_cleanup_bounded() {
   timeout --foreground "${remaining}s" "$@"
 }
 
+run_preflight_bounded() {
+  local remaining status command_name="${1:-command}"
+
+  remaining=$((preflight_stability_deadline - SECONDS))
+  (( remaining > 0 )) || return 124
+  if timeout --foreground "${remaining}s" "$@"; then
+    return 0
+  else
+    status="$?"
+  fi
+  if (( status == 124 )); then
+    failure_reason="bounded preflight command timed out: $command_name"
+  fi
+  return "$status"
+}
+
 bounded_sleep() {
   run_bounded sleep "$1"
 }
@@ -134,6 +153,10 @@ kns() {
 
 cleanup_kns() {
   run_cleanup_bounded kubectl --context "$context" -n "$namespace" "$@"
+}
+
+preflight_kube() {
+  run_preflight_bounded kubectl --context "$context" "$@"
 }
 
 write_failure_report() {
@@ -178,22 +201,54 @@ cleanup_kafka_marker() {
   ! grep -Fxq "$marker_topic" <<<"$topics"
 }
 
+cleanup_postgres_marker() {
+  local sql output remaining
+
+  [[ -n "$postgres_marker_run_id" ]] || return 0
+  [[ -n "$postgres_pod" ]] || return 1
+  sql="DELETE FROM risk_service.local_resilience_marker
+WHERE run_id = '$postgres_marker_run_id' AND marker_value = '$marker_value';
+SELECT count(*) FROM risk_service.local_resilience_marker
+WHERE run_id = '$postgres_marker_run_id' AND marker_value = '$marker_value';"
+  output="$(run_cleanup_bounded kubectl --context "$context" -n "$namespace" exec \
+    "$postgres_pod" -c postgres -- psql --username=simplematch --dbname=simplematch \
+    --no-psqlrc --tuples-only --no-align --set=ON_ERROR_STOP=1 --command "$sql")" ||
+    return 1
+  remaining="$(tail -n 1 <<<"$output" | tr -d '[:space:]')"
+  [[ "$remaining" == 0 ]] || return 1
+  postgres_marker_run_id=""
+}
+
 emergency_cleanup() {
   local status="$?"
+  local cleanup_status=0
   [[ "$emergency_cleanup_running" == false ]] || exit "$status"
   emergency_cleanup_running=true
   set +e
   cleanup_deadline_at_seconds=$((SECONDS + cleanup_timeout_seconds))
   if [[ "$worker_stopped" == true && -n "$worker_node" ]]; then
-    run_cleanup_bounded docker start "$worker_node" >/dev/null 2>&1 ||
+    if ! run_cleanup_bounded docker start "$worker_node" >/dev/null 2>&1; then
       failure_reason="${failure_reason:-could not restore worker during cleanup}"
+      cleanup_status=1
+    fi
   fi
   if [[ "$marker_topic_created" == true && -n "$marker_topic" && -n "$kafka_marker_pod" ]]; then
-    cleanup_kafka_marker ||
+    if ! cleanup_kafka_marker; then
       failure_reason="${failure_reason:-could not clean up Kafka marker during cleanup}"
+      cleanup_status=1
+    fi
+  fi
+  if [[ -n "$postgres_marker_run_id" ]]; then
+    cleanup_postgres_marker || {
+      failure_reason="${failure_reason:-could not clean up PostgreSQL durable marker during cleanup}"
+      cleanup_status=1
+    }
   fi
   if [[ -n "$report_path" && ! -f "$report_path" ]]; then
     write_failure_report FAILED
+  fi
+  if (( cleanup_status != 0 )); then
+    status=1
   fi
   trap - EXIT
   exit "$status"
@@ -223,9 +278,10 @@ validate_namespace() {
   labels_run_id="$(jq -r '.metadata.labels["simplematch.io/run-id"]' <<<"$namespace_json")"
   [[ "$labels_run_id" =~ ^[A-Za-z0-9._-]+$ ]] ||
     die 'namespace run-id contains unsupported characters'
-  if [[ -n "$namespace_run_id" && "$labels_run_id" != "$namespace_run_id" ]]; then
+  [[ -n "$namespace_run_id" ]] ||
+    die 'namespace-run-id is required for fault injection'
+  [[ "$labels_run_id" == "$namespace_run_id" ]] ||
     die "namespace belongs to run $labels_run_id, not $namespace_run_id"
-  fi
   namespace_run_id="$labels_run_id"
   marker_value="${namespace_run_id}-${component}-${run_id}"
   marker_key="simplematch-resilience-${run_id}"
@@ -263,6 +319,59 @@ validate_cluster_preflight() {
     die 'canonical topology is not one control plane plus three Ready workers'
   kube get --raw='/readyz?verbose' | grep -Fq 'readyz check passed' ||
     die 'canonical control plane is not reporting readyz success'
+  validate_control_plane_stability
+}
+
+control_plane_snapshot() {
+  preflight_kube get pods -n kube-system -o json | jq -c '
+    [.items[]
+     | select((.metadata.name // "") | test("^(etcd-|kube-controller-manager-|kube-scheduler-)"))
+     | {name:.metadata.name,
+        phase:(.status.phase // ""),
+        ready:any(.status.conditions[]?; .type == "Ready" and .status == "True"),
+        restart_count:([.status.containerStatuses[]?.restartCount] | add // 0)}]
+    | sort_by(.name)'
+}
+
+validate_control_plane_stability() {
+  local before after events now
+
+  preflight_stability_deadline=$((SECONDS + preflight_timeout_seconds + control_plane_stability_window_seconds))
+  before="$(control_plane_snapshot)" || die 'could not capture control-plane readiness baseline'
+  jq -e '
+    length == 3 and
+    all(.[]; .phase == "Running" and .ready == true)
+  ' <<<"$before" >/dev/null ||
+    die 'control-plane components are not all Ready before fault injection'
+
+  run_preflight_bounded sleep "$control_plane_stability_window_seconds" ||
+    die 'control-plane stability window could not complete'
+  after="$(control_plane_snapshot)" || die 'could not capture control-plane readiness after stability window'
+  jq -n -e --argjson before "$before" --argjson after "$after" '$before == $after' >/dev/null ||
+    die 'control-plane readiness or restart counts changed during stability window'
+
+  events="$(preflight_kube get events -n kube-system --sort-by=.lastTimestamp -o json)" ||
+    die 'could not inspect recent control-plane events'
+  now="$(date -u +%s)"
+  jq -e --argjson now "$now" --argjson window "$control_plane_stability_window_seconds" '
+    def event_epoch:
+      (.eventTime // .lastTimestamp // .series.lastObservedTime // .metadata.creationTimestamp // "")
+      | if type == "string" and length > 0
+        then (sub("\\.[0-9]+Z$"; "Z") | try fromdateiso8601 catch null)
+        else null
+        end;
+    all(.items[]?;
+      . as $event |
+      ($event.involvedObject.name // "") as $name |
+      ($event | event_epoch) as $timestamp |
+      if ($name | test("^(etcd-|kube-controller-manager-|kube-scheduler-)")) and
+         ($timestamp != null) and (($now - $timestamp) <= $window)
+      then (((($event.reason // "") + " " + ($event.message // ""))
+             | test("lease|probe|unhealthy|failed|timeout"; "i")) | not)
+      else true
+      end)
+  ' <<<"$events" >/dev/null ||
+    die 'recent control-plane lease, probe, or failure event detected'
 }
 
 prepare_evidence_dir() {
@@ -555,6 +664,7 @@ WHERE run_id = '$postgres_marker_run_id' AND marker_value = '$marker_value';"
         durable_after:$durable_after,data_preserved:true,
         owner_worker_replacement_absent:$owner_worker_replacement_absent},failure_reason:null,
       claim_boundary:["local PostgreSQL same-worker PVC and durable-row recovery"]}')"
+  cleanup_postgres_marker || die 'could not clean up PostgreSQL durable marker'
   write_validated_report postgresql "$report_json"
 }
 
@@ -946,6 +1056,9 @@ esac
   die 'deadline-seconds must be a positive integer no greater than 300'
 [[ -n "$namespace" ]] || die '--namespace is required'
 [[ "$namespace" =~ ^[a-z0-9]([-a-z0-9]*[a-z0-9])?$ ]] || die 'namespace is not a valid Kubernetes name'
+if [[ "$dry_run" == false && -z "$namespace_run_id" ]]; then
+  die '--namespace-run-id is required for fault injection'
+fi
 evidence_dir="${evidence_dir:-$repo_root/out/resilience/dependencies-$run_id}"
 report_path="$evidence_dir/$component.json"
 

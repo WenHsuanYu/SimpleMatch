@@ -112,9 +112,12 @@ RF3/minimum ISR 2 topic durability, and a two-available PDB. These are local lab
 cross-node storage HA or production certification.
 
 The dependency lifecycle seam is available without rerunning the full local runner:
-`scripts/run-local-resilience-dependencies.sh --component postgresql|redis|kafka --namespace NAME`
-consumes an existing lifecycle-labelled disposable namespace, captures exact Pod/Node/PVC/PV and
-data identity, injects one bounded worker-stop (or Pod restart), and writes a diagnostic-only report.
+`scripts/run-local-resilience-dependencies.sh --component postgresql|redis|kafka --namespace NAME --namespace-run-id ID`
+consumes an existing lifecycle-labelled disposable namespace only after proving the exact run-id,
+captures exact Pod/Node/PVC/PV and data identity, injects one bounded worker-stop (or Pod restart),
+and writes a diagnostic-only report. Before fault injection it also requires a bounded stable window
+with Ready `etcd`, `kube-controller-manager`, and `kube-scheduler`, unchanged restart counts,
+and no recent control-plane lease/probe/failure event.
 PostgreSQL must return with its original node-local PVC and the Flyway-owned
 `risk_service.local_resilience_marker` row; this diagnostic marker is separate from the observer-owned
 `risk_service.cdc_delivery_lag` health row. Kafka must retain its RF3 marker, two-broker availability
@@ -122,7 +125,9 @@ during the fault, and all three ISR after rejoin; during a PostgreSQL worker-sto
 checks that no replacement Pod is assigned to another worker before the original worker returns.
 Redis is expected
 to be rebuildable because its `emptyDir` state is disposable. Namespace, worker-container, cluster
-identity, or data mismatches fail closed. A Redis worker-stop report waits for the node-controller
+identity, or data mismatches fail closed. PostgreSQL's diagnostic marker is deleted after the durable
+row observation is captured; cleanup failure is itself a failed diagnostic. A Redis worker-stop report
+waits for the node-controller
 taint path and allows up to 150 seconds for a new Ready Pod on a different worker; this focused report
 cannot be promoted to a full-local
 certification PASS; the parent #151 runner still owns the aggregate baseline and fault-family verdict.

@@ -675,15 +675,16 @@ out/resilience/<run-id>/
 
 當只需要驗證 PostgreSQL/Redis/Kafka 的 worker-loss 或 Pod restart 行為時，不必重跑完整
 `full-local` runner。對一個已存在、具 `disposable` ownership label 的 namespace 執行下列
-其中一個 focused diagnostic：
+其中一個 focused diagnostic；state-changing 執行必須同時提供與 namespace label 完全相符的
+`--namespace-run-id`：
 
 ```bash
 bash scripts/run-local-resilience-dependencies.sh \
-  --component postgresql --namespace <run-namespace>
+  --component postgresql --namespace <run-namespace> --namespace-run-id <namespace-run-id>
 bash scripts/run-local-resilience-dependencies.sh \
-  --component redis --namespace <run-namespace>
+  --component redis --namespace <run-namespace> --namespace-run-id <namespace-run-id>
 bash scripts/run-local-resilience-dependencies.sh \
-  --component kafka --namespace <run-namespace>
+  --component kafka --namespace <run-namespace> --namespace-run-id <namespace-run-id>
 ```
 
 每次執行只注入一個明確的 fault，使用單一 300 秒 monotonic deadline；所有可能阻塞的
@@ -691,7 +692,8 @@ bash scripts/run-local-resilience-dependencies.sh \
 清理則另有 30 秒 best-effort 上限，並在
 `out/resilience/dependencies-<run-id>/` 保存一份 component report。PostgreSQL 報告必須證明
 原本的 worker slot、Pod、RWO PVC/PV 與 Flyway 管理的 `risk_service.local_resilience_marker` row
-都保留；worker-stop 期間並確認沒有 PostgreSQL replacement Pod 被指派到其他 worker；該 marker
+在 recovery observation 時存在並被記錄；worker-stop 期間並確認沒有 PostgreSQL replacement Pod
+被指派到其他 worker；該 marker
 與 observer-owned 的 `risk_service.cdc_delivery_lag` 分離，不可用來偽造
 CDC 健康資料。Kafka 報告必須證明
 三個固定 ordinal 的 cluster/node identity、RF3 marker、兩個存活 broker 與恢復後 ISR3；
@@ -703,8 +705,9 @@ worker 回報為 `Ready=Unknown`，這與 `Ready=False` 同樣表示該 worker �
 worker-stop 的故障證據；健康基線與 worker 恢復仍要求唯一且嚴格的 `Ready=True`，缺少、重複或
 未知的 Ready condition 一律 fail closed。pod-restart 則要求新的 Pod UID，並明確標示
 `emptyDir` state 可遺失。Namespace、
-kind cluster、worker container identity 或上述資料契約不一致時會 fail closed，且 cleanup 只
-刪除本次 Kafka marker topic。
+kind cluster、worker container identity 或上述資料契約不一致時會 fail closed；PostgreSQL
+durable marker row 與 Kafka marker topic 都只在觀察結果已捕捉、且 PASS 報告發布前清除；cleanup
+失敗也會讓診斷 fail closed。
 
 這是針對 #154/#155 的 focused local diagnostic，不是 `full-local` certification PASS，也
 不宣稱跨節點 PVC takeover、production HA 或外部環境認證。完整 baseline、fault-family

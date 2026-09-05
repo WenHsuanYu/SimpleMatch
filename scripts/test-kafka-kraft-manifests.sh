@@ -175,6 +175,7 @@ end
 %w[
   matching.commands
   matching.events
+  account.lifecycle
   marketdata.events
   simplematch-connect-configs
   simplematch-connect-offsets
@@ -194,6 +195,7 @@ require_value(
 %w[
   ensure_topic matching.commands 15 delete
   ensure_topic matching.events 15 delete
+  ensure_topic account.lifecycle 15 delete
   ensure_topic marketdata.events 15 delete
   ensure_topic simplematch-connect-configs 1 compact
   ensure_topic simplematch-connect-offsets 25 compact

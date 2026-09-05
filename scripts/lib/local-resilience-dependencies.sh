@@ -64,6 +64,7 @@ resilience_dependency_report_is_valid() {
         common and
         (if .status == "PASSED" then
           (.failure_reason == null) and
+          (.claim_boundary | type == "array" and length > 0) and
           (.target.before | type == "object") and (.target.after | type == "object") and
           (.target.before.pod == "postgres-0") and (.target.after.pod == "postgres-0") and
           (.target.before.pod_uid | text) and (.target.after.pod_uid | text) and
@@ -111,6 +112,7 @@ resilience_dependency_report_is_valid() {
         common and
         (if .status == "PASSED" then
           (.failure_reason == null) and
+          (.claim_boundary | type == "array" and length > 0) and
           (.target.before | type == "object") and (.target.after | type == "object") and
           (.target.before.pod | text) and (.target.after.pod | text) and
           (.target.before.pod_uid | text) and (.target.after.pod_uid | text) and
@@ -169,6 +171,7 @@ resilience_dependency_report_is_valid() {
         common and
         (if .status == "PASSED" then
           (.failure_reason == null) and
+          (.claim_boundary | type == "array" and length > 0) and
           (.target.ordinal | type == "number" and floor == . and . >= 0 and . <= 2) and
           (.target.before | type == "object") and (.target.after | type == "object") and
           (.target.before.pod == ("kafka-" + (.target.ordinal | tostring))) and
