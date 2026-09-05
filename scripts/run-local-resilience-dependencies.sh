@@ -290,12 +290,12 @@ validate_namespace() {
 }
 
 validate_cluster_preflight() {
-  local nodes_json current_context worker_count ready_workers control_plane_count
+  local nodes_json available_contexts worker_count ready_workers control_plane_count
   local worker_nodes_json worker_index node_json node_name ready_state
 
-  current_context="$(run_bounded kubectl config current-context 2>/dev/null || true)"
-  [[ "$current_context" == "$context" ]] ||
-    die "current Kubernetes context=$current_context, expected $context"
+  available_contexts="$(run_bounded kubectl config get-contexts -o name 2>/dev/null || true)"
+  grep -Fxq "$context" <<<"$available_contexts" ||
+    die "Kubernetes context is not configured: $context"
   run_bounded kind get clusters | grep -Fxq "$cluster_name" ||
     die "canonical kind cluster is not available: $cluster_name"
   nodes_json="$(kube get nodes -o json)" || die 'could not read canonical kind nodes'

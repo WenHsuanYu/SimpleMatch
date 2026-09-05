@@ -246,6 +246,8 @@ grep -Fq 'capture exact identity' <<<"$dry_run" || fail 'runtime diagnostic dry-
 grep -Fq 'simplematch.io/lifecycle' "$runtime_script" || fail 'runtime diagnostic lacks namespace ownership guard'
 grep -Fq 'PVC/PV' "$runtime_script" || fail 'runtime diagnostic lacks storage continuity guard'
 grep -Fq 'container identity' "$runtime_script" || fail 'runtime diagnostic lacks worker identity guard'
+grep -Fq 'config get-contexts -o name' "$runtime_script" ||
+  fail 'runtime diagnostic does not validate the selected Kubernetes context'
 grep -Fq 'wait_for_kafka_set_ready ""' "$runtime_script" || fail 'runtime diagnostic lacks a stable Kafka baseline wait'
 grep -Fq 'validate_control_plane_stability' "$runtime_script" || fail 'runtime diagnostic lacks control-plane stability preflight'
 grep -Fq 'restart_count' "$runtime_script" || fail 'control-plane stability preflight lacks restart-count continuity'
