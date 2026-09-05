@@ -5,9 +5,12 @@
 # Interface:
 #   1. cdc_capture_topic_end_offsets <topic> <snapshot-file>
 #   2. cdc_wait_for_connector_state <connector-name> <expected-state> [timeout-seconds]
-#   3. cdc_read_outbox_probe <schema> <aggregate-type> <aggregate-id> <probe-file>
-#   4. cdc_assert_same_probe <expected-probe> <observed-probe>
-#   5. cdc_assert_probe_publication <probe-file> <baseline-snapshot>
+#   3. cdc_capture_outbox_baseline <schema> <aggregate-type> <aggregate-id> <baseline-file>
+#   4. cdc_read_outbox_probe <schema> <aggregate-type> <aggregate-id> <probe-file> [baseline-file]
+#   5. cdc_assert_same_probe <expected-probe> <observed-probe>
+#   6. cdc_assert_probe_publication <probe-file> <baseline-snapshot> [publication-evidence-file]
+#   7. cdc_validate_probe <probe-file>
+#   8. cdc_validate_publication_evidence <publication-evidence-file>
 #
 # The CdcProbeIdentity is a test-side JSON document produced by cdc_read_outbox_probe. It carries
 # the durable outbox identity and immutable publication contract so scenario callers do not rebuild
@@ -16,6 +19,8 @@
 #
 # Ordering and invariants:
 #   - Capture the Kafka baseline before committing or publishing the event under test.
+#   - Capture the existing outbox event identities before a transition when an aggregate can have
+#     lifecycle history, then read exactly one row that is absent from that baseline.
 #   - Read the committed outbox row by stable business/aggregate identity through CDC_OUTBOX_EXEC.
 #   - The topic partition set must remain unchanged between baseline and verification.
 #   - Event identity is the exact Debezium EventRouter `id` header; Kafka key text never locates it.
@@ -24,10 +29,11 @@
 #
 # Adapters at the external seams:
 #   - CDC_KAFKA_EXEC executes Kafka CLI commands.
-#   - CDC_OUTBOX_EXEC receives one SQL string and returns one tab-separated outbox row.
+#   - CDC_OUTBOX_EXEC receives one Module-owned SQL string and returns tab-separated rows. Baseline
+#     capture returns one event_id per row; probe lookup returns the ten-field publication row.
 #   - CDC_CONNECT_STATUS_EXEC receives one connector name and returns its Connect status JSON.
-# The Compose harness and this Module's fakes are two concrete Adapters today; #156 may provide
-# Kubernetes-backed Adapters without changing this Interface or copying its observation logic.
+# The Compose harness, this Module's fakes, and the #156 focused Kubernetes runner are concrete
+# Adapters without changing this Interface or copying its observation logic.
 #
 # Error modes and performance:
 #   - CDC_VERIFIER_TIMEOUT_SECONDS bounds polling and CDC_VERIFIER_SCAN_TIMEOUT_MS bounds each scan.
@@ -132,6 +138,95 @@ _cdc_validate_probe() {
     || return 1
 }
 
+cdc_validate_probe() {
+  _cdc_validate_probe "$1"
+}
+
+cdc_validate_publication_evidence() {
+  local evidence_file="$1"
+
+  [[ -s "$evidence_file" ]] ||
+    _cdc_fail "publication evidence is missing or empty: $evidence_file" || return 1
+  jq -e 'type == "object"' "$evidence_file" >/dev/null 2>&1 ||
+    _cdc_fail "publication evidence must be one JSON object: $evidence_file" || return 1
+  jq -e '
+      .schema_version == 1 and
+      .status == "PASS" and
+      (.topic | type == "string" and length > 0) and
+      (.event_id | type == "string" and test("^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$")) and
+      (.partition | type == "number" and floor == . and . >= 0) and
+      (.offset | type == "number" and floor == . and . >= 0) and
+      (.expected_message_key | type == "string" and length > 0) and
+      (.expected_timestamp_unix_ms | type == "number" and floor == . and . >= 0) and
+      (.expected_headers_json_sha256 | type == "string" and test("^[0-9a-f]{64}$")) and
+      (.expected_event_type | type == "string" and length > 0) and
+      (.expected_payload_sha256 | type == "string" and test("^[0-9a-f]{64}$")) and
+      (.verification | type == "object") and
+      (.verification.headers_exact == true) and
+      (.verification.key_exact == true) and
+      (.verification.timestamp_exact == true) and
+      (.verification.payload_exact == true)
+    ' "$evidence_file" >/dev/null 2>&1 ||
+    _cdc_fail "publication evidence contract is invalid: $evidence_file" || return 1
+}
+
+_cdc_validate_outbox_locator() {
+  local schema="$1" aggregate_type="$2" aggregate_id="$3"
+
+  [[ "$schema" =~ ^[a-z][a-z0-9_]*$ ]] \
+    || _cdc_fail "invalid outbox schema name: $schema" \
+    || return 1
+  [[ "$aggregate_type" =~ ^[A-Za-z][A-Za-z0-9_.-]*$ ]] \
+    || _cdc_fail "invalid outbox aggregate type: $aggregate_type" \
+    || return 1
+  [[ "$aggregate_id" =~ ^[A-Za-z0-9][A-Za-z0-9_.:-]*$ ]] \
+    || _cdc_fail "invalid outbox business identity for $aggregate_type" \
+    || return 1
+}
+
+_cdc_validate_outbox_baseline() {
+  local baseline="$1" schema="$2" aggregate_type="$3" aggregate_id="$4"
+
+  [[ -s "$baseline" ]] \
+    || _cdc_fail "outbox baseline is missing or empty: $baseline" \
+    || return 1
+  jq -e '
+      (.schema_version == 1)
+      and (.event_ids | type == "array")
+      and (.event_ids | all(.[];
+        type == "string" and
+        test("^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$")))
+      and ((.event_ids | unique | length) == (.event_ids | length))
+    ' "$baseline" >/dev/null \
+    || _cdc_fail "outbox baseline contract is invalid: $baseline" \
+    || return 1
+  jq -e \
+    --arg schema "$schema" \
+    --arg aggregate_type "$aggregate_type" \
+    --arg aggregate_id "$aggregate_id" '
+      .schema == $schema
+      and .aggregate_type == $aggregate_type
+      and .aggregate_id == $aggregate_id
+    ' "$baseline" >/dev/null \
+    || _cdc_fail \
+      "outbox baseline aggregate identity mismatch: expected ${schema}/${aggregate_type}/${aggregate_id}" \
+    || return 1
+}
+
+_cdc_baseline_event_ids_sql() {
+  local baseline="$1" event_id event_ids_sql=''
+
+  while IFS= read -r event_id; do
+    [[ -n "$event_id" ]] || continue
+    if [[ -n "$event_ids_sql" ]]; then
+      event_ids_sql+=', '
+    fi
+    # _cdc_validate_outbox_baseline has already restricted every value to a UUID.
+    event_ids_sql+="'$event_id'"
+  done < <(jq -r '.event_ids[]' "$baseline")
+  printf '%s' "$event_ids_sql"
+}
+
 cdc_capture_topic_end_offsets() {
   local topic="$1" output="$2" raw line_topic partition offset
   [[ -n "$topic" && -n "$output" ]] \
@@ -196,34 +291,83 @@ cdc_wait_for_connector_state() {
   done
 }
 
+cdc_capture_outbox_baseline() {
+  local schema="$1" aggregate_type="$2" aggregate_id="$3" output="$4"
+  local sql raw line event_ids_json
+  local -a event_ids=()
+
+  _cdc_validate_outbox_locator "$schema" "$aggregate_type" "$aggregate_id" || return 1
+  [[ -n "$output" ]] || _cdc_fail 'outbox baseline output path is required' || return 1
+
+  sql="SELECT event_id::text FROM ${schema}.outbox WHERE aggregate_type = '${aggregate_type}' AND aggregate_id = '${aggregate_id}' ORDER BY event_id"
+  raw="$(_cdc_outbox "$sql")" || {
+    _cdc_fail \
+      "failed to capture durable ${aggregate_type} outbox baseline for business identity $aggregate_id from ${schema}.outbox"
+    return 1
+  }
+  while IFS= read -r line; do
+    [[ -n "$line" ]] || continue
+    [[ "$line" != *$'\t'* ]] \
+      || _cdc_fail "outbox baseline returned more than one column for $aggregate_type/$aggregate_id" \
+      || return 1
+    _cdc_is_uuid "$line" \
+      || _cdc_fail "outbox baseline returned an invalid event identity for $aggregate_type/$aggregate_id" \
+      || return 1
+    event_ids+=("$line")
+  done <<<"$raw"
+
+  if ((${#event_ids[@]} == 0)); then
+    event_ids_json='[]'
+  else
+    event_ids_json="$(printf '%s\n' "${event_ids[@]}" | jq -Rsc 'split("\n") | map(select(length > 0))')" || return 1
+  fi
+  jq -n \
+    --argjson schema_version 1 \
+    --arg schema "$schema" \
+    --arg aggregate_type "$aggregate_type" \
+    --arg aggregate_id "$aggregate_id" \
+    --argjson event_ids "$event_ids_json" \
+    '{schema_version:$schema_version,schema:$schema,aggregate_type:$aggregate_type,
+      aggregate_id:$aggregate_id,event_ids:$event_ids}' >"$output" || return 1
+  _cdc_validate_outbox_baseline "$output" "$schema" "$aggregate_type" "$aggregate_id"
+}
+
 cdc_read_outbox_probe() {
-  local schema="$1" aggregate_type="$2" aggregate_id="$3" output="$4" sql raw row_count
+  local schema="$1" aggregate_type="$2" aggregate_id="$3" output="$4"
+  local baseline_file="${5:-}" sql raw row_count baseline_event_ids_sql exclusion_sql=''
   local event_id topic message_key partition payload_hex payload_type timestamp_ms headers_json
   local observed_aggregate_type observed_aggregate_id payload_sha reservation_id='' account_id=''
   local partition_json='null'
 
-  [[ "$schema" =~ ^[a-z][a-z0-9_]*$ ]] \
-    || _cdc_fail "invalid outbox schema name: $schema" \
-    || return 1
-  [[ "$aggregate_type" =~ ^[A-Za-z][A-Za-z0-9_.-]*$ ]] \
-    || _cdc_fail "invalid outbox aggregate type: $aggregate_type" \
-    || return 1
-  [[ "$aggregate_id" =~ ^[A-Za-z0-9][A-Za-z0-9_.:-]*$ ]] \
-    || _cdc_fail "invalid outbox business identity for $aggregate_type" \
-    || return 1
+  _cdc_validate_outbox_locator "$schema" "$aggregate_type" "$aggregate_id" || return 1
   [[ -n "$output" ]] || _cdc_fail 'probe output path is required' || return 1
 
-  sql="SELECT event_id::text, topic, message_key, COALESCE(kafka_partition_id::text, 'NULL'), encode(payload, 'hex'), payload_type, round(extract(epoch from created_at) * 1000)::bigint, headers_json, aggregate_type, aggregate_id FROM ${schema}.outbox WHERE aggregate_type = '${aggregate_type}' AND aggregate_id = '${aggregate_id}'"
+  if [[ -n "$baseline_file" ]]; then
+    _cdc_validate_outbox_baseline \
+      "$baseline_file" "$schema" "$aggregate_type" "$aggregate_id" || return 1
+    baseline_event_ids_sql="$(_cdc_baseline_event_ids_sql "$baseline_file")"
+    if [[ -n "$baseline_event_ids_sql" ]]; then
+      exclusion_sql=" AND event_id::text NOT IN (${baseline_event_ids_sql})"
+    fi
+  fi
+  sql="SELECT event_id::text, topic, message_key, COALESCE(kafka_partition_id::text, 'NULL'), encode(payload, 'hex'), payload_type, round(extract(epoch from created_at) * 1000)::bigint, headers_json, aggregate_type, aggregate_id FROM ${schema}.outbox WHERE aggregate_type = '${aggregate_type}' AND aggregate_id = '${aggregate_id}'${exclusion_sql} ORDER BY created_at, event_id"
   raw="$(_cdc_outbox "$sql")" || {
     _cdc_fail \
       "failed to read durable ${aggregate_type} outbox event for business identity $aggregate_id from ${schema}.outbox"
     return 1
   }
   row_count="$(printf '%s\n' "$raw" | awk 'NF { count++ } END { print count + 0 }')"
-  [[ "$row_count" == 1 ]] \
-    || _cdc_fail \
-      "durable ${aggregate_type} outbox event for business identity $aggregate_id in ${schema}.outbox: expected exactly one row, observed $row_count" \
-    || return 1
+  if [[ -n "$baseline_file" ]]; then
+    [[ "$row_count" == 1 ]] \
+      || _cdc_fail \
+        "durable ${aggregate_type} outbox transition for business identity $aggregate_id in ${schema}.outbox: expected exactly one post-baseline row, observed $row_count" \
+      || return 1
+  else
+    [[ "$row_count" == 1 ]] \
+      || _cdc_fail \
+        "durable ${aggregate_type} outbox event for business identity $aggregate_id in ${schema}.outbox: expected exactly one row, observed $row_count" \
+      || return 1
+  fi
 
   IFS=$'\t' read -r event_id topic message_key partition payload_hex payload_type timestamp_ms headers_json \
     observed_aggregate_type observed_aggregate_id <<<"$raw"
@@ -682,7 +826,8 @@ _cdc_assert_record_contract() {
   local topic="$1" event_id="$2" baseline_snapshot="$3" expected_key="$4"
   local expected_timestamp="$5" expected_header="$6" expected_event_type="$7"
   local expected_payload_hex="$8" expected_payload_sha="$9"
-  local expected_partition="${10:-}" result_file partition offset
+  local expected_partition="${10:-}" publication_evidence="${11:-}"
+  local result_file partition offset expected_headers_sha
 
   result_file="$(mktemp)"
   if ! _cdc_wait_for_event_after_snapshot \
@@ -703,12 +848,43 @@ _cdc_assert_record_contract() {
     rm -f "$result_file"
     return 1
   fi
+  if [[ -n "$publication_evidence" ]]; then
+    expected_headers_sha="$(printf '%s' "${expected_header#headers_json:}" |
+      sha256sum | awk '{print $1}')" || {
+      rm -f "$result_file"
+      _cdc_fail 'could not hash the verified Kafka headers'
+      return 1
+    }
+    jq -n \
+      --arg topic "$topic" --arg event_id "$event_id" \
+      --argjson partition "$partition" --argjson offset "$offset" \
+      --arg message_key "$expected_key" \
+      --argjson timestamp "$expected_timestamp" \
+      --arg headers_sha "$expected_headers_sha" \
+      --arg event_type "$expected_event_type" \
+      --arg payload_sha "$expected_payload_sha" \
+      '{schema_version:1,status:"PASS",topic:$topic,event_id:$event_id,
+        partition:$partition,offset:$offset,expected_message_key:$message_key,
+        expected_timestamp_unix_ms:$timestamp,expected_headers_json_sha256:$headers_sha,
+        expected_event_type:$event_type,expected_payload_sha256:$payload_sha,
+        verification:{headers_exact:true,key_exact:true,timestamp_exact:true,payload_exact:true}}' \
+      >"$publication_evidence" || {
+        rm -f "$result_file"
+        _cdc_fail "could not write publication evidence: $publication_evidence"
+        return 1
+      }
+    cdc_validate_publication_evidence "$publication_evidence" || {
+      rm -f "$result_file"
+      return 1
+    }
+  fi
   printf '%s\t%s\n' "$partition" "$offset"
   rm -f "$result_file"
 }
 
 cdc_assert_probe_publication() {
   local probe="$1" baseline_snapshot="$2"
+  local publication_evidence="${3:-}"
   local event_id topic message_key timestamp_ms headers_json payload_type payload_hex payload_sha partition
   _cdc_validate_probe "$probe" || return 1
   event_id="$(_cdc_probe_field "$probe" event_id)"
@@ -725,5 +901,5 @@ cdc_assert_probe_publication() {
   _cdc_assert_record_contract \
     "$topic" "$event_id" "$baseline_snapshot" "$message_key" "$timestamp_ms" \
     "headers_json:${headers_json}" "eventType:${payload_type}" \
-    "$payload_hex" "$payload_sha" "$partition"
+    "$payload_hex" "$payload_sha" "$partition" "$publication_evidence"
 }

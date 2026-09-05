@@ -33,14 +33,49 @@ application-to-Kafka E2E.
 
 1. `cdc_capture_topic_end_offsets <topic> <snapshot-file>`
 2. `cdc_wait_for_connector_state <connector-name> <expected-state> [timeout-seconds]`
-3. `cdc_read_outbox_probe <schema> <aggregate-type> <aggregate-id> <probe-file>`
-4. `cdc_assert_same_probe <expected-probe> <observed-probe>`
-5. `cdc_assert_probe_publication <probe-file> <baseline-snapshot>`
+3. `cdc_capture_outbox_baseline <schema> <aggregate-type> <aggregate-id> <baseline-file>`
+4. `cdc_read_outbox_probe <schema> <aggregate-type> <aggregate-id> <probe-file> [baseline-file]`
+5. `cdc_assert_same_probe <expected-probe> <observed-probe>`
+6. `cdc_assert_probe_publication <probe-file> <baseline-snapshot> [publication-evidence-file]`
+7. `cdc_validate_publication_evidence <publication-evidence-file>`
 
-The Module hides PostgreSQL outbox-row parsing, event-id discovery, payload hashing, bounded Connect
-status polling, Kafka offset-window selection, Debezium event lookup, exact key/header/timestamp/
-partition/value checks, topology validation, and Kafka diagnostics. Removing the Module would spread
-that knowledge back across Compose and Kubernetes scenario callers.
+The Module hides PostgreSQL outbox-row parsing, baseline event-id capture, post-transition event-id
+discovery, payload hashing, bounded Connect status polling, Kafka offset-window selection, Debezium
+event lookup, exact key/header/timestamp/partition/value checks, topology validation, and Kafka
+diagnostics. Removing the Module would spread that knowledge back across Compose and Kubernetes
+scenario callers.
+
+### Terms and lifecycle
+
+These words describe different responsibilities; they are not interchangeable:
+
+- **Contract** means an executable rule: a schema, predicate, ordering requirement, or failure
+  condition that a validator can check. A JSON/YAML file is only the carrier for inputs or evidence;
+  it cannot prove its own `PASS` value.
+- **Module** means the cohesive implementation that owns those rules behind a small Interface.
+  `scripts/lib/cdc-verifier.sh` owns outbox selection and exact publication checks, while
+  `scripts/lib/connect-worker-loss.sh` owns task-owner identity, Pod-loss, reassignment, and report
+  linkage. A caller should not repeat those rules.
+- **Seam** (in the Michael Feathers sense) is the location where the Interface can be substituted
+  without editing the Module. In this design, `CDC_OUTBOX_EXEC`, `CDC_KAFKA_EXEC`, and
+  `CDC_CONNECT_STATUS_EXEC` are seams: the Module invokes them, while a test fake, Compose command,
+  or Kubernetes command can fill the same slot. A seam is therefore a replaceable code location,
+  not necessarily a service, network, or DDD boundary.
+- **Adapter** is the concrete implementation plugged into a seam. For example, the Kubernetes
+  runner's `postgres_exec`, `kafka_exec`, and `connect_status` translate `kubectl`, Kafka CLI, and
+  REST calls into the Module's narrow Interface. They provide access; they do not decide whether
+  the evidence passes.
+- **Runner** is the scenario orchestrator. It orders preflight, fault injection, cleanup, and
+  evidence files. Shell is appropriate here because it is excellent CI/deployment glue and a
+  transparent wrapper around existing command-line tools. It is a poor home for domain semantics,
+  complicated asynchronous state machines, or a second copy of the evidence rules.
+
+The industry lifecycle is consequently additive: keep the Contract, schema, and Module while they
+are supported; keep the runner while it is an active operator or CI entry point; archive a runner
+only after a replacement has the same Interface, evidence shape, and regression coverage. Historical
+fixtures and evidence may be archived immediately when they are no longer current authorities, but
+they remain useful incident records. Archiving the shell wrapper must never remove the executable
+specification that prevents a false `PASS`.
 
 Three dependency seams are injected through environment-specific Adapters:
 
@@ -48,18 +83,28 @@ Three dependency seams are injected through environment-specific Adapters:
 - `CDC_CONNECT_STATUS_EXEC` returns one connector status document.
 - `CDC_KAFKA_EXEC` executes Kafka CLI reads.
 
-The live Compose harness and `scripts/test-cdc-verifier.sh` fake are two concrete Adapters at each
-seam. Future #156 Kubernetes orchestration can supply Kubernetes-backed Adapters without copying the
-Module Implementation. Docker Compose commands, Pod/node manipulation, worker selection, task-owner
-reassignment, and namespace lifecycle do not belong in this Module.
+The live Compose harness, `scripts/test-cdc-verifier.sh` fakes, and the #156 focused Kubernetes
+runner are concrete Adapters at each seam. They supply environment-specific execution without
+copying the Module Implementation. Docker Compose commands, Pod/node manipulation, worker
+selection, task-owner reassignment, and namespace lifecycle do not belong in this Module.
 
 ## CdcProbeIdentity
 
 `cdc_read_outbox_probe` materializes a temporary test-side JSON observation document called a
 `CdcProbeIdentity`. It is infrastructure test state, not a domain object and not a production
-contract. Callers identify a new business change by the existing durable outbox aggregate identity;
-for Account reservation publication this is `account_reservation + reservation_id`. The Module then
-discovers the internally generated outbox `event_id` and records:
+contract. For a fresh aggregate, callers can use the four-argument form and identify a durable
+outbox row by aggregate identity. When an aggregate may already have lifecycle history, callers first
+run `cdc_capture_outbox_baseline` and pass its file as the optional fifth argument. The Module then
+excludes every event id present in that baseline and requires exactly one post-transition row; zero or
+multiple candidates fail closed. For Account reservation publication the locator remains
+`account_reservation + reservation_id`, while event selection stays inside the Module.
+
+An outbox baseline is a small JSON document containing the schema, aggregate identity, schema version,
+and event-id set that existed before the transition. It contains no payload bytes or business values,
+so it can be retained as evidence without expanding the sensitive-data surface. A concurrent extra
+lifecycle event is intentionally reported as ambiguity instead of silently selecting the first row.
+
+The Module then discovers the internally generated outbox `event_id` and records:
 
 - event id and business identity,
 - Account reservation/account identity where applicable,
@@ -98,6 +143,12 @@ recovery.
 Connector `RUNNING` is only prerequisite/diagnostic evidence. A scenario succeeds only when the
 expected durable change passes the Kafka record verification.
 
+When a caller supplies the optional publication-evidence path, the Module retains the verified
+topic, event id, partition, offset, expected key/timestamp/header/payload digest, and individual
+exact-record checks. A later report validator can therefore reconstruct which Kafka record was
+observed instead of trusting an unlinked `exact_kafka_record=true` flag. Raw payload bytes and
+unredacted Kafka headers remain outside this retained artifact.
+
 ## Downstream duplicate-safety contract
 
 The narrow consumer-side requirement is tested through the existing `QueryProjectionStore`
@@ -108,18 +159,55 @@ same event id with different raw payload fails closed as a conflicting event.
 
 ## Issue #156 reuse contract
 
-Issue #156 remains responsible for Kubernetes/Connect distributed-runtime orchestration. Its future
-worker-loss case belongs in existing `scripts/run-local-resilience.sh` and must independently prove:
+Issue #156 remains responsible for Kubernetes/Connect distributed-runtime orchestration. Its
+worker-loss case is exposed as the focused `scripts/run-local-connect-worker-loss.sh` diagnostic and
+must independently prove:
 
 1. the current task owner is known,
 2. the owning worker actually disappears,
 3. the task is reassigned to another worker,
 4. a new post-reassignment Account business transition occurs,
-5. its durable outbox change is captured through `cdc_read_outbox_probe`, and
+5. an outbox baseline is captured before that transition and its durable change is captured through
+   the baseline-aware `cdc_read_outbox_probe`, and
 6. `cdc_assert_probe_publication` verifies the corresponding Kafka record.
 
 A Ready replacement Pod, a changed REST task listing, or connector `RUNNING` alone cannot satisfy
-that data-plane assertion. #176 intentionally contains no Kubernetes worker-loss orchestration.
+that data-plane assertion. The diagnostic owns only task-owner selection, Pod deletion, reassignment,
+and the Kubernetes/REST adapters; the baseline-aware Module Interface is the sole event-selection
+seam. Its controlled Account outbox fixture is deliberately a transport-level transition probe, so
+the resulting report does not claim Account RPC/business-transaction semantics or full-local
+certification. #176 intentionally contains no Kubernetes worker-loss orchestration.
+
+Run it only against a retained, disposable production-like namespace whose run-id is supplied
+exactly as labelled; the evidence directory must be empty and the command never applies manifests or
+deletes the cluster:
+
+```bash
+bash scripts/run-local-connect-worker-loss.sh \
+  --namespace <run-namespace> \
+  --namespace-run-id <namespace-run-id> \
+  --retained-evidence-dir out/certification/local-production-like \
+  --evidence-dir out/resilience/connect-worker-loss-<run-id>
+```
+
+The retained directory must contain the same namespace/run-id and the `cdc_runtime_signature` and
+`cdc_verifier_signature` recorded by the full production-like run. The focused command compares both
+scoped signatures before any Pod mutation; a mismatch fails closed and requires a fresh source-aligned
+full run. The diagnostic first verifies Flyway/topic prerequisites, two PVC-free Connect workers, RF3/minISR2
+internal topics, PDB protection, service-owned connector table/header boundaries, and strict Pod
+identity. It applies a JSON-Patch UID precondition and a run-unique marker, then deletes only the
+uniquely marked Pod and proves that the original UID disappears before waiting for reassignment. It then requires the same
+task id to move to a different worker and Pod UID, captures the outbox baseline before inserting one
+run-owned lifecycle fixture, and delegates post-transition selection and exact Kafka verification to
+`cdc-verifier.sh`. A passed report is focused diagnostic evidence only; it must be consumed by the
+parent #151 runner rather than relabelled as a complete local certification.
+
+The report links every prerequisite snapshot, the pre-delete UID recheck,
+`account-transition.json`, and `account-publication.json`. The publication
+artifact is emitted only after the shared verifier succeeds and records the
+observed partition/offset together with key, timestamp, header, and payload
+digest checks, so a later consumer does not have to trust an unlinked
+`exact_kafka_record=true` flag.
 
 ## Final Risk publication contract
 

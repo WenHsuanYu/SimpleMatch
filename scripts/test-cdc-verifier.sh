@@ -52,6 +52,8 @@ MOCK_PAYLOAD_TYPE='simplematch.account.v2.AccountLifecycleEvent'
 MOCK_EXTRA_HEADER=''
 MOCK_CONNECTOR_STATE='RUNNING'
 MOCK_MODE='locator'
+MOCK_BASELINE_EVENT_ID='00000000-0000-0000-0000-000000000041'
+MOCK_SECOND_TARGET_EVENT='00000000-0000-0000-0000-000000000043'
 
 reset_mock() {
   MOCK_MODE="$1"
@@ -63,6 +65,8 @@ reset_mock() {
   MOCK_PAYLOAD_TYPE='simplematch.account.v2.AccountLifecycleEvent'
   MOCK_EXTRA_HEADER=''
   MOCK_CONNECTOR_STATE='RUNNING'
+  MOCK_BASELINE_EVENT_ID='00000000-0000-0000-0000-000000000041'
+  MOCK_SECOND_TARGET_EVENT='00000000-0000-0000-0000-000000000043'
   printf '0\n' >"$MOCK_OFFSET_CALL_FILE"
 }
 
@@ -74,18 +78,37 @@ mock_outbox_exec() {
     || fail "outbox adapter did not receive aggregate type: $sql"
   [[ "$sql" == *"aggregate_id = 'reservation-42'"* ]] \
     || fail "outbox adapter did not receive business identity: $sql"
+
+  if [[ "$sql" == *'SELECT event_id::text FROM'* ]]; then
+    case "$MOCK_MODE" in
+      baseline-history|baseline-ambiguous)
+        printf '%s\n' "$MOCK_BASELINE_EVENT_ID"
+        ;;
+      baseline-empty)
+        ;;
+      *)
+        fail "unexpected baseline lookup in mock mode: $MOCK_MODE"
+        ;;
+    esac
+    return
+  fi
+
+  if [[ "$MOCK_MODE" == baseline-ambiguous ]]; then
+    [[ "$sql" == *"NOT IN ('$MOCK_BASELINE_EVENT_ID')"* ]] \
+      || fail "post-baseline lookup did not exclude the captured event: $sql"
+  fi
+
   payload_hex="$(printf '%s' "$MOCK_OUTBOX_PAYLOAD" | od -An -tx1 | tr -d ' \n')"
   printf '%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\n' \
-    "$MOCK_TARGET_EVENT" \
-    'account.lifecycle' \
-    'account-42' \
-    'NULL' \
-    "$payload_hex" \
-    "$MOCK_PAYLOAD_TYPE" \
-    '2000' \
-    '{"trace-id":"account-42"}' \
-    'account_reservation' \
-    'reservation-42'
+    "$MOCK_TARGET_EVENT" 'account.lifecycle' 'account-42' 'NULL' "$payload_hex" \
+    "$MOCK_PAYLOAD_TYPE" '2000' '{"trace-id":"account-42"}' \
+    'account_reservation' 'reservation-42'
+  if [[ "$MOCK_MODE" == baseline-ambiguous ]]; then
+    printf '%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\n' \
+      "$MOCK_SECOND_TARGET_EVENT" 'account.lifecycle' 'account-42' 'NULL' "$payload_hex" \
+      "$MOCK_PAYLOAD_TYPE" '2001' '{"trace-id":"account-42-second"}' \
+      'account_reservation' 'reservation-42'
+  fi
 }
 
 mock_connect_status_exec() {
@@ -242,13 +265,67 @@ assert_equal "$(jq -r '.payload_type' "$probe")" \
   'simplematch.account.v2.AccountLifecycleEvent' 'probe payload type'
 assert_equal "$(jq -r '.explicit_partition' "$probe")" 'null' 'probe nullable partition'
 
+reset_mock baseline-history
+outbox_baseline="$TMP_DIR/account-outbox-baseline.json"
+history_probe="$TMP_DIR/account-probe-after-transition.json"
+cdc_capture_outbox_baseline account_service account_reservation reservation-42 "$outbox_baseline"
+assert_equal "$(jq -r '.schema_version' "$outbox_baseline")" '1' \
+  'outbox baseline schema version'
+assert_equal "$(jq -r '.event_ids | length' "$outbox_baseline")" '1' \
+  'outbox baseline event count'
+assert_equal "$(jq -r '.event_ids[0]' "$outbox_baseline")" \
+  "$MOCK_BASELINE_EVENT_ID" 'outbox baseline event identity'
+cdc_read_outbox_probe account_service account_reservation reservation-42 \
+  "$history_probe" "$outbox_baseline"
+assert_equal "$(jq -r '.event_id' "$history_probe")" "$MOCK_TARGET_EVENT" \
+  'post-baseline probe event identity'
+
+reset_mock baseline-empty
+empty_baseline="$TMP_DIR/account-outbox-empty-baseline.json"
+empty_probe="$TMP_DIR/account-probe-after-empty-baseline.json"
+cdc_capture_outbox_baseline account_service account_reservation reservation-42 \
+  "$empty_baseline"
+assert_equal "$(jq -r '.event_ids | length' "$empty_baseline")" '0' \
+  'empty outbox baseline event count'
+cdc_read_outbox_probe account_service account_reservation reservation-42 \
+  "$empty_probe" "$empty_baseline"
+assert_equal "$(jq -r '.event_id' "$empty_probe")" "$MOCK_TARGET_EVENT" \
+  'empty-baseline probe event identity'
+
+reset_mock baseline-ambiguous
+ambiguous_baseline="$TMP_DIR/account-outbox-ambiguous-baseline.json"
+ambiguous_probe="$TMP_DIR/account-probe-ambiguous.json"
+ambiguous_error="$TMP_DIR/account-probe-ambiguous-error.log"
+cdc_capture_outbox_baseline account_service account_reservation reservation-42 \
+  "$ambiguous_baseline"
+assert_failure_contains 'expected exactly one post-baseline row' "$ambiguous_error" \
+  cdc_read_outbox_probe account_service account_reservation reservation-42 \
+  "$ambiguous_probe" "$ambiguous_baseline"
+
+wrong_identity_baseline="$TMP_DIR/account-outbox-wrong-identity.json"
+jq '.aggregate_id = "another-reservation"' "$outbox_baseline" >"$wrong_identity_baseline"
+identity_error="$TMP_DIR/account-outbox-wrong-identity-error.log"
+assert_failure_contains 'baseline aggregate identity mismatch' "$identity_error" \
+  cdc_read_outbox_probe account_service account_reservation reservation-42 \
+  "$history_probe" "$wrong_identity_baseline"
+
+reset_mock locator
+
 cdc_wait_for_connector_state account-service-outbox RUNNING
 
 baseline="$TMP_DIR/baseline.tsv"
 cdc_capture_topic_end_offsets account.lifecycle "$baseline"
 assert_equal "$(cat "$baseline")" $'0\t5\n1\t2' 'baseline offset snapshot'
-location="$(cdc_assert_probe_publication "$probe" "$baseline")"
+publication_evidence="$TMP_DIR/account-publication.json"
+location="$(cdc_assert_probe_publication "$probe" "$baseline" "$publication_evidence")"
 assert_equal "$location" $'1\t2' 'probe must locate the exact Debezium event'
+cdc_validate_publication_evidence "$publication_evidence"
+assert_equal "$(jq -r '.partition' "$publication_evidence")" '1' \
+  'publication evidence partition'
+assert_equal "$(jq -r '.offset' "$publication_evidence")" '2' \
+  'publication evidence offset'
+assert_equal "$(jq -r '.verification.payload_exact' "$publication_evidence")" 'true' \
+  'publication evidence payload verification'
 
 second_probe="$TMP_DIR/account-probe-after-recovery.json"
 cdc_read_outbox_probe account_service account_reservation reservation-42 "$second_probe"
