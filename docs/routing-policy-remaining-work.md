@@ -268,10 +268,18 @@ disposable. Its manifest covers both the custom portable-workload taint and the 
 `not-ready`/`unreachable` taints with explicit 30-second tolerations; the focused diagnostic waits up
 to 150 seconds for the replacement.
 
+Child closure is scoped to the capability owned by the child issue. A child may be marked
+`COMPLETED` when its own implementation, contract checks, and source-aligned focused runtime
+evidence satisfy its acceptance criteria; it does not have to wait for the parent aggregate run.
+Parent #151 remains a separate integration gate: the later runner issues must consume the retained
+child reports, execute the remaining baseline and fault families, and publish one aggregate verdict
+before #151 can close. A focused child report is therefore valid completion evidence for its child,
+but it must not be relabeled as a #151 `full-local` certification PASS.
+
 | Issue | Current status | Remaining completion gate |
 | --- | --- | --- |
-| [#154](https://github.com/WenHsuanYu/SimpleMatch/issues/154) PostgreSQL and Redis in Kubernetes | `PARTIAL` | PostgreSQL worker-loss and Pod-restart reports, plus Redis worker-loss report, pass in retained namespace `simplematch-local-cert-20260905-154155-r2` (worker-loss evidence remains under `out/resilience/dependencies-154-155-20260905-r2/`; source-aligned Pod-restart evidence is `out/resilience/dependencies-154-155-20260905-r4/postgresql-pod-restart/postgresql.json`). Parent #151 must still consume the reports in its aggregate baseline/fault-family evidence. |
-| [#155](https://github.com/WenHsuanYu/SimpleMatch/issues/155) Durable Kafka KRaft cluster | `PARTIAL` | Kafka worker-loss and source-aligned Pod-restart reports pass in retained namespace `simplematch-local-cert-20260905-154155-r2` (`out/resilience/dependencies-154-155-20260905-r2/kafka-fixed-r1/kafka.json`, `out/resilience/dependencies-154-155-20260905-r4/kafka-pod-restart/kafka.json`). Parent #151 must still consume both fault families in its aggregate baseline/fault-family evidence. |
+| [#154](https://github.com/WenHsuanYu/SimpleMatch/issues/154) PostgreSQL and Redis in Kubernetes | `COMPLETED` | Child acceptance is satisfied by the PostgreSQL worker-loss and Pod-restart reports plus the Redis worker-loss report in retained namespace `simplematch-local-cert-20260905-154155-r2` (worker-loss evidence remains under `out/resilience/dependencies-154-155-20260905-r2/`; source-aligned Pod-restart evidence is `out/resilience/dependencies-154-155-20260905-r4/postgresql-pod-restart/postgresql.json`). Parent #151 aggregate baseline/fault-family integration remains separate. |
+| [#155](https://github.com/WenHsuanYu/SimpleMatch/issues/155) Durable Kafka KRaft cluster | `COMPLETED` | Child acceptance is satisfied by the Kafka worker-loss and source-aligned Pod-restart reports in retained namespace `simplematch-local-cert-20260905-154155-r2` (`out/resilience/dependencies-154-155-20260905-r2/kafka-fixed-r1/kafka.json`, `out/resilience/dependencies-154-155-20260905-r4/kafka-pod-restart/kafka.json`). Parent #151 aggregate baseline/fault-family integration remains separate. |
 
 These reports do not close #151 by themselves and do not claim cross-node storage takeover,
 production HA, or external certification. The later #162–#167 issues own full-local orchestration,
