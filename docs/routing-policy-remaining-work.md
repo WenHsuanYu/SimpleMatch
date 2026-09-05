@@ -270,8 +270,8 @@ to 150 seconds for the replacement.
 
 | Issue | Current status | Remaining completion gate |
 | --- | --- | --- |
-| [#154](https://github.com/WenHsuanYu/SimpleMatch/issues/154) PostgreSQL and Redis in Kubernetes | `PARTIAL` | Focused PostgreSQL and Redis worker-loss reports now pass in retained namespace `simplematch-local-cert-20260905-154155-r2` (`out/resilience/dependencies-154-155-20260905-r2/postgresql-fixed/postgresql.json`, `out/resilience/dependencies-154-155-20260905-r2/redis-fixed-r2/redis.json`); parent #151 must still consume them in its aggregate baseline/fault-family evidence. |
-| [#155](https://github.com/WenHsuanYu/SimpleMatch/issues/155) Durable Kafka KRaft cluster | `PARTIAL` | Focused Kafka worker-loss report now passes in the same retained namespace (`out/resilience/dependencies-154-155-20260905-r2/kafka-fixed-r1/kafka.json`); parent #151 must still consume it in its aggregate baseline/fault-family evidence. |
+| [#154](https://github.com/WenHsuanYu/SimpleMatch/issues/154) PostgreSQL and Redis in Kubernetes | `PARTIAL` | PostgreSQL worker-loss and Pod-restart reports, plus Redis worker-loss report, pass in retained namespace `simplematch-local-cert-20260905-154155-r2` (worker-loss evidence remains under `out/resilience/dependencies-154-155-20260905-r2/`; source-aligned Pod-restart evidence is `out/resilience/dependencies-154-155-20260905-r4/postgresql-pod-restart/postgresql.json`). Parent #151 must still consume the reports in its aggregate baseline/fault-family evidence. |
+| [#155](https://github.com/WenHsuanYu/SimpleMatch/issues/155) Durable Kafka KRaft cluster | `PARTIAL` | Kafka worker-loss and source-aligned Pod-restart reports pass in retained namespace `simplematch-local-cert-20260905-154155-r2` (`out/resilience/dependencies-154-155-20260905-r2/kafka-fixed-r1/kafka.json`, `out/resilience/dependencies-154-155-20260905-r4/kafka-pod-restart/kafka.json`). Parent #151 must still consume both fault families in its aggregate baseline/fault-family evidence. |
 
 These reports do not close #151 by themselves and do not claim cross-node storage takeover,
 production HA, or external certification. The later #162–#167 issues own full-local orchestration,
@@ -279,12 +279,15 @@ worker-stop coverage across every workload family, and the final aggregate verdi
 
 The 2026-09-05 focused reports are source-aligned to the retained production-like run's namespace
 run-id `20260904-175915-1205891`. PostgreSQL preserved the slot-0 Pod, RWO PVC/PV, and Flyway
-marker row without a cross-worker replacement; Redis rescheduled to a different worker and lost
-only its disposable `emptyDir` marker; Kafka retained the fixed ordinal/PVC/cluster identities,
-RF3 marker, ISR3, and log-dirs catch-up after one worker stop. The first Redis attempt is retained
-as a failed diagnostic because non-interactive `redis-cli GET` returned an empty line for a missing
-key; the reviewed classifier fix is recorded in `docs/agents/deployment-test-lessons.md` and the
-successful rerun is the report used above.
+marker row across both worker-loss and Pod-restart observations; the run-owned marker is removed
+after observation. Redis rescheduled to a different worker and lost only its disposable `emptyDir`
+marker; Kafka retained the fixed ordinal/PVC/cluster identities, RF3 marker, ISR3, and log-dirs
+catch-up across both worker-loss and Pod-restart observations, with its run-owned marker topic
+removed after observation. The first Redis attempt is retained as a failed diagnostic because
+non-interactive `redis-cli GET` returned an empty line for a missing key; the reviewed classifier
+fix is recorded in `docs/agents/deployment-test-lessons.md` and the successful rerun is the report
+used above. An initial PostgreSQL Pod-restart preflight failure caused by the caller's global
+`docker-desktop` context is also retained separately and is not used as PASS evidence.
 
 ## Detailed inventory
 
