@@ -115,39 +115,10 @@ trap 'rm -rf "$propagation_fixture"' EXIT
 if ! (
   set -Eeuo pipefail
   namespace=certification-test
-  evidence_dir="$propagation_fixture/evidence"
-  calls_file="$propagation_fixture/migrations.calls"
-  touch "$calls_file"
-  # shellcheck source=/dev/null
-  source "$kubernetes_lib"
-  apply_kubernetes_topic_provisioning() {
-    printf '%s\n' topic-provisioning >>"$calls_file"
-    return 1
-  }
-  kubectl() {
-    printf '%s\n' "$*" >>"$calls_file"
-    return 0
-  }
-  set +e
-  apply_kubernetes_migrations "$propagation_fixture/migrations.yaml"
-  status=$?
-  set -e
-  [[ "$status" -ne 0 ]]
-  ! grep -Fq -- '--selector app.kubernetes.io/name=account-service-flyway' "$calls_file"
-); then
-  fail 'a failed topic-provisioning Job must abort Kubernetes migrations before Flyway Jobs are applied'
-fi
-
-if ! (
-  set -Eeuo pipefail
-  namespace=certification-test
   calls_file="$propagation_fixture/migrations-order.calls"
   touch "$calls_file"
   # shellcheck source=/dev/null
   source "$kubernetes_lib"
-  apply_kubernetes_topic_provisioning() {
-    printf '%s\n' topic-provisioning >>"$calls_file"
-  }
   kubectl() {
     printf '%s\n' "$*" >>"$calls_file"
   }
@@ -155,6 +126,7 @@ if ! (
   mapfile -t apply_lines < <(grep -n -- '--selector app.kubernetes.io/name=' "$calls_file" | cut -d: -f1)
   mapfile -t wait_lines < <(grep -n -- '--for=condition=complete' "$calls_file" | cut -d: -f1)
   [[ "${#apply_lines[@]}" -eq 7 && "${#wait_lines[@]}" -eq 7 ]]
+  ! grep -Fq topic-provisioning "$calls_file"
   for line in "${apply_lines[@]}"; do
     (( line < wait_lines[0] ))
   done

@@ -88,8 +88,11 @@ simplematch_certification_cdc_runtime_source_paths() {
     scripts/lib/local-image-inventory.sh \
     scripts/lib/local-image-transport.sh \
     scripts/lib/local-kind.sh \
+    scripts/lib/cdc-verifier.sh \
+    scripts/lib/connect-worker-loss.sh \
     scripts/render-local-kubernetes-manifest.sh \
     scripts/run-local-production-like-certification.sh \
+    scripts/run-local-connect-worker-loss.sh \
     deploy/k8s \
     ':(exclude)deploy/k8s/*.md' \
     ':(exclude)deploy/k8s/**/*.md' \
@@ -113,8 +116,11 @@ simplematch_certification_cdc_verifier_source_paths() {
     scripts/lib/local-certification-provenance.sh \
     scripts/lib/local-certification-focused-diagnostic.sh \
     scripts/lib/cdc-observer-fixture.sh \
+    scripts/lib/cdc-verifier.sh \
+    scripts/lib/connect-worker-loss.sh \
     scripts/lib/local-resilience.sh \
     scripts/run-local-cdc-delivery-focused-diagnostic.sh \
+    scripts/run-local-connect-worker-loss.sh \
     scripts/run-risk-cdc-delivery-observer-check.sh \
     scripts/test-cdc-observer-fixture-contract.sh \
     scripts/test-local-certification-focused-diagnostic.sh

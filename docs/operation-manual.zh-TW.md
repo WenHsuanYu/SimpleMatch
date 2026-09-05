@@ -713,6 +713,60 @@ durable marker row 與 Kafka marker topic 都只在觀察結果已捕捉、且 P
 不宣稱跨節點 PVC takeover、production HA 或外部環境認證。完整 baseline、fault-family
 編排與 parent #151 的聚合 verdict 仍由後續 runner issues 負責。
 
+### 13.4 Kafka Connect worker-loss focused diagnostic（#156）
+
+若只需要驗證 Debezium Kafka Connect task 在 worker Pod 消失後是否重新指派，以及重新指派後
+的 Account outbox 變更是否仍精確送達 Kafka，不必重跑昂貴的 `full-local` runner。對一個已存在、
+具 `disposable` ownership label 的 production-like namespace 執行：
+
+這裡的術語有明確分工：**證據契約**是可執行的 schema、predicate、順序與 fail-closed 條件，
+不是一份自稱 `PASS` 的 YAML/JSON；**Module** 是擁有這些規則的深模組，目前由
+`scripts/lib/cdc-verifier.sh` 負責 outbox/Kafka 精確觀測、由
+`scripts/lib/connect-worker-loss.sh` 負責 task owner、Pod loss、reassignment 與 evidence
+linkage。**Seam** 是可以替換實作而不必修改 Module 的位置；本例的
+`CDC_OUTBOX_EXEC`、`CDC_KAFKA_EXEC`、`CDC_CONNECT_STATUS_EXEC` 就是 seam，測試 fake、Compose
+或 Kubernetes 都能接上同一個位置。**Adapter** 是接入 seam 的具體實作，例如 runner 裡的
+`postgres_exec`、`kafka_exec`、`connect_status`；它只負責把 kubectl/CLI/REST 結果送進 Module，
+不負責自行判定 PASS。**Runner** 則是 shell 編排器，負責 preflight、故障注入、cleanup 與
+證據檔案順序。業界通常用 shell 做 CI/CD、deployment smoke、受控 chaos/fault injection
+的 glue；不會把複雜 domain 判定、非同步狀態機或第二份驗證規則堆在 shell 裡。
+
+因此，shell runner 只有在仍是支援中的 operator/CI 入口時才保留；未來若由 typed tool 取代，
+必須先保持相同的 Interface、evidence schema 與 regression coverage，才可把舊 runner 移到
+`scripts/archive/`。契約、schema、Module 不是一次 certification 後就能刪除的暫存物；歷史
+fixture/evidence 則可在不再是 current authority 時移到 `docs/archive/` 或對應 evidence archive。
+
+```bash
+bash scripts/run-local-connect-worker-loss.sh \
+  --namespace <run-namespace> \
+  --namespace-run-id <namespace-run-id> \
+  --retained-evidence-dir out/certification/local-production-like \
+  --evidence-dir out/resilience/connect-worker-loss-<run-id>
+```
+
+`--retained-evidence-dir` 必須指向同一個 production-like run；其 `run-context` 的 namespace、
+run-id、`cdc_runtime_signature` 與 `cdc_verifier_signature` 都要和目前 source 對齊。命令在
+任何 Pod mutation 前比較兩個 scoped signature；不一致會 fail-closed，必須建立新的
+source-aligned full run。命令會先確認 Kafka topic provisioning、六個 Flyway Job、PostgreSQL、兩個無 PVC 的 Connect
+worker、RF3/minISR2 internal topic、PDB、service-owned connector table/header 邊界與嚴格的
+Pod identity。接著用 JSON-Patch 的 UID test 加上 run-unique marker，只刪除唯一被標記且仍是
+原始 UID 的 Account connector task-owning Pod，並確認原始 UID 已消失，要求相同
+task id 改由不同 worker 與新 Pod UID 執行；單獨的 `RUNNING` status、Ready replacement Pod 或
+REST task listing 不能通過 recovery gate。故障恢復後由共用 `cdc-verifier.sh` 先捕捉 aggregate
+outbox baseline，再定位唯一的 post-transition row 並核對 Kafka exact record。
+
+PASS report 會連結所有 prerequisite snapshot、刪除前 UID recheck、
+`account-transition.json` 與 `account-publication.json`；後者由共用 verifier
+在確認 partition/offset、key、timestamp、headers 與 payload digest 後才產生。
+因此後續 consumer 可以重建觀測鏈，不必把 report 中的
+`exact_kafka_record=true` 當成自我宣告。
+
+這個報告是 diagnostic-only：其中的 run-owned Account lifecycle row 是 transport-level fixture，
+只證明 outbox → Debezium → Kafka 的重指派後傳輸，不宣稱 Account RPC 或完整 business
+transaction semantics，也不能直接升級成 #151 的 `full-local` certification PASS。失敗時會保留
+原始 task/Pod identity、故障目標與 bounded diagnostics；命令不會套用 manifest，也不會刪除 kind
+cluster。
+
 ---
 
 ## 14. Read-only resource report

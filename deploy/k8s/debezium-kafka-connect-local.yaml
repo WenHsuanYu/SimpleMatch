@@ -65,11 +65,27 @@ spec:
       topologySpreadConstraints:
         - maxSkew: 1
           topologyKey: simplematch.io/worker-slot
-          whenUnsatisfiable: ScheduleAnyway
+          whenUnsatisfiable: DoNotSchedule
           labelSelector:
             matchLabels:
               app.kubernetes.io/name: kafka-connect
               app.kubernetes.io/component: connector
+      tolerations:
+        - key: simplematch.io/portable-workload
+          operator: Exists
+          effect: NoExecute
+          tolerationSeconds: 30
+        # A stopped kind worker receives standard NoExecute taints from the
+        # node controller; keep the eviction budget explicit for reassignment.
+        - key: node.kubernetes.io/not-ready
+          operator: Exists
+          effect: NoExecute
+          tolerationSeconds: 30
+        - key: node.kubernetes.io/unreachable
+          operator: Exists
+          effect: NoExecute
+          tolerationSeconds: 30
+      terminationGracePeriodSeconds: 30
       securityContext:
         runAsUser: 1001
         runAsGroup: 1001

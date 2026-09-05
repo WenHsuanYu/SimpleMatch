@@ -129,15 +129,16 @@ kubernetes-manifest-split|FRESH|REEXECUTE|source configuration image-lock|manife
 kubernetes-namespace|FRESH|VALIDATE|runtime-state configuration|namespace| |1
 kubernetes-inputs|FRESH|REEXECUTE|configuration artifact namespace|runtime-state|kubernetes-namespace|1
 kubernetes-platform-apply|FRESH|REEXECUTE|manifest namespace|runtime-state|kubernetes-inputs|1
-kubernetes-migrations|FRESH|REEXECUTE|manifest runtime-state|migration-proof|kubernetes-platform-apply static-flyway-services|1
+kubernetes-migrations|FRESH|REEXECUTE|manifest runtime-state|migration-proof|kubernetes-platform-apply static-flyway-services kubernetes-topic-provisioning|1
 kubernetes-matching-manifest|FRESH|REEXECUTE|manifest runtime-state|manifest|kubernetes-platform-apply|1
 kubernetes-topic-provisioning|FRESH|REEXECUTE|manifest runtime-state|runtime-proof|kubernetes-platform-apply|1
 kubernetes-open-barriers|FRESH|FORBID|artifact image runtime-state|runtime-proof||1
+kubernetes-connect-apply|FRESH|REEXECUTE|manifest runtime-state|runtime-state|kubernetes-migrations kubernetes-topic-provisioning|1
 kubernetes-workload-apply|FRESH|REEXECUTE|manifest runtime-state|runtime-state|kubernetes-open-barriers|1
 kubernetes-matching-apply|FRESH|REEXECUTE|manifest runtime-state|runtime-state|kubernetes-open-barriers|1
-kubernetes-risk-outbox-connector|FRESH|REEXECUTE|runtime-state configuration|runtime-state|kubernetes-workload-apply|1
-kubernetes-account-outbox-connector|FRESH|REEXECUTE|runtime-state configuration|runtime-state|kubernetes-workload-apply|1
-kubernetes-workloads|FRESH|REEXECUTE|runtime-state|runtime-proof|kubernetes-risk-outbox-connector kubernetes-account-outbox-connector|1
+kubernetes-risk-outbox-connector|FRESH|REEXECUTE|runtime-state configuration|runtime-state|kubernetes-connect-apply|1
+kubernetes-account-outbox-connector|FRESH|REEXECUTE|runtime-state configuration|runtime-state|kubernetes-connect-apply|1
+kubernetes-workloads|FRESH|REEXECUTE|runtime-state|runtime-proof|kubernetes-workload-apply kubernetes-risk-outbox-connector kubernetes-account-outbox-connector|1
 kubernetes-cdc-delivery|FRESH|REEXECUTE|runtime-state configuration|runtime-proof|kubernetes-workloads|1
 kubernetes-matching-workloads|FRESH|REEXECUTE|runtime-state|runtime-proof|kubernetes-matching-apply|1
 kubernetes-fleet|FRESH|REEXECUTE|runtime-state|runtime-proof||1
@@ -296,7 +297,10 @@ certification_phase_dependencies() {
       if [[ "${matching_fleet_only:-false}" == true ]]; then
         printf '%s\n' kubernetes-topic-provisioning
       else
-        printf '%s\n' kubernetes-migrations
+        printf '%s\n' \
+          kubernetes-migrations \
+          kubernetes-topic-provisioning \
+          kubernetes-connect-apply
       fi
       return 0
       ;;

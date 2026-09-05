@@ -133,9 +133,16 @@ cannot be promoted to a full-local
 certification PASS; the parent #151 runner still owns the aggregate baseline and fault-family verdict.
 
 The local overlay also runs two Debezium Kafka Connect workers against the in-cluster Kafka and
-PostgreSQL Services. The certification runner waits for all Flyway Jobs to complete, then registers
-each retained service-owned connector (Risk and Account) through the Connect REST API and records
-its `RUNNING` connector/task status before waiting for application workloads.
+PostgreSQL Services. The certification phase applies this Connect Deployment only after the Flyway
+Jobs and Kafka topic-provisioning Job complete; a later phase applies the Java workloads, then
+registers each retained service-owned connector (Risk and Account) through the Connect REST API and
+records its `RUNNING` connector/task status before waiting for application workloads. The focused
+`scripts/run-local-connect-worker-loss.sh` diagnostic can delete the task-owning worker Pod and
+requires a task-id-preserving reassignment plus baseline-aware Account CDC evidence; it never
+re-applies the deployment or deletes the cluster.
+Its PASS report links prerequisite snapshots, the UID delete precondition,
+the transition record, and the exact Kafka publication location; report
+booleans are not accepted without those artifacts.
 Risk additionally runs a dedicated Kafka observer group: it persists exact Debezium `id` headers,
 proves committed offsets reached every current `matching.commands` partition head, and only then
 refreshes the durable admission-lag row. The full Kubernetes gate pauses the Risk connector,

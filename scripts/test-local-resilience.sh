@@ -7,11 +7,14 @@ source "$script_dir/lib/local-resilience.sh"
 
 bash -n "$script_dir/lib/local-resilience.sh" \
   "$script_dir/lib/local-resilience-dependencies.sh" \
+  "$script_dir/lib/connect-worker-loss.sh" \
   "$script_dir/run-local-resilience.sh" \
+  "$script_dir/run-local-connect-worker-loss.sh" \
   "$script_dir/run-local-resilience-dependencies.sh" \
   "$script_dir/validate-local-resilience-contract.sh"
 
 bash "$script_dir/test-local-resilience-dependencies.sh"
+bash "$script_dir/test-local-connect-worker-loss.sh"
 
 [[ "$(resilience_deadline 100 300)" == 400 ]]
 [[ "$RESILIENCE_DEFAULT_DEADLINE_SECONDS" == 300 ]]
@@ -70,5 +73,10 @@ grep -Fq 'cannot become a resilience pass' "$script_dir/run-local-resilience.sh"
 full_local_dry_run="$("$script_dir"/run-local-resilience.sh --profile full-local --dry-run)"
 grep -Fq 'pod-replacement, planned-disruption, worker-stop' <<<"$full_local_dry_run"
 grep -Fq 'lifecycle-labeled disposable namespace' <<<"$full_local_dry_run"
+
+connect_worker_loss_dry_run="$("$script_dir"/run-local-connect-worker-loss.sh \
+  --namespace simplematch-cert-run --namespace-run-id run-1 --dry-run)"
+grep -Fq 'Connect Pod' <<<"$connect_worker_loss_dry_run"
+grep -Fq 'diagnostic evidence only' "$script_dir/run-local-connect-worker-loss.sh"
 
 printf '%s\n' 'Local resilience runner contract passed.'

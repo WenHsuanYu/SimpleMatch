@@ -291,8 +291,12 @@ wait_for_all_connectors() {
 }
 
 capture_probe() {
-  local schema="$1" aggregate_type="$2" aggregate_id="$3" output="$4"
-  cdc_read_outbox_probe "$schema" "$aggregate_type" "$aggregate_id" "$output"
+  local schema="$1" aggregate_type="$2" aggregate_id="$3" output="$4" baseline="${5:-}"
+  if [[ -n "$baseline" ]]; then
+    cdc_read_outbox_probe "$schema" "$aggregate_type" "$aggregate_id" "$output" "$baseline"
+  else
+    cdc_read_outbox_probe "$schema" "$aggregate_type" "$aggregate_id" "$output"
+  fi
 }
 
 verify_probe_publication() {
@@ -382,6 +386,28 @@ INSERT INTO account_service.outbox (
 SQL
 capture_probe account_service account_reservation account-reservation-1 "$account_probe"
 verify_probe_publication "$account_probe" "$account_baseline" account_service
+
+account_transition_baseline="$TMP_DIR/account-transition-outbox-baseline.json"
+account_transition_kafka_baseline="$TMP_DIR/account-transition-kafka-baseline.tsv"
+account_transition_probe="$TMP_DIR/account-transition-probe.json"
+cdc_capture_outbox_baseline account_service account_reservation account-reservation-1 \
+  "$account_transition_baseline"
+cdc_capture_topic_end_offsets account.lifecycle "$account_transition_kafka_baseline"
+psql_query <<SQL
+INSERT INTO account_service.outbox (
+  id, event_id, topic, message_key, kafka_partition_id, payload, payload_type, headers_json,
+  aggregate_type, aggregate_id, created_at_unix_ms, created_at
+) VALUES
+  (5, '00000000-0000-0000-0000-00000000000a', 'account.lifecycle', 'account-1', NULL,
+   decode('6163636f756e742d7061796c6f61642d7472616e736974696f6e', 'hex'),
+   'simplematch.account.v2.AccountLifecycleEvent',
+   '{"trace-id":"account-transition"}', 'account_reservation', 'account-reservation-1', $((EVENT_BASE_MS + 2000)),
+   to_timestamp($((EVENT_BASE_MS + 2000)) / 1000.0) AT TIME ZONE 'UTC');
+SQL
+capture_probe account_service account_reservation account-reservation-1 \
+  "$account_transition_probe" "$account_transition_baseline"
+verify_probe_publication "$account_transition_probe" "$account_transition_kafka_baseline" account_service
+echo "Verified baseline-aware Account lifecycle transition selection."
 
 echo "Verified baseline exact payload bytes, event identity, key, partition semantics, timestamp, topic, and headers."
 

@@ -581,9 +581,11 @@ Conceptually:
                                    │
                          topic provisioning
                                    │
+                            Connect apply
+                                   │
                             Open Barriers
                                    │
-                              workloads
+                          Java workloads
                                    │
                             workload wait
                                    │
@@ -625,14 +627,20 @@ phases conservative.
 | Kubernetes inputs/platform apply | `FRESH` | Applied state belongs to the new namespace. |
 | migrations | `FRESH` | Must prove migrations against fresh database state. |
 | topic provisioning | `FRESH` | Must prove topics in the current runtime. |
+| Connect apply | `FRESH` | Applies the Kafka Connect Deployment only after migrations and topic provisioning complete; connector registration remains a later runtime phase. |
 | Open Barrier publication | `FRESH` | Session and runtime identity are current-run facts. |
-| workload apply/wait | `FRESH` | Runtime availability is current-run behavior. |
+| Java workload apply/wait | `FRESH` | Runtime availability is current-run behavior; Connect is applied by its own predecessor phase. |
 | Matching fleet verification | `FRESH` | Ownership, identity, recovery, and readiness are live facts. |
 | retained-run provenance | `FRESH` | Binds the current source, run, namespace, and immutable images. |
 
 A later proposal may change an environment phase from `FRESH` to `REVALIDATE`,
 but only with an explicit environment identity and acceptance tests proving that
 no required current fact is lost.
+
+Topic provisioning has one phase owner: `kubernetes-topic-provisioning`. The
+migrations phase depends on that result but does not invoke the provisioning
+adapter itself, so a full profile and the Matching-only profile cannot submit
+the same Job twice.
 
 ## 15. Per-image content-addressed reuse
 

@@ -42,6 +42,42 @@ if simplematch_kind_node_readiness_state "$ready_unsupported" >/dev/null 2>&1; t
   fail 'unsupported Ready status unexpectedly passed'
 fi
 
+fake_bin="$fixture_dir/bin"
+mkdir -p "$fake_bin"
+cat >"$fake_bin/kubectl" <<'EOF_KUBECTL'
+#!/usr/bin/env bash
+set -euo pipefail
+case "$*" in
+  *'get --raw=/readyz?verbose'*)
+    printf '%s\n' 'readyz check passed'
+    ;;
+  *'get pods -n kube-system -o json'*)
+    cat <<'EOF_PODS'
+{"items":[
+  {"metadata":{"name":"etcd-simplematch-live-control-plane"},"status":{"phase":"Running","conditions":[{"type":"Ready","status":"True"}],"containerStatuses":[{"restartCount":0}]}},
+  {"metadata":{"name":"kube-controller-manager-simplematch-live-control-plane"},"status":{"phase":"Running","conditions":[{"type":"Ready","status":"True"}],"containerStatuses":[{"restartCount":0}]}},
+  {"metadata":{"name":"kube-scheduler-simplematch-live-control-plane"},"status":{"phase":"Running","conditions":[{"type":"Ready","status":"True"}],"containerStatuses":[{"restartCount":0}]}}
+]}
+EOF_PODS
+    ;;
+  *'get events -n kube-system'*)
+    printf '%s\n' '{"items":[]}'
+    ;;
+  *)
+    printf 'unexpected fake kubectl invocation: %s\n' "$*" >&2
+    exit 1
+    ;;
+esac
+EOF_KUBECTL
+chmod +x "$fake_bin/kubectl"
+control_plane_evidence="$fixture_dir/control-plane"
+PATH="$fake_bin:$PATH" simplematch_kind_validate_control_plane_stability \
+  fake-context 1 5 "$control_plane_evidence" ||
+  fail 'stable control-plane fixture was rejected'
+[[ -s "$control_plane_evidence/readyz.txt" && -s "$control_plane_evidence/before.json" &&
+  -s "$control_plane_evidence/after.json" && -s "$control_plane_evidence/events.json" ]] ||
+  fail 'control-plane stability evidence was not retained'
+
 redis_marker_value='run-redis-marker'
 [[ "$(resilience_dependency_redis_marker_state "$redis_marker_value" "$redis_marker_value")" == present ]] ||
   fail 'matching Redis marker response was not classified as present'
@@ -262,10 +298,10 @@ grep -Fq 'config get-contexts -o name' "$runtime_script" ||
   fail 'runtime diagnostic does not validate the selected Kubernetes context'
 grep -Fq 'wait_for_kafka_set_ready ""' "$runtime_script" || fail 'runtime diagnostic lacks a stable Kafka baseline wait'
 grep -Fq 'validate_control_plane_stability' "$runtime_script" || fail 'runtime diagnostic lacks control-plane stability preflight'
-grep -Fq 'restart_count' "$runtime_script" || fail 'control-plane stability preflight lacks restart-count continuity'
-grep -Fq 'kube-controller-manager-' "$runtime_script" || fail 'control-plane stability preflight lacks controller-manager coverage'
-grep -Fq 'kube-scheduler-' "$runtime_script" || fail 'control-plane stability preflight lacks scheduler coverage'
-grep -Fq 'etcd-' "$runtime_script" || fail 'control-plane stability preflight lacks etcd coverage'
+grep -Fq 'restart_count' "$readiness_lib" || fail 'control-plane stability preflight lacks restart-count continuity'
+grep -Fq 'kube-controller-manager-' "$readiness_lib" || fail 'control-plane stability preflight lacks controller-manager coverage'
+grep -Fq 'kube-scheduler-' "$readiness_lib" || fail 'control-plane stability preflight lacks scheduler coverage'
+grep -Fq 'etcd-' "$readiness_lib" || fail 'control-plane stability preflight lacks etcd coverage'
 grep -Fq 'DELETE FROM risk_service.local_resilience_marker' "$runtime_script" ||
   fail 'PostgreSQL marker cleanup is missing'
 grep -Fq 'cleanup_status=1' "$runtime_script" ||

@@ -251,7 +251,6 @@ apply_kubernetes_migrations() {
     quickfix-gateway
   )
 
-  apply_kubernetes_topic_provisioning "$migration_manifest" || return 1
   # Submit every migration Job before waiting. Kubernetes can then schedule the
   # independent schema owners concurrently, while each bounded wait below still
   # preserves the existing fail-closed completion contract.

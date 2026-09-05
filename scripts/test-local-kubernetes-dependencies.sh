@@ -150,12 +150,34 @@ account_connector_document = JSON.parse(account_connector_configmap.dig("data", 
 account_connector_values = account_connector_document.fetch("config")
 connect_volume_mounts = connect_container.fetch("volumeMounts")
 connect_volumes = connect_spec.fetch("volumes")
+connect_tolerations = connect_spec.fetch("tolerations", [])
 
 require_value(connect.fetch("spec").fetch("replicas") == 2, "Local Kafka Connect must retain two workers")
 require_value(connect_pdb.dig("spec", "minAvailable") == 1, "Kafka Connect PDB must retain one worker")
 require_value(
   connect_spec.dig("nodeSelector", "simplematch.io/node-pool") == "local-resilience",
   "Local Kafka Connect must use local-resilience workers"
+)
+require_value(
+  connect_spec.dig("topologySpreadConstraints", 0) == {
+    "maxSkew" => 1,
+    "topologyKey" => "simplematch.io/worker-slot",
+    "whenUnsatisfiable" => "DoNotSchedule",
+    "labelSelector" => {"matchLabels" => {
+      "app.kubernetes.io/name" => "kafka-connect",
+      "app.kubernetes.io/component" => "connector"
+    }}
+  },
+  "Local Kafka Connect must spread workers across eligible worker slots"
+)
+required_connect_tolerations = [
+  {"key" => "simplematch.io/portable-workload", "operator" => "Exists", "effect" => "NoExecute", "tolerationSeconds" => 30},
+  {"key" => "node.kubernetes.io/not-ready", "operator" => "Exists", "effect" => "NoExecute", "tolerationSeconds" => 30},
+  {"key" => "node.kubernetes.io/unreachable", "operator" => "Exists", "effect" => "NoExecute", "tolerationSeconds" => 30}
+]
+require_value(
+  required_connect_tolerations.all? { |expected| connect_tolerations.include?(expected) },
+  "Local Kafka Connect must use the accepted portable and node-loss tolerations"
 )
 require_value(
   connect_config.dig("data", "bootstrap_servers") == "kafka:9092" &&

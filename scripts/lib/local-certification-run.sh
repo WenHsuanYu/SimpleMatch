@@ -346,6 +346,14 @@ certification_execute_phase() {
     kubernetes-topic-provisioning)
       run_logged "$phase_id" apply_kubernetes_topic_provisioning "$migration_manifest"
       ;;
+    kubernetes-connect-apply)
+      # Kafka Connect is applied only after PostgreSQL migrations and the Kafka topic
+      # provisioning Job have completed. The workload manifest also contains Java
+      # Deployments; the selector keeps this phase's ownership narrow without a second
+      # rendered manifest or duplicated YAML.
+      run_logged "$phase_id" kubectl apply -f "$workload_manifest" \
+        --selector 'app.kubernetes.io/name=kafka-connect'
+      ;;
     kubernetes-open-barriers)
       matching_digest="$(_certification_matching_digest_argument)" || return 1
       matching_reference="$(_certification_matching_reference_argument)" || return 1
@@ -353,7 +361,8 @@ certification_execute_phase() {
         "$matching_digest" "$matching_reference"
       ;;
     kubernetes-workload-apply)
-      run_logged "$phase_id" kubectl apply -f "$workload_manifest"
+      run_logged "$phase_id" kubectl apply -f "$workload_manifest" \
+        --selector 'app.kubernetes.io/name!=kafka-connect'
       ;;
     kubernetes-matching-apply)
       run_logged "$phase_id" kubectl apply -f "$matching_workload_manifest"

@@ -274,14 +274,34 @@ grep -Fxq kubernetes-open-barriers \
   printf '%s\n' 'Workload application must depend on the durable Matching barrier.' >&2
   exit 1
 }
-grep -Fxq kubernetes-workload-apply \
+grep -Fxq kubernetes-connect-apply \
   <<<"$(certification_phase_dependencies kubernetes-risk-outbox-connector)" || {
-  printf '%s\n' 'Connector registration must depend on workload application.' >&2
+  printf '%s\n' 'Connector registration must depend on Connect application.' >&2
+  exit 1
+}
+grep -Fxq kubernetes-connect-apply \
+  <<<"$(certification_phase_dependencies kubernetes-account-outbox-connector)" || {
+  printf '%s\n' 'Account connector registration must depend on Connect application.' >&2
+  exit 1
+}
+grep -Fxq kubernetes-migrations \
+  <<<"$(certification_phase_dependencies kubernetes-connect-apply)" || {
+  printf '%s\n' 'Connect application must wait for Flyway migrations.' >&2
+  exit 1
+}
+grep -Fxq kubernetes-topic-provisioning \
+  <<<"$(certification_phase_dependencies kubernetes-connect-apply)" || {
+  printf '%s\n' 'Connect application must wait for Kafka topic provisioning.' >&2
+  exit 1
+}
+grep -Fxq kubernetes-topic-provisioning \
+  <<<"$(certification_phase_dependencies kubernetes-migrations)" || {
+  printf '%s\n' 'Flyway migrations must consume the single topic-provisioning phase.' >&2
   exit 1
 }
 grep -Fxq kubernetes-workload-apply \
-  <<<"$(certification_phase_dependencies kubernetes-account-outbox-connector)" || {
-  printf '%s\n' 'Account connector registration must depend on workload application.' >&2
+  <<<"$(certification_phase_dependencies kubernetes-workloads)" || {
+  printf '%s\n' 'Workload readiness must wait for Java workload application.' >&2
   exit 1
 }
 grep -Fxq kubernetes-risk-outbox-connector \
@@ -304,10 +324,29 @@ grep -Fxq kubernetes-cdc-delivery \
   printf '%s\n' 'Full Kubernetes certification must include Risk CDC evidence.' >&2
   exit 1
 }
+phase_order="$(certification_required_phase_ids)"
+phase_index() {
+  awk -v target="$1" '$0 == target { print NR; exit }' <<<"$phase_order"
+}
+assert_phase_precedes() {
+  local first second
+  first="$(phase_index "$1")"
+  second="$(phase_index "$2")"
+  [[ -n "$first" && -n "$second" && "$first" -lt "$second" ]] || {
+    printf 'Certification phase order is invalid: %s must precede %s.\n' "$1" "$2" >&2
+    exit 1
+  }
+}
+assert_phase_precedes kubernetes-topic-provisioning kubernetes-connect-apply
+assert_phase_precedes kubernetes-connect-apply kubernetes-open-barriers
+assert_phase_precedes kubernetes-open-barriers kubernetes-workload-apply
+assert_phase_precedes kubernetes-workload-apply kubernetes-workloads
 grep -Fq 'apply_kubernetes_migrations' "$kubernetes_lib" "$run_lib"
 grep -Fq 'apply_kubernetes_topic_provisioning' "$kubernetes_lib" "$run_lib"
 grep -Fq 'local-kubernetes-migrations.yaml' "$run_lib"
 grep -Fq 'local-kubernetes-workloads.yaml' "$run_lib"
+grep -Fq "app.kubernetes.io/name=kafka-connect" "$run_lib"
+grep -Fq "app.kubernetes.io/name!=kafka-connect" "$run_lib"
 grep -Fq 'publish_local_matching_open_barriers' "$run_lib"
 grep -Fq 'register_kubernetes_risk_connector' "$run_lib"
 grep -Fq 'register_kubernetes_account_connector' "$run_lib"

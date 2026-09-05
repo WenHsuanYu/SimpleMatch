@@ -51,7 +51,6 @@ postgres_marker_run_id=""
 postgres_pod=""
 emergency_cleanup_running=false
 cleanup_deadline_at_seconds=0
-preflight_stability_deadline=0
 
 usage() {
   cat <<'EOF_USAGE'
@@ -121,22 +120,6 @@ run_cleanup_bounded() {
   timeout --foreground "${remaining}s" "$@"
 }
 
-run_preflight_bounded() {
-  local remaining status command_name="${1:-command}"
-
-  remaining=$((preflight_stability_deadline - SECONDS))
-  (( remaining > 0 )) || return 124
-  if timeout --foreground "${remaining}s" "$@"; then
-    return 0
-  else
-    status="$?"
-  fi
-  if (( status == 124 )); then
-    failure_reason="bounded preflight command timed out: $command_name"
-  fi
-  return "$status"
-}
-
 bounded_sleep() {
   run_bounded sleep "$1"
 }
@@ -153,10 +136,6 @@ kns() {
 
 cleanup_kns() {
   run_cleanup_bounded kubectl --context "$context" -n "$namespace" "$@"
-}
-
-preflight_kube() {
-  run_preflight_bounded kubectl --context "$context" "$@"
 }
 
 write_failure_report() {
@@ -317,61 +296,11 @@ validate_cluster_preflight() {
   [[ "$(jq '.items | length' <<<"$nodes_json")" == 4 && "$worker_count" == 3 &&
     "$ready_workers" == 3 && "$control_plane_count" == 1 ]] ||
     die 'canonical topology is not one control plane plus three Ready workers'
-  kube get --raw='/readyz?verbose' | grep -Fq 'readyz check passed' ||
-    die 'canonical control plane is not reporting readyz success'
-  validate_control_plane_stability
-}
-
-control_plane_snapshot() {
-  preflight_kube get pods -n kube-system -o json | jq -c '
-    [.items[]
-     | select((.metadata.name // "") | test("^(etcd-|kube-controller-manager-|kube-scheduler-)"))
-     | {name:.metadata.name,
-        phase:(.status.phase // ""),
-        ready:any(.status.conditions[]?; .type == "Ready" and .status == "True"),
-        restart_count:([.status.containerStatuses[]?.restartCount] | add // 0)}]
-    | sort_by(.name)'
-}
-
-validate_control_plane_stability() {
-  local before after events now
-
-  preflight_stability_deadline=$((SECONDS + preflight_timeout_seconds + control_plane_stability_window_seconds))
-  before="$(control_plane_snapshot)" || die 'could not capture control-plane readiness baseline'
-  jq -e '
-    length == 3 and
-    all(.[]; .phase == "Running" and .ready == true)
-  ' <<<"$before" >/dev/null ||
-    die 'control-plane components are not all Ready before fault injection'
-
-  run_preflight_bounded sleep "$control_plane_stability_window_seconds" ||
-    die 'control-plane stability window could not complete'
-  after="$(control_plane_snapshot)" || die 'could not capture control-plane readiness after stability window'
-  jq -n -e --argjson before "$before" --argjson after "$after" '$before == $after' >/dev/null ||
-    die 'control-plane readiness or restart counts changed during stability window'
-
-  events="$(preflight_kube get events -n kube-system --sort-by=.lastTimestamp -o json)" ||
-    die 'could not inspect recent control-plane events'
-  now="$(date -u +%s)"
-  jq -e --argjson now "$now" --argjson window "$control_plane_stability_window_seconds" '
-    def event_epoch:
-      (.eventTime // .lastTimestamp // .series.lastObservedTime // .metadata.creationTimestamp // "")
-      | if type == "string" and length > 0
-        then (sub("\\.[0-9]+Z$"; "Z") | try fromdateiso8601 catch null)
-        else null
-        end;
-    all(.items[]?;
-      . as $event |
-      ($event.involvedObject.name // "") as $name |
-      ($event | event_epoch) as $timestamp |
-      if ($name | test("^(etcd-|kube-controller-manager-|kube-scheduler-)")) and
-         ($timestamp != null) and (($now - $timestamp) <= $window)
-      then (((($event.reason // "") + " " + ($event.message // ""))
-             | test("lease|probe|unhealthy|failed|timeout"; "i")) | not)
-      else true
-      end)
-  ' <<<"$events" >/dev/null ||
-    die 'recent control-plane lease, probe, or failure event detected'
+  simplematch_kind_validate_control_plane_stability \
+    "$context" "$control_plane_stability_window_seconds" \
+    "$preflight_timeout_seconds" "$evidence_dir/control-plane" \
+    "$preflight_timeout_seconds" ||
+    die 'canonical control plane is not stable for the required preflight window'
 }
 
 prepare_evidence_dir() {

@@ -26,6 +26,163 @@ simplematch_kind_node_readiness_state() {
   ' <<<"$node_json"
 }
 
+_simplematch_kind_control_plane_snapshot() {
+  local context="$1" command_timeout_seconds="$2"
+
+  timeout --foreground "${command_timeout_seconds}s" \
+    kubectl --context "$context" get pods -n kube-system -o json | jq -c '
+      [.items[]
+       | select((.metadata.name // "") | test("^(etcd-|kube-controller-manager-|kube-scheduler-)"))
+       | {name:.metadata.name,
+          phase:(.status.phase // ""),
+          ready:any(.status.conditions[]?; .type == "Ready" and .status == "True"),
+          restart_count:([.status.containerStatuses[]?.restartCount] | add // 0)}]
+      | sort_by(.name)'
+}
+
+_simplematch_kind_control_plane_timeout() {
+  local deadline_at="$1" command_timeout_seconds="$2"
+  local remaining timeout_seconds
+
+  remaining=$((deadline_at - SECONDS))
+  (( remaining > 0 )) || return 124
+  timeout_seconds="$command_timeout_seconds"
+  (( remaining < timeout_seconds )) && timeout_seconds="$remaining"
+  printf '%s\n' "$timeout_seconds"
+}
+
+# Verify that the kind control plane is stable before a state-changing
+# diagnostic. The check is shared by dependency and Connect worker-loss
+# diagnostics so a fault cannot be attributed to an unstable etcd or lease
+# path. If an evidence directory is supplied, the raw readiness, snapshots,
+# and recent events are retained for the diagnostic report. The optional fifth
+# argument is one aggregate budget for the whole check, not a multiplier for
+# each kubectl call.
+simplematch_kind_validate_control_plane_stability() {
+  local context="$1"
+  local window_seconds="${2:-5}"
+  local command_timeout_seconds="${3:-60}"
+  local evidence_dir="${4:-}"
+  local aggregate_timeout_seconds="${5:-$((window_seconds + command_timeout_seconds * 4))}"
+  local before after events now readyz deadline_at command_timeout
+
+  [[ "$window_seconds" =~ ^[1-9][0-9]*$ ]] || return 1
+  [[ "$command_timeout_seconds" =~ ^[1-9][0-9]*$ ]] || return 1
+  [[ "$aggregate_timeout_seconds" =~ ^[1-9][0-9]*$ ]] || return 1
+  deadline_at=$((SECONDS + aggregate_timeout_seconds))
+  if [[ -n "$evidence_dir" ]]; then
+    mkdir -p "$evidence_dir" || return 1
+  fi
+
+  command_timeout="$(_simplematch_kind_control_plane_timeout "$deadline_at" \
+    "$command_timeout_seconds")" || {
+    printf 'kind control plane stability deadline elapsed before readyz for %s\n' \
+      "$context" >&2
+    return 1
+  }
+  readyz="$(timeout --foreground "${command_timeout}s" \
+    kubectl --context "$context" get --raw='/readyz?verbose')" || {
+    printf 'kind control plane readyz check failed for %s\n' "$context" >&2
+    return 1
+  }
+  grep -Fq 'readyz check passed' <<<"$readyz" || {
+    printf 'kind control plane is not reporting readyz success for %s\n' "$context" >&2
+    return 1
+  }
+  if [[ -n "$evidence_dir" ]]; then
+    printf '%s\n' "$readyz" >"$evidence_dir/readyz.txt" || return 1
+  fi
+
+  command_timeout="$(_simplematch_kind_control_plane_timeout "$deadline_at" \
+    "$command_timeout_seconds")" || {
+    printf 'kind control plane stability deadline elapsed before snapshot for %s\n' \
+      "$context" >&2
+    return 1
+  }
+  before="$(_simplematch_kind_control_plane_snapshot \
+    "$context" "$command_timeout")" || {
+    printf 'could not capture kind control-plane readiness for %s\n' "$context" >&2
+    return 1
+  }
+  jq -e 'length == 3 and all(.[]; .phase == "Running" and .ready == true)' \
+    <<<"$before" >/dev/null || {
+    printf 'kind control-plane components are not all Ready for %s\n' "$context" >&2
+    return 1
+  }
+  if [[ -n "$evidence_dir" ]]; then
+    printf '%s\n' "$before" >"$evidence_dir/before.json" || return 1
+  fi
+
+  command_timeout="$(_simplematch_kind_control_plane_timeout "$deadline_at" \
+    "$((window_seconds + 1))")" || {
+    printf 'kind control plane stability deadline elapsed before window for %s\n' \
+      "$context" >&2
+    return 1
+  }
+  timeout --foreground "${command_timeout}s" sleep "$window_seconds" || {
+    printf 'kind control-plane stability window timed out for %s\n' "$context" >&2
+    return 1
+  }
+  command_timeout="$(_simplematch_kind_control_plane_timeout "$deadline_at" \
+    "$command_timeout_seconds")" || {
+    printf 'kind control plane stability deadline elapsed after window for %s\n' \
+      "$context" >&2
+    return 1
+  }
+  after="$(_simplematch_kind_control_plane_snapshot \
+    "$context" "$command_timeout")" || {
+    printf 'could not capture kind control-plane readiness after stability window for %s\n' \
+      "$context" >&2
+    return 1
+  }
+  jq -n -e --argjson before "$before" --argjson after "$after" \
+    '$before == $after' >/dev/null || {
+    printf 'kind control-plane readiness or restart counts changed for %s\n' "$context" >&2
+    return 1
+  }
+  if [[ -n "$evidence_dir" ]]; then
+    printf '%s\n' "$after" >"$evidence_dir/after.json" || return 1
+  fi
+
+  command_timeout="$(_simplematch_kind_control_plane_timeout "$deadline_at" \
+    "$command_timeout_seconds")" || {
+    printf 'kind control plane stability deadline elapsed before events for %s\n' \
+      "$context" >&2
+    return 1
+  }
+  events="$(timeout --foreground "${command_timeout}s" \
+    kubectl --context "$context" get events -n kube-system --sort-by=.lastTimestamp -o json)" || {
+    printf 'could not inspect recent kind control-plane events for %s\n' "$context" >&2
+    return 1
+  }
+  if [[ -n "$evidence_dir" ]]; then
+    printf '%s\n' "$events" >"$evidence_dir/events.json" || return 1
+  fi
+  now="$(date -u +%s)" || return 1
+  jq -e --argjson now "$now" --argjson window "$window_seconds" '
+    def event_epoch:
+      (.eventTime // .lastTimestamp // .series.lastObservedTime // .metadata.creationTimestamp // "")
+      | if type == "string" and length > 0
+        then (sub("\\.[0-9]+Z$"; "Z") | try fromdateiso8601 catch null)
+        else null
+        end;
+    all(.items[]?;
+      . as $event |
+      ($event.involvedObject.name // "") as $name |
+      ($event | event_epoch) as $timestamp |
+      if ($name | test("^(etcd-|kube-controller-manager-|kube-scheduler-)")) and
+         ($timestamp != null) and (($now - $timestamp) <= $window)
+      then (((($event.reason // "") + " " + ($event.message // ""))
+             | test("lease|probe|unhealthy|failed|timeout"; "i")) | not)
+      else true
+      end)
+  ' <<<"$events" >/dev/null || {
+    printf 'recent kind control-plane lease, probe, or failure event detected for %s\n' \
+      "$context" >&2
+    return 1
+  }
+}
+
 simplematch_kind_create_disposable_namespace() {
   local context="$1"
   local namespace="$2"
