@@ -65,6 +65,11 @@ resilience_dependency_report_is_valid() {
         (if .status == "PASSED" then
           (.failure_reason == null) and
           (.claim_boundary | type == "array" and length > 0) and
+          (.claim_boundary ==
+            (if .fault_mode == "pod-restart"
+             then ["local PostgreSQL Pod restart PVC and durable-row recovery"]
+             else ["local PostgreSQL same-worker PVC and durable-row recovery"]
+             end)) and
           (.target.before | type == "object") and (.target.after | type == "object") and
           (.target.before.pod == "postgres-0") and (.target.after.pod == "postgres-0") and
           (.target.before.pod_uid | text) and (.target.after.pod_uid | text) and
@@ -113,6 +118,11 @@ resilience_dependency_report_is_valid() {
         (if .status == "PASSED" then
           (.failure_reason == null) and
           (.claim_boundary | type == "array" and length > 0) and
+          (.claim_boundary ==
+            (if .fault_mode == "pod-restart"
+             then ["local Redis readiness after Pod restart", "Redis state is disposable"]
+             else ["local Redis readiness after portable worker recovery", "Redis state is disposable"]
+             end)) and
           (.target.before | type == "object") and (.target.after | type == "object") and
           (.target.before.pod | text) and (.target.after.pod | text) and
           (.target.before.pod_uid | text) and (.target.after.pod_uid | text) and
@@ -172,6 +182,11 @@ resilience_dependency_report_is_valid() {
         (if .status == "PASSED" then
           (.failure_reason == null) and
           (.claim_boundary | type == "array" and length > 0) and
+          (.claim_boundary ==
+            (if .fault_mode == "pod-restart"
+             then ["local Kafka RF3 committed-marker recovery after Pod restart"]
+             else ["local Kafka RF3 committed-marker recovery after one worker stop"]
+             end)) and
           (.target.ordinal | type == "number" and floor == . and . >= 0 and . <= 2) and
           (.target.before | type == "object") and (.target.after | type == "object") and
           (.target.before.pod == ("kafka-" + (.target.ordinal | tostring))) and

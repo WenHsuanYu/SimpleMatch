@@ -605,7 +605,7 @@ assert_postgres_no_cross_node_replacement() {
 
 run_postgresql() {
   local before after marker_before marker_after durable_before durable_after
-  local target_node target_pod worker_json report_json previous_uid=""
+  local target_node target_pod worker_json report_json claim_boundary previous_uid=""
   local owner_worker_replacement_absent=false
   local sql
 
@@ -649,13 +649,19 @@ WHERE run_id = '$postgres_marker_run_id' AND marker_value = '$marker_value';"
   else
     worker_json='null'
   fi
+  if [[ "$fault_mode" == pod-restart ]]; then
+    claim_boundary='local PostgreSQL Pod restart PVC and durable-row recovery'
+  else
+    claim_boundary='local PostgreSQL same-worker PVC and durable-row recovery'
+  fi
   report_json="$(jq -n \
     --argjson before "$before" --argjson after "$after" \
     --argjson worker_stop "$worker_json" --arg marker "$postgres_marker_run_id" \
     --argjson durable_before "$durable_before" --argjson durable_after "$durable_after" \
     --argjson owner_worker_replacement_absent "$owner_worker_replacement_absent" \
     --arg cluster "$cluster_name" --arg context "$context" --arg namespace "$namespace" \
-    --arg run_id "$run_id" --arg fault_mode "$fault_mode" --argjson deadline "$deadline_seconds" \
+    --arg run_id "$run_id" --arg fault_mode "$fault_mode" --arg claim_boundary "$claim_boundary" \
+    --argjson deadline "$deadline_seconds" \
     '{schema_version:1,profile:"dependency-recovery",component:"postgresql",status:"PASSED",
       cluster:$cluster,context:$context,namespace:$namespace,run_id:$run_id,fault_mode:$fault_mode,
       deadline_seconds:$deadline,target:{before:$before,after:$after},
@@ -663,7 +669,7 @@ WHERE run_id = '$postgres_marker_run_id' AND marker_value = '$marker_value';"
       recovery:{ready:true,durable_marker:$marker,durable_before:$durable_before,
         durable_after:$durable_after,data_preserved:true,
         owner_worker_replacement_absent:$owner_worker_replacement_absent},failure_reason:null,
-      claim_boundary:["local PostgreSQL same-worker PVC and durable-row recovery"]}')"
+      claim_boundary:[$claim_boundary]}')"
   cleanup_postgres_marker || die 'could not clean up PostgreSQL durable marker'
   write_validated_report postgresql "$report_json"
 }
@@ -704,7 +710,7 @@ capture_redis_identity() {
 run_redis() {
   local before after target_pod target_node marker_before marker_after
   local marker_after_bool=false marker_state rescheduled_after_worker_loss=false
-  local worker_json report_json previous_uid
+  local worker_json report_json claim_boundary previous_uid
 
   wait_for_redis_pod_ready ""
   capture_redis_identity before
@@ -733,19 +739,25 @@ run_redis() {
   else
     worker_json='null'
   fi
+  if [[ "$fault_mode" == pod-restart ]]; then
+    claim_boundary='local Redis readiness after Pod restart'
+  else
+    claim_boundary='local Redis readiness after portable worker recovery'
+  fi
   report_json="$(jq -n \
     --argjson before "$before" --argjson after "$after" --argjson worker_stop "$worker_json" \
     --argjson rescheduled_after_worker_loss "$rescheduled_after_worker_loss" \
     --argjson marker_before true --argjson marker_after "$marker_after_bool" \
     --arg cluster "$cluster_name" --arg context "$context" --arg namespace "$namespace" \
-    --arg run_id "$run_id" --arg fault_mode "$fault_mode" --argjson deadline "$deadline_seconds" \
+    --arg run_id "$run_id" --arg fault_mode "$fault_mode" --arg claim_boundary "$claim_boundary" \
+    --argjson deadline "$deadline_seconds" \
     '{schema_version:1,profile:"dependency-recovery",component:"redis",status:"PASSED",
       cluster:$cluster,context:$context,namespace:$namespace,run_id:$run_id,fault_mode:$fault_mode,
       deadline_seconds:$deadline,target:{before:$before,after:$after},worker_stop:$worker_stop,
       recovery:{ready:true,portable:true,rescheduled_after_worker_loss:$rescheduled_after_worker_loss,
         disposable_state:true,marker_before:$marker_before,
         marker_after:$marker_after,marker_required_after:false},failure_reason:null,
-      claim_boundary:["local Redis readiness after portable worker recovery","Redis state is disposable"]}')"
+      claim_boundary:[$claim_boundary,"Redis state is disposable"]}')"
   write_validated_report redis "$report_json"
 }
 
@@ -950,7 +962,7 @@ delete_kafka_marker() {
 run_kafka() {
   local before after target_pod target_node marker_count_before marker_count_after
   local isr_before isr_during isr_after available_during worker_json report_json
-  local target_before target_after previous_uid="" catch_up_complete=false
+  local target_before target_after claim_boundary previous_uid="" catch_up_complete=false
   wait_for_kafka_set_ready ""
   capture_kafka_set before
   target_pod=kafka-1
@@ -1007,6 +1019,11 @@ run_kafka() {
   else
     worker_json='null'
   fi
+  if [[ "$fault_mode" == pod-restart ]]; then
+    claim_boundary='local Kafka RF3 committed-marker recovery after Pod restart'
+  else
+    claim_boundary='local Kafka RF3 committed-marker recovery after one worker stop'
+  fi
   report_json="$(jq -n \
     --argjson before "$before" --argjson after "$after" \
     --argjson target_before "$target_before" --argjson target_after "$target_after" \
@@ -1016,7 +1033,8 @@ run_kafka() {
     --argjson marker_count_after "$marker_count_after" --argjson catch_up_complete "$catch_up_complete" \
     --arg topic "$marker_topic" --arg key "$marker_key" \
     --arg cluster "$cluster_name" --arg context "$context" --arg namespace "$namespace" \
-    --arg run_id "$run_id" --arg fault_mode "$fault_mode" --argjson deadline "$deadline_seconds" \
+    --arg run_id "$run_id" --arg fault_mode "$fault_mode" --arg claim_boundary "$claim_boundary" \
+    --argjson deadline "$deadline_seconds" \
     '{schema_version:1,profile:"dependency-recovery",component:"kafka",status:"PASSED",
       cluster:$cluster,context:$context,namespace:$namespace,run_id:$run_id,fault_mode:$fault_mode,
       deadline_seconds:$deadline,target:{ordinal:1,before:$target_before,after:$target_after},
@@ -1027,7 +1045,7 @@ run_kafka() {
         record_count_before:$marker_count_before,record_count_after:$marker_count_after},
       topic_contract:{verified:true,topics:["matching.commands", "matching.events", "account.lifecycle", "marketdata.events", "simplematch-connect-configs", "simplematch-connect-offsets", "simplematch-connect-status"],producer_acks:"all",producer_idempotence:true},
       recovery:{ready:true,rejoined:true,formatted_again:false,catch_up_complete:$catch_up_complete,catch_up_probe:"log-dirs-offset-lag-zero"},
-      failure_reason:null,claim_boundary:["local Kafka RF3 committed-marker recovery after one worker stop"]}')"
+      failure_reason:null,claim_boundary:[$claim_boundary]}')"
   write_validated_report kafka "$report_json"
 }
 

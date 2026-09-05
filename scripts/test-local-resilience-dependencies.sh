@@ -100,6 +100,10 @@ jq '.fault_mode = "pod-restart" | .worker_stop = null | .target.after.pod_uid = 
 if resilience_dependency_report_is_passed postgresql "$fixture_dir/postgresql-unchanged-pod-restart.json"; then
   fail 'unchanged Pod restart evidence unexpectedly passed'
 fi
+jq '.fault_mode = "pod-restart" | .worker_stop = null | .target.after.pod_uid = "postgres-after" | .claim_boundary = ["local PostgreSQL same-worker PVC and durable-row recovery"]' "$postgres_report" >"$fixture_dir/postgresql-wrong-pod-restart-claim.json"
+if resilience_dependency_report_is_passed postgresql "$fixture_dir/postgresql-wrong-pod-restart-claim.json"; then
+  fail 'PostgreSQL Pod-restart evidence with a worker-stop claim unexpectedly passed'
+fi
 jq '.failure_reason = "misleading pass reason"' "$postgres_report" >"$fixture_dir/postgresql-pass-reason.json"
 if resilience_dependency_report_is_passed postgresql "$fixture_dir/postgresql-pass-reason.json"; then
   fail 'successful report with a failure reason unexpectedly passed'
@@ -154,6 +158,10 @@ fi
 jq '.claim_boundary = []' "$redis_report" >"$fixture_dir/redis-empty-claim-boundary.json"
 if resilience_dependency_report_is_passed redis "$fixture_dir/redis-empty-claim-boundary.json"; then
   fail 'Redis PASS with an empty claim boundary unexpectedly passed'
+fi
+jq '.fault_mode = "pod-restart" | .recovery.rescheduled_after_worker_loss = false | .target.after.pod_uid = "redis-after" | .claim_boundary = ["local Redis readiness after portable worker recovery", "Redis state is disposable"]' "$redis_report" >"$fixture_dir/redis-wrong-pod-restart-claim.json"
+if resilience_dependency_report_is_passed redis "$fixture_dir/redis-wrong-pod-restart-claim.json"; then
+  fail 'Redis Pod-restart evidence with a worker-loss claim unexpectedly passed'
 fi
 jq '.target.after.node = .target.before.node' "$redis_report" >"$fixture_dir/redis-same-worker.json"
 if resilience_dependency_report_is_passed redis "$fixture_dir/redis-same-worker.json"; then
@@ -210,6 +218,10 @@ fi
 jq '.claim_boundary = []' "$kafka_report" >"$fixture_dir/kafka-empty-claim-boundary.json"
 if resilience_dependency_report_is_passed kafka "$fixture_dir/kafka-empty-claim-boundary.json"; then
   fail 'Kafka PASS with an empty claim boundary unexpectedly passed'
+fi
+jq '.fault_mode = "pod-restart" | .worker_stop = null | .target.after.pod_uid = "kafka-after" | .claim_boundary = ["local Kafka RF3 committed-marker recovery after one worker stop"]' "$kafka_report" >"$fixture_dir/kafka-wrong-pod-restart-claim.json"
+if resilience_dependency_report_is_passed kafka "$fixture_dir/kafka-wrong-pod-restart-claim.json"; then
+  fail 'Kafka Pod-restart evidence with a worker-stop claim unexpectedly passed'
 fi
 jq 'del(.worker_stop)' "$kafka_report" >"$fixture_dir/kafka-missing-worker-evidence.json"
 if resilience_dependency_report_is_passed kafka "$fixture_dir/kafka-missing-worker-evidence.json"; then
