@@ -48,6 +48,7 @@ postgres_pod=""
 kafka_pod=""
 connect_url=""
 connect_port_forward_pid=""
+connect_port_forward_log_offset=0
 fixture_aggregate_id=""
 fixture_created=false
 target_pod=""
@@ -357,14 +358,20 @@ validate_prerequisites() {
 
 start_connect_port_forward() {
   local log_path="$evidence_dir/connect-port-forward.log" port
-  kns port-forward service/kafka-connect :8083 >"$log_path" 2>&1 &
+  if [[ -n "$connect_port_forward_pid" ]]; then
+    stop_connect_port_forward "$connect_port_forward_pid"
+  fi
+  connect_port_forward_log_offset="$(wc -c <"$log_path" 2>/dev/null || printf '0')"
+  printf '%s\n' "Starting Kafka Connect service port-forward" >>"$log_path"
+  kns port-forward service/kafka-connect :8083 >>"$log_path" 2>&1 &
   connect_port_forward_pid="$!"
   for _ in $(seq 1 30); do
     if ! kill -0 "$connect_port_forward_pid" >/dev/null 2>&1; then
       cat "$log_path" >&2
       die 'Kafka Connect port-forward exited before becoming ready'
     fi
-    port="$(sed -nE 's/.*127\.0\.0\.1:([0-9]+).*8083.*/\1/p' "$log_path" | tail -n 1)"
+    port="$(simplematch_connect_port_forward_port "$log_path" \
+      "$connect_port_forward_log_offset")"
     if [[ -n "$port" ]]; then
       connect_url="http://127.0.0.1:${port}"
       return 0
@@ -372,6 +379,14 @@ start_connect_port_forward() {
     run_bounded sleep 1 || die 'Kafka Connect port-forward did not become ready before timeout'
   done
   die 'could not resolve Kafka Connect port-forward port'
+}
+
+restart_connect_port_forward() {
+  local reason="${1:-Kafka Connect REST tunnel became unavailable}"
+
+  printf '%s\n' "Restarting Kafka Connect service port-forward: $reason" \
+    >>"$evidence_dir/connect-port-forward.log"
+  start_connect_port_forward
 }
 
 connect_status() {
@@ -555,7 +570,13 @@ wait_for_reassignment() {
   while true; do
     kns get pods -l app.kubernetes.io/name=kafka-connect,app.kubernetes.io/component=connector \
       -o json >"$candidate_pods" || true
-    connect_status account-service-outbox >"$candidate_status" 2>/dev/null || true
+    if ! connect_status account-service-outbox >"$candidate_status" 2>/dev/null; then
+      remaining_seconds | grep -Eq '^[1-9][0-9]*$' ||
+        die 'Connect task was not reassigned before the diagnostic deadline'
+      restart_connect_port_forward \
+        'the service tunnel no longer reached a live Connect Pod after worker loss'
+      continue
+    fi
     if jq -e --arg pod "$deleted_pod" --arg uid "$deleted_uid" \
         'all(.items[]?; .metadata.name != $pod and .metadata.uid != $uid)' \
         "$candidate_pods" >/dev/null 2>&1 &&
@@ -694,7 +715,7 @@ if [[ "$dry_run" == true ]]; then
   exit 0
 fi
 
-for tool in kubectl kind jq curl timeout sed grep date seq sleep tail cat od tr awk cp mv; do
+for tool in kubectl kind jq curl timeout sed grep date seq sleep tail cat od tr awk cp mv wc; do
   command -v "$tool" >/dev/null 2>&1 || die "$tool is required"
 done
 simplematch_certification_cdc_verifier_contract_path \

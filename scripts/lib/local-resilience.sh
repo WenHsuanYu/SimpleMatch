@@ -18,6 +18,18 @@ RESILIENCE_DEFAULT_DEADLINE_SECONDS=300
 : "${SIMPLEMATCH_KIND_IMAGE_CACHE_PREFLIGHT_DEFAULT_SECONDS:=60}"
 : "${SIMPLEMATCH_KIND_IMAGE_CACHE_PREFLIGHT_MAX_SECONDS:=120}"
 
+# Return the port announced by the current kubectl port-forward attempt. The
+# byte offset prevents a restarted tunnel from reusing a dead port recorded by
+# an earlier attempt in the same evidence log.
+simplematch_connect_port_forward_port() {
+  local log_path="$1"
+  local byte_offset="$2"
+
+  [[ -r "$log_path" && "$byte_offset" =~ ^[0-9]+$ ]] || return 1
+  tail -c +$((byte_offset + 1)) "$log_path" |
+    sed -nE 's/.*127\.0\.0\.1:([0-9]+).*8083.*/\1/p' | tail -n 1
+}
+
 _simplematch_kind_image_cache_remaining() {
   local deadline_at="$1"
   local remaining=$((deadline_at - SECONDS))

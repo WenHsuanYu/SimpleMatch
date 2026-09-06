@@ -5,6 +5,8 @@ IFS=$'\n\t'
 script_dir="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
 # shellcheck source=scripts/lib/cdc-verifier.sh
 source "$script_dir/lib/cdc-verifier.sh"
+# shellcheck source=scripts/lib/local-resilience.sh
+source "$script_dir/lib/local-resilience.sh"
 # shellcheck source=scripts/lib/connect-worker-loss.sh
 source "$script_dir/lib/connect-worker-loss.sh"
 
@@ -61,6 +63,14 @@ connect_configs_topic="$fixture_dir/connect-configs.txt"
 connect_offsets_topic="$fixture_dir/connect-offsets.txt"
 connect_status_topic="$fixture_dir/connect-status.txt"
 control_plane_dir="$fixture_dir/control-plane"
+
+port_forward_log="$fixture_dir/connect-port-forward.log"
+printf '%s\n' 'Forwarding from 127.0.0.1:30001 -> 8083' >"$port_forward_log"
+port_forward_log_offset="$(wc -c <"$port_forward_log")"
+printf '%s\n' 'Forwarding from 127.0.0.1:30002 -> 8083' >>"$port_forward_log"
+[[ "$(simplematch_connect_port_forward_port "$port_forward_log" \
+  "$port_forward_log_offset")" == 30002 ]] ||
+  fail 'port-forward parser reused the stale port from an earlier attempt'
 
 jq -n '{name:"account-service-outbox",connector:{state:"RUNNING",worker_id:"10.244.0.11:8083"},tasks:[{id:0,state:"RUNNING",worker_id:"10.244.0.11:8083"}]}' >"$status_before"
 jq -n '{name:"account-service-outbox",connector:{state:"RUNNING",worker_id:"10.244.0.33:8083"},tasks:[{id:0,state:"RUNNING",worker_id:"10.244.0.33:8083"}]}' >"$status_after"
@@ -427,6 +437,8 @@ grep -Fq 'simplematch_focused_preflight' "$runtime_script" ||
   fail 'runtime does not reuse the shared source-aligned focused preflight'
 grep -Fq 'simplematch_kind_image_cache_preflight' "$runtime_script" ||
   fail 'runtime does not preflight the Connect image cache before Pod deletion'
+grep -Fq 'restart_connect_port_forward' "$runtime_script" ||
+  fail 'runtime does not recover a service port-forward after worker loss'
 grep -Fq 'recovery_deadline_started_at_unix_ms' "$runtime_script" ||
   fail 'runtime does not start the recovery budget at fault injection'
 grep -Fq 'SIMPLEMATCH_KIND_IMAGE_CACHE_PREFLIGHT_DEFAULT_SECONDS' \
