@@ -13,6 +13,8 @@ repo_root="$(cd -- "$script_dir/.." && pwd)"
 source "$script_dir/lib/local-common.sh"
 # shellcheck source=scripts/lib/local-kind.sh
 source "$script_dir/lib/local-kind.sh"
+# shellcheck source=scripts/lib/local-resilience.sh
+source "$script_dir/lib/local-resilience.sh"
 # shellcheck source=scripts/lib/local-certification-provenance.sh
 source "$script_dir/lib/local-certification-provenance.sh"
 # shellcheck source=scripts/lib/local-certification-phase-graph.sh

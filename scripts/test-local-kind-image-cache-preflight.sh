@@ -3,8 +3,8 @@ set -Eeuo pipefail
 IFS=$'\n\t'
 
 script_dir="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
-# shellcheck source=scripts/lib/local-kind.sh
-source "$script_dir/lib/local-kind.sh"
+# shellcheck source=scripts/lib/local-resilience.sh
+source "$script_dir/lib/local-resilience.sh"
 
 fail() {
   printf 'image-cache preflight contract failed: %s\n' "$*" >&2

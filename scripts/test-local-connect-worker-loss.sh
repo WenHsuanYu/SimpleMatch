@@ -430,7 +430,7 @@ grep -Fq 'simplematch_kind_image_cache_preflight' "$runtime_script" ||
 grep -Fq 'recovery_deadline_started_at_unix_ms' "$runtime_script" ||
   fail 'runtime does not start the recovery budget at fault injection'
 grep -Fq 'SIMPLEMATCH_KIND_IMAGE_CACHE_PREFLIGHT_DEFAULT_SECONDS' \
-  "$script_dir/lib/local-kind.sh" ||
+  "$script_dir/lib/local-resilience.sh" ||
   fail 'image-cache adapter does not define a bounded preflight budget'
 grep -Fq 'simplematch_kind_validate_control_plane_stability' "$runtime_script" ||
   fail 'runtime does not gate fault injection on control-plane stability'
