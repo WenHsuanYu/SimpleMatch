@@ -162,18 +162,26 @@ COMMIT;"
 }
 
 stop_connect_port_forward() {
-  local pid="$1" iteration
+  local pid="$1" deadline="${2:-0}" iteration
 
   kill "$pid" >/dev/null 2>&1 || true
   for ((iteration = 0; iteration < 50; iteration++)); do
     if ! kill -0 "$pid" >/dev/null 2>&1; then
       wait "$pid" >/dev/null 2>&1 || true
+      connect_port_forward_pid=""
       return 0
+    fi
+    if [[ "$deadline" =~ ^[1-9][0-9]*$ ]] && (( SECONDS >= deadline )); then
+      break
     fi
     sleep 0.1
   done
   kill -KILL "$pid" >/dev/null 2>&1 || true
   wait "$pid" >/dev/null 2>&1 || true
+  connect_port_forward_pid=""
+  if [[ "$deadline" =~ ^[1-9][0-9]*$ ]] && (( SECONDS >= deadline )); then
+    return 1
+  fi
 }
 
 validate_relative_path() {
@@ -359,19 +367,28 @@ validate_prerequisites() {
 start_connect_port_forward() {
   local log_path="$evidence_dir/connect-port-forward.log" port
   if [[ -n "$connect_port_forward_pid" ]]; then
-    stop_connect_port_forward "$connect_port_forward_pid"
+    stop_connect_port_forward "$connect_port_forward_pid" "$deadline_at" ||
+      die 'Kafka Connect port-forward teardown exceeded the diagnostic deadline'
   fi
-  connect_port_forward_log_offset="$(wc -c <"$log_path" 2>/dev/null || printf '0')"
+  if [[ -e "$log_path" || -L "$log_path" ]]; then
+    [[ -f "$log_path" && ! -L "$log_path" ]] ||
+      die 'Kafka Connect port-forward log is not a regular file'
+    connect_port_forward_log_offset="$(wc -c <"$log_path")" ||
+      die 'could not read the Kafka Connect port-forward log size'
+  else
+    connect_port_forward_log_offset=0
+  fi
   printf '%s\n' "Starting Kafka Connect service port-forward" >>"$log_path"
-  kns port-forward service/kafka-connect :8083 >>"$log_path" 2>&1 &
+  kubectl --context "$context" -n "$namespace" \
+    port-forward service/kafka-connect :8083 >>"$log_path" 2>&1 &
   connect_port_forward_pid="$!"
   for _ in $(seq 1 30); do
     if ! kill -0 "$connect_port_forward_pid" >/dev/null 2>&1; then
       cat "$log_path" >&2
       die 'Kafka Connect port-forward exited before becoming ready'
     fi
-    port="$(simplematch_connect_port_forward_port "$log_path" \
-      "$connect_port_forward_log_offset")"
+    port="$(simplematch_port_forward_port "$log_path" \
+      "$connect_port_forward_log_offset" 8083)"
     if [[ -n "$port" ]]; then
       connect_url="http://127.0.0.1:${port}"
       return 0
@@ -396,16 +413,24 @@ connect_status() {
 }
 
 wait_connector_running() {
-  local connector="$1" output_file="$2" status
+  local connector="$1" output_file="$2" status_file="${2}.attempt"
   while true; do
-    if status="$(connect_status "$connector" 2>/dev/null)" &&
-      jq -e '
+    if connect_status "$connector" >"$status_file" 2>/dev/null; then
+      if jq -e '
         .connector.state == "RUNNING" and
         (.tasks | type == "array" and length > 0) and
         all(.tasks[]; .state == "RUNNING")
-      ' <<<"$status" >/dev/null 2>&1; then
-      printf '%s\n' "$status" >"$output_file"
-      return 0
+      ' "$status_file" >/dev/null 2>&1; then
+        mv -- "$status_file" "$output_file"
+        return 0
+      fi
+    else
+      remaining_seconds | grep -Eq '^[1-9][0-9]*$' ||
+        die "${connector} did not become RUNNING before timeout"
+      restart_connect_port_forward \
+        "${connector} REST status tunnel became unavailable"
+      run_bounded sleep 1 || die "${connector} did not become RUNNING before timeout"
+      continue
     fi
     remaining_seconds | grep -Eq '^[1-9][0-9]*$' || die "${connector} did not become RUNNING before timeout"
     run_bounded sleep 1 || die "${connector} did not become RUNNING before timeout"
@@ -575,6 +600,8 @@ wait_for_reassignment() {
         die 'Connect task was not reassigned before the diagnostic deadline'
       restart_connect_port_forward \
         'the service tunnel no longer reached a live Connect Pod after worker loss'
+      run_bounded sleep 1 ||
+        die 'Connect task was not reassigned before the diagnostic deadline'
       continue
     fi
     if jq -e --arg pod "$deleted_pod" --arg uid "$deleted_uid" \
