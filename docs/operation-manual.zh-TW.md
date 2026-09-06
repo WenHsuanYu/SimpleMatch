@@ -542,7 +542,16 @@ bash scripts/run-local-cdc-delivery-focused-diagnostic.sh \
   --timeout-seconds 180
 ```
 
-它只接受 full proof profile，並從 `run-context` 驗證 namespace/run-id、依賴 phase、immutable image lock、實際 workload image、session ConfigMap 與 PostgreSQL Secret。`run-context` 另外保存兩個 scoped identity：`cdc_runtime_signature` 涵蓋建立保留 namespace 所需的 manifest、Risk CDC runtime、image/fingerprint 與 orchestration 輸入；`cdc_verifier_signature` 涵蓋 observer、fixture 與 focused verifier。無關 source commit 不會改變 runtime signature，因此不必重建 deployment；若只有 verifier signature 改變，會先執行快速 `test-cdc-observer-fixture-contract.sh`，再對同一個 retained runtime 執行 observer。runtime signature、namespace、image、input 或 dependency 任一漂移，或舊 `run-context` 沒有 scoped identity，都會在 observer side effect 前 fail-closed，必須重新建立完整 certification run。
+它只接受 full proof profile，並從 `run-context` 驗證 namespace/run-id、依賴 phase、immutable image lock、實際 workload image、session ConfigMap 與 PostgreSQL Secret。Focused preflight 另外確認 retained `registry-image-lock` PASS 的 output identity 等於目前 `local-images.lock` 的 SHA-256，避免呼叫端替換 generated lock 後仍通過。`run-context` 保存兩個 scoped identity：`cdc_runtime_signature` 涵蓋建立保留 namespace 所需的 manifest、Risk CDC runtime、image/fingerprint 與 orchestration 輸入；`cdc_verifier_signature` 涵蓋 observer、fixture、focused verifier，以及選定 contract 的 canonical path/content digest。無關 source commit 不會改變 runtime signature，因此不必重建 deployment；若只有 verifier signature 改變，會先執行快速 `test-cdc-observer-fixture-contract.sh`，再對同一個 retained runtime 執行 observer。runtime signature、namespace、image、input 或 dependency 任一漂移，或舊 `run-context` 沒有 scoped identity，都會在 observer side effect 前 fail-closed，必須重新建立完整 certification run。
+
+Verifier identity 也會綁定 observer script 的 canonical path/content digest；每次 focused report 會
+另外保存 `verifier-observer.sh` 與 `verifier-contract.sh` 的相對 evidence copy。這些副本讓封存後
+的報告仍可檢查實際輸入，不必假設工作樹中的外部檔案永遠存在；執行時則仍使用已解析的原始
+script，因為它可能需要從自身目錄載入 shared library。
+
+這裡的「重用 runtime」只表示重新讀取同一個已驗證的 namespace；它不表示重用舊的 diagnostic
+報告。每次 focused 執行都會以目前 verifier 寫入新的 `verdict.json` 與 provenance，並明確
+記錄 retained/current verifier fingerprint 及是否發生 drift。
 
 成功結果會標示 `FOCUSED_DIAGNOSTIC` 且 `fullCertification=false`；即使 PASS，也只證明目前 verifier 對 retained runtime 的 CDC observer 結果，不能關閉或升級完整 certification，也不會改寫原本的 phase evidence。
 
@@ -745,19 +754,29 @@ bash scripts/run-local-connect-worker-loss.sh \
 ```
 
 `--retained-evidence-dir` 必須指向同一個 production-like run；其 `run-context` 的 namespace、
-run-id、`cdc_runtime_signature` 與 `cdc_verifier_signature` 都要和目前 source 對齊。命令在
-任何 Pod mutation 前比較兩個 scoped signature；不一致會 fail-closed，必須建立新的
-source-aligned full run。命令會先確認 Kafka topic provisioning、六個 Flyway Job、PostgreSQL、兩個無 PVC 的 Connect
+run-id、`cdc_runtime_signature` 與 `cdc_verifier_signature` 都要存在。命令在任何 Pod mutation
+前比較 runtime fingerprint；runtime 不一致會 fail-closed，必須建立新的 source-aligned full
+run。verifier fingerprint 不一致不會重用舊 diagnostic，而是記錄 drift、先執行
+`test-cdc-observer-fixture-contract.sh`，再用目前 verifier 產生新的 report。命令會先確認 Kafka topic provisioning、六個 Flyway Job、PostgreSQL、兩個無 PVC 的 Connect
 worker、RF3/minISR2 internal topic、PDB、service-owned connector table/header 邊界與嚴格的
-Pod identity。接著用 JSON-Patch 的 UID test 加上 run-unique marker，只刪除唯一被標記且仍是
+Pod identity。這些應用層 prerequisite 通過後，才用一個 bounded runtime precondition 檢查
+Deployment 指向的 Connect image 在 eligible kind worker 上有一致的 node-local identity，且
+containerd 能以 `/bin/sh -c true` 啟動；這不重複驗證 Docker/Kubernetes 工具本身。`--deadline-seconds`
+只計算真正 Pod deletion 後的 worker-loss/reassignment recovery window（預設 600 秒，上限
+900 秒），不會被 setup 或 image preflight 消耗。接著用 JSON-Patch 的 UID test 加上 run-unique marker，只刪除唯一被標記且仍是
 原始 UID 的 Account connector task-owning Pod，並確認原始 UID 已消失，要求相同
 task id 改由不同 worker 與新 Pod UID 執行；單獨的 `RUNNING` status、Ready replacement Pod 或
 REST task listing 不能通過 recovery gate。故障恢復後由共用 `cdc-verifier.sh` 先捕捉 aggregate
 outbox baseline，再定位唯一的 post-transition row 並核對 Kafka exact record。
 
-PASS report 會連結所有 prerequisite snapshot、刪除前 UID recheck、
-`account-transition.json` 與 `account-publication.json`；後者由共用 verifier
-在確認 partition/offset、key、timestamp、headers 與 payload digest 後才產生。
+PASS report 會連結所有 prerequisite snapshot、目前 verifier contract、刪除前 UID recheck、
+`target-delete-observation.json`、`account-transition.json` 與
+`account-publication.json`。`target-delete-observation.json` 是 schema-versioned 的
+機器可讀紀錄，包含被刪除的 Pod UID、replacement/not-found 結果、replacement UID（若有）及
+原 UID 已消失的確認；原始 delete log 僅供事故診斷。`account-publication.json` 使用 schema
+version 2，由共用 verifier 在確認 partition/offset、broker timestamp、event identity/type、
+key/payload/完整 headers/`headers_json` digest 與每一項 exact-record check 後才產生，且不保留
+raw payload 或未遮罩 headers。
 因此後續 consumer 可以重建觀測鏈，不必把 report 中的
 `exact_kafka_record=true` 當成自我宣告。
 

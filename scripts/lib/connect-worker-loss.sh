@@ -19,7 +19,19 @@
 # Connect worker id to a Ready Pod. The runner only supplies Kubernetes and REST
 # Adapters, injects the Pod loss, and delegates CDC observation to cdc-verifier.sh.
 
-CONNECT_WORKER_LOSS_REPORT_SCHEMA_VERSION=1
+# Version 2 adds scoped provenance fields and the executable verifier-contract
+# evidence link. A report from version 1 is intentionally not upgraded.
+CONNECT_WORKER_LOSS_REPORT_SCHEMA_VERSION=2
+CONNECT_WORKER_LOSS_MAX_DEADLINE_SECONDS=900
+CONNECT_WORKER_LOSS_MAX_IMAGE_CACHE_PREFLIGHT_SECONDS=120
+
+connect_worker_loss_default_deadline_seconds() {
+  printf '%s\n' 600
+}
+
+connect_worker_loss_setup_deadline_seconds() {
+  printf '%s\n' 300
+}
 
 _connect_worker_loss_fail() {
   printf 'Connect worker-loss verifier: %s\n' "$*" >&2
@@ -177,7 +189,8 @@ connect_worker_loss_report_is_valid() {
   [[ -s "$report_file" ]] ||
     _connect_worker_loss_fail "worker-loss report is missing or empty: $report_file" || return 1
   jq -e \
-    --argjson schema_version "$CONNECT_WORKER_LOSS_REPORT_SCHEMA_VERSION" '
+    --argjson schema_version "$CONNECT_WORKER_LOSS_REPORT_SCHEMA_VERSION" \
+    --argjson max_deadline "$CONNECT_WORKER_LOSS_MAX_DEADLINE_SECONDS" '
       .schema_version == $schema_version and
       .profile == "connect-worker-loss" and
       (.status == "PASSED" or .status == "FAILED" or .status == "UNSUPPORTED") and
@@ -187,13 +200,50 @@ connect_worker_loss_report_is_valid() {
       (.namespace_run_id | type == "string" and length > 0) and
       (.run_id | type == "string" and length > 0) and
       (.fault_mode == "pod-delete") and
-      (.deadline_seconds | type == "number" and floor == . and . > 0) and
+      (.deadline_seconds | type == "number" and floor == . and
+        . >= 1 and . <= $max_deadline) and
+      (.recovery_deadline_started_at_unix_ms | type == "number" and
+        floor == . and . >= 0) and
       (.claim_boundary | type == "array" and length > 0 and all(.[]; type == "string" and length > 0)) and
       ((.failure_reason == null) or (.failure_reason | type == "string")) and
       ((.status == "PASSED" and (.failure_reason == null or .failure_reason == "")) or
        (.status != "PASSED" and (.failure_reason | type == "string" and length > 0)))
     ' "$report_file" >/dev/null ||
     _connect_worker_loss_fail "worker-loss report envelope is invalid: $report_file" || return 1
+}
+
+connect_worker_loss_image_cache_evidence_is_valid() {
+  local evidence_file="$1"
+  local deployment_file="$2"
+  local image_reference
+
+  [[ -s "$evidence_file" && -s "$deployment_file" ]] ||
+    _connect_worker_loss_fail 'image-cache preflight evidence is missing or empty' || return 1
+  image_reference="$(jq -er '
+    [.spec.template.spec.containers[]? | select(.name == "kafka-connect") | .image]
+    | if length == 1 and (.[0] | type == "string" and length > 0) then .[0]
+      else empty end
+  ' "$deployment_file")" ||
+    _connect_worker_loss_fail 'Connect Deployment does not identify exactly one image' || return 1
+  jq -e --arg image "$image_reference" \
+    --argjson max_budget "$CONNECT_WORKER_LOSS_MAX_IMAGE_CACHE_PREFLIGHT_SECONDS" '
+      .schema_version == 1 and .status == "PASS" and
+      .image_reference == $image and
+      (.image_identity | type == "string" and test("^sha256:[0-9a-f]{64}$")) and
+      (.budget_seconds | type == "number" and floor == . and . >= 1 and . <= $max_budget) and
+      (.nodes | type == "array" and length >= 2) and
+      ((.nodes | map(.node) | unique | length) == (.nodes | length)) and
+      (.nodes | all(
+        (.node | type == "string" and length > 0) and
+        .status == "PASS" and .inspect_status == "PASS" and
+        .execution_probe_status == "PASS" and
+        (.identity | type == "string" and test("^sha256:[0-9a-f]{64}$"))
+      )) and
+      ((.nodes | map(.identity) | unique | length) == 1) and
+      (.nodes[0].identity == .image_identity) and
+      (.failure_reason == null or .failure_reason == "")
+    ' "$evidence_file" >/dev/null ||
+    _connect_worker_loss_fail 'image-cache preflight evidence is invalid' || return 1
 }
 
 _connect_worker_loss_report_evidence_path() {
@@ -217,12 +267,14 @@ _connect_worker_loss_report_evidence_path() {
 }
 
 connect_worker_loss_prerequisites_are_valid() {
-  local report_file="$1" nodes deployment pdb postgres account_config risk_config
+  local report_file="$1" nodes deployment pdb postgres connect_config account_config risk_config
+  local connect_pods
   local topic job connector config_file table
   local -a prerequisite_keys=(
     nodes_file control_plane_readyz_file control_plane_before_file
     control_plane_after_file control_plane_events_file
-    connect_deployment_file connect_pdb_file
+    connect_deployment_file connect_pdb_file connect_config_file
+    image_cache_preflight_file
     account_connector_file risk_connector_file postgres_file
     topic_provisioning_file account_flyway_file risk_flyway_file
     persistence_flyway_file market_data_projection_flyway_file
@@ -245,6 +297,7 @@ connect_worker_loss_prerequisites_are_valid() {
   local control_plane_events="${prerequisite_paths[control_plane_events_file]}"
   deployment="${prerequisite_paths[connect_deployment_file]}"
   pdb="${prerequisite_paths[connect_pdb_file]}"
+  connect_config="${prerequisite_paths[connect_config_file]}"
   account_config="${prerequisite_paths[account_connector_file]}"
   risk_config="${prerequisite_paths[risk_connector_file]}"
   postgres="${prerequisite_paths[postgres_file]}"
@@ -276,14 +329,74 @@ connect_worker_loss_prerequisites_are_valid() {
       .name == "kafka-connect" and .image == "quay.io/debezium/connect:3.6.0.Final")
   ' "$deployment" >/dev/null ||
     _connect_worker_loss_fail 'Connect Deployment prerequisite evidence is invalid' || return 1
+  connect_worker_loss_image_cache_evidence_is_valid \
+    "${prerequisite_paths[image_cache_preflight_file]}" "$deployment" || return 1
+  jq -e '
+    (.spec.template.spec.containers[] | select(.name == "kafka-connect")) as $container |
+    ($container.env | map({key:.name,value:(.value // null)}) | from_entries) as $env |
+    (.spec.template.spec.tolerations // []) as $tolerations |
+    (.spec.template.spec.topologySpreadConstraints // []) as $spreads |
+    $env.GROUP_ID == "simplematch-connect-local" and
+    $env.CONFIG_STORAGE_TOPIC == "simplematch-connect-configs" and
+    $env.OFFSET_STORAGE_TOPIC == "simplematch-connect-offsets" and
+    $env.STATUS_STORAGE_TOPIC == "simplematch-connect-status" and
+    $env.CONNECT_CONFIG_STORAGE_REPLICATION_FACTOR == "3" and
+    $env.CONNECT_OFFSET_STORAGE_REPLICATION_FACTOR == "3" and
+    $env.CONNECT_STATUS_STORAGE_REPLICATION_FACTOR == "3" and
+    $env.CONNECT_CONFIG_PROVIDERS == "envvarprovider" and
+    $env.CONNECT_CONFIG_PROVIDERS_ENVVARPROVIDER_CLASS ==
+      "org.apache.kafka.common.config.provider.EnvVarConfigProvider" and
+    .spec.template.spec.nodeSelector["simplematch.io/node-pool"] == "local-resilience" and
+    any($spreads[]?;
+      .maxSkew == 1 and .topologyKey == "simplematch.io/worker-slot" and
+      .whenUnsatisfiable == "DoNotSchedule" and
+      .labelSelector.matchLabels["app.kubernetes.io/name"] == "kafka-connect" and
+      .labelSelector.matchLabels["app.kubernetes.io/component"] == "connector") and
+    any($tolerations[]?;
+      .key == "simplematch.io/portable-workload" and .operator == "Exists" and
+      .effect == "NoExecute" and .tolerationSeconds == 30) and
+    any($tolerations[]?;
+      .key == "node.kubernetes.io/not-ready" and .operator == "Exists" and
+      .effect == "NoExecute" and .tolerationSeconds == 30) and
+    any($tolerations[]?;
+      .key == "node.kubernetes.io/unreachable" and .operator == "Exists" and
+      .effect == "NoExecute" and .tolerationSeconds == 30)
+  ' "$deployment" >/dev/null ||
+    _connect_worker_loss_fail 'Connect Deployment does not prove its profile, spread, or tolerations' || return 1
+  jq -e '
+    .metadata.name == "simplematch-kafka-connect-config" and
+    .data.bootstrap_servers == "kafka:9092" and
+    .data.postgres_hostname == "postgres" and
+    .data.postgres_port == "5432" and
+    .data.postgres_dbname == "simplematch" and
+    .data.postgres_sslmode == "disable" and
+    .data.postgres_sslrootcert == "/dev/null"
+  ' "$connect_config" >/dev/null ||
+    _connect_worker_loss_fail 'Kafka Connect profile ConfigMap evidence is invalid' || return 1
   jq -e '
     .spec.minAvailable == 1 and
     .spec.selector.matchLabels["app.kubernetes.io/name"] == "kafka-connect" and
     .spec.selector.matchLabels["app.kubernetes.io/component"] == "connector"
   ' "$pdb" >/dev/null ||
     _connect_worker_loss_fail 'Connect PDB prerequisite evidence is invalid' || return 1
-  connect_worker_loss_pods_are_valid "$(_connect_worker_loss_report_evidence_path \
+  connect_pods="$(_connect_worker_loss_report_evidence_path \
     "$report_file" pods_before_file)" || return 1
+  connect_worker_loss_pods_are_valid "$connect_pods" || return 1
+  jq -n -e --slurpfile nodes "$nodes" --slurpfile pods "$connect_pods" '
+    ($nodes[0].items // []) as $node_items |
+    ($pods[0].items // []
+      | map(select(any(.status.conditions[]?; .type == "Ready" and .status == "True")))) as $pod_items |
+    ($node_items
+      | map(select(.metadata.labels["simplematch.io/node-pool"] == "local-resilience"))
+      | map({name:.metadata.name,slot:(.metadata.labels["simplematch.io/worker-slot"] // "")})
+      | map(select(.slot | test("^[0-9]+$")))) as $worker_nodes |
+    ($pod_items | map(.spec.nodeName)) as $pod_nodes |
+    ($worker_nodes | map(.slot) | unique | length) >= 2 and
+    ($pod_nodes | length == 2 and (unique | length) == 2) and
+    all($pod_nodes[]; . as $pod_node |
+      any($worker_nodes[]; .name == $pod_node))
+  ' >/dev/null ||
+    _connect_worker_loss_fail 'Connect worker Pods are not bound to distinct labelled resilience slots' || return 1
   jq -e '
     .kind == "StatefulSet" and .metadata.name == "postgres" and
     (.status.readyReplicas // 0) >= (.spec.replicas // 1)
@@ -331,11 +444,16 @@ connect_worker_loss_report_is_passed() {
   local before_status after_status before_pods after_pods before_target after_target
   local pre_delete_status pre_delete_pods pre_delete_target pre_delete_pod worker_loss provenance
   local transition publication_evidence
-  local pod_patch pod_delete_precondition baseline probe kafka_baseline evidence_file
+  local pod_patch pod_delete_precondition delete_observation baseline probe kafka_baseline verifier_contract evidence_file
+  local verifier_contract_sha256 actual_contract_sha256
+  local verifier_contract_script verifier_contract_evidence_file
+  local verifier_observer_script verifier_observer_evidence_file
+  local verifier_observer_sha256
   local before_pod before_uid pre_delete_uid
   local report_event probe_event transition_event transition_aggregate transition_payload_type
   local transition_created_at reassignment_observed_at
   local publication_partition publication_offset
+  local recovery_deadline_started_at_unix_ms fault_requested_at_unix_ms
   local run_id namespace namespace_run_id
 
   connect_worker_loss_report_is_valid "$report_file" || return 1
@@ -352,6 +470,8 @@ connect_worker_loss_report_is_passed() {
   pod_patch="$(_connect_worker_loss_report_evidence_path "$report_file" pod_patch_file)" || return 1
   pod_delete_precondition="$(_connect_worker_loss_report_evidence_path \
     "$report_file" pod_delete_precondition_file)" || return 1
+  delete_observation="$(_connect_worker_loss_report_evidence_path \
+    "$report_file" target_delete_observation_file)" || return 1
   worker_loss="$(_connect_worker_loss_report_evidence_path "$report_file" worker_loss_file)" || return 1
   provenance="$(_connect_worker_loss_report_evidence_path "$report_file" provenance_file)" || return 1
   transition="$(_connect_worker_loss_report_evidence_path "$report_file" transition_file)" || return 1
@@ -360,14 +480,62 @@ connect_worker_loss_report_is_passed() {
   kafka_baseline="$(_connect_worker_loss_report_evidence_path "$report_file" kafka_baseline_file)" || return 1
   publication_evidence="$(_connect_worker_loss_report_evidence_path \
     "$report_file" publication_evidence_file)" || return 1
+  verifier_contract="$(_connect_worker_loss_report_evidence_path \
+    "$report_file" verifier_contract_file)" || return 1
+  verifier_contract_script="$(_connect_worker_loss_report_evidence_path \
+    "$report_file" verifier_contract_script_file)" || return 1
+  verifier_observer_script="$(_connect_worker_loss_report_evidence_path \
+    "$report_file" verifier_observer_script_file)" || return 1
   for evidence_file in "$before_status" "$after_status" "$before_pods" "$after_pods" \
       "$before_target" "$after_target" "$pre_delete_status" "$pre_delete_pods" \
       "$pre_delete_target" \
-      "$pre_delete_pod" "$pod_patch" "$pod_delete_precondition" "$worker_loss" "$provenance" "$transition" \
-      "$baseline" "$probe" "$kafka_baseline" "$publication_evidence"; do
+      "$pre_delete_pod" "$pod_patch" "$pod_delete_precondition" "$delete_observation" "$worker_loss" "$provenance" "$transition" \
+      "$baseline" "$probe" "$kafka_baseline" "$publication_evidence" \
+      "$verifier_contract" "$verifier_contract_script" "$verifier_observer_script"; do
     [[ -f "$evidence_file" && ! -L "$evidence_file" ]] ||
       _connect_worker_loss_fail "report evidence file is missing: $evidence_file" || return 1
   done
+  grep -Fxq 'CDC observer fixture header contract is valid.' "$verifier_contract" ||
+    _connect_worker_loss_fail 'verifier contract evidence does not prove the current fixture contract' ||
+    return 1
+  jq -e '.verifier_contract_path |
+    select(type == "string" and length > 0)' "$provenance" >/dev/null ||
+    _connect_worker_loss_fail \
+    'provenance does not identify the verifier contract executable' || return 1
+  verifier_contract_evidence_file="$(jq -er \
+    '.verifier_contract_evidence_file |
+      select(type == "string" and length > 0)' "$provenance")" ||
+    _connect_worker_loss_fail \
+      'provenance does not identify its retained verifier contract copy' || return 1
+  [[ "$verifier_contract_evidence_file" == \
+    "$(jq -er '.evidence.verifier_contract_script_file' "$report_file")" ]] ||
+    _connect_worker_loss_fail \
+      'provenance verifier contract copy is not linked from the report' || return 1
+  verifier_contract_sha256="$(jq -er \
+    '.verifier_contract_sha256 | select(type == "string" and test("^[0-9a-f]{64}$"))' \
+    "$provenance")" || _connect_worker_loss_fail \
+    'provenance does not contain a canonical verifier contract digest' || return 1
+  actual_contract_sha256="$(sha256sum "$verifier_contract_script" | awk '{print $1}')" ||
+    return 1
+  [[ "$actual_contract_sha256" == "$verifier_contract_sha256" ]] ||
+    _connect_worker_loss_fail \
+      'provenance verifier contract digest does not match its retained copy' || return 1
+  verifier_observer_evidence_file="$(jq -er \
+    '.verifier_observer_evidence_file |
+      select(type == "string" and length > 0)' "$provenance")" ||
+    _connect_worker_loss_fail \
+      'provenance does not identify its retained CDC observer copy' || return 1
+  [[ "$verifier_observer_evidence_file" == \
+    "$(jq -er '.evidence.verifier_observer_script_file' "$report_file")" ]] ||
+    _connect_worker_loss_fail \
+      'provenance CDC observer copy is not linked from the report' || return 1
+  verifier_observer_sha256="$(jq -er \
+    '.verifier_observer_sha256 | select(type == "string" and test("^[0-9a-f]{64}$"))' \
+    "$provenance")" || _connect_worker_loss_fail \
+    'provenance does not contain a canonical CDC observer digest' || return 1
+  [[ "$(sha256sum "$verifier_observer_script" | awk '{print $1}')" == \
+    "$verifier_observer_sha256" ]] || _connect_worker_loss_fail \
+    'provenance CDC observer digest does not match its retained copy' || return 1
 
   connect_worker_loss_prerequisites_are_valid "$report_file" || return 1
   connect_worker_loss_status_is_valid "$before_status" || return 1
@@ -384,6 +552,16 @@ connect_worker_loss_report_is_passed() {
   run_id="$(jq -er '.run_id' "$report_file")" || return 1
   namespace="$(jq -er '.namespace' "$report_file")" || return 1
   namespace_run_id="$(jq -er '.namespace_run_id' "$report_file")" || return 1
+  recovery_deadline_started_at_unix_ms="$(jq -er \
+    '.recovery_deadline_started_at_unix_ms |
+      select(type == "number" and floor == . and . > 0)' "$report_file")" ||
+    _connect_worker_loss_fail \
+      'passed worker-loss report has no positive recovery deadline start' || return 1
+  fault_requested_at_unix_ms="$(jq -er \
+    '.requested_at_unix_ms | select(type == "number" and floor == . and . > 0)' \
+    "$worker_loss")" ||
+    _connect_worker_loss_fail \
+      'worker-loss evidence has no positive fault request timestamp' || return 1
   before_pod="$(jq -er '.pod' "$before_target")" || return 1
   before_uid="$(jq -er '.pod_uid' "$before_target")" || return 1
   pre_delete_uid="$(jq -er '.metadata.uid' "$pre_delete_pod")" || return 1
@@ -410,17 +588,32 @@ connect_worker_loss_report_is_passed() {
     (.metadata.deletionTimestamp // null) == null
   ' "$pod_delete_precondition" >/dev/null ||
     _connect_worker_loss_fail 'UID delete precondition evidence does not identify the task owner' || return 1
+  jq -e --arg pod "$before_pod" --arg uid "$before_uid" '
+    .schema_version == 1 and .target_pod == $pod and
+    .target_pod_uid == $uid and .target_uid_absent == true and
+    (.outcome == "not-found" or
+      (.outcome == "replacement-pod" and
+       (.replacement_pod_uid | type == "string" and length > 0 and . != $uid))) and
+    (.observed_at_utc | type == "string" and length > 0)
+  ' "$delete_observation" >/dev/null ||
+    _connect_worker_loss_fail 'Pod deletion observation does not prove the original UID disappeared' || return 1
   jq -e --arg uid "$before_uid" --arg pod "$before_pod" \
       'all(.items[]?; .metadata.uid != $uid and .metadata.name != $pod)' \
       "$after_pods" >/dev/null ||
     _connect_worker_loss_fail 'after-reassignment Pods still contain the deleted task owner' || return 1
 
-  jq -e --arg pod "$before_pod" --arg uid "$before_uid" --arg run_id "$run_id" '
+  jq -e --arg pod "$before_pod" --arg uid "$before_uid" --arg run_id "$run_id" \
+      --argjson recovery_started "$recovery_deadline_started_at_unix_ms" \
+      --argjson requested_at "$fault_requested_at_unix_ms" '
     .fault == "pod-delete" and .target_pod == $pod and .target_pod_uid == $uid and
     .delete_requested == true and .uid_precondition_test == true and .pre_delete_recheck == true and
     .target_uid_absent == true and .delete_output_contains_target == true and
     .delete_selector == ("simplematch.io/worker-loss-run=" + $run_id) and
-    .delete_field_selector == ("metadata.uid=" + $uid)
+    (.delete_output | type == "string" and contains($pod)) and
+    .recovery_deadline_started_at_unix_ms == $recovery_started and
+    (.recovery_deadline_started_at_unix_ms | type == "number" and floor == . and . > 0) and
+    .requested_at_unix_ms == $requested_at and
+    (.requested_at_unix_ms | type == "number" and floor == . and . >= $recovery_started)
   ' "$worker_loss" >/dev/null ||
     _connect_worker_loss_fail 'worker-loss evidence does not prove an exact Pod deletion' || return 1
 
@@ -429,9 +622,21 @@ connect_worker_loss_report_is_passed() {
     .namespace_run_id == $namespace_run_id and
     (.current_commit | type == "string" and test("^[0-9a-f]{40}$")) and
     (.cdc_runtime_signature | type == "string" and test("^[0-9a-f]{64}$")) and
+    (.retained_cdc_runtime_signature | type == "string" and test("^[0-9a-f]{64}$")) and
+    .cdc_runtime_signature == .retained_cdc_runtime_signature and
     (.cdc_verifier_signature | type == "string" and test("^[0-9a-f]{64}$")) and
+    (.retained_cdc_verifier_signature | type == "string" and test("^[0-9a-f]{64}$")) and
+    (.verifier_signature_changed | type == "boolean") and
+    (.verifier_signature_changed ==
+      (.cdc_verifier_signature != .retained_cdc_verifier_signature)) and
+    .runtime_reused == true and
     (.verifier_image_identity | type == "string" and
-      test("^sha256:[0-9a-f]{64}$"))
+      test("^sha256:[0-9a-f]{64}$")) and
+    (.verifier_observer_path | type == "string" and length > 0) and
+    (.verifier_observer_sha256 | type == "string" and test("^[0-9a-f]{64}$")) and
+    (.verifier_observer_evidence_file | type == "string" and length > 0) and
+    (.verifier_contract_path | type == "string" and length > 0) and
+    (.verifier_contract_sha256 | type == "string" and test("^[0-9a-f]{64}$"))
   ' "$provenance" >/dev/null ||
     _connect_worker_loss_fail 'provenance evidence does not match the worker-loss report' || return 1
 
@@ -488,7 +693,7 @@ connect_worker_loss_report_is_passed() {
   publication_partition="$(jq -er '.partition' "$publication_evidence")" || return 1
   publication_offset="$(jq -er '.offset' "$publication_evidence")" || return 1
   awk -F '\t' -v partition="$publication_partition" -v offset="$publication_offset" '
-    $1 == partition && $1 ~ /^[0-9]+$/ && $2 ~ /^[0-9]+$/ && offset > $2 { found = 1 }
+    $1 == partition && $1 ~ /^[0-9]+$/ && $2 ~ /^[0-9]+$/ && offset >= $2 { found = 1 }
     END { exit(found ? 0 : 1) }
   ' "$kafka_baseline" ||
     _connect_worker_loss_fail 'Kafka publication location is not after its retained baseline' || return 1

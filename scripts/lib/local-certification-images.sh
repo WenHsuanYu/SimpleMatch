@@ -12,6 +12,12 @@ source "$_certification_images_dir/local-image-transport.sh"
 unset _certification_images_dir
 
 registry_fragment_directory=""
+# These values are supplied by the production-like runner. Defaults keep this
+# adapter safe to source in focused contract tests and make the dependency
+# explicit without weakening the runner's required configuration checks.
+evidence_dir="${evidence_dir:-}"
+kind_cluster="${kind_cluster:-}"
+matching_fleet_only="${matching_fleet_only:-false}"
 
 certification_source_image_identity() {
   local service="$1"
@@ -75,6 +81,28 @@ _certification_image_lock_payload_valid() {
     return 1
   }
   rm -f -- "$temp_lock"
+}
+
+# Validate the retained registry-image-lock evidence against the exact lock file
+# that the focused diagnostic is about to trust. The evidence object is the
+# immutable authority; the materialized result is only a pointer to that object.
+certification_image_lock_evidence_matches_lock() {
+  local evidence_digest="$1"
+  local lock_file="$2"
+  local expected_input="${3:-}"
+  local object_path payload identity expected_identity
+
+  object_path="$(_certification_evidence_object_path "$evidence_digest")" || return 1
+  certification_evidence_validate_object \
+    "$object_path" "$evidence_digest" registry-image-lock "$expected_input" || return 1
+  _certification_image_lock_payload_valid "$object_path" || return 1
+  payload="$(_certification_image_lock_payload "$object_path")" || return 1
+  identity="$(jq -er \
+    '.identity | select(type == "string" and test("^sha256:[0-9a-f]{64}$"))' \
+    <<<"$payload")" || return 1
+  simplematch_local_image_lock_validate_file "$lock_file" || return 1
+  expected_identity="sha256:$(sha256sum "$lock_file" | awk '{print $1}')" || return 1
+  [[ "$identity" == "$expected_identity" ]]
 }
 
 _certification_image_current_result_output() {
@@ -203,7 +231,7 @@ _certification_image_lock_output() {
   [[ -n "$content_base64" ]] || return 1
   jq -cn \
     --arg identity "$digest" \
-    --arg location "${image_lock#$repo_root/}" \
+    --arg location "${image_lock#"$repo_root"/}" \
     --arg contentBase64 "$content_base64" \
     '[{kind:"image-lock",name:"local-images",identity:$identity,location:$location,contentBase64:$contentBase64}]'
 }

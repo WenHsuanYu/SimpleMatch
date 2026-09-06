@@ -45,6 +45,7 @@ CDC_VERIFIER_TIMEOUT_SECONDS="${CDC_VERIFIER_TIMEOUT_SECONDS:-30}"
 CDC_VERIFIER_POLL_INTERVAL_SECONDS="${CDC_VERIFIER_POLL_INTERVAL_SECONDS:-1}"
 CDC_VERIFIER_SCAN_TIMEOUT_MS="${CDC_VERIFIER_SCAN_TIMEOUT_MS:-2000}"
 CDC_VERIFIER_HEADER_SEPARATOR="${CDC_VERIFIER_HEADER_SEPARATOR:-__SIMPLEMATCH_CDC_HEADER__}"
+CDC_PUBLICATION_EVIDENCE_SCHEMA_VERSION=2
 
 _cdc_fail() {
   printf 'CDC verifier: %s\n' "$*" >&2
@@ -105,6 +106,16 @@ _cdc_payload_sha256() {
   printf '%s' "$payload_hex" | xxd -r -p | sha256sum | awk '{print $1}'
 }
 
+_cdc_hex_sha256() {
+  local value_hex="$1"
+  [[ -n "$value_hex" && "$value_hex" =~ ^([0-9a-fA-F]{2})+$ ]] ||
+    _cdc_fail 'hex value is missing or is not hexadecimal' || return 1
+  command -v xxd >/dev/null 2>&1 || _cdc_fail 'xxd is required for hex hashing' || return 1
+  command -v sha256sum >/dev/null 2>&1 ||
+    _cdc_fail 'sha256sum is required for hex hashing' || return 1
+  printf '%s' "$value_hex" | xxd -r -p | sha256sum | awk '{print $1}'
+}
+
 _cdc_probe_field() {
   local probe="$1" field="$2"
   jq -r --arg field "$field" '.[$field] // "null"' "$probe"
@@ -143,14 +154,22 @@ cdc_validate_probe() {
 }
 
 cdc_validate_publication_evidence() {
-  local evidence_file="$1"
+  local evidence_file="$1" expected_key expected_key_hex expected_key_sha
 
   [[ -s "$evidence_file" ]] ||
     _cdc_fail "publication evidence is missing or empty: $evidence_file" || return 1
   jq -e 'type == "object"' "$evidence_file" >/dev/null 2>&1 ||
     _cdc_fail "publication evidence must be one JSON object: $evidence_file" || return 1
-  jq -e '
-      .schema_version == 1 and
+  expected_key="$(jq -er '.expected_message_key |
+    select(type == "string" and length > 0)' "$evidence_file")" ||
+    _cdc_fail "publication evidence has no expected message key: $evidence_file" || return 1
+  expected_key_hex="$(printf '%s\n' "$expected_key" | od -An -tx1 | tr -d ' \n')" ||
+    _cdc_fail "could not encode the expected message key: $evidence_file" || return 1
+  expected_key_sha="$(_cdc_hex_sha256 "$expected_key_hex")" || return 1
+  jq -e \
+      --argjson schema_version "$CDC_PUBLICATION_EVIDENCE_SCHEMA_VERSION" \
+      --arg expected_key_sha "$expected_key_sha" '
+      .schema_version == $schema_version and
       .status == "PASS" and
       (.topic | type == "string" and length > 0) and
       (.event_id | type == "string" and test("^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$")) and
@@ -161,6 +180,21 @@ cdc_validate_publication_evidence() {
       (.expected_headers_json_sha256 | type == "string" and test("^[0-9a-f]{64}$")) and
       (.expected_event_type | type == "string" and length > 0) and
       (.expected_payload_sha256 | type == "string" and test("^[0-9a-f]{64}$")) and
+      (.observed | type == "object") and
+      (.observed.partition == .partition) and
+      (.observed.offset == .offset) and
+      (.observed.timestamp_unix_ms == .expected_timestamp_unix_ms) and
+      (.observed.key_sha256 == $expected_key_sha) and
+      (.observed.payload_sha256 == .expected_payload_sha256) and
+      (.observed.headers_json_sha256 == .expected_headers_json_sha256) and
+      (.observed.event_id == .event_id) and
+      (.observed.event_type == .expected_event_type) and
+      (.observed.header_count == 7) and
+      (.observed.headers_sha256 | type == "string" and test("^[0-9a-f]{64}$")) and
+      (.observed.key_sha256 | type == "string" and test("^[0-9a-f]{64}$")) and
+      (.observed.payload_sha256 | type == "string" and test("^[0-9a-f]{64}$")) and
+      (.observed.headers_json_sha256 | type == "string" and test("^[0-9a-f]{64}$")) and
+      (.observed.timestamp_unix_ms | type == "number" and floor == . and . >= 0) and
       (.verification | type == "object") and
       (.verification.headers_exact == true) and
       (.verification.key_exact == true) and
@@ -567,6 +601,7 @@ _cdc_wait_for_event_after_snapshot() {
   local topic="$1" event_id="$2" baseline_snapshot="$3" result_file="$4"
   local timeout="${5:-$CDC_VERIFIER_TIMEOUT_SECONDS}"
   local deadline now current_snapshot partition end_offset start_offset scan_status
+  local found=false fatal_scan=false
 
   [[ -s "$baseline_snapshot" ]] \
     || _cdc_fail "baseline snapshot is missing or empty for event $event_id on $topic: $baseline_snapshot" \
@@ -598,21 +633,30 @@ _cdc_wait_for_event_after_snapshot() {
     while IFS=$'\t' read -r partition end_offset; do
       start_offset="$(_cdc_snapshot_offset_for_partition "$baseline_snapshot" "$partition")" \
         || {
-          rm -f "$current_snapshot"
-          return 1
+          fatal_scan=true
+          break
         }
       if _cdc_scan_partition_window_for_event \
           "$topic" "$partition" "$start_offset" "$end_offset" "$event_id" >"$result_file"; then
-        rm -f "$current_snapshot"
-        return 0
+        found=true
+        break
       else
         scan_status=$?
         if (( scan_status > 1 )); then
-          rm -f "$current_snapshot"
-          return 1
+          fatal_scan=true
+          break
         fi
       fi
     done <"$current_snapshot"
+
+    if [[ "$found" == true ]]; then
+      rm -f "$current_snapshot"
+      return 0
+    fi
+    if [[ "$fatal_scan" == true ]]; then
+      rm -f "$current_snapshot"
+      return 1
+    fi
 
     now="$(date +%s)"
     if (( now >= deadline )); then
@@ -661,14 +705,15 @@ _cdc_read_record_headers() {
     --formatter-property "headers.separator=$CDC_VERIFIER_HEADER_SEPARATOR" 2>/dev/null
 }
 
-_cdc_assert_exact_record_headers() {
+_cdc_validate_exact_record_headers() {
   local topic="$1" partition="$2" offset="$3" event_id="$4" expected_header="$5"
-  local expected_event_type="$6"
-  local headers remaining token logical_name run_id
+  local expected_event_type="$6" headers="$7"
+  local remaining token logical_name run_id headers_sha headers_json_sha
+  local observed_event_id='' observed_event_type='' observed_headers_json=''
+  local observed_logical_name='' observed_task_id='' observed_connector_name='' observed_run_id=''
   local event_id_count=0 expected_count=0 event_type_count=0 logical_name_count=0 task_id_count=0 connector_name_count=0
   local run_id_count=0 header_count=0
 
-  headers="$(_cdc_read_record_headers "$topic" "$partition" "$offset")" || return 1
   remaining="${headers//$'\t'/$CDC_VERIFIER_HEADER_SEPARATOR}${CDC_VERIFIER_HEADER_SEPARATOR}"
   while [[ "$remaining" == *"$CDC_VERIFIER_HEADER_SEPARATOR"* ]]; do
     token="${remaining%%"$CDC_VERIFIER_HEADER_SEPARATOR"*}"
@@ -676,24 +721,41 @@ _cdc_assert_exact_record_headers() {
     [[ -n "$token" ]] || continue
     header_count=$((header_count + 1))
     case "$token" in
-      "id:${event_id}") event_id_count=$((event_id_count + 1)) ;;
-      "$expected_header") expected_count=$((expected_count + 1)) ;;
-      "$expected_event_type") event_type_count=$((event_type_count + 1)) ;;
+      "id:${event_id}")
+        event_id_count=$((event_id_count + 1))
+        observed_event_id="$event_id"
+        ;;
+      "$expected_header")
+        expected_count=$((expected_count + 1))
+        observed_headers_json="${token#headers_json:}"
+        ;;
+      "$expected_event_type")
+        event_type_count=$((event_type_count + 1))
+        observed_event_type="${token#eventType:}"
+        ;;
       __debezium.context.connectorLogicalName:*)
         logical_name="${token#__debezium.context.connectorLogicalName:}"
         [[ -n "$logical_name" ]] \
           || _cdc_fail "$topic event $event_id has an empty Debezium connector logical-name header at $partition:$offset" \
           || return 1
         logical_name_count=$((logical_name_count + 1))
+        observed_logical_name="$logical_name"
         ;;
-      __debezium.context.taskId:0) task_id_count=$((task_id_count + 1)) ;;
-      __debezium.context.connectorName:postgresql) connector_name_count=$((connector_name_count + 1)) ;;
+      __debezium.context.taskId:0)
+        task_id_count=$((task_id_count + 1))
+        observed_task_id=0
+        ;;
+      __debezium.context.connectorName:postgresql)
+        connector_name_count=$((connector_name_count + 1))
+        observed_connector_name=postgresql
+        ;;
       __debezium.context.runId:*)
         run_id="${token#__debezium.context.runId:}"
         _cdc_is_uuid "$run_id" \
           || _cdc_fail "$topic event $event_id has a non-UUID Debezium runId at $partition:$offset" \
           || return 1
         run_id_count=$((run_id_count + 1))
+        observed_run_id="$run_id"
         ;;
       *)
         _cdc_fail "$topic event $event_id headers at $partition:$offset contain unexpected header '$token'"
@@ -714,6 +776,34 @@ _cdc_assert_exact_record_headers() {
       "$topic event $event_id headers at $partition:$offset do not match the complete known Debezium 3.6 shape"
     return 1
   fi
+
+  headers_sha="$(printf '%s' "$headers" | sha256sum | awk '{print $1}')" || return 1
+  headers_json_sha="$(printf '%s' "$observed_headers_json" |
+    sha256sum | awk '{print $1}')" || return 1
+  jq -n \
+    --arg event_id "$observed_event_id" \
+    --arg event_type "$observed_event_type" \
+    --arg headers_sha "$headers_sha" \
+    --arg headers_json_sha "$headers_json_sha" \
+    --arg logical_name "$observed_logical_name" \
+    --arg connector_name "$observed_connector_name" \
+    --arg run_id "$observed_run_id" \
+    --argjson header_count "$header_count" \
+    --argjson task_id "$observed_task_id" \
+    '{event_id:$event_id,event_type:$event_type,headers_sha256:$headers_sha,
+      headers_json_sha256:$headers_json_sha,header_count:$header_count,
+      connector_logical_name:$logical_name,task_id:$task_id,
+      connector_name:$connector_name,run_id:$run_id}'
+}
+
+_cdc_assert_exact_record_headers() {
+  local topic="$1" partition="$2" offset="$3" event_id="$4" expected_header="$5"
+  local expected_event_type="$6" headers
+
+  headers="$(_cdc_read_record_headers "$topic" "$partition" "$offset")" || return 1
+  _cdc_validate_exact_record_headers \
+    "$topic" "$partition" "$offset" "$event_id" "$expected_header" \
+    "$expected_event_type" "$headers" >/dev/null
 }
 
 _cdc_record_key_hex() {
@@ -735,27 +825,28 @@ _cdc_record_key_hex() {
     | tr -d ' \n'
 }
 
-_cdc_assert_record_key() {
-  local topic="$1" partition="$2" offset="$3" event_id="$4" expected_key="$5"
-  local actual_hex expected_hex
-  actual_hex="$(_cdc_record_key_hex "$topic" "$partition" "$offset")" || return 1
+_cdc_validate_record_key_hex() {
+  local topic="$1" partition="$2" offset="$3" event_id="$4" expected_key="$5" actual_hex="$6"
+  local expected_hex
   expected_hex="$(printf '%s\n' "$expected_key" | od -An -tx1 | tr -d ' \n')"
   [[ "${actual_hex,,}" == "${expected_hex,,}" ]] \
     || _cdc_fail \
       "$topic event $event_id key bytes mismatch at $partition:$offset: expected '$expected_key'"
 }
 
-_cdc_assert_record_metadata() {
+_cdc_assert_record_key() {
   local topic="$1" partition="$2" offset="$3" event_id="$4" expected_key="$5"
-  local expected_timestamp="$6" expected_header="$7" expected_event_type="$8"
-  local expected_partition="${9:-}"
-  local metadata observed_partition observed_offset
+  local actual_hex
+  actual_hex="$(_cdc_record_key_hex "$topic" "$partition" "$offset")" || return 1
+  _cdc_validate_record_key_hex \
+    "$topic" "$partition" "$offset" "$event_id" "$expected_key" "$actual_hex"
+}
 
-  metadata="$(_cdc_read_record_metadata "$topic" "$partition" "$offset")" || return 1
-  _cdc_assert_exact_record_headers \
-    "$topic" "$partition" "$offset" "$event_id" "$expected_header" \
-    "$expected_event_type" || return 1
-  _cdc_assert_record_key "$topic" "$partition" "$offset" "$event_id" "$expected_key" || return 1
+_cdc_validate_record_metadata() {
+  local topic="$1" partition="$2" offset="$3" event_id="$4"
+  local expected_timestamp="$5" expected_partition="${6:-}"
+  local metadata="$7" observed_partition observed_offset
+
   _cdc_tokens_contain "$metadata" "CreateTime:${expected_timestamp}" \
     || _cdc_fail \
       "$topic event $event_id timestamp mismatch at $partition:$offset: expected CreateTime:${expected_timestamp}" \
@@ -780,6 +871,22 @@ _cdc_assert_record_metadata() {
   fi
 }
 
+_cdc_assert_record_metadata() {
+  local topic="$1" partition="$2" offset="$3" event_id="$4" expected_key="$5"
+  local expected_timestamp="$6" expected_header="$7" expected_event_type="$8"
+  local expected_partition="${9:-}"
+  local metadata
+
+  metadata="$(_cdc_read_record_metadata "$topic" "$partition" "$offset")" || return 1
+  _cdc_assert_exact_record_headers \
+    "$topic" "$partition" "$offset" "$event_id" "$expected_header" \
+    "$expected_event_type" || return 1
+  _cdc_assert_record_key "$topic" "$partition" "$offset" "$event_id" "$expected_key" || return 1
+  _cdc_validate_record_metadata \
+    "$topic" "$partition" "$offset" "$event_id" "$expected_timestamp" \
+    "$expected_partition" "$metadata"
+}
+
 _cdc_record_value_hex() {
   local topic="$1" partition="$2" offset="$3"
   _cdc_kafka /opt/kafka/bin/kafka-console-consumer.sh \
@@ -799,15 +906,14 @@ _cdc_record_value_hex() {
     | tr -d ' \n'
 }
 
-_cdc_assert_record_value_hex() {
+_cdc_validate_record_value_hex() {
   local topic="$1" partition="$2" offset="$3" event_id="$4" expected_payload_hex="$5"
-  local expected_payload_sha="$6" actual_console_hex actual_payload_hex actual_sha
+  local expected_payload_sha="$6" actual_console_hex="$7" actual_payload_hex actual_sha
   local expected_bytes observed_bytes
   [[ "$expected_payload_hex" =~ ^([0-9a-fA-F]{2})+$ ]] \
     || _cdc_fail "$topic event $event_id expected payload is not hexadecimal" \
     || return 1
 
-  actual_console_hex="$(_cdc_record_value_hex "$topic" "$partition" "$offset")" || return 1
   [[ "$actual_console_hex" == *0a ]] \
     || _cdc_fail "$topic event $event_id Kafka console output omitted its record separator at $partition:$offset" \
     || return 1
@@ -822,12 +928,26 @@ _cdc_assert_record_value_hex() {
   fi
 }
 
+_cdc_assert_record_value_hex() {
+  local topic="$1" partition="$2" offset="$3" event_id="$4" expected_payload_hex="$5"
+  local expected_payload_sha="$6" actual_console_hex
+  actual_console_hex="$(_cdc_record_value_hex "$topic" "$partition" "$offset")" || return 1
+  _cdc_validate_record_value_hex \
+    "$topic" "$partition" "$offset" "$event_id" "$expected_payload_hex" \
+    "$expected_payload_sha" "$actual_console_hex"
+}
+
 _cdc_assert_record_contract() {
   local topic="$1" event_id="$2" baseline_snapshot="$3" expected_key="$4"
   local expected_timestamp="$5" expected_header="$6" expected_event_type="$7"
   local expected_payload_hex="$8" expected_payload_sha="$9"
   local expected_partition="${10:-}" publication_evidence="${11:-}"
-  local result_file partition offset expected_headers_sha
+  local result_file partition offset expected_headers_sha expected_key_hex expected_key_sha
+  local metadata headers key_hex value_console_hex actual_payload_hex actual_payload_sha
+  local header_observation observed_headers_sha observed_headers_json_sha observed_event_id
+  local observed_event_type observed_header_count observed_timestamp observed_key_sha
+  local header_observation_file
+  local expected_payload_type="${expected_event_type#eventType:}"
 
   result_file="$(mktemp)"
   if ! _cdc_wait_for_event_after_snapshot \
@@ -836,18 +956,55 @@ _cdc_assert_record_contract() {
     return 1
   fi
   IFS=$'\t' read -r partition offset <"$result_file"
-  if ! _cdc_assert_record_metadata \
-      "$topic" "$partition" "$offset" "$event_id" "$expected_key" \
-      "$expected_timestamp" "$expected_header" "$expected_event_type" \
-      "$expected_partition"; then
+  header_observation_file="$(mktemp)" || {
+    rm -f "$result_file"
+    _cdc_fail 'could not allocate Kafka header observation evidence'
+    return 1
+  }
+  metadata="$(_cdc_read_record_metadata "$topic" "$partition" "$offset")" || {
+    rm -f "$header_observation_file" "$result_file"
+    return 1
+  }
+  headers="$(_cdc_read_record_headers "$topic" "$partition" "$offset")" || {
+    rm -f "$header_observation_file" "$result_file"
+    return 1
+  }
+  key_hex="$(_cdc_record_key_hex "$topic" "$partition" "$offset")" || {
+    rm -f "$header_observation_file" "$result_file"
+    return 1
+  }
+  value_console_hex="$(_cdc_record_value_hex "$topic" "$partition" "$offset")" || {
+    rm -f "$header_observation_file" "$result_file"
+    return 1
+  }
+  if ! _cdc_validate_record_metadata \
+      "$topic" "$partition" "$offset" "$event_id" "$expected_timestamp" \
+      "$expected_partition" "$metadata" ||
+    ! _cdc_validate_exact_record_headers \
+      "$topic" "$partition" "$offset" "$event_id" "$expected_header" \
+      "$expected_event_type" "$headers" >"$header_observation_file"; then
+    rm -f "$header_observation_file" "$result_file"
+    return 1
+  fi
+  header_observation="$(cat "$header_observation_file")"
+  rm -f "$header_observation_file"
+  if ! _cdc_validate_record_key_hex \
+      "$topic" "$partition" "$offset" "$event_id" "$expected_key" "$key_hex" ||
+    ! _cdc_validate_record_value_hex \
+      "$topic" "$partition" "$offset" "$event_id" "$expected_payload_hex" \
+      "$expected_payload_sha" "$value_console_hex"; then
     rm -f "$result_file"
     return 1
   fi
-  if ! _cdc_assert_record_value_hex \
-      "$topic" "$partition" "$offset" "$event_id" "$expected_payload_hex" "$expected_payload_sha"; then
-    rm -f "$result_file"
+  [[ "$value_console_hex" == *0a ]] || {
+    rm -f "$header_observation_file" "$result_file"
     return 1
-  fi
+  }
+  actual_payload_hex="${value_console_hex%0a}"
+  actual_payload_sha="$(_cdc_payload_sha256 "$actual_payload_hex")" || {
+    rm -f "$header_observation_file" "$result_file"
+    return 1
+  }
   if [[ -n "$publication_evidence" ]]; then
     expected_headers_sha="$(printf '%s' "${expected_header#headers_json:}" |
       sha256sum | awk '{print $1}')" || {
@@ -855,18 +1012,69 @@ _cdc_assert_record_contract() {
       _cdc_fail 'could not hash the verified Kafka headers'
       return 1
     }
+    expected_key_hex="$(printf '%s\n' "$expected_key" | od -An -tx1 | tr -d ' \n')" || {
+      rm -f "$result_file"
+      _cdc_fail 'could not encode the verified Kafka key'
+      return 1
+    }
+    expected_key_sha="$(_cdc_hex_sha256 "$expected_key_hex")" || {
+      rm -f "$result_file"
+      return 1
+    }
+    observed_headers_sha="$(jq -er '.headers_sha256' <<<"$header_observation")" || {
+      rm -f "$result_file"
+      return 1
+    }
+    observed_headers_json_sha="$(jq -er '.headers_json_sha256' <<<"$header_observation")" || {
+      rm -f "$result_file"
+      return 1
+    }
+    observed_event_id="$(jq -er '.event_id' <<<"$header_observation")" || {
+      rm -f "$result_file"
+      return 1
+    }
+    observed_event_type="$(jq -er '.event_type' <<<"$header_observation")" || {
+      rm -f "$result_file"
+      return 1
+    }
+    observed_header_count="$(jq -er '.header_count' <<<"$header_observation")" || {
+      rm -f "$result_file"
+      return 1
+    }
+    observed_timestamp="$(_cdc_extract_labeled_uint "$metadata" CreateTime)" || {
+      rm -f "$result_file"
+      return 1
+    }
+    observed_key_sha="$(_cdc_hex_sha256 "$key_hex")" || {
+      rm -f "$result_file"
+      return 1
+    }
     jq -n \
+      --argjson schema_version "$CDC_PUBLICATION_EVIDENCE_SCHEMA_VERSION" \
       --arg topic "$topic" --arg event_id "$event_id" \
       --argjson partition "$partition" --argjson offset "$offset" \
       --arg message_key "$expected_key" \
       --argjson timestamp "$expected_timestamp" \
       --arg headers_sha "$expected_headers_sha" \
-      --arg event_type "$expected_event_type" \
+      --arg event_type "$expected_payload_type" \
       --arg payload_sha "$expected_payload_sha" \
-      '{schema_version:1,status:"PASS",topic:$topic,event_id:$event_id,
+      --arg observed_headers_sha "$observed_headers_sha" \
+      --arg observed_headers_json_sha "$observed_headers_json_sha" \
+      --arg observed_event_id "$observed_event_id" \
+      --arg observed_event_type "$observed_event_type" \
+      --arg observed_key_sha "$observed_key_sha" \
+      --arg observed_payload_sha "$actual_payload_sha" \
+      --argjson observed_timestamp "$observed_timestamp" \
+      --argjson observed_header_count "$observed_header_count" \
+      '{schema_version:$schema_version,status:"PASS",topic:$topic,event_id:$event_id,
         partition:$partition,offset:$offset,expected_message_key:$message_key,
         expected_timestamp_unix_ms:$timestamp,expected_headers_json_sha256:$headers_sha,
         expected_event_type:$event_type,expected_payload_sha256:$payload_sha,
+        observed:{partition:$partition,offset:$offset,timestamp_unix_ms:$observed_timestamp,
+          key_sha256:$observed_key_sha,payload_sha256:$observed_payload_sha,
+          headers_sha256:$observed_headers_sha,headers_json_sha256:$observed_headers_json_sha,
+          event_id:$observed_event_id,event_type:$observed_event_type,
+          header_count:$observed_header_count},
         verification:{headers_exact:true,key_exact:true,timestamp_exact:true,payload_exact:true}}' \
       >"$publication_evidence" || {
         rm -f "$result_file"

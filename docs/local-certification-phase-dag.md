@@ -180,6 +180,26 @@ The retained CDC run-context therefore records two narrower identities:
 orchestration inputs that created the retained namespace, while
 `cdc_verifier_signature` covers the observer, fixture, and focused verifier.
 
+The runtime scope intentionally excludes the CDC verifier and worker-loss
+diagnostic runners. Its path-set and hashing implementation live in
+`local-certification-runtime-provenance.sh`, which is included in that
+same scope so changing the authority itself requires a fresh source-aligned
+run. A verifier-only change therefore records drift and runs a new focused
+report against the retained namespace; it never relabels a prior report. The
+runtime signature covers every source input that can change the deployed
+manifests, image bindings, schemas, connector registration, or phase ordering.
+
+Generated image-lock bytes are not copied into the source fingerprint. Instead,
+focused preflight validates their SHA-256 against the retained
+`registry-image-lock` PASS output and then checks every deployed workload
+image against that lock. This keeps the scope precise while preserving the
+fail-closed image identity proof. The verifier signature additionally binds the
+selected observer/contract paths and content digests, so an environment override
+is visible provenance rather than an untracked escape hatch. Focused reports copy
+both scripts into the report directory and validate those copies by digest; the
+copies are audit evidence, while execution continues to use the canonical paths
+so scripts that load sibling shared modules retain their normal semantics.
+
 An unrelated source change may reuse the retained runtime. A verifier-only
 change must pass the fast observer contract before the observer is invoked. Any
 runtime-signature, namespace, image, input, or dependency drift fails closed and

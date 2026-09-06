@@ -8,48 +8,9 @@
 _provenance_dir="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
 # shellcheck source=scripts/lib/local-image-transport.sh
 source "$_provenance_dir/local-image-transport.sh"
+# shellcheck source=scripts/lib/local-certification-runtime-provenance.sh
+source "$_provenance_dir/local-certification-runtime-provenance.sh"
 unset _provenance_dir
-
-simplematch_certification_runtime_source_paths() {
-  printf '%s\n' \
-    . \
-    ':(exclude)graphify-out/**' \
-    ':(exclude)docs/**' \
-    ':(exclude)*.md' \
-    ':(exclude)**/*.md'
-}
-
-simplematch_certification_source_revision() {
-  local repo_root="$1"
-  local untracked_source
-  local -a runtime_source_paths
-
-  mapfile -t runtime_source_paths < <(simplematch_certification_runtime_source_paths)
-
-  if ! git -C "$repo_root" diff --quiet --ignore-submodules -- \
-        "${runtime_source_paths[@]}" ||
-     ! git -C "$repo_root" diff --cached --quiet --ignore-submodules -- \
-        "${runtime_source_paths[@]}"; then
-    printf '%s\n' \
-      'certification runtime source has tracked changes; commit or restore them before certification.' \
-      >&2
-    return 1
-  fi
-
-  untracked_source="$(
-    git -C "$repo_root" ls-files --others --exclude-standard -- \
-      "${runtime_source_paths[@]}"
-  )" || return 1
-  if [[ -n "$untracked_source" ]]; then
-    printf '%s\n' \
-      'certification runtime source has untracked files; commit, ignore, or remove them before certification.' \
-      >&2
-    printf '%s\n' "$untracked_source" >&2
-    return 1
-  fi
-
-  git -C "$repo_root" rev-parse HEAD
-}
 
 simplematch_certification_source_signature() {
   local repo_root="$1"
@@ -71,48 +32,20 @@ simplematch_certification_source_signature() {
 }
 
 # Focused CDC diagnostics reuse a retained Kubernetes runtime only when the
-# inputs that created that runtime are unchanged.  The full certification
-# source signature intentionally covers every non-document source file; using
-# it here would make an unrelated commit invalidate a narrowly scoped
-# observer.  Keep these path sets explicit so a runtime or verifier change is
-# reviewed as a deliberate provenance boundary instead of being hidden behind
-# a broad "skip" switch.
-simplematch_certification_cdc_runtime_source_paths() {
-  printf '%s\n' \
-    scripts/lib/local-certification-phase-graph.sh \
-    scripts/lib/local-certification-fingerprint.sh \
-    scripts/lib/local-certification-connect.sh \
-    scripts/lib/local-certification-kubernetes.sh \
-    scripts/lib/local-certification-run.sh \
-    scripts/lib/local-certification-bootstrap.sh \
-    scripts/lib/local-image-inventory.sh \
-    scripts/lib/local-image-transport.sh \
-    scripts/lib/local-kind.sh \
-    scripts/lib/cdc-verifier.sh \
-    scripts/lib/connect-worker-loss.sh \
-    scripts/render-local-kubernetes-manifest.sh \
-    scripts/run-local-production-like-certification.sh \
-    scripts/run-local-connect-worker-loss.sh \
-    deploy/k8s \
-    ':(exclude)deploy/k8s/*.md' \
-    ':(exclude)deploy/k8s/**/*.md' \
-    CMakeLists.txt CMakePresets.json vcpkg.json triplets proto \
-    matching-engine/include matching-engine/src \
-    matching-engine/tests/matching_kafka_fixture_publisher.cpp \
-    services/risk-service/src/main/java/com/simplematch/riskservice/cdc \
-    services/risk-service/src/main/java/com/simplematch/riskservice/store \
-    services/risk-service/src/main/java/com/simplematch/riskservice/config/RiskCdcDeliveryConfiguration.java \
-    services/risk-service/src/main/java/com/simplematch/riskservice/config/CdcDeliveryProperties.java \
-    services/risk-service/src/main/java/com/simplematch/riskservice/config/RiskServiceProperties.java \
-    services/risk-service/src/main/resources/db/migration/risk-service/V10__record_cdc_delivery_observations.sql \
-    services/risk-service/src/main/resources/db/migration/risk-service/V11__require_admission_artifact_route.sql \
-    services/risk-service/src/main/resources/application.yaml \
-    scripts/test-kubernetes-overlays.sh \
-    scripts/test-local-kubernetes-dependencies.sh
-}
-
+# inputs that created that runtime are unchanged. The full certification source
+# signature intentionally covers every non-document source file; using it here
+# would make an unrelated commit invalidate a narrowly scoped observer. Keep
+# these path sets explicit so a runtime or verifier change is reviewed as a
+# deliberate provenance boundary instead of being hidden behind a broad
+# "skip" switch.
+#
+# Verifier scope covers the observer, evidence interpretation, and focused
+# diagnostic adapters. It may change while a retained runtime remains valid;
+# every focused invocation still runs the current verifier and writes a new
+# diagnostic report.
 simplematch_certification_cdc_verifier_source_paths() {
   printf '%s\n' \
+    scripts/lib/local-certification-runtime-provenance.sh \
     scripts/lib/local-certification-provenance.sh \
     scripts/lib/local-certification-focused-diagnostic.sh \
     scripts/lib/cdc-observer-fixture.sh \
@@ -126,68 +59,100 @@ simplematch_certification_cdc_verifier_source_paths() {
     scripts/test-local-certification-focused-diagnostic.sh
 }
 
-simplematch_certification_scoped_source_signature() {
-  local repo_root="$1"
-  local scope="$2"
-  local git_output manifest path digest declared_path executable
-  shift 2
-  (($# > 0)) || return 1
-
-  for declared_path in "$@"; do
-    [[ "$declared_path" == ':(exclude)'* ]] && continue
-    git_output="$(git -C "$repo_root" ls-files -co --exclude-standard -- \
-      "$declared_path")" || return 1
-    [[ -n "$git_output" ]] || {
-      printf 'certification %s provenance input is missing: %s\n' \
-        "$scope" "$declared_path" >&2
-      return 1
-    }
-  done
-
-  git_output="$(git -C "$repo_root" ls-files -co --exclude-standard -- "$@" |
-    LC_ALL=C sort -u)" || return 1
-  [[ -n "$git_output" ]] || {
-    printf 'certification %s provenance scope has no tracked inputs\n' "$scope" >&2
-    return 1
-  }
-  manifest="$(
-    printf 'scope\t%s\n' "$scope"
-    while IFS= read -r path; do
-      [[ -n "$path" ]] || continue
-      [[ -f "$repo_root/$path" ]] || {
-        printf 'certification %s provenance input is missing: %s\n' \
-          "$scope" "$path" >&2
-        exit 1
-      }
-      digest="$(sha256sum "$repo_root/$path" | awk '{print $1}')" || exit 1
-      [[ "$digest" =~ ^[0-9a-f]{64}$ ]] || exit 1
-      executable=false
-      [[ -x "$repo_root/$path" ]] && executable=true
-      printf 'file\t%s\t%s\texecutable=%s\n' \
-        "$path" "$digest" "$executable"
-    done <<<"$git_output"
-  )" || return 1
-  printf '%s\n' "$manifest" | sha256sum | awk '{print $1}'
-}
-
-simplematch_certification_cdc_runtime_signature() {
-  local repo_root="$1"
-  local path_output
-  local -a paths=()
-  path_output="$(simplematch_certification_cdc_runtime_source_paths)" || return 1
-  mapfile -t paths <<<"$path_output"
-  simplematch_certification_scoped_source_signature \
-    "$repo_root" cdc-runtime "${paths[@]}"
-}
-
 simplematch_certification_cdc_verifier_signature() {
   local repo_root="$1"
+  local contract_script="${2:-}"
+  local observer_script="${3:-}"
   local path_output
+  local base_signature contract_path contract_reference contract_digest
+  local observer_path observer_reference observer_digest
   local -a paths=()
   path_output="$(simplematch_certification_cdc_verifier_source_paths)" || return 1
   mapfile -t paths <<<"$path_output"
-  simplematch_certification_scoped_source_signature \
-    "$repo_root" cdc-verifier "${paths[@]}"
+  base_signature="$(simplematch_certification_scoped_source_signature \
+    "$repo_root" cdc-verifier "${paths[@]}")" || return 1
+  contract_path="$(simplematch_certification_cdc_verifier_contract_path \
+    "$repo_root" "$contract_script")" || return 1
+  contract_reference="$(simplematch_certification_cdc_verifier_contract_reference \
+    "$repo_root" "$contract_path")" || return 1
+  contract_digest="$(simplematch_certification_cdc_verifier_contract_sha256 \
+    "$contract_path")" || return 1
+  observer_path="$(simplematch_certification_cdc_verifier_observer_path \
+    "$repo_root" "$observer_script")" || return 1
+  observer_reference="$(simplematch_certification_cdc_verifier_observer_reference \
+    "$repo_root" "$observer_path")" || return 1
+  observer_digest="$(simplematch_certification_cdc_verifier_observer_sha256 \
+    "$observer_path")" || return 1
+  printf 'base\t%s\ncontract\t%s\ncontract-sha256\t%s\nobserver\t%s\nobserver-sha256\t%s\n' \
+    "$base_signature" "$contract_reference" "$contract_digest" \
+    "$observer_reference" "$observer_digest" |
+    sha256sum | awk '{print $1}'
+}
+
+simplematch_certification_cdc_verifier_contract_path() {
+  local repo_root="$1"
+  local requested="${2:-${SIMPLEMATCH_CDC_OBSERVER_CONTRACT_SCRIPT:-}}"
+  local directory filename
+
+  requested="${requested:-$repo_root/scripts/test-cdc-observer-fixture-contract.sh}"
+  [[ "$requested" == /* ]] || requested="$repo_root/$requested"
+  [[ -f "$requested" && ! -L "$requested" && -r "$requested" ]] || {
+    printf 'CDC verifier contract is missing, symlinked, or not readable: %s\n' \
+      "$requested" >&2
+    return 1
+  }
+  directory="${requested%/*}"
+  filename="${requested##*/}"
+  [[ "$directory" != "$requested" ]] || directory=.
+  directory="$(cd -- "$directory" && pwd)" || return 1
+  printf '%s/%s\n' "$directory" "$filename"
+}
+
+simplematch_certification_cdc_verifier_contract_reference() {
+  local repo_root="$1"
+  local contract_path="$2"
+  case "$contract_path" in
+    "$repo_root"/*) printf '%s\n' "${contract_path#"$repo_root"/}" ;;
+    *) printf '%s\n' "$contract_path" ;;
+  esac
+}
+
+simplematch_certification_cdc_verifier_contract_sha256() {
+  local contract_path="$1"
+  sha256sum "$contract_path" | awk '{print $1}'
+}
+
+simplematch_certification_cdc_verifier_observer_path() {
+  local repo_root="$1"
+  local requested="${2:-${SIMPLEMATCH_CDC_OBSERVER_SCRIPT:-}}"
+  local directory filename
+
+  requested="${requested:-$repo_root/scripts/run-risk-cdc-delivery-observer-check.sh}"
+  [[ "$requested" == /* ]] || requested="$repo_root/$requested"
+  [[ -f "$requested" && ! -L "$requested" && -r "$requested" && -x "$requested" ]] || {
+    printf 'CDC observer is missing, symlinked, unreadable, or not executable: %s\n' \
+      "$requested" >&2
+    return 1
+  }
+  directory="${requested%/*}"
+  filename="${requested##*/}"
+  [[ "$directory" != "$requested" ]] || directory=.
+  directory="$(cd -- "$directory" && pwd)" || return 1
+  printf '%s/%s\n' "$directory" "$filename"
+}
+
+simplematch_certification_cdc_verifier_observer_reference() {
+  local repo_root="$1"
+  local observer_path="$2"
+  case "$observer_path" in
+    "$repo_root"/*) printf '%s\n' "${observer_path#"$repo_root"/}" ;;
+    *) printf '%s\n' "$observer_path" ;;
+  esac
+}
+
+simplematch_certification_cdc_verifier_observer_sha256() {
+  local observer_path="$1"
+  sha256sum "$observer_path" | awk '{print $1}'
 }
 
 simplematch_certification_verifier_image_identity() {

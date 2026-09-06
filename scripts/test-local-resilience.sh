@@ -15,6 +15,7 @@ bash -n "$script_dir/lib/local-resilience.sh" \
 
 bash "$script_dir/test-local-resilience-dependencies.sh"
 bash "$script_dir/test-local-connect-worker-loss.sh"
+bash "$script_dir/test-local-kind-image-cache-preflight.sh"
 
 [[ "$(resilience_deadline 100 300)" == 400 ]]
 [[ "$RESILIENCE_DEFAULT_DEADLINE_SECONDS" == 300 ]]

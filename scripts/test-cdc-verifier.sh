@@ -42,6 +42,7 @@ TMP_DIR="$(mktemp -d)"
 trap 'rm -rf "$TMP_DIR"' EXIT
 
 MOCK_OFFSET_CALL_FILE="$TMP_DIR/offset-call"
+MOCK_VALUE_CALL_FILE="$TMP_DIR/value-call"
 MOCK_TARGET_EVENT='00000000-0000-0000-0000-000000000042'
 MOCK_OUTBOX_PAYLOAD='account-payload-v2'
 MOCK_KAFKA_PAYLOAD='account-payload-v2'
@@ -68,6 +69,7 @@ reset_mock() {
   MOCK_BASELINE_EVENT_ID='00000000-0000-0000-0000-000000000041'
   MOCK_SECOND_TARGET_EVENT='00000000-0000-0000-0000-000000000043'
   printf '0\n' >"$MOCK_OFFSET_CALL_FILE"
+  printf '0\n' >"$MOCK_VALUE_CALL_FILE"
 }
 
 mock_outbox_exec() {
@@ -191,6 +193,10 @@ mock_kafka_exec() {
       fi
 
       if [[ "$print_value" == true ]]; then
+        local mock_value_call
+        mock_value_call="$(cat "$MOCK_VALUE_CALL_FILE")"
+        mock_value_call=$((mock_value_call + 1))
+        printf '%s\n' "$mock_value_call" >"$MOCK_VALUE_CALL_FILE"
         [[ "$partition" == 1 && "$offset" == 2 && "$max_messages" == 1 ]] \
           || fail "payload read used unexpected location $partition:$offset max=$max_messages"
         printf '%s\n' "$MOCK_KAFKA_PAYLOAD"
@@ -319,6 +325,8 @@ assert_equal "$(cat "$baseline")" $'0\t5\n1\t2' 'baseline offset snapshot'
 publication_evidence="$TMP_DIR/account-publication.json"
 location="$(cdc_assert_probe_publication "$probe" "$baseline" "$publication_evidence")"
 assert_equal "$location" $'1\t2' 'probe must locate the exact Debezium event'
+assert_equal "$(cat "$MOCK_VALUE_CALL_FILE")" '1' \
+  'publication verification reads the Kafka value once'
 cdc_validate_publication_evidence "$publication_evidence"
 assert_equal "$(jq -r '.partition' "$publication_evidence")" '1' \
   'publication evidence partition'
@@ -326,6 +334,19 @@ assert_equal "$(jq -r '.offset' "$publication_evidence")" '2' \
   'publication evidence offset'
 assert_equal "$(jq -r '.verification.payload_exact' "$publication_evidence")" 'true' \
   'publication evidence payload verification'
+assert_equal "$(jq -r '.schema_version' "$publication_evidence")" '2' \
+  'publication evidence schema version'
+assert_equal "$(jq -r '.observed.event_id' "$publication_evidence")" "$MOCK_TARGET_EVENT" \
+  'observed Kafka event identity'
+assert_equal "$(jq -r '.observed.event_type' "$publication_evidence")" "$MOCK_PAYLOAD_TYPE" \
+  'observed Kafka event type'
+assert_equal "$(jq -r '.observed.header_count' "$publication_evidence")" '7' \
+  'observed Kafka header count'
+jq '.observed.payload_sha256 = "0000000000000000000000000000000000000000000000000000000000000000"' \
+  "$publication_evidence" >"$TMP_DIR/tampered-publication.json"
+if cdc_validate_publication_evidence "$TMP_DIR/tampered-publication.json"; then
+  fail 'publication evidence with a forged observed payload digest was accepted'
+fi
 
 second_probe="$TMP_DIR/account-probe-after-recovery.json"
 cdc_read_outbox_probe account_service account_reservation reservation-42 "$second_probe"

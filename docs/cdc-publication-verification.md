@@ -191,9 +191,11 @@ bash scripts/run-local-connect-worker-loss.sh \
 ```
 
 The retained directory must contain the same namespace/run-id and the `cdc_runtime_signature` and
-`cdc_verifier_signature` recorded by the full production-like run. The focused command compares both
-scoped signatures before any Pod mutation; a mismatch fails closed and requires a fresh source-aligned
-full run. The diagnostic first verifies Flyway/topic prerequisites, two PVC-free Connect workers, RF3/minISR2
+`cdc_verifier_signature` recorded by the full production-like run. The focused command compares the
+runtime signature before any Pod mutation; a runtime mismatch fails closed and requires a fresh
+source-aligned full run. A verifier-signature mismatch is recorded as drift, then the current verifier
+contract is executed before any Pod mutation and the diagnostic writes new evidence. No old diagnostic
+report is reused. The diagnostic first verifies Flyway/topic prerequisites, two PVC-free Connect workers, RF3/minISR2
 internal topics, PDB protection, service-owned connector table/header boundaries, and strict Pod
 identity. It applies a JSON-Patch UID precondition and a run-unique marker, then deletes only the
 uniquely marked Pod and proves that the original UID disappears before waiting for reassignment. It then requires the same
@@ -203,11 +205,54 @@ run-owned lifecycle fixture, and delegates post-transition selection and exact K
 parent #151 runner rather than relabelled as a complete local certification.
 
 The report links every prerequisite snapshot, the pre-delete UID recheck,
-`account-transition.json`, and `account-publication.json`. The publication
-artifact is emitted only after the shared verifier succeeds and records the
-observed partition/offset together with key, timestamp, header, and payload
-digest checks, so a later consumer does not have to trust an unlinked
-`exact_kafka_record=true` flag.
+`target-delete-observation.json`, `account-transition.json`, and
+`account-publication.json`. The delete observation is a schema-versioned,
+run-owned record: it contains the target Pod UID, the replacement outcome (or
+an explicit `not-found` outcome), the replacement UID when one exists, and the
+fact that the original UID is absent. The raw delete log remains useful for
+incident diagnosis, but it is not the machine-readable recovery proof.
+
+The publication artifact uses schema version 2. It is emitted only after the
+shared verifier succeeds and records the expected contract plus the actual
+Kafka observation: partition, offset, broker timestamp, event identity/type,
+and SHA-256 digests for the key, payload, complete headers, and canonical
+`headers_json`, together with each exact-record check. It deliberately does
+not retain raw payload bytes or unredacted headers. A later consumer can
+reconstruct the observation chain without trusting an unlinked
+`exact_kafka_record=true` flag or a caller-supplied expected value.
+
+The provenance boundary is intentionally layered:
+
+```text
+runtime fingerprint  = source-controlled deployment manifests, schemas, connector registration,
+                       and phase inputs that shape the retained namespace
+image-lock proof      = the retained PASS identity from registry-image-lock, matched to
+                       the exact local-images.lock bytes before any observer or Pod mutation
+verifier fingerprint = CDC selection/publication rules, fixture contract, and evidence checks,
+                       including selected observer/contract paths and content digests
+diagnostic evidence   = a new report produced by the current verifier against the retained runtime
+```
+
+較好的後續設計不是關閉 provenance，而是把 fingerprint 分成更精準的 scope。只有 runtime
+fingerprint 變更才要求重新建立部署；verifier fingerprint 變更會要求重新執行 focused
+diagnostic，並在 `provenance.json` 記錄 retained/current verifier fingerprints 與
+`verifier_signature_changed`。contract adapter 的 canonical path 與 SHA-256 也會寫入
+`provenance.json`；observer 或 contract 內容、path/override 改變時，fingerprint 必然改變，
+而且目前 contract 仍會在 observer/Pod mutation 前執行並要求固定 success marker。這保留
+fail-closed correctness，也避免把「新的 verifier 通過」誤寫成「舊的 diagnostic report 仍然有效」。
+
+Focused preflight 不只比較檔案 fingerprint：它必須讀取 retained
+`phases/registry-image-lock/result.json`，確認 status 是 `PASS`、output identity 是
+`sha256:<sha256(local-images.lock)>`，並再次核對 namespace 實際 workload image。這個
+上游 evidence binding 讓 generated image lock 不會被呼叫端悄悄替換。Worker-loss report
+目前使用 schema version 2；schema 1 envelope 不會被自動升級或接受。
+
+Focused verdict 也使用 schema version 2，並將實際執行的 observer 與 contract script
+複製到該次 diagnostic 目錄（`verifier-observer.sh`、`verifier-contract.sh`）。報告保留
+canonical path、內容 SHA-256 與相對 evidence file；後續查驗以副本的 digest 為準，不依賴
+工作樹中仍存在的外部檔案。副本只作為可攜式 audit evidence，執行時仍使用已解析且先前
+fingerprint 過的 canonical script，避免 script 內部以自身目錄載入 shared library 時改變
+語義。
 
 ## Final Risk publication contract
 

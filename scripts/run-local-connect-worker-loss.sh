@@ -15,6 +15,14 @@ source "$script_dir/lib/local-common.sh"
 source "$script_dir/lib/local-kind.sh"
 # shellcheck source=scripts/lib/local-certification-provenance.sh
 source "$script_dir/lib/local-certification-provenance.sh"
+# shellcheck source=scripts/lib/local-certification-phase-graph.sh
+source "$script_dir/lib/local-certification-phase-graph.sh"
+# shellcheck source=scripts/lib/local-certification-evidence.sh
+source "$script_dir/lib/local-certification-evidence.sh"
+# shellcheck source=scripts/lib/local-certification-images.sh
+source "$script_dir/lib/local-certification-images.sh"
+# shellcheck source=scripts/lib/local-certification-focused-diagnostic.sh
+source "$script_dir/lib/local-certification-focused-diagnostic.sh"
 # shellcheck source=scripts/lib/cdc-verifier.sh
 source "$script_dir/lib/cdc-verifier.sh"
 # shellcheck source=scripts/lib/connect-worker-loss.sh
@@ -26,7 +34,8 @@ namespace="${SIMPLEMATCH_RESILIENCE_NAMESPACE:-}"
 namespace_run_id="${SIMPLEMATCH_RESILIENCE_NAMESPACE_RUN_ID:-}"
 evidence_dir="${SIMPLEMATCH_CONNECT_WORKER_LOSS_EVIDENCE_DIR:-}"
 retained_evidence_dir="${SIMPLEMATCH_CONNECT_WORKER_LOSS_RETAINED_EVIDENCE_DIR:-${SIMPLEMATCH_PRODUCTION_LIKE_EVIDENCE_DIR:-out/certification/local-production-like}}"
-deadline_seconds="${SIMPLEMATCH_CONNECT_WORKER_LOSS_DEADLINE_SECONDS:-300}"
+deadline_seconds="${SIMPLEMATCH_CONNECT_WORKER_LOSS_DEADLINE_SECONDS:-$(connect_worker_loss_default_deadline_seconds)}"
+verifier_contract_script="${SIMPLEMATCH_CDC_OBSERVER_CONTRACT_SCRIPT:-$script_dir/test-cdc-observer-fixture-contract.sh}"
 dry_run=false
 
 run_id="connect-worker-loss-$(date -u +%Y%m%dt%H%M%sz)-$$"
@@ -41,6 +50,8 @@ fixture_aggregate_id=""
 fixture_created=false
 target_pod=""
 target_uid=""
+recovery_deadline_started_at_unix_ms=0
+fault_requested_at_unix_ms=0
 reassignment_observed_at_unix_ms=0
 
 usage() {
@@ -57,13 +68,15 @@ Options:
   --retained-evidence-dir PATH
                          Source-aligned production-like evidence (default: SIMPLEMATCH_PRODUCTION_LIKE_EVIDENCE_DIR or out/certification/local-production-like).
   --evidence-dir PATH    Empty directory for this diagnostic report.
-  --deadline-seconds N   One bounded deadline, at most 600 seconds (default: 300).
+  --deadline-seconds N   Bounded fault/recovery deadline, at most 900 seconds (default: 600).
   --dry-run              Print the focused plan without changing state.
 
 The diagnostic deletes exactly the Connect Pod that owns the Account connector
 task, waits for a different task owner, then uses the shared CDC verifier to
 prove one post-reassignment Account outbox transition reached account.lifecycle.
-It is diagnostic evidence only; it is not a full-local certification PASS.
+The retained runtime fingerprint must match; a verifier-only fingerprint change
+is recorded and checked by the fast observer contract before mutation. It is
+diagnostic evidence only; it is not a full-local certification PASS.
 EOF_USAGE
 }
 
@@ -119,7 +132,8 @@ write_failure_report() {
     '{schema_version:$schema_version,profile:"connect-worker-loss",status:$status,
       cluster:$cluster,context:$context,namespace:$namespace,
       namespace_run_id:$namespace_run_id,run_id:$run_id,fault_mode:"pod-delete",
-      deadline_seconds:$deadline_seconds,prerequisites:{},task_reassignment:{},
+      deadline_seconds:$deadline_seconds,recovery_deadline_started_at_unix_ms:0,
+      prerequisites:{},task_reassignment:{},
       publication:{},failure_reason:$reason,
       claim_boundary:["focused local Kafka Connect worker-loss diagnostic"]}' \
     >"$report_path"
@@ -189,78 +203,43 @@ cleanup() {
   exit "$status"
 }
 
-validate_namespace() {
-  local namespace_json labels_run_id
-  namespace_json="$(kube get namespace "$namespace" -o json)" ||
-    die "namespace is not available: $namespace"
-  jq -e '
-    .metadata.labels["simplematch.io/lifecycle"] == "disposable" and
-    (.metadata.labels["simplematch.io/managed-by"] == "local-resilience" or
-     .metadata.labels["simplematch.io/managed-by"] == "local-production-like-certification") and
-    (.metadata.labels["simplematch.io/run-id"] | type == "string" and length > 0)
-  ' <<<"$namespace_json" >/dev/null ||
-    die "namespace is not an owned disposable namespace: $namespace"
-  labels_run_id="$(jq -er '.metadata.labels["simplematch.io/run-id"]' <<<"$namespace_json")" || return 1
-  [[ "$labels_run_id" == "$namespace_run_id" ]] ||
-    die "namespace belongs to run $labels_run_id, not $namespace_run_id"
-}
-
-validate_retained_provenance() {
-  local context_file="$retained_evidence_dir/run-context"
-  local retained_namespace retained_run_id retained_runtime_signature retained_verifier_signature
-  local retained_verifier_image_identity
-  local current_runtime_signature current_verifier_signature current_commit
-
-  [[ -d "$retained_evidence_dir" ]] ||
-    die "retained production-like evidence directory is missing: $retained_evidence_dir"
-  [[ -f "$context_file" ]] ||
-    die "retained production-like run context is missing: $context_file"
-
-  retained_namespace="$(awk -F= '
-    $1 == "namespace" { count++; value=substr($0, index($0, "=") + 1) }
-    END { if (count != 1 || value == "" || value ~ /[[:space:]]/) exit 1; print value }
-  ' "$context_file")" || die 'retained run context has no unique namespace'
-  retained_run_id="$(awk -F= '
-    $1 == "run_id" { count++; value=substr($0, index($0, "=") + 1) }
-    END { if (count != 1 || value == "" || value ~ /[[:space:]]/) exit 1; print value }
-  ' "$context_file")" || die 'retained run context has no unique run-id'
-  retained_runtime_signature="$(awk -F= '
-    $1 == "cdc_runtime_signature" { count++; value=substr($0, index($0, "=") + 1) }
-    END { if (count != 1 || value !~ /^[0-9a-f]{64}$/) exit 1; print value }
-  ' "$context_file")" || die 'retained run context has no valid CDC runtime signature'
-  retained_verifier_signature="$(awk -F= '
-    $1 == "cdc_verifier_signature" { count++; value=substr($0, index($0, "=") + 1) }
-    END { if (count != 1 || value !~ /^[0-9a-f]{64}$/) exit 1; print value }
-  ' "$context_file")" || die 'retained run context has no valid CDC verifier signature'
-  retained_verifier_image_identity="$(
-    simplematch_certification_verifier_image_identity "$retained_evidence_dir"
-  )" || die 'retained verifier image identity is missing or malformed'
-
-  [[ "$retained_namespace" == "$namespace" ]] ||
-    die "retained evidence belongs to namespace $retained_namespace, not $namespace"
-  [[ "$retained_run_id" == "$namespace_run_id" ]] ||
-    die "retained evidence belongs to run $retained_run_id, not $namespace_run_id"
-
-  current_runtime_signature="$(simplematch_certification_cdc_runtime_signature "$repo_root")" ||
-    die 'could not calculate the current CDC runtime signature'
-  [[ "$current_runtime_signature" == "$retained_runtime_signature" ]] ||
-    die 'retained CDC runtime signature differs; create a fresh source-aligned run'
-  current_verifier_signature="$(simplematch_certification_cdc_verifier_signature "$repo_root")" ||
-    die 'could not calculate the current CDC verifier signature'
-  [[ "$current_verifier_signature" == "$retained_verifier_signature" ]] ||
-    die 'retained CDC verifier signature differs; create a fresh source-aligned run'
+write_provenance_evidence() {
+  local current_commit retained_verifier_image_identity
 
   current_commit="$(git -C "$repo_root" rev-parse HEAD)" ||
     die 'could not record the current source revision'
+  retained_verifier_image_identity="$(
+    simplematch_certification_verifier_image_identity "$retained_evidence_dir"
+  )" || die 'retained verifier image identity is missing or malformed'
   jq -n \
     --arg status PASS --arg evidence_dir "$retained_evidence_dir" \
     --arg namespace "$namespace" --arg namespace_run_id "$namespace_run_id" \
-    --arg commit "$current_commit" --arg runtime "$current_runtime_signature" \
-    --arg verifier "$current_verifier_signature" --arg image "$retained_verifier_image_identity" \
+    --arg commit "$current_commit" \
+    --arg runtime "$SIMPLEMATCH_FOCUSED_CURRENT_CDC_RUNTIME_SIGNATURE" \
+    --arg retained_runtime "$SIMPLEMATCH_FOCUSED_RETAINED_CDC_RUNTIME_SIGNATURE" \
+    --arg verifier "$SIMPLEMATCH_FOCUSED_CURRENT_CDC_VERIFIER_SIGNATURE" \
+    --arg retained_verifier "$SIMPLEMATCH_FOCUSED_RETAINED_CDC_VERIFIER_SIGNATURE" \
+    --arg image "$retained_verifier_image_identity" \
+    --arg observer_path "$(simplematch_focused_verifier_observer_path)" \
+    --arg observer_sha256 "$(simplematch_focused_verifier_observer_sha256)" \
+    --arg observer_evidence_file \
+      "$(simplematch_focused_verifier_observer_evidence_file)" \
+    --arg contract_path "$(simplematch_focused_verifier_contract_path)" \
+    --arg contract_sha256 "$(simplematch_focused_verifier_contract_sha256)" \
+    --argjson verifier_changed \
+      "$([[ "$(simplematch_focused_verifier_changed)" == true ]] &&
+        printf true || printf false)" \
     '{status:$status,retained_evidence_dir:$evidence_dir,namespace:$namespace,
       namespace_run_id:$namespace_run_id,current_commit:$commit,
-      cdc_runtime_signature:$runtime,cdc_verifier_signature:$verifier,
-      verifier_image_identity:$image}' \
+      cdc_runtime_signature:$runtime,retained_cdc_runtime_signature:$retained_runtime,
+      cdc_verifier_signature:$verifier,retained_cdc_verifier_signature:$retained_verifier,
+      verifier_signature_changed:$verifier_changed,runtime_reused:true,
+      verifier_image_identity:$image,verifier_observer_path:$observer_path,
+      verifier_observer_sha256:$observer_sha256,
+      verifier_observer_evidence_file:$observer_evidence_file,
+      verifier_contract_path:$contract_path,
+      verifier_contract_sha256:$contract_sha256,
+      verifier_contract_evidence_file:"verifier-contract.sh"}' \
     >"$evidence_dir/provenance.json" || die 'could not write provenance evidence'
 }
 
@@ -305,6 +284,9 @@ validate_prerequisites() {
   kns rollout status statefulset/postgres --timeout="$(remaining_seconds)s" >/dev/null ||
     die 'PostgreSQL was not Ready before Connect observation'
 
+  kns get configmap simplematch-kafka-connect-config -o json \
+    >"$evidence_dir/connect-config.json" ||
+    die 'Kafka Connect profile ConfigMap is missing'
   deployment_json="$(kns get deployment kafka-connect -o json)" || die 'Kafka Connect Deployment is missing'
   pdb_json="$(kns get pdb kafka-connect -o json)" || die 'Kafka Connect PDB is missing'
   printf '%s\n' "$deployment_json" >"$evidence_dir/connect-deployment.json"
@@ -452,7 +434,7 @@ recheck_target_before_delete() {
   pod_json="$(kns get pod "$target_pod" -o json)" ||
     die "task-owning Connect Pod disappeared before fault injection: $target_pod"
   printf '%s\n' "$pod_json" >"$pod_file"
-  current_ip="$(jq -er '.status.podIP' "$target_file")" || return 1
+  current_ip="$(jq -er '.pod_ip' "$target_file")" || return 1
   current_node="$(jq -er '.node' "$target_file")" || return 1
   jq -e --arg pod "$target_pod" --arg uid "$target_uid" --arg ip "$current_ip" \
       --arg node "$current_node" '
@@ -467,7 +449,8 @@ recheck_target_before_delete() {
 
 wait_for_deleted_target() {
   local error_file="$evidence_dir/target-delete-observation.log"
-  local pod_json observed_uid
+  local observation_file="$evidence_dir/target-delete-observation.json"
+  local pod_json observed_uid outcome observed_at
 
   : >"$error_file"
   while true; do
@@ -477,9 +460,26 @@ wait_for_deleted_target() {
         jq -e --arg run_id "$run_id" \
           '(.metadata.labels["simplematch.io/worker-loss-run"] // "") != $run_id' \
           <<<"$pod_json" >/dev/null || die 'a replacement Pod inherited the worker-loss marker'
+        outcome=replacement-pod
+        observed_at="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+        jq -n --arg pod "$target_pod" --arg uid "$target_uid" \
+          --arg outcome "$outcome" --arg replacement_uid "$observed_uid" \
+          --arg observed_at "$observed_at" \
+          '{schema_version:1,target_pod:$pod,target_pod_uid:$uid,
+            outcome:$outcome,replacement_pod_uid:$replacement_uid,
+            target_uid_absent:true,observed_at_utc:$observed_at}' \
+          >"$observation_file" || die 'could not record the Pod deletion observation'
         return 0
       fi
     elif grep -Eqi 'notfound|not found' "$error_file"; then
+      outcome=not-found
+      observed_at="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+      jq -n --arg pod "$target_pod" --arg uid "$target_uid" \
+        --arg outcome "$outcome" --arg observed_at "$observed_at" \
+        '{schema_version:1,target_pod:$pod,target_pod_uid:$uid,
+          outcome:$outcome,replacement_pod_uid:null,
+          target_uid_absent:true,observed_at_utc:$observed_at}' \
+        >"$observation_file" || die 'could not record the Pod deletion observation'
       return 0
     fi
     remaining_seconds | grep -Eq '^[1-9][0-9]*$' ||
@@ -520,21 +520,24 @@ delete_target_pod() {
     (.metadata.deletionTimestamp // null) == null
   ' <<<"$precondition" >/dev/null ||
     die 'UID delete precondition no longer identifies the task-owning Pod'
-  delete_output="$(kns delete pods -l "$selector" \
-    --field-selector "metadata.uid=$target_uid" --wait=false)" ||
+  fault_requested_at_unix_ms="$(date +%s%3N)"
+  delete_output="$(kns delete pods -l "$selector" --wait=false)" ||
     die "could not delete the marked task-owning Connect Pod: $target_pod"
   grep -Fq "$target_pod" <<<"$delete_output" ||
     die 'Pod deletion selector did not report the intended task-owning Pod'
   wait_for_deleted_target
   jq -n --arg pod "$target_pod" --arg pod_uid "$target_uid" \
-      --arg selector "$selector" --arg field_selector "metadata.uid=$target_uid" \
+      --arg selector "$selector" \
       --arg output "$delete_output" \
+      --argjson recovery_started_at_unix_ms "$recovery_deadline_started_at_unix_ms" \
+      --argjson requested_at_unix_ms "$fault_requested_at_unix_ms" \
       --arg requested_at "$(date -u +%Y-%m-%dT%H:%M:%SZ)" \
       '{fault:"pod-delete",target_pod:$pod,target_pod_uid:$pod_uid,
         delete_selector:$selector,delete_output:$output,
-        delete_field_selector:$field_selector,
         delete_requested:true,uid_precondition_test:true,pre_delete_recheck:true,
         delete_output_contains_target:true,target_uid_absent:true,
+        recovery_deadline_started_at_unix_ms:$recovery_started_at_unix_ms,
+        requested_at_unix_ms:$requested_at_unix_ms,
         requested_at:$requested_at}' >"$evidence_dir/worker-loss.json"
 }
 
@@ -575,7 +578,8 @@ wait_for_reassignment() {
 postgres_exec() {
   local sql="$1"
   kns exec "$postgres_pod" -c postgres -- psql --username=simplematch --dbname=simplematch \
-    --no-psqlrc --tuples-only --no-align --set=ON_ERROR_STOP=1 --command "$sql"
+    --no-psqlrc --tuples-only --no-align --field-separator $'\t' \
+    --set=ON_ERROR_STOP=1 --command "$sql"
 }
 
 kafka_exec() {
@@ -649,7 +653,7 @@ run_publication_check() {
     --arg payload_type "$account_payload_type" \
     --argjson transition_created_at_unix_ms "$transition_created_at_unix_ms" \
     --argjson reassignment_observed_at_unix_ms "$reassignment_observed_at_unix_ms" \
-    '{aggregate_id:$aggregate_id,event_id:$event_id,payload_type:$payload_type,
+    '{schema_version:1,aggregate_id:$aggregate_id,event_id:$event_id,payload_type:$payload_type,
       transition_created_at_unix_ms:$transition_created_at_unix_ms,
       reassignment_observed_at_unix_ms:$reassignment_observed_at_unix_ms,
       transition:"post-reassignment Account lifecycle fixture"}' >"$evidence_dir/account-transition.json"
@@ -674,8 +678,9 @@ done
 [[ "$namespace" =~ ^[a-z0-9]([-a-z0-9]*[a-z0-9])?$ ]] || die 'namespace is not a valid Kubernetes name'
 [[ -n "$namespace_run_id" ]] || { usage >&2; die '--namespace-run-id is required'; }
 [[ "$namespace_run_id" =~ ^[A-Za-z0-9._-]+$ ]] || die 'namespace run-id contains unsupported characters'
-[[ "$deadline_seconds" =~ ^[1-9][0-9]*$ && "$deadline_seconds" -le 600 ]] ||
-  die '--deadline-seconds must be a positive integer no greater than 600'
+[[ "$deadline_seconds" =~ ^[1-9][0-9]*$ &&
+  "$deadline_seconds" -le "$CONNECT_WORKER_LOSS_MAX_DEADLINE_SECONDS" ]] ||
+  die "--deadline-seconds must be a positive integer no greater than $CONNECT_WORKER_LOSS_MAX_DEADLINE_SECONDS"
 evidence_dir="${evidence_dir:-out/resilience/connect-worker-loss-$run_id}"
 validate_relative_path "$retained_evidence_dir" retained-evidence-dir
 validate_relative_path "$evidence_dir" evidence-dir
@@ -683,26 +688,52 @@ validate_relative_path "$evidence_dir" evidence-dir
 if [[ "$dry_run" == true ]]; then
   printf 'DRY RUN: cluster=%s context=%s namespace=%s run-id=%s deadline=%ss\n' \
     "$cluster_name" "$context" "$namespace" "$namespace_run_id" "$deadline_seconds"
-  printf '%s\n' 'DRY RUN: validate ownership/prerequisites -> capture task owner -> delete exactly that Connect Pod -> prove reassignment -> verify baseline-aware Account CDC publication.'
+  printf '%s\n' 'DRY RUN: validate ownership/prerequisites and image cache -> capture task owner -> delete exactly that Connect Pod -> prove reassignment -> verify baseline-aware Account CDC publication.'
   exit 0
 fi
 
 for tool in kubectl kind jq curl timeout sed grep date seq sleep tail cat od tr awk cp mv; do
   command -v "$tool" >/dev/null 2>&1 || die "$tool is required"
 done
+simplematch_certification_cdc_verifier_contract_path \
+  "$repo_root" "$verifier_contract_script" >/dev/null || die \
+  "CDC verifier contract script is missing, symlinked, or not readable: $verifier_contract_script"
 mkdir -p "$evidence_dir"
 shopt -s nullglob dotglob
 existing_evidence=("$evidence_dir"/*)
 shopt -u nullglob dotglob
 ((${#existing_evidence[@]} == 0)) || die "evidence directory must be empty: $evidence_dir"
 report_path="$evidence_dir/connect-worker-loss.json"
-deadline_at=$((SECONDS + deadline_seconds))
+deadline_at=$((SECONDS + $(connect_worker_loss_setup_deadline_seconds)))
 trap cleanup EXIT
 
 validate_cluster
-validate_namespace
-validate_retained_provenance
+focused_evidence_dir="$retained_evidence_dir"
+focused_repo_root="$repo_root"
+focused_kubectl_bin=kubectl
+focused_preflight_deadline_epoch=$(( $(date +%s) + 60 ))
+focused_image_lock="$retained_evidence_dir/local-images.lock"
+focused_observer_script="$script_dir/run-risk-cdc-delivery-observer-check.sh"
+focused_verifier_observer_copy="$evidence_dir/verifier-observer.sh"
+focused_verifier_contract_script="$verifier_contract_script"
+focused_verifier_contract_output="$evidence_dir/verifier-contract.log"
+focused_verifier_contract_copy="$evidence_dir/verifier-contract.sh"
+export SIMPLEMATCH_CDC_OBSERVER_CONTRACT_SCRIPT="$verifier_contract_script"
+simplematch_focused_preflight || die \
+  "retained certification preflight failed: $(simplematch_focused_failure_reason)"
+[[ "$context" == "$SIMPLEMATCH_FOCUSED_KIND_CONTEXT" ]] ||
+  die "requested context $context does not match retained context $SIMPLEMATCH_FOCUSED_KIND_CONTEXT"
+[[ "$cluster_name" == "${SIMPLEMATCH_FOCUSED_CONTEXT[cluster]}" ]] ||
+  die "requested cluster $cluster_name does not match retained cluster ${SIMPLEMATCH_FOCUSED_CONTEXT[cluster]}"
+[[ "$namespace" == "${SIMPLEMATCH_FOCUSED_CONTEXT[namespace]}" &&
+  "$namespace_run_id" == "${SIMPLEMATCH_FOCUSED_CONTEXT[run_id]}" ]] ||
+  die 'worker-loss arguments do not match retained namespace ownership'
+write_provenance_evidence
 validate_prerequisites
+simplematch_kind_image_cache_preflight \
+  "$context" "$evidence_dir/connect-deployment.json" \
+  "$evidence_dir/image-cache-preflight.json" ||
+  die 'Kafka Connect image is missing or not executable on every eligible kind worker'
 start_connect_port_forward
 
 postgres_pod="$(kns get pods -l app.kubernetes.io/name=postgres -o json \
@@ -730,6 +761,8 @@ capture_target_slot "$evidence_dir/task-owner-before.json"
 target_pod="$(jq -er '.pod' "$evidence_dir/task-owner-before.json")"
 target_uid="$(jq -er '.pod_uid' "$evidence_dir/task-owner-before.json")"
 recheck_target_before_delete
+recovery_deadline_started_at_unix_ms="$(date +%s%3N)"
+deadline_at=$((SECONDS + deadline_seconds))
 delete_target_pod
 wait_for_reassignment "$evidence_dir/connect-status-before.json" \
   "$evidence_dir/task-owner-before.json" "$target_pod" "$target_uid"
@@ -745,11 +778,13 @@ jq -n \
   --arg cluster "$cluster_name" --arg context "$context" --arg namespace "$namespace" \
   --arg namespace_run_id "$namespace_run_id" --arg run_id "$run_id" \
   --argjson deadline_seconds "$deadline_seconds" \
+  --argjson recovery_deadline_started_at_unix_ms "$recovery_deadline_started_at_unix_ms" \
   --argjson before "$before_target_json" --argjson after "$after_target_json" \
   --arg event_id "$(jq -r '.event_id' "$evidence_dir/account-outbox-probe.json")" \
   '{schema_version:$schema_version,profile:"connect-worker-loss",status:"PASSED",
     cluster:$cluster,context:$context,namespace:$namespace,namespace_run_id:$namespace_run_id,
     run_id:$run_id,fault_mode:"pod-delete",deadline_seconds:$deadline_seconds,
+    recovery_deadline_started_at_unix_ms:$recovery_deadline_started_at_unix_ms,
     prerequisites:{connect_workers:2,ready_workers_before:2,ready_workers_after:2,
       internal_topics_rf3:true,pdb_min_available_1:true,connect_has_no_pvc:true,
       service_owned_connectors:true,flyway_and_topic_prerequisites:true},
@@ -775,7 +810,12 @@ jq -n \
       pod_pre_delete_file:"pod-pre-delete.json",
       pod_patch_file:"pod-patch.json",
       pod_delete_precondition_file:"pod-delete-precondition.json",
+      image_cache_preflight_file:"image-cache-preflight.json",
+      target_delete_observation_file:"target-delete-observation.json",
       worker_loss_file:"worker-loss.json",provenance_file:"provenance.json",
+      verifier_contract_file:"verifier-contract.log",
+      verifier_contract_script_file:"verifier-contract.sh",
+      verifier_observer_script_file:"verifier-observer.sh",
       transition_file:"account-transition.json",
       baseline_file:"account-outbox-baseline.json",probe_file:"account-outbox-probe.json",
       kafka_baseline_file:"account-kafka-baseline.tsv",
@@ -787,8 +827,9 @@ jq -n \
       control_plane_events_file:"control-plane/events.json",
       connect_deployment_file:"connect-deployment.json",
       connect_pdb_file:"connect-pdb.json",
+      connect_config_file:"connect-config.json",
       account_connector_file:"account-service-outbox-configmap.json",
-      risk_connector_file:"risk-service-outbox-configmap.json",postgres_file:"postgres.json",
+      risk_connector_file:"risk-service-outbox-configmap.json",postgres_file:"prerequisites/postgres.json",
       topic_provisioning_file:"prerequisites/kafka-topic-provisioning.json",
       account_flyway_file:"prerequisites/account-service-flyway.json",
       risk_flyway_file:"prerequisites/risk-service-flyway.json",

@@ -17,6 +17,11 @@ declare -g SIMPLEMATCH_FOCUSED_CURRENT_CDC_VERIFIER_SIGNATURE=""
 declare -g SIMPLEMATCH_FOCUSED_VERIFIER_CHANGED=false
 declare -g SIMPLEMATCH_FOCUSED_CURRENT_REVISION=""
 declare -g SIMPLEMATCH_FOCUSED_IMAGE_LOCK_DIGEST=""
+declare -g SIMPLEMATCH_FOCUSED_VERIFIER_OBSERVER_PATH=""
+declare -g SIMPLEMATCH_FOCUSED_VERIFIER_OBSERVER_SHA256=""
+declare -g SIMPLEMATCH_FOCUSED_VERIFIER_OBSERVER_EVIDENCE_FILE=""
+declare -g SIMPLEMATCH_FOCUSED_VERIFIER_CONTRACT_PATH=""
+declare -g SIMPLEMATCH_FOCUSED_VERIFIER_CONTRACT_SHA256=""
 
 # These values are supplied by the entry point. Defaults keep the sourced
 # module safe for contract tests and make every external dependency explicit.
@@ -26,8 +31,11 @@ declare -g SIMPLEMATCH_FOCUSED_IMAGE_LOCK_DIGEST=""
 : "${focused_preflight_deadline_epoch:=0}"
 : "${focused_image_transport:=}"
 : "${focused_image_lock:=}"
+: "${focused_observer_script:=}"
+: "${focused_verifier_observer_copy:=}"
 : "${focused_verifier_contract_script:=}"
 : "${focused_verifier_contract_output:=}"
+: "${focused_verifier_contract_copy:=}"
 
 simplematch_focused_failure_reason() {
   printf '%s\n' "$SIMPLEMATCH_FOCUSED_FAILURE_REASON"
@@ -49,10 +57,73 @@ simplematch_focused_verifier_changed() {
   printf '%s\n' "$SIMPLEMATCH_FOCUSED_VERIFIER_CHANGED"
 }
 
+simplematch_focused_verifier_contract_path() {
+  printf '%s\n' "$SIMPLEMATCH_FOCUSED_VERIFIER_CONTRACT_PATH"
+}
+
+simplematch_focused_verifier_contract_sha256() {
+  printf '%s\n' "$SIMPLEMATCH_FOCUSED_VERIFIER_CONTRACT_SHA256"
+}
+
+simplematch_focused_verifier_observer_path() {
+  printf '%s\n' "$SIMPLEMATCH_FOCUSED_VERIFIER_OBSERVER_PATH"
+}
+
+simplematch_focused_verifier_observer_sha256() {
+  printf '%s\n' "$SIMPLEMATCH_FOCUSED_VERIFIER_OBSERVER_SHA256"
+}
+
+simplematch_focused_verifier_observer_evidence_file() {
+  printf '%s\n' "$SIMPLEMATCH_FOCUSED_VERIFIER_OBSERVER_EVIDENCE_FILE"
+}
+
 simplematch_focused_fail() {
   SIMPLEMATCH_FOCUSED_FAILURE_REASON="$1"
   printf 'Focused CDC diagnostic: %s\n' "$1" >&2
   return 1
+}
+
+# Keep this mapping as an independent persisted-plan check.  The planner owns
+# the producer mapping; the focused verifier must not trust that producer when
+# deciding whether a retained result and plan entry agree.
+simplematch_focused_plan_decision_for_result() {
+  case "$1" in
+    EXECUTED) printf '%s\n' EXECUTE ;;
+    REUSED) printf '%s\n' REUSE ;;
+    REVALIDATED) printf '%s\n' REVALIDATE ;;
+    *) return 1 ;;
+  esac
+}
+
+# A retained phase result contains current-run planner metadata, while the
+# content-addressed object owns its immutable identity and outputs.  This
+# verifier-scoped seam binds the result to the exact object digest and avoids
+# comparing timing/reason fields that legitimately change on reuse.
+simplematch_focused_result_is_bound_to_object() {
+  local result_path="$1"
+  local object_path="$2"
+  local evidence_digest="$3"
+
+  [[ -f "$result_path" && ! -L "$result_path" ]] || return 1
+  [[ -f "$object_path" && ! -L "$object_path" ]] || return 1
+  [[ "$evidence_digest" =~ ^sha256:[0-9a-f]{64}$ ]] || return 1
+  certification_evidence_validate_object \
+    "$object_path" "$evidence_digest" || return 1
+  jq -e -s --arg evidence "$evidence_digest" \
+    --slurpfile object "$object_path" '
+      length == 1 and ($object | length) == 1 and
+      .[0] as $result | $object[0] as $source |
+      ($result.evidenceDigest == $evidence) and
+      ($result.decision == "EXECUTED" or
+        $result.decision == "REUSED" or
+        $result.decision == "REVALIDATED") and
+      $result.schemaVersion == $source.schemaVersion and
+      $result.phaseId == $source.phaseId and
+      $result.definitionVersion == $source.definitionVersion and
+      $result.status == $source.status and
+      $result.inputFingerprint == $source.inputFingerprint and
+      $result.outputs == $source.outputs
+    ' "$result_path" >/dev/null
 }
 
 simplematch_focused_context_value() {
@@ -213,7 +284,9 @@ simplematch_focused_collect_dependencies() {
 }
 
 simplematch_focused_validate_dependencies() {
-  local dependency result_path
+  local dependency result_path policy input_fingerprint evidence_digest object_path
+  local result_decision expected_plan_decision
+  local retained_source_revision plan_phase
 
   SIMPLEMATCH_FOCUSED_DEPENDENCIES=()
   declare -gA SIMPLEMATCH_FOCUSED_DEPENDENCY_SEEN=()
@@ -222,20 +295,106 @@ simplematch_focused_validate_dependencies() {
       'could not resolve the kubernetes-cdc-delivery dependency graph' || return 1
   [[ -f "$focused_evidence_dir/plan.json" ]] || simplematch_focused_fail \
     "retained certification plan is missing: $focused_evidence_dir/plan.json" || return 1
-  jq -e '.schemaVersion == 1 and (.phases | type == "array")' \
+  jq -e -s '
+    if length != 1 then false
+    else .[0] as $plan |
+      ($plan.schemaVersion == 1 and ($plan.phases | type == "array") and
+        ([$plan.phases[]?.phaseId] | length == (unique | length)) and
+        all($plan.phases[]?;
+          type == "object" and
+          (.phaseId | type == "string" and length > 0) and
+          (.policy | type == "string" and length > 0) and
+          (.decision | type == "string" and length > 0) and
+          (.lookupDurationMillis | type == "number" and floor == . and . >= 0) and
+          (.revalidationDurationMillis | type == "number" and floor == . and . >= 0) and
+          (.inputFingerprint == null or
+            (.inputFingerprint | type == "string" and test("^sha256:[0-9a-f]{64}$"))) and
+          (.evidenceDigest == null or
+            (.evidenceDigest | type == "string" and test("^sha256:[0-9a-f]{64}$")))
+        ))
+    end
+  ' \
     "$focused_evidence_dir/plan.json" >/dev/null || simplematch_focused_fail \
-    'retained certification plan is malformed' || return 1
+    'retained certification plan is malformed or contains duplicate phases' || return 1
+  while IFS= read -r plan_phase; do
+    [[ -n "$plan_phase" ]] || continue
+    certification_phase_policy "$plan_phase" >/dev/null || simplematch_focused_fail \
+      "retained certification plan contains unknown phase: $plan_phase" || return 1
+  done < <(jq -r '.phases[].phaseId' "$focused_evidence_dir/plan.json")
+  [[ -f "$focused_evidence_dir/source-revision" &&
+    ! -L "$focused_evidence_dir/source-revision" ]] || simplematch_focused_fail \
+    'retained certification source revision is missing' || return 1
+  retained_source_revision="$(tr -d '\r\n' <"$focused_evidence_dir/source-revision")" ||
+    simplematch_focused_fail 'retained certification source revision is unreadable' || return 1
+  [[ "$retained_source_revision" =~ ^[0-9a-f]{40}$ ]] || simplematch_focused_fail \
+    'retained certification source revision is not canonical' || return 1
 
   for dependency in "${SIMPLEMATCH_FOCUSED_DEPENDENCIES[@]}"; do
     result_path="$focused_evidence_dir/phases/$dependency/result.json"
-    [[ -f "$result_path" ]] || simplematch_focused_fail \
+    [[ -f "$result_path" && ! -L "$result_path" ]] || simplematch_focused_fail \
       "dependency evidence is missing for $dependency" || return 1
     jq -e --arg phase "$dependency" '
-      .schemaVersion == 1 and .phaseId == $phase and .status == "PASS"
+      .schemaVersion == 1 and .phaseId == $phase and
+      (.definitionVersion | type == "number" and floor == . and . >= 1) and
+      .status == "PASS" and
+      (.inputFingerprint | type == "string" and test("^sha256:[0-9a-f]{64}$")) and
+      (.outputs | type == "array") and
+      (.execution.sourceRevision | type == "string" and test("^[0-9a-f]{40}$"))
     ' "$result_path" >/dev/null || simplematch_focused_fail \
       "dependency $dependency does not have a valid PASS result" || return 1
-    jq -e --arg phase "$dependency" '
-      any(.phases[]; .phaseId == $phase and .decision != "SKIP")
+    jq -e --arg source_revision "$retained_source_revision" \
+      '.execution.sourceRevision == $source_revision' "$result_path" >/dev/null ||
+      simplematch_focused_fail \
+        "dependency $dependency does not belong to the retained source revision" || return 1
+    policy="$(certification_phase_policy "$dependency")" || simplematch_focused_fail \
+      "dependency $dependency has no known certification policy" || return 1
+    result_decision="$(jq -er '.decision' "$result_path")" || \
+      simplematch_focused_fail \
+        "dependency $dependency has no result decision" || return 1
+    expected_plan_decision="$(
+      simplematch_focused_plan_decision_for_result "$result_decision"
+    )" || simplematch_focused_fail \
+      "dependency $dependency has an unsupported result decision: $result_decision" ||
+      return 1
+    case "$policy:$result_decision" in
+      FRESH:EXECUTED|CONTENT_ADDRESSED:EXECUTED|CONTENT_ADDRESSED:REUSED|\
+      REVALIDATE:EXECUTED|REVALIDATE:REVALIDATED) ;;
+      FRESH:*|CONTENT_ADDRESSED:*|REVALIDATE:*)
+        simplematch_focused_fail \
+          "dependency $dependency result decision $result_decision is invalid for $policy" ||
+          return 1
+        ;;
+      *) simplematch_focused_fail \
+        "dependency $dependency has an unsupported policy/decision pair: $policy/$result_decision" ||
+        return 1 ;;
+    esac
+    input_fingerprint="$(jq -er '.inputFingerprint' "$result_path")" || return 1
+    evidence_digest="$(jq -r '.evidenceDigest // ""' "$result_path")" || return 1
+    if [[ "$policy" == FRESH ]]; then
+      [[ -z "$evidence_digest" ]] || simplematch_focused_fail \
+        "fresh dependency $dependency unexpectedly carries reusable evidence" || return 1
+    else
+      [[ "$evidence_digest" =~ ^sha256:[0-9a-f]{64}$ ]] || simplematch_focused_fail \
+        "reusable dependency $dependency has no canonical evidence digest" || return 1
+      object_path="$(_certification_evidence_object_path "$evidence_digest")" || \
+        simplematch_focused_fail "dependency $dependency evidence object path is invalid" || return 1
+      [[ -f "$object_path" && ! -L "$object_path" ]] || simplematch_focused_fail \
+        "dependency $dependency evidence object is missing" || return 1
+      certification_evidence_validate_object \
+        "$object_path" "$evidence_digest" "$dependency" "$input_fingerprint" || \
+        simplematch_focused_fail \
+          "dependency $dependency evidence object failed integrity validation" || return 1
+      simplematch_focused_result_is_bound_to_object \
+        "$result_path" "$object_path" "$evidence_digest" || simplematch_focused_fail \
+        "dependency $dependency result is not bound to its evidence object" || return 1
+    fi
+    jq -e --arg phase "$dependency" --arg policy "$policy" \
+      --arg decision "$expected_plan_decision" \
+      --arg input "$input_fingerprint" --arg evidence "$evidence_digest" '
+      any(.phases[];
+        .phaseId == $phase and .policy == $policy and
+        .decision == $decision and
+        .inputFingerprint == $input and (.evidenceDigest // "") == $evidence)
     ' "$focused_evidence_dir/plan.json" >/dev/null || simplematch_focused_fail \
       "dependency $dependency is not part of the retained executed plan" || return 1
   done
@@ -361,7 +520,8 @@ simplematch_focused_validate_workload_image_binding() {
 
 simplematch_focused_validate_image_inputs() {
   local namespace="$1"
-  local workload_json workload_images expected_image service entry
+  local workload_json workload_images expected_image service entry image_lock_result
+  local evidence_digest input_fingerprint
   local -a overlay_services=()
 
   [[ "$focused_image_transport" == registry ]] || simplematch_focused_fail \
@@ -374,6 +534,34 @@ simplematch_focused_validate_image_inputs() {
     simplematch_focused_fail 'could not fingerprint the retained image lock' || return 1
   [[ "$SIMPLEMATCH_FOCUSED_IMAGE_LOCK_DIGEST" =~ ^[0-9a-f]{64}$ ]] ||
     simplematch_focused_fail 'retained image lock fingerprint is not canonical' || return 1
+  image_lock_result="$focused_evidence_dir/phases/registry-image-lock/result.json"
+  [[ -f "$image_lock_result" && ! -L "$image_lock_result" ]] ||
+    simplematch_focused_fail \
+      'retained registry-image-lock phase evidence is missing; create a fresh full run' ||
+    return 1
+  evidence_digest="$(jq -er \
+    '.evidenceDigest | select(type == "string" and test("^sha256:[0-9a-f]{64}$"))' \
+    "$image_lock_result")" || simplematch_focused_fail \
+    'retained registry-image-lock evidence has no canonical content digest' || return 1
+  input_fingerprint="$(jq -er \
+    '.inputFingerprint | select(type == "string" and test("^sha256:[0-9a-f]{64}$"))' \
+    "$image_lock_result")" || simplematch_focused_fail \
+    'retained registry-image-lock evidence has no canonical input fingerprint' || return 1
+  declare -F certification_image_lock_evidence_matches_lock >/dev/null ||
+    simplematch_focused_fail \
+      'registry-image-lock evidence validator is unavailable' || return 1
+  certification_image_lock_evidence_matches_lock \
+    "$evidence_digest" "$focused_image_lock" "$input_fingerprint" ||
+    simplematch_focused_fail \
+      'retained registry-image-lock evidence object is not bound to the exact lock bytes' ||
+    return 1
+  jq -e --arg identity "sha256:$SIMPLEMATCH_FOCUSED_IMAGE_LOCK_DIGEST" '
+    .schemaVersion == 1 and .phaseId == "registry-image-lock" and .status == "PASS" and
+    any(.outputs[]?;
+      .kind == "image-lock" and .identity == $identity)
+  ' "$image_lock_result" >/dev/null || simplematch_focused_fail \
+    'retained image lock does not match the immutable registry-image-lock phase output' ||
+    return 1
 
   workload_json="$(simplematch_focused_kubectl --context \
     "$SIMPLEMATCH_FOCUSED_KIND_CONTEXT" -n "$namespace" \
@@ -401,6 +589,8 @@ simplematch_focused_validate_image_inputs() {
 
 simplematch_focused_validate_scoped_provenance() {
   local current_runtime_signature current_verifier_signature
+  local observer_path observer_digest copied_observer_digest
+  local contract_path contract_digest copied_contract_digest
 
   current_runtime_signature="$(
     simplematch_certification_cdc_runtime_signature "$focused_repo_root"
@@ -415,8 +605,62 @@ simplematch_focused_validate_scoped_provenance() {
     simplematch_focused_fail \
       'retained CDC runtime signature differs; create a fresh full run' || return 1
 
+  observer_path="$(simplematch_certification_cdc_verifier_observer_path \
+    "$focused_repo_root" "$focused_observer_script")" ||
+    simplematch_focused_fail \
+      'CDC observer identity could not be resolved' || return 1
+  observer_digest="$(simplematch_certification_cdc_verifier_observer_sha256 \
+    "$observer_path")" || simplematch_focused_fail \
+    'CDC observer could not be fingerprinted' || return 1
+  [[ "$observer_digest" =~ ^[0-9a-f]{64}$ ]] || simplematch_focused_fail \
+    'CDC observer fingerprint is not canonical' || return 1
+  [[ -n "$focused_verifier_observer_copy" ]] || simplematch_focused_fail \
+    'CDC observer evidence copy path is not configured' || return 1
+  [[ ! -e "$focused_verifier_observer_copy" &&
+    ! -L "$focused_verifier_observer_copy" ]] || simplematch_focused_fail \
+    'CDC observer evidence copy path is not empty' || return 1
+  mkdir -p "$(dirname -- "$focused_verifier_observer_copy")" || simplematch_focused_fail \
+    'could not create the CDC observer evidence directory' || return 1
+  cp -- "$observer_path" "$focused_verifier_observer_copy" || simplematch_focused_fail \
+    'could not retain a copy of the CDC observer' || return 1
+  copied_observer_digest="$(simplematch_certification_cdc_verifier_observer_sha256 \
+    "$focused_verifier_observer_copy")" || simplematch_focused_fail \
+    'could not fingerprint the retained CDC observer copy' || return 1
+  [[ "$copied_observer_digest" == "$observer_digest" ]] || simplematch_focused_fail \
+    'CDC observer changed while its evidence copy was created' || return 1
+  SIMPLEMATCH_FOCUSED_VERIFIER_OBSERVER_PATH="$observer_path"
+  SIMPLEMATCH_FOCUSED_VERIFIER_OBSERVER_SHA256="$copied_observer_digest"
+  SIMPLEMATCH_FOCUSED_VERIFIER_OBSERVER_EVIDENCE_FILE="verifier-observer.sh"
+
+  contract_path="$(simplematch_certification_cdc_verifier_contract_path \
+    "$focused_repo_root" "$focused_verifier_contract_script")" ||
+    simplematch_focused_fail \
+      'CDC verifier contract identity could not be resolved' || return 1
+  contract_digest="$(simplematch_certification_cdc_verifier_contract_sha256 \
+    "$contract_path")" || simplematch_focused_fail \
+    'CDC verifier contract could not be fingerprinted' || return 1
+  [[ "$contract_digest" =~ ^[0-9a-f]{64}$ ]] || simplematch_focused_fail \
+    'CDC verifier contract fingerprint is not canonical' || return 1
+  [[ -n "$focused_verifier_contract_copy" ]] || simplematch_focused_fail \
+    'CDC verifier contract evidence copy path is not configured' || return 1
+  [[ ! -e "$focused_verifier_contract_copy" && ! -L "$focused_verifier_contract_copy" ]] ||
+    simplematch_focused_fail \
+      'CDC verifier contract evidence copy path is not empty' || return 1
+  mkdir -p "$(dirname -- "$focused_verifier_contract_copy")" || simplematch_focused_fail \
+    'could not create the CDC verifier contract evidence directory' || return 1
+  cp -- "$contract_path" "$focused_verifier_contract_copy" || simplematch_focused_fail \
+    'could not retain a copy of the CDC verifier contract' || return 1
+  copied_contract_digest="$(simplematch_certification_cdc_verifier_contract_sha256 \
+    "$focused_verifier_contract_copy")" || simplematch_focused_fail \
+    'could not fingerprint the retained CDC verifier contract copy' || return 1
+  [[ "$copied_contract_digest" == "$contract_digest" ]] || simplematch_focused_fail \
+    'CDC verifier contract changed while its evidence copy was created' || return 1
+  SIMPLEMATCH_FOCUSED_VERIFIER_CONTRACT_PATH="$contract_path"
+  SIMPLEMATCH_FOCUSED_VERIFIER_CONTRACT_SHA256="$copied_contract_digest"
+
   current_verifier_signature="$(
-    simplematch_certification_cdc_verifier_signature "$focused_repo_root"
+    simplematch_certification_cdc_verifier_signature \
+      "$focused_repo_root" "$contract_path" "$observer_path"
   )" || simplematch_focused_fail \
     'could not calculate the current CDC verifier signature' || return 1
   [[ "$current_verifier_signature" =~ ^[0-9a-f]{64}$ ]] || \
@@ -430,20 +674,33 @@ simplematch_focused_validate_scoped_provenance() {
 }
 
 simplematch_focused_validate_verifier_contract() {
-  local remaining
+  local remaining contract_path copied_contract_digest
 
-  [[ -x "$focused_verifier_contract_script" ]] || simplematch_focused_fail \
-    "CDC verifier contract script is missing or not executable: $focused_verifier_contract_script" ||
-    return 1
   [[ -n "$focused_verifier_contract_output" ]] || simplematch_focused_fail \
     'CDC verifier contract output path is not configured' || return 1
+  contract_path="$(simplematch_focused_verifier_contract_path)"
+  [[ -n "$contract_path" ]] || simplematch_focused_fail \
+    'CDC verifier contract identity was not established' || return 1
+  [[ -f "$focused_verifier_contract_copy" && ! -L "$focused_verifier_contract_copy" &&
+    -r "$focused_verifier_contract_copy" ]] || simplematch_focused_fail \
+    'CDC verifier contract evidence copy is missing, symlinked, or not readable' ||
+    return 1
+  copied_contract_digest="$(simplematch_certification_cdc_verifier_contract_sha256 \
+    "$focused_verifier_contract_copy")" || simplematch_focused_fail \
+    'CDC verifier contract evidence copy could not be fingerprinted' || return 1
+  [[ "$copied_contract_digest" == "$SIMPLEMATCH_FOCUSED_VERIFIER_CONTRACT_SHA256" ]] ||
+    simplematch_focused_fail \
+      'CDC verifier contract evidence copy no longer matches its retained digest' || return 1
   remaining="$(simplematch_focused_remaining_seconds)" || simplematch_focused_fail \
     'focused preflight deadline expired before the CDC verifier contract' || return 1
-  if ! timeout "$remaining" "$focused_verifier_contract_script" \
+  if ! timeout "$remaining" bash "$contract_path" \
       >"$focused_verifier_contract_output" 2>&1; then
     simplematch_focused_fail \
       "CDC verifier contract failed; inspect $focused_verifier_contract_output" || return 1
   fi
+  grep -Fxq 'CDC observer fixture header contract is valid.' \
+    "$focused_verifier_contract_output" || simplematch_focused_fail \
+    'CDC verifier contract did not emit its success marker' || return 1
 }
 
 simplematch_focused_preflight() {

@@ -146,6 +146,27 @@ REJECTED
 `MISS` means no candidate exists. `REJECTED` means a candidate or index existed
 but could not be trusted. The planner preserves this distinction in run evidence.
 
+Focused diagnostics use a separate verifier-scoped binding seam in
+`scripts/lib/local-certification-focused-diagnostic.sh`:
+
+```text
+simplematch_focused_result_is_bound_to_object RESULT_FILE OBJECT_FILE EVIDENCE_DIGEST
+```
+
+The seam first validates the content-addressed object for the supplied digest,
+then requires one result value whose evidence digest, phase identity, definition
+version, input fingerprint, status, and outputs exactly match that object.  The
+result decision may be `EXECUTED`, `REUSED`, or `REVALIDATED`; planner timing,
+reason, and execution timestamps are deliberately current-run metadata and are
+not compared.  The policy-specific matrix is `FRESH -> EXECUTED`,
+`CONTENT_ADDRESSED -> EXECUTED|REUSED`, and `REVALIDATE ->
+EXECUTED|REVALIDATED`; a cached `REUSED` result must never satisfy a
+`REVALIDATE` phase.  Its caller must also bind each result to one unique
+`plan.json` entry, with `EXECUTED` mapping to `EXECUTE`, `REUSED` to `REUSE`,
+and `REVALIDATED` to `REVALIDATE`.  This keeps a verifier-only change from
+entering the retained runtime provenance scope without weakening the evidence
+contract.
+
 ### CertificationPlanner
 
 File: `scripts/lib/local-certification-planner.sh`
