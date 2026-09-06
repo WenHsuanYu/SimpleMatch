@@ -14,6 +14,7 @@ bash -n "$script_dir/lib/local-resilience.sh" \
   "$script_dir/validate-local-resilience-contract.sh"
 
 bash "$script_dir/test-local-resilience-dependencies.sh"
+bash "$script_dir/test-connect-rest-tunnel.sh"
 bash "$script_dir/test-local-connect-worker-loss.sh"
 bash "$script_dir/test-local-kind-image-cache-preflight.sh"
 

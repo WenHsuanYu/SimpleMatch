@@ -15,6 +15,8 @@ source "$script_dir/lib/local-common.sh"
 source "$script_dir/lib/local-kind.sh"
 # shellcheck source=scripts/lib/local-resilience.sh
 source "$script_dir/lib/local-resilience.sh"
+# shellcheck source=scripts/lib/connect-rest-tunnel.sh
+source "$script_dir/lib/connect-rest-tunnel.sh"
 # shellcheck source=scripts/lib/local-certification-provenance.sh
 source "$script_dir/lib/local-certification-provenance.sh"
 # shellcheck source=scripts/lib/local-certification-phase-graph.sh
@@ -46,9 +48,6 @@ failure_reason=""
 report_path=""
 postgres_pod=""
 kafka_pod=""
-connect_url=""
-connect_port_forward_pid=""
-connect_port_forward_log_offset=0
 fixture_aggregate_id=""
 fixture_created=false
 target_pod=""
@@ -161,29 +160,6 @@ COMMIT;"
   fixture_created=false
 }
 
-stop_connect_port_forward() {
-  local pid="$1" deadline="${2:-0}" iteration
-
-  kill "$pid" >/dev/null 2>&1 || true
-  for ((iteration = 0; iteration < 50; iteration++)); do
-    if ! kill -0 "$pid" >/dev/null 2>&1; then
-      wait "$pid" >/dev/null 2>&1 || true
-      connect_port_forward_pid=""
-      return 0
-    fi
-    if [[ "$deadline" =~ ^[1-9][0-9]*$ ]] && (( SECONDS >= deadline )); then
-      break
-    fi
-    sleep 0.1
-  done
-  kill -KILL "$pid" >/dev/null 2>&1 || true
-  wait "$pid" >/dev/null 2>&1 || true
-  connect_port_forward_pid=""
-  if [[ "$deadline" =~ ^[1-9][0-9]*$ ]] && (( SECONDS >= deadline )); then
-    return 1
-  fi
-}
-
 validate_relative_path() {
   local path="$1" label="$2"
 
@@ -197,9 +173,7 @@ validate_relative_path() {
 cleanup() {
   local status="$?" cleanup_status=0
   set +e
-  if [[ -n "$connect_port_forward_pid" ]]; then
-    stop_connect_port_forward "$connect_port_forward_pid"
-  fi
+  connect_rest_tunnel_close 5 || cleanup_status=1
   if [[ "$fixture_created" == true ]]; then
     cleanup_fixture || cleanup_status=1
   fi
@@ -364,51 +338,11 @@ validate_prerequisites() {
   done
 }
 
-start_connect_port_forward() {
-  local log_path="$evidence_dir/connect-port-forward.log" port
-  if [[ -n "$connect_port_forward_pid" ]]; then
-    stop_connect_port_forward "$connect_port_forward_pid" "$deadline_at" ||
-      die 'Kafka Connect port-forward teardown exceeded the diagnostic deadline'
-  fi
-  if [[ -e "$log_path" || -L "$log_path" ]]; then
-    [[ -f "$log_path" && ! -L "$log_path" ]] ||
-      die 'Kafka Connect port-forward log is not a regular file'
-    connect_port_forward_log_offset="$(wc -c <"$log_path")" ||
-      die 'could not read the Kafka Connect port-forward log size'
-  else
-    connect_port_forward_log_offset=0
-  fi
-  printf '%s\n' "Starting Kafka Connect service port-forward" >>"$log_path"
-  kubectl --context "$context" -n "$namespace" \
-    port-forward service/kafka-connect :8083 >>"$log_path" 2>&1 &
-  connect_port_forward_pid="$!"
-  for _ in $(seq 1 30); do
-    if ! kill -0 "$connect_port_forward_pid" >/dev/null 2>&1; then
-      cat "$log_path" >&2
-      die 'Kafka Connect port-forward exited before becoming ready'
-    fi
-    if port="$(simplematch_port_forward_port "$log_path" \
-      "$connect_port_forward_log_offset" 8083)" && [[ -n "$port" ]]; then
-      connect_url="http://127.0.0.1:${port}"
-      return 0
-    fi
-    run_bounded sleep 1 || die 'Kafka Connect port-forward did not become ready before timeout'
-  done
-  die 'could not resolve Kafka Connect port-forward port'
-}
-
-restart_connect_port_forward() {
-  local reason="${1:-Kafka Connect REST tunnel became unavailable}"
-
-  printf '%s\n' "Restarting Kafka Connect service port-forward: $reason" \
-    >>"$evidence_dir/connect-port-forward.log"
-  start_connect_port_forward
-}
-
 connect_status() {
-  local connector="$1"
-  run_bounded curl -fsS --connect-timeout 2 --max-time 5 \
-    "$connect_url/connectors/$connector/status"
+  local connector="$1" remaining
+  remaining="$(remaining_seconds)"
+  ((remaining > 0)) || return 124
+  connect_rest_tunnel_status "$connector" "$remaining"
 }
 
 wait_connector_running() {
@@ -426,8 +360,6 @@ wait_connector_running() {
     else
       remaining_seconds | grep -Eq '^[1-9][0-9]*$' ||
         die "${connector} did not become RUNNING before timeout"
-      restart_connect_port_forward \
-        "${connector} REST status tunnel became unavailable"
       run_bounded sleep 1 || die "${connector} did not become RUNNING before timeout"
       continue
     fi
@@ -597,8 +529,6 @@ wait_for_reassignment() {
     if ! connect_status account-service-outbox >"$candidate_status" 2>/dev/null; then
       remaining_seconds | grep -Eq '^[1-9][0-9]*$' ||
         die 'Connect task was not reassigned before the diagnostic deadline'
-      restart_connect_port_forward \
-        'the service tunnel no longer reached a live Connect Pod after worker loss'
       run_bounded sleep 1 ||
         die 'Connect task was not reassigned before the diagnostic deadline'
       continue
@@ -783,7 +713,9 @@ simplematch_kind_image_cache_preflight \
   "$context" "$evidence_dir/connect-deployment.json" \
   "$evidence_dir/image-cache-preflight.json" ||
   die 'Kafka Connect image is missing or not executable on every eligible kind worker'
-start_connect_port_forward
+connect_rest_tunnel_configure "$context" "$namespace" \
+  "$evidence_dir/connect-port-forward.log" ||
+  die 'Kafka Connect REST tunnel configuration is invalid'
 
 postgres_pod="$(kns get pods -l app.kubernetes.io/name=postgres -o json \
   | jq -er '[.items[] | select(any(.status.conditions[]?; .type == "Ready" and .status == "True"))][0].metadata.name')" ||
