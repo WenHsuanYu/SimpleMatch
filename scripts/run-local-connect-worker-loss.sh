@@ -387,9 +387,8 @@ start_connect_port_forward() {
       cat "$log_path" >&2
       die 'Kafka Connect port-forward exited before becoming ready'
     fi
-    port="$(simplematch_port_forward_port "$log_path" \
-      "$connect_port_forward_log_offset" 8083)"
-    if [[ -n "$port" ]]; then
+    if port="$(simplematch_port_forward_port "$log_path" \
+      "$connect_port_forward_log_offset" 8083)" && [[ -n "$port" ]]; then
       connect_url="http://127.0.0.1:${port}"
       return 0
     fi

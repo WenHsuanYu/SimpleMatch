@@ -75,6 +75,10 @@ port_forward_log_offset="$(wc -c <"$port_forward_log")"
 [[ "$(simplematch_port_forward_port "$port_forward_log" \
   "$port_forward_log_offset" 8083)" == 30002 ]] ||
   fail 'port-forward parser reused the stale port from an earlier attempt'
+if simplematch_port_forward_port "$port_forward_log" \
+  "$(wc -c <"$port_forward_log")" 8083 >/dev/null; then
+  fail 'port-forward parser accepted an attempt with no forwarding line'
+fi
 
 jq -n '{name:"account-service-outbox",connector:{state:"RUNNING",worker_id:"10.244.0.11:8083"},tasks:[{id:0,state:"RUNNING",worker_id:"10.244.0.11:8083"}]}' >"$status_before"
 jq -n '{name:"account-service-outbox",connector:{state:"RUNNING",worker_id:"10.244.0.33:8083"},tasks:[{id:0,state:"RUNNING",worker_id:"10.244.0.33:8083"}]}' >"$status_after"
@@ -445,6 +449,8 @@ grep -Fq 'restart_connect_port_forward' "$runtime_script" ||
   fail 'runtime does not recover a service port-forward after a REST failure'
 grep -Fq 'simplematch_port_forward_port' "$runtime_script" ||
   fail 'runtime does not isolate the current port-forward attempt'
+grep -Fq "if port=\"\$(simplematch_port_forward_port" "$runtime_script" ||
+  fail 'runtime does not tolerate an asynchronous port-forward announcement'
 grep -Fq 'recovery_deadline_started_at_unix_ms' "$runtime_script" ||
   fail 'runtime does not start the recovery budget at fault injection'
 grep -Fq 'SIMPLEMATCH_KIND_IMAGE_CACHE_PREFLIGHT_DEFAULT_SECONDS' \
