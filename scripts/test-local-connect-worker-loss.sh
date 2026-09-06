@@ -9,6 +9,8 @@ source "$script_dir/lib/cdc-verifier.sh"
 source "$script_dir/lib/local-resilience.sh"
 # shellcheck source=scripts/lib/connect-worker-loss.sh
 source "$script_dir/lib/connect-worker-loss.sh"
+# shellcheck source=scripts/lib/connect-worker-loss-scenario.sh
+source "$script_dir/lib/connect-worker-loss-scenario.sh"
 
 fail() {
   printf 'Connect worker-loss contract failed: %s\n' "$*" >&2
@@ -394,68 +396,29 @@ if report_is_passed report-with-forged-delete-output.json; then
   fail 'report whose deletion output names another Pod was accepted'
 fi
 
+observed_phases=()
+record_phase() {
+  observed_phases+=("$1")
+}
+connect_worker_loss_state_flow record_phase || fail 'valid state flow failed'
+expected_phases='preflight observe-owner arm-target delete-target observe-reassignment publish-probe restore report verify'
+observed_phase_line="$(printf '%s ' "${observed_phases[@]}")"
+[[ "${observed_phase_line% }" == "$expected_phases" ]] ||
+  fail "state flow order changed: $observed_phase_line"
+
+observed_phases=()
+fail_at_delete() {
+  observed_phases+=("$1")
+  [[ "$1" != delete-target ]]
+}
+if connect_worker_loss_state_flow fail_at_delete; then
+  fail 'state flow accepted a failed deletion phase'
+fi
+observed_phase_line="$(printf '%s ' "${observed_phases[@]}")"
+[[ "${observed_phase_line% }" == 'preflight observe-owner arm-target delete-target' ]] ||
+  fail 'state flow continued after a failed deletion phase'
+
 runtime_script="$script_dir/run-local-connect-worker-loss.sh"
-grep -Fq 'connect_worker_loss_target_identity' "$runtime_script" ||
-  fail 'runtime does not resolve the task-owning Pod through the Module'
-grep -Fq 'connect_worker_loss_assert_reassignment' "$runtime_script" ||
-  fail 'runtime does not require task reassignment evidence'
-grep -Fq 'cdc_capture_outbox_baseline' "$runtime_script" ||
-  fail 'runtime does not capture an outbox baseline through cdc-verifier'
-grep -Fq 'cdc_read_outbox_probe' "$runtime_script" ||
-  fail 'runtime does not read the post-transition event through cdc-verifier'
-grep -Fq 'cdc_assert_probe_publication' "$runtime_script" ||
-  fail 'runtime does not verify exact Kafka publication through cdc-verifier'
-grep -Fq 'recheck_target_before_delete' "$runtime_script" ||
-  fail 'runtime does not re-check task owner identity before deletion'
-rg -n 'current_ip=.*\.pod_ip' "$runtime_script" >/dev/null ||
-  fail 'runtime does not read the task-owner Pod IP field from its Module output'
-if rg -n 'current_ip=.*\.status\.podIP' "$runtime_script" >/dev/null; then
-  fail 'runtime reads status.podIP from the task-owner identity instead of pod_ip'
-fi
-grep -Fq 'uid_precondition_test' "$runtime_script" ||
-  fail 'runtime does not record its UID precondition evidence'
-grep -Fq -- '--field-separator $'"'"'\t'"'"'' "$runtime_script" ||
-  fail 'PostgreSQL adapter does not emit the tab-separated CDC contract'
-grep -Fq 'postgres_file:"prerequisites/postgres.json"' "$runtime_script" ||
-  fail 'runtime does not link PostgreSQL prerequisite evidence under prerequisites/'
-grep -Fq "'{schema_version:1,aggregate_id:\$aggregate_id" "$runtime_script" ||
-  fail 'runtime does not version the Account transition evidence envelope'
-grep -Fq "kns delete pods -l \"\$selector\" --wait=false" "$runtime_script" ||
-  fail 'runtime does not delete through the unique worker-loss marker selector'
-if grep -Fq -- '--field-selector' "$runtime_script"; then
-  fail 'runtime uses an unsupported Kubernetes Pod UID field selector'
-fi
-grep -Fq 'simplematch_focused_preflight' "$runtime_script" ||
-  fail 'runtime does not reuse the shared source-aligned focused preflight'
-grep -Fq 'simplematch_kind_image_cache_preflight' "$runtime_script" ||
-  fail 'runtime does not preflight the Connect image cache before Pod deletion'
-grep -Fq 'recovery_deadline_started_at_unix_ms' "$runtime_script" ||
-  fail 'runtime does not start the recovery budget at fault injection'
-grep -Fq 'SIMPLEMATCH_KIND_IMAGE_CACHE_PREFLIGHT_DEFAULT_SECONDS' \
-  "$script_dir/lib/local-resilience.sh" ||
-  fail 'image-cache adapter does not define a bounded preflight budget'
-grep -Fq 'simplematch_kind_validate_control_plane_stability' "$runtime_script" ||
-  fail 'runtime does not gate fault injection on control-plane stability'
-grep -Fq -- '--retained-evidence-dir' "$runtime_script" ||
-  fail 'runtime does not expose the retained evidence directory boundary'
-grep -Fq "account-service-outbox) table='account_service.outbox'" "$runtime_script" ||
-  fail 'runtime does not preserve the Account connector outbox table identity'
-grep -Fq "risk-service-outbox) table='risk_service.outbox'" "$runtime_script" ||
-  fail 'runtime does not preserve the Risk connector outbox table identity'
-grep -Fq '.data["connector.json"]' "$runtime_script" ||
-  fail 'runtime does not read the deployed connector.json ConfigMap key'
-grep -Fq 'simplematch-kafka-connect-config' "$runtime_script" ||
-  fail 'runtime does not capture the deployed Kafka Connect profile ConfigMap'
-if grep -Fq '.data.connector | fromjson' "$runtime_script"; then
-  fail 'runtime reads a non-existent connector ConfigMap key'
-fi
-derived_table_expression="\${connector%-outbox}.outbox"
-if grep -Fq "$derived_table_expression" "$runtime_script"; then
-  fail 'runtime derives SQL table names from connector names'
-fi
-if rg -n 'SELECT[[:space:]]+event_id|ORDER BY[[:space:]]+.*event_id' "$runtime_script" >/dev/null; then
-  fail 'runtime duplicates outbox event-selection SQL'
-fi
 
 dry_run_output="$(bash "$runtime_script" \
   --namespace simplematch-cert-run --namespace-run-id run-1 --dry-run)"
