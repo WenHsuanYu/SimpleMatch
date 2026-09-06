@@ -114,7 +114,7 @@ short_cleanup() {
 write_failure_report() {
   local reason="${failure_reason:-diagnostic did not complete}"
   jq -n \
-    --argjson schema_version "$CONNECT_WORKER_LOSS_REPORT_SCHEMA_VERSION" \
+    --argjson schema_version "$report_schema_version" \
     --arg status FAILED --arg cluster "$cluster_name" --arg context "$context" \
     --arg namespace "$namespace" --arg namespace_run_id "$namespace_run_id" \
     --arg run_id "$run_id" --argjson deadline_seconds "$deadline_seconds" \
@@ -630,7 +630,7 @@ write_passed_report() {
   before_target_json="$(cat "$evidence_dir/task-owner-before.json")"
   after_target_json="$(cat "$evidence_dir/task-owner-after-reassignment.json")"
   jq -n \
-    --argjson schema_version "$CONNECT_WORKER_LOSS_REPORT_SCHEMA_VERSION" \
+    --argjson schema_version "$report_schema_version" \
     --arg cluster "$cluster_name" --arg context "$context" --arg namespace "$namespace" \
     --arg namespace_run_id "$namespace_run_id" --arg run_id "$run_id" \
     --argjson deadline_seconds "$deadline_seconds" \
@@ -785,7 +785,8 @@ run_scenario_phase() {
 connect_worker_loss_main() {
 local script_dir repo_root
 local cluster_name context namespace namespace_run_id evidence_dir retained_evidence_dir
-local deadline_seconds verifier_contract_script dry_run run_id deadline_at
+local deadline_seconds max_deadline_seconds report_schema_version
+local verifier_contract_script dry_run run_id deadline_at
 local failure_reason report_path postgres_pod kafka_pod fixture_aggregate_id
 local fixture_created target_pod target_uid recovery_deadline_started_at_unix_ms
 local fault_requested_at_unix_ms reassignment_observed_at_unix_ms
@@ -806,6 +807,8 @@ namespace_run_id="${SIMPLEMATCH_RESILIENCE_NAMESPACE_RUN_ID:-}"
 evidence_dir="${SIMPLEMATCH_CONNECT_WORKER_LOSS_EVIDENCE_DIR:-}"
 retained_evidence_dir="${SIMPLEMATCH_CONNECT_WORKER_LOSS_RETAINED_EVIDENCE_DIR:-${SIMPLEMATCH_PRODUCTION_LIKE_EVIDENCE_DIR:-out/certification/local-production-like}}"
 deadline_seconds="${SIMPLEMATCH_CONNECT_WORKER_LOSS_DEADLINE_SECONDS:-$(connect_worker_loss_default_deadline_seconds)}"
+max_deadline_seconds="$(connect_worker_loss_max_deadline_seconds)"
+report_schema_version="$(connect_worker_loss_report_schema_version)"
 verifier_contract_script="${SIMPLEMATCH_CDC_OBSERVER_CONTRACT_SCRIPT:-$script_dir/test-cdc-observer-fixture-contract.sh}"
 dry_run=false
 run_id="connect-worker-loss-$(date -u +%Y%m%dt%H%M%sz)-$$"
@@ -842,8 +845,8 @@ done
 [[ -n "$namespace_run_id" ]] || { usage >&2; die '--namespace-run-id is required'; }
 [[ "$namespace_run_id" =~ ^[A-Za-z0-9._-]+$ ]] || die 'namespace run-id contains unsupported characters'
 [[ "$deadline_seconds" =~ ^[1-9][0-9]*$ &&
-  "$deadline_seconds" -le "$CONNECT_WORKER_LOSS_MAX_DEADLINE_SECONDS" ]] ||
-  die "--deadline-seconds must be a positive integer no greater than $CONNECT_WORKER_LOSS_MAX_DEADLINE_SECONDS"
+  "$deadline_seconds" -le "$max_deadline_seconds" ]] ||
+  die "--deadline-seconds must be a positive integer no greater than $max_deadline_seconds"
 evidence_dir="${evidence_dir:-out/resilience/connect-worker-loss-$run_id}"
 validate_relative_path "$retained_evidence_dir" retained-evidence-dir
 validate_relative_path "$evidence_dir" evidence-dir
@@ -852,10 +855,11 @@ if [[ "$dry_run" == true ]]; then
   printf 'DRY RUN: cluster=%s context=%s namespace=%s run-id=%s deadline=%ss\n' \
     "$cluster_name" "$context" "$namespace" "$namespace_run_id" "$deadline_seconds"
   printf '%s\n' 'DRY RUN: validate ownership/prerequisites and image cache -> capture task owner -> delete exactly that Connect Pod -> prove reassignment -> verify baseline-aware Account CDC publication.'
+  printf '%s\n' 'DRY RUN: output is diagnostic evidence only, never a full-local certification PASS.'
   exit 0
 fi
 
-for tool in kubectl kind jq curl timeout sed grep date seq sleep tail cat od tr awk cp mv wc; do
+for tool in kubectl kind jq ruby curl timeout sed grep date seq sleep tail cat od tr awk cp mv wc; do
   command -v "$tool" >/dev/null 2>&1 || die "$tool is required"
 done
 simplematch_certification_cdc_verifier_contract_path \

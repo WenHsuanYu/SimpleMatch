@@ -264,7 +264,7 @@ if connect_worker_loss_pods_are_valid "$fixture_dir/pods-missing-label.json"; th
 fi
 
 jq -n \
-  --argjson schema_version "$CONNECT_WORKER_LOSS_REPORT_SCHEMA_VERSION" \
+  --argjson schema_version "$(connect_worker_loss_report_schema_version)" \
   --argjson before "$(cat "$target_before")" --argjson after "$(cat "$target_after")" \
   '{schema_version:$schema_version,profile:"connect-worker-loss",status:"PASSED",
     cluster:"simplematch-live",context:"kind-simplematch-live",
@@ -317,6 +317,13 @@ jq -n \
     claim_boundary:["focused local worker-loss"]}' >"$report"
 report_is_valid || fail 'valid report envelope was rejected'
 report_is_passed || fail 'valid report did not pass'
+jq '.diagnostics = {attempts: 1}' "$report" >"$fixture_dir/report-with-diagnostics.json"
+report_is_passed report-with-diagnostics.json ||
+  fail 'additive diagnostic metadata broke the public evidence contract'
+jq '.task_reassignment.task_id = "0"' "$report" >"$fixture_dir/report-string-task-id.json"
+if report_is_passed report-string-task-id.json; then
+  fail 'string task identity bypassed the typed evidence contract'
+fi
 jq '.deadline_seconds = 901' "$report" >"$fixture_dir/report-over-budget.json"
 if report_is_valid report-over-budget.json; then
   fail 'over-budget worker-loss report was accepted'

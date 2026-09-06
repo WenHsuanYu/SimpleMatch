@@ -54,8 +54,16 @@ These words describe different responsibilities; they are not interchangeable:
   it cannot prove its own `PASS` value.
 - **Module** means the cohesive implementation that owns those rules behind a small Interface.
   `scripts/lib/cdc-verifier.sh` owns outbox selection and exact publication checks, while
-  `scripts/lib/connect-worker-loss.sh` owns task-owner identity, Pod-loss, reassignment, and report
-  linkage. A caller should not repeat those rules.
+`scripts/lib/connect-worker-loss.sh` owns task-owner identity, Pod-loss, reassignment, and report
+linkage. A caller should not repeat those rules.
+
+The worker-loss diagnostic now separates three operational Modules behind stable Interfaces:
+`connect-rest-tunnel.sh` owns the recoverable REST tunnel, `connect-worker-loss-scenario.sh` owns the
+ordered fault lifecycle behind the unchanged command, and `connect-worker-loss-evidence.rb` parses
+the report and linked files into explicit data objects before checking cross-file semantics. Shell
+remains the Adapter for `kubectl`, PostgreSQL, and Kafka commands. Tests exercise returned status,
+phase outcomes, CLI output, and accepted/rejected evidence fixtures; they do not require function
+names, source layout, or an exact set of optional diagnostic fields to remain unchanged.
 - **Seam** (in the Michael Feathers sense) is the location where the Interface can be substituted
   without editing the Module. In this design, `CDC_OUTBOX_EXEC`, `CDC_KAFKA_EXEC`, and
   `CDC_CONNECT_STATUS_EXEC` are seams: the Module invokes them, while a test fake, Compose command,

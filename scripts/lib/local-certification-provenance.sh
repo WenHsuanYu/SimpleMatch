@@ -50,6 +50,9 @@ simplematch_certification_cdc_verifier_source_paths() {
     scripts/lib/local-certification-focused-diagnostic.sh \
     scripts/lib/cdc-observer-fixture.sh \
     scripts/lib/cdc-verifier.sh \
+    scripts/lib/connect-rest-tunnel.sh \
+    scripts/lib/connect-worker-loss-evidence.rb \
+    scripts/lib/connect-worker-loss-scenario.sh \
     scripts/lib/connect-worker-loss.sh \
     scripts/lib/local-resilience.sh \
     scripts/run-local-cdc-delivery-focused-diagnostic.sh \

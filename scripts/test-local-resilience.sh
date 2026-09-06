@@ -79,6 +79,6 @@ grep -Fq 'lifecycle-labeled disposable namespace' <<<"$full_local_dry_run"
 connect_worker_loss_dry_run="$("$script_dir"/run-local-connect-worker-loss.sh \
   --namespace simplematch-cert-run --namespace-run-id run-1 --dry-run)"
 grep -Fq 'Connect Pod' <<<"$connect_worker_loss_dry_run"
-grep -Fq 'diagnostic evidence only' "$script_dir/run-local-connect-worker-loss.sh"
+grep -Fq 'diagnostic evidence only' <<<"$connect_worker_loss_dry_run"
 
 printf '%s\n' 'Local resilience runner contract passed.'
