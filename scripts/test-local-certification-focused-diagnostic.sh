@@ -318,33 +318,55 @@ run_expect_failure_without_observer() {
     "observer was invoked before preflight rejected $evidence_dir"
 }
 
+replace_context_value() {
+  local context_file="$1" key="$2" value="$3" line found=false
+  local temporary_file="${context_file}.tmp"
+
+  while IFS= read -r line; do
+    if [[ "$line" == "$key="* ]]; then
+      printf '%s=%s\n' "$key" "$value"
+      found=true
+    else
+      printf '%s\n' "$line"
+    fi
+  done <"$context_file" >"$temporary_file"
+  [[ "$found" == true ]] || {
+    rm -f -- "$temporary_file"
+    return 1
+  }
+  mv -f -- "$temporary_file" "$context_file"
+}
+
+# Build the expensive phase/evidence tree once; each case mutates one input.
+base_fixture="$fixture_root/base"
+write_fixture "$base_fixture" "$source_signature" \
+  "$current_runtime_signature" "$fake_verifier_signature"
+
 missing_context="$fixture_root/missing-context"
-mkdir -p "$missing_context"
+cp -R -- "$base_fixture" "$missing_context"
+rm -f -- "$missing_context/current-context"
 run_expect_failure_without_observer "$missing_context"
 
 profile_fixture="$fixture_root/profile"
-write_fixture "$profile_fixture" "$source_signature" \
-  "$current_runtime_signature" "$current_verifier_signature" true
+cp -R -- "$base_fixture" "$profile_fixture"
+replace_context_value "$profile_fixture/run-context" skip_build true
 run_expect_failure_without_observer "$profile_fixture"
 
 dependency_fixture="$fixture_root/dependency"
-write_fixture "$dependency_fixture" "$source_signature" \
-  "$current_runtime_signature" "$current_verifier_signature"
+cp -R -- "$base_fixture" "$dependency_fixture"
 dependency_result="$dependency_fixture/phases/kubernetes-workloads/result.json"
 jq '.status = "FAIL"' "$dependency_result" >"$dependency_result.tmp"
 mv -f -- "$dependency_result.tmp" "$dependency_result"
 run_expect_failure_without_observer "$dependency_fixture"
 
 runtime_fixture="$fixture_root/runtime-drift"
-write_fixture "$runtime_fixture" \
-  0000000000000000000000000000000000000000000000000000000000000000 \
-  0000000000000000000000000000000000000000000000000000000000000000 \
-  "$current_verifier_signature"
+cp -R -- "$base_fixture" "$runtime_fixture"
+replace_context_value "$runtime_fixture/run-context" cdc_runtime_signature \
+  0000000000000000000000000000000000000000000000000000000000000000
 run_expect_failure_without_observer "$runtime_fixture"
 
 swapped_image_fixture="$fixture_root/swapped-image"
-write_fixture "$swapped_image_fixture" "$source_signature" \
-  "$current_runtime_signature" "$current_verifier_signature"
+cp -R -- "$base_fixture" "$swapped_image_fixture"
 account_image="$(jq -r '.items[] | select(.metadata.name == "account-service") |
   .spec.template.spec.containers[0].image' "$swapped_image_fixture/workloads.json")"
 risk_image="$(jq -r '.items[] | select(.metadata.name == "risk-service") |
@@ -361,8 +383,7 @@ mv -f -- "$swapped_image_fixture/workloads.json.tmp" \
 run_expect_failure_without_observer "$swapped_image_fixture"
 
 image_lock_fixture="$fixture_root/image-lock-drift"
-write_fixture "$image_lock_fixture" "$source_signature" \
-  "$current_runtime_signature" "$current_verifier_signature"
+cp -R -- "$base_fixture" "$image_lock_fixture"
 sed '1s/:focused/:tampered/' "$image_lock_fixture/local-images.lock" \
   >"$image_lock_fixture/local-images.lock.tmp"
 mv -f -- "$image_lock_fixture/local-images.lock.tmp" \
@@ -370,9 +391,9 @@ mv -f -- "$image_lock_fixture/local-images.lock.tmp" \
 run_expect_failure_without_observer "$image_lock_fixture"
 
 unrelated_fixture="$fixture_root/unrelated-source-drift"
-write_fixture "$unrelated_fixture" \
-  0000000000000000000000000000000000000000000000000000000000000000 \
-  "$current_runtime_signature" "$current_verifier_signature"
+cp -R -- "$base_fixture" "$unrelated_fixture"
+replace_context_value "$unrelated_fixture/run-context" source_signature \
+  0000000000000000000000000000000000000000000000000000000000000000
 unrelated_marker="$fixture_root/unrelated-observer-marker"
 if ! FAKE_KUBECTL_ROOT="$unrelated_fixture" \
     FAKE_OBSERVER_MARKER="$unrelated_marker" \
@@ -388,8 +409,8 @@ fi
   'unrelated source drift did not reach the observer'
 
 verifier_fixture="$fixture_root/verifier-drift"
-write_fixture "$verifier_fixture" "$source_signature" \
-  "$current_runtime_signature" \
+cp -R -- "$base_fixture" "$verifier_fixture"
+replace_context_value "$verifier_fixture/run-context" cdc_verifier_signature \
   0000000000000000000000000000000000000000000000000000000000000000
 verifier_marker="$fixture_root/verifier-observer-marker"
 if ! FAKE_KUBECTL_ROOT="$verifier_fixture" \
@@ -406,8 +427,7 @@ fi
   'verifier-only drift did not reach the observer'
 
 valid_fixture="$fixture_root/valid"
-write_fixture "$valid_fixture" "$source_signature" \
-  "$current_runtime_signature" "$fake_verifier_signature"
+cp -R -- "$base_fixture" "$valid_fixture"
 marker="$fixture_root/observer-marker"
 if ! FAKE_KUBECTL_ROOT="$valid_fixture" \
     FAKE_OBSERVER_MARKER="$marker" \
@@ -455,7 +475,7 @@ jq -e '.schemaVersion == 2 and
   "$preflight_file" >/dev/null || fail 'focused preflight schema/linkage is invalid'
 
 plan_mismatch_fixture="$fixture_root/plan-mismatch"
-cp -R -- "$valid_fixture" "$plan_mismatch_fixture"
+cp -R -- "$base_fixture" "$plan_mismatch_fixture"
 jq '(.phases[] | select(.phaseId == "static-matching-profile")).decision = "EXECUTE"' \
   "$plan_mismatch_fixture/plan.json" >"$plan_mismatch_fixture/plan.json.tmp"
 mv -f -- "$plan_mismatch_fixture/plan.json.tmp" "$plan_mismatch_fixture/plan.json"
@@ -471,7 +491,7 @@ if FAKE_KUBECTL_ROOT="$plan_mismatch_fixture" \
 fi
 
 revalidate_mismatch_fixture="$fixture_root/revalidate-mismatch"
-cp -R -- "$valid_fixture" "$revalidate_mismatch_fixture"
+cp -R -- "$base_fixture" "$revalidate_mismatch_fixture"
 jq '(.phases[] | select(.phaseId == "registry-publish/account-service")).decision = "REUSE"' \
   "$revalidate_mismatch_fixture/plan.json" >"$revalidate_mismatch_fixture/plan.json.tmp"
 mv -f -- "$revalidate_mismatch_fixture/plan.json.tmp" "$revalidate_mismatch_fixture/plan.json"
