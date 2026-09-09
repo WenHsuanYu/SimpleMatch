@@ -925,6 +925,22 @@ Shell contract tests verify the top-level runner:
 - preserves `--resume` as same-run continuation;
 - writes complete plan, phase, timing, and provenance evidence.
 
+The focused CDC contract suite keeps this boundary explicit while avoiding
+repeated runner startup for deterministic rejects.  Profile, dependency,
+scoped-provenance, image-binding, image-lock, and persisted-plan mismatches
+call the existing `simplematch_focused_preflight` Interface directly through
+an isolated fixture input.  One invalid retained-run case still invokes the
+top-level runner and asserts that the observer is not called before preflight
+fails; valid retained-run, unrelated-source-drift, and verifier-drift cases
+also continue through the runner so evidence materialization and the allowed
+scoped-verifier change remain covered.  The test setup builds one canonical
+phase/evidence tree and copies it before mutating one input per case.  This is
+a test-cost boundary only: it does not add a runtime skip mode, weaken any
+fail-closed predicate, or turn focused diagnostic evidence into a
+`full-local` certification result.  The current local contract test measured
+about 39 seconds after this split; the timing is informative rather than an
+acceptance threshold.
+
 ## 24. Acceptance scenarios
 
 The implementation is not complete until all scenarios below are automated.

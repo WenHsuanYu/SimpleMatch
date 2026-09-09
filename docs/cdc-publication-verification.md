@@ -69,6 +69,17 @@ names, source layout, or an exact set of optional diagnostic fields to remain un
 The deployment preflight therefore captures raw prerequisite objects and invokes the same typed
 prerequisite verifier used by the final report gate; it does not maintain a second jq/grep copy of
 the connector, topic, image, or Job semantics.
+
+The #156 focused contract test applies the same separation to its own test
+harness.  It exercises deterministic preflight rejections through the public
+`simplematch_focused_preflight` seam using copied fixture inputs, while one
+runner-level rejection preserves the observer-ordering check and the valid,
+unrelated-source, and verifier-drift cases continue to exercise the complete
+runner path.  The expensive phase/evidence fixture is created once and each
+negative case mutates only its targeted input.  This shortens local feedback
+without skipping a production-like preflight or changing the evidence
+contract; a passing focused diagnostic remains diagnostic-only evidence and
+never becomes a complete certification PASS.
 - **Seam** (in the Michael Feathers sense) is the location where the Interface can be substituted
   without editing the Module. In this design, `CDC_OUTBOX_EXEC`, `CDC_KAFKA_EXEC`, and
   `CDC_CONNECT_STATUS_EXEC` are seams: the Module invokes them, while a test fake, Compose command,
