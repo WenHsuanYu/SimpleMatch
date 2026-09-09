@@ -23,6 +23,34 @@ These instructions apply to the whole repository.
   the dependent test. After a new or repeated deployment-test failure, record the symptom, root
   cause, safe fix, prevention check, and redacted evidence in that document before declaring the
   run complete.
+- Before an expensive local certification rerun, classify changed inputs through the certification
+  planner (`scripts/lib/local-certification-planner.sh`) and phase graph
+  (`scripts/lib/local-certification-phase-graph.sh`), following the [reuse contract](docs/local-certification-phase-dag.md).
+  For an unskipped complete run, classification is complete only when `plan.json` records one
+  `EXECUTE`, `REUSE`, or `REVALIDATE` decision, input fingerprint, and reason for every required
+  phase. `SKIP` is valid only for an explicit partial profile; it has no fingerprint or PASS evidence
+  and can never be reused or reported as complete. `FRESH` executes in every new production-like
+  certification run. `CONTENT_ADDRESSED` evidence may be reused only after the PhaseGraph,
+  Fingerprint, and EvidenceStore contracts validate declared inputs, dependencies, immutable outputs,
+  and identities; `REVALIDATE` additionally performs its declared current external check. Unchanged
+  reusable evidence must not be rerun merely for reassurance. Pure issue metadata or non-normative
+  documentation changes that do not alter phase semantics require no runtime rerun; changes to phase
+  semantics, acceptance contracts, or reuse policy require planner/spec review and a corresponding
+  definition-version or effective-input update. If prose and executable phase declarations disagree,
+  treat reuse as unavailable and report the mismatch before testing.
+- Use a focused CDC/Connect continuation only through a documented runner such as
+  `scripts/run-local-cdc-delivery-focused-diagnostic.sh` or
+  `scripts/run-local-connect-worker-loss.sh`. Its preflight must validate the retained runtime
+  fingerprint, exact namespace/run-id ownership, immutable image identities, dependency PASS results,
+  and evidence identity. A verifier-scope change, or an unrelated source change proven outside both
+  runtime and verifier scopes, may reuse the retained runtime; runtime, input, dependency,
+  namespace/environment, image, or evidence-identity drift requires the fresh source-aligned
+  dependent path. The focused command must execute its current verifier/contract before any observer
+  or state-changing mutation, write a new diagnostic-only report, never reuse or relabel an old
+  diagnostic report, and never upgrade focused PASS to certification PASS. Integrate and review all
+  scenario changes in one coherent source-aligned batch before one final `full-local` aggregate run
+  for that batch; this does not block independent changes or necessary focused diagnostics, and a
+  rerun is allowed after failure or invalidation. Do not start one full deployment per child issue.
 - For every implementation or test task, invoke the repository's `implement` skill when it is
   available and follow its acceptance-criteria, test, review, and handoff workflow. Keep the
   implementation slice narrow, run focused checks during the work, and run the relevant complete
