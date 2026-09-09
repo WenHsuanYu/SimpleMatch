@@ -318,6 +318,60 @@ run_expect_failure_without_observer() {
     "observer was invoked before preflight rejected $evidence_dir"
 }
 
+run_preflight_expect_failure() {
+  local label="$1"
+  local evidence_dir="$2"
+  local output_dir="$fixture_root/preflight/$label"
+  local marker="$fixture_root/preflight/$label-observer-marker"
+  local contract_marker="$fixture_root/preflight/$label-contract-marker"
+  local deadline_epoch
+  local -A config
+
+  deadline_epoch="$(( $(date +%s) + 60 ))"
+  mkdir -p "$output_dir"
+  config=(
+    [evidence_dir]="$evidence_dir"
+    [repo_root]="$repo_root"
+    [kubectl_bin]="$fake_kubectl"
+    [preflight_deadline_epoch]="$deadline_epoch"
+    [image_lock]="$evidence_dir/local-images.lock"
+    [observer_script]="$fake_observer"
+    [verifier_observer_copy]="$output_dir/verifier-observer.sh"
+    [verifier_contract_script]="$fake_verifier_contract"
+    [verifier_contract_output]="$output_dir/verifier-contract.log"
+    [verifier_contract_copy]="$output_dir/verifier-contract.sh"
+  )
+  rm -f -- "$marker" "$contract_marker"
+  if (
+    SIMPLEMATCH_FOCUSED_CONTEXT=()
+    SIMPLEMATCH_FOCUSED_DEPENDENCIES=()
+    SIMPLEMATCH_FOCUSED_FAILURE_REASON=''
+    SIMPLEMATCH_FOCUSED_KIND_CONTEXT=''
+    SIMPLEMATCH_FOCUSED_SOURCE_SIGNATURE=''
+    SIMPLEMATCH_FOCUSED_RETAINED_CDC_RUNTIME_SIGNATURE=''
+    SIMPLEMATCH_FOCUSED_RETAINED_CDC_VERIFIER_SIGNATURE=''
+    SIMPLEMATCH_FOCUSED_CURRENT_CDC_RUNTIME_SIGNATURE=''
+    SIMPLEMATCH_FOCUSED_CURRENT_CDC_VERIFIER_SIGNATURE=''
+    SIMPLEMATCH_FOCUSED_VERIFIER_CHANGED=false
+    SIMPLEMATCH_FOCUSED_CURRENT_REVISION=''
+    SIMPLEMATCH_FOCUSED_IMAGE_LOCK_DIGEST=''
+    SIMPLEMATCH_FOCUSED_VERIFIER_OBSERVER_PATH=''
+    SIMPLEMATCH_FOCUSED_VERIFIER_OBSERVER_SHA256=''
+    SIMPLEMATCH_FOCUSED_VERIFIER_OBSERVER_EVIDENCE_FILE=''
+    SIMPLEMATCH_FOCUSED_VERIFIER_CONTRACT_PATH=''
+    SIMPLEMATCH_FOCUSED_VERIFIER_CONTRACT_SHA256=''
+    export FAKE_KUBECTL_ROOT="$evidence_dir"
+    export FAKE_OBSERVER_MARKER="$marker"
+    export FAKE_VERIFIER_CONTRACT_MARKER="$contract_marker"
+    simplematch_focused_configure_inputs config
+    simplematch_focused_preflight
+  ) >/dev/null 2>&1; then
+    fail "invalid focused preflight unexpectedly passed: $evidence_dir"
+  fi
+  [[ ! -e "$marker" ]] || fail \
+    "observer was invoked during preflight for $evidence_dir"
+}
+
 replace_context_value() {
   local context_file="$1" key="$2" value="$3" line found=false
   local temporary_file="${context_file}.tmp"
@@ -350,20 +404,20 @@ run_expect_failure_without_observer "$missing_context"
 profile_fixture="$fixture_root/profile"
 cp -R -- "$base_fixture" "$profile_fixture"
 replace_context_value "$profile_fixture/run-context" skip_build true
-run_expect_failure_without_observer "$profile_fixture"
+run_preflight_expect_failure profile "$profile_fixture"
 
 dependency_fixture="$fixture_root/dependency"
 cp -R -- "$base_fixture" "$dependency_fixture"
 dependency_result="$dependency_fixture/phases/kubernetes-workloads/result.json"
 jq '.status = "FAIL"' "$dependency_result" >"$dependency_result.tmp"
 mv -f -- "$dependency_result.tmp" "$dependency_result"
-run_expect_failure_without_observer "$dependency_fixture"
+run_preflight_expect_failure dependency "$dependency_fixture"
 
 runtime_fixture="$fixture_root/runtime-drift"
 cp -R -- "$base_fixture" "$runtime_fixture"
 replace_context_value "$runtime_fixture/run-context" cdc_runtime_signature \
   0000000000000000000000000000000000000000000000000000000000000000
-run_expect_failure_without_observer "$runtime_fixture"
+run_preflight_expect_failure runtime-drift "$runtime_fixture"
 
 swapped_image_fixture="$fixture_root/swapped-image"
 cp -R -- "$base_fixture" "$swapped_image_fixture"
@@ -380,7 +434,7 @@ jq --arg account "$account_image" --arg risk "$risk_image" '
   >"$swapped_image_fixture/workloads.json.tmp"
 mv -f -- "$swapped_image_fixture/workloads.json.tmp" \
   "$swapped_image_fixture/workloads.json"
-run_expect_failure_without_observer "$swapped_image_fixture"
+run_preflight_expect_failure swapped-image "$swapped_image_fixture"
 
 image_lock_fixture="$fixture_root/image-lock-drift"
 cp -R -- "$base_fixture" "$image_lock_fixture"
@@ -388,7 +442,7 @@ sed '1s/:focused/:tampered/' "$image_lock_fixture/local-images.lock" \
   >"$image_lock_fixture/local-images.lock.tmp"
 mv -f -- "$image_lock_fixture/local-images.lock.tmp" \
   "$image_lock_fixture/local-images.lock"
-run_expect_failure_without_observer "$image_lock_fixture"
+run_preflight_expect_failure image-lock-drift "$image_lock_fixture"
 
 unrelated_fixture="$fixture_root/unrelated-source-drift"
 cp -R -- "$base_fixture" "$unrelated_fixture"
@@ -479,16 +533,7 @@ cp -R -- "$base_fixture" "$plan_mismatch_fixture"
 jq '(.phases[] | select(.phaseId == "static-matching-profile")).decision = "EXECUTE"' \
   "$plan_mismatch_fixture/plan.json" >"$plan_mismatch_fixture/plan.json.tmp"
 mv -f -- "$plan_mismatch_fixture/plan.json.tmp" "$plan_mismatch_fixture/plan.json"
-if FAKE_KUBECTL_ROOT="$plan_mismatch_fixture" \
-    FAKE_OBSERVER_MARKER="$fixture_root/plan-mismatch-observer-marker" \
-    FAKE_VERIFIER_CONTRACT_MARKER="$fixture_root/plan-mismatch-contract-marker" \
-    SIMPLEMATCH_FOCUSED_KUBECTL_BIN="$fake_kubectl" \
-    SIMPLEMATCH_CDC_OBSERVER_SCRIPT="$fake_observer" \
-    SIMPLEMATCH_CDC_OBSERVER_CONTRACT_SCRIPT="$fake_verifier_contract" \
-    "$runner" --evidence-dir "$plan_mismatch_fixture" --timeout-seconds 31 \
-    >/dev/null; then
-  fail 'plan/result decision mismatch was accepted by focused preflight'
-fi
+run_preflight_expect_failure plan-mismatch "$plan_mismatch_fixture"
 
 revalidate_mismatch_fixture="$fixture_root/revalidate-mismatch"
 cp -R -- "$base_fixture" "$revalidate_mismatch_fixture"
@@ -501,16 +546,7 @@ jq '.decision = "REUSED"' \
 mv -f -- \
   "$revalidate_mismatch_fixture/phases/registry-publish/account-service/result.json.tmp" \
   "$revalidate_mismatch_fixture/phases/registry-publish/account-service/result.json"
-if FAKE_KUBECTL_ROOT="$revalidate_mismatch_fixture" \
-    FAKE_OBSERVER_MARKER="$fixture_root/revalidate-mismatch-observer-marker" \
-    FAKE_VERIFIER_CONTRACT_MARKER="$fixture_root/revalidate-mismatch-contract-marker" \
-    SIMPLEMATCH_FOCUSED_KUBECTL_BIN="$fake_kubectl" \
-    SIMPLEMATCH_CDC_OBSERVER_SCRIPT="$fake_observer" \
-    SIMPLEMATCH_CDC_OBSERVER_CONTRACT_SCRIPT="$fake_verifier_contract" \
-    "$runner" --evidence-dir "$revalidate_mismatch_fixture" --timeout-seconds 31 \
-    >/dev/null; then
-  fail 'REVALIDATE dependency accepted a cached REUSED result'
-fi
+run_preflight_expect_failure revalidate-mismatch "$revalidate_mismatch_fixture"
 
 binding_result="$valid_fixture/phases/registry-image-lock/result.json"
 binding_digest="$(jq -er '.evidenceDigest' "$binding_result")"
