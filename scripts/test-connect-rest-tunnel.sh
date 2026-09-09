@@ -32,6 +32,10 @@ EOF_KUBECTL
 cat >"$fake_bin/curl" <<'EOF_CURL'
 #!/usr/bin/env bash
 set -euo pipefail
+if [[ "${TUNNEL_TEST_SLOW:-false}" == true ]]; then
+  sleep 2
+  exit 7
+fi
 count=0
 [[ ! -f "$TUNNEL_TEST_DIR/curl-count" ]] ||
   count="$(<"$TUNNEL_TEST_DIR/curl-count")"
@@ -66,12 +70,35 @@ grep -Fq 'Restarting Kafka Connect service port-forward after REST failure' \
   "$log_path" || fail 'REST recovery was not recorded in the tunnel log'
 
 tunnel_pid="$CONNECT_REST_TUNNEL_PID"
+connect_rest_tunnel_configure kind-simplematch-live simplematch-cert-run "$log_path" ||
+  fail 'reconfiguration did not close the previous tunnel'
+if kill -0 "$tunnel_pid" >/dev/null 2>&1; then
+  fail 'reconfiguration retained the previous tunnel process'
+fi
+
+tunnel_pid="$CONNECT_REST_TUNNEL_PID"
 connect_rest_tunnel_close 2 || fail 'tunnel close exceeded its bounded budget'
 [[ -z "$CONNECT_REST_TUNNEL_PID" && -z "$CONNECT_REST_TUNNEL_URL" ]] ||
   fail 'tunnel state was retained after close'
 if kill -0 "$tunnel_pid" >/dev/null 2>&1; then
   fail 'tunnel process remained alive after close'
 fi
+
+CONNECT_REST_TUNNEL_PID="$$"
+CONNECT_REST_TUNNEL_PID_START=not-the-current-process
+connect_rest_tunnel_close 2 || fail 'stale PID identity was not safely discarded'
+[[ -z "$CONNECT_REST_TUNNEL_PID" ]] || fail 'stale PID identity remained configured'
+
+export TUNNEL_TEST_SLOW=true
+started_at=$SECONDS
+if connect_rest_tunnel_status account-service-outbox 1 >/dev/null 2>&1; then
+  fail 'request exceeding the shared deadline unexpectedly passed'
+fi
+elapsed=$((SECONDS - started_at))
+((elapsed <= 2)) || fail 'request retry exceeded the shared absolute deadline'
+[[ "$(<"$fixture_dir/kubectl-count")" == 3 ]] ||
+  fail 'expired request budget opened an additional retry tunnel'
+unset TUNNEL_TEST_SLOW
 
 if connect_rest_tunnel_configure '' simplematch-cert-run "$log_path"; then
   fail 'empty Kubernetes context was accepted'

@@ -40,6 +40,17 @@
 #   - Kafka/Connect/outbox failures, topology drift, missing rows, and exact-record mismatches fail
 #     closed. Diagnostics identify event/topic/location where known, but never print raw payloads.
 
+cdc_configure_adapters() {
+  local kafka_adapter="$1" outbox_adapter="$2" connect_status_adapter="$3"
+
+  [[ "$kafka_adapter" =~ ^[A-Za-z_][A-Za-z0-9_]*$ &&
+    "$outbox_adapter" =~ ^[A-Za-z_][A-Za-z0-9_]*$ &&
+    "$connect_status_adapter" =~ ^[A-Za-z_][A-Za-z0-9_]*$ ]] || return 2
+  CDC_KAFKA_EXEC=("$kafka_adapter")
+  CDC_OUTBOX_EXEC=("$outbox_adapter")
+  CDC_CONNECT_STATUS_EXEC=("$connect_status_adapter")
+}
+
 CDC_KAFKA_BOOTSTRAP="${CDC_KAFKA_BOOTSTRAP:-kafka:29092}"
 CDC_VERIFIER_TIMEOUT_SECONDS="${CDC_VERIFIER_TIMEOUT_SECONDS:-30}"
 CDC_VERIFIER_POLL_INTERVAL_SECONDS="${CDC_VERIFIER_POLL_INTERVAL_SECONDS:-1}"

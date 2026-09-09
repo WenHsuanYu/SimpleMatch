@@ -2,6 +2,8 @@
 
 set -euo pipefail
 
+: "${SIMPLEMATCH_KIND_KUBECTL_BIN:=kubectl}"
+
 # These values are consumed by scripts that source this library.
 # shellcheck disable=SC2034
 
@@ -55,7 +57,7 @@ simplematch_kind_image_cache_preflight() {
   [[ -n "$context" && -s "$workload_file" && -n "$evidence_file" ]] || return 1
   [[ "$budget_seconds" =~ ^[1-9][0-9]*$ &&
     "$budget_seconds" -le "$SIMPLEMATCH_KIND_IMAGE_CACHE_PREFLIGHT_MAX_SECONDS" ]] || return 1
-  command -v kubectl >/dev/null 2>&1 || return 1
+  command -v "$SIMPLEMATCH_KIND_KUBECTL_BIN" >/dev/null 2>&1 || return 1
   command -v docker >/dev/null 2>&1 || return 1
   command -v jq >/dev/null 2>&1 || return 1
   command -v timeout >/dev/null 2>&1 || return 1
@@ -89,7 +91,7 @@ simplematch_kind_image_cache_preflight() {
 
   if [[ "$status" == PASS ]]; then
     if ! nodes_json="$(_simplematch_kind_image_cache_run "$deadline_at" \
-        kubectl --context "$context" get nodes -o json 2>&1)"; then
+        "$SIMPLEMATCH_KIND_KUBECTL_BIN" --context "$context" get nodes -o json 2>&1)"; then
       status=FAILED
       failure_reason='could not read eligible kind nodes before the image-cache deadline'
     elif ! jq -e '.items | type == "array"' <<<"$nodes_json" >/dev/null 2>&1; then
@@ -261,7 +263,7 @@ resilience_log_is_safe() {
 
 resilience_owned_namespace() {
   local namespace="$1" run_id="$2" context="$3"
-  kubectl --context "$context" get namespace "$namespace" -o json 2>/dev/null |
+  "$SIMPLEMATCH_KIND_KUBECTL_BIN" --context "$context" get namespace "$namespace" -o json 2>/dev/null |
     resilience_namespace_json_is_owned "$run_id"
 }
 

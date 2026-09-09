@@ -1,14 +1,17 @@
 #!/usr/bin/env bash
 
+: "${SIMPLEMATCH_KIND_KUBECTL_BIN:=kubectl}"
+: "${SIMPLEMATCH_KIND_BIN:=kind}"
+
 simplematch_kind_exists() {
   local cluster_name="$1"
-  command -v kind >/dev/null 2>&1 &&
-    kind get clusters 2>/dev/null | grep -Fxq "$cluster_name"
+  command -v "$SIMPLEMATCH_KIND_BIN" >/dev/null 2>&1 &&
+    "$SIMPLEMATCH_KIND_BIN" get clusters 2>/dev/null | grep -Fxq "$cluster_name"
 }
 
 simplematch_kind_nodes() {
   local cluster_name="$1"
-  kind get nodes --name "$cluster_name" 2>/dev/null
+  "$SIMPLEMATCH_KIND_BIN" get nodes --name "$cluster_name" 2>/dev/null
 }
 
 simplematch_kind_node_readiness_state() {
@@ -30,7 +33,7 @@ _simplematch_kind_control_plane_snapshot() {
   local context="$1" command_timeout_seconds="$2"
 
   timeout --foreground "${command_timeout_seconds}s" \
-    kubectl --context "$context" get pods -n kube-system -o json | jq -c '
+    "$SIMPLEMATCH_KIND_KUBECTL_BIN" --context "$context" get pods -n kube-system -o json | jq -c '
       [.items[]
        | select((.metadata.name // "") | test("^(etcd-|kube-controller-manager-|kube-scheduler-)"))
        | {name:.metadata.name,
@@ -81,7 +84,7 @@ simplematch_kind_validate_control_plane_stability() {
     return 1
   }
   readyz="$(timeout --foreground "${command_timeout}s" \
-    kubectl --context "$context" get --raw='/readyz?verbose')" || {
+    "$SIMPLEMATCH_KIND_KUBECTL_BIN" --context "$context" get --raw='/readyz?verbose')" || {
     printf 'kind control plane readyz check failed for %s\n' "$context" >&2
     return 1
   }
@@ -151,7 +154,7 @@ simplematch_kind_validate_control_plane_stability() {
     return 1
   }
   events="$(timeout --foreground "${command_timeout}s" \
-    kubectl --context "$context" get events -n kube-system --sort-by=.lastTimestamp -o json)" || {
+    "$SIMPLEMATCH_KIND_KUBECTL_BIN" --context "$context" get events -n kube-system --sort-by=.lastTimestamp -o json)" || {
     printf 'could not inspect recent kind control-plane events for %s\n' "$context" >&2
     return 1
   }
@@ -196,24 +199,24 @@ simplematch_kind_create_disposable_namespace() {
   )
   labels+=("$@")
 
-  simplematch_require_command kubectl
-  if kubectl --context "$context" get namespace "$namespace" >/dev/null 2>&1; then
+  simplematch_require_command "$SIMPLEMATCH_KIND_KUBECTL_BIN"
+  if "$SIMPLEMATCH_KIND_KUBECTL_BIN" --context "$context" get namespace "$namespace" >/dev/null 2>&1; then
     simplematch_warn "namespace already exists: $namespace"
     return 1
   fi
 
   if [[ "${SIMPLEMATCH_DRY_RUN:-false}" == true ]]; then
-    simplematch_quote_command kubectl --context "$context" create namespace "$namespace"
-    simplematch_quote_command kubectl --context "$context" label namespace "$namespace" \
+    simplematch_quote_command "$SIMPLEMATCH_KIND_KUBECTL_BIN" --context "$context" create namespace "$namespace"
+    simplematch_quote_command "$SIMPLEMATCH_KIND_KUBECTL_BIN" --context "$context" label namespace "$namespace" \
       "${labels[@]}"
     return 0
   fi
 
-  kubectl --context "$context" create namespace "$namespace" >/dev/null
-  if ! kubectl --context "$context" label namespace "$namespace" \
+  "$SIMPLEMATCH_KIND_KUBECTL_BIN" --context "$context" create namespace "$namespace" >/dev/null
+  if ! "$SIMPLEMATCH_KIND_KUBECTL_BIN" --context "$context" label namespace "$namespace" \
       "${labels[@]}" >/dev/null; then
     simplematch_warn "failed to establish disposable ownership labels on namespace $namespace; removing it"
-    kubectl --context "$context" delete namespace "$namespace" \
+    "$SIMPLEMATCH_KIND_KUBECTL_BIN" --context "$context" delete namespace "$namespace" \
       --ignore-not-found --wait=true --timeout=120s >/dev/null 2>&1 || true
     return 1
   fi
@@ -227,14 +230,14 @@ simplematch_kind_namespace_is_disposable() {
   local managed_by
 
   lifecycle="$(
-    kubectl --context "$context" get namespace "$namespace" \
+    "$SIMPLEMATCH_KIND_KUBECTL_BIN" --context "$context" get namespace "$namespace" \
       -o jsonpath='{.metadata.labels.simplematch\.io/lifecycle}' 2>/dev/null || true
   )"
   [[ "$lifecycle" == disposable ]] || return 1
 
   if [[ -n "$expected_manager" ]]; then
     managed_by="$(
-      kubectl --context "$context" get namespace "$namespace" \
+      "$SIMPLEMATCH_KIND_KUBECTL_BIN" --context "$context" get namespace "$namespace" \
         -o jsonpath='{.metadata.labels.simplematch\.io/managed-by}' 2>/dev/null || true
     )"
     [[ "$managed_by" == "$expected_manager" ]] || return 1
@@ -244,7 +247,7 @@ simplematch_kind_namespace_is_disposable() {
 simplematch_kind_claim_namespaces() {
   local context="$1"
 
-  kubectl --context "$context" get pv \
+  "$SIMPLEMATCH_KIND_KUBECTL_BIN" --context "$context" get pv \
     -o jsonpath='{range .items[*]}{.spec.claimRef.namespace}{"\n"}{end}' \
     2>/dev/null
 }
@@ -283,12 +286,12 @@ simplematch_kind_delete_disposable_namespace() {
 
   simplematch_log "Delete disposable namespace $namespace"
   if [[ "${SIMPLEMATCH_DRY_RUN:-false}" == true ]]; then
-    simplematch_quote_command kubectl --context "$context" delete namespace "$namespace" \
+    simplematch_quote_command "$SIMPLEMATCH_KIND_KUBECTL_BIN" --context "$context" delete namespace "$namespace" \
       --ignore-not-found --wait=true --timeout="${timeout_seconds}s"
     return 0
   fi
 
-  kubectl --context "$context" delete namespace "$namespace" \
+  "$SIMPLEMATCH_KIND_KUBECTL_BIN" --context "$context" delete namespace "$namespace" \
     --ignore-not-found --wait=true --timeout="${timeout_seconds}s" || return 1
   simplematch_kind_wait_claim_pvs_gone "$context" "$namespace" "$timeout_seconds"
 }
@@ -296,7 +299,7 @@ simplematch_kind_delete_disposable_namespace() {
 simplematch_kind_disposable_namespaces() {
   local context="$1"
 
-  kubectl --context "$context" get namespaces \
+  "$SIMPLEMATCH_KIND_KUBECTL_BIN" --context "$context" get namespaces \
     -l simplematch.io/lifecycle=disposable \
     -o jsonpath='{range .items[*]}{.metadata.name}{"\n"}{end}' \
     2>/dev/null
@@ -310,7 +313,7 @@ simplematch_kind_delete_disposable_namespaces() {
   local namespaces
   local cleanup_failed=false
 
-  simplematch_require_command kubectl
+  simplematch_require_command "$SIMPLEMATCH_KIND_KUBECTL_BIN"
   if ! simplematch_kind_exists "$cluster_name"; then
     simplematch_info "kind cluster does not exist; skipping namespace cleanup: $cluster_name"
     return 0

@@ -54,16 +54,21 @@ These words describe different responsibilities; they are not interchangeable:
   it cannot prove its own `PASS` value.
 - **Module** means the cohesive implementation that owns those rules behind a small Interface.
   `scripts/lib/cdc-verifier.sh` owns outbox selection and exact publication checks, while
-`scripts/lib/connect-worker-loss.sh` owns task-owner identity, Pod-loss, reassignment, and report
-linkage. A caller should not repeat those rules.
+  `scripts/lib/connect-worker-loss.sh` owns task-owner identity, Pod-loss, reassignment, and report
+  linkage. A caller should not repeat those rules.
 
-The worker-loss diagnostic now separates three operational Modules behind stable Interfaces:
+The worker-loss diagnostic now separates three operational Modules behind stable Interfaces, with
+`connect-worker-loss-cli.sh` as a fourth, deliberately shallow request Adapter:
 `connect-rest-tunnel.sh` owns the recoverable REST tunnel, `connect-worker-loss-scenario.sh` owns the
 ordered fault lifecycle behind the unchanged command, and `connect-worker-loss-evidence.rb` parses
-the report and linked files into explicit data objects before checking cross-file semantics. Shell
-remains the Adapter for `kubectl`, PostgreSQL, and Kafka commands. Tests exercise returned status,
+the report and linked files into explicit data objects before checking cross-file semantics,
+including deployment, image-cache, control-plane, and topic prerequisites. Shell remains the
+Adapter for `kubectl`, PostgreSQL, and Kafka commands. Tests exercise returned status,
 phase outcomes, CLI output, and accepted/rejected evidence fixtures; they do not require function
 names, source layout, or an exact set of optional diagnostic fields to remain unchanged.
+The deployment preflight therefore captures raw prerequisite objects and invokes the same typed
+prerequisite verifier used by the final report gate; it does not maintain a second jq/grep copy of
+the connector, topic, image, or Job semantics.
 - **Seam** (in the Michael Feathers sense) is the location where the Interface can be substituted
   without editing the Module. In this design, `CDC_OUTBOX_EXEC`, `CDC_KAFKA_EXEC`, and
   `CDC_CONNECT_STATUS_EXEC` are seams: the Module invokes them, while a test fake, Compose command,
@@ -206,7 +211,9 @@ contract is executed before any Pod mutation and the diagnostic writes new evide
 report is reused. The diagnostic first verifies Flyway/topic prerequisites, two PVC-free Connect workers, RF3/minISR2
 internal topics, PDB protection, service-owned connector table/header boundaries, and strict Pod
 identity. It applies a JSON-Patch UID precondition and a run-unique marker, then deletes only the
-uniquely marked Pod and proves that the original UID disappears before waiting for reassignment. It then requires the same
+uniquely marked Pod and proves that the original UID disappears before waiting for reassignment. Its
+state flow verifies the report before restoring the fixture, while the EXIT cleanup trap remains a
+last-resort rollback. It then requires the same
 task id to move to a different worker and Pod UID, captures the outbox baseline before inserting one
 run-owned lifecycle fixture, and delegates post-transition selection and exact Kafka verification to
 `cdc-verifier.sh`. A passed report is focused diagnostic evidence only; it must be consumed by the
@@ -217,8 +224,10 @@ The report links every prerequisite snapshot, the pre-delete UID recheck,
 `account-publication.json`. The delete observation is a schema-versioned,
 run-owned record: it contains the target Pod UID, the replacement outcome (or
 an explicit `not-found` outcome), the replacement UID when one exists, and the
-fact that the original UID is absent. The raw delete log remains useful for
-incident diagnosis, but it is not the machine-readable recovery proof.
+fact that the original UID is absent. A `replacement-pod` outcome must also
+identify that replacement UID in the after-Pod snapshot; a `not-found` outcome
+must prove neither the original name nor UID remains. The raw delete log remains
+useful for incident diagnosis, but it is not the machine-readable recovery proof.
 
 The publication artifact uses schema version 2. It is emitted only after the
 shared verifier succeeds and records the expected contract plus the actual

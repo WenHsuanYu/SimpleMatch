@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 
 # Focused diagnostics for one retained certification phase. The caller supplies
-# only the evidence directory and timeout; this module derives the runtime
+# one validated associative input record; this module derives the runtime
 # identity from the retained run-context and never changes certification plan
 # or phase evidence.
 
@@ -36,6 +36,28 @@ declare -g SIMPLEMATCH_FOCUSED_VERIFIER_CONTRACT_SHA256=""
 : "${focused_verifier_contract_script:=}"
 : "${focused_verifier_contract_output:=}"
 : "${focused_verifier_contract_copy:=}"
+
+simplematch_focused_configure_inputs() {
+  local config_name="$1"
+  local -n config="$config_name"
+  local key
+
+  for key in evidence_dir repo_root kubectl_bin preflight_deadline_epoch \
+      image_lock observer_script verifier_observer_copy verifier_contract_script \
+      verifier_contract_output verifier_contract_copy; do
+    [[ -n "${config[$key]-}" ]] || return 2
+  done
+  focused_evidence_dir="${config[evidence_dir]}"
+  focused_repo_root="${config[repo_root]}"
+  focused_kubectl_bin="${config[kubectl_bin]}"
+  focused_preflight_deadline_epoch="${config[preflight_deadline_epoch]}"
+  focused_image_lock="${config[image_lock]}"
+  focused_observer_script="${config[observer_script]}"
+  focused_verifier_observer_copy="${config[verifier_observer_copy]}"
+  focused_verifier_contract_script="${config[verifier_contract_script]}"
+  focused_verifier_contract_output="${config[verifier_contract_output]}"
+  focused_verifier_contract_copy="${config[verifier_contract_copy]}"
+}
 
 simplematch_focused_failure_reason() {
   printf '%s\n' "$SIMPLEMATCH_FOCUSED_FAILURE_REASON"

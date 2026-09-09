@@ -11,6 +11,8 @@ source "$script_dir/lib/local-resilience.sh"
 source "$script_dir/lib/connect-worker-loss.sh"
 # shellcheck source=scripts/lib/connect-worker-loss-scenario.sh
 source "$script_dir/lib/connect-worker-loss-scenario.sh"
+# shellcheck source=scripts/lib/connect-worker-loss-cli.sh
+source "$script_dir/lib/connect-worker-loss-cli.sh"
 
 fail() {
   printf 'Connect worker-loss contract failed: %s\n' "$*" >&2
@@ -65,6 +67,19 @@ connect_configs_topic="$fixture_dir/connect-configs.txt"
 connect_offsets_topic="$fixture_dir/connect-offsets.txt"
 connect_status_topic="$fixture_dir/connect-status.txt"
 control_plane_dir="$fixture_dir/control-plane"
+retained_authority="$fixture_dir/retained"
+mkdir -p "$retained_authority"
+printf '%s\n' \
+  'run_id=run-1' \
+  'namespace=simplematch-cert-run' \
+  'cluster=simplematch-live' \
+  'cdc_runtime_signature=0000000000000000000000000000000000000000000000000000000000000000' \
+  'cdc_verifier_signature=1111111111111111111111111111111111111111111111111111111111111111' \
+  >"$retained_authority/run-context"
+printf '%s\n' '0000000000000000000000000000000000000000' >"$retained_authority/source-revision"
+printf '%s\n' 'sha256:2222222222222222222222222222222222222222222222222222222222222222' \
+  >"$retained_authority/verifier-image-identity"
+printf '%s\n' 'simplematch-cert-run' >"$retained_authority/retained-namespace"
 
 jq -n '{name:"account-service-outbox",connector:{state:"RUNNING",worker_id:"10.244.0.11:8083"},tasks:[{id:0,state:"RUNNING",worker_id:"10.244.0.11:8083"}]}' >"$status_before"
 jq -n '{name:"account-service-outbox",connector:{state:"RUNNING",worker_id:"10.244.0.33:8083"},tasks:[{id:0,state:"RUNNING",worker_id:"10.244.0.33:8083"}]}' >"$status_after"
@@ -76,6 +91,7 @@ cat >"$pods_before" <<'EOF_PODS'
   {"metadata":{"name":"kafka-connect-b","uid":"uid-b","labels":{"app.kubernetes.io/name":"kafka-connect","app.kubernetes.io/component":"connector"}},"spec":{"nodeName":"simplematch-live-worker2","volumes":[{"name":"runtime-tmp","emptyDir":{}}]},"status":{"podIP":"10.244.0.22","conditions":[{"type":"Ready","status":"True"}]}}
 ]}
 EOF_PODS
+cp -- "$pods_before" "$fixture_dir/pods-before-valid.json"
 cat >"$pods_after" <<'EOF_PODS'
 {"items":[
   {"metadata":{"name":"kafka-connect-b","uid":"uid-b","labels":{"app.kubernetes.io/name":"kafka-connect","app.kubernetes.io/component":"connector"}},"spec":{"nodeName":"simplematch-live-worker2","volumes":[{"name":"runtime-tmp","emptyDir":{}}]},"status":{"podIP":"10.244.0.22","conditions":[{"type":"Ready","status":"True"}]}},
@@ -90,6 +106,36 @@ if connect_worker_loss_status_is_valid "$status_running_only"; then
 fi
 connect_worker_loss_pods_are_valid "$pods_before" || fail 'valid before Pods were rejected'
 connect_worker_loss_pods_are_valid "$pods_after" || fail 'valid after Pods were rejected'
+connect_worker_loss_parse_args \
+  --namespace simplematch-cert-run --namespace-run-id run-1 --deadline-seconds 7 ||
+  fail 'valid CLI request was rejected'
+[[ "${CONNECT_WORKER_LOSS_REQUEST[deadline_seconds]}" == 7 ]] ||
+  fail 'CLI request did not retain the requested deadline'
+if connect_worker_loss_parse_args --namespace simplematch-cert-run \
+    --namespace-run-id run-1 --deadline-seconds 901; then
+  fail 'CLI request accepted an over-budget deadline'
+fi
+[[ "${#CONNECT_WORKER_LOSS_REQUEST[@]}" == 0 ]] ||
+  fail 'invalid CLI request left stale parsed options in the public request'
+connect_worker_loss_configure_adapters fake-kubectl fake-kind fake-curl ||
+  fail 'adapter bundle rejected injected binaries'
+[[ "$SIMPLEMATCH_KIND_KUBECTL_BIN" == fake-kubectl &&
+  "$SIMPLEMATCH_KIND_BIN" == fake-kind &&
+  "$CONNECT_REST_TUNNEL_KUBECTL_BIN" == fake-kubectl &&
+  "$CONNECT_REST_TUNNEL_CURL_BIN" == fake-curl ]] ||
+  fail 'injected adapter binaries were not shared across helper modules'
+connect_worker_loss_configure_adapters kubectl kind curl ||
+  fail 'adapter bundle could not be restored'
+connect_worker_loss_delete_output_is_exact \
+  kafka-connect-a 'pod/kafka-connect-a deletion requested' ||
+  fail 'current kubectl deletion output was rejected'
+connect_worker_loss_delete_output_is_exact \
+  kafka-connect-a 'pod "kafka-connect-a" deleted from namespace namespace' ||
+  fail 'legacy kubectl deletion output was rejected'
+if connect_worker_loss_delete_output_is_exact \
+    kafka-connect-a $'pod/kafka-connect-a deletion requested\npod/kafka-connect-b deleted'; then
+  fail 'multi-Pod deletion output was accepted'
+fi
 
 connect_worker_loss_target_identity "$status_before" "$pods_before" "$target_before" ||
   fail 'before task owner could not be resolved'
@@ -114,7 +160,7 @@ jq -n '{fault:"pod-delete",target_pod:"kafka-connect-a",target_pod_uid:"uid-a",
   delete_selector:"simplematch.io/worker-loss-run=connect-worker-loss-run-1",
   delete_output:"pod/kafka-connect-a deletion requested",
   delete_requested:true,uid_precondition_test:true,pre_delete_recheck:true,
-  delete_output_contains_target:true,target_uid_absent:true,
+  selector_target_count:1,delete_output_contains_target:true,target_uid_absent:true,
   recovery_deadline_started_at_unix_ms:1,requested_at_unix_ms:2,
   requested_at:"2026-09-03T00:00:00Z"}' >"$worker_loss"
 jq -n '{schema_version:1,target_pod:"kafka-connect-a",target_pod_uid:"uid-a",
@@ -124,7 +170,7 @@ jq -n --arg contract_path "$verifier_contract_script" \
   --arg contract_sha256 "$(sha256sum "$verifier_contract_script" | awk '{print $1}')" \
   --arg observer_path "$script_dir/run-risk-cdc-delivery-observer-check.sh" \
   --arg observer_sha256 "$(sha256sum "$script_dir/run-risk-cdc-delivery-observer-check.sh" | awk '{print $1}')" \
-  '{status:"PASS",namespace:"simplematch-cert-run",namespace_run_id:"run-1",
+  '{status:"PASS",retained_evidence_dir:"retained",namespace:"simplematch-cert-run",namespace_run_id:"run-1",
   current_commit:"0000000000000000000000000000000000000000",
   cdc_runtime_signature:"0000000000000000000000000000000000000000000000000000000000000000",
   retained_cdc_runtime_signature:"0000000000000000000000000000000000000000000000000000000000000000",
@@ -176,7 +222,7 @@ jq -n '{items:[
   {metadata:{name:"simplematch-live-worker",labels:{"simplematch.io/node-pool":"local-resilience","simplematch.io/worker-slot":"0"}},status:{conditions:[{type:"Ready",status:"True"}]}},
   {metadata:{name:"simplematch-live-worker2",labels:{"simplematch.io/node-pool":"local-resilience","simplematch.io/worker-slot":"1"}},status:{conditions:[{type:"Ready",status:"True"}]}}
 ]}' >"$nodes"
-jq -n '{spec:{replicas:2,template:{spec:{nodeSelector:{"simplematch.io/node-pool":"local-resilience"},
+jq -n '{metadata:{name:"kafka-connect"},spec:{replicas:2,template:{spec:{nodeSelector:{"simplematch.io/node-pool":"local-resilience"},
   topologySpreadConstraints:[{maxSkew:1,topologyKey:"simplematch.io/worker-slot",whenUnsatisfiable:"DoNotSchedule",
     labelSelector:{matchLabels:{"app.kubernetes.io/name":"kafka-connect","app.kubernetes.io/component":"connector"}}}],
   tolerations:[{key:"simplematch.io/portable-workload",operator:"Exists",effect:"NoExecute",tolerationSeconds:30},
@@ -191,7 +237,7 @@ jq -n '{spec:{replicas:2,template:{spec:{nodeSelector:{"simplematch.io/node-pool
 jq -n '{metadata:{name:"simplematch-kafka-connect-config"},data:{bootstrap_servers:"kafka:9092",
   postgres_hostname:"postgres",postgres_port:"5432",postgres_dbname:"simplematch",postgres_sslmode:"disable",
   postgres_sslrootcert:"/dev/null"}}' >"$connect_config"
-jq -n '{spec:{minAvailable:1,selector:{matchLabels:{"app.kubernetes.io/name":"kafka-connect","app.kubernetes.io/component":"connector"}}}}' >"$pdb"
+jq -n '{metadata:{name:"kafka-connect"},spec:{minAvailable:1,selector:{matchLabels:{"app.kubernetes.io/name":"kafka-connect","app.kubernetes.io/component":"connector"}}}}' >"$pdb"
 for connector in account-service-outbox risk-service-outbox; do
   table='account_service.outbox'
   config_file="$account_config"
@@ -200,7 +246,7 @@ for connector in account-service-outbox risk-service-outbox; do
     config_file="$risk_config"
   fi
   jq -n --arg connector "$connector" --arg table "$table" \
-    '{data:{"connector.json":({name:$connector,config:{"table.include.list":$table,
+    '{metadata:{name:($connector + "-connector")},data:{"connector.json":({name:$connector,config:{"table.include.list":$table,
       "transforms.outbox.table.fields.additional.placement":"headers_json:header:headers_json,payload_type:header:eventType"}}|tojson)}}' \
     >"$config_file"
 done
@@ -219,24 +265,76 @@ jq -n --arg image 'quay.io/debezium/connect:3.6.0.Final' --arg identity "$fixtur
       {node:"simplematch-live-worker2",status:"PASS",inspect_status:"PASS",
         execution_probe_status:"PASS",identity:$identity,failure_reason:null}],
     failure_reason:null}' >"$image_cache_preflight"
-for job in "$topic_provisioning" "$account_flyway" "$risk_flyway" "$persistence_flyway" \
-    "$market_data_projection_flyway" "$query_flyway" "$quickfix_gateway_flyway"; do
-  jq -n '{kind:"Job",status:{conditions:[{type:"Complete",status:"True"}]}}' >"$job"
+cp -- "$image_cache_preflight" "$fixture_dir/image-cache-valid.json"
+for job_spec in \
+    "kafka-topic-provisioning:$topic_provisioning" \
+    "account-service-flyway:$account_flyway" \
+    "risk-service-flyway:$risk_flyway" \
+    "persistence-flyway:$persistence_flyway" \
+    "market-data-projection-flyway:$market_data_projection_flyway" \
+    "query-service-flyway:$query_flyway" \
+    "quickfix-gateway-flyway:$quickfix_gateway_flyway"; do
+  job_name="${job_spec%%:*}"
+  job_file="${job_spec#*:}"
+  jq -n --arg name "$job_name" \
+    '{kind:"Job",metadata:{name:$name},status:{conditions:[{type:"Complete",status:"True"}]}}' \
+    >"$job_file"
 done
-for topic in "$connect_configs_topic" "$connect_offsets_topic" "$connect_status_topic"; do
-  printf '%s\n' 'ReplicationFactor: 3' 'min.insync.replicas=2' >"$topic"
-done
+printf '%s\n' \
+  'Topic: simplematch-connect-configs TopicId: fixture-configs PartitionCount: 3 ReplicationFactor: 3 Configs: cleanup.policy=compact,min.insync.replicas=2' \
+  >"$connect_configs_topic"
+printf '%s\n' \
+  'Topic: simplematch-connect-offsets TopicId: fixture-offsets PartitionCount: 3 ReplicationFactor: 3 Configs: cleanup.policy=compact,min.insync.replicas=2' \
+  >"$connect_offsets_topic"
+printf '%s\n' \
+  'Topic: simplematch-connect-status TopicId: fixture-status PartitionCount: 3 ReplicationFactor: 3 Configs: cleanup.policy=compact,min.insync.replicas=2' \
+  >"$connect_status_topic"
 mkdir -p "$control_plane_dir"
 printf '%s\n' 'readyz check passed' >"$control_plane_dir/readyz.txt"
 printf '%s\n' 'CDC observer fixture header contract is valid.' >"$verifier_contract"
 cp -- "$verifier_contract_script" "$verifier_contract_copy"
 cp -- "$script_dir/run-risk-cdc-delivery-observer-check.sh" "$verifier_observer_script"
-jq -n '[{name:"etcd-control-plane",phase:"Running",ready:true,restart_count:0},
-  {name:"kube-controller-manager-control-plane",phase:"Running",ready:true,restart_count:0},
-  {name:"kube-scheduler-control-plane",phase:"Running",ready:true,restart_count:0}]' \
+jq -n '[{name:"etcd-simplematch-live-control-plane",phase:"Running",ready:true,restart_count:0},
+  {name:"kube-controller-manager-simplematch-live-control-plane",phase:"Running",ready:true,restart_count:0},
+  {name:"kube-scheduler-simplematch-live-control-plane",phase:"Running",ready:true,restart_count:0}]' \
   >"$control_plane_dir/before.json"
 cp "$control_plane_dir/before.json" "$control_plane_dir/after.json"
 jq -n '{items:[]}' >"$control_plane_dir/events.json"
+
+typed_prerequisites="$fixture_dir/typed-prerequisites"
+mkdir -p "$typed_prerequisites/control-plane" "$typed_prerequisites/prerequisites"
+cp -- "$nodes" "$typed_prerequisites/nodes.json"
+cp -- "$control_plane_dir/readyz.txt" "$typed_prerequisites/control-plane/readyz.txt"
+cp -- "$control_plane_dir/before.json" "$typed_prerequisites/control-plane/before.json"
+cp -- "$control_plane_dir/after.json" "$typed_prerequisites/control-plane/after.json"
+cp -- "$control_plane_dir/events.json" "$typed_prerequisites/control-plane/events.json"
+cp -- "$deployment" "$typed_prerequisites/connect-deployment.json"
+cp -- "$pdb" "$typed_prerequisites/connect-pdb.json"
+cp -- "$connect_config" "$typed_prerequisites/connect-config.json"
+cp -- "$image_cache_preflight" "$typed_prerequisites/image-cache-preflight.json"
+cp -- "$pods_before" "$typed_prerequisites/connect-pods-before.json"
+cp -- "$account_config" "$typed_prerequisites/account-service-outbox-configmap.json"
+cp -- "$risk_config" "$typed_prerequisites/risk-service-outbox-configmap.json"
+cp -- "$postgres" "$typed_prerequisites/prerequisites/postgres.json"
+cp -- "$topic_provisioning" \
+  "$typed_prerequisites/prerequisites/kafka-topic-provisioning.json"
+cp -- "$account_flyway" \
+  "$typed_prerequisites/prerequisites/account-service-flyway.json"
+cp -- "$risk_flyway" \
+  "$typed_prerequisites/prerequisites/risk-service-flyway.json"
+cp -- "$persistence_flyway" \
+  "$typed_prerequisites/prerequisites/persistence-flyway.json"
+cp -- "$market_data_projection_flyway" \
+  "$typed_prerequisites/prerequisites/market-data-projection-flyway.json"
+cp -- "$query_flyway" \
+  "$typed_prerequisites/prerequisites/query-service-flyway.json"
+cp -- "$quickfix_gateway_flyway" \
+  "$typed_prerequisites/prerequisites/quickfix-gateway-flyway.json"
+cp -- "$connect_configs_topic" "$typed_prerequisites/prerequisites/simplematch-connect-configs.txt"
+cp -- "$connect_offsets_topic" "$typed_prerequisites/prerequisites/simplematch-connect-offsets.txt"
+cp -- "$connect_status_topic" "$typed_prerequisites/prerequisites/simplematch-connect-status.txt"
+(cd "$fixture_dir" && ruby "$script_dir/lib/connect-worker-loss-evidence.rb" \
+  prerequisites typed-prerequisites) || fail 'typed prerequisite mode rejected valid evidence'
 
 report_is_valid() {
   local name="${1:-report.json}"
@@ -317,6 +415,99 @@ jq -n \
     claim_boundary:["focused local worker-loss"]}' >"$report"
 report_is_valid || fail 'valid report envelope was rejected'
 report_is_passed || fail 'valid report did not pass'
+
+jq '.evidence.risk_flyway_file = "topic-provisioning.json"' "$report" \
+  >"$fixture_dir/report-aliased-job.json"
+if report_is_passed report-aliased-job.json; then
+  fail 'one completed Job was accepted as two distinct prerequisites'
+fi
+jq '.evidence.control_plane_after_file = "control-plane/before.json"' "$report" \
+  >"$fixture_dir/report-aliased-control-plane.json"
+if report_is_passed report-aliased-control-plane.json; then
+  fail 'one control-plane snapshot was accepted as two snapshots'
+fi
+ln -s . "$fixture_dir/evidence-parent-link"
+jq '.evidence.status_before_file = "evidence-parent-link/status-before.json"' "$report" \
+  >"$fixture_dir/report-symlink-evidence.json"
+if report_is_passed report-symlink-evidence.json; then
+  fail 'evidence path through a symlinked parent was accepted'
+fi
+
+jq '.items[0].status.conditions[0].status = "False"' "$pods_before" \
+  >"$fixture_dir/pods-before-not-ready.json"
+jq '.evidence.pods_before_file = "pods-before-not-ready.json"' "$report" \
+  >"$fixture_dir/report-target-not-ready.json"
+if report_is_passed report-target-not-ready.json; then
+  fail 'non-Ready target Pod was accepted by the typed verifier'
+fi
+
+jq '.failure_reason = "unexpected failure"' "$image_cache_preflight" \
+  >"$fixture_dir/image-cache-failure-reason.json"
+jq '.evidence.image_cache_preflight_file = "image-cache-failure-reason.json"' "$report" \
+  >"$fixture_dir/report-image-cache-failure.json"
+if report_is_passed report-image-cache-failure.json; then
+  fail 'image-cache PASS with a failure reason was accepted'
+fi
+
+printf '%s\n' \
+  'Topic: wrong-topic TopicId: fixture-configs PartitionCount: 3 ReplicationFactor: 30 Configs: cleanup.policy=compact,min.insync.replicas=20' \
+  >"$fixture_dir/connect-configs-invalid.txt"
+jq '.evidence.connect_configs_topic_file = "connect-configs-invalid.txt"' "$report" \
+  >"$fixture_dir/report-topic-invalid.json"
+if report_is_passed report-topic-invalid.json; then
+  fail 'wrong topic or loose replication settings were accepted'
+fi
+
+jq '.items = [
+  (.items[1] | .metadata.name = "kafka-connect-a" |
+    .metadata.uid = "uid-replacement" | .spec.nodeName = "simplematch-live-worker3" |
+    .status.podIP = "10.244.0.44"), .items[0]
+]' "$pods_after" >"$fixture_dir/pods-after-replacement.json"
+jq '.connector.worker_id = "10.244.0.44:8083" |
+  .tasks[0].worker_id = "10.244.0.44:8083"' "$status_after" \
+  >"$fixture_dir/status-after-replacement.json"
+jq '.worker_id = "10.244.0.44:8083" | .worker_host = "10.244.0.44" |
+  .pod = "kafka-connect-a" | .pod_uid = "uid-replacement" |
+  .node = "simplematch-live-worker3" | .pod_ip = "10.244.0.44" |
+  .worker_slot = "2"' "$target_after" >"$fixture_dir/target-after-replacement.json"
+jq -n '{schema_version:1,target_pod:"kafka-connect-a",target_pod_uid:"uid-a",
+  outcome:"replacement-pod",replacement_pod_uid:"uid-replacement",target_uid_absent:true,
+  observed_at_utc:"2026-09-03T00:00:00Z"}' >"$fixture_dir/replacement-observation.json"
+jq --slurpfile after "$fixture_dir/target-after-replacement.json" \
+  '.task_reassignment.after = $after[0] |
+   .evidence.status_after_file = "status-after-replacement.json" |
+   .evidence.pods_after_file = "pods-after-replacement.json" |
+   .evidence.target_after_file = "target-after-replacement.json" |
+   .evidence.target_delete_observation_file = "replacement-observation.json"' \
+  "$report" >"$fixture_dir/report-replacement.json"
+report_is_passed report-replacement.json ||
+  fail 'replacement Pod observation was not linked to the after snapshot'
+jq '.items[0].spec.nodeName = "simplematch-live-worker"' \
+  "$fixture_dir/pods-after-replacement.json" >"$fixture_dir/pods-after-same-node.json"
+jq '.node = "simplematch-live-worker" | .worker_slot = "0"' \
+  "$fixture_dir/target-after-replacement.json" >"$fixture_dir/target-after-same-node.json"
+jq --slurpfile target "$fixture_dir/target-after-same-node.json" \
+  '.task_reassignment.after = $target[0] |
+   .task_reassignment.node_changed = false |
+   .evidence.pods_after_file = "pods-after-same-node.json" |
+   .evidence.target_after_file = "target-after-same-node.json"' \
+  "$fixture_dir/report-replacement.json" >"$fixture_dir/report-replacement-same-node.json"
+report_is_passed report-replacement-same-node.json ||
+  fail 'valid same-node Pod replacement was rejected'
+jq '.replacement_pod_uid = "uid-other"' "$fixture_dir/replacement-observation.json" \
+  >"$fixture_dir/replacement-observation-forged.json"
+jq '.evidence.target_delete_observation_file = "replacement-observation-forged.json"' \
+  "$fixture_dir/report-replacement.json" >"$fixture_dir/report-replacement-forged.json"
+if report_is_passed report-replacement-forged.json; then
+  fail 'replacement Pod observation was accepted without after-snapshot linkage'
+fi
+jq '.data["connector.json"] = "not-json"' "$account_config" >"$account_config.tmp" &&
+  mv "$account_config.tmp" "$account_config"
+if report_is_passed; then
+  fail 'malformed connector prerequisite escaped as an uncontrolled error'
+fi
+# Restore the fixture from its deterministic source after the negative check.
+jq -n '{metadata:{name:"account-service-outbox-connector"},data:{"connector.json":({name:"account-service-outbox",config:{"table.include.list":"account_service.outbox","transforms.outbox.table.fields.additional.placement":"headers_json:header:headers_json,payload_type:header:eventType"}}|tojson)}}' >"$account_config"
 jq '.diagnostics = {attempts: 1}' "$report" >"$fixture_dir/report-with-diagnostics.json"
 report_is_passed report-with-diagnostics.json ||
   fail 'additive diagnostic metadata broke the public evidence contract'
@@ -408,7 +599,7 @@ record_phase() {
   observed_phases+=("$1")
 }
 connect_worker_loss_state_flow record_phase || fail 'valid state flow failed'
-expected_phases='preflight observe-owner arm-target delete-target observe-reassignment publish-probe restore report verify'
+expected_phases='preflight observe-owner arm-target delete-target observe-reassignment publish-probe report verify restore'
 observed_phase_line="$(printf '%s ' "${observed_phases[@]}")"
 [[ "${observed_phase_line% }" == "$expected_phases" ]] ||
   fail "state flow order changed: $observed_phase_line"
