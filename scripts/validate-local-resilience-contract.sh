@@ -18,15 +18,33 @@ abort "canonical kind configuration is missing" unless File.file?(File.join(repo
 abort "canonical StorageClass manifest is missing" unless File.file?(File.join(repo_root, "deploy/kind/simplematch-live-storageclass.yaml"))
 
 java_workloads = %w[account-service risk-service persistence market-data-projection query-service]
+accepted_java_tolerations = [
+  {"key" => "simplematch.io/portable-workload", "operator" => "Exists", "effect" => "NoExecute", "tolerationSeconds" => 30},
+  {"key" => "node.kubernetes.io/not-ready", "operator" => "Exists", "effect" => "NoExecute", "tolerationSeconds" => 30},
+  {"key" => "node.kubernetes.io/unreachable", "operator" => "Exists", "effect" => "NoExecute", "tolerationSeconds" => 30}
+]
 java_workloads.each do |name|
   deployment = resources.fetch(["Deployment", name])
   pod = deployment.fetch("spec").fetch("template")
   spec = pod.fetch("spec")
   container = spec.fetch("containers").first
   abort "#{name} must have two replicas" unless deployment.dig("spec", "replicas") == 2
-  abort "#{name} must select local-resilience workers" unless spec.dig("nodeSelector", "simplematch.io/node-pool") == "local-resilience"
+  abort "#{name} must use the canonical local-resilience selector" unless
+    spec.fetch("nodeSelector") == {"simplematch.io/node-pool" => "local-resilience"}
   spread = spec.fetch("topologySpreadConstraints", []).first
-  abort "#{name} must spread by hostname" unless spread && spread["topologyKey"] == "kubernetes.io/hostname" && spread["maxSkew"] == 1 && spread["whenUnsatisfiable"] == "DoNotSchedule"
+  expected_labels = {
+    "app.kubernetes.io/name" => name,
+    "app.kubernetes.io/component" => "java-service"
+  }
+  abort "#{name} must have one hostname spread constraint" unless
+    spec.fetch("topologySpreadConstraints").length == 1 &&
+      spread &&
+      spread["topologyKey"] == "kubernetes.io/hostname" &&
+      spread["maxSkew"] == 1 &&
+      spread["whenUnsatisfiable"] == "DoNotSchedule" &&
+      spread.dig("labelSelector", "matchLabels") == expected_labels
+  abort "#{name} must use the accepted portable and node-loss tolerations" unless
+    spec.fetch("tolerations").sort_by(&:to_s) == accepted_java_tolerations.sort_by(&:to_s)
   %w[startupProbe readinessProbe livenessProbe].each do |probe_name|
     probe = container.fetch(probe_name, {})
     http_get = probe.fetch("httpGet", {})
@@ -35,7 +53,9 @@ java_workloads.each do |name|
     abort "#{name} #{probe_name} must use #{expected_path}" unless http_get["path"] == expected_path
   end
   abort "#{name} must define resources" unless container.dig("resources", "requests") && container.dig("resources", "limits")
-  abort "#{name} must have a PDB" unless resources.key?(["PodDisruptionBudget", name])
+  pdb = resources.fetch(["PodDisruptionBudget", name], nil)
+  abort "#{name} must have a PDB with minAvailable 1" unless pdb && pdb.dig("spec", "minAvailable") == 1
+  abort "#{name} PDB must select its Java workload" unless pdb.dig("spec", "selector", "matchLabels") == expected_labels
 end
 
 streamer = resources.fetch(["Deployment", "marketdata-streamer"])

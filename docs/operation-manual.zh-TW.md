@@ -658,7 +658,7 @@ Measurement會檢查warm plan的policy decisions，並以warm wall-clock扣除�
 bash scripts/run-local-resilience.sh --profile contract
 ```
 
-這個 profile 驗證 repository-rendered topology、placement、PDB、resource、dependency、probe 等 contract，不會停止 worker，因此不能當成 runtime resilience evidence。
+這個 profile 驗證 repository-rendered topology、placement、PDB、resource、dependency、probe 等 contract；其中五個複製的 Java workload 必須共用兩副本、local-resilience worker、hostname `maxSkew=1`／`DoNotSchedule`、`minAvailable=1` PDB，以及 portable-workload、`not-ready`、`unreachable` 三個 30 秒 `NoExecute` toleration。不會停止 worker，因此不能當成 runtime resilience evidence。
 
 ### 13.2 Full-local profile
 

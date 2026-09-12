@@ -7,6 +7,21 @@ spec:
     spec:
       nodeSelector:
         simplematch.io/node-pool: local-resilience
+      tolerations:
+        - key: simplematch.io/portable-workload
+          operator: Exists
+          effect: NoExecute
+          tolerationSeconds: 30
+        # A stopped kind worker receives standard NoExecute taints from the
+        # node controller; keep the eviction budget explicit for rescheduling.
+        - key: node.kubernetes.io/not-ready
+          operator: Exists
+          effect: NoExecute
+          tolerationSeconds: 30
+        - key: node.kubernetes.io/unreachable
+          operator: Exists
+          effect: NoExecute
+          tolerationSeconds: 30
       topologySpreadConstraints:
         - maxSkew: 1
           topologyKey: kubernetes.io/hostname
@@ -25,6 +40,19 @@ spec:
     spec:
       nodeSelector:
         simplematch.io/node-pool: local-resilience
+      tolerations:
+        - key: simplematch.io/portable-workload
+          operator: Exists
+          effect: NoExecute
+          tolerationSeconds: 30
+        - key: node.kubernetes.io/not-ready
+          operator: Exists
+          effect: NoExecute
+          tolerationSeconds: 30
+        - key: node.kubernetes.io/unreachable
+          operator: Exists
+          effect: NoExecute
+          tolerationSeconds: 30
       topologySpreadConstraints:
         - maxSkew: 1
           topologyKey: kubernetes.io/hostname
@@ -43,6 +71,19 @@ spec:
     spec:
       nodeSelector:
         simplematch.io/node-pool: local-resilience
+      tolerations:
+        - key: simplematch.io/portable-workload
+          operator: Exists
+          effect: NoExecute
+          tolerationSeconds: 30
+        - key: node.kubernetes.io/not-ready
+          operator: Exists
+          effect: NoExecute
+          tolerationSeconds: 30
+        - key: node.kubernetes.io/unreachable
+          operator: Exists
+          effect: NoExecute
+          tolerationSeconds: 30
       topologySpreadConstraints:
         - maxSkew: 1
           topologyKey: kubernetes.io/hostname
@@ -61,6 +102,19 @@ spec:
     spec:
       nodeSelector:
         simplematch.io/node-pool: local-resilience
+      tolerations:
+        - key: simplematch.io/portable-workload
+          operator: Exists
+          effect: NoExecute
+          tolerationSeconds: 30
+        - key: node.kubernetes.io/not-ready
+          operator: Exists
+          effect: NoExecute
+          tolerationSeconds: 30
+        - key: node.kubernetes.io/unreachable
+          operator: Exists
+          effect: NoExecute
+          tolerationSeconds: 30
       topologySpreadConstraints:
         - maxSkew: 1
           topologyKey: kubernetes.io/hostname
@@ -79,6 +133,19 @@ spec:
     spec:
       nodeSelector:
         simplematch.io/node-pool: local-resilience
+      tolerations:
+        - key: simplematch.io/portable-workload
+          operator: Exists
+          effect: NoExecute
+          tolerationSeconds: 30
+        - key: node.kubernetes.io/not-ready
+          operator: Exists
+          effect: NoExecute
+          tolerationSeconds: 30
+        - key: node.kubernetes.io/unreachable
+          operator: Exists
+          effect: NoExecute
+          tolerationSeconds: 30
       topologySpreadConstraints:
         - maxSkew: 1
           topologyKey: kubernetes.io/hostname

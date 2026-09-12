@@ -96,6 +96,12 @@ The local Kustomize patch intentionally removes physical-node anti-affinity and 
 resource requests so fifteen logical owners can run on a disposable kind node. The base, staging,
 and production manifests retain the strict three-CPU, fifteen-node production contract.
 
+The five replicated Java workloads in the local resilience overlay use the same placement contract:
+two replicas on the `local-resilience` worker pool, hostname spreading with `maxSkew: 1` and
+`DoNotSchedule`, a `minAvailable: 1` PDB, and explicit 30-second `NoExecute` tolerations for the
+portable-workload, `not-ready`, and `unreachable` taints. The shared contract validator checks these
+fields after Kustomize rendering so a patch that only looks correct in source cannot pass by itself.
+
 Render and validate them with:
 
 ```text
