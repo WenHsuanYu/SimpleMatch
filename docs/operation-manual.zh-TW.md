@@ -786,6 +786,35 @@ transaction semantics，也不能直接升級成 #151 的 `full-local` certifica
 原始 task/Pod identity、故障目標與 bounded diagnostics；命令不會套用 manifest，也不會刪除 kind
 cluster。
 
+### 13.5 Java placement/serving focused diagnostic（#157）
+
+若只需要補齊五個 Java workload 共用 placement contract 的代表性 deployed observation，對一個
+已由 source-aligned production-like run 建立、仍在服務的 disposable namespace 執行：
+
+```bash
+bash scripts/run-local-java-placement-serving-check.sh \
+  --namespace <run-namespace> \
+  --namespace-run-id <namespace-run-id> \
+  --retained-evidence-dir out/certification/<retained-run> \
+  --evidence-dir out/resilience/java-placement-serving-<run-id>
+```
+
+Runner 會先驗證 canonical `simplematch-live`/`kind-simplematch-live` context、namespace ownership、
+retained source revision、verifier image provenance 與 control-plane stability；它不套用 manifest，
+也不建立第二條 full-local pipeline。代表性 target 固定是 `query-service`：觀察兩個 Ready Pod
+分布在至少兩個 `local-resilience` worker、EndpointSlice 只指向該兩個 Pod，並記錄 Pod UID、Node、
+image、startup completion 與 restart count。它透過 target Pod port-forward 依序檢查
+`/actuator/health/readiness`、`/actuator/health/liveness` 與 `/api/v1/freshness` 的 JSON/HTTP 200
+回應，讓 startup、readiness、liveness 和實際 serving responsibility 在同一份 evidence 中可追溯。
+
+為了驗證依賴故障時的 health boundary，Runner 只把 run-owned Redis Deployment 從一副本縮到零，
+以 bounded observation window 確認 Redis outage，重新觀察 query-service 的 readiness、liveness、
+serving、Pod UID、Node 與 restart count，再將 Redis 恢復一副本並重複檢查。Redis outage 是此
+diagnostic 的可逆 mutation；cleanup 另有 30 秒上限，失敗會讓報告 fail closed。PASS report 保留
+各階段 placement/health snapshots、response digest、replica 轉換與 claim boundary，且明確標示
+diagnostic-only，不能直接升級成 #151 的 full-local aggregate PASS。舊 retained evidence 若與目前
+source revision 不同，必須先建立新的 source-aligned run。
+
 ---
 
 ## 14. Read-only resource report

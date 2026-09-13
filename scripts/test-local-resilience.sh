@@ -11,6 +11,9 @@ bash -n "$script_dir/lib/local-resilience.sh" \
   "$script_dir/run-local-resilience.sh" \
   "$script_dir/run-local-connect-worker-loss.sh" \
   "$script_dir/run-local-resilience-dependencies.sh" \
+  "$script_dir/lib/local-java-placement-serving.sh" \
+  "$script_dir/run-local-java-placement-serving-check.sh" \
+  "$script_dir/test-local-java-placement-serving.sh" \
   "$script_dir/validate-local-resilience-contract.sh"
 
 bash "$script_dir/validate-local-resilience-contract.sh"
@@ -18,6 +21,7 @@ bash "$script_dir/test-local-resilience-dependencies.sh"
 bash "$script_dir/test-connect-rest-tunnel.sh"
 bash "$script_dir/test-local-connect-worker-loss.sh"
 bash "$script_dir/test-local-kind-image-cache-preflight.sh"
+bash "$script_dir/test-local-java-placement-serving.sh"
 
 [[ "$(resilience_deadline 100 300)" == 400 ]]
 [[ "$RESILIENCE_DEFAULT_DEADLINE_SECONDS" == 300 ]]
