@@ -138,6 +138,8 @@ restore_redis() {
 write_failure_report() {
   local exit_status="$1"
   [[ "$evidence_initialized" == true ]] || return 0
+  java_placement_serving_path_has_symlink_component \
+    "$evidence_dir/java-placement-serving.json" && return 1
   jq -n \
     --arg profile "$JAVA_PLACEMENT_SERVING_PROFILE" \
     --arg cluster "$cluster_name" \
@@ -191,6 +193,8 @@ prepare_evidence_dir() {
   local existing
   [[ -n "$evidence_dir" ]] ||
     evidence_dir="$repo_root/out/resilience/java-placement-serving-$(date -u +%Y%m%d-%H%M%S)-$$"
+  java_placement_serving_path_has_symlink_component "$evidence_dir" &&
+    die "evidence directory path contains a symlink component: $evidence_dir"
   if [[ -e "$evidence_dir" ]]; then
     existing="$(find "$evidence_dir" -mindepth 1 -maxdepth 1 -print -quit 2>/dev/null || true)"
     [[ -z "$existing" ]] || die "evidence directory must be empty: $evidence_dir"
@@ -241,6 +245,8 @@ print_redis_summary() {
 validate_retained_certification_pass() {
   local report_file="$retained_evidence_dir/report.md"
   local plan_file="$retained_evidence_dir/plan.json"
+  local manifest_file="$retained_evidence_dir/evidence-manifest.json"
+  local image_lock="$retained_evidence_dir/local-images.lock"
   local static_result="$retained_evidence_dir/phases/static-phase1-deployment-contracts/result.json"
   local retained_status
 
@@ -255,16 +261,56 @@ validate_retained_certification_pass() {
 
   [[ -f "$plan_file" && ! -L "$plan_file" ]] ||
     die "retained certification plan is missing: $plan_file"
-  jq -e '
-    .schemaVersion == 1
-    and (.phases | type == "array" and length > 0)
-    and all(.phases[]; .decision | IN("EXECUTE", "REUSE", "REVALIDATE"))
-  ' "$plan_file" >/dev/null || die 'retained certification plan is incomplete'
+  [[ -f "$manifest_file" && ! -L "$manifest_file" ]] ||
+    die "retained certification evidence manifest is missing: $manifest_file"
+  jq -e --slurpfile manifest "$manifest_file" '
+    . as $plan
+    | $plan.schemaVersion == 1
+    and ($plan.phases | type == "array" and length > 0)
+    and all($plan.phases[];
+      (.phaseId | type == "string" and length > 0)
+      and (.decision | IN("EXECUTE", "REUSE", "REVALIDATE"))
+      and (.inputFingerprint | type == "string" and test("^sha256:[0-9a-f]{64}$"))
+      and (.evidenceDigest == null or
+        (.evidenceDigest | type == "string" and test("^sha256:[0-9a-f]{64}$"))))
+    and ($manifest[0].schemaVersion == 1)
+    and ($manifest[0].phases | type == "array" and length == ($plan.phases | length))
+    and ([$manifest[0].phases[].phaseId] | sort == ([$plan.phases[].phaseId] | sort))
+    and all($manifest[0].phases[];
+      (.phaseId | type == "string" and length > 0)
+      and (.status == "PASS")
+      and (.definitionVersion | type == "number" and floor == . and . >= 1)
+      and (.inputFingerprint | type == "string" and test("^sha256:[0-9a-f]{64}$"))
+      and (.evidenceDigest == null or
+        (.evidenceDigest | type == "string" and test("^sha256:[0-9a-f]{64}$"))))
+  ' "$plan_file" >/dev/null || die 'retained certification plan or evidence manifest is incomplete'
+
+  [[ -f "$image_lock" && ! -L "$image_lock" ]] ||
+    die "retained local image lock is missing: $image_lock"
+  simplematch_local_image_lock_validate_file "$image_lock" ||
+    die 'retained local image lock is invalid'
 
   [[ -f "$static_result" && ! -L "$static_result" ]] ||
     die 'retained placement contract result is missing'
   jq -e '.status == "PASS"' "$static_result" >/dev/null ||
     die 'retained placement contract result is not PASS'
+}
+
+validate_deployed_query_image() {
+  local deployment_file="$1"
+  local image_lock="$retained_evidence_dir/local-images.lock"
+  local expected_image actual_image
+
+  expected_image="$(simplematch_local_image_lock_digest_reference \
+    "$image_lock" "$JAVA_PLACEMENT_SERVING_SERVICE")" ||
+    die 'retained image lock has no query-service entry'
+  actual_image="$(jq -er --arg container "$JAVA_PLACEMENT_SERVING_CONTAINER" '
+    [.spec.template.spec.containers[]? | select(.name == $container) | .image]
+    | if length == 1 and (.[0] | type == "string" and length > 0)
+      then .[0] else error("query-service image is missing") end
+  ' "$deployment_file")" || die 'deployed query-service image is missing'
+  [[ "$actual_image" == "$expected_image" ]] ||
+    die "deployed query-service image does not match retained lock: $actual_image"
 }
 
 validate_namespace_and_provenance() {
@@ -380,6 +426,7 @@ capture_placement() {
   if [[ "$stage" == baseline ]]; then
     java_placement_serving_probe_contract_is_valid "$deployment_file" ||
       die 'query-service probe wiring is invalid in the deployed baseline'
+    validate_deployed_query_image "$deployment_file"
   fi
   java_placement_serving_runtime_snapshot \
     "$deployment_file" "$pods_file" "$nodes_file" >"$summary_file" ||

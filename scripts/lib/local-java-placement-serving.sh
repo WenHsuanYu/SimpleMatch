@@ -18,6 +18,9 @@ JAVA_PLACEMENT_SERVING_READINESS_PATH=/actuator/health/readiness
 JAVA_PLACEMENT_SERVING_LIVENESS_PATH=/actuator/health/liveness
 JAVA_PLACEMENT_SERVING_STARTUP_PATH=/actuator/health/readiness
 JAVA_PLACEMENT_SERVING_APPLICATION_PATH=/api/v1/freshness
+JAVA_PLACEMENT_SERVING_LIVENESS_INITIAL_DELAY_SECONDS=20
+JAVA_PLACEMENT_SERVING_LIVENESS_PERIOD_SECONDS=10
+JAVA_PLACEMENT_SERVING_LIVENESS_FAILURE_THRESHOLD=3
 JAVA_PLACEMENT_SERVING_CLAIM_BOUNDARY_JSON='[
   "source-aligned query-service placement and serving",
   "query-service readiness and liveness remained healthy during a Redis outage",
@@ -41,9 +44,14 @@ JAVA_PLACEMENT_SERVING_EVIDENCE_FILES_JSON='[
   "health/restored-liveness.json",
   "health/restored-serving.json"
 ]'
-# The outage may begin just after a Pod starts.  Cover the 20-second liveness
-# initial delay, three 10-second failures, and one extra period for detection.
-JAVA_PLACEMENT_SERVING_MIN_OBSERVE_SECONDS=60
+# The outage may begin just after a Pod starts. Cover the configured liveness
+# initial delay, three failure periods, and one extra period for detection.
+JAVA_PLACEMENT_SERVING_MIN_OBSERVE_SECONDS=$((
+  JAVA_PLACEMENT_SERVING_LIVENESS_INITIAL_DELAY_SECONDS
+  + JAVA_PLACEMENT_SERVING_LIVENESS_PERIOD_SECONDS *
+    JAVA_PLACEMENT_SERVING_LIVENESS_FAILURE_THRESHOLD
+  + JAVA_PLACEMENT_SERVING_LIVENESS_PERIOD_SECONDS
+))
 
 java_placement_serving_probe_contract_is_valid() {
   local deployment_file="$1"
@@ -55,6 +63,9 @@ java_placement_serving_probe_contract_is_valid() {
     --arg readiness_path "$JAVA_PLACEMENT_SERVING_READINESS_PATH" \
     --arg liveness_path "$JAVA_PLACEMENT_SERVING_LIVENESS_PATH" \
     --arg port http \
+    --argjson liveness_initial_delay "$JAVA_PLACEMENT_SERVING_LIVENESS_INITIAL_DELAY_SECONDS" \
+    --argjson liveness_period "$JAVA_PLACEMENT_SERVING_LIVENESS_PERIOD_SECONDS" \
+    --argjson liveness_failure_threshold "$JAVA_PLACEMENT_SERVING_LIVENESS_FAILURE_THRESHOLD" \
     '
       ([.spec.template.spec.containers[]?
         | select(.name == $container)] | length) == 1
@@ -68,7 +79,10 @@ java_placement_serving_probe_contract_is_valid() {
       and ($readiness.httpGet.path == $readiness_path
            and $readiness.httpGet.port == $port)
       and ($liveness.httpGet.path == $liveness_path
-           and $liveness.httpGet.port == $port)
+           and $liveness.httpGet.port == $port
+           and $liveness.initialDelaySeconds == $liveness_initial_delay
+           and $liveness.periodSeconds == $liveness_period
+           and $liveness.failureThreshold == $liveness_failure_threshold)
     ' "$deployment_file" >/dev/null
 }
 
@@ -119,6 +133,7 @@ java_placement_serving_runtime_snapshot() {
           desired_replicas: ($deploymentSpec.replicas // 0),
           ready_replicas: ($deploymentStatus.readyReplicas // 0),
           node_pool: $node_pool,
+          deployment_node_pool: ($deploymentSpec.template.spec.nodeSelector["simplematch.io/node-pool"] // ""),
           eligible_node_names: $eligibleNodes,
           pods: $podRows,
           pod_count: ($podRows | length),
@@ -148,6 +163,7 @@ java_placement_serving_snapshot_json_is_ready() {
         and (.image_id | immutable_image);
       (.deployment_name == $service)
       and (.node_pool == $node_pool)
+      and (.deployment_node_pool == $node_pool)
       and (.desired_replicas == $replicas)
       and (.ready_replicas == $replicas)
       and (.pod_count == $replicas)
@@ -256,6 +272,17 @@ java_placement_serving_report_evidence_files_are_valid() {
     | if ($references | length) == ($expected_files | length)
       and (($references | map(.[1]) | unique | length) == ($expected_files | length))
       and (($references | map(.[1]) | sort) == ($expected_files | sort))
+      and ([.placement.snapshots | to_entries[] |
+        .value.file == ("placement/" +
+          (if .key == "outage" then "redis-outage" else .key end) + ".json")]
+        | all)
+      and ([.redis_outage.snapshots | to_entries[] |
+        .value.file == ("placement/redis-" + .key + ".json")] | all)
+      and ([.observations | to_entries[] as $stage |
+        $stage.value | to_entries[] |
+        .value.body_file == ("health/" +
+          ($stage.key | gsub("_"; "-")) + "-" + .key + ".json")]
+        | all)
       then ($references[] | @tsv)
       else empty
       end
@@ -300,7 +327,7 @@ java_placement_serving_report_evidence_files_are_valid() {
     --slurpfile outage "$report_dir/placement/redis-outage.json" \
     --slurpfile restored "$report_dir/placement/restored.json" '
       def identities($snapshot):
-        [$snapshot.pods[] | {name, uid}] | sort_by(.name);
+        [$snapshot.pods[] | {name, uid, node}] | sort_by(.name);
       def restarts($snapshot):
         [$snapshot.pods[] | {name, restart_count}] | sort_by(.name);
       (.placement.pod_uid_unchanged == (
@@ -371,7 +398,7 @@ java_placement_serving_write_pass_report() {
     --arg redis_after_digest "$redis_after_digest" \
     --argjson observed_seconds "$observed_seconds" '
       def identities($snapshot):
-        [$snapshot.pods[] | {name, uid}] | sort_by(.name);
+        [$snapshot.pods[] | {name, uid, node}] | sort_by(.name);
       def restarts($snapshot):
         [$snapshot.pods[] | {name, restart_count}] | sort_by(.name);
       ($baseline[0]) as $baseline_snapshot
@@ -473,11 +500,13 @@ java_placement_serving_report_is_passed() {
         ($probe.http_status == 200)
         and ($probe.path == $expected_path)
         and ($probe.body_status == "UP")
+        and ($probe.body_type == "object")
         and ($probe.body_file | text)
         and ($probe.body_sha256 | digest);
       def healthy_serving($probe):
         ($probe.http_status == 200)
         and ($probe.path == $application_path)
+        and ($probe.body_status == "SERVING")
         and ($probe.body_type == "object")
         and ($probe.body_file | text)
         and ($probe.body_sha256 | digest);
@@ -519,6 +548,9 @@ java_placement_serving_report_is_passed() {
       and (.redis_outage.replicas_before == 1)
       and (.redis_outage.replicas_during == 0)
       and (.redis_outage.replicas_after == 1)
+      and (.redis_outage.snapshots.before.replicas == .redis_outage.replicas_before)
+      and (.redis_outage.snapshots.during.replicas == .redis_outage.replicas_during)
+      and (.redis_outage.snapshots.after.replicas == .redis_outage.replicas_after)
       and (.redis_outage.observed_seconds >= $min_observe_seconds)
       and (.claim_boundary == $claim_boundary)
     ' "$report_file" >/dev/null || return 1

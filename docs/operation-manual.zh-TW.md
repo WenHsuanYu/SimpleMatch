@@ -800,15 +800,17 @@ bash scripts/run-local-java-placement-serving-check.sh \
 ```
 
 Runner 會先驗證 canonical `simplematch-live`/`kind-simplematch-live` context、namespace ownership、
-retained production-like report 為完整 `PASSED`、source revision、verifier image provenance 與
-control-plane stability；它不套用 manifest，也不建立第二條 full-local pipeline。代表性 target 固定是
+retained production-like report 為完整 `PASSED`、phase/evidence manifest、source revision、retained
+local image lock、verifier image provenance 與 control-plane stability；它不套用 manifest，也不建立
+第二條 full-local pipeline。代表性 target 固定是
 `query-service`：觀察兩個 Ready Pod
 分布在至少兩個 `local-resilience` worker，並記錄 Pod UID、Node、immutable image identity 與
 restart count。這個 focused claim 直接對 target Pod 做 port-forward；Service/EndpointSlice 的
 selector 與 endpoint 生成是 Kubernetes controller 的責任，不在此重複驗證。Runner 依序檢查
 `/actuator/health/readiness`、`/actuator/health/liveness` 與 `/api/v1/freshness` 的 JSON/HTTP 200
-回應；startup/readiness/liveness 的 path 與 responsibility 由 shared static contract checker
-驗證，runtime observer 只記錄這些端點的實際健康結果與 Pod-level serving。
+回應；startup/readiness/liveness 的 path、responsibility 與 liveness timing 由 shared contract
+validator 驗證，runtime observer 只記錄這些端點的實際健康結果與 Pod-level serving。若 deployed
+timing 偏離 bounded window 的依據，observer 會在 mutation 前 fail closed。
 
 為了驗證依賴故障時的 health boundary，Runner 只把 run-owned Redis Deployment 從一副本縮到零，
 先確認零 Ready replica，再以預設 60 秒的 bounded observation window 等待 liveness failure threshold
