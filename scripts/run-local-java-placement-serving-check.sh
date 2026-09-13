@@ -596,6 +596,7 @@ write_pass_report() {
     --arg service "$JAVA_PLACEMENT_SERVING_SERVICE" \
     --arg pod "$target_pod" --arg pod_uid "$target_pod_uid" --arg node "$target_node" \
     --arg container "$JAVA_PLACEMENT_SERVING_CONTAINER" \
+    --arg node_pool "$JAVA_PLACEMENT_SERVING_NODE_POOL" \
     --argjson port "$JAVA_PLACEMENT_SERVING_PORT" \
     --arg startup_path "$JAVA_PLACEMENT_SERVING_STARTUP_PATH" \
     --arg readiness_path "$JAVA_PLACEMENT_SERVING_READINESS_PATH" \
@@ -618,7 +619,7 @@ write_pass_report() {
       --arg outage_digest "$outage_digest" \
       --arg restored_digest "$restored_digest" \
       '{pod_count:($baseline[0].pods|length),ready_pod_count:($baseline[0].pods|map(select(.ready==true))|length),
-        node_pool:$JAVA_PLACEMENT_SERVING_NODE_POOL,
+        node_pool:$node_pool,
         distinct_nodes:$baseline[0].distinct_nodes,ready_endpoint_count:$baseline[0].ready_endpoint_count,
         startup_completed_pod_count:$baseline[0].startup_completed_pod_count,
         image_ids:($baseline[0].pods|map(.image_id)|unique),
