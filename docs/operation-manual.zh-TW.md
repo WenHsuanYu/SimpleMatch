@@ -800,20 +800,27 @@ bash scripts/run-local-java-placement-serving-check.sh \
 ```
 
 Runner 會先驗證 canonical `simplematch-live`/`kind-simplematch-live` context、namespace ownership、
-retained source revision、verifier image provenance 與 control-plane stability；它不套用 manifest，
-也不建立第二條 full-local pipeline。代表性 target 固定是 `query-service`：觀察兩個 Ready Pod
-分布在至少兩個 `local-resilience` worker、EndpointSlice 只指向該兩個 Pod，並記錄 Pod UID、Node、
-image、startup completion 與 restart count。它透過 target Pod port-forward 依序檢查
+retained production-like report 為完整 `PASSED`、source revision、verifier image provenance 與
+control-plane stability；它不套用 manifest，也不建立第二條 full-local pipeline。代表性 target 固定是
+`query-service`：觀察兩個 Ready Pod
+分布在至少兩個 `local-resilience` worker，並記錄 Pod UID、Node、immutable image identity 與
+restart count。這個 focused claim 直接對 target Pod 做 port-forward；Service/EndpointSlice 的
+selector 與 endpoint 生成是 Kubernetes controller 的責任，不在此重複驗證。Runner 依序檢查
 `/actuator/health/readiness`、`/actuator/health/liveness` 與 `/api/v1/freshness` 的 JSON/HTTP 200
-回應，讓 startup、readiness、liveness 和實際 serving responsibility 在同一份 evidence 中可追溯。
+回應；startup/readiness/liveness 的 path 與 responsibility 由 shared static contract checker
+驗證，runtime observer 只記錄這些端點的實際健康結果與 Pod-level serving。
 
 為了驗證依賴故障時的 health boundary，Runner 只把 run-owned Redis Deployment 從一副本縮到零，
-以 bounded observation window 確認 Redis outage，重新觀察 query-service 的 readiness、liveness、
-serving、Pod UID、Node 與 restart count，再將 Redis 恢復一副本並重複檢查。Redis outage 是此
-diagnostic 的可逆 mutation；cleanup 另有 30 秒上限，失敗會讓報告 fail closed。PASS report 保留
-各階段 placement/health snapshots、response digest、replica 轉換與 claim boundary，且明確標示
-diagnostic-only，不能直接升級成 #151 的 full-local aggregate PASS。舊 retained evidence 若與目前
-source revision 不同，必須先建立新的 source-aligned run。
+先確認零 Ready replica，再以預設 60 秒的 bounded observation window 等待 liveness failure threshold
+可能發生的時間，醒來時再次確認 outage 仍然成立。60 秒涵蓋 20 秒 liveness initial delay、三次
+10 秒 failure period，以及一個用來觀察 restart 的額外 period；可用 `--observe-seconds` 增加，但
+不能縮短。Runner 接著
+重新觀察 query-service 的 readiness、liveness、serving、Pod UID、Node 與 restart count，再將 Redis
+恢復一副本並重複檢查。Redis outage 是此 diagnostic 的可逆 mutation；cleanup 另有 30 秒上限，
+失敗會讓報告 fail closed。PASS report 保留各階段 placement/health snapshots、response digest、
+replica 轉換與 claim boundary，且明確標示 diagnostic-only，不能直接升級成 #151 的 full-local
+aggregate PASS。舊 retained evidence 若與目前 source revision 不同，必須先建立新的 source-aligned
+run。
 
 ---
 

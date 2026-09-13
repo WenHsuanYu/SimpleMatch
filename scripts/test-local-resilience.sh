@@ -5,7 +5,8 @@ script_dir="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
 # shellcheck source=scripts/lib/local-resilience.sh
 source "$script_dir/lib/local-resilience.sh"
 
-bash -n "$script_dir/lib/local-resilience.sh" \
+for script in \
+  "$script_dir/lib/local-resilience.sh" \
   "$script_dir/lib/local-resilience-dependencies.sh" \
   "$script_dir/lib/connect-worker-loss.sh" \
   "$script_dir/run-local-resilience.sh" \
@@ -14,7 +15,9 @@ bash -n "$script_dir/lib/local-resilience.sh" \
   "$script_dir/lib/local-java-placement-serving.sh" \
   "$script_dir/run-local-java-placement-serving-check.sh" \
   "$script_dir/test-local-java-placement-serving.sh" \
-  "$script_dir/validate-local-resilience-contract.sh"
+  "$script_dir/validate-local-resilience-contract.sh"; do
+  bash -n "$script"
+done
 
 bash "$script_dir/validate-local-resilience-contract.sh"
 bash "$script_dir/test-local-resilience-dependencies.sh"

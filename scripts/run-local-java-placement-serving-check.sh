@@ -17,14 +17,14 @@ source "$script_dir/lib/local-certification-provenance.sh"
 # shellcheck source=scripts/lib/local-java-placement-serving.sh
 source "$script_dir/lib/local-java-placement-serving.sh"
 
-cluster_name="${SIMPLEMATCH_KIND_CLUSTER_NAME:-simplematch-live}"
+cluster_name="${SIMPLEMATCH_KIND_CLUSTER_NAME:-$JAVA_PLACEMENT_SERVING_CLUSTER}"
 context="${SIMPLEMATCH_KUBE_CONTEXT:-kind-$cluster_name}"
 namespace="${SIMPLEMATCH_JAVA_PLACEMENT_NAMESPACE:-}"
 namespace_run_id="${SIMPLEMATCH_JAVA_PLACEMENT_NAMESPACE_RUN_ID:-}"
 retained_evidence_dir="${SIMPLEMATCH_JAVA_PLACEMENT_RETAINED_EVIDENCE_DIR:-}"
 evidence_dir="${SIMPLEMATCH_JAVA_PLACEMENT_EVIDENCE_DIR:-}"
 timeout_seconds="${SIMPLEMATCH_JAVA_PLACEMENT_TIMEOUT_SECONDS:-300}"
-observe_seconds="${SIMPLEMATCH_JAVA_PLACEMENT_OBSERVE_SECONDS:-5}"
+observe_seconds="${SIMPLEMATCH_JAVA_PLACEMENT_OBSERVE_SECONDS:-$JAVA_PLACEMENT_SERVING_MIN_OBSERVE_SECONDS}"
 preflight_timeout_seconds=60
 control_plane_window_seconds=5
 cleanup_timeout_seconds=30
@@ -56,12 +56,14 @@ Usage:
     [--timeout-seconds N] [--observe-seconds N]
 
 The observer consumes a source-aligned, lifecycle-labelled disposable namespace
-that already serves the five Java workloads. It records the representative
-query-service placement, startup/readiness/liveness probes, and application
-serving response. It then scales only Redis to zero for a bounded outage,
-proves query-service remains serving without a Pod restart, restores Redis, and
-writes diagnostic-only evidence. It never applies manifests or claims a
-full-local aggregate certification PASS.
+whose retained production-like report and placement contract are already PASS.
+It records the representative
+query-service placement and health endpoint responses. It then scales only Redis
+to zero for a bounded outage, proves query-service remains serving without a Pod
+restart, restores Redis, and writes diagnostic-only evidence. The default outage
+window is 60 seconds: it covers the 20-second liveness initial delay, three
+10-second failures, and one extra period for restart detection. It never applies
+manifests or claims a full-local aggregate certification PASS.
 EOF_USAGE
 }
 
@@ -124,10 +126,12 @@ restore_redis() {
   [[ -n "$replicas" ]] || return 1
   remaining=$((cleanup_deadline_epoch - SECONDS))
   (( remaining > 0 )) || return 1
-  cleanup_kube scale deployment/redis "--replicas=$replicas" >/dev/null || return 1
+  cleanup_kube scale "deployment/$JAVA_PLACEMENT_SERVING_REDIS_DEPLOYMENT" \
+    "--replicas=$replicas" >/dev/null || return 1
   remaining=$((cleanup_deadline_epoch - SECONDS))
   (( remaining > 0 )) || return 1
-  cleanup_kube rollout status deployment/redis "--timeout=${remaining}s" >/dev/null || return 1
+  cleanup_kube rollout status "deployment/$JAVA_PLACEMENT_SERVING_REDIS_DEPLOYMENT" \
+    "--timeout=${remaining}s" >/dev/null || return 1
   redis_scaled=false
 }
 
@@ -204,7 +208,6 @@ print_placement_summary() {
   summary="$(jq -r --arg stage "$stage" '
     "\($stage): pods=\(.pod_count)/\(.desired_replicas) "
     + "ready=\(.ready_pod_count) nodes=\(.distinct_nodes) "
-    + "endpoints=\(.ready_endpoint_count) startup=\(.startup_completed_pod_count) "
     + "restarts=\([.pods[].restart_count] | join(","))"
   ' "$summary_file")" || die "cannot summarize query-service placement during $stage"
   printf 'Java placement observer %s\n' "$summary"
@@ -235,6 +238,35 @@ print_redis_summary() {
   printf 'Redis observer %s\n' "$summary"
 }
 
+validate_retained_certification_pass() {
+  local report_file="$retained_evidence_dir/report.md"
+  local plan_file="$retained_evidence_dir/plan.json"
+  local static_result="$retained_evidence_dir/phases/static-phase1-deployment-contracts/result.json"
+  local retained_status
+
+  [[ -f "$report_file" && ! -L "$report_file" ]] ||
+    die "retained certification report is missing: $report_file"
+  retained_status="$(awk -F': ' '
+    $1 == "- status" { print $2; found=1; exit }
+    END { if (!found) exit 1 }
+  ' "$report_file")" || die 'retained certification report has no status'
+  [[ "$retained_status" == PASSED ]] ||
+    die "retained production-like run is not a complete PASS: $retained_status"
+
+  [[ -f "$plan_file" && ! -L "$plan_file" ]] ||
+    die "retained certification plan is missing: $plan_file"
+  jq -e '
+    .schemaVersion == 1
+    and (.phases | type == "array" and length > 0)
+    and all(.phases[]; .decision | IN("EXECUTE", "REUSE", "REVALIDATE"))
+  ' "$plan_file" >/dev/null || die 'retained certification plan is incomplete'
+
+  [[ -f "$static_result" && ! -L "$static_result" ]] ||
+    die 'retained placement contract result is missing'
+  jq -e '.status == "PASS"' "$static_result" >/dev/null ||
+    die 'retained placement contract result is not PASS'
+}
+
 validate_namespace_and_provenance() {
   local namespace_json labels_run_id labels_manager source_revision retained_source retained_run_id
 
@@ -245,6 +277,7 @@ validate_namespace_and_provenance() {
   [[ -n "$retained_evidence_dir" ]] || die '--retained-evidence-dir is required'
   [[ -d "$retained_evidence_dir" ]] ||
     die "retained evidence directory does not exist: $retained_evidence_dir"
+  validate_retained_certification_pass
 
   namespace_json="$(kube get namespace "$namespace" -o json)" ||
     die "namespace does not exist: $namespace"
@@ -332,36 +365,24 @@ capture_placement() {
   local deployment_file="$evidence_dir/placement/${stage}-deployment.json"
   local pods_file="$evidence_dir/placement/${stage}-pods.json"
   local nodes_file="$evidence_dir/placement/${stage}-nodes.json"
-  local endpoint_slices_file="$evidence_dir/placement/${stage}-endpointslices.json"
-  local service_file="$evidence_dir/placement/service.json"
   local summary_file="$evidence_dir/placement/${stage}.json"
+  local pod_selector="app.kubernetes.io/name=${JAVA_PLACEMENT_SERVING_SERVICE},app.kubernetes.io/component=java-service"
 
+  # The repository contract checker owns probe wiring. The focused claim is
+  # Pod-level serving, so Service and EndpointSlice routing remain outside this
+  # diagnostic's evidence.
   kns get deployment "$JAVA_PLACEMENT_SERVING_SERVICE" -o json >"$deployment_file" ||
     die "cannot capture query-service Deployment during $stage"
-  local pod_selector="app.kubernetes.io/name=${JAVA_PLACEMENT_SERVING_SERVICE},app.kubernetes.io/component=java-service"
 
   kns get pods -l "$pod_selector" -o json >"$pods_file" ||
     die "cannot capture query-service Pods during $stage"
   kube get nodes -o json >"$nodes_file" || die "cannot capture kind nodes during $stage"
-  kns get endpointslice -l \
-    kubernetes.io/service-name="$JAVA_PLACEMENT_SERVING_SERVICE" -o json \
-    >"$endpoint_slices_file" || die "cannot capture query-service EndpointSlices during $stage"
-  if [[ ! -s "$service_file" ]]; then
-    kns get service "$JAVA_PLACEMENT_SERVING_SERVICE" -o json >"$service_file" ||
-      die 'cannot capture query-service Service'
-    jq -e --arg service "$JAVA_PLACEMENT_SERVING_SERVICE" \
-      --argjson port "$JAVA_PLACEMENT_SERVING_PORT" '
-      .spec.selector == {
-        "app.kubernetes.io/name":$service,
-        "app.kubernetes.io/component":"java-service"
-      }
-      and any(.spec.ports[]?; .name == "http" and .port == $port and .targetPort == "http")
-    ' "$service_file" >/dev/null || die 'query-service Service selector or port is invalid'
+  if [[ "$stage" == baseline ]]; then
+    java_placement_serving_probe_contract_is_valid "$deployment_file" ||
+      die 'query-service probe wiring is invalid in the deployed baseline'
   fi
-  java_placement_serving_probe_contract_is_valid "$deployment_file" ||
-    die "query-service probe wiring is invalid during $stage"
   java_placement_serving_runtime_snapshot \
-    "$deployment_file" "$pods_file" "$nodes_file" "$endpoint_slices_file" >"$summary_file" ||
+    "$deployment_file" "$pods_file" "$nodes_file" >"$summary_file" ||
     die "query-service placement snapshot could not be normalized during $stage"
   java_placement_serving_snapshot_file_is_ready "$summary_file" ||
     die "query-service placement is not two Ready, spread Pods during $stage"
@@ -398,16 +419,18 @@ capture_http_probe() {
   local path="$3"
   local body_file="$evidence_dir/health/${stage}-${name}.json"
   local relative_file="health/${stage}-${name}.json"
-  local status body_status body_type digest
+  local status body_status body_type body_is_up digest
 
   status="$(curl --connect-timeout 2 \
     --max-time "$(remaining_seconds)" -sS -o "$body_file" -w '%{http_code}' \
     "http://127.0.0.1:${port_forward_port}${path}")" ||
     die "$stage $name request failed"
   [[ "$status" == 200 ]] || die "$stage $name returned HTTP $status"
-  body_type="$(jq -r 'type' "$body_file")" || die "$stage $name response is not JSON"
+  IFS=$'\t' read -r body_type body_is_up < <(
+    jq -er '[type, (.status == "UP")] | @tsv' "$body_file"
+  ) || die "$stage $name response is not JSON"
   if [[ "$name" == readiness || "$name" == liveness ]]; then
-    jq -e '.status == "UP"' "$body_file" >/dev/null ||
+    [[ "$body_type" == object && "$body_is_up" == true ]] ||
       die "$stage $name response did not report UP"
     body_status=UP
   else
@@ -451,12 +474,20 @@ wait_for_redis_replicas() {
   local deployment_json redis_pods_json ready replicas
   while :; do
     remaining_seconds >/dev/null || return 1
-    deployment_json="$(kns get deployment redis -o json 2>/dev/null || true)"
-    replicas="$(jq -r '.spec.replicas // -1' <<<"$deployment_json" 2>/dev/null || true)"
-    ready="$(jq -r '.status.readyReplicas // 0' <<<"$deployment_json" 2>/dev/null || true)"
+    deployment_json="$(kns get deployment "$JAVA_PLACEMENT_SERVING_REDIS_DEPLOYMENT" \
+      -o json 2>/dev/null || true)"
+    if ! IFS=$'\t' read -r replicas ready < <(
+      jq -er '[.spec.replicas // -1, .status.readyReplicas // 0] | @tsv' \
+        <<<"$deployment_json" 2>/dev/null || true
+    ); then
+      replicas=-1
+      ready=-1
+    fi
     if [[ "$replicas" == "$expected" && "$ready" == "$expected" ]]; then
       if [[ "$expected" == 0 ]]; then
-        redis_pods_json="$(kns get pods -l app.kubernetes.io/name=redis -o json)" || return 1
+        redis_pods_json="$(kns get pods \
+          -l "app.kubernetes.io/name=$JAVA_PLACEMENT_SERVING_REDIS_DEPLOYMENT" \
+          -o json)" || return 1
         if ! jq -e 'any(.items[]?;
             any(.status.conditions[]?; .type == "Ready" and .status == "True"))' \
             <<<"$redis_pods_json" >/dev/null; then
@@ -470,6 +501,21 @@ wait_for_redis_replicas() {
   done
 }
 
+redis_outage_is_observed() {
+  local deployment_json redis_pods_json
+
+  deployment_json="$(kns get deployment "$JAVA_PLACEMENT_SERVING_REDIS_DEPLOYMENT" \
+    -o json)" || return 1
+  jq -e '.spec.replicas == 0 and (.status.readyReplicas // 0) == 0' \
+    <<<"$deployment_json" >/dev/null || return 1
+  redis_pods_json="$(kns get pods \
+    -l "app.kubernetes.io/name=$JAVA_PLACEMENT_SERVING_REDIS_DEPLOYMENT" \
+    -o json)" || return 1
+  jq -e 'all(.items[]?;
+    (any(.status.conditions[]?; .type == "Ready" and .status == "True") | not))' \
+    <<<"$redis_pods_json" >/dev/null
+}
+
 capture_redis_snapshot() {
   local stage="$1"
   local expected_replicas="$2"
@@ -477,9 +523,10 @@ capture_redis_snapshot() {
   local pods_file="$evidence_dir/placement/redis-${stage}-pods.json"
   local snapshot_file="$evidence_dir/placement/redis-${stage}.json"
 
-  kns get deployment redis -o json >"$deployment_file" ||
+  kns get deployment "$JAVA_PLACEMENT_SERVING_REDIS_DEPLOYMENT" -o json >"$deployment_file" ||
     die "cannot capture Redis Deployment during $stage"
-  kns get pods -l app.kubernetes.io/name=redis -o json >"$pods_file" ||
+  kns get pods -l "app.kubernetes.io/name=$JAVA_PLACEMENT_SERVING_REDIS_DEPLOYMENT" \
+    -o json >"$pods_file" ||
     die "cannot capture Redis Pods during $stage"
   jq -n \
     --slurpfile deployment "$deployment_file" \
@@ -528,138 +575,17 @@ assert_target_identity_unchanged() {
   local stage="$1"
   local summary_file="$evidence_dir/placement/${stage}.json"
   local stage_uid stage_restart stage_node
-  stage_uid="$(jq -er --arg pod "$target_pod" \
-    '.pods[] | select(.name == $pod) | .uid' "$summary_file")" ||
-    die "$stage lost target Pod $target_pod"
-  stage_restart="$(jq -er --arg pod "$target_pod" \
-    '.pods[] | select(.name == $pod) | .restart_count' "$summary_file")" ||
-    die "$stage lost target restart count"
-  stage_node="$(jq -er --arg pod "$target_pod" \
-    '.pods[] | select(.name == $pod) | .node' "$summary_file")" ||
-    die "$stage lost target node"
+  IFS=$'\t' read -r stage_uid stage_node stage_restart < <(
+    jq -er --arg pod "$target_pod" \
+      '.pods[] | select(.name == $pod) | [.uid, .node, .restart_count] | @tsv' \
+      "$summary_file"
+  ) || die "$stage lost target Pod identity"
   [[ "$stage_uid" == "$target_pod_uid" ]] ||
     die "$stage replaced target Pod $target_pod"
   [[ "$stage_restart" == "$target_restart_count" ]] ||
     die "$stage increased target restart count"
   [[ "$stage_node" == "$target_node" ]] ||
     die "$stage moved target Pod $target_pod"
-}
-
-write_pass_report() {
-  local report_file="$evidence_dir/java-placement-serving.json"
-  local baseline_file="$evidence_dir/placement/baseline.json"
-  local outage_file="$evidence_dir/placement/redis-outage.json"
-  local restored_file="$evidence_dir/placement/restored.json"
-  local redis_before_file="$evidence_dir/placement/redis-before.json"
-  local redis_during_file="$evidence_dir/placement/redis-during.json"
-  local redis_after_file="$evidence_dir/placement/redis-after.json"
-  local baseline_uid_set outage_uid_set restored_uid_set
-  local baseline_restart_set outage_restart_set restored_restart_set
-  local baseline_digest outage_digest restored_digest
-  local redis_before_digest redis_during_digest redis_after_digest
-  local redis_during_replicas redis_after_replicas
-  local baseline_placement_file=placement/baseline.json
-  local outage_placement_file=placement/redis-outage.json
-  local restored_placement_file=placement/restored.json
-  local redis_before_report_file=placement/redis-before.json
-  local redis_during_report_file=placement/redis-during.json
-  local redis_after_report_file=placement/redis-after.json
-
-  baseline_uid_set="$(jq -c '[.pods[] | {name,uid}] | sort_by(.name)' "$baseline_file")"
-  outage_uid_set="$(jq -c '[.pods[] | {name,uid}] | sort_by(.name)' "$outage_file")"
-  restored_uid_set="$(jq -c '[.pods[] | {name,uid}] | sort_by(.name)' "$restored_file")"
-  baseline_restart_set="$(jq -c '[.pods[] | {name,restart_count}] | sort_by(.name)' "$baseline_file")"
-  outage_restart_set="$(jq -c '[.pods[] | {name,restart_count}] | sort_by(.name)' "$outage_file")"
-  restored_restart_set="$(jq -c '[.pods[] | {name,restart_count}] | sort_by(.name)' "$restored_file")"
-  baseline_digest="$(java_placement_serving_sha256_digest "$baseline_file")" ||
-    die 'baseline placement digest is invalid'
-  outage_digest="$(java_placement_serving_sha256_digest "$outage_file")" ||
-    die 'outage placement digest is invalid'
-  restored_digest="$(java_placement_serving_sha256_digest "$restored_file")" ||
-    die 'restored placement digest is invalid'
-  redis_before_digest="$(java_placement_serving_sha256_digest "$redis_before_file")" ||
-    die 'baseline Redis digest is invalid'
-  redis_during_digest="$(java_placement_serving_sha256_digest "$redis_during_file")" ||
-    die 'outage Redis digest is invalid'
-  redis_after_digest="$(java_placement_serving_sha256_digest "$redis_after_file")" ||
-    die 'restored Redis digest is invalid'
-  redis_during_replicas="$(jq -er '.desired_replicas' "$redis_during_file")" ||
-    die 'outage Redis replica count is invalid'
-  redis_after_replicas="$(jq -er '.desired_replicas' "$redis_after_file")" ||
-    die 'restored Redis replica count is invalid'
-
-  jq -n \
-    --arg profile "$JAVA_PLACEMENT_SERVING_PROFILE" \
-    --arg cluster "$cluster_name" --arg context "$context" \
-    --arg namespace "$namespace" --arg namespace_run_id "$namespace_run_id" \
-    --arg source_revision "$(jq -r '.source_revision' "$evidence_dir/provenance.json")" \
-    --arg service "$JAVA_PLACEMENT_SERVING_SERVICE" \
-    --arg pod "$target_pod" --arg pod_uid "$target_pod_uid" --arg node "$target_node" \
-    --arg container "$JAVA_PLACEMENT_SERVING_CONTAINER" \
-    --argjson port "$JAVA_PLACEMENT_SERVING_PORT" \
-    --arg startup_path "$JAVA_PLACEMENT_SERVING_STARTUP_PATH" \
-    --arg readiness_path "$JAVA_PLACEMENT_SERVING_READINESS_PATH" \
-    --arg liveness_path "$JAVA_PLACEMENT_SERVING_LIVENESS_PATH" \
-    --argjson replicas "$JAVA_PLACEMENT_SERVING_REPLICAS" \
-    --arg redis_before_file "$redis_before_report_file" \
-    --arg redis_during_file "$redis_during_report_file" \
-    --arg redis_after_file "$redis_after_report_file" \
-    --arg redis_before_digest "$redis_before_digest" \
-    --arg redis_during_digest "$redis_during_digest" \
-    --arg redis_after_digest "$redis_after_digest" \
-    --argjson placement "$(jq -n \
-      --slurpfile baseline "$baseline_file" \
-      --argjson uid_unchanged "$([[ "$baseline_uid_set" == "$outage_uid_set" && "$baseline_uid_set" == "$restored_uid_set" ]] && echo true || echo false)" \
-      --argjson restart_unchanged "$([[ "$baseline_restart_set" == "$outage_restart_set" && "$baseline_restart_set" == "$restored_restart_set" ]] && echo true || echo false)" \
-      --arg node_pool "$JAVA_PLACEMENT_SERVING_NODE_POOL" \
-      --arg baseline_file "$baseline_placement_file" \
-      --arg outage_file "$outage_placement_file" \
-      --arg restored_file "$restored_placement_file" \
-      --arg baseline_digest "$baseline_digest" \
-      --arg outage_digest "$outage_digest" \
-      --arg restored_digest "$restored_digest" \
-      '{pod_count:($baseline[0].pods|length),ready_pod_count:($baseline[0].pods|map(select(.ready==true))|length),
-        node_pool:$node_pool,
-        distinct_nodes:$baseline[0].distinct_nodes,ready_endpoint_count:$baseline[0].ready_endpoint_count,
-        startup_completed_pod_count:$baseline[0].startup_completed_pod_count,
-        image_ids:($baseline[0].pods|map(.image_id)|unique),
-        pod_uid_unchanged:$uid_unchanged,restart_count_unchanged:$restart_unchanged,
-        snapshots:{
-          baseline:{file:$baseline_file,sha256:$baseline_digest},
-          outage:{file:$outage_file,sha256:$outage_digest},
-          restored:{file:$restored_file,sha256:$restored_digest}
-        }}')" \
-    --slurpfile baseline "$evidence_dir/health/baseline.json" \
-    --slurpfile outage "$evidence_dir/health/redis-outage.json" \
-    --slurpfile restored "$evidence_dir/health/restored.json" \
-    --argjson observed_seconds "$outage_observed_seconds" \
-    --argjson redis_before "$original_redis_replicas" \
-    --argjson redis_during "$redis_during_replicas" \
-    --argjson redis_after "$redis_after_replicas" \
-    '{schema_version:1,profile:$profile,status:"PASS",cluster:$cluster,context:$context,
-      namespace:$namespace,namespace_run_id:$namespace_run_id,source_revision:$source_revision,
-      target:{service:$service,container:$container,port:$port,pod:$pod,
-        pod_uid:$pod_uid,node:$node,replicas:$replicas},
-      placement:$placement,
-      probes:{startup:{path:$startup_path,port:"http"},
-        readiness:{path:$readiness_path,port:"http"},
-        liveness:{path:$liveness_path,port:"http"}},
-      observations:{baseline:$baseline[0],redis_outage:$outage[0],restored:$restored[0]},
-      redis_outage:{deployment:"redis",replicas_before:$redis_before,
-        replicas_during:$redis_during,replicas_after:$redis_after,
-        observed_seconds:$observed_seconds,
-        snapshots:{
-          before:{file:$redis_before_file,sha256:$redis_before_digest,replicas:$redis_before},
-          during:{file:$redis_during_file,sha256:$redis_during_digest,replicas:$redis_during},
-          after:{file:$redis_after_file,sha256:$redis_after_digest,replicas:$redis_after}
-        }},
-      claim_boundary:["source-aligned query-service placement and serving",
-        "query-service readiness and liveness remained healthy during a Redis outage",
-        "no query-service Pod replacement or restart was observed during the bounded outage",
-        "diagnostic-only evidence; not a full-local aggregate certification"]}' \
-    >"$report_file"
-  java_placement_serving_report_is_passed "$report_file" ||
-    die 'published Java placement/serving report failed its evidence contract'
 }
 
 while [[ $# -gt 0 ]]; do
@@ -678,7 +604,9 @@ done
 [[ "$timeout_seconds" =~ ^[1-9][0-9]*$ ]] || die '--timeout-seconds must be positive'
 (( timeout_seconds <= 600 )) || die '--timeout-seconds must not exceed 600'
 [[ "$observe_seconds" =~ ^[1-9][0-9]*$ ]] || die '--observe-seconds must be positive'
-(( observe_seconds <= 30 )) || die '--observe-seconds must not exceed 30'
+(( observe_seconds >= JAVA_PLACEMENT_SERVING_MIN_OBSERVE_SECONDS )) ||
+  die "--observe-seconds must be at least $JAVA_PLACEMENT_SERVING_MIN_OBSERVE_SECONDS"
+(( observe_seconds <= 120 )) || die '--observe-seconds must not exceed 120'
 deadline_epoch=$((SECONDS + timeout_seconds))
 
 prepare_evidence_dir
@@ -689,22 +617,14 @@ printf 'Java placement observer preflight passed: cluster=%s context=%s namespac
 
 current_stage='capture baseline placement'
 capture_placement baseline
-java_placement_serving_probe_contract_is_valid \
-  "$evidence_dir/placement/baseline-deployment.json" || die 'baseline probe contract is invalid'
-target_pod="$(jq -er '.pods[0].name' "$evidence_dir/placement/baseline.json")" ||
-  die 'could not select a unique query-service target Pod'
-target_pod_uid="$(jq -er --arg pod "$target_pod" \
-  '.pods[] | select(.name == $pod) | .uid' "$evidence_dir/placement/baseline.json")" ||
-  die 'baseline target Pod UID is missing'
-target_node="$(jq -er --arg pod "$target_pod" \
-  '.pods[] | select(.name == $pod) | .node' "$evidence_dir/placement/baseline.json")" ||
-  die 'baseline target Pod node is missing'
-target_restart_count="$(jq -er --arg pod "$target_pod" \
-  '.pods[] | select(.name == $pod) | .restart_count' "$evidence_dir/placement/baseline.json")" ||
-  die 'baseline target restart count is missing'
+IFS=$'\t' read -r target_pod target_pod_uid target_node target_restart_count < <(
+  jq -er '.pods[0] | [.name, .uid, .node, .restart_count] | @tsv' \
+    "$evidence_dir/placement/baseline.json"
+) || die 'baseline target Pod identity is incomplete'
 
 redis_before_deployment_file="$evidence_dir/placement/redis-before-deployment.json"
-kns get deployment redis -o json >"$redis_before_deployment_file" ||
+kns get deployment "$JAVA_PLACEMENT_SERVING_REDIS_DEPLOYMENT" \
+  -o json >"$redis_before_deployment_file" ||
   die 'cannot capture Redis baseline'
 original_redis_replicas="$(redis_replicas "$redis_before_deployment_file")" ||
   die 'Redis replica count is invalid'
@@ -718,19 +638,22 @@ capture_health baseline
 
 current_stage='observe query-service during Redis outage'
 redis_scaled=true
-kns scale deployment/redis --replicas=0 >/dev/null || die 'Redis could not be scaled down'
+kns scale "deployment/$JAVA_PLACEMENT_SERVING_REDIS_DEPLOYMENT" \
+  --replicas=0 >/dev/null || die 'Redis could not be scaled down'
 wait_for_redis_replicas 0 || die 'Redis outage was not observed'
 capture_redis_snapshot during 0
 outage_started_seconds="$SECONDS"
 run_bounded sleep "$observe_seconds" || die 'Redis outage observation window exceeded deadline'
 outage_observed_seconds=$((SECONDS - outage_started_seconds))
 (( outage_observed_seconds >= observe_seconds )) || die 'Redis outage observation window was incomplete'
+redis_outage_is_observed || die 'Redis outage did not remain active for the observation window'
 capture_placement redis-outage
 assert_target_identity_unchanged redis-outage
 capture_health redis-outage
 
 current_stage='restore Redis and verify serving'
-kns scale deployment/redis "--replicas=$original_redis_replicas" >/dev/null ||
+kns scale "deployment/$JAVA_PLACEMENT_SERVING_REDIS_DEPLOYMENT" \
+  "--replicas=$original_redis_replicas" >/dev/null ||
   die 'Redis could not be restored'
 wait_for_redis_replicas "$original_redis_replicas" || die 'Redis did not become Ready after restoration'
 redis_scaled=false
@@ -740,7 +663,8 @@ assert_target_identity_unchanged restored
 capture_health restored
 
 current_stage='publish placement and serving evidence'
-write_pass_report
+java_placement_serving_write_pass_report "$evidence_dir" "$outage_observed_seconds" ||
+  die 'published Java placement/serving report failed its evidence contract'
 report_published=true
 printf 'Java placement/serving observer passed: %s\n' "$evidence_dir/java-placement-serving.json"
 cleanup 0
