@@ -596,7 +596,6 @@ write_pass_report() {
     --arg service "$JAVA_PLACEMENT_SERVING_SERVICE" \
     --arg pod "$target_pod" --arg pod_uid "$target_pod_uid" --arg node "$target_node" \
     --arg container "$JAVA_PLACEMENT_SERVING_CONTAINER" \
-    --arg node_pool "$JAVA_PLACEMENT_SERVING_NODE_POOL" \
     --argjson port "$JAVA_PLACEMENT_SERVING_PORT" \
     --arg startup_path "$JAVA_PLACEMENT_SERVING_STARTUP_PATH" \
     --arg readiness_path "$JAVA_PLACEMENT_SERVING_READINESS_PATH" \
@@ -612,6 +611,7 @@ write_pass_report() {
       --slurpfile baseline "$baseline_file" \
       --argjson uid_unchanged "$([[ "$baseline_uid_set" == "$outage_uid_set" && "$baseline_uid_set" == "$restored_uid_set" ]] && echo true || echo false)" \
       --argjson restart_unchanged "$([[ "$baseline_restart_set" == "$outage_restart_set" && "$baseline_restart_set" == "$restored_restart_set" ]] && echo true || echo false)" \
+      --arg node_pool "$JAVA_PLACEMENT_SERVING_NODE_POOL" \
       --arg baseline_file "$baseline_placement_file" \
       --arg outage_file "$outage_placement_file" \
       --arg restored_file "$restored_placement_file" \
