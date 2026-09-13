@@ -383,6 +383,9 @@ grep -Fq 'docker-system-df-before.txt' "$script_dir/run-local-java-placement-ser
   fail 'runner omitted pre-observation Docker inventory'
 grep -Fq 'docker-system-df-after.txt' "$script_dir/run-local-java-placement-serving-check.sh" ||
   fail 'runner omitted post-observation Docker inventory'
+grep -Fq "node_pool:\$JAVA_PLACEMENT_SERVING_NODE_POOL" \
+  "$script_dir/run-local-java-placement-serving-check.sh" ||
+  fail 'runner report omitted canonical node-pool identity'
 
 bash -n "$script_dir/lib/local-java-placement-serving.sh" \
   "$script_dir/run-local-java-placement-serving-check.sh"

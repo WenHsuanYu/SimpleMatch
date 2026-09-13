@@ -618,6 +618,7 @@ write_pass_report() {
       --arg outage_digest "$outage_digest" \
       --arg restored_digest "$restored_digest" \
       '{pod_count:($baseline[0].pods|length),ready_pod_count:($baseline[0].pods|map(select(.ready==true))|length),
+        node_pool:$JAVA_PLACEMENT_SERVING_NODE_POOL,
         distinct_nodes:$baseline[0].distinct_nodes,ready_endpoint_count:$baseline[0].ready_endpoint_count,
         startup_completed_pod_count:$baseline[0].startup_completed_pod_count,
         image_ids:($baseline[0].pods|map(.image_id)|unique),
