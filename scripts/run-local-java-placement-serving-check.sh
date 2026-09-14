@@ -14,6 +14,8 @@ source "$script_dir/lib/local-common.sh"
 source "$script_dir/lib/local-kind.sh"
 # shellcheck source=scripts/lib/local-certification-provenance.sh
 source "$script_dir/lib/local-certification-provenance.sh"
+# shellcheck source=scripts/lib/local-certification-phase-graph.sh
+source "$script_dir/lib/local-certification-phase-graph.sh"
 # shellcheck source=scripts/lib/local-java-placement-serving.sh
 source "$script_dir/lib/local-java-placement-serving.sh"
 
@@ -210,8 +212,9 @@ print_placement_summary() {
   local summary
 
   summary="$(jq -r --arg stage "$stage" '
-    "\($stage): pods=\(.pod_count)/\(.desired_replicas) "
-    + "ready=\(.ready_pod_count) nodes=\(.distinct_nodes) "
+    "\($stage): pods=\(.pods | length)/\(.desired_replicas) "
+    + "ready=\([.pods[] | select(.ready == true)] | length) "
+    + "nodes=\([.pods[].node] | unique | length) "
     + "restarts=\([.pods[].restart_count] | join(","))"
   ' "$summary_file")" || die "cannot summarize query-service placement during $stage"
   printf 'Java placement observer %s\n' "$summary"
@@ -246,9 +249,14 @@ validate_retained_certification_pass() {
   local report_file="$retained_evidence_dir/report.md"
   local plan_file="$retained_evidence_dir/plan.json"
   local manifest_file="$retained_evidence_dir/evidence-manifest.json"
+  local run_context="$retained_evidence_dir/run-context"
   local image_lock="$retained_evidence_dir/local-images.lock"
-  local static_result="$retained_evidence_dir/phases/static-phase1-deployment-contracts/result.json"
-  local retained_status
+  local retained_status retained_image_transport retained_skip_build
+  local retained_skip_compose retained_skip_kubernetes retained_matching_fleet_only
+  local required_phase_output required_phase_json phase_id result_path
+  local image_lock_result expected_lock_identity lock_payload lock_identity lock_content
+  local temporary_lock actual_lock_identity
+  local -a result_paths=()
 
   [[ -f "$report_file" && ! -L "$report_file" ]] ||
     die "retained certification report is missing: $report_file"
@@ -263,37 +271,149 @@ validate_retained_certification_pass() {
     die "retained certification plan is missing: $plan_file"
   [[ -f "$manifest_file" && ! -L "$manifest_file" ]] ||
     die "retained certification evidence manifest is missing: $manifest_file"
-  jq -e --slurpfile manifest "$manifest_file" '
-    . as $plan
-    | $plan.schemaVersion == 1
-    and ($plan.phases | type == "array" and length > 0)
-    and all($plan.phases[];
-      (.phaseId | type == "string" and length > 0)
-      and (.decision | IN("EXECUTE", "REUSE", "REVALIDATE"))
-      and (.inputFingerprint | type == "string" and test("^sha256:[0-9a-f]{64}$"))
-      and (.evidenceDigest == null or
-        (.evidenceDigest | type == "string" and test("^sha256:[0-9a-f]{64}$"))))
-    and ($manifest[0].schemaVersion == 1)
-    and ($manifest[0].phases | type == "array" and length == ($plan.phases | length))
-    and ([$manifest[0].phases[].phaseId] | sort == ([$plan.phases[].phaseId] | sort))
-    and all($manifest[0].phases[];
-      (.phaseId | type == "string" and length > 0)
-      and (.status == "PASS")
-      and (.definitionVersion | type == "number" and floor == . and . >= 1)
-      and (.inputFingerprint | type == "string" and test("^sha256:[0-9a-f]{64}$"))
-      and (.evidenceDigest == null or
-        (.evidenceDigest | type == "string" and test("^sha256:[0-9a-f]{64}$"))))
-  ' "$plan_file" >/dev/null || die 'retained certification plan or evidence manifest is incomplete'
+  [[ -f "$run_context" && ! -L "$run_context" ]] ||
+    die 'retained certification run-context is missing'
+
+  retained_image_transport="$(
+    simplematch_certification_image_transport "$retained_evidence_dir"
+  )" || die 'retained certification image transport is invalid'
+  [[ "$retained_image_transport" == registry ]] ||
+    die 'retained certification must use registry image transport'
+  retained_skip_build="$(awk -F= \
+    '$1 == "skip_build" { print substr($0, index($0, "=") + 1); exit }' \
+    "$run_context")"
+  retained_skip_compose="$(awk -F= \
+    '$1 == "skip_compose" { print substr($0, index($0, "=") + 1); exit }' \
+    "$run_context")"
+  retained_skip_kubernetes="$(awk -F= \
+    '$1 == "skip_kubernetes" { print substr($0, index($0, "=") + 1); exit }' \
+    "$run_context")"
+  retained_matching_fleet_only="$(awk -F= \
+    '$1 == "matching_fleet_only" { print substr($0, index($0, "=") + 1); exit }' \
+    "$run_context")"
+  [[ "$retained_skip_build" == false &&
+    "$retained_skip_compose" == false &&
+    "$retained_skip_kubernetes" == false &&
+    "$retained_matching_fleet_only" == false ]] ||
+    die 'retained certification is not the complete full-local profile'
+
+  # Reconstruct the current full profile so a forged or partial plan cannot
+  # satisfy the focused diagnostic merely by repeating a smaller phase list.
+  local image_transport="$retained_image_transport"
+  local skip_build="$retained_skip_build"
+  local skip_compose="$retained_skip_compose"
+  local skip_kubernetes="$retained_skip_kubernetes"
+  local matching_fleet_only="$retained_matching_fleet_only"
+  required_phase_output="$(certification_required_phase_ids)" ||
+    die 'current certification phase graph is invalid'
+  required_phase_json="$(printf '%s\n' "$required_phase_output" |
+    jq -Rsc 'split("\n") | map(select(length > 0))')" ||
+    die 'current certification phase list is malformed'
+  while IFS= read -r phase_id; do
+    [[ -n "$phase_id" ]] || continue
+    result_path="$retained_evidence_dir/phases/$phase_id/result.json"
+    [[ -f "$result_path" && ! -L "$result_path" ]] ||
+      die "retained certification phase result is missing: $phase_id"
+    java_placement_serving_path_has_symlink_component "$result_path" &&
+      die "retained certification phase result path contains a symlink: $phase_id"
+    result_paths+=("$result_path")
+  done <<<"$required_phase_output"
+
+  # The planner owns fingerprint calculation, reuse decisions, and
+  # phase-specific output schemas. This join only checks that the retained
+  # plan, manifest, and completed results describe the same passing phases.
+  jq -e -s --argjson required "$required_phase_json" \
+    --slurpfile plan "$plan_file" \
+    --slurpfile manifest "$manifest_file" '
+      def result_for($results; $phase):
+        [$results[] | select(.phaseId == $phase.phaseId)]
+        | if length == 1 then .[0] else null end;
+      def manifest_for($manifest_phases; $phase):
+        [$manifest_phases[] | select(.phaseId == $phase.phaseId)]
+        | if length == 1 then .[0] else null end;
+      def decision_matches($phase; $result):
+        ($phase.decision == "EXECUTE" and $result.decision == "EXECUTED")
+        or ($phase.decision == "REUSE" and $result.decision == "REUSED")
+        or ($phase.decision == "REVALIDATE" and $result.decision == "REVALIDATED");
+      if ($plan | length) != 1 or ($manifest | length) != 1 then
+        false
+      else
+        . as $results
+        | $plan[0] as $plan_object
+        | $manifest[0] as $manifest_object
+        | ($plan_object.phases // []) as $plan_phases
+        | ($manifest_object.phases // []) as $manifest_phases
+        | ($plan_phases | map(.phaseId)) as $plan_ids
+        | ($manifest_phases | map(.phaseId)) as $manifest_ids
+        | ($results | map(.phaseId)) as $result_ids
+        | ($plan_object.schemaVersion == 1)
+        and ($manifest_object.schemaVersion == 1)
+        and (($plan_ids | sort) == ($required | sort))
+        and (($manifest_ids | sort) == ($required | sort))
+        and ($result_ids == $required)
+        and all($plan_phases[]?;
+          .decision | IN("EXECUTE", "REUSE", "REVALIDATE"))
+        and all($manifest_phases[]?;
+          (.status == "PASS")
+          and (.resultPath == ("phases/" + .phaseId + "/result.json")))
+        and all($results[]?;
+          .schemaVersion == 1 and .status == "PASS")
+        and all($plan_phases[]?;
+          . as $phase
+          | result_for($results; $phase) as $result
+          | manifest_for($manifest_phases; $phase) as $manifest_entry
+          | ($result != null and $manifest_entry != null)
+          and decision_matches($phase; $result)
+          and ($phase.inputFingerprint == $result.inputFingerprint)
+          and ($phase.evidenceDigest == null or
+            $phase.evidenceDigest == $result.evidenceDigest)
+          and ($manifest_entry.definitionVersion == $result.definitionVersion)
+          and ($manifest_entry.decision == $result.decision)
+          and ($manifest_entry.status == $result.status)
+          and ($manifest_entry.inputFingerprint == $result.inputFingerprint)
+          and (($manifest_entry.evidenceDigest // "") == ($result.evidenceDigest // ""))
+          and ($manifest_entry.outputs == $result.outputs)
+          and ($manifest_entry.resultPath ==
+            ("phases/" + $result.phaseId + "/result.json")))
+      end
+    ' "${result_paths[@]}" >/dev/null ||
+    die 'retained certification phase plan, results, or manifest are incomplete'
 
   [[ -f "$image_lock" && ! -L "$image_lock" ]] ||
     die "retained local image lock is missing: $image_lock"
   simplematch_local_image_lock_validate_file "$image_lock" ||
     die 'retained local image lock is invalid'
 
-  [[ -f "$static_result" && ! -L "$static_result" ]] ||
-    die 'retained placement contract result is missing'
-  jq -e '.status == "PASS"' "$static_result" >/dev/null ||
-    die 'retained placement contract result is not PASS'
+  image_lock_result="$retained_evidence_dir/phases/registry-image-lock/result.json"
+  expected_lock_identity="sha256:$(sha256sum "$image_lock" | awk '{print $1}')" ||
+    die 'retained local image lock could not be fingerprinted'
+  lock_payload="$(jq -er --arg identity "$expected_lock_identity" '
+    [.outputs[]?
+      | select(.kind == "image-lock" and .name == "local-images"
+        and .identity == $identity)] as $matches
+    | if ($matches | length) == 1 then $matches[0] else error("image lock output mismatch") end
+    | [.identity, .contentBase64]
+    | if (.[0] | type == "string" and test("^sha256:[0-9a-f]{64}$"))
+      and (.[1] | type == "string" and length > 0)
+      then @tsv else error("image lock output is incomplete") end
+  ' "$image_lock_result")" ||
+    die 'retained registry-image-lock output is not bound to the image lock'
+  IFS=$'\t' read -r lock_identity lock_content <<<"$lock_payload"
+  command -v base64 >/dev/null 2>&1 || die 'base64 is required for image-lock validation'
+  temporary_lock="$(mktemp)" || die 'could not create temporary image-lock file'
+  if ! printf '%s' "$lock_content" | base64 --decode >"$temporary_lock" 2>/dev/null; then
+    rm -f -- "$temporary_lock"
+    die 'retained registry-image-lock output contains invalid content'
+  fi
+  actual_lock_identity="sha256:$(sha256sum "$temporary_lock" | awk '{print $1}')" || {
+    rm -f -- "$temporary_lock"
+    die 'retained registry-image-lock output could not be fingerprinted'
+  }
+  rm -f -- "$temporary_lock"
+  [[ "$lock_identity" == "$expected_lock_identity" &&
+    "$actual_lock_identity" == "$expected_lock_identity" ]] ||
+    die 'retained registry-image-lock output does not match lock bytes'
+
 }
 
 validate_deployed_query_image() {
@@ -488,10 +608,9 @@ capture_http_probe() {
     die "$stage $name response digest is invalid"
   jq -n \
     --arg path "$path" --arg file "$relative_file" --arg status "$status" \
-    --arg body_status "$body_status" --arg body_type "$body_type" \
-    --arg digest "$digest" \
+    --arg body_status "$body_status" --arg digest "$digest" \
     '{path:$path,http_status:($status|tonumber),body_status:$body_status,
-      body_type:$body_type,body_file:$file,body_sha256:$digest}'
+      body_file:$file,body_sha256:$digest}'
 }
 
 capture_health() {

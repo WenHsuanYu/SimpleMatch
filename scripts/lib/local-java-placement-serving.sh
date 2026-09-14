@@ -27,23 +27,6 @@ JAVA_PLACEMENT_SERVING_CLAIM_BOUNDARY_JSON='[
   "no query-service Pod replacement or restart was observed during the bounded outage",
   "diagnostic-only evidence; not a full-local aggregate certification"
 ]'
-JAVA_PLACEMENT_SERVING_EVIDENCE_FILES_JSON='[
-  "placement/baseline.json",
-  "placement/redis-outage.json",
-  "placement/restored.json",
-  "placement/redis-before.json",
-  "placement/redis-during.json",
-  "placement/redis-after.json",
-  "health/baseline-readiness.json",
-  "health/baseline-liveness.json",
-  "health/baseline-serving.json",
-  "health/redis-outage-readiness.json",
-  "health/redis-outage-liveness.json",
-  "health/redis-outage-serving.json",
-  "health/restored-readiness.json",
-  "health/restored-liveness.json",
-  "health/restored-serving.json"
-]'
 # The outage may begin just after a Pod starts. Cover the configured liveness
 # initial delay, three failure periods, and one extra period for detection.
 JAVA_PLACEMENT_SERVING_MIN_OBSERVE_SECONDS=$((
@@ -115,7 +98,6 @@ java_placement_serving_runtime_snapshot() {
                name: (.metadata.name // ""),
                uid: (.metadata.uid // ""),
                node: (.spec.nodeName // ""),
-               phase: (.status.phase // ""),
                ready: any(.status.conditions[]?;
                  .type == "Ready" and .status == "True"),
                restart_count: ($containerStatus.restartCount // -1),
@@ -125,20 +107,19 @@ java_placement_serving_runtime_snapshot() {
       | ([ $nodeItems[]?
            | select(.metadata.labels["simplematch.io/node-pool"] == $node_pool)
            | .metadata.name ] | unique) as $eligibleNodes
-      | ([ $podRows[].node ] | unique) as $podNodes
-      | ($deploymentObject.status // {}) as $deploymentStatus
       | ($deploymentObject.spec // {}) as $deploymentSpec
+      | ([ $deploymentSpec.template.spec.containers[]?
+           | select(.name == $container)]
+         | if length == 1 then .[0] else {} end) as $deploymentContainer
       | {
           deployment_name: ($deploymentObject.metadata.name // ""),
+          deployment_image: ($deploymentContainer.image // ""),
           desired_replicas: ($deploymentSpec.replicas // 0),
-          ready_replicas: ($deploymentStatus.readyReplicas // 0),
-          node_pool: $node_pool,
-          deployment_node_pool: ($deploymentSpec.template.spec.nodeSelector["simplematch.io/node-pool"] // ""),
+          deployment_node_pool: (
+            $deploymentSpec.template.spec.nodeSelector["simplematch.io/node-pool"] // ""
+          ),
           eligible_node_names: $eligibleNodes,
-          pods: $podRows,
-          pod_count: ($podRows | length),
-          ready_pod_count: ($podRows | map(select(.ready == true)) | length),
-          distinct_nodes: ($podNodes | length)
+          pods: $podRows
       }
     '
 }
@@ -147,34 +128,36 @@ java_placement_serving_runtime_snapshot() {
 java_placement_serving_snapshot_json_is_ready() {
   local snapshot_json="$1"
 
-  jq -e \
+  jq -e -s \
     --arg service "$JAVA_PLACEMENT_SERVING_SERVICE" \
     --arg node_pool "$JAVA_PLACEMENT_SERVING_NODE_POOL" \
     --argjson replicas "$JAVA_PLACEMENT_SERVING_REPLICAS" '
       def text: type == "string" and length > 0;
-      def immutable_image: text and test("sha256:[0-9a-f]{64}$");
+      def image_digest:
+        capture("@(?<digest>sha256:[0-9a-f]{64})$").digest;
       def valid_pod:
         (.name | text)
         and (.uid | text)
         and (.node | text)
-        and (.phase == "Running")
         and (.ready == true)
-        and (.restart_count | numbers and . >= 0)
-        and (.image_id | immutable_image);
-      (.deployment_name == $service)
-      and (.node_pool == $node_pool)
-      and (.deployment_node_pool == $node_pool)
-      and (.desired_replicas == $replicas)
-      and (.ready_replicas == $replicas)
-      and (.pod_count == $replicas)
-      and (.ready_pod_count == $replicas)
-      and (all(.pods[]?; valid_pod))
-      and ((.pods | map(.uid) | unique | length) == $replicas)
-      and ((.pods | map(.node) | unique | length) >= $replicas)
-      and (. as $snapshot
-        | all($snapshot.pods[]?;
+        and (.restart_count | numbers and . >= 0);
+      length == 1
+      and (
+        .[0] as $snapshot
+        | (try ($snapshot.deployment_image | image_digest) catch "") as $deployment_digest
+        | ($snapshot.deployment_name == $service)
+        and ($deployment_digest | text)
+        and ($snapshot.deployment_node_pool == $node_pool)
+        and ($snapshot.desired_replicas == $replicas)
+        and (($snapshot.pods | length) == $replicas)
+        and (all($snapshot.pods[]?; valid_pod))
+        and (all($snapshot.pods[]?;
+            ((.image_id // "") | endswith("@" + $deployment_digest))))
+        and (($snapshot.pods | map(.node) | unique | length) == $replicas)
+        and (all($snapshot.pods[]?;
             .node as $node
             | ($snapshot.eligible_node_names | index($node)) != null))
+      )
     ' <<<"$snapshot_json" >/dev/null
 }
 
@@ -221,23 +204,23 @@ java_placement_serving_redis_snapshot_is_expected() {
 
   [[ -s "$snapshot_file" ]] || return 1
   [[ "$expected_replicas" =~ ^[0-9]+$ ]] || return 1
-  jq -e --argjson expected "$expected_replicas" '
-    (.deployment_name == "redis")
-    and (.desired_replicas == $expected)
-    and (.ready_replicas == $expected)
-    and (.ready_pod_count == $expected)
-    and if $expected == 0
-        then (.pods | all(.[]; .ready != true))
-        else (.pods | any(.[]; .ready == true))
-        end
+  jq -e -s --argjson expected "$expected_replicas" '
+    length == 1
+    and (
+      .[0] as $snapshot
+      | ($snapshot.deployment_name == "redis")
+      and ($snapshot.desired_replicas == $expected)
+      and if $expected == 0
+          then ($snapshot.pods | all(.[]; .ready != true))
+          else ($snapshot.pods | any(.[]; .ready == true))
+          end
+    )
   ' "$snapshot_file" >/dev/null
 }
 
 java_placement_serving_report_evidence_files_are_valid() {
   local report_file="$1"
   local report_dir raw_report_dir references kind file expected_digest expected_replicas path actual_digest
-  local target_pod target_uid target_node
-  local -a health_files
 
   [[ -s "$report_file" && ! -L "$report_file" ]] || return 1
   java_placement_serving_path_has_symlink_component "$report_file" && return 1
@@ -248,49 +231,46 @@ java_placement_serving_report_evidence_files_are_valid() {
   report_dir="$(cd -- "$report_dir" && pwd)" || return 1
   [[ -d "$report_dir/placement" && ! -L "$report_dir/placement" &&
     -d "$report_dir/health" && ! -L "$report_dir/health" ]] || return 1
-  health_files=(
-    "$report_dir/health/baseline-readiness.json"
-    "$report_dir/health/baseline-liveness.json"
-    "$report_dir/health/redis-outage-readiness.json"
-    "$report_dir/health/redis-outage-liveness.json"
-    "$report_dir/health/restored-readiness.json"
-    "$report_dir/health/restored-liveness.json"
-    "$report_dir/health/baseline-serving.json"
-    "$report_dir/health/redis-outage-serving.json"
-    "$report_dir/health/restored-serving.json"
-  )
-  references="$(jq -er \
-    --argjson expected_files "$JAVA_PLACEMENT_SERVING_EVIDENCE_FILES_JSON" '
-    [
-      (.placement.snapshots | to_entries[]
-       | ["placement", .value.file, .value.sha256, ""]),
-      (.redis_outage.snapshots | to_entries[]
-       | ["redis", .value.file, .value.sha256, (.value.replicas | tostring)]),
-      (.observations | to_entries[] | .value | to_entries[] | .value
-       | ["health", .body_file, .body_sha256, ""])
-    ] as $references
-    | if ($references | length) == ($expected_files | length)
-      and (($references | map(.[1]) | unique | length) == ($expected_files | length))
-      and (($references | map(.[1]) | sort) == ($expected_files | sort))
-      and ([.placement.snapshots | to_entries[] |
-        .value.file == ("placement/" +
-          (if .key == "outage" then "redis-outage" else .key end) + ".json")]
-        | all)
-      and ([.redis_outage.snapshots | to_entries[] |
-        .value.file == ("placement/redis-" + .key + ".json")] | all)
-      and ([.observations | to_entries[] as $stage |
-        $stage.value | to_entries[] |
-        .value.body_file == ("health/" +
-          ($stage.key | gsub("_"; "-")) + "-" + .key + ".json")]
-        | all)
-      then ($references[] | @tsv)
-      else empty
-      end
+  [[ -f "$report_dir/provenance.json" && ! -L "$report_dir/provenance.json" ]] ||
+    return 1
+  references="$(jq -er -s '
+    def evidence($kind; $file; $entry; $replicas):
+      select($entry.file == $file)
+      | [$kind, $file, $entry.sha256, $replicas];
+    def health($file; $entry):
+      evidence("health"; $file;
+        {file: $entry.body_file, sha256: $entry.body_sha256}; "");
+    select(length == 1)
+    | .[0]
+    | [
+        evidence("placement"; "placement/baseline.json";
+          .placement.snapshots.baseline; ""),
+        evidence("placement"; "placement/redis-outage.json";
+          .placement.snapshots.outage; ""),
+        evidence("placement"; "placement/restored.json";
+          .placement.snapshots.restored; ""),
+        evidence("redis"; "placement/redis-before.json";
+          .redis_outage.snapshots.before; "1"),
+        evidence("redis"; "placement/redis-during.json";
+          .redis_outage.snapshots.during; "0"),
+        evidence("redis"; "placement/redis-after.json";
+          .redis_outage.snapshots.after; "1"),
+        health("health/baseline-readiness.json"; .observations.baseline.readiness),
+        health("health/baseline-liveness.json"; .observations.baseline.liveness),
+        health("health/baseline-serving.json"; .observations.baseline.serving),
+        health("health/redis-outage-readiness.json";
+          .observations.redis_outage.readiness),
+        health("health/redis-outage-liveness.json";
+          .observations.redis_outage.liveness),
+        health("health/redis-outage-serving.json"; .observations.redis_outage.serving),
+        health("health/restored-readiness.json"; .observations.restored.readiness),
+        health("health/restored-liveness.json"; .observations.restored.liveness),
+        health("health/restored-serving.json"; .observations.restored.serving)
+      ]
+    | select(length == 15)
+    | .[]
+    | @tsv
   ' "$report_file")" || return 1
-
-  IFS=$'\t' read -r target_pod target_uid target_node < <(
-    jq -er '[.target.pod, .target.pod_uid, .target.node] | @tsv' "$report_file"
-  ) || return 1
 
   while IFS=$'\t' read -r kind file expected_digest expected_replicas; do
     [[ "$file" != /* && "$file" != *..* ]] || return 1
@@ -305,24 +285,26 @@ java_placement_serving_report_evidence_files_are_valid() {
     case "$kind" in
       placement)
         java_placement_serving_snapshot_file_is_ready "$path" || return 1
-        if [[ "$file" == placement/baseline.json ]]; then
-          jq -e --arg pod "$target_pod" --arg uid "$target_uid" --arg node "$target_node" '
-            any(.pods[]?; .name == $pod and .uid == $uid and .node == $node)
-          ' "$path" >/dev/null || return 1
-        fi
         ;;
       redis) java_placement_serving_redis_snapshot_is_expected \
         "$path" "$expected_replicas" || return 1 ;;
+      health)
+        case "$file" in
+          *-readiness.json|*-liveness.json)
+            jq -e -s 'length == 1 and .[0].status == "UP"' \
+              "$path" >/dev/null || return 1
+            ;;
+          *-serving.json)
+            jq -e -s 'length == 1 and (.[0] | type) == "object"' \
+              "$path" >/dev/null || return 1
+            ;;
+        esac
+        ;;
     esac
   done <<<"$references"
 
-  jq -e -s '
-    length == 9
-    and all(.[0:6][]; type == "object" and .status == "UP")
-    and all(.[6:9][]; type == "object")
-  ' "${health_files[@]}" >/dev/null || return 1
-
   jq -e \
+    --slurpfile provenance "$report_dir/provenance.json" \
     --slurpfile baseline "$report_dir/placement/baseline.json" \
     --slurpfile outage "$report_dir/placement/redis-outage.json" \
     --slurpfile restored "$report_dir/placement/restored.json" '
@@ -330,7 +312,24 @@ java_placement_serving_report_evidence_files_are_valid() {
         [$snapshot.pods[] | {name, uid, node}] | sort_by(.name);
       def restarts($snapshot):
         [$snapshot.pods[] | {name, restart_count}] | sort_by(.name);
-      (.placement.pod_uid_unchanged == (
+      .target as $target
+      | ($provenance | length == 1)
+      and (.source_revision == $provenance[0].source_revision)
+      and (.namespace == $provenance[0].namespace)
+      and (.namespace_run_id == $provenance[0].namespace_run_id)
+      and (.placement.node_pool == $baseline[0].deployment_node_pool)
+      and (.placement.pod_count == ($baseline[0].pods | length))
+      and (.placement.ready_pod_count ==
+        ([$baseline[0].pods[] | select(.ready == true)] | length))
+      and (.placement.distinct_nodes ==
+        ([$baseline[0].pods[].node] | unique | length))
+      and ($baseline[0].deployment_image == $outage[0].deployment_image)
+      and ($baseline[0].deployment_image == $restored[0].deployment_image)
+      and any($baseline[0].pods[]?;
+        .name == $target.pod
+        and .uid == $target.pod_uid
+        and .node == $target.node)
+      and (.placement.pod_uid_unchanged == (
         identities($baseline[0]) == identities($outage[0])
         and identities($baseline[0]) == identities($restored[0])
       ))
@@ -420,14 +419,17 @@ java_placement_serving_write_pass_report() {
             port: $port,
             pod: ($target.name // ""),
             pod_uid: ($target.uid // ""),
-            node: ($target.node // ""),
-            replicas: $replicas
+            node: ($target.node // "")
           },
           placement: {
-            node_pool: ($baseline_snapshot.node_pool // ""),
-            pod_count: ($baseline_snapshot.pod_count // 0),
-            ready_pod_count: ($baseline_snapshot.ready_pod_count // 0),
-            distinct_nodes: ($baseline_snapshot.distinct_nodes // 0),
+            node_pool: ($baseline_snapshot.deployment_node_pool // ""),
+            pod_count: ($baseline_snapshot.pods | length),
+            ready_pod_count: (
+              [$baseline_snapshot.pods[] | select(.ready == true)] | length
+            ),
+            distinct_nodes: (
+              [$baseline_snapshot.pods[].node] | unique | length
+            ),
             pod_uid_unchanged: (
               identities($baseline_snapshot) == identities($outage_snapshot)
               and identities($baseline_snapshot) == identities($restored_snapshot)
@@ -454,12 +456,9 @@ java_placement_serving_write_pass_report() {
             replicas_after: ($redis_after[0].desired_replicas // -1),
             observed_seconds: $observed_seconds,
             snapshots: {
-              before: {file:"placement/redis-before.json", sha256:$redis_before_digest,
-                replicas:($redis_before[0].desired_replicas // -1)},
-              during: {file:"placement/redis-during.json", sha256:$redis_during_digest,
-                replicas:($redis_during[0].desired_replicas // -1)},
-              after: {file:"placement/redis-after.json", sha256:$redis_after_digest,
-                replicas:($redis_after[0].desired_replicas // -1)}
+              before: {file:"placement/redis-before.json", sha256:$redis_before_digest},
+              during: {file:"placement/redis-during.json", sha256:$redis_during_digest},
+              after: {file:"placement/redis-after.json", sha256:$redis_after_digest}
             }
           },
           claim_boundary: $claim_boundary
@@ -468,11 +467,14 @@ java_placement_serving_write_pass_report() {
     rm -f -- "$temporary_file"
     return 1
   fi
+  java_placement_serving_report_is_passed "$temporary_file" || {
+    rm -f -- "$temporary_file"
+    return 1
+  }
   mv -- "$temporary_file" "$report_file" || {
     rm -f -- "$temporary_file"
     return 1
   }
-  java_placement_serving_report_is_passed "$report_file"
 }
 
 java_placement_serving_report_is_passed() {
@@ -495,21 +497,14 @@ java_placement_serving_report_is_passed() {
     --argjson min_observe_seconds "$JAVA_PLACEMENT_SERVING_MIN_OBSERVE_SECONDS" \
     --argjson claim_boundary "$JAVA_PLACEMENT_SERVING_CLAIM_BOUNDARY_JSON" '
       def text: type == "string" and length > 0;
-      def digest: type == "string" and test("^sha256:[0-9a-f]{64}$");
       def healthy_probe($probe; $expected_path):
         ($probe.http_status == 200)
         and ($probe.path == $expected_path)
-        and ($probe.body_status == "UP")
-        and ($probe.body_type == "object")
-        and ($probe.body_file | text)
-        and ($probe.body_sha256 | digest);
+        and ($probe.body_status == "UP");
       def healthy_serving($probe):
         ($probe.http_status == 200)
         and ($probe.path == $application_path)
-        and ($probe.body_status == "SERVING")
-        and ($probe.body_type == "object")
-        and ($probe.body_file | text)
-        and ($probe.body_sha256 | digest);
+        and ($probe.body_status == "SERVING");
       def healthy_observation($observation):
         healthy_probe($observation.readiness; $readiness_path)
         and healthy_probe($observation.liveness; $liveness_path)
@@ -526,11 +521,7 @@ java_placement_serving_report_is_passed() {
       def target_contract:
         (.target.service == $service)
         and (.target.container == $container)
-        and (.target.port == $port)
-        and (.target.replicas == $replicas)
-        and (.target.pod | text)
-        and (.target.pod_uid | text)
-        and (.target.node | text);
+        and (.target.port == $port);
       def placement_contract:
         (.placement.node_pool == $node_pool)
         and (.placement.pod_count == $replicas)
@@ -548,9 +539,6 @@ java_placement_serving_report_is_passed() {
       and (.redis_outage.replicas_before == 1)
       and (.redis_outage.replicas_during == 0)
       and (.redis_outage.replicas_after == 1)
-      and (.redis_outage.snapshots.before.replicas == .redis_outage.replicas_before)
-      and (.redis_outage.snapshots.during.replicas == .redis_outage.replicas_during)
-      and (.redis_outage.snapshots.after.replicas == .redis_outage.replicas_after)
       and (.redis_outage.observed_seconds >= $min_observe_seconds)
       and (.claim_boundary == $claim_boundary)
     ' "$report_file" >/dev/null || return 1

@@ -593,6 +593,7 @@ spec:
               port: http
             initialDelaySeconds: 20
             periodSeconds: 10
+            failureThreshold: 3
           resources:
             requests:
               cpu: 250m

@@ -60,6 +60,7 @@ write_deployment_fixture() {
             nodeSelector: {"simplematch.io/node-pool": "local-resilience"},
             containers: [{
               name: "query-service",
+              image: "localhost:5001/simplematch/query-service@sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
               ports: [{name: "http", containerPort: 8086}],
               startupProbe: {httpGet: {
                 path: "/actuator/health/readiness", port: "http"
@@ -160,15 +161,15 @@ write_health_stage() {
     --arg serving_digest "$serving_digest" '
       {
         readiness: {path:"/actuator/health/readiness", http_status:200,
-          body_status:"UP", body_type:"object",
+          body_status:"UP",
           body_file:("health/" + $stage + "-readiness.json"),
           body_sha256:$readiness_digest},
         liveness: {path:"/actuator/health/liveness", http_status:200,
-          body_status:"UP", body_type:"object",
+          body_status:"UP",
           body_file:("health/" + $stage + "-liveness.json"),
           body_sha256:$liveness_digest},
         serving: {path:"/api/v1/freshness", http_status:200,
-          body_status:"SERVING", body_type:"object",
+          body_status:"SERVING",
           body_file:("health/" + $stage + "-serving.json"),
           body_sha256:$serving_digest}
       }
@@ -177,12 +178,18 @@ write_health_stage() {
 
 write_deployment_fixture
 write_workload_fixture
+mkdir -p "$fixture_dir/placement" "$fixture_dir/health"
 java_placement_serving_probe_contract_is_valid "$deployment" ||
   fail 'valid probe contract was rejected'
 java_placement_serving_runtime_snapshot_is_ready "$deployment" "$pods" "$nodes" ||
   fail 'valid placement snapshot was rejected'
 snapshot_json="$(java_placement_serving_runtime_snapshot "$deployment" "$pods" "$nodes")" ||
   fail 'runtime snapshot could not be normalized'
+printf '%s\n' "$snapshot_json" "$snapshot_json" \
+  >"$fixture_dir/placement/concatenated.json"
+expect_reject 'concatenated placement snapshot' \
+  java_placement_serving_snapshot_file_is_ready \
+  "$fixture_dir/placement/concatenated.json"
 
 jq '.spec.template.spec.nodeSelector["simplematch.io/node-pool"] = "other-pool"' \
   "$deployment" >"$fixture_dir/deployment-wrong-node-pool.json"
@@ -207,13 +214,25 @@ expect_reject 'mutable runtime image identity' \
   java_placement_serving_runtime_snapshot_is_ready \
   "$deployment" "$fixture_dir/pods-mutable-image.json" "$nodes"
 
-mkdir -p "$fixture_dir/placement" "$fixture_dir/health"
+jq '.items[0].status.containerStatuses[0].imageID =
+  "docker-pullable://simplematch/query-service@sha256:cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc"' \
+  "$pods" >"$fixture_dir/pods-wrong-image.json"
+expect_reject 'runtime image outside the Deployment identity' \
+  java_placement_serving_runtime_snapshot_is_ready \
+  "$deployment" "$fixture_dir/pods-wrong-image.json" "$nodes"
+
 for placement_stage in baseline redis-outage restored; do
   printf '%s\n' "$snapshot_json" >"$fixture_dir/placement/$placement_stage.json"
 done
 write_redis_fixture before 1
 write_redis_fixture during 0
 write_redis_fixture after 1
+cat "$fixture_dir/placement/redis-before.json" \
+  "$fixture_dir/placement/redis-before.json" \
+  >"$fixture_dir/placement/redis-concatenated.json"
+expect_reject 'concatenated Redis snapshot' \
+  java_placement_serving_redis_snapshot_is_expected \
+  "$fixture_dir/placement/redis-concatenated.json" 1
 write_health_body_fixtures
 write_health_stage baseline
 write_health_stage redis-outage
@@ -230,6 +249,11 @@ java_placement_serving_write_pass_report "$fixture_dir" \
   "$JAVA_PLACEMENT_SERVING_MIN_OBSERVE_SECONDS" ||
   fail 'report assembler did not produce a valid PASS report'
 [[ -s "$report" ]] || fail 'report assembler did not publish the report'
+
+cat "$report" "$report" >"$fixture_dir/report-concatenated.json"
+expect_reject 'concatenated placement report' \
+  java_placement_serving_report_is_passed \
+  "$fixture_dir/report-concatenated.json"
 
 ln -s "$fixture_dir" "$fixture_dir/report-alias"
 expect_reject 'report through a symlinked parent path' \
@@ -271,12 +295,30 @@ expect_reject 'cross-stage Pod identity mismatch' \
   "$fixture_dir/report-identity-mismatch.json"
 mv "$fixture_dir/redis-outage.original" "$fixture_dir/placement/redis-outage.json"
 
+cp "$fixture_dir/placement/redis-outage.json" "$fixture_dir/redis-outage.original"
+different_image='query-service@sha256:ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff'
+jq --arg image "$different_image" '
+  .deployment_image = $image | (.pods[].image_id) = $image
+' "$fixture_dir/placement/redis-outage.json" \
+  >"$fixture_dir/placement/redis-outage.changed-image.json"
+mv "$fixture_dir/placement/redis-outage.changed-image.json" \
+  "$fixture_dir/placement/redis-outage.json"
+changed_image_digest="$(java_placement_serving_sha256_digest \
+  "$fixture_dir/placement/redis-outage.json")"
+jq --arg digest "$changed_image_digest" \
+  '.placement.snapshots.outage.sha256 = $digest' "$report" \
+  >"$fixture_dir/report-image-mismatch.json"
+expect_reject 'cross-stage image mismatch' \
+  java_placement_serving_report_is_passed \
+  "$fixture_dir/report-image-mismatch.json"
+mv "$fixture_dir/redis-outage.original" "$fixture_dir/placement/redis-outage.json"
+
 expect_report_rejects 'report-liveness-failed' \
   '.observations.redis_outage.liveness.http_status = 503'
 expect_report_rejects 'report-serving-metadata-mismatch' \
   '.observations.baseline.serving.body_status = "DOWN"'
 expect_report_rejects 'report-redis-snapshot-mismatch' \
-  '.redis_outage.snapshots.during.replicas = 1'
+  '.redis_outage.snapshots.during.file = "placement/redis-before.json"'
 expect_report_rejects 'report-swapped-placement-stages' \
   '.placement.snapshots.baseline.file = "placement/restored.json" |
    .placement.snapshots.restored.file = "placement/baseline.json"'

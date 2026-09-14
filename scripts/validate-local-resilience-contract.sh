@@ -51,6 +51,12 @@ java_workloads.each do |name|
     abort "#{name} #{probe_name} must use an HTTP health endpoint" unless http_get["path"] && http_get["port"]
     expected_path = probe_name == "livenessProbe" ? "/actuator/health/liveness" : "/actuator/health/readiness"
     abort "#{name} #{probe_name} must use #{expected_path}" unless http_get["path"] == expected_path
+    if name == "query-service" && probe_name == "livenessProbe"
+      abort "query-service liveness probe timing is not the observed contract" unless
+        probe["initialDelaySeconds"] == 20 &&
+          probe["periodSeconds"] == 10 &&
+          probe["failureThreshold"] == 3
+    end
   end
   abort "#{name} must define resources" unless container.dig("resources", "requests") && container.dig("resources", "limits")
   pdb = resources.fetch(["PodDisruptionBudget", name], nil)
