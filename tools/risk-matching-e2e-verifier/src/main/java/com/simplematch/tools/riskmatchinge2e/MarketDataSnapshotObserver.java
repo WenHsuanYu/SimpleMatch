@@ -127,7 +127,8 @@ public final class MarketDataSnapshotObserver {
       return List.copyOf(asks);
     }
 
-    private static Observation from(MarketDataSnapshot snapshot) {
+    /** Converts the protobuf snapshot into the immutable public evidence shape. */
+    static Observation from(MarketDataSnapshot snapshot) {
       final LastTradeObservation lastTrade =
           snapshot.getHasLastTrade()
               ? new LastTradeObservation(

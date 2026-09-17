@@ -10,6 +10,8 @@ source "$script_dir/lib/local-common.sh"
 source "$script_dir/lib/local-kind.sh"
 # shellcheck source=scripts/lib/local-image-transport.sh
 source "$script_dir/lib/local-image-transport.sh"
+# shellcheck source=scripts/lib/local-docker-storage.sh
+source "$script_dir/lib/local-docker-storage.sh"
 # shellcheck source=scripts/lib/local-certification-provenance.sh
 source "$script_dir/lib/local-certification-provenance.sh"
 

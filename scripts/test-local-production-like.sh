@@ -18,6 +18,8 @@ fingerprint_lib="$script_dir/lib/local-certification-fingerprint.sh"
 evidence_lib="$script_dir/lib/local-certification-evidence.sh"
 planner_lib="$script_dir/lib/local-certification-planner.sh"
 images_lib="$script_dir/lib/local-certification-images.sh"
+docker_storage_lib="$script_dir/lib/local-docker-storage.sh"
+docker_storage_test="$script_dir/test-local-docker-storage-preflight.sh"
 cdc_fixture_lib="$script_dir/lib/cdc-observer-fixture.sh"
 cdc_fixture_test="$script_dir/test-cdc-observer-fixture-contract.sh"
 focused_diagnostic_lib="$script_dir/lib/local-certification-focused-diagnostic.sh"
@@ -33,11 +35,13 @@ for file in \
   "$runner" "$framework_lib" "$kafka_lib" "$kubernetes_lib" \
   "$connect_lib" "$workloads_lib" "$bootstrap_lib" "$run_lib" \
   "$transport_lib" "$phase_graph_lib" "$fingerprint_lib" \
-  "$evidence_lib" "$planner_lib" "$images_lib" "$cdc_fixture_lib" \
+  "$evidence_lib" "$planner_lib" "$images_lib" "$docker_storage_lib" \
+  "$cdc_fixture_lib" \
   "$focused_diagnostic_lib" "$script_dir/lib/local-resilience-dependencies.sh"; do
   bash -n "$file"
 done
 bash -n "$cdc_fixture_test"
+bash -n "$docker_storage_test"
 bash -n "$focused_diagnostic_script" "$focused_diagnostic_test" "$job_supervision_test"
 bash -n "$script_dir/run-local-resilience-dependencies.sh" \
   "$script_dir/test-local-resilience-dependencies.sh"
@@ -99,6 +103,7 @@ bash -n "$repo_root/scripts/lib/local-kind.sh"
 observer_script="$repo_root/scripts/run-risk-cdc-delivery-observer-check.sh"
 grep -Fq 'current_epoch_millis()' "$observer_script"
 bash "$cdc_fixture_test"
+bash "$docker_storage_test"
 bash "$focused_diagnostic_test"
 bash "$job_supervision_test"
 grep -Fq 'baseline_age_ms="$(( $(current_epoch_millis) - baseline_updated ))"' \
@@ -155,6 +160,8 @@ grep -Fq 'SIMPLEMATCH_CERTIFICATION_TIMEOUT_SECONDS' \
   "$runner" "$framework_lib" "$bootstrap_lib"
 grep -Fq 'SIMPLEMATCH_KAFKA_CAPACITY_WORKLOAD_FILE' "$runner"
 grep -Fq 'scripts/testdata/matching-topic-profile/local/capacity.properties' "$runner"
+grep -Fq 'fixture_wait_timeout_seconds=600' "$kubernetes_lib"
+grep -Fq -- '--timeout="${fixture_wait_timeout_seconds}s"' "$kubernetes_lib"
 grep -Fq 'workload.commands.per.day=10000' \
   "$repo_root/scripts/testdata/matching-topic-profile/local/capacity.properties"
 grep -Fq 'workload.events.per.day=10000' \

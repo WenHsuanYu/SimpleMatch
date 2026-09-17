@@ -88,6 +88,11 @@ else
 fi
 compose_command=("${compose_prefix[@]}" --project-name "$compose_project" --file "$compose_file")
 
+if [[ "$dry_run" == false ]]; then
+  simplematch_docker_storage_preflight || die \
+    'Docker host-capacity preflight failed; no production-like phase was started.'
+fi
+
 generated_run_id="$(date -u +%Y%m%d-%H%M%S)-$$"
 run_id="$generated_run_id"
 namespace="${SIMPLEMATCH_CERTIFICATION_NAMESPACE:-simplematch-local-cert-${run_id}}"

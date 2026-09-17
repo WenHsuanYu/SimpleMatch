@@ -8,12 +8,15 @@ start_port_forward() {
   local log_path="$3"
   local pid_variable="$4"
   local port_variable="$5"
+  local requested_port="${6:-}"
+  local port_spec=":$remote_port"
   local pid
   local port=""
 
+  [[ -z "$requested_port" ]] || port_spec="${requested_port}:${remote_port}"
   mkdir -p "$(dirname -- "$log_path")"
   : >"$log_path"
-  kns port-forward "$resource" ":$remote_port" >"$log_path" 2>&1 &
+  kns port-forward "$resource" "$port_spec" >"$log_path" 2>&1 &
   pid="$!"
   printf -v "$pid_variable" '%s' "$pid"
 
@@ -32,10 +35,70 @@ start_port_forward() {
   return 1
 }
 
+# Port-forward wrappers can leave child kubectl processes behind; stop the exact
+# process tree before a replacement tries to claim the same local port.
+background_process_is_alive() {
+  local pid="$1"
+  local state
+  state="$(ps -o state= -p "$pid" 2>/dev/null)" || return 1
+  [[ -n "$state" && "$state" != Z* ]]
+}
+
+background_process_descendants() {
+  local parent_pid="$1"
+  local child_pid
+  while read -r child_pid; do
+    [[ "$child_pid" =~ ^[1-9][0-9]*$ ]] || continue
+    background_process_descendants "$child_pid"
+    printf '%s\n' "$child_pid"
+  done < <(pgrep -P "$parent_pid" 2>/dev/null || true)
+}
+
+background_processes_stopped() {
+  local pid
+  for pid in "$@"; do
+    background_process_is_alive "$pid" && return 1
+  done
+  return 0
+}
+
+wait_for_background_processes_to_stop() {
+  local -a pids=("$@")
+  for _ in $(seq 1 50); do
+    background_processes_stopped "${pids[@]}" && return 0
+    sleep 0.1
+  done
+  return 1
+}
+
 stop_background_process() {
   local pid="${1:-}"
+  local descendants
+  local child_pid
+  local index
+  local -a pids=("$pid")
   [[ -n "$pid" ]] || return 0
-  kill "$pid" >/dev/null 2>&1 || true
+
+  descendants="$(background_process_descendants "$pid")"
+  if [[ -n "$descendants" ]]; then
+    while read -r child_pid; do
+      [[ "$child_pid" =~ ^[1-9][0-9]*$ ]] || continue
+      pids+=("$child_pid")
+    done <<<"$descendants"
+  fi
+
+  for ((index = ${#pids[@]} - 1; index >= 0; index--)); do
+    kill -TERM "${pids[index]}" >/dev/null 2>&1 || true
+  done
+  if wait_for_background_processes_to_stop "${pids[@]}"; then
+    wait "$pid" >/dev/null 2>&1 || true
+    return 0
+  fi
+
+  for ((index = ${#pids[@]} - 1; index >= 0; index--)); do
+    kill -KILL "${pids[index]}" >/dev/null 2>&1 || true
+  done
+  wait_for_background_processes_to_stop "${pids[@]}" || return 1
   wait "$pid" >/dev/null 2>&1 || true
 }
 

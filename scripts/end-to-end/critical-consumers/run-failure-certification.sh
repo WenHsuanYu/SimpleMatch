@@ -20,6 +20,7 @@ context="kind-$cluster_name"
 namespace=""
 evidence_dir=""
 timeout_seconds="${SIMPLEMATCH_CRITICAL_CONSUMER_FAILURE_TIMEOUT_SECONDS:-180}"
+retained_evidence_dir=""
 
 observer_pod="matching-event-outage-observer"
 observer_manifest="$repo_root/deploy/k8s/verification/matching-event-observer-pod.yaml"
@@ -219,7 +220,7 @@ done
 [[ "$timeout_seconds" =~ ^[1-9][0-9]*$ ]] || die '--timeout-seconds must be a positive integer'
 (( timeout_seconds <= 300 )) || die '--timeout-seconds must not exceed 300'
 
-for tool in kubectl jq curl awk sed grep date seq sleep tr cp mv; do
+for tool in docker kubectl jq curl awk sed grep date seq sleep tr cp mv; do
   command -v "$tool" >/dev/null 2>&1 || die "$tool is required"
 done
 [[ -x "$repo_root/gradlew" ]] || die 'Gradle wrapper is missing'
@@ -230,8 +231,9 @@ done
 [[ "$(kubectl config current-context)" == "$context" ]] ||
   die "current Kubernetes context must be $context"
 kubectl get namespace "$namespace" >/dev/null 2>&1 || die "namespace does not exist: $namespace"
-simplematch_kind_namespace_is_disposable "$context" "$namespace" ||
-  die 'refusing failure certification outside a lifecycle-labeled disposable namespace'
+simplematch_kind_namespace_is_disposable \
+  "$context" "$namespace" local-production-like-certification ||
+  die 'refusing failure certification outside the run-owned production-like namespace'
 
 mkdir -p "$evidence_dir"
 evidence_dir="$(cd -- "$evidence_dir" && pwd)"
@@ -248,6 +250,25 @@ mkdir -p \
   "$evidence_dir/client-state" \
   "$evidence_dir/diagnostics"
 evidence_initialized=true
+
+retained_evidence_dir="$(simplematch_production_like_evidence_dir "$repo_root")"
+docker info >/dev/null || die 'Docker daemon is not ready'
+simplematch_kind_exists "$cluster_name" || die 'canonical kind cluster is not available'
+simplematch_kind_validate_canonical_topology \
+  "$context" "$evidence_dir/diagnostics/nodes.json" ||
+  die 'canonical kind topology is not one Ready control plane plus three workers'
+simplematch_kind_validate_control_plane_stability \
+  "$context" 5 60 "$evidence_dir/diagnostics/control-plane" 60 ||
+  die 'canonical Kubernetes control plane is not stable before failure injection'
+simplematch_certification_verifier_image \
+  "$repo_root" "$namespace" "$retained_evidence_dir" >/dev/null ||
+  die 'retained production-like source or verifier-image provenance is not valid'
+retained_run_id="$(awk -F= '$1 == "run_id" {print substr($0, index($0, "=") + 1)}' \
+  "$retained_evidence_dir/run-context")"
+namespace_run_id="$(kubectl --context "$context" get namespace "$namespace" \
+  -o jsonpath='{.metadata.labels.simplematch\.io/run-id}')"
+[[ -n "$retained_run_id" && "$namespace_run_id" == "$retained_run_id" ]] ||
+  die 'namespace run-id does not match retained production-like evidence'
 
 current_stage="capture original workload configuration"
 original_matching_replicas="$(workload_replicas statefulset matching)"
@@ -277,7 +298,7 @@ current_stage="prepare deterministic order input"
 select_market_input
 account_id="$(cat /proc/sys/kernel/random/uuid)"
 cl_ord_id="FAIL-$(date -u +%Y%m%d-%H%M%S)-$$"
-seed_account_limit
+seed_account_limit "$@"
 
 current_stage="prepare Gateway and external clients"
 enable_gateway_operations
@@ -287,7 +308,7 @@ wait_outbox_connector_state RUNNING "$evidence_dir/baseline/outbox-running-statu
 start_fix_port_forward
 start_fix_submit_client || die 'retained FIX client did not log on and reach the submission barrier'
 start_gateway_port_forward
-start_kafka_observation_adapter
+start_kafka_observation_adapter "$@"
 
 current_stage="establish deterministic Risk outbox barrier"
 pause_risk_outbox

@@ -74,6 +74,9 @@ spec:
             storage: 2Gi
   template:
     spec:
+      nodeSelector:
+        simplematch.io/node-pool: local-resilience
+        simplematch.io/worker-slot: "1"
       containers:
         - name: quickfix-gateway
           env:
@@ -102,6 +105,21 @@ spec:
             items:
               - key: FIX44.xml
                 path: FIX44.xml
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: marketdata-streamer
+spec:
+  template:
+    spec:
+      nodeSelector:
+        simplematch.io/node-pool: local-resilience
+      tolerations:
+        - key: simplematch.io/portable-workload
+          operator: Exists
+          effect: NoExecute
+          tolerationSeconds: 30
 ---
 apiVersion: apps/v1
 kind: Deployment

@@ -29,6 +29,38 @@ simplematch_kind_node_readiness_state() {
   ' <<<"$node_json"
 }
 
+# Verify the canonical local production-like node shape before a deployment
+# test changes workload state. This checks only the environment boundary that
+# the deployment lessons require: one control plane and three Ready workers
+# with the local-resilience slots used by the ownership contracts.
+simplematch_kind_validate_canonical_topology() {
+  local context="$1"
+  local evidence_file="${2:-}"
+  local nodes_json
+
+  nodes_json="$(
+    "$SIMPLEMATCH_KIND_KUBECTL_BIN" --context "$context" get nodes -o json
+  )" || return 1
+  if [[ -n "$evidence_file" ]]; then
+    mkdir -p "$(dirname -- "$evidence_file")" || return 1
+    printf '%s\n' "$nodes_json" >"$evidence_file" || return 1
+  fi
+  jq -e '
+    (.items | length) == 4
+    and ([.items[] | select(.metadata.labels | has("node-role.kubernetes.io/control-plane"))]
+      | length) == 1
+    and ([.items[] | select(.metadata.labels["simplematch.io/node-pool"] == "local-resilience")]
+      | length) == 3
+    and ([.items[]
+      | select(any(.status.conditions[]?; .type == "Ready" and .status == "True"))]
+      | length) == 4
+    and ([.items[]
+      | select(.metadata.labels["simplematch.io/node-pool"] == "local-resilience")
+      | .metadata.labels["simplematch.io/worker-slot"]]
+      | sort) == ["0", "1", "2"]
+  ' <<<"$nodes_json" >/dev/null
+}
+
 _simplematch_kind_control_plane_snapshot() {
   local context="$1" command_timeout_seconds="$2"
 

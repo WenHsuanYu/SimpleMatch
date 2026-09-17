@@ -102,6 +102,13 @@ two replicas on the `local-resilience` worker pool, hostname spreading with `max
 portable-workload, `not-ready`, and `unreachable` taints. The shared contract validator checks these
 fields after Kustomize rendering so a patch that only looks correct in source cannot pass by itself.
 
+The local overlay keeps QuickFIX as one owner on worker slot 1, with its owner-specific Service,
+`minAvailable: 1` PDB, and node-local RWO PVC. `marketdata-streamer` remains one `Recreate` owner,
+but selects the whole local-resilience pool and tolerates the portable-workload taint so a replacement
+can use another worker. The rendered validator checks only these ownership and placement signals;
+same-owner FIX recovery and streamer reconnect/resubscribe are runtime gates owned by the later
+resilience scenarios, not by a second manifest mirror.
+
 Render and validate them with:
 
 ```text

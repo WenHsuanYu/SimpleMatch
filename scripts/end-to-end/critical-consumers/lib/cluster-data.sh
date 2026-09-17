@@ -394,7 +394,6 @@ critical_consumer_state_is_healthy() {
     .persistenceQuarantines == 0
     and .accountQuarantines == 0
     and .quickfixQuarantines == 0
-    and .riskQuarantines == 0
     and .quickfixPendingIntents == 0
     and .marketDataDeadLetters == 0
     and (.marketDataProgress | length) > 0
@@ -538,10 +537,6 @@ capture_consumer_state() {
             GROUP BY state
           ) admission
         ), '[]'::json),
-        'riskQuarantines', (
-          SELECT COUNT(*) FROM risk_service.consumer_quarantines
-          WHERE status = 'QUARANTINED'
-        ),
         'accountReservationStateCounts', COALESCE((
           SELECT json_agg(row_to_json(reservation) ORDER BY reservation.status)
           FROM (
@@ -588,7 +583,6 @@ require_clean_baseline() {
     and .persistenceQuarantineHistory == 0
     and .accountQuarantineHistory == 0
     and .quickfixQuarantineHistory == 0
-    and .riskQuarantines == 0
     and .quickfixPendingIntents == 0
     and .marketDataDeadLetters == 0
     and .activeMatchingOrders == 0

@@ -48,7 +48,8 @@ path = ARGV.fetch(0)
 source = File.read(path, encoding: "UTF-8")
 abort "prepared FIX client must retain structured ExecutionReport evidence" unless
   source.include?("writeEvidence(") &&
-  source.include?("accountId, timeInForce, terminalReport")
+  source.include?("report.getString(ExecType.FIELD)") &&
+  source.include?("report.getString(OrdStatus.FIELD)")
 abort "prepared FIX client must accept the explicit order side" unless
   source.include?("SIMPLEMATCH_LIVE_FIX_SIDE") &&
   source.include?("order.setChar(quickfix.field.Side.FIELD, side.charAt(0))")

@@ -416,12 +416,29 @@ done
 [[ -n "$replay_ready_ms" ]] || die "Matching offset catch-up did not reach $command_end_offset within $replay_timeout_seconds seconds"
 replay_ms=$(( replay_ready_ms - replay_started_ms ))
 
+read_runtime_metrics_with_retry() {
+  local pod="$1"
+  local output_path="$2"
+  local deadline=$(( $(date +%s) + 60 ))
+  local metrics_json=""
+
+  while [[ "$(date +%s)" -le "$deadline" ]]; do
+    metrics_json="$(kns exec "$pod" -c matching -- cat /var/lib/simplematch/matching/runtime-metrics.json 2>/dev/null || true)"
+    if [[ -n "$metrics_json" ]] &&
+      jq -e 'has("input_ring") and has("output_ring") and (.runtime_state | type == "string")' \
+        <<<"$metrics_json" >/dev/null; then
+      printf '%s\n' "$metrics_json" >"$output_path"
+      return 0
+    fi
+    sleep 2
+  done
+
+  return 1
+}
+
 while IFS= read -r pod; do
-  kns exec "$pod" -c matching -- cat /var/lib/simplematch/matching/runtime-metrics.json \
-    >"$evidence_dir/ring/after/$pod.json"
-  jq -e 'has("input_ring") and has("output_ring") and (.runtime_state | type == "string")' \
-    "$evidence_dir/ring/after/$pod.json" >/dev/null ||
-    die "invalid runtime metrics from $pod after E2E"
+  read_runtime_metrics_with_retry "$pod" "$evidence_dir/ring/after/$pod.json" ||
+    die "runtime metrics did not become readable from $pod after E2E"
 done < <(kns get pods -l app.kubernetes.io/name=matching -o json | jq -r '.items[] | .metadata.name' | sort)
 
 replacement_seconds="$(jq -n --argjson milliseconds "$replacement_ms" '$milliseconds / 1000')"

@@ -15,6 +15,8 @@ for script in \
   "$script_dir/lib/local-java-placement-serving.sh" \
   "$script_dir/run-local-java-placement-serving-check.sh" \
   "$script_dir/test-local-java-placement-serving.sh" \
+  "$script_dir/end-to-end/market-data/run-streamer-recovery-certification.sh" \
+  "$script_dir/end-to-end/market-data/tests/streamer-recovery-contract.sh" \
   "$script_dir/validate-local-resilience-contract.sh"; do
   bash -n "$script"
 done
@@ -25,6 +27,7 @@ bash "$script_dir/test-connect-rest-tunnel.sh"
 bash "$script_dir/test-local-connect-worker-loss.sh"
 bash "$script_dir/test-local-kind-image-cache-preflight.sh"
 bash "$script_dir/test-local-java-placement-serving.sh"
+bash "$script_dir/end-to-end/market-data/tests/streamer-recovery-contract.sh"
 
 [[ "$(resilience_deadline 100 300)" == 400 ]]
 [[ "$RESILIENCE_DEFAULT_DEADLINE_SECONDS" == 300 ]]

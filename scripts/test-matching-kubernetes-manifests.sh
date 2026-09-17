@@ -26,6 +26,7 @@ service = load_documents(File.join(manifest_dir, "matching-headless-service.yaml
 pdb = load_documents(File.join(manifest_dir, "matching-pod-disruption-budget.yaml")).fetch(0)
 gateway_statefulset = load_documents(File.join(manifest_dir, "quickfix-gateway-statefulset.yaml")).fetch(0)
 gateway_service = load_documents(File.join(manifest_dir, "quickfix-gateway-owner-0-service.yaml")).fetch(0)
+gateway_pdb = load_documents(File.join(manifest_dir, "quickfix-gateway-pod-disruption-budget.yaml")).fetch(0)
 rbac_documents = load_documents(File.join(manifest_dir, "matching-lease-rbac.yaml"))
 leases = load_documents(File.join(manifest_dir, "matching-partition-leases.yaml"))
 oci_patch = JSON.parse(File.read(File.join(manifest_dir, "matching-artifact-oci-data-image-patch.json"), encoding: "UTF-8"))
@@ -41,6 +42,17 @@ require_value(gateway_statefulset.dig("metadata", "name") == "quickfix-gateway",
 require_value(gateway_statefulset.dig("spec", "replicas") == 1, "Phase 1 Gateway must have one owner")
 require_value(gateway_service.fetch("kind") == "Service", "Gateway owner Service must be present")
 require_value(
+  gateway_service.dig("spec", "selector", "app.kubernetes.io/name") == "quickfix-gateway" &&
+    gateway_service.dig("spec", "selector", "statefulset.kubernetes.io/pod-name") == "quickfix-gateway-0",
+  "Gateway owner Service must select only quickfix-gateway-0"
+)
+require_value(
+  gateway_pdb.fetch("kind") == "PodDisruptionBudget" &&
+    gateway_pdb.dig("spec", "minAvailable") == 1 &&
+    gateway_pdb.dig("spec", "selector", "matchLabels", "app.kubernetes.io/name") == "quickfix-gateway",
+  "Gateway PDB must protect the sole owner"
+)
+require_value(
   gateway_statefulset.dig("spec", "template", "spec", "containers", 0, "image").include?("@sha256:"),
   "Gateway image must be digest pinned"
 )
@@ -50,6 +62,10 @@ gateway_environment = gateway_container.fetch("env").to_h { |entry| [entry.fetch
 require_value(
   gateway_environment.dig("SIMPLEMATCH_KUBERNETES_CONFIG_IMPORT", "value") == "kubernetes:",
   "Gateway Kubernetes Config Import must be a valid Spring location"
+)
+require_value(
+  gateway_environment.dig("SIMPLEMATCH_QUICKFIX_GATEWAY_OWNER_ID", "valueFrom", "fieldRef", "fieldPath") == "metadata.name",
+  "Gateway owner identity must come from the StatefulSet Pod name"
 )
 
 template_spec = statefulset.dig("spec", "template", "spec")

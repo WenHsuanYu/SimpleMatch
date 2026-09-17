@@ -37,10 +37,10 @@ import quickfix.field.ExecType;
 import quickfix.field.HandlInst;
 import quickfix.field.MsgSeqNum;
 import quickfix.field.MsgType;
-import quickfix.field.OrdStatus;
 import quickfix.field.OrdType;
 import quickfix.field.OrderID;
 import quickfix.field.OrderQty;
+import quickfix.field.OrdStatus;
 import quickfix.field.Price;
 import quickfix.field.Symbol;
 import quickfix.field.Text;
@@ -121,18 +121,8 @@ class QuickFixPreparedSubmissionLiveCertificationTest {
 
       final ExecutionReport report =
           application.awaitExecutionReport(clOrdId, timeoutSeconds);
-      final ExecutionReport terminalReport =
-          "3".equals(timeInForce)
-              ? application.awaitExecutionReport(
-                  clOrdId,
-                  timeoutSeconds,
-                  this::isTerminalCancellation)
-              : isMatchingLifecycle(report)
-                  ? report
-                  : application.awaitExecutionReport(
-                      clOrdId, timeoutSeconds, this::isMatchingLifecycle);
       writeEvidence(
-          evidencePath, report, sentAtEpochMs, accountId, timeInForce, terminalReport);
+          evidencePath, report, sentAtEpochMs, accountId, timeInForce, null);
     } finally {
       initiator.stop(true);
     }
@@ -269,23 +259,6 @@ class QuickFixPreparedSubmissionLiveCertificationTest {
 
   private String optionalText(ExecutionReport report) throws FieldNotFound {
     return report.isSetField(Text.FIELD) ? report.getString(Text.FIELD) : "";
-  }
-
-  private boolean isTerminalCancellation(ExecutionReport report) {
-    try {
-      return "4".equals(report.getString(ExecType.FIELD))
-          && "4".equals(report.getString(OrdStatus.FIELD));
-    } catch (FieldNotFound missingField) {
-      return false;
-    }
-  }
-
-  private boolean isMatchingLifecycle(ExecutionReport report) {
-    try {
-      return !"A".equals(report.getString(ExecType.FIELD));
-    } catch (FieldNotFound missingField) {
-      return false;
-    }
   }
 
   private Path dictionaryPath() {

@@ -95,3 +95,27 @@ tasks.register<JavaExec>("observeMarketDataSnapshot") {
         }
     }
 }
+
+tasks.register<JavaExec>("observeMarketDataRecovery") {
+    group = "verification"
+    description = "Observes a public market-data reconnect and resubscribe through gRPC."
+    classpath = sourceSets.main.get().runtimeClasspath
+    mainClass.set("com.simplematch.tools.riskmatchinge2e.MarketDataSnapshotRecoveryObservationMain")
+    doFirst {
+        val required = mapOf(
+            "--host" to (System.getenv("SIMPLEMATCH_MARKET_DATA_HOST") ?: "127.0.0.1"),
+            "--port" to (System.getenv("SIMPLEMATCH_MARKET_DATA_PORT") ?: error("SIMPLEMATCH_MARKET_DATA_PORT is required")),
+            "--venue-mic" to (System.getenv("SIMPLEMATCH_MARKET_DATA_VENUE_MIC") ?: error("SIMPLEMATCH_MARKET_DATA_VENUE_MIC is required")),
+            "--symbol" to (System.getenv("SIMPLEMATCH_MARKET_DATA_SYMBOL") ?: error("SIMPLEMATCH_MARKET_DATA_SYMBOL is required")),
+            "--timeout-seconds" to (System.getenv("SIMPLEMATCH_MARKET_DATA_TIMEOUT_SECONDS") ?: "300"),
+            "--evidence" to (System.getenv("SIMPLEMATCH_MARKET_DATA_RECOVERY_EVIDENCE") ?: error("SIMPLEMATCH_MARKET_DATA_RECOVERY_EVIDENCE is required")),
+            "--initial-subscription-ready" to (System.getenv("SIMPLEMATCH_MARKET_DATA_INITIAL_SUBSCRIPTION_READY") ?: error("SIMPLEMATCH_MARKET_DATA_INITIAL_SUBSCRIPTION_READY is required")),
+            "--initial-snapshot-ready" to (System.getenv("SIMPLEMATCH_MARKET_DATA_INITIAL_SNAPSHOT_READY") ?: error("SIMPLEMATCH_MARKET_DATA_INITIAL_SNAPSHOT_READY is required")),
+            "--disconnected-ready" to (System.getenv("SIMPLEMATCH_MARKET_DATA_DISCONNECTED_READY") ?: error("SIMPLEMATCH_MARKET_DATA_DISCONNECTED_READY is required")),
+            "--replacement-ready" to (System.getenv("SIMPLEMATCH_MARKET_DATA_REPLACEMENT_READY") ?: error("SIMPLEMATCH_MARKET_DATA_REPLACEMENT_READY is required")),
+            "--reconnected-ready" to (System.getenv("SIMPLEMATCH_MARKET_DATA_RECONNECTED_READY") ?: error("SIMPLEMATCH_MARKET_DATA_RECONNECTED_READY is required")),
+            "--resubscribed-snapshot-ready" to (System.getenv("SIMPLEMATCH_MARKET_DATA_RESUBSCRIBED_SNAPSHOT_READY") ?: error("SIMPLEMATCH_MARKET_DATA_RESUBSCRIBED_SNAPSHOT_READY is required")),
+        )
+        args(required.flatMap { (name, value) -> listOf(name, value) })
+    }
+}

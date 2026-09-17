@@ -204,6 +204,10 @@ publish_local_matching_open_barriers() {
   local artifact_json
   local artifact_sha256
   local routing_version
+  # A cold kind worker may need more than two minutes to pull and unpack the
+  # native Matching image. Keep this bounded, but do not turn first-use image
+  # delivery into a false certification failure.
+  local fixture_wait_timeout_seconds=600
   local fixture_publisher="$repo_root/out/build/full-native-dev/simplematch-matching-kafka-fixture-publisher"
   local fixture_pod="matching-fixture-publisher"
 
@@ -229,7 +233,8 @@ publish_local_matching_open_barriers() {
   kubectl -n "$namespace" run "$fixture_pod" \
     --image="$matching_runtime_image" --image-pull-policy=IfNotPresent \
     --restart=Never --command -- sleep 300 >/dev/null || return 1
-  kubectl -n "$namespace" wait --for=condition=Ready "pod/$fixture_pod" --timeout=120s || return 1
+  kubectl -n "$namespace" wait --for=condition=Ready "pod/$fixture_pod" \
+    --timeout="${fixture_wait_timeout_seconds}s" || return 1
   base64 "$fixture_publisher" | kubectl -n "$namespace" exec -i "$fixture_pod" -- \
     sh -c 'base64 -d >/tmp/simplematch-matching-kafka-fixture-publisher && chmod 755 /tmp/simplematch-matching-kafka-fixture-publisher' || return 1
   kubectl -n "$namespace" exec "$fixture_pod" -- \

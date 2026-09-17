@@ -84,6 +84,17 @@
 - 補齊文件與測試，作為後續 StatefulSet / endpoint / recovery 實作的骨架
 - 新增 StatefulSet / owner Service / PVC / continuity config map 的 K8s scaffolding
 - 新增 startup recovery lifecycle 與 `/readyz` readiness gating
+- local resilience overlay 將 QuickFIX owner 固定在 worker slot 1，並讓單一 market-data streamer
+  只在 local-resilience worker pool 內以 `Recreate`、portable-workload toleration 替換
+
+這個切片只固定 deployment ownership contract。它不把 manifest 渲染結果當成 runtime recovery
+證據，也不重複驗證 Kubernetes scheduler、StatefulSet 或 Kafka consumer group 已保證的語意。
+同一 owner 的 FIX reconnect/resend 與 streamer replacement/reconnect/resubscribe 由部署情境
+runner 負責：`scripts/end-to-end/critical-consumers/run-failure-certification.sh` 驗證 QuickFIX
+durable recovery，`scripts/end-to-end/market-data/run-streamer-recovery-certification.sh` 透過
+公開 gRPC subscription、Kafka group assignment 與 Pod identity 驗證 streamer replacement。
+這些 runner 只檢查 issue 所需的 recovery boundary；它們不把每個 protobuf 欄位或平台已保證的
+基本 scheduler 語意重新複製成第二套 verifier。
 
 ## 檢查工作內容清單
 
@@ -104,7 +115,7 @@
 - [x] 將 QuickFIX store / log / WAL 對齊 PVC
 - [x] 關閉 production 不適合的 reset 設定
 - [x] 設計 startup recovery 與 readiness gating
-- [ ] 實作 same-owner reconnect 驗證測試
+- [x] 實作 same-owner reconnect 驗證 runner；保留 live certification 作為 runtime gate
 
 ### Phase 2：shared state 基礎
 

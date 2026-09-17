@@ -57,6 +57,7 @@ grep -Fq 'helper_node=' "$e2e_script"
 grep -Fq 'simplematch.io/node-pool=local-resilience' "$e2e_script"
 grep -Fq 'distinct from $old_node' "$e2e_script"
 grep -Fq 'actual_helper_node' "$e2e_script"
+grep -Fq 'read_runtime_metrics_with_retry' "$e2e_script"
 
 invalid_node_report="$fixture_dir/invalid-node.json"
 jq '.target.new_node = "worker-b"' "$valid_report" >"$invalid_node_report"

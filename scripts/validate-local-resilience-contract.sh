@@ -64,9 +64,49 @@ java_workloads.each do |name|
   abort "#{name} PDB must select its Java workload" unless pdb.dig("spec", "selector", "matchLabels") == expected_labels
 end
 
+matching = resources.fetch(["StatefulSet", "matching"])
+matching_spec = matching.fetch("spec").fetch("template").fetch("spec")
+matching_spread = matching_spec.fetch("topologySpreadConstraints", []).find do |constraint|
+  constraint["topologyKey"] == "kubernetes.io/hostname"
+end
+abort "Matching local fleet must retain fifteen ordinal owners" unless matching.dig("spec", "replicas") == 15
+abort "Matching local fleet must use bounded host spreading on local-resilience workers" unless
+  matching_spec.dig("nodeSelector", "simplematch.io/node-pool") == "local-resilience" &&
+    matching_spread &&
+    matching_spread["maxSkew"] == 1 &&
+    matching_spread["whenUnsatisfiable"] == "DoNotSchedule" &&
+    matching_spread.dig("labelSelector", "matchLabels", "app.kubernetes.io/name") == "matching"
+
+quickfix = resources.fetch(["StatefulSet", "quickfix-gateway"])
+quickfix_spec = quickfix.fetch("spec").fetch("template").fetch("spec")
+abort "QuickFIX must have one local slot-1 owner" unless
+  quickfix.dig("spec", "replicas") == 1 &&
+    quickfix_spec.dig("nodeSelector", "simplematch.io/node-pool") == "local-resilience" &&
+    quickfix_spec.dig("nodeSelector", "simplematch.io/worker-slot") == "1"
+quickfix_pdb = resources.fetch(["PodDisruptionBudget", "quickfix-gateway"], nil)
+abort "QuickFIX must have a sole-owner PDB" unless
+  quickfix_pdb &&
+    quickfix_pdb.dig("spec", "minAvailable") == 1 &&
+    quickfix_pdb.dig("spec", "selector", "matchLabels", "app.kubernetes.io/name") == "quickfix-gateway"
+quickfix_owner_service = resources.fetch(["Service", "quickfix-gateway-owner-0"], nil)
+abort "QuickFIX owner Service must select quickfix-gateway-0" unless
+  quickfix_owner_service &&
+    quickfix_owner_service.dig("spec", "selector", "app.kubernetes.io/name") == "quickfix-gateway" &&
+    quickfix_owner_service.dig("spec", "selector", "statefulset.kubernetes.io/pod-name") == "quickfix-gateway-0"
+
 streamer = resources.fetch(["Deployment", "marketdata-streamer"])
-abort "marketdata-streamer must use Recreate" unless streamer.dig("spec", "strategy", "type") == "Recreate"
-abort "QuickFIX must have a sole-owner PDB" unless resources.key?(["PodDisruptionBudget", "quickfix-gateway"])
+streamer_spec = streamer.fetch("spec").fetch("template").fetch("spec")
+abort "marketdata-streamer must use one Recreate owner" unless
+  streamer.dig("spec", "replicas") == 1 && streamer.dig("spec", "strategy", "type") == "Recreate"
+abort "marketdata-streamer must remain portable within local-resilience workers" unless
+  streamer_spec.dig("nodeSelector", "simplematch.io/node-pool") == "local-resilience" &&
+    !streamer_spec.dig("nodeSelector", "simplematch.io/worker-slot") &&
+    streamer_spec.fetch("tolerations", []).include?(
+      "key" => "simplematch.io/portable-workload",
+      "operator" => "Exists",
+      "effect" => "NoExecute",
+      "tolerationSeconds" => 30
+    )
 
 postgres = resources.fetch(["StatefulSet", "postgres"])
 postgres_spec = postgres.dig("spec", "template", "spec")
