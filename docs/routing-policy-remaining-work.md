@@ -8,9 +8,10 @@ canonical release-scope definition lives in
 Architecture documents describe the accepted target. This document alone distinguishes that target
 from the repository's current implementation state.
 
-Status was reconciled against the current worktree on 2026-09-05. An accepted design is not
-`COMPLETED` until the repository contains its implementation and source-aligned local
-production-like verification evidence. External production certification and live
+Status was reconciled against the current worktree and issue backlog on 2026-09-22. An accepted
+Phase 1 capability is not `COMPLETED` until the repository contains its implementation and the
+required source-aligned local verification evidence. Later portfolio-focused hardening is tracked
+separately and does not reopen an already completed Phase 1 capability. External production certification and live
 staging/production promotion are not goals of this project. Their deployment values and run
 sequence remain template work with placeholders and are neither current completion criteria nor
 blockers. Aggregate issue [#10](https://github.com/WenHsuanYu/SimpleMatch/issues/10) and cleanup
@@ -36,6 +37,7 @@ certifications.
 | `PARTIAL` | Required local implementation, deployment resources, or the local production-like gate is incomplete. |
 | `NOT_STARTED` | No repository implementation of the target capability exists. |
 | `OBSOLETE_TO_REMOVE` | Current code implements a superseded design and must be removed or migrated. |
+| `NON_BLOCKING` | A bounded follow-up with independent engineering value; it does not reopen or block the completed Phase 1 release boundary. |
 
 ## Verification boundary
 
@@ -249,8 +251,10 @@ reuse a runtime namespace whose source or image identity changed.
 | Production-shaped Kafka topic profile | `COMPLETED` | [#125](https://github.com/WenHsuanYu/SimpleMatch/issues/125) |
 | Performance and recovery certification | `COMPLETED` | [#136](https://github.com/WenHsuanYu/SimpleMatch/issues/136) |
 | Pre-release compatibility and legacy cleanup | `COMPLETED` | [#119](https://github.com/WenHsuanYu/SimpleMatch/issues/119) (with completed [#120](https://github.com/WenHsuanYu/SimpleMatch/issues/120)) |
+| Representative multi-node resilience milestone | `COMPLETED` | [#151](https://github.com/WenHsuanYu/SimpleMatch/issues/151) |
+| Portfolio-focused admission/deployability/integration/recovery follow-ups | `NON_BLOCKING` | [#160](https://github.com/WenHsuanYu/SimpleMatch/issues/160), [#161](https://github.com/WenHsuanYu/SimpleMatch/issues/161), [#162](https://github.com/WenHsuanYu/SimpleMatch/issues/162), [#164](https://github.com/WenHsuanYu/SimpleMatch/issues/164), [#168](https://github.com/WenHsuanYu/SimpleMatch/issues/168), [#179](https://github.com/WenHsuanYu/SimpleMatch/issues/179) |
 
-### Local resilience dependency issues #154 and #155
+### Local resilience capability evidence #154 through #159
 
 The local PostgreSQL/Redis and Kafka KRaft manifests are implemented and their static/fake
 lifecycle contracts pass. The focused seam is
@@ -269,21 +273,21 @@ disposable. Its manifest covers both the custom portable-workload taint and the 
 to 150 seconds for the replacement.
 
 Child closure is scoped to the capability owned by the child issue. A child may be marked
-`COMPLETED` when its own implementation, contract checks, and source-aligned focused runtime
-evidence satisfy its acceptance criteria; it does not have to wait for the parent aggregate run.
-Parent #151 remains a separate integration gate: the later runner issues must consume the retained
-child reports, execute the remaining baseline and fault families, and publish one aggregate verdict
-before #151 can close. A focused child report is therefore valid completion evidence for its child,
-but it must not be relabeled as a #151 `full-local` certification PASS.
+`COMPLETED` when its own implementation, contract checks, and appropriately scoped runtime
+evidence satisfy its acceptance criteria. Issue #151 was narrowed and closed on 2026-09-21 as a
+representative multi-node resilience milestone; it no longer requires every fault family to be
+re-executed under one aggregate runner or verdict. Focused evidence remains valid only for the
+claim it actually proves and must not be relabeled as production HA, external certification, or a
+broader business-recovery result.
 
 | Issue | Current status | Remaining completion gate |
 | --- | --- | --- |
-| [#154](https://github.com/WenHsuanYu/SimpleMatch/issues/154) PostgreSQL and Redis in Kubernetes | `COMPLETED` | Child acceptance is satisfied by the PostgreSQL worker-loss and Pod-restart reports plus the Redis worker-loss report in retained namespace `simplematch-local-cert-20260905-154155-r2` (worker-loss evidence remains under `out/resilience/dependencies-154-155-20260905-r2/`; source-aligned Pod-restart evidence is `out/resilience/dependencies-154-155-20260905-r4/postgresql-pod-restart/postgresql.json`). Parent #151 aggregate baseline/fault-family integration remains separate. |
-| [#155](https://github.com/WenHsuanYu/SimpleMatch/issues/155) Durable Kafka KRaft cluster | `COMPLETED` | Child acceptance is satisfied by the Kafka worker-loss and source-aligned Pod-restart reports in retained namespace `simplematch-local-cert-20260905-154155-r2` (`out/resilience/dependencies-154-155-20260905-r2/kafka-fixed-r1/kafka.json`, `out/resilience/dependencies-154-155-20260905-r4/kafka-pod-restart/kafka.json`). Parent #151 aggregate baseline/fault-family integration remains separate. |
-| [#156](https://github.com/WenHsuanYu/SimpleMatch/issues/156) Debezium task reassignment across Connect workers | `COMPLETED` | Child acceptance is satisfied by the source-aligned focused report `out/resilience/connect-worker-loss-20260906-r12/connect-worker-loss.json` in namespace `simplematch-local-cert-20260905-170540-2660083`. It proves the bounded image-cache precondition with an executable containerd probe and one image identity on all three eligible nodes, exact UID-guarded Pod deletion, task-id-preserving reassignment to a different worker/Pod UID/node, and a baseline-aware Account transition with exact Kafka publication after reassignment. The report, provenance, shared CDC validators, static contracts, Bash syntax checks, ShellCheck, and focused runtime gate pass. The REST tunnel recovery fixes are isolated to the diagnostic Adapter (`b260848`, `b7cd3fd`, `c698489`), while the retained CDC runtime is reused under scoped provenance. Parent #151 still owns aggregate baseline/fault-family integration; this child report is not a `full-local` or production certification PASS. |
-| [#157](https://github.com/WenHsuanYu/SimpleMatch/issues/157) Replicated Java placement contract | `IN_PROGRESS` | The local overlay now renders the five Java workloads with two replicas, the canonical worker selector, hostname `maxSkew: 1` `DoNotSchedule` spread, `minAvailable: 1` PDBs, and the accepted 30-second portable/node-loss tolerations. The shared validator checks those fields after rendering. `run-local-java-placement-serving-check.sh` now provides a source-aligned representative observer for query-service placement, health endpoint responses, Pod identity, restart counts, and a bounded Redis outage; its contract test is integrated with the resilience suite. Remaining evidence is to run this observer in a current deployed namespace and retain its PASS report. This child gate does not require or claim the #151 full-local aggregate baseline. |
-| [#158](https://github.com/WenHsuanYu/SimpleMatch/issues/158) Matching owner placement and fencing | `IN_PROGRESS` | The rendered local contract now keeps fifteen ordinal owners on the local-resilience pool with bounded hostname spreading. Existing live seams remain authoritative for the rest: the Matching fleet gate checks Ready Pods, pod-index/Lease holder identity, and RWOP PVCs; the critical-consumer topology verifier checks each PVC's PV node affinity against its Pod node; the deployed collector checks 5/5/5. Replacement replay/catch-up and worker-loss evidence remain separate runtime gates under the later resilience scenarios, and this issue does not claim cross-node storage takeover. |
-| [#159](https://github.com/WenHsuanYu/SimpleMatch/issues/159) Gateway and streamer ownership | `IN_PROGRESS` | The local overlay now fixes the single QuickFIX owner to worker slot 1 and retains its owner-specific Service, sole-owner PDB, and node-local RWO claim; the single market-data streamer uses `Recreate` on the local-resilience pool with the portable-workload toleration. The rendered checks cover only those project-owned ownership signals. Same-owner JDBC/PVC/FIX reconnect evidence and streamer replacement/reconnect/resubscribe remain runtime gates under the later resilience scenarios; no overlap or HA claim is made from static output alone. |
+| [#154](https://github.com/WenHsuanYu/SimpleMatch/issues/154) PostgreSQL and Redis in Kubernetes | `COMPLETED` | PostgreSQL worker-loss and Pod-restart evidence preserves the node-local durable-state boundary; Redis worker-loss evidence demonstrates disposable-cache rescheduling. Evidence remains under `out/resilience/dependencies-154-155-20260905-r2/` and `out/resilience/dependencies-154-155-20260905-r4/postgresql-pod-restart/postgresql.json`. |
+| [#155](https://github.com/WenHsuanYu/SimpleMatch/issues/155) Durable Kafka KRaft cluster | `COMPLETED` | Kafka worker-loss and Pod-restart evidence proves the bounded RF3/minISR2 data-plane and same-broker/PVC rejoin behavior used by the local lab. Evidence remains at `out/resilience/dependencies-154-155-20260905-r2/kafka-fixed-r1/kafka.json` and `out/resilience/dependencies-154-155-20260905-r4/kafka-pod-restart/kafka.json`. |
+| [#156](https://github.com/WenHsuanYu/SimpleMatch/issues/156) Debezium task reassignment across Connect workers | `COMPLETED` | The source-aligned focused report `out/resilience/connect-worker-loss-20260906-r12/connect-worker-loss.json` proves exact target identity, task-id-preserving reassignment to a different worker/Pod, and traceable CDC publication after reassignment. The claim remains Connect/CDC-specific and is not a production-HA claim. |
+| [#157](https://github.com/WenHsuanYu/SimpleMatch/issues/157) Replicated Java placement contract | `COMPLETED` | The five Java workloads share the rendered two-replica worker-placement contract. The representative query-service observer verifies deployed placement, health/serving boundaries, Pod identity and restart counts, including a bounded Redis outage without a liveness restart loop. It does **not** claim that a Java Pod replacement scenario was executed; #163 was closed `not planned` rather than relabeling this evidence. |
+| [#158](https://github.com/WenHsuanYu/SimpleMatch/issues/158) Matching owner placement and fencing | `COMPLETED` | The local contract and retained runtime evidence cover all fifteen ordinal owners, 5/5/5 placement, Lease/PVC ownership, replay-before-Ready behavior, normal replacement, and bounded same-worker recovery. The evidence does not claim PVC loss or cross-node storage takeover. |
+| [#159](https://github.com/WenHsuanYu/SimpleMatch/issues/159) Gateway and streamer ownership | `COMPLETED` | The local overlay establishes one node-local QuickFIX owner with an owner-specific Service and one portable `Recreate` market-data streamer. Static ownership constraints are complete. Deployed QuickFIX protocol/session recovery remains the independent follow-up #164; streamer worker-loss certification was intentionally dropped with #167 rather than treated as completed evidence. |
 
 The image-cache precondition is deliberately owned by `scripts/lib/local-resilience.sh`; `scripts/lib/local-kind.sh` remains the generic kind lifecycle helper. This boundary keeps the diagnostic adapter in the CDC verifier scope, so verifier-only changes can reuse a retained runtime without weakening the node-level execution check.
 
@@ -298,9 +302,10 @@ the focused runtime gate. The image-cache check is therefore a deployment precon
 #156's startup and recovery boundary; it is not an additional acceptance checkbox and cannot
 substitute for the required reassignment or CDC evidence.
 
-These reports do not close #151 by themselves and do not claim cross-node storage takeover,
-production HA, or external certification. The later #162–#167 issues own full-local orchestration,
-worker-stop coverage across every workload family, and the final aggregate verdict.
+These focused reports retain their original claim boundaries and do not imply cross-node storage
+takeover, production HA, or external certification. Issue #151 is now closed as a representative
+portfolio resilience milestone. The remaining open follow-ups deliberately test independent
+engineering properties rather than rebuilding an exhaustive full-local fault matrix.
 
 The 2026-09-05 focused reports are source-aligned to the retained production-like run's namespace
 run-id `20260904-175915-1205891`. PostgreSQL preserved the slot-0 Pod, RWO PVC/PV, and Flyway
@@ -313,6 +318,26 @@ non-interactive `redis-cli GET` returned an empty line for a missing key; the re
 fix is recorded in `docs/agents/deployment-test-lessons.md` and the successful rerun is the report
 used above. An initial PostgreSQL Pod-restart preflight failure caused by the caller's global
 `docker-desktop` context is also retained separately and is not used as PASS evidence.
+
+## Remaining portfolio-focused follow-ups
+
+The Phase 1 release capabilities above remain complete. The following open issues are bounded
+follow-ups chosen for distinct engineering value; none is a parent aggregate certification gate.
+
+| Issue | Engineering outcome | Boundary |
+| --- | --- | --- |
+| [#160](https://github.com/WenHsuanYu/SimpleMatch/issues/160) | Live Gateway admission observations | Connect deployed Risk, Matching, Kafka, and critical-consumer facts to the existing admission evaluator; keep missing/stale/conflicting facts fail-closed and require explicit operator open. |
+| [#161](https://github.com/WenHsuanYu/SimpleMatch/issues/161) | Canonical local-profile deployability | Reconcile rendered host-level resource requests with the documented local runtime budget; do not retain the old arbitrary 20 GiB / 4 GiB / 1 GiB optimization targets. |
+| [#162](https://github.com/WenHsuanYu/SimpleMatch/issues/162) | One deployed end-to-end trading flow | Trace one real Gateway-originated operation through Risk, Kafka/Matching, Persistence, and Account without rebuilding infrastructure identity/report plumbing. |
+| [#164](https://github.com/WenHsuanYu/SimpleMatch/issues/164) | Deployed QuickFIX same-owner recovery | Prove durable FIX session recovery, reconnect/resend, and no duplicate Risk admission. Matching replacement is already proven elsewhere. |
+| [#168](https://github.com/WenHsuanYu/SimpleMatch/issues/168) | Business correctness after one representative recovery | Use one Matching restart/replay path to prove Persistence and Account outcomes remain singular and the recovered path is usable. |
+| [#179](https://github.com/WenHsuanYu/SimpleMatch/issues/179) | Domain-context documentation cleanup | Keep `CONTEXT.md` focused on domain ownership, invariants, aggregates, consistency, and ubiquitous language rather than implementation mechanics. |
+
+The former scenario-matrix issues #163, #165, #166, #167, #169, and #170 are closed `not planned`
+after requirement disposition. Their closure must not be interpreted as completion evidence for a
+scenario that was never run. Issue #185 is closed `completed` because its Phase-DAG implementation
+and verification were delivered; optional workstation timing remains measurement rather than an
+implementation blocker.
 
 ## Detailed inventory
 
