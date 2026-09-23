@@ -76,20 +76,14 @@ resilience_write_case_json "$case_file" pod-replacement TESTED PASSED PASSED NOT
 [[ "$(jq -r '.timeline.stability_confirmed' "$case_file")" == null ]]
 if resilience_write_case_json "$case_file" pod-replacement TESTED PASSED PASSED NOT_APPLICABLE PASSED \
   '' pod_uid,node pod_uid; then exit 1; fi
-[[ "$(resilience_aggregate_full_local PASSED PASSED PASSED)" == PASSED ]]
-[[ "$(resilience_aggregate_full_local NOT_EVALUATED NOT_IMPLEMENTED)" == INCOMPLETE ]]
-[[ "$(resilience_aggregate_full_local PASSED FAILED)" == FAILED ]]
-
 contract_dry_run="$("$script_dir"/run-local-resilience.sh --profile contract --dry-run)"
 grep -Fq 'profile=contract' <<<"$contract_dry_run"
-grep -Fq 'cannot become a resilience pass' "$script_dir/run-local-resilience.sh"
-full_local_dry_run="$("$script_dir"/run-local-resilience.sh --profile full-local --dry-run)"
-grep -Fq 'pod-replacement, planned-disruption, worker-stop' <<<"$full_local_dry_run"
-grep -Fq 'lifecycle-labeled disposable namespace' <<<"$full_local_dry_run"
+grep -Fq 'full-local is retired' "$script_dir/run-local-resilience.sh"
+if "$script_dir"/run-local-resilience.sh --profile full-local --dry-run >/dev/null 2>&1; then exit 1; fi
 
 connect_worker_loss_dry_run="$("$script_dir"/run-local-connect-worker-loss.sh \
   --namespace simplematch-cert-run --namespace-run-id run-1 --dry-run)"
 grep -Fq 'Connect Pod' <<<"$connect_worker_loss_dry_run"
 grep -Fq 'diagnostic evidence only' <<<"$connect_worker_loss_dry_run"
 
-printf '%s\n' 'Local resilience runner contract passed.'
+printf '%s\n' 'Local resilience support contracts passed.'

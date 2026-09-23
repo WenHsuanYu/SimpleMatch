@@ -7,7 +7,6 @@ set -euo pipefail
 # These values are consumed by scripts that source this library.
 # shellcheck disable=SC2034
 
-RESILIENCE_SCENARIOS=(pod-replacement planned-disruption worker-stop)
 RESILIENCE_EXECUTION_VERDICTS=(PASSED FAILED NOT_IMPLEMENTED UNSUPPORTED SKIPPED BLOCKED)
 # shellcheck disable=SC2034
 RESILIENCE_COMPONENT_RESULTS=(PASSED FAILED NOT_APPLICABLE NOT_EVALUATED)
@@ -275,18 +274,6 @@ resilience_namespace_json_is_owned() {
     .metadata.labels["simplematch.io/run-id"] == $run_id and
     .metadata.labels["simplematch.io/resilience-run"] == $run_id
   ' >/dev/null
-}
-
-resilience_aggregate_full_local() {
-  local cleanup_result="$1" verdict
-  shift
-  [[ "$cleanup_result" == FAILED ]] && { printf 'FAILED\n'; return; }
-  [[ $# -gt 0 ]] || { printf 'INCOMPLETE\n'; return; }
-  for verdict in "$@"; do
-    [[ "$verdict" == FAILED ]] && { printf 'FAILED\n'; return; }
-    [[ "$verdict" == PASSED ]] || { printf 'INCOMPLETE\n'; return; }
-  done
-  [[ "$cleanup_result" == PASSED ]] && printf 'PASSED\n' || printf 'INCOMPLETE\n'
 }
 
 resilience_write_case_json() {

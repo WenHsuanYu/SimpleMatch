@@ -121,7 +121,8 @@ findmnt -T "$(docker info --format '{{.DockerRootDir}}')"
 | Render local Kubernetes manifest | `scripts/render-local-kubernetes-manifest.sh` |
 | Local production-like gate | `scripts/run-local-production-like-certification.sh` |
 | 測量 certification reuse | `scripts/measure-local-certification-reuse.sh` |
-| Local resilience | `scripts/run-local-resilience.sh` |
+| Static resilience contract | `scripts/run-local-resilience.sh --profile contract` |
+| Runtime recovery diagnostics | 使用第 13 節的 property-specific focused runners |
 | 資源報告 | `scripts/local-resource-report.sh` |
 | 日常清理 | `scripts/simplematch-clean-local-disk.sh` |
 | 專案 hard reset | `scripts/hard-reset-local.sh` |
@@ -660,30 +661,18 @@ bash scripts/run-local-resilience.sh --profile contract
 
 這個 profile 驗證 repository-rendered topology、placement、PDB、resource、dependency、probe 等 contract；其中五個複製的 Java workload 必須共用兩副本、local-resilience worker、hostname `maxSkew=1`／`DoNotSchedule`、`minAvailable=1` PDB，以及 portable-workload、`not-ready`、`unreachable` 三個 30 秒 `NoExecute` toleration。不會停止 worker，因此不能當成 runtime resilience evidence。
 
-### 13.2 Full-local profile
+### 13.2 Runtime recovery diagnostics
 
-```bash
-bash scripts/run-local-resilience.sh --profile full-local
-```
+Repository 不再維護 `full-local` 的 workload-by-fault aggregate scenario matrix。Runtime
+recovery 應依要驗證的 recovery property 選擇 focused diagnostic，例如 dependency recovery、
+Connect task reassignment 或 Java placement/serving。每個 report 只支持它實際觀察的
+failure/recovery path，不能升級成完整 resilience、production HA 或其他元件的 recovery
+證據。
 
-它使用 canonical `simplematch-live` cluster，建立單一 run-owned disposable namespace，並執行目前可實作的 live scenario families。未實作或環境不支援的 scenario 會保持 `INCOMPLETE`/`UNSUPPORTED`，不會被默認成 pass。
-
-保留 run namespace：
-
-```bash
-bash scripts/run-local-resilience.sh --profile full-local --keep-resources
-```
-
-Evidence 預設寫入：
-
-```text
-out/resilience/<run-id>/
-```
 
 ### 13.3 依賴生命週期 focused diagnostic
 
-當只需要驗證 PostgreSQL/Redis/Kafka 的 worker-loss 或 Pod restart 行為時，不必重跑完整
-`full-local` runner。對一個已存在、具 `disposable` ownership label 的 namespace 執行下列
+當只需要驗證 PostgreSQL/Redis/Kafka 的 worker-loss 或 Pod restart 行為時，不需要先執行已退休的 aggregate runner。對一個已存在、具 `disposable` ownership label 的 namespace 執行下列
 其中一個 focused diagnostic；state-changing 執行必須同時提供與 namespace label 完全相符的
 `--namespace-run-id`：
 
@@ -718,14 +707,14 @@ kind cluster、worker container identity 或上述資料契約不一致時會 fa
 durable marker row 與 Kafka marker topic 都只在觀察結果已捕捉、且 PASS 報告發布前清除；cleanup
 失敗也會讓診斷 fail closed。
 
-這是針對 #154/#155 的 focused local diagnostic，不是 `full-local` certification PASS，也
-不宣稱跨節點 PVC takeover、production HA 或外部環境認證。完整 baseline、fault-family
-編排與 parent #151 的聚合 verdict 仍由後續 runner issues 負責。
+這是針對 #154/#155 的 focused local diagnostic，只支持實際執行的 dependency recovery
+property；不宣稱跨節點 PVC takeover、production HA、外部環境認證，也不存在需要由
+parent #151 聚合的 fault-family verdict。
 
 ### 13.4 Kafka Connect worker-loss focused diagnostic（#156）
 
 若只需要驗證 Debezium Kafka Connect task 在 worker Pod 消失後是否重新指派，以及重新指派後
-的 Account outbox 變更是否仍精確送達 Kafka，不必重跑昂貴的 `full-local` runner。對一個已存在、
+的 Account outbox 變更是否仍精確送達 Kafka，不需要先執行已退休的 aggregate runner。對一個已存在、
 具 `disposable` ownership label 的 production-like namespace 執行：
 
 這裡的術語有明確分工：**證據契約**是可執行的 schema、predicate、順序與 fail-closed 條件，

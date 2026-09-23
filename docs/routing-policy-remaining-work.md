@@ -330,8 +330,13 @@ follow-ups chosen for distinct engineering value; none is a parent aggregate cer
 | [#161](https://github.com/WenHsuanYu/SimpleMatch/issues/161) | Canonical local-profile deployability | Reconcile rendered host-level resource requests with the documented local runtime budget; do not retain the old arbitrary 20 GiB / 4 GiB / 1 GiB optimization targets. |
 | [#162](https://github.com/WenHsuanYu/SimpleMatch/issues/162) | One deployed end-to-end trading flow | Trace one real Gateway-originated operation through Risk, Kafka/Matching, Persistence, and Account without rebuilding infrastructure identity/report plumbing. |
 | [#164](https://github.com/WenHsuanYu/SimpleMatch/issues/164) | Deployed QuickFIX same-owner recovery | Prove durable FIX session recovery, reconnect/resend, and no duplicate Risk admission. Matching replacement is already proven elsewhere. |
-| [#168](https://github.com/WenHsuanYu/SimpleMatch/issues/168) | Business correctness after one representative recovery | Use one Matching restart/replay path to prove Persistence and Account outcomes remain singular and the recovered path is usable. |
+| [#168](https://github.com/WenHsuanYu/SimpleMatch/issues/168) | Recovery integration test after one representative recovery | Inject one Matching restart/replay and prove the integrated Kafka, Persistence, and Account recovery path preserves singular business outcomes and remains usable. |
 | [#179](https://github.com/WenHsuanYu/SimpleMatch/issues/179) | Domain-context documentation cleanup | Keep `CONTEXT.md` focused on domain ownership, invariants, aggregates, consistency, and ubiquitous language rather than implementation mechanics. |
+
+Terminology: #168 is a **recovery integration test**. The Matching restart is the fault injection;
+the test objective is the correctness of the integrated recovery path and its business invariants.
+Do not use **composition failure testing** as the category for this work; it is not an established
+testing term for this scope.
 
 The former scenario-matrix issues #163, #165, #166, #167, #169, and #170 are closed `not planned`
 after requirement disposition. Their closure must not be interpreted as completion evidence for a

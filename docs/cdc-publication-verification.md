@@ -227,8 +227,9 @@ state flow verifies the report before restoring the fixture, while the EXIT clea
 last-resort rollback. It then requires the same
 task id to move to a different worker and Pod UID, captures the outbox baseline before inserting one
 run-owned lifecycle fixture, and delegates post-transition selection and exact Kafka verification to
-`cdc-verifier.sh`. A passed report is focused diagnostic evidence only; it must be consumed by the
-parent #151 runner rather than relabelled as a complete local certification.
+`cdc-verifier.sh`. A passed report is focused diagnostic evidence only; it supports the exact
+Connect reassignment and CDC publication path that was observed and must not be relabelled as a
+complete local resilience or production certification.
 
 The report links every prerequisite snapshot, the pre-delete UID recheck,
 `target-delete-observation.json`, `account-transition.json`, and

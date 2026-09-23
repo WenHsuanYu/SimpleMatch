@@ -64,16 +64,17 @@ bash scripts/manage-simplematch-live.sh delete
 Normal local resilience cleanup never deletes this reusable cluster. It deletes only the generated
 run namespace and resources owned by that run.
 
-The runner has two profiles:
+Static deployment contracts can be checked with:
 
 ```text
 bash scripts/run-local-resilience.sh --profile contract
-bash scripts/run-local-resilience.sh --profile full-local
+bash scripts/validate-local-resilience-contract.sh
 ```
 
-The `contract` profile is static and cannot produce runtime resilience evidence. The `full-local`
-profile owns one run namespace, evidence directory, bounded verdicts, and cleanup; scenarios that
-are not yet executable remain explicitly incomplete.
+The contract profile is static and cannot produce runtime recovery evidence. Runtime recovery is
+verified by property-specific focused diagnostics. The former `full-local` workload-by-fault
+scenario matrix is retired; a focused report supports only the recovery property it actually
+observes and cannot be promoted to a broader resilience or production-HA claim.
 
 ### Local production-like version contract
 
@@ -106,8 +107,9 @@ The local overlay keeps QuickFIX as one owner on worker slot 1, with its owner-s
 `minAvailable: 1` PDB, and node-local RWO PVC. `marketdata-streamer` remains one `Recreate` owner,
 but selects the whole local-resilience pool and tolerates the portable-workload taint so a replacement
 can use another worker. The rendered validator checks only these ownership and placement signals;
-same-owner FIX recovery and streamer reconnect/resubscribe are runtime gates owned by the later
-resilience scenarios, not by a second manifest mirror.
+same-owner FIX recovery is tracked separately in #164. Streamer worker-loss certification is no
+longer a project completion gate; the static ownership contract remains valid without a second
+manifest mirror.
 
 Render and validate them with:
 
@@ -141,9 +143,8 @@ to be rebuildable because its `emptyDir` state is disposable. Namespace, worker-
 identity, or data mismatches fail closed. PostgreSQL's diagnostic marker is deleted after the durable
 row observation is captured; cleanup failure is itself a failed diagnostic. A Redis worker-stop report
 waits for the node-controller
-taint path and allows up to 150 seconds for a new Ready Pod on a different worker; this focused report
-cannot be promoted to a full-local
-certification PASS; the parent #151 runner still owns the aggregate baseline and fault-family verdict.
+taint path and allows up to 150 seconds for a new Ready Pod on a different worker; this focused report supports only the Redis recovery behavior it actually observes; it does not
+establish a broader resilience, production-HA, or cross-node storage claim.
 
 The local overlay also runs two Debezium Kafka Connect workers against the in-cluster Kafka and
 PostgreSQL Services. The certification phase applies this Connect Deployment only after the Flyway

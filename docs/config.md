@@ -197,8 +197,8 @@ row and Kafka's run-owned marker topic are cleaned only after their observations
 cleanup attempted under a shared 30-second failure budget. Cleanup failure makes the diagnostic fail
 closed. If Kafka reports an uncertain marker creation outcome, the diagnostic does not delete the
 topic because ownership cannot be proven; inspect that exact topic before any manual cleanup. Its
-report is diagnostic evidence and cannot be promoted to the parent #151 aggregate certification
-verdict.
+report is focused diagnostic evidence and supports only the Kafka recovery property it actually
+observes; it cannot be promoted to a broader resilience or production certification claim.
 
 ## Change Policy
 
