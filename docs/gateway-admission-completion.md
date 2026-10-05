@@ -1,7 +1,7 @@
 # Gateway admission completion specification
 
-This specification defines the remaining repository-owned work for GitHub issue #135. The existing
-QuickFIX Gateway operational code owns admission state, readiness evaluation, operator commands,
+This specification records Gateway completion for #135 and its live-observation follow-up #160.
+Existing QuickFIX Gateway operational code owns admission state, readiness evaluation, operator commands,
 audit records, and automatic safety actions. This change completes trading-day close coordination
 and certifies the behavior without creating another production service or readiness implementation.
 
@@ -43,7 +43,9 @@ observations. Kafka supplies availability, topology, and progress; consumers sup
 freshness, pending ages, and quarantine state. Existing event validation and conflict handling remain
 required. Consumer-detected processing conflicts surface through durable quarantine; the Kafka
 Admin API alone cannot prove that no event ID/payload conflict has ever occurred.
-The deployed PRE_OPEN-to-explicit-open smoke remains required before Issue #160 can be closed.
+The source-aligned local PRE_OPEN-to-explicit-open smoke below satisfies the deployed admission
+criterion. Publication/integration of the local commits remains a delivery step; external
+production certification and the business command in #162 are separate work.
 
 Matching command progress comes from Kafka's acknowledged offsets for
 `matching-partition-consumer-0` through `matching-partition-consumer-14`. Native
@@ -77,7 +79,7 @@ admission through its existing evaluator, and native self-fencing deadlines rema
 The first 2026-10-05 deployed bootstrap exposed both the missing parser dependency and the encoder's
 incorrect READY invariant. Its failed report and previous Gateway/Matching startup logs remain in
 `out/certification/issue-160-smoke-bootstrap-20261005-r1/`; its disposable namespace and owned PVCs
-were removed. These regression fixes do not replace the still-required deployed explicit-open smoke.
+were removed. Those failed observations remain regression evidence, not a successful deployed open.
 
 The next source-aligned bootstrap (`d55809b`) completed all 46 selected phase results, including all
 six first-attempt migrations, workloads, CDC delivery, and the Matching fleet. Its report remains
@@ -87,6 +89,34 @@ Its evidence is retained under `out/certification/issue-160-admission-smoke-2026
 Pod template was restored with a clean canonical diff, the owned operator Secret was deleted, and
 the retained evidence contains no token. A fresh source-aligned path is required after this adapter
 fix; the failed smoke cannot be relabeled as a successful deployed open.
+
+### Deployed admission smoke
+
+On 2026-10-06 Asia/Taipei, source `6b624259aeca2d0917b86ca46f6e70c78fca0d03` completed a
+fresh disposable-namespace bootstrap and actual production-collector smoke. Bootstrap evidence is
+retained in `out/certification/issue-160-smoke-bootstrap-20261005-r3/`; all 46 selected phase results
+are `PASS`. Its aggregate report is `PARTIAL` because Compose was explicitly skipped, not a
+`full-local` certification. All six migrations succeeded on their first observed Pod with exit 0
+and no restart. All fifteen Matching Pods and Gateway were Ready with zero restarts before smoke;
+the pinned helper and Matching images also executed on every eligible worker.
+
+`out/certification/issue-160-admission-smoke-20261005-r3/report.json` records the separate admission
+smoke as passing. Unauthenticated status returned 401. Authenticated status remained `PRE_OPEN`
+through three healthy samples; status polling did not create observations or open trading. The
+production collector supplied the existing qualifying observations. One explicit authenticated
+`open` returned `accepted: true`, `gateState: OPEN`, `reason: OPENED`, and `OPEN_ELIGIBLE` with no
+unsafe reasons. Eight further healthy OPEN samples spanned seven seconds, exceeding the unchanged
+five-second expiry, and the database retained an `ACCEPTED / OPEN` audit for the operator command.
+No synthetic observation was posted and no monitor or automatic-close setting was disabled.
+
+The temporary change enabled HTTP and referenced a run-owned operator Secret only. Cleanup restored
+the original Pod template with an empty canonical diff, removed the Secret and private token/header
+files, and found no token value in retained bootstrap/smoke evidence. This verifies the tested
+local admission path, not production HA, current-market calendar/data accuracy, or an end-to-end
+business order. The input was the existing approved 2026-08-27 FINAL artifact, not a fabricated
+current-day artifact. Failed earlier runs remain retained separately. Documentation-only evidence
+and runbook updates do not change the tested executable behavior; the deployed source revision
+above remains explicit.
 
 ### Observation contract baselines
 

@@ -326,7 +326,7 @@ follow-ups chosen for distinct engineering value; none is a parent aggregate cer
 
 | Issue | Engineering outcome | Boundary |
 | --- | --- | --- |
-| [#160](https://github.com/WenHsuanYu/SimpleMatch/issues/160) | Live Gateway admission observations | Risk, Matching, Kafka, and critical-consumer adapters are implemented and locally tested with fail-closed collection and explicit operator open. Trading identity comparison is limited to Risk and Matching; Kafka/consumer full identity attestation is out of scope. The deployed PRE_OPEN-to-open smoke remains required; keep the issue open. |
+| [#160](https://github.com/WenHsuanYu/SimpleMatch/issues/160) | Live Gateway admission observations | Source `6b62425` passed the local deployed PRE_OPEN-to-healthy-production-observations-to-authenticated-explicit-open smoke without synthetic reports. Risk/Matching identity comparison remains required; Kafka/consumer full identity attestation and identity copying are out of scope. All local acceptance criteria are verified; keep the issue open pending publication/integration of the local commits. This is not full-local, production, or #162 business certification. |
 | [#161](https://github.com/WenHsuanYu/SimpleMatch/issues/161) | Canonical local-profile deployability | Reconcile rendered host-level resource requests with the documented local runtime budget; do not retain the old arbitrary 20 GiB / 4 GiB / 1 GiB optimization targets. |
 | [#162](https://github.com/WenHsuanYu/SimpleMatch/issues/162) | One deployed end-to-end trading flow | Trace one real Gateway-originated operation through Risk, Kafka/Matching, Persistence, and Account without rebuilding infrastructure identity/report plumbing. |
 | [#164](https://github.com/WenHsuanYu/SimpleMatch/issues/164) | Deployed QuickFIX same-owner recovery | Prove durable FIX session recovery, reconnect/resend, and no duplicate Risk admission. Matching replacement is already proven elsewhere. |
@@ -711,6 +711,12 @@ implementation blocker.
   state-machine, controller, audit, ingress, migration, and application-context tests pass. The
   retained integrated production-like run completed the Gateway, workload, health, metrics, and
   retained-provenance phases.
+  Issue #160 additionally passed the source-aligned actual-collector admission smoke on
+  2026-10-06 Asia/Taipei at source `6b62425`: authenticated explicit open, eight healthy OPEN samples
+  over seven seconds, durable accepted-open audit, no synthetic observations, unchanged safety
+  settings, and verified operator-token/Pod-template restoration. Evidence is retained under
+  `out/certification/issue-160-admission-smoke-20261005-r3/`. The separate bootstrap selected 46
+  passing phases but remains `PARTIAL`; Compose/full-local and #162 business flow are not claimed.
 - **Missing behavior:** None for the repository-owned project target. The authenticated HTTP adapter
   remains disabled by default and does not invent live facts; external production certification is
   outside the project target.
