@@ -58,6 +58,7 @@ add_library(simplematch_matching_ingress STATIC
     matching-engine/src/partition_replay_coordinator.cpp
     matching-engine/src/input_offset_ledger.cpp
     matching-engine/src/matching_runtime.cpp
+    matching-engine/src/matching_runtime_observation.cpp
     matching-engine/src/matching_runtime_supervisor.cpp)
 target_include_directories(simplematch_matching_ingress
     PUBLIC matching-engine/include
@@ -151,6 +152,7 @@ if(BUILD_TESTING)
       matching-engine/tests/partition_replay_coordinator_test.cpp
       matching-engine/tests/input_offset_ledger_test.cpp
       matching-engine/tests/matching_runtime_test.cpp
+      matching-engine/tests/matching_runtime_observation_test.cpp
       matching-engine/tests/matching_partition_runtime_driver_test.cpp)
   target_link_libraries(simplematch_matching_ingress_tests
       PRIVATE simplematch_matching_ingress

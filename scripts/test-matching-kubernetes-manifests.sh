@@ -30,6 +30,8 @@ gateway_pdb = load_documents(File.join(manifest_dir, "quickfix-gateway-pod-disru
 rbac_documents = load_documents(File.join(manifest_dir, "matching-lease-rbac.yaml"))
 leases = load_documents(File.join(manifest_dir, "matching-partition-leases.yaml"))
 oci_patch = JSON.parse(File.read(File.join(manifest_dir, "matching-artifact-oci-data-image-patch.json"), encoding: "UTF-8"))
+network_policy = load_documents(File.join(manifest_dir, "base", "network-policy.yaml")).fetch(0)
+dockerfile = File.read(File.join(manifest_dir, "..", "docker", "Dockerfile.matching"), encoding: "UTF-8")
 
 expected_lease_names = (0...15).map { |partition| format("matching-partition-%02d", partition) }
 
@@ -69,8 +71,28 @@ require_value(
 )
 
 template_spec = statefulset.dig("spec", "template", "spec")
+require_value(
+  template_spec.dig("securityContext", "fsGroup") == 10_001,
+  "matching Pod volumes must be writable by the non-root runtime group"
+)
 container = template_spec.fetch("containers").find { |candidate| candidate.fetch("name") == "matching" }
 require_value(!container.nil?, "matching StatefulSet must contain the matching container")
+status_container = template_spec.fetch("containers").find { |candidate| candidate.fetch("name") == "runtime-status" }
+require_value(!status_container.nil?, "matching StatefulSet must contain the runtime status sidecar")
+require_value(
+  status_container.fetch("image") == container.fetch("image"),
+  "runtime status sidecar must use the same digest-pinned Matching image"
+)
+require_value(
+  status_container.fetch("command") == ["/usr/bin/busybox", "httpd", "-f", "-p", "8081", "-h", "/var/run/simplematch/matching"],
+  "runtime status sidecar must serve only the shared Matching status directory"
+)
+status_mount = status_container.fetch("volumeMounts").find { |mount| mount.fetch("name") == "runtime-observation" }
+require_value(
+  status_mount&.fetch("readOnly") == true,
+  "runtime status sidecar must mount only the observation directory read-only"
+)
+require_value(dockerfile.include?("busybox"), "Matching runtime image must contain the status server")
 
 environment = container.fetch("env").to_h { |entry| [entry.fetch("name"), entry] }
 require_value(
@@ -112,6 +134,16 @@ require_value(
 )
 
 require_value(service.fetch("kind") == "Service" && service.dig("spec", "clusterIP") == "None", "matching must expose a headless Service")
+require_value(
+  service.fetch("spec").fetch("ports").any? { |port| port.fetch("name") == "runtime-status" && port.fetch("port") == 8081 },
+  "matching headless Service must expose the runtime status port"
+)
+require_value(
+  statefulset.dig("spec", "template", "metadata", "labels", "app.kubernetes.io/part-of") == "simplematch",
+  "matching Pods must participate in the internal NetworkPolicy identity"
+)
+java_egress_ports = network_policy.dig("spec", "egress", 0, "ports").map { |port| port.fetch("port") }
+require_value(java_egress_ports.include?(8081), "Java services must be allowed to read Matching status")
 require_value(pdb.fetch("kind") == "PodDisruptionBudget" && pdb.dig("spec", "maxUnavailable") == 1, "matching PDB must allow at most one unavailable pod")
 
 role = rbac_documents.find { |document| document.fetch("kind") == "Role" }

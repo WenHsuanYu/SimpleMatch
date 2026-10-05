@@ -31,7 +31,7 @@ ENV DEBIAN_FRONTEND=noninteractive
 
 RUN apt-get update \
     && apt-get install --no-install-recommends --yes \
-       ca-certificates libgcc-s1 libssl3t64 libstdc++6 zlib1g \
+       busybox ca-certificates libgcc-s1 libssl3t64 libstdc++6 zlib1g \
     && rm -rf /var/lib/apt/lists/* \
     && useradd --system --uid 10001 --home-dir /nonexistent --shell /usr/sbin/nologin simplematch \
     && mkdir -p /app /var/lib/simplematch/matching /tmp \

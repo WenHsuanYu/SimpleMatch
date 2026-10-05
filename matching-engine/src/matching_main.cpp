@@ -1,6 +1,7 @@
 #include "simplematch/matching/config/market_reference_artifact.hpp"
 #include "simplematch/matching/core/deterministic_matching_core.hpp"
 #include "simplematch/matching/runtime/kubernetes_lease_ownership_adapter.hpp"
+#include "simplematch/matching/runtime/matching_runtime_observation.hpp"
 #include "simplematch/matching/runtime/matching_partition_runtime_driver.hpp"
 #include "simplematch/matching/runtime/rdkafka_runtime_adapter.hpp"
 
@@ -218,24 +219,6 @@ void write_status(const std::string &path, std::string_view status) {
   write_atomic_file(path, status);
 }
 
-std::string partition_session_state_name(PartitionSessionState state) {
-  switch (state) {
-    case PartitionSessionState::kAwaitingOpen:
-      return "AWAITING_OPEN";
-    case PartitionSessionState::kOpen:
-      return "OPEN";
-    case PartitionSessionState::kClosed:
-      return "CLOSED";
-    case PartitionSessionState::kFailedClosed:
-      return "FAILED_CLOSED";
-  }
-  return "UNKNOWN";
-}
-
-Json optional_offset_json(std::optional<std::int64_t> offset) {
-  return offset.has_value() ? Json(*offset) : Json(nullptr);
-}
-
 std::int64_t current_epoch_millis() {
   return std::chrono::duration_cast<std::chrono::milliseconds>(
              std::chrono::system_clock::now().time_since_epoch())
@@ -253,27 +236,21 @@ void write_runtime_state_metrics(const std::string &path, std::string_view runti
 
 void write_runtime_metrics(
     const std::string &path,
+    const PartitionOwnershipIdentity &ownership_identity,
+    const std::string &artifact_id,
+    const PinnedMatchingIdentity &pinned_identity,
     const PartitionReplayCoordinator &coordinator,
     std::string_view runtime_state) {
-  const auto metrics = coordinator.runtime().metrics();
-  const auto replay_status = coordinator.status();
-  const Json encoded = {
-      {"schema_version", 1},
-      {"updated_at_epoch_ms", current_epoch_millis()},
-      {"runtime_state", runtime_state},
-      {"partition_state", partition_session_state_name(replay_status.state)},
-      {"input_ring", {{"capacity", metrics.input_capacity},
-                       {"occupancy", metrics.input_occupancy},
-                       {"high_watermark", metrics.input_high_watermark}}},
-      {"output_ring", {{"capacity", metrics.output_capacity},
-                        {"occupancy", metrics.output_occupancy},
-                        {"high_watermark", metrics.output_high_watermark}}},
-      {"pending_inputs", replay_status.pending_input_count},
-      {"pending_publications", replay_status.pending_publication_count},
-      {"highest_contiguous_completed_offset",
-       optional_offset_json(replay_status.highest_contiguous_completed_offset)},
-      {"next_commit_offset", optional_offset_json(replay_status.next_commit_offset)}};
-  write_atomic_file(path, encoded.dump());
+  const MatchingRuntimeObservation observation{
+      .partition_id = ownership_identity.partition_id,
+      .owner_id = ownership_identity.holder_identity,
+      .artifact_id = artifact_id,
+      .identity = pinned_identity,
+      .metrics = coordinator.runtime().metrics(),
+      .replay = coordinator.status(),
+      .runtime_state = std::string(runtime_state),
+      .updated_at_epoch_ms = current_epoch_millis()};
+  write_atomic_file(path, encode_matching_runtime_observation(observation));
 }
 
 bool status_is(const std::string &path, std::string_view expected) {
@@ -397,6 +374,7 @@ int run_runtime() {
 
     const std::string artifact_identity =
         configuration.trading_day + ":" + trim_text(checksum);
+    const std::string artifact_id = "market-reference-" + configuration.trading_day;
     const PartitionOwnershipIdentity ownership_identity{
         configuration.partition_id,
         required_environment("MATCHING_POD_NAME") + ":" + required_environment("MATCHING_POD_UID"),
@@ -461,14 +439,18 @@ int run_runtime() {
         std::move(cpu_affinity),
         std::move(supervisor_options));
     if (!driver.start(&baseline_store)) {
-      write_runtime_metrics(configuration.metrics_path, coordinator, "NOT_READY");
+      write_runtime_metrics(
+          configuration.metrics_path, ownership_identity, artifact_id, pinned_identity, coordinator,
+          "NOT_READY");
       write_status(configuration.status_path, "NOT_READY");
       return 3;
     }
     std::optional<PartitionBaselineMetadata> last_saved_baseline;
     bool runtime_ready = false;
     auto next_metrics_snapshot = std::chrono::steady_clock::now();
-    write_runtime_metrics(configuration.metrics_path, coordinator, "RUNNING");
+    write_runtime_metrics(
+        configuration.metrics_path, ownership_identity, artifact_id, pinned_identity, coordinator,
+        "RUNNING");
     write_status(configuration.status_path, "RUNNING");
     for (;;) {
       if (shutdown_requested.load(std::memory_order_relaxed)) {
@@ -478,14 +460,18 @@ int run_runtime() {
           baseline_store.save(*baseline);
           last_saved_baseline = baseline;
         }
-        write_runtime_metrics(configuration.metrics_path, coordinator, stopped ? "STOPPED" : "FAILED");
+        write_runtime_metrics(
+            configuration.metrics_path, ownership_identity, artifact_id, pinned_identity, coordinator,
+            stopped ? "STOPPED" : "FAILED");
         write_status(configuration.status_path, stopped ? "STOPPED" : "FAILED");
         return stopped ? 0 : 4;
       }
       const auto step = driver.run_once();
       if (step == MatchingPartitionDriverStep::kFailedClosed ||
           step == MatchingPartitionDriverStep::kOwnershipDenied) {
-        write_runtime_metrics(configuration.metrics_path, coordinator, "FAILED");
+        write_runtime_metrics(
+            configuration.metrics_path, ownership_identity, artifact_id, pinned_identity, coordinator,
+            "FAILED");
         write_status(configuration.status_path, "FAILED");
         return 4;
       }
@@ -502,7 +488,8 @@ int run_runtime() {
       }
       if (std::chrono::steady_clock::now() >= next_metrics_snapshot) {
         write_runtime_metrics(
-            configuration.metrics_path, coordinator, runtime_ready ? "READY" : "RUNNING");
+            configuration.metrics_path, ownership_identity, artifact_id, pinned_identity, coordinator,
+            runtime_ready ? "READY" : "RUNNING");
         next_metrics_snapshot = std::chrono::steady_clock::now() + 1s;
       }
     }
