@@ -18,8 +18,9 @@ final class MatchingFleetReadinessAssessment {
   void assess(MatchingFleetStatus fleet, TradingSystemAssessment assessment) {
     componentAssessment.assessFreshness("MATCHING_FLEET", fleet.observedAt(), assessment);
     final Set<Integer> observedPartitions = new HashSet<>();
+    final Set<String> observedOwners = new HashSet<>();
     for (MatchingPartitionStatus partition : fleet.partitions()) {
-      assessPartition(partition, observedPartitions, assessment);
+      assessPartition(partition, observedPartitions, observedOwners, assessment);
     }
     for (int partitionId = 0; partitionId < thresholds.expectedPartitionCount(); partitionId++) {
       if (!observedPartitions.contains(partitionId)) {
@@ -34,6 +35,7 @@ final class MatchingFleetReadinessAssessment {
   private void assessPartition(
       MatchingPartitionStatus partition,
       Set<Integer> observedPartitions,
+      Set<String> observedOwners,
       TradingSystemAssessment assessment) {
     final String prefix = "MATCHING_PARTITION_" + partition.partitionId();
     if (partition.partitionId() >= thresholds.expectedPartitionCount()) {
@@ -42,6 +44,10 @@ final class MatchingFleetReadinessAssessment {
     }
     if (!observedPartitions.add(partition.partitionId())) {
       assessment.interrupt(prefix + "_DUPLICATE_OWNER");
+      return;
+    }
+    if (!observedOwners.add(partition.ownerId())) {
+      assessment.interrupt("MATCHING_OWNER_ID_DUPLICATED");
       return;
     }
     componentAssessment.assessIdentity(prefix, partition.identity(), assessment);
