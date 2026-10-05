@@ -45,6 +45,13 @@ required. Consumer-detected processing conflicts surface through durable quarant
 Admin API alone cannot prove that no event ID/payload conflict has ever occurred.
 The deployed PRE_OPEN-to-explicit-open smoke remains required before Issue #160 can be closed.
 
+Matching command progress comes from Kafka's acknowledged offsets for
+`matching-partition-consumer-0` through `matching-partition-consumer-14`. Native
+`next_commit_offset` is only a pending commit candidate: it legitimately becomes `null` after
+acknowledgement and must never stand in for the domain's `committedOffset`. All fifteen group reads
+start before the adapter waits for results. Missing committed progress for a non-empty command log
+fails closed; neither a pending candidate nor the log end is substituted for missing evidence.
+
 The local Kubernetes overlay uses a 23:59 lab session close time so a fresh admission smoke can run
 after the real-market 13:30 cutoff. Automatic close, the independent stale monitor, and all freshness
 limits remain enabled; other overlays keep the normal session policy. This local window does not
@@ -71,6 +78,15 @@ The first 2026-10-05 deployed bootstrap exposed both the missing parser dependen
 incorrect READY invariant. Its failed report and previous Gateway/Matching startup logs remain in
 `out/certification/issue-160-smoke-bootstrap-20261005-r1/`; its disposable namespace and owned PVCs
 were removed. These regression fixes do not replace the still-required deployed explicit-open smoke.
+
+The next source-aligned bootstrap (`d55809b`) completed all 46 selected phase results, including all
+six first-attempt migrations, workloads, CDC delivery, and the Matching fleet. Its report remains
+`PARTIAL` because Compose was explicitly skipped. The subsequent actual collector smoke exposed the
+commit-candidate/committed-position mismatch and remained `PRE_OPEN` without sending an open command.
+Its evidence is retained under `out/certification/issue-160-admission-smoke-20261005-r2/`: the original
+Pod template was restored with a clean canonical diff, the owned operator Secret was deleted, and
+the retained evidence contains no token. A fresh source-aligned path is required after this adapter
+fix; the failed smoke cannot be relabeled as a successful deployed open.
 
 ### Observation contract baselines
 

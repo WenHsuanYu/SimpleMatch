@@ -38,6 +38,45 @@ class LiveTradingSystemObservationCollectorTest {
   }
 
   @Test
+  void idleMatchingUsesDurableCommitAfterItsCommitCandidateClears() {
+    final Fixture fixture = fixture(NOW);
+    final ObjectNode matching = (ObjectNode) fixture.documents().get("matching-0");
+    matching.putNull("next_commit_offset");
+    matching.put("highest_contiguous_completed_offset", 1);
+    fixture.commandEndOffsets().put(0, 2L);
+    fixture.matchingCommits().put(0, 2L);
+
+    final TradingSystemObservation observation = fixture.collector().collect();
+
+    assertThat(observation.matchingFleet().partitions().getFirst().committedOffset()).isEqualTo(2);
+    assertThat(evaluate(observation, NOW).readiness()).isEqualTo(TradingReadiness.OPEN_ELIGIBLE);
+  }
+
+  @Test
+  void pendingCommitCandidateCannotReplaceTheDurableMatchingCommit() {
+    final Fixture fixture = fixture(NOW);
+    ((ObjectNode) fixture.documents().get("matching-0")).put("next_commit_offset", 9);
+    fixture.commandEndOffsets().put(0, 9L);
+    fixture.matchingCommits().put(0, 2L);
+
+    final TradingSystemObservation observation = fixture.collector().collect();
+
+    assertThat(observation.matchingFleet().partitions().getFirst().committedOffset()).isEqualTo(2);
+    assertThat(evaluate(observation, NOW).readiness()).isEqualTo(TradingReadiness.PAUSE_REQUIRED);
+  }
+
+  @Test
+  void missingMatchingCommitForANonEmptyCommandLogFailsClosed() {
+    final Fixture fixture = fixture(NOW);
+    fixture.commandEndOffsets().put(0, 2L);
+    fixture.matchingCommits().remove(0);
+
+    assertThatThrownBy(() -> fixture.collector().collect())
+        .isInstanceOf(IllegalStateException.class)
+        .hasMessageContaining("progress is incomplete");
+  }
+
+  @Test
   void staleSourceFactsRequireAPause() {
     final Fixture fixture = fixture(NOW.minusSeconds(6));
 
@@ -102,7 +141,7 @@ class LiveTradingSystemObservationCollectorTest {
 
     assertThatThrownBy(() -> fixture.collector().collect())
         .isInstanceOf(IllegalStateException.class)
-        .hasMessageContaining("consumer progress is incomplete");
+        .hasMessageContaining("committed progress is incomplete");
   }
 
   @Test
@@ -153,6 +192,8 @@ class LiveTradingSystemObservationCollectorTest {
                     false, zeroOffsets(), Map.of(), observedAt),
             Runnable::run);
     final Map<Integer, Long> offsets = zeroOffsets();
+    final Map<Integer, Long> commandEndOffsets = new HashMap<>(offsets);
+    final Map<Integer, Long> matchingCommits = new HashMap<>(offsets);
     final Map<Integer, Long> eventEndOffsets = new HashMap<>(offsets);
     final EnumMap<CriticalConsumer, Map<Integer, Long>> commits =
         new EnumMap<>(CriticalConsumer.class);
@@ -161,12 +202,14 @@ class LiveTradingSystemObservationCollectorTest {
     }
     return new Fixture(
         documents,
+        commandEndOffsets,
+        matchingCommits,
         eventEndOffsets,
         commits,
         new LiveTradingSystemObservationCollector(
             statusClient,
             () -> new KafkaAdmissionSnapshot(
-                15, 15, offsets, eventEndOffsets, commits, observedAt),
+                15, 15, commandEndOffsets, matchingCommits, eventEndOffsets, commits, observedAt),
             Runnable::run));
   }
 
@@ -239,6 +282,8 @@ class LiveTradingSystemObservationCollectorTest {
 
   private record Fixture(
       Map<String, JsonNode> documents,
+      Map<Integer, Long> commandEndOffsets,
+      Map<Integer, Long> matchingCommits,
       Map<Integer, Long> eventEndOffsets,
       EnumMap<CriticalConsumer, Map<Integer, Long>> commits,
       LiveTradingSystemObservationCollector collector) {}

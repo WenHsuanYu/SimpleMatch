@@ -6,11 +6,15 @@ import java.util.EnumMap;
 import java.util.Map;
 import java.util.Objects;
 
-/** One atomic-enough Kafka control-plane sample used to normalize live readiness facts. */
+/**
+ * One Kafka control-plane sample of topology and durable Matching/critical-consumer progress.
+ * Matching offsets are acknowledged command-group positions, not native commit candidates.
+ */
 public record KafkaAdmissionSnapshot(
     int commandPartitionCount,
     int eventPartitionCount,
     Map<Integer, Long> commandEndOffsets,
+    Map<Integer, Long> matchingCommittedOffsets,
     Map<Integer, Long> eventEndOffsets,
     Map<CriticalConsumer, Map<Integer, Long>> consumerCommittedOffsets,
     Instant observedAt) {
@@ -20,6 +24,7 @@ public record KafkaAdmissionSnapshot(
       throw new IllegalArgumentException("Kafka partition counts must be positive");
     }
     commandEndOffsets = Map.copyOf(commandEndOffsets);
+    matchingCommittedOffsets = Map.copyOf(matchingCommittedOffsets);
     eventEndOffsets = Map.copyOf(eventEndOffsets);
     final EnumMap<CriticalConsumer, Map<Integer, Long>> copied =
         new EnumMap<>(CriticalConsumer.class);

@@ -36,7 +36,7 @@ public final class LiveTradingSystemObservationCollector
     final KafkaAdmissionSnapshot kafka = join(kafkaPending);
     final CompletableFuture<MatchingFleetStatus> matchingPending =
         CompletableFuture.supplyAsync(
-            () -> statusClient.matchingFleet(kafka.commandEndOffsets()), executor);
+            () -> statusClient.matchingFleet(kafka), executor);
     final var consumersPending =
         CompletableFuture.supplyAsync(
             () -> statusClient.criticalConsumers(kafka), executor);

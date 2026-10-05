@@ -48,8 +48,13 @@ public final class GatewayLiveStatusClient {
     return StatusDocumentDecoder.riskStatus(documents.read(endpoints.risk()));
   }
 
-  /** Reads exactly one owner and its recovery/progress facts for all 15 Matching partitions. */
-  public MatchingFleetStatus matchingFleet(Map<Integer, Long> commandEndOffsets) {
+  /**
+   * Combines each owner's recovery facts with Kafka-authoritative committed command progress.
+   *
+   * @param kafka snapshot of acknowledged command commits and command-log end offsets
+   * @return normalized recovery and durable-progress facts for all fifteen Matching partitions
+   */
+  public MatchingFleetStatus matchingFleet(KafkaAdmissionSnapshot kafka) {
     final List<CompletableFuture<MatchingPartitionStatus>> pending =
         new ArrayList<>(PARTITION_COUNT);
     for (int partition = 0; partition < PARTITION_COUNT; partition++) {
@@ -59,10 +64,12 @@ public final class GatewayLiveStatusClient {
               () -> {
                 final JsonNode root =
                     documents.read(endpoints.matchingTemplate().formatted(expectedPartition));
+                final long endOffset = requiredOffset(kafka.commandEndOffsets(), expectedPartition);
                 return StatusDocumentDecoder.matchingPartition(
                     root,
                     expectedPartition,
-                    requiredOffset(commandEndOffsets, expectedPartition));
+                    observedOffset(kafka.matchingCommittedOffsets(), expectedPartition, endOffset),
+                    endOffset);
               },
               executor));
     }
@@ -146,16 +153,18 @@ public final class GatewayLiveStatusClient {
         quarantined ? "QUARANTINED" : "READY");
   }
 
+  /** A missing commit proves zero progress only when the corresponding Kafka log is empty. */
   private static long observedOffset(Map<Integer, Long> offsets, int partition, long endOffset) {
     final Long offset = offsets.get(partition);
     if (offset == null) {
       if (endOffset == 0) {
         return 0;
       }
-      throw new IllegalStateException("consumer progress is incomplete for partition " + partition);
+      throw new IllegalStateException(
+          "committed progress is incomplete for partition " + partition);
     }
     if (offset < 0) {
-      throw new IllegalStateException("consumer offset is negative for partition " + partition);
+      throw new IllegalStateException("committed offset is negative for partition " + partition);
     }
     return offset;
   }

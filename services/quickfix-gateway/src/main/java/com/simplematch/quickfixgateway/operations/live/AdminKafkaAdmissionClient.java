@@ -65,6 +65,8 @@ public final class AdminKafkaAdmissionClient implements KafkaAdmissionClient {
       }
       final KafkaFuture<Map<TopicPartition, ListOffsetsResultInfo>> endOffsetsPending =
           admin.listOffsets(endOffsetRequest).all();
+      final Map<Integer, KafkaFuture<Map<TopicPartition, OffsetAndMetadata>>> matchingPending =
+          matchingCommitsPending();
       final EnumMap<CriticalConsumer, KafkaFuture<Map<TopicPartition, OffsetAndMetadata>>>
           commitsPending = new EnumMap<>(CriticalConsumer.class);
       consumerGroups.forEach(
@@ -94,6 +96,7 @@ public final class AdminKafkaAdmissionClient implements KafkaAdmissionClient {
           commands.partitions().size(),
           events.partitions().size(),
           commandEnds,
+          matchingCommittedOffsets(matchingPending),
           eventEnds,
           commits,
           clock.instant());
@@ -103,6 +106,39 @@ public final class AdminKafkaAdmissionClient implements KafkaAdmissionClient {
     } catch (ExecutionException | TimeoutException failure) {
       throw new IllegalStateException("Kafka admission observation unavailable", failure);
     }
+  }
+
+  private Map<Integer, KafkaFuture<Map<TopicPartition, OffsetAndMetadata>>>
+      matchingCommitsPending() {
+    final Map<Integer, KafkaFuture<Map<TopicPartition, OffsetAndMetadata>>> pending =
+        new HashMap<>();
+    for (int partition = 0; partition < EXPECTED_PARTITION_COUNT; partition++) {
+      pending.put(
+          partition,
+          admin.listConsumerGroupOffsets("matching-partition-consumer-" + partition)
+              .partitionsToOffsetAndMetadata());
+    }
+    return pending;
+  }
+
+  private Map<Integer, Long> matchingCommittedOffsets(
+      Map<Integer, KafkaFuture<Map<TopicPartition, OffsetAndMetadata>>> pending)
+      throws InterruptedException, ExecutionException, TimeoutException {
+    final Map<Integer, Long> normalized = new HashMap<>();
+    for (Map.Entry<Integer, KafkaFuture<Map<TopicPartition, OffsetAndMetadata>>> group
+        : pending.entrySet()) {
+      final int partition = group.getKey();
+      final Map<Integer, Long> offsets = committedOffsets(
+          group.getValue().get(timeout.toMillis(), TimeUnit.MILLISECONDS), commandsTopic);
+      if (offsets.keySet().stream().anyMatch(observedPartition -> observedPartition != partition)) {
+        throw new IllegalStateException("Matching group committed another partition: " + partition);
+      }
+      final Long offset = offsets.get(partition);
+      if (offset != null) {
+        normalized.put(partition, offset);
+      }
+    }
+    return Map.copyOf(normalized);
   }
 
   private Map<Integer, Long> endOffsets(
@@ -131,9 +167,13 @@ public final class AdminKafkaAdmissionClient implements KafkaAdmissionClient {
     final Map<Integer, Long> normalized = new HashMap<>();
     offsets.forEach(
         (partition, offset) -> {
-          if (partition.topic().equals(requiredTopic) && offset.offset() >= 0) {
-            normalized.put(partition.partition(), offset.offset());
+          if (!partition.topic().equals(requiredTopic)) {
+            return;
           }
+          if (offset.offset() < 0) {
+            throw new IllegalStateException("Kafka committed offset is negative: " + partition);
+          }
+          normalized.put(partition.partition(), offset.offset());
         });
     return Map.copyOf(normalized);
   }

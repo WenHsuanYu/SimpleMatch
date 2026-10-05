@@ -23,13 +23,12 @@ final class StatusDocumentDecoder {
   }
 
   static MatchingPartitionStatus matchingPartition(
-      JsonNode root, int expectedPartition, long endOffset) {
+      JsonNode root, int expectedPartition, long committedOffset, long endOffset) {
     final JsonNode admission = StatusDocumentFields.requiredObject(root, "admission");
     final int partition = StatusDocumentFields.requiredInt(admission, "partition_id");
     if (partition != expectedPartition) {
       throw new IllegalStateException("Matching partition identity does not match endpoint");
     }
-    final long nextCommitOffset = StatusDocumentFields.requiredLong(root, "next_commit_offset");
     final long updatedAt = StatusDocumentFields.requiredLong(root, "updated_at_epoch_ms");
     final boolean permitted =
         StatusDocumentFields.requiredBoolean(admission, "ownership_permitted");
@@ -44,7 +43,7 @@ final class StatusDocumentDecoder {
         snakeCaseIdentity(StatusDocumentFields.requiredObject(admission, "identity")),
         permitted,
         recovered,
-        nextCommitOffset,
+        committedOffset,
         endOffset,
         Instant.ofEpochMilli(updatedAt),
         ready ? "READY" : runtimeState + "/" + partitionState);
