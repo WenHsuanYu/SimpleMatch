@@ -7,6 +7,8 @@ import com.simplematch.riskservice.admission.AdmissionRoutingPolicyResolver;
 import com.simplematch.riskservice.admission.DailyArtifactAdmissionRoutingResolver;
 import com.simplematch.riskservice.admission.MatchingBarrierOutboxFactory;
 import com.simplematch.riskservice.admission.TradingSessionBarrierService;
+import com.simplematch.riskservice.operations.RiskOperationalIdentity;
+import com.simplematch.riskservice.operations.RiskOperationalStatusProvider;
 import com.simplematch.riskservice.outbox.OutboxRepository;
 import org.springframework.boot.context.properties.EnableConfigurationProperties;
 import org.springframework.boot.health.contributor.Health;
@@ -38,6 +40,25 @@ public class RiskDailyArtifactConfiguration {
   AdmissionRoutingPolicyResolver admissionRoutingPolicyResolver(
       VerifiedMarketReferenceArtifact artifact) {
     return new DailyArtifactAdmissionRoutingResolver(artifact);
+  }
+
+  /** Creates the live Risk identity source consumed by Gateway operational coordination. */
+  @Bean
+  RiskOperationalStatusProvider riskOperationalStatusProvider(
+      VerifiedMarketReferenceArtifact artifact,
+      MarketReferenceArtifactProperties properties,
+      java.time.Clock riskServiceClock) {
+    final String tradingDay = artifact.identity().tradingDay().toString();
+    final RiskOperationalIdentity identity =
+        new RiskOperationalIdentity(
+            tradingDay + "-regular",
+            "market-reference-" + tradingDay,
+            artifact.identity().contentSha256(),
+            1,
+            1,
+            artifact.artifact().routingPolicy().algorithmVersion(),
+            properties.matchingImageDigest());
+    return new RiskOperationalStatusProvider(identity, riskServiceClock);
   }
 
   /** Creates the deterministic barrier records for the same artifact that Admission resolves. */

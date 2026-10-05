@@ -1,5 +1,6 @@
 package com.simplematch.quickfixgateway.config;
 
+import com.simplematch.config.delivery.CriticalConsumerOperationalStatusProvider;
 import com.simplematch.config.delivery.CriticalDeliveryController;
 import com.simplematch.config.delivery.DeliveryMetrics;
 import com.simplematch.config.delivery.DeliveryPosition;
@@ -21,6 +22,7 @@ import io.micrometer.core.instrument.MeterRegistry;
 import java.time.Clock;
 import java.util.List;
 import org.springframework.beans.factory.ObjectProvider;
+import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.boot.context.properties.EnableConfigurationProperties;
 import org.springframework.boot.sql.init.dependency.DependsOnDatabaseInitialization;
@@ -111,6 +113,15 @@ public class QuickFixGatewayFinalMatchingEventConfiguration {
       openPositions.stream().findFirst().ifPresent(status::recordQuarantined);
     }
     return status;
+  }
+
+  /** Creates the durable Gateway quarantine observation used by admission collection. */
+  @Bean
+  CriticalConsumerOperationalStatusProvider quickFixCriticalConsumerOperationalStatusProvider(
+      Clock quickFixGatewayClock,
+      @Qualifier("quickFixFinalMatchingEventQuarantineStore") QuarantineStore quarantineStore) {
+    return new CriticalConsumerOperationalStatusProvider(
+        CONSUMER_NAME, quarantineStore, quickFixGatewayClock);
   }
 
   /** Creates the manual-ack Kafka boundary for final Matching Event delivery. */

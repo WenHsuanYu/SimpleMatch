@@ -6,6 +6,7 @@ import com.simplematch.accountservice.matching.FinalMatchingEventAccountConsumer
 import com.simplematch.accountservice.matching.FinalMatchingEventAccountHandler;
 import com.simplematch.accountservice.store.JdbcAccountFinalMatchingEventQuarantineStore;
 import com.simplematch.accountservice.store.JdbcFinalMatchingEventAccountInbox;
+import com.simplematch.config.delivery.CriticalConsumerOperationalStatusProvider;
 import com.simplematch.config.delivery.CriticalDeliveryController;
 import com.simplematch.config.delivery.DeliveryMetrics;
 import com.simplematch.config.delivery.DeliveryPosition;
@@ -75,6 +76,15 @@ public class AccountFinalMatchingEventConsumerConfiguration {
       openPositions.stream().findFirst().ifPresent(status::recordQuarantined);
     }
     return status;
+  }
+
+  /** Creates the durable Account quarantine observation used by Gateway admission. */
+  @Bean
+  CriticalConsumerOperationalStatusProvider accountCriticalConsumerOperationalStatusProvider(
+      Clock accountServiceClock,
+      @Qualifier("accountFinalMatchingEventQuarantineStore") QuarantineStore quarantineStore) {
+    return new CriticalConsumerOperationalStatusProvider(
+        CONSUMER_NAME, quarantineStore, accountServiceClock);
   }
 
   /** Creates Account's public critical final-event consumer boundary. */

@@ -1,5 +1,6 @@
 package com.simplematch.persistence.config;
 
+import com.simplematch.config.delivery.CriticalConsumerOperationalStatusProvider;
 import com.simplematch.config.delivery.CriticalDeliveryController;
 import com.simplematch.config.delivery.DeliveryMetrics;
 import com.simplematch.config.delivery.MicrometerDeliveryMetrics;
@@ -75,6 +76,14 @@ public class PersistenceMatchingEventConsumerConfiguration {
       openPositions.stream().findFirst().ifPresent(status::recordQuarantined);
     }
     return status;
+  }
+
+  /** Creates the durable Persistence quarantine observation used by Gateway admission. */
+  @Bean
+  CriticalConsumerOperationalStatusProvider persistenceCriticalConsumerOperationalStatusProvider(
+      Clock persistenceClock, QuarantineStore persistenceMatchingEventQuarantineStore) {
+    return new CriticalConsumerOperationalStatusProvider(
+        CONSUMER_NAME, persistenceMatchingEventQuarantineStore, persistenceClock);
   }
 
   /** Creates the public final-event consumer boundary. */
