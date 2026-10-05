@@ -19,7 +19,11 @@ struct MatchingRuntimeObservation {
   std::int64_t updated_at_epoch_ms;
 };
 
-/** Encodes one Matching owner observation as the status-sidecar JSON contract. */
+/**
+ * Encodes one owner's facts without treating process readiness as admission permission.
+ * Lease uncertainty can coexist with a READY process during its bounded processing grace period;
+ * false ownership or recovery facts must remain observable to the Gateway's readiness policy.
+ */
 [[nodiscard]] std::string encode_matching_runtime_observation(
     const MatchingRuntimeObservation &observation);
 

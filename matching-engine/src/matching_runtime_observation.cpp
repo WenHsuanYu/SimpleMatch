@@ -83,10 +83,6 @@ void validate_observation(
       !supported_runtime_state(observation.runtime_state)) {
     throw std::invalid_argument("Matching runtime observation is invalid");
   }
-  if (observation.runtime_state == "READY" &&
-      (!ownership_permitted(observation) || !recovery_complete(observation))) {
-    throw std::invalid_argument("READY Matching observation is not permitted and recovered");
-  }
 }
 
 Json admission_json(

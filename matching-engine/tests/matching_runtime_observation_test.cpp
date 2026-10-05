@@ -3,6 +3,8 @@
 #include <gtest/gtest.h>
 #include <nlohmann/json.hpp>
 
+#include <chrono>
+
 namespace simplematch::matching {
 namespace {
 
@@ -52,11 +54,44 @@ TEST(MatchingRuntimeObservationTest, ExposesIdentityOwnershipRecoveryAndProgress
   EXPECT_FALSE(encoded.contains("artifact_id"));
 }
 
-TEST(MatchingRuntimeObservationTest, RejectsReadyStateWhenOwnershipIsNotPermitted) {
+TEST(MatchingRuntimeObservationTest, PreservesSelfFencingDespiteACachedReadyState) {
   auto observation = valid_observation();
   observation.replay.ownership.state = PartitionOwnershipState::kSelfFenced;
 
-  EXPECT_THROW(encode_matching_runtime_observation(observation), std::invalid_argument);
+  const auto encoded = nlohmann::json::parse(encode_matching_runtime_observation(observation));
+
+  EXPECT_EQ(encoded.at("runtime_state"), "READY");
+  EXPECT_FALSE(encoded.at("admission").at("ownership_permitted"));
+}
+
+TEST(MatchingRuntimeObservationTest, ReportsUnconfirmedOwnershipDuringProcessingGrace) {
+  auto observation = valid_observation();
+  const PartitionOwnershipIdentity identity{
+      observation.partition_id, observation.owner_id, observation.identity.trading_session_id};
+  LeaseFencedPartitionOwnershipPermit permit(identity, std::chrono::seconds{5});
+  const auto renewed_at = std::chrono::steady_clock::time_point{};
+  ASSERT_TRUE(permit.confirm_renewal(identity, renewed_at));
+  permit.report_renewal_uncertainty(renewed_at + std::chrono::seconds{1});
+  ASSERT_TRUE(permit.allows_processing());
+  observation.replay.ownership = permit.status();
+
+  const auto encoded = nlohmann::json::parse(encode_matching_runtime_observation(observation));
+
+  EXPECT_EQ(encoded.at("runtime_state"), "READY");
+  EXPECT_FALSE(encoded.at("admission").at("ownership_permitted"));
+  EXPECT_TRUE(encoded.at("admission").at("recovery_complete"));
+  permit.evaluate_at(renewed_at + std::chrono::seconds{6});
+  EXPECT_FALSE(permit.allows_processing());
+}
+
+TEST(MatchingRuntimeObservationTest, PreservesIncompleteRecoveryDespiteACachedReadyState) {
+  auto observation = valid_observation();
+  observation.replay.state = PartitionSessionState::kAwaitingOpen;
+
+  const auto encoded = nlohmann::json::parse(encode_matching_runtime_observation(observation));
+
+  EXPECT_EQ(encoded.at("runtime_state"), "READY");
+  EXPECT_FALSE(encoded.at("admission").at("recovery_complete"));
 }
 
 TEST(MatchingRuntimeObservationTest, RejectsMalformedPinnedIdentity) {

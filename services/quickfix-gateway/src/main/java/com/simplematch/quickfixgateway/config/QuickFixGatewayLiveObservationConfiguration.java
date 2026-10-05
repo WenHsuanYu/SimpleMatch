@@ -39,14 +39,13 @@ public class QuickFixGatewayLiveObservationConfiguration {
     return HttpClient.newBuilder().connectTimeout(properties.requestTimeout()).build();
   }
 
-  /** Creates the fail-closed JSON document client. */
+  /** Creates a fail-closed document client with its own parser, independent of MVC JSON binding. */
   @Bean
   StatusDocumentClient gatewayStatusDocumentClient(
       HttpClient gatewayLiveObservationHttpClient,
-      ObjectMapper objectMapper,
       GatewayLiveObservationProperties properties) {
     return new JdkStatusDocumentClient(
-        gatewayLiveObservationHttpClient, objectMapper, properties.requestTimeout());
+        gatewayLiveObservationHttpClient, new ObjectMapper(), properties.requestTimeout());
   }
 
   /** Creates task-per-request concurrency bounded by the collector's total deadline. */

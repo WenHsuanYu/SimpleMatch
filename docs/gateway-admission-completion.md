@@ -53,6 +53,25 @@ certify the production close schedule or authorize automatic opening.
 The older certification-side collector remains test infrastructure. It is not called by the
 production adapter and cannot publish on behalf of a running Gateway.
 
+### Live-enabled startup and ownership observations
+
+The live status HTTP client owns its JSON-tree parser independently of Spring MVC's JSON binding.
+Its composition therefore does not require a framework-provided Jackson 2 `ObjectMapper` bean.
+`QuickFixGatewayLiveObservationApplicationTest` starts the live-enabled application composition
+with only polling and delivery-plane ports isolated; it does not substitute the document client or
+the deadline-bound collector.
+
+Matching's process `runtime_state` is not an admission permission. A previously confirmed owner
+can remain process-ready during the existing five-second lease-renewal uncertainty grace period,
+while its current `ownership_permitted` fact is false. The encoder preserves false ownership and
+recovery facts rather than throwing on that combination. The Gateway still rejects unsafe
+admission through its existing evaluator, and native self-fencing deadlines remain unchanged.
+
+The first 2026-10-05 deployed bootstrap exposed both the missing parser dependency and the encoder's
+incorrect READY invariant. Its failed report and previous Gateway/Matching startup logs remain in
+`out/certification/issue-160-smoke-bootstrap-20261005-r1/`; its disposable namespace and owned PVCs
+were removed. These regression fixes do not replace the still-required deployed explicit-open smoke.
+
 ### Observation contract baselines
 
 `scripts/end-to-end/critical-consumers/tests/system-observation-contract.sh` runs independent named
