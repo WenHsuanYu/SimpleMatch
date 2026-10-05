@@ -76,12 +76,12 @@ resilience_write_case_json "$case_file" pod-replacement TESTED PASSED PASSED NOT
 [[ "$(jq -r '.timeline.stability_confirmed' "$case_file")" == null ]]
 if resilience_write_case_json "$case_file" pod-replacement TESTED PASSED PASSED NOT_APPLICABLE PASSED \
   '' pod_uid,node pod_uid; then exit 1; fi
-contract_dry_run="$("$script_dir"/run-local-resilience.sh --profile contract --dry-run)"
+contract_dry_run="$(bash "$script_dir/run-local-resilience.sh" --profile contract --dry-run)"
 grep -Fq 'profile=contract' <<<"$contract_dry_run"
 grep -Fq 'full-local is retired' "$script_dir/run-local-resilience.sh"
-if "$script_dir"/run-local-resilience.sh --profile full-local --dry-run >/dev/null 2>&1; then exit 1; fi
+if bash "$script_dir/run-local-resilience.sh" --profile full-local --dry-run >/dev/null 2>&1; then exit 1; fi
 
-connect_worker_loss_dry_run="$("$script_dir"/run-local-connect-worker-loss.sh \
+connect_worker_loss_dry_run="$(bash "$script_dir/run-local-connect-worker-loss.sh" \
   --namespace simplematch-cert-run --namespace-run-id run-1 --dry-run)"
 grep -Fq 'Connect Pod' <<<"$connect_worker_loss_dry_run"
 grep -Fq 'diagnostic evidence only' <<<"$connect_worker_loss_dry_run"

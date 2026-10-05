@@ -77,6 +77,24 @@ abort "#{overlay}: QuickFIX Gateway does not use the #{expected_environment} Spr
 abort "#{overlay}: QuickFIX Gateway trading day must come from matching-session-config" unless
   quickfix_environment.fetch("SIMPLEMATCH_TRADING_DAY").fetch("valueFrom").fetch("configMapKeyRef") ==
     { "name" => "matching-session-config", "key" => "trading_day" }
+session_close_override = quickfix_environment["SIMPLEMATCH_QUICKFIX_GATEWAY_OPERATIONS_SESSION_CLOSE_TIME"]
+if overlay == "local"
+  abort "local: Gateway lab session must allow out-of-hours admission smoke" unless
+    session_close_override == {
+      "name" => "SIMPLEMATCH_QUICKFIX_GATEWAY_OPERATIONS_SESSION_CLOSE_TIME",
+      "value" => "23:59"
+    }
+else
+  abort "#{overlay}: local lab session close time must not leak into other overlays" if
+    session_close_override
+end
+%w[
+  SIMPLEMATCH_QUICKFIX_GATEWAY_OPERATIONS_AUTOMATIC_CLOSE_ENABLED
+  SIMPLEMATCH_QUICKFIX_GATEWAY_OPERATIONS_MONITOR_ENABLED
+].each do |name|
+  abort "#{overlay}: Gateway session window must not disable automatic safety" if
+    quickfix_environment.dig(name, "value") == "false"
+end
 
 %w[
   account-service

@@ -45,6 +45,11 @@ required. Consumer-detected processing conflicts surface through durable quarant
 Admin API alone cannot prove that no event ID/payload conflict has ever occurred.
 The deployed PRE_OPEN-to-explicit-open smoke remains required before Issue #160 can be closed.
 
+The local Kubernetes overlay uses a 23:59 lab session close time so a fresh admission smoke can run
+after the real-market 13:30 cutoff. Automatic close, the independent stale monitor, and all freshness
+limits remain enabled; other overlays keep the normal session policy. This local window does not
+certify the production close schedule or authorize automatic opening.
+
 The older certification-side collector remains test infrastructure. It is not called by the
 production adapter and cannot publish on behalf of a running Gateway.
 

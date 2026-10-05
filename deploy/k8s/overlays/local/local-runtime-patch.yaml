@@ -82,6 +82,8 @@ spec:
           env:
             - name: SPRING_PROFILES_ACTIVE
               value: local
+            - name: SIMPLEMATCH_QUICKFIX_GATEWAY_OPERATIONS_SESSION_CLOSE_TIME
+              value: "23:59"
             - name: SIMPLEMATCH_POSTGRES_DSN
               valueFrom:
                 secretKeyRef:
