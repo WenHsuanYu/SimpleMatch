@@ -5,7 +5,7 @@ import java.util.HashSet;
 import java.util.List;
 import java.util.Set;
 
-/** Applies critical-consumer presence, identity, state, and per-partition progress rules. */
+/** Applies critical-consumer presence, state, freshness, and per-partition progress rules. */
 final class CriticalConsumerReadinessAssessment {
   private final TradingSystemReadinessThresholds thresholds;
   private final TradingSystemComponentAssessment componentAssessment;
@@ -25,7 +25,6 @@ final class CriticalConsumerReadinessAssessment {
         assessment.pause(prefix + "_DUPLICATE_STATUS");
         continue;
       }
-      componentAssessment.assessIdentity(prefix, consumer.identity(), assessment);
       componentAssessment.assessComponentState(prefix, consumer.state(), assessment);
       componentAssessment.assessFreshness(prefix, consumer.observedAt(), assessment);
       assessProgress(prefix, consumer.partitionProgress(), assessment);

@@ -84,6 +84,17 @@ class LiveTradingSystemObservationCollectorTest {
   }
 
   @Test
+  void consumerQuarantineInterruptsWithoutAConsumerTradingIdentity() {
+    final Fixture fixture = fixture(NOW);
+    ((ObjectNode) fixture.documents().get("account")).put("quarantined", true);
+
+    final var status = evaluate(fixture.collector().collect(), NOW);
+
+    assertThat(status.readiness()).isEqualTo(TradingReadiness.INTERRUPT_REQUIRED);
+    assertThat(status.reasons()).contains("CRITICAL_CONSUMER_ACCOUNT_QUARANTINED");
+  }
+
+  @Test
   void missingCriticalConsumerProgressFailsClosed() {
     final Fixture fixture = fixture(NOW);
     fixture.eventEndOffsets().put(0, 1L);

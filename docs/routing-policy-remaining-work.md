@@ -326,7 +326,7 @@ follow-ups chosen for distinct engineering value; none is a parent aggregate cer
 
 | Issue | Engineering outcome | Boundary |
 | --- | --- | --- |
-| [#160](https://github.com/WenHsuanYu/SimpleMatch/issues/160) | Live Gateway admission observations | Connect deployed Risk, Matching, Kafka, and critical-consumer facts to the existing admission evaluator; keep missing/stale/conflicting facts fail-closed and require explicit operator open. |
+| [#160](https://github.com/WenHsuanYu/SimpleMatch/issues/160) | Live Gateway admission observations | Risk, Matching, Kafka, and critical-consumer adapters are implemented and locally tested with fail-closed collection and explicit operator open. Trading identity comparison is limited to Risk and Matching; Kafka/consumer full identity attestation is out of scope. The deployed PRE_OPEN-to-open smoke remains required; keep the issue open. |
 | [#161](https://github.com/WenHsuanYu/SimpleMatch/issues/161) | Canonical local-profile deployability | Reconcile rendered host-level resource requests with the documented local runtime budget; do not retain the old arbitrary 20 GiB / 4 GiB / 1 GiB optimization targets. |
 | [#162](https://github.com/WenHsuanYu/SimpleMatch/issues/162) | One deployed end-to-end trading flow | Trace one real Gateway-originated operation through Risk, Kafka/Matching, Persistence, and Account without rebuilding infrastructure identity/report plumbing. |
 | [#164](https://github.com/WenHsuanYu/SimpleMatch/issues/164) | Deployed QuickFIX same-owner recovery | Prove durable FIX session recovery, reconnect/resend, and no duplicate Risk admission. Matching replacement is already proven elsewhere. |

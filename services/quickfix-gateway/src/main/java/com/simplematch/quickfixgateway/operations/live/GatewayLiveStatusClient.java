@@ -10,7 +10,6 @@ import com.simplematch.quickfixgateway.operations.MatchingFleetStatus;
 import com.simplematch.quickfixgateway.operations.MatchingPartitionStatus;
 import com.simplematch.quickfixgateway.operations.OperationalComponentState;
 import com.simplematch.quickfixgateway.operations.RiskStatus;
-import com.simplematch.quickfixgateway.operations.TradingIdentity;
 import java.time.Duration;
 import java.time.Instant;
 import java.util.ArrayList;
@@ -80,21 +79,19 @@ public final class GatewayLiveStatusClient {
   }
 
   /** Reads quarantine/age facts and combines them with Kafka-authoritative group progress. */
-  public List<CriticalConsumerStatus> criticalConsumers(
-      TradingIdentity identity, KafkaAdmissionSnapshot kafka) {
+  public List<CriticalConsumerStatus> criticalConsumers(KafkaAdmissionSnapshot kafka) {
     final List<CriticalConsumerStatus> statuses = new ArrayList<>(CriticalConsumer.values().length);
     final CompletableFuture<CriticalConsumerStatus> persistencePending =
         criticalConsumerAsync(
-            CriticalConsumer.PERSISTENCE, endpoints.persistence(), identity, kafka);
+            CriticalConsumer.PERSISTENCE, endpoints.persistence(), kafka);
     final CompletableFuture<CriticalConsumerStatus> accountPending =
-        criticalConsumerAsync(CriticalConsumer.ACCOUNT, endpoints.account(), identity, kafka);
+        criticalConsumerAsync(CriticalConsumer.ACCOUNT, endpoints.account(), kafka);
     statuses.add(join(persistencePending));
     statuses.add(join(accountPending));
     statuses.add(
         criticalConsumer(
             CriticalConsumer.QUICKFIX,
             quickfixStatus.get(),
-            identity,
             kafka.consumerCommittedOffsets().get(CriticalConsumer.QUICKFIX),
             kafka.eventEndOffsets(),
             kafka.observedAt()));
@@ -104,14 +101,12 @@ public final class GatewayLiveStatusClient {
   private CompletableFuture<CriticalConsumerStatus> criticalConsumerAsync(
       CriticalConsumer component,
       String endpoint,
-      TradingIdentity identity,
       KafkaAdmissionSnapshot kafka) {
     return CompletableFuture.supplyAsync(
         () ->
             criticalConsumer(
                 component,
                 StatusDocumentDecoder.consumerObservation(documents.read(endpoint)),
-                identity,
                 kafka.consumerCommittedOffsets().get(component),
                 kafka.eventEndOffsets(),
                 kafka.observedAt()),
@@ -121,7 +116,6 @@ public final class GatewayLiveStatusClient {
   private CriticalConsumerStatus criticalConsumer(
       CriticalConsumer component,
       CriticalConsumerOperationalStatus source,
-      TradingIdentity identity,
       Map<Integer, Long> kafkaCommittedOffsets,
       Map<Integer, Long> eventEndOffsets,
       Instant kafkaObservedAt) {
@@ -147,7 +141,6 @@ public final class GatewayLiveStatusClient {
     return new CriticalConsumerStatus(
         component,
         quarantined ? OperationalComponentState.QUARANTINED : OperationalComponentState.READY,
-        identity,
         progress,
         observedAt,
         quarantined ? "QUARANTINED" : "READY");

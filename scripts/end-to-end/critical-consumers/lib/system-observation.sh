@@ -949,7 +949,6 @@ capture_gateway_observation_once() {
         {
           component:"PERSISTENCE",
           state:"READY",
-          identity:$identity,
           partitionProgress:$persistenceProgress,
           observedAt:$consumerObservedAt,
           reason:"workload Ready and durable progress caught up"
@@ -957,7 +956,6 @@ capture_gateway_observation_once() {
         {
           component:"ACCOUNT",
           state:"READY",
-          identity:$identity,
           partitionProgress:$accountProgress,
           observedAt:$consumerObservedAt,
           reason:"workload Ready and durable progress caught up"
@@ -965,7 +963,6 @@ capture_gateway_observation_once() {
         {
           component:"QUICKFIX",
           state:"READY",
-          identity:$identity,
           partitionProgress:$quickfixProgress,
           observedAt:$consumerObservedAt,
           reason:"workload Ready and durable progress caught up"
@@ -973,7 +970,6 @@ capture_gateway_observation_once() {
       ],
       kafkaStatus:{
         state:"READY",
-        identity:$identity,
         commandPartitionCount:15,
         eventPartitionCount:15,
         sameEventIdDifferentPayload:false,

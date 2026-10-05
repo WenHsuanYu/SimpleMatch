@@ -30,6 +30,28 @@ This README describes the Gateway-specific implementation of that policy.
 The former `orders.commands` compatibility publisher is retired. The Gateway has no runtime switch
 that can re-enable that Kafka publication path.
 
+## Live trading admission observation
+
+When `simplematch.quickfix-gateway.live-observation.enabled=true`, the Gateway gathers the Risk
+daily identity, all 15 Matching runtime documents, Kafka topic ends and consumer-group commits,
+and the three critical consumers' quarantine and pending-age status. Kafka commits are the durable
+progress authority; a consumer's process-local offset cache may be empty after restart. One HTTP
+request has a one-second timeout and the complete sample has a three-second deadline. A failed or
+partial sample is never published, so the existing five-second stale-status monitor pauses an open
+Gateway. The collector never issues an operator `open` command: three qualifying complete samples
+make opening eligible, and an authenticated operator must still explicitly request it.
+
+Trading identity is compared between Risk and Matching. Kafka and critical-consumer observations
+contain no trading identity and never inherit Risk's identity: they report their own availability,
+topology, progress, freshness, and quarantine facts as applicable. Consumer event validation and
+conflict handling remain required; full trading identity attestation for these components is outside
+the admission scope.
+
+The live adapter is disabled by default in generic local runs and enabled in production and the
+Kubernetes Gateway ConfigMap. See [configuration](../docs/config.md) for endpoint and timing
+overrides. A deployed PRE_OPEN-to-open smoke is still required for Issue #160; passing unit tests
+or rendered-manifest checks alone is not deployment evidence.
+
 The runtime QuickFIX session config defaults to `config/quickfix/acceptor.cfg`, which uses
 `../../config/quickfix/fix-spec/FIX44.xml` as the shared FIX dictionary.
 

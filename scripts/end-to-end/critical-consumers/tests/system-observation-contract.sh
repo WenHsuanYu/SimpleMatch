@@ -263,6 +263,76 @@ fi
 [[ "$observation_failure_classification" == SOURCE_ALREADY_STALE ]] ||
   fail 'source-side staleness must remain distinct from collector-induced expiration'
 
+(
+  # Exercise the real final JSON assembly with healthy source facts.
+  expected_identity="$(identity_json)"
+  identity_observation="$tmp/identity-observation.json"
+  capture_kafka_matching_committed_positions() {
+    jq -n '{topic:"matching.commands", partitions:[]}' >"$1"
+  }
+  capture_matching_samples_parallel() {
+    mkdir -p "$1"
+  }
+  capture_kafka_log_end_positions() {
+    local commands_destination="$1"
+    local events_destination="$2"
+    jq -n '{
+      topic: "matching.commands",
+      partitions: [range(0; 15) | {partition: ., offset: 0}]
+    }' >"$commands_destination"
+    jq '.topic = "matching.events"' "$commands_destination" >"$events_destination"
+  }
+  capture_consumer_state() {
+    jq -n '{
+      persistenceQuarantines: 0,
+      accountQuarantines: 0,
+      quickfixQuarantines: 0,
+      persistenceQuarantineHistory: 0,
+      accountQuarantineHistory: 0,
+      quickfixQuarantineHistory: 0,
+      quickfixPendingIntents: 0,
+      activeMatchingOrders: 0,
+      persistenceProgress: [],
+      accountProgress: [],
+      quickfixProgress: []
+    }' >"$1"
+  }
+  capture_required_workloads() {
+    cp "$tmp/workloads.json" "$1"
+  }
+  build_matching_partition_statuses() {
+    local validation_epoch_millis="$7"
+    local destination="$8"
+    local observed_at
+    observed_at="$(iso_utc_from_epoch_millis "$validation_epoch_millis")"
+    jq -cn \
+      --argjson identity "$expected_identity" \
+      --arg observedAt "$observed_at" '
+        range(0; 15) | {partitionId: ., identity: $identity, observedAt: $observedAt}
+      ' >"$destination"
+  }
+
+  capture_gateway_observation_once "$tmp/identity-contract" "$identity_observation" ||
+    fail 'healthy source facts must produce a Gateway observation'
+  jq -e --argjson expectedIdentity "$expected_identity" '
+    .riskStatus.identity == $expectedIdentity
+  ' "$identity_observation" >/dev/null ||
+    fail 'Risk observation must preserve its complete trading identity'
+  jq -e --argjson expectedIdentity "$expected_identity" '
+    .matchingFleet.partitions
+    | length == 15 and all(.[]; .identity == $expectedIdentity)
+  ' "$identity_observation" >/dev/null ||
+    fail 'all 15 Matching observations must preserve their trading identities'
+  jq -e '
+    .kafkaStatus | has("identity") | not
+  ' "$identity_observation" >/dev/null ||
+    fail 'Kafka observation must not contain a trading identity'
+  jq -e '
+    .criticalConsumers | length == 3 and all(.[]; has("identity") | not)
+  ' "$identity_observation" >/dev/null ||
+    fail 'critical-consumer observations must not contain a trading identity'
+)
+
 attempts=0
 capture_gateway_observation_once() {
   local attempt_dir="$1"

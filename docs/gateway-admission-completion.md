@@ -14,17 +14,39 @@ turns Risk, Matching fleet, Kafka, and critical-consumer observations into open,
 decisions.
 
 The normalized observation interface is intentionally independent of Kubernetes and Kafka client
-types. Infrastructure-specific production collection remains outside this issue.
+types. Issue #160 supplies production HTTP and Kafka adapters behind that interface without moving
+transport types into the admission domain.
 
-## Scope decision for issue #160
+## Live observation implementation for issue #160
 
-Issue #160 is not included in this implementation wave. Its live Kubernetes, Kafka, and service
-observation adapters remain blocked by issues #154 through #159 and must later adapt deployed facts
-to the existing `TradingSystemObservation` seam. Issue #160 must not duplicate readiness policy or
-introduce another admission state machine.
+The Gateway now collects production observations through the existing
+`TradingSystemObservation` seam. Risk exposes its startup-verified daily identity, every Matching
+owner atomically publishes a runtime document, Kafka Admin supplies required topology, log ends, and
+consumer-group commits, and each critical consumer exposes process-local pending ages plus durable
+quarantine state. Kafka group commits, not the process-local offset cache, are authoritative after a
+consumer restart. The Gateway normalizes those transport-specific facts and leaves all readiness
+policy in `TradingSystemStatusEvaluator`; there is still only one admission state machine.
 
-Issue #135 may use certification-side collectors to prove deployed behavior. Those collectors are
-test infrastructure and are not the production live-observation implementation required by #160.
+The Matching status sidecar serves only an `emptyDir` observation volume mounted read-only, not the
+PVC that contains baseline metadata. The 15 Matching requests and the remote critical-consumer
+requests run concurrently. A single request is bounded to one second and the complete observation
+is bounded to three seconds, which must remain shorter than the five-second freshness threshold.
+Collection and stale monitoring use separate scheduler threads. Missing, malformed, incomplete, or
+timed-out input therefore cannot refresh readiness: the last complete observation expires and the
+existing automatic safety action pauses new orders.
+
+Trading identity comparison belongs to Risk and Matching: each Matching owner must report its
+actual session, artifact, schema, algorithm, and image identity for comparison with Risk's verified
+daily identity. Kafka and critical-consumer observations have no trading identity field and require
+no independent full trading identity attestation. Adapters must not copy Risk identity into those
+observations. Kafka supplies availability, topology, and progress; consumers supply progress,
+freshness, pending ages, and quarantine state. Existing event validation and conflict handling remain
+required. Consumer-detected processing conflicts surface through durable quarantine; the Kafka
+Admin API alone cannot prove that no event ID/payload conflict has ever occurred.
+The deployed PRE_OPEN-to-explicit-open smoke remains required before Issue #160 can be closed.
+
+The older certification-side collector remains test infrastructure. It is not called by the
+production adapter and cannot publish on behalf of a running Gateway.
 
 ## Module and seam design
 
@@ -84,8 +106,9 @@ The admission contract remains:
 - recovery never opens automatically.
 - status older than five seconds requires a new-order pause.
 - an oldest pending critical event warns at 30 seconds and requires a pause at 120 seconds.
-- identity, schema, artifact, algorithm, image, topology, quarantine, or deterministic payload
-  conflicts require interruption according to the existing evaluator.
+- Risk/Matching identity, schema, artifact, algorithm, or image disagreement requires interruption.
+  Kafka topology, critical-consumer quarantine, and reported deterministic payload conflicts also
+  require interruption according to the existing evaluator.
 - zero market activity is valid when committed and end offsets agree and no pending-event age
   exists.
 
@@ -225,5 +248,6 @@ Issue #135 can close when all of the following are true:
 - repository static analysis, Flyway checks, documentation checks, and `git diff --check` pass; and
 - GitHub Actions for the final pull-request head pass.
 
-The completion evidence does not claim that #160 live observation adapters are implemented, nor does
-it claim external production promotion.
+The #135 evidence remains scoped to close coordination. Issue #160 separately owns production live
+observation and its deployed PRE_OPEN-to-explicit-open smoke; neither claim implies external
+production promotion.

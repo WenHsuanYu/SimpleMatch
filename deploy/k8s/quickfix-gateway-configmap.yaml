@@ -15,3 +15,5 @@ data:
           trading-day: ${SIMPLEMATCH_TRADING_DAY}
         final-matching-events:
           enabled: true
+        live-observation:
+          enabled: true

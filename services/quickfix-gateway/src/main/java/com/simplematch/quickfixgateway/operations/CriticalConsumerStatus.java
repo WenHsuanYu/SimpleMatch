@@ -3,11 +3,10 @@ package com.simplematch.quickfixgateway.operations;
 import java.time.Instant;
 import java.util.List;
 
-/** Complete status of one critical final Matching Event consumer group. */
+/** Progress and health of one critical consumer, without full trading identity attestation. */
 public record CriticalConsumerStatus(
     CriticalConsumer component,
     OperationalComponentState state,
-    TradingIdentity identity,
     List<ConsumerPartitionProgress> partitionProgress,
     Instant observedAt,
     String reason) {
@@ -15,7 +14,6 @@ public record CriticalConsumerStatus(
   public CriticalConsumerStatus {
     component = OperationalStatusValidation.required(component, "component");
     state = OperationalStatusValidation.required(state, "state");
-    identity = OperationalStatusValidation.required(identity, "identity");
     partitionProgress =
         List.copyOf(OperationalStatusValidation.required(partitionProgress, "partitionProgress"));
     observedAt = OperationalStatusValidation.required(observedAt, "observedAt");

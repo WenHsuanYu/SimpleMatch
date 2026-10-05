@@ -195,9 +195,11 @@ is considered complete.
 
 Gateway operational admission composition remains separate GO-1 work. The three
 consumer-status Modules now expose readiness, next Kafka positions,
-oldest-unprocessed age, and quarantine state; an infrastructure Adapter still
-has to combine those facts with Kafka end offsets, trading identity, and
-observation time for the Gateway operational Interface. That aggregation does
+oldest-unprocessed age, and quarantine state; the live admission Adapter combines
+those facts with Kafka end offsets and observation time for the
+Gateway operational Interface. Full trading identity comparison belongs to Risk
+and Matching; Kafka/consumer observations do not carry or copy that identity.
+Event validation and conflict handling remain required. That aggregation does
 not belong inside the Account or Persistence Modules.
 
 Until the local failure/restart and FIX-session certification is executed and

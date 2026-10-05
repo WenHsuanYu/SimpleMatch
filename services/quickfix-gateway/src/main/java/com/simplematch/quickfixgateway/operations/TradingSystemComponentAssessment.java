@@ -18,7 +18,6 @@ final class TradingSystemComponentAssessment {
   }
 
   void assessKafka(KafkaStatus status, TradingSystemAssessment assessment) {
-    assessIdentity("KAFKA", status.identity(), assessment);
     assessComponentState("KAFKA", status.state(), assessment);
     assessFreshness("KAFKA", status.observedAt(), assessment);
     if (status.commandPartitionCount() != thresholds.expectedPartitionCount()) {

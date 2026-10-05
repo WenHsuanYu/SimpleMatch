@@ -1,10 +1,11 @@
 package com.simplematch.quickfixgateway.operations;
 
 /**
- * Immutable identity that every Phase 1 critical participant must share for a trading session.
+ * Immutable trading identity that Risk and Matching must agree on for a trading session.
  *
  * <p>It intentionally contains only domain strings and schema versions, never an infrastructure
- * client object or deployment-specific resource type.
+ * client object or deployment-specific resource type. Kafka and critical-consumer observations
+ * do not carry this identity.
  */
 public record TradingIdentity(
     String tradingSessionId,

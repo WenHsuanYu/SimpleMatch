@@ -33,16 +33,15 @@ final class TradingSystemStatusFixtures {
             .toList();
     final List<CriticalConsumerStatus> consumers =
         List.of(
-            consumer(CriticalConsumer.PERSISTENCE, identity, observedAt),
-            consumer(CriticalConsumer.ACCOUNT, identity, observedAt),
-            consumer(CriticalConsumer.QUICKFIX, identity, observedAt));
+            consumer(CriticalConsumer.PERSISTENCE, observedAt),
+            consumer(CriticalConsumer.ACCOUNT, observedAt),
+            consumer(CriticalConsumer.QUICKFIX, observedAt));
     return new TradingSystemObservation(
         new RiskStatus(OperationalComponentState.READY, identity, observedAt, "READY"),
         new MatchingFleetStatus(matchingPartitions, observedAt),
         consumers,
         new KafkaStatus(
             OperationalComponentState.READY,
-            identity,
             PARTITION_COUNT,
             PARTITION_COUNT,
             false,
@@ -115,7 +114,6 @@ final class TradingSystemStatusFixtures {
         new CriticalConsumerStatus(
             current.component(),
             current.state(),
-            current.identity(),
             progress,
             current.observedAt(),
             current.reason()));
@@ -131,7 +129,6 @@ final class TradingSystemStatusFixtures {
         source.criticalConsumers(),
         new KafkaStatus(
             kafka.state(),
-            kafka.identity(),
             kafka.commandPartitionCount(),
             kafka.eventPartitionCount(),
             true,
@@ -162,13 +159,13 @@ final class TradingSystemStatusFixtures {
   }
 
   private static CriticalConsumerStatus consumer(
-      CriticalConsumer component, TradingIdentity identity, Instant observedAt) {
+      CriticalConsumer component, Instant observedAt) {
     final List<ConsumerPartitionProgress> progress =
         IntStream.range(0, PARTITION_COUNT)
             .mapToObj(partitionId -> new ConsumerPartitionProgress(partitionId, 500, 500, Optional.empty()))
             .toList();
     return new CriticalConsumerStatus(
-        component, OperationalComponentState.READY, identity, progress, observedAt, "READY");
+        component, OperationalComponentState.READY, progress, observedAt, "READY");
   }
 
   private static TradingSystemObservation copyWithMatching(

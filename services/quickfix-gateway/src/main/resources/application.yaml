@@ -1,4 +1,8 @@
 spring:
+  task:
+    scheduling:
+      pool:
+        size: 2
   application:
     name: quickfix-gateway
   profiles:
@@ -80,6 +84,11 @@ simplematch:
       monitor-enabled: true
       http-enabled: false
       operator-token: ${SIMPLEMATCH_QUICKFIX_GATEWAY_OPERATIONS_OPERATOR_TOKEN:}
+    live-observation:
+      enabled: false
+      request-timeout: 1s
+      collection-timeout: 3s
+      interval-millis: 1000
     final-matching-events:
       enabled: false
       topic: matching.events

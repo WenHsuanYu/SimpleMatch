@@ -60,7 +60,9 @@ approved startup Market Reference Artifact, persists its identity and explicit p
 Admission, and removes production Risk fallback to runtime Market Reference topics or hashing.
 QuickFIX Gateway consumes `EnvironmentProperties` for its runtime identity, `GrpcProperties` for the
 risk-service channel, and `KafkaProperties` for the compatibility topic; gateway-local paths,
-features, and retry policy remain owned by its service-specific property modules.
+features, and retry policy remain owned by its service-specific property modules. Its live admission
+collector uses the same Spring Kafka security properties as the service consumer, so SASL/TLS is
+not bypassed by a second Kafka configuration path.
 The offline Market Reference builder is not a Spring runtime and has no `simplematch.*` runtime
 configuration namespace. Its source, artifact, and approval command contract is documented in
 [the Market Reference approval workflow](market-reference-approval-workflow.md).
@@ -76,6 +78,16 @@ Useful canonical keys include:
 - `simplematch.quickfix-gateway.owner-id`
 - `simplematch.quickfix-gateway.quickfix-config-path`
 - `simplematch.quickfix-gateway.wal-path`
+- `simplematch.quickfix-gateway.live-observation.enabled` (defaults to `false`; the Kubernetes
+  Gateway ConfigMap enables the production collector)
+- `simplematch.quickfix-gateway.live-observation.request-timeout` (defaults to `1s`; bounds each
+  internal HTTP or Kafka Admin operation)
+- `simplematch.quickfix-gateway.live-observation.collection-timeout` (defaults to `3s`; bounds one
+  complete all-or-nothing observation and must be shorter than `operations.stale-status-after`)
+- `simplematch.quickfix-gateway.live-observation.interval-millis` (defaults to `1000`; starts a new
+  collection after the previous scheduled attempt completes)
+- `simplematch.quickfix-gateway.operations.stale-status-after` (defaults to `5s`; a previously
+  healthy fact older than this is no longer proof of current safety and requires a new-order pause)
 - `simplematch.risk-service.scheduling-enabled` (defaults to `true`; set to `false` only when
   background admission recovery must be disabled, such as a narrow context test)
 - `simplematch.risk-service.cdc-delivery.enabled` (defaults to `false`; the local Kubernetes

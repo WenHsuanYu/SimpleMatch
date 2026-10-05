@@ -1,5 +1,7 @@
 simplematch:
   environment: production
   quickfix-gateway:
+    live-observation:
+      enabled: true
     final-matching-events:
       enabled: true

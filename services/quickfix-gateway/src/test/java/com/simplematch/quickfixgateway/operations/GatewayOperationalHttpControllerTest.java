@@ -13,6 +13,8 @@ import java.util.ArrayList;
 import java.util.List;
 import org.junit.jupiter.api.Test;
 import org.springframework.web.server.ResponseStatusException;
+import tools.jackson.databind.json.JsonMapper;
+import tools.jackson.databind.node.ObjectNode;
 
 class GatewayOperationalHttpControllerTest {
   private static final Instant NOW = Instant.parse("2026-08-12T01:00:00Z");
@@ -58,6 +60,44 @@ class GatewayOperationalHttpControllerTest {
                     TOKEN))
         .isInstanceOf(ResponseStatusException.class)
         .hasMessageContaining("400 BAD_REQUEST");
+  }
+
+  @Test
+  void opensAfterHealthyJsonObservationsWithoutKafkaOrConsumerTradingIdentity() {
+    final JsonMapper mapper = new JsonMapper();
+    final ObjectNode document =
+        mapper.valueToTree(TradingSystemStatusFixtures.readyObservation(NOW));
+    ((ObjectNode) document.get("kafkaStatus")).remove("identity");
+    document
+        .get("criticalConsumers")
+        .forEach(consumer -> ((ObjectNode) consumer).remove("identity"));
+    final TradingSystemObservation observation =
+        mapper.treeToValue(document, TradingSystemObservation.class);
+    final GatewayOperationalHttpController controller = controller();
+
+    for (int check = 0; check < 3; check++) {
+      assertThat(controller.report(observation, TOKEN).readiness())
+          .isEqualTo(TradingReadiness.OPEN_ELIGIBLE);
+    }
+    assertThat(controller.status(TOKEN).gateState()).isEqualTo(GatewayAdmissionGate.State.PRE_OPEN);
+    final GatewayOperationResult opened =
+        controller.execute(
+            "open",
+            new GatewayOperationalHttpController.OperatorCommandRequest("ops", "ready"),
+            TOKEN);
+
+    assertThat(opened.accepted()).isTrue();
+    assertThat(opened.gateState()).isEqualTo(GatewayAdmissionGate.State.OPEN);
+    final ObjectNode serialized = mapper.valueToTree(observation);
+    assertThat(serialized.get("kafkaStatus").has("identity")).isFalse();
+    serialized
+        .get("criticalConsumers")
+        .forEach(consumer -> assertThat(consumer.has("identity")).isFalse());
+    assertThat(serialized.get("riskStatus").has("identity")).isTrue();
+    serialized
+        .get("matchingFleet")
+        .get("partitions")
+        .forEach(partition -> assertThat(partition.has("identity")).isTrue());
   }
 
   private static GatewayOperationalHttpController controller() {

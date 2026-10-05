@@ -39,12 +39,11 @@ public final class LiveTradingSystemObservationCollector
             () -> statusClient.matchingFleet(kafka.commandEndOffsets()), executor);
     final var consumersPending =
         CompletableFuture.supplyAsync(
-            () -> statusClient.criticalConsumers(risk.identity(), kafka), executor);
+            () -> statusClient.criticalConsumers(kafka), executor);
     final MatchingFleetStatus matching = join(matchingPending);
     final KafkaStatus kafkaStatus =
         new KafkaStatus(
             OperationalComponentState.READY,
-            risk.identity(),
             kafka.commandPartitionCount(),
             kafka.eventPartitionCount(),
             false,
