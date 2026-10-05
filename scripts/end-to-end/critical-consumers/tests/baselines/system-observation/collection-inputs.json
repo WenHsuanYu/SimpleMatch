@@ -1,0 +1,231 @@
+{
+  "commandEnds": {
+    "topic": "matching.commands",
+    "partitions": [
+      {
+        "partition": 0,
+        "offset": 1
+      },
+      {
+        "partition": 1,
+        "offset": 1
+      },
+      {
+        "partition": 2,
+        "offset": 1
+      },
+      {
+        "partition": 3,
+        "offset": 1
+      },
+      {
+        "partition": 4,
+        "offset": 1
+      },
+      {
+        "partition": 5,
+        "offset": 1
+      },
+      {
+        "partition": 6,
+        "offset": 1
+      },
+      {
+        "partition": 7,
+        "offset": 1
+      },
+      {
+        "partition": 8,
+        "offset": 1
+      },
+      {
+        "partition": 9,
+        "offset": 1
+      },
+      {
+        "partition": 10,
+        "offset": 1
+      },
+      {
+        "partition": 11,
+        "offset": 1
+      },
+      {
+        "partition": 12,
+        "offset": 1
+      },
+      {
+        "partition": 13,
+        "offset": 1
+      },
+      {
+        "partition": 14,
+        "offset": 1
+      }
+    ]
+  },
+  "commits": {
+    "topic": "matching.commands",
+    "partitions": [
+      {
+        "partition": 0,
+        "committedOffset": 1
+      },
+      {
+        "partition": 1,
+        "committedOffset": 1
+      },
+      {
+        "partition": 2,
+        "committedOffset": 1
+      },
+      {
+        "partition": 3,
+        "committedOffset": 1
+      },
+      {
+        "partition": 4,
+        "committedOffset": 1
+      },
+      {
+        "partition": 5,
+        "committedOffset": 1
+      },
+      {
+        "partition": 6,
+        "committedOffset": 1
+      },
+      {
+        "partition": 7,
+        "committedOffset": 1
+      },
+      {
+        "partition": 8,
+        "committedOffset": 1
+      },
+      {
+        "partition": 9,
+        "committedOffset": 1
+      },
+      {
+        "partition": 10,
+        "committedOffset": 1
+      },
+      {
+        "partition": 11,
+        "committedOffset": 1
+      },
+      {
+        "partition": 12,
+        "committedOffset": 1
+      },
+      {
+        "partition": 13,
+        "committedOffset": 1
+      },
+      {
+        "partition": 14,
+        "committedOffset": 1
+      }
+    ]
+  },
+  "eventEnds": {
+    "topic": "matching.events",
+    "partitions": [
+      {
+        "partition": 0,
+        "offset": 0
+      },
+      {
+        "partition": 1,
+        "offset": 3
+      },
+      {
+        "partition": 2,
+        "offset": 0
+      },
+      {
+        "partition": 3,
+        "offset": 0
+      },
+      {
+        "partition": 4,
+        "offset": 0
+      },
+      {
+        "partition": 5,
+        "offset": 0
+      },
+      {
+        "partition": 6,
+        "offset": 0
+      },
+      {
+        "partition": 7,
+        "offset": 0
+      },
+      {
+        "partition": 8,
+        "offset": 0
+      },
+      {
+        "partition": 9,
+        "offset": 0
+      },
+      {
+        "partition": 10,
+        "offset": 0
+      },
+      {
+        "partition": 11,
+        "offset": 0
+      },
+      {
+        "partition": 12,
+        "offset": 0
+      },
+      {
+        "partition": 13,
+        "offset": 0
+      },
+      {
+        "partition": 14,
+        "offset": 0
+      }
+    ]
+  },
+  "consumerState": {
+    "persistenceProgress": [
+      {
+        "partition_id": 1,
+        "last_processed_offset": 2
+      }
+    ],
+    "accountProgress": [
+      {
+        "partition_id": 1,
+        "last_processed_offset": 2
+      }
+    ],
+    "quickfixProgress": [
+      {
+        "partition_id": 1,
+        "last_processed_offset": 2
+      }
+    ],
+    "persistenceQuarantines": 0,
+    "accountQuarantines": 0,
+    "quickfixQuarantines": 0,
+    "persistenceQuarantineHistory": 0,
+    "accountQuarantineHistory": 0,
+    "quickfixQuarantineHistory": 0,
+    "quickfixPendingIntents": 0,
+    "activeMatchingOrders": 0
+  },
+  "runtimeSample": {
+    "schema_version": 1,
+    "runtime_state": "READY",
+    "partition_state": "OPEN",
+    "updated_at_epoch_ms": 10000
+  }
+}

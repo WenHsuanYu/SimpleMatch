@@ -1,0 +1,7 @@
+{
+  "attempt": 1,
+  "exitStatus": 1,
+  "retryable": false,
+  "classification": "INVALID_EVIDENCE",
+  "reason": "invalid source identity"
+}

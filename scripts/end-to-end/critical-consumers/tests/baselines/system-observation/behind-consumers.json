@@ -1,0 +1,8 @@
+{
+  "persistenceProgress": [
+    {
+      "partition_id": 1,
+      "last_processed_offset": 1
+    }
+  ]
+}

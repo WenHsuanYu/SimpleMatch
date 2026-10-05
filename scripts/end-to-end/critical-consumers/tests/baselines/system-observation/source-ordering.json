@@ -1,0 +1,7 @@
+{
+  "openingKafkaCompleted": true,
+  "durableCaptureIncludesDelay": true,
+  "runtimeFollowsDurableCapture": true,
+  "closingKafkaFollowsRuntime": true,
+  "attemptCompleted": true
+}

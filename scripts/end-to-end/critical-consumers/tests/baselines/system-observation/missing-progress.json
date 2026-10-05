@@ -1,0 +1,92 @@
+[
+  {
+    "partitionId": 0,
+    "committedOffset": 0,
+    "endOffset": 0,
+    "oldestUnprocessedAge": null
+  },
+  {
+    "partitionId": 1,
+    "committedOffset": null,
+    "endOffset": 3,
+    "oldestUnprocessedAge": null
+  },
+  {
+    "partitionId": 2,
+    "committedOffset": 0,
+    "endOffset": 0,
+    "oldestUnprocessedAge": null
+  },
+  {
+    "partitionId": 3,
+    "committedOffset": 0,
+    "endOffset": 0,
+    "oldestUnprocessedAge": null
+  },
+  {
+    "partitionId": 4,
+    "committedOffset": 0,
+    "endOffset": 0,
+    "oldestUnprocessedAge": null
+  },
+  {
+    "partitionId": 5,
+    "committedOffset": 0,
+    "endOffset": 0,
+    "oldestUnprocessedAge": null
+  },
+  {
+    "partitionId": 6,
+    "committedOffset": 0,
+    "endOffset": 0,
+    "oldestUnprocessedAge": null
+  },
+  {
+    "partitionId": 7,
+    "committedOffset": 0,
+    "endOffset": 0,
+    "oldestUnprocessedAge": null
+  },
+  {
+    "partitionId": 8,
+    "committedOffset": 0,
+    "endOffset": 0,
+    "oldestUnprocessedAge": null
+  },
+  {
+    "partitionId": 9,
+    "committedOffset": 0,
+    "endOffset": 0,
+    "oldestUnprocessedAge": null
+  },
+  {
+    "partitionId": 10,
+    "committedOffset": 0,
+    "endOffset": 0,
+    "oldestUnprocessedAge": null
+  },
+  {
+    "partitionId": 11,
+    "committedOffset": 0,
+    "endOffset": 0,
+    "oldestUnprocessedAge": null
+  },
+  {
+    "partitionId": 12,
+    "committedOffset": 0,
+    "endOffset": 0,
+    "oldestUnprocessedAge": null
+  },
+  {
+    "partitionId": 13,
+    "committedOffset": 0,
+    "endOffset": 0,
+    "oldestUnprocessedAge": null
+  },
+  {
+    "partitionId": 14,
+    "committedOffset": 0,
+    "endOffset": 0,
+    "oldestUnprocessedAge": null
+  }
+]

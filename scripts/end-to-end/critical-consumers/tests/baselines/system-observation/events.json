@@ -1,0 +1,65 @@
+{
+  "topic": "matching.events",
+  "partitions": [
+    {
+      "partition": 0,
+      "offset": 0
+    },
+    {
+      "partition": 1,
+      "offset": 3
+    },
+    {
+      "partition": 2,
+      "offset": 0
+    },
+    {
+      "partition": 3,
+      "offset": 0
+    },
+    {
+      "partition": 4,
+      "offset": 0
+    },
+    {
+      "partition": 5,
+      "offset": 0
+    },
+    {
+      "partition": 6,
+      "offset": 0
+    },
+    {
+      "partition": 7,
+      "offset": 0
+    },
+    {
+      "partition": 8,
+      "offset": 0
+    },
+    {
+      "partition": 9,
+      "offset": 0
+    },
+    {
+      "partition": 10,
+      "offset": 0
+    },
+    {
+      "partition": 11,
+      "offset": 0
+    },
+    {
+      "partition": 12,
+      "offset": 0
+    },
+    {
+      "partition": 13,
+      "offset": 0
+    },
+    {
+      "partition": 14,
+      "offset": 0
+    }
+  ]
+}

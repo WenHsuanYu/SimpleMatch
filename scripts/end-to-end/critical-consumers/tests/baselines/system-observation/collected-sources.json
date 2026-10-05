@@ -1,0 +1,606 @@
+{
+  "riskIdentity": {
+    "tradingSessionId": "session",
+    "artifactId": "artifact",
+    "artifactContentSha256": "checksum",
+    "commandSchemaVersion": 1,
+    "eventSchemaVersion": 1,
+    "matchingAlgorithmVersion": "algorithm",
+    "matchingImageIdentity": "image"
+  },
+  "matchingPartitions": [
+    {
+      "partitionId": 0,
+      "ownerId": "observed-owner-0",
+      "state": "READY",
+      "identity": {
+        "tradingSessionId": "session",
+        "artifactId": "artifact",
+        "artifactContentSha256": "checksum",
+        "commandSchemaVersion": 1,
+        "eventSchemaVersion": 1,
+        "matchingAlgorithmVersion": "algorithm",
+        "matchingImageIdentity": "image"
+      },
+      "ownershipPermit": true,
+      "recoveryComplete": true,
+      "committedOffset": 1,
+      "endOffset": 1,
+      "observedAt": "1970-01-01T00:00:10.000Z",
+      "reason": "READY"
+    },
+    {
+      "partitionId": 1,
+      "ownerId": "observed-owner-1",
+      "state": "READY",
+      "identity": {
+        "tradingSessionId": "session",
+        "artifactId": "artifact",
+        "artifactContentSha256": "checksum",
+        "commandSchemaVersion": 1,
+        "eventSchemaVersion": 1,
+        "matchingAlgorithmVersion": "algorithm",
+        "matchingImageIdentity": "image"
+      },
+      "ownershipPermit": true,
+      "recoveryComplete": true,
+      "committedOffset": 1,
+      "endOffset": 1,
+      "observedAt": "1970-01-01T00:00:10.000Z",
+      "reason": "READY"
+    },
+    {
+      "partitionId": 2,
+      "ownerId": "observed-owner-2",
+      "state": "READY",
+      "identity": {
+        "tradingSessionId": "session",
+        "artifactId": "artifact",
+        "artifactContentSha256": "checksum",
+        "commandSchemaVersion": 1,
+        "eventSchemaVersion": 1,
+        "matchingAlgorithmVersion": "algorithm",
+        "matchingImageIdentity": "image"
+      },
+      "ownershipPermit": true,
+      "recoveryComplete": true,
+      "committedOffset": 1,
+      "endOffset": 1,
+      "observedAt": "1970-01-01T00:00:10.000Z",
+      "reason": "READY"
+    },
+    {
+      "partitionId": 3,
+      "ownerId": "observed-owner-3",
+      "state": "READY",
+      "identity": {
+        "tradingSessionId": "session",
+        "artifactId": "artifact",
+        "artifactContentSha256": "checksum",
+        "commandSchemaVersion": 1,
+        "eventSchemaVersion": 1,
+        "matchingAlgorithmVersion": "algorithm",
+        "matchingImageIdentity": "image"
+      },
+      "ownershipPermit": true,
+      "recoveryComplete": true,
+      "committedOffset": 1,
+      "endOffset": 1,
+      "observedAt": "1970-01-01T00:00:10.000Z",
+      "reason": "READY"
+    },
+    {
+      "partitionId": 4,
+      "ownerId": "observed-owner-4",
+      "state": "READY",
+      "identity": {
+        "tradingSessionId": "session",
+        "artifactId": "artifact",
+        "artifactContentSha256": "checksum",
+        "commandSchemaVersion": 1,
+        "eventSchemaVersion": 1,
+        "matchingAlgorithmVersion": "algorithm",
+        "matchingImageIdentity": "image"
+      },
+      "ownershipPermit": true,
+      "recoveryComplete": true,
+      "committedOffset": 1,
+      "endOffset": 1,
+      "observedAt": "1970-01-01T00:00:10.000Z",
+      "reason": "READY"
+    },
+    {
+      "partitionId": 5,
+      "ownerId": "observed-owner-5",
+      "state": "READY",
+      "identity": {
+        "tradingSessionId": "session",
+        "artifactId": "artifact",
+        "artifactContentSha256": "checksum",
+        "commandSchemaVersion": 1,
+        "eventSchemaVersion": 1,
+        "matchingAlgorithmVersion": "algorithm",
+        "matchingImageIdentity": "image"
+      },
+      "ownershipPermit": true,
+      "recoveryComplete": true,
+      "committedOffset": 1,
+      "endOffset": 1,
+      "observedAt": "1970-01-01T00:00:10.000Z",
+      "reason": "READY"
+    },
+    {
+      "partitionId": 6,
+      "ownerId": "observed-owner-6",
+      "state": "READY",
+      "identity": {
+        "tradingSessionId": "session",
+        "artifactId": "artifact",
+        "artifactContentSha256": "checksum",
+        "commandSchemaVersion": 1,
+        "eventSchemaVersion": 1,
+        "matchingAlgorithmVersion": "algorithm",
+        "matchingImageIdentity": "image"
+      },
+      "ownershipPermit": true,
+      "recoveryComplete": true,
+      "committedOffset": 1,
+      "endOffset": 1,
+      "observedAt": "1970-01-01T00:00:10.000Z",
+      "reason": "READY"
+    },
+    {
+      "partitionId": 7,
+      "ownerId": "observed-owner-7",
+      "state": "READY",
+      "identity": {
+        "tradingSessionId": "session",
+        "artifactId": "artifact",
+        "artifactContentSha256": "checksum",
+        "commandSchemaVersion": 1,
+        "eventSchemaVersion": 1,
+        "matchingAlgorithmVersion": "algorithm",
+        "matchingImageIdentity": "image"
+      },
+      "ownershipPermit": true,
+      "recoveryComplete": true,
+      "committedOffset": 1,
+      "endOffset": 1,
+      "observedAt": "1970-01-01T00:00:10.000Z",
+      "reason": "READY"
+    },
+    {
+      "partitionId": 8,
+      "ownerId": "observed-owner-8",
+      "state": "READY",
+      "identity": {
+        "tradingSessionId": "session",
+        "artifactId": "artifact",
+        "artifactContentSha256": "checksum",
+        "commandSchemaVersion": 1,
+        "eventSchemaVersion": 1,
+        "matchingAlgorithmVersion": "algorithm",
+        "matchingImageIdentity": "image"
+      },
+      "ownershipPermit": true,
+      "recoveryComplete": true,
+      "committedOffset": 1,
+      "endOffset": 1,
+      "observedAt": "1970-01-01T00:00:10.000Z",
+      "reason": "READY"
+    },
+    {
+      "partitionId": 9,
+      "ownerId": "observed-owner-9",
+      "state": "READY",
+      "identity": {
+        "tradingSessionId": "session",
+        "artifactId": "artifact",
+        "artifactContentSha256": "checksum",
+        "commandSchemaVersion": 1,
+        "eventSchemaVersion": 1,
+        "matchingAlgorithmVersion": "algorithm",
+        "matchingImageIdentity": "image"
+      },
+      "ownershipPermit": true,
+      "recoveryComplete": true,
+      "committedOffset": 1,
+      "endOffset": 1,
+      "observedAt": "1970-01-01T00:00:10.000Z",
+      "reason": "READY"
+    },
+    {
+      "partitionId": 10,
+      "ownerId": "observed-owner-10",
+      "state": "READY",
+      "identity": {
+        "tradingSessionId": "session",
+        "artifactId": "artifact",
+        "artifactContentSha256": "checksum",
+        "commandSchemaVersion": 1,
+        "eventSchemaVersion": 1,
+        "matchingAlgorithmVersion": "algorithm",
+        "matchingImageIdentity": "image"
+      },
+      "ownershipPermit": true,
+      "recoveryComplete": true,
+      "committedOffset": 1,
+      "endOffset": 1,
+      "observedAt": "1970-01-01T00:00:10.000Z",
+      "reason": "READY"
+    },
+    {
+      "partitionId": 11,
+      "ownerId": "observed-owner-11",
+      "state": "READY",
+      "identity": {
+        "tradingSessionId": "session",
+        "artifactId": "artifact",
+        "artifactContentSha256": "checksum",
+        "commandSchemaVersion": 1,
+        "eventSchemaVersion": 1,
+        "matchingAlgorithmVersion": "algorithm",
+        "matchingImageIdentity": "image"
+      },
+      "ownershipPermit": true,
+      "recoveryComplete": true,
+      "committedOffset": 1,
+      "endOffset": 1,
+      "observedAt": "1970-01-01T00:00:10.000Z",
+      "reason": "READY"
+    },
+    {
+      "partitionId": 12,
+      "ownerId": "observed-owner-12",
+      "state": "READY",
+      "identity": {
+        "tradingSessionId": "session",
+        "artifactId": "artifact",
+        "artifactContentSha256": "checksum",
+        "commandSchemaVersion": 1,
+        "eventSchemaVersion": 1,
+        "matchingAlgorithmVersion": "algorithm",
+        "matchingImageIdentity": "image"
+      },
+      "ownershipPermit": true,
+      "recoveryComplete": true,
+      "committedOffset": 1,
+      "endOffset": 1,
+      "observedAt": "1970-01-01T00:00:10.000Z",
+      "reason": "READY"
+    },
+    {
+      "partitionId": 13,
+      "ownerId": "observed-owner-13",
+      "state": "READY",
+      "identity": {
+        "tradingSessionId": "session",
+        "artifactId": "artifact",
+        "artifactContentSha256": "checksum",
+        "commandSchemaVersion": 1,
+        "eventSchemaVersion": 1,
+        "matchingAlgorithmVersion": "algorithm",
+        "matchingImageIdentity": "image"
+      },
+      "ownershipPermit": true,
+      "recoveryComplete": true,
+      "committedOffset": 1,
+      "endOffset": 1,
+      "observedAt": "1970-01-01T00:00:10.000Z",
+      "reason": "READY"
+    },
+    {
+      "partitionId": 14,
+      "ownerId": "observed-owner-14",
+      "state": "READY",
+      "identity": {
+        "tradingSessionId": "session",
+        "artifactId": "artifact",
+        "artifactContentSha256": "checksum",
+        "commandSchemaVersion": 1,
+        "eventSchemaVersion": 1,
+        "matchingAlgorithmVersion": "algorithm",
+        "matchingImageIdentity": "image"
+      },
+      "ownershipPermit": true,
+      "recoveryComplete": true,
+      "committedOffset": 1,
+      "endOffset": 1,
+      "observedAt": "1970-01-01T00:00:10.000Z",
+      "reason": "READY"
+    }
+  ],
+  "consumerProgress": [
+    {
+      "component": "PERSISTENCE",
+      "partitionProgress": [
+        {
+          "partitionId": 0,
+          "committedOffset": 0,
+          "endOffset": 0,
+          "oldestUnprocessedAge": null
+        },
+        {
+          "partitionId": 1,
+          "committedOffset": 3,
+          "endOffset": 3,
+          "oldestUnprocessedAge": null
+        },
+        {
+          "partitionId": 2,
+          "committedOffset": 0,
+          "endOffset": 0,
+          "oldestUnprocessedAge": null
+        },
+        {
+          "partitionId": 3,
+          "committedOffset": 0,
+          "endOffset": 0,
+          "oldestUnprocessedAge": null
+        },
+        {
+          "partitionId": 4,
+          "committedOffset": 0,
+          "endOffset": 0,
+          "oldestUnprocessedAge": null
+        },
+        {
+          "partitionId": 5,
+          "committedOffset": 0,
+          "endOffset": 0,
+          "oldestUnprocessedAge": null
+        },
+        {
+          "partitionId": 6,
+          "committedOffset": 0,
+          "endOffset": 0,
+          "oldestUnprocessedAge": null
+        },
+        {
+          "partitionId": 7,
+          "committedOffset": 0,
+          "endOffset": 0,
+          "oldestUnprocessedAge": null
+        },
+        {
+          "partitionId": 8,
+          "committedOffset": 0,
+          "endOffset": 0,
+          "oldestUnprocessedAge": null
+        },
+        {
+          "partitionId": 9,
+          "committedOffset": 0,
+          "endOffset": 0,
+          "oldestUnprocessedAge": null
+        },
+        {
+          "partitionId": 10,
+          "committedOffset": 0,
+          "endOffset": 0,
+          "oldestUnprocessedAge": null
+        },
+        {
+          "partitionId": 11,
+          "committedOffset": 0,
+          "endOffset": 0,
+          "oldestUnprocessedAge": null
+        },
+        {
+          "partitionId": 12,
+          "committedOffset": 0,
+          "endOffset": 0,
+          "oldestUnprocessedAge": null
+        },
+        {
+          "partitionId": 13,
+          "committedOffset": 0,
+          "endOffset": 0,
+          "oldestUnprocessedAge": null
+        },
+        {
+          "partitionId": 14,
+          "committedOffset": 0,
+          "endOffset": 0,
+          "oldestUnprocessedAge": null
+        }
+      ]
+    },
+    {
+      "component": "ACCOUNT",
+      "partitionProgress": [
+        {
+          "partitionId": 0,
+          "committedOffset": 0,
+          "endOffset": 0,
+          "oldestUnprocessedAge": null
+        },
+        {
+          "partitionId": 1,
+          "committedOffset": 3,
+          "endOffset": 3,
+          "oldestUnprocessedAge": null
+        },
+        {
+          "partitionId": 2,
+          "committedOffset": 0,
+          "endOffset": 0,
+          "oldestUnprocessedAge": null
+        },
+        {
+          "partitionId": 3,
+          "committedOffset": 0,
+          "endOffset": 0,
+          "oldestUnprocessedAge": null
+        },
+        {
+          "partitionId": 4,
+          "committedOffset": 0,
+          "endOffset": 0,
+          "oldestUnprocessedAge": null
+        },
+        {
+          "partitionId": 5,
+          "committedOffset": 0,
+          "endOffset": 0,
+          "oldestUnprocessedAge": null
+        },
+        {
+          "partitionId": 6,
+          "committedOffset": 0,
+          "endOffset": 0,
+          "oldestUnprocessedAge": null
+        },
+        {
+          "partitionId": 7,
+          "committedOffset": 0,
+          "endOffset": 0,
+          "oldestUnprocessedAge": null
+        },
+        {
+          "partitionId": 8,
+          "committedOffset": 0,
+          "endOffset": 0,
+          "oldestUnprocessedAge": null
+        },
+        {
+          "partitionId": 9,
+          "committedOffset": 0,
+          "endOffset": 0,
+          "oldestUnprocessedAge": null
+        },
+        {
+          "partitionId": 10,
+          "committedOffset": 0,
+          "endOffset": 0,
+          "oldestUnprocessedAge": null
+        },
+        {
+          "partitionId": 11,
+          "committedOffset": 0,
+          "endOffset": 0,
+          "oldestUnprocessedAge": null
+        },
+        {
+          "partitionId": 12,
+          "committedOffset": 0,
+          "endOffset": 0,
+          "oldestUnprocessedAge": null
+        },
+        {
+          "partitionId": 13,
+          "committedOffset": 0,
+          "endOffset": 0,
+          "oldestUnprocessedAge": null
+        },
+        {
+          "partitionId": 14,
+          "committedOffset": 0,
+          "endOffset": 0,
+          "oldestUnprocessedAge": null
+        }
+      ]
+    },
+    {
+      "component": "QUICKFIX",
+      "partitionProgress": [
+        {
+          "partitionId": 0,
+          "committedOffset": 0,
+          "endOffset": 0,
+          "oldestUnprocessedAge": null
+        },
+        {
+          "partitionId": 1,
+          "committedOffset": 3,
+          "endOffset": 3,
+          "oldestUnprocessedAge": null
+        },
+        {
+          "partitionId": 2,
+          "committedOffset": 0,
+          "endOffset": 0,
+          "oldestUnprocessedAge": null
+        },
+        {
+          "partitionId": 3,
+          "committedOffset": 0,
+          "endOffset": 0,
+          "oldestUnprocessedAge": null
+        },
+        {
+          "partitionId": 4,
+          "committedOffset": 0,
+          "endOffset": 0,
+          "oldestUnprocessedAge": null
+        },
+        {
+          "partitionId": 5,
+          "committedOffset": 0,
+          "endOffset": 0,
+          "oldestUnprocessedAge": null
+        },
+        {
+          "partitionId": 6,
+          "committedOffset": 0,
+          "endOffset": 0,
+          "oldestUnprocessedAge": null
+        },
+        {
+          "partitionId": 7,
+          "committedOffset": 0,
+          "endOffset": 0,
+          "oldestUnprocessedAge": null
+        },
+        {
+          "partitionId": 8,
+          "committedOffset": 0,
+          "endOffset": 0,
+          "oldestUnprocessedAge": null
+        },
+        {
+          "partitionId": 9,
+          "committedOffset": 0,
+          "endOffset": 0,
+          "oldestUnprocessedAge": null
+        },
+        {
+          "partitionId": 10,
+          "committedOffset": 0,
+          "endOffset": 0,
+          "oldestUnprocessedAge": null
+        },
+        {
+          "partitionId": 11,
+          "committedOffset": 0,
+          "endOffset": 0,
+          "oldestUnprocessedAge": null
+        },
+        {
+          "partitionId": 12,
+          "committedOffset": 0,
+          "endOffset": 0,
+          "oldestUnprocessedAge": null
+        },
+        {
+          "partitionId": 13,
+          "committedOffset": 0,
+          "endOffset": 0,
+          "oldestUnprocessedAge": null
+        },
+        {
+          "partitionId": 14,
+          "committedOffset": 0,
+          "endOffset": 0,
+          "oldestUnprocessedAge": null
+        }
+      ]
+    }
+  ],
+  "observedAt": {
+    "risk": "1970-01-01T00:00:12.000Z",
+    "matching": "1970-01-01T00:00:10.000Z",
+    "consumers": "1970-01-01T00:00:11.000Z",
+    "kafka": "1970-01-01T00:00:11.000Z"
+  }
+}

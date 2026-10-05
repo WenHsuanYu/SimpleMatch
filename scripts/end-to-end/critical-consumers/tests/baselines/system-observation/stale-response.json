@@ -1,0 +1,7 @@
+{
+  "openEligible": false,
+  "reasons": [
+    "MATCHING_PARTITION_0_STATUS_STALE",
+    "RISK_STATUS_STALE"
+  ]
+}

@@ -698,6 +698,53 @@ validate_kafka_position_stability() {
   }
 }
 
+# Encodes already validated source facts; collection and admission policy stay with their owners.
+# Input is one normalized-sources JSON file, and output is the Gateway observation on stdout.
+encode_gateway_observation_json() {
+  local sources="$1"
+  jq -e '
+    if (.riskIdentity | type) != "object"
+       or (.matchingPartitions | type) != "array"
+       or (.consumerProgress | type) != "array"
+       or ([.observedAt.risk, .observedAt.matching, .observedAt.consumers, .observedAt.kafka]
+           | all(type == "string") | not)
+    then error("incomplete normalized observation sources")
+    else
+      . as $source
+      | {
+          riskStatus: {
+            state: "READY",
+            identity: $source.riskIdentity,
+            observedAt: $source.observedAt.risk,
+            reason: "deployment Ready at workload observation"
+          },
+          matchingFleet: {
+            partitions: $source.matchingPartitions,
+            observedAt: $source.observedAt.matching
+          },
+          criticalConsumers: [
+            $source.consumerProgress[]
+            | {
+                component: .component,
+                state: "READY",
+                partitionProgress: .partitionProgress,
+                observedAt: $source.observedAt.consumers,
+                reason: "workload Ready and durable progress caught up"
+              }
+          ],
+          kafkaStatus: {
+            state: "READY",
+            commandPartitionCount: 15,
+            eventPartitionCount: 15,
+            sameEventIdDifferentPayload: false,
+            observedAt: $source.observedAt.kafka,
+            reason: "Kafka Ready; positions stable; critical consumers caught up without quarantine history"
+          }
+        }
+    end
+  ' "$sources"
+}
+
 capture_gateway_observation_once() {
   local attempt_dir="$1"
   local destination="$2"
@@ -924,6 +971,7 @@ capture_gateway_observation_once() {
   consumer_observed_at="$(iso_utc_from_epoch_millis "$consumer_status_observed_epoch_millis")"
   kafka_observed_at="$(iso_utc_from_epoch_millis "$kafka_observed_epoch_millis")"
 
+  local normalized_sources="$attempt_dir/normalized-sources.json"
   jq -n \
     --argjson identity "$identity" \
     --argjson matchingPartitions "$matching_partitions" \
@@ -935,48 +983,25 @@ capture_gateway_observation_once() {
     --arg consumerObservedAt "$consumer_observed_at" \
     --arg kafkaObservedAt "$kafka_observed_at" \
     '{
-      riskStatus:{
-        state:"READY",
-        identity:$identity,
-        observedAt:$riskObservedAt,
-        reason:"deployment Ready at workload observation"
-      },
-      matchingFleet:{
-        partitions:$matchingPartitions,
-        observedAt:$matchingFleetObservedAt
-      },
-      criticalConsumers:[
-        {
-          component:"PERSISTENCE",
-          state:"READY",
-          partitionProgress:$persistenceProgress,
-          observedAt:$consumerObservedAt,
-          reason:"workload Ready and durable progress caught up"
-        },
-        {
-          component:"ACCOUNT",
-          state:"READY",
-          partitionProgress:$accountProgress,
-          observedAt:$consumerObservedAt,
-          reason:"workload Ready and durable progress caught up"
-        },
-        {
-          component:"QUICKFIX",
-          state:"READY",
-          partitionProgress:$quickfixProgress,
-          observedAt:$consumerObservedAt,
-          reason:"workload Ready and durable progress caught up"
-        }
+      riskIdentity: $identity,
+      matchingPartitions: $matchingPartitions,
+      consumerProgress: [
+        {component: "PERSISTENCE", partitionProgress: $persistenceProgress},
+        {component: "ACCOUNT", partitionProgress: $accountProgress},
+        {component: "QUICKFIX", partitionProgress: $quickfixProgress}
       ],
-      kafkaStatus:{
-        state:"READY",
-        commandPartitionCount:15,
-        eventPartitionCount:15,
-        sameEventIdDifferentPayload:false,
-        observedAt:$kafkaObservedAt,
-        reason:"Kafka Ready; positions stable; critical consumers caught up without quarantine history"
+      observedAt: {
+        risk: $riskObservedAt,
+        matching: $matchingFleetObservedAt,
+        consumers: $consumerObservedAt,
+        kafka: $kafkaObservedAt
       }
-    }' >"$destination" || {
+    }' >"$normalized_sources" || {
+    set_observation_failure INVALID_EVIDENCE \
+      "normalized observation sources cannot be serialized"
+    return 1
+  }
+  encode_gateway_observation_json "$normalized_sources" >"$destination" || {
     set_observation_failure INVALID_EVIDENCE \
       "Gateway observation cannot be serialized"
     return 1

@@ -1,0 +1,64 @@
+{
+  "riskIdentity": {
+    "tradingSessionId": "session",
+    "artifactId": "risk-artifact",
+    "artifactContentSha256": "verified-checksum",
+    "commandSchemaVersion": 1,
+    "eventSchemaVersion": 1,
+    "matchingAlgorithmVersion": "algorithm",
+    "matchingImageIdentity": "image"
+  },
+  "matchingPartitions": [
+    {
+      "partitionId": 7,
+      "identity": {
+        "tradingSessionId": "session",
+        "artifactId": "matching-observed-artifact",
+        "artifactContentSha256": "verified-checksum",
+        "commandSchemaVersion": 1,
+        "eventSchemaVersion": 1,
+        "matchingAlgorithmVersion": "algorithm",
+        "matchingImageIdentity": "image"
+      },
+      "observedAt": "2026-08-12T01:00:00Z"
+    }
+  ],
+  "consumerProgress": [
+    {
+      "component": "PERSISTENCE",
+      "partitionProgress": [
+        {
+          "partitionId": 7,
+          "committedOffset": 11,
+          "endOffset": 11
+        }
+      ]
+    },
+    {
+      "component": "ACCOUNT",
+      "partitionProgress": [
+        {
+          "partitionId": 7,
+          "committedOffset": 10,
+          "endOffset": 11
+        }
+      ]
+    },
+    {
+      "component": "QUICKFIX",
+      "partitionProgress": [
+        {
+          "partitionId": 7,
+          "committedOffset": 9,
+          "endOffset": 11
+        }
+      ]
+    }
+  ],
+  "observedAt": {
+    "risk": "2026-08-12T01:00:01Z",
+    "matching": "2026-08-12T01:00:00Z",
+    "consumers": "2026-08-12T01:00:02Z",
+    "kafka": "2026-08-12T01:00:03Z"
+  }
+}

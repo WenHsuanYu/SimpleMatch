@@ -1,0 +1,83 @@
+{
+  "riskStatus": {
+    "state": "READY",
+    "identity": {
+      "tradingSessionId": "session",
+      "artifactId": "risk-artifact",
+      "artifactContentSha256": "verified-checksum",
+      "commandSchemaVersion": 1,
+      "eventSchemaVersion": 1,
+      "matchingAlgorithmVersion": "algorithm",
+      "matchingImageIdentity": "image"
+    },
+    "observedAt": "2026-08-12T01:00:01Z",
+    "reason": "deployment Ready at workload observation"
+  },
+  "matchingFleet": {
+    "partitions": [
+      {
+        "partitionId": 7,
+        "identity": {
+          "tradingSessionId": "session",
+          "artifactId": "matching-observed-artifact",
+          "artifactContentSha256": "verified-checksum",
+          "commandSchemaVersion": 1,
+          "eventSchemaVersion": 1,
+          "matchingAlgorithmVersion": "algorithm",
+          "matchingImageIdentity": "image"
+        },
+        "observedAt": "2026-08-12T01:00:00Z"
+      }
+    ],
+    "observedAt": "2026-08-12T01:00:00Z"
+  },
+  "criticalConsumers": [
+    {
+      "component": "PERSISTENCE",
+      "state": "READY",
+      "partitionProgress": [
+        {
+          "partitionId": 7,
+          "committedOffset": 11,
+          "endOffset": 11
+        }
+      ],
+      "observedAt": "2026-08-12T01:00:02Z",
+      "reason": "workload Ready and durable progress caught up"
+    },
+    {
+      "component": "ACCOUNT",
+      "state": "READY",
+      "partitionProgress": [
+        {
+          "partitionId": 7,
+          "committedOffset": 10,
+          "endOffset": 11
+        }
+      ],
+      "observedAt": "2026-08-12T01:00:02Z",
+      "reason": "workload Ready and durable progress caught up"
+    },
+    {
+      "component": "QUICKFIX",
+      "state": "READY",
+      "partitionProgress": [
+        {
+          "partitionId": 7,
+          "committedOffset": 9,
+          "endOffset": 11
+        }
+      ],
+      "observedAt": "2026-08-12T01:00:02Z",
+      "reason": "workload Ready and durable progress caught up"
+    }
+  ],
+  "kafkaStatus": {
+    "state": "READY",
+    "commandPartitionCount": 15,
+    "eventPartitionCount": 15,
+    "sameEventIdDifferentPayload": false,
+    "observedAt": "2026-08-12T01:00:03Z",
+    "reason": "Kafka Ready; positions stable; critical consumers caught up without quarantine history"
+  }
+}

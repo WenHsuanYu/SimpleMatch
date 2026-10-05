@@ -48,6 +48,34 @@ The deployed PRE_OPEN-to-explicit-open smoke remains required before Issue #160 
 The older certification-side collector remains test infrastructure. It is not called by the
 production adapter and cannot publish on behalf of a running Gateway.
 
+### Observation contract baselines
+
+`scripts/end-to-end/critical-consumers/tests/system-observation-contract.sh` runs independent named
+cases in subshells, so each case owns its temporary files and transport stubs. Run the script without
+arguments for the complete suite, or pass case names such as `json_encoding consumer_progress` for a
+focused check. Static input fixtures and expected outputs live under
+`scripts/end-to-end/critical-consumers/tests/baselines/system-observation/`; they are reviewed files,
+not expectations generated from the implementation under test.
+
+The certification-side JSON encoder takes one normalized-source file and writes one observation.
+The encoding case compares its complete output with `gateway-observation.json`, including independently
+supplied Risk and Matching identities and the absence of Kafka/consumer identity fields. Progress and
+diagnostic cases likewise compare generated outputs with their baselines. Before `diff -u`, `jq -S`
+sorts object keys only: array order, values, missing fields, and extra fields still matter. Dynamic
+capture times are checked through named ordering predicates rather than exact wall-clock timestamps;
+the raw timing document and ordering log are also retained for inspection.
+
+`collector_success_path` fixes the clock and replaces only external capture/offset-lookup seams. It
+runs the real source validation, 15-owner assembly, consumer normalization, and encoder, then compares
+both normalized sources and the final observation with complete baselines. This covers wiring that a
+direct encoder test alone cannot prove.
+
+Each invocation prints a review directory under `out/contracts/system-observation.*`, containing
+the canonical expected and actual JSON plus a diff for each comparison. A mismatch prints the diff
+and exits unsuccessfully. A changed contract requires deliberate review of both the implementation
+and its baseline; the script never updates baselines automatically. These local reports prove the
+test-infrastructure contract, not live collection by the deployed Gateway.
+
 ## Module and seam design
 
 No new Gradle subproject or standalone coordination service is introduced.

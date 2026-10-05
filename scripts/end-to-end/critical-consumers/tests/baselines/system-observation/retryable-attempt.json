@@ -1,0 +1,7 @@
+{
+  "attempt": 1,
+  "exitStatus": 2,
+  "retryable": true,
+  "classification": "KAFKA_POSITION_CHANGED",
+  "reason": "Kafka positions changed during observation"
+}

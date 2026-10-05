@@ -1,0 +1,6 @@
+{
+  "oldestSourceAgeAtCaptureCompletionMillis": 2000,
+  "oldestSourceAgeAtValidationMillis": 3000,
+  "ageAddedByCollectorMillis": 1000,
+  "remainingBudgetAtValidationMillis": 500
+}
