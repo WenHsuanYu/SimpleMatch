@@ -40,6 +40,8 @@ request has a one-second timeout and the complete sample has a three-second dead
 partial sample is never published, so the existing five-second stale-status monitor pauses an open
 Gateway. The collector never issues an operator `open` command: three qualifying complete samples
 make opening eligible, and an authenticated operator must still explicitly request it.
+An expired reporting gap discards the earlier qualifying streak: recovery needs three newly
+reported healthy samples, not three status queries, and never opens admission automatically.
 
 Trading identity is compared between Risk and Matching. Kafka and critical-consumer observations
 contain no trading identity and never inherit Risk's identity: they report their own availability,
@@ -48,9 +50,11 @@ conflict handling remain required; full trading identity attestation for these c
 the admission scope.
 
 The live adapter is disabled by default in generic local runs and enabled in production and the
-Kubernetes Gateway ConfigMap. See [configuration](../docs/config.md) for endpoint and timing
-overrides. A deployed PRE_OPEN-to-open smoke is still required for Issue #160; passing unit tests
-or rendered-manifest checks alone is not deployment evidence.
+Kubernetes Gateway ConfigMap. See [configuration](../../docs/config.md) for endpoint and timing
+overrides. The [completion specification](../../docs/gateway-admission-completion.md#deployed-admission-smoke)
+records the source-specific local deployed PRE_OPEN-to-open smoke and its limits. The later
+stale-recovery streak fix has separate local controller regression evidence, not a rerun of that
+deployment smoke. Unit tests or rendered-manifest checks alone are not deployment evidence.
 
 The runtime QuickFIX session config defaults to `config/quickfix/acceptor.cfg`, which uses
 `../../config/quickfix/fix-spec/FIX44.xml` as the shared FIX dictionary.

@@ -36,6 +36,13 @@ outcome, gate state, readiness, and time are retained in `quickfix_gateway.gatew
 `open` requires three separately reported `OPEN_ELIGIBLE` observations; it cannot reopen after
 `CLOSED`. Recovery becoming healthy does not issue an implicit open.
 
+If the previous observation has become unsafe or expired, the next report starts the qualifying
+streak again at one. Healthy checks from before a reporting gap do not carry over, even if a new
+report arrives before the monitor runs. After a stale-status pause, the first and second healthy
+reports still cannot reopen admission; the third permits an explicit operator `open`. Read-only
+status polling contributes no checks. The existing threshold remains strictly more than five
+seconds: evidence exactly five seconds old has not expired.
+
 ## Authenticated HTTP operation
 
 The existing internal HTTP adapter calls `GatewayOperationalCommandHandler`; an operator does not

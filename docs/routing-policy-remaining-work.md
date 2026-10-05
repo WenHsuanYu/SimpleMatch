@@ -326,7 +326,7 @@ follow-ups chosen for distinct engineering value; none is a parent aggregate cer
 
 | Issue | Engineering outcome | Boundary |
 | --- | --- | --- |
-| [#160](https://github.com/WenHsuanYu/SimpleMatch/issues/160) | Live Gateway admission observations | Source `6b62425` passed the local deployed PRE_OPEN-to-healthy-production-observations-to-authenticated-explicit-open smoke without synthetic reports. Risk/Matching identity comparison remains required; Kafka/consumer full identity attestation and identity copying are out of scope. All local acceptance criteria are verified; keep the issue open pending publication/integration of the local commits. This is not full-local, production, or #162 business certification. |
+| [#160](https://github.com/WenHsuanYu/SimpleMatch/issues/160) | Live Gateway admission observations | Source `6b62425` passed the local deployed PRE_OPEN-to-healthy-production-observations-to-authenticated-explicit-open smoke without synthetic reports. Risk/Matching identity comparison remains required; Kafka/consumer full identity attestation and identity copying are out of scope. The later stale-recovery streak fix is covered by local controller regressions, not that earlier deployed smoke. Remote delivery status is tracked in the issue. This is not full-local, production, or #162 business certification. |
 | [#161](https://github.com/WenHsuanYu/SimpleMatch/issues/161) | Canonical local-profile deployability | Reconcile rendered host-level resource requests with the documented local runtime budget; do not retain the old arbitrary 20 GiB / 4 GiB / 1 GiB optimization targets. |
 | [#162](https://github.com/WenHsuanYu/SimpleMatch/issues/162) | One deployed end-to-end trading flow | Trace one real Gateway-originated operation through Risk, Kafka/Matching, Persistence, and Account without rebuilding infrastructure identity/report plumbing. |
 | [#164](https://github.com/WenHsuanYu/SimpleMatch/issues/164) | Deployed QuickFIX same-owner recovery | Prove durable FIX session recovery, reconnect/resend, and no duplicate Risk admission. Matching replacement is already proven elsewhere. |
@@ -709,6 +709,9 @@ implementation blocker.
   observations to open, auto-pauses/interrupts, auto-closes in Asia/Taipei time, never auto-reopens,
   records operations in Flyway V2, and exposes a fixed five-command application boundary. Focused
   state-machine, controller, audit, ingress, migration, and application-context tests pass. The
+  stale-recovery regressions require three new healthy reports after an expired reporting gap,
+  with or without a monitor cycle; status polling cannot qualify and recovery cannot auto-open.
+  Evidence exactly five seconds old remains within the unchanged freshness threshold. The
   retained integrated production-like run completed the Gateway, workload, health, metrics, and
   retained-provenance phases.
   Issue #160 additionally passed the source-aligned actual-collector admission smoke on

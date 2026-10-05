@@ -9,10 +9,17 @@ final class GatewayOperationalState {
   private TradingSystemObservation latestObservation;
   private int consecutiveOpenEligibleChecks;
 
+  /** Records a report without carrying an expired qualification streak across a reporting gap. */
   TradingSystemStatus report(
       TradingSystemObservation observation, TradingSystemStatusEvaluator evaluator, Instant now) {
-    latestObservation = OperationalStatusValidation.required(observation, "observation");
-    final TradingSystemStatus status = evaluator.evaluate(latestObservation, now);
+    final TradingSystemObservation requiredObservation =
+        OperationalStatusValidation.required(observation, "observation");
+    final TradingSystemStatus status = evaluator.evaluate(requiredObservation, now);
+    if (latestObservation != null
+        && !evaluator.evaluate(latestObservation, now).isOpenEligible()) {
+      consecutiveOpenEligibleChecks = 0;
+    }
+    latestObservation = requiredObservation;
     if (status.isOpenEligible()) {
       consecutiveOpenEligibleChecks++;
     } else {

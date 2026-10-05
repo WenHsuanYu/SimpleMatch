@@ -82,6 +82,84 @@ class GatewayOperationalControllerTest {
   }
 
   @Test
+  void stalePauseRequiresThreeNewHealthyObservationsBeforeReopen() {
+    final AdjustableClock clock = new AdjustableClock(Instant.parse("2026-08-11T01:00:00Z"));
+    final GatewayAdmissionGate gate = new GatewayAdmissionGate();
+    final GatewayOperationalController controller =
+        controller(gate, new TestAuditStore(), clock);
+    final TradingSystemObservation ready =
+        TradingSystemStatusFixtures.readyObservation(clock.instant());
+
+    controller.report(ready);
+    controller.report(ready);
+    controller.report(ready);
+    assertThat(controller.open("operator-1", "open").accepted()).isTrue();
+    clock.advance(Duration.ofSeconds(6));
+    controller.monitor();
+    assertThat(gate.state()).isEqualTo(GatewayAdmissionGate.State.NEW_ORDERS_PAUSED);
+
+    controller.report(TradingSystemStatusFixtures.readyObservation(clock.instant()));
+    assertThat(controller.status().tradingSystemStatus().isOpenEligible()).isTrue();
+    controller.status();
+    controller.status();
+    assertThat(controller.open("operator-1", "first recovery observation").accepted()).isFalse();
+
+    clock.advance(Duration.ofSeconds(1));
+    controller.report(TradingSystemStatusFixtures.readyObservation(clock.instant()));
+    assertThat(controller.open("operator-1", "second recovery observation").accepted()).isFalse();
+
+    clock.advance(Duration.ofSeconds(1));
+    controller.report(TradingSystemStatusFixtures.readyObservation(clock.instant()));
+    assertThat(gate.state()).isEqualTo(GatewayAdmissionGate.State.NEW_ORDERS_PAUSED);
+    assertThat(controller.open("operator-1", "third recovery observation").accepted()).isTrue();
+    assertThat(gate.state()).isEqualTo(GatewayAdmissionGate.State.OPEN);
+  }
+
+  @Test
+  void expiredPreOpenObservationsDoNotCountWithoutAMonitorCycle() {
+    final AdjustableClock clock = new AdjustableClock(Instant.parse("2026-08-11T01:00:00Z"));
+    final GatewayAdmissionGate gate = new GatewayAdmissionGate();
+    final GatewayOperationalController controller =
+        controller(gate, new TestAuditStore(), clock);
+    final TradingSystemObservation ready =
+        TradingSystemStatusFixtures.readyObservation(clock.instant());
+
+    controller.report(ready);
+    controller.report(ready);
+    clock.advance(Duration.ofSeconds(6));
+
+    controller.report(TradingSystemStatusFixtures.readyObservation(clock.instant()));
+    assertThat(controller.open("operator-1", "first fresh observation").accepted()).isFalse();
+    assertThat(gate.state()).isEqualTo(GatewayAdmissionGate.State.PRE_OPEN);
+
+    clock.advance(Duration.ofSeconds(1));
+    controller.report(TradingSystemStatusFixtures.readyObservation(clock.instant()));
+    assertThat(controller.open("operator-1", "second fresh observation").accepted()).isFalse();
+
+    clock.advance(Duration.ofSeconds(1));
+    controller.report(TradingSystemStatusFixtures.readyObservation(clock.instant()));
+    assertThat(controller.open("operator-1", "third fresh observation").accepted()).isTrue();
+  }
+
+  @Test
+  void observationsAtTheFreshnessBoundaryStillQualify() {
+    final AdjustableClock clock = new AdjustableClock(Instant.parse("2026-08-11T01:00:00Z"));
+    final GatewayAdmissionGate gate = new GatewayAdmissionGate();
+    final GatewayOperationalController controller =
+        controller(gate, new TestAuditStore(), clock);
+    final TradingSystemObservation ready =
+        TradingSystemStatusFixtures.readyObservation(clock.instant());
+
+    controller.report(ready);
+    controller.report(ready);
+    clock.advance(Duration.ofSeconds(5));
+    controller.report(TradingSystemStatusFixtures.readyObservation(clock.instant()));
+
+    assertThat(controller.open("operator-1", "freshness boundary review").accepted()).isTrue();
+    assertThat(gate.state()).isEqualTo(GatewayAdmissionGate.State.OPEN);
+  }
+
+  @Test
   void configuredSessionEndClosesAdmissionAndRequestsRiskClosure() {
     final AdjustableClock clock = new AdjustableClock(Instant.parse("2026-08-11T05:29:00Z"));
     final GatewayAdmissionGate gate = new GatewayAdmissionGate();

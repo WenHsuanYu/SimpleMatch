@@ -44,8 +44,8 @@ freshness, pending ages, and quarantine state. Existing event validation and con
 required. Consumer-detected processing conflicts surface through durable quarantine; the Kafka
 Admin API alone cannot prove that no event ID/payload conflict has ever occurred.
 The source-aligned local PRE_OPEN-to-explicit-open smoke below satisfies the deployed admission
-criterion. Publication/integration of the local commits remains a delivery step; external
-production certification and the business command in #162 are separate work.
+criterion. Remote delivery status is tracked in #160; external production certification and the
+business command in #162 are separate work.
 
 Matching command progress comes from Kafka's acknowledged offsets for
 `matching-partition-consumer-0` through `matching-partition-consumer-14`. Native
@@ -117,6 +117,14 @@ business order. The input was the existing approved 2026-08-27 FINAL artifact, n
 current-day artifact. Failed earlier runs remain retained separately. Documentation-only evidence
 and runbook updates do not change the tested executable behavior; the deployed source revision
 above remains explicit.
+
+The later stale-recovery qualification fix is verified separately through the public controller,
+not by relabeling this deployed smoke. It re-evaluates previous evidence before replacing it with a
+new report, so an expired healthy streak cannot count toward reopening. Controller regressions
+cover three new healthy reports after a monitor-induced pause, the same reporting gap before the
+monitor runs, read-only status polls, no implicit reopening, and the unchanged exact five-second
+boundary. This recovery fix has local test evidence; it was not deployed in the smoke recorded
+above.
 
 ### Observation contract baselines
 
@@ -201,6 +209,8 @@ The admission contract remains:
 - `CLOSED` rejects both and cannot reopen in the current Gateway process.
 - `open` requires three consecutive fresh `OPEN_ELIGIBLE` observations and an explicit operator
   command.
+- previous qualification is discarded when the preceding observation has become unsafe or expired,
+  including a reporting gap with no monitor cycle; status queries do not create qualifying checks.
 - recovery never opens automatically.
 - status older than five seconds requires a new-order pause.
 - an oldest pending critical event warns at 30 seconds and requires a pause at 120 seconds.
