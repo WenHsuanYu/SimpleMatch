@@ -320,6 +320,13 @@ spec:
           image: apache/kafka:4.3.1
           imagePullPolicy: IfNotPresent
           command: ["/bin/sh", "/opt/kafka/scripts/broker-init.sh"]
+          resources:
+            requests:
+              cpu: 500m
+              memory: 1Gi
+            limits:
+              cpu: "1"
+              memory: 2Gi
           env:
             - name: POD_NAME
               valueFrom:
