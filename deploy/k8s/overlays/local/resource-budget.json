@@ -1,0 +1,14 @@
+{
+  "schema_version": 1,
+  "reference_host_memory_gib": 38,
+  "profiles": {
+    "full": "all",
+    "matching-fleet-only": [
+      "Deployment/redis",
+      "Job/kafka-topic-provisioning",
+      "StatefulSet/kafka",
+      "StatefulSet/matching",
+      "StatefulSet/postgres"
+    ]
+  }
+}
