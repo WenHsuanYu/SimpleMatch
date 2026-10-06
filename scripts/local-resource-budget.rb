@@ -32,18 +32,31 @@ class LocalResourceBudget
   def report
     workloads = selected_workloads.map { |document| workload_request(document) }
     steady, bootstrap = workloads.partition { |workload| workload.fetch("phase") == "steady" }
+    platform_names = @configuration.fetch("bootstrap_platform_workloads")
+    platform = steady.select { |workload| platform_names.include?("#{workload.fetch('kind')}/#{workload.fetch('name')}") }
+    raise ArgumentError, "bootstrap platform selection is incomplete" unless platform.length == platform_names.length
+
     steady_memory = steady.sum { |workload| workload.fetch("memory_bytes") }
     bootstrap_memory = bootstrap.sum { |workload| workload.fetch("memory_bytes") }
+    bootstrap_phase_memory = platform.sum { |workload| workload.fetch("memory_bytes") } + bootstrap_memory
+    steady_cpu = steady.sum { |workload| workload.fetch("cpu_millicores") }
+    bootstrap_cpu = bootstrap.sum { |workload| workload.fetch("cpu_millicores") }
+    bootstrap_phase_cpu = platform.sum { |workload| workload.fetch("cpu_millicores") } + bootstrap_cpu
+    peak_phase_memory = [steady_memory, bootstrap_phase_memory].max
     {
       "schema_version" => 1,
       "profile" => @profile,
       "host_memory_bytes" => @host_memory_bytes,
       "steady_memory_bytes" => steady_memory,
       "bootstrap_memory_bytes" => bootstrap_memory,
+      "bootstrap_phase_memory_bytes" => bootstrap_phase_memory,
       "steady_plus_bootstrap_memory_bytes" => steady_memory + bootstrap_memory,
-      "steady_cpu_millicores" => steady.sum { |workload| workload.fetch("cpu_millicores") },
-      "bootstrap_cpu_millicores" => bootstrap.sum { |workload| workload.fetch("cpu_millicores") },
-      "requests_within_host_budget" => steady_memory + bootstrap_memory <= @host_memory_bytes,
+      "peak_phase_memory_bytes" => peak_phase_memory,
+      "steady_cpu_millicores" => steady_cpu,
+      "bootstrap_cpu_millicores" => bootstrap_cpu,
+      "bootstrap_phase_cpu_millicores" => bootstrap_phase_cpu,
+      "peak_phase_cpu_millicores" => [steady_cpu, bootstrap_phase_cpu].max,
+      "requests_within_host_budget" => peak_phase_memory <= @host_memory_bytes,
       "workloads" => workloads
     }
   end
@@ -151,10 +164,11 @@ if $PROGRAM_NAME == __FILE__
                                      options.fetch(:profile), options.fetch(:host_memory_bytes, reference_bytes)).report
     output = JSON.pretty_generate(budget) + "\n"
     options[:report] ? File.write(options[:report], output) : print(output)
-    if options[:check] && !budget.fetch("requests_within_host_budget")
-      warn "#{budget.fetch('profile')} requests #{budget.fetch('steady_plus_bootstrap_memory_bytes')} bytes " \
-           "but the host budget is #{budget.fetch('host_memory_bytes')} bytes"
-      exit 1
+    unless budget.fetch("requests_within_host_budget")
+      warn "#{budget.fetch('profile')} declared requests peak at " \
+           "#{budget.fetch('peak_phase_memory_bytes')} bytes, above the host budget of " \
+           "#{budget.fetch('host_memory_bytes')} bytes; actual usage may be lower"
+      exit 1 if options[:check]
     end
   rescue ArgumentError, KeyError, OptionParser::ParseError, Psych::Exception => error
     warn error.message

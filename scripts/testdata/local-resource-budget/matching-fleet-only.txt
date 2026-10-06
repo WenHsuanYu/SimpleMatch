@@ -1,0 +1,17 @@
+profile=matching-fleet-only
+host_memory_bytes=40802189312
+steady_memory_bytes=36767268864
+bootstrap_memory_bytes=134217728
+bootstrap_phase_memory_bytes=4563402752
+steady_plus_bootstrap_memory_bytes=36901486592
+peak_phase_memory_bytes=36767268864
+steady_cpu_millicores=3675
+bootstrap_cpu_millicores=100
+bootstrap_phase_cpu_millicores=2200
+peak_phase_cpu_millicores=3675
+requests_within_host_budget=true
+Deployment|redis|steady|1|134217728|100
+Job|kafka-topic-provisioning|bootstrap|1|134217728|100
+StatefulSet|kafka|steady|3|3221225472|1500
+StatefulSet|matching|steady|15|32338083840|1575
+StatefulSet|postgres|steady|1|1073741824|500

@@ -1,6 +1,11 @@
 {
   "schema_version": 1,
   "reference_host_memory_gib": 38,
+  "bootstrap_platform_workloads": [
+    "Deployment/redis",
+    "StatefulSet/kafka",
+    "StatefulSet/postgres"
+  ],
   "profiles": {
     "full": "all",
     "matching-fleet-only": [
