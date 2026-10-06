@@ -1,0 +1,13 @@
+{
+  "status": "PASS",
+  "scenario": "resting-buy",
+  "commandId": "0198a000-0000-7000-8000-000000000003",
+  "orderId": "0198a000-0000-7000-8000-000000000002",
+  "eventId": "9aa0b8f04cf7c963c36d49aee707126d876645d59f7b1a501d56e56df84d15e8",
+  "partition": 4,
+  "commandOffset": 12,
+  "eventOffset": 0,
+  "quantityShares": 1000,
+  "priceUnits": 569000,
+  "reservedNotional": "56900.0"
+}

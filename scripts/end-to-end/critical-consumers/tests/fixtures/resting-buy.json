@@ -1,0 +1,99 @@
+{
+  "expected": {
+    "accountId": "0198a000-0000-7000-8000-000000000001",
+    "clOrdId": "REST-162-001",
+    "venueMic": "XTAI",
+    "symbol": "1101",
+    "quantityShares": 1000,
+    "priceUnits": 569000,
+    "tradingDay": "2026-10-07",
+    "tradingSessionId": "2026-10-07-regular",
+    "artifactContentSha256": "f14ea4d735ac962abf9295b2cced30337b89114fef1edd9202aa88915e2094e4",
+    "routingAlgorithmVersion": "stable-least-loaded-v1"
+  },
+  "open": {"accepted": true, "gateState": "OPEN", "tradingSystemStatus": {"openEligible": true}},
+  "after": {"gateState": "OPEN", "tradingSystemStatus": {"openEligible": true}},
+  "fix": {
+    "clOrdId": "REST-162-001",
+    "accountId": "0198a000-0000-7000-8000-000000000001",
+    "orderId": "0198a000-0000-7000-8000-000000000002",
+    "execType": "A",
+    "ordStatus": "A"
+  },
+  "risk": {
+    "count": 1,
+    "outboxCount": 1,
+    "commandId": "0198a000-0000-7000-8000-000000000003",
+    "orderId": "0198a000-0000-7000-8000-000000000002",
+    "reservationId": "0198a000-0000-7000-8000-000000000004",
+    "accountId": "0198a000-0000-7000-8000-000000000001",
+    "clOrdId": "REST-162-001",
+    "state": "ACCEPTED",
+    "routingPartition": 4,
+    "venueMic": "XTAI",
+    "symbol": "1101",
+    "side": "SIDE_BUY",
+    "quantityShares": 1000,
+    "priceUnits": 569000,
+    "tradingDay": "2026-10-07",
+    "artifactContentSha256": "f14ea4d735ac962abf9295b2cced30337b89114fef1edd9202aa88915e2094e4",
+    "routingAlgorithmVersion": "stable-least-loaded-v1"
+  },
+  "command": {
+    "topic": "matching.commands", "partition": 4, "offset": 12, "physicalDeliveryCount": 1,
+    "commandId": "0198a000-0000-7000-8000-000000000003",
+    "orderId": "0198a000-0000-7000-8000-000000000002",
+    "accountId": "0198a000-0000-7000-8000-000000000001",
+    "venueMic": "XTAI", "symbol": "1101", "side": "SIDE_BUY",
+    "quantityShares": 1000, "priceUnits": 569000,
+    "orderType": "ORDER_TYPE_LIMIT", "timeInForce": "TIME_IN_FORCE_ROD",
+    "tradingDay": "2026-10-07", "tradingSessionId": "2026-10-07-regular",
+    "artifactContentSha256": "f14ea4d735ac962abf9295b2cced30337b89114fef1edd9202aa88915e2094e4",
+    "routingAlgorithmVersion": "stable-least-loaded-v1"
+  },
+  "event": {
+    "topic": "matching.events", "partition": 4, "startOffset": 0, "offset": 0,
+    "eventId": "9aa0b8f04cf7c963c36d49aee707126d876645d59f7b1a501d56e56df84d15e8",
+    "payloadSha256": "263411ba4ba471c5bfd7663e6f663cdf470c1898c9c03f3d0b93cd4ae3ded959",
+    "eventType": "MATCHING_EVENT_TYPE_ORDER_RESTED",
+    "sourceCommandId": "0198a000-0000-7000-8000-000000000003",
+    "orderId": "0198a000-0000-7000-8000-000000000002",
+    "context": {
+      "sourceInputOffset": 12, "tradingDay": "2026-10-07",
+      "tradingSessionId": "2026-10-07-regular",
+      "artifactContentSha256": "f14ea4d735ac962abf9295b2cced30337b89114fef1edd9202aa88915e2094e4",
+      "routingAlgorithmVersion": "stable-least-loaded-v1"
+    },
+    "restedOrder": {
+      "accountId": "0198a000-0000-7000-8000-000000000001",
+      "venueMic": "XTAI", "symbol": "1101", "side": "SIDE_BUY",
+      "leavesQuantityShares": 1000, "restingPriceUnits": 569000
+    }
+  },
+  "durable": {
+    "persistence": {
+      "orderId": "0198a000-0000-7000-8000-000000000002",
+      "accountId": "0198a000-0000-7000-8000-000000000001",
+      "venueMic": "XTAI", "symbol": "1101", "side": 1, "status": "RESTING",
+      "cumulativeQuantityShares": 0, "leavesQuantityShares": 1000, "fillCount": 0,
+      "lastEventId": "9aa0b8f04cf7c963c36d49aee707126d876645d59f7b1a501d56e56df84d15e8"
+    },
+    "account": {
+      "reservationCount": 1, "limitCount": 1,
+      "reservationId": "0198a000-0000-7000-8000-000000000004",
+      "orderId": "0198a000-0000-7000-8000-000000000002",
+      "accountId": "0198a000-0000-7000-8000-000000000001",
+      "venueMic": "XTAI", "symbol": "1101", "side": "SIDE_BUY", "tradingDay": "2026-10-07",
+      "status": "RESERVATION_STATUS_ACCEPTED",
+      "quantity": "1000.00000000", "remainingQuantity": "1000.00000000", "filledQuantity": "0.00000000",
+      "limitPrice": "56.90000000", "reservedNotional": "56900.00000000",
+      "limitReservedNotional": "56900.00000000", "limitUtilizedNotional": "0.00000000",
+      "limitTotalNotional": "99999999999999999999.00000000", "limitAvailableNotional": "99999999999999943099.00000000"
+    },
+    "events": {
+      "persistenceCount": 1, "accountCount": 1, "quickfixCount": 1, "quarantineCount": 0,
+      "persistencePayloadSha256": "263411ba4ba471c5bfd7663e6f663cdf470c1898c9c03f3d0b93cd4ae3ded959",
+      "accountPayloadSha256": "263411ba4ba471c5bfd7663e6f663cdf470c1898c9c03f3d0b93cd4ae3ded959"
+    }
+  }
+}
