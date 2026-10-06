@@ -93,7 +93,8 @@
     "events": {
       "persistenceCount": 1, "accountCount": 1, "quickfixCount": 1, "quarantineCount": 0,
       "persistencePayloadSha256": "263411ba4ba471c5bfd7663e6f663cdf470c1898c9c03f3d0b93cd4ae3ded959",
-      "accountPayloadSha256": "263411ba4ba471c5bfd7663e6f663cdf470c1898c9c03f3d0b93cd4ae3ded959"
+      "accountPayloadSha256": "263411ba4ba471c5bfd7663e6f663cdf470c1898c9c03f3d0b93cd4ae3ded959",
+      "quickfixPayloadSha256": "263411ba4ba471c5bfd7663e6f663cdf470c1898c9c03f3d0b93cd4ae3ded959"
     }
   }
 }

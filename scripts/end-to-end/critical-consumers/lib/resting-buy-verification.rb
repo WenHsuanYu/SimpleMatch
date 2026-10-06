@@ -136,7 +136,7 @@ module RestingBuyVerification
     %w[persistenceCount accountCount quickfixCount].each do |field|
       equal(1, consumption.fetch(field), "exact event #{field}")
     end
-    %w[persistencePayloadSha256 accountPayloadSha256].each do |field|
+    %w[persistencePayloadSha256 accountPayloadSha256 quickfixPayloadSha256].each do |field|
       equal(event.fetch("payloadSha256"), consumption.fetch(field), "exact event #{field}")
     end
     equal(0, consumption.fetch("quarantineCount"), "critical consumer quarantine count")
@@ -173,7 +173,7 @@ module RestingBuyVerification
       "sourceRevision" => File.read(File.join(directory, "source-revision")).strip,
       "restorationPassed" => restoration_failed == "false",
       "fullLocalCertification" => false,
-      "evidence" => %w[baseline/gateway-open.json fix/submit.json submission/risk-admission.json kafka/matching-command-observation.json kafka/matching-event-observation.json durable-state.json baseline/gateway-after.json]
+      "evidence" => %w[baseline/verifier-helper-provenance.json baseline/gateway-open.json fix/submit.json submission/risk-admission.json kafka/matching-command-observation.json kafka/matching-event-observation.json durable-state.json baseline/gateway-after.json]
     )
     File.write(File.join(directory, "verdict.json"), JSON.pretty_generate(result) + "\n")
     passed

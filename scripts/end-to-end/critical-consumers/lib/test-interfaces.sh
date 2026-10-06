@@ -156,7 +156,7 @@ start_fix_submit_client() {
     SIMPLEMATCH_LIVE_FIX_PRICE="$price" \
     SIMPLEMATCH_LIVE_FIX_CL_ORD_ID="$cl_ord_id" \
     SIMPLEMATCH_LIVE_FIX_TIME_IN_FORCE="${live_fix_time_in_force:-0}" \
-    SIMPLEMATCH_RETAINED_FIX_STATE_DIR="$evidence_dir/client-state" \
+    SIMPLEMATCH_RETAINED_FIX_STATE_DIR="${fix_state_dir:-$evidence_dir/client-state}" \
     SIMPLEMATCH_RETAINED_FIX_EVIDENCE="$evidence_dir/fix/submit.json" \
     SIMPLEMATCH_RETAINED_FIX_READY_FILE="$fix_ready_file" \
     SIMPLEMATCH_RETAINED_FIX_RELEASE_FILE="$fix_release_file" \
@@ -265,6 +265,9 @@ gateway_override_is_absent() {
 }
 
 enable_gateway_operations() {
+  local automatic_close_enabled="${1:-false}"
+  [[ "$automatic_close_enabled" == true || "$automatic_close_enabled" == false ]] ||
+    die 'automatic-close override must be true or false'
   local names=(
     SIMPLEMATCH_QUICKFIX_GATEWAY_OPERATIONS_HTTP_ENABLED
     SIMPLEMATCH_QUICKFIX_GATEWAY_OPERATIONS_AUTOMATIC_CLOSE_ENABLED
@@ -278,7 +281,7 @@ enable_gateway_operations() {
   gateway_operator_token="$(cat /proc/sys/kernel/random/uuid)"
   kns set env statefulset/quickfix-gateway \
     SIMPLEMATCH_QUICKFIX_GATEWAY_OPERATIONS_HTTP_ENABLED=true \
-    SIMPLEMATCH_QUICKFIX_GATEWAY_OPERATIONS_AUTOMATIC_CLOSE_ENABLED=false \
+    "SIMPLEMATCH_QUICKFIX_GATEWAY_OPERATIONS_AUTOMATIC_CLOSE_ENABLED=$automatic_close_enabled" \
     SIMPLEMATCH_QUICKFIX_GATEWAY_OPERATIONS_OPERATOR_TOKEN="$gateway_operator_token" >/dev/null ||
     die 'QuickFIX Gateway certification overrides could not be applied'
   gateway_env_modified=true
@@ -314,6 +317,39 @@ stop_gateway_port_forward() {
   stop_background_process "${gateway_port_forward_pid:-}"
   gateway_port_forward_pid=""
   gateway_port=""
+}
+
+# Eligibility is a current observation, not proof that the stability counter is
+# complete. Retry the actual operator command; never synthesize readiness.
+open_gateway_from_live_observations() {
+  local request="$1" before="$2" result="$3"
+  local deadline=$(( $(date +%s) + timeout_seconds ))
+  while (( $(date +%s) < deadline )); do
+    gateway_request GET /operations/status "$before" || return 1
+    if jq -e '.tradingSystemStatus.openEligible == true' "$before" >/dev/null; then
+      gateway_request POST /operations/open "$result" "$request" || return 1
+      if jq -e '.accepted == true and .gateState == "OPEN"' "$result" >/dev/null; then
+        return 0
+      fi
+    fi
+    sleep 1
+  done
+  return 1
+}
+
+# A transient monitor pause may need three new live observations to recover.
+# Wait for automatic recovery; do not force-open an interrupted market.
+wait_gateway_live_open() {
+  local destination="$1"
+  local deadline=$(( $(date +%s) + timeout_seconds ))
+  while (( $(date +%s) < deadline )); do
+    gateway_request GET /operations/status "$destination" || return 1
+    if jq -e '.gateState == "OPEN" and .tradingSystemStatus.openEligible == true' "$destination" >/dev/null; then
+      return 0
+    fi
+    sleep 1
+  done
+  return 1
 }
 
 accepted_observation_attempt_dir() {

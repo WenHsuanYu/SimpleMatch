@@ -38,6 +38,8 @@ Acceptance requires one coherent chain of evidence:
    limit, and zero utilized notional. Both consumers process the exact event
    once, without quarantine. Kafka may physically redeliver identical bytes;
    this must not reserve or apply a business effect twice.
+   The fresh namespace must have no active critical-consumer quarantine at all:
+   an unrelated quarantine is also a real Gateway safety blocker, not ignored.
 6. A single result contains only the necessary identifiers and business facts.
    No token, Secret value, raw FIX message, protobuf payload, or complete account
    payload is evidence. A PASS is published only after owned test overrides and

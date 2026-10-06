@@ -45,6 +45,7 @@ class RestingBuyVerificationTest < Minitest::Test
       ["durable", "account", "limitAvailableNotional"] => "99999999999999943099.00000001",
       ["durable", "events", "accountCount"] => 0,
       ["durable", "events", "persistencePayloadSha256"] => "wrong-payload",
+      ["durable", "events", "quickfixPayloadSha256"] => "wrong-payload",
       ["durable", "events", "quarantineCount"] => 1,
       ["open", "accepted"] => false,
       ["after", "gateState"] => "NEW_ORDERS_PAUSED"

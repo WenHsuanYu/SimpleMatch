@@ -725,17 +725,10 @@ seed_account_limit() {
   local now_ms
   now_ms="$(( $(date +%s) * 1000 ))"
   kns exec -i "$postgres" -c postgres -- psql -U simplematch -d simplematch \
-    -v ON_ERROR_STOP=1 >"$destination" 2>&1 <<SQL
-INSERT INTO account_service.account_limits (
-  account_id, scope_type, scope_key, trading_day, currency,
-  limit_total_notional, reserved_notional, utilized_notional,
-  available_notional, updated_at_unix_ms, version
-) VALUES (
-  '$account_id', 'ACCOUNT', '*', DATE '$trading_day', 'TWD',
-  99999999999999999999.00000000, 0, 0,
-  99999999999999999999.00000000, $now_ms, 0
-);
-SQL
+    -v ON_ERROR_STOP=1 -v account_id="$account_id" -v trading_day="$trading_day" \
+    -v now_ms="$now_ms" -f - \
+    <"$repo_root/scripts/end-to-end/critical-consumers/sql/account-limit-fixture.sql" \
+    >"$destination" 2>&1
 }
 
 seed_account_position() {
