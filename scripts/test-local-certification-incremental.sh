@@ -88,6 +88,24 @@ done
 assert_eq CONTENT_ADDRESSED \
   "$(certification_phase_policy static-kubernetes-overlays)" \
   'static Kubernetes validation must be content addressed'
+docker() {
+  [[ "$1" == info && "$2" == --format ]] || \
+    fail "unexpected Docker request in budget fingerprint fixture: $*"
+  case "$3" in
+    '{{.MemTotal}}') printf '%s\n' 40802189312 ;;
+    '{{.Name}}') printf '%s\n' test-daemon ;;
+    *) fail "unexpected Docker info field in budget fingerprint fixture: $3" ;;
+  esac
+}
+budget_manifest="$(certification_phase_input_manifest local-resource-budget)"
+grep -Fq 'profile=full' <<<"$budget_manifest" || fail 'budget manifest omitted full profile'
+grep -Fq 'hostMemoryBytes=' <<<"$budget_manifest" || fail 'budget manifest omitted host memory'
+matching_fleet_only=true
+budget_manifest="$(certification_phase_input_manifest local-resource-budget)"
+grep -Fq 'profile=matching-fleet-only' <<<"$budget_manifest" || \
+  fail 'budget manifest omitted reduced profile'
+matching_fleet_only=false
+unset -f docker
 assert_eq CONTENT_ADDRESSED \
   "$(certification_phase_policy local-image-build/quickfix-gateway)" \
   'QuickFIX image build must be content addressed'
@@ -97,7 +115,7 @@ assert_eq REVALIDATE \
 
 full_required="$(certification_required_phase_ids)"
 assert_has_line "$(certification_phase_dependencies kubernetes-manifest-split)" \
-  local-resource-budget 'manifest split does not depend on the current host budget'
+  local-resource-budget 'manifest split must depend on the current host budget'
 assert_eq 2 "$(certification_phase_definition_version kubernetes-manifest-split)" \
   'manifest split definition version did not change with its preflight'
 assert_has_line "$full_required" local-resource-budget \

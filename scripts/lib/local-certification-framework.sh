@@ -367,6 +367,7 @@ execute_with_certification_deadline() {
 
 write_report() {
   local exit_code="$1"
+  local completed_phase budget_phase_completed=false
   [[ "$dry_run" == true ]] && return 0
 
   mkdir -p "$evidence_dir"
@@ -379,6 +380,13 @@ write_report() {
   else
     completion_status="PASSED"
   fi
+  for completed_phase in "${completed_phases[@]}"; do
+    case "$completed_phase" in
+      local-resource-budget|local-resource-budget\ \(same-run\ resume\))
+        budget_phase_completed=true
+        ;;
+    esac
+  done
 
   {
     printf '%s\n\n' '# SimpleMatch local production-like certification'
@@ -393,9 +401,9 @@ write_report() {
     printf '%s\n' "- compose_file: ${compose_file#$repo_root/}"
     printf '%s\n' "- kubernetes_namespace: ${namespace:-not-run}"
     printf '%s\n' "- trading_day: $certification_trading_day"
-    if [[ -f "$evidence_dir/local-resource-budget.json" ]]; then
+    if [[ "$budget_phase_completed" == true && -f "$evidence_dir/local-resource-budget.json" ]]; then
       printf '%s\n' "- declared_resource_budget: $(jq -r \
-        'if .requests_within_host_budget then "within host reference" else "exceeds host reference; budget check did not block runtime" end' \
+        'if .requests_within_host_budget then "within selected host capacity" else "exceeds selected host capacity; budget check did not block runtime" end' \
         "$evidence_dir/local-resource-budget.json")"
       printf '%s\n' '- resource_budget_evidence: local-resource-budget.json'
     fi

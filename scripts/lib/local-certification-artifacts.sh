@@ -33,6 +33,15 @@ certification_phase_current_outputs_valid() {
   local result_path="$2"
 
   case "$phase_id" in
+    local-resource-budget)
+      local report="$evidence_dir/local-resource-budget.json" identity
+      [[ -f "$report" ]] || return 1
+      identity="$(sha256sum "$report" | awk '{print "sha256:" $1}')" || return 1
+      jq -e --arg identity "$identity" '
+        [.outputs[] | select(.name == "local-resource-budget" and
+          .location == "local-resource-budget.json" and .identity == $identity)] | length == 1
+      ' "$result_path" >/dev/null 2>&1
+      ;;
     local-image-build/*|registry-image-lock)
       certification_image_phase_current_outputs_valid \
         "$phase_id" "$result_path"
@@ -66,6 +75,9 @@ certification_phase_outputs_json() {
   shift
 
   case "$phase_id" in
+    local-resource-budget)
+      certification_local_resource_budget_outputs_json
+      ;;
     local-image-build/*|registry-publish/*|registry-image-lock)
       certification_image_phase_outputs_json "$phase_id" "$@"
       ;;
@@ -79,6 +91,17 @@ certification_phase_outputs_json() {
       printf '%s\n' '[]'
       ;;
   esac
+}
+
+certification_local_resource_budget_outputs_json() {
+  local report="$evidence_dir/local-resource-budget.json" identity
+  [[ -f "$report" ]] || return 1
+  identity="$(sha256sum "$report" | awk '{print "sha256:" $1}')" || return 1
+  jq -cn \
+    --arg identity "$identity" \
+    --rawfile content "$report" \
+    '{kind:"file-content",name:"local-resource-budget",identity:$identity,
+      location:"local-resource-budget.json",contentBase64:($content | @base64)}' | jq -s .
 }
 
 certification_kubernetes_cdc_delivery_outputs_json() {

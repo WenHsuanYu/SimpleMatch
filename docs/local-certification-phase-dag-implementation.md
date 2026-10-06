@@ -43,7 +43,9 @@ daemon's current memory and the rendered local overlay to write a run-owned budg
 any image build or namespace creation. An excess produces a warning and remains in `report.md`,
 but does not block the runtime attempt. `kubernetes-manifest-split` depends on this phase and uses
 definition version 2; a cached static overlay validation never substitutes for the current host
-capacity check.
+capacity. Its input fingerprint includes the selected profile, daemon identity and memory, and
+local render/calculator sources; its phase result records the report file digest. A failed or
+skipped phase cannot link an older report from the shared evidence directory as current evidence.
 
 Public interface:
 

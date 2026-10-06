@@ -423,5 +423,7 @@ done
 ruby -r yaml -e 'YAML.load_file(ARGV.fetch(0), aliases: true)' \
   "$repo_root/deploy/compose/kafka-connect.production-like.yml" >/dev/null
 
+bash "$repo_root/scripts/test-local-resource-budget-evidence.sh"
+
 printf '%s\n' \
   'Local production-like incremental image and certification contracts are valid.'

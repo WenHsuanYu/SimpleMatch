@@ -435,10 +435,24 @@ _certification_fixture_validator_identity_manifest() {
 certification_phase_input_manifest() {
   local phase_id="$1"
   shift
-  local phase_version service value_index=0 value
+  local phase_version service value_index=0 value profile host_memory_bytes daemon_name
 
   phase_version="$(certification_phase_definition_version "$phase_id")" || return 1
   case "$phase_id" in
+    local-resource-budget)
+      profile=full
+      [[ "${matching_fleet_only:-false}" == true ]] && profile=matching-fleet-only
+      host_memory_bytes="$(docker info --format '{{.MemTotal}}')" || return 1
+      daemon_name="$(docker info --format '{{.Name}}')" || return 1
+      [[ "$host_memory_bytes" =~ ^[0-9]+$ && "$host_memory_bytes" -gt 0 ]] || return 1
+      _certification_paths_and_values_manifest \
+        scripts/local-resource-budget.rb scripts/lib/local-certification-run.sh \
+        scripts/lib/local-certification-artifacts.sh \
+        scripts/lib/local-certification-fingerprint.sh deploy/k8s \
+        -- "phase=$phase_id" "version=$phase_version" \
+        "profile=$profile" "hostMemoryBytes=$host_memory_bytes" \
+        "dockerDaemon=$daemon_name"
+      ;;
     static-kubernetes-overlays)
       _certification_paths_and_values_manifest \
         scripts/test-kubernetes-overlays.sh deploy/k8s \
