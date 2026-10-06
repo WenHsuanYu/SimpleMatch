@@ -142,6 +142,7 @@ authoritative lifecycle events and must not become a second command path.
 | Account limit          | Daily notional authority for one account and trading day, including its reserved and utilized amounts. | Account Authority                            |
 | Account position       | Symbol-level inventory authority for one account, including long, short, and reserved quantities.    | Account Authority                            |
 | Execution fill         | One idempotent matched quantity at one execution price.                                               | Matching produces; Account Authority applies |
+| Resting order          | An order's unfilled remainder waiting in the order book for a compatible opposing order; prior partial fills are possible. | Matching                                    |
 | Release                | Terminal removal of remaining reserved authority.                                                     | Account Authority                            |
 | Market snapshot        | Versioned set of instrument eligibility and trading rules.                                            | Market Reference                             |
 | Routing policy         | Complete stable assignment of every eligible instrument to one of 15 fixed Matching partitions for one trading day. | Market Reference                             |
