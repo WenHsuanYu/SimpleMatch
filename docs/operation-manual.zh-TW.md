@@ -596,6 +596,20 @@ requests，並將 `local-resource-budget.json` 存入該次 run evidence、在 `
 幫助執行，卻不能把超額報告變成容量已通過的證據。兩種 profile 的範圍、計算及限制見
 [`deploy/k8s/README.md`](../deploy/k8s/README.md#local-host-memory-budget)。
 
+若操作員只想手動確認縮減 profile 的宣告 requests 是否符合**目前 Docker daemon** 容量，
+從 repository root 執行（不會建立任何 Kubernetes 資源）：
+
+```bash
+kubectl kustomize deploy/k8s/overlays/local --load-restrictor LoadRestrictionsNone |
+  ruby scripts/local-resource-budget.rb --manifest - --profile matching-fleet-only \
+    --host-memory-bytes "$(docker info --format '{{.MemTotal}}')" --check
+```
+
+`--manifest -` 的 `-` 表示從前面的 `kubectl kustomize` 管線讀取 YAML；沒有該管線，
+這不是一條完整的檢查命令。`--check` 僅讓這條明確的操作員檢查在超額時回傳非零狀態；
+正式 runner 不使用它，因此完整 profile 即使超額仍會留下警告並繼續。若要檢查 repository
+固定的 38 GiB 參考值與已審查 baseline，執行 `ruby scripts/test-local-resource-budget.rb`。
+
 相反地，正常 full run 中由 planner 安全判定的 `REUSE` / `REVALIDATE` 仍可得到 `PASSED`，因為 requirement 仍有可驗證 evidence，而不是被跳過。
 
 ### 12.3 Run evidence 與 reusable cache
