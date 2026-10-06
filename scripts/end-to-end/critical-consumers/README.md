@@ -82,18 +82,30 @@ not a claim of `full-local` certification. Do not use `--matching-fleet-only`,
 which lacks the required Gateway, Risk, Persistence and Account workloads.
 
 ```bash
-SIMPLEMATCH_CERTIFICATION_EVIDENCE_DIR=out/certification/issue-162-deployment \
-  scripts/run-local-production-like-certification.sh --skip-compose --keep-resources
+test_trading_day=2026-08-27
+delivery_manifest=tools/market-reference-builder/data/$test_trading_day/delivery/manifest.yaml
+test -r "$delivery_manifest"
 
+SIMPLEMATCH_CERTIFICATION_TRADING_DAY="$test_trading_day" \
+SIMPLEMATCH_MARKET_REFERENCE_DELIVERY_MANIFEST="$delivery_manifest" \
+SIMPLEMATCH_CERTIFICATION_EVIDENCE_DIR=out/certification/issue-162-deployment \
+  scripts/run-local-production-like-certification.sh \
+    --skip-compose --keep-resources --image-transport kind-load
+
+SIMPLEMATCH_CERTIFICATION_TRADING_DAY="$test_trading_day" \
 SIMPLEMATCH_PRODUCTION_LIKE_EVIDENCE_DIR=out/certification/issue-162-deployment \
   scripts/end-to-end/critical-consumers/run-resting-buy-certification.sh \
     --namespace <retained-namespace> \
     --evidence-dir out/certification/issue-162-resting-buy
 ```
 
-Use a clean committed tree, today's Taipei trading day, an empty result directory,
-and the canonical context. The runner refuses an unrelated namespace, mismatched
-run ID, source revision or verifier image. It temporarily enables authenticated
+Use a clean committed tree, an empty result directory, and the canonical context.
+Select an approved artifact for the explicit trading day before an expensive
+build: this example intentionally uses the historical `2026-08-27` artifact,
+not today's date. Keep that date consistent in deployment and observation; do
+not relabel an old artifact or change the host clock. The runner refuses an
+unrelated namespace, mismatched run ID, source revision or verifier image.
+It temporarily enables authenticated
 operator HTTP access while preserving automatic close; it requires the existing
 production live collector to make the gate open-eligible. Run before the configured
 automatic close time. It does not relax readiness to compensate for a slow host.
@@ -125,10 +137,11 @@ the attempt is discarded and retried. Matching Pods are sampled in parallel,
 and their Pod UID is checked before and after reading runtime metrics so a Pod
 replacement cannot combine evidence from two processes.
 
-## FIX submission boundary
+## Failure-scenario FIX submission boundary
 
-The prepared FIX client logs on before the freshness-sensitive admission window
-and waits for a release file. The runner then supplies three fresh observations,
+In the failure scenario, the prepared FIX client logs on before the
+freshness-sensitive admission window and waits for a release file. The runner
+then supplies three fresh observations,
 opens Gateway admission, and immediately releases the client. The normal Gateway
 stale-observation monitor remains enabled throughout the run.
 

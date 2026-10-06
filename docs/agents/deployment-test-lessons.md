@@ -20,16 +20,31 @@ Before applying deployment resources or injecting a deployment fault:
    trading day, and namespace.
 5. Inventory Docker resources and generated caches before and after the run. Cleanup must preserve
    active resources and remove only exact run-owned disposable resources.
+6. Select an explicit trading day and readable approved delivery manifest before expensive builds.
+   A historical artifact must retain its original day; never relabel it or adjust the host clock.
+7. For kind-loaded helpers, compare matching identity types: Docker's immutable `.Id` may identify
+   an image config or an OCI index, while CRI `.status.id` identifies the config. When they differ,
+   verify the exact reference's containerd target digest instead. Require an execution probe on
+   every eligible worker as well; metadata equality alone cannot prove usable content.
 
 If a preflight check fails, stop before fault injection and record the result as an environment or
 precondition failure. Do not make the test green by changing Kafka offsets, deleting authoritative
 data, weakening fail-closed behavior, or guessing a replacement target.
 
+The #162 preflight found a missing current-day approved manifest, an unset image-reference argument
+in the fleet wrapper, and a false verifier identity rejection caused by comparing an OCI index
+with an image config. The safe corrections are explicit historical artifact selection, the existing
+image-transport resolver, and typed digest comparison plus execution probes. Checked-in command and
+identity baselines cover the latter two corrections. Preserve the original failed reports in
+`out/certification/issue-162-deployment-20261007-r1`, `issue-162-deployment-20260827-r3`, and
+`issue-162-runtime-baseline-20260827-r3`; they remain diagnostic failures, not business-flow evidence.
+These corrected deterministic defects are not recurring platform failures in the table below.
+
 ## Recurring lessons
 
 | ID | Symptom | Root cause | Prevention check | Safe fix | Last verified |
 | --- | --- | --- | --- | --- | --- |
-| DT-002 | Kubernetes commands fail, or the API refuses connections | Docker is stopped, the kind cluster is absent, or the active context is not canonical | Run `docker info`, verify `kind-simplematch-live`, verify the current context, and verify one control plane plus three labelled workers before deployment work | Restore the daemon or select the verified canonical context; do not recreate or delete resources during a failed preflight | 2026-08-15 |
+| DT-002 | Kubernetes commands fail, or the API refuses connections | Docker is stopped, the kind cluster is absent, or the active context is not canonical | Run `docker info`, verify `kind-simplematch-live`, verify the current context, and verify one control plane plus three labelled workers before deployment work | Restore the daemon or select the verified canonical context in a run-scoped `KUBECONFIG`, preserving the user's default context; do not recreate or delete resources during a failed preflight | 2026-10-07 (redacted: #162 private context preflight) |
 | DT-005 | Native configure or image build is killed by the host | Parallel compilation exceeds the local memory budget | Check available Docker/host memory and use the documented bounded parallelism for the selected preset before starting the build | Lower build parallelism or adjust the local resource budget; do not misclassify exit 137 as a source failure | 2026-08-15 |
 | DT-010 | PostgreSQL and dependent workloads enter CrashLoopBackOff after Docker/kind recovery, or Docker Desktop metrics temporarily report zero CPUs | Docker Desktop retained a virtual-disk limit larger than the relocated host filesystem, then its sparse `Docker.raw` consumed all user-available ext4 blocks; local-path PVC requests are logical reservations rather than preallocated capacity | Before production-like work, require at least 40 GiB of host-usable space and require the Desktop disk limit to remain at or below 75% of its host filesystem; keep the existing worker `/var` and PVC-envelope checks | Inventory exact owners before cleanup; reclaim only unreferenced resources, and recreate or resize the Desktop disk only with explicit acknowledgement that shrinking discards its containers, images, volumes, and kind clusters | 2026-09-16 (redacted: Docker Desktop settings log and host filesystem measurements) |
 | DT-012 | A newly created kind control plane never becomes healthy and kubelet reports `overlay ... invalid argument` while creating Pod sandboxes | Docker's relocated data root was on an NTFS filesystem; images remained readable, but nested containerd overlay mounts used by kind could not be created reliably | Before creating kind, verify `docker info` storage root and `findmnt -T <DockerRootDir>`; require a Linux filesystem such as ext4 for the Docker data root and verify a disposable nested container before deployment | Move Docker data to a Docker Desktop-supported Linux VM disk or Linux filesystem, restart the daemon, delete only the failed canonical cluster, and rerun the repository cluster preflight | 2026-08-15 |

@@ -149,6 +149,6 @@ kns exec -i "$postgres" -c postgres -- psql -U simplematch -d simplematch -At \
   -v ON_ERROR_STOP=1 -v account_id="$account_id" -v order_id="$order_id" \
   -v trading_day="$trading_day" -v event_id="$event_id" -f - \
   <"$script_dir/sql/resting-buy-durable-state.sql" >"$evidence_dir/durable-state.json"
-wait_gateway_live_open "$evidence_dir/baseline/gateway-after.json" || die 'Gateway did not automatically recover to healthy OPEN'
+wait_gateway_live_open "$evidence_dir/baseline/gateway-after.json" || die 'Gateway did not remain healthy and OPEN'
 ruby "$script_dir/lib/resting-buy-verification.rb" verify "$evidence_dir"
 current_stage=completed

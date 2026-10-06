@@ -77,7 +77,7 @@ prepare_matching_event_observer_manifest() {
 verify_kind_loaded_verifier_image_identity() {
   local pod="$1"
   local retained_evidence_dir="$2"
-  local image_transport expected_identity verifier_image_reference node actual_identity
+  local image_transport expected_identity verifier_image_reference node
 
   image_transport="$(
     simplematch_certification_image_transport "$retained_evidence_dir"
@@ -95,11 +95,8 @@ verify_kind_loaded_verifier_image_identity() {
   node="$(kns get pod "$pod" -o jsonpath='{.spec.nodeName}')" || return 1
   [[ -n "$node" ]] || return 1
 
-  actual_identity="$(
-    docker exec "$node" crictl inspecti "$verifier_image_reference" |
-      jq -er '.status.id | select(type == "string" and test("^sha256:[0-9a-f]{64}$"))'
-  )" || return 1
-  [[ "$actual_identity" == "$expected_identity" ]]
+  simplematch_verify_kind_loaded_verifier_identity \
+    "$node" "$verifier_image_reference" "$expected_identity"
 }
 
 capture_kafka_observer_startup_diagnostics() {

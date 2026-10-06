@@ -43,10 +43,17 @@ date() { printf '%s\n' "$test_epoch"; }
 sleep() { test_epoch=$((test_epoch + 1)); }
 gateway_request() {
   local method="$1" destination="$3" fixture
-  if [[ "$method" == POST || "$mode" == recovery ]]; then
+  if [[ "$method" == POST ]]; then
+    [[ "$mode" == open ]] || die 'status observation must not reopen Gateway'
     attempts=$((attempts + 1))
     fixture=waiting
     (( attempts < 3 )) || fixture=opened
+  elif [[ "$mode" == observe ]]; then
+    attempts=$((attempts + 1))
+    fixture=unready-open
+    (( attempts < 3 )) || fixture=opened
+  elif [[ "$mode" == paused ]]; then
+    fixture=waiting
   else
     fixture=eligible
   fi
@@ -54,13 +61,13 @@ gateway_request() {
 }
 open_gateway_from_live_observations request.json "$temporary_directory/before.json" "$temporary_directory/open.json"
 [[ "$attempts" == 3 ]]
-mode=recovery
+mode=observe
 attempts=0
 wait_gateway_live_open "$temporary_directory/after.json"
 [[ "$attempts" == 3 ]]
-attempts=0
+mode=paused
 timeout_seconds=2
 if wait_gateway_live_open "$temporary_directory/timeout.json"; then
-  die 'a paused Gateway must not be treated as recovered after the deadline'
+  die 'a paused Gateway must not be treated as OPEN after the deadline'
 fi
-printf '%s\n' 'Live Gateway retries real operator open and waits for bounded automatic recovery.'
+printf '%s\n' 'Live Gateway retries real operator open; final observation never reopens a paused gate.'

@@ -1,0 +1,2 @@
+REF TYPE DIGEST SIZE PLATFORMS LABELS
+docker.io/simplematch/risk-matching-e2e-verifier:local application/vnd.oci.image.index.v1+json sha256:5b95b95ad9646cd8da64348486cfb364920dcc89d31618fa1d74cea9565ee61e 190MiB linux/amd64 -

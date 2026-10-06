@@ -337,8 +337,8 @@ open_gateway_from_live_observations() {
   return 1
 }
 
-# A transient monitor pause may need three new live observations to recover.
-# Wait for automatic recovery; do not force-open an interrupted market.
+# Observe a healthy OPEN gate without issuing another operator command. A pause
+# is not automatically reopened; it must fail this scenario at the deadline.
 wait_gateway_live_open() {
   local destination="$1"
   local deadline=$(( $(date +%s) + timeout_seconds ))

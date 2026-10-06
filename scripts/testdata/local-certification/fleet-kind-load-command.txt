@@ -1,0 +1,5 @@
+--namespace
+cached-matching-test
+--allow-shared-node
+--allow-local-image
+simplematch-matching:local

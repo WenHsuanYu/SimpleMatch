@@ -41,7 +41,9 @@ verify_local_matching_fleet() {
     --allow-shared-node
   )
   if [[ "$image_transport" == kind-load ]]; then
-    args+=(--allow-local-image "$matching_image_reference")
+    local matching_reference
+    matching_reference="$(_certification_matching_reference_argument)" || return 1
+    args+=(--allow-local-image "$matching_reference")
   fi
   bash "$repo_root/scripts/verify-matching-fleet-live.sh" "${args[@]}"
 }

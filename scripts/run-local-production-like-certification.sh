@@ -57,7 +57,6 @@ run_context_file=""
 source_signature=""
 cdc_runtime_signature=""
 cdc_verifier_signature=""
-matching_image_reference=""
 compose_prefix=()
 compose_command=()
 

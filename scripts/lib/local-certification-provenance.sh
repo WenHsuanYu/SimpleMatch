@@ -311,11 +311,36 @@ simplematch_certification_verifier_image() {
   printf '%s\n' "$verifier_image_reference"
 }
 
+# Classic Docker stores expose an image-config digest as .Id; containerd-backed
+# stores expose the target descriptor (often an OCI index). Compare each with
+# the corresponding node identity, never with a mutable tag alone. Kind-load
+# verifier references come from the fixed local Docker Hub image inventory.
+simplematch_verify_kind_loaded_verifier_identity() {
+  local node="$1" verifier_image_reference="$2" expected_identity="$3"
+  local actual_identity node_reference
+  [[ "$expected_identity" =~ ^sha256:[0-9a-f]{64}$ ]] || return 1
+  actual_identity="$(
+    docker exec "$node" crictl inspecti "$verifier_image_reference" |
+      jq -er '.status.id | select(type == "string" and test("^sha256:[0-9a-f]{64}$"))'
+  )" || return 1
+  [[ "$actual_identity" == "$expected_identity" ]] && return 0
+
+  node_reference="docker.io/${verifier_image_reference#docker.io/}"
+  actual_identity="$(
+    docker exec "$node" ctr -n k8s.io images ls |
+      awk -v reference="$node_reference" '
+        $1 == reference { identity = $3; matches++ }
+        END { if (matches != 1) exit 1; print identity }
+      '
+  )" || return 1
+  [[ "$actual_identity" =~ ^sha256:[0-9a-f]{64}$ && "$actual_identity" == "$expected_identity" ]]
+}
+
 simplematch_verify_kind_loaded_verifier_image_execution() {
   local repo_root="$1"
   local expected_namespace="$2"
   local retained_evidence_dir="$3"
-  local image_transport expected_identity verifier_image_reference nodes node actual_identity probe_name
+  local image_transport expected_identity verifier_image_reference nodes node probe_name
 
   image_transport="$(simplematch_certification_image_transport "$retained_evidence_dir")" || return 1
   [[ "$image_transport" == kind-load ]] || return 0
@@ -341,14 +366,11 @@ simplematch_verify_kind_loaded_verifier_image_execution() {
 
   while IFS= read -r node; do
     [[ -n "$node" ]] || continue
-    actual_identity="$(
-      docker exec "$node" crictl inspecti "$verifier_image_reference" |
-        jq -er '.status.id | select(type == "string" and test("^sha256:[0-9a-f]{64}$"))'
-    )" || return 1
-    [[ "$actual_identity" == "$expected_identity" ]] || return 1
+    simplematch_verify_kind_loaded_verifier_identity \
+      "$node" "$verifier_image_reference" "$expected_identity" || return 1
     probe_name="simplematch-verifier-image-probe-$RANDOM-$$"
     docker exec "$node" ctr -n k8s.io run --rm --net-host \
-      "$verifier_image_reference" "$probe_name" /bin/sh -c true || return 1
+      "docker.io/${verifier_image_reference#docker.io/}" "$probe_name" /bin/sh -c true || return 1
   done <<<"$nodes"
 }
 

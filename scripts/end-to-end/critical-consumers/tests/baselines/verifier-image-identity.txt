@@ -1,0 +1,4 @@
+Legacy image-config identity: PASS
+OCI image-index identity: PASS
+Different retained identity: REJECT
+Matching metadata but unusable content: REJECT
