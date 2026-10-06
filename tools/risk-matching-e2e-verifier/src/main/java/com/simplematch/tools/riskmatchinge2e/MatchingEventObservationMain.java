@@ -190,7 +190,8 @@ public final class MatchingEventObservationMain {
       return null;
     }
     final var order = event.getOrderRested();
-    return new RestedOrderEvidence(order.getAccountId(), order.getInstrument().getVenueMic(),
+    return new RestedOrderEvidence(order.getOrderId(), order.getAccountId(),
+        order.getInstrument().getVenueMic(),
         order.getInstrument().getSymbol(), order.getSide().name(),
         order.getLeavesQuantityShares(), order.getRestingPriceUnits());
   }
@@ -258,7 +259,8 @@ public final class MatchingEventObservationMain {
       String artifactContentSha256, String routingAlgorithmVersion) {}
 
   /** Only the business fields necessary to establish that an admitted order really rested. */
-  record RestedOrderEvidence(String accountId, String venueMic, String symbol, String side,
+  record RestedOrderEvidence(String orderId, String accountId, String venueMic, String symbol,
+      String side,
       long leavesQuantityShares, long restingPriceUnits) {}
 
   /** Parsed observer inputs used to establish the event correlation boundary. */

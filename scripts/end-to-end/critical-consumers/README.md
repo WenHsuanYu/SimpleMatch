@@ -27,6 +27,8 @@ Acceptance requires one coherent chain of evidence:
 2. The FIX `ClOrdID` resolves to exactly one accepted Risk admission, reservation,
    and new-order outbox row. Its stable command/order identities correlate with
    the actual `matching.commands` Kafka record and its admitted business fields.
+   The Pending New ACK uses Gateway's `O-<ClOrdID>` WAL identity, not Risk's
+   derived order UUID; correlation requires the same account and `ClOrdID`.
 3. Matching publishes `ORDER_RESTED` for that order, account, instrument, side,
    price, quantity, session and artifact. Its source input offset identifies an
    observed byte-identical command delivery, not just an assumed topic position.
@@ -105,6 +107,10 @@ build: this example intentionally uses the historical `2026-08-27` artifact,
 not today's date. Keep that date consistent in deployment and observation; do
 not relabel an old artifact or change the host clock. The runner refuses an
 unrelated namespace, mismatched run ID, source revision or verifier image.
+It also requires a completed deployment report and matching PASS results for
+the trading prerequisites, including the fleet gate. A FAILED deployment is
+not eligible even if its surviving Pods are Ready; the generated
+`baseline/deployment-prerequisites.json` records this bounded prerequisite check.
 It temporarily enables authenticated
 operator HTTP access while preserving automatic close; it requires the existing
 production live collector to make the gate open-eligible. Run before the configured

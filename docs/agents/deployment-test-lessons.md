@@ -40,6 +40,13 @@ identity baselines cover the latter two corrections. Preserve the original faile
 `issue-162-runtime-baseline-20260827-r3`; they remain diagnostic failures, not business-flow evidence.
 These corrected deterministic defects are not recurring platform failures in the table below.
 
+The first #162 resting-buy run reached the real command, `ORDER_RESTED`, and durable business
+effects but failed because the verifier equated the FIX Pending New `O-<ClOrdID>` WAL identity
+with Risk's derived order UUID. The corrected fixture checks the actual protocol identity and
+keeps account/ClOrdID correlation plus every downstream UUID equality; the fast verifier test
+must pass before deployment. Preserve `out/certification/issue-162-resting-buy-20260827-r4`
+as FAIL with successful restoration, never relabeling captured observations as a new run.
+
 ## Recurring lessons
 
 | ID | Symptom | Root cause | Prevention check | Safe fix | Last verified |

@@ -6,8 +6,8 @@
     "symbol": "1101",
     "quantityShares": 1000,
     "priceUnits": 569000,
-    "tradingDay": "2026-10-07",
-    "tradingSessionId": "2026-10-07-regular",
+    "tradingDay": "2026-08-27",
+    "tradingSessionId": "2026-08-27-regular",
     "artifactContentSha256": "f14ea4d735ac962abf9295b2cced30337b89114fef1edd9202aa88915e2094e4",
     "routingAlgorithmVersion": "stable-least-loaded-v1"
   },
@@ -16,7 +16,7 @@
   "fix": {
     "clOrdId": "REST-162-001",
     "accountId": "0198a000-0000-7000-8000-000000000001",
-    "orderId": "0198a000-0000-7000-8000-000000000002",
+    "orderId": "O-REST-162-001",
     "execType": "A",
     "ordStatus": "A"
   },
@@ -35,7 +35,7 @@
     "side": "SIDE_BUY",
     "quantityShares": 1000,
     "priceUnits": 569000,
-    "tradingDay": "2026-10-07",
+    "tradingDay": "2026-08-27",
     "artifactContentSha256": "f14ea4d735ac962abf9295b2cced30337b89114fef1edd9202aa88915e2094e4",
     "routingAlgorithmVersion": "stable-least-loaded-v1"
   },
@@ -47,7 +47,7 @@
     "venueMic": "XTAI", "symbol": "1101", "side": "SIDE_BUY",
     "quantityShares": 1000, "priceUnits": 569000,
     "orderType": "ORDER_TYPE_LIMIT", "timeInForce": "TIME_IN_FORCE_ROD",
-    "tradingDay": "2026-10-07", "tradingSessionId": "2026-10-07-regular",
+    "tradingDay": "2026-08-27", "tradingSessionId": "2026-08-27-regular",
     "artifactContentSha256": "f14ea4d735ac962abf9295b2cced30337b89114fef1edd9202aa88915e2094e4",
     "routingAlgorithmVersion": "stable-least-loaded-v1"
   },
@@ -59,12 +59,13 @@
     "sourceCommandId": "0198a000-0000-7000-8000-000000000003",
     "orderId": "0198a000-0000-7000-8000-000000000002",
     "context": {
-      "sourceInputOffset": 12, "tradingDay": "2026-10-07",
-      "tradingSessionId": "2026-10-07-regular",
+      "sourceInputOffset": 12, "tradingDay": "2026-08-27",
+      "tradingSessionId": "2026-08-27-regular",
       "artifactContentSha256": "f14ea4d735ac962abf9295b2cced30337b89114fef1edd9202aa88915e2094e4",
       "routingAlgorithmVersion": "stable-least-loaded-v1"
     },
     "restedOrder": {
+      "orderId": "0198a000-0000-7000-8000-000000000002",
       "accountId": "0198a000-0000-7000-8000-000000000001",
       "venueMic": "XTAI", "symbol": "1101", "side": "SIDE_BUY",
       "leavesQuantityShares": 1000, "restingPriceUnits": 569000
@@ -83,7 +84,7 @@
       "reservationId": "0198a000-0000-7000-8000-000000000004",
       "orderId": "0198a000-0000-7000-8000-000000000002",
       "accountId": "0198a000-0000-7000-8000-000000000001",
-      "venueMic": "XTAI", "symbol": "1101", "side": "SIDE_BUY", "tradingDay": "2026-10-07",
+      "venueMic": "XTAI", "symbol": "1101", "side": "SIDE_BUY", "tradingDay": "2026-08-27",
       "status": "RESERVATION_STATUS_ACCEPTED",
       "quantity": "1000.00000000", "remainingQuantity": "1000.00000000", "filledQuantity": "0.00000000",
       "limitPrice": "56.90000000", "reservedNotional": "56900.00000000",

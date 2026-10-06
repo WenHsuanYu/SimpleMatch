@@ -80,12 +80,15 @@ simplematch_certification_verifier_image "$repo_root" "$namespace" "$retained_ev
 retained_run_id="$(awk -F= '$1 == "run_id" {print substr($0, index($0, "=") + 1)}' "$retained_evidence_dir/run-context")"
 namespace_run_id="$(kns get namespace "$namespace" -o jsonpath='{.metadata.labels.simplematch\.io/run-id}')"
 [[ -n "$retained_run_id" && "$namespace_run_id" == "$retained_run_id" ]] || die 'namespace run-id mismatch'
+deployment_prerequisites="$(ruby "$script_dir/lib/resting-buy-verification.rb" deployment "$retained_evidence_dir")" ||
+  die 'retained deployment did not complete the required trading prerequisites'
 mkdir -p "$evidence_dir"
 evidence_dir="$(cd -- "$evidence_dir" && pwd)"
 [[ -z "$(ls -A "$evidence_dir")" ]] || die 'evidence directory must be empty'
 mkdir -p "$evidence_dir/baseline" "$evidence_dir/submission" "$evidence_dir/fix" "$evidence_dir/kafka"
 cp "$retained_evidence_dir/source-revision" "$evidence_dir/source-revision"
 evidence_initialized=true
+printf '%s\n' "$deployment_prerequisites" >"$evidence_dir/baseline/deployment-prerequisites.json"
 docker info >/dev/null || die 'Docker daemon is unavailable'
 simplematch_kind_validate_canonical_topology "$context" "$evidence_dir/baseline/nodes.json" || die 'canonical topology is not ready'
 simplematch_kind_validate_control_plane_stability "$context" 5 60 "$evidence_dir/baseline/control-plane" 60 || die 'control plane is unstable'

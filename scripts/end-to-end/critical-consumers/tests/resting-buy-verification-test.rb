@@ -1,5 +1,6 @@
 #!/usr/bin/env ruby
 require "json"
+require "fileutils"
 require "minitest/autorun"
 require "tmpdir"
 require_relative "../lib/resting-buy-verification"
@@ -21,6 +22,10 @@ class RestingBuyVerificationTest < Minitest::Test
   def test_checks_identity_and_business_fields_at_each_boundary
     {
       ["fix", "clOrdId"] => "OTHER",
+      ["fix", "orderId"] => "O-OTHER",
+      ["fix", "accountId"] => "another-account",
+      ["fix", "execType"] => "0",
+      ["risk", "orderId"] => "0198a000-0000-7000-8000-000000000099",
       ["risk", "count"] => 2,
       ["risk", "outboxCount"] => 0,
       ["risk", "state"] => "REJECTED",
@@ -30,6 +35,7 @@ class RestingBuyVerificationTest < Minitest::Test
       ["command", "partition"] => 5,
       ["command", "artifactContentSha256"] => "wrong-artifact",
       ["event", "context", "sourceInputOffset"] => 13,
+      ["event", "restedOrder", "orderId"] => "0198a000-0000-7000-8000-000000000099",
       ["event", "restedOrder", "accountId"] => "another-account",
       ["event", "restedOrder", "leavesQuantityShares"] => 999,
       ["event", "eventType"] => "MATCHING_EVENT_TYPE_TRADE_EXECUTED",
@@ -58,6 +64,12 @@ class RestingBuyVerificationTest < Minitest::Test
     end
   end
 
+  def test_correlates_the_fix_pending_identity_without_equating_it_to_the_risk_uuid
+    evidence = fixture
+    refute_equal evidence.fetch("risk").fetch("orderId"), evidence.fetch("fix").fetch("orderId")
+    assert_equal "PASS", RestingBuyVerification.verify(evidence).fetch("status")
+  end
+
   def test_allows_identical_transport_redeliveries_without_double_business_effects
     evidence = fixture
     evidence["command"]["physicalDeliveryCount"] = 2
@@ -83,6 +95,56 @@ class RestingBuyVerificationTest < Minitest::Test
       verdict = JSON.parse(File.read(File.join(directory, "verdict.json")))
       assert_equal true, verdict.fetch("restorationPassed")
       assert_equal false, verdict.fetch("fullLocalCertification")
+    end
+  end
+
+  def completed_deployment(directory)
+    deployment = JSON.parse(File.read(File.join(__dir__, "fixtures/completed-trading-deployment.json")))
+    File.write(File.join(directory, "source-revision"), deployment.fetch("sourceRevision") + "\n")
+    File.write(File.join(directory, "report.md"), "- status: #{deployment.fetch('reportStatus')}\n")
+    phases = deployment.fetch("phaseIds").map do |phase|
+      result = deployment.fetch("result").merge("phaseId" => phase)
+      phase_directory = File.join(directory, "phases", phase)
+      FileUtils.mkdir_p(phase_directory)
+      File.write(File.join(phase_directory, "result.json"), JSON.generate(result))
+      result
+    end
+    File.write(File.join(directory, "evidence-manifest.json"), JSON.generate({"schemaVersion" => 1, "phases" => phases}))
+  end
+
+  def test_accepts_completed_kubernetes_deployment_but_not_a_failed_parent
+    Dir.mktmpdir("resting-buy-deployment") do |directory|
+      completed_deployment(directory)
+      actual = File.join(directory, "observed-prerequisites.json")
+      File.write(actual, JSON.pretty_generate(RestingBuyVerification.verify_deployment(directory)) + "\n")
+      assert system("diff", "-u", File.join(__dir__, "baselines/deployment-prerequisites.json"), actual)
+      File.write(File.join(directory, "report.md"), "- status: FAILED\n")
+      assert_raises(RestingBuyVerification::InvalidEvidence) do
+        RestingBuyVerification.verify_deployment(directory)
+      end
+    end
+  end
+
+  def test_requires_completed_matching_fleet_evidence_from_the_same_source
+    %w[missing failed different-source missing-manifest].each do |failure|
+      Dir.mktmpdir("resting-buy-deployment") do |directory|
+        completed_deployment(directory)
+        result_path = File.join(directory, "phases/kubernetes-fleet/result.json")
+        result = JSON.parse(File.read(result_path))
+        case failure
+        when "missing" then File.delete(result_path)
+        when "missing-manifest" then File.delete(File.join(directory, "evidence-manifest.json"))
+        when "failed"
+          result["status"] = "FAIL"
+          File.write(result_path, JSON.generate(result))
+        when "different-source"
+          result["execution"]["sourceRevision"] = "480ded3ead07038a8779b59b365421a141247c43"
+          File.write(result_path, JSON.generate(result))
+        end
+        assert_raises(RestingBuyVerification::InvalidEvidence, failure) do
+          RestingBuyVerification.verify_deployment(directory)
+        end
+      end
     end
   end
 end

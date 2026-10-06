@@ -119,6 +119,8 @@ class MatchingEventObservationMainTest {
     assertThat(observation.restedOrder().accountId()).endsWith("0005");
     assertThat(observation.context().tradingDay()).isEqualTo("2026-08-27");
     final String json = new ObjectMapper().writeValueAsString(observation);
+    assertThat(new ObjectMapper().readTree(json).path("restedOrder").path("orderId").asText())
+        .isEqualTo(orderId);
     assertThat(json).contains("\"symbol\":\"1101\"").doesNotContain("payloadBase64");
   }
 

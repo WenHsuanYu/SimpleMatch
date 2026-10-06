@@ -1,0 +1,18 @@
+{
+  "sourceRevision": "811bd6114d6cfdb59f32cda74cac6632c8ef5c25",
+  "reportStatus": "PARTIAL",
+  "phaseIds": [
+    "kubernetes-inputs", "kubernetes-topic-provisioning", "kubernetes-migrations",
+    "kubernetes-open-barriers", "kubernetes-risk-outbox-connector",
+    "kubernetes-account-outbox-connector", "kubernetes-workloads",
+    "kubernetes-cdc-delivery", "kubernetes-fleet"
+  ],
+  "result": {
+    "schemaVersion": 1,
+    "definitionVersion": 1,
+    "decision": "EXECUTED",
+    "status": "PASS",
+    "inputFingerprint": "sha256:4ef34a1ef993d87e10a8b53d6e714a1bec9ceb3a75f9364c8ecd71e707bd3108",
+    "execution": {"sourceRevision": "811bd6114d6cfdb59f32cda74cac6632c8ef5c25"}
+  }
+}

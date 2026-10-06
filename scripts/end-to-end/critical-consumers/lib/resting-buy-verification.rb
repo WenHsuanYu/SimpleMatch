@@ -21,6 +21,34 @@ module RestingBuyVerification
     fields.each { |field| equal(expected.fetch(field), actual.fetch(field), "#{boundary}.#{field}") }
   end
 
+  # A normal order requires completed deployment gates, not a merely live namespace.
+  def self.verify_deployment(directory)
+    statuses = File.read(File.join(directory, "report.md")).scan(/^- status: (\S+)$/).flatten
+    equal(true, statuses.size == 1 && %w[PASS PARTIAL].include?(statuses.first), "deployment completion")
+    source = File.read(File.join(directory, "source-revision")).strip
+    manifest = JSON.parse(File.read(File.join(directory, "evidence-manifest.json")))
+    equal(1, manifest.fetch("schemaVersion"), "deployment manifest schema")
+    phases = manifest.fetch("phases")
+    equal(Array, phases.class, "deployment phases")
+    required = %w[kubernetes-inputs kubernetes-topic-provisioning kubernetes-migrations
+      kubernetes-open-barriers kubernetes-risk-outbox-connector kubernetes-account-outbox-connector
+      kubernetes-workloads kubernetes-cdc-delivery kubernetes-fleet]
+    required.each do |phase|
+      entries = phases.select { |entry| entry.fetch("phaseId") == phase }
+      equal(1, entries.size, "deployment #{phase} manifest entry")
+      result = JSON.parse(File.read(File.join(directory, "phases", phase, "result.json")))
+      equal(1, result.fetch("schemaVersion"), "deployment #{phase} result schema")
+      same_fields(entries.first, result, %w[phaseId definitionVersion decision status inputFingerprint execution], phase)
+      equal("PASS", result.fetch("status"), "deployment #{phase}")
+      equal(source, result.fetch("execution").fetch("sourceRevision"), "deployment #{phase} source")
+      equal(true, /\Asha256:[0-9a-f]{64}\z/.match?(result.fetch("inputFingerprint")), "deployment #{phase} fingerprint")
+    end
+    {"status" => "PASS", "deploymentStatus" => statuses.first,
+      "sourceRevision" => source, "prerequisitePhases" => required}
+  rescue Errno::ENOENT, JSON::ParserError, KeyError, ArgumentError, TypeError => failure
+    raise InvalidEvidence, "missing or invalid deployment evidence: #{failure.class}"
+  end
+
   def self.verify(evidence)
     expected = evidence.fetch("expected")
     risk = evidence.fetch("risk")
@@ -58,7 +86,8 @@ module RestingBuyVerification
     equal(true, evidence.fetch("open").fetch("accepted"), "Gateway operator open")
     fix = evidence.fetch("fix")
     same_fields(expected, fix, %w[accountId clOrdId], "FIX")
-    equal(risk.fetch("orderId"), fix.fetch("orderId"), "FIX orderId")
+    # Gateway's Pending New ACK uses its WAL identity, not Risk's derived UUID.
+    equal("O-#{expected.fetch('clOrdId')}", fix.fetch("orderId"), "FIX pending orderId")
     equal("A", fix.fetch("execType"), "FIX admission ExecType")
     equal("A", fix.fetch("ordStatus"), "FIX admission OrdStatus")
     equal(1, risk.fetch("count"), "Risk admission count")
@@ -91,6 +120,7 @@ module RestingBuyVerification
     raise InvalidEvidence, "event precedes observation boundary" unless
       event.fetch("offset") >= event.fetch("startOffset")
     rested = event.fetch("restedOrder")
+    equal(risk.fetch("orderId"), rested.fetch("orderId"), "decoded rested orderId")
     same_fields(expected, rested, %w[accountId venueMic symbol], "rested order")
     equal("SIDE_BUY", rested.fetch("side"), "rested side")
     equal(expected.fetch("quantityShares"), rested.fetch("leavesQuantityShares"), "rested quantity")
@@ -173,7 +203,7 @@ module RestingBuyVerification
       "sourceRevision" => File.read(File.join(directory, "source-revision")).strip,
       "restorationPassed" => restoration_failed == "false",
       "fullLocalCertification" => false,
-      "evidence" => %w[baseline/verifier-helper-provenance.json baseline/gateway-open.json fix/submit.json submission/risk-admission.json kafka/matching-command-observation.json kafka/matching-event-observation.json durable-state.json baseline/gateway-after.json]
+      "evidence" => %w[baseline/deployment-prerequisites.json baseline/verifier-helper-provenance.json baseline/gateway-open.json fix/submit.json submission/risk-admission.json kafka/matching-command-observation.json kafka/matching-event-observation.json durable-state.json baseline/gateway-after.json]
     )
     File.write(File.join(directory, "verdict.json"), JSON.pretty_generate(result) + "\n")
     passed
@@ -182,20 +212,22 @@ end
 
 if $PROGRAM_NAME == __FILE__
   operation, directory, *values = ARGV
-  abort "usage: resting-buy-verification.rb prepare|verify EVIDENCE_DIR [fixture identities]" unless directory
-  if operation == "prepare"
-    RestingBuyVerification.prepare(directory, values)
-  elsif operation == "finalize"
-    exit(RestingBuyVerification.finalize(directory, values) ? 0 : 1)
-  elsif operation == "verify"
-    begin
+  abort "usage: resting-buy-verification.rb prepare|deployment|verify|finalize EVIDENCE_DIR [values]" unless directory
+  begin
+    if operation == "prepare"
+      RestingBuyVerification.prepare(directory, values)
+    elsif operation == "finalize"
+      exit(RestingBuyVerification.finalize(directory, values) ? 0 : 1)
+    elsif operation == "deployment"
+      puts JSON.pretty_generate(RestingBuyVerification.verify_deployment(directory))
+    elsif operation == "verify"
       result = RestingBuyVerification.verify(RestingBuyVerification.read_evidence(directory))
       File.write(File.join(directory, "business-result.json"), JSON.pretty_generate(result) + "\n")
-    rescue RestingBuyVerification::InvalidEvidence => failure
-      warn failure.message
-      exit 1
+    else
+      abort "unknown operation: #{operation}"
     end
-  else
-    abort "unknown operation: #{operation}"
+  rescue RestingBuyVerification::InvalidEvidence => failure
+    warn failure.message
+    exit 1
   end
 end

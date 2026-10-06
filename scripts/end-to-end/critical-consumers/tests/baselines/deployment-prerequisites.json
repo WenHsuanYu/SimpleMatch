@@ -1,0 +1,16 @@
+{
+  "status": "PASS",
+  "deploymentStatus": "PARTIAL",
+  "sourceRevision": "811bd6114d6cfdb59f32cda74cac6632c8ef5c25",
+  "prerequisitePhases": [
+    "kubernetes-inputs",
+    "kubernetes-topic-provisioning",
+    "kubernetes-migrations",
+    "kubernetes-open-barriers",
+    "kubernetes-risk-outbox-connector",
+    "kubernetes-account-outbox-connector",
+    "kubernetes-workloads",
+    "kubernetes-cdc-delivery",
+    "kubernetes-fleet"
+  ]
+}
