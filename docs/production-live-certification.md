@@ -40,6 +40,17 @@ The authoritative entrypoint is:
 bash scripts/run-local-production-like-certification.sh
 ~~~
 
+Before building images, a fresh resource-budget phase renders the local overlay and compares the
+selected profile's staged memory requests with the currently selected Docker daemon's memory.
+The reference 38 GiB local host fits the existing `--matching-fleet-only` reduced profile by
+declared requests; the full profile's steady requests exceed that reference. The runner warns but
+does not block a full runtime attempt: actual usage and swap can differ from declared requests.
+It records the profile, per-workload requests, host capacity, and comparison in its run-owned
+`local-resource-budget.json` and links the verdict from `report.md`. The reduced profile
+reports `PARTIAL` and cannot stand in for the full cross-service gate. See the
+[local host memory budget](../deploy/k8s/README.md#local-host-memory-budget) for the calculations
+and the focused baseline test.
+
 The local profile uses the current local deployment image set, a three-broker Kafka cluster with 15
 Matching partitions and replication factor 3, PostgreSQL, Redis, Debezium/Kafka Connect, and a
 disposable Kubernetes runtime for the 15 logical Matching owners. It verifies the Risk-to-Matching-

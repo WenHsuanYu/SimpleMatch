@@ -230,6 +230,15 @@ Interface responsibility:
 
 The caller must not encode dependency ordering independently.
 
+The `local-resource-budget` phase is `FRESH`: it compares the selected local workload's rendered
+requests with the Docker daemon used for this run and retains the resulting JSON report. It runs
+before image builds and is a dependency of `kubernetes-manifest-split`, so a previous run's host
+capacity cannot be reused as current evidence. An over-budget result warns and remains visible in
+the final report, but does not block deployment; strict `--check` is reserved for the focused
+reference-profile test. The manifest-split phase uses definition version 2 for this new prerequisite.
+An explicit partial profile still records omitted full-run phases as `SKIP`; passing its budget
+check does not promote that profile to a complete certification.
+
 Conceptual interface:
 
 ```text

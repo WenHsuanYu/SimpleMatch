@@ -38,6 +38,13 @@ Owns:
 - definition versions;
 - topological execution order.
 
+The `local-resource-budget` phase is fresh for each Kubernetes run. It uses the selected Docker
+daemon's current memory and the rendered local overlay to write a run-owned budget report before
+any image build or namespace creation. An excess produces a warning and remains in `report.md`,
+but does not block the runtime attempt. `kubernetes-manifest-split` depends on this phase and uses
+definition version 2; a cached static overlay validation never substitutes for the current host
+capacity check.
+
 Public interface:
 
 ```text

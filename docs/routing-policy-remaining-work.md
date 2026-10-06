@@ -327,7 +327,7 @@ follow-ups chosen for distinct engineering value; none is a parent aggregate cer
 | Issue | Engineering outcome | Boundary |
 | --- | --- | --- |
 | [#160](https://github.com/WenHsuanYu/SimpleMatch/issues/160) | Live Gateway admission observations | Source `6b62425` passed the local deployed PRE_OPEN-to-healthy-production-observations-to-authenticated-explicit-open smoke without synthetic reports. Risk/Matching identity comparison remains required; Kafka/consumer full identity attestation and identity copying are out of scope. The later stale-recovery streak fix is covered by local controller regressions, not that earlier deployed smoke. Remote delivery status is tracked in the issue. This is not full-local, production, or #162 business certification. |
-| [#161](https://github.com/WenHsuanYu/SimpleMatch/issues/161) | Canonical local-profile deployability | Reconcile rendered host-level resource requests with the documented local runtime budget; do not retain the old arbitrary 20 GiB / 4 GiB / 1 GiB optimization targets. |
+| [#161](https://github.com/WenHsuanYu/SimpleMatch/issues/161) | Canonical local-profile deployability | The selected 38 GiB reference host fits the explicitly partial Matching fleet profile by declared requests; the full profile exceeds that reference but remains runnable with a visible warning and retained budget evidence. Both profiles have rendered, checked-in request baselines, and every Kubernetes run records a fresh host comparison before image builds. The prior 20 GiB / 4 GiB / 1 GiB optimization targets remain removed. |
 | [#162](https://github.com/WenHsuanYu/SimpleMatch/issues/162) | One deployed end-to-end trading flow | Trace one real Gateway-originated operation through Risk, Kafka/Matching, Persistence, and Account without rebuilding infrastructure identity/report plumbing. |
 | [#164](https://github.com/WenHsuanYu/SimpleMatch/issues/164) | Deployed QuickFIX same-owner recovery | Prove durable FIX session recovery, reconnect/resend, and no duplicate Risk admission. Matching replacement is already proven elsewhere. |
 | [#168](https://github.com/WenHsuanYu/SimpleMatch/issues/168) | Recovery integration test after one representative recovery | Inject one Matching restart/replay and prove the integrated Kafka, Persistence, and Account recovery path preserves singular business outcomes and remains usable. |
@@ -870,9 +870,12 @@ implementation blocker.
   local-day profile fixes 150 books, 34 measured iterations, 10 cycles, 102,000 commands/events,
   a 256 resting-order bound, warmup, rate, deterministic checksums, RSS, latency percentiles,
   throughput, and zero loss/duplicates. The local PVC request envelope is 87 GiB and is logical
-  local-path reservation rather than immediate allocation. The rendered local overlay requests
-  about 38.63 GiB in steady state and about 45.75 GiB while one-shot bootstrap Jobs are present;
-  this is a documented local resource-budget limitation, not a production capacity claim.
+  local-path reservation rather than immediate allocation. Those earlier resource totals were
+  about 38.63 GiB steady and 45.75 GiB including one-shot Jobs. The current rendered full overlay
+  requests 41.7421875 GiB steady and 47.8671875 GiB including all Jobs; the explicitly partial
+  Matching fleet selection requests 34.2421875 GiB steady and 34.3671875 GiB including its Job
+  against the 38 GiB reference host budget. These are declared local requests, not observed RSS
+  or a production capacity claim. The calculations and limits are in `deploy/k8s/README.md`.
   The profile is not a 24-hour wall-clock endurance run, and external hardware, cluster, or
   production certification is not part of this project's target.
 - **Acceptance criteria:** Report core and Kafka end-to-end p50/p99/p99.9/max, RSS, ring occupancy,

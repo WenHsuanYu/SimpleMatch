@@ -589,6 +589,13 @@ bash scripts/run-local-production-like-certification.sh --dry-run
 
 `--matching-fleet-only` 明確產生 PARTIAL evidence。`--skip-build`、`--skip-compose` 或 `--skip-kubernetes` 也代表 operator 主動省略 requirement。這些選項不會因 cache 中已有舊 PASS 就被升級成完整 certification。
 
+執行 Kubernetes 路徑前，runner 會以目前選用的 Docker daemon 記憶體容量檢查 render 後的整體
+requests，並將 `local-resource-budget.json` 存入該次 run evidence、在 `report.md` 標示結果。
+38 GiB 參考主機的 `--matching-fleet-only` 縮減 workload 在宣告 requests 下符合預算；
+目前完整 workload 超額時會警告，但仍可繼續部署。requests 不是實際記憶體用量，swap 可能
+幫助執行，卻不能把超額報告變成容量已通過的證據。兩種 profile 的範圍、計算及限制見
+[`deploy/k8s/README.md`](../deploy/k8s/README.md#local-host-memory-budget)。
+
 相反地，正常 full run 中由 planner 安全判定的 `REUSE` / `REVALIDATE` 仍可得到 `PASSED`，因為 requirement 仍有可驗證 evidence，而不是被跳過。
 
 ### 12.3 Run evidence 與 reusable cache

@@ -76,6 +76,51 @@ verified by property-specific focused diagnostics. The former `full-local` workl
 scenario matrix is retired; a focused report supports only the recovery property it actually
 observes and cannot be promoted to a broader resilience or production-HA claim.
 
+### Local host memory budget
+
+All three kind workers share the Docker daemon's host memory. The repository's reference local
+budget is 38 GiB, recorded in `overlays/local/resource-budget.json`; the Docker Desktop daemon
+used to set this reference reported about 38.26 GiB on 2026-10-06. The production-like runner
+reads the *selected daemon's current* memory capacity and runs the fresh `local-resource-budget`
+phase before image builds or Kubernetes apply. Its report is retained at
+`local-resource-budget.json` in the run evidence directory and the final report links its verdict.
+If declared requests exceed that capacity, the runner warns but still permits the runtime attempt.
+This comparison is an early capacity signal, not a scheduling guarantee or a measurement of live
+memory, swap use, per-worker placement, or available space during a rollout.
+
+The full local overlay currently renders 41.7421875 GiB of steady requests and 6.125 GiB from
+its seven Jobs. The actual bootstrap stage runs platform services alongside Jobs (10.25 GiB of
+requests), then starts the full steady set after Jobs complete; its declared stage peak is thus
+41.7421875 GiB, above the 38 GiB reference. The 47.8671875 GiB all-together sum is only a
+conservative review envelope, not the startup gate. The existing `--matching-fleet-only` runner
+profile fits this reference by declared requests: it applies PostgreSQL, Redis, three Kafka brokers, the
+topic-provisioning Job, and all 15 Matching owners. Its exact workload selection is recorded in
+`overlays/local/resource-budget.json`; it renders 34.2421875 GiB steady, 4.25 GiB during
+bootstrap, and a 34.2421875 GiB declared stage peak. This is a `PARTIAL` Matching fleet gate.
+The full profile may still run here: actual memory can be below requests and swap may help, as
+earlier runtime attempts suggest, but neither a prior run nor swap certifies today's request fit
+or guarantees success. A full certification verdict still requires its own live evidence.
+
+The Matching main container retains the observed, successful 2 GiB local fleet limit and its
+bounded 1,024-order and 524,288-slot configuration. Fifteen main containers therefore request
+30 GiB; the status sidecars add 120 MiB. The native direct-core RSS benchmark is a different
+workload from a full Kafka-connected pod and does not justify lowering the pod to 1 GiB. Kafka's
+three 1 GiB broker requests, PostgreSQL's 1 GiB request, and Redis's 128 MiB request complete the
+reduced steady set. The Kafka storage-format init container now declares a bounded request and
+limit; its 1 GiB memory request does not add to each pod's effective request because that pod's
+broker already requests 1 GiB. These are local sizing choices; the base and promotion templates
+retain their separate production resource contract.
+
+Run the focused render/resource check with `ruby scripts/test-local-resource-budget.rb`. It
+re-renders the local overlay, compares each profile's review lines with checked-in text baselines using
+`diff`, and verifies that the reduced profile fits the 38 GiB reference while strict `--check`
+rejects an over-budget fixture. Without `--check`, the calculator warns and records excess but
+exits successfully so the runner can continue. To inspect current numbers directly, pipe `kubectl kustomize
+deploy/k8s/overlays/local --load-restrictor LoadRestrictionsNone` into `ruby
+scripts/local-resource-budget.rb --manifest - --profile full` (or
+`--profile matching-fleet-only`). The JSON separates bootstrap, steady, actual stage peak, and
+the deliberately conservative all-together envelope; none is an observed RSS peak.
+
 ### Local production-like version contract
 
 The executable local profile is checked against this stable version set as of 2026-08-12. The
