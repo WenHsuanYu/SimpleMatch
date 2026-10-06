@@ -81,14 +81,45 @@ class MatchingEventObservationMainTest {
                 commandId.toString(),
                 orderId,
                 Duration.ofSeconds(5),
-                Path.of("build/evidence")));
+                Path.of("build/evidence"), null));
 
     assertThat(observation.startOffset()).isEqualTo(startOffset);
     assertThat(observation.offset()).isEqualTo(startOffset + 1);
+    assertThat(observation.context().sourceInputOffset()).isEqualTo(10);
+    assertThat(observation.restedOrder()).isNull();
 
     final ObjectMapper json = new ObjectMapper().findAndRegisterModules();
     assertThat(json.readTree(json.writeValueAsString(observation)).path("startOffset").asLong())
         .isEqualTo(startOffset);
+  }
+
+  @Test
+  void capturesRestedBusinessFactsWithoutRawPayloads() throws Exception {
+    final UUID commandId = UUID.fromString("0198a000-0000-7000-8000-000000000003");
+    final String orderId = "0198a000-0000-7000-8000-000000000004";
+    final MatchingEvent event = cancelledEvent("2026-08-27-regular", 4, commandId, orderId)
+        .toBuilder()
+        .setEventType(MatchingEventType.MATCHING_EVENT_TYPE_ORDER_RESTED)
+        .setOrderRested(OrderRested.newBuilder()
+            .setOrderId(orderId)
+            .setAccountId("0198a000-0000-7000-8000-000000000005")
+            .setInstrument(VenueInstrument.newBuilder().setVenueMic("XTAI").setSymbol("1101"))
+            .setSide(Side.SIDE_BUY)
+            .setLeavesQuantityShares(1000)
+            .setRestingPriceUnits(569000))
+        .build();
+    final var arguments = new MatchingEventObservationMain.ObservationArguments(
+        "kafka:9092", "matching.events", 4, 0, commandId.toString(), orderId,
+        Duration.ofSeconds(5), Path.of("build/evidence"), null);
+    final var observation = MatchingEventObservationMain.matchingObservation(
+        new ConsumerRecord<>("matching.events", 4, 0, null, event.toByteArray()), arguments);
+
+    assertThat(observation.restedOrder().leavesQuantityShares()).isEqualTo(1000);
+    assertThat(observation.restedOrder().restingPriceUnits()).isEqualTo(569000);
+    assertThat(observation.restedOrder().accountId()).endsWith("0005");
+    assertThat(observation.context().tradingDay()).isEqualTo("2026-08-27");
+    final String json = new ObjectMapper().writeValueAsString(observation);
+    assertThat(json).contains("\"symbol\":\"1101\"").doesNotContain("payloadBase64");
   }
 
   private static MatchingEvent cancelledEvent(

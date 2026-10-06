@@ -11,6 +11,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.Properties;
 import java.util.UUID;
+import java.util.stream.Collectors;
 import org.apache.kafka.clients.consumer.ConsumerConfig;
 import org.apache.kafka.clients.consumer.ConsumerRecord;
 import org.apache.kafka.clients.consumer.ConsumerRecords;
@@ -31,6 +32,7 @@ public final class MatchingEventObservationMain {
     Files.createDirectories(arguments.evidenceDir());
 
     try {
+      observeCommandIfRequested(arguments, json);
       final Observation observation = observe(arguments);
       json.writerWithDefaultPrettyPrinter()
           .writeValue(
@@ -62,6 +64,58 @@ public final class MatchingEventObservationMain {
               verdict);
       throw failure;
     }
+  }
+
+  private static void observeCommandIfRequested(
+      ObservationArguments arguments, ObjectMapper json) throws Exception {
+    if (arguments.commandsBefore() == null) {
+      return;
+    }
+    final var positions = json.readValue(arguments.commandsBefore().toFile(),
+        KafkaObservationSession.TopicEndPositions.class);
+    if (!"matching.commands".equals(positions.topic())) {
+      throw new IllegalArgumentException("command boundary must describe matching.commands");
+    }
+    final Map<Integer, Long> offsets = positions.partitions().stream().collect(Collectors.toMap(
+        KafkaObservationSession.PartitionEndOffset::partition,
+        KafkaObservationSession.PartitionEndOffset::offset));
+    try (var probe = new KafkaMatchingCommandProbe(
+        arguments.bootstrap(), positions.topic(), "resting-buy-" + UUID.randomUUID())) {
+      final var command = probe.awaitCommand(
+          arguments.commandId(), arguments.partition(), offsets, arguments.timeout());
+      json.writerWithDefaultPrettyPrinter().writeValue(
+          arguments.evidenceDir().resolve("matching-command-observation.json").toFile(),
+          commandEvidence(command));
+    }
+  }
+
+  /** Selects necessary order facts and physical location without serializing raw command bytes. */
+  static Map<String, Object> commandEvidence(KafkaMatchingCommandProbe.ProbeResult result) {
+    final var command = result.command();
+    final var header = command.getHeader();
+    if (!command.hasNewOrder() || !result.key().equals(header.getCommandId())
+        || result.partition() != header.getPartitionId()) {
+      throw new IllegalStateException("observed command is not the correlated admitted new order");
+    }
+    final var order = command.getNewOrder();
+    return Map.ofEntries(
+        Map.entry("topic", "matching.commands"), Map.entry("partition", result.partition()),
+        Map.entry("offset", result.offset()),
+        Map.entry("physicalDeliveryCount", result.physicalDeliveryCount()),
+        Map.entry("payloadSha256", result.payloadSha256()),
+        Map.entry("commandId", header.getCommandId()), Map.entry("orderId", order.getOrderId()),
+        Map.entry("accountId", order.getAccountId()),
+        Map.entry("venueMic", order.getInstrument().getVenueMic()),
+        Map.entry("symbol", order.getInstrument().getSymbol()),
+        Map.entry("side", order.getSide().name()),
+        Map.entry("quantityShares", order.getQuantityShares()),
+        Map.entry("priceUnits", order.getLimitPriceUnits()),
+        Map.entry("orderType", order.getOrderType().name()),
+        Map.entry("timeInForce", order.getTimeInForce().name()),
+        Map.entry("tradingDay", header.getArtifactIdentity().getTradingDay()),
+        Map.entry("tradingSessionId", header.getTradingSessionId()),
+        Map.entry("artifactContentSha256", header.getArtifactIdentity().getContentSha256()),
+        Map.entry("routingAlgorithmVersion", header.getRoutingAlgorithmVersion()));
   }
 
   private static Observation observe(ObservationArguments arguments) {
@@ -124,7 +178,21 @@ public final class MatchingEventObservationMain {
         envelope.payloadSha256Hex(),
         event.getEventType().name(),
         event.getSourceCommandId(),
-        arguments.orderId());
+        arguments.orderId(),
+        new EventContext(event.getSourceInputOffset(), event.getArtifactIdentity().getTradingDay(),
+            event.getTradingSessionId(), event.getArtifactIdentity().getContentSha256(),
+            event.getRoutingAlgorithmVersion()),
+        restedOrderEvidence(event));
+  }
+
+  private static RestedOrderEvidence restedOrderEvidence(MatchingEvent event) {
+    if (!event.hasOrderRested()) {
+      return null;
+    }
+    final var order = event.getOrderRested();
+    return new RestedOrderEvidence(order.getAccountId(), order.getInstrument().getVenueMic(),
+        order.getInstrument().getSymbol(), order.getSide().name(),
+        order.getLeavesQuantityShares(), order.getRestingPriceUnits());
   }
 
   private static FinalMatchingEventEnvelope parse(
@@ -181,7 +249,17 @@ public final class MatchingEventObservationMain {
       String payloadSha256,
       String eventType,
       String sourceCommandId,
-      String orderId) {}
+      String orderId,
+      EventContext context,
+      RestedOrderEvidence restedOrder) {}
+
+  /** Immutable input position and deployed session/artifact identities of the event. */
+  record EventContext(long sourceInputOffset, String tradingDay, String tradingSessionId,
+      String artifactContentSha256, String routingAlgorithmVersion) {}
+
+  /** Only the business fields necessary to establish that an admitted order really rested. */
+  record RestedOrderEvidence(String accountId, String venueMic, String symbol, String side,
+      long leavesQuantityShares, long restingPriceUnits) {}
 
   /** Parsed observer inputs used to establish the event correlation boundary. */
   record ObservationArguments(
@@ -192,7 +270,8 @@ public final class MatchingEventObservationMain {
       String commandId,
       String orderId,
       Duration timeout,
-      Path evidenceDir) {
+      Path evidenceDir,
+      Path commandsBefore) {
     private static ObservationArguments parse(String[] args) {
       final Map<String, String> values = argumentValues(args);
       final int partition = rangedInt(values, "--partition", 0, 14);
@@ -208,7 +287,9 @@ public final class MatchingEventObservationMain {
           commandId,
           orderId,
           Duration.ofSeconds(timeoutSeconds),
-          Path.of(required(values, "--evidence-dir")).toAbsolutePath().normalize());
+          Path.of(required(values, "--evidence-dir")).toAbsolutePath().normalize(),
+          values.containsKey("--commands-before")
+              ? Path.of(required(values, "--commands-before")) : null);
     }
 
     private static Map<String, String> argumentValues(String[] args) {
