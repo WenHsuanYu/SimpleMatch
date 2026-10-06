@@ -68,6 +68,7 @@ image_transport=registry
 
 for phase in \
   source-preflight \
+  local-resource-budget \
   kafka-capacity-evidence \
   kafka-broker-failure-live \
   kind-load-import \
@@ -95,6 +96,12 @@ assert_eq REVALIDATE \
   'registry publication must be revalidated'
 
 full_required="$(certification_required_phase_ids)"
+assert_has_line "$(certification_phase_dependencies kubernetes-manifest-split)" \
+  local-resource-budget 'manifest split does not depend on the current host budget'
+assert_eq 2 "$(certification_phase_definition_version kubernetes-manifest-split)" \
+  'manifest split definition version did not change with its preflight'
+assert_has_line "$full_required" local-resource-budget \
+  'full profile omitted host resource preflight'
 assert_has_line "$full_required" local-image-build/quickfix-gateway \
   'full profile omitted QuickFIX image build'
 assert_has_line "$full_required" registry-publish/quickfix-gateway \
@@ -106,6 +113,8 @@ assert_has_line "$full_required" retained-run-provenance \
 
 matching_fleet_only=true
 matching_required="$(certification_required_phase_ids)"
+assert_has_line "$matching_required" local-resource-budget \
+  'Matching profile omitted host resource preflight'
 assert_has_line "$matching_required" local-image-build/matching \
   'Matching profile omitted Matching image build'
 assert_lacks_line "$matching_required" local-image-build/quickfix-gateway \

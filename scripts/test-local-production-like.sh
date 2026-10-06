@@ -244,6 +244,7 @@ grep -Fq 'publish-local-images.sh' <<<"$certification_dry_run"
 grep -Fq -- '--service account-service' <<<"$certification_dry_run"
 grep -Fq 'certification_construct_registry_image_lock' <<<"$certification_dry_run"
 grep -Fq '_certification_render_and_split_kubernetes_manifest' <<<"$certification_dry_run"
+grep -Fq '_certification_check_local_resource_budget' <<<"$certification_dry_run"
 grep -Fq 'render_local_kubernetes_manifest' "$run_lib"
 if grep -Fq 'kind load docker-image' <<<"$certification_dry_run"; then
   printf '%s\n' 'Default certification dry-run unexpectedly imports images directly into kind.' >&2

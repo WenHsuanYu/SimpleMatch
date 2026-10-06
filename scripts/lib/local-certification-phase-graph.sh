@@ -96,6 +96,7 @@ _certification_register_fixed_phases() {
       "$dependencies" "${version:-1}" || return 1
   done <<'EOF_PHASES'
 source-preflight|FRESH|REEXECUTE|source|source-revision||1
+local-resource-budget|FRESH|REEXECUTE|source configuration runtime-state|budget-report|static-kubernetes-overlays|1
 static-kubernetes-overlays|CONTENT_ADDRESSED|REUSE_RESULT|source configuration|validation-result|source-preflight|1
 static-phase1-deployment-contracts|CONTENT_ADDRESSED|REUSE_RESULT|source configuration|validation-result|source-preflight|1
 static-kubernetes-dependencies|CONTENT_ADDRESSED|REUSE_RESULT|source configuration|validation-result|source-preflight|1
@@ -125,7 +126,7 @@ compose-down-before-kubernetes|FRESH|REEXECUTE|runtime-state|runtime-transition|
 registry-connectivity|FRESH|REEXECUTE|registry runtime-state|runtime-proof||1
 registry-image-lock|CONTENT_ADDRESSED|REUSE_RESULT|registry-image configuration|image-lock||1
 kind-load-import|FRESH|REEXECUTE|docker-image runtime-state|runtime-proof||1
-kubernetes-manifest-split|FRESH|REEXECUTE|source configuration image-lock|manifest| |1
+kubernetes-manifest-split|FRESH|REEXECUTE|source configuration image-lock|manifest| |2
 kubernetes-namespace|FRESH|VALIDATE|runtime-state configuration|namespace| |1
 kubernetes-inputs|FRESH|REEXECUTE|configuration artifact namespace|runtime-state|kubernetes-namespace|1
 kubernetes-platform-apply|FRESH|REEXECUTE|manifest namespace|runtime-state|kubernetes-inputs|1
@@ -277,6 +278,7 @@ certification_phase_dependencies() {
       ;;
     kubernetes-manifest-split)
       printf '%s\n' \
+        local-resource-budget \
         static-kubernetes-overlays \
         static-kubernetes-dependencies \
         static-matching-manifests
@@ -331,6 +333,8 @@ _certification_profile_root_phase_ids() {
     static-flyway-services \
     compose-config \
     local-image-inventory
+
+  [[ "${skip_kubernetes:-false}" == true ]] || printf '%s\n' local-resource-budget
 
   if [[ "${skip_build:-false}" != true ]]; then
     selected_services="$(certification_selected_image_services)" || return 1

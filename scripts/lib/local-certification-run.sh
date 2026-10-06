@@ -29,6 +29,23 @@ _certification_render_and_split_kubernetes_manifest() {
     "$workload_manifest" "$input_manifest"
 }
 
+_certification_check_local_resource_budget() {
+  local profile=full host_memory_bytes
+  [[ "$matching_fleet_only" == true ]] && profile=matching-fleet-only
+  host_memory_bytes="$(docker info --format '{{.MemTotal}}')" || return 1
+  [[ "$host_memory_bytes" =~ ^[0-9]+$ && "$host_memory_bytes" -gt 0 ]] || {
+    printf 'Docker did not report a positive host memory budget.\n' >&2
+    return 1
+  }
+
+  kubectl kustomize "$repo_root/deploy/k8s/overlays/local" \
+    --load-restrictor LoadRestrictionsNone |
+    ruby "$repo_root/scripts/local-resource-budget.rb" \
+      --manifest - --profile "$profile" \
+      --host-memory-bytes "$host_memory_bytes" \
+      --report "$evidence_dir/local-resource-budget.json"
+}
+
 _certification_matching_digest() {
   simplematch_local_image_transport_matching_digest \
     "$image_transport" "$image_tag" "$image_lock"
@@ -228,6 +245,9 @@ certification_execute_phase() {
   case "$phase_id" in
     source-preflight)
       run_logged "$phase_id" simplematch_certification_source_revision "$repo_root"
+      ;;
+    local-resource-budget)
+      run_logged "$phase_id" _certification_check_local_resource_budget
       ;;
     static-kubernetes-overlays)
       run_logged "$phase_id" bash "$repo_root/scripts/test-kubernetes-overlays.sh"

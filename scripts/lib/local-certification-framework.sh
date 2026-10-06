@@ -393,6 +393,12 @@ write_report() {
     printf '%s\n' "- compose_file: ${compose_file#$repo_root/}"
     printf '%s\n' "- kubernetes_namespace: ${namespace:-not-run}"
     printf '%s\n' "- trading_day: $certification_trading_day"
+    if [[ -f "$evidence_dir/local-resource-budget.json" ]]; then
+      printf '%s\n' "- declared_resource_budget: $(jq -r \
+        'if .requests_within_host_budget then "within host reference" else "exceeds host reference; budget check did not block runtime" end' \
+        "$evidence_dir/local-resource-budget.json")"
+      printf '%s\n' '- resource_budget_evidence: local-resource-budget.json'
+    fi
     if [[ -n "$failed_phase" ]]; then
       printf '%s\n' "- failed_phase: $failed_phase"
     fi
