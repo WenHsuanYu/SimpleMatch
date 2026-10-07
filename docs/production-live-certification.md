@@ -79,6 +79,26 @@ Gradle 9.7.0, Spring Boot 4.1.0, vcpkg 2026.07.29, Apache Kafka 4.3.1, PostgreSQ
 These are the latest stable versions verified on 2026-08-12 for this local compatibility profile;
 the contract intentionally avoids mutable `latest` and prerelease tags.
 
+### Normal resting-buy integration baseline (#162)
+
+Source `b5eff574f6adabed7843bd9494494fed959bda74` passed one real deployed BUY / LIMIT / DAY
+scenario on 2026-10-07 using the approved historical trading day `2026-08-27`. The production
+live collector made Gateway open-eligible; authenticated operator open and the final read-only
+status both observed `OPEN`. The FIX-originated Risk admission correlated with the physical
+Kafka command and Matching's `ORDER_RESTED`: 1,000 shares of `XTAI/1101` at 24.30, with zero
+fills. Persistence retained `RESTING` with full leaves, and Account held one accepted reservation
+for 24,300 with zero utilized notional. The three critical consumers applied the same event once,
+with matching payload digests and no quarantine.
+
+The normal result is `out/certification/issue-162-resting-buy-20260827-r5/verdict.json`;
+its source-aligned deployment is `out/certification/issue-162-deployment-20260827-r5/report.md`.
+All nine trading prerequisites passed. The parent report remains intentionally `PARTIAL` because
+Compose was explicitly skipped; the business result is `PASS` with successful restoration, not a
+filled-trade, recovery, external-production or `full-local` certification claim. The disposable
+namespace and its 20 PVC/PVs were removed after verification; reports and current images remain.
+Use the existing [normal-scenario recipe](../scripts/end-to-end/critical-consumers/README.md#run-the-normal-scenario)
+for reproduction. Later evidence-documentation commits do not change the certified runtime code.
+
 ## External template acceptance criteria
 
 The later external certification template is complete only when all of these are evidenced for the same approved

@@ -321,14 +321,15 @@ used above. An initial PostgreSQL Pod-restart preflight failure caused by the ca
 
 ## Remaining portfolio-focused follow-ups
 
-The Phase 1 release capabilities above remain complete. The following open issues are bounded
-follow-ups chosen for distinct engineering value; none is a parent aggregate certification gate.
+The Phase 1 release capabilities above remain complete. The following issues are bounded
+follow-ups chosen for distinct engineering value; GitHub owns their current delivery status.
+None is a parent aggregate certification gate.
 
 | Issue | Engineering outcome | Boundary |
 | --- | --- | --- |
 | [#160](https://github.com/WenHsuanYu/SimpleMatch/issues/160) | Live Gateway admission observations | Source `6b62425` passed the local deployed PRE_OPEN-to-healthy-production-observations-to-authenticated-explicit-open smoke without synthetic reports. Risk/Matching identity comparison remains required; Kafka/consumer full identity attestation and identity copying are out of scope. The later stale-recovery streak fix is covered by local controller regressions, not that earlier deployed smoke. Remote delivery status is tracked in the issue. This is not full-local, production, or #162 business certification. |
 | [#161](https://github.com/WenHsuanYu/SimpleMatch/issues/161) | Canonical local-profile deployability | The selected 38 GiB reference host fits the explicitly partial Matching fleet profile by declared requests; the full profile exceeds that reference but remains runnable with a visible warning and retained budget evidence. Both profiles have rendered, checked-in request baselines, and every Kubernetes run records a fresh host comparison before image builds. The prior 20 GiB / 4 GiB / 1 GiB optimization targets remain removed. |
-| [#162](https://github.com/WenHsuanYu/SimpleMatch/issues/162) | One deployed end-to-end trading flow | Trace one real Gateway-originated operation through Risk, Kafka/Matching, Persistence, and Account without rebuilding infrastructure identity/report plumbing. |
+| [#162](https://github.com/WenHsuanYu/SimpleMatch/issues/162) | One deployed end-to-end trading flow | Source `b5eff574` passed the real FIX-originated resting BUY baseline using approved day `2026-08-27`: live Gateway open, one Risk admission, correlated Kafka command/`ORDER_RESTED`, Persistence `RESTING` with zero fills/full leaves, and one Account reservation for 24,300 with zero utilization. Evidence: `out/certification/issue-162-resting-buy-20260827-r5/verdict.json`, PASS with successful restoration. Its nine deployment prerequisites passed; the Kubernetes-only parent remains intentionally PARTIAL. This proves no filled trade, fault recovery, full-local or external production claim; remote delivery remains tracked in the issue. |
 | [#164](https://github.com/WenHsuanYu/SimpleMatch/issues/164) | Deployed QuickFIX same-owner recovery | Prove durable FIX session recovery, reconnect/resend, and no duplicate Risk admission. Matching replacement is already proven elsewhere. |
 | [#168](https://github.com/WenHsuanYu/SimpleMatch/issues/168) | Recovery integration test after one representative recovery | Inject one Matching restart/replay and prove the integrated Kafka, Persistence, and Account recovery path preserves singular business outcomes and remains usable. |
 | [#179](https://github.com/WenHsuanYu/SimpleMatch/issues/179) | Domain-context documentation cleanup | Keep `CONTEXT.md` focused on domain ownership, invariants, aggregates, consistency, and ubiquitous language rather than implementation mechanics. |
