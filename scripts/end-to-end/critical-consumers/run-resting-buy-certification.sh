@@ -10,6 +10,8 @@ source "$repo_root/scripts/lib/local-common.sh"
 source "$repo_root/scripts/lib/local-kind.sh"
 # shellcheck source=scripts/end-to-end/critical-consumers/lib/failure-support.sh
 source "$script_dir/lib/failure-support.sh"
+# shellcheck source=scripts/end-to-end/critical-consumers/lib/gateway-owner-recovery.sh
+source "$script_dir/lib/gateway-owner-recovery.sh"
 
 context="kind-${SIMPLEMATCH_KIND_CLUSTER_NAME:-simplematch-live}"
 namespace=""
@@ -23,6 +25,7 @@ gateway_env_modified=false
 restoration_failed=false
 evidence_initialized=false
 fix_state_dir=""
+gateway_recovery=false
 current_stage=preflight
 
 die() { printf 'resting-buy certification: %s\n' "$*" >&2; exit 1; }
@@ -31,6 +34,9 @@ cleanup() {
   local status="$?"
   trap - EXIT ERR
   set +e
+  timeout_seconds="${gateway_recovery_original_timeout_seconds:-$timeout_seconds}"
+  kubernetes_request_timeout_seconds=""
+  stop_background_process "${gateway_owner_sampler_pid:-}" || restoration_failed=true
   stop_background_process "${fix_submit_pid:-}" || restoration_failed=true
   stop_fix_port_forward
   stop_gateway_port_forward
@@ -47,7 +53,7 @@ cleanup() {
       restoration_failed=true
     fi
     ruby "$script_dir/lib/resting-buy-verification.rb" finalize \
-      "$evidence_dir" "$status" "$current_stage" "$restoration_failed" || status=1
+      "$evidence_dir" "$status" "$current_stage" "$restoration_failed" "$gateway_recovery" || status=1
   fi
   [[ "$restoration_failed" == false ]] || status=1
   exit "$status"
@@ -59,8 +65,9 @@ while (($# > 0)); do
     --namespace) namespace="${2:?namespace required}"; shift 2 ;;
     --evidence-dir) evidence_dir="${2:?evidence directory required}"; shift 2 ;;
     --timeout-seconds) timeout_seconds="${2:?timeout required}"; shift 2 ;;
+    --gateway-recovery) gateway_recovery=true; shift ;;
     --help|-h)
-      printf '%s\n' 'Usage: run-resting-buy-certification.sh --namespace NAME --evidence-dir PATH [--timeout-seconds 180]'
+      printf '%s\n' 'Usage: run-resting-buy-certification.sh --namespace NAME --evidence-dir PATH [--timeout-seconds 180] [--gateway-recovery]'
       exit 0 ;;
     *) die "unknown option: $1" ;;
   esac
@@ -121,7 +128,11 @@ open_gateway_from_live_observations "$evidence_dir/baseline/open-request.json" \
 
 current_stage='submit one real FIX order and observe durable Risk admission'
 release_fix_submit_client
-wait_fix_submit_client || die 'FIX submission failed'
+if [[ "$gateway_recovery" == true ]]; then
+  wait_fix_submission_evidence || die 'retained FIX submission failed'
+else
+  wait_fix_submit_client || die 'FIX submission failed'
+fi
 require_fix_submission_accepted "$evidence_dir/fix/submit.json"
 postgres="$(postgres_pod)"
 kns exec -i "$postgres" -c postgres -- psql -U simplematch -d simplematch -At \
@@ -154,4 +165,7 @@ kns exec -i "$postgres" -c postgres -- psql -U simplematch -d simplematch -At \
   <"$script_dir/sql/resting-buy-durable-state.sql" >"$evidence_dir/durable-state.json"
 wait_gateway_live_open "$evidence_dir/baseline/gateway-after.json" || die 'Gateway did not remain healthy and OPEN'
 ruby "$script_dir/lib/resting-buy-verification.rb" verify "$evidence_dir"
+if [[ "$gateway_recovery" == true ]]; then
+  run_gateway_owner_recovery
+fi
 current_stage=completed

@@ -51,12 +51,47 @@ All workload and verifier images must come from the same committed source-aligne
 deployment evidence. This proves one normal integration baseline, not a filled
 trade, infrastructure-failure resilience, or a new `full-local` aggregate run.
 
+## Same-owner Gateway recovery acceptance contract (#164)
+
+`--gateway-recovery` extends the resting-buy scenario with one normal Gateway
+Pod replacement. The original order, client session store, and approved trading
+day remain the test identities throughout recovery.
+
+Acceptance requires:
+
+1. A different Pod UID resumes the same logical owner, owner-specific Service,
+   node and PVC/PV identities. Samples during replacement show at most one
+   running owner and the stable Service targets only that owner.
+2. The JDBC FIX session creation time and retained message identities survive;
+   sender/target sequence counters continue forward. The original inbound WAL
+   record remains on the same claim and startup recovery completes before Ready.
+3. The client reconnects with its existing store and explicitly resends a prior
+   ExecutionReport, preserving its sequence, ExecID and original sending time.
+4. After an authenticated operator open from production live observations, the
+   client resubmits the original order. Risk still has one accepted admission,
+   the original command/order/reservation identities and one new-order outbox
+   row; Persistence and Account retain the original resting-buy outcome. A
+   TestRequest/Heartbeat pair follows the retry, and any intervening FIX rejection
+   fails the test; identical retries do not require a second Pending New ACK.
+5. One recovery deadline bounds replacement, reconnect and business recovery.
+   The final Gateway is healthy and OPEN. The result records protocol recovery,
+   business correctness and successful environment restoration separately.
+
+The external test interfaces are FIX messages, the existing operator endpoint,
+Kubernetes owner/storage observations and read-only durable SQL evidence. The
+recovery verifier is tested with independent checked-in observations and a
+reviewable result baseline. This scenario exercises one Gateway restart.
+
 ## Structure
 
 - `run-resting-buy-certification.sh` owns the normal #162 scenario; the readable
   `sql/` files and `lib/resting-buy-verification.rb` own its SQL observations and
   cross-boundary business assertions. The verifier tests diff a generated result
   against `tests/baselines/resting-buy-result.json` and reject corrupted facts.
+- `lib/gateway-owner-recovery.sh` adds the opt-in #164 restart and observations.
+  `lib/gateway-recovery-verification.rb` redacts owner/WAL observations and checks
+  recovery against the same business baseline. Its independent fixtures and
+  `tests/baselines/gateway-recovery-result.json` cover negative evidence as well.
 - `run-failure-certification.sh` owns only the failure and recovery scenario.
 - `lib/matching-status.sh` validates Matching runtime evidence and normalizes
   Kafka committed positions. It performs no Kubernetes or Kafka I/O.
@@ -100,6 +135,29 @@ SIMPLEMATCH_PRODUCTION_LIKE_EVIDENCE_DIR=out/certification/issue-162-deployment 
     --namespace <retained-namespace> \
     --evidence-dir out/certification/issue-162-resting-buy
 ```
+
+For #164, use the same deployment command with a new, issue-specific deployment
+evidence directory, then run the normal scenario once with `--gateway-recovery`:
+
+```bash
+SIMPLEMATCH_CERTIFICATION_TRADING_DAY=2026-08-27 \
+SIMPLEMATCH_PRODUCTION_LIKE_EVIDENCE_DIR=out/certification/issue-164-deployment \
+  scripts/end-to-end/critical-consumers/run-resting-buy-certification.sh \
+    --namespace <retained-namespace> \
+    --evidence-dir out/certification/issue-164-gateway-recovery \
+    --gateway-recovery --timeout-seconds 180
+```
+
+The 180-second budget is a test deadline, not the Gateway's five-second freshness
+threshold. It starts immediately before the single Pod deletion and includes
+replacement, actual client reconnect/resend, authenticated reopen and final
+business/OPEN observations. Owner sampling is once per second while recovery is
+in progress; it is bounded observed evidence, not proof against every conceivable
+sub-second overlap. This test stays on the same node and storage, and does not
+claim cross-node HA, Matching replacement, or a complete infrastructure matrix.
+`business-result.json` is the initial order baseline; `recovery-result.json` is
+the recovery check. Only `verdict.json`, written after cleanup, is the final
+result: baseline PASS alone cannot satisfy a requested recovery run.
 
 Use a clean committed tree, an empty result directory, and the canonical context.
 Select an approved artifact for the explicit trading day before an expensive

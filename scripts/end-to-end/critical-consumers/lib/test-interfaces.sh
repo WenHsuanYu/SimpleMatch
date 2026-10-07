@@ -103,11 +103,12 @@ stop_background_process() {
 }
 
 start_fix_port_forward() {
+  local requested_port="${1:-}"
   stop_background_process "${fix_port_forward_pid:-}"
   fix_port_forward_pid=""
   fix_port=""
   start_port_forward service/quickfix-gateway-owner-0 5001 \
-    "$evidence_dir/fix/port-forward.log" fix_port_forward_pid fix_port ||
+    "$evidence_dir/fix/port-forward.log" fix_port_forward_pid fix_port "$requested_port" ||
     die 'QuickFIX port-forward did not become ready'
 }
 
@@ -161,6 +162,9 @@ start_fix_submit_client() {
     SIMPLEMATCH_RETAINED_FIX_READY_FILE="$fix_ready_file" \
     SIMPLEMATCH_RETAINED_FIX_RELEASE_FILE="$fix_release_file" \
     SIMPLEMATCH_RETAINED_FIX_TIMEOUT_SECONDS="$timeout_seconds" \
+    SIMPLEMATCH_RETAINED_FIX_RECOVERY="${gateway_recovery:-false}" \
+    SIMPLEMATCH_RETAINED_FIX_RECOVERY_RELEASE="${fix_state_dir:-$evidence_dir/client-state}/recovery-release" \
+    SIMPLEMATCH_RETAINED_FIX_RECOVERY_EVIDENCE="$evidence_dir/recovery/protocol.json" \
     "$repo_root/gradlew" --no-daemon \
       :services:quickfix-gateway:preparedSubmissionCertificationTest \
       >"$fix_submit_log" 2>&1 &

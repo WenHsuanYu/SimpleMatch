@@ -9,6 +9,13 @@ consumer outage. The test uses deployed Kubernetes workloads, Kafka,
 PostgreSQL, Kafka Connect, and an external FIX session. It does not call
 consumer implementation methods directly.
 
+For the smaller, single-Gateway same-owner recovery scenario owned by #164, use
+the existing resting-buy runner's `--gateway-recovery` option. Its
+[acceptance contract and command](../scripts/end-to-end/critical-consumers/README.md#same-owner-gateway-recovery-acceptance-contract-164)
+retain the same client session store and order, perform one normal Pod restart,
+and check actual reconnect/resend plus unchanged durable business results. Do
+not run this mixed Matching/PostgreSQL/consumer outage merely to prove #164.
+
 ## Repository layout
 
 The canonical test lives under:

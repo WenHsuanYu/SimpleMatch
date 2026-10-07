@@ -71,3 +71,13 @@ if wait_gateway_live_open "$temporary_directory/timeout.json"; then
   die 'a paused Gateway must not be treated as OPEN after the deadline'
 fi
 printf '%s\n' 'Live Gateway retries real operator open; final observation never reopens a paused gate.'
+
+stop_background_process() { return 0; }
+start_port_forward() {
+  [[ "$1" == service/quickfix-gateway-owner-0 && "$2" == 5001 && "$6" == 45678 ]]
+  fix_port="$6"
+}
+evidence_dir="$temporary_directory"
+start_fix_port_forward 45678
+[[ "$fix_port" == 45678 ]]
+printf '%s\n' 'Recovery rebinds the stable owner Service to the retained client port.'

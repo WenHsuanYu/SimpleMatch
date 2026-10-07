@@ -193,11 +193,17 @@ module RestingBuyVerification
   end
 
   def self.finalize(directory, values)
-    exit_status, stage, restoration_failed = values
+    exit_status, stage, restoration_failed, recovery_requested = values
     passed = exit_status == "0" && restoration_failed == "false"
     business_path = File.join(directory, "business-result.json")
     result = File.exist?(business_path) ? JSON.parse(File.read(business_path)) : {"scenario" => "resting-buy"}
     passed &&= result["status"] == "PASS"
+    if recovery_requested == "true"
+      recovery_path = File.join(directory, "recovery-result.json")
+      recovery = File.exist?(recovery_path) ? JSON.parse(File.read(recovery_path)) : {"scenario" => "gateway-same-owner-recovery"}
+      passed &&= recovery["status"] == "PASS"
+      result.merge!(recovery)
+    end
     result.merge!(
       "status" => passed ? "PASS" : "FAIL", "stage" => stage,
       "sourceRevision" => File.read(File.join(directory, "source-revision")).strip,
@@ -205,6 +211,12 @@ module RestingBuyVerification
       "fullLocalCertification" => false,
       "evidence" => %w[baseline/deployment-prerequisites.json baseline/verifier-helper-provenance.json baseline/gateway-open.json fix/submit.json submission/risk-admission.json kafka/matching-command-observation.json kafka/matching-event-observation.json durable-state.json baseline/gateway-after.json]
     )
+    if recovery_requested == "true"
+      result.fetch("evidence").concat(%w[recovery/before-owner.json recovery/after-owner.json
+        recovery/owner-samples.jsonl recovery/before-session.json recovery/after-session.json
+        recovery/before-wal.json recovery/after-wal.json recovery/protocol.json recovery/timing.json
+        recovery/risk-after.json recovery/durable-after.json recovery/gateway-open.json recovery/gateway-final.json])
+    end
     File.write(File.join(directory, "verdict.json"), JSON.pretty_generate(result) + "\n")
     passed
   end
