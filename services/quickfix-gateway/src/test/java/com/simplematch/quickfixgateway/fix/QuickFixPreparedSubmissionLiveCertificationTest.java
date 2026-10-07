@@ -5,6 +5,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.nio.file.StandardCopyOption;
 import java.time.Instant;
 import java.time.ZoneOffset;
 import java.time.format.DateTimeFormatter;
@@ -94,12 +95,13 @@ class QuickFixPreparedSubmissionLiveCertificationTest {
                     stateDir, host, port, senderCompId, targetCompId, dictionary)
                 .toString());
     final PreparedInitiatorApplication application = new PreparedInitiatorApplication();
+    final FixWireLogObserver wireObserver = new FixWireLogObserver(new FileLogFactory(settings));
     final SocketInitiator initiator =
         new SocketInitiator(
             application,
             new FileStoreFactory(settings),
             settings,
-            new FileLogFactory(settings),
+            wireObserver,
             new DefaultMessageFactory());
 
     try {
@@ -123,6 +125,8 @@ class QuickFixPreparedSubmissionLiveCertificationTest {
           application.awaitExecutionReport(clOrdId, timeoutSeconds);
       writeEvidence(
           evidencePath, report, sentAtEpochMs, accountId, timeInForce, null);
+      application.recoveryProbe.completeIfRequested(
+          new FixRecoveryProbe.Exchange(sessionId, order, report), wireObserver, timeoutSeconds);
     } finally {
       initiator.stop(true);
     }
@@ -254,7 +258,9 @@ class QuickFixPreparedSubmissionLiveCertificationTest {
             + sentAtEpochMs
             + "\n"
             + "}\n";
-    Files.writeString(path, json);
+    final Path temporary = Files.createTempFile(path.getParent(), "submit-", ".json");
+    Files.writeString(temporary, json);
+    Files.move(temporary, path, StandardCopyOption.ATOMIC_MOVE, StandardCopyOption.REPLACE_EXISTING);
   }
 
   private String optionalText(ExecutionReport report) throws FieldNotFound {
@@ -327,6 +333,7 @@ class QuickFixPreparedSubmissionLiveCertificationTest {
         new java.util.concurrent.CountDownLatch(1);
     private final AtomicReference<SessionID> sessionId = new AtomicReference<>();
     private final LinkedBlockingQueue<Message> applicationMessages = new LinkedBlockingQueue<>();
+    private final FixRecoveryProbe recoveryProbe = new FixRecoveryProbe();
 
     @Override
     public void onCreate(SessionID createdSessionId) {
@@ -335,12 +342,15 @@ class QuickFixPreparedSubmissionLiveCertificationTest {
 
     @Override
     public void onLogon(SessionID loggedOnSessionId) {
+      recoveryProbe.onLogon();
       sessionId.set(loggedOnSessionId);
       logonLatch.countDown();
     }
 
     @Override
-    public void onLogout(SessionID ignored) {}
+    public void onLogout(SessionID ignored) {
+      recoveryProbe.onLogout();
+    }
 
     @Override
     public void toAdmin(Message message, SessionID ignored) {}

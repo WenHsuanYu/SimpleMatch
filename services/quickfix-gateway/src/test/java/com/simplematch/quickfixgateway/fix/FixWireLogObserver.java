@@ -5,15 +5,19 @@ import java.util.Map;
 import java.util.Objects;
 import java.util.concurrent.LinkedBlockingQueue;
 import java.util.concurrent.TimeUnit;
+import java.util.function.Predicate;
 import quickfix.Log;
 import quickfix.LogFactory;
 import quickfix.SessionID;
 import quickfix.field.ClOrdID;
 import quickfix.field.ExecID;
+import quickfix.field.ExecType;
 import quickfix.field.MsgSeqNum;
 import quickfix.field.MsgType;
 import quickfix.field.PossDupFlag;
+import quickfix.field.TestReqID;
 import quickfix.fix44.ExecutionReport;
+import quickfix.fix44.Heartbeat;
 
 /** Observes raw incoming FIX messages before QuickFIX/J sequence validation. */
 final class FixWireLogObserver implements LogFactory {
@@ -38,6 +42,33 @@ final class FixWireLogObserver implements LogFactory {
   WireMessage awaitResentExecutionReport(
       String clOrdId, int messageSequence, String executionId, int timeoutSeconds)
       throws InterruptedException {
+    return awaitIncoming(
+        message -> ExecutionReport.MSGTYPE.equals(message.field(MsgType.FIELD))
+            && clOrdId.equals(message.field(ClOrdID.FIELD))
+            && Integer.toString(messageSequence).equals(message.field(MsgSeqNum.FIELD))
+            && executionId.equals(message.field(ExecID.FIELD))
+            && "Y".equals(message.field(PossDupFlag.FIELD)),
+        timeoutSeconds);
+  }
+
+  WireMessage awaitHeartbeat(String testRequestId, int timeoutSeconds)
+      throws InterruptedException {
+    return awaitIncoming(
+        message -> {
+          final String type = message.field(MsgType.FIELD);
+          if ("3".equals(type) || "j".equals(type)
+              || (ExecutionReport.MSGTYPE.equals(type)
+                  && "8".equals(message.field(ExecType.FIELD)))) {
+            throw new AssertionError("FIX retry was rejected before its heartbeat probe");
+          }
+          return Heartbeat.MSGTYPE.equals(type)
+              && testRequestId.equals(message.field(TestReqID.FIELD));
+        },
+        timeoutSeconds);
+  }
+
+  private WireMessage awaitIncoming(Predicate<WireMessage> predicate, int timeoutSeconds)
+      throws InterruptedException {
     final long deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(timeoutSeconds);
     while (System.nanoTime() < deadline) {
       final long remainingNanos = deadline - System.nanoTime();
@@ -49,16 +80,12 @@ final class FixWireLogObserver implements LogFactory {
         break;
       }
       final WireMessage message = WireMessage.parse(rawMessage);
-      if (ExecutionReport.MSGTYPE.equals(message.field(MsgType.FIELD))
-          && clOrdId.equals(message.field(ClOrdID.FIELD))
-          && Integer.toString(messageSequence).equals(message.field(MsgSeqNum.FIELD))
-          && executionId.equals(message.field(ExecID.FIELD))
-          && "Y".equals(message.field(PossDupFlag.FIELD))) {
+      if (predicate.test(message)) {
         return message;
       }
     }
     throw new AssertionError(
-        "expected raw FIX retransmission was not observed before the deadline");
+        "expected raw FIX protocol response was not observed before the deadline");
   }
 
   record WireMessage(Map<Integer, String> fields) {
