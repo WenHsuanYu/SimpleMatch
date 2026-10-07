@@ -28,8 +28,8 @@ capture_gateway_recovery_state() {
   claim="$(jq -er '.spec.volumes[] | select(.name == "quickfix-data") | .persistentVolumeClaim.claimName' "$private_dir/pod.json")"
   kns get pvc "$claim" -o json >"$private_dir/pvc.json"
   volume="$(jq -er '.spec.volumeName' "$private_dir/pvc.json")"
-  timeout "$(bounded_operation_timeout_seconds 10)" \
-    kubectl --context "$context" get pv "$volume" --request-timeout=10s -o json >"$private_dir/pv.json"
+  timeout --foreground --signal=TERM --kill-after=2s "$(bounded_operation_timeout_seconds 10)s" \
+    kubectl --context "$context" get pv "$volume" --request-timeout=10s -o json >"$private_dir/pv.json" || return 1
   ruby "$script_dir/lib/gateway-recovery-verification.rb" owner \
     "$private_dir/pod.json" "$private_dir/service.json" "$private_dir/pvc.json" "$private_dir/pv.json" \
     >"$evidence_dir/recovery/$phase-owner.json"

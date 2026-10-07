@@ -130,6 +130,10 @@ class RestingBuyVerificationTest < Minitest::Test
       assert_includes verdict.fetch("evidence"), "recovery/protocol.json"
       assert_equal true, verdict.fetch("restorationGatewayReady")
       assert_equal false, verdict.fetch("postRestorationOpenProven")
+      refute RestingBuyVerification.finalize(directory, ["0", "completed", "true", "true"])
+      failed_cleanup = JSON.parse(File.read(File.join(directory, "verdict.json")))
+      assert_equal "FAIL", failed_cleanup.fetch("status")
+      assert_equal false, failed_cleanup.fetch("restorationPassed")
     end
   end
 

@@ -110,16 +110,14 @@ stop_background_process() {
 
 start_fix_port_forward() {
   local requested_port="${1:-}"
-  stop_background_process "${fix_port_forward_pid:-}"
-  fix_port_forward_pid=""
-  fix_port=""
+  stop_fix_port_forward || return 1
   start_port_forward service/quickfix-gateway-owner-0 5001 \
     "$evidence_dir/fix/port-forward.log" fix_port_forward_pid fix_port "$requested_port" ||
     die 'QuickFIX port-forward did not become ready'
 }
 
 stop_fix_port_forward() {
-  stop_background_process "${fix_port_forward_pid:-}"
+  stop_background_process "${fix_port_forward_pid:-}" || return 1
   fix_port_forward_pid=""
   fix_port=""
 }
@@ -314,9 +312,7 @@ restore_gateway_environment() {
 }
 
 start_gateway_port_forward() {
-  stop_background_process "${gateway_port_forward_pid:-}"
-  gateway_port_forward_pid=""
-  gateway_port=""
+  stop_gateway_port_forward || return 1
   start_port_forward pod/quickfix-gateway-0 8080 \
     "$evidence_dir/baseline/gateway-management-port-forward.log" \
     gateway_port_forward_pid gateway_port ||
@@ -324,7 +320,7 @@ start_gateway_port_forward() {
 }
 
 stop_gateway_port_forward() {
-  stop_background_process "${gateway_port_forward_pid:-}"
+  stop_background_process "${gateway_port_forward_pid:-}" || return 1
   gateway_port_forward_pid=""
   gateway_port=""
 }

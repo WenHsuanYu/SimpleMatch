@@ -129,6 +129,7 @@ create_kafka_observer_pod() {
 }
 
 start_kafka_observation_adapter() {
+  stop_kafka_observation_adapter || return 1
   local retained_evidence_dir="${1:-$(simplematch_production_like_evidence_dir "$repo_root")}"
   prepare_kafka_observer_manifest "$retained_evidence_dir" ||
     die 'retained production-like source or verifier image provenance is not valid'
@@ -138,9 +139,6 @@ start_kafka_observation_adapter() {
   fi
   create_kafka_observer_pod "$retained_evidence_dir"
 
-  stop_background_process "${kafka_observer_port_forward_pid:-}"
-  kafka_observer_port_forward_pid=""
-  kafka_observer_port=""
   start_port_forward "pod/$kafka_observer_pod" 8081 \
     "$evidence_dir/baseline/kafka-observer-port-forward.log" \
     kafka_observer_port_forward_pid kafka_observer_port ||
@@ -148,7 +146,7 @@ start_kafka_observation_adapter() {
 }
 
 stop_kafka_observation_adapter() {
-  stop_background_process "${kafka_observer_port_forward_pid:-}"
+  stop_background_process "${kafka_observer_port_forward_pid:-}" || return 1
   kafka_observer_port_forward_pid=""
   kafka_observer_port=""
 }

@@ -39,16 +39,16 @@ cleanup() {
   operation_deadline_epoch_ms=""
   stop_background_process "${gateway_owner_sampler_pid:-}" || restoration_failed=true
   stop_background_process "${fix_submit_pid:-}" || restoration_failed=true
-  stop_fix_port_forward
-  stop_gateway_port_forward
-  stop_kafka_observation_adapter
+  stop_fix_port_forward || restoration_failed=true
+  stop_gateway_port_forward || restoration_failed=true
+  stop_kafka_observation_adapter || restoration_failed=true
   delete_kafka_observer_pod || restoration_failed=true
   restore_gateway_environment
   if [[ "$gateway_recovery" == true && "$evidence_initialized" == true &&
       -n "$fix_state_dir" && "$restoration_failed" == false ]]; then
     mkdir -p "$evidence_dir/recovery"
     capture_restored_gateway_readiness || restoration_failed=true
-    stop_gateway_port_forward
+    stop_gateway_port_forward || restoration_failed=true
   fi
   # This exact mktemp directory contains temporary raw FIX stores/logs, not evidence.
   if [[ -n "$fix_state_dir" ]]; then

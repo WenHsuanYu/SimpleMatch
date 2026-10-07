@@ -3,6 +3,8 @@ set -euo pipefail
 script_dir="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
 # shellcheck source=scripts/end-to-end/critical-consumers/lib/test-interfaces.sh
 source "$script_dir/../lib/test-interfaces.sh"
+# shellcheck source=scripts/end-to-end/critical-consumers/lib/kafka-observation-interface.sh
+source "$script_dir/../lib/kafka-observation-interface.sh"
 
 gateway_env_modified=false
 restoration_failed=false
@@ -82,6 +84,42 @@ start_fix_port_forward 45678
 [[ "$fix_port" == 45678 ]]
 printf '%s\n' 'Recovery rebinds the stable owner Service to the retained client port.'
 
+stop_background_process() { return 1; }
+fix_port_forward_pid=12345
+gateway_port_forward_pid=23456
+gateway_port=45679
+kafka_observer_port_forward_pid=34567
+kafka_observer_port=45680
+if stop_fix_port_forward; then
+  die 'failed FIX tunnel cleanup must propagate failure'
+fi
+[[ "$fix_port_forward_pid" == 12345 && "$fix_port" == 45678 ]]
+if stop_gateway_port_forward; then
+  die 'failed Gateway tunnel cleanup must propagate failure'
+fi
+[[ "$gateway_port_forward_pid" == 23456 && "$gateway_port" == 45679 ]]
+if stop_kafka_observation_adapter; then
+  die 'failed Kafka observer tunnel cleanup must propagate failure'
+fi
+[[ "$kafka_observer_port_forward_pid" == 34567 && "$kafka_observer_port" == 45680 ]]
+start_port_forward() { die 'a failed tunnel cleanup must refuse a replacement'; }
+prepare_kafka_observer_manifest() { return 0; }
+create_kafka_observer_pod() { return 0; }
+kafka_observer_pod=contract-observer
+if start_fix_port_forward 45678 || start_gateway_port_forward || start_kafka_observation_adapter contract-evidence; then
+  die 'a stale tunnel must not be replaced after cleanup fails'
+fi
+[[ "$fix_port_forward_pid" == 12345 && "$gateway_port_forward_pid" == 23456 &&
+    "$kafka_observer_port_forward_pid" == 34567 ]]
+stop_background_process() { return 0; }
+stop_fix_port_forward
+stop_gateway_port_forward
+stop_kafka_observation_adapter
+[[ -z "$fix_port_forward_pid" && -z "$fix_port" &&
+    -z "$gateway_port_forward_pid" && -z "$gateway_port" &&
+    -z "$kafka_observer_port_forward_pid" && -z "$kafka_observer_port" ]]
+printf '%s\n' 'Tunnel cleanup propagates failure and retains identity for a later cleanup attempt.'
+
 # The optional absolute deadline belongs to one scenario, not to each I/O retry.
 # shellcheck source=scripts/end-to-end/critical-consumers/lib/cluster-data.sh
 source "$script_dir/../lib/cluster-data.sh"
@@ -95,3 +133,26 @@ fi
 unset operation_deadline_epoch_ms
 [[ "$(bounded_operation_timeout_seconds 15)" == 15 ]]
 printf '%s\n' 'Recovery I/O uses remaining total time; existing scenarios keep their own limits.'
+
+# Reject a timed-out PV query through the same hard-kill contract as namespaced I/O.
+# shellcheck source=scripts/end-to-end/critical-consumers/lib/gateway-owner-recovery.sh
+source "$script_dir/../lib/gateway-owner-recovery.sh"
+fix_state_dir="$temporary_directory/private"
+context="kind-contract-test"
+mkdir -p "$evidence_dir/recovery"
+kns() {
+  [[ "$1" == get ]]
+  jq --arg resource "$2" '.[$resource]' "$script_dir/fixtures/gateway-owner-resources.json"
+}
+pv_timeout_checked=false
+timeout() {
+  [[ "$1" == --foreground && "$2" == --signal=TERM && "$3" == --kill-after=2s &&
+      "$4" == 10s && "$5" == kubectl ]] || die 'PV query must have TERM-to-KILL timeout escalation'
+  pv_timeout_checked=true
+  return 1
+}
+if capture_gateway_recovery_state before; then
+  die 'a failed PV query must reject the recovery observation'
+fi
+[[ "$pv_timeout_checked" == true ]]
+printf '%s\n' 'PV continuity reads escalate TERM to KILL and propagate query failure.'
