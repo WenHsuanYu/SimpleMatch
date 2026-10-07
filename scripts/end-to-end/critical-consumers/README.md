@@ -184,6 +184,35 @@ publishing PASS. The verdict separates recovered `OPEN` before teardown from
 `postRestorationOpenProven: false`; it does not leave operator HTTP enabled or
 claim the restored configuration is still open for new orders.
 
+### Recorded local verification
+
+Source `8920af4` passed this scenario on 2026-10-08 (Asia/Taipei), using the
+approved `2026-08-27` artifact. Retained evidence is:
+
+- `out/certification/issue-164-deployment-20260827-r6/report.md`: all 36
+  applicable phases passed (21 executed, 15 reused); 15 Compose phases were
+  explicitly skipped, so the parent remains `PARTIAL`.
+- `out/certification/issue-164-gateway-recovery-20260827-r3/verdict.json`:
+  final PASS with successful restoration, protocol recovery and business
+  recovery recorded separately. Recovery took 37,742 ms within the 180,000 ms
+  budget. The 36 owner samples observed a maximum of one active Gateway owner.
+
+The replacement retained the owner-specific Service, node and PVC/PV identities.
+The same JDBC session creation time and all four prior stored messages survived;
+incoming sequence advanced from 5 to 10 and outgoing sequence from 5 to 8.
+The original WAL record digest and accepted journal remained unchanged. The
+retained client reconnected, requested and received ExecutionReport sequence 3
+with the original ExecID/time and `PossDup`, then retried the same order body
+with client sequence 8 instead of 3. Risk still had one admission and one outbox
+row; Persistence remained `RESTING` with zero fills and 1,000 shares left;
+Account retained one reservation for 24,300 with zero utilization.
+
+Gateway was healthy and `OPEN` before restoration; afterward its actual
+readiness and removed overrides passed, with `postRestorationOpenProven: false`.
+This is one observed same-owner Gateway recovery, not Matching fault injection,
+cross-node HA, a filled trade, or `full-local` certification. GitHub owns remote
+delivery status; this local report does not establish remote CI success.
+
 Use a clean committed tree, an empty result directory, and the canonical context.
 Select an approved artifact for the explicit trading day before an expensive
 build: this example intentionally uses the historical `2026-08-27` artifact,
