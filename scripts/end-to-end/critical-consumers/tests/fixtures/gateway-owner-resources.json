@@ -1,0 +1,32 @@
+{
+  "pod": {
+    "metadata": {
+      "name": "quickfix-gateway-0", "uid": "old-pod",
+      "labels": {"app.kubernetes.io/name": "quickfix-gateway", "statefulset.kubernetes.io/pod-name": "quickfix-gateway-0"}
+    },
+    "spec": {
+      "nodeName": "worker-1",
+      "containers": [{"name": "quickfix-gateway", "env": [
+        {"name": "SIMPLEMATCH_QUICKFIX_GATEWAY_OWNER_ID", "valueFrom": {"fieldRef": {"fieldPath": "metadata.name"}}},
+        {"name": "GATEWAY_OPERATOR_TOKEN", "value": "PRIVATE_TEST_TOKEN_NOT_FOR_EVIDENCE"}
+      ]}],
+      "volumes": [{"name": "quickfix-data", "persistentVolumeClaim": {"claimName": "quickfix-data-quickfix-gateway-0"}}]
+    },
+    "status": {
+      "phase": "Running", "conditions": [{"type": "Ready", "status": "True"}],
+      "containerStatuses": [{"name": "quickfix-gateway", "state": {"running": {"startedAt": "2026-10-07T08:00:00Z"}}}]
+    }
+  },
+  "service": {
+    "metadata": {"name": "quickfix-gateway-owner-0", "uid": "stable-service"},
+    "spec": {"selector": {"app.kubernetes.io/name": "quickfix-gateway", "statefulset.kubernetes.io/pod-name": "quickfix-gateway-0"}}
+  },
+  "pvc": {
+    "metadata": {"name": "quickfix-data-quickfix-gateway-0", "uid": "stable-claim"},
+    "spec": {"volumeName": "local-volume"}, "status": {"phase": "Bound"}
+  },
+  "pv": {
+    "metadata": {"name": "local-volume", "uid": "stable-volume"},
+    "spec": {"claimRef": {"uid": "stable-claim"}}, "status": {"phase": "Bound"}
+  }
+}
