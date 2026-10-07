@@ -19,6 +19,22 @@ wait_fix_submission_evidence() {
   return 1
 }
 
+# The shell-less Gateway image is observed through its bound local-path PV.
+# Raw content is streamed directly to the caller's redacting verifier.
+read_gateway_recovery_file() {
+  local private_dir="$1" filename="$2" node volume_path cluster
+  case "$filename" in inbound.wal|inbound.wal.recovery) ;; *) return 1 ;; esac
+  node="$(jq -er '.spec.nodeName' "$private_dir/pod.json")" || return 1
+  volume_path="$(jq -er '.spec.hostPath.path' "$private_dir/pv.json")" || return 1
+  case "$volume_path" in /var/local-path-provisioner/*) ;; *) return 1 ;; esac
+  [[ "$volume_path" != *'/..'* ]] || return 1
+  cluster="$(timeout --foreground --signal=TERM --kill-after=2s "$(bounded_operation_timeout_seconds 10)s" \
+    docker inspect --format '{{index .Config.Labels "io.x-k8s.kind.cluster"}}' "$node")" || return 1
+  [[ "$cluster" == "${context#kind-}" ]] || return 1
+  timeout --foreground --signal=TERM --kill-after=2s "$(bounded_operation_timeout_seconds 10)s" \
+    docker exec "$node" cat "$volume_path/wal/$filename"
+}
+
 capture_gateway_recovery_state() {
   local phase="$1" claim volume record_id
   local private_dir="$fix_state_dir/owner-resources"
@@ -32,17 +48,15 @@ capture_gateway_recovery_state() {
     kubectl --context "$context" get pv "$volume" --request-timeout=10s -o json >"$private_dir/pv.json" || return 1
   ruby "$script_dir/lib/gateway-recovery-verification.rb" owner \
     "$private_dir/pod.json" "$private_dir/service.json" "$private_dir/pvc.json" "$private_dir/pv.json" \
-    >"$evidence_dir/recovery/$phase-owner.json"
+    >"$evidence_dir/recovery/$phase-owner.json" || return 1
   kns exec -i "$postgres" -c postgres -- psql -U simplematch -d simplematch -At \
     -v ON_ERROR_STOP=1 -f - <"$script_dir/sql/gateway-session-state.sql" \
     >"$evidence_dir/recovery/$phase-session.json"
-  kns exec quickfix-gateway-0 -c quickfix-gateway -- \
-    cat /var/lib/simplematch/quickfix-gateway/wal/inbound.wal |
+  read_gateway_recovery_file "$private_dir" inbound.wal |
     ruby "$script_dir/lib/gateway-recovery-verification.rb" wal "$account_id" "$cl_ord_id" \
       >"$evidence_dir/recovery/$phase-wal.json"
   record_id="$(jq -er '.records | if length == 1 then .[0].recordId else error("one original WAL record is required") end' "$evidence_dir/recovery/$phase-wal.json")"
-  kns exec quickfix-gateway-0 -c quickfix-gateway -- \
-    cat /var/lib/simplematch/quickfix-gateway/wal/inbound.wal.recovery |
+  read_gateway_recovery_file "$private_dir" inbound.wal.recovery |
     ruby "$script_dir/lib/gateway-recovery-verification.rb" journal "$record_id" \
       >"$evidence_dir/recovery/$phase-journal.json"
 }

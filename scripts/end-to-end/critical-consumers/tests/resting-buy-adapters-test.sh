@@ -156,3 +156,40 @@ if capture_gateway_recovery_state before; then
 fi
 [[ "$pv_timeout_checked" == true ]]
 printf '%s\n' 'PV continuity reads escalate TERM to KILL and propagate query failure.'
+
+# Gateway's shell-less runtime is observed through its validated kind-local PV.
+private_resources="$fix_state_dir/owner-resources"
+jq '.pv' "$script_dir/fixtures/gateway-owner-resources.json" >"$private_resources/pv.json"
+test_node_cluster="${context#kind-}"
+docker() {
+  case "$1" in
+    inspect) printf '%s\n' "$test_node_cluster" ;;
+    exec)
+      [[ "$2" == worker-1 && "$3" == cat &&
+          "$4" == /var/local-path-provisioner/PRIVATE_TEST_VOLUME/wal/inbound.wal ]] ||
+        die 'WAL reads must use only the actual owner node and validated local PV'
+      printf '%s\n' 'redacted-test-wal-line' ;;
+    *) return 1 ;;
+  esac
+}
+timeout() {
+  [[ "$1" == --foreground && "$2" == --signal=TERM && "$3" == --kill-after=2s &&
+      "$4" == 10s && "$5" == docker ]] || die 'node-local WAL reads must remain bounded'
+  shift 4
+  "$@"
+}
+read_gateway_recovery_file "$private_resources" inbound.wal >"$temporary_directory/wal-read.txt"
+[[ "$(<"$temporary_directory/wal-read.txt")" == redacted-test-wal-line ]]
+if read_gateway_recovery_file "$private_resources" ../../another-file; then
+  die 'WAL observation must refuse unrelated files'
+fi
+test_node_cluster=unrelated-cluster
+if read_gateway_recovery_file "$private_resources" inbound.wal; then
+  die 'WAL observation must refuse a node from another kind cluster'
+fi
+test_node_cluster="${context#kind-}"
+jq '.pv | .spec.hostPath.path = "/unrelated-volume"' "$script_dir/fixtures/gateway-owner-resources.json" >"$private_resources/pv.json"
+if read_gateway_recovery_file "$private_resources" inbound.wal; then
+  die 'WAL observation must refuse an unsupported storage root'
+fi
+printf '%s\n' 'WAL reads use the exact owned local PV, with no shell dependency in Gateway.'

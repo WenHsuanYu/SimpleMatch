@@ -40,6 +40,41 @@ identity baselines cover the latter two corrections. Preserve the original faile
 `issue-162-runtime-baseline-20260827-r3`; they remain diagnostic failures, not business-flow evidence.
 These corrected deterministic defects are not recurring platform failures in the table below.
 
+The #164 run found two corrected shell-less-image observation mistakes. An initial
+node execution probe assumed every image provided `/bin/sh`; the normalized
+Paketo runtime did not. The safe probe uses its observed Java binary for Spring
+images and retains shell execution for helper images, after immutable identity
+comparison. The original failed report remains in
+`out/certification/issue-164-deployment-20260827-r2`; corrected probes execute on
+every eligible worker before workload application. The first recovery scenario
+then failed before restart because Gateway also lacks `cat`. Its retained FAIL
+is `out/certification/issue-164-gateway-recovery-20260827-r1/verdict.json`.
+The observer now reads only the two named files from the verified, bound
+kind-local PV on the actual owner node, with node/container ownership, mount,
+storage-root and deadline checks. Redaction tests and a read-only deployed
+observation cover that seam; no shell, schema or production endpoint was added.
+These are corrected verifier assumptions, not evidence of runtime corruption
+and not recurring platform failures in the table below.
+
+The second #164 recovery run completed the owner replacement and protocol/business
+observations but the strict verifier rejected `FIX.4.4 `: PostgreSQL had padded
+the existing `CHAR(8)` BeginString during JSON serialization. The read-only SQL
+now casts only that field to `text`; schema, session contents and verifier
+conditions are unchanged. PostgreSQL CI diffs the actual query output against a
+checked-in identity baseline using a rollback fixture that also preserves a
+significant trailing space in `VARCHAR`. Preserve
+`out/certification/issue-164-gateway-recovery-20260827-r2/verdict.json` as FAIL with
+successful restoration, not corrected deployed PASS evidence.
+
+A retained #164 deployment was also ineligible after the configured local 23:59
+automatic close: all 15 Risk session barriers were closed and Matching was no
+longer Ready for trading. Preserve the read-only diagnostic in
+`out/certification/issue-164-r4-closed-precondition-20261008`; no Gateway fault was
+injected. Start a fresh source-aligned disposable deployment in an eligible time
+window rather than changing the clock, reopening closed barriers or disabling
+automatic close. A historical trading artifact does not bypass the real local
+operations schedule.
+
 The first #162 resting-buy run reached the real command, `ORDER_RESTED`, and durable business
 effects but failed because the verifier equated the FIX Pending New `O-<ClOrdID>` WAL identity
 with Risk's derived order UUID. The corrected fixture checks the actual protocol identity and

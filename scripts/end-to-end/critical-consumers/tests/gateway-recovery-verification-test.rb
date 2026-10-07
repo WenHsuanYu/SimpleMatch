@@ -49,6 +49,19 @@ class GatewayRecoveryVerificationTest < Minitest::Test
     assert_equal true, sample.fetch("oldOwnerInterrupted")
   end
 
+  def test_requires_the_real_gateway_mount_and_volume_node_assignment
+    resources = owner_resources
+    resources["pod"]["spec"]["containers"][0]["volumeMounts"][0]["mountPath"] = "/another-mount"
+    assert_raises(GatewayRecoveryVerification::InvalidEvidence) do
+      GatewayRecoveryVerification.observe_owner(resources)
+    end
+    resources = owner_resources
+    resources["pv"]["spec"]["nodeAffinity"]["required"]["nodeSelectorTerms"][0]["matchExpressions"][0]["values"] = ["another-worker"]
+    assert_raises(GatewayRecoveryVerification::InvalidEvidence) do
+      GatewayRecoveryVerification.observe_owner(resources)
+    end
+  end
+
   def test_checks_actual_post_restoration_readiness_without_claiming_trading_is_open
     resources = owner_resources
     result = GatewayRecoveryVerification.observe_restoration(resources)
@@ -109,6 +122,7 @@ class GatewayRecoveryVerificationTest < Minitest::Test
       ["after", "session", "outgoingSequence"] => 1,
       ["after", "session", "messages"] => [],
       ["before", "session", "identity"] => [],
+      ["after", "session", "identity"] => ["FIX.4.4", "ANOTHER-OWNER", "", "", "CLIENT", "", "", ""],
       ["before", "session", "messages"] => [{"sequence" => 2, "sha256" => "not-a-digest"}],
       ["before", "wal", "records"] => [{"recordId" => "", "sha256" => "not-a-digest"}],
       ["after", "wal", "count"] => 0,
@@ -140,6 +154,14 @@ class GatewayRecoveryVerificationTest < Minitest::Test
     observation = GatewayRecoveryVerification.observe_journal(
       ["original\tUNKNOWN\n", "unrelated\tREJECTED\n", "original\tACCEPTED\n"], "original")
     assert_equal({"recordId" => "original", "states" => ["UNKNOWN", "ACCEPTED"]}, observation)
+  end
+
+  def test_rejects_a_different_session_protocol_even_when_both_observations_match
+    evidence = fixture
+    %w[before after].each { |phase| evidence[phase]["session"]["identity"][0] = "FIX.4.2" }
+    assert_raises(GatewayRecoveryVerification::InvalidEvidence) do
+      GatewayRecoveryVerification.verify_durable_state(evidence)
+    end
   end
 
   def test_requires_reconnect_resend_and_a_processed_retry_within_the_deadline

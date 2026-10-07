@@ -96,6 +96,9 @@ reviewable result baseline. This scenario exercises one Gateway restart.
   `lib/gateway-recovery-verification.rb` redacts owner/WAL observations and checks
   recovery against the same business baseline. Its independent fixtures and
   `tests/baselines/gateway-recovery-result.json` cover negative evidence as well.
+  PostgreSQL CI runs `tests/gateway-session-sql-test.sh` against the migrated test
+  database. Its rollback fixture and identity baseline verify the real SQL
+  removes `CHAR(8)` padding without trimming significant `VARCHAR` identities.
 - `run-failure-certification.sh` owns only the failure and recovery scenario.
 - `lib/matching-status.sh` validates Matching runtime evidence and normalizes
   Kafka committed positions. It performs no Kubernetes or Kafka I/O.
@@ -162,6 +165,14 @@ claim cross-node HA, Matching replacement, or a complete infrastructure matrix.
 `business-result.json` is the initial order baseline; `recovery-result.json` is
 the recovery check. Only `verdict.json`, written after cleanup, is the final
 result: baseline PASS alone cannot satisfy a requested recovery run.
+
+Gateway uses a shell-less Java runtime image. WAL and recovery-journal reads
+therefore use the actual bound local-path PV on its observed kind node, not
+`kubectl exec ... cat` inside Gateway. The observer validates the Gateway mount,
+volume binding, node assignment and kind-container ownership before streaming
+only the two named files into the redacting verifier. Unsupported storage roots
+fail closed; this local-kind observation does not claim a portable storage or
+cross-node recovery contract.
 
 Every recovery I/O is limited by the remaining absolute deadline. Teardown has
 its existing separate, bounded restoration wait: it stops the test client,

@@ -23,9 +23,16 @@ module GatewayRecoveryVerification
     equal("metadata.name", identity.fetch("valueFrom").fetch("fieldRef").fetch("fieldPath"), "runtime owner source")
     mount = pod.fetch("spec").fetch("volumes").find { |item| item["name"] == "quickfix-data" }
     equal(claim.fetch("metadata").fetch("name"), mount.fetch("persistentVolumeClaim").fetch("claimName"), "mounted claim")
+    data_mount = container.fetch("volumeMounts").find { |item| item["name"] == "quickfix-data" }
+    equal("/var/lib/simplematch/quickfix-gateway", data_mount.fetch("mountPath"), "Gateway data mount")
     equal(volume.fetch("metadata").fetch("name"), claim.fetch("spec").fetch("volumeName"), "bound volume")
     equal(claim.fetch("metadata").fetch("uid"), volume.fetch("spec").fetch("claimRef").fetch("uid"), "volume claim UID")
     [claim, volume].each { |item| equal("Bound", item.fetch("status").fetch("phase"), "storage binding") }
+    node_terms = volume.fetch("spec").fetch("nodeAffinity").fetch("required").fetch("nodeSelectorTerms")
+    owner_node = pod.fetch("spec").fetch("nodeName")
+    equal(true, node_terms.any? { |term| term.fetch("matchExpressions").any? { |expression|
+      expression["key"] == "kubernetes.io/hostname" && expression["operator"] == "In" && expression.fetch("values").include?(owner_node)
+    } }, "volume node assignment")
     {
       "podName" => owner, "podUid" => pod.fetch("metadata").fetch("uid"),
       "nodeName" => pod.fetch("spec").fetch("nodeName"),

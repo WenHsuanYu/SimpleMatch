@@ -9,7 +9,7 @@
       "containers": [{"name": "quickfix-gateway", "env": [
         {"name": "SIMPLEMATCH_QUICKFIX_GATEWAY_OWNER_ID", "valueFrom": {"fieldRef": {"fieldPath": "metadata.name"}}},
         {"name": "GATEWAY_OPERATOR_TOKEN", "value": "PRIVATE_TEST_TOKEN_NOT_FOR_EVIDENCE"}
-      ]}],
+      ], "volumeMounts": [{"name": "quickfix-data", "mountPath": "/var/lib/simplematch/quickfix-gateway"}]}],
       "volumes": [{"name": "quickfix-data", "persistentVolumeClaim": {"claimName": "quickfix-data-quickfix-gateway-0"}}]
     },
     "status": {
@@ -31,6 +31,12 @@
   },
   "pv": {
     "metadata": {"name": "local-volume", "uid": "stable-volume"},
-    "spec": {"claimRef": {"uid": "stable-claim"}}, "status": {"phase": "Bound"}
+    "spec": {
+      "claimRef": {"uid": "stable-claim"},
+      "hostPath": {"path": "/var/local-path-provisioner/PRIVATE_TEST_VOLUME"},
+      "nodeAffinity": {"required": {"nodeSelectorTerms": [{"matchExpressions": [
+        {"key": "kubernetes.io/hostname", "operator": "In", "values": ["worker-1"]}
+      ]}]}}
+    }, "status": {"phase": "Bound"}
   }
 }

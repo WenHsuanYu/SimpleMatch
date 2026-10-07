@@ -11,7 +11,8 @@ WITH observed_session AS (
 )
 SELECT jsonb_build_object(
     'count', (SELECT count(*) FROM observed_session),
-    'identity', jsonb_build_array(s.beginstring, s.sendercompid, s.sendersubid, s.senderlocid,
+    -- CHAR(8) pads BeginString; VARCHAR identity fields must remain exact.
+    'identity', jsonb_build_array(s.beginstring::text, s.sendercompid, s.sendersubid, s.senderlocid,
         s.targetcompid, s.targetsubid, s.targetlocid, s.session_qualifier),
     'creationTime', s.creation_time,
     'incomingSequence', s.incoming_seqnum, 'outgoingSequence', s.outgoing_seqnum,
