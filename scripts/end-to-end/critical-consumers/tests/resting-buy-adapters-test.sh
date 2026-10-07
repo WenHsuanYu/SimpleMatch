@@ -81,3 +81,17 @@ evidence_dir="$temporary_directory"
 start_fix_port_forward 45678
 [[ "$fix_port" == 45678 ]]
 printf '%s\n' 'Recovery rebinds the stable owner Service to the retained client port.'
+
+# The optional absolute deadline belongs to one scenario, not to each I/O retry.
+# shellcheck source=scripts/end-to-end/critical-consumers/lib/cluster-data.sh
+source "$script_dir/../lib/cluster-data.sh"
+date() { printf '%s\n' 1000; }
+operation_deadline_epoch_ms=1500
+[[ "$(bounded_operation_timeout_seconds 15)" == 0.500 ]]
+operation_deadline_epoch_ms=1000
+if bounded_operation_timeout_seconds 15; then
+  die 'expired overall deadline must refuse the next I/O'
+fi
+unset operation_deadline_epoch_ms
+[[ "$(bounded_operation_timeout_seconds 15)" == 15 ]]
+printf '%s\n' 'Recovery I/O uses remaining total time; existing scenarios keep their own limits.'

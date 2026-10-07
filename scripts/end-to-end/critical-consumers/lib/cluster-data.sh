@@ -3,12 +3,29 @@
 # Kubernetes, Kafka, PostgreSQL, and test-fixture access for the deployed test.
 # The caller provides context, namespace, evidence_dir, timeout_seconds, and repo_root.
 
+# Clamp existing I/O limits to a caller's optional absolute recovery deadline.
+bounded_operation_timeout_seconds() {
+  local maximum_seconds="$1" remaining_ms bounded_ms
+  if [[ ! "${operation_deadline_epoch_ms:-}" =~ ^[1-9][0-9]*$ ]]; then
+    printf '%s\n' "$maximum_seconds"
+    return 0
+  fi
+  remaining_ms=$((operation_deadline_epoch_ms - $(date +%s%3N)))
+  (( remaining_ms > 0 )) || return 1
+  bounded_ms=$((maximum_seconds * 1000))
+  (( remaining_ms >= bounded_ms )) || bounded_ms="$remaining_ms"
+  printf '%d.%03d\n' "$((bounded_ms / 1000))" "$((bounded_ms % 1000))"
+}
+
 kns() {
   local -a kubectl_args=(--context "$context" -n "$namespace")
-  if [[ "${kubernetes_request_timeout_seconds:-}" =~ ^[1-9][0-9]*$ ]]; then
-    kubectl_args+=(--request-timeout="${kubernetes_request_timeout_seconds}s")
+  local request_timeout
+  if [[ "${kubernetes_request_timeout_seconds:-}" =~ ^[1-9][0-9]*$ ||
+      "${operation_deadline_epoch_ms:-}" =~ ^[1-9][0-9]*$ ]]; then
+    request_timeout="$(bounded_operation_timeout_seconds "${kubernetes_request_timeout_seconds:-10}")" || return 1
+    kubectl_args+=(--request-timeout="${request_timeout}s")
     timeout --foreground --signal=TERM --kill-after=2s \
-      "${kubernetes_request_timeout_seconds}s" kubectl "${kubectl_args[@]}" "$@"
+      "${request_timeout}s" kubectl "${kubectl_args[@]}" "$@"
   else
     kubectl "${kubectl_args[@]}" "$@"
   fi

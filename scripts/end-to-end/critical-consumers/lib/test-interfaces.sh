@@ -21,6 +21,12 @@ start_port_forward() {
   printf -v "$pid_variable" '%s' "$pid"
 
   for _ in $(seq 1 60); do
+    if [[ -n "${operation_deadline_epoch_ms:-}" ]]; then
+      bounded_operation_timeout_seconds 60 >/dev/null || {
+        stop_background_process "$pid"
+        return 1
+      }
+    fi
     if ! kill -0 "$pid" >/dev/null 2>&1; then
       cat "$log_path" >&2
       return 1
@@ -468,8 +474,12 @@ gateway_request() {
   local path="$2"
   local destination="$3"
   local payload="${4:-}"
+  local request_timeout=15
+  if [[ -n "${operation_deadline_epoch_ms:-}" ]]; then
+    request_timeout="$(bounded_operation_timeout_seconds 15)" || return 1
+  fi
   local -a request=(
-    curl --connect-timeout 5 --max-time 15 -sS -o "$destination" -w '%{http_code}'
+    curl --connect-timeout 5 --max-time "$request_timeout" -sS -o "$destination" -w '%{http_code}'
     -X "$method"
     -H "X-SimpleMatch-Operator-Token: $gateway_operator_token"
   )

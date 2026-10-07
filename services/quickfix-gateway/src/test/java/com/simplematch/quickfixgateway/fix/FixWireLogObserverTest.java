@@ -68,6 +68,19 @@ class FixWireLogObserverTest {
         .hasMessageContaining("rejected");
   }
 
+  @Test
+  void observesTheExactOutgoingResendRangeAndItsWireTime() throws Exception {
+    final FixWireLogObserver observer = new FixWireLogObserver(new RecordingLogFactory());
+    final Log log = observer.create(new SessionID("FIX.4.4", "CLIENT", "SIMPLEMATCH"));
+    log.onOutgoing(fixMessage("35=2", "7=6", "16=7"));
+    log.onOutgoing(fixMessage("35=2", "7=7", "16=7"));
+
+    final var request = observer.awaitSentResendRequest(7, 1);
+    assertThat(request.requiredIntegerField(7)).isEqualTo(7);
+    assertThat(request.requiredIntegerField(16)).isEqualTo(7);
+    assertThat(request.observedAtEpochMs()).isPositive();
+  }
+
   private String fixMessage(String... fields) {
     return String.join("\u0001", fields) + '\u0001';
   }

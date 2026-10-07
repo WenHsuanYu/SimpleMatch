@@ -7,6 +7,14 @@ require "tmpdir"
 require_relative "../lib/gateway-recovery-verification"
 
 class GatewayRecoveryVerificationTest < Minitest::Test
+  def test_usage_lists_every_supported_operation
+    command = File.join(__dir__, "../lib/gateway-recovery-verification.rb")
+    output, error, status = Open3.capture3("ruby", command, "unsupported")
+    refute status.success?
+    assert_empty output
+    assert_equal "usage: gateway-recovery-verification.rb owner|restoration|sample|wal|journal|timing|verify [values]\n", error
+  end
+
   def fixture
     JSON.parse(File.read(File.join(__dir__, "fixtures/gateway-recovery.json")))
   end
@@ -39,6 +47,24 @@ class GatewayRecoveryVerificationTest < Minitest::Test
     sample = GatewayRecoveryVerification.observe_sample({"items" => [original, replacement]}, "old-pod")
     assert_equal 2, sample.fetch("activeOwners")
     assert_equal true, sample.fetch("oldOwnerInterrupted")
+  end
+
+  def test_checks_actual_post_restoration_readiness_without_claiming_trading_is_open
+    resources = owner_resources
+    result = GatewayRecoveryVerification.observe_restoration(resources)
+    assert_equal true, result.fetch("gatewayReady")
+    assert_equal true, result.fetch("operationsOverridesRemoved")
+    assert_equal false, result.fetch("postRestorationOpenProven")
+    resources["health"]["status"] = "DOWN"
+    assert_raises(GatewayRecoveryVerification::InvalidEvidence) do
+      GatewayRecoveryVerification.observe_restoration(resources)
+    end
+    resources = owner_resources
+    resources["statefulset"]["spec"]["template"]["spec"]["containers"][0]["env"] <<
+      {"name" => "SIMPLEMATCH_QUICKFIX_GATEWAY_OPERATIONS_HTTP_ENABLED", "value" => "true"}
+    assert_raises(GatewayRecoveryVerification::InvalidEvidence) do
+      GatewayRecoveryVerification.observe_restoration(resources)
+    end
   end
 
   def test_hashes_the_exact_original_wal_line_without_exposing_raw_fix
@@ -99,6 +125,23 @@ class GatewayRecoveryVerificationTest < Minitest::Test
     end
   end
 
+  def test_requires_the_original_recovery_journal_prefix_and_accepted_outcome
+    {
+      ["after", "journal", "states"] => ["ACCEPTED"],
+      ["after", "journal", "recordId"] => "another-command",
+      ["before", "journal", "states"] => []
+    }.each do |path, value|
+      evidence = fixture
+      evidence.dig(*path[0...-1])[path.last] = value
+      assert_raises(GatewayRecoveryVerification::InvalidEvidence, path.join(".")) do
+        GatewayRecoveryVerification.verify_durable_state(evidence)
+      end
+    end
+    observation = GatewayRecoveryVerification.observe_journal(
+      ["original\tUNKNOWN\n", "unrelated\tREJECTED\n", "original\tACCEPTED\n"], "original")
+    assert_equal({"recordId" => "original", "states" => ["UNKNOWN", "ACCEPTED"]}, observation)
+  end
+
   def test_requires_reconnect_resend_and_a_processed_retry_within_the_deadline
     assert_equal true, GatewayRecoveryVerification.verify_protocol(fixture)
     {
@@ -106,6 +149,7 @@ class GatewayRecoveryVerificationTest < Minitest::Test
       "reconnectedAtEpochMs" => 999999, "resentSequence" => 3,
       "resentExecId" => "another-execution", "origSendingTime" => "another-time",
       "possDup" => false, "retryMessageSequence" => 2,
+      "resendRequestSentAtEpochMs" => 999999, "resentReceivedAtEpochMs" => 1010050,
       "heartbeatTestRequestId" => "another-request"
     }.each do |field, value|
       evidence = fixture
@@ -183,7 +227,7 @@ class GatewayRecoveryVerificationTest < Minitest::Test
       FileUtils.mkdir_p(File.join(directory, "recovery"))
       recovery = complete_recovery
       %w[before after].each do |phase|
-        %w[owner session wal].each do |name|
+        %w[owner session wal journal].each do |name|
           File.write(File.join(directory, "recovery/#{phase}-#{name}.json"), JSON.generate(recovery.fetch(phase).fetch(name)))
         end
       end

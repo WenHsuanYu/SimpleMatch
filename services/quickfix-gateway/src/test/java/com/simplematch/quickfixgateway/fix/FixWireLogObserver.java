@@ -10,6 +10,8 @@ import quickfix.Log;
 import quickfix.LogFactory;
 import quickfix.SessionID;
 import quickfix.field.ClOrdID;
+import quickfix.field.BeginSeqNo;
+import quickfix.field.EndSeqNo;
 import quickfix.field.ExecID;
 import quickfix.field.ExecType;
 import quickfix.field.MsgSeqNum;
@@ -18,13 +20,15 @@ import quickfix.field.PossDupFlag;
 import quickfix.field.TestReqID;
 import quickfix.fix44.ExecutionReport;
 import quickfix.fix44.Heartbeat;
+import quickfix.fix44.ResendRequest;
 
 /** Observes raw incoming FIX messages before QuickFIX/J sequence validation. */
 final class FixWireLogObserver implements LogFactory {
   private static final char FIELD_DELIMITER = '\u0001';
 
   private final LogFactory delegate;
-  private final LinkedBlockingQueue<String> incomingMessages = new LinkedBlockingQueue<>();
+  private final LinkedBlockingQueue<WireMessage> incomingMessages = new LinkedBlockingQueue<>();
+  private final LinkedBlockingQueue<WireMessage> outgoingMessages = new LinkedBlockingQueue<>();
 
   FixWireLogObserver(LogFactory delegate) {
     this.delegate = Objects.requireNonNull(delegate, "delegate");
@@ -37,6 +41,18 @@ final class FixWireLogObserver implements LogFactory {
 
   void discardIncoming() {
     incomingMessages.clear();
+  }
+
+  void discardOutgoing() {
+    outgoingMessages.clear();
+  }
+
+  WireMessage awaitSentResendRequest(int sequence, int timeoutSeconds) throws InterruptedException {
+    return awaitMessage(outgoingMessages,
+        message -> ResendRequest.MSGTYPE.equals(message.field(MsgType.FIELD))
+            && Integer.toString(sequence).equals(message.field(BeginSeqNo.FIELD))
+            && Integer.toString(sequence).equals(message.field(EndSeqNo.FIELD)),
+        timeoutSeconds);
   }
 
   WireMessage awaitResentExecutionReport(
@@ -69,17 +85,22 @@ final class FixWireLogObserver implements LogFactory {
 
   private WireMessage awaitIncoming(Predicate<WireMessage> predicate, int timeoutSeconds)
       throws InterruptedException {
+    return awaitMessage(incomingMessages, predicate, timeoutSeconds);
+  }
+
+  private WireMessage awaitMessage(
+      LinkedBlockingQueue<WireMessage> messages, Predicate<WireMessage> predicate, int timeoutSeconds)
+      throws InterruptedException {
     final long deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(timeoutSeconds);
     while (System.nanoTime() < deadline) {
       final long remainingNanos = deadline - System.nanoTime();
-      final String rawMessage =
-          incomingMessages.poll(
+      final WireMessage message =
+          messages.poll(
               Math.max(1L, TimeUnit.NANOSECONDS.toMillis(remainingNanos)),
               TimeUnit.MILLISECONDS);
-      if (rawMessage == null) {
+      if (message == null) {
         break;
       }
-      final WireMessage message = WireMessage.parse(rawMessage);
       if (predicate.test(message)) {
         return message;
       }
@@ -88,12 +109,13 @@ final class FixWireLogObserver implements LogFactory {
         "expected raw FIX protocol response was not observed before the deadline");
   }
 
-  record WireMessage(Map<Integer, String> fields) {
+  record WireMessage(Map<Integer, String> fields, long observedAtEpochMs) {
     WireMessage {
       fields = Map.copyOf(fields);
     }
 
     static WireMessage parse(String rawMessage) {
+      final long observedAtEpochMs = System.currentTimeMillis();
       final Map<Integer, String> fields = new HashMap<>();
       int fieldStart = 0;
       while (fieldStart < rawMessage.length()) {
@@ -112,7 +134,7 @@ final class FixWireLogObserver implements LogFactory {
         }
         fieldStart = fieldEnd + 1;
       }
-      return new WireMessage(fields);
+      return new WireMessage(fields, observedAtEpochMs);
     }
 
     String field(int tag) {
@@ -142,18 +164,22 @@ final class FixWireLogObserver implements LogFactory {
     @Override
     public void clear() {
       incomingMessages.clear();
+      outgoingMessages.clear();
       delegateLog.clear();
     }
 
     @Override
     public void onIncoming(String message) {
+      final WireMessage observed = WireMessage.parse(message);
       delegateLog.onIncoming(message);
-      incomingMessages.add(message);
+      incomingMessages.add(observed);
     }
 
     @Override
     public void onOutgoing(String message) {
+      final WireMessage observed = WireMessage.parse(message);
       delegateLog.onOutgoing(message);
+      outgoingMessages.add(observed);
     }
 
     @Override

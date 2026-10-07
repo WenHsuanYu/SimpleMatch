@@ -17,6 +17,10 @@
       "containerStatuses": [{"name": "quickfix-gateway", "state": {"running": {"startedAt": "2026-10-07T08:00:00Z"}}}]
     }
   },
+  "statefulset": {"spec": {"template": {"spec": {"containers": [
+    {"name": "quickfix-gateway", "env": [{"name": "SPRING_PROFILES_ACTIVE", "value": "local"}]}
+  ]}}}},
+  "health": {"status": "UP"},
   "service": {
     "metadata": {"name": "quickfix-gateway-owner-0", "uid": "stable-service"},
     "spec": {"selector": {"app.kubernetes.io/name": "quickfix-gateway", "statefulset.kubernetes.io/pod-name": "quickfix-gateway-0"}}

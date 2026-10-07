@@ -20,7 +20,7 @@ wait_fix_submission_evidence() {
 }
 
 capture_gateway_recovery_state() {
-  local phase="$1" claim volume
+  local phase="$1" claim volume record_id
   local private_dir="$fix_state_dir/owner-resources"
   mkdir -p "$private_dir"
   kns get pod quickfix-gateway-0 -o json >"$private_dir/pod.json"
@@ -28,7 +28,8 @@ capture_gateway_recovery_state() {
   claim="$(jq -er '.spec.volumes[] | select(.name == "quickfix-data") | .persistentVolumeClaim.claimName' "$private_dir/pod.json")"
   kns get pvc "$claim" -o json >"$private_dir/pvc.json"
   volume="$(jq -er '.spec.volumeName' "$private_dir/pvc.json")"
-  kubectl --context "$context" get pv "$volume" --request-timeout=10s -o json >"$private_dir/pv.json"
+  timeout "$(bounded_operation_timeout_seconds 10)" \
+    kubectl --context "$context" get pv "$volume" --request-timeout=10s -o json >"$private_dir/pv.json"
   ruby "$script_dir/lib/gateway-recovery-verification.rb" owner \
     "$private_dir/pod.json" "$private_dir/service.json" "$private_dir/pvc.json" "$private_dir/pv.json" \
     >"$evidence_dir/recovery/$phase-owner.json"
@@ -39,6 +40,11 @@ capture_gateway_recovery_state() {
     cat /var/lib/simplematch/quickfix-gateway/wal/inbound.wal |
     ruby "$script_dir/lib/gateway-recovery-verification.rb" wal "$account_id" "$cl_ord_id" \
       >"$evidence_dir/recovery/$phase-wal.json"
+  record_id="$(jq -er '.records | if length == 1 then .[0].recordId else error("one original WAL record is required") end' "$evidence_dir/recovery/$phase-wal.json")"
+  kns exec quickfix-gateway-0 -c quickfix-gateway -- \
+    cat /var/lib/simplematch/quickfix-gateway/wal/inbound.wal.recovery |
+    ruby "$script_dir/lib/gateway-recovery-verification.rb" journal "$record_id" \
+      >"$evidence_dir/recovery/$phase-journal.json"
 }
 
 sample_gateway_recovery_owners() {
@@ -62,6 +68,21 @@ wait_gateway_replacement_ready() {
   return 1
 }
 
+capture_restored_gateway_readiness() {
+  local private_dir="$fix_state_dir/restored-resources"
+  mkdir -p "$private_dir" || return 1
+  kns get pod quickfix-gateway-0 -o json >"$private_dir/pod.json" || return 1
+  kns get statefulset quickfix-gateway -o json >"$private_dir/statefulset.json" || return 1
+  start_port_forward pod/quickfix-gateway-0 8080 \
+    "$evidence_dir/recovery/restored-management-port-forward.log" \
+    gateway_port_forward_pid gateway_port || return 1
+  curl --fail --connect-timeout 5 --max-time 15 -sS \
+    "http://127.0.0.1:$gateway_port/readyz" >"$private_dir/health.json" || return 1
+  ruby "$script_dir/lib/gateway-recovery-verification.rb" restoration \
+    "$private_dir/pod.json" "$private_dir/statefulset.json" "$private_dir/health.json" \
+    >"$evidence_dir/recovery/restoration.json"
+}
+
 run_gateway_owner_recovery() {
   local original_timeout="$timeout_seconds" retained_port="$fix_port" started_ms
   gateway_recovery_original_timeout_seconds="$timeout_seconds"
@@ -71,6 +92,7 @@ run_gateway_owner_recovery() {
   gateway_original_uid="$(jq -er '.podUid' "$evidence_dir/recovery/before-owner.json")"
   started_ms="$(date +%s%3N)"
   gateway_recovery_deadline_ms=$((started_ms + original_timeout * 1000))
+  operation_deadline_epoch_ms="$gateway_recovery_deadline_ms"
   kubernetes_request_timeout_seconds=10
   sample_gateway_recovery_owners >"$evidence_dir/recovery/owner-samples.jsonl" &
   gateway_owner_sampler_pid="$!"
@@ -118,4 +140,5 @@ run_gateway_owner_recovery() {
   ruby "$script_dir/lib/gateway-recovery-verification.rb" verify "$evidence_dir"
   timeout_seconds="$original_timeout"
   kubernetes_request_timeout_seconds=""
+  operation_deadline_epoch_ms=""
 }

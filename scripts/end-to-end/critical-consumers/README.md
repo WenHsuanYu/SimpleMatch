@@ -64,9 +64,13 @@ Acceptance requires:
    running owner and the stable Service targets only that owner.
 2. The JDBC FIX session creation time and retained message identities survive;
    sender/target sequence counters continue forward. The original inbound WAL
-   record remains on the same claim and startup recovery completes before Ready.
+   record and the append-only `inbound.wal.recovery` journal prefix remain on the
+   same claim. The recovered journal retains the accepted outcome, and startup
+   recovery completes before Ready.
 3. The client reconnects with its existing store and explicitly resends a prior
    ExecutionReport, preserving its sequence, ExecID and original sending time.
+   Outbound ResendRequest and incoming retransmission wire timestamps establish
+   the observed ordering after reconnect.
 4. After an authenticated operator open from production live observations, the
    client resubmits the original order. Risk still has one accepted admission,
    the original command/order/reservation identities and one new-order outbox
@@ -158,6 +162,16 @@ claim cross-node HA, Matching replacement, or a complete infrastructure matrix.
 `business-result.json` is the initial order baseline; `recovery-result.json` is
 the recovery check. Only `verdict.json`, written after cleanup, is the final
 result: baseline PASS alone cannot satisfy a requested recovery run.
+
+Every recovery I/O is limited by the remaining absolute deadline. Teardown has
+its existing separate, bounded restoration wait: it stops the test client,
+removes the temporary operation overrides and rolls back to the original
+configuration. The runner then checks the actual `/readyz` endpoint and verifies
+the overrides are absent from both the StatefulSet and restored Pod before
+publishing PASS. The verdict separates recovered `OPEN` before teardown from
+`restorationGatewayReady` afterward and explicitly sets
+`postRestorationOpenProven: false`; it does not leave operator HTTP enabled or
+claim the restored configuration is still open for new orders.
 
 Use a clean committed tree, an empty result directory, and the canonical context.
 Select an approved artifact for the explicit trading day before an expensive

@@ -117,11 +117,19 @@ class RestingBuyVerificationTest < Minitest::Test
       File.write(File.join(directory, "source-revision"), "811bd6114d6cfdb59f32cda74cac6632c8ef5c25\n")
       File.write(File.join(directory, "business-result.json"), JSON.generate(RestingBuyVerification.verify(fixture)))
       refute RestingBuyVerification.finalize(directory, ["0", "completed", "false", "true"])
-      File.write(File.join(directory, "recovery-result.json"), JSON.generate({"status" => "PASS", "scenario" => "gateway-same-owner-recovery"}))
+      File.write(File.join(directory, "recovery-result.json"), File.read(File.join(__dir__, "baselines/gateway-recovery-result.json")))
+      refute RestingBuyVerification.finalize(directory, ["0", "completed", "false", "true"])
+      FileUtils.mkdir_p(File.join(directory, "recovery"))
+      File.write(File.join(directory, "recovery/restoration.json"), "")
+      refute RestingBuyVerification.finalize(directory, ["0", "completed", "false", "true"])
+      assert_equal "FAIL", JSON.parse(File.read(File.join(directory, "verdict.json"))).fetch("status")
+      File.write(File.join(directory, "recovery/restoration.json"), JSON.generate({"status" => "PASS", "gatewayReady" => true, "operationsOverridesRemoved" => true, "postRestorationOpenProven" => false}))
       assert RestingBuyVerification.finalize(directory, ["0", "completed", "false", "true"])
       verdict = JSON.parse(File.read(File.join(directory, "verdict.json")))
       assert_equal "gateway-same-owner-recovery", verdict.fetch("scenario")
       assert_includes verdict.fetch("evidence"), "recovery/protocol.json"
+      assert_equal true, verdict.fetch("restorationGatewayReady")
+      assert_equal false, verdict.fetch("postRestorationOpenProven")
     end
   end
 

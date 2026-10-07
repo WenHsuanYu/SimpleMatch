@@ -55,6 +55,26 @@ module GatewayRecoveryVerification
     }
   end
 
+  # Teardown returns the original configuration; Ready is not a claim of trading OPEN.
+  def self.observe_restoration(resources)
+    pod = resources.fetch("pod")
+    equal("quickfix-gateway-0", pod.fetch("metadata").fetch("name"), "restored owner")
+    equal("UP", resources.fetch("health").fetch("status"), "restored readiness endpoint")
+    equal(true, pod.fetch("status").fetch("conditions").any? { |item| item["type"] == "Ready" && item["status"] == "True" }, "restored Pod Ready")
+    overrides = %w[SIMPLEMATCH_QUICKFIX_GATEWAY_OPERATIONS_HTTP_ENABLED
+      SIMPLEMATCH_QUICKFIX_GATEWAY_OPERATIONS_AUTOMATIC_CLOSE_ENABLED
+      SIMPLEMATCH_QUICKFIX_GATEWAY_OPERATIONS_OPERATOR_TOKEN]
+    template = resources.fetch("statefulset").fetch("spec").fetch("template").fetch("spec")
+    [pod.fetch("spec"), template].each do |spec|
+      container = spec.fetch("containers").find { |item| item["name"] == "quickfix-gateway" }
+      names = container.fetch("env", []).map { |item| item.fetch("name") }
+      equal([], names & overrides, "removed operation overrides")
+    end
+    {"status" => "PASS", "gatewayReady" => true, "operationsOverridesRemoved" => true,
+      "postRestorationOpenProven" => false, "podName" => pod.fetch("metadata").fetch("name"),
+      "podUid" => pod.fetch("metadata").fetch("uid")}
+  end
+
   def self.observe_wal(lines, account_id, cl_ord_id)
     records = lines.filter_map do |line|
       document = JSON.parse(line)
@@ -62,6 +82,15 @@ module GatewayRecoveryVerification
       {"recordId" => document.fetch("recordId"), "sha256" => Digest::SHA256.hexdigest(line.chomp)}
     end
     {"count" => records.size, "records" => records}
+  end
+
+  def self.observe_journal(lines, record_id)
+    states = lines.filter_map do |line|
+      fields = line.chomp.split("\t")
+      equal(true, fields.size == 2 && %w[UNKNOWN PENDING ACCEPTED REJECTED].include?(fields[1]), "journal line")
+      fields[1] if fields[0] == record_id
+    end
+    {"recordId" => record_id, "states" => states}
   end
 
   def self.verify_owner(evidence)
@@ -122,6 +151,15 @@ module GatewayRecoveryVerification
     record = before.fetch("wal").fetch("records").first
     equal(true, record.fetch("recordId").is_a?(String) && !record.fetch("recordId").empty?, "WAL record identity")
     equal(true, /\A[0-9a-f]{64}\z/.match?(record.fetch("sha256")), "WAL record digest")
+    old_journal = before.fetch("journal")
+    journal = after.fetch("journal")
+    [old_journal, journal].each do |value|
+      equal(record.fetch("recordId"), value.fetch("recordId"), "journal command identity")
+      equal(true, value.fetch("states").is_a?(Array) && !value.fetch("states").empty?, "journal state evidence")
+    end
+    equal("ACCEPTED", journal.fetch("states").last, "recovered journal admission outcome")
+    states = old_journal.fetch("states")
+    equal(states, journal.fetch("states").first(states.size), "retained journal prefix")
     true
   rescue KeyError, ArgumentError, TypeError => failure
     raise InvalidEvidence, "missing or invalid durable recovery evidence: #{failure.class}"
@@ -149,8 +187,11 @@ module GatewayRecoveryVerification
     disconnected = protocol.fetch("logoutAtEpochMs")
     reconnected = protocol.fetch("reconnectedAtEpochMs")
     retried = protocol.fetch("retrySentAtEpochMs")
+    request_sent = protocol.fetch("resendRequestSentAtEpochMs")
+    resent_received = protocol.fetch("resentReceivedAtEpochMs")
     equal(true, started <= disconnected && disconnected <= reconnected &&
-      reconnected <= retried && retried <= completed, "observed reconnect ordering")
+      reconnected <= request_sent && request_sent <= resent_received &&
+      resent_received <= retried && retried <= completed, "observed reconnect ordering")
     equal(protocol.fetch("originalSequence"), protocol.fetch("resentSequence"), "resent sequence")
     equal(protocol.fetch("originalExecId"), protocol.fetch("resentExecId"), "resent ExecID")
     equal(protocol.fetch("originalSendingTime"), protocol.fetch("origSendingTime"), "resent original time")
@@ -193,8 +234,8 @@ module GatewayRecoveryVerification
   def self.read_evidence(directory)
     read = lambda { |name| JSON.parse(File.read(File.join(directory, "recovery", name + ".json"))) }
     {
-      "before" => %w[owner session wal].to_h { |name| [name, read.call("before-#{name}")] },
-      "after" => %w[owner session wal].to_h { |name| [name, read.call("after-#{name}")] },
+      "before" => %w[owner session wal journal].to_h { |name| [name, read.call("before-#{name}")] },
+      "after" => %w[owner session wal journal].to_h { |name| [name, read.call("after-#{name}")] },
       "samples" => File.readlines(File.join(directory, "recovery/owner-samples.jsonl")).map { |line| JSON.parse(line) },
       "protocol" => read.call("protocol"), "timing" => read.call("timing"),
       "riskAfter" => read.call("risk-after"), "durableAfter" => read.call("durable-after"),
@@ -210,10 +251,15 @@ if $PROGRAM_NAME == __FILE__
     when "owner"
       resources = %w[pod service pvc pv].zip(values).to_h.transform_values { |path| JSON.parse(File.read(path)) }
       GatewayRecoveryVerification.observe_owner(resources)
+    when "restoration"
+      resources = %w[pod statefulset health].zip(values).to_h.transform_values { |path| JSON.parse(File.read(path)) }
+      GatewayRecoveryVerification.observe_restoration(resources)
     when "sample"
       GatewayRecoveryVerification.observe_sample(JSON.parse($stdin.read), values.fetch(0))
     when "wal"
       GatewayRecoveryVerification.observe_wal($stdin.each_line, *values)
+    when "journal"
+      GatewayRecoveryVerification.observe_journal($stdin.each_line, values.fetch(0))
     when "timing"
       {"startedAtEpochMs" => Integer(values.fetch(0)), "completedAtEpochMs" => (Time.now.to_r * 1000).to_i,
         "budgetMillis" => Integer(values.fetch(1))}
@@ -223,7 +269,7 @@ if $PROGRAM_NAME == __FILE__
       File.write(File.join(directory, "recovery-result.json"), JSON.pretty_generate(verdict) + "\n")
       verdict
     else
-      abort "usage: gateway-recovery-verification.rb owner|sample|wal|timing|verify [values]"
+      abort "usage: gateway-recovery-verification.rb owner|restoration|sample|wal|journal|timing|verify [values]"
     end
     puts JSON.pretty_generate(result) unless operation == "sample"
     puts JSON.generate(result) if operation == "sample"

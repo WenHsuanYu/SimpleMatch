@@ -196,13 +196,21 @@ module RestingBuyVerification
     exit_status, stage, restoration_failed, recovery_requested = values
     passed = exit_status == "0" && restoration_failed == "false"
     business_path = File.join(directory, "business-result.json")
-    result = File.exist?(business_path) ? JSON.parse(File.read(business_path)) : {"scenario" => "resting-buy"}
+    result = read_optional_result(business_path, {"scenario" => "resting-buy"})
     passed &&= result["status"] == "PASS"
     if recovery_requested == "true"
       recovery_path = File.join(directory, "recovery-result.json")
-      recovery = File.exist?(recovery_path) ? JSON.parse(File.read(recovery_path)) : {"scenario" => "gateway-same-owner-recovery"}
-      passed &&= recovery["status"] == "PASS"
+      recovery = read_optional_result(recovery_path, {"scenario" => "gateway-same-owner-recovery"})
+      recovery_passed = recovery["status"] == "PASS" && recovery["scenario"] == "gateway-same-owner-recovery" &&
+        recovery["protocolRecoveryPassed"] == true && recovery["businessRecoveryPassed"] == true && recovery["infrastructureReady"] == true
+      passed &&= recovery_passed
       result.merge!(recovery)
+      restoration_path = File.join(directory, "recovery/restoration.json")
+      restoration = read_optional_result(restoration_path, {})
+      passed &&= restoration["status"] == "PASS" && restoration["gatewayReady"] == true && restoration["operationsOverridesRemoved"] == true
+      result.merge!("recoveryGateStateBeforeRestoration" => recovery_passed ? "OPEN" : "NOT_PROVEN",
+        "restorationGatewayReady" => restoration["gatewayReady"] == true,
+        "postRestorationOpenProven" => false)
     end
     result.merge!(
       "status" => passed ? "PASS" : "FAIL", "stage" => stage,
@@ -214,11 +222,19 @@ module RestingBuyVerification
     if recovery_requested == "true"
       result.fetch("evidence").concat(%w[recovery/before-owner.json recovery/after-owner.json
         recovery/owner-samples.jsonl recovery/before-session.json recovery/after-session.json
-        recovery/before-wal.json recovery/after-wal.json recovery/protocol.json recovery/timing.json
-        recovery/risk-after.json recovery/durable-after.json recovery/gateway-open.json recovery/gateway-final.json])
+        recovery/before-wal.json recovery/after-wal.json recovery/before-journal.json recovery/after-journal.json recovery/protocol.json recovery/timing.json
+        recovery/risk-after.json recovery/durable-after.json recovery/gateway-open.json recovery/gateway-final.json recovery/restoration.json])
     end
     File.write(File.join(directory, "verdict.json"), JSON.pretty_generate(result) + "\n")
     passed
+  end
+
+  # A failed producer can leave partial JSON; finalize must still publish FAIL.
+  def self.read_optional_result(path, fallback)
+    document = JSON.parse(File.read(path))
+    document.is_a?(Hash) ? document : fallback
+  rescue Errno::ENOENT, JSON::ParserError
+    fallback
   end
 end
 

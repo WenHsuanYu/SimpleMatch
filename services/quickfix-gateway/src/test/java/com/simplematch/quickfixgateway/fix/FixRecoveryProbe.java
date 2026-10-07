@@ -20,6 +20,7 @@ import quickfix.field.EndSeqNo;
 import quickfix.field.ExecID;
 import quickfix.field.MsgSeqNum;
 import quickfix.field.OrigSendingTime;
+import quickfix.field.PossDupFlag;
 import quickfix.field.SendingTime;
 import quickfix.field.TestReqID;
 import quickfix.fix44.ExecutionReport;
@@ -76,20 +77,24 @@ final class FixRecoveryProbe {
     final String clOrdId = original.getString(ClOrdID.FIELD);
     final int sequence = original.getHeader().getInt(MsgSeqNum.FIELD);
     observer.discardIncoming();
+    observer.discardOutgoing();
     final ResendRequest request = new ResendRequest();
     request.setInt(BeginSeqNo.FIELD, sequence);
     request.setInt(EndSeqNo.FIELD, sequence);
     assertThat(Session.sendToTarget(request, exchange.sessionId())).isTrue();
+    final var sentRequest = observer.awaitSentResendRequest(sequence, secondsRemaining(deadlineEpochMs));
     final var resent = observer.awaitResentExecutionReport(
         clOrdId, sequence, original.getString(ExecID.FIELD), secondsRemaining(deadlineEpochMs));
     evidence.put("sessionId", exchange.sessionId().toString())
+        .put("resendRequestSentAtEpochMs", sentRequest.observedAtEpochMs())
+        .put("resentReceivedAtEpochMs", resent.observedAtEpochMs())
         .put("originalSequence", sequence)
         .put("originalExecId", original.getString(ExecID.FIELD))
         .put("originalSendingTime", original.getHeader().getString(SendingTime.FIELD))
         .put("resentSequence", resent.requiredIntegerField(MsgSeqNum.FIELD))
         .put("resentExecId", resent.requiredField(ExecID.FIELD))
         .put("origSendingTime", resent.requiredField(OrigSendingTime.FIELD))
-        .put("possDup", true);
+        .put("possDup", "Y".equals(resent.requiredField(PossDupFlag.FIELD)));
 
     // A true duplicate is intentionally silent: a correlated heartbeat proves
     // processing continued, while the runner checks real durable business effects.

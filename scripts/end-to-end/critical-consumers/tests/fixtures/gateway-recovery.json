@@ -12,6 +12,7 @@
       "creationTime": "2026-10-07T08:00:00", "incomingSequence": 4, "outgoingSequence": 5,
       "messages": [{"sequence": 2, "sha256": "2192a2c3db650619e6c52a49a48942d544853cfc00fba7009f2d7975704107d2"}]
     },
+    "journal": {"recordId": "0198a000-0000-7000-8000-000000000005", "states": ["UNKNOWN", "ACCEPTED"]},
     "wal": {
       "count": 1,
       "records": [{"recordId": "0198a000-0000-7000-8000-000000000005", "sha256": "e90319a93c0084c4e4d7dd69e3d3ff422a716a2c21b0a05073611a0dae1c3a6d"}]
@@ -30,6 +31,7 @@
       "creationTime": "2026-10-07T08:00:00", "incomingSequence": 10, "outgoingSequence": 11,
       "messages": [{"sequence": 2, "sha256": "2192a2c3db650619e6c52a49a48942d544853cfc00fba7009f2d7975704107d2"}]
     },
+    "journal": {"recordId": "0198a000-0000-7000-8000-000000000005", "states": ["UNKNOWN", "ACCEPTED", "ACCEPTED"]},
     "wal": {
       "count": 1,
       "records": [{"recordId": "0198a000-0000-7000-8000-000000000005", "sha256": "e90319a93c0084c4e4d7dd69e3d3ff422a716a2c21b0a05073611a0dae1c3a6d"}]
@@ -45,6 +47,7 @@
     "sessionId": "FIX.4.4:CLIENT->SIMPLEMATCH",
     "logonCount": 2, "logoutCount": 1, "logoutAtEpochMs": 1000500,
     "reconnectedAtEpochMs": 1010000,
+    "resendRequestSentAtEpochMs": 1010100, "resentReceivedAtEpochMs": 1010500,
     "originalSequence": 2, "originalExecId": "E-original", "originalSendingTime": "20261007-08:00:00.100",
     "resentSequence": 2, "resentExecId": "E-original", "possDup": true,
     "origSendingTime": "20261007-08:00:00.100",
