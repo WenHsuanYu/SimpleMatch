@@ -111,6 +111,9 @@ jobs:
           bash scripts/end-to-end/critical-consumers/tests/verifier-image-identity-test.sh
           ruby scripts/end-to-end/critical-consumers/tests/resting-buy-verification-test.rb
           ruby scripts/end-to-end/critical-consumers/tests/gateway-recovery-verification-test.rb
+          ruby scripts/end-to-end/critical-consumers/tests/matching-recovery-verification-test.rb
+          ruby scripts/end-to-end/critical-consumers/tests/matching-owner-observation-test.rb
+          bash scripts/end-to-end/critical-consumers/tests/matching-recovery-adapters-test.sh
           bash scripts/end-to-end/critical-consumers/tests/resting-buy-adapters-test.sh
           bash scripts/end-to-end/market-data/tests/verdict-contract.sh
           bash scripts/end-to-end/query-service/tests/evidence-contract.sh

@@ -193,7 +193,7 @@ module RestingBuyVerification
   end
 
   def self.finalize(directory, values)
-    exit_status, stage, restoration_failed, recovery_requested = values
+    exit_status, stage, restoration_failed, recovery_requested, matching_recovery_requested = values
     passed = exit_status == "0" && restoration_failed == "false"
     business_path = File.join(directory, "business-result.json")
     result = read_optional_result(business_path, {"scenario" => "resting-buy"})
@@ -212,6 +212,15 @@ module RestingBuyVerification
         "restorationGatewayReady" => restoration["gatewayReady"] == true,
         "postRestorationOpenProven" => false)
     end
+    if matching_recovery_requested == "true"
+      recovery = read_optional_result(File.join(directory, "matching-recovery-result.json"), {"scenario" => "matching-business-recovery"})
+      passed &&= recovery["status"] == "PASS" && recovery["scenario"] == "matching-business-recovery" &&
+        %w[matchingRecoveryPassed postRecoveryCancelPassed controlledRedeliveryPassed].all? { |field| recovery[field] == true }
+      result.merge!(recovery)
+      restoration = read_optional_result(File.join(directory, "recovery/restoration.json"), {})
+      passed &&= restoration["status"] == "PASS" && restoration["gatewayReady"] == true && restoration["operationsOverridesRemoved"] == true
+      result.merge!("restorationGatewayReady" => restoration["gatewayReady"] == true, "postRestorationOpenProven" => false)
+    end
     result.merge!(
       "status" => passed ? "PASS" : "FAIL", "stage" => stage,
       "sourceRevision" => File.read(File.join(directory, "source-revision")).strip,
@@ -224,6 +233,14 @@ module RestingBuyVerification
         recovery/owner-samples.jsonl recovery/before-session.json recovery/after-session.json
         recovery/before-wal.json recovery/after-wal.json recovery/before-journal.json recovery/after-journal.json recovery/protocol.json recovery/timing.json
         recovery/risk-after.json recovery/durable-after.json recovery/gateway-open.json recovery/gateway-final.json recovery/restoration.json])
+    end
+    if matching_recovery_requested == "true"
+      result.fetch("evidence").concat(%w[matching-recovery/before-owner.json matching-recovery/after-owner.json
+        matching-recovery/interruption.json matching-recovery/timing.json matching-recovery/runtime-after.json
+        matching-recovery/gateway-open.json matching-recovery/gateway-final.json matching-recovery/fix-cancel.json
+        matching-recovery/risk-cancel.json matching-recovery/matching-command-observation.json matching-recovery/matching-event-observation.json
+        matching-recovery/durable-after-replay.json matching-recovery/durable-after-cancel.json
+        matching-recovery/redelivery.json matching-recovery/consumer-progress.json matching-recovery/durable-after-redelivery.json recovery/restoration.json])
     end
     File.write(File.join(directory, "verdict.json"), JSON.pretty_generate(result) + "\n")
     passed

@@ -86,6 +86,65 @@ Kubernetes owner/storage observations and read-only durable SQL evidence. The
 recovery verifier is tested with independent checked-in observations and a
 reviewable result baseline. This scenario exercises one Gateway restart.
 
+## Matching business recovery acceptance contract (#168)
+
+`--matching-recovery` selects one recovery integration test: one real resting
+BUY, replacement of its observed Matching partition owner, a new FIX cancel
+command for the original order, and controlled byte-identical redelivery of its
+final cancellation event. It is mutually exclusive with `--gateway-recovery`.
+
+The four business checkpoints are:
+
+1. The existing #162 contract passes for the original order. Its command/event
+   identity, partition, full resting quantity and Account reservation are retained.
+2. The original Matching Pod is actually deleted before a different UID becomes
+   Ready on the same node/PVC/PV. Runtime evidence completes replay through the
+   original input offset. Persistence and Account retain the original business
+   state. Only the owner selected by the observed command partition is targeted.
+3. After production live observations allow authenticated Gateway open, a new
+   cancel command succeeds for the original order. It has a distinct command
+   identity, one Risk admission/outbox, and a correlated `ORDER_CANCELLED` event.
+   Persistence has one cancelled projection and no fills; Account releases the
+   original reservation, reserved notional becomes zero, utilized notional remains
+   zero, and available notional returns exactly to the isolated account limit.
+4. The helper reads the original cancellation record and republishes its exact
+   key/value bytes to the same partition. An independent read observes the new
+   physical offset with the same event ID and payload digest. All critical
+   consumers advance through that offset, but their inbox and business state
+   remain singular; Account's business revision does not advance a second time.
+
+Matching reconstruction can suppress previously completed event publication.
+The report therefore distinguishes actual Matching recovery from deliberately
+controlled Kafka redelivery; it never claims the restart itself caused the
+redelivery. The post-recovery cancel is the new representative operation, not a
+retry of the original admission. No opposing order or filled-trade claim is needed.
+
+Local negative fixtures must reject missing interruption/replay evidence,
+identity/content conflicts, incorrect or duplicate Persistence outcomes,
+incorrect or repeated Account effects, a failed post-recovery operation despite
+Ready, and missing actual redelivery evidence. The final runner must propagate
+these failures and cannot publish PASS before successful restoration. Evidence
+contains necessary identifiers/business facts only, never raw FIX/Kafka payloads
+or credentials. The approved deployment trading day is retained unchanged.
+
+Run against a completed deployment from the same clean, committed source:
+
+```bash
+SIMPLEMATCH_PRODUCTION_LIKE_EVIDENCE_DIR=out/certification/local-production-like \
+  bash scripts/end-to-end/critical-consumers/run-resting-buy-certification.sh \
+    --namespace "$namespace" --evidence-dir out/certification/matching-recovery \
+    --matching-recovery --timeout-seconds 180
+```
+
+The evidence directory must be new/empty. The operator needs no direct Kafka
+payload editing or manual FIX sequence manipulation. The runner creates an
+isolated funded account, controls the real FIX client and performs authenticated
+open using live observations. It retains normal automatic-close behavior and
+does not change the artifact's trading day. `matching-recovery-result.json` is
+the business result; `verdict.json` is the final verdict after cleanup restores
+the Gateway's original configuration and proves Ready. Ready after restoration
+is not a promise that trading is still OPEN.
+
 ## Structure
 
 - `run-resting-buy-certification.sh` owns the normal #162 scenario; the readable

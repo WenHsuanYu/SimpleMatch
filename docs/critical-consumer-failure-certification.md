@@ -16,6 +16,15 @@ retain the same client session store and order, perform one normal Pod restart,
 and check actual reconnect/resend plus unchanged durable business results. Do
 not run this mixed Matching/PostgreSQL/consumer outage merely to prove #164.
 
+For #168, use the same resting-buy runner with `--matching-recovery`. It replaces
+only the Matching owner selected by the real command partition, then submits one
+new cancel for the recovered resting order. Its separate controlled redelivery
+reads and republishes the exact cancellation bytes and independently observes the
+new Kafka offset. It checks unchanged Persistence and Account state/revisions
+after consumers advance through that offset; it does not assume Matching replay
+republishes completed events. See the
+[business recovery contract](../scripts/end-to-end/critical-consumers/README.md#matching-business-recovery-acceptance-contract-168).
+
 ## Repository layout
 
 The canonical test lives under:

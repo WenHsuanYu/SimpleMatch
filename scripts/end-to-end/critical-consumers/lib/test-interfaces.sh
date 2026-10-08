@@ -169,6 +169,9 @@ start_fix_submit_client() {
     SIMPLEMATCH_RETAINED_FIX_RECOVERY="${gateway_recovery:-false}" \
     SIMPLEMATCH_RETAINED_FIX_RECOVERY_RELEASE="${fix_state_dir:-$evidence_dir/client-state}/recovery-release" \
     SIMPLEMATCH_RETAINED_FIX_RECOVERY_EVIDENCE="$evidence_dir/recovery/protocol.json" \
+    SIMPLEMATCH_RETAINED_FIX_CANCEL="${matching_recovery:-false}" \
+    SIMPLEMATCH_RETAINED_FIX_CANCEL_RELEASE="${fix_state_dir:-$evidence_dir/client-state}/cancel-release" \
+    SIMPLEMATCH_RETAINED_FIX_CANCEL_EVIDENCE="$evidence_dir/matching-recovery/fix-cancel.json" \
     "$repo_root/gradlew" --no-daemon \
       :services:quickfix-gateway:preparedSubmissionCertificationTest \
       >"$fix_submit_log" 2>&1 &

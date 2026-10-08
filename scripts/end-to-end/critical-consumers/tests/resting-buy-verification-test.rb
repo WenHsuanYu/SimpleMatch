@@ -150,6 +150,30 @@ class RestingBuyVerificationTest < Minitest::Test
     end
   end
 
+  def test_matching_recovery_requires_complete_scenario_and_restoration
+    Dir.mktmpdir("matching-recovery-finalize") do |directory|
+      File.write(File.join(directory, "source-revision"), "dac12972ebb322c4ac20edc414af999e8bd92e8d\n")
+      File.write(File.join(directory, "business-result.json"), JSON.generate(RestingBuyVerification.verify(fixture)))
+      values = ["0", "completed", "false", "false", "true"]
+      refute RestingBuyVerification.finalize(directory, values)
+      File.write(File.join(directory, "matching-recovery-result.json"), File.read(File.join(__dir__, "baselines/matching-recovery-result.json")))
+      refute RestingBuyVerification.finalize(directory, values)
+      FileUtils.mkdir_p(File.join(directory, "recovery"))
+      File.write(File.join(directory, "recovery/restoration.json"), JSON.generate({"status" => "PASS", "gatewayReady" => true, "operationsOverridesRemoved" => true}))
+      assert RestingBuyVerification.finalize(directory, values)
+      verdict = JSON.parse(File.read(File.join(directory, "verdict.json")))
+      assert_equal "matching-business-recovery", verdict.fetch("scenario")
+      assert_equal false, verdict.fetch("restartCausedRedeliveryProven")
+      assert_includes verdict.fetch("evidence"), "matching-recovery/redelivery.json"
+      refute RestingBuyVerification.finalize(directory, ["0", "restore", "true", "false", "true"])
+      refute RestingBuyVerification.finalize(directory, ["1", "redelivery", "false", "false", "true"])
+      incomplete = JSON.parse(File.read(File.join(directory, "matching-recovery-result.json")))
+      incomplete["controlledRedeliveryPassed"] = false
+      File.write(File.join(directory, "matching-recovery-result.json"), JSON.generate(incomplete))
+      refute RestingBuyVerification.finalize(directory, values)
+    end
+  end
+
   def test_requires_completed_matching_fleet_evidence_from_the_same_source
     %w[missing failed different-source missing-manifest].each do |failure|
       Dir.mktmpdir("resting-buy-deployment") do |directory|
