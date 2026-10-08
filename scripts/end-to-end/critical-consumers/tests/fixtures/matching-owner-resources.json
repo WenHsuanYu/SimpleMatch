@@ -1,0 +1,5 @@
+{
+  "pod":{"metadata":{"name":"matching-4","uid":"matching-original-uid"},"spec":{"nodeName":"simplematch-live-worker2","volumes":[{"name":"matching-baseline","persistentVolumeClaim":{"claimName":"matching-data-matching-4"}}],"containers":[{"name":"matching","volumeMounts":[{"name":"matching-baseline","mountPath":"/var/lib/simplematch/matching"}]}]},"status":{"conditions":[{"type":"Ready","status":"True"}],"containerStatuses":[{"name":"matching","imageID":"sha256:f14ea4d735ac962abf9295b2cced30337b89114fef1edd9202aa88915e2094e4","state":{"running":{}}}]}},
+  "pvc":{"metadata":{"name":"matching-data-matching-4","uid":"matching-claim-uid"},"spec":{"volumeName":"matching-volume"},"status":{"phase":"Bound"}},
+  "pv":{"metadata":{"name":"matching-volume","uid":"matching-volume-uid"},"spec":{"claimRef":{"uid":"matching-claim-uid"},"nodeAffinity":{"required":{"nodeSelectorTerms":[{"matchExpressions":[{"key":"kubernetes.io/hostname","operator":"In","values":["simplematch-live-worker2"]}]}]}}},"status":{"phase":"Bound"}}
+}
