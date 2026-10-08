@@ -138,6 +138,11 @@ image_has_container_reference() {
   [[ -n "$(docker ps -aq --filter "ancestor=${image_reference}" 2>/dev/null || true)" ]]
 }
 
+kind_cluster_has_container_reference() {
+  local cluster_name="$1"
+  [[ -n "$(docker ps -aq --filter "label=io.x-k8s.kind.cluster=${cluster_name}" 2>/dev/null || true)" ]]
+}
+
 remove_local_registry() {
   local -a args=(delete)
   [[ "$purge_registry" == true ]] && args+=(--purge-data)
@@ -174,23 +179,34 @@ else
 fi
 
 simplematch_log 'Delete selected kind clusters'
+current_clusters=""
 if command -v kind >/dev/null 2>&1; then
-  current_clusters="$(kind get clusters 2>/dev/null || true)"
-  for cluster in "${kind_clusters[@]}"; do
-    [[ -n "$cluster" ]] || continue
-    grep -Fxq "$cluster" <<<"$current_clusters" || continue
-    if [[ "$cluster" == "$canonical_kind_cluster" ]]; then
+  if ! current_clusters="$(kind get clusters 2>/dev/null)"; then
+    simplematch_warn 'kind cluster discovery failed; Docker ownership evidence will still protect canonical deletion'
+    current_clusters=""
+  fi
+fi
+for cluster in "${kind_clusters[@]}"; do
+  [[ -n "$cluster" ]] || continue
+
+  if [[ "$cluster" == "$canonical_kind_cluster" ]]; then
+    # Canonical deletion must always cross the manager safety boundary. Docker
+    # ownership evidence is checked independently from `kind get clusters` so a
+    # missing/broken kind CLI cannot turn canonical nodes into generic orphans.
+    if kind_cluster_has_container_reference "$cluster" || grep -Fxq "$cluster" <<<"$current_clusters"; then
       args=(delete)
       [[ "$SIMPLEMATCH_DRY_RUN" == true ]] && args+=(--dry-run)
-      # Canonical deletion is a safety gate, not best-effort cleanup. If the
-      # manager cannot prove cluster identity, stop before generic container
-      # cleanup can bypass that refusal.
       simplematch_run bash "$script_dir/manage-simplematch-live.sh" "${args[@]}"
     else
-      simplematch_run_best_effort kind delete cluster --name "$cluster"
+      simplematch_info "canonical kind cluster already absent: $cluster"
     fi
-  done
-fi
+    continue
+  fi
+
+  if [[ -n "$current_clusters" ]] && grep -Fxq "$cluster" <<<"$current_clusters"; then
+    simplematch_run_best_effort kind delete cluster --name "$cluster"
+  fi
+done
 
 simplematch_log 'Remove orphaned containers for selected kind clusters'
 while IFS= read -r container; do
