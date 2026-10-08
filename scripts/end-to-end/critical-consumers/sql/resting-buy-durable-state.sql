@@ -14,6 +14,8 @@ SELECT jsonb_build_object(
             'cumulativeQuantityShares', cumulative_quantity_shares,
             'leavesQuantityShares', leaves_quantity_shares,
             'lastEventId', encode(last_event_id, 'hex'),
+            'projectionCount', (SELECT count(*) FROM persistence.matching_order_projections
+                WHERE account_id = :'account_id'::uuid),
             'fillCount', (SELECT count(*) FROM persistence.order_fills
                 WHERE order_id = :'order_id'::uuid)
         ) FROM persistence.matching_order_projections WHERE order_id = :'order_id'::uuid
@@ -23,6 +25,7 @@ SELECT jsonb_build_object(
             'reservationCount', (SELECT count(*) FROM reservations),
             'limitCount', (SELECT count(*) FROM limits),
             'reservationId', r.reservation_id, 'orderId', r.order_id, 'accountId', r.account_id,
+            'reservationVersion', r.version, 'limitVersion', l.version,
             'venueMic', r.venue_mic, 'symbol', r.symbol, 'side', r.side,
             'tradingDay', r.trading_day, 'status', r.status,
             'quantity', r.quantity::text, 'remainingQuantity', r.remaining_quantity::text,

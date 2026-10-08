@@ -1,0 +1,26 @@
+{
+  "beforeOwner": {"podName":"matching-4","podUid":"matching-original-uid","nodeName":"simplematch-live-worker2","pvcName":"matching-data-matching-4","pvcUid":"matching-claim-uid","pvName":"matching-volume","pvUid":"matching-volume-uid","imageId":"sha256:f14ea4d735ac962abf9295b2cced30337b89114fef1edd9202aa88915e2094e4","ready":true},
+  "afterOwner": {"podName":"matching-4","podUid":"matching-replacement-uid","nodeName":"simplematch-live-worker2","pvcName":"matching-data-matching-4","pvcUid":"matching-claim-uid","pvName":"matching-volume","pvUid":"matching-volume-uid","imageId":"sha256:f14ea4d735ac962abf9295b2cced30337b89114fef1edd9202aa88915e2094e4","ready":true},
+  "interruption": {"originalPodUid":"matching-original-uid","oldOwnerInterrupted":true,"observedAtEpochMs":1787846401000},
+  "timing": {"startedAtEpochMs":1787846400000,"recoveredAtEpochMs":1787846408000,"completedAtEpochMs":1787846415000,"budgetMillis":180000},
+  "runtimeAfter": {
+    "schema_version":1,"updated_at_epoch_ms":1787846407500,"runtime_state":"READY","partition_state":"OPEN",
+    "pending_inputs":0,"pending_publications":0,"highest_contiguous_completed_offset":12,"next_commit_offset":13,
+    "admission":{"partition_id":4,"owner_id":"matching-4","ownership_permitted":true,"recovery_complete":true,
+      "identity":{"trading_session_id":"2026-08-27-regular","artifact":{"id":"market-reference-2026-08-27","content_sha256":"f14ea4d735ac962abf9295b2cced30337b89114fef1edd9202aa88915e2094e4"},"matching_algorithm_version":"stable-least-loaded-v1"}}
+  },
+  "gatewayOpen":{"accepted":true,"gateState":"OPEN","tradingSystemStatus":{"openEligible":true}},
+  "gatewayFinal":{"gateState":"OPEN","tradingSystemStatus":{"openEligible":true}},
+  "cancel": {
+    "fix":{"clOrdId":"CAN-168-001","origClOrdId":"REST-162-001","reportClOrdId":"REST-162-001","accountId":"0198a000-0000-7000-8000-000000000001","orderId":"O-REST-162-001","execType":"4","ordStatus":"4","sentAtEpochMs":1787846409000},
+    "risk":{"count":1,"outboxCount":1,"commandId":"0198a000-0000-7000-8000-000000000005","orderId":"0198a000-0000-7000-8000-000000000002","reservationId":null,"accountId":"0198a000-0000-7000-8000-000000000001","clOrdId":"CAN-168-001","state":"ACCEPTED","routingPartition":4,"venueMic":"XTAI","symbol":"1101","side":"SIDE_BUY","tradingDay":"2026-08-27","artifactContentSha256":"f14ea4d735ac962abf9295b2cced30337b89114fef1edd9202aa88915e2094e4","routingAlgorithmVersion":"stable-least-loaded-v1"},
+    "command":{"topic":"matching.commands","partition":4,"offset":13,"physicalDeliveryCount":1,"commandId":"0198a000-0000-7000-8000-000000000005","orderId":"0198a000-0000-7000-8000-000000000002","accountId":"0198a000-0000-7000-8000-000000000001","venueMic":"XTAI","symbol":"1101","side":"SIDE_BUY","commandType":"CANCEL_ORDER","tradingDay":"2026-08-27","tradingSessionId":"2026-08-27-regular","artifactContentSha256":"f14ea4d735ac962abf9295b2cced30337b89114fef1edd9202aa88915e2094e4","routingAlgorithmVersion":"stable-least-loaded-v1"},
+    "event":{"topic":"matching.events","partition":4,"startOffset":1,"offset":1,"eventId":"de24c9c849347e74de0168079ff5ef73e3460bce2c35a6019d75d0babd863a50","payloadSha256":"f370ed99dcbcb7a5e6dfdc52e34fba27a305a74db6a5625a325a7f51d5c2bb45","eventType":"MATCHING_EVENT_TYPE_ORDER_CANCELLED","sourceCommandId":"0198a000-0000-7000-8000-000000000005","orderId":"0198a000-0000-7000-8000-000000000002",
+      "context":{"sourceInputOffset":13,"tradingDay":"2026-08-27","tradingSessionId":"2026-08-27-regular","artifactContentSha256":"f14ea4d735ac962abf9295b2cced30337b89114fef1edd9202aa88915e2094e4","routingAlgorithmVersion":"stable-least-loaded-v1"},
+      "terminalOrder":{"orderId":"0198a000-0000-7000-8000-000000000002","accountId":"0198a000-0000-7000-8000-000000000001","venueMic":"XTAI","symbol":"1101","side":"SIDE_BUY","leavesQuantityShares":1000,"reason":"CANCELLATION_REASON_USER_REQUEST"}}
+  },
+  "redelivery":{"topic":"matching.events","partition":4,"originalOffset":1,"publishedOffset":2,"observedOffset":2,"eventId":"de24c9c849347e74de0168079ff5ef73e3460bce2c35a6019d75d0babd863a50","payloadSha256":"f370ed99dcbcb7a5e6dfdc52e34fba27a305a74db6a5625a325a7f51d5c2bb45","keySha256":"4657335c6a2a633c7a12f984610fe64b2b2333a5f33114d4d91cd737489570ab","keyBytesEqual":true,"valueBytesEqual":true},
+  "consumerProgress":{"partition":4,"persistenceLastProcessedOffset":2,"accountLastProcessedOffset":2,"quickfixLastProcessedOffset":2},
+  "baselineVersions":{"reservationVersion":7,"limitVersion":11},
+  "cancelledAccountChanges":{"status":"RESERVATION_STATUS_RELEASED","remainingQuantity":"0.00000000","reservedNotional":"0.00000000","limitReservedNotional":"0.00000000","limitAvailableNotional":"99999999999999999999.00000000","reservationVersion":8,"limitVersion":12}
+}

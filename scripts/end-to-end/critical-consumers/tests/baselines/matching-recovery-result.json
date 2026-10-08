@@ -1,0 +1,17 @@
+{
+  "status": "PASS",
+  "scenario": "matching-business-recovery",
+  "commandId": "0198a000-0000-7000-8000-000000000003",
+  "orderId": "0198a000-0000-7000-8000-000000000002",
+  "partition": 4,
+  "replacementPodUid": "matching-replacement-uid",
+  "cancelCommandId": "0198a000-0000-7000-8000-000000000005",
+  "cancelEventId": "de24c9c849347e74de0168079ff5ef73e3460bce2c35a6019d75d0babd863a50",
+  "cancelEventOffset": 1,
+  "redeliveryOffset": 2,
+  "matchingRecoveryPassed": true,
+  "postRecoveryCancelPassed": true,
+  "controlledRedeliveryPassed": true,
+  "restartCausedRedeliveryProven": false,
+  "fullLocalCertification": false
+}
