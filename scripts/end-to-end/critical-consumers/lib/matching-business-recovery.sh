@@ -3,6 +3,22 @@
 # One routed Matching owner, the original resting order, and one new cancel.
 # All steps share a deadline; raw Kubernetes resources remain in private scratch.
 
+# Select the artifact day recorded by the retained deployment, never today's day.
+matching_recovery_trading_day() {
+  local retained_day requested_day="${SIMPLEMATCH_CERTIFICATION_TRADING_DAY:-}"
+  retained_day="$(awk -F= '$1 == "trading_day" {print substr($0, index($0, "=") + 1)}' "$1/run-context")" || return 1
+  if [[ ! "$retained_day" =~ ^[0-9]{4}-[0-9]{2}-[0-9]{2}$ ]]; then
+    printf '%s\n' 'Matching recovery requires one retained YYYY-MM-DD trading day' >&2
+    return 1
+  fi
+  ruby -rdate -e 'Date.iso8601(ARGV.fetch(0))' "$retained_day" >/dev/null || return 1
+  if [[ -n "$requested_day" && "$requested_day" != "$retained_day" ]]; then
+    printf '%s\n' 'Matching recovery trading day must match the retained deployment' >&2
+    return 1
+  fi
+  printf '%s\n' "$retained_day"
+}
+
 matching_recovery_remaining_seconds() {
   local remaining=$((matching_recovery_deadline_ms - $(date +%s%3N)))
   (( remaining > 0 )) || die 'Matching business recovery exceeded its single deadline'

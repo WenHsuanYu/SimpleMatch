@@ -173,7 +173,8 @@ public final class MatchingEventObservationMain {
    * @param arguments requested observation boundary and correlation identifiers
    * @return correlated evidence, or {@code null} when the record is outside the requested range or
    *     does not match
-   * @throws IllegalStateException when a record contains an invalid Matching Event payload
+   * @throws IllegalStateException when a record contains an invalid Matching Event payload or its
+   *     logical partition differs from the requested physical Kafka placement
    */
   static Observation matchingObservation(
       ConsumerRecord<byte[], byte[]> record, ObservationArguments arguments) {
@@ -183,6 +184,11 @@ public final class MatchingEventObservationMain {
     final FinalMatchingEventEnvelope envelope =
         parse(record, arguments.topic(), arguments.partition());
     final MatchingEvent event = envelope.event();
+    if (!record.topic().equals(arguments.topic()) || record.partition() != arguments.partition()
+        || event.getPartitionId() != record.partition()) {
+      throw new IllegalStateException(
+          "Matching Event logical partition must match its requested Kafka topic/partition");
+    }
     final boolean matchesCommand = event.getSourceCommandId().equals(arguments.commandId());
     final boolean matchesExpectedOrder = matchesOrder(event, arguments.orderId());
     if (!matchesCommand || !matchesExpectedOrder) {
@@ -257,6 +263,15 @@ public final class MatchingEventObservationMain {
     };
   }
 
+  /**
+   * Creates an isolated byte-preserving observer that reads committed records only.
+   *
+   * <p>Callers assign and seek explicitly; no auto-commit, offset reset or topic creation can hide
+   * a missing delivery boundary. This contract is shared by observation and controlled redelivery.
+   *
+   * @param arguments bootstrap configuration for this bounded observation
+   * @return independent consumer properties with byte-preserving, fail-closed settings
+   */
   static Properties consumerProperties(ObservationArguments arguments) {
     final Properties properties = new Properties();
     properties.put(ConsumerConfig.BOOTSTRAP_SERVERS_CONFIG, arguments.bootstrap());
@@ -309,6 +324,13 @@ public final class MatchingEventObservationMain {
       Duration timeout,
       Path evidenceDir,
       Path commandsBefore) {
+    /**
+     * Parses bounded partition/offset/deadline inputs and canonical correlation UUIDs.
+     *
+     * @param args command-line name/value pairs
+     * @return validated observation boundaries and evidence destination
+     * @throws IllegalArgumentException when required inputs are missing, invalid or duplicated
+     */
     static ObservationArguments parse(String[] args) {
       final Map<String, String> values = argumentValues(args);
       final int partition = rangedInt(values, "--partition", 0, 14);

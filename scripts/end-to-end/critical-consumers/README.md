@@ -127,9 +127,13 @@ these failures and cannot publish PASS before successful restoration. Evidence
 contains necessary identifiers/business facts only, never raw FIX/Kafka payloads
 or credentials. The approved deployment trading day is retained unchanged.
 
-Run against a completed deployment from the same clean, committed source:
+Run against a completed deployment from the same clean, committed source. The
+example pins the approved historical day; the runner also reads `trading_day`
+from the retained deployment's `run-context` and rejects any explicit different
+day. Omitting the environment value retains that deployment day, not today's day:
 
 ```bash
+SIMPLEMATCH_CERTIFICATION_TRADING_DAY=2026-08-27 \
 SIMPLEMATCH_PRODUCTION_LIKE_EVIDENCE_DIR=out/certification/local-production-like \
   bash scripts/end-to-end/critical-consumers/run-resting-buy-certification.sh \
     --namespace "$namespace" --evidence-dir out/certification/matching-recovery \

@@ -1,6 +1,7 @@
 package com.simplematch.tools.riskmatchinge2e;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.google.protobuf.ByteString;
@@ -116,6 +117,22 @@ class MatchingEventObservationMainTest {
     assertThat(evidence).containsEntry("commandType", "CANCEL_ORDER")
         .containsEntry("orderId", command.getCancelOrder().getOrderId())
         .doesNotContainKeys("quantityShares", "priceUnits", "reservationId", "payloadBase64");
+  }
+
+  @Test
+  void rejectsLogicalEventPartitionDifferentFromPhysicalKafkaPlacement() {
+    final UUID command = UUID.fromString("0198a000-0000-7000-8000-000000000003");
+    final String order = "0198a000-0000-7000-8000-000000000004";
+    // The envelope and deterministic event ID are internally valid for partition 5.
+    final var event = cancelledEvent("2026-08-27-regular", 5, command, order);
+    final var arguments = new MatchingEventObservationMain.ObservationArguments(
+        "kafka:9092", "matching.events", 4, 0, command.toString(), order,
+        Duration.ofSeconds(5), Path.of("build/evidence"), null);
+    final var physicallyMisplaced = new ConsumerRecord<byte[], byte[]>(
+        "matching.events", 4, 1, event.getEventId().toByteArray(), event.toByteArray());
+    assertThatThrownBy(() -> MatchingEventObservationMain.matchingObservation(
+        physicallyMisplaced, arguments)).isInstanceOf(IllegalStateException.class)
+        .hasMessageContaining("partition");
   }
 
   @Test

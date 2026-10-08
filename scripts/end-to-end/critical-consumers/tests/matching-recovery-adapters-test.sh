@@ -19,6 +19,25 @@ timeout_seconds=10
 matching_recovery_deadline_ms=$(( $(date +%s%3N) + 10000 ))
 die() { printf '%s\n' "$*" >&2; exit 1; }
 
+# Historical day is selected from retained provenance, never from today's clock.
+retained_evidence_dir="$temporary_directory/retained"
+mkdir -p "$retained_evidence_dir"
+cp "$script_dir/tests/fixtures/matching-run-context" "$retained_evidence_dir/run-context"
+unset SIMPLEMATCH_CERTIFICATION_TRADING_DAY
+[[ "$(matching_recovery_trading_day "$retained_evidence_dir")" == 2026-08-27 ]]
+SIMPLEMATCH_CERTIFICATION_TRADING_DAY=2026-08-27
+[[ "$(matching_recovery_trading_day "$retained_evidence_dir")" == 2026-08-27 ]]
+SIMPLEMATCH_CERTIFICATION_TRADING_DAY=2026-10-09
+if matching_recovery_trading_day "$retained_evidence_dir"; then
+  die 'an explicit different day must not replace the retained artifact day'
+fi
+unset SIMPLEMATCH_CERTIFICATION_TRADING_DAY
+printf '%s\n' 'trading_day=2026-02-30' >"$retained_evidence_dir/run-context"
+if matching_recovery_trading_day "$retained_evidence_dir"; then
+  die 'invalid retained calendar day must be rejected'
+fi
+cp "$script_dir/tests/fixtures/matching-run-context" "$retained_evidence_dir/run-context"
+
 # A failed inventory must stop before the first delete, even in a conditional caller.
 kns() { return 1; }
 if run_matching_business_recovery; then

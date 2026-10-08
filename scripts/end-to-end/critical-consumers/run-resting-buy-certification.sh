@@ -101,6 +101,11 @@ namespace_run_id="$(kns get namespace "$namespace" -o jsonpath='{.metadata.label
 [[ -n "$retained_run_id" && "$namespace_run_id" == "$retained_run_id" ]] || die 'namespace run-id mismatch'
 deployment_prerequisites="$(ruby "$script_dir/lib/resting-buy-verification.rb" deployment "$retained_evidence_dir")" ||
   die 'retained deployment did not complete the required trading prerequisites'
+if [[ "$matching_recovery" == true ]]; then
+  SIMPLEMATCH_CERTIFICATION_TRADING_DAY="$(matching_recovery_trading_day "$retained_evidence_dir")" ||
+    die 'retained deployment trading day is missing, invalid or conflicts with the requested day'
+  export SIMPLEMATCH_CERTIFICATION_TRADING_DAY
+fi
 mkdir -p "$evidence_dir"
 evidence_dir="$(cd -- "$evidence_dir" && pwd)"
 [[ -z "$(ls -A "$evidence_dir")" ]] || die 'evidence directory must be empty'
