@@ -127,6 +127,11 @@ class QuickFixPreparedSubmissionLiveCertificationTest {
           evidencePath, report, sentAtEpochMs, accountId, timeInForce, null);
       application.recoveryProbe.completeIfRequested(
           new FixRecoveryProbe.Exchange(sessionId, order, report), wireObserver, timeoutSeconds);
+      FixCancelProbe.completeIfRequested(
+          new FixRecoveryProbe.Exchange(sessionId, order, report),
+          (originalId, remaining) -> application.awaitExecutionReport(
+              originalId, remaining, FixCancelProbe::isCancelled),
+          timeoutSeconds);
     } finally {
       initiator.stop(true);
     }
