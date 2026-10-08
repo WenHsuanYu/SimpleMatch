@@ -226,6 +226,14 @@ registry deletion / data purge
 
 The hard-reset script may read shared identity constants for planning and postcondition verification, but it does not call the registry deletion primitive directly.
 
+Canonical kind deletion also checks Docker's cluster-label inventory independently
+of `kind get clusters`. If the kind CLI is missing or discovery fails while node
+containers remain, the manager must still verify identity before any generic
+container cleanup. A failed Docker inventory query is not evidence that the
+cluster is absent: hard reset stops. A manager refusal likewise stops subsequent
+cleanup. This is not an atomic reset; selected Compose cleanup may already have
+completed before the kind gate is reached.
+
 Project-scoped cleanup can remove selected SimpleMatch Compose state, unreferenced SimpleMatch-tagged host images, and repository-generated build/evidence state. Daemon-global operations remain behind explicit aggressive opt-in:
 
 ```text
@@ -253,5 +261,14 @@ Deterministic validation covers:
 - Phase-DAG transport propagation, per-image reuse/revalidation, and resume identity;
 - kubelet image-GC configuration;
 - hard-reset manager delegation and aggressive-mode boundaries.
+
+Run `ruby scripts/test-hard-reset-safety.rb` for the behavioral deletion gate
+regression. It executes the real hard-reset and manager entry points in a temporary
+repository, with only fake Docker/kind tools on the child PATH. The checked-in
+`scripts/testdata/hard-reset/baseline.json` defines expected exit status, diagnostic,
+and deletion effects; assertion failures show the expected/actual difference.
+It covers missing kind, failed discovery, manager identity refusal, failed Docker
+observation, healthy deletion, an already absent cluster, and dry-run. This test
+does not modify or certify a live Docker/kind deployment.
 
 The live kind smoke then proves real registry publication, digest rendering, on-demand node pull, baseline behavior, and cleanup. Local Resource Lifecycle CI protects the local certification contracts; CDC CI remains a regression boundary for the certification runner and Kafka Connect behavior.

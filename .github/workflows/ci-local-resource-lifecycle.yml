@@ -32,6 +32,8 @@ on:
       - 'scripts/prepare-local-kubernetes-images.sh'
       - 'scripts/simplematch-clean-local-disk.sh'
       - 'scripts/hard-reset-local.sh'
+      - 'scripts/test-hard-reset-safety.rb'
+      - 'scripts/testdata/hard-reset/**'
       - 'scripts/local-resource-report.sh'
       - 'scripts/publish-local-images.sh'
       - 'scripts/render-local-kubernetes-manifest.sh'
@@ -97,6 +99,7 @@ jobs:
       - name: Validate shell lifecycle contracts
         run: |
           bash scripts/archive/test-local-lifecycle-safety.sh
+          ruby scripts/test-hard-reset-safety.rb
           bash scripts/archive/test-local-registry-resource-lifecycle.sh
           bash scripts/end-to-end/critical-consumers/tests/matching-status-contract.sh
           bash scripts/end-to-end/critical-consumers/tests/system-observation-contract.sh

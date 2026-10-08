@@ -140,7 +140,10 @@ image_has_container_reference() {
 
 kind_cluster_has_container_reference() {
   local cluster_name="$1"
-  [[ -n "$(docker ps -aq --filter "label=io.x-k8s.kind.cluster=${cluster_name}" 2>/dev/null || true)" ]]
+  local containers
+  containers="$(docker ps -aq --filter "label=io.x-k8s.kind.cluster=${cluster_name}")" ||
+    simplematch_die "cannot observe Docker containers for kind cluster: $cluster_name"
+  [[ -n "$containers" ]]
 }
 
 remove_local_registry() {
