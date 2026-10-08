@@ -101,6 +101,8 @@ The four business checkpoints are:
    Ready on the same node/PVC/PV. Runtime evidence completes replay through the
    original input offset. Persistence and Account retain the original business
    state. Only the owner selected by the observed command partition is targeted.
+   Runtime `owner_id` must equal `<Pod name>:<replacement Pod UID>`; the stable
+   ordinal alone cannot identify the new execution or reject the old owner.
 3. After production live observations allow authenticated Gateway open, a new
    cancel command succeeds for the original order. It has a distinct command
    identity, one Risk admission/outbox, and a correlated `ORDER_CANCELLED` event.

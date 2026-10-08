@@ -47,6 +47,17 @@ class MatchingRecoveryVerificationTest < Minitest::Test
     assert_equal "PASS", MatchingRecoveryVerification.verify(evidence).fetch("status")
   end
 
+  def test_rejects_old_wrong_or_unqualified_runtime_owner
+    %w[matching-4:matching-original-uid matching-4:another-uid matching-4].each do |owner_id|
+      evidence = fixture
+      evidence.fetch("runtimeAfter").fetch("admission")["owner_id"] = owner_id
+      failure = assert_raises(RestingBuyVerification::InvalidEvidence) do
+        MatchingRecoveryVerification.verify(evidence)
+      end
+      assert_equal "Matching recovery runtime owner does not match the contract", failure.message
+    end
+  end
+
   # Six risk categories, not six deployments or a resilience matrix.
   def test_rejects_missing_actual_interruption_or_replay
     reject_mutations({

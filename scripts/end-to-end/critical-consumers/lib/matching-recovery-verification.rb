@@ -68,7 +68,7 @@ module MatchingRecoveryVerification
     equal(true, updated.is_a?(Integer) && updated <= recovered && recovered - updated <= 5000, "fresh recovered runtime")
     admission = runtime.fetch("admission")
     equal(baseline.dig("risk", "routingPartition"), admission.fetch("partition_id"), "runtime partition")
-    equal(after.fetch("podName"), admission.fetch("owner_id"), "runtime owner")
+    equal("#{after.fetch('podName')}:#{after.fetch('podUid')}", admission.fetch("owner_id"), "runtime owner")
     %w[ownership_permitted recovery_complete].each { |field| equal(true, admission.fetch(field), field) }
     identity = admission.fetch("identity")
     expected = baseline.fetch("expected")
