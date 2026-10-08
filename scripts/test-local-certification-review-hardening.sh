@@ -167,28 +167,6 @@ publish_after="$(certification_phase_fingerprint registry-publish/quickfix-gatew
   fail 'publication implementation change did not invalidate evidence'
 repo_root="$real_repo_root"
 
-# The live CDC phase must fingerprint the shared connector applicator and all
-# effective connector documents, not only its service-specific wrappers.
-cdc_manifest="$(certification_phase_input_manifest cdc-outbox-failure-live)" || \
-  fail 'CDC phase input manifest could not be calculated'
-for required_input in \
-  deploy/compose/apply-outbox-connector.sh \
-  deploy/compose/risk-service-outbox-connector.json \
-  deploy/compose/account-service-outbox-connector.json; do
-  grep -Fq $'file\t'"$required_input"$'\t' <<<"$cdc_manifest" || \
-    fail "CDC phase manifest omitted ${required_input}"
-done
-unset SIMPLEMATCH_CONNECT_OFFSET_FLUSH_INTERVAL_MS \
-  SIMPLEMATCH_CDC_OBSERVER_TIMEOUT_SECONDS SIMPLEMATCH_KIND_CLUSTER_NAME || true
-assert_contains "$cdc_manifest" 'offsetFlushIntervalMs=120000' \
-  'CDC phase manifest omitted the effective Connect offset-flush interval'
-kubernetes_cdc_manifest="$(certification_phase_input_manifest kubernetes-cdc-delivery)" || \
-  fail 'Kubernetes CDC phase input manifest could not be calculated'
-assert_contains "$kubernetes_cdc_manifest" 'observerTimeoutSeconds=180' \
-  'Kubernetes CDC phase manifest omitted the effective observer timeout'
-assert_contains "$kubernetes_cdc_manifest" 'kindCluster=simplematch-live' \
-  'Kubernetes CDC phase manifest omitted the effective kind cluster'
-
 # Evidence lookup returns a diagnostic MISS instead of forcing the planner to
 # collapse every rejection into one generic reason.
 cache_dir="$fixture_root/cache"

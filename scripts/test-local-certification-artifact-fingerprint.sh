@@ -32,6 +32,9 @@ for path in \
   build-logic/plugin.txt \
   shared-java/shared.txt \
   proto/contracts.proto \
+  deploy/compose/apply-outbox-connector.sh \
+  deploy/compose/risk-service-outbox-connector.json \
+  deploy/compose/account-service-outbox-connector.json \
   gradle/libs.versions.toml \
   services/account-service/source.txt \
   scripts/build-local-images.sh \
@@ -58,6 +61,9 @@ git -C "$fixture_root" init -q
 git -C "$fixture_root" add .
 repo_root="$fixture_root"
 image_tag=local
+unset SIMPLEMATCH_MATCHING_FIXTURE_PUBLISHER_BIN \
+  SIMPLEMATCH_CONNECT_OFFSET_FLUSH_INTERVAL_MS \
+  SIMPLEMATCH_CDC_OBSERVER_TIMEOUT_SECONDS SIMPLEMATCH_KIND_CLUSTER_NAME || true
 
 validator_manifest="$(_certification_fixture_validator_identity_manifest)" || \
   fail 'fixture validator identity could not be calculated'
@@ -71,6 +77,26 @@ if SIMPLEMATCH_MATCHING_FIXTURE_PUBLISHER_BIN=/tmp/simplematch-validator-outside
     _certification_fixture_validator_identity_manifest >/dev/null 2>&1; then
   fail 'outside-repository fixture validator unexpectedly passed'
 fi
+
+# CDC input manifests use the same isolated repository and validator fixture.
+# Their configuration contracts must not require a local native build.
+cdc_manifest="$(certification_phase_input_manifest cdc-outbox-failure-live)" || \
+  fail 'CDC phase input manifest could not be calculated'
+for required_input in \
+  deploy/compose/apply-outbox-connector.sh \
+  deploy/compose/risk-service-outbox-connector.json \
+  deploy/compose/account-service-outbox-connector.json; do
+  grep -Fq $'file\t'"$required_input"$'\t' <<<"$cdc_manifest" || \
+    fail "CDC phase manifest omitted ${required_input}"
+done
+[[ "$cdc_manifest" == *'offsetFlushIntervalMs=120000'* ]] || \
+  fail 'CDC phase manifest omitted the effective Connect offset-flush interval'
+kubernetes_cdc_manifest="$(certification_phase_input_manifest kubernetes-cdc-delivery)" || \
+  fail 'Kubernetes CDC phase input manifest could not be calculated'
+[[ "$kubernetes_cdc_manifest" == *'observerTimeoutSeconds=180'* ]] || \
+  fail 'Kubernetes CDC phase manifest omitted the effective observer timeout'
+[[ "$kubernetes_cdc_manifest" == *'kindCluster=simplematch-live'* ]] || \
+  fail 'Kubernetes CDC phase manifest omitted the effective kind cluster'
 
 _certification_spring_toolchain_identity() {
   printf '%s\n' \

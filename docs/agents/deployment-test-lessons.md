@@ -75,6 +75,16 @@ window rather than changing the clock, reopening closed barriers or disabling
 automatic close. A historical trading artifact does not bypass the real local
 operations schedule.
 
+The #164 remote-delivery contracts failed on 2026-10-08 because the CDC input
+manifest test assumed a locally built native validator existed in a clean CI
+checkout. The CDC assertions now belong to
+`scripts/test-local-certification-artifact-fingerprint.sh`, which already owns
+an isolated repository and validator fixture; the live observer still checks
+and executes the real validator. Before delivery, run the workflow's contract
+commands from a clean checkout without generated native build output. Preserve
+the [original failed CI](https://github.com/WenHsuanYu/SimpleMatch/actions/runs/37720241668)
+as a test-fixture failure, not a deployed CDC failure.
+
 The first #162 resting-buy run reached the real command, `ORDER_RESTED`, and durable business
 effects but failed because the verifier equated the FIX Pending New `O-<ClOrdID>` WAL identity
 with Risk's derived order UUID. The corrected fixture checks the actual protocol identity and
