@@ -93,9 +93,28 @@ public final class MatchingEventObservationMain {
   static Map<String, Object> commandEvidence(KafkaMatchingCommandProbe.ProbeResult result) {
     final var command = result.command();
     final var header = command.getHeader();
-    if (!command.hasNewOrder() || !result.key().equals(header.getCommandId())
+    if ((!command.hasNewOrder() && !command.hasCancelOrder())
+        || !result.key().equals(header.getCommandId())
         || result.partition() != header.getPartitionId()) {
-      throw new IllegalStateException("observed command is not the correlated admitted new order");
+      throw new IllegalStateException("observed command is not a correlated order command");
+    }
+    if (command.hasCancelOrder()) {
+      final var cancel = command.getCancelOrder();
+      return Map.ofEntries(
+          Map.entry("topic", "matching.commands"), Map.entry("partition", result.partition()),
+          Map.entry("offset", result.offset()),
+          Map.entry("physicalDeliveryCount", result.physicalDeliveryCount()),
+          Map.entry("payloadSha256", result.payloadSha256()),
+          Map.entry("commandType", "CANCEL_ORDER"),
+          Map.entry("commandId", header.getCommandId()), Map.entry("orderId", cancel.getOrderId()),
+          Map.entry("accountId", cancel.getAccountId()),
+          Map.entry("venueMic", cancel.getInstrument().getVenueMic()),
+          Map.entry("symbol", cancel.getInstrument().getSymbol()),
+          Map.entry("side", cancel.getSide().name()),
+          Map.entry("tradingDay", header.getArtifactIdentity().getTradingDay()),
+          Map.entry("tradingSessionId", header.getTradingSessionId()),
+          Map.entry("artifactContentSha256", header.getArtifactIdentity().getContentSha256()),
+          Map.entry("routingAlgorithmVersion", header.getRoutingAlgorithmVersion()));
     }
     final var order = command.getNewOrder();
     return Map.ofEntries(
@@ -182,7 +201,18 @@ public final class MatchingEventObservationMain {
         new EventContext(event.getSourceInputOffset(), event.getArtifactIdentity().getTradingDay(),
             event.getTradingSessionId(), event.getArtifactIdentity().getContentSha256(),
             event.getRoutingAlgorithmVersion()),
-        restedOrderEvidence(event));
+        restedOrderEvidence(event), terminalOrderEvidence(event));
+  }
+
+  private static TerminalOrderEvidence terminalOrderEvidence(MatchingEvent event) {
+    if (!event.hasOrderCancelled() && !event.hasOrderExpired()) {
+      return null;
+    }
+    final var order = event.hasOrderCancelled()
+        ? event.getOrderCancelled() : event.getOrderExpired();
+    return new TerminalOrderEvidence(order.getOrderId(), order.getAccountId(),
+        order.getInstrument().getVenueMic(), order.getInstrument().getSymbol(),
+        order.getSide().name(), order.getLeavesQuantityShares(), order.getReason().name());
   }
 
   private static RestedOrderEvidence restedOrderEvidence(MatchingEvent event) {
@@ -227,7 +257,7 @@ public final class MatchingEventObservationMain {
     };
   }
 
-  private static Properties consumerProperties(ObservationArguments arguments) {
+  static Properties consumerProperties(ObservationArguments arguments) {
     final Properties properties = new Properties();
     properties.put(ConsumerConfig.BOOTSTRAP_SERVERS_CONFIG, arguments.bootstrap());
     properties.put(ConsumerConfig.GROUP_ID_CONFIG, "matching-event-observer-" + UUID.randomUUID());
@@ -252,7 +282,8 @@ public final class MatchingEventObservationMain {
       String sourceCommandId,
       String orderId,
       EventContext context,
-      RestedOrderEvidence restedOrder) {}
+      RestedOrderEvidence restedOrder,
+      TerminalOrderEvidence terminalOrder) {}
 
   /** Immutable input position and deployed session/artifact identities of the event. */
   record EventContext(long sourceInputOffset, String tradingDay, String tradingSessionId,
@@ -262,6 +293,10 @@ public final class MatchingEventObservationMain {
   record RestedOrderEvidence(String orderId, String accountId, String venueMic, String symbol,
       String side,
       long leavesQuantityShares, long restingPriceUnits) {}
+
+  /** Unfilled quantity cancelled or expired, not a claim that those shares were filled. */
+  record TerminalOrderEvidence(String orderId, String accountId, String venueMic, String symbol,
+      String side, long leavesQuantityShares, String reason) {}
 
   /** Parsed observer inputs used to establish the event correlation boundary. */
   record ObservationArguments(
@@ -274,7 +309,7 @@ public final class MatchingEventObservationMain {
       Duration timeout,
       Path evidenceDir,
       Path commandsBefore) {
-    private static ObservationArguments parse(String[] args) {
+    static ObservationArguments parse(String[] args) {
       final Map<String, String> values = argumentValues(args);
       final int partition = rangedInt(values, "--partition", 0, 14);
       final long startOffset = nonNegativeLong(values, "--start-offset");

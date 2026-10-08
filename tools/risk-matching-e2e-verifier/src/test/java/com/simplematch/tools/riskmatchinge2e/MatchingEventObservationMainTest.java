@@ -8,6 +8,9 @@ import com.simplematch.contracts.common.v2.Side;
 import com.simplematch.contracts.common.v2.VenueInstrument;
 import com.simplematch.contracts.matching.runtime.v1.ArtifactIdentity;
 import com.simplematch.contracts.matching.runtime.v1.CancellationReason;
+import com.simplematch.contracts.matching.runtime.v1.CancelOrder;
+import com.simplematch.contracts.matching.runtime.v1.CommandHeader;
+import com.simplematch.contracts.matching.runtime.v1.MatchingCommand;
 import com.simplematch.contracts.matching.runtime.v1.MatchingEvent;
 import com.simplematch.contracts.matching.runtime.v1.MatchingEventIdentityV1;
 import com.simplematch.contracts.matching.runtime.v1.MatchingEventType;
@@ -87,10 +90,32 @@ class MatchingEventObservationMainTest {
     assertThat(observation.offset()).isEqualTo(startOffset + 1);
     assertThat(observation.context().sourceInputOffset()).isEqualTo(10);
     assertThat(observation.restedOrder()).isNull();
+    assertThat(observation.terminalOrder().leavesQuantityShares()).isEqualTo(1000);
+    assertThat(observation.terminalOrder().reason()).isEqualTo("CANCELLATION_REASON_USER_REQUEST");
 
     final ObjectMapper json = new ObjectMapper().findAndRegisterModules();
     assertThat(json.readTree(json.writeValueAsString(observation)).path("startOffset").asLong())
         .isEqualTo(startOffset);
+  }
+
+  @Test
+  void observesNewCancelCommandWithoutInventingAnotherReservationOrOrderQuantity() {
+    final String commandId = "0198a000-0000-7000-8000-000000000003";
+    final var command = MatchingCommand.newBuilder()
+        .setHeader(CommandHeader.newBuilder().setCommandId(commandId).setPartitionId(4))
+        .setCancelOrder(CancelOrder.newBuilder()
+            .setOrderId("0198a000-0000-7000-8000-000000000004")
+            .setAccountId("0198a000-0000-7000-8000-000000000005")
+            .setInstrument(VenueInstrument.newBuilder().setVenueMic("XTAI").setSymbol("1101"))
+            .setSide(Side.SIDE_BUY))
+        .build();
+    final var observed = new KafkaMatchingCommandProbe.ProbeResult(
+        new KafkaMatchingCommandProbe.RecordMetadata(4, 12, 1234, commandId),
+        1, new Bytes(command.toByteArray()));
+    final var evidence = MatchingEventObservationMain.commandEvidence(observed);
+    assertThat(evidence).containsEntry("commandType", "CANCEL_ORDER")
+        .containsEntry("orderId", command.getCancelOrder().getOrderId())
+        .doesNotContainKeys("quantityShares", "priceUnits", "reservationId", "payloadBase64");
   }
 
   @Test
@@ -124,7 +149,7 @@ class MatchingEventObservationMainTest {
     assertThat(json).contains("\"symbol\":\"1101\"").doesNotContain("payloadBase64");
   }
 
-  private static MatchingEvent cancelledEvent(
+  static MatchingEvent cancelledEvent(
       String tradingSessionId, int partition, UUID commandId, String orderId) {
     final String artifactSha256 = "a".repeat(64);
     return MatchingEvent.newBuilder()
