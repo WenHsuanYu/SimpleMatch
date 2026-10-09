@@ -151,6 +151,43 @@ the business result; `verdict.json` is the final verdict after cleanup restores
 the Gateway's original configuration and proves Ready. Ready after restoration
 is not a promise that trading is still OPEN.
 
+### Recorded Matching recovery verification
+
+Source `34500c4` passed this scenario on 2026-10-09 (Asia/Taipei), retaining
+the approved `2026-08-27` artifact. The fresh deployment evidence is
+`out/certification/issue-168-deployment-20260827-r3/report.md`: all 26
+applicable phases passed (18 executed, 8 reused). Its 25 explicit build and
+Compose skips keep this prerequisite workflow `PARTIAL`, not full-local.
+Source-only image preparation is recorded separately in
+`out/certification/issue-168-images-20260827-r2/report.md`.
+
+The final business verdict is
+`out/certification/issue-168-matching-recovery-20260827-r3/verdict.json`, PASS
+with successful restoration. The real resting order routed to partition 12.
+The observed `matching-12` interruption and replacement changed the Pod UID
+while preserving its node, PVC/PV and image identity. Runtime evidence bound
+the replacement incarnation and completed replay through the original input.
+Recovery took 34,802 ms within the 180,000 ms budget; the complete recovery,
+cancel and controlled-redelivery observation took 46,650 ms.
+
+The new FIX cancel succeeded for the original order. Persistence retained one
+`CANCELLED` projection with zero fills; Account released its one reservation,
+with reserved and utilized notional zero and available notional equal to the
+isolated limit. The cancellation event at Kafka offset 1 was republished with
+the same key/value bytes and independently observed at offset 2. Account,
+Persistence and QuickFIX advanced through offset 2, each retained one inbox
+entry for that event, and no quarantine was recorded. The authoritative
+durable-state files before and after redelivery have an empty diff, including
+Account's business revisions.
+
+Gateway restoration proved Ready and removed the operations overrides, not
+post-restoration OPEN. Preserve the original r1 business FAIL and the
+interrupted r2 deployment as separate evidence, never upgrading their traces
+to deployed PASS. The redelivery was deliberately injected, not proven to be
+caused by the restart. Cross-node recovery, filled trades, production
+exactly-once and full-local certification remain outside this result;
+GitHub owns the current remote-delivery status.
+
 ## Structure
 
 - `run-resting-buy-certification.sh` owns the normal #162 scenario; the readable
