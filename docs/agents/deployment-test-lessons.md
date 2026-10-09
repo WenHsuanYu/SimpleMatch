@@ -85,6 +85,15 @@ commands from a clean checkout without generated native build output. Preserve
 the [original failed CI](https://github.com/WenHsuanYu/SimpleMatch/actions/runs/37720241668)
 as a test-fixture failure, not a deployed CDC failure.
 
+The first #168 remote lifecycle-contract run stopped with exit 127 because
+the new adapter test used optional `rg` to check a fixed error-message string.
+The runner did not provide ripgrep. Use standard `grep -Fq` for that literal
+assertion; do not add a CI package dependency or weaken the conflicting-option
+check. Run the adapter test with a tool PATH that excludes `rg` before delivery,
+then run the workflow's complete contracts. Preserve the
+[original failed CI](https://github.com/WenHsuanYu/SimpleMatch/actions/runs/37897697115)
+as test portability evidence, not a deployed Matching recovery failure.
+
 The first #162 resting-buy run reached the real command, `ORDER_RESTED`, and durable business
 effects but failed because the verifier equated the FIX Pending New `O-<ClOrdID>` WAL identity
 with Risk's derived order UUID. The corrected fixture checks the actual protocol identity and

@@ -89,5 +89,5 @@ if bash "$script_dir/run-resting-buy-certification.sh" --namespace contract \
     >"$temporary_directory/conflict.log" 2>&1; then
   die 'mixed recovery options must be rejected before deployment access'
 fi
-rg -q 'choose one recovery scenario' "$temporary_directory/conflict.log"
+grep -Fq 'choose one recovery scenario' "$temporary_directory/conflict.log"
 printf '%s\n' 'Matching recovery fails closed on observation/helper errors and mutates only the routed owner.'
