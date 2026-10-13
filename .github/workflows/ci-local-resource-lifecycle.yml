@@ -115,6 +115,8 @@ jobs:
           ruby scripts/end-to-end/critical-consumers/tests/matching-owner-observation-test.rb
           bash scripts/end-to-end/critical-consumers/tests/matching-recovery-adapters-test.sh
           bash scripts/end-to-end/critical-consumers/tests/resting-buy-adapters-test.sh
+          bash scripts/end-to-end/critical-consumers/tests/business-recovery-lifecycle-test.sh
+          bash scripts/end-to-end/critical-consumers/tests/business-recovery-failure-test.sh
           bash scripts/end-to-end/market-data/tests/verdict-contract.sh
           bash scripts/end-to-end/query-service/tests/evidence-contract.sh
           bash scripts/end-to-end/query-service/tests/lifecycle-contract.sh

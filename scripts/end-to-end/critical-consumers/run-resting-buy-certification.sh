@@ -37,10 +37,7 @@ cleanup() {
   local status="$?"
   trap - EXIT ERR
   set +e
-  timeout_seconds="${matching_recovery_original_timeout_seconds:-${gateway_recovery_original_timeout_seconds:-$timeout_seconds}}"
-  kubernetes_request_timeout_seconds=""
-  operation_deadline_epoch_ms=""
-  stop_background_process "${gateway_owner_sampler_pid:-}" || restoration_failed=true
+  finish_business_recovery || restoration_failed=true
   stop_background_process "${fix_submit_pid:-}" || restoration_failed=true
   stop_fix_port_forward || restoration_failed=true
   stop_gateway_port_forward || restoration_failed=true

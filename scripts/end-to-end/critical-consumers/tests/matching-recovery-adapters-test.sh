@@ -16,7 +16,7 @@ matching_owner=matching-4
 matching_original_uid=matching-original-uid
 partition=4
 timeout_seconds=10
-matching_recovery_deadline_ms=$(( $(date +%s%3N) + 10000 ))
+operation_deadline_epoch_ms=$(( $(date +%s%3N) + 10000 ))
 die() { printf '%s\n' "$*" >&2; exit 1; }
 
 # Historical day is selected from retained provenance, never from today's clock.

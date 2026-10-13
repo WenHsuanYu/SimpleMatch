@@ -286,6 +286,26 @@ publishing PASS. The verdict separates recovered `OPEN` before teardown from
 `postRestorationOpenProven: false`; it does not leave operator HTTP enabled or
 claim the restored configuration is still open for new orders.
 
+Recovery execution ownership lives in `lib/business-recovery-lifecycle.sh`:
+both scenarios share the absolute deadline and borrowed timeout restoration,
+and it starts/stops the Gateway owner sampler. The runner keeps its single
+`EXIT` trap and notifies recovery to finish before restoring baseline resources;
+it does not inspect scenario-specific timeout or sampler state. Sampler stop
+failure retains its process identity for terminal cleanup and refuses PASS.
+Baseline FIX clients, tunnels, Kafka observation and environment overrides
+remain owned by their existing creators. The Gateway and Matching business
+sequences, verifiers, evidence formats and recovery/restoration clocks remain
+distinct and unchanged. Recovery is invoked as a simple command, with explicit
+failure propagation at observation and mutation steps; conditional Bash callers
+must not allow a failed step to fall through into later work.
+
+The lifecycle and failure contracts run without deployment access:
+
+```bash
+bash scripts/end-to-end/critical-consumers/tests/business-recovery-lifecycle-test.sh
+bash scripts/end-to-end/critical-consumers/tests/business-recovery-failure-test.sh
+```
+
 ### Recorded local verification
 
 Source `8920af4` passed this scenario on 2026-10-08 (Asia/Taipei), using the
