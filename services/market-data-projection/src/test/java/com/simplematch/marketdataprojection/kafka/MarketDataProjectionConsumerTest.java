@@ -3,6 +3,7 @@ package com.simplematch.marketdataprojection.kafka;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.verifyNoInteractions;
 
 import com.google.protobuf.ByteString;
 import com.simplematch.config.delivery.DeadLetterEvidence;
@@ -28,6 +29,8 @@ import java.util.List;
 import java.util.UUID;
 import org.apache.kafka.clients.consumer.ConsumerRecord;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.CsvSource;
 import org.springframework.kafka.support.Acknowledgment;
 
 /** Verifies market-data delivery retries or dead-letters without blocking matching authority. */
@@ -79,6 +82,30 @@ class MarketDataProjectionConsumerTest {
         .satisfies(value -> assertThat(value.record().eventId()).isEqualTo(EVENT_ID_HEX));
   }
 
+  @ParameterizedTest
+  @CsvSource({"XTAI,abc", "XTAI,a-b", "XTAI,''", "XTAI,ABCDEFGHIJKLM", "XXXX,2330"})
+  void deadLettersANonCanonicalInstrumentBeforeProjecting(String venueMic, String symbol) {
+    final Acknowledgment acknowledgment = mock(Acknowledgment.class);
+    final RecordingDeadLetterStore deadLetters = new RecordingDeadLetterStore();
+    final MarketDataProjectionHandler handler = mock(MarketDataProjectionHandler.class);
+    final MarketDataProjectionConsumer consumer =
+        new MarketDataProjectionConsumer(
+            handler, controller(deadLetters, 1), new RecordingRetryScheduler());
+    final byte[] payload = eventPayload(venueMic, symbol);
+
+    consumer.onMatchingEvent(
+        new ConsumerRecord<>("matching.events", 0, 7L, EVENT_ID, payload), acknowledgment);
+
+    verifyNoInteractions(handler);
+    verify(acknowledgment).acknowledge();
+    assertThat(deadLetters.evidence)
+        .singleElement()
+        .satisfies(value -> {
+          assertThat(value.record().eventId()).isEqualTo("matching.events:0:7");
+          assertThat(value.record().payload()).isEqualTo(payload);
+        });
+  }
+
   private MarketDataProjectionHandler acceptedHandler() {
     return (envelope, partition, offset) -> MarketDataProjectionResult.duplicate();
   }
@@ -94,6 +121,10 @@ class MarketDataProjectionConsumerTest {
   }
 
   private byte[] eventPayload() {
+    return eventPayload("XTAI", "2330");
+  }
+
+  private byte[] eventPayload(String venueMic, String symbol) {
     return MatchingEvent.newBuilder()
         .setSchemaVersion(1)
         .setIdentityVersion(1)
@@ -114,7 +145,7 @@ class MarketDataProjectionConsumerTest {
             OrderRested.newBuilder()
                 .setOrderId("0198a001-0000-7000-8000-000000000011")
                 .setAccountId("0198a001-0000-7000-8000-0000000000aa")
-                .setInstrument(VenueInstrument.newBuilder().setVenueMic("XTAI").setSymbol("2330"))
+                .setInstrument(VenueInstrument.newBuilder().setVenueMic(venueMic).setSymbol(symbol))
                 .setSide(Side.SIDE_BUY)
                 .setLeavesQuantityShares(100L)
                 .setRestingPriceUnits(1_000_000L))

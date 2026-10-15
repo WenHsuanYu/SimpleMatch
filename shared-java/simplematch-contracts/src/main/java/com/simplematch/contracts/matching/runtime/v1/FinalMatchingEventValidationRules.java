@@ -14,8 +14,11 @@ final class FinalMatchingEventValidationRules {
   }
 
   static void validateInstrument(String venueMic, String symbol) {
-    require(!venueMic.isBlank(), "venueMic must not be blank");
-    require(!symbol.isBlank(), "symbol must not be blank");
+    require(
+        venueMic.equals("XTAI") || venueMic.equals("ROCO"),
+        "venueMic must be XTAI or ROCO");
+    require(
+        symbol.matches("[A-Z0-9]{1,12}"), "symbol must contain 1-12 uppercase letters or digits");
   }
 
   static void requireKnownSide(Side side) {

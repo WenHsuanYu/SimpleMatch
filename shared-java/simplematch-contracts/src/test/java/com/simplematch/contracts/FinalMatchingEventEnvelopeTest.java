@@ -5,6 +5,7 @@ import static org.junit.jupiter.api.Assertions.assertDoesNotThrow;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 
+import com.simplematch.contracts.common.v2.VenueInstrument;
 import com.simplematch.contracts.matching.runtime.v1.FinalMatchingEventEnvelope;
 import com.simplematch.contracts.matching.runtime.v1.FinalMatchingEventTransportValidator;
 import com.simplematch.contracts.matching.runtime.v1.MatchingEvent;
@@ -14,9 +15,44 @@ import java.io.InputStream;
 import java.nio.charset.StandardCharsets;
 import java.util.HexFormat;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.CsvSource;
 
 /** Verifies native raw-record interoperability and exact-byte fingerprinting. */
 class FinalMatchingEventEnvelopeTest {
+  private static final String[] EVENT_FIXTURES = {
+    "cpp-matching-order-rested-v1.hex",
+    "cpp-matching-trade-executed-v1.hex",
+    "cpp-matching-order-cancelled-v1.hex",
+    "cpp-matching-order-expired-v1.hex"
+  };
+
+  @ParameterizedTest
+  @CsvSource({"XTAI,A", "ROCO,A", "XTAI,ABCDEFGHIJKL", "ROCO,ABCDEFGHIJKL"})
+  void acceptsCanonicalInstrumentsForEveryFinalEvent(String venueMic, String symbol)
+      throws IOException {
+    for (String name : EVENT_FIXTURES) {
+      final byte[] raw = eventWithInstrument(name, venueMic, symbol);
+
+      assertDoesNotThrow(() -> FinalMatchingEventEnvelope.parse(raw), name);
+    }
+  }
+
+  @ParameterizedTest
+  @CsvSource({
+    "XTAI,abc", "XTAI,a-b", "XTAI,''", "XTAI,' '", "XTAI,ABCDEFGHIJKLM",
+    "XXXX,2330", "xtai,2330", "'',2330", "' ',2330"
+  })
+  void rejectsNonCanonicalInstrumentsForEveryFinalEvent(String venueMic, String symbol)
+      throws IOException {
+    for (String name : EVENT_FIXTURES) {
+      final byte[] raw = eventWithInstrument(name, venueMic, symbol);
+
+      assertThrows(
+          IllegalArgumentException.class, () -> FinalMatchingEventEnvelope.parse(raw), name);
+    }
+  }
+
   @Test
   void parsesEveryNativeFinalEventAndPinsItsRawValueHash() throws IOException {
     assertFixture(
@@ -110,5 +146,25 @@ class FinalMatchingEventEnvelopeTest {
               .replaceAll("\\s", "");
       return HexFormat.of().parseHex(encoded);
     }
+  }
+
+  private byte[] eventWithInstrument(String name, String venueMic, String symbol)
+      throws IOException {
+    final MatchingEvent event = MatchingEvent.parseFrom(fixture(name));
+    final VenueInstrument instrument =
+        VenueInstrument.newBuilder().setVenueMic(venueMic).setSymbol(symbol).build();
+    final MatchingEvent.Builder builder = event.toBuilder();
+    switch (event.getEventCase()) {
+      case ORDER_RESTED -> builder.setOrderRested(
+          event.getOrderRested().toBuilder().setInstrument(instrument));
+      case TRADE_EXECUTED -> builder.setTradeExecuted(
+          event.getTradeExecuted().toBuilder().setInstrument(instrument));
+      case ORDER_CANCELLED -> builder.setOrderCancelled(
+          event.getOrderCancelled().toBuilder().setInstrument(instrument));
+      case ORDER_EXPIRED -> builder.setOrderExpired(
+          event.getOrderExpired().toBuilder().setInstrument(instrument));
+      default -> throw new IllegalArgumentException("fixture requires a final event payload");
+    }
+    return builder.build().toByteArray();
   }
 }

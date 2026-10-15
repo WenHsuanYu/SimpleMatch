@@ -50,6 +50,25 @@ class MarketDataProjectionFlywayMigrationTest {
         .isEqualTo("XTAI:" + symbol);
   }
 
+  @ParameterizedTest
+  @MethodSource("nonCanonicalInstruments")
+  void rejectsNonCanonicalInstruments(String table, String column, String value) {
+    insertValidProjectionRows("2330");
+
+    assertThatThrownBy(() -> jdbc.update(
+        "UPDATE market_data_projection." + table + " SET " + column + " = ?", value))
+        .isInstanceOf(DataIntegrityViolationException.class);
+  }
+
+  private static Stream<Arguments> nonCanonicalInstruments() {
+    return Stream.of("order_book_entries", "instrument_market_data")
+        .flatMap(table -> Stream.concat(
+            Stream.of("abc", "a-b", "", " ", "ABCDEFGHIJKLM")
+                .map(symbol -> Arguments.of(table, "symbol", symbol)),
+            Stream.of("XXXX", "xtai", "", " ")
+                .map(venue -> Arguments.of(table, "venue_mic", venue))));
+  }
+
   private void insertValidProjectionRows(String symbol) {
     insertValidSnapshot(symbol);
     jdbc.update(
