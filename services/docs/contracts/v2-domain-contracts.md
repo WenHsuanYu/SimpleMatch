@@ -1,9 +1,9 @@
 # V2 Domain Contracts
 
-This page records the additive v2 Protobuf contracts that define the current typed admission
+This page records the v2 Protobuf contracts that define the current typed admission
 vocabulary. QuickFIX Gateway and Risk now use the v2 order-admission contracts on the production
-synchronous path; other domains may still have independently versioned v1 event contracts while
-their own migrations remain incomplete.
+synchronous path. Independently versioned Matching/market-data runtime v1 contracts and Gateway
+WAL v1 encoding remain current contracts; their version names do not imply legacy admission support.
 
 ## Contract shape
 
@@ -30,7 +30,10 @@ A rejection is a domain fact, not a transport failure or dead-letter record.
   venue MIC and business trading day with the reservation, so a repeated command with different
   request facts is a stable request conflict rather than an equivalent replay.
   `ShareQuantity` uses signed 64-bit whole shares.
-- The only v2 currency is `TWD`; phase-one venues are `XTAI` and `ROCO`.
+- The only v2 currency is `TWD`; phase-one venues are `XTAI` (TWSE) and `ROCO` (TPEx).
+  Within each trading day, a symbol belongs to exactly one venue. Symbols contain 1–12 uppercase
+  alphanumeric characters. A request must use the symbol/venue pair in the approved artifact.
+  Account position identity remains `(account_id, symbol)` under this uniqueness rule.
 - Absolute times are UTC milliseconds. `TradingDay` is an ISO date interpreted in `Asia/Taipei`, and
   session state is explicit.
 - ROD, IOC, and FOK are all represented by the v2 time-in-force enum.
@@ -72,6 +75,8 @@ fields are append-only: a field number must never be reused or assigned a differ
 change that needs incompatible semantics creates a new message or versioned contract rather than
 modifying an existing field.
 
-The retired v1 order-command adapter and legacy order/execution messages are no longer part of the
-shared contract surface. Production ingress uses typed v2 commands, while Matching transport uses
+The retired v1 order-command adapter, common v1 enum/metadata contract, and legacy order/execution
+messages are no longer part of the shared contract surface. Account owns its internal reservation
+status and uses UUID-backed identity values; no legacy venue or implicit trading-day constructors
+remain. Production ingress uses typed v2 commands, while Matching transport uses
 the deterministic runtime command and final-event contracts.

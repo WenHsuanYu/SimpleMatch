@@ -1,5 +1,10 @@
 # Field Typing Phase 2 Gates
 
+> Historical phase evidence: this document describes the schema at that phase. The current
+> [database implementation guide](database-architecture.md#current-schema-contract-cleanup)
+> supersedes the old Persistence table inventory and Account string/decimal shapes.
+
+
 This document records the first Phase 2 profiling pass for field typing convergence across
 `risk-service`,
 `account-service`, and `persistence`.

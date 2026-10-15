@@ -72,7 +72,8 @@ or account persistence after an order has been admitted.
 Owns the offline acquisition, normalization, validation, and construction of one immutable Market
 Reference Artifact for each Asia/Taipei trading day. The artifact contains reusable market rules,
 instrument facts and eligibility, and complete stable routing assignments for all Phase 1 eligible
-XTAI and ROCO regular-board common stocks. Risk Admission and all Matching owners load the same
+XTAI (TWSE) and ROCO (TPEx) regular-board common stocks. Within one trading day, each
+symbol belongs to exactly one of these venues; an artifact cannot assign the same symbol to both. Risk Admission and all Matching owners load the same
 approved file bytes at startup. Market Reference is an offline capability with no event-publication,
 consumer-projection, or trading-path lookup responsibility. A future trading day's artifact may
 assign an instrument to a different route, but the current trading session's topology and assignments

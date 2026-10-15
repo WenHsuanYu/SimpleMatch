@@ -50,6 +50,28 @@ not rely on implicit `public`.
 | Migration tests             | Service migration tests validate owner schemas, versioned migrations, constraints, and clean-install/idempotent migration behavior.                                                                |
 | Flyway CI                   | All registered Flyway services, including Query Service, migrate into one CI database while retaining independent owner schemas and independent `flyway_schema_history`.                         |
 
+## Current schema contract cleanup
+
+The [cleanup acceptance plan](schema-contract-cleanup.md) records the no-legacy-data assumption,
+service ownership, current symbol/venue rule and validation boundaries. The current schema uses
+native UUIDs for Account and Query canonical identities, whole-share quantities and exact TWD
+amounts. Account requires an explicit venue and trading day; neither LEGACY venue nor wall-clock
+fallbacks are part of the active contract. Account-wide monetary aggregates retain a wider exact
+range than an individual v2 reservation's signed-long units.
+
+Later migrations supersede the historical table catalog above. Persistence's obsolete `orders`,
+`executions` and `inbox` are retired in favor of `trades`, `order_fills`,
+`matching_order_projections` and the Matching Event inbox. Flyway smoke/index checks target these
+active tables. Query retains mixed-source text event IDs while its canonical account/order/execution
+IDs are native UUIDs. Market-data projection accepts the same 12-character symbol capacity as the
+shared instrument contract.
+
+`run-flyway-ci-checks.sh` also executes `check-service-schema-contracts.sql` against PostgreSQL.
+These probes first insert valid rows, reject individual invalid values with specific SQLSTATEs,
+and roll back every fixture. They complement H2/JDBC tests; they do not certify a live deployment.
+Historical migrations remain versioned; no Flyway repair or database reset is required merely to
+apply the new source to an empty database.
+
 ## Identity and persistence rule
 
 Database convenience does not define identity ownership. A canonical identifier is defined by its
