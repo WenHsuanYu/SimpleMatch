@@ -9,7 +9,7 @@ postgres_port="${CI_POSTGRES_PORT:-5432}"
 postgres_user="${CI_POSTGRES_USER:-simplematch}"
 postgres_password="${CI_POSTGRES_PASSWORD:-simplematch}"
 
-psql_explain() {
+psql_exec() {
   local sql_statement="$1"
 
   PGPASSWORD="$postgres_password" psql \
@@ -21,17 +21,28 @@ psql_explain() {
     --tuples-only \
     --quiet \
     --set ON_ERROR_STOP=1 \
-    --command "SET enable_seqscan = off; EXPLAIN (COSTS OFF) $sql_statement"
+    --command "$sql_statement"
+}
+
+psql_explain() {
+  psql_exec "SET enable_seqscan = off; EXPLAIN (COSTS OFF) $1"
 }
 
 assert_index_plan() {
   local description="$1"
   local expected_index="$2"
   local sql_statement="$3"
+  local alternate_index="${4:-}"
+  local schema_name="${service_name//-/_}"
   local plan
 
+  if [[ "$(psql_exec "SELECT EXISTS (SELECT 1 FROM pg_indexes WHERE schemaname = '$schema_name' AND indexname = '$expected_index');")" != t ]]; then
+    echo "Expected index $schema_name.$expected_index does not exist." >&2
+    return 1
+  fi
   plan="$(psql_explain "$sql_statement")"
-  if [[ "$plan" != *"$expected_index"* ]]; then
+  if [[ "$plan" != *"$expected_index"* ]] && \
+     [[ -z "$alternate_index" || "$plan" != *"$alternate_index"* ]]; then
     echo "Expected $description to use index $expected_index." >&2
     echo "$plan" >&2
     return 1
@@ -64,10 +75,12 @@ case "$service_name" in
       "query executions by order chronology" \
       "execution_read_model_order_idx" \
       "SELECT execution_id FROM query_service.execution_read_model WHERE order_id = '00000000-0000-0000-0000-000000000002' ORDER BY executed_at_unix_ms, execution_id"
+    # Empty-table costs can favor the day/symbol unique index for the same day lookup.
     assert_index_plan \
       "query active market reference artifact" \
       "active_market_reference_artifact_idx" \
-      "SELECT symbol FROM query_service.active_market_reference WHERE trading_day = DATE '2026-07-28' AND artifact_id = 'artifact'"
+      "SELECT symbol FROM query_service.active_market_reference WHERE trading_day = DATE '2026-07-28' AND artifact_id = 'artifact'" \
+      "active_market_reference_symbol_unique"
     ;;
   risk-service)
     assert_index_plan \
