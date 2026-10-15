@@ -14,6 +14,22 @@ dependencies {
     testImplementation(libs.h2)
     testImplementation(libs.flyway.core)
     testImplementation("org.springframework:spring-jdbc")
+    testRuntimeOnly(libs.flyway.database.postgresql)
+}
+
+sourceSets.test {
+    resources.srcDir(rootProject.file("shared-java/market-reference-contract/src/test/resources"))
+}
+
+tasks.register<Test>("postgresJdbcTest") {
+    group = "verification"
+    description = "Runs Query JDBC contract tests against a runner-owned PostgreSQL scratch database."
+    testClassesDirs = sourceSets.test.get().output.classesDirs
+    classpath = sourceSets.test.get().runtimeClasspath
+    filter.includeTestsMatching("com.simplematch.queryservice.store.JdbcQueryProjectionStoreTest")
+    systemProperty("simplematch.query.jdbc.backend", "postgresql")
+    maxParallelForks = 1
+    outputs.upToDateWhen { false }
 }
 
 simpleMatchFlyway {

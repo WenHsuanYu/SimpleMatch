@@ -100,7 +100,7 @@ jobs:
         run: |
           sudo apt-get update
           sudo apt-get install -y postgresql-client
-      - name: Run Flyway and PostgreSQL smoke checks
+      - name: Run Flyway, PostgreSQL and JDBC checks
         env:
           CI_POSTGRES_HOST: 127.0.0.1
           CI_POSTGRES_PORT: '5432'

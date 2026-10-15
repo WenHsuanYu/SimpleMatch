@@ -3,6 +3,7 @@ package com.simplematch.queryservice.store;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
+import com.fasterxml.jackson.databind.ObjectMapper;
 import com.google.protobuf.ByteString;
 import com.google.protobuf.InvalidProtocolBufferException;
 import com.simplematch.contracts.account.v2.AccountLifecycleEvent;
@@ -20,13 +21,27 @@ import com.simplematch.contracts.matching.runtime.v1.OrderRested;
 import com.simplematch.contracts.matching.runtime.v1.TradeExecuted;
 import com.simplematch.contracts.matching.runtime.v1.TradeLeg;
 import com.simplematch.contracts.matching.runtime.v1.TradeLegState;
+import com.simplematch.marketreference.ArtifactChecksum;
+import com.simplematch.marketreference.MarketReferenceArtifact;
+import com.simplematch.marketreference.MarketReferenceArtifactCodec;
+import com.simplematch.marketreference.VerifiedMarketReferenceArtifact;
 import com.simplematch.queryservice.model.QueryFreshness;
+import com.simplematch.queryservice.runtime.QueryProjectionApplicationService;
+import java.io.InputStream;
+import java.time.LocalDate;
 import java.util.UUID;
-import org.flywaydb.core.Flyway;
+import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
+import org.springframework.aop.framework.ProxyFactory;
+import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.jdbc.core.JdbcTemplate;
+import org.springframework.jdbc.datasource.DataSourceTransactionManager;
 import org.springframework.jdbc.datasource.DriverManagerDataSource;
+import org.springframework.transaction.TransactionStatus;
+import org.springframework.transaction.annotation.AnnotationTransactionAttributeSource;
+import org.springframework.transaction.interceptor.TransactionInterceptor;
+import org.springframework.transaction.support.DefaultTransactionDefinition;
 
 class JdbcQueryProjectionStoreTest {
   private static final String ORDER_ID =
@@ -39,23 +54,24 @@ class JdbcQueryProjectionStoreTest {
       "0198a001-0000-7000-8000-000000000004";
 
   private QueryProjectionStore store;
+  private JdbcTemplate jdbc;
+  private DataSourceTransactionManager transactionManager;
+  private TransactionStatus fixtureTransaction;
 
   @BeforeEach
   void setUp() {
-    final DriverManagerDataSource dataSource = new DriverManagerDataSource();
-    dataSource.setDriverClassName("org.h2.Driver");
-    dataSource.setUrl(
-        "jdbc:h2:mem:querytest"
-            + UUID.randomUUID().toString().replace("-", "")
-            + ";MODE=PostgreSQL;DB_CLOSE_DELAY=-1;"
-            + "INIT=CREATE SCHEMA IF NOT EXISTS query_service\\;"
-            + "SET SCHEMA query_service");
-    Flyway.configure()
-        .dataSource(dataSource)
-        .locations("classpath:db/migration/query-service")
-        .load()
-        .migrate();
-    store = new JdbcQueryProjectionStore(new JdbcTemplate(dataSource));
+    final DriverManagerDataSource dataSource = QueryProjectionTestDatabase.open();
+    jdbc = new JdbcTemplate(dataSource);
+    store = new JdbcQueryProjectionStore(jdbc);
+    transactionManager = new DataSourceTransactionManager(dataSource);
+    fixtureTransaction = transactionManager.getTransaction(new DefaultTransactionDefinition());
+  }
+
+  @AfterEach
+  void rollBackFixture() {
+    if (fixtureTransaction != null && !fixtureTransaction.isCompleted()) {
+      transactionManager.rollback(fixtureTransaction);
+    }
   }
 
   @Test
@@ -102,23 +118,27 @@ class JdbcQueryProjectionStoreTest {
   @Test
   void roundTripsUuidOrderAndExecutionIdentitiesAfterTrade() throws Exception {
     final String takerOrderId = "0198a001-0000-7000-8000-000000000005";
-    final MatchingEvent rested = matchingEvent(FIRST_COMMAND_ID, 0L).event();
+    store.projectMatching(matchingEvent(FIRST_COMMAND_ID, 0L),
+        source("matching.events", 0, 0L, 100L));
+    final MatchingEvent next = matchingEvent(LATER_COMMAND_ID, 1L).event();
     final TradeLeg maker = TradeLeg.newBuilder()
         .setOrderId(ORDER_ID).setAccountId(ACCOUNT_ID).setSide(Side.SIDE_BUY)
         .setCumulativeQuantityShares(10).setAveragePriceUnits(100_000)
         .setResultingState(TradeLegState.TRADE_LEG_STATE_FILLED).build();
-    final MatchingEvent traded = rested.toBuilder()
+    final MatchingEvent traded = next.toBuilder()
         .setEventType(MatchingEventType.MATCHING_EVENT_TYPE_TRADE_EXECUTED)
         .setTradeExecuted(TradeExecuted.newBuilder()
             .setTradeId(ByteString.copyFrom(MatchingEventIdentityV1.tradeId(
-                rested.getTradingSessionId(), 0, UUID.fromString(FIRST_COMMAND_ID), 0)))
-            .setInstrument(rested.getOrderRested().getInstrument())
+                next.getTradingSessionId(), 0, UUID.fromString(LATER_COMMAND_ID), 0)))
+            .setInstrument(next.getOrderRested().getInstrument())
             .setMaker(maker)
             .setTaker(maker.toBuilder().setOrderId(takerOrderId).setSide(Side.SIDE_SELL))
             .setAggressorSide(Side.SIDE_SELL).setQuantityShares(10).setPriceUnits(100_000))
         .build();
-    store.projectMatching(FinalMatchingEventEnvelope.parse(traded.toByteArray()),
-        source("matching.events", 0, 0L, 100L));
+    final FinalMatchingEventEnvelope envelope =
+        FinalMatchingEventEnvelope.parse(traded.toByteArray());
+    store.projectMatching(envelope, source("matching.events", 0, 1L, 101L));
+    store.projectMatching(envelope, source("matching.events", 0, 2L, 102L));
 
     assertThat(store.findOrder(ORDER_ID)).isPresent().get()
         .satisfies(order -> assertThat(order.state()).isEqualTo("FILLED"));
@@ -129,6 +149,54 @@ class JdbcQueryProjectionStoreTest {
           assertThat(execution.accountId()).isEqualTo(ACCOUNT_ID);
         });
     assertThat(store.findExecutions(takerOrderId)).hasSize(1);
+    assertThat(store.findOrder(takerOrderId)).isPresent().get()
+        .satisfies(order -> assertThat(order.state()).isEqualTo("FILLED"));
+    assertThat(store.freshness().partitions()).singleElement()
+        .extracting(QueryFreshness.PartitionFreshness::lastProcessedOffset)
+        .isEqualTo(2L);
+  }
+
+  @Test
+  void installsAndReadsVerifiedReferenceWithSqlDateAndCurrentArtifactIdentity() throws Exception {
+    final VerifiedMarketReferenceArtifact artifact = verifiedArtifact();
+    store.installMarketReference(artifact, 100L);
+    store.installMarketReference(artifact, 101L);
+
+    assertThat(store.findMarketReference("2026-08-11", "XTAI", "2330"))
+        .isPresent().get().satisfies(reference -> {
+          assertThat(reference.tradingDay()).isEqualTo(LocalDate.of(2026, 8, 11));
+          assertThat(reference.artifactId()).isEqualTo(artifact.identity().value());
+          assertThat(reference.referencePriceUnits()).isEqualTo(1_000_000L);
+          assertThat(reference.lowerPriceLimitUnits()).isEqualTo(900_000L);
+          assertThat(reference.upperPriceLimitUnits()).isEqualTo(1_100_000L);
+          assertThat(reference.routingPartition()).isZero();
+          assertThat(reference.updatedAtUnixMs()).isEqualTo(101L);
+        });
+  }
+
+  @Test
+  void applicationTransactionRollsBackInboxAndModelWhenCheckpointWriteFails() {
+    // The production interceptor must own this transaction, including its real rollback.
+    transactionManager.rollback(fixtureTransaction);
+    jdbc.execute("ALTER TABLE query_service.projection_checkpoint "
+        + "ADD CONSTRAINT query_jdbc_test_checkpoint_failure "
+        + "CHECK (source_topic <> 'rollback-test')");
+    try {
+      final QueryProjectionApplicationService application = transactionalApplicationService();
+
+      assertThatThrownBy(() -> application.projectMatching(
+          matchingEvent(FIRST_COMMAND_ID, 0L), source("rollback-test", 0, 0L, 100L)))
+          .isInstanceOf(DataIntegrityViolationException.class)
+          .hasMessageContaining("projection_checkpoint");
+
+      assertThat(store.findOrder(ORDER_ID)).isEmpty();
+      assertThat(store.freshness().partitions()).isEmpty();
+      assertThat(jdbc.queryForObject(
+          "SELECT COUNT(*) FROM query_service.projection_inbox", Long.class)).isZero();
+    } finally {
+      jdbc.execute("ALTER TABLE query_service.projection_checkpoint "
+          + "DROP CONSTRAINT query_jdbc_test_checkpoint_failure");
+    }
   }
 
   @Test
@@ -300,6 +368,29 @@ class JdbcQueryProjectionStoreTest {
     } catch (InvalidProtocolBufferException invalidFixture) {
       throw new AssertionError(
           "test Matching Event fixture must be valid", invalidFixture);
+    }
+  }
+
+  private QueryProjectionApplicationService transactionalApplicationService() {
+    final TransactionInterceptor interceptor = new TransactionInterceptor();
+    interceptor.setTransactionManager(transactionManager);
+    interceptor.setTransactionAttributeSource(new AnnotationTransactionAttributeSource());
+    final ProxyFactory proxy = new ProxyFactory(new QueryProjectionApplicationService(store));
+    proxy.addAdvice(interceptor);
+    return (QueryProjectionApplicationService) proxy.getProxy();
+  }
+
+  private VerifiedMarketReferenceArtifact verifiedArtifact() throws Exception {
+    try (InputStream resource = getClass().getResourceAsStream(
+        "/market-reference-fixtures/market_reference.json")) {
+      assertThat(resource).isNotNull();
+      final byte[] bytes = resource.readAllBytes();
+      final String checksum = ArtifactChecksum.sha256(bytes);
+      final LocalDate tradingDay = LocalDate.of(2026, 8, 11);
+      final MarketReferenceArtifact artifact = new MarketReferenceArtifactCodec(new ObjectMapper())
+          .readVerified(bytes, checksum, tradingDay);
+      return new VerifiedMarketReferenceArtifact(
+          artifact, com.simplematch.marketreference.ArtifactIdentity.of(tradingDay, checksum));
     }
   }
 

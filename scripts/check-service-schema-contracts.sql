@@ -147,4 +147,57 @@ SELECT pg_temp.expect_rejected(
     'UPDATE quickfix_gateway.fix_delivery_intents SET status = ''SENT''', '23514');
 UPDATE quickfix_gateway.fix_delivery_intents SET status = 'SENT', sent_at_unix_ms = 1;
 
+-- The same canonical symbol rules apply at the projection SQL seam.
+SELECT pg_temp.expect_rejected(
+    $sql$UPDATE market_data_projection.order_book_entries SET symbol = 'abc'$sql$, '23514');
+SELECT pg_temp.expect_rejected(
+    $sql$UPDATE market_data_projection.order_book_entries SET symbol = 'a-b'$sql$, '23514');
+SELECT pg_temp.expect_rejected(
+    $sql$UPDATE market_data_projection.order_book_entries SET symbol = ' '$sql$, '23514');
+SELECT pg_temp.expect_rejected(
+    $sql$UPDATE market_data_projection.instrument_market_data SET symbol = 'abc'$sql$, '23514');
+SELECT pg_temp.expect_rejected(
+    $sql$UPDATE market_data_projection.instrument_market_data SET symbol = 'a-b'$sql$, '23514');
+SELECT pg_temp.expect_rejected(
+    $sql$UPDATE market_data_projection.instrument_market_data SET symbol = ' '$sql$, '23514');
+
+-- Persisted outcome facts must be rehydratable by their existing Java domain objects.
+SELECT pg_temp.expect_rejected(
+    $sql$UPDATE account_service.account_reservations SET reason_code = 'BAD'$sql$, '23514');
+SELECT pg_temp.expect_rejected(
+    $sql$UPDATE account_service.account_reservations
+        SET status = 'RESERVATION_STATUS_REJECTED', reserved_notional = 0$sql$, '23514');
+UPDATE account_service.account_reservations
+SET status = 'RESERVATION_STATUS_REJECTED', reserved_notional = 0,
+    reason_code = 'INVALID_ORDER', reason_text = 'Invalid order facts';
+SELECT pg_temp.expect_rejected(
+    $sql$UPDATE account_service.account_reservations SET reason_text = ''$sql$, '23514');
+UPDATE account_service.account_reservations
+SET status = 'RESERVATION_STATUS_RELEASED', remaining_quantity = 0,
+    reason_code = 'RELEASED', reason_text = '';
+
+SELECT pg_temp.expect_rejected(
+    $sql$UPDATE risk_service.admission_journal SET state = 'REJECTED'$sql$, '23514');
+UPDATE risk_service.admission_journal
+SET state = 'REJECTED', reason_code = 'INVALID_COMMAND', reason_detail = 'Invalid command facts';
+SELECT pg_temp.expect_rejected(
+    $sql$UPDATE risk_service.admission_journal SET reason_code = ''$sql$, '23514');
+
+-- Match Java String.isBlank for reason data instead of checking ASCII spaces only.
+SELECT pg_temp.expect_rejected(
+    $sql$UPDATE risk_service.admission_journal SET reason_code = E'\t\n'$sql$, '23514');
+SELECT pg_temp.expect_rejected(
+    $sql$UPDATE risk_service.admission_journal SET reason_detail = U&'\3000'$sql$, '23514');
+-- NBSP is deliberately nonblank under the existing Java domain rule.
+UPDATE risk_service.admission_journal SET reason_detail = U&'\00A0';
+UPDATE account_service.account_reservations
+SET status = 'RESERVATION_STATUS_REJECTED', remaining_quantity = 1,
+    reason_code = 'INVALID_ORDER', reason_text = 'Invalid facts';
+SELECT pg_temp.expect_rejected(
+    $sql$UPDATE account_service.account_reservations SET reason_text = U&'\3000'$sql$, '23514');
+UPDATE account_service.account_reservations
+SET status = 'RESERVATION_STATUS_ACCEPTED', reason_code = E'\t\n', reason_text = U&'\3000';
+SELECT pg_temp.expect_rejected(
+    $sql$UPDATE account_service.account_reservations SET reason_text = U&'\00A0'$sql$, '23514');
+
 ROLLBACK;
