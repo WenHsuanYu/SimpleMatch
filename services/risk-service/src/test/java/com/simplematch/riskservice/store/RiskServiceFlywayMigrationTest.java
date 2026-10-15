@@ -62,7 +62,7 @@ class RiskServiceFlywayMigrationTest {
         .isEqualTo("NO");
     assertThat(columnNullable(jdbcTemplate, "ADMISSION_JOURNAL", "ROUTING_ALGORITHM_VERSION"))
         .isEqualTo("NO");
-    assertThat(appliedMigrationCount(jdbcTemplate)).isEqualTo(8);
+    assertThat(appliedMigrationCount(jdbcTemplate)).isEqualTo(9);
   }
 
   @DisplayName("local resilience markers reject blank values and negative timestamps")
