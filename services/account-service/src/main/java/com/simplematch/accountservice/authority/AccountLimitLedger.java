@@ -30,9 +30,6 @@ public record AccountLimitLedger(
   }
 
   private static BigDecimal nonNegative(BigDecimal value, String field) {
-    if (value == null || value.signum() < 0) {
-      throw new IllegalArgumentException(field + " must be non-negative");
-    }
-    return value;
+    return AccountAmounts.aggregateAmount(value, field);
   }
 }

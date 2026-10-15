@@ -19,8 +19,8 @@ import com.simplematch.accountservice.store.JdbcAccountAuthorityReader;
 import com.simplematch.accountservice.store.JdbcAccountOutboxRepository;
 import com.simplematch.contracts.account.v2.AccountLifecycleEvent;
 import com.simplematch.contracts.account.v2.AccountLifecycleState;
-import com.simplematch.contracts.common.v1.ReservationStatus;
-import com.simplematch.contracts.common.v1.Side;
+import com.simplematch.accountservice.authority.ReservationStatus;
+import com.simplematch.contracts.common.v2.Side;
 import java.math.BigDecimal;
 import java.time.Clock;
 import java.time.Instant;
@@ -185,7 +185,7 @@ class AccountReservationApplicationServiceTransactionTest {
             new ExecutionFill(
                 new ExecutionFill.ExecutionId(UUID.randomUUID().toString()),
                 ExecutionFill.AggregateSequence.absent(),
-                new ExecutionFill.FillQuantity(new BigDecimal("1")),
+                new ExecutionFill.FillQuantity(1),
                 new ExecutionFill.FillPrice(new BigDecimal("99"))));
 
     assertThatThrownBy(() -> service.applyFill(fill))
@@ -237,9 +237,10 @@ class AccountReservationApplicationServiceTransactionTest {
                 first.identity().accountId()),
             new ReservationTerms(
                 new ReservationTerms.InstrumentSymbol("2330"),
+                new ReservationTerms.VenueMic("XTAI"),
                 Side.SIDE_BUY,
-                new ReservationTerms.ReservationQuantity(new BigDecimal("11")),
-                new ReservationTerms.LimitPrice(new BigDecimal("100"))));
+                new ReservationTerms.ReservationQuantity(11),
+                new ReservationTerms.LimitPrice(new BigDecimal("100"))), java.time.LocalDate.of(2026, 7, 28));
 
     assertThatThrownBy(() -> service.reserve(conflicting))
         .isInstanceOf(ReservationRequestConflictException.class)
@@ -261,7 +262,7 @@ class AccountReservationApplicationServiceTransactionTest {
             new ExecutionFill(
                 new ExecutionFill.ExecutionId(executionId),
                 ExecutionFill.AggregateSequence.absent(),
-                new ExecutionFill.FillQuantity(new BigDecimal("10")),
+                new ExecutionFill.FillQuantity(10),
                 new ExecutionFill.FillPrice(new BigDecimal("99"))));
 
     final ReservationRecord applied = service.applyFill(fill);
@@ -297,7 +298,7 @@ class AccountReservationApplicationServiceTransactionTest {
         new ExecutionFill(
             new ExecutionFill.ExecutionId(UUID.randomUUID().toString()),
             new ExecutionFill.AggregateSequence(7L),
-            new ExecutionFill.FillQuantity(new BigDecimal("4")),
+            new ExecutionFill.FillQuantity(4),
             new ExecutionFill.FillPrice(new BigDecimal("99")));
     final ApplyFillOperation first = new ApplyFillOperation(identity, firstFill);
     final ApplyFillOperation duplicateSequence =
@@ -306,7 +307,7 @@ class AccountReservationApplicationServiceTransactionTest {
             new ExecutionFill(
                 new ExecutionFill.ExecutionId(UUID.randomUUID().toString()),
                 new ExecutionFill.AggregateSequence(7L),
-                new ExecutionFill.FillQuantity(new BigDecimal("4")),
+                new ExecutionFill.FillQuantity(4),
                 new ExecutionFill.FillPrice(new BigDecimal("99"))));
 
     final ReservationRecord applied = service.applyFill(first);
@@ -335,7 +336,7 @@ class AccountReservationApplicationServiceTransactionTest {
             new ExecutionFill(
                 new ExecutionFill.ExecutionId(UUID.randomUUID().toString()),
                 ExecutionFill.AggregateSequence.absent(),
-                new ExecutionFill.FillQuantity(new BigDecimal("4")),
+                new ExecutionFill.FillQuantity(4),
                 new ExecutionFill.FillPrice(new BigDecimal("99"))));
 
     final ReservationRecord applied = service.applyFill(fill);
@@ -366,7 +367,7 @@ class AccountReservationApplicationServiceTransactionTest {
             new ExecutionFill(
                 new ExecutionFill.ExecutionId(UUID.randomUUID().toString()),
                 ExecutionFill.AggregateSequence.absent(),
-                new ExecutionFill.FillQuantity(new BigDecimal("4")),
+                new ExecutionFill.FillQuantity(4),
                 new ExecutionFill.FillPrice(new BigDecimal("99")))));
 
     final ReservationRecord released =
@@ -481,7 +482,7 @@ class AccountReservationApplicationServiceTransactionTest {
   }
 
   private ReserveOperation operation(Side side, String quantity, String price) {
-    return operation(side, quantity, price, null);
+    return operation(side, quantity, price, CLOCK.instant().atZone(java.time.ZoneId.of("Asia/Taipei")).toLocalDate());
   }
 
   private ReserveOperation operation(
@@ -493,8 +494,9 @@ class AccountReservationApplicationServiceTransactionTest {
             new ReservationRequestIdentity.AccountId(ACCOUNT_ID)),
         new ReservationTerms(
             new ReservationTerms.InstrumentSymbol("2330"),
+            new ReservationTerms.VenueMic("XTAI"),
             side,
-            new ReservationTerms.ReservationQuantity(new BigDecimal(quantity)),
+            new ReservationTerms.ReservationQuantity(Long.parseLong(quantity)),
             new ReservationTerms.LimitPrice(new BigDecimal(price))),
         tradingDay);
   }

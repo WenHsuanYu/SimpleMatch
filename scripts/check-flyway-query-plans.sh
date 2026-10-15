@@ -43,7 +43,7 @@ case "$service_name" in
     assert_index_plan \
       "account reservation idempotency lookup" \
       "uq_account_reservations_request_id" \
-      "SELECT reservation_id FROM account_service.account_reservations WHERE request_id = 'plan-check'"
+      "SELECT reservation_id FROM account_service.account_reservations WHERE request_id = '00000000-0000-0000-0000-000000000001'"
     ;;
   market-data-projection)
     assert_index_plan \
@@ -59,11 +59,11 @@ case "$service_name" in
     assert_index_plan \
       "query order history by account" \
       "order_read_model_account_idx" \
-      "SELECT order_id FROM query_service.order_read_model WHERE account_id = 'account' ORDER BY updated_at_unix_ms"
+      "SELECT order_id FROM query_service.order_read_model WHERE account_id = '00000000-0000-0000-0000-000000000001' ORDER BY updated_at_unix_ms"
     assert_index_plan \
       "query executions by order chronology" \
       "execution_read_model_order_idx" \
-      "SELECT execution_id FROM query_service.execution_read_model WHERE order_id = 'order' ORDER BY executed_at_unix_ms, execution_id"
+      "SELECT execution_id FROM query_service.execution_read_model WHERE order_id = '00000000-0000-0000-0000-000000000002' ORDER BY executed_at_unix_ms, execution_id"
     assert_index_plan \
       "query active market reference artifact" \
       "active_market_reference_artifact_idx" \
@@ -82,8 +82,8 @@ case "$service_name" in
   persistence)
     assert_index_plan \
       "persistence inbox deduplication lookup" \
-      "inbox_pkey" \
-      "SELECT received_at_unix_ms FROM persistence.inbox WHERE consumer_name = 'persistence' AND event_id = '00000000-0000-0000-0000-000000000000'"
+      "matching_event_inbox_pkey" \
+      "SELECT received_at_unix_ms FROM persistence.matching_event_inbox WHERE consumer_name = 'persistence-matching-events' AND event_id = decode(repeat('00', 32), 'hex')"
     ;;
   quickfix-gateway)
     assert_index_plan \

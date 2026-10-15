@@ -17,8 +17,8 @@ import com.simplematch.accountservice.reservation.ReservationRequestIdentity;
 import com.simplematch.accountservice.reservation.ReservationTerms;
 import com.simplematch.accountservice.reservation.ReserveOperation;
 import com.simplematch.accountservice.store.JdbcFinalMatchingEventAccountInbox;
-import com.simplematch.contracts.common.v1.ReservationStatus;
-import com.simplematch.contracts.common.v1.Side;
+import com.simplematch.accountservice.authority.ReservationStatus;
+import com.simplematch.contracts.common.v2.Side;
 import java.math.BigDecimal;
 import java.time.Clock;
 import java.time.Instant;
@@ -158,7 +158,7 @@ class FinalMatchingEventAccountAuthorityIntegrationTest {
         new ReservationIdentity.OrderId(reservation.orderId()),
         AccountId.parse(reservation.accountId()),
         new ReservationTerms.InstrumentSymbol(reservation.symbol()),
-        new ExecutionFill.FillQuantity(new BigDecimal(quantity)),
+        new ExecutionFill.FillQuantity(Long.parseLong(quantity)),
         new ExecutionFill.FillPrice(new BigDecimal(price)),
         resultingState);
   }
@@ -204,9 +204,10 @@ class FinalMatchingEventAccountAuthorityIntegrationTest {
                 new ReservationRequestIdentity.AccountId(accountId)),
             new ReservationTerms(
                 new ReservationTerms.InstrumentSymbol("2330"),
+                new ReservationTerms.VenueMic("XTAI"),
                 side,
-                new ReservationTerms.ReservationQuantity(new BigDecimal(quantity)),
-                new ReservationTerms.LimitPrice(new BigDecimal(price)))));
+                new ReservationTerms.ReservationQuantity(Long.parseLong(quantity)),
+                new ReservationTerms.LimitPrice(new BigDecimal(price))), java.time.LocalDate.of(2026, 7, 28)));
   }
 
   private void assertReservation(

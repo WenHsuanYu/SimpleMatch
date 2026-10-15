@@ -79,4 +79,11 @@ if ! rg -q -U 'name: SIMPLEMATCH_GRPC_SECURITY_TLS_ENABLED\r?\n\s+value: "true"'
   exit 1
 fi
 
+# The current runtime v1 event and WAL encodings are independent of retired common v1.
+if [[ -e proto/common.proto ]] || rg -n --glob '*.java' \
+  'com\.simplematch\.contracts\.common\.v1' services shared-java tools; then
+  echo "Retired common v1 types must not remain in service or shared Java source." >&2
+  exit 1
+fi
+
 echo "Account reservation v2 source and configuration cutover guard passed."

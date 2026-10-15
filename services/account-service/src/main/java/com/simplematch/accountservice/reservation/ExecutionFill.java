@@ -1,5 +1,6 @@
 package com.simplematch.accountservice.reservation;
 
+import com.simplematch.accountservice.authority.AccountAmounts;
 import java.math.BigDecimal;
 import java.util.Objects;
 
@@ -26,11 +27,13 @@ public record ExecutionFill(
     Objects.requireNonNull(aggregateSequence, "aggregateSequence");
     Objects.requireNonNull(quantity, "quantity");
     Objects.requireNonNull(price, "price");
+    AccountAmounts.reservationAmount(
+        price.value().multiply(BigDecimal.valueOf(quantity.value())), "fill_notional");
   }
 
   /** Returns the execution notional represented by this fill. */
   public BigDecimal notional() {
-    return quantity.value().multiply(price.value());
+    return BigDecimal.valueOf(quantity.value()).multiply(price.value());
   }
 
   /** Idempotency identity of one execution event. */
@@ -59,10 +62,12 @@ public record ExecutionFill(
   }
 
   /** Positive quantity filled by one execution. */
-  public record FillQuantity(BigDecimal value) {
+  public record FillQuantity(long value) {
     /** Requires a positive fill quantity. */
     public FillQuantity {
-      value = requirePositive(value, "fill_quantity");
+      if (value <= 0) {
+        throw new IllegalArgumentException("fill_quantity must be positive");
+      }
     }
   }
 
@@ -71,6 +76,7 @@ public record ExecutionFill(
     /** Requires a positive execution price. */
     public FillPrice {
       value = requirePositive(value, "fill_price");
+      value = AccountAmounts.reservationAmount(value, "fill_price");
     }
   }
 

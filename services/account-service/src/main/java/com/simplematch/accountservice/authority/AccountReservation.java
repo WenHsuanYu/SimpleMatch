@@ -5,8 +5,7 @@ import com.simplematch.accountservice.reservation.ReleaseReservationOperation;
 import com.simplematch.accountservice.reservation.ReservationIdentity;
 import com.simplematch.accountservice.reservation.ReservationTerms;
 import com.simplematch.accountservice.reservation.ReserveOperation;
-import com.simplematch.contracts.common.v1.ReservationStatus;
-import com.simplematch.contracts.common.v1.Side;
+import com.simplematch.contracts.common.v2.Side;
 import java.math.BigDecimal;
 import java.time.LocalDate;
 import java.util.Objects;
@@ -71,17 +70,17 @@ public record AccountReservation(
 
   /** Returns the reservation identifier for persistence and external responses. */
   public String reservationId() {
-    return identity.reservationId().value();
+    return identity.reservationId().wireValue();
   }
 
   /** Returns the idempotent request identifier. */
   public String requestId() {
-    return identity.requestId().value();
+    return identity.requestId().wireValue();
   }
 
   /** Returns the owning order identifier. */
   public String orderId() {
-    return identity.orderId().value();
+    return identity.orderId().wireValue();
   }
 
   /** Returns the canonical Account-domain identity. */
@@ -110,17 +109,17 @@ public record AccountReservation(
   }
 
   /** Returns the original requested quantity. */
-  public BigDecimal quantity() {
+  public long quantity() {
     return terms.quantity().value();
   }
 
   /** Returns the quantity not yet filled or released. */
-  public BigDecimal remainingQuantity() {
+  public long remainingQuantity() {
     return lifecycle.allocation().remainingQuantity();
   }
 
   /** Returns the quantity already filled. */
-  public BigDecimal filledQuantity() {
+  public long filledQuantity() {
     return lifecycle.allocation().filledQuantity();
   }
 
@@ -134,7 +133,7 @@ public record AccountReservation(
     Objects.requireNonNull(operation, "operation");
     return orderId().equals(operation.orderId())
         && accountId().equals(operation.accountId())
-        && (operation.tradingDay() == null || tradingDay.equals(operation.tradingDay()))
+        && tradingDay.equals(operation.tradingDay())
         && terms.hasEquivalentFacts(operation.terms());
   }
 

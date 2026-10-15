@@ -2,7 +2,7 @@ package com.simplematch.accountservice.reservation;
 
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
-import com.simplematch.contracts.common.v1.Side;
+import com.simplematch.contracts.common.v2.Side;
 import java.math.BigDecimal;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
@@ -13,10 +13,10 @@ class ReservationConstructorContractTest {
   @Test
   @DisplayName("reserve operations require both typed components")
   void reserveOperationRequiresTypedComponents() {
-    assertThatThrownBy(() -> new ReserveOperation(null, terms()))
+    assertThatThrownBy(() -> new ReserveOperation(null, terms(), java.time.LocalDate.of(2026, 7, 28)))
         .isInstanceOf(NullPointerException.class)
         .hasMessage("identity");
-    assertThatThrownBy(() -> new ReserveOperation(requestIdentity(), null))
+    assertThatThrownBy(() -> new ReserveOperation(requestIdentity(), null, java.time.LocalDate.of(2026, 7, 28)))
         .isInstanceOf(NullPointerException.class)
         .hasMessage("terms");
   }
@@ -28,14 +28,14 @@ class ReservationConstructorContractTest {
             () ->
                 new ReservationRequestIdentity(
                     null,
-                    new ReservationRequestIdentity.OrderId("order-1"),
+                    new ReservationRequestIdentity.OrderId("00000000-0000-0000-0000-000000000013"),
                     new ReservationRequestIdentity.AccountId(ACCOUNT_ID)))
         .isInstanceOf(NullPointerException.class)
         .hasMessage("requestId");
     assertThatThrownBy(
             () ->
                 new ReservationRequestIdentity(
-                    new ReservationRequestIdentity.RequestId("request-1"),
+                    new ReservationRequestIdentity.RequestId("00000000-0000-0000-0000-000000000011"),
                     null,
                     new ReservationRequestIdentity.AccountId(ACCOUNT_ID)))
         .isInstanceOf(NullPointerException.class)
@@ -43,8 +43,8 @@ class ReservationConstructorContractTest {
     assertThatThrownBy(
             () ->
                 new ReservationRequestIdentity(
-                    new ReservationRequestIdentity.RequestId("request-1"),
-                    new ReservationRequestIdentity.OrderId("order-1"),
+                    new ReservationRequestIdentity.RequestId("00000000-0000-0000-0000-000000000011"),
+                    new ReservationRequestIdentity.OrderId("00000000-0000-0000-0000-000000000013"),
                     null))
         .isInstanceOf(NullPointerException.class)
         .hasMessage("accountId");
@@ -56,18 +56,18 @@ class ReservationConstructorContractTest {
     assertThatThrownBy(
             () ->
                 new ReservationTerms(
-                    null,
+                    null,new ReservationTerms.VenueMic("XTAI"),
                     Side.SIDE_BUY,
-                    new ReservationTerms.ReservationQuantity(new BigDecimal("10")),
+                    new ReservationTerms.ReservationQuantity(10),
                     ReservationTerms.LimitPrice.absent()))
         .isInstanceOf(NullPointerException.class)
         .hasMessage("symbol");
     assertThatThrownBy(
             () ->
                 new ReservationTerms(
-                    new ReservationTerms.InstrumentSymbol("2330"),
+                    new ReservationTerms.InstrumentSymbol("2330"),new ReservationTerms.VenueMic("XTAI"),
                     null,
-                    new ReservationTerms.ReservationQuantity(new BigDecimal("10")),
+                    new ReservationTerms.ReservationQuantity(10),
                     ReservationTerms.LimitPrice.absent()))
         .isInstanceOf(NullPointerException.class)
         .hasMessage("side");
@@ -75,6 +75,7 @@ class ReservationConstructorContractTest {
             () ->
                 new ReservationTerms(
                     new ReservationTerms.InstrumentSymbol("2330"),
+                    new ReservationTerms.VenueMic("XTAI"),
                     Side.SIDE_BUY,
                     null,
                     ReservationTerms.LimitPrice.absent()))
@@ -84,8 +85,9 @@ class ReservationConstructorContractTest {
             () ->
                 new ReservationTerms(
                     new ReservationTerms.InstrumentSymbol("2330"),
+                    new ReservationTerms.VenueMic("XTAI"),
                     Side.SIDE_BUY,
-                    new ReservationTerms.ReservationQuantity(new BigDecimal("10")),
+                    new ReservationTerms.ReservationQuantity(10),
                     null))
         .isInstanceOf(NullPointerException.class)
         .hasMessage("limitPrice");
@@ -112,23 +114,23 @@ class ReservationConstructorContractTest {
             () ->
                 new ReservationIdentity(
                     null,
-                    new ReservationIdentity.ReservationId("reservation-1"),
-                    new ReservationIdentity.OrderId("order-1")))
+                    new ReservationIdentity.ReservationId("00000000-0000-0000-0000-000000000012"),
+                    new ReservationIdentity.OrderId("00000000-0000-0000-0000-000000000013")))
         .isInstanceOf(NullPointerException.class)
         .hasMessage("requestId");
     assertThatThrownBy(
             () ->
                 new ReservationIdentity(
-                    new ReservationIdentity.RequestId("request-1"),
+                    new ReservationIdentity.RequestId("00000000-0000-0000-0000-000000000011"),
                     null,
-                    new ReservationIdentity.OrderId("order-1")))
+                    new ReservationIdentity.OrderId("00000000-0000-0000-0000-000000000013")))
         .isInstanceOf(NullPointerException.class)
         .hasMessage("reservationId");
     assertThatThrownBy(
             () ->
                 new ReservationIdentity(
-                    new ReservationIdentity.RequestId("request-1"),
-                    new ReservationIdentity.ReservationId("reservation-1"),
+                    new ReservationIdentity.RequestId("00000000-0000-0000-0000-000000000011"),
+                    new ReservationIdentity.ReservationId("00000000-0000-0000-0000-000000000012"),
                     null))
         .isInstanceOf(NullPointerException.class)
         .hasMessage("orderId");
@@ -164,24 +166,25 @@ class ReservationConstructorContractTest {
 
   private ReservationRequestIdentity requestIdentity() {
     return new ReservationRequestIdentity(
-        new ReservationRequestIdentity.RequestId("request-1"),
-        new ReservationRequestIdentity.OrderId("order-1"),
+        new ReservationRequestIdentity.RequestId("00000000-0000-0000-0000-000000000011"),
+        new ReservationRequestIdentity.OrderId("00000000-0000-0000-0000-000000000013"),
         new ReservationRequestIdentity.AccountId(ACCOUNT_ID));
   }
 
   private ReservationTerms terms() {
     return new ReservationTerms(
         new ReservationTerms.InstrumentSymbol("2330"),
+        new ReservationTerms.VenueMic("XTAI"),
         Side.SIDE_BUY,
-        new ReservationTerms.ReservationQuantity(new BigDecimal("10")),
+        new ReservationTerms.ReservationQuantity(10),
         new ReservationTerms.LimitPrice(new BigDecimal("100")));
   }
 
   private ReservationIdentity reservationIdentity() {
     return new ReservationIdentity(
-        new ReservationIdentity.RequestId("request-1"),
-        new ReservationIdentity.ReservationId("reservation-1"),
-        new ReservationIdentity.OrderId("order-1"));
+        new ReservationIdentity.RequestId("00000000-0000-0000-0000-000000000011"),
+        new ReservationIdentity.ReservationId("00000000-0000-0000-0000-000000000012"),
+        new ReservationIdentity.OrderId("00000000-0000-0000-0000-000000000013"));
   }
 
   private ExecutionFill fill() {
@@ -197,7 +200,7 @@ class ReservationConstructorContractTest {
   }
 
   private ExecutionFill.FillQuantity quantity() {
-    return new ExecutionFill.FillQuantity(new BigDecimal("10"));
+    return new ExecutionFill.FillQuantity(10);
   }
 
   private ExecutionFill.FillPrice price() {

@@ -122,7 +122,7 @@ class AccountReservationV2GrpcServiceTest {
     final ReservationCommand conflicting =
         validRequest()
             .toBuilder()
-            .setInstrument(VenueInstrument.newBuilder().setSymbol("2330").setVenueMic("XTAI2"))
+            .setInstrument(VenueInstrument.newBuilder().setSymbol("2330").setVenueMic("ROCO"))
             .build();
     final TestStreamObserver<AccountLifecycleEvent> observer = new TestStreamObserver<>();
 

@@ -8,6 +8,7 @@ import com.simplematch.accountservice.authority.AccountReservation;
 import java.time.LocalDate;
 import java.util.List;
 import java.util.Optional;
+import java.util.UUID;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Repository;
 
@@ -28,7 +29,7 @@ public class JdbcAccountAuthorityReader implements AccountAuthorityReader {
                         SELECT account_id, trading_day, currency, limit_total_notional, reserved_notional,
                           utilized_notional, available_notional, version, updated_at_unix_ms
                         FROM account_service.account_limits
-                        WHERE account_id = ? AND scope_type = 'ACCOUNT' AND scope_key = '*' AND trading_day = ?
+                        WHERE account_id = ? AND trading_day = ?
                         FOR UPDATE
         """,
         AccountAuthorityJdbcSupport.LIMIT_MAPPER,
@@ -43,7 +44,7 @@ public class JdbcAccountAuthorityReader implements AccountAuthorityReader {
                         SELECT account_id, trading_day, currency, limit_total_notional, reserved_notional,
                           utilized_notional, available_notional, version, updated_at_unix_ms
                         FROM account_service.account_limits
-                        WHERE account_id = ? AND scope_type = 'ACCOUNT' AND scope_key = '*' AND trading_day = ?
+                        WHERE account_id = ? AND trading_day = ?
         """,
         AccountAuthorityJdbcSupport.LIMIT_MAPPER,
         accountId.value(),
@@ -97,7 +98,7 @@ public class JdbcAccountAuthorityReader implements AccountAuthorityReader {
     return jdbc.queryFirst(
         jdbc.reservationSelect() + " WHERE request_id = ?",
         AccountAuthorityJdbcSupport.RESERVATION_MAPPER,
-        requestId);
+        UUID.fromString(requestId));
   }
 
   @Override
@@ -105,7 +106,7 @@ public class JdbcAccountAuthorityReader implements AccountAuthorityReader {
     return jdbc.queryFirst(
         jdbc.reservationSelect() + " WHERE order_id = ?",
         AccountAuthorityJdbcSupport.RESERVATION_MAPPER,
-        orderId);
+        UUID.fromString(orderId));
   }
 
   @Override
@@ -113,6 +114,6 @@ public class JdbcAccountAuthorityReader implements AccountAuthorityReader {
     return jdbc.queryForUpdate(
         jdbc.reservationSelect() + " WHERE reservation_id = ? FOR UPDATE",
         AccountAuthorityJdbcSupport.RESERVATION_MAPPER,
-        reservationId);
+        UUID.fromString(reservationId));
   }
 }

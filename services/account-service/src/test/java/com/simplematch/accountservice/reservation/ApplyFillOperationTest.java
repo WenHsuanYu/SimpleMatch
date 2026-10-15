@@ -13,14 +13,14 @@ class ApplyFillOperationTest {
   void groupsReservationAndExecutionValues() {
     final ReservationIdentity identity =
         new ReservationIdentity(
-            new ReservationIdentity.RequestId("request-1"),
-            new ReservationIdentity.ReservationId("reservation-1"),
-            new ReservationIdentity.OrderId("order-1"));
+            new ReservationIdentity.RequestId("00000000-0000-0000-0000-000000000011"),
+            new ReservationIdentity.ReservationId("00000000-0000-0000-0000-000000000012"),
+            new ReservationIdentity.OrderId("00000000-0000-0000-0000-000000000013"));
     final ExecutionFill fill =
         new ExecutionFill(
             new ExecutionFill.ExecutionId("execution-1"),
             new ExecutionFill.AggregateSequence(7L),
-            new ExecutionFill.FillQuantity(new BigDecimal("10")),
+            new ExecutionFill.FillQuantity(10),
             new ExecutionFill.FillPrice(new BigDecimal("99")));
 
     final ApplyFillOperation operation = new ApplyFillOperation(identity, fill);
@@ -33,7 +33,7 @@ class ApplyFillOperationTest {
   @DisplayName("Fill commands reject invalid execution quantities before transaction work")
   @Test
   void rejectsInvalidExecutionQuantity() {
-    assertThatThrownBy(() -> new ExecutionFill.FillQuantity(BigDecimal.ZERO))
+    assertThatThrownBy(() -> new ExecutionFill.FillQuantity(0))
         .isInstanceOf(IllegalArgumentException.class)
         .hasMessage("fill_quantity must be positive");
   }

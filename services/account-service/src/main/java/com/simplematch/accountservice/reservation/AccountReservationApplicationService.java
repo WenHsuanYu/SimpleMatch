@@ -9,12 +9,12 @@ import com.simplematch.accountservice.authority.AccountOutboxRepository;
 import com.simplematch.accountservice.authority.AccountPosition;
 import com.simplematch.accountservice.authority.AccountReservation;
 import com.simplematch.accountservice.authority.ReservationOwnership;
+import com.simplematch.accountservice.authority.ReservationStatus;
 import com.simplematch.config.SimpleMatchUuids;
 import com.simplematch.contracts.account.v2.AccountLifecycleEvent;
 import com.simplematch.contracts.account.v2.AccountLifecycleState;
-import com.simplematch.contracts.common.v1.ReservationStatus;
-import com.simplematch.contracts.common.v1.Side;
 import com.simplematch.contracts.common.v2.EventMetadata;
+import com.simplematch.contracts.common.v2.Side;
 import com.simplematch.contracts.common.v2.TwdNotional;
 import com.simplematch.contracts.orders.v2.ShareQuantity;
 import java.math.BigDecimal;
@@ -47,10 +47,7 @@ public class AccountReservationApplicationService {
   @Transactional(timeout = TRANSACTION_TIMEOUT_SECONDS)
   public ReservationRecord reserve(ReserveOperation operation) {
     Objects.requireNonNull(operation, "operation");
-    final LocalDate tradingDay =
-        operation.tradingDay() == null
-            ? clock.instant().atZone(TAIPEI).toLocalDate()
-            : operation.tradingDay();
+    final LocalDate tradingDay = operation.tradingDay();
     authorityWriter.claimReservationRequest(operation.requestId(), clock.millis());
     final AccountReservation existing =
         authorityReader.findReservationByRequestId(operation.requestId()).orElse(null);
@@ -62,7 +59,7 @@ public class AccountReservationApplicationService {
     final BigDecimal notional =
         operation.limitPrice() == null
             ? BigDecimal.ZERO
-            : operation.quantity().multiply(operation.limitPrice());
+            : BigDecimal.valueOf(operation.quantity()).multiply(operation.limitPrice());
     if (operation.limitPrice() == null) {
       return persistRejected(
           operation,
@@ -121,25 +118,25 @@ public class AccountReservationApplicationService {
         && !authorityWriter.claimInbox(
             CONSUMER_NAME,
             operation.sourceEventId(),
-            identity.orderId().value(),
+            identity.orderId().wireValue(),
             null,
             clock.millis())) {
       return authorityReader
-          .findReservationForUpdate(identity.reservationId().value())
+          .findReservationForUpdate(identity.reservationId().wireValue())
           .map(ReservationRecord::from)
           .orElseThrow(() -> new IllegalArgumentException("reservation not found"));
     }
     final AccountReservation reservation =
         authorityReader
-            .findReservationForUpdate(identity.reservationId().value())
+            .findReservationForUpdate(identity.reservationId().wireValue())
             .orElseThrow(() -> new IllegalArgumentException("reservation not found"));
-    if (!reservation.requestId().equals(identity.requestId().value())
-        || !reservation.orderId().equals(identity.orderId().value())) {
+    if (!reservation.requestId().equals(identity.requestId().wireValue())
+        || !reservation.orderId().equals(identity.orderId().wireValue())) {
       throw new IllegalArgumentException("reservation identity does not match request");
     }
     if (reservation.status() == ReservationStatus.RESERVATION_STATUS_RELEASED
         || reservation.status() == ReservationStatus.RESERVATION_STATUS_REJECTED
-        || reservation.remainingQuantity().signum() == 0) {
+        || reservation.remainingQuantity() == 0) {
       return ReservationRecord.from(reservation);
     }
     final long now = clock.millis();
@@ -161,22 +158,22 @@ public class AccountReservationApplicationService {
     if (!authorityWriter.claimInbox(
         CONSUMER_NAME,
         fill.executionId().value(),
-        identity.orderId().value(),
+        identity.orderId().wireValue(),
         fill.aggregateSequence().value(),
         clock.millis())) {
       return authorityReader
-          .findReservationForUpdate(identity.reservationId().value())
+          .findReservationForUpdate(identity.reservationId().wireValue())
           .map(ReservationRecord::from)
           .orElseThrow(() -> new IllegalArgumentException("reservation not found"));
     }
     final AccountReservation reservation =
         authorityReader
-            .findReservationForUpdate(identity.reservationId().value())
+            .findReservationForUpdate(identity.reservationId().wireValue())
             .orElseThrow(() -> new IllegalArgumentException("reservation not found"));
     AccountAuthorityTransitions.validateFill(reservation, identity, fill);
     final long now = clock.millis();
     final BigDecimal releasedNotional =
-        fill.quantity().value().compareTo(reservation.remainingQuantity()) == 0
+        fill.quantity().value() == reservation.remainingQuantity()
             ? reservation.reservedNotional()
             : reservation.reservedNotionalReleasedBy(fill);
     AccountAuthorityTransitions.applyFilledAuthority(
@@ -263,7 +260,7 @@ public class AccountReservationApplicationService {
                     .build())
             .setReservedQuantity(
                 ShareQuantity.newBuilder()
-                    .setShares(reservation.remainingQuantity().longValueExact())
+                    .setShares(reservation.remainingQuantity())
                     .build())
             .setReasonCode(reasonCode == null ? "" : reasonCode)
             .setReasonDetail(reservation.reasonText())

@@ -24,8 +24,8 @@ import com.simplematch.config.delivery.CriticalDeliveryController;
 import com.simplematch.config.delivery.DeliveryPosition;
 import com.simplematch.config.delivery.QuarantineEvidence;
 import com.simplematch.config.delivery.QuarantineStore;
-import com.simplematch.contracts.common.v1.ReservationStatus;
-import com.simplematch.contracts.common.v1.Side;
+import com.simplematch.accountservice.authority.ReservationStatus;
+import com.simplematch.contracts.common.v2.Side;
 import com.simplematch.contracts.matching.runtime.v1.MatchingEvent;
 import com.simplematch.contracts.matching.runtime.v1.TradeLegState;
 import java.io.IOException;
@@ -240,8 +240,8 @@ class FinalMatchingEventAccountConsumerTest {
             new ReservationTerms.InstrumentSymbol("2330"),
             new ReservationTerms.VenueMic("XTAI"),
             side,
-            new ReservationTerms.ReservationQuantity(new BigDecimal("100")),
-            new ReservationTerms.LimitPrice(new BigDecimal("100"))));
+            new ReservationTerms.ReservationQuantity(100),
+            new ReservationTerms.LimitPrice(new BigDecimal("100"))), java.time.LocalDate.of(2026, 8, 11));
   }
 
   private CriticalDeliveryController controller(

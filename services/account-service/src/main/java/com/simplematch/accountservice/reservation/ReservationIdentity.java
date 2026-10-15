@@ -1,6 +1,7 @@
 package com.simplematch.accountservice.reservation;
 
 import java.util.Objects;
+import java.util.UUID;
 
 /**
  * Stable identity of one account reservation across synchronous requests and lifecycle events.
@@ -23,33 +24,67 @@ public record ReservationIdentity(
   }
 
   /** Idempotent operation identity used by the synchronous reservation boundary. */
-  public record RequestId(String value) {
-    /** Requires a nonblank request identifier. */
+  public record RequestId(UUID value) {
+    /** Parses a UUID identifier at a text boundary. */
+    public RequestId(String value) {
+      this(parseUuid(value, "request_id"));
+    }
+
+    /** Requires a concrete UUID identifier. */
     public RequestId {
-      value = requireNonBlank(value, "request_id");
+      Objects.requireNonNull(value, "value");
+    }
+
+    /** Returns the canonical representation used at transport boundaries. */
+    public String wireValue() {
+      return value.toString();
     }
   }
 
   /** Account-owned identity of one reservation. */
-  public record ReservationId(String value) {
-    /** Requires a nonblank reservation identifier. */
+  public record ReservationId(UUID value) {
+    /** Parses a UUID identifier at a text boundary. */
+    public ReservationId(String value) {
+      this(parseUuid(value, "reservation_id"));
+    }
+
+    /** Requires a concrete UUID identifier. */
     public ReservationId {
-      value = requireNonBlank(value, "reservation_id");
+      Objects.requireNonNull(value, "value");
+    }
+
+    /** Returns the canonical representation used at transport boundaries. */
+    public String wireValue() {
+      return value.toString();
     }
   }
 
   /** Identity of the order that owns the reservation. */
-  public record OrderId(String value) {
-    /** Requires a nonblank order identifier. */
+  public record OrderId(UUID value) {
+    /** Parses a UUID identifier at a text boundary. */
+    public OrderId(String value) {
+      this(parseUuid(value, "order_id"));
+    }
+
+    /** Requires a concrete UUID identifier. */
     public OrderId {
-      value = requireNonBlank(value, "order_id");
+      Objects.requireNonNull(value, "value");
+    }
+
+    /** Returns the canonical representation used at transport boundaries. */
+    public String wireValue() {
+      return value.toString();
     }
   }
 
-  private static String requireNonBlank(String value, String fieldName) {
+  private static UUID parseUuid(String value, String fieldName) {
     if (value == null || value.isBlank()) {
-      throw new IllegalArgumentException(fieldName + " must not be blank");
+      throw new IllegalArgumentException(fieldName + " must be a UUID");
     }
-    return value;
+    try {
+      return UUID.fromString(value);
+    } catch (IllegalArgumentException invalid) {
+      throw new IllegalArgumentException(fieldName + " must be a UUID", invalid);
+    }
   }
 }

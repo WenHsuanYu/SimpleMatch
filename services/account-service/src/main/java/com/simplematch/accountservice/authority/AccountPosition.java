@@ -1,6 +1,5 @@
 package com.simplematch.accountservice.authority;
 
-import java.math.BigDecimal;
 import java.util.Objects;
 
 /**
@@ -26,7 +25,7 @@ public record AccountPosition(
     return new AccountPosition(
         new AccountPositionIdentity(accountId, symbol),
         new AccountPositionInventory(
-            BigDecimal.ZERO, BigDecimal.ZERO, BigDecimal.ZERO, BigDecimal.ZERO),
+            0, 0, 0, 0),
         AccountPositionRevision.initial(now));
   }
 
@@ -52,22 +51,22 @@ public record AccountPosition(
   }
 
   /** Returns long inventory. */
-  public BigDecimal longQuantity() {
+  public long longQuantity() {
     return inventory.longQuantity();
   }
 
   /** Returns short inventory. */
-  public BigDecimal shortQuantity() {
+  public long shortQuantity() {
     return inventory.shortQuantity();
   }
 
   /** Returns reserved long inventory. */
-  public BigDecimal reservedLongQuantity() {
+  public long reservedLongQuantity() {
     return inventory.reservedLongQuantity();
   }
 
   /** Returns reserved short inventory. */
-  public BigDecimal reservedShortQuantity() {
+  public long reservedShortQuantity() {
     return inventory.reservedShortQuantity();
   }
 

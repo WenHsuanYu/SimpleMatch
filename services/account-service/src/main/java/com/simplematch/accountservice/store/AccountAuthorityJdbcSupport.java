@@ -15,15 +15,13 @@ import com.simplematch.accountservice.authority.ReservationLifecycle;
 import com.simplematch.accountservice.authority.ReservationOutcome;
 import com.simplematch.accountservice.authority.ReservationOwnership;
 import com.simplematch.accountservice.authority.ReservationRevision;
+import com.simplematch.accountservice.authority.ReservationStatus;
 import com.simplematch.accountservice.reservation.ReservationIdentity;
 import com.simplematch.accountservice.reservation.ReservationTerms;
-import com.simplematch.contracts.common.v1.ReservationStatus;
-import com.simplematch.contracts.common.v1.Side;
+import com.simplematch.contracts.common.v2.Side;
 import java.sql.PreparedStatement;
 import java.sql.ResultSet;
-import java.time.Instant;
 import java.time.LocalDate;
-import java.time.ZoneId;
 import java.util.List;
 import java.util.Objects;
 import java.util.Optional;
@@ -34,7 +32,6 @@ import org.springframework.jdbc.core.RowMapper;
 
 /** Shared JDBC mechanics for the account-authority reader and lifecycle-writer adapters. */
 final class AccountAuthorityJdbcSupport {
-  private static final ZoneId TAIPEI = ZoneId.of("Asia/Taipei");
   static final int LOCK_QUERY_TIMEOUT_SECONDS = 2;
   static final RowMapper<AccountLimit> LIMIT_MAPPER =
       (rs, row) ->
@@ -54,10 +51,10 @@ final class AccountAuthorityJdbcSupport {
           new AccountPosition(
               new AccountPositionIdentity(accountId(rs), rs.getString("symbol")),
               new AccountPositionInventory(
-                  rs.getBigDecimal("long_qty"),
-                  rs.getBigDecimal("short_qty"),
-                  rs.getBigDecimal("reserved_long_qty"),
-                  rs.getBigDecimal("reserved_short_qty")),
+                  rs.getLong("long_qty"),
+                  rs.getLong("short_qty"),
+                  rs.getLong("reserved_long_qty"),
+                  rs.getLong("reserved_short_qty")),
               new AccountPositionRevision(rs.getLong("version"), rs.getLong("updated_at_unix_ms")));
   static final RowMapper<AccountReservation> RESERVATION_MAPPER =
       (rs, row) -> reservation(rs);
@@ -69,21 +66,21 @@ final class AccountAuthorityJdbcSupport {
   private static AccountReservation reservation(ResultSet rs) throws java.sql.SQLException {
     return new AccountReservation(
         new ReservationIdentity(
-            new ReservationIdentity.RequestId(rs.getString("request_id")),
-            new ReservationIdentity.ReservationId(rs.getString("reservation_id")),
-            new ReservationIdentity.OrderId(rs.getString("order_id"))),
+            new ReservationIdentity.RequestId(rs.getObject("request_id", UUID.class)),
+            new ReservationIdentity.ReservationId(rs.getObject("reservation_id", UUID.class)),
+            new ReservationIdentity.OrderId(rs.getObject("order_id", UUID.class))),
         new ReservationOwnership(accountId(rs)),
         new ReservationTerms(
             new ReservationTerms.InstrumentSymbol(rs.getString("symbol")),
             new ReservationTerms.VenueMic(rs.getString("venue_mic")),
             Side.valueOf(rs.getString("side")),
-            new ReservationTerms.ReservationQuantity(rs.getBigDecimal("quantity")),
+            new ReservationTerms.ReservationQuantity(rs.getLong("quantity")),
             new ReservationTerms.LimitPrice(rs.getBigDecimal("limit_price"))),
-        reservationTradingDay(rs),
+        rs.getObject("trading_day", LocalDate.class),
         new ReservationLifecycle(
             new ReservationAllocation(
-                rs.getBigDecimal("remaining_quantity"),
-                rs.getBigDecimal("filled_quantity"),
+                rs.getLong("remaining_quantity"),
+                rs.getLong("filled_quantity"),
                 rs.getBigDecimal("reserved_notional")),
             new ReservationOutcome(
                 ReservationStatus.valueOf(rs.getString("status")),
@@ -93,15 +90,6 @@ final class AccountAuthorityJdbcSupport {
                 rs.getLong("version"),
                 rs.getLong("created_at_unix_ms"),
                 rs.getLong("updated_at_unix_ms"))));
-  }
-
-  private static LocalDate reservationTradingDay(ResultSet rs) throws java.sql.SQLException {
-    final LocalDate persisted = rs.getObject("trading_day", LocalDate.class);
-    return persisted != null
-        ? persisted
-        : Instant.ofEpochMilli(rs.getLong("created_at_unix_ms"))
-            .atZone(TAIPEI)
-            .toLocalDate();
   }
 
   private final JdbcTemplate jdbcTemplate;

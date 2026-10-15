@@ -1,6 +1,5 @@
 package com.simplematch.accountservice.authority;
 
-import com.simplematch.contracts.common.v1.ReservationStatus;
 import java.util.Objects;
 
 /**
@@ -17,9 +16,6 @@ public record ReservationOutcome(
     Objects.requireNonNull(status, "status");
     reasonCode = Objects.requireNonNullElse(reasonCode, "");
     reasonText = Objects.requireNonNullElse(reasonText, "");
-    if (status == ReservationStatus.RESERVATION_STATUS_UNSPECIFIED) {
-      throw new IllegalArgumentException("status must be specified");
-    }
     if (status == ReservationStatus.RESERVATION_STATUS_REJECTED
         && (reasonCode.isBlank() || reasonText.isBlank())) {
       throw new IllegalArgumentException("rejected reservation requires a stable reason");

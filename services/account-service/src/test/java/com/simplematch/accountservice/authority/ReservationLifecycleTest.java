@@ -6,8 +6,8 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import com.simplematch.accountservice.reservation.ExecutionFill;
 import com.simplematch.accountservice.reservation.ReleaseReservationOperation;
 import com.simplematch.accountservice.reservation.ReservationTerms;
-import com.simplematch.contracts.common.v1.ReservationStatus;
-import com.simplematch.contracts.common.v1.Side;
+import com.simplematch.accountservice.authority.ReservationStatus;
+import com.simplematch.contracts.common.v2.Side;
 import java.math.BigDecimal;
 import java.util.UUID;
 import org.junit.jupiter.api.DisplayName;
@@ -21,7 +21,7 @@ class ReservationLifecycleTest {
     final ReservationLifecycle rejected =
         ReservationLifecycle.rejected(terms(), "LIMIT", "limit unavailable", 100L);
 
-    assertThat(rejected.allocation().remainingQuantity()).isEqualByComparingTo("10");
+    assertThat(rejected.allocation().remainingQuantity()).isEqualTo(10L);
     assertThat(rejected.allocation().filledQuantity()).isZero();
     assertThat(rejected.allocation().reservedNotional()).isZero();
     assertThatThrownBy(() -> rejected.applyFill(fill("1", "99"), terms(), 101L))
@@ -42,7 +42,7 @@ class ReservationLifecycleTest {
     assertThat(released.outcome().status())
         .isEqualTo(ReservationStatus.RESERVATION_STATUS_RELEASED);
     assertThat(released.allocation().remainingQuantity()).isZero();
-    assertThat(released.allocation().filledQuantity()).isEqualByComparingTo("4");
+    assertThat(released.allocation().filledQuantity()).isEqualTo(4L);
     assertThat(released.allocation().reservedNotional()).isZero();
   }
 
@@ -56,15 +56,16 @@ class ReservationLifecycleTest {
     assertThat(applied.outcome().status())
         .isEqualTo(ReservationStatus.RESERVATION_STATUS_APPLIED);
     assertThat(applied.allocation().remainingQuantity()).isZero();
-    assertThat(applied.allocation().filledQuantity()).isEqualByComparingTo("10");
+    assertThat(applied.allocation().filledQuantity()).isEqualTo(10L);
     assertThat(applied.allocation().reservedNotional()).isZero();
   }
 
   private ReservationTerms terms() {
     return new ReservationTerms(
         new ReservationTerms.InstrumentSymbol("2330"),
+        new ReservationTerms.VenueMic("XTAI"),
         Side.SIDE_BUY,
-        new ReservationTerms.ReservationQuantity(new BigDecimal("10")),
+        new ReservationTerms.ReservationQuantity(10),
         new ReservationTerms.LimitPrice(new BigDecimal("100")));
   }
 
@@ -72,7 +73,7 @@ class ReservationLifecycleTest {
     return new ExecutionFill(
         new ExecutionFill.ExecutionId(UUID.randomUUID().toString()),
         ExecutionFill.AggregateSequence.absent(),
-        new ExecutionFill.FillQuantity(new BigDecimal(quantity)),
+        new ExecutionFill.FillQuantity(Long.parseLong(quantity)),
         new ExecutionFill.FillPrice(new BigDecimal(price)));
   }
 }

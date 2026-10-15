@@ -63,14 +63,14 @@ final class AccountReservationV2CommandAdapter {
 
   private static ReservationTerms toReservationTerms(ReservationCommand request) {
     validateTerms(request);
-    final com.simplematch.contracts.common.v1.Side side = toInternalSide(request);
+    final com.simplematch.contracts.common.v2.Side side = request.getSide();
     final long quantity = request.getQuantity().getShares();
     final long priceUnits = request.getLimitPrice().getUnits();
     return new ReservationTerms(
         new ReservationTerms.InstrumentSymbol(request.getInstrument().getSymbol()),
         new ReservationTerms.VenueMic(request.getInstrument().getVenueMic()),
         side,
-        new ReservationTerms.ReservationQuantity(BigDecimal.valueOf(quantity)),
+        new ReservationTerms.ReservationQuantity(quantity),
         priceUnits == 0
             ? ReservationTerms.LimitPrice.absent()
             : new ReservationTerms.LimitPrice(BigDecimal.valueOf(priceUnits, TWD_SCALE)));
@@ -100,15 +100,6 @@ final class AccountReservationV2CommandAdapter {
       throw new IllegalArgumentException(
           "notional.units must equal quantity.shares * limit_price.units");
     }
-  }
-
-  private static com.simplematch.contracts.common.v1.Side toInternalSide(
-      ReservationCommand request) {
-    return switch (request.getSide()) {
-      case SIDE_BUY -> com.simplematch.contracts.common.v1.Side.SIDE_BUY;
-      case SIDE_SELL -> com.simplematch.contracts.common.v1.Side.SIDE_SELL;
-      default -> throw new IllegalArgumentException("side must be specified");
-    };
   }
 
   private static String uuid(String value, String fieldName) {

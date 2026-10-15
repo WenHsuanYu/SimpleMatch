@@ -3,7 +3,6 @@ package com.simplematch.accountservice.authority;
 import com.simplematch.accountservice.reservation.ExecutionFill;
 import com.simplematch.accountservice.reservation.ReleaseReservationOperation;
 import com.simplematch.accountservice.reservation.ReservationTerms;
-import com.simplematch.contracts.common.v1.ReservationStatus;
 import java.math.BigDecimal;
 import java.util.Objects;
 
@@ -26,12 +25,12 @@ public record ReservationLifecycle(
     Objects.requireNonNull(revision, "revision");
     switch (outcome.status()) {
       case RESERVATION_STATUS_ACCEPTED -> {
-        if (allocation.remainingQuantity().signum() == 0) {
+        if (allocation.remainingQuantity() == 0) {
           throw new IllegalArgumentException("accepted reservation must have remaining quantity");
         }
       }
       case RESERVATION_STATUS_REJECTED -> {
-        if (allocation.filledQuantity().signum() != 0
+        if (allocation.filledQuantity() != 0
             || allocation.reservedNotional().signum() != 0) {
           throw new IllegalArgumentException("rejected reservation must have no held authority");
         }
@@ -55,7 +54,7 @@ public record ReservationLifecycle(
       ReservationTerms terms, BigDecimal reservedNotional, long now) {
     Objects.requireNonNull(terms, "terms");
     return new ReservationLifecycle(
-        new ReservationAllocation(terms.quantity().value(), BigDecimal.ZERO, reservedNotional),
+        new ReservationAllocation(terms.quantity().value(), 0, reservedNotional),
         ReservationOutcome.accepted(),
         ReservationRevision.initial(now));
   }
@@ -63,7 +62,7 @@ public record ReservationLifecycle(
   /**
    * Creates a rejected lifecycle with no filled quantity or held authority.
    *
-   * <p>The legacy reservation row retains the unfilled requested quantity in
+   * <p>The reservation retains the unfilled requested quantity in
    * {@code remaining_quantity}. Rejected status and zero reserved notional make clear that this
    * quantity is request metadata, not authority held against the account.
    *
@@ -77,7 +76,7 @@ public record ReservationLifecycle(
       ReservationTerms terms, String reasonCode, String reasonText, long now) {
     Objects.requireNonNull(terms, "terms");
     return new ReservationLifecycle(
-        new ReservationAllocation(terms.quantity().value(), BigDecimal.ZERO, BigDecimal.ZERO),
+        new ReservationAllocation(terms.quantity().value(), 0, BigDecimal.ZERO),
         ReservationOutcome.rejected(reasonCode, reasonText),
         ReservationRevision.initial(now));
   }
@@ -97,7 +96,7 @@ public record ReservationLifecycle(
     }
     return allocation
         .reservedNotional()
-        .min(terms.limitPrice().value().multiply(fill.quantity().value()));
+        .min(terms.limitPrice().value().multiply(BigDecimal.valueOf(fill.quantity().value())));
   }
 
   /**
@@ -114,19 +113,19 @@ public record ReservationLifecycle(
     if (outcome.status() != ReservationStatus.RESERVATION_STATUS_ACCEPTED) {
       throw new IllegalArgumentException("reservation is not active");
     }
-    if (fill.quantity().value().compareTo(allocation.remainingQuantity()) > 0) {
+    if (fill.quantity().value() > allocation.remainingQuantity()) {
       throw new IllegalArgumentException("fill quantity exceeds remaining reservation quantity");
     }
     final BigDecimal releasedNotional = reservedNotionalReleasedBy(fill, terms);
-    final BigDecimal remaining = allocation.remainingQuantity().subtract(fill.quantity().value());
+    final long remaining = allocation.remainingQuantity() - fill.quantity().value();
     final ReservationStatus nextStatus =
-        remaining.signum() == 0
+        remaining == 0
             ? ReservationStatus.RESERVATION_STATUS_APPLIED
             : ReservationStatus.RESERVATION_STATUS_ACCEPTED;
     return new ReservationLifecycle(
         new ReservationAllocation(
             remaining,
-            allocation.filledQuantity().add(fill.quantity().value()),
+            Math.addExact(allocation.filledQuantity(), fill.quantity().value()),
             allocation.reservedNotional().subtract(releasedNotional)),
         nextStatus == ReservationStatus.RESERVATION_STATUS_APPLIED
             ? ReservationOutcome.applied()
@@ -149,7 +148,7 @@ public record ReservationLifecycle(
     }
     return new ReservationLifecycle(
         new ReservationAllocation(
-            BigDecimal.ZERO, allocation.filledQuantity(), BigDecimal.ZERO),
+            0, allocation.filledQuantity(), BigDecimal.ZERO),
         ReservationOutcome.released(reason.value()),
         revision.next(now));
   }
@@ -161,8 +160,8 @@ public record ReservationLifecycle(
    */
   public void validateAgainst(ReservationTerms terms) {
     Objects.requireNonNull(terms, "terms");
-    final BigDecimal requested = terms.quantity().value();
-    if (allocation.filledQuantity().compareTo(requested) > 0) {
+    final long requested = terms.quantity().value();
+    if (allocation.filledQuantity() > requested) {
       throw new IllegalArgumentException("filled quantity exceeds reservation quantity");
     }
     switch (outcome.status()) {
@@ -174,29 +173,28 @@ public record ReservationLifecycle(
     }
   }
 
-  private void validateConservedQuantity(BigDecimal requested) {
-    if (allocation.filledQuantity().add(allocation.remainingQuantity()).compareTo(requested)
-        != 0) {
+  private void validateConservedQuantity(long requested) {
+    if (allocation.remainingQuantity() != requested - allocation.filledQuantity()) {
       throw new IllegalArgumentException("reservation quantities are invalid");
     }
   }
 
-  private void validateRejectedQuantity(BigDecimal requested) {
-    if (allocation.filledQuantity().signum() != 0
-        || allocation.remainingQuantity().compareTo(requested) != 0) {
+  private void validateRejectedQuantity(long requested) {
+    if (allocation.filledQuantity() != 0
+        || allocation.remainingQuantity() != requested) {
       throw new IllegalArgumentException("rejected reservation must retain unfilled quantity");
     }
   }
 
   private void validateReleasedQuantity() {
-    if (allocation.remainingQuantity().signum() != 0) {
+    if (allocation.remainingQuantity() != 0) {
       throw new IllegalArgumentException(
           "released reservation must have no remaining quantity");
     }
   }
 
   private static void requireNoHeldAuthority(String state, ReservationAllocation allocation) {
-    if (allocation.remainingQuantity().signum() != 0
+    if (allocation.remainingQuantity() != 0
         || allocation.reservedNotional().signum() != 0) {
       throw new IllegalArgumentException(state + " reservation must have no held authority");
     }

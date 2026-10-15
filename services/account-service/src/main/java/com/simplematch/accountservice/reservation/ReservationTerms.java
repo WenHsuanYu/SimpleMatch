@@ -1,6 +1,7 @@
 package com.simplematch.accountservice.reservation;
 
-import com.simplematch.contracts.common.v1.Side;
+import com.simplematch.accountservice.authority.AccountAmounts;
+import com.simplematch.contracts.common.v2.Side;
 import java.math.BigDecimal;
 import java.util.Locale;
 import java.util.Objects;
@@ -30,15 +31,13 @@ public record ReservationTerms(
     Objects.requireNonNull(side, "side");
     Objects.requireNonNull(quantity, "quantity");
     Objects.requireNonNull(limitPrice, "limitPrice");
-    if (side == Side.SIDE_UNSPECIFIED) {
+    if (side != Side.SIDE_BUY && side != Side.SIDE_SELL) {
       throw new IllegalArgumentException("side must be specified");
     }
-  }
-
-  /** Creates legacy v1 terms with an explicit compatibility venue. */
-  public ReservationTerms(
-      InstrumentSymbol symbol, Side side, ReservationQuantity quantity, LimitPrice limitPrice) {
-    this(symbol, VenueMic.legacy(), side, quantity, limitPrice);
+    if (limitPrice.isPresent()) {
+      AccountAmounts.reservationAmount(
+          limitPrice.value().multiply(BigDecimal.valueOf(quantity.value())), "notional");
+    }
   }
 
   /** Returns whether two reservation requests carry the same trading facts. */
@@ -47,7 +46,7 @@ public record ReservationTerms(
     return symbol.equals(other.symbol)
         && venueMic.equals(other.venueMic)
         && side == other.side
-        && quantity.value.compareTo(other.quantity.value) == 0
+        && quantity.value == other.quantity.value
         && sameDecimal(limitPrice.value, other.limitPrice.value);
   }
 
@@ -59,11 +58,9 @@ public record ReservationTerms(
         throw new IllegalArgumentException("venue_mic must not be blank");
       }
       value = value.trim().toUpperCase(Locale.ROOT);
-    }
-
-    /** Returns the compatibility venue used by legacy v1 reservation requests. */
-    public static VenueMic legacy() {
-      return new VenueMic("LEGACY");
+      if (!value.equals("XTAI") && !value.equals("ROCO")) {
+        throw new IllegalArgumentException("venue_mic must be XTAI or ROCO");
+      }
     }
   }
 
@@ -71,17 +68,20 @@ public record ReservationTerms(
   public record InstrumentSymbol(String value) {
     /** Requires a nonblank instrument symbol. */
     public InstrumentSymbol {
-      if (value == null || value.isBlank()) {
-        throw new IllegalArgumentException("symbol must not be blank");
+      if (value == null || !value.matches("[A-Z0-9]{1,12}")) {
+        throw new IllegalArgumentException(
+            "symbol must contain 1 to 12 uppercase letters or digits");
       }
     }
   }
 
   /** Positive order quantity whose authority is reserved. */
-  public record ReservationQuantity(BigDecimal value) {
+  public record ReservationQuantity(long value) {
     /** Requires a positive reservation quantity. */
     public ReservationQuantity {
-      value = requirePositive(value, "quantity");
+      if (value <= 0) {
+        throw new IllegalArgumentException("quantity must be positive");
+      }
     }
   }
 
@@ -91,6 +91,7 @@ public record ReservationTerms(
     public LimitPrice {
       if (value != null) {
         value = requirePositive(value, "limit_price");
+        value = AccountAmounts.reservationAmount(value, "limit_price");
       }
     }
 

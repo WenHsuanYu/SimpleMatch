@@ -7,8 +7,8 @@ import com.simplematch.accountservice.authority.AccountLimitLedger;
 import com.simplematch.accountservice.authority.AccountPosition;
 import com.simplematch.accountservice.authority.AccountPositionInventory;
 import com.simplematch.accountservice.authority.AccountReservation;
-import com.simplematch.contracts.common.v1.ReservationStatus;
-import com.simplematch.contracts.common.v1.Side;
+import com.simplematch.accountservice.authority.ReservationStatus;
+import com.simplematch.contracts.common.v2.Side;
 import java.math.BigDecimal;
 import java.time.LocalDate;
 
@@ -45,11 +45,7 @@ final class AccountAuthorityTransitions {
             .findPositionForUpdate(operation.accountIdentity(), operation.symbol())
             .orElse(null);
     if (position == null
-        || position
-                .longQuantity()
-                .subtract(position.reservedLongQuantity())
-                .compareTo(operation.quantity())
-            < 0) {
+        || position.longQuantity() - position.reservedLongQuantity() < operation.quantity()) {
       return false;
     }
     final AccountPosition changed =
@@ -57,7 +53,7 @@ final class AccountAuthorityTransitions {
             new AccountPositionInventory(
                 position.longQuantity(),
                 position.shortQuantity(),
-                position.reservedLongQuantity().add(operation.quantity()),
+                Math.addExact(position.reservedLongQuantity(), operation.quantity()),
                 position.reservedShortQuantity()),
             position.revision().next(now));
     authorityWriter.updatePosition(changed, position.version());
@@ -95,14 +91,14 @@ final class AccountAuthorityTransitions {
             .findPositionForUpdate(reservation.accountIdentity(), reservation.symbol())
             .orElseThrow(
                 () -> new AccountReservationInvariantException("position is not provisioned"));
-    final BigDecimal released =
-        position.reservedLongQuantity().min(reservation.remainingQuantity());
+    final long released =
+        Math.min(position.reservedLongQuantity(), reservation.remainingQuantity());
     final AccountPosition changed =
         position.withInventory(
             new AccountPositionInventory(
                 position.longQuantity(),
                 position.shortQuantity(),
-                position.reservedLongQuantity().subtract(released),
+                position.reservedLongQuantity() - released,
                 position.reservedShortQuantity()),
             position.revision().next(now));
     authorityWriter.updatePosition(changed, position.version());
@@ -139,7 +135,7 @@ final class AccountAuthorityTransitions {
       final AccountPosition changedPosition =
           position.withInventory(
               new AccountPositionInventory(
-                  position.longQuantity().add(fill.quantity().value()),
+                  Math.addExact(position.longQuantity(), fill.quantity().value()),
                   position.shortQuantity(),
                   position.reservedLongQuantity(),
                   position.reservedShortQuantity()),
@@ -152,13 +148,13 @@ final class AccountAuthorityTransitions {
             .findPositionForUpdate(reservation.accountIdentity(), reservation.symbol())
             .orElseThrow(
                 () -> new AccountReservationInvariantException("position is not provisioned"));
-    final BigDecimal released = position.reservedLongQuantity().min(fill.quantity().value());
+    final long released = Math.min(position.reservedLongQuantity(), fill.quantity().value());
     final AccountPosition changed =
         position.withInventory(
             new AccountPositionInventory(
-                position.longQuantity().subtract(released),
+                position.longQuantity() - released,
                 position.shortQuantity(),
-                position.reservedLongQuantity().subtract(released),
+                position.reservedLongQuantity() - released,
                 position.reservedShortQuantity()),
             position.revision().next(now));
     authorityWriter.updatePosition(changed, position.version());
@@ -166,14 +162,14 @@ final class AccountAuthorityTransitions {
 
   static void validateFill(
       AccountReservation reservation, ReservationIdentity identity, ExecutionFill fill) {
-    if (!reservation.requestId().equals(identity.requestId().value())
-        || !reservation.orderId().equals(identity.orderId().value())) {
+    if (!reservation.requestId().equals(identity.requestId().wireValue())
+        || !reservation.orderId().equals(identity.orderId().wireValue())) {
       throw new IllegalArgumentException("reservation identity does not match fill");
     }
     if (reservation.status() != ReservationStatus.RESERVATION_STATUS_ACCEPTED) {
       throw new IllegalArgumentException("reservation is not active");
     }
-    if (fill.quantity().value().compareTo(reservation.remainingQuantity()) > 0) {
+    if (fill.quantity().value() > reservation.remainingQuantity()) {
       throw new IllegalArgumentException("fill quantity exceeds remaining reservation quantity");
     }
   }

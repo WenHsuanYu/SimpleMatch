@@ -1,10 +1,10 @@
--- Select only test identities/business facts. Preserve NUMERIC(38, 8) as text.
+-- Select only test identities/business facts. Preserve exact monetary decimals as text.
 WITH reservations AS (
     SELECT * FROM account_service.account_reservations WHERE account_id = :'account_id'
 ), limits AS (
     SELECT * FROM account_service.account_limits
     WHERE account_id = :'account_id' AND trading_day = :'trading_day'::date
-        AND scope_type = 'ACCOUNT' AND scope_key = '*' AND currency = 'TWD'
+        AND currency = 'TWD'
 )
 SELECT jsonb_build_object(
     'persistence', (

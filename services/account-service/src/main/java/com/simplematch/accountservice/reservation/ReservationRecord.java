@@ -2,8 +2,8 @@ package com.simplematch.accountservice.reservation;
 
 import com.simplematch.accountservice.authority.AccountReservation;
 import com.simplematch.accountservice.authority.ReservationOwnership;
-import com.simplematch.contracts.common.v1.ReservationStatus;
-import com.simplematch.contracts.common.v1.Side;
+import com.simplematch.accountservice.authority.ReservationStatus;
+import com.simplematch.contracts.common.v2.Side;
 import java.math.BigDecimal;
 import java.util.Objects;
 
@@ -52,17 +52,17 @@ public record ReservationRecord(
 
   /** Returns the reservation identifier for the response boundary. */
   public String reservationId() {
-    return identity.reservationId().value();
+    return identity.reservationId().wireValue();
   }
 
   /** Returns the idempotent request identifier for the response boundary. */
   public String requestId() {
-    return identity.requestId().value();
+    return identity.requestId().wireValue();
   }
 
   /** Returns the owning order identifier. */
   public String orderId() {
-    return identity.orderId().value();
+    return identity.orderId().wireValue();
   }
 
   /** Returns the owning account identifier. */
@@ -86,7 +86,7 @@ public record ReservationRecord(
   }
 
   /** Returns the original requested quantity. */
-  public BigDecimal quantity() {
+  public long quantity() {
     return terms.quantity().value();
   }
 

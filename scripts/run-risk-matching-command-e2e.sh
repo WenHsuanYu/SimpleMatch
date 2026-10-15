@@ -322,15 +322,13 @@ postgres_pod="$(
 [[ -n "$postgres_pod" ]] || die 'cannot resolve PostgreSQL Pod'
 
 # The reservation operation carries the explicit certification trading day. Account authority
-# looks up the ACCOUNT/* limit on that business day, so the fixture must use the same value rather
+# looks up the account limit on that business day, so the fixture must use the same value rather
 # than the host wall-clock date.
 now_ms="$(( $(date +%s) * 1000 ))"
 if [[ "$side" == BUY ]]; then
   account_fixture_sql="$(cat <<SQL
 INSERT INTO account_service.account_limits (
   account_id,
-  scope_type,
-  scope_key,
   trading_day,
   currency,
   limit_total_notional,
@@ -341,8 +339,6 @@ INSERT INTO account_service.account_limits (
   version
 ) VALUES (
   '$account_id',
-  'ACCOUNT',
-  '*',
   DATE '$trading_day',
   'TWD',
   99999999999999999999.00000000,

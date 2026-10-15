@@ -7,6 +7,7 @@ import java.util.UUID;
 import org.flywaydb.core.Flyway;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
+import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.jdbc.datasource.DriverManagerDataSource;
 
@@ -31,7 +32,7 @@ class AccountServiceFlywayMigrationTest {
     assertThat(hasTable(jdbcTemplate, "MATCHING_EVENT_CONSUMER_QUARANTINES")).isTrue();
     assertThat(hasColumn(jdbcTemplate, "OUTBOX", "CREATED_AT")).isTrue();
     assertThat(hasColumn(jdbcTemplate, "ACCOUNT_RESERVATIONS", "TRADING_DAY")).isTrue();
-    assertThat(appliedMigrationCount(jdbcTemplate)).isEqualTo(9);
+    assertThat(appliedMigrationCount(jdbcTemplate)).isEqualTo(10);
   }
 
   @DisplayName("a second account-service migration is a no-op")
@@ -46,65 +47,99 @@ class AccountServiceFlywayMigrationTest {
     assertThat(appliedMigrationCount(jdbcTemplate)).isEqualTo(migrationsAfterFirstRun);
   }
 
-  @DisplayName("account reservation constraints allow a supported side")
+  @DisplayName("account reservation constraints accept a complete current-contract row")
   @Test
   void constraintsAllowSupportedReservationSide() {
-    final JdbcTemplate jdbcTemplate = new JdbcTemplate(newDataSource());
-    migrate(jdbcTemplate.getDataSource());
+    final JdbcTemplate jdbcTemplate = migratedDatabase();
 
-    final int insertedRows =
-        jdbcTemplate.update(
-            """
-                                INSERT INTO account_service.account_reservations (
-                                  reservation_id, request_id, order_id, account_id, symbol, venue_mic, side, quantity,
-                                  reserved_notional, status, created_at_unix_ms, updated_at_unix_ms,
-                                  remaining_quantity, filled_quantity, version
-                                ) VALUES ('reservation-valid', 'request-valid', 'order-valid', ?, '2330', 'XTAI',
-                                  'SIDE_BUY', 1, 0, 'RESERVATION_STATUS_ACCEPTED', 1, 1, 1, 0, 0)
-                                """,
-            UUID.fromString(ACCOUNT_ID));
-
-    assertThat(insertedRows).isEqualTo(1);
+    assertThat(insertValidReservation(jdbcTemplate)).isEqualTo(1);
+    assertThat(hasColumn(jdbcTemplate, "ACCOUNT_LIMITS", "SCOPE_TYPE")).isFalse();
+    assertThat(hasColumn(jdbcTemplate, "ACCOUNT_LIMITS", "SCOPE_KEY")).isFalse();
+    assertThat(jdbcTemplate.queryForObject(
+            "SELECT request_id FROM account_service.account_reservations", UUID.class))
+        .isEqualTo(UUID.fromString("00000000-0000-0000-0000-000000000011"));
   }
 
-  @DisplayName("account reservation constraints reject an unsupported side")
-  @Test
-  void constraintsRejectUnsupportedReservationSide() {
-    final JdbcTemplate jdbcTemplate = new JdbcTemplate(newDataSource());
-    migrate(jdbcTemplate.getDataSource());
+  @DisplayName("reservation constraints reject one invalid fact at a time")
+  @org.junit.jupiter.params.ParameterizedTest
+  @org.junit.jupiter.params.provider.ValueSource(strings = {
+      "side = 'SIDE_UNSPECIFIED'",
+      "quantity = 0",
+      "venue_mic = 'XXXX'",
+      "symbol = 'lowercase'",
+      "trading_day = NULL",
+      "request_id = 'not-a-uuid'",
+      "limit_price = 0",
+      "reserved_notional = 922337203685477.5808",
+      "limit_price = 922337203685477.5808",
+      "quantity = 2, remaining_quantity = 2, limit_price = 922337203685477.5807",
+      "filled_quantity = 1",
+      "status = 'RESERVATION_STATUS_APPLIED'"
+  })
+  void rejectsInvalidReservationFact(String assignment) {
+    final JdbcTemplate jdbcTemplate = migratedDatabase();
+    assertThat(insertValidReservation(jdbcTemplate)).isEqualTo(1);
 
-    assertThatThrownBy(
-            () ->
-                jdbcTemplate.update(
-                    """
-                                        INSERT INTO account_service.account_reservations (
-                                          reservation_id, request_id, order_id, account_id, symbol, venue_mic, side, quantity,
-                                          reserved_notional, status, created_at_unix_ms, updated_at_unix_ms
-                                        ) VALUES ('reservation-1', 'request-1', 'order-1', ?, '2330', 'XTAI',
-                                          'SIDE_UNSPECIFIED', 1, 0, 'RESERVATION_STATUS_ACCEPTED', 1, 1)
-                                        """,
-                    UUID.fromString(ACCOUNT_ID)))
-        .isInstanceOf(RuntimeException.class);
+    assertThatThrownBy(() -> jdbcTemplate.update(
+            "UPDATE account_service.account_reservations SET " + assignment))
+        .isInstanceOf(DataIntegrityViolationException.class);
   }
 
-  @DisplayName("account reservation constraints reject a non-positive quantity")
+  @DisplayName("account aggregates hold exact sums beyond one reservation while retaining balance")
   @Test
-  void constraintsRejectNonPositiveReservationQuantity() {
+  void aggregateRetainsWideRange() {
+    final JdbcTemplate jdbcTemplate = migratedDatabase();
+    final java.math.BigDecimal total = new java.math.BigDecimal("1844674407370955.1614");
+
+    jdbcTemplate.update("""
+        INSERT INTO account_service.account_limits (
+          account_id, trading_day, currency, limit_total_notional, available_notional,
+          updated_at_unix_ms) VALUES (?, DATE '2026-07-28', 'TWD', ?, ?, 1)
+        """, UUID.fromString(ACCOUNT_ID), total, total);
+
+    assertThat(jdbcTemplate.queryForObject(
+            "SELECT available_notional FROM account_service.account_limits",
+            java.math.BigDecimal.class))
+        .isEqualByComparingTo(total);
+    assertThatThrownBy(() -> jdbcTemplate.update(
+            "UPDATE account_service.account_limits SET reserved_notional = 1"))
+        .isInstanceOf(DataIntegrityViolationException.class);
+  }
+
+  @DisplayName("inventory uses signed long whole shares with bounded reservations")
+  @Test
+  void inventoryRetainsWholeShareCapacity() {
+    final JdbcTemplate jdbcTemplate = migratedDatabase();
+    jdbcTemplate.update("""
+        INSERT INTO account_service.account_positions (
+          account_id, symbol, long_qty, updated_at_unix_ms) VALUES (?, 'ABCDEFGHIJKL', ?, 1)
+        """, UUID.fromString(ACCOUNT_ID), Long.MAX_VALUE);
+
+    assertThat(jdbcTemplate.queryForObject(
+            "SELECT long_qty FROM account_service.account_positions", Long.class))
+        .isEqualTo(Long.MAX_VALUE);
+    assertThatThrownBy(() -> jdbcTemplate.update(
+            "UPDATE account_service.account_positions SET reserved_long_qty = -1"))
+        .isInstanceOf(DataIntegrityViolationException.class);
+  }
+
+  private JdbcTemplate migratedDatabase() {
     final JdbcTemplate jdbcTemplate = new JdbcTemplate(newDataSource());
     migrate(jdbcTemplate.getDataSource());
+    return jdbcTemplate;
+  }
 
-    assertThatThrownBy(
-            () ->
-                jdbcTemplate.update(
-                    """
-                                        INSERT INTO account_service.account_reservations (
-                                          reservation_id, request_id, order_id, account_id, symbol, venue_mic, side, quantity,
-                                          reserved_notional, status, created_at_unix_ms, updated_at_unix_ms
-                                        ) VALUES ('reservation-2', 'request-2', 'order-2', ?, '2330', 'XTAI',
-                                          'SIDE_BUY', 0, 0, 'RESERVATION_STATUS_ACCEPTED', 1, 1)
-                                        """,
-                    UUID.fromString(ACCOUNT_ID)))
-        .isInstanceOf(RuntimeException.class);
+  private int insertValidReservation(JdbcTemplate jdbcTemplate) {
+    return jdbcTemplate.update("""
+        INSERT INTO account_service.account_reservations (
+          reservation_id, request_id, order_id, account_id, symbol, venue_mic, trading_day,
+          side, quantity, limit_price, reserved_notional, status,
+          created_at_unix_ms, updated_at_unix_ms, remaining_quantity, filled_quantity, version
+        ) VALUES ('00000000-0000-0000-0000-000000000012',
+          '00000000-0000-0000-0000-000000000011', '00000000-0000-0000-0000-000000000012', ?,
+          '2330', 'XTAI', DATE '2026-07-28', 'SIDE_BUY', 1, 100, 100,
+          'RESERVATION_STATUS_ACCEPTED', 1, 1, 1, 0, 0)
+        """, UUID.fromString(ACCOUNT_ID));
   }
 
   private DriverManagerDataSource newDataSource() {

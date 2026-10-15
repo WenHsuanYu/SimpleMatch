@@ -29,12 +29,12 @@ public class JdbcAccountAuthorityLifecycleWriter implements AccountAuthorityLife
                 + "ON CONFLICT (request_id) DO NOTHING"
             : "MERGE INTO account_service.reservation_request_locks "
                 + "(request_id, created_at_unix_ms) KEY(request_id) VALUES (?, ?)";
-    jdbc.update(insert, requestId, claimedAtUnixMs);
+    jdbc.update(insert, UUID.fromString(requestId), claimedAtUnixMs);
     jdbc.queryForUpdate(
         "SELECT request_id FROM account_service.reservation_request_locks "
             + "WHERE request_id = ? FOR UPDATE",
         (rows, row) -> rows.getString("request_id"),
-        requestId);
+        UUID.fromString(requestId));
   }
 
   @Override
@@ -42,9 +42,9 @@ public class JdbcAccountAuthorityLifecycleWriter implements AccountAuthorityLife
     jdbc.update(
         """
                         INSERT INTO account_service.account_limits (
-                          account_id, scope_type, scope_key, trading_day, currency, limit_total_notional,
+                          account_id, trading_day, currency, limit_total_notional,
                           reserved_notional, utilized_notional, available_notional, version, updated_at_unix_ms)
-                        VALUES (?, 'ACCOUNT', '*', ?, ?, ?, ?, ?, ?, ?, ?)
+                        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
         """,
         limit.accountIdentity().value(),
         limit.tradingDay(),
@@ -86,9 +86,9 @@ public class JdbcAccountAuthorityLifecycleWriter implements AccountAuthorityLife
                           remaining_quantity, filled_quantity, version)
                         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         """,
-        reservation.reservationId(),
-        reservation.requestId(),
-        reservation.orderId(),
+        reservation.identity().reservationId().value(),
+        reservation.identity().requestId().value(),
+        reservation.identity().orderId().value(),
         reservation.accountIdentity().value(),
         reservation.tradingDay(),
         reservation.symbol(),
@@ -112,7 +112,7 @@ public class JdbcAccountAuthorityLifecycleWriter implements AccountAuthorityLife
     updateExactlyOne(
         "UPDATE account_service.account_limits SET reserved_notional = ?, utilized_notional = ?, "
             + "available_notional = ?, version = ?, updated_at_unix_ms = ? "
-            + "WHERE account_id = ? AND scope_type = 'ACCOUNT' AND scope_key = '*' "
+            + "WHERE account_id = ? "
             + "AND trading_day = ? AND version = ?",
         limit.reservedNotional(),
         limit.utilizedNotional(),
@@ -156,7 +156,7 @@ public class JdbcAccountAuthorityLifecycleWriter implements AccountAuthorityLife
         reservation.reasonText(),
         reservation.version(),
         reservation.updatedAtUnixMs(),
-        reservation.reservationId(),
+        reservation.identity().reservationId().value(),
         expectedVersion);
   }
 

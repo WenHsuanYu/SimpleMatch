@@ -175,7 +175,7 @@ class FinalMatchingEventAccountApplicationServiceTest {
             new ReservationIdentity.OrderId("0198a001-0000-7000-8000-000000000011"),
             AccountId.parse("0198a001-0000-7000-8000-0000000000aa"),
             new ReservationTerms.InstrumentSymbol("2330"),
-            new ExecutionFill.FillQuantity(new BigDecimal("100")),
+            new ExecutionFill.FillQuantity(100),
             new ExecutionFill.FillPrice(new BigDecimal("100.0000")),
             MatchingAccountEffect.ResultingState.FILLED),
         new MatchingAccountEffect.Terminal(

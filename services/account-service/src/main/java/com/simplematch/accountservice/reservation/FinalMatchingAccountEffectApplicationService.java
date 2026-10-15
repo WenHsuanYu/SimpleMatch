@@ -3,7 +3,7 @@ package com.simplematch.accountservice.reservation;
 import com.simplematch.accountservice.authority.AccountAuthorityReader;
 import com.simplematch.accountservice.authority.AccountId;
 import com.simplematch.accountservice.authority.AccountReservation;
-import com.simplematch.contracts.common.v1.ReservationStatus;
+import com.simplematch.accountservice.authority.ReservationStatus;
 import java.util.Objects;
 import lombok.NonNull;
 import lombok.RequiredArgsConstructor;
@@ -36,7 +36,7 @@ public class FinalMatchingAccountEffectApplicationService
       ReservationTerms.InstrumentSymbol symbol) {
     final AccountReservation reservation =
         authorityReader
-            .findReservationByOrderId(orderId.value())
+            .findReservationByOrderId(orderId.wireValue())
             .orElseThrow(() -> new IllegalArgumentException("reservation not found for order"));
     if (!reservation.accountIdentity().equals(accountId)
         || !reservation.terms().symbol().equals(symbol)) {

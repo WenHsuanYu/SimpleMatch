@@ -70,7 +70,7 @@ public final class AccountReservationV2GrpcService
                 .build())
         .setReservedQuantity(
             com.simplematch.contracts.orders.v2.ShareQuantity.newBuilder()
-                .setShares(reservation.quantity().longValueExact())
+                .setShares(reservation.quantity())
                 .build())
         .setReasonCode(reservation.reasonCode())
         .setReasonDetail(reservation.reasonText())

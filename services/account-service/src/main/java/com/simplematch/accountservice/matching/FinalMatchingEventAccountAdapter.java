@@ -74,7 +74,7 @@ final class FinalMatchingEventAccountAdapter {
         new ReservationIdentity.OrderId(leg.getOrderId()),
         AccountId.parse(leg.getAccountId()),
         new ReservationTerms.InstrumentSymbol(trade.getInstrument().getSymbol()),
-        new ExecutionFill.FillQuantity(BigDecimal.valueOf(trade.getQuantityShares())),
+        new ExecutionFill.FillQuantity(trade.getQuantityShares()),
         new ExecutionFill.FillPrice(
             BigDecimal.valueOf(trade.getPriceUnits(), TWD_PRICE_SCALE)),
         resultingState(leg.getResultingState()));
