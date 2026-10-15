@@ -64,7 +64,10 @@ class AdmissionJournalConstraintsTest {
   @Test
   void pendingAndRejectedMarketOrdersPermitNoLimitPriceOrReservation() {
     jdbcTemplate.update("UPDATE risk_service.admission_journal SET order_type = 'ORDER_TYPE_MARKET', limit_price_units = NULL");
-    jdbcTemplate.update("UPDATE risk_service.admission_journal SET state = 'REJECTED'");
+    jdbcTemplate.update("""
+        UPDATE risk_service.admission_journal SET state = 'REJECTED',
+          reason_code = 'INVALID_COMMAND', reason_detail = 'Market order rejected'
+        """);
     assertThat(jdbcTemplate.queryForObject("SELECT COUNT(*) FROM risk_service.admission_journal", Integer.class))
         .isEqualTo(1);
   }

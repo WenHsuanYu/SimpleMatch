@@ -7,6 +7,9 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import org.flywaydb.core.Flyway;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.ValueSource;
+import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.jdbc.datasource.DriverManagerDataSource;
 
@@ -62,7 +65,7 @@ class RiskServiceFlywayMigrationTest {
         .isEqualTo("NO");
     assertThat(columnNullable(jdbcTemplate, "ADMISSION_JOURNAL", "ROUTING_ALGORITHM_VERSION"))
         .isEqualTo("NO");
-    assertThat(appliedMigrationCount(jdbcTemplate)).isEqualTo(9);
+    assertThat(appliedMigrationCount(jdbcTemplate)).isEqualTo(10);
   }
 
   @DisplayName("local resilience markers reject blank values and negative timestamps")
@@ -141,6 +144,82 @@ class RiskServiceFlywayMigrationTest {
                                           'risk_submission', 'order-1', 1)
                                         """))
         .isInstanceOf(RuntimeException.class);
+  }
+
+  @DisplayName("a valid rejected admission persists both stable reason fields")
+  @Test
+  void acceptsCompleteRejectionReason() {
+    final JdbcTemplate jdbcTemplate = migratedRejection();
+
+    assertThat(jdbcTemplate.queryForObject(
+            "SELECT reason_detail FROM risk_service.admission_journal", String.class))
+        .isEqualTo("Invalid command");
+  }
+
+  @DisplayName("rejected admission code cannot consist only of Java whitespace")
+  @ParameterizedTest
+  @ValueSource(strings = {"", " ", "\t\n", "\u001c", "\u2003", "\u3000"})
+  void rejectsBlankRejectionCode(String blank) {
+    final JdbcTemplate jdbcTemplate = migratedRejection();
+
+    assertThatThrownBy(() -> jdbcTemplate.update(
+            "UPDATE risk_service.admission_journal SET reason_code = ?", blank))
+        .isInstanceOf(DataIntegrityViolationException.class)
+        .hasMessageContaining("CK_ADMISSION_REJECTED_REASON");
+  }
+
+  @DisplayName("rejected admission detail cannot consist only of Java whitespace")
+  @ParameterizedTest
+  @ValueSource(strings = {"", " ", "\t\n", "\u001c", "\u2003", "\u3000"})
+  void rejectsBlankRejectionDetail(String blank) {
+    final JdbcTemplate jdbcTemplate = migratedRejection();
+
+    assertThatThrownBy(() -> jdbcTemplate.update(
+            "UPDATE risk_service.admission_journal SET reason_detail = ?", blank))
+        .isInstanceOf(DataIntegrityViolationException.class)
+        .hasMessageContaining("CK_ADMISSION_REJECTED_REASON");
+  }
+
+  @DisplayName("nonbreaking spaces remain nonblank like AdmissionFailure")
+  @ParameterizedTest
+  @ValueSource(strings = {"\u00a0", "\u2007", "\u202f"})
+  void acceptsNonbreakingSpaceReason(String nonblank) {
+    final JdbcTemplate jdbcTemplate = migratedRejection();
+
+    assertThat(jdbcTemplate.update("""
+        UPDATE risk_service.admission_journal SET reason_code = ?, reason_detail = ?
+        """, nonblank, nonblank)).isOne();
+  }
+
+  @DisplayName("pending and accepted admissions retain their existing reason semantics")
+  @ParameterizedTest
+  @ValueSource(strings = {"PENDING", "ACCEPTED"})
+  void allowsNonrejectedAdmission(String state) {
+    final JdbcTemplate jdbcTemplate = migratedRejection();
+
+    assertThat(jdbcTemplate.update("""
+        UPDATE risk_service.admission_journal SET state = ?, reason_code = '', reason_detail = ''
+        """, state)).isOne();
+  }
+
+  private JdbcTemplate migratedRejection() {
+    final JdbcTemplate jdbcTemplate = new JdbcTemplate(newDataSource());
+    migrate(jdbcTemplate.getDataSource());
+    assertThat(jdbcTemplate.update("""
+        INSERT INTO risk_service.admission_journal (
+          command_id, order_id, account_id, symbol, venue_mic, side, quantity,
+          order_type, tif, trading_day, sender_comp_id, target_comp_id, cl_ord_id,
+          routing_partition, state, reason_code, reason_detail,
+          created_at_unix_ms, updated_at_unix_ms,
+          artifact_trading_day, artifact_content_sha256, routing_algorithm_version
+        ) VALUES (
+          '00000000-0000-0000-0000-000000000003', '00000000-0000-0000-0000-000000000001',
+          '00000000-0000-0000-0000-000000000002', '2330', 'XTAI', 'SIDE_BUY', 1,
+          'CANCEL', 'CANCEL', DATE '2026-10-15', 'CLIENT', 'SERVER', 'cancel-1',
+          0, 'REJECTED', 'INVALID_COMMAND', 'Invalid command', 1, 1,
+          DATE '2026-10-15', REPEAT('a', 64), 'v1')
+        """)).isOne();
+    return jdbcTemplate;
   }
 
   private DriverManagerDataSource newDataSource() {
