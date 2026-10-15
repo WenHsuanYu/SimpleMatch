@@ -13,21 +13,21 @@ import org.springframework.jdbc.datasource.DriverManagerDataSource;
 class PersistenceFlywayMigrationTest {
   private static final String SCHEMA_NAME = "PERSISTENCE";
 
-  @DisplayName("an empty database receives the complete persistence projection and Matching-event schema")
+  @DisplayName("an empty database receives the active Matching-event schema without obsolete projections")
   @Test
   void migrateEmptyDatabaseCreatesProjectionAndInboxTables() {
     final JdbcTemplate jdbcTemplate = new JdbcTemplate(newDataSource());
 
     migrate(jdbcTemplate.getDataSource());
 
-    assertThat(hasTable(jdbcTemplate, "ORDERS")).isTrue();
-    assertThat(hasTable(jdbcTemplate, "EXECUTIONS")).isTrue();
-    assertThat(hasTable(jdbcTemplate, "INBOX")).isTrue();
+    assertThat(hasTable(jdbcTemplate, "ORDERS")).isFalse();
+    assertThat(hasTable(jdbcTemplate, "EXECUTIONS")).isFalse();
+    assertThat(hasTable(jdbcTemplate, "INBOX")).isFalse();
     assertThat(hasTable(jdbcTemplate, "MATCHING_EVENT_INBOX")).isTrue();
     assertThat(hasTable(jdbcTemplate, "TRADES")).isTrue();
     assertThat(hasTable(jdbcTemplate, "ORDER_FILLS")).isTrue();
     assertThat(hasTable(jdbcTemplate, "MATCHING_ORDER_PROJECTIONS")).isTrue();
-    assertThat(appliedMigrationCount(jdbcTemplate)).isEqualTo(3);
+    assertThat(appliedMigrationCount(jdbcTemplate)).isEqualTo(4);
   }
 
   @DisplayName("a second persistence migration is a no-op")
@@ -42,24 +42,41 @@ class PersistenceFlywayMigrationTest {
     assertThat(appliedMigrationCount(jdbcTemplate)).isEqualTo(migrationsAfterFirstRun);
   }
 
-  @DisplayName("projection constraints reject invalid quantities")
+  @DisplayName("active trade facts accept valid rows and reject a zero quantity")
   @Test
   void constraintsRejectInvalidBusinessValues() {
     final JdbcTemplate jdbcTemplate = new JdbcTemplate(newDataSource());
     migrate(jdbcTemplate.getDataSource());
+    jdbcTemplate.update(
+        """
+        INSERT INTO persistence.trades (
+          trade_id, event_id, trading_day, trading_session_id, partition_id, source_input_offset,
+          venue_mic, symbol, quantity_shares, price_units
+        ) VALUES (?, ?, DATE '2026-10-15', 'CONTINUOUS', 0, 1, 'XTAI', '2330', 100, 10000)
+        """, new byte[32], new byte[32]);
+    assertThat(jdbcTemplate.queryForObject("SELECT COUNT(*) FROM persistence.trades", Integer.class))
+        .isEqualTo(1);
+    assertThatThrownBy(() -> jdbcTemplate.update("UPDATE persistence.trades SET quantity_shares = 0"))
+        .isInstanceOf(org.springframework.dao.DataIntegrityViolationException.class);
+  }
 
-    assertThatThrownBy(
-            () ->
-                jdbcTemplate.update(
-                    """
-                                        INSERT INTO persistence.orders (
-                                          order_id, account_id, symbol, shard_id, side, order_type, tif, qty, status,
-                                          state_version, sender_comp_id, target_comp_id, cl_ord_id, created_at_unix_ms,
-                                          updated_at_unix_ms
-                                        ) VALUES ('order-1', 'account-1', '2330', 0, 'SIDE_BUY', 'ORDER_TYPE_LIMIT',
-                                          'TIME_IN_FORCE_ROD', 0, 'NEW', 0, 'CLIENT', 'SIMPLEMATCH', 'clord-1', 1, 1)
-                                        """))
-        .isInstanceOf(RuntimeException.class);
+  @DisplayName("quarantine status and recovery timestamp must describe the same lifecycle")
+  @Test
+  void constraintsRejectInconsistentQuarantineRecovery() {
+    final JdbcTemplate jdbcTemplate = new JdbcTemplate(newDataSource());
+    migrate(jdbcTemplate.getDataSource());
+    jdbcTemplate.update(
+        """
+        INSERT INTO persistence.matching_consumer_quarantines (
+          consumer_name, topic, partition_id, offset_value, payload_sha256, reason,
+          status, quarantined_at_unix_ms
+        ) VALUES ('persistence', 'matching.events.v1', 0, 1, ?, 'invalid event', 'QUARANTINED', 10)
+        """, new byte[32]);
+    assertThatThrownBy(() -> jdbcTemplate.update("UPDATE persistence.matching_consumer_quarantines SET status = 'RECOVERED'"))
+        .isInstanceOf(org.springframework.dao.DataIntegrityViolationException.class);
+    assertThatThrownBy(() -> jdbcTemplate.update("UPDATE persistence.matching_consumer_quarantines SET recovered_at_unix_ms = 11"))
+        .isInstanceOf(org.springframework.dao.DataIntegrityViolationException.class);
+    jdbcTemplate.update("UPDATE persistence.matching_consumer_quarantines SET status = 'RECOVERED', recovered_at_unix_ms = 11");
   }
 
   private DriverManagerDataSource newDataSource() {

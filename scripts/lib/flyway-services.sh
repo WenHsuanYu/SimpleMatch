@@ -145,7 +145,7 @@ flyway_service_smoke_tables() {
       printf '%s\n' matching_event_inbox instrument_market_data market_data_events_outbox
       ;;
     persistence)
-      printf '%s\n' orders executions inbox
+      printf '%s\n' trades order_fills matching_order_projections matching_event_inbox
       ;;
     query-service)
       printf '%s\n' order_read_model execution_read_model account_summary_read_model active_market_reference

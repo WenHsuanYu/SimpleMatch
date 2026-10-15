@@ -131,7 +131,7 @@ while IFS='|' read -r service project task env schema migration smoke_tables; do
 done <<'MAPPINGS'
 account-service|:services:account-service|accountService|ACCOUNT_SERVICE|account_service|services/account-service/src/main/resources/db/migration/account-service|account_limits\naccount_positions\naccount_reservations
 market-data-projection|:services:market-data-projection|marketDataProjection|MARKET_DATA_PROJECTION|market_data_projection|services/market-data-projection/src/main/resources/db/migration/market-data-projection|matching_event_inbox\ninstrument_market_data\nmarket_data_events_outbox
-persistence|:services:persistence|persistence|PERSISTENCE|persistence|services/persistence/src/main/resources/db/migration/persistence|orders\nexecutions\ninbox
+persistence|:services:persistence|persistence|PERSISTENCE|persistence|services/persistence/src/main/resources/db/migration/persistence|trades\norder_fills\nmatching_order_projections\nmatching_event_inbox
 query-service|:services:query-service|queryService|QUERY_SERVICE|query_service|services/query-service/src/main/resources/db/migration/query-service|order_read_model\nexecution_read_model\naccount_summary_read_model\nactive_market_reference
 quickfix-gateway|:services:quickfix-gateway|quickFixGateway|QUICKFIX_GATEWAY|quickfix_gateway|services/quickfix-gateway/src/main/resources/db/migration/quickfix-gateway|matching_event_inbox\nfix_delivery_intents\ngateway_operation_audit
 risk-service|:services:risk-service|riskService|RISK_SERVICE|risk_service|services/risk-service/src/main/resources/db/migration/risk-service|admission_journal\noutbox\nlocal_resilience_marker
