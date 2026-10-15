@@ -1,5 +1,6 @@
 package com.simplematch.accountservice.authority;
 
+import com.simplematch.accountservice.reservation.ReservationTerms.InstrumentSymbol;
 import java.util.Objects;
 
 /**
@@ -9,16 +10,9 @@ import java.util.Objects;
  * @param symbol instrument symbol
  */
 public record AccountPositionIdentity(AccountId accountId, String symbol) {
-  /** Requires a canonical account and nonblank instrument identity. */
+  /** Requires a canonical account and the same symbol contract used by reservations. */
   public AccountPositionIdentity {
     Objects.requireNonNull(accountId, "account_id");
-    symbol = requireText(symbol, "symbol");
-  }
-
-  private static String requireText(String value, String field) {
-    if (value == null || value.isBlank()) {
-      throw new IllegalArgumentException(field + " must not be blank");
-    }
-    return value;
+    symbol = new InstrumentSymbol(symbol).value();
   }
 }
