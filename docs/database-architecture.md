@@ -69,6 +69,11 @@ shared instrument contract.
 `run-flyway-ci-checks.sh` also executes `check-service-schema-contracts.sql` against PostgreSQL.
 These probes first insert valid rows, reject individual invalid values with specific SQLSTATEs,
 and roll back every fixture. They complement H2/JDBC tests; they do not certify a live deployment.
+The [bounded follow-up](schema-contract-followup.md) also runs the existing Query JDBC contract
+suite on PostgreSQL, exercising the production ON CONFLICT branch and actual transaction rollback.
+The runner creates a uniquely named scratch database, records ownership, and removes only that
+owned database after the explicit JDBC task. The ordinary Java suite keeps its fast H2 coverage.
+
 Historical migrations remain versioned; no Flyway repair or database reset is required merely to
 apply the new source to an empty database.
 
