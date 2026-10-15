@@ -123,7 +123,8 @@ while IFS= read -r service_name; do
     "${task_prefix}FlywayMigrate"
 
   ./gradlew -q --no-daemon --stacktrace \
-    "${task_prefix}FlywayMigrate"
+    "${task_prefix}FlywayMigrate" \
+    "${task_prefix}FlywayValidate"
 
   echo "Running PostgreSQL smoke assertions for $service_name..."
   assert_service_tables "$service_name" "$database_name"
@@ -131,5 +132,10 @@ while IFS= read -r service_name; do
 done < <(flyway_known_services)
 
 assert_schema_isolation
+
+PGPASSWORD="$postgres_password" psql \
+  --host "$postgres_host" --port "$postgres_port" --username "$postgres_user" \
+  --dbname "$database_name" --set ON_ERROR_STOP=1 \
+  --file "$repo_root/scripts/check-service-schema-contracts.sql"
 
 echo "Verified shared database $database_name with service-local schemas and Flyway histories."
