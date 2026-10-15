@@ -1,11 +1,13 @@
 package com.simplematch.marketreference.builder;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 import com.simplematch.marketreference.ArtifactInstrument;
 import com.simplematch.marketreference.ArtifactReleaseState;
 import com.simplematch.marketreference.InstrumentEligibility;
 import com.simplematch.marketreference.InstrumentRef;
+import com.simplematch.marketreference.MarketReferenceValidationException;
 import com.simplematch.marketreference.SourceProvenance;
 import java.time.LocalDate;
 import java.util.List;
@@ -45,6 +47,21 @@ class MarketReferenceArtifactFactoryTest {
         .doesNotContainNull();
     assertThat(finalResult.routingAllocation().routeChanges())
         .allSatisfy(change -> assertThat(change.previousPartitionId()).isEqualTo(change.partitionId()));
+  }
+
+  @DisplayName("the daily builder rejects a symbol assigned to both TWSE and TPEx")
+  @Test
+  void rejectsTheSameSymbolAcrossVenues() {
+    final NormalizedOfficialMarketData conflictingSources =
+        new NormalizedOfficialMarketData(
+            PhaseOneMarketRules.marketRules(),
+            List.of(candidateEligible("XTAI", "2330"), candidateEligible("ROCO", "2330")),
+            provenance());
+
+    assertThatThrownBy(
+            () -> factory.build(conflictingSources, TRADING_DAY, ArtifactReleaseState.PRELIMINARY, null))
+        .isInstanceOf(MarketReferenceValidationException.class)
+        .hasMessageContaining("duplicate instrument symbols");
   }
 
   private NormalizedOfficialMarketData candidateData() {

@@ -52,10 +52,10 @@ final class MarketReferenceArtifactStructureValidator {
   }
 
   private void validateSnapshot(MarketReferenceArtifact artifact) {
-    final Set<InstrumentRef> instrumentIds = new HashSet<>();
+    final Set<String> instrumentSymbols = new HashSet<>();
     final Set<String> marketRuleIds = marketRuleIds(artifact.marketRules());
     for (ArtifactInstrument instrument : artifact.marketSnapshot().instruments()) {
-      validateInstrument(artifact.metadata(), instrument, instrumentIds, marketRuleIds);
+      validateInstrument(artifact.metadata(), instrument, instrumentSymbols, marketRuleIds);
     }
   }
 
@@ -66,11 +66,11 @@ final class MarketReferenceArtifactStructureValidator {
   private void validateInstrument(
       ArtifactMetadata metadata,
       ArtifactInstrument instrument,
-      Set<InstrumentRef> instrumentIds,
+      Set<String> instrumentSymbols,
       Set<String> marketRuleIds) {
-    if (!instrumentIds.add(instrument.instrument())) {
+    if (!instrumentSymbols.add(instrument.instrument().symbol())) {
       throw new MarketReferenceValidationException(
-          "artifact contains duplicate instrument identities");
+          "artifact contains duplicate instrument symbols across its venues");
     }
     if (instrument.eligibility() == InstrumentEligibility.ELIGIBLE) {
       validateEligibleInstrument(metadata, instrument, marketRuleIds);

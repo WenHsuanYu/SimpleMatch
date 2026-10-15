@@ -6,6 +6,7 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import java.nio.charset.StandardCharsets;
 import java.time.LocalDate;
+import java.util.ArrayList;
 import java.util.List;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
@@ -44,6 +45,34 @@ class MarketReferenceArtifactCodecTest {
                     LocalDate.of(2026, 8, 11)))
         .isInstanceOf(MarketReferenceValidationException.class)
         .hasMessageContaining("checksum");
+  }
+
+  @DisplayName("one symbol cannot belong to two venues in the same trading-day artifact")
+  @Test
+  void rejectsTheSameSymbolAcrossVenuesIncludingUnsupportedInstruments() {
+    final MarketReferenceArtifact original = artifact();
+    final ArtifactInstrument duplicateSymbol =
+        new ArtifactInstrument(
+            new InstrumentRef("ROCO", "2330"),
+            InstrumentEligibility.UNSUPPORTED,
+            "NOT_LISTED_COMMON_STOCK",
+            null,
+            null,
+            null,
+            null);
+    final List<ArtifactInstrument> instruments =
+        new ArrayList<>(original.marketSnapshot().instruments());
+    instruments.add(duplicateSymbol);
+    final MarketReferenceArtifact invalid =
+        new MarketReferenceArtifact(
+            original.metadata(),
+            original.marketRules(),
+            new MarketSnapshot(instruments),
+            original.routingPolicy());
+
+    assertThatThrownBy(() -> codec.write(invalid))
+        .isInstanceOf(MarketReferenceValidationException.class)
+        .hasMessageContaining("duplicate instrument symbols");
   }
 
   private MarketReferenceArtifact artifact() {
