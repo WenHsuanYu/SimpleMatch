@@ -7,6 +7,7 @@ import com.simplematch.queryservice.model.QueryMarketReferenceView;
 import com.simplematch.queryservice.model.QueryOrderView;
 import java.sql.ResultSet;
 import java.sql.SQLException;
+import java.util.UUID;
 
 /** Maps JDBC rows into immutable query read models. */
 final class JdbcQueryProjectionRowMappers {
@@ -14,8 +15,8 @@ final class JdbcQueryProjectionRowMappers {
 
   static QueryOrderView order(ResultSet resultSet, int ignored) throws SQLException {
     return new QueryOrderView(
-        resultSet.getString(1),
-        resultSet.getString(2),
+        resultSet.getObject(1, UUID.class).toString(),
+        resultSet.getObject(2, UUID.class).toString(),
         resultSet.getString(3),
         resultSet.getString(4),
         resultSet.getString(5),
@@ -27,9 +28,9 @@ final class JdbcQueryProjectionRowMappers {
 
   static QueryExecutionView execution(ResultSet resultSet, int ignored) throws SQLException {
     return new QueryExecutionView(
-        resultSet.getString(1),
-        resultSet.getString(2),
-        resultSet.getString(3),
+        resultSet.getObject(1, UUID.class).toString(),
+        resultSet.getObject(2, UUID.class).toString(),
+        resultSet.getObject(3, UUID.class).toString(),
         resultSet.getString(4),
         resultSet.getString(5),
         resultSet.getString(6),
@@ -44,7 +45,7 @@ final class JdbcQueryProjectionRowMappers {
 
   static QueryAccountSummaryView account(ResultSet resultSet, int ignored) throws SQLException {
     return new QueryAccountSummaryView(
-        resultSet.getString(1),
+        resultSet.getObject(1, UUID.class).toString(),
         resultSet.getString(2),
         resultSet.getLong(3),
         resultSet.getLong(4),

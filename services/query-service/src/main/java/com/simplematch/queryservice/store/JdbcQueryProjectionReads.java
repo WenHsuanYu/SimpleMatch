@@ -8,6 +8,7 @@ import com.simplematch.queryservice.model.QueryOrderView;
 import java.sql.Date;
 import java.util.List;
 import java.util.Optional;
+import java.util.UUID;
 import org.springframework.jdbc.core.JdbcOperations;
 
 /** Reads durable query projections and source freshness from PostgreSQL or H2. */
@@ -21,7 +22,7 @@ final class JdbcQueryProjectionReads {
                 + "leaves_quantity_shares, last_event_id, updated_at_unix_ms "
                 + "FROM query_service.order_read_model WHERE order_id = ?",
             JdbcQueryProjectionRowMappers::order,
-            orderId)
+            UUID.fromString(orderId))
         .stream()
         .findFirst();
   }
@@ -34,7 +35,7 @@ final class JdbcQueryProjectionReads {
             + "executed_at_unix_ms FROM query_service.execution_read_model "
             + "WHERE order_id = ? ORDER BY executed_at_unix_ms, execution_id",
         JdbcQueryProjectionRowMappers::execution,
-        orderId);
+        UUID.fromString(orderId));
   }
 
   static Optional<QueryAccountSummaryView> findAccountSummary(
@@ -46,7 +47,7 @@ final class JdbcQueryProjectionReads {
                 + "updated_at_unix_ms FROM query_service.account_summary_read_model "
                 + "WHERE account_id = ?",
             JdbcQueryProjectionRowMappers::account,
-            accountId)
+            UUID.fromString(accountId))
         .stream()
         .findFirst();
   }

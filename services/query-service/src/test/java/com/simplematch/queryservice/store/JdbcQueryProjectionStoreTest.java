@@ -17,6 +17,9 @@ import com.simplematch.contracts.matching.runtime.v1.MatchingEvent;
 import com.simplematch.contracts.matching.runtime.v1.MatchingEventIdentityV1;
 import com.simplematch.contracts.matching.runtime.v1.MatchingEventType;
 import com.simplematch.contracts.matching.runtime.v1.OrderRested;
+import com.simplematch.contracts.matching.runtime.v1.TradeExecuted;
+import com.simplematch.contracts.matching.runtime.v1.TradeLeg;
+import com.simplematch.contracts.matching.runtime.v1.TradeLegState;
 import com.simplematch.queryservice.model.QueryFreshness;
 import java.util.UUID;
 import org.flywaydb.core.Flyway;
@@ -77,6 +80,55 @@ class JdbcQueryProjectionStoreTest {
     assertThat(store.freshness().partitions())
         .extracting(QueryFreshness.PartitionFreshness::sourceTopic)
         .containsExactly("account.lifecycle", "matching.events");
+  }
+
+  @Test
+  void preservesAccountReasonWithoutConsumerSideTruncation() {
+    final AccountLifecycleEvent account = accountEvent().toBuilder()
+        .setReasonCode("R".repeat(255))
+        .setReasonDetail("詳細原因".repeat(300))
+        .build();
+    store.projectAccountLifecycle(
+        account, account.toByteArray(), source("account.lifecycle", 0, 0L, 200L));
+
+    assertThat(store.findAccountSummary(ACCOUNT_ID)).isPresent().get()
+        .satisfies(summary -> {
+          assertThat(summary.accountId()).isEqualTo(ACCOUNT_ID);
+          assertThat(summary.reasonCode()).isEqualTo(account.getReasonCode());
+          assertThat(summary.reasonDetail()).isEqualTo(account.getReasonDetail());
+        });
+  }
+
+  @Test
+  void roundTripsUuidOrderAndExecutionIdentitiesAfterTrade() throws Exception {
+    final String takerOrderId = "0198a001-0000-7000-8000-000000000005";
+    final MatchingEvent rested = matchingEvent(FIRST_COMMAND_ID, 0L).event();
+    final TradeLeg maker = TradeLeg.newBuilder()
+        .setOrderId(ORDER_ID).setAccountId(ACCOUNT_ID).setSide(Side.SIDE_BUY)
+        .setCumulativeQuantityShares(10).setAveragePriceUnits(100_000)
+        .setResultingState(TradeLegState.TRADE_LEG_STATE_FILLED).build();
+    final MatchingEvent traded = rested.toBuilder()
+        .setEventType(MatchingEventType.MATCHING_EVENT_TYPE_TRADE_EXECUTED)
+        .setTradeExecuted(TradeExecuted.newBuilder()
+            .setTradeId(ByteString.copyFrom(MatchingEventIdentityV1.tradeId(
+                rested.getTradingSessionId(), 0, UUID.fromString(FIRST_COMMAND_ID), 0)))
+            .setInstrument(rested.getOrderRested().getInstrument())
+            .setMaker(maker)
+            .setTaker(maker.toBuilder().setOrderId(takerOrderId).setSide(Side.SIDE_SELL))
+            .setAggressorSide(Side.SIDE_SELL).setQuantityShares(10).setPriceUnits(100_000))
+        .build();
+    store.projectMatching(FinalMatchingEventEnvelope.parse(traded.toByteArray()),
+        source("matching.events", 0, 0L, 100L));
+
+    assertThat(store.findOrder(ORDER_ID)).isPresent().get()
+        .satisfies(order -> assertThat(order.state()).isEqualTo("FILLED"));
+    assertThat(store.findExecutions(ORDER_ID)).singleElement()
+        .satisfies(execution -> {
+          assertThat(UUID.fromString(execution.executionId())).isNotNull();
+          assertThat(execution.orderId()).isEqualTo(ORDER_ID);
+          assertThat(execution.accountId()).isEqualTo(ACCOUNT_ID);
+        });
+    assertThat(store.findExecutions(takerOrderId)).hasSize(1);
   }
 
   @Test

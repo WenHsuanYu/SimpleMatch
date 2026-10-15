@@ -1,6 +1,7 @@
 package com.simplematch.queryservice.store;
 
 import com.simplematch.contracts.account.v2.AccountLifecycleEvent;
+import java.util.UUID;
 import org.springframework.jdbc.core.ConnectionCallback;
 import org.springframework.jdbc.core.JdbcOperations;
 
@@ -20,7 +21,7 @@ final class JdbcQueryAccountProjection {
       String eventId,
       QueryProjectionPosition position) {
     final Object[] values = {
-      event.getAccountId(),
+      UUID.fromString(event.getAccountId()),
       event.getState().name(),
       event.getReservedNotional().getUnits(),
       event.getReservedQuantity().getShares(),

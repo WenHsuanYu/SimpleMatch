@@ -10,6 +10,7 @@ import java.time.LocalDate;
 import java.util.List;
 import java.util.Locale;
 import java.util.Optional;
+import java.util.UUID;
 import java.util.function.Supplier;
 import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.http.ResponseEntity;
@@ -38,28 +39,32 @@ public final class QueryReadController {
 
   /** Returns one order read model with durable freshness metadata. */
   @GetMapping("/orders/{orderId}")
-  public ResponseEntity<?> order(@PathVariable String orderId) {
+  public ResponseEntity<?> order(@PathVariable UUID orderId) {
+    final String canonicalOrderId = orderId.toString();
     return read(
-        cacheKey("order", orderId),
-        store.findOrder(orderId).map(order -> new QueryReadResponse<>(order, store.freshness())));
+        cacheKey("order", canonicalOrderId),
+        store.findOrder(canonicalOrderId)
+            .map(order -> new QueryReadResponse<>(order, store.freshness())));
   }
 
   /** Returns all executions for one order in deterministic source order. */
   @GetMapping("/orders/{orderId}/executions")
-  public ResponseEntity<?> executions(@PathVariable String orderId) {
+  public ResponseEntity<?> executions(@PathVariable UUID orderId) {
+    final String canonicalOrderId = orderId.toString();
     return read(
-        cacheKey("executions", orderId),
+        cacheKey("executions", canonicalOrderId),
         Optional.of(
             new QueryReadResponse<List<QueryExecutionView>>(
-                store.findExecutions(orderId), store.freshness())));
+                store.findExecutions(canonicalOrderId), store.freshness())));
   }
 
   /** Returns the latest Account lifecycle summary. */
   @GetMapping("/accounts/{accountId}/summary")
-  public ResponseEntity<?> accountSummary(@PathVariable String accountId) {
+  public ResponseEntity<?> accountSummary(@PathVariable UUID accountId) {
+    final String canonicalAccountId = accountId.toString();
     return read(
-        cacheKey("account-summary", accountId),
-        store.findAccountSummary(accountId)
+        cacheKey("account-summary", canonicalAccountId),
+        store.findAccountSummary(canonicalAccountId)
             .map(summary -> new QueryReadResponse<>(summary, store.freshness())));
   }
 

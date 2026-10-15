@@ -3,6 +3,7 @@ package com.simplematch.queryservice.store;
 import com.simplematch.contracts.DeterministicTextIdentity;
 import com.simplematch.contracts.matching.runtime.v1.MatchingEvent;
 import com.simplematch.contracts.matching.runtime.v1.TradeLeg;
+import java.util.UUID;
 import org.springframework.jdbc.core.ConnectionCallback;
 import org.springframework.jdbc.core.JdbcOperations;
 
@@ -106,13 +107,12 @@ final class JdbcQueryMatchingProjection {
 
   private static void projectTradeLeg(JdbcOperations jdbcTemplate, TradeLegProjection projection) {
     final TradeLeg leg = projection.leg();
-    final String executionId =
+    final UUID executionId =
         DeterministicTextIdentity.uuid(
                 "simplematch.query-execution-v1",
                 projection.source().eventId(),
                 leg.getOrderId(),
-                projection.role())
-            .toString();
+                projection.role());
     upsertOrder(
         jdbcTemplate,
         new OrderProjection(
@@ -158,8 +158,8 @@ final class JdbcQueryMatchingProjection {
 
   private static void upsertOrder(JdbcOperations jdbcTemplate, OrderProjection projection) {
     final Object[] values = {
-      projection.orderId(),
-      projection.accountId(),
+      UUID.fromString(projection.orderId()),
+      UUID.fromString(projection.accountId()),
       projection.instrument().venueMic(),
       projection.instrument().symbol(),
       projection.side(),
@@ -200,8 +200,8 @@ final class JdbcQueryMatchingProjection {
     final TradeLeg leg = projection.leg();
     final Object[] values = {
       projection.executionId(),
-      leg.getOrderId(),
-      leg.getAccountId(),
+      UUID.fromString(leg.getOrderId()),
+      UUID.fromString(leg.getAccountId()),
       projection.instrument().venueMic(),
       projection.instrument().symbol(),
       leg.getSide().name(),
@@ -287,7 +287,7 @@ final class JdbcQueryMatchingProjection {
       long priceUnits) {}
 
   private record ExecutionProjection(
-      String executionId,
+      UUID executionId,
       TradeLeg leg,
       InstrumentProjection instrument,
       ProjectionSource source,
