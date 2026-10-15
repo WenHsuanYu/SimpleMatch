@@ -12,7 +12,6 @@ import com.simplematch.quickfixgateway.fix.FinalFixDeliveryRecipient;
 import com.simplematch.quickfixgateway.fix.FinalFixDeliveryReport;
 import com.simplematch.quickfixgateway.fix.OrderSessionRegistry;
 import com.simplematch.quickfixgateway.fix.OrderSessionState;
-import java.math.BigDecimal;
 import java.util.HexFormat;
 import java.util.List;
 import java.util.UUID;
@@ -246,12 +245,7 @@ public final class FinalMatchingEventFixDeliveryPlanner {
   }
 
   private long quantity(OrderSessionState state) {
-    try {
-      return new BigDecimal(state.quantity()).longValueExact();
-    } catch (ArithmeticException | NumberFormatException invalid) {
-      throw new IllegalStateException(
-          "owning FIX order quantity is not an exact share quantity", invalid);
-    }
+    return state.order().quantity().shares();
   }
 
   private long cumulative(long orderQuantity, long leavesQuantity) {
@@ -266,7 +260,7 @@ public final class FinalMatchingEventFixDeliveryPlanner {
     if (cumulative < 0
         || leaves < 0
         || cumulative > orderQuantity
-        || cumulative + leaves != orderQuantity) {
+        || leaves != orderQuantity - cumulative) {
       throw new IllegalArgumentException(
           "final Matching Event quantities do not match the FIX order");
     }

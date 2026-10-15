@@ -17,5 +17,6 @@ public record FinalFixDeliveryRecipient(UUID orderId, SessionID sessionId, FixOr
     Objects.requireNonNull(orderId, "orderId");
     Objects.requireNonNull(sessionId, "sessionId");
     Objects.requireNonNull(order, "order");
+    order.quantity().shares();
   }
 }

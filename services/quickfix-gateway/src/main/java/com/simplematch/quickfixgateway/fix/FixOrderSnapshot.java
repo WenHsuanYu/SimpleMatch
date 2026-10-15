@@ -2,6 +2,7 @@ package com.simplematch.quickfixgateway.fix;
 
 import com.simplematch.contracts.common.v2.Side;
 import com.simplematch.quickfixgateway.wal.WalRecord;
+import java.math.BigDecimal;
 import java.util.Objects;
 
 /**
@@ -79,6 +80,27 @@ public record FixOrderSnapshot(
     /** Normalizes an absent quantity to the explicit empty representation. */
     public Quantity {
       value = Objects.requireNonNullElse(value, "");
+    }
+
+    /**
+     * Returns positive exact shares for a durable final-event recipient.
+     *
+     * @return the whole-share count
+     * @throws IllegalArgumentException when absent, fractional, nonpositive, or outside the
+     *     BIGINT range
+     */
+    public long shares() {
+      final long shares;
+      try {
+        shares = new BigDecimal(value).longValueExact();
+      } catch (ArithmeticException | NumberFormatException invalid) {
+        throw new IllegalArgumentException(
+            "FIX order quantity must be exact BIGINT shares", invalid);
+      }
+      if (shares <= 0) {
+        throw new IllegalArgumentException("FIX order quantity must be positive shares");
+      }
+      return shares;
     }
   }
 

@@ -91,7 +91,7 @@ final class FinalFixDeliveryIntentStore {
         recipient.order().clientOrderId().value(),
         recipient.order().symbol().value(),
         FinalFixDeliverySqlValues.sideCode(recipient.order().side()),
-        recipient.order().quantity().value(),
+        recipient.order().quantity().shares(),
         report.executionId(),
         Character.toString(report.executionType()),
         Character.toString(report.orderStatus()),

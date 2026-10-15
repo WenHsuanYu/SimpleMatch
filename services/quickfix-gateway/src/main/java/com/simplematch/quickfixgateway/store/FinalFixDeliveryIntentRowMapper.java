@@ -46,6 +46,6 @@ final class FinalFixDeliveryIntentRowMapper implements RowMapper<FinalFixDeliver
         new FixOrderSnapshot.ClientOrderId(resultSet.getString("client_order_id")),
         new FixOrderSnapshot.Symbol(resultSet.getString("symbol")),
         FinalFixDeliverySqlValues.side(resultSet.getInt("side")),
-        new FixOrderSnapshot.Quantity(resultSet.getString("order_quantity")));
+        new FixOrderSnapshot.Quantity(Long.toString(resultSet.getLong("order_quantity"))));
   }
 }
