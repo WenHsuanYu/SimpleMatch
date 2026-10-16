@@ -39,12 +39,49 @@ SELECT pg_temp.expect_rejected(
     'UPDATE query_service.account_summary_read_model SET reserved_notional_units = -1', '23514');
 
 INSERT INTO query_service.active_market_reference (
-    trading_day, artifact_id, venue_mic, symbol, updated_at_unix_ms
-) VALUES ('2026-10-15', 'artifact', 'XTAI', '2330', 1);
+    trading_day, artifact_id, venue_mic, symbol, market_rule_id, reference_price_units,
+    lower_price_limit_units, upper_price_limit_units, routing_partition, updated_at_unix_ms
+) VALUES ('2026-10-15', 'artifact', 'XTAI', '2330', 'RULE_1', 10000, 9000, 11000, 0, 1);
 SELECT pg_temp.expect_rejected(
     $sql$INSERT INTO query_service.active_market_reference (
-        trading_day, artifact_id, venue_mic, symbol, updated_at_unix_ms
-    ) VALUES ('2026-10-15', 'artifact', 'ROCO', '2330', 1)$sql$, '23505');
+        trading_day, artifact_id, venue_mic, symbol, market_rule_id, reference_price_units,
+        lower_price_limit_units, upper_price_limit_units, routing_partition, updated_at_unix_ms
+    ) VALUES ('2026-10-15', 'artifact', 'ROCO', '2330', 'RULE_1', 10000, 9000, 11000, 0, 1)$sql$, '23505');
+SELECT pg_temp.expect_rejected(
+    'UPDATE query_service.active_market_reference SET market_rule_id = NULL', '23502');
+SELECT pg_temp.expect_rejected(
+    'UPDATE query_service.active_market_reference SET reference_price_units = NULL', '23502');
+SELECT pg_temp.expect_rejected(
+    'UPDATE query_service.active_market_reference SET lower_price_limit_units = NULL', '23502');
+SELECT pg_temp.expect_rejected(
+    'UPDATE query_service.active_market_reference SET upper_price_limit_units = NULL', '23502');
+SELECT pg_temp.expect_rejected(
+    'UPDATE query_service.active_market_reference SET routing_partition = NULL', '23502');
+SELECT pg_temp.expect_rejected(
+    $sql$UPDATE query_service.active_market_reference SET market_rule_id = ' '$sql$, '23514');
+SELECT pg_temp.expect_rejected(
+    $sql$UPDATE query_service.active_market_reference SET market_rule_id = ''$sql$, '23514');
+SELECT pg_temp.expect_rejected(
+    $sql$UPDATE query_service.active_market_reference SET market_rule_id = E'\t\n'$sql$, '23514');
+SELECT pg_temp.expect_rejected(
+    'UPDATE query_service.active_market_reference SET reference_price_units = 0', '23514');
+SELECT pg_temp.expect_rejected(
+    'UPDATE query_service.active_market_reference SET lower_price_limit_units = 0', '23514');
+SELECT pg_temp.expect_rejected(
+    'UPDATE query_service.active_market_reference SET upper_price_limit_units = 0', '23514');
+SELECT pg_temp.expect_rejected(
+    'UPDATE query_service.active_market_reference SET lower_price_limit_units = 10001', '23514');
+SELECT pg_temp.expect_rejected(
+    'UPDATE query_service.active_market_reference SET upper_price_limit_units = 9999', '23514');
+SELECT pg_temp.expect_rejected(
+    'UPDATE query_service.active_market_reference SET lower_price_limit_units = reference_price_units', '23514');
+SELECT pg_temp.expect_rejected(
+    'UPDATE query_service.active_market_reference SET upper_price_limit_units = reference_price_units', '23514');
+SELECT pg_temp.expect_rejected(
+    'UPDATE query_service.active_market_reference SET routing_partition = -1', '23514');
+SELECT pg_temp.expect_rejected(
+    'UPDATE query_service.active_market_reference SET routing_partition = 15', '23514');
+UPDATE query_service.active_market_reference SET routing_partition = 14;
 
 -- SQL's UNKNOWN value must not admit a half-present trade.
 INSERT INTO market_data_projection.instrument_market_data (
@@ -105,6 +142,17 @@ SELECT pg_temp.expect_rejected(
     'UPDATE account_service.account_reservations SET trading_day = NULL', '23502');
 SELECT pg_temp.expect_rejected(
     'UPDATE account_service.account_reservations SET venue_mic = ''NONE''', '23514');
+DO $$ BEGIN
+    IF EXISTS (SELECT 1 FROM information_schema.columns
+        WHERE table_schema = 'account_service' AND table_name = 'account_reservations'
+            AND column_name = 'released_at_unix_ms') THEN
+        RAISE EXCEPTION 'Unused Account release timestamp still exists';
+    END IF;
+END $$;
+SELECT pg_temp.expect_rejected(
+    'UPDATE account_service.account_reservations SET created_at_unix_ms = -1', '23514');
+SELECT pg_temp.expect_rejected(
+    'UPDATE account_service.account_reservations SET updated_at_unix_ms = 0', '23514');
 
 -- Risk accepts cancellation without reservation; accepted new orders require one.
 INSERT INTO risk_service.admission_journal (
@@ -146,6 +194,24 @@ SELECT pg_temp.expect_rejected(
 SELECT pg_temp.expect_rejected(
     'UPDATE quickfix_gateway.fix_delivery_intents SET status = ''SENT''', '23514');
 UPDATE quickfix_gateway.fix_delivery_intents SET status = 'SENT', sent_at_unix_ms = 1;
+SELECT pg_temp.expect_rejected(
+    'UPDATE quickfix_gateway.fix_delivery_intents SET session_id = NULL', '23502');
+SELECT pg_temp.expect_rejected(
+    $sql$UPDATE quickfix_gateway.fix_delivery_intents SET session_id = ' '$sql$, '23514');
+-- A full session with seven 64-character components exceeds the former 256-character limit.
+UPDATE quickfix_gateway.fix_delivery_intents
+SET session_id = 'FIX.4.4:' || repeat('S', 64) || '/' || repeat('s', 64)
+    || '/' || repeat('L', 64) || '->' || repeat('T', 64) || '/' || repeat('t', 64)
+    || '/' || repeat('R', 64) || ':' || repeat('Q', 64);
+DO $$ BEGIN
+    IF NOT EXISTS (SELECT 1 FROM quickfix_gateway.fix_delivery_intents
+        WHERE length(session_id) > 256 AND session_id =
+            'FIX.4.4:' || repeat('S', 64) || '/' || repeat('s', 64)
+                || '/' || repeat('L', 64) || '->' || repeat('T', 64) || '/' || repeat('t', 64)
+                || '/' || repeat('R', 64) || ':' || repeat('Q', 64)) THEN
+        RAISE EXCEPTION 'Complete FIX session identity did not round-trip';
+    END IF;
+END $$;
 
 -- The same canonical symbol rules apply at the projection SQL seam.
 SELECT pg_temp.expect_rejected(
