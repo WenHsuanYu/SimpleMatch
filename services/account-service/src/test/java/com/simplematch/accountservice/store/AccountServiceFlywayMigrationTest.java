@@ -35,7 +35,8 @@ class AccountServiceFlywayMigrationTest {
     assertThat(hasTable(jdbcTemplate, "MATCHING_EVENT_CONSUMER_QUARANTINES")).isTrue();
     assertThat(hasColumn(jdbcTemplate, "OUTBOX", "CREATED_AT")).isTrue();
     assertThat(hasColumn(jdbcTemplate, "ACCOUNT_RESERVATIONS", "TRADING_DAY")).isTrue();
-    assertThat(appliedMigrationCount(jdbcTemplate)).isEqualTo(12);
+    assertThat(hasColumn(jdbcTemplate, "ACCOUNT_RESERVATIONS", "RELEASED_AT_UNIX_MS")).isFalse();
+    assertThat(appliedMigrationCount(jdbcTemplate)).isEqualTo(13);
   }
 
   @DisplayName("a second account-service migration is a no-op")
@@ -86,6 +87,35 @@ class AccountServiceFlywayMigrationTest {
     assertThatThrownBy(() -> jdbcTemplate.update(
             "UPDATE account_service.account_reservations SET " + assignment))
         .isInstanceOf(DataIntegrityViolationException.class);
+  }
+
+  @DisplayName("reservation timestamp constraints survive removal of the unused release column")
+  @ParameterizedTest
+  @ValueSource(strings = {"created_at_unix_ms = -1", "updated_at_unix_ms = 0"})
+  void rejectsInvalidReservationTimestamp(String assignment) {
+    final JdbcTemplate jdbcTemplate = migratedDatabase();
+    assertThat(insertValidReservation(jdbcTemplate)).isOne();
+
+    assertThatThrownBy(() -> jdbcTemplate.update(
+            "UPDATE account_service.account_reservations SET " + assignment))
+        .isInstanceOf(DataIntegrityViolationException.class)
+        .hasMessageContaining("CK_ACCOUNT_RESERVATIONS_TIMESTAMPS");
+  }
+
+  @DisplayName("released reservations retain lifecycle timestamps without a separate release time")
+  @Test
+  void releasesWithLifecycleTimestamp() {
+    final JdbcTemplate jdbcTemplate = migratedDatabase();
+    assertThat(insertValidReservation(jdbcTemplate)).isOne();
+
+    assertThat(updateOutcome(jdbcTemplate, "RELEASED", "MATCHING_CANCELLED", "")).isOne();
+    assertThat(jdbcTemplate.update("""
+        UPDATE account_service.account_reservations SET updated_at_unix_ms = 2
+        """)).isOne();
+
+    assertThat(jdbcTemplate.queryForObject(
+            "SELECT updated_at_unix_ms FROM account_service.account_reservations", Long.class))
+        .isEqualTo(2L);
   }
 
   @DisplayName("account aggregates hold exact sums beyond one reservation while retaining balance")
