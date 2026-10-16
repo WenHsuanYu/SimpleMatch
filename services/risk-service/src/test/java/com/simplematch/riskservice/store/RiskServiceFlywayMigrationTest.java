@@ -65,7 +65,11 @@ class RiskServiceFlywayMigrationTest {
         .isEqualTo("NO");
     assertThat(columnNullable(jdbcTemplate, "ADMISSION_JOURNAL", "ROUTING_ALGORITHM_VERSION"))
         .isEqualTo("NO");
-    assertThat(appliedMigrationCount(jdbcTemplate)).isEqualTo(10);
+    assertThat(columnNullable(jdbcTemplate, "ADMISSION_JOURNAL", "REASON_CODE"))
+        .isEqualTo("NO");
+    assertThat(columnNullable(jdbcTemplate, "ADMISSION_JOURNAL", "REASON_DETAIL"))
+        .isEqualTo("NO");
+    assertThat(appliedMigrationCount(jdbcTemplate)).isEqualTo(11);
   }
 
   @DisplayName("local resilience markers reject blank values and negative timestamps")
@@ -156,39 +160,62 @@ class RiskServiceFlywayMigrationTest {
         .isEqualTo("Invalid command");
   }
 
-  @DisplayName("rejected admission code cannot consist only of Java whitespace")
+  @DisplayName("rejected admission code must follow the ASCII machine token grammar")
+  // PostgreSQL probes cover trailing line terminators; H2's regex end anchor differs.
   @ParameterizedTest
-  @ValueSource(strings = {"", " ", "\t\n", "\u001c", "\u2003", "\u3000"})
-  void rejectsBlankRejectionCode(String blank) {
+  @ValueSource(strings = {
+      "", " ", "\t\n", "\u3000", "invalid", "INVALID-COMMAND", "INVALID COMMAND",
+      " INVALID", "INVALID ", "1INVALID", "_INVALID", "無效", "ÉCHEC"
+  })
+  void rejectsInvalidRejectionCode(String code) {
     final JdbcTemplate jdbcTemplate = migratedRejection();
 
     assertThatThrownBy(() -> jdbcTemplate.update(
-            "UPDATE risk_service.admission_journal SET reason_code = ?", blank))
+            "UPDATE risk_service.admission_journal SET reason_code = ?", code))
         .isInstanceOf(DataIntegrityViolationException.class)
         .hasMessageContaining("CK_ADMISSION_REJECTED_REASON");
   }
 
-  @DisplayName("rejected admission detail cannot consist only of Java whitespace")
+  @DisplayName("rejected admission permits any uppercase ASCII token")
   @ParameterizedTest
-  @ValueSource(strings = {"", " ", "\t\n", "\u001c", "\u2003", "\u3000"})
-  void rejectsBlankRejectionDetail(String blank) {
+  @ValueSource(strings = {"A", "INVALID_COMMAND", "LIMIT_2_EXCEEDED", "NEW_REASON_2027"})
+  void acceptsMachineReadableRejectionCode(String code) {
+    final JdbcTemplate jdbcTemplate = migratedRejection();
+
+    assertThat(jdbcTemplate.update(
+        "UPDATE risk_service.admission_journal SET reason_code = ?", code)).isOne();
+  }
+
+  @DisplayName("rejected admission detail must contain at least one character in SQL")
+  @Test
+  void rejectsEmptyRejectionDetail() {
     final JdbcTemplate jdbcTemplate = migratedRejection();
 
     assertThatThrownBy(() -> jdbcTemplate.update(
-            "UPDATE risk_service.admission_journal SET reason_detail = ?", blank))
+            "UPDATE risk_service.admission_journal SET reason_detail = ''"))
         .isInstanceOf(DataIntegrityViolationException.class)
         .hasMessageContaining("CK_ADMISSION_REJECTED_REASON");
   }
 
-  @DisplayName("nonbreaking spaces remain nonblank like AdmissionFailure")
+  @DisplayName("SQL leaves nonempty detail whitespace validation to the application")
   @ParameterizedTest
-  @ValueSource(strings = {"\u00a0", "\u2007", "\u202f"})
-  void acceptsNonbreakingSpaceReason(String nonblank) {
+  @ValueSource(strings = {" ", "\t\n", "\u001c", "\u2003", "\u3000", "\u00a0"})
+  void acceptsNonemptyDetailWithoutUnicodeClassification(String detail) {
     final JdbcTemplate jdbcTemplate = migratedRejection();
 
-    assertThat(jdbcTemplate.update("""
-        UPDATE risk_service.admission_journal SET reason_code = ?, reason_detail = ?
-        """, nonblank, nonblank)).isOne();
+    assertThat(jdbcTemplate.update(
+        "UPDATE risk_service.admission_journal SET reason_detail = ?", detail)).isOne();
+  }
+
+  @DisplayName("reason columns remain nonnull independently of the state check")
+  @ParameterizedTest
+  @ValueSource(strings = {"reason_code", "reason_detail"})
+  void rejectsNullReasonColumn(String column) {
+    final JdbcTemplate jdbcTemplate = migratedRejection();
+
+    assertThatThrownBy(() -> jdbcTemplate.update(
+            "UPDATE risk_service.admission_journal SET " + column + " = NULL"))
+        .isInstanceOf(DataIntegrityViolationException.class);
   }
 
   @DisplayName("pending and accepted admissions retain their existing reason semantics")
@@ -198,7 +225,8 @@ class RiskServiceFlywayMigrationTest {
     final JdbcTemplate jdbcTemplate = migratedRejection();
 
     assertThat(jdbcTemplate.update("""
-        UPDATE risk_service.admission_journal SET state = ?, reason_code = '', reason_detail = ''
+        UPDATE risk_service.admission_journal SET state = ?,
+          reason_code = 'not a machine code', reason_detail = ' '
         """, state)).isOne();
   }
 

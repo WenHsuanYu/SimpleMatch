@@ -7,6 +7,8 @@ import java.time.LocalDate;
 import java.util.UUID;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.ValueSource;
 
 /** Tests the Risk Admission aggregate lifecycle without persistence or transport adapters. */
 class AdmissionJournalEntryTest {
@@ -71,6 +73,24 @@ class AdmissionJournalEntryTest {
               assertThat(rejected.failure().detail().value()).isEqualTo("cash");
             });
     assertThat(transitioned.lifecycle().state()).isEqualTo(AdmissionState.REJECTED);
+  }
+
+  @DisplayName("account rejection codes are validated before entering the journal aggregate")
+  @ParameterizedTest
+  @ValueSource(strings = {"invalid_command", "INVALID-COMMAND", "INVALID\n"})
+  void rejectsMalformedAccountRejectionCode(String code) {
+    assertThatThrownBy(() -> pending("LIMIT")
+        .finalizeWith(ReservationOutcome.rejected(code, "Invalid command"), 200L))
+        .isInstanceOf(IllegalArgumentException.class);
+  }
+
+  @DisplayName("account rejection details remain subject to application blank validation")
+  @ParameterizedTest
+  @ValueSource(strings = {"", "\t\u3000"})
+  void rejectsBlankAccountRejectionDetail(String detail) {
+    assertThatThrownBy(() -> pending("LIMIT")
+        .finalizeWith(ReservationOutcome.rejected("INVALID_COMMAND", detail), 200L))
+        .isInstanceOf(IllegalArgumentException.class);
   }
 
   @DisplayName("new-order acceptance cannot omit its reservation identity")

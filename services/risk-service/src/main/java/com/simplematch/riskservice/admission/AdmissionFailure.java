@@ -46,12 +46,18 @@ public record AdmissionFailure(ReasonCode reasonCode, Detail detail) {
         new ReasonCode("ROUTING_INSTRUMENT_NOT_ASSIGNED"), new Detail(detail));
   }
 
-  /** Stable machine-readable admission failure code. */
+  /** Stable uppercase ASCII admission failure code, without a closed list of permitted codes. */
   public record ReasonCode(String value) {
-    /** Requires a nonblank reason code. */
+    /**
+     * Requires a code starting with an uppercase ASCII letter, followed by letters, digits,
+     * or underscores.
+     *
+     * @param value the machine-readable code, preserved without normalization
+     * @throws IllegalArgumentException if the value is null or does not match the code grammar
+     */
     public ReasonCode {
-      if (value == null || value.isBlank()) {
-        throw new IllegalArgumentException("reason_code must not be blank");
+      if (value == null || !value.matches("[A-Z][A-Z0-9_]*")) {
+        throw new IllegalArgumentException("reason_code must match [A-Z][A-Z0-9_]*");
       }
     }
   }
