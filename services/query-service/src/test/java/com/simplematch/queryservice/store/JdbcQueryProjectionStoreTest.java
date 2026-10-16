@@ -33,6 +33,8 @@ import java.util.UUID;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.ValueSource;
 import org.springframework.aop.framework.ProxyFactory;
 import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.jdbc.core.JdbcTemplate;
@@ -96,6 +98,38 @@ class JdbcQueryProjectionStoreTest {
     assertThat(store.freshness().partitions())
         .extracting(QueryFreshness.PartitionFreshness::sourceTopic)
         .containsExactly("account.lifecycle", "matching.events");
+    assertThat(jdbc.queryForList("SELECT event_id FROM query_service.projection_inbox",
+        String.class)).containsExactlyInAnyOrder(
+            account.getMetadata().getEventId(), matching.eventIdHex());
+    assertThat(matching.eventIdHex()).matches("[0-9a-f]{64}");
+  }
+
+  @ParameterizedTest
+  @ValueSource(strings = {"", " ", "arbitrary-event", "1-1-1-1-1",
+      "0198A001-0000-7000-8000-000000000010",
+      "0198a001000070008000000000000010",
+      "0198a001-0000-7000-8000-000000000010x",
+      "0198a001-0000-7000-8000-000000000010\n",
+      "abcdef0123456789abcdef0123456789abcdef0123456789abcdef0123456789"})
+  void rejectsNoncanonicalAccountEventIdentityBeforeAnyMutation(String eventId) {
+    final AccountLifecycleEvent original = accountEvent();
+    store.projectAccountLifecycle(
+        original, original.toByteArray(), source("account.lifecycle", 0, 0L, 200L));
+    final QueryFreshness freshnessBefore = store.freshness();
+    final AccountLifecycleEvent malformed = original.toBuilder()
+        .setMetadata(original.getMetadata().toBuilder().setEventId(eventId))
+        .setReservedNotional(TwdNotional.newBuilder().setUnits(2_000))
+        .build();
+
+    assertThatThrownBy(() -> store.projectAccountLifecycle(malformed, malformed.toByteArray(),
+        source("account.lifecycle", 0, 1L, 201L)))
+        .isInstanceOf(IllegalArgumentException.class);
+
+    assertThat(store.findAccountSummary(ACCOUNT_ID)).isPresent().get()
+        .satisfies(summary -> assertThat(summary.reservedNotionalUnits()).isEqualTo(1_000L));
+    assertThat(store.freshness()).isEqualTo(freshnessBefore);
+    assertThat(jdbc.queryForList("SELECT event_id FROM query_service.projection_inbox",
+        String.class)).containsExactly(original.getMetadata().getEventId());
   }
 
   @Test

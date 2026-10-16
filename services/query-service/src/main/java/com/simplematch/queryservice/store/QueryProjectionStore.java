@@ -16,7 +16,14 @@ public interface QueryProjectionStore {
   /** Applies one final Matching Event and its exact source position. */
   void projectMatching(FinalMatchingEventEnvelope envelope, QueryProjectionSource source);
 
-  /** Applies one Account lifecycle fact and its exact source position. */
+  /**
+   * Applies one Account lifecycle fact with a canonical lowercase UUID event identity.
+   *
+   * @param event lifecycle fact produced by Account
+   * @param rawPayload exact source bytes used to detect conflicting replays
+   * @param source exact transport position
+   * @throws IllegalArgumentException if the event identity is not a canonical lowercase UUID
+   */
   void projectAccountLifecycle(
       AccountLifecycleEvent event, byte[] rawPayload, QueryProjectionSource source);
 

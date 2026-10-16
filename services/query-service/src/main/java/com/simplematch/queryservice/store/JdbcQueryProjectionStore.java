@@ -10,6 +10,7 @@ import com.simplematch.queryservice.model.QueryMarketReferenceView;
 import com.simplematch.queryservice.model.QueryOrderView;
 import java.util.List;
 import java.util.Optional;
+import java.util.UUID;
 import org.springframework.jdbc.core.JdbcOperations;
 
 /** JDBC adapter that keeps PostgreSQL durable state ahead of the optional Redis read cache. */
@@ -41,8 +42,9 @@ public final class JdbcQueryProjectionStore implements QueryProjectionStore {
       byte[] rawPayload,
       QueryProjectionSource source) {
     final String eventId = event.getMetadata().getEventId();
-    if (eventId.isBlank()) {
-      throw new IllegalArgumentException("account lifecycle event_id is required");
+    if (!UUID.fromString(eventId).toString().equals(eventId)) {
+      throw new IllegalArgumentException(
+          "account lifecycle event_id must be a canonical lowercase UUID");
     }
     final QueryProjectionPosition position = source.position();
     if (!JdbcQueryProjectionState.claimInbox(
