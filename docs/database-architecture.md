@@ -80,6 +80,13 @@ simple ASCII token grammar, absent Account reasons are exact empty strings, and 
 nonempty rejected detail. Application constructors retain nonblank detail validation. RELEASED
 semantics and existing NOT NULL columns remain unchanged.
 
+The [remaining hardening batch](schema-contract-optional-hardening.md) adds complete active-reference
+facts with the verified artifact's strict price band and routing bounds. Query validates canonical
+Account UUID event identities before claiming its inbox while retaining Matching SHA-256 text IDs.
+Gateway stores a complete serialized FIX SessionID as TEXT and checks configured components against
+the existing session-table capacities. Account removes the unused release timestamp while preserving
+its created/updated timestamp constraint.
+
 Historical migrations remain versioned; no Flyway repair or database reset is required merely to
 apply the new source to an empty database.
 

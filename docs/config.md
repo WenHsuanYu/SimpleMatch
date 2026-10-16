@@ -63,6 +63,11 @@ risk-service channel, and `KafkaProperties` for the compatibility topic; gateway
 features, and retry policy remain owned by its service-specific property modules. Its live admission
 collector uses the same Spring Kafka security properties as the service consumer, so SASL/TLS is
 not bypassed by a second Kafka configuration path.
+The configured QuickFIX sessions are validated before engine startup: BeginString fits the existing
+8-character column, and sender/target CompID, SubID, LocationID and session qualifier each fit their
+64-character columns. Optional components may be empty. Complete serialized identities use TEXT
+for durable delivery and may exceed 256 characters; see the
+[Gateway session settings contract](../services/quickfix-gateway/README.md).
 The offline Market Reference builder is not a Spring runtime and has no `simplematch.*` runtime
 configuration namespace. Its source, artifact, and approval command contract is documented in
 [the Market Reference approval workflow](market-reference-approval-workflow.md).

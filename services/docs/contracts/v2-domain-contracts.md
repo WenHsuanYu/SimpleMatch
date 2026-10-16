@@ -47,6 +47,11 @@ constructors enforce the stronger nonblank-detail rule. SQL does not reproduce J
 whitespace classification. Current Account writers use fixed codes/messages, and Risk persists the
 Account result rather than accepting user-authored reason text.
 
+Query requires Account lifecycle metadata event IDs to be lowercase, hyphenated canonical UUIDs
+before any inbox/projection/checkpoint mutation. Matching runtime event IDs remain lowercase
+64-character SHA-256 values derived by the verified envelope; Query's shared inbox retains text
+storage for these two source formats.
+
 ## Account reservation saga boundary
 
 Risk owns the durable Admission intent, not the Account reservation transaction. It commits
