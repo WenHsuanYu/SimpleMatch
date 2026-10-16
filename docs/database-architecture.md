@@ -74,6 +74,12 @@ suite on PostgreSQL, exercising the production ON CONFLICT branch and actual tra
 The runner creates a uniquely named scratch database, records ownership, and removes only that
 owned database after the explicit JDBC task. The ordinary Java suite keeps its fast H2 coverage.
 
+The [canonical reason revision](schema-contract-followup.md#canonical-reason-storage-revision)
+supersedes the Unicode whitespace CHECKs with Account V12 and Risk V15. Rejection codes have a
+simple ASCII token grammar, absent Account reasons are exact empty strings, and SQL requires
+nonempty rejected detail. Application constructors retain nonblank detail validation. RELEASED
+semantics and existing NOT NULL columns remain unchanged.
+
 Historical migrations remain versioned; no Flyway repair or database reset is required merely to
 apply the new source to an empty database.
 

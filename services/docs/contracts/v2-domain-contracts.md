@@ -38,6 +38,15 @@ A rejection is a domain fact, not a transport failure or dead-letter record.
   session state is explicit.
 - ROD, IOC, and FOK are all represented by the v2 time-in-force enum.
 
+Account rejection codes and Risk admission failure codes are ASCII tokens matching
+`[A-Z][A-Z0-9_]*`; the owning application produces a nonblank human-readable detail. Account
+ACCEPTED/APPLIED outcomes have zero-length reason strings. Account RELEASED preserves its existing
+release-code semantics and does not require detail. Database columns remain NOT NULL. Database
+CHECKs enforce code shape, nonempty rejected detail and exact empty active reasons; application
+constructors enforce the stronger nonblank-detail rule. SQL does not reproduce Java's Unicode
+whitespace classification. Current Account writers use fixed codes/messages, and Risk persists the
+Account result rather than accepting user-authored reason text.
+
 ## Account reservation saga boundary
 
 Risk owns the durable Admission intent, not the Account reservation transaction. It commits
