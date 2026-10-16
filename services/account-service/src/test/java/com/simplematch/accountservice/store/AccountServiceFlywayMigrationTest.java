@@ -35,7 +35,7 @@ class AccountServiceFlywayMigrationTest {
     assertThat(hasTable(jdbcTemplate, "MATCHING_EVENT_CONSUMER_QUARANTINES")).isTrue();
     assertThat(hasColumn(jdbcTemplate, "OUTBOX", "CREATED_AT")).isTrue();
     assertThat(hasColumn(jdbcTemplate, "ACCOUNT_RESERVATIONS", "TRADING_DAY")).isTrue();
-    assertThat(appliedMigrationCount(jdbcTemplate)).isEqualTo(11);
+    assertThat(appliedMigrationCount(jdbcTemplate)).isEqualTo(12);
   }
 
   @DisplayName("a second account-service migration is a no-op")
@@ -131,10 +131,13 @@ class AccountServiceFlywayMigrationTest {
   @CsvSource({
       "ACCEPTED, '', ''",
       "APPLIED, '', ''",
+      "REJECTED, A, Detail",
+      "REJECTED, A0_, Detail",
       "REJECTED, INSUFFICIENT_CASH, Insufficient cash",
       "RELEASED, '', ''",
       "RELEASED, CANCELLED, ''",
-      "RELEASED, CANCELLED, Caller detail"
+      "RELEASED, CANCELLED, Caller detail",
+      "RELEASED, caller code, ' '"
   })
   void allowsValidOutcomeReasons(String status, String code, String text) {
     final JdbcTemplate jdbcTemplate = migratedDatabase();
@@ -143,10 +146,10 @@ class AccountServiceFlywayMigrationTest {
     assertThat(updateOutcome(jdbcTemplate, status, code, text)).isOne();
   }
 
-  @DisplayName("rejected reservations require a nonblank reason code")
+  @DisplayName("rejected reservation codes must be canonical uppercase ASCII tokens")
   @ParameterizedTest
-  @ValueSource(strings = {"", " ", "\t\n", "\u001c", "\u2003", "\u3000"})
-  void rejectsBlankRejectionCode(String code) {
+  @ValueSource(strings = {"", " ", "\t\n", "lower", "BAD-CODE", " BAD", "BAD ", "1BAD", "失敗"})
+  void rejectsMalformedRejectionCode(String code) {
     final JdbcTemplate jdbcTemplate = migratedDatabase();
     assertThat(insertValidReservation(jdbcTemplate)).isOne();
     assertThat(updateOutcome(jdbcTemplate, "REJECTED", "REJECTED", "Detail")).isOne();
@@ -157,21 +160,20 @@ class AccountServiceFlywayMigrationTest {
         .hasMessageContaining("CK_ACCOUNT_RESERVATIONS_OUTCOME_REASONS");
   }
 
-  @DisplayName("rejected reservations require nonblank reason detail")
-  @ParameterizedTest
-  @ValueSource(strings = {"", " ", "\t\n", "\u001c", "\u2003", "\u3000"})
-  void rejectsBlankRejectionText(String text) {
+  @DisplayName("SQL rejects empty rejection detail while the application owns blank validation")
+  @Test
+  void rejectsEmptyRejectionText() {
     final JdbcTemplate jdbcTemplate = migratedDatabase();
     assertThat(insertValidReservation(jdbcTemplate)).isOne();
     assertThat(updateOutcome(jdbcTemplate, "REJECTED", "REJECTED", "Detail")).isOne();
 
     assertThatThrownBy(() -> jdbcTemplate.update(
-            "UPDATE account_service.account_reservations SET reason_text = ?", text))
+            "UPDATE account_service.account_reservations SET reason_text = ''"))
         .isInstanceOf(DataIntegrityViolationException.class)
         .hasMessageContaining("CK_ACCOUNT_RESERVATIONS_OUTCOME_REASONS");
   }
 
-  @DisplayName("active and applied reservations cannot carry nonblank reasons")
+  @DisplayName("active and applied reservations cannot carry reasons")
   @ParameterizedTest
   @CsvSource({
       "ACCEPTED, reason_code", "ACCEPTED, reason_text",
@@ -188,25 +190,51 @@ class AccountServiceFlywayMigrationTest {
         .hasMessageContaining("CK_ACCOUNT_RESERVATIONS_OUTCOME_REASONS");
   }
 
-  @DisplayName("reservation blank semantics agree with Java whitespace rules")
+  @DisplayName("SQL active reasons use exact empty strings rather than whitespace")
   @ParameterizedTest
   @ValueSource(strings = {" ", "\t\n", "\u001c", "\u2003", "\u3000"})
-  void allowsWhitespaceOnlyActiveReasons(String blank) {
+  void rejectsWhitespaceActiveReasons(String whitespace) {
     final JdbcTemplate jdbcTemplate = migratedDatabase();
     assertThat(insertValidReservation(jdbcTemplate)).isOne();
 
-    assertThat(updateOutcome(jdbcTemplate, "ACCEPTED", blank, blank)).isOne();
-    assertThat(updateOutcome(jdbcTemplate, "APPLIED", blank, blank)).isOne();
+    for (String status : new String[] {"ACCEPTED", "APPLIED"}) {
+      assertThatThrownBy(() -> updateOutcome(jdbcTemplate, status, whitespace, ""))
+          .isInstanceOf(DataIntegrityViolationException.class)
+          .hasMessageContaining("CK_ACCOUNT_RESERVATIONS_OUTCOME_REASONS");
+      assertThatThrownBy(() -> updateOutcome(jdbcTemplate, status, "", whitespace))
+          .isInstanceOf(DataIntegrityViolationException.class)
+          .hasMessageContaining("CK_ACCOUNT_RESERVATIONS_OUTCOME_REASONS");
+    }
   }
 
-  @DisplayName("nonbreaking spaces remain nonblank like ReservationOutcome")
+  @DisplayName("SQL accepts nonempty detail without duplicating Java Unicode blank rules")
   @ParameterizedTest
-  @ValueSource(strings = {"\u00a0", "\u2007", "\u202f"})
-  void allowsNonbreakingSpaceRejection(String nonblank) {
+  @ValueSource(strings = {" ", "\t\n", "\u001c", "\u2003", "\u3000", "\u00a0", "\u2007", "\u202f"})
+  void allowsNonemptyRejectionDetail(String detail) {
     final JdbcTemplate jdbcTemplate = migratedDatabase();
     assertThat(insertValidReservation(jdbcTemplate)).isOne();
 
-    assertThat(updateOutcome(jdbcTemplate, "REJECTED", nonblank, nonblank)).isOne();
+    assertThat(updateOutcome(jdbcTemplate, "REJECTED", "REJECTED", detail)).isOne();
+  }
+
+  @DisplayName("all outcome reason columns retain NOT NULL protection")
+  @ParameterizedTest
+  @CsvSource({
+      "ACCEPTED, reason_code", "ACCEPTED, reason_text",
+      "APPLIED, reason_code", "APPLIED, reason_text",
+      "REJECTED, reason_code", "REJECTED, reason_text",
+      "RELEASED, reason_code", "RELEASED, reason_text"
+  })
+  void rejectsNullOutcomeReasons(String status, String column) {
+    final JdbcTemplate jdbcTemplate = migratedDatabase();
+    assertThat(insertValidReservation(jdbcTemplate)).isOne();
+    final String code = status.equals("REJECTED") ? "REJECTED" : "";
+    final String text = status.equals("REJECTED") ? "Detail" : "";
+    assertThat(updateOutcome(jdbcTemplate, status, code, text)).isOne();
+
+    assertThatThrownBy(() -> jdbcTemplate.update(
+            "UPDATE account_service.account_reservations SET " + column + " = NULL"))
+        .isInstanceOf(DataIntegrityViolationException.class);
   }
 
   private int updateOutcome(JdbcTemplate jdbcTemplate, String status, String code, String text) {

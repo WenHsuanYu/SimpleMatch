@@ -4,25 +4,26 @@ import java.util.Objects;
 
 /**
  * State-specific outcome and reason of one reservation lifecycle.
+ * Released outcomes retain the caller's reason without imposing rejection requirements.
  *
  * @param status lifecycle status
- * @param reasonCode stable machine-readable reason
- * @param reasonText human-readable reason detail
+ * @param reasonCode stable ASCII token for rejection; empty for accepted or applied outcomes
+ * @param reasonText nonblank rejection detail; empty for accepted or applied outcomes
  */
 public record ReservationOutcome(
     ReservationStatus status, String reasonCode, String reasonText) {
-  /** Enforces legal reason combinations for each reservation status. */
+  /** Normalizes null reasons to empty strings and enforces status-specific reason contracts. */
   public ReservationOutcome {
     Objects.requireNonNull(status, "status");
     reasonCode = Objects.requireNonNullElse(reasonCode, "");
     reasonText = Objects.requireNonNullElse(reasonText, "");
     if (status == ReservationStatus.RESERVATION_STATUS_REJECTED
-        && (reasonCode.isBlank() || reasonText.isBlank())) {
+        && (!reasonCode.matches("[A-Z][A-Z0-9_]*") || reasonText.isBlank())) {
       throw new IllegalArgumentException("rejected reservation requires a stable reason");
     }
     if ((status == ReservationStatus.RESERVATION_STATUS_ACCEPTED
             || status == ReservationStatus.RESERVATION_STATUS_APPLIED)
-        && (!reasonCode.isBlank() || !reasonText.isBlank())) {
+        && (!reasonCode.isEmpty() || !reasonText.isEmpty())) {
       throw new IllegalArgumentException("active reservation must not carry a reason");
     }
   }
