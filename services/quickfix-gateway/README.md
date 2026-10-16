@@ -142,6 +142,13 @@ The Gateway accepts `ClOrdID` values up to 64 characters, so the durable FIX del
 the prefixed external `OrderID` in a `VARCHAR(66)` column. This keeps the WAL, FIX mapper, and
 versioned Flyway schema aligned at the maximum supported identity length.
 
+The complete QuickFIX/J `SessionID` is stored as `TEXT` in the delivery ledger because it combines
+multiple components and can exceed 256 characters. Before creating the acceptor, loaded session
+identities (including values inherited from `[DEFAULT]`) are checked against the existing JDBC
+component capacities: `BeginString` has 8 characters and each sender/target CompID, SubID,
+LocationID and session qualifier has 64. Optional components may be empty. These capacities describe
+the Gateway-owned schema; they do not impose a 256-character limit on the combined identity.
+
 At the Risk v2 boundary, `RiskOrderIdentityDeriver` derives a separate opaque internal order UUID
 from FIX session identity, the deployment-owned trading day, and the original client `ClOrdID`.
 That configured day must identify the same session as the approved Market Reference artifact; it is

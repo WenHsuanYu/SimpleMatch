@@ -118,6 +118,26 @@ class FinalFixDeliveryDispatcherTest {
         .isEqualTo("100");
   }
 
+  @Test
+  void completeSessionIdBeyond256CharactersRoundTripsThroughDurableStore() {
+    final SessionID longSessionId = new SessionID(
+        "FIX.4.4", "S".repeat(64), "U".repeat(64), "L".repeat(64),
+        "T".repeat(64), "V".repeat(64), "M".repeat(64), "Q".repeat(64));
+    assertThat(longSessionId.toString().length()).isGreaterThan(256);
+    final FinalFixDeliveryIntent original = intent();
+    final FinalFixDeliveryIntent longIntent = new FinalFixDeliveryIntent(
+        original.identity(),
+        new FinalFixDeliveryRecipient(ORDER_ID, longSessionId, original.recipient().order()),
+        original.report(), original.sourcePartition(), original.sourceOffset(),
+        original.createdAtUnixMs());
+
+    store.recordDeliveryIntents(List.of(longIntent));
+
+    assertThat(store.findPending(1).getFirst().recipient().sessionId()).isEqualTo(longSessionId);
+    assertThat(store.findPending(1).getFirst().recipient().sessionId().toString())
+        .isEqualTo(longSessionId.toString());
+  }
+
   private FinalFixDeliveryIntent intent() {
     final FixOrderSnapshot order =
         new FixOrderSnapshot(

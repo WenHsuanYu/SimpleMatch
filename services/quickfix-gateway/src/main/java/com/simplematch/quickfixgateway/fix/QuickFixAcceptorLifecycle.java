@@ -3,10 +3,12 @@ package com.simplematch.quickfixgateway.fix;
 import com.simplematch.quickfixgateway.config.QuickFixGatewayRuntime;
 import java.io.InputStream;
 import java.nio.file.Files;
+import java.util.Iterator;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.context.SmartLifecycle;
 import org.springframework.lang.NonNull;
+import quickfix.SessionID;
 import quickfix.SessionSettings;
 import quickfix.SocketAcceptor;
 
@@ -39,6 +41,7 @@ public final class QuickFixAcceptorLifecycle implements SmartLifecycle {
 
     try (InputStream inputStream = Files.newInputStream(runtime.quickfixConfigPath())) {
       final SessionSettings settings = new SessionSettings(inputStream);
+      validateSessionIdentities(settings);
       logger.info("{} starting...", runtime.quickfixConfigPath());
 
       acceptor = acceptorFactory.create(application, settings);
@@ -52,6 +55,37 @@ public final class QuickFixAcceptorLifecycle implements SmartLifecycle {
           runtime.walPath());
     } catch (Exception e) {
       throw new IllegalStateException("failed to start QuickFix/J acceptor", e);
+    }
+  }
+
+  /** Checks the parsed, default-resolved identities before JDBC state or engine creation. */
+  private static void validateSessionIdentities(SessionSettings settings) {
+    final Iterator<SessionID> sessions = settings.sectionIterator();
+    while (sessions.hasNext()) {
+      final SessionID session = sessions.next();
+      // Capacities belong to the Gateway-owned QuickFIX/J component columns, not FIX limits.
+      validateRequiredComponent(session.getBeginString(), "BeginString", 8);
+      validateRequiredComponent(session.getSenderCompID(), "SenderCompID", 64);
+      validateRequiredComponent(session.getTargetCompID(), "TargetCompID", 64);
+      validateComponent(session.getSenderSubID(), "SenderSubID", 64);
+      validateComponent(session.getSenderLocationID(), "SenderLocationID", 64);
+      validateComponent(session.getTargetSubID(), "TargetSubID", 64);
+      validateComponent(session.getTargetLocationID(), "TargetLocationID", 64);
+      validateComponent(session.getSessionQualifier(), "SessionQualifier", 64);
+    }
+  }
+
+  private static void validateRequiredComponent(String value, String name, int capacity) {
+    if (value.isEmpty()) {
+      throw new IllegalArgumentException(name + " must not be empty");
+    }
+    validateComponent(value, name, capacity);
+  }
+
+  private static void validateComponent(String value, String name, int capacity) {
+    if (value.codePointCount(0, value.length()) > capacity) {
+      throw new IllegalArgumentException(
+          name + " must contain at most " + capacity + " characters");
     }
   }
 

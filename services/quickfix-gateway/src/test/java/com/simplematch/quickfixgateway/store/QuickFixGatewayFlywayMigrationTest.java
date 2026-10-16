@@ -31,7 +31,7 @@ class QuickFixGatewayFlywayMigrationTest {
     assertThat(hasTable(jdbcTemplate, "EVENT_LOG")).isTrue();
     assertThat(hasTable(jdbcTemplate, "MESSAGES_LOG")).isTrue();
     assertThat(hasTable(jdbcTemplate, "GATEWAY_OPERATION_AUDIT")).isTrue();
-    assertThat(appliedMigrationCount(jdbcTemplate)).isEqualTo(4);
+    assertThat(appliedMigrationCount(jdbcTemplate)).isEqualTo(5);
     assertThat(columnLength(jdbcTemplate, "FIX_DELIVERY_INTENTS", "ORDER_ID"))
         .isEqualTo(66);
   }
