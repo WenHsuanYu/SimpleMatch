@@ -126,6 +126,36 @@ class QueryFlywayMigrationTest {
         .isInstanceOf(DataIntegrityViolationException.class);
   }
 
+  @ParameterizedTest
+  @ValueSource(strings = {"market_rule_id = NULL", "reference_price_units = NULL",
+      "lower_price_limit_units = NULL", "upper_price_limit_units = NULL",
+      "routing_partition = NULL", "market_rule_id = ''", "market_rule_id = '   '",
+      "market_rule_id = '\t\n'", "reference_price_units = 0", "reference_price_units = -1",
+      "lower_price_limit_units = 0", "lower_price_limit_units = -1",
+      "upper_price_limit_units = 0", "upper_price_limit_units = -1",
+      "lower_price_limit_units = 100", "lower_price_limit_units = 101",
+      "upper_price_limit_units = 100", "upper_price_limit_units = 99",
+      "routing_partition = -1", "routing_partition = 15"})
+  void rejectsIncompleteOrInvalidFinalReferenceFacts(String update) {
+    insertReference("2026-10-15", "XTAI", "2330");
+
+    assertThatThrownBy(() -> jdbc.update("UPDATE query_service.active_market_reference SET "
+        + update)).isInstanceOf(DataIntegrityViolationException.class);
+  }
+
+  @Test
+  void acceptsFinalReferencePriceAndRoutingBoundaries() {
+    insertReference("2026-10-15", "XTAI", "2330");
+    jdbc.update("UPDATE query_service.active_market_reference SET "
+        + "lower_price_limit_units = 1, reference_price_units = 2, upper_price_limit_units = 3");
+    jdbc.update("UPDATE query_service.active_market_reference SET routing_partition = 14, "
+        + "reference_price_units = ?, upper_price_limit_units = ?",
+        Long.MAX_VALUE - 1, Long.MAX_VALUE);
+
+    assertThat(jdbc.queryForObject("SELECT routing_partition "
+        + "FROM query_service.active_market_reference", Integer.class)).isEqualTo(14);
+  }
+
   private void insertOrder() {
     jdbc.update("INSERT INTO query_service.order_read_model VALUES "
         + "(?, ?, 'XTAI', '2330', 'SIDE_BUY', 'RESTING', 10, 'event', 0, 0, 1)",
@@ -150,7 +180,10 @@ class QueryFlywayMigrationTest {
 
   private void insertReference(String day, String venue, String symbol) {
     jdbc.update("INSERT INTO query_service.active_market_reference "
-        + "(trading_day, artifact_id, venue_mic, symbol, updated_at_unix_ms) "
-        + "VALUES (CAST(? AS DATE), 'artifact', ?, ?, 1)", day, venue, symbol);
+        + "(trading_day, artifact_id, venue_mic, symbol, market_rule_id, reference_price_units, "
+        + "lower_price_limit_units, upper_price_limit_units, routing_partition, "
+        + "updated_at_unix_ms) "
+        + "VALUES (CAST(? AS DATE), 'artifact', ?, ?, 'TW_EQ', 100, 90, 110, 0, 1)",
+        day, venue, symbol);
   }
 }
