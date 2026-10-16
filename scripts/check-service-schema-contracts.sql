@@ -161,7 +161,7 @@ SELECT pg_temp.expect_rejected(
 SELECT pg_temp.expect_rejected(
     $sql$UPDATE market_data_projection.instrument_market_data SET symbol = ' '$sql$, '23514');
 
--- Persisted outcome facts must be rehydratable by their existing Java domain objects.
+-- The database guards state/code shape; applications own nonblank detail validation.
 SELECT pg_temp.expect_rejected(
     $sql$UPDATE account_service.account_reservations SET reason_code = 'BAD'$sql$, '23514');
 SELECT pg_temp.expect_rejected(
@@ -183,21 +183,62 @@ SET state = 'REJECTED', reason_code = 'INVALID_COMMAND', reason_detail = 'Invali
 SELECT pg_temp.expect_rejected(
     $sql$UPDATE risk_service.admission_journal SET reason_code = ''$sql$, '23514');
 
--- Match Java String.isBlank for reason data instead of checking ASCII spaces only.
+-- Rejection codes are ASCII tokens, not arbitrary nonblank Unicode strings.
 SELECT pg_temp.expect_rejected(
     $sql$UPDATE risk_service.admission_journal SET reason_code = E'\t\n'$sql$, '23514');
 SELECT pg_temp.expect_rejected(
-    $sql$UPDATE risk_service.admission_journal SET reason_detail = U&'\3000'$sql$, '23514');
--- NBSP is deliberately nonblank under the existing Java domain rule.
-UPDATE risk_service.admission_journal SET reason_detail = U&'\00A0';
+    $sql$UPDATE risk_service.admission_journal SET reason_code = 'invalid_command'$sql$, '23514');
+SELECT pg_temp.expect_rejected(
+    $sql$UPDATE risk_service.admission_journal SET reason_code = 'BAD-CODE'$sql$, '23514');
+SELECT pg_temp.expect_rejected(
+    $sql$UPDATE risk_service.admission_journal SET reason_code = '1BAD'$sql$, '23514');
+-- PostgreSQL anchors reject trailing line endings; H2's regex engine differs here.
+SELECT pg_temp.expect_rejected(
+    $sql$UPDATE risk_service.admission_journal SET reason_code = E'INVALID\n'$sql$, '23514');
+SELECT pg_temp.expect_rejected(
+    $sql$UPDATE risk_service.admission_journal SET reason_code = E'INVALID\r'$sql$, '23514');
+SELECT pg_temp.expect_rejected(
+    $sql$UPDATE risk_service.admission_journal SET reason_code = NULL$sql$, '23502');
+SELECT pg_temp.expect_rejected(
+    $sql$UPDATE risk_service.admission_journal SET reason_detail = NULL$sql$, '23502');
+SELECT pg_temp.expect_rejected(
+    $sql$UPDATE risk_service.admission_journal SET reason_detail = ''$sql$, '23514');
+-- SQL promises nonempty detail only; application constructors reject whitespace-only text.
+UPDATE risk_service.admission_journal SET reason_code = 'A_0', reason_detail = E'\t\n';
+UPDATE risk_service.admission_journal
+SET reason_code = 'INVALID_COMMAND', reason_detail = 'Invalid command facts';
+
 UPDATE account_service.account_reservations
 SET status = 'RESERVATION_STATUS_REJECTED', remaining_quantity = 1,
     reason_code = 'INVALID_ORDER', reason_text = 'Invalid facts';
 SELECT pg_temp.expect_rejected(
-    $sql$UPDATE account_service.account_reservations SET reason_text = U&'\3000'$sql$, '23514');
-UPDATE account_service.account_reservations
-SET status = 'RESERVATION_STATUS_ACCEPTED', reason_code = E'\t\n', reason_text = U&'\3000';
+    $sql$UPDATE account_service.account_reservations SET reason_code = 'invalid_order'$sql$, '23514');
 SELECT pg_temp.expect_rejected(
-    $sql$UPDATE account_service.account_reservations SET reason_text = U&'\00A0'$sql$, '23514');
+    $sql$UPDATE account_service.account_reservations SET reason_code = 'BAD-CODE'$sql$, '23514');
+SELECT pg_temp.expect_rejected(
+    $sql$UPDATE account_service.account_reservations SET reason_code = '1BAD'$sql$, '23514');
+SELECT pg_temp.expect_rejected(
+    $sql$UPDATE account_service.account_reservations SET reason_code = E'INVALID\n'$sql$, '23514');
+SELECT pg_temp.expect_rejected(
+    $sql$UPDATE account_service.account_reservations SET reason_code = E'INVALID\r'$sql$, '23514');
+SELECT pg_temp.expect_rejected(
+    $sql$UPDATE account_service.account_reservations SET reason_code = NULL$sql$, '23502');
+SELECT pg_temp.expect_rejected(
+    $sql$UPDATE account_service.account_reservations SET reason_text = NULL$sql$, '23502');
+UPDATE account_service.account_reservations SET reason_code = 'A_0', reason_text = E'\t\n';
+UPDATE account_service.account_reservations
+SET status = 'RESERVATION_STATUS_ACCEPTED', reason_code = '', reason_text = '';
+-- No reason has exactly one stored representation: the zero-length string.
+SELECT pg_temp.expect_rejected(
+    $sql$UPDATE account_service.account_reservations SET reason_code = E'\t\n'$sql$, '23514');
+SELECT pg_temp.expect_rejected(
+    $sql$UPDATE account_service.account_reservations SET reason_text = ' '$sql$, '23514');
+UPDATE account_service.account_reservations
+SET status = 'RESERVATION_STATUS_APPLIED', remaining_quantity = 0, filled_quantity = quantity;
+SELECT pg_temp.expect_rejected(
+    $sql$UPDATE account_service.account_reservations SET reason_text = E'\t\n'$sql$, '23514');
+-- Release reasons retain their existing freedom, including an empty detail.
+UPDATE account_service.account_reservations
+SET status = 'RESERVATION_STATUS_RELEASED', reason_code = 'caller release reason', reason_text = '';
 
 ROLLBACK;
