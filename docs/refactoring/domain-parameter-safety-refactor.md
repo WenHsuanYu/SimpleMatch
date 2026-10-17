@@ -1,11 +1,17 @@
 # Domain parameter-safety refactor
 
-This document records the implementation scope after ADR 0002. The completed slices refactored every
-handwritten production Java constructor and method with more than seven parameters to a shorter
-semantic interface. PMD's `ExcessiveParameterList` rule, with its existing default threshold of ten,
-is now the repository's sole automated parameter-count gate. Later slices must still preserve the
-same semantic construction vocabulary rather than hide a wide boundary behind a broad exception. An
-external shape may remain wide only at its flatten/rehydrate adapter; generated sources are excluded.
+This development reference combines the current [review checklist](#review-checklist) with the
+implementation history after ADR 0002. The recorded completed slices refactored their handwritten
+production Java boundaries with more than seven parameters to shorter semantic interfaces. PMD's
+`ExcessiveParameterList` rule, with its existing default threshold of ten, is the repository's sole
+automated parameter-count gate. New work must preserve semantic construction vocabulary rather than
+hide a wide boundary behind a broad exception. An external shape may remain wide only at its
+flatten/rehydrate adapter; generated sources are excluded.
+
+The migration tables, class shapes, and "remaining" descriptions below belong to their respective
+implementation stages; the completion sections preserve their original verification boundaries.
+For example, `ReserveOperation` later gained a required business `tradingDay` alongside identity and
+terms. Use current source for exact signatures and the owning GitHub Issue for live workflow state.
 
 ## Completed production migrations
 
@@ -30,6 +36,9 @@ configuration contract through adapters. Findings in later slices remain migrati
 intentional exceptions to the policy.
 
 ## Wide external shapes under migration
+
+This is the original slice inventory. The later completion records below describe the selected
+Account/Risk and #69–#76 deliveries; this table is not a current repository TODO list.
 
 | Slice | External shape | Required semantic representation and adapter containment |
 |---|---|---|
@@ -57,12 +66,12 @@ specification:
 - Risk Admission `admission` production code, its journal/outbox adapters, and route-reuse tests.
 
 The completed `SubmissionResult` predecessor slice is tracked by Issues #33–#37, and the completed
-Risk Submission outbox event descriptor slice is tracked by Issue #46. Remaining Risk Submission
-members, QuickFIX WAL, Market Reference snapshots, and shared platform
-configuration are separate parameter-safety surfaces. QuickFIX configuration and shared platform
-configuration are complete in Issues #69–#76; remaining Risk Submission members, QuickFIX WAL, and
-Market Reference snapshot work must still be evaluated as migration work rather than exceptions to
-the PMD gate. None of these follow-up surfaces is a reason to keep Issues #39, #44, or #46 open.
+Risk Submission outbox event descriptor slice is tracked by Issue #46. At the #39/#44 verification
+stage, other Risk Submission members, QuickFIX WAL, Market Reference snapshots, and shared platform
+configuration were separate parameter-safety surfaces. The later #69–#76 verification below records
+the selected QuickFIX, Market Reference, and shared-configuration work. Any further finding still
+requires source review and an owning Issue; these historical boundaries neither create an exception
+to the PMD gate nor establish the current open/closed state of an Issue.
 
 ## Slice 1: durable submission outcomes
 

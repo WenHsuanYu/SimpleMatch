@@ -13,9 +13,15 @@ terminology or architectural decisions need recording.
 
 ## File structure
 
-This is a single-context repository:
+One root `CONTEXT.md` describes the repository's multiple bounded contexts and their relationships.
+The domain-documentation layout is centralized; business ownership remains with each context.
 
-/ ├── CONTEXT.md ├── docs/adr/ └── src/
+```text
+/
+├── CONTEXT.md
+└── docs/
+    └── adr/
+```
 
 ## Use the glossary's vocabulary
 

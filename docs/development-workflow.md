@@ -119,10 +119,9 @@ Implement the smallest production change that makes the tests pass.
 
 ### PostgreSQL skill routing
 
-- Use `postgresql-code-review` for schema design, migration review, SQL safety, and
-  PostgreSQL-specific maintainability.
-- Use `postgresql-optimization` for indexing strategy, query structure, execution-plan-sensitive
-  work, and PostgreSQL performance tuning.
+Follow the PostgreSQL migration conventions above and the validation sequence below for every SQL
+change. Use a matching PostgreSQL review or optimization skill when it is available in the current
+skill inventory; the repository workflow remains applicable when no such skill is installed.
 
 ### Java documentation conventions
 
@@ -240,7 +239,9 @@ For most changes in this repository, use this order:
 6. Run targeted tests.
 7. Run static analysis.
 8. Run service or smoke tests.
-9. Update docs and tasks.
+9. Update relevant docs and the owning GitHub Issue; update the capability inventory only when its
+   status, evidence, dependencies, or acceptance mapping changes. Keep `tasks.md` as historical
+   navigation.
 10. Review the diff for consistency.
 
 ## 9. When To Escalate Design Work
