@@ -49,9 +49,13 @@ and stable allocator. Its fixture is also consumed by
 invalid checksum before attempting JSON parsing, and rejects a non-final or mismatched trading-day
 artifact before a Matching owner may start.
 
-The eventual Risk and Matching startup integrations are deliberately separate work in #126 and
-#127. This contract supplies their shared input and fail-closed validator; it does not claim those
-runtimes already load it.
+Risk startup wires the shared validator through
+[RiskDailyArtifactConfiguration](../../services/risk-service/src/main/java/com/simplematch/riskservice/config/RiskDailyArtifactConfiguration.java).
+The [Matching process](../../matching-engine/src/matching_main.cpp) also loads and validates the
+mounted artifact before starting its runtime. This contract supplies their shared input and
+fail-closed validation rules; the builder's successful output alone does not prove workload
+readiness. Source-specific implementation and verification evidence is indexed in the
+[capability inventory](../status/phase-1-capability-inventory.md).
 
 ## Retention and delivery
 
@@ -74,5 +78,7 @@ The builder chooses delivery only after re-verifying the exact bytes and externa
   contract beside the delivery manifest.
 
 Both forms expose `/etc/simplematch/market-reference/market_reference.json` and its sibling
-checksum file. The generated manifest is a deployment fragment for the future Risk/Matching
-workloads; full Kubernetes rollout ownership is tracked separately in #138.
+checksum file. The generated manifest is an artifact-delivery fragment for the Risk and Matching
+workloads. Applying the complete workload, dependency, and readiness configuration belongs to the
+[local certification workflow](../verification/local-production-like-certification.md) and the
+[deployment specifications](../../services/docs/platform/deployment.md), rather than the builder.

@@ -228,8 +228,11 @@ routing, session, or transport policy. Local and test changes take effect on pro
 The Phase 1 target is one externally checksummed final `market_reference.json` for each trading day.
 The offline builder retains approved output under `config/market-reference/approved/YYYY-MM-DD/` and
 generates either an immutable ConfigMap or a digest-pinned OCI data-image delivery fragment. Risk
-and Matching will load the same mounted file at startup; #126 and #127 own that runtime integration.
-There is no target Market Reference Kafka topic, outbox, runtime API, or Spring configuration key.
+and Matching load and validate the same mounted file at startup through their owned artifact
+loaders. See the [artifact contract](market-reference-artifact-contract.md) for the shared input
+and the [capability inventory](../status/phase-1-capability-inventory.md) for implementation evidence.
+Runtime startup properties select the mounted input; the artifact remains the immutable daily data
+authority. The offline capability has no runtime publication topic, outbox, or lookup API.
 
 The source-compatible v1 submission adapter is not registered as a production Spring service while
 its wire contract lacks the venue and authoritative artifact route. The v2 artifact-backed
