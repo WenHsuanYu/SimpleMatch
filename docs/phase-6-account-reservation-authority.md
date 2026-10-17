@@ -1,6 +1,8 @@
-# Phase 6: Account reservation authority
+# Account reservation authority
 
-Phase 6 is implemented in `account-service` as a local, database-authoritative transaction boundary.
+This implementation reference describes the local, database-authoritative transaction boundary in
+`account-service`, originally delivered in Phase 6. Target ownership and cross-service contracts
+remain in the service/platform specifications linked below; deployment evidence is separate.
 
 - Account Service owns canonical account identity through the UUID-backed `AccountId` domain value.
   FIX and upstream services propagate that identity unchanged; they do not derive aliases or create
@@ -14,8 +16,9 @@ Phase 6 is implemented in `account-service` as a local, database-authoritative t
   mechanics.
 - Account limits, positions, and reservations persist `account_id` as the same native PostgreSQL UUID
   carried through the Account domain and service boundary.
-- V2 reservations persist the upstream admission `trading_day` and reuse it for release and fill
-  authority mutations; legacy V1 operations retain their wall-clock compatibility fallback.
+- Reserve operations require the upstream admission business `trading_day`; reservations persist
+  it and reuse it for release and fill authority mutations. Account admission v1 and its wall-clock
+  compatibility fallback are retired. The current-day `getLimits` query is a separate read contract.
 - `account_service.inbox` makes execution delivery idempotent and records optional aggregate sequence
   claims.
 - Reservation decisions and lifecycle changes write binary account outbox events in the same

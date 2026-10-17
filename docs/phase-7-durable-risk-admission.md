@@ -1,7 +1,7 @@
-# Phase 7: Durable risk admission
+# Durable risk admission
 
-Phase 7 is implemented as a recoverable local saga in `risk-service` and is the authoritative
-business-outcome boundary for order admission.
+This implementation reference describes the recoverable local saga in `risk-service`, originally
+delivered in Phase 7, and the authoritative business-outcome boundary for order admission.
 
 The domain boundary is one Admission aggregate root per `command_id`. It owns normalized decision
 facts, FIX business-key idempotency, and the durable `PENDING` to `ACCEPTED` or `REJECTED`
