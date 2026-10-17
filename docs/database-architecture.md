@@ -1,4 +1,4 @@
-# Database Architecture Implementation Guide
+# Database Implementation Guide
 
 The canonical target database topology and ownership rules are in
 [the target platform specification](../services/docs/platform/database-architecture.md). Cross-
@@ -52,9 +52,9 @@ not rely on implicit `public`.
 
 ## Current schema contract cleanup
 
-The [cleanup acceptance plan](schema-contract-cleanup.md) records the no-legacy-data assumption,
-service ownership, current symbol/venue rule and validation boundaries. The current schema uses
-native UUIDs for Account and Query canonical identities, whole-share quantities and exact TWD
+The [completed schema cleanup record](schema-contract-cleanup.md) records the no-legacy-data
+assumption, service ownership, current symbol/venue rule and validation boundaries. The current
+schema uses native UUIDs for Account and Query canonical identities, whole-share quantities and exact TWD
 amounts. Account requires an explicit venue and trading day; neither LEGACY venue nor wall-clock
 fallbacks are part of the active contract. Account-wide monetary aggregates retain a wider exact
 range than an individual v2 reservation's signed-long units.
@@ -69,8 +69,9 @@ shared instrument contract.
 `run-flyway-ci-checks.sh` also executes `check-service-schema-contracts.sql` against PostgreSQL.
 These probes first insert valid rows, reject individual invalid values with specific SQLSTATEs,
 and roll back every fixture. They complement H2/JDBC tests; they do not certify a live deployment.
-The [bounded follow-up](schema-contract-followup.md) also runs the existing Query JDBC contract
-suite on PostgreSQL, exercising the production ON CONFLICT branch and actual transaction rollback.
+The [completed follow-up record](schema-contract-followup.md) documents the existing Query JDBC
+contract suite on PostgreSQL, exercising the production ON CONFLICT branch and actual transaction
+rollback.
 The runner creates a uniquely named scratch database, records ownership, and removes only that
 owned database after the explicit JDBC task. The ordinary Java suite keeps its fast H2 coverage.
 
@@ -80,9 +81,9 @@ simple ASCII token grammar, absent Account reasons are exact empty strings, and 
 nonempty rejected detail. Application constructors retain nonblank detail validation. RELEASED
 semantics and existing NOT NULL columns remain unchanged.
 
-The [remaining hardening batch](schema-contract-optional-hardening.md) adds complete active-reference
-facts with the verified artifact's strict price band and routing bounds. Query validates canonical
-Account UUID event identities before claiming its inbox while retaining Matching SHA-256 text IDs.
+The [completed hardening record](schema-contract-optional-hardening.md) documents complete
+active-reference facts with the verified artifact's strict price band and routing bounds. Query validates
+canonical Account UUID event identities before claiming its inbox while retaining Matching SHA-256 text IDs.
 Gateway stores a complete serialized FIX SessionID as TEXT and checks configured components against
 the existing session-table capacities. Account removes the unused release timestamp while preserving
 its created/updated timestamp constraint.

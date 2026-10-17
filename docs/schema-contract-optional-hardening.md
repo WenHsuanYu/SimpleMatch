@@ -1,4 +1,9 @@
-# Remaining schema contract hardening
+# Schema contract hardening record
+
+This is the completed implementation record for the four items below, with isolated local
+validation on 2026-10-17. "Optional" describes their earlier assessment, before the owner approved
+this batch. Its source-specific results remain separate from the earlier cleanup/follow-up records,
+remote CI, and deployment certification.
 
 The owner approved these four previously optional items after the canonical reason revision.
 This bounded batch starts at `2f019ac`. Existing transaction-data compatibility remains out of

@@ -1,11 +1,15 @@
-# Schema contract follow-up
+# Schema contract follow-up record
+
+This completed record contains two successive batches with separate local validation results.
+The 2026-10-17 [canonical reason storage revision](#canonical-reason-storage-revision) is the final
+reason-storage decision in this document; the initial Unicode SQL design below is historical.
+Read each test/migration count with its own batch and source boundary. Later optional items were
+delivered in the separate [hardening record](schema-contract-optional-hardening.md).
 
 This bounded follow-up starts at `e78d7e0`, after the first schema cleanup. The owner approved the
 four recommended follow-ups from the residual assessment; optional reference-price constraints,
 FIX session-ID capacity changes, mixed event-ID format changes and unused-column removal are
 outside this batch. Existing transaction-data compatibility is not required.
-The later [canonical reason revision](#canonical-reason-storage-revision) supersedes the initial
-Unicode reason-validation design below.
 
 ## Initial acceptance
 
