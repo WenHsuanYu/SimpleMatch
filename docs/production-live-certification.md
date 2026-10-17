@@ -1,9 +1,14 @@
-# Local and Production Certification Runbook
+# Local Production-Like Certification Runbook
 
 This document records the repeatable verification path for the Phase 1 Trading Release. The
 repository-owned local production-like gate is the current completion boundary; the staging and
 production sequence remains a separately rendered promotion template. A local pass is never
 reported as an external production certification.
+
+Use the local sections for the executable repository-owned workflow. The production target and
+later staging/production instructions define the environment and promotion template an operator
+must supply and execute separately. Selected-phase or focused diagnostic results retain their
+own scope and cannot substitute for an aggregate `full-local` PASS.
 
 ## Target and hard boundaries
 

@@ -3,7 +3,10 @@
 > Historical phase evidence: this document describes the schema at that phase. The current
 > [database implementation guide](database-architecture.md#current-schema-contract-cleanup)
 > supersedes the old Persistence table inventory and Account string/decimal shapes.
-
+> The findings, SQL examples, and next decisions below retain their original phase meaning;
+> words such as "current" refer to that profiling pass. Before profiling or migrating a current
+> database, use the guide, the owning service's contracts, and its versioned Flyway migrations.
+> Historical `fail` / `blocked` gates do not describe today's runtime or authorize a new migration.
 
 This document records the first Phase 2 profiling pass for field typing convergence across
 `risk-service`,
