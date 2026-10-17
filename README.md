@@ -75,19 +75,19 @@ intentional exceptions are listed in
 the [domain parameter-safety refactor](docs/development/domain-parameter-safety-refactor.md).
 
 The deployed RM-1 Risk-to-`matching.commands` certification is documented in the
-[accepted-command E2E runbook](docs/rm1-risk-matching-command-e2e.md) and the retained
-[restart/equivalent-replay runbook](docs/rm1-risk-matching-restart-replay.md). Risk and Account
+[accepted-command E2E runbook](docs/verification/risk-matching-command-e2e.md) and the retained
+[restart/equivalent-replay runbook](docs/verification/risk-matching-restart-replay.md). Risk and Account
 transactional-outbox publication, outage recovery, duplicate delivery, and exact Kafka-record
 evidence are mapped in the
-[CDC publication verification guide](docs/cdc-publication-verification.md).
+[CDC publication verification guide](docs/verification/cdc-publication-verification.md).
 
 The query-service replay, PostgreSQL fallback, Redis rebuild, quiescent critical-path isolation,
 and controlled public IOC active-processing liveness gate is documented in the query-service
-certification runbook at docs/query-service-certification.md. A `PASS` requires the active event
+certification runbook at docs/verification/query-service-certification.md. A `PASS` requires the active event
 evidence as well as the replay and outage checks.
 
 The exact release scope is defined by the
 [Phase 1 Trading Release system boundary](services/docs/architecture/system-boundaries.md#phase-1-trading-release-boundary).
 Its implementation status is tracked in the
-[remaining-work inventory](docs/routing-policy-remaining-work.md); GitHub Issues remain the
+[remaining-work inventory](docs/status/phase-1-capability-inventory.md); GitHub Issues remain the
 executable task source of truth.

@@ -32,7 +32,7 @@ when it explicitly provisions a multi-worker kind cluster and executes each fail
 action. The checked-in lab record currently proves a disposable kind Matching smoke with
 Lease/PVC/replay and normal Pod recreation, and labels the one-node/RF1 profile
 non-certifying; it does not claim kind worker drain, stop, or permanent removal
-resilience ([local production-like certification record](../production-live-certification.md)).
+resilience ([local production-like certification record](../verification/local-production-like-certification.md)).
 
 ## What each worker action means
 
@@ -136,7 +136,7 @@ orchestration by itself ([PostgreSQL failover](https://www.postgresql.org/docs/c
 The repository’s recorded local production-like gate uses a disposable local PostgreSQL
 dependency and a kind application runtime; its documented target explicitly separates
 the local gate from production PostgreSQL HA
-([local production-like certification record](../production-live-certification.md)).
+([local production-like certification record](../verification/local-production-like-certification.md)).
 Consequently, a kind worker loss can test application disconnect/reconnect if PostgreSQL
 remains alive, but it does not test PostgreSQL primary loss, PVC failover, standby
 promotion, synchronous durability, backup/PITR, or cross-node replicated storage. Those
@@ -197,7 +197,7 @@ The current checked-in evidence supports these bounded statements:
 
 - The kind smoke can exercise the Matching Lease/PVC/replay contract and normal Pod
   recreation. The runbook explicitly describes the one-node/RF1 setup as
-  non-certifying ([local production-like certification record](../production-live-certification.md)).
+  non-certifying ([local production-like certification record](../verification/local-production-like-certification.md)).
 - The application manifests and official Kubernetes semantics explain what a Pod,
   StatefulSet PVC, `emptyDir`, and local PV should do under a controlled action.
 - The repository’s QuickFIX implementation separates JDBC session storage from the

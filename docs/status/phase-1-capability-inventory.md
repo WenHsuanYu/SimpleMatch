@@ -4,7 +4,7 @@ This is the canonical implementation-status inventory for the complete Phase 1 T
 the daily Market Reference Artifact, Risk-to-Matching routing, deterministic Matching, downstream
 durability, required read paths, deployment/security, certification, and pre-release cleanup. The
 canonical release-scope definition lives in
-[`system-boundaries.md`](../services/docs/architecture/system-boundaries.md#phase-1-trading-release-boundary).
+[`system-boundaries.md`](../../services/docs/architecture/system-boundaries.md#phase-1-trading-release-boundary).
 Architecture documents describe the accepted target. This document alone distinguishes that target
 from the repository's current implementation state.
 

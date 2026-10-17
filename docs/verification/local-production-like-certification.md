@@ -53,7 +53,7 @@ does not block a full runtime attempt: actual usage and swap can differ from dec
 It records the profile, per-workload requests, host capacity, and comparison in its run-owned
 `local-resource-budget.json` and links the verdict from `report.md`. The reduced profile
 reports `PARTIAL` and cannot stand in for the full cross-service gate. See the
-[local host memory budget](../deploy/k8s/README.md#local-host-memory-budget) for the calculations
+[local host memory budget](../../deploy/k8s/README.md#local-host-memory-budget) for the calculations
 and the focused baseline test.
 
 The local profile uses the current local deployment image set, a three-broker Kafka cluster with 15
@@ -76,7 +76,7 @@ promotion identity and must not replace the staging/production digest placeholde
 
 The Kubernetes startup dependency investigation, including the read-only Flyway runtime fixes,
 diagnostic evidence, and migration-first apply sequence, is recorded in
-[Historical local production-like Kubernetes workload startup investigation](archive/local-production-like-kubernetes-workload-startup.md).
+[Historical local production-like Kubernetes workload startup investigation](../archive/local-production-like-kubernetes-workload-startup.md).
 
 The local dependency/build versions are checked in the deployment documentation and contract test:
 Gradle 9.7.0, Spring Boot 4.1.0, vcpkg 2026.07.29, Apache Kafka 4.3.1, PostgreSQL 18.4, Redis
@@ -101,7 +101,7 @@ All nine trading prerequisites passed. The parent report remains intentionally `
 Compose was explicitly skipped; the business result is `PASS` with successful restoration, not a
 filled-trade, recovery, external-production or `full-local` certification claim. The disposable
 namespace and its 20 PVC/PVs were removed after verification; reports and current images remain.
-Use the existing [normal-scenario recipe](../scripts/end-to-end/critical-consumers/README.md#run-the-normal-scenario)
+Use the existing [normal-scenario recipe](../../scripts/end-to-end/critical-consumers/README.md#run-the-normal-scenario)
 for reproduction. Later evidence-documentation commits do not change the certified runtime code.
 
 ## External template acceptance criteria
@@ -164,7 +164,7 @@ Run these in order from the repository root. GRADLE_USER_HOME is only needed whe
 Gradle cache is read-only or unsuitable; it is not a production setting.
 
 Before applying any Compose or Kubernetes resources, or injecting a deployment fault, complete the
-mandatory preflight in [Deployment Test Lessons](agents/deployment-test-lessons.md). Confirm the
+mandatory preflight in [Deployment Test Lessons](../agents/deployment-test-lessons.md). Confirm the
 Docker daemon, canonical kind context and worker topology, observed runtime identities, isolated
 namespace/evidence directory, and before/after resource inventory. Stop before fault injection if
 any preflight check fails.

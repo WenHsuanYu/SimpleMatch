@@ -3,9 +3,9 @@
 This is the completed implementation and local-validation record for the first cleanup batch.
 The acceptance and delivery sections preserve that batch's scope; the validation section records
 its local results rather than current-head CI or deployment evidence. Later changes are recorded
-in the [follow-up](schema-contract-followup.md) and
-[hardening](schema-contract-optional-hardening.md) records; the
-[database implementation guide](development/database-implementation-guide.md#current-schema-contract-cleanup) summarizes
+in the [follow-up](schema-contract-followup-record.md) and
+[hardening](schema-contract-hardening-record.md) records; the
+[database implementation guide](../development/database-implementation-guide.md#current-schema-contract-cleanup) summarizes
 the resulting schema contract.
 
 This work follows the service SQL review and the owner's clarified assumptions: there is no

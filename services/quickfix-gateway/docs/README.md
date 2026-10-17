@@ -18,7 +18,7 @@ decisions or matching order.
 The configured gateway `ownerId` claims each `SessionID` at logon. Claims are idempotent for the
 same owner; a conflicting owner fails closed and cannot process application messages or emit FIX
 execution responses. The deployment's owner-aware endpoint and same-owner restart model are
-specified in [`docs/quickfix-gateway-session-scale-plan.md`](../../../docs/quickfix-gateway-session-scale-plan.md).
+specified in [`docs/plans/quickfix-gateway-session-scale-out.md`](../../../docs/plans/quickfix-gateway-session-scale-out.md).
 
 The admission gate is explicit for both `NewOrderSingle` and `OrderCancelRequest`. A paused gate
 returns `ADMISSION_PAUSED`; a market interruption returns `MARKET_INTERRUPTED`. The gateway sends

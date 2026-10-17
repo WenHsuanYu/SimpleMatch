@@ -666,9 +666,9 @@ Measurement會檢查warm plan的policy decisions，並以warm wall-clock扣除�
 
 詳細設計與操作說明：
 
-- `docs/local-certification-phase-dag.md`
-- `docs/local-certification-phase-dag-implementation.md`
-- `docs/local-certification-reuse-measurement.md`
+- `docs/verification/local-certification-phase-dag.md`
+- `docs/verification/local-certification-phase-dag-implementation.md`
+- `docs/verification/local-certification-reuse-measurement.md`
 
 ---
 
@@ -1183,17 +1183,17 @@ test -w "$VCPKG_ROOT" && echo writable || echo read-only
 - `README.md`：系統目標與 service landscape。
 - `docs/development/dependencies.md`：Java/Gradle、CMake、vcpkg 與 dependency policy。
 - `deploy/k8s/README.md`：local/staging/production overlays、Secrets、Matching fleet 與 local cluster contract。
-- `docs/local-certification-phase-dag.md`：local certification Phase DAG、reuse policy與evidence architecture。
-- `docs/local-certification-phase-dag-implementation.md`：目前PhaseGraph、Planner、fingerprint、evidence與resume Interface。
-- `docs/local-certification-reuse-measurement.md`：cold/warm reuse量測方式與結果解讀。
+- `docs/verification/local-certification-phase-dag.md`：local certification Phase DAG、reuse policy與evidence architecture。
+- `docs/verification/local-certification-phase-dag-implementation.md`：目前PhaseGraph、Planner、fingerprint、evidence與resume Interface。
+- `docs/verification/local-certification-reuse-measurement.md`：cold/warm reuse量測方式與結果解讀。
 - `docs/operations/local-registry-resource-lifecycle.md`：local registry、digest transport、baseline 與 cleanup 設計。
-- `docs/production-live-certification.md`：local gate 與 staging/production certification boundary。
+- `docs/verification/local-production-like-certification.md`：local gate 與 staging/production certification boundary。
 - `config/market-reference/README.md`：Market Reference builder。
-- `docs/rm1-risk-matching-command-e2e.md`：Risk-to-Matching accepted-command E2E。
-- `docs/rm1-risk-matching-restart-replay.md`：restart / equivalent replay evidence。
-- `docs/cdc-publication-verification.md`：transactional outbox 與 CDC publication verification。
+- `docs/verification/risk-matching-command-e2e.md`：Risk-to-Matching accepted-command E2E。
+- `docs/verification/risk-matching-restart-replay.md`：restart / equivalent replay evidence。
+- `docs/verification/cdc-publication-verification.md`：transactional outbox 與 CDC publication verification。
 
-新增的 query-service certification 入口：[query-service certification](../query-service-certification.md)。
+新增的 query-service certification 入口：[query-service certification](../verification/query-service-certification.md)。
 它涵蓋 replay、Redis fallback、quiescent critical-path isolation，以及 query-service 為零副本
 期間的一筆公開 FIX IOC active-processing liveness；`PASS` 必須同時具備各階段的結構化證據。
 

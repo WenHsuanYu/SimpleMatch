@@ -2,7 +2,7 @@
 
 This index is the entry point for cross-cutting target specifications.
 
-- [Phase 1 Trading Release remaining work](../../docs/routing-policy-remaining-work.md) —
+- [Phase 1 Trading Release remaining work](../../docs/status/phase-1-capability-inventory.md) —
   canonical implementation status, evidence, dependencies, and acceptance gates.
 - [Architecture](architecture/README.md)
 - [Contracts](contracts/README.md)

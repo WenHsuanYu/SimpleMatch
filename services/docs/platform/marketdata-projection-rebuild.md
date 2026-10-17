@@ -45,7 +45,7 @@ The endpoint response proves only that the local reset transaction completed. Ka
 source retention, replay boundary, and final convergence remain operator-owned evidence.
 
 The repository-owned completion gate is
-[`docs/runtime-market-data-projection-certification.md`](../../../docs/runtime-market-data-projection-certification.md).
+[`docs/verification/runtime-market-data-projection-certification.md`](../../../docs/verification/runtime-market-data-projection-certification.md).
 Run it only against a lifecycle-labelled disposable namespace:
 
 ```bash

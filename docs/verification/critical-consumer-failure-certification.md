@@ -11,7 +11,7 @@ consumer implementation methods directly.
 
 For the smaller, single-Gateway same-owner recovery scenario owned by #164, use
 the existing resting-buy runner's `--gateway-recovery` option. Its
-[acceptance contract and command](../scripts/end-to-end/critical-consumers/README.md#same-owner-gateway-recovery-acceptance-contract-164)
+[acceptance contract and command](../../scripts/end-to-end/critical-consumers/README.md#same-owner-gateway-recovery-acceptance-contract-164)
 retain the same client session store and order, perform one normal Pod restart,
 and check actual reconnect/resend plus unchanged durable business results. Do
 not run this mixed Matching/PostgreSQL/consumer outage merely to prove #164.
@@ -23,7 +23,7 @@ reads and republishes the exact cancellation bytes and independently observes th
 new Kafka offset. It checks unchanged Persistence and Account state/revisions
 after consumers advance through that offset; it does not assume Matching replay
 republishes completed events. See the
-[business recovery contract](../scripts/end-to-end/critical-consumers/README.md#matching-business-recovery-acceptance-contract-168).
+[business recovery contract](../../scripts/end-to-end/critical-consumers/README.md#matching-business-recovery-acceptance-contract-168).
 
 ## Repository layout
 

@@ -37,7 +37,7 @@ does not decide whether its market contents are valid.
 Market Reference therefore owns offline source acquisition and artifact construction, not a
 runtime API, PostgreSQL schema, Kafka topic, outbox, activation service, or Risk projection table.
 Current implementation evidence and removal work are tracked in the
-[remaining-work inventory](../../../docs/routing-policy-remaining-work.md).
+[remaining-work inventory](../../../docs/status/phase-1-capability-inventory.md).
 
 The executable builder and delivery contracts are documented separately:
 

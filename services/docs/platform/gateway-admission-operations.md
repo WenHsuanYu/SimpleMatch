@@ -160,6 +160,6 @@ outside the admission evaluator; there is still one admission policy and one sta
 
 The source-aligned local deployed smoke verifies `PRE_OPEN`, healthy production observations,
 and authenticated explicit open without posting synthetic observations. Its evidence and limits
-are recorded in the [completion specification](../../../docs/gateway-admission-completion.md#deployed-admission-smoke)
+are recorded in the [completion specification](../../../docs/verification/gateway-admission-verification.md#deployed-admission-smoke)
 and the
-[Phase 1 remaining-work inventory](../../../docs/routing-policy-remaining-work.md#go-1-operate-one-gateway-admission-authority).
+[Phase 1 remaining-work inventory](../../../docs/status/phase-1-capability-inventory.md#go-1-operate-one-gateway-admission-authority).

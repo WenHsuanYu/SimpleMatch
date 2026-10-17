@@ -19,7 +19,7 @@ proof that the Java gateway can:
 - complete logout and acceptor shutdown cleanly.
 
 The architectural meaning of these states is defined by
-[Consistency, Recovery, Identity, and Error Boundaries](../services/docs/platform/consistency-recovery-identity-and-errors.md).
+[Consistency, Recovery, Identity, and Error Boundaries](../../services/docs/platform/consistency-recovery-identity-and-errors.md).
 
 ## Evidence Source
 

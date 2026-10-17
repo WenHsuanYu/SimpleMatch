@@ -74,7 +74,7 @@ on:
       - 'scripts/test-simplematch-kind-manager.sh'
       - 'services/quickfix-gateway/build.gradle.kts'
       - 'services/quickfix-gateway/src/test/java/com/simplematch/quickfixgateway/fix/QuickFixPreparedSubmissionLiveCertificationTest.java'
-      - 'docs/critical-consumer-failure-certification.md'
+      - 'docs/verification/critical-consumer-failure-certification.md'
       - 'docs/operations/local-registry-resource-lifecycle.md'
       - 'docs/agents/deployment-test-lessons.md'
   workflow_dispatch:

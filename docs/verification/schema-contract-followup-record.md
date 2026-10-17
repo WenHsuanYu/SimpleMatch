@@ -4,7 +4,7 @@ This completed record contains two successive batches with separate local valida
 The 2026-10-17 [canonical reason storage revision](#canonical-reason-storage-revision) is the final
 reason-storage decision in this document; the initial Unicode SQL design below is historical.
 Read each test/migration count with its own batch and source boundary. Later optional items were
-delivered in the separate [hardening record](schema-contract-optional-hardening.md).
+delivered in the separate [hardening record](schema-contract-hardening-record.md).
 
 This bounded follow-up starts at `e78d7e0`, after the first schema cleanup. The owner approved the
 four recommended follow-ups from the residual assessment; optional reference-price constraints,

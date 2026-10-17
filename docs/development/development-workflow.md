@@ -208,7 +208,7 @@ Whenever paths, behavior, or boundaries change, update the documentation in the 
 
 - Update README when the structure or build entry points change.
 - Update the owning GitHub Issue for executable status, blockers, and completion evidence.
-- Update `docs/routing-policy-remaining-work.md` only when a listed capability's repository status,
+- Update `docs/status/phase-1-capability-inventory.md` only when a listed capability's repository status,
   evidence, dependency, or acceptance mapping changes.
 - Keep `tasks.md` as historical navigation; add new work through a GitHub Issue rather than a live
   checkbox.

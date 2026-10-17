@@ -2,7 +2,7 @@
 
 This is the canonical target contract for SimpleMatch's external FIX 4.4 boundary. Current
 implementation and migration status are tracked in the
-[Phase 1 Trading Release remaining-work inventory](../../../docs/routing-policy-remaining-work.md).
+[Phase 1 Trading Release remaining-work inventory](../../../docs/status/phase-1-capability-inventory.md).
 
 ## Boundary and command flow
 

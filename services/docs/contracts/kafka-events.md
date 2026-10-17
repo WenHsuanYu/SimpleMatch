@@ -2,7 +2,7 @@
 
 This is the canonical target contract for cross-service Kafka records. Current implementation and
 legacy-removal status are tracked in the
-[Phase 1 Trading Release remaining-work inventory](../../../docs/routing-policy-remaining-work.md).
+[Phase 1 Trading Release remaining-work inventory](../../../docs/status/phase-1-capability-inventory.md).
 
 ## Delivery model
 

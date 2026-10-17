@@ -2,7 +2,7 @@
 
 This is the canonical target specification for SimpleMatch topology, ownership, and the end-to-end
 trading flow. Current implementation status and removal work are tracked separately in the
-[Phase 1 Trading Release remaining-work inventory](../../../docs/routing-policy-remaining-work.md).
+[Phase 1 Trading Release remaining-work inventory](../../../docs/status/phase-1-capability-inventory.md).
 
 ## Phase 1 Trading Release boundary
 

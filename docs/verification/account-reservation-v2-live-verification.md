@@ -90,7 +90,7 @@ kubectl auth can-i get secrets -n "$SIMPLEMATCH_NAMESPACE"
 ```
 
 Provision Secrets through your organization’s approved secret manager or `kubectl` workflow. The
-repository expects the keys documented in [`deploy/k8s/README.md`](../deploy/k8s/README.md): service
+repository expects the keys documented in [`deploy/k8s/README.md`](../../deploy/k8s/README.md): service
 PostgreSQL DSNs, gRPC TLS material, PostgreSQL CA material, and—when Kafka is enabled—Kafka client
 trust and SASL material.
 

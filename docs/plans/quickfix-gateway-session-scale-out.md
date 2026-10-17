@@ -117,7 +117,7 @@ drain 或 standby lease / fencing / takeover 已完成。
 
 ### 文件與配置
 
-- [x] 建立 `docs/quickfix-gateway-session-scale-plan.md`
+- [x] 建立 `docs/plans/quickfix-gateway-session-scale-out.md`
 - [x] 新增 `simplematch.quickfix-gateway.owner-id` 配置說明
 - [ ] 定義 session routing snapshot 格式
 - [x] 定義 owner endpoint 命名規則

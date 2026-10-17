@@ -34,7 +34,7 @@ lag remain operator-owned evidence. Use the repository production-like certifica
 retain that evidence; never treat the HTTP response alone as a completed replay.
 
 The repository-owned completion gate is
-[`docs/query-service-certification.md`](../../../docs/query-service-certification.md). It requires
+[`docs/verification/query-service-certification.md`](../../../docs/verification/query-service-certification.md). It requires
 an explicit fresh retained production-like evidence directory:
 
 ```bash

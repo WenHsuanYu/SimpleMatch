@@ -41,6 +41,6 @@ material. They intentionally remain outside this target specification so the tar
 model does not claim a particular run has happened.
 
 The execution-state runbook for the complete deployment-environment gate is
-[Production Live Certification](../../../docs/production-live-certification.md). It records the
+[Production Live Certification](../../../docs/verification/local-production-like-certification.md). It records the
 repository checks, the non-certifying kind smoke, and the required Kafka, Matching, PostgreSQL,
 and external QuickFIX inputs.

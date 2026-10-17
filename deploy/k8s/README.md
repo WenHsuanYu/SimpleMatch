@@ -306,7 +306,7 @@ The strict live gate is bash scripts/verify-matching-fleet-live.sh. It requires 
 Ready with real digest-pinned images, current per-ordinal Lease holders, Bound
 ReadWriteOncePod PVCs, and 15 distinct nodes. The complete Kafka, PostgreSQL, and external
 QuickFIX sequence is recorded in
-[Production Live Certification](../../docs/production-live-certification.md).
+[Production Live Certification](../../docs/verification/local-production-like-certification.md).
 
 The local production-like gate is
 `bash scripts/run-local-production-like-certification.sh`. It verifies the same logical 15-owner,

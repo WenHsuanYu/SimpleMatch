@@ -34,7 +34,7 @@ reconciliation, retry, and client/operator error-message policy is defined in
 
 The Account reservation v2 live verification sequence, including the direct RPC boundary, pending
 recovery scenarios, Kubernetes prerequisites, and the later Kafka/Debezium extension, is documented
-in [Account Reservation v2 Live Verification](../account-reservation-v2-live-verification.md).
+in [Account Reservation v2 Live Verification](../verification/account-reservation-v2-live-verification.md).
 
 Canonical Account identity is a UUID owned by Account Service. Risk validates/preserves the value
 carried by the v2 command and forwards the same identity to Account reservation; Risk does not

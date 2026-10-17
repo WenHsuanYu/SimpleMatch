@@ -4,7 +4,7 @@ Status: Implemented; acceptance requires exact-head CI and the completion gates
 listed below.
 
 This is the implementation specification for Issue #185 and
-`docs/local-certification-phase-dag.md`. The architecture specification explains
+`docs/verification/local-certification-phase-dag.md`. The architecture specification explains
 why Phase DAG execution and content-addressed evidence are used. This document
 explains the current shell interfaces, ownership of behavior, failure semantics,
 and verification seams.

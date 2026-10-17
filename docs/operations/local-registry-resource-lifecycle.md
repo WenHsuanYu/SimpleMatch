@@ -195,7 +195,7 @@ A same-run completion marker is only a resume candidate. The PhaseGraph resume p
 
 The reusable cache defaults to `out/certification-cache/`. Required evidence and immutable artifact identity are materialized into each retained run, so dependent certification does not require that cache directory to survive.
 
-See `docs/local-certification-phase-dag.md` for the architecture and `docs/local-certification-phase-dag-implementation.md` for the current module/interface contract.
+See `docs/verification/local-certification-phase-dag.md` for the architecture and `docs/verification/local-certification-phase-dag-implementation.md` for the current module/interface contract.
 
 ## 6. Kubelet image-cache policy
 

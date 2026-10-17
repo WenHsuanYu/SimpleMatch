@@ -240,5 +240,5 @@ ownership.
 - [Deployment](services/docs/platform/deployment.md) and
   [Matching fleet recovery](services/docs/platform/matching-fleet-recovery.md) describe runtime
   placement, partition ownership enforcement, and operator procedures.
-- [Local certification](docs/production-live-certification.md) describes the Phase 1 release gate,
+- [Local certification](docs/verification/local-production-like-certification.md) describes the Phase 1 release gate,
   local evidence, image identities, and the separate external deployment templates.

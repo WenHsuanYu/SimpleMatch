@@ -52,7 +52,7 @@ not rely on implicit `public`.
 
 ## Current schema contract cleanup
 
-The [completed schema cleanup record](../schema-contract-cleanup.md) records the no-legacy-data
+The [completed schema cleanup record](../verification/schema-contract-cleanup-record.md) records the no-legacy-data
 assumption, service ownership, current symbol/venue rule and validation boundaries. The current
 schema uses native UUIDs for Account and Query canonical identities, whole-share quantities and exact TWD
 amounts. Account requires an explicit venue and trading day; neither LEGACY venue nor wall-clock
@@ -69,19 +69,19 @@ shared instrument contract.
 `run-flyway-ci-checks.sh` also executes `check-service-schema-contracts.sql` against PostgreSQL.
 These probes first insert valid rows, reject individual invalid values with specific SQLSTATEs,
 and roll back every fixture. They complement H2/JDBC tests; they do not certify a live deployment.
-The [completed follow-up record](../schema-contract-followup.md) documents the existing Query JDBC
+The [completed follow-up record](../verification/schema-contract-followup-record.md) documents the existing Query JDBC
 contract suite on PostgreSQL, exercising the production ON CONFLICT branch and actual transaction
 rollback.
 The runner creates a uniquely named scratch database, records ownership, and removes only that
 owned database after the explicit JDBC task. The ordinary Java suite keeps its fast H2 coverage.
 
-The [canonical reason revision](../schema-contract-followup.md#canonical-reason-storage-revision)
+The [canonical reason revision](../verification/schema-contract-followup-record.md#canonical-reason-storage-revision)
 supersedes the Unicode whitespace CHECKs with Account V12 and Risk V15. Rejection codes have a
 simple ASCII token grammar, absent Account reasons are exact empty strings, and SQL requires
 nonempty rejected detail. Application constructors retain nonblank detail validation. RELEASED
 semantics and existing NOT NULL columns remain unchanged.
 
-The [completed hardening record](../schema-contract-optional-hardening.md) documents complete
+The [completed hardening record](../verification/schema-contract-hardening-record.md) documents complete
 active-reference facts with the verified artifact's strict price band and routing bounds. Query validates
 canonical Account UUID event identities before claiming its inbox while retaining Matching SHA-256 text IDs.
 Gateway stores a complete serialized FIX SessionID as TEXT and checks configured components against

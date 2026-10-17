@@ -25,7 +25,7 @@ These instructions apply to the whole repository.
   run complete.
 - Before an expensive local certification rerun, classify changed inputs through the certification
   planner (`scripts/lib/local-certification-planner.sh`) and phase graph
-  (`scripts/lib/local-certification-phase-graph.sh`), following the [reuse contract](docs/local-certification-phase-dag.md).
+  (`scripts/lib/local-certification-phase-graph.sh`), following the [reuse contract](docs/verification/local-certification-phase-dag.md).
   For an unskipped complete run, classification is complete only when `plan.json` records one
   `EXECUTE`, `REUSE`, or `REVALIDATE` decision, input fingerprint, and reason for every required
   phase. `SKIP` is valid only for an explicit partial profile; it has no fingerprint or PASS evidence

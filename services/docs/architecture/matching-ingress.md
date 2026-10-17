@@ -44,4 +44,4 @@ The matching Kubernetes manifests declare the 15 ordinal/PVC/Lease deployment co
 standard artifact mount. Production packaging still has to provide the native process's
 `readiness` and `liveness` commands, Kubernetes Lease client, and Kafka client adapters around this
 tested library seam. Their operational evidence remains tracked in the
-[remaining-work inventory](../../../docs/routing-policy-remaining-work.md).
+[remaining-work inventory](../../../docs/status/phase-1-capability-inventory.md).

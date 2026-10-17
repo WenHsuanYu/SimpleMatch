@@ -51,7 +51,7 @@ the admission scope.
 
 The live adapter is disabled by default in generic local runs and enabled in production and the
 Kubernetes Gateway ConfigMap. See [configuration](../../docs/reference/runtime-configuration.md) for endpoint and timing
-overrides. The [completion specification](../../docs/gateway-admission-completion.md#deployed-admission-smoke)
+overrides. The [completion specification](../../docs/verification/gateway-admission-verification.md#deployed-admission-smoke)
 records the source-specific local deployed PRE_OPEN-to-open smoke and its limits. The later
 stale-recovery streak fix has separate local controller regression evidence, not a rerun of that
 deployment smoke. Unit tests or rendered-manifest checks alone are not deployment evidence.
@@ -70,7 +70,7 @@ Session-aware deployment baseline:
 - The default QuickFIX acceptor configuration uses continuity defaults
   (`ResetOnLogon/Logout/Disconnect=N`) for same-owner restart semantics.
 - Standby promotion, fencing, and route transfer remain follow-up work documented in
-  `docs/quickfix-gateway-session-scale-plan.md`.
+  `docs/plans/quickfix-gateway-session-scale-out.md`.
 
 ## Durable Admission And Recovery
 

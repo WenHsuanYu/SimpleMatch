@@ -7,11 +7,11 @@ competing with the active documentation entry points.
 
 Use the current documents for implementation and verification:
 
-- [Phase 1 remaining-work inventory](../routing-policy-remaining-work.md) is the current capability,
+- [Phase 1 remaining-work inventory](../status/phase-1-capability-inventory.md) is the current capability,
   dependency, and evidence authority.
 - [Target documentation index](../../services/docs/README.md) is the current architecture and
   contract entry point.
-- [Production-like certification runbook](../production-live-certification.md) is the current
+- [Production-like certification runbook](../verification/local-production-like-certification.md) is the current
   local certification procedure.
 - [Deployment-test lessons](../agents/deployment-test-lessons.md) is the current prevention
   checklist for deployment failures.
@@ -29,7 +29,7 @@ Use the current documents for implementation and verification:
 | `readme-documentation-refactor-audit.md` | Completed documentation-navigation audit. | [Target documentation index](../../services/docs/README.md), root README, and the Markdown link checks. |
 | `readme-documentation-refactor-spec.md` | Completed documentation reorganization specification. | The current documentation indexes and repository workflow rules. |
 | `taiwan-event-driven-refactor-plan.md` | Historical master plan whose status and phase checklist no longer describe the completed Phase 1 release. | Remaining-work inventory, cross-cutting transaction policy, ADRs, and certification runbook. |
-| `local-production-like-kubernetes-workload-startup.md` | Historical startup investigation; prevention checks and executable runbooks now own the workflow. | [Production-like certification runbook](../production-live-certification.md), [deployment lessons](../agents/deployment-test-lessons.md), and [registry lifecycle](../operations/local-registry-resource-lifecycle.md). |
+| `local-production-like-kubernetes-workload-startup.md` | Historical startup investigation; prevention checks and executable runbooks now own the workflow. | [Production-like certification runbook](../verification/local-production-like-certification.md), [deployment lessons](../agents/deployment-test-lessons.md), and [registry lifecycle](../operations/local-registry-resource-lifecycle.md). |
 | `research-pmd-static-analysis.md` | Completed PMD adoption research; its proposed rollout is now implemented by the blocking PMD policy. | [PMD quality policy](../reference/pmd-quality-policy.md) and [development workflow](../development/development-workflow.md). |
 
 ## Documentation review — 2026-09-05

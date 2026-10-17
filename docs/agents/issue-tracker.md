@@ -6,10 +6,10 @@ Issues and PRDs for this repo live as GitHub issues. Use the `gh` CLI for all op
 
 - GitHub Issue state, assignee, native parent/sub-issue relationship, and dependency edges are the
   executable source of truth.
-- `docs/routing-policy-remaining-work.md` owns current phase capability status and evidence; it maps
+- `docs/status/phase-1-capability-inventory.md` owns current phase capability status and evidence; it maps
   repository status to issues but does not replace issue workflow state.
 - `docs/reference/transaction-and-consistency-policy.md` owns transaction and consistency
-  rules; `docs/production-live-certification.md` owns the current local final-gate runbook.
+  rules; `docs/verification/local-production-like-certification.md` owns the current local final-gate runbook.
 - `docs/archive/taiwan-event-driven-refactor-plan.md` preserves the historical phase, transaction,
   rollback, and decision plan; its acceptance sections remain a static CI contract, not a current
   task, status, or release-evidence authority.

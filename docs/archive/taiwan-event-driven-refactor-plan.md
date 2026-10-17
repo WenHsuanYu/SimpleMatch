@@ -18,7 +18,7 @@ they are not mistaken for behavior that already exists.
 
 The acceptance-criteria checklists below are final-program gates. The canonical detailed status for
 the complete release frontier is
-[Phase 1 Trading Release remaining work](../routing-policy-remaining-work.md); older completed
+[Phase 1 Trading Release remaining work](../status/phase-1-capability-inventory.md); older completed
 runtime-publication steps below are historical evidence, not the accepted target.
 
 ## Phase 1 Trading Release Boundary
@@ -43,7 +43,7 @@ The exclusions in this document's [Out of Scope](#out-of-scope) section bound th
 
 This table is a frozen plan snapshot from 2026-08-11. It is retained to explain the original phase
 sequence and does not describe the current source tree. For current status, use the
-[Phase 1 Trading Release remaining-work inventory](../routing-policy-remaining-work.md), which is
+[Phase 1 Trading Release remaining-work inventory](../status/phase-1-capability-inventory.md), which is
 updated after source-aligned verification. The phase-15 checklist below records the later cleanup
 commit boundaries but does not by itself certify a deployment.
 
@@ -74,7 +74,7 @@ remaining issue graph:
 - GitHub Issue state, native sub-issue hierarchy, and dependency edges under
   [#10](https://github.com/WenHsuanYu/SimpleMatch/issues/10) are the executable task source of
   truth. This document owns phase/transaction/rollback gates, not assignment or closure state.
-- [The canonical remaining-work inventory](../routing-policy-remaining-work.md) owns capability status,
+- [The canonical remaining-work inventory](../status/phase-1-capability-inventory.md) owns capability status,
   repository evidence, and acceptance-gate mapping.
 - [#119](https://github.com/WenHsuanYu/SimpleMatch/issues/119) remains the pre-release cleanup
   tracker. [#120](https://github.com/WenHsuanYu/SimpleMatch/issues/120) is locally implemented but
