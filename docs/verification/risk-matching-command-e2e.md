@@ -187,10 +187,13 @@ Risk outbox -> Debezium -> `matching.commands` path directly, including connecto
 Kafka bytes, so manually refreshing `risk_service.cdc_delivery_lag` would add synthetic health data
 without strengthening the RM-1 claim.
 
-The production/default Risk configuration keeps CDC backpressure enabled. Issue #138 owns the
-runtime producer that must continuously derive a fresh delivery-lag measurement from real
-outbox/CDC/Kafka progress. Until that producer exists and has its own outage/recovery evidence, this
-RM-1 verifier does not claim that the CDC lag safety controller is operationally certified.
+The production/default Risk configuration keeps CDC backpressure enabled. Its Risk-owned
+`CdcDeliveryMonitor` derives delivery lag from outbox/Kafka progress and refreshes the durable
+measurement only after proving its observation consumer is caught up. The
+[deployment capability record](../status/phase-1-capability-inventory.md#pd-1-harden-the-cross-service-deployment-and-security-baseline)
+indexes the separate #138 implementation and source-specific outage/recovery evidence. This RM-1
+baseline still disables the controller in its own overlay, so its accepted-command evidence does
+not independently certify the CDC lag safety controller.
 
 ## Evidence hand-off
 
@@ -254,12 +257,13 @@ must not overwrite the original failure.
 
 ## Current boundary
 
-This retained verifier closes the missing deployed **accepted New Order** path, including the valid
-Risk admission recovery path, and checks initial at-least-once duplicate consistency. It intentionally
-does not yet claim the restart/replay portion of the complete RM-1 acceptance criteria. Before RM-1
-is changed from `PARTIAL` to `COMPLETED`, extend the retained scenario with an explicit Risk/connector
-restart or pause/resume boundary and prove that the same durable command identity preserves artifact
-identity, partition, and command semantics after replay.
+This baseline verifier proves the deployed **accepted New Order** path, including valid Risk
+admission recovery, and checks initial at-least-once duplicate consistency. The separate
+[Risk restart and equivalent-replay gate](risk-matching-restart-replay.md) verifies that the same
+durable command preserves artifact identity, partition, and semantics after restart/replay.
+Complete RM-1 verification requires the applicable gates and their source-aligned evidence; the
+baseline's narrower PASS does not acquire the second gate's coverage merely by linking to it.
 
-Do not mark RM-1 complete merely because this script exists. Status changes require a fresh canonical
-local production-like run and retained evidence from the version of the verifier being claimed.
+Use the [capability inventory](../status/phase-1-capability-inventory.md#rm-1-load-the-artifact-in-risk-and-publish-matching-commands)
+for the recorded RM-1 status and evidence. The existence of either script does not establish a new
+source version's PASS; certification claims require retained evidence for the version being claimed.
