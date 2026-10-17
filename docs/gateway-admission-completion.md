@@ -1,9 +1,15 @@
-# Gateway admission completion specification
+# Gateway admission verification
 
-This specification records Gateway completion for #135 and its live-observation follow-up #160.
-Existing QuickFIX Gateway operational code owns admission state, readiness evaluation, operator commands,
-audit records, and automatic safety actions. This change completes trading-day close coordination
-and certifies the behavior without creating another production service or readiness implementation.
+This document combines the current Gateway implementation reference, verification procedures, and
+dated local evidence for #135 and its live-observation follow-up #160. The implementation and seam
+sections describe owned behavior; the deployed-smoke section preserves the source/environment of
+that run, and the later certification sections describe how to verify close coordination. The
+completion gate records acceptance criteria, while the owning Issues retain live workflow state.
+
+QuickFIX Gateway operational code owns admission state, readiness evaluation, operator commands,
+audit records, automatic safety actions, and trading-day close coordination. Local test or deployed
+smoke evidence applies only to the behavior and source explicitly recorded below; later fixes do
+not inherit an earlier deployment's PASS.
 
 ## Current implementation
 
@@ -345,7 +351,7 @@ scripts/end-to-end/critical-consumers/run-gateway-close-certification.sh \
 
 ## Completion gate
 
-Issue #135 can close when all of the following are true:
+The recorded closure criteria for Issue #135 require all of the following:
 
 - the close workflow is wired through the owned Risk transport without duplicating barrier logic;
 - focused QuickFIX Gateway and Risk tests pass;
