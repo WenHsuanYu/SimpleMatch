@@ -74,7 +74,7 @@ for phase in "${required_phases[@]}"; do
     continue
   fi
 
-  if ! grep -Fq 'transaction-and-consistency-policy.md' <<<"$section"; then
+  if ! grep -Fq '](../reference/transaction-and-consistency-policy.md)' <<<"$section"; then
     echo "Missing canonical policy reference: $phase" >&2
     status=1
   fi

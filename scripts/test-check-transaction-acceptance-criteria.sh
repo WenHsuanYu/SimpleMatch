@@ -48,4 +48,11 @@ sed -i '/^##### Timeout policy$/d' "$broken_plan"
 assert_fails_with 'a missing required transaction field' 'Missing transaction acceptance field' \
   bash "$checker" --plan "$broken_plan"
 
+stale_policy_plan="$fixture_root/stale-policy-plan.md"
+cp "$repo_root/docs/archive/taiwan-event-driven-refactor-plan.md" "$stale_policy_plan"
+sed -i 's@reference/transaction-and-consistency-policy.md@cross-cutting-transaction-and-consistency-policy.md@g' \
+  "$stale_policy_plan"
+assert_fails_with 'a retired policy path' 'Missing canonical policy reference' \
+  bash "$checker" --plan "$stale_policy_plan"
+
 echo 'Transaction acceptance criteria checker tests passed.'
