@@ -9,14 +9,14 @@ on:
       - '.github/workflows/ci-transaction-criteria.yml'
       - 'scripts/check-transaction-acceptance-criteria.sh'
       - 'scripts/test-check-transaction-acceptance-criteria.sh'
-      - 'docs/cross-cutting-transaction-and-consistency-policy.md'
+      - 'docs/reference/transaction-and-consistency-policy.md'
       - 'docs/archive/taiwan-event-driven-refactor-plan.md'
   pull_request:
     paths:
       - '.github/workflows/ci-transaction-criteria.yml'
       - 'scripts/check-transaction-acceptance-criteria.sh'
       - 'scripts/test-check-transaction-acceptance-criteria.sh'
-      - 'docs/cross-cutting-transaction-and-consistency-policy.md'
+      - 'docs/reference/transaction-and-consistency-policy.md'
       - 'docs/archive/taiwan-event-driven-refactor-plan.md'
   workflow_dispatch:
 

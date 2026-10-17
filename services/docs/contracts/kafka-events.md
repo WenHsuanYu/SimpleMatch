@@ -254,7 +254,7 @@ Producers use `acks=all` and idempotence. Neither topic is compacted. Production
 these values and certified disk headroom. A local one-broker profile may reduce replication for
 development but cannot pass production readiness. The executable provisioning, validation, sizing,
 and alert contract is in the
-[Matching Kafka durability profile](../../../docs/kafka-matching-durability-profile.md).
+[Matching Kafka durability profile](../../../docs/reference/kafka-matching-durability-profile.md).
 
 ## Evolution and compatibility
 

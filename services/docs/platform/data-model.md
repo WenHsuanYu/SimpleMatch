@@ -80,4 +80,4 @@ versioning rule, and rebuild contract; Kafka use alone does not make a model eve
 
 This page is the authority for target data ownership. SQL table layouts, migration inventory, and
 rollout evidence remain in the
-[database implementation guide](../../../docs/database-architecture.md).
+[database implementation guide](../../../docs/development/database-implementation-guide.md).

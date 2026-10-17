@@ -228,7 +228,7 @@ ownership.
 
 - [Domain-value implementation](docs/adr/0002-domain-values-for-wide-call-boundaries.md) documents
   concrete types, ingress composition, and persistence mapping. The subsequent
-  [parameter-safety refactor](docs/refactoring/domain-parameter-safety-refactor.md) records the
+  [parameter-safety refactor](docs/development/domain-parameter-safety-refactor.md) records the
   current interface policy and completed migrations.
 - [Consistency and recovery](services/docs/platform/consistency-recovery-identity-and-errors.md)
   describes durable admission, identity mapping, retry, and event-delivery mechanisms.

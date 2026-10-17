@@ -5,7 +5,7 @@ set -euo pipefail
 script_dir="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
 repo_root="$(cd -- "$script_dir/.." && pwd)"
 plan_file="$repo_root/docs/archive/taiwan-event-driven-refactor-plan.md"
-policy_file="$repo_root/docs/cross-cutting-transaction-and-consistency-policy.md"
+policy_file="$repo_root/docs/reference/transaction-and-consistency-policy.md"
 
 if [[ "${1:-}" == "--plan" ]]; then
   plan_file="${2:?missing plan path after --plan}"
@@ -74,7 +74,7 @@ for phase in "${required_phases[@]}"; do
     continue
   fi
 
-  if ! grep -Fq 'cross-cutting-transaction-and-consistency-policy.md' <<<"$section"; then
+  if ! grep -Fq 'transaction-and-consistency-policy.md' <<<"$section"; then
     echo "Missing canonical policy reference: $phase" >&2
     status=1
   fi

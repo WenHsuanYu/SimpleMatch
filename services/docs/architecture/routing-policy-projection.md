@@ -41,6 +41,6 @@ Current implementation evidence and removal work are tracked in the
 
 The executable builder and delivery contracts are documented separately:
 
-- [Official-source contract](../../../docs/market-reference-official-source-contract.md)
-- [Canonical artifact contract](../../../docs/market-reference-artifact-contract.md)
+- [Official-source contract](../../../docs/reference/market-reference-official-source-contract.md)
+- [Canonical artifact contract](../../../docs/reference/market-reference-artifact-contract.md)
 - [Daily approval workflow](../../../docs/market-reference-approval-workflow.md)

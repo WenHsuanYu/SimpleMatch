@@ -31,7 +31,7 @@ Risk reservation uses the original admission `command_id` as the Account reserva
 so retry and recovery preserve the same idempotency identity instead of creating a second
 reservation attempt. The authoritative cross-service retry, identity, and error-boundary rules are
 in
-[Consistency, Recovery, Identity, and Error Boundaries](../services/docs/platform/consistency-recovery-identity-and-errors.md).
+[Consistency, Recovery, Identity, and Error Boundaries](../../services/docs/platform/consistency-recovery-identity-and-errors.md).
 
 Malformed account UUIDs are client/boundary validation failures, not transport uncertainty. A future
 human-readable external account code would require an explicit Account-owned resolution contract;

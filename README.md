@@ -72,7 +72,7 @@ detailed architecture, contract, platform, and service specifications. Domain-va
 parameter-safe APIs are recorded in
 [ADR 0002](docs/adr/0002-domain-values-for-wide-call-boundaries.md). The concrete migration and
 intentional exceptions are listed in
-the [domain parameter-safety refactor](docs/refactoring/domain-parameter-safety-refactor.md).
+the [domain parameter-safety refactor](docs/development/domain-parameter-safety-refactor.md).
 
 The deployed RM-1 Risk-to-`matching.commands` certification is documented in the
 [accepted-command E2E runbook](docs/rm1-risk-matching-command-e2e.md) and the retained

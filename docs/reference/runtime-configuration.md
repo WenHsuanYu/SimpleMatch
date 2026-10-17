@@ -67,10 +67,10 @@ The configured QuickFIX sessions are validated before engine startup: BeginStrin
 8-character column, and sender/target CompID, SubID, LocationID and session qualifier each fit their
 64-character columns. Optional components may be empty. Complete serialized identities use TEXT
 for durable delivery and may exceed 256 characters; see the
-[Gateway session settings contract](../services/quickfix-gateway/README.md).
+[Gateway session settings contract](../../services/quickfix-gateway/README.md).
 The offline Market Reference builder is not a Spring runtime and has no `simplematch.*` runtime
 configuration namespace. Its source, artifact, and approval command contract is documented in
-[the Market Reference approval workflow](market-reference-approval-workflow.md).
+[the Market Reference approval workflow](../market-reference-approval-workflow.md).
 
 Useful canonical keys include:
 
@@ -161,7 +161,7 @@ to this repository.
 `deploy/k8s/simplematch-platform-configmap.yaml`
 contains only non-sensitive data.
 The complete cross-service base/overlay contract and external Secret keys are documented in
-[`deploy/k8s/README.md`](../deploy/k8s/README.md#cross-service-base-and-overlays), with a local
+[`deploy/k8s/README.md`](../../deploy/k8s/README.md#cross-service-base-and-overlays), with a local
 rendering gate in `scripts/test-kubernetes-overlays.sh`.
 
 The Risk and Account Debezium connector templates resolve their database usernames and passwords

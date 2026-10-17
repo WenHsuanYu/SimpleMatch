@@ -1,9 +1,9 @@
 # Database Implementation Guide
 
 The canonical target database topology and ownership rules are in
-[the target platform specification](../services/docs/platform/database-architecture.md). Cross-
+[the target platform specification](../../services/docs/platform/database-architecture.md). Cross-
 service identity, recovery, and retry semantics are in
-[Consistency, Recovery, Identity, and Error Boundaries](../services/docs/platform/consistency-recovery-identity-and-errors.md).
+[Consistency, Recovery, Identity, and Error Boundaries](../../services/docs/platform/consistency-recovery-identity-and-errors.md).
 This guide preserves rollout, migration, connector, and verification evidence for the existing
 repository; it is not a second target-architecture source.
 
@@ -13,23 +13,23 @@ repository; it is not a second target-architecture source.
 
 | File                                                                                                                         | Implementation responsibility                                              |
 |------------------------------------------------------------------------------------------------------------------------------|----------------------------------------------------------------------------|
-| [SimpleMatchFlywayServicePlugin.kt](../build-logic/src/main/kotlin/com/simplematch/gradle/SimpleMatchFlywayServicePlugin.kt) | Resolves service-scoped schema configuration and Flyway history placement. |
-| [risk-service build](../services/risk-service/build.gradle.kts)                                                              | Declares the `risk_service` owner schema.                                  |
-| [account-service build](../services/account-service/build.gradle.kts)                                                        | Declares the `account_service` owner schema.                               |
-| [persistence build](../services/persistence/build.gradle.kts)                                                                | Declares the `persistence` owner schema.                                   |
-| [query-service build](../services/query-service/build.gradle.kts)                                                            | Declares the `query_service` rebuildable read-model schema.                |
+| [SimpleMatchFlywayServicePlugin.kt](../../build-logic/src/main/kotlin/com/simplematch/gradle/SimpleMatchFlywayServicePlugin.kt) | Resolves service-scoped schema configuration and Flyway history placement. |
+| [risk-service build](../../services/risk-service/build.gradle.kts)                                                              | Declares the `risk_service` owner schema.                                  |
+| [account-service build](../../services/account-service/build.gradle.kts)                                                        | Declares the `account_service` owner schema.                               |
+| [persistence build](../../services/persistence/build.gradle.kts)                                                                | Declares the `persistence` owner schema.                                   |
+| [query-service build](../../services/query-service/build.gradle.kts)                                                            | Declares the `query_service` rebuildable read-model schema.                |
 
 ### Migration SQL
 
 | File                                                                                                                                                                 | Implementation evidence                                                                                              |
 |----------------------------------------------------------------------------------------------------------------------------------------------------------------------|----------------------------------------------------------------------------------------------------------------------|
-| [account-service V2](../services/account-service/src/main/resources/db/migration/account-service/V2__add_account_authority_lifecycle_tables.sql)                     | Extends Account authority tables with lifecycle columns, inbox, and binary outbox.                                   |
-| [account-service V6](../services/account-service/src/main/resources/db/migration/account-service/V6__canonical_account_identity.sql)                                 | Moves Account-owned `account_id` columns to native UUID for the canonical identity contract.                         |
-| [account-service V9](../services/account-service/src/main/resources/db/migration/account-service/V9__persist_reservation_trading_day.sql)                               | Persists the admission business trading day on reservations for historical release/fill authority.                  |
-| [risk-service V2](../services/risk-service/src/main/resources/db/migration/risk-service/V2__add_durable_admission_journal.sql)                                       | Adds the durable Risk admission journal beside decision/outbox state.                                                |
-| [risk-service V12](../services/risk-service/src/main/resources/db/migration/risk-service/V12__add_local_resilience_marker.sql)                                       | Adds a diagnostic-only durable marker separate from observer-owned CDC health data.                                  |
-| [persistence V1](../services/persistence/src/main/resources/db/migration/persistence/V1__create_projection_tables.sql)                                               | Creates typed projection and inbox tables from an empty schema.                                                      |
-| [query-service V1](../services/query-service/src/main/resources/db/migration/query-service/V1__create_query_read_models.sql)                                         | Creates inbox/checkpoints and query-owned order, execution, account, and active-reference models.                    |
+| [account-service V2](../../services/account-service/src/main/resources/db/migration/account-service/V2__add_account_authority_lifecycle_tables.sql)                     | Extends Account authority tables with lifecycle columns, inbox, and binary outbox.                                   |
+| [account-service V6](../../services/account-service/src/main/resources/db/migration/account-service/V6__canonical_account_identity.sql)                                 | Moves Account-owned `account_id` columns to native UUID for the canonical identity contract.                         |
+| [account-service V9](../../services/account-service/src/main/resources/db/migration/account-service/V9__persist_reservation_trading_day.sql)                               | Persists the admission business trading day on reservations for historical release/fill authority.                  |
+| [risk-service V2](../../services/risk-service/src/main/resources/db/migration/risk-service/V2__add_durable_admission_journal.sql)                                       | Adds the durable Risk admission journal beside decision/outbox state.                                                |
+| [risk-service V12](../../services/risk-service/src/main/resources/db/migration/risk-service/V12__add_local_resilience_marker.sql)                                       | Adds a diagnostic-only durable marker separate from observer-owned CDC health data.                                  |
+| [persistence V1](../../services/persistence/src/main/resources/db/migration/persistence/V1__create_projection_tables.sql)                                               | Creates typed projection and inbox tables from an empty schema.                                                      |
+| [query-service V1](../../services/query-service/src/main/resources/db/migration/query-service/V1__create_query_read_models.sql)                                         | Creates inbox/checkpoints and query-owned order, execution, account, and active-reference models.                    |
 
 The historical Phase 4 field catalog records the schema state delivered at that phase; later
 versioned migrations such as Account V6 intentionally supersede those historical column shapes.
@@ -52,7 +52,7 @@ not rely on implicit `public`.
 
 ## Current schema contract cleanup
 
-The [completed schema cleanup record](schema-contract-cleanup.md) records the no-legacy-data
+The [completed schema cleanup record](../schema-contract-cleanup.md) records the no-legacy-data
 assumption, service ownership, current symbol/venue rule and validation boundaries. The current
 schema uses native UUIDs for Account and Query canonical identities, whole-share quantities and exact TWD
 amounts. Account requires an explicit venue and trading day; neither LEGACY venue nor wall-clock
@@ -69,19 +69,19 @@ shared instrument contract.
 `run-flyway-ci-checks.sh` also executes `check-service-schema-contracts.sql` against PostgreSQL.
 These probes first insert valid rows, reject individual invalid values with specific SQLSTATEs,
 and roll back every fixture. They complement H2/JDBC tests; they do not certify a live deployment.
-The [completed follow-up record](schema-contract-followup.md) documents the existing Query JDBC
+The [completed follow-up record](../schema-contract-followup.md) documents the existing Query JDBC
 contract suite on PostgreSQL, exercising the production ON CONFLICT branch and actual transaction
 rollback.
 The runner creates a uniquely named scratch database, records ownership, and removes only that
 owned database after the explicit JDBC task. The ordinary Java suite keeps its fast H2 coverage.
 
-The [canonical reason revision](schema-contract-followup.md#canonical-reason-storage-revision)
+The [canonical reason revision](../schema-contract-followup.md#canonical-reason-storage-revision)
 supersedes the Unicode whitespace CHECKs with Account V12 and Risk V15. Rejection codes have a
 simple ASCII token grammar, absent Account reasons are exact empty strings, and SQL requires
 nonempty rejected detail. Application constructors retain nonblank detail validation. RELEASED
 semantics and existing NOT NULL columns remain unchanged.
 
-The [completed hardening record](schema-contract-optional-hardening.md) documents complete
+The [completed hardening record](../schema-contract-optional-hardening.md) documents complete
 active-reference facts with the verified artifact's strict price band and routing bounds. Query validates
 canonical Account UUID event identities before claiming its inbox while retaining Matching SHA-256 text IDs.
 Gateway stores a complete serialized FIX SessionID as TEXT and checks configured components against

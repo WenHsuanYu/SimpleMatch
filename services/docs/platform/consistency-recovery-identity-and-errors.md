@@ -7,7 +7,7 @@ must not weaken or contradict these rules.
 The policy describes the current target/runtime contract established by the durable Risk admission,
 reconciliation, state-aware Gateway recovery, and canonical Account identity work. Transaction
 mechanics remain governed by
-[`docs/cross-cutting-transaction-and-consistency-policy.md`](../../../docs/cross-cutting-transaction-and-consistency-policy.md).
+[`docs/reference/transaction-and-consistency-policy.md`](../../../docs/reference/transaction-and-consistency-policy.md).
 
 ## Core invariants
 

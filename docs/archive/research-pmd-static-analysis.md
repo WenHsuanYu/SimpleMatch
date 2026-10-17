@@ -1,7 +1,7 @@
 # PMD static-analysis adoption research
 
 > Archived on 2026-09-05. This research informed the PMD rollout but is no longer the current
-> quality-policy authority. See [`docs/pmd-quality-policy.md`](../pmd-quality-policy.md) and
+> quality-policy authority. See [`docs/pmd-quality-policy.md`](../reference/pmd-quality-policy.md) and
 > [`docs/archive/README.md`](README.md) for the active replacement and archive index.
 
 **Status:** research only; no build or production configuration was changed.  

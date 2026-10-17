@@ -49,5 +49,5 @@ a controlled rolling restart; no runtime refresh may partially apply a multi-set
 This page is the target authority for configuration ownership and safety. Capability property
 modules bind subsets of the unchanged `simplematch.*` namespace, and the former shared root facade
 is no longer part of the runtime configuration contract. The
-[configuration runbook](../../../docs/config.md) lists current key names, precedence, secret
+[configuration runbook](../../../docs/reference/runtime-configuration.md) lists current key names, precedence, secret
 ownership, connector templates, and operational endpoints.

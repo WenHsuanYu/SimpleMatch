@@ -3,7 +3,7 @@
 This is the canonical execution and phase-gate policy for transaction ownership and consistency. It
 describes required future behavior, not current runtime behavior. Cross-service outcome,
 reconciliation, identity, and client/operator error-boundary rules are defined separately in
-[Consistency, Recovery, Identity, and Error Boundaries](../services/docs/platform/consistency-recovery-identity-and-errors.md).
+[Consistency, Recovery, Identity, and Error Boundaries](../../services/docs/platform/consistency-recovery-identity-and-errors.md).
 
 ## TP-1 — Transaction Ownership and Atomicity
 

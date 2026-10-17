@@ -216,7 +216,7 @@ instead of preserving them indefinitely.
 ### Transaction ownership and consistency
 
 - [ ] Every affected phase follows the canonical
-  [Cross-Cutting Transaction and Consistency Policy](../cross-cutting-transaction-and-consistency-policy.md)
+  [Cross-Cutting Transaction and Consistency Policy](../reference/transaction-and-consistency-policy.md)
   (TP-1 through TP-12).
 - [ ] An externally invoked public concrete application-service method uses
   `@Transactional` by default for each all-local business outcome.
@@ -308,7 +308,7 @@ Each item below is intended to be one small commit unless its acceptance test sh
 further. Every commit runs the narrowest relevant tests before the broader phase gate.
 
 The required `Transaction Acceptance Criteria` sections below reference the
-canonical [Cross-Cutting Transaction and Consistency Policy](../cross-cutting-transaction-and-consistency-policy.md).
+canonical [Cross-Cutting Transaction and Consistency Policy](../reference/transaction-and-consistency-policy.md).
 They are a readiness gate: criteria must be complete before a phase begins, and the mapped
 PostgreSQL-backed integration tests must pass before a phase is complete. Run
 `bash scripts/check-transaction-acceptance-criteria.sh` to verify the documentation structure; it
@@ -471,7 +471,7 @@ Rollback:
 
 ##### Applicable policy
 
-TP-1 through TP-12 in the [canonical policy](../cross-cutting-transaction-and-consistency-policy.md).
+TP-1 through TP-12 in the [canonical policy](../reference/transaction-and-consistency-policy.md).
 
 ##### Transaction owner
 
@@ -552,7 +552,7 @@ Rollback:
 
 ##### Applicable policy
 
-TP-1 through TP-12 in the [canonical policy](../cross-cutting-transaction-and-consistency-policy.md).
+TP-1 through TP-12 in the [canonical policy](../reference/transaction-and-consistency-policy.md).
 
 ##### Transaction owner
 
@@ -638,7 +638,7 @@ Rollback:
 
 ##### Applicable policy
 
-TP-1 through TP-12 in the [canonical policy](../cross-cutting-transaction-and-consistency-policy.md).
+TP-1 through TP-12 in the [canonical policy](../reference/transaction-and-consistency-policy.md).
 
 ##### Transaction owner
 
@@ -827,7 +827,7 @@ Rollback:
 
 ##### Applicable policy
 
-TP-1 through TP-12 in the [canonical policy](../cross-cutting-transaction-and-consistency-policy.md).
+TP-1 through TP-12 in the [canonical policy](../reference/transaction-and-consistency-policy.md).
 
 ##### Transaction owner
 
@@ -910,7 +910,7 @@ Executable ownership is split between
 
 ##### Applicable policy
 
-TP-1 through TP-12 in the [canonical policy](../cross-cutting-transaction-and-consistency-policy.md).
+TP-1 through TP-12 in the [canonical policy](../reference/transaction-and-consistency-policy.md).
 
 ##### Transaction owner
 
@@ -986,7 +986,7 @@ Rollback:
 
 ##### Applicable policy
 
-TP-1 through TP-12 in the [canonical policy](../cross-cutting-transaction-and-consistency-policy.md),
+TP-1 through TP-12 in the [canonical policy](../reference/transaction-and-consistency-policy.md),
 including its bounded replay and recovery rules.
 
 ##### Transaction owner

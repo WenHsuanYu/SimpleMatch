@@ -50,7 +50,7 @@ conflict handling remain required; full trading identity attestation for these c
 the admission scope.
 
 The live adapter is disabled by default in generic local runs and enabled in production and the
-Kubernetes Gateway ConfigMap. See [configuration](../../docs/config.md) for endpoint and timing
+Kubernetes Gateway ConfigMap. See [configuration](../../docs/reference/runtime-configuration.md) for endpoint and timing
 overrides. The [completion specification](../../docs/gateway-admission-completion.md#deployed-admission-smoke)
 records the source-specific local deployed PRE_OPEN-to-open smoke and its limits. The later
 stale-recovery streak fix has separate local controller regression evidence, not a rerun of that

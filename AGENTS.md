@@ -4,7 +4,7 @@ These instructions apply to the whole repository.
 
 ## Layer 1: Non-negotiable guardrails
 
-- Read [docs/development-workflow.md](docs/development-workflow.md) before making any change.
+- Read [docs/development/development-workflow.md](docs/development/development-workflow.md) before making any change.
 - Read [badCodeSmell.md](badCodeSmell.md) before writing or editing code, and treat it as an
   avoid-list for code smells during design, implementation, and refactoring.
 - Identify the affected files, services, and modules before editing.
@@ -117,7 +117,7 @@ workflow doc and the relevant cloud design patterns before coding.
 Use an available workflow skill whenever its description matches the task. Read its
 `SKILL.md` before acting and follow it in addition to these repository rules. Do not claim to use a
 skill that is unavailable; apply the relevant guidance in this file and
-`docs/development-workflow.md` directly instead.
+`docs/development/development-workflow.md` directly instead.
 
 - Use `diagnosing-bugs` to investigate reported failures, errors, regressions, or performance
   problems. Diagnose first; implement a fix only when requested.

@@ -1181,7 +1181,7 @@ test -w "$VCPKG_ROOT" && echo writable || echo read-only
 需要理解操作背後的設計與 claim boundary 時，再閱讀以下文件：
 
 - `README.md`：系統目標與 service landscape。
-- `docs/dependencies.md`：Java/Gradle、CMake、vcpkg 與 dependency policy。
+- `docs/development/dependencies.md`：Java/Gradle、CMake、vcpkg 與 dependency policy。
 - `deploy/k8s/README.md`：local/staging/production overlays、Secrets、Matching fleet 與 local cluster contract。
 - `docs/local-certification-phase-dag.md`：local certification Phase DAG、reuse policy與evidence architecture。
 - `docs/local-certification-phase-dag-implementation.md`：目前PhaseGraph、Planner、fingerprint、evidence與resume Interface。

@@ -58,4 +58,4 @@ later is an infrastructure change that preserves these ownership and contract ru
 
 This page owns the target topology and boundary rules. Migration file references, rollout
 sequencing, and completion checklists belong in the
-[database implementation guide](../../../docs/database-architecture.md).
+[database implementation guide](../../../docs/development/database-implementation-guide.md).

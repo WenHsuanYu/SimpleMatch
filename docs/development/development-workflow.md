@@ -212,8 +212,8 @@ Whenever paths, behavior, or boundaries change, update the documentation in the 
   evidence, dependency, or acceptance mapping changes.
 - Keep `tasks.md` as historical navigation; add new work through a GitHub Issue rather than a live
   checkbox.
-- Update docs/config.md when configuration keys or defaults change.
-- Update docs/dependencies.md when build or dependency expectations change.
+- Update docs/reference/runtime-configuration.md when configuration keys or defaults change.
+- Update docs/development/dependencies.md when build or dependency expectations change.
 - Keep file and folder names consistent across docs and the actual repository layout.
 
 ## 7. Delivery Checklist
