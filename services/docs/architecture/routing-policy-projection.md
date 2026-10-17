@@ -43,4 +43,4 @@ The executable builder and delivery contracts are documented separately:
 
 - [Official-source contract](../../../docs/reference/market-reference-official-source-contract.md)
 - [Canonical artifact contract](../../../docs/reference/market-reference-artifact-contract.md)
-- [Daily approval workflow](../../../docs/market-reference-approval-workflow.md)
+- [Daily approval workflow](../../../docs/operations/market-reference-approval-workflow.md)

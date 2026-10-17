@@ -14,7 +14,7 @@ Both runs create fresh runtime state and execute every phase whose policy is
 `FRESH`.
 
 For the normal local-certification workflow, `--resume`, and cleanup guidance,
-see `docs/operation-manual.zh-TW.md`. This document is limited to reuse
+see `docs/operations/operation-manual.zh-TW.md`. This document is limited to reuse
 measurement and interpretation.
 
 ## Preconditions

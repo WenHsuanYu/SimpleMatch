@@ -594,7 +594,7 @@ requests，並將 `local-resource-budget.json` 存入該次 run evidence、在 `
 38 GiB 參考主機的 `--matching-fleet-only` 縮減 workload 在宣告 requests 下符合預算；
 目前完整 workload 超額時會警告，但仍可繼續部署。requests 不是實際記憶體用量，swap 可能
 幫助執行，卻不能把超額報告變成容量已通過的證據。兩種 profile 的範圍、計算及限制見
-[`deploy/k8s/README.md`](../deploy/k8s/README.md#local-host-memory-budget)。
+[`deploy/k8s/README.md`](../../deploy/k8s/README.md#local-host-memory-budget)。
 
 若操作員只想手動確認縮減 profile 的宣告 requests 是否符合**目前 Docker daemon** 容量，
 從 repository root 執行（不會建立任何 Kubernetes 資源）：
@@ -1186,14 +1186,14 @@ test -w "$VCPKG_ROOT" && echo writable || echo read-only
 - `docs/local-certification-phase-dag.md`：local certification Phase DAG、reuse policy與evidence architecture。
 - `docs/local-certification-phase-dag-implementation.md`：目前PhaseGraph、Planner、fingerprint、evidence與resume Interface。
 - `docs/local-certification-reuse-measurement.md`：cold/warm reuse量測方式與結果解讀。
-- `docs/local-registry-resource-lifecycle.md`：local registry、digest transport、baseline 與 cleanup 設計。
+- `docs/operations/local-registry-resource-lifecycle.md`：local registry、digest transport、baseline 與 cleanup 設計。
 - `docs/production-live-certification.md`：local gate 與 staging/production certification boundary。
 - `config/market-reference/README.md`：Market Reference builder。
 - `docs/rm1-risk-matching-command-e2e.md`：Risk-to-Matching accepted-command E2E。
 - `docs/rm1-risk-matching-restart-replay.md`：restart / equivalent replay evidence。
 - `docs/cdc-publication-verification.md`：transactional outbox 與 CDC publication verification。
 
-新增的 query-service certification 入口：[query-service certification](query-service-certification.md)。
+新增的 query-service certification 入口：[query-service certification](../query-service-certification.md)。
 它涵蓋 replay、Redis fallback、quiescent critical-path isolation，以及 query-service 為零副本
 期間的一筆公開 FIX IOC active-processing liveness；`PASS` 必須同時具備各階段的結構化證據。
 

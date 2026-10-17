@@ -70,7 +70,7 @@ for durable delivery and may exceed 256 characters; see the
 [Gateway session settings contract](../../services/quickfix-gateway/README.md).
 The offline Market Reference builder is not a Spring runtime and has no `simplematch.*` runtime
 configuration namespace. Its source, artifact, and approval command contract is documented in
-[the Market Reference approval workflow](../market-reference-approval-workflow.md).
+[the Market Reference approval workflow](../operations/market-reference-approval-workflow.md).
 
 Useful canonical keys include:
 
