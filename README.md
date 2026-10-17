@@ -62,8 +62,10 @@ for commands, source-file requirements, and the restricted Gradle-cache fallback
 
 ## Documentation
 
-For day-to-day development, local kind/registry setup, image publication,
-certification, resource reporting, cleanup, and troubleshooting, start with the
+Use the [documentation guide](docs/README.md) to find documents by purpose or system topic.
+New contributors can follow the [onboarding path](docs/onboarding/README.md) from system ownership
+through local development and a first change. For the full local kind/registry environment, image
+publication, certification, resource reporting, cleanup, and troubleshooting, use the
 [Traditional Chinese operations manual](docs/operations/operation-manual.zh-TW.md).
 
 Start with the [domain context and context map](CONTEXT.md) for bounded-context ownership and
