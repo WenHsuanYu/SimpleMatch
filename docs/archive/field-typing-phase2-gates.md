@@ -1,7 +1,7 @@
 # Field Typing Phase 2 Gates
 
 > Historical phase evidence: this document describes the schema at that phase. The current
-> [database implementation guide](development/database-implementation-guide.md#current-schema-contract-cleanup)
+> [database implementation guide](../development/database-implementation-guide.md#current-schema-contract-cleanup)
 > supersedes the old Persistence table inventory and Account string/decimal shapes.
 > The findings, SQL examples, and next decisions below retain their original phase meaning;
 > words such as "current" refer to that profiling pass. Before profiling or migrating a current
