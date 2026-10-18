@@ -114,6 +114,15 @@ as FAIL with successful restoration; rerun against fresh source-aligned
 prerequisites without modifying business data, offsets or the failed report.
 This corrected verifier assumption is not a recurring runtime defect.
 
+The 2026-10-18 current-runtime verification preparation reproduced a handoff mismatch before
+deployment: the full-local report producer writes `PASSED`, but the resting-buy deployment verifier
+accepted only `PASS` or `PARTIAL`. Its existing public verifier test now consumes the real report
+producer's output; the original red result was `deployment completion does not match the resting-buy
+contract`. The fix accepts `PASSED` while preserving required phase, manifest, fingerprint and source
+checks. Negative fixtures reject failed, unknown, empty and duplicate statuses, plus missing/failed
+dependencies under both `PASSED` and `PARTIAL`. Run these regressions before dependent business
+verification. This is a corrected verifier vocabulary mismatch, not a deployed trading failure.
+
 ## Recurring lessons
 
 | ID | Symptom | Root cause | Prevention check | Safe fix | Last verified |

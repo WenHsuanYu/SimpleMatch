@@ -24,7 +24,7 @@ module RestingBuyVerification
   # A normal order requires completed deployment gates, not a merely live namespace.
   def self.verify_deployment(directory)
     statuses = File.read(File.join(directory, "report.md")).scan(/^- status: (\S+)$/).flatten
-    equal(true, statuses.size == 1 && %w[PASS PARTIAL].include?(statuses.first), "deployment completion")
+    equal(true, statuses.size == 1 && %w[PASS PASSED PARTIAL].include?(statuses.first), "deployment completion")
     source = File.read(File.join(directory, "source-revision")).strip
     manifest = JSON.parse(File.read(File.join(directory, "evidence-manifest.json")))
     equal(1, manifest.fetch("schemaVersion"), "deployment manifest schema")

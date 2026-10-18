@@ -150,6 +150,50 @@ class RestingBuyVerificationTest < Minitest::Test
     end
   end
 
+  def test_accepts_the_report_written_by_a_complete_full_local_run
+    Dir.mktmpdir("resting-buy-full-deployment") do |directory|
+      completed_deployment(directory)
+      framework = File.expand_path("../../../lib/local-certification-framework.sh", __dir__)
+      assert system("bash", "-c", <<~BASH, "full-local-report", framework, directory)
+        source "$1"
+        trap - EXIT
+        dry_run=false
+        evidence_dir="$2"
+        skip_build=false
+        skip_compose=false
+        skip_kubernetes=false
+        matching_fleet_only=false
+        completed_phases=()
+        image_tag=fixture
+        image_transport=kind-load
+        compose_project=fixture
+        compose_file=fixture.yaml
+        repo_root=fixture
+        namespace=fixture
+        certification_trading_day=20260917
+        failed_phase=
+        failure_reason=
+        certification_plan_file="$2/absent-plan.json"
+        write_report 0
+      BASH
+      result = RestingBuyVerification.verify_deployment(directory)
+      assert_equal "PASS", result.fetch("status")
+      assert_equal "PASSED", result.fetch("deploymentStatus")
+    end
+  end
+
+  def test_rejects_unknown_or_ambiguous_parent_completion
+    ["FAILED", "UNKNOWN", "", "PASSED\n- status: PARTIAL"].each do |status|
+      Dir.mktmpdir("resting-buy-invalid-deployment") do |directory|
+        completed_deployment(directory)
+        File.write(File.join(directory, "report.md"), "- status: #{status}\n")
+        assert_raises(RestingBuyVerification::InvalidEvidence, status) do
+          RestingBuyVerification.verify_deployment(directory)
+        end
+      end
+    end
+  end
+
   def test_matching_recovery_requires_complete_scenario_and_restoration
     Dir.mktmpdir("matching-recovery-finalize") do |directory|
       File.write(File.join(directory, "source-revision"), "dac12972ebb322c4ac20edc414af999e8bd92e8d\n")
@@ -175,9 +219,10 @@ class RestingBuyVerificationTest < Minitest::Test
   end
 
   def test_requires_completed_matching_fleet_evidence_from_the_same_source
-    %w[missing failed different-source missing-manifest].each do |failure|
+    %w[missing failed different-source missing-manifest].product(%w[PARTIAL PASSED]).each do |failure, status|
       Dir.mktmpdir("resting-buy-deployment") do |directory|
         completed_deployment(directory)
+        File.write(File.join(directory, "report.md"), "- status: #{status}\n")
         result_path = File.join(directory, "phases/kubernetes-fleet/result.json")
         result = JSON.parse(File.read(result_path))
         case failure
