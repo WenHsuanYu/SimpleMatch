@@ -61,6 +61,7 @@
 | Gateway admission 與 FIX 整合 | [Gateway admission](verification/gateway-admission-verification.md)：目前契約、驗證方式與有日期的證據；[QuickFIX/J integration evidence](verification/quickfixj-integration-evidence.md)：repository 內 FIX simulator 的整合驗證。 |
 | Query 與 runtime market data | [Query certification](verification/query-service-certification.md)、[Market-data projection certification](verification/runtime-market-data-projection-certification.md)：各自公開介面的本機部署驗收。 |
 | 認證 phase 與證據重用 | [Phase DAG 設計](verification/local-certification-phase-dag.md)、[實作介面與驗證](verification/local-certification-phase-dag-implementation.md)、[重用量測程序](verification/local-certification-reuse-measurement.md)。 |
+| 歷史認證證據的可用性 | [Evidence audit](verification/local-certification-evidence-audit.md)：2026-10-18 查核快照，區分 r13 完整歷史紀錄、r14 無法確認的整體完成狀態，以及原始檔目前缺失的引用。 |
 | Schema 修改與當時驗證 | [Cleanup record](verification/schema-contract-cleanup-record.md)、[Follow-up record](verification/schema-contract-followup-record.md)、[Hardening record](verification/schema-contract-hardening-record.md)：不同來源批次的 schema 決策與檢查紀錄。 |
 
 ### 能力狀態與演進計畫

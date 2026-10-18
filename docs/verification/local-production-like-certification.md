@@ -10,6 +10,10 @@ later staging/production instructions define the environment and promotion templ
 must supply and execute separately. Selected-phase or focused diagnostic results retain their
 own scope and cannot substitute for an aggregate `full-local` PASS.
 
+For availability and consistency of retained historical records, read the
+[2026-10-18 evidence audit](local-certification-evidence-audit.md). It distinguishes a complete
+historical aggregate record from an unconfirmed run summary and does not certify the current runtime.
+
 ## Target and hard boundaries
 
 The production target is:

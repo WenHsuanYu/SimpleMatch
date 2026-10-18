@@ -18,9 +18,10 @@ blockers. Aggregate issue [#10](https://github.com/WenHsuanYu/SimpleMatch/issues
 issue [#119](https://github.com/WenHsuanYu/SimpleMatch/issues/119) were closed as `completed` on
 2026-09-04 after the required Phase 1 child issues were completed and the fresh #119 gate passed.
 
-The latest retained Query evidence is source-aligned to the certified pre-squash tree recorded in
-`out/certification/issue-137-query-20260902-start-offset-query2/provenance.json`; the latest integrated
-deployment evidence is source-aligned to `0d5f1737691dda104b5f5d878e0d61f644d0772a` in
+The historical Query evidence was recorded against the certified pre-squash tree in
+`out/certification/issue-137-query-20260902-start-offset-query2/provenance.json`; the integrated
+deployment evidence recorded in that 2026-09-04 release snapshot was source-aligned to
+`0d5f1737691dda104b5f5d878e0d61f644d0772a` in
 `out/certification/issue-138-20260904-post-squash/evidence-manifest.json`. A fresh source-aligned
 production-like run for the #119 cleanup was retained on 2026-09-04 at source revision
 `93815beb11a8569bae5bcb10235a9d865ea9a27a`; its evidence and boundaries are recorded below. The
@@ -73,7 +74,22 @@ reuse a runtime namespace whose source or image identity changed.
 | Absorb a transient Matching Kafka coordinator race | The direct Kafka consumer retries only `RD_KAFKA_RESP_ERR_NOT_COORDINATOR`, for at most five attempts with `100/200/400/800 ms` backoff (`b2af17c`). | Non-retryable errors and exhausted retries remain fatal; no unknown recovery boundary is accepted and no certification phase is skipped. |
 | Preserve evidence across a history-only squash | The pre-squash certification evidence is retained after verifying that the squash produced the exact same runtime tree. | Evidence is not relabeled as exact-HEAD provenance; the existing commit-ID check may require a future refinement before dependent evidence is reused. |
 
-## Latest verification evidence (2026-09-04)
+## Evidence availability audit (2026-10-18)
+
+The [historical certification evidence audit](../verification/local-certification-evidence-audit.md)
+separates directly available records from historical references and unconfirmed aggregate results.
+The r13 run at `out/certification/issues-158-159-20260917-r13/` has a report, manifest and 61 matching
+PASS phase results at source `c7147e0aa232744250828be0c4cfdb5973dd1cc6`. It is the complete historical
+aggregate record directly inspected in this audit, not a certification of the current runtime.
+
+The r14 run retains source `cf4e8f234c5aeeb271df60f07b89a6f25ca0e36d` in its phase results and logs,
+but only nine completed results and no aggregate manifest. Its original report says `PASSED`;
+aggregate completion cannot be confirmed. The #137 Query provenance/verdict and #138 manifest
+cited below are absent from this workspace on the audit date. Their historical claims remain
+recorded, while the #119 report and manifest are still available. These availability findings do
+not change accepted Phase 1 capability status or upgrade focused evidence to an aggregate PASS.
+
+## Historical release verification evidence (2026-09-04)
 
 - The retained Query production-like run passed with status `PASSED` in namespace
   `simplematch-local-cert-20260901-180937-1202218`; its companion Query verdict is `PASS` with 9/9
@@ -83,7 +99,8 @@ reuse a runtime namespace whose source or image identity changed.
   `out/certification/issue-137-query-20260902-start-offset-query2/verdict.json`. The retained Query
   provenance records source revision `b6fa6d21854a8be3088a07459379f7f26336dd54`, the certified
   pre-squash tree.
-- The latest integrated cross-service run passed all 62/62 phases in namespace
+- The integrated cross-service run recorded in this release snapshot passed all 62/62 phases in
+  namespace
   `simplematch-local-cert-20260903-173801-1848616`. It includes the three retained CDC connectors,
   Flyway Jobs, Kubernetes workload/fleet checks, the CDC pause/recovery observation, zero-traffic
   freshness, sensitive-log checks, and retained-run provenance. Evidence is under
@@ -97,7 +114,8 @@ reuse a runtime namespace whose source or image identity changed.
   run provenance. Evidence is under
   `out/certification/issue-119-20260904-r2/`; its report is `PASSED` and its manifest records source
   revision `93815beb11a8569bae5bcb10235a9d865ea9a27a`.
-- The current worktree's post-certification hardening passed the focused native Matching suite,
+- The post-certification hardening recorded in this release snapshot passed the focused native
+  Matching suite,
   the full 80-test/15-suite native ingress executable, Flyway shell contract/grammar checks, and
   Docker BuildKit Dockerfile checks. The fresh #119 run validates the pre-squash tree whose exact
   runtime contents were preserved by the subsequent history-only squash; the hardening remains
