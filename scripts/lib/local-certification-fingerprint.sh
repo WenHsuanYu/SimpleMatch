@@ -492,6 +492,7 @@ certification_phase_input_manifest() {
     static-flyway-services)
       _certification_paths_and_values_manifest \
         scripts/test-flyway-services.sh build-logic services \
+        deploy/docker/Dockerfile.flyway-runner deploy/docker/run-flyway \
         scripts/lib/local-certification-fingerprint.sh \
         -- "phase=$phase_id" "version=$phase_version"
       ;;

@@ -32,6 +32,8 @@ for path in \
   build-logic/plugin.txt \
   shared-java/shared.txt \
   proto/contracts.proto \
+  deploy/docker/Dockerfile.flyway-runner \
+  deploy/docker/run-flyway \
   deploy/compose/apply-outbox-connector.sh \
   deploy/compose/risk-service-outbox-connector.json \
   deploy/compose/account-service-outbox-connector.json \
@@ -39,6 +41,7 @@ for path in \
   services/account-service/source.txt \
   scripts/build-local-images.sh \
   scripts/publish-local-images.sh \
+  scripts/test-flyway-services.sh \
   scripts/validate-matching-producer-contract.sh \
   scripts/lib/local-image-inventory.sh \
   scripts/lib/local-image-transport.sh \
@@ -97,6 +100,16 @@ kubernetes_cdc_manifest="$(certification_phase_input_manifest kubernetes-cdc-del
   fail 'Kubernetes CDC phase manifest omitted the effective observer timeout'
 [[ "$kubernetes_cdc_manifest" == *'kindCluster=simplematch-live'* ]] || \
   fail 'Kubernetes CDC phase manifest omitted the effective kind cluster'
+
+for flyway_input in deploy/docker/Dockerfile.flyway-runner deploy/docker/run-flyway; do
+  flyway_before="$(certification_phase_fingerprint static-flyway-services)" || \
+    fail 'Flyway contract fingerprint could not be calculated'
+  printf 'changed:%s\n' "$flyway_input" >"$fixture_root/$flyway_input"
+  flyway_after="$(certification_phase_fingerprint static-flyway-services)" || \
+    fail 'Flyway contract fingerprint could not be recalculated'
+  [[ "$flyway_before" != "$flyway_after" ]] || \
+    fail "Flyway contract reused evidence after changing ${flyway_input}"
+done
 
 _certification_spring_toolchain_identity() {
   printf '%s\n' \
