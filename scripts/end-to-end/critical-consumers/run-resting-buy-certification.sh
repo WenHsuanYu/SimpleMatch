@@ -27,6 +27,8 @@ gateway_env_modified=false
 restoration_failed=false
 evidence_initialized=false
 fix_state_dir=""
+fix_state_dir_owned=false
+fix_wait_for_delivery=false
 gateway_recovery=false
 matching_recovery=false
 current_stage=preflight
@@ -50,10 +52,7 @@ cleanup() {
     capture_restored_gateway_readiness || restoration_failed=true
     stop_gateway_port_forward || restoration_failed=true
   fi
-  # This exact mktemp directory contains temporary raw FIX stores/logs, not evidence.
-  if [[ -n "$fix_state_dir" ]]; then
-    rm -rf -- "$fix_state_dir" || restoration_failed=true
-  fi
+  remove_owned_fix_state_directory || restoration_failed=true
   if [[ "$evidence_initialized" == true ]]; then
     if [[ -n "${gateway_operator_token:-}" ]] &&
         rg -q --fixed-strings -- "$gateway_operator_token" "$evidence_dir"; then
@@ -113,7 +112,10 @@ printf '%s\n' "$deployment_prerequisites" >"$evidence_dir/baseline/deployment-pr
 docker info >/dev/null || die 'Docker daemon is unavailable'
 simplematch_kind_validate_canonical_topology "$context" "$evidence_dir/baseline/nodes.json" || die 'canonical topology is not ready'
 simplematch_kind_validate_control_plane_stability "$context" 5 60 "$evidence_dir/baseline/control-plane" 60 || die 'control plane is unstable'
-fix_state_dir="$(mktemp -d "${TMPDIR:-/tmp}/simplematch-resting-fix.XXXXXX")"
+prepare_fix_state_directory || die 'cannot prepare retained FIX client state'
+if [[ "$gateway_recovery" != true && "$matching_recovery" != true ]]; then
+  fix_wait_for_delivery=true
+fi
 
 current_stage='select observed instrument and fund isolated account'
 select_market_input
@@ -142,11 +144,7 @@ open_gateway_from_live_observations "$evidence_dir/baseline/open-request.json" \
 
 current_stage='submit one real FIX order and observe durable Risk admission'
 release_fix_submit_client
-if [[ "$gateway_recovery" == true || "$matching_recovery" == true ]]; then
-  wait_fix_submission_evidence || die 'retained FIX submission failed'
-else
-  wait_fix_submit_client || die 'FIX submission failed'
-fi
+wait_fix_submission_evidence || die 'retained FIX submission failed'
 require_fix_submission_accepted "$evidence_dir/fix/submit.json"
 postgres="$(postgres_pod)"
 kns exec -i "$postgres" -c postgres -- psql -U simplematch -d simplematch -At \
@@ -170,6 +168,12 @@ for name in matching-command-observation matching-event-observation matching-eve
 done
 
 current_stage='verify Persistence and Account business effects'
+if [[ "$fix_wait_for_delivery" == true ]]; then
+  wait_fix_intent_status SENT "$evidence_dir/fix/final-intent.json" ||
+    die 'QuickFIX did not durably deliver the resting order'
+  complete_fix_submit_client "$evidence_dir/fix/final-intent.json" ||
+    die 'FIX client did not observe the resting order delivery'
+fi
 event_id="$(jq -er '.eventId' "$evidence_dir/kafka/matching-event-observation.json")"
 event_offset="$(jq -er '.offset' "$evidence_dir/kafka/matching-event-observation.json")"
 wait_consumers_through "$partition" "$event_offset"

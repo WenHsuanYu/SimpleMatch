@@ -37,6 +37,10 @@ cluster_name="${SIMPLEMATCH_KIND_CLUSTER_NAME:-simplematch-live}"
 context="kind-$cluster_name"
 namespace=""
 evidence_dir=""
+query_evidence_root=""
+fix_state_dir=""
+fix_state_dir_owned=false
+fix_wait_for_delivery=true
 retained_evidence_dir=""
 timeout_seconds="${SIMPLEMATCH_QUERY_CERTIFICATION_TIMEOUT_SECONDS:-180}"
 query_isolation_probe_seconds="${SIMPLEMATCH_QUERY_ISOLATION_PROBE_SECONDS:-5}"
@@ -180,12 +184,14 @@ simplematch_kind_namespace_is_disposable "$context" "$namespace" ||
 
 mkdir -p "$evidence_dir"
 evidence_dir="$(cd -- "$evidence_dir" && pwd)"
+query_evidence_root="$evidence_dir"
 shopt -s nullglob dotglob
 existing_evidence=("$evidence_dir"/*)
 shopt -u nullglob dotglob
 ((${#existing_evidence[@]} == 0)) || die "evidence directory must be empty"
 mkdir -p "$evidence_dir/diagnostics"
 evidence_initialized=true
+prepare_fix_state_directory || die 'cannot prepare retained FIX client state'
 
 current_stage="validate retained production-like provenance"
 retained_evidence_dir="$(cd -- "$retained_evidence_dir" && pwd)" ||

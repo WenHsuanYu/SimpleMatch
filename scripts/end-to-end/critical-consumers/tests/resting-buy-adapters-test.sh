@@ -193,3 +193,57 @@ if read_gateway_recovery_file "$private_resources" inbound.wal; then
   die 'WAL observation must refuse an unsupported storage root'
 fi
 printf '%s\n' 'WAL reads use the exact owned local PV, with no shell dependency in Gateway.'
+
+# Exercise the shared prepared-client process and completion protocol through its CLI boundary.
+(
+  unset -f date sleep timeout
+  repo_root="$temporary_directory/prepared-client"
+  evidence_dir="$temporary_directory/prepared-evidence"
+  mkdir -p "$repo_root" "$evidence_dir/fix"
+  cat >"$repo_root/gradlew" <<'CLIENT'
+#!/usr/bin/env bash
+set -euo pipefail
+printf 'ready\n' >"$SIMPLEMATCH_RETAINED_FIX_READY_FILE"
+until [[ -f "$SIMPLEMATCH_RETAINED_FIX_RELEASE_FILE" ]]; do sleep 0.02; done
+printf '{"clOrdId":"TEST-ORDER"}\n' >"$SIMPLEMATCH_RETAINED_FIX_EVIDENCE"
+until [[ -f "$SIMPLEMATCH_RETAINED_FIX_COMPLETION_FILE" ]]; do sleep 0.02; done
+[[ "$(<"$SIMPLEMATCH_RETAINED_FIX_COMPLETION_FILE")" == TEST-FINAL-EXEC ]]
+printf '{"clOrdId":"TEST-ORDER","execId":"TEST-FINAL-EXEC"}\n' \
+  >"$SIMPLEMATCH_RETAINED_FIX_COMPLETION_EVIDENCE"
+CLIENT
+  chmod +x "$repo_root/gradlew"
+  SIMPLEMATCH_RETAINED_FIX_STATE_DIR="$temporary_directory/shared-fix-state"
+  prepare_fix_state_directory
+  printf 'retained-sequence-ledger\n' >"$fix_state_dir/ledger"
+  fix_wait_for_delivery=true
+  gateway_recovery=false
+  matching_recovery=false
+  fix_port=12345 account_id=test-account symbol=test quantity=1 price=1 cl_ord_id=TEST-ORDER
+  timeout_seconds=5
+  start_fix_submit_client
+  release_fix_submit_client
+  wait_fix_submission_evidence
+  kill -0 "$fix_submit_pid"
+  for intent in pending unrelated; do
+    jq -n --arg status "$([[ "$intent" == pending ]] && echo PENDING || echo SENT)" \
+      --arg clOrdId "$([[ "$intent" == unrelated ]] && echo ANOTHER-ORDER || echo TEST-ORDER)" \
+      '{status:$status,clientOrderId:$clOrdId,execId:"TEST-FINAL-EXEC"}' \
+      >"$evidence_dir/intent.json"
+    if complete_fix_submit_client "$evidence_dir/intent.json"; then
+      die 'pending or unrelated delivery must not release the prepared client'
+    fi
+    [[ ! -e "$fix_completion_file" ]]
+  done
+  printf '{"status":"SENT","clientOrderId":"TEST-ORDER","execId":"TEST-FINAL-EXEC"}\n' \
+    >"$evidence_dir/intent.json"
+  complete_fix_submit_client "$evidence_dir/intent.json"
+  [[ -z "$fix_submit_pid" ]]
+  remove_owned_fix_state_directory
+  [[ "$(<"$fix_state_dir/ledger")" == retained-sequence-ledger ]]
+  unset SIMPLEMATCH_RETAINED_FIX_STATE_DIR
+  prepare_fix_state_directory
+  owned_state="$fix_state_dir"
+  remove_owned_fix_state_directory
+  [[ ! -d "$owned_state" ]]
+)
+printf '%s\n' 'Prepared completion requires correlated SENT evidence and preserves caller-owned FIX state.'

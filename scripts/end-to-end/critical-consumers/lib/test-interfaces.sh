@@ -145,11 +145,42 @@ run_fix_phase() {
       :services:quickfix-gateway:retainedSessionCertificationTest
 }
 
+prepare_fix_state_directory() {
+  fix_state_dir="${SIMPLEMATCH_RETAINED_FIX_STATE_DIR:-}"
+  fix_state_dir_owned=false
+  if [[ -n "$fix_state_dir" ]]; then
+    mkdir -p "$fix_state_dir" || return 1
+    fix_state_dir="$(cd -- "$fix_state_dir" && pwd)" || return 1
+  else
+    fix_state_dir="$(mktemp -d "${TMPDIR:-/tmp}/simplematch-certification-fix.XXXXXX")" || return 1
+    fix_state_dir_owned=true
+  fi
+}
+
+remove_owned_fix_state_directory() {
+  if [[ "${fix_state_dir_owned:-false}" == true && -n "${fix_state_dir:-}" ]]; then
+    rm -rf -- "$fix_state_dir" || return 1
+    fix_state_dir=""
+    fix_state_dir_owned=false
+  fi
+}
+
 start_fix_submit_client() {
   fix_ready_file="$evidence_dir/fix/submit-client-ready"
   fix_release_file="$evidence_dir/fix/submit-client-release"
   fix_submit_log="$evidence_dir/fix/submit-client.log"
+  fix_completion_file=""
+  if [[ "${fix_wait_for_delivery:-false}" == true ]]; then
+    fix_completion_file="$evidence_dir/fix/submit-client-complete"
+    rm -f "$fix_completion_file" "$evidence_dir/fix/completed.json"
+  fi
   rm -f "$fix_ready_file" "$fix_release_file" "$evidence_dir/fix/submit.json"
+  if [[ "${gateway_recovery:-false}" == true ]]; then
+    rm -f "${fix_state_dir:-$evidence_dir/client-state}/recovery-release"
+  fi
+  if [[ "${matching_recovery:-false}" == true ]]; then
+    rm -f "${fix_state_dir:-$evidence_dir/client-state}/cancel-release"
+  fi
 
   env \
     SIMPLEMATCH_LIVE_FIX_HOST=127.0.0.1 \
@@ -165,6 +196,8 @@ start_fix_submit_client() {
     SIMPLEMATCH_RETAINED_FIX_EVIDENCE="$evidence_dir/fix/submit.json" \
     SIMPLEMATCH_RETAINED_FIX_READY_FILE="$fix_ready_file" \
     SIMPLEMATCH_RETAINED_FIX_RELEASE_FILE="$fix_release_file" \
+    SIMPLEMATCH_RETAINED_FIX_COMPLETION_FILE="$fix_completion_file" \
+    SIMPLEMATCH_RETAINED_FIX_COMPLETION_EVIDENCE="$evidence_dir/fix/completed.json" \
     SIMPLEMATCH_RETAINED_FIX_TIMEOUT_SECONDS="$timeout_seconds" \
     SIMPLEMATCH_RETAINED_FIX_RECOVERY="${gateway_recovery:-false}" \
     SIMPLEMATCH_RETAINED_FIX_RECOVERY_RELEASE="${fix_state_dir:-$evidence_dir/client-state}/recovery-release" \
@@ -190,6 +223,32 @@ start_fix_submit_client() {
 
 release_fix_submit_client() {
   : >"$fix_release_file"
+}
+
+wait_fix_submission_evidence() {
+  local deadline=$(( $(date +%s) + timeout_seconds ))
+  while (( $(date +%s) < deadline )); do
+    [[ -s "$evidence_dir/fix/submit.json" ]] && return 0
+    background_process_is_alive "$fix_submit_pid" || return 1
+    sleep 1
+  done
+  return 1
+}
+
+complete_fix_submit_client() {
+  local intent_path="$1" expected_exec_id temporary
+  [[ -n "${fix_completion_file:-}" ]] || return 1
+  expected_exec_id="$(jq -er --arg clOrdId "$cl_ord_id" '
+    select(.status == "SENT" and .clientOrderId == $clOrdId)
+    | .execId | select(type == "string" and length > 0)
+  ' "$intent_path")" || return 1
+  temporary="$(mktemp "$fix_completion_file.XXXXXX")" || return 1
+  printf '%s\n' "$expected_exec_id" >"$temporary" || return 1
+  mv -- "$temporary" "$fix_completion_file" || return 1
+  wait_fix_submit_client || return 1
+  jq -e --arg execId "$expected_exec_id" --arg clOrdId "$cl_ord_id" '
+    .execId == $execId and .clOrdId == $clOrdId
+  ' "$evidence_dir/fix/completed.json" >/dev/null
 }
 
 wait_fix_submit_client() {

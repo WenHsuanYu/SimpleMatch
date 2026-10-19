@@ -116,3 +116,22 @@ environment_mutation_line="$(grep -n 'SIMPLEMATCH_QUERY_SERVICE_REBUILD_HTTP_ENA
 }
 
 printf 'Query-service certification lifecycle contract is valid.\n'
+
+if (
+  source "$lifecycle_module"
+  query_evidence_root="$temporary_directory/root-failure"
+  evidence_dir="$query_evidence_root/matching-fixture/buy"
+  mkdir -p "$evidence_dir"
+  evidence_initialized=true namespace=test current_stage=fixture failure_reason=fixture-failed
+  restoration_failed=false certification_succeeded=false
+  restore_query_certification_environment() { [[ "$evidence_dir" == "$query_evidence_root" ]]; }
+  trap cleanup_query_certification EXIT
+  exit 1
+); then
+  printf '%s\n' 'Fixture failure must remain a failing process.' >&2
+  exit 1
+fi
+jq -e '.status == "FAIL" and .reason == "fixture-failed"' \
+  "$temporary_directory/root-failure/verdict.json" >/dev/null
+[[ ! -e "$temporary_directory/root-failure/matching-fixture/buy/verdict.json" ]]
+printf '%s\n' 'Query fixture failures retain the canonical root verdict path.'

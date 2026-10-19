@@ -176,7 +176,7 @@ run_query_active_liveness() {
   # still paused, so the public order cannot race a stale safety decision.
   open_query_active_gateway || die 'Gateway did not reopen for active liveness release'
   release_fix_submit_client
-  wait_fix_submit_client || die 'active liveness FIX submission client failed'
+  wait_fix_submission_evidence || die 'active liveness FIX submission client failed'
   cp "$evidence_dir/fix/submit.json" \
     "$active_liveness_evidence_dir/fix/submit.json"
 
@@ -229,6 +229,8 @@ run_query_active_liveness() {
     "$active_liveness_evidence_dir/exact-inbox-counts.json"
   wait_fix_intent_status SENT "$active_liveness_evidence_dir/fix-intent.json" ||
     die 'QuickFIX did not durably deliver the active terminal event'
+  complete_fix_submit_client "$active_liveness_evidence_dir/fix-intent.json" ||
+    die 'FIX client did not observe the active terminal delivery'
   capture_consumer_state "$active_liveness_evidence_dir/consumer-state.json" ||
     die 'cannot capture active liveness consumer state'
   jq -e '

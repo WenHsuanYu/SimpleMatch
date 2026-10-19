@@ -71,7 +71,7 @@ query_fixture_submit_order() {
     "query-fixture-$side" open "execution-backed $side query fixture" \
     "$expected_active_matching_orders" || return 1
   release_fix_submit_client
-  wait_fix_submit_client || return 1
+  wait_fix_submission_evidence || return 1
   capture_risk_admission "$phase_dir/risk-admission.json" || return 1
 
   query_fixture_last_order_id="$(jq -er '.orderId' "$phase_dir/risk-admission.json")" || return 1
@@ -81,6 +81,7 @@ query_fixture_submit_order() {
     "$expected_projection_status" \
     "$phase_dir/order-projection.json" || return 1
   wait_fix_intent_status SENT "$phase_dir/fix-intent.json" || return 1
+  complete_fix_submit_client "$phase_dir/fix-intent.json" || return 1
 
   jq -n \
     --arg side "$side" \

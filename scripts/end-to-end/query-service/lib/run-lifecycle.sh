@@ -16,6 +16,9 @@ restore_query_certification_environment() {
     stop_background_process "${fix_submit_pid:-}"
   fi
   fix_submit_pid=""
+  if declare -F remove_owned_fix_state_directory >/dev/null 2>&1; then
+    remove_owned_fix_state_directory || restoration_failed=true
+  fi
   if declare -F stop_fix_port_forward >/dev/null 2>&1; then
     stop_fix_port_forward
   fi
@@ -72,6 +75,7 @@ write_query_failure_verdict() {
 cleanup_query_certification() {
   local status="$?"
   trap - ERR EXIT INT TERM
+  evidence_dir="${query_evidence_root:-$evidence_dir}"
   restore_query_certification_environment
   if [[ "$restoration_failed" == true ]]; then
     status=1

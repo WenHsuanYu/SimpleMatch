@@ -6,16 +6,6 @@ source "$(dirname -- "${BASH_SOURCE[0]}")/business-recovery-lifecycle.sh"
 # One opt-in Gateway restart, using the existing FIX client and durable SQL seams.
 # Raw Kubernetes resources and FIX state stay in the caller's private mktemp directory.
 
-wait_fix_submission_evidence() {
-  local deadline=$(( $(date +%s) + timeout_seconds ))
-  while (( $(date +%s) < deadline )); do
-    [[ -s "$evidence_dir/fix/submit.json" ]] && return 0
-    background_process_is_alive "$fix_submit_pid" || return 1
-    sleep 1
-  done
-  return 1
-}
-
 # The shell-less Gateway image is observed through its bound local-path PV.
 # Raw content is streamed directly to the caller's redacting verifier.
 read_gateway_recovery_file() {
