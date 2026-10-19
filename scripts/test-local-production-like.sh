@@ -203,7 +203,7 @@ grep -Fq 'test-local-certification-focused-diagnostic.sh' \
   "$repo_root/scripts/test-phase1-deployment-contracts.sh"
 grep -Fq 'FOCUSED_DIAGNOSTIC' "$focused_diagnostic_script"
 grep -Fq 'simplematch_focused_preflight' "$focused_diagnostic_script"
-grep -Fq 'all seven independent Flyway Jobs' \
+grep -Fq 'all six independent Flyway Jobs' \
   "$repo_root/docs/verification/local-certification-phase-dag.md"
 grep -Fq 'simplematch.delivery.observations' \
   "$repo_root/scripts/run-risk-cdc-delivery-observer-check.sh"
