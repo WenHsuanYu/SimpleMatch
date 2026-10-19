@@ -1,6 +1,7 @@
 package com.simplematch.gradle
 
 import org.flywaydb.gradle.FlywayExtension
+import org.flywaydb.gradle.task.AbstractFlywayTask
 import org.gradle.api.Plugin
 import org.gradle.api.Project
 import org.gradle.api.model.ObjectFactory
@@ -93,6 +94,7 @@ class SimpleMatchFlywayServicePlugin : Plugin<Project> {
 
             configureFlywayTasks(project)
             registerRootTasks(project, serviceTaskPrefix)
+            registerRuntimePreparation(project)
         }
     }
 
@@ -118,6 +120,33 @@ class SimpleMatchFlywayServicePlugin : Plugin<Project> {
         project.tasks.matching { it.name.startsWith("flyway") }.configureEach {
             group = "database"
         }
+    }
+
+    /** Resolves the same classpath used by migration without connecting to a database. */
+    private fun registerRuntimePreparation(project: Project) {
+        val migration = project.tasks.named("flywayMigrate", AbstractFlywayTask::class.java)
+        val extension = project.extensions.getByType(FlywayExtension::class.java)
+        val prepare = project.tasks.register("prepareFlywayRuntime") {
+            group = "database"
+            description = "Resolves this owner's Flyway runtime dependencies for offline migration."
+            doLast {
+                // Flyway 12 uses these four Java configurations unless explicitly configured.
+                val configurations = migration.get().configurations ?: extension.configurations
+                    ?: arrayOf("compileClasspath", "runtimeClasspath", "testCompileClasspath", "testRuntimeClasspath")
+                configurations.forEach { project.configurations.getByName(it).resolve() }
+            }
+        }
+        val root = project.rootProject
+        val aggregateName = "prepareFlywayRuntimeAll"
+        val aggregate = if (root.tasks.findByName(aggregateName) == null) {
+            root.tasks.register(aggregateName) {
+                group = "database"
+                description = "Resolves runtime dependencies for all registered Flyway owners."
+            }
+        } else {
+            root.tasks.named(aggregateName)
+        }
+        aggregate.configure { dependsOn(prepare) }
     }
 
     private fun resolveSchema(
