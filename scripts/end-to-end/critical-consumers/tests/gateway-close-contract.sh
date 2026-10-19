@@ -243,7 +243,9 @@ grep -F 'capture_matching_partition_sample "$partition" "$samples_dir" false' \
 
 running_closed_pod="$temporary_directory/running-closed-pod.json"
 running_closed_metrics="$temporary_directory/running-closed-metrics.json"
-jq -n '{metadata:{uid:"pod-uid"},status:{containerStatuses:[{name:"matching",ready:false,state:{running:{startedAt:"2026-08-27T00:00:00Z"}}}]}}' \
+jq -n '{metadata:{name:"matching-3",uid:"pod-uid"},
+  spec:{containers:[{name:"matching",env:[{name:"MATCHING_METRICS_PATH",value:"/var/run/simplematch/matching/runtime-metrics.json"}]}]},
+  status:{containerStatuses:[{name:"matching",ready:false,state:{running:{startedAt:"2026-08-27T00:00:00Z"}}}]}}' \
   >"$running_closed_pod"
 jq -n '{schema_version:1,runtime_state:"RUNNING",partition_state:"CLOSED",pending_inputs:0,pending_publications:0,updated_at_epoch_ms:1}' \
   >"$running_closed_metrics"
@@ -255,6 +257,7 @@ jq -n '{schema_version:1,runtime_state:"RUNNING",partition_state:"CLOSED",pendin
         cat "$running_closed_pod"
         ;;
       exec)
+        [[ "$2" == matching-3 && "$6" == cat && "$7" == /var/run/simplematch/matching/runtime-metrics.json ]] || return 1
         cat "$running_closed_metrics"
         ;;
       *)

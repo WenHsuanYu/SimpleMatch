@@ -6,6 +6,8 @@ script_dir="$(cd -- "$(dirname -- "$0")" && pwd)"
 repo_root="$(cd -- "$script_dir/.." && pwd)"
 # shellcheck source=scripts/lib/matching-e2e.sh
 source "$script_dir/lib/matching-e2e.sh"
+# shellcheck source=scripts/end-to-end/critical-consumers/lib/matching-status.sh
+source "$script_dir/end-to-end/critical-consumers/lib/matching-status.sh"
 
 env_or() {
   local value
@@ -129,6 +131,13 @@ kns() {
   kubectl --context "$context" -n "$namespace" "$@"
 }
 
+read_runtime_metrics() {
+  local pod="$1" pod_document metrics_path
+  pod_document="$(kns get pod "$pod" -o json)" || return 1
+  metrics_path="$(matching_runtime_metrics_path /dev/stdin <<<"$pod_document")" || return 1
+  kns exec "$pod" -c matching -- cat "$metrics_path"
+}
+
 configmap_value() {
   local configmap="$1"
   local key="$2"
@@ -237,7 +246,7 @@ jq -n \
   >"$evidence_dir/replacement/target-before.json"
 
 while IFS= read -r pod; do
-  kns exec "$pod" -c matching -- cat /var/lib/simplematch/matching/runtime-metrics.json \
+  read_runtime_metrics "$pod" \
     >"$evidence_dir/ring/before/$pod.json"
   jq -e 'has("input_ring") and has("output_ring") and (.runtime_state | type == "string")' \
     "$evidence_dir/ring/before/$pod.json" >/dev/null ||
@@ -404,7 +413,7 @@ replay_started_ms="$replacement_ready_ms"
 replay_deadline=$(( $(date +%s) + replay_timeout_seconds ))
 replay_ready_ms=""
 while [[ "$(date +%s)" -le "$replay_deadline" ]]; do
-  last_runtime_metrics="$(kns exec "$target_name" -c matching -- cat /var/lib/simplematch/matching/runtime-metrics.json 2>/dev/null || true)"
+  last_runtime_metrics="$(read_runtime_metrics "$target_name" 2>/dev/null || true)"
   if [[ -n "$last_runtime_metrics" ]] &&
     matching_e2e_runtime_caught_up "$last_runtime_metrics" "$command_end_offset"; then
     replay_ready_ms="$(date +%s%3N)"
@@ -423,7 +432,7 @@ read_runtime_metrics_with_retry() {
   local metrics_json=""
 
   while [[ "$(date +%s)" -le "$deadline" ]]; do
-    metrics_json="$(kns exec "$pod" -c matching -- cat /var/lib/simplematch/matching/runtime-metrics.json 2>/dev/null || true)"
+    metrics_json="$(read_runtime_metrics "$pod" 2>/dev/null || true)"
     if [[ -n "$metrics_json" ]] &&
       jq -e 'has("input_ring") and has("output_ring") and (.runtime_state | type == "string")' \
         <<<"$metrics_json" >/dev/null; then

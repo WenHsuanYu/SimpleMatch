@@ -84,6 +84,31 @@ if run_matching_kafka_helper MatchingEventRedeliveryMain 0198a000-0000-7000-8000
   die 'failed redelivery helper must propagate failure'
 fi
 
+# Replay polling uses the same deployed path contract as normal observations.
+mkdir -p "$evidence_dir/kafka" "$fix_state_dir/matching-owner"
+printf '%s\n' '{"offset":7}' >"$evidence_dir/kafka/matching-command-observation.json"
+for configured_path in /var/run/simplematch/matching/runtime-metrics.json \
+    /var/lib/simplematch/matching/runtime-metrics.json; do
+  jq -n --arg path "$configured_path" '{spec:{containers:[{name:"matching",
+    env:[{name:"MATCHING_METRICS_PATH",value:$path}]}]}}' >"$fix_state_dir/matching-owner/pod.json"
+  kns() {
+    printf '%s\n' "$*" >>"$temporary_directory/metrics-exec.log"
+    [[ "$1" == exec && "$2" == matching-4 && "$6" == cat && "$7" == "$configured_path" ]] || return 1
+    printf '%s\n' '{"runtime_state":"READY","partition_state":"OPEN",
+      "admission":{"ownership_permitted":true,"recovery_complete":true},
+      "pending_inputs":0,"pending_publications":0,"highest_contiguous_completed_offset":7}'
+  }
+  wait_matching_replayed || die 'recovery did not read its configured Matching metrics path'
+done
+jq '.spec.containers[0].env += .spec.containers[0].env' \
+  "$fix_state_dir/matching-owner/pod.json" >"$temporary_directory/ambiguous-pod.json"
+cp "$temporary_directory/ambiguous-pod.json" "$fix_state_dir/matching-owner/pod.json"
+: >"$temporary_directory/metrics-exec.log"
+if wait_matching_replayed; then
+  die 'ambiguous replay metrics configuration was accepted'
+fi
+[[ ! -s "$temporary_directory/metrics-exec.log" ]] || die 'ambiguous replay metrics path reached exec'
+
 if bash "$script_dir/run-resting-buy-certification.sh" --namespace contract \
     --evidence-dir "$temporary_directory/invalid" --gateway-recovery --matching-recovery \
     >"$temporary_directory/conflict.log" 2>&1; then

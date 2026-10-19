@@ -2,6 +2,8 @@
 
 # shellcheck source=scripts/end-to-end/critical-consumers/lib/business-recovery-lifecycle.sh
 source "$(dirname -- "${BASH_SOURCE[0]}")/business-recovery-lifecycle.sh"
+# shellcheck source=scripts/end-to-end/critical-consumers/lib/matching-status.sh
+source "$(dirname -- "${BASH_SOURCE[0]}")/matching-status.sh"
 
 # One routed Matching owner, the original resting order, and one new cancel.
 # All steps share a deadline; raw Kubernetes resources remain in private scratch.
@@ -62,8 +64,7 @@ replace_matching_owner() {
 wait_matching_replayed() {
   local input_offset metrics_path
   input_offset="$(jq -er '.offset' "$evidence_dir/kafka/matching-command-observation.json")" || return 1
-  metrics_path="$(jq -er '.spec.containers[] | select(.name == "matching") | .env[] | select(.name == "MATCHING_METRICS_PATH") | .value' "$fix_state_dir/matching-owner/pod.json")" || return 1
-  case "$metrics_path" in /var/run/simplematch/matching/runtime-metrics.json|/var/lib/simplematch/matching/runtime-metrics.json) ;; *) return 1 ;; esac
+  metrics_path="$(matching_runtime_metrics_path "$fix_state_dir/matching-owner/pod.json")" || return 1
   while (( $(date +%s%3N) < operation_deadline_epoch_ms )); do
     kns exec "$matching_owner" -c matching -- cat "$metrics_path" >"$evidence_dir/matching-recovery/runtime-after.json" || return 1
     if jq -e --argjson offset "$input_offset" '

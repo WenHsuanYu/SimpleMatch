@@ -59,6 +59,96 @@ grep -Fq 'distinct from $old_node' "$e2e_script"
 grep -Fq 'actual_helper_node' "$e2e_script"
 grep -Fq 'read_runtime_metrics_with_retry' "$e2e_script"
 
+# Drive the real CLI through baseline metrics collection, stopping at the helper
+# creation boundary. All external commands are local fixture adapters.
+mkdir -p "$fixture_dir/bin"
+cat >"$fixture_dir/bin/kind" <<'SH'
+#!/usr/bin/env bash
+printf '%s\n' simplematch-live
+SH
+cat >"$fixture_dir/bin/kubectl" <<'SH'
+#!/usr/bin/env bash
+set -euo pipefail
+[[ "$1" != --context ]] || shift 2
+[[ "$1" != -n ]] || shift 2
+case "$1 $2" in
+  'get nodes') printf '%s\n' '{"items":[{"metadata":{"labels":{"node-role.kubernetes.io/control-plane":""}}},{"metadata":{"labels":{"simplematch.io/node-pool":"local-resilience"}}},{"metadata":{"labels":{"simplematch.io/node-pool":"local-resilience"}}},{"metadata":{"labels":{"simplematch.io/node-pool":"local-resilience"}}}]}' ;;
+  'get namespace') printf '{}\n' ;;
+  'get statefulset') cat "$MATCHING_READER_FIXTURE/statefulset.json" ;;
+  'get pods') cat "$MATCHING_READER_FIXTURE/pods.json" ;;
+  'get pod') jq --arg name "$3" '.items[] | select(.metadata.name == $name)' "$MATCHING_READER_FIXTURE/pods.json" ;;
+  'get configmap')
+    if [[ "$3" == matching-session-config ]]; then
+      printf '%s\n' '{"data":{"trading_day":"2026-08-27","trading_session_id":"2026-08-27-regular","matching_image_digest":"fixture-image"}}'
+    else
+      jq -n --arg artifact '{"metadata":{"routingAlgorithmVersion":"fixture"},"routingPolicy":{"assignments":[{"partitionId":0,"venueMic":"XTAI","symbol":"2330"}]}}' \
+        '{data:{"market_reference.json":$artifact,"market_reference.sha256":("a" * 64)}}'
+    fi ;;
+  'get pvc') printf '%s\n' '{"spec":{"volumeName":"fixture-volume"}}' ;;
+  'get pv') printf '{}\n' ;;
+  'delete pod') exit 0 ;;
+  'run '*) exit 73 ;;
+  *)
+    if [[ "$1" == exec ]]; then
+      printf '%s\n' "$*" >>"$MATCHING_READER_FIXTURE/exec.log"
+      [[ "${!#}" == "$MATCHING_READER_PATH" ]] || exit 74
+      printf '%s\n' '{"runtime_state":"READY","input_ring":{},"output_ring":{}}'
+    else
+      exit 75
+    fi ;;
+esac
+SH
+chmod +x "$fixture_dir/bin/kind" "$fixture_dir/bin/kubectl"
+jq -n '{spec:{replicas:15,template:{spec:{containers:[{name:"matching",env:[
+  {name:"MATCHING_KAFKA_BROKERS",value:"kafka:9092"},
+  {name:"MATCHING_COMMANDS_TOPIC",value:"matching.commands"},
+  {name:"MATCHING_EVENTS_TOPIC",value:"matching.events"}]}]}}}}' >"$fixture_dir/statefulset.json"
+for configured_path in /var/run/simplematch/matching/runtime-metrics.json \
+    /var/lib/simplematch/matching/runtime-metrics.json; do
+  jq -n --arg path "$configured_path" '{items:[range(0;15) | . as $n |
+    {metadata:{name:("matching-"+($n|tostring)),uid:("uid-"+($n|tostring)),
+      labels:{"apps.kubernetes.io/pod-index":($n|tostring)}},
+     spec:{nodeName:"worker-a",volumes:[{name:"matching-baseline",persistentVolumeClaim:{claimName:"fixture-claim"}}],
+       containers:[{name:"matching",image:"fixture-image",env:[{name:"MATCHING_METRICS_PATH",value:$path}]}]},
+     status:{conditions:[{type:"Ready",status:"True"}],containerStatuses:[{name:"matching",restartCount:0}]}}]}' \
+    >"$fixture_dir/pods.json"
+  : >"$fixture_dir/exec.log"
+  result=0
+  PATH="$fixture_dir/bin:$PATH" MATCHING_READER_FIXTURE="$fixture_dir" \
+    MATCHING_READER_PATH="$configured_path" SIMPLEMATCH_MATCHING_E2E_BIN=/bin/true \
+    bash "$e2e_script" --namespace contract --report "$fixture_dir/reader/report.json" \
+    >"$fixture_dir/reader.log" 2>&1 || result=$?
+  [[ "$result" == 73 && "$(wc -l <"$fixture_dir/exec.log")" == 15 ]] || {
+    cat "$fixture_dir/reader.log" >&2
+    printf 'Matching CLI did not read all configured runtime paths: %s\n' "$configured_path" >&2
+    exit 1
+  }
+done
+
+for invalid in missing unknown duplicate; do
+  jq '.items[].spec.containers[0].env=[{name:"MATCHING_METRICS_PATH",value:"/var/run/simplematch/matching/runtime-metrics.json"}]' \
+    "$fixture_dir/pods.json" >"$fixture_dir/valid-pods.json"
+  cp "$fixture_dir/valid-pods.json" "$fixture_dir/pods.json"
+  case "$invalid" in
+    missing) jq '.items[].spec.containers[0].env=[]' "$fixture_dir/pods.json" ;;
+    unknown) jq '.items[].spec.containers[0].env[0].value="/tmp/stale.json"' "$fixture_dir/pods.json" ;;
+    duplicate) jq '.items[].spec.containers[0].env=[{name:"MATCHING_METRICS_PATH",value:"/var/run/simplematch/matching/runtime-metrics.json"},{name:"MATCHING_METRICS_PATH",value:"/var/run/simplematch/matching/runtime-metrics.json"}]' "$fixture_dir/pods.json" ;;
+  esac >"$fixture_dir/invalid-pods.json"
+  cp "$fixture_dir/invalid-pods.json" "$fixture_dir/pods.json"
+  : >"$fixture_dir/exec.log"
+  if PATH="$fixture_dir/bin:$PATH" MATCHING_READER_FIXTURE="$fixture_dir" \
+      MATCHING_READER_PATH=/tmp/stale.json SIMPLEMATCH_MATCHING_E2E_BIN=/bin/true \
+      bash "$e2e_script" --namespace contract --report "$fixture_dir/reader/report.json" \
+      >"$fixture_dir/reader.log" 2>&1; then
+    printf 'Matching CLI accepted invalid metrics config: %s\n' "$invalid" >&2
+    exit 1
+  fi
+  [[ ! -s "$fixture_dir/exec.log" ]] || {
+    printf 'Invalid Matching config reached exec: %s\n' "$invalid" >&2
+    exit 1
+  }
+done
+
 invalid_node_report="$fixture_dir/invalid-node.json"
 jq '.target.new_node = "worker-b"' "$valid_report" >"$invalid_node_report"
 if matching_e2e_report_is_valid "$invalid_node_report" "$runtime_evidence"; then

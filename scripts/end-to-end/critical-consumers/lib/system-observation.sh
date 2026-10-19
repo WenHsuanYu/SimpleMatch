@@ -290,10 +290,12 @@ capture_matching_partition_sample() {
   local before="$samples_dir/partition-$partition-pod-before.json"
   local after="$samples_dir/partition-$partition-pod-after.json"
   local metrics="$samples_dir/partition-$partition-runtime.json"
+  local metrics_path
 
   [[ "$require_ready" == true || "$require_ready" == false ]] || return 1
 
   kns get pod "$pod" -o json >"$before" || return 1
+  metrics_path="$(matching_runtime_metrics_path "$before")" || return 1
   if [[ "$require_ready" == true ]]; then
     jq -e '
       [.status.containerStatuses[]? | select(.name == "matching")] as $containers
@@ -307,7 +309,7 @@ capture_matching_partition_sample() {
   fi
 
   kns exec "$pod" -c matching -- \
-    cat /var/lib/simplematch/matching/runtime-metrics.json >"$metrics" || return 1
+    cat "$metrics_path" >"$metrics" || return 1
   jq -e 'type == "object"' "$metrics" >/dev/null || return 1
 
   kns get pod "$pod" -o json >"$after" || return 1

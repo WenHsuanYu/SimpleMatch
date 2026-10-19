@@ -148,6 +148,19 @@ canonical inventory, resolve their observed containerd references, then execute 
 on every eligible worker. Preserve those initial probe diagnostics separately from runtime image
 corruption; the corrected helper probes passed before the original deployment.
 
+The first dependent Query attempt after the 2026-10-19 aggregate stopped before releasing its
+public FIX order because the system observer read the old
+`/var/lib/simplematch/matching/runtime-metrics.json` path. All 15 deployed Matching containers
+explicitly configured `MATCHING_METRICS_PATH` under `/var/run/simplematch/matching/`; those files
+were fresh and reported Ready/Open. The deployment had moved runtime observations to a shared
+temporary volume, but four certification reads still used the former persistent-volume path.
+Resolve the path from the observed Matching Pod configuration through the shared reader contract;
+reject missing, duplicate or unsupported paths rather than falling back to a possibly stale PVC
+file. Regression checks must exercise the actual capture adapter, including both explicitly
+configured supported paths. Preserve `out/verification/current-runtime-20261019/gates/query` as
+FAIL with successful cleanup. This deterministic observer defect is separate from the preceding
+host OOM event and belongs to the reader's source validation.
+
 ## Recurring lessons
 
 | ID | Symptom | Root cause | Prevention check | Safe fix | Last verified |

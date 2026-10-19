@@ -152,6 +152,53 @@ stable_source_capture() (
   compare_json_baseline source-ordering.json "$tmp/source-ordering.json"
 )
 
+configured_matching_metrics_capture() (
+  setup_case
+  local pod_document="$tmp/pod.json" selected_path
+  local exec_log="$tmp/exec.log"
+  kns() {
+    case "$1" in
+      get) cat "$pod_document" ;;
+      exec)
+        printf '%s\n' "$*" >>"$exec_log"
+        [[ "$2" == matching-0 && "$3" == -c && "$4" == matching &&
+           "$5" == -- && "$6" == cat && "$7" == "$selected_path" ]] || return 1
+        printf '%s\n' '{"runtime_state":"READY","partition_state":"OPEN","updated_at_epoch_ms":10000}'
+        ;;
+      *) return 1 ;;
+    esac
+  }
+  for selected_path in /var/run/simplematch/matching/runtime-metrics.json \
+      /var/lib/simplematch/matching/runtime-metrics.json; do
+    jq -n --arg path "$selected_path" '{metadata:{name:"matching-0",uid:"same-owner"},
+      spec:{containers:[{name:"matching",env:[{name:"MATCHING_METRICS_PATH",value:$path}]}]},
+      status:{containerStatuses:[{name:"matching",ready:true,state:{running:{}}}]}}' >"$pod_document"
+    mkdir -p "$tmp/samples"
+    capture_matching_partition_sample 0 "$tmp/samples" ||
+      fail "real Matching capture did not use configured path $selected_path"
+    jq -e '.runtime_state == "READY"' "$tmp/samples/partition-0-runtime.json" >/dev/null ||
+      fail 'configured Matching runtime capture was not retained'
+  done
+  for invalid in missing unknown duplicate valueFrom duplicate-container; do
+    case "$invalid" in
+      missing) jq '.spec.containers[0].env=[]' "$pod_document" ;;
+      unknown) jq '.spec.containers[0].env[0].value="/tmp/untrusted.json"' "$pod_document" ;;
+      duplicate) jq '.spec.containers[0].env += .spec.containers[0].env' "$pod_document" ;;
+      valueFrom) jq '.spec.containers[0].env[0].valueFrom={secretKeyRef:{name:"path",key:"value"}}' "$pod_document" ;;
+      duplicate-container) jq '.spec.containers += .spec.containers' "$pod_document" ;;
+    esac >"$tmp/invalid.json"
+    cp "$tmp/invalid.json" "$pod_document"
+    : >"$exec_log"
+    if capture_matching_partition_sample 0 "$tmp/samples"; then
+      fail "invalid metrics configuration was accepted: $invalid"
+    fi
+    [[ ! -s "$exec_log" ]] || fail "invalid metrics configuration reached exec: $invalid"
+    jq '.spec.containers=[{name:"matching",env:[{name:"MATCHING_METRICS_PATH",value:"/var/run/simplematch/matching/runtime-metrics.json"}]}]' \
+      "$pod_document" >"$tmp/reset.json"
+    cp "$tmp/reset.json" "$pod_document"
+  done
+)
+
 timing_diagnostics() (
   setup_case
   age_dir="$tmp/age-timing"
@@ -437,6 +484,7 @@ stale_gateway_response() (
   fi
 )
 cases=(
+  configured_matching_metrics_capture
   freshness_boundaries
   stable_source_capture
   timing_diagnostics

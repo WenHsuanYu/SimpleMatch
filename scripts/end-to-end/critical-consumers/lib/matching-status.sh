@@ -5,6 +5,22 @@
 
 matching_runtime_default_max_age_millis=5000
 
+# Only an explicit, unambiguous deployed setting may select a status file.
+matching_runtime_metrics_path() {
+  jq -er '
+    [.spec.containers[]? | select(.name == "matching")] as $containers
+    | if ($containers | length) != 1 then error("ambiguous Matching container") else
+        [$containers[0].env[]? | select(.name == "MATCHING_METRICS_PATH")] as $paths
+        | if ($paths | length) != 1 then error("missing or ambiguous Matching metrics path")
+          elif ($paths[0] | has("valueFrom")) then error("Matching metrics path must be literal")
+          elif $paths[0].value == "/var/run/simplematch/matching/runtime-metrics.json"
+            or $paths[0].value == "/var/lib/simplematch/matching/runtime-metrics.json"
+          then $paths[0].value
+          else error("unsupported Matching metrics path") end
+      end
+  ' "$@"
+}
+
 matching_runtime_readiness_reason() {
   local now_epoch_millis="${1:-$(date +%s%3N)}"
   local maximum_age_millis="${2:-$matching_runtime_default_max_age_millis}"
