@@ -24,6 +24,32 @@ for service in "${expected_services[@]}"; do
   flyway_service_exists "$service"
 done
 
+# Exercise the real entry point before it can copy a workspace or start Gradle.
+# A wrapper distribution alone does not provide the migration dependencies.
+runtime_fixture="$(mktemp -d)"
+trap 'rm -rf -- "$runtime_fixture"' EXIT
+mkdir -p "$runtime_fixture/wrapper-only/wrapper/dists"
+for seed in "$runtime_fixture/missing" "$runtime_fixture/wrapper-only"; do
+  if SIMPLEMATCH_FLYWAY_SERVICE_ID=account-service \
+      SIMPLEMATCH_GRADLE_CACHE_SEED_DIR="$seed" \
+      SIMPLEMATCH_FLYWAY_WORK_DIR="$runtime_fixture/workspace" \
+      GRADLE_USER_HOME="$runtime_fixture/gradle" \
+      bash "$repo_root/deploy/docker/run-flyway" >"$runtime_fixture/result.log" 2>&1; then
+    echo "Flyway accepted an absent or wrapper-only runtime dependency seed." >&2
+    exit 1
+  fi
+  grep -Fq 'Flyway runtime dependency seed is missing or incomplete' \
+    "$runtime_fixture/result.log" || {
+    cat "$runtime_fixture/result.log" >&2
+    echo "Flyway must fail closed on its dependency seed before starting Gradle." >&2
+    exit 1
+  }
+  [[ ! -e "$runtime_fixture/workspace" ]] || {
+    echo "Invalid dependency seed must fail before workspace preparation." >&2
+    exit 1
+  }
+done
+
 query_plan_checker="$repo_root/scripts/check-flyway-query-plans.sh"
 for service in "${expected_services[@]}"; do
   if ! grep -Fq "  ${service})" "$query_plan_checker"; then
@@ -42,7 +68,7 @@ grep -Fq 'kotlin_compiler_execution_strategy="${SIMPLEMATCH_KOTLIN_COMPILER_EXEC
   "$repo_root/deploy/docker/run-flyway" &&
 grep -Fq 'gradle_max_workers="${SIMPLEMATCH_GRADLE_MAX_WORKERS:-}"' \
   "$repo_root/deploy/docker/run-flyway" &&
-grep -Fq 'exec "$work_dir/gradlew" --no-daemon \' \
+grep -Fq 'exec "$work_dir/gradlew" --no-daemon --offline \' \
   "$repo_root/deploy/docker/run-flyway" &&
 grep -Fq '"-Dorg.gradle.jvmargs=$gradle_jvm_args"' \
   "$repo_root/deploy/docker/run-flyway" &&
@@ -60,9 +86,11 @@ grep -Fq '  --project-cache-dir "$project_cache_dir" \' \
 
 grep -Fq 'gradle_cache_seed_dir="${SIMPLEMATCH_GRADLE_CACHE_SEED_DIR:-/opt/simplematch/gradle-cache}"' \
   "$repo_root/deploy/docker/run-flyway" &&
-grep -Fq 'if [[ -d "$gradle_cache_seed_dir/wrapper/dists" ]]; then' \
+grep -Fq '"$gradle_cache_seed_dir/flyway-runtime.ready"' \
   "$repo_root/deploy/docker/run-flyway" &&
 grep -Fq 'cp -a "$gradle_cache_seed_dir/wrapper/dists/." "$gradle_user_home/wrapper/dists/"' \
+  "$repo_root/deploy/docker/run-flyway" &&
+grep -Fq 'cp -a "$gradle_cache_seed_dir/caches/." "$gradle_user_home/caches/"' \
   "$repo_root/deploy/docker/run-flyway" || {
   echo "Flyway runner does not seed its writable Gradle cache." >&2
   exit 1
@@ -73,9 +101,29 @@ grep -Fq 'FROM eclipse-temurin:25-jdk AS gradle-cache' \
   "$repo_root/deploy/docker/Dockerfile.flyway-runner" &&
 grep -Fq 'RUN --mount=type=cache,target=/root/.gradle,sharing=locked' \
   "$repo_root/deploy/docker/Dockerfile.flyway-runner" &&
-grep -Fq 'COPY --from=gradle-cache /opt/simplematch/gradle-cache/' \
+grep -Fq 'COPY --from=gradle-cache --chown=10001:10001 /opt/simplematch/gradle-cache/' \
   "$repo_root/deploy/docker/Dockerfile.flyway-runner" || {
   echo "Flyway image does not prewarm the pinned Gradle distribution." >&2
+  exit 1
+}
+grep -Fq 'COPY --chown=10001:10001 . /workspace/' \
+  "$repo_root/deploy/docker/Dockerfile.flyway-runner" &&
+grep -Fq 'COPY --from=gradle-cache --chown=10001:10001 /workspace/build-logic/build/' \
+  "$repo_root/deploy/docker/Dockerfile.flyway-runner" &&
+grep -Fq 'COPY --chown=10001:10001 deploy/docker/run-flyway /app/run-flyway' \
+  "$repo_root/deploy/docker/Dockerfile.flyway-runner" || {
+  echo "Flyway final-stage inputs must receive ownership while copying." >&2
+  exit 1
+}
+if grep -Eq 'chown[[:space:]]+-R' "$repo_root/deploy/docker/Dockerfile.flyway-runner"; then
+  echo "Flyway image must not duplicate its dependency seed through recursive chown." >&2
+  exit 1
+fi
+grep -Fq '/workspace/gradlew --no-daemon prepareFlywayRuntimeAll' \
+  "$repo_root/deploy/docker/Dockerfile.flyway-runner" &&
+grep -Fq 'cp -a /root/.gradle/caches/.' \
+  "$repo_root/deploy/docker/Dockerfile.flyway-runner" || {
+  echo "Flyway image does not prepare and package its migration dependency closure." >&2
   exit 1
 }
 grep -Fq 'ENV SIMPLEMATCH_GRADLE_CACHE_SEED_DIR=/opt/simplematch/gradle-cache' \

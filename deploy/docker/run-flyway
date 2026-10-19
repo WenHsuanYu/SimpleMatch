@@ -13,6 +13,13 @@ work_dir="${SIMPLEMATCH_FLYWAY_WORK_DIR:-/tmp/simplematch-workspace}"
 gradle_jvm_options=()
 gradle_execution_options=()
 
+if [[ ! -f "$gradle_cache_seed_dir/flyway-runtime.ready" ||
+    ! -d "$gradle_cache_seed_dir/wrapper/dists" ||
+    ! -d "$gradle_cache_seed_dir/caches/modules-2" ]]; then
+  printf '%s\n' 'Flyway runtime dependency seed is missing or incomplete' >&2
+  exit 1
+fi
+
 if [[ -n "$gradle_jvm_args" ]]; then
   gradle_jvm_options+=("-Dorg.gradle.jvmargs=$gradle_jvm_args")
 fi
@@ -30,10 +37,9 @@ fi
 mkdir -p "$work_dir"
 cp -a /workspace/. "$work_dir/"
 
-if [[ -d "$gradle_cache_seed_dir/wrapper/dists" ]]; then
-  mkdir -p "$gradle_user_home/wrapper/dists"
-  cp -a "$gradle_cache_seed_dir/wrapper/dists/." "$gradle_user_home/wrapper/dists/"
-fi
+mkdir -p "$gradle_user_home/wrapper/dists" "$gradle_user_home/caches"
+cp -a "$gradle_cache_seed_dir/wrapper/dists/." "$gradle_user_home/wrapper/dists/"
+cp -a "$gradle_cache_seed_dir/caches/." "$gradle_user_home/caches/"
 
 case "$service_id" in
   account-service) task="accountServiceFlywayMigrate" ;;
@@ -50,7 +56,7 @@ esac
 
 cd "$work_dir"
 
-exec "$work_dir/gradlew" --no-daemon \
+exec "$work_dir/gradlew" --no-daemon --offline \
   "${gradle_jvm_options[@]}" \
   "${gradle_execution_options[@]}" \
   --gradle-user-home "$gradle_user_home" \
