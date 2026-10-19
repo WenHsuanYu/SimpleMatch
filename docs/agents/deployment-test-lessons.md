@@ -161,6 +161,31 @@ configured supported paths. Preserve `out/verification/current-runtime-20261019/
 FAIL with successful cleanup. This deterministic observer defect is separate from the preceding
 host OOM event and belongs to the reader's source validation.
 
+The 2026-10-20 Query attempt reached Risk acceptance and a resting Matching order, but its
+prepared FIX client closed after Pending New, before the asynchronous final delivery. Keep
+`out/verification/current-runtime-20261020/r4/gates/query/matching-fixture/buy/verdict.json` as FAIL;
+the parent aggregate's 62 PASS results remain a separate claim. Positive certification clients
+must retain their session until the runner observes the correlated durable SENT intent and the
+client receives that exact ExecID. Preserve receipt-only fault scenarios and their recovery
+protocols. Before the next deployment, require a real FIX regression with delayed final delivery,
+an unrelated ExecID, and the original receipt-only behavior, plus adapter checks rejecting PENDING
+or unrelated completion evidence. Sequential submissions to the same Gateway CLIENT identity
+must retain initiator sequence state; cleanup may remove only runner-owned temporary stores.
+Never reset session ledgers, mark intents SENT manually, or extend timeouts to mask this defect.
+Query EXIT reporting must retain the root evidence directory even while a fixture changes its
+working evidence scope. This is a corrected certification-client defect, not a recurring platform
+failure.
+
+Before dependent scenarios, verify that the retained trading window is still OPEN. The earlier
+aggregate's runtime had automatically closed at 23:59 while execution was interrupted; its PASS
+evidence was preserved, and a fresh run used the approved artifact's original trading day without
+changing the host clock or reopening a closed barrier. Before that fresh deployment, an idle
+Desktop VM still retained most host memory after the owned namespace and PVC cleanup. Only after
+confirming no application namespace/PV remained, the same Desktop service was restarted once;
+the daemon identity, canonical four nodes, registry, 21 volumes and 40 images were preserved.
+Repeat control-plane stability and all 15 helper execution probes after such a restart, and record
+host available memory and swap before starting another resource-intensive run.
+
 ## Recurring lessons
 
 | ID | Symptom | Root cause | Prevention check | Safe fix | Last verified |
