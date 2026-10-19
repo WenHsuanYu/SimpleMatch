@@ -38,10 +38,10 @@ import quickfix.field.ExecType;
 import quickfix.field.HandlInst;
 import quickfix.field.MsgSeqNum;
 import quickfix.field.MsgType;
+import quickfix.field.OrdStatus;
 import quickfix.field.OrdType;
 import quickfix.field.OrderID;
 import quickfix.field.OrderQty;
-import quickfix.field.OrdStatus;
 import quickfix.field.Price;
 import quickfix.field.Symbol;
 import quickfix.field.Text;
@@ -49,7 +49,9 @@ import quickfix.field.TransactTime;
 import quickfix.fix44.ExecutionReport;
 import quickfix.fix44.NewOrderSingle;
 
-/** Prepares one external FIX session and waits for the certification runner to release the order. */
+/**
+ * Prepares one external FIX session and waits for the certification runner to release the order.
+ */
 class QuickFixPreparedSubmissionLiveCertificationTest {
   private static final DateTimeFormatter FIX_TIMESTAMP =
       DateTimeFormatter.ofPattern("yyyyMMdd-HH:mm:ss.SSS")
@@ -91,8 +93,7 @@ class QuickFixPreparedSubmissionLiveCertificationTest {
 
     final SessionSettings settings =
         new SessionSettings(
-            writeInitiatorConfig(
-                    stateDir, host, port, senderCompId, targetCompId, dictionary)
+            writeInitiatorConfig(stateDir, host, port, senderCompId, targetCompId, dictionary)
                 .toString());
     final PreparedInitiatorApplication application = new PreparedInitiatorApplication();
     final FixWireLogObserver wireObserver = new FixWireLogObserver(new FileLogFactory(settings));
@@ -117,24 +118,54 @@ class QuickFixPreparedSubmissionLiveCertificationTest {
       final NewOrderSingle order =
           newOrder(clOrdId, symbol, quantity, price, accountId, timeInForce);
       order.setChar(quickfix.field.Side.FIELD, side.charAt(0));
-      assertThat(
-              Session.sendToTarget(order, sessionId))
-          .isTrue();
+      assertThat(Session.sendToTarget(order, sessionId)).isTrue();
 
-      final ExecutionReport report =
-          application.awaitExecutionReport(clOrdId, timeoutSeconds);
-      writeEvidence(
-          evidencePath, report, sentAtEpochMs, accountId, timeInForce, null);
+      final ExecutionReport report = application.awaitExecutionReport(clOrdId, timeoutSeconds);
+      writeEvidence(evidencePath, report, sentAtEpochMs, accountId, timeInForce, null);
       application.recoveryProbe.completeIfRequested(
           new FixRecoveryProbe.Exchange(sessionId, order, report), wireObserver, timeoutSeconds);
       FixCancelProbe.completeIfRequested(
           new FixRecoveryProbe.Exchange(sessionId, order, report),
-          (originalId, remaining) -> application.awaitExecutionReport(
-              originalId, remaining, FixCancelProbe::isCancelled),
+          (originalId, remaining) ->
+              application.awaitExecutionReport(originalId, remaining, FixCancelProbe::isCancelled),
           timeoutSeconds);
+      completeDeliveryIfRequested(
+          application, report, sentAtEpochMs, accountId, timeInForce, timeoutSeconds);
     } finally {
       initiator.stop(true);
     }
+  }
+
+  private void completeDeliveryIfRequested(
+      PreparedInitiatorApplication application,
+      ExecutionReport initialReport,
+      long sentAtEpochMs,
+      String accountId,
+      String timeInForce,
+      int timeoutSeconds)
+      throws Exception {
+    final String configured = environmentValue("SIMPLEMATCH_RETAINED_FIX_COMPLETION_FILE");
+    if (configured == null || configured.isBlank()) {
+      return;
+    }
+    final Path completionFile = Path.of(configured);
+    awaitRelease(completionFile, timeoutSeconds);
+    final String expectedExecId = Files.readString(completionFile).trim();
+    assertThat(expectedExecId).as("runner-selected final ExecID").isNotBlank();
+    final ExecutionReport completed =
+        expectedExecId.equals(initialReport.getString(ExecID.FIELD))
+            ? initialReport
+            : application.awaitExecutionReport(
+                initialReport.getString(ClOrdID.FIELD),
+                timeoutSeconds,
+                report -> expectedExecId.equals(report.getOptionalString(ExecID.FIELD).orElse("")));
+    writeEvidence(
+        requiredPath("SIMPLEMATCH_RETAINED_FIX_COMPLETION_EVIDENCE"),
+        completed,
+        sentAtEpochMs,
+        accountId,
+        timeInForce,
+        completed);
   }
 
   private void awaitRelease(Path releaseFile, int timeoutSeconds) throws Exception {
@@ -265,7 +296,8 @@ class QuickFixPreparedSubmissionLiveCertificationTest {
             + "}\n";
     final Path temporary = Files.createTempFile(path.getParent(), "submit-", ".json");
     Files.writeString(temporary, json);
-    Files.move(temporary, path, StandardCopyOption.ATOMIC_MOVE, StandardCopyOption.REPLACE_EXISTING);
+    Files.move(
+        temporary, path, StandardCopyOption.ATOMIC_MOVE, StandardCopyOption.REPLACE_EXISTING);
   }
 
   private String optionalText(ExecutionReport report) throws FieldNotFound {
@@ -273,7 +305,7 @@ class QuickFixPreparedSubmissionLiveCertificationTest {
   }
 
   private Path dictionaryPath() {
-    final String configured = System.getenv("SIMPLEMATCH_LIVE_FIX_DICTIONARY");
+    final String configured = environmentValue("SIMPLEMATCH_LIVE_FIX_DICTIONARY");
     return Path.of(
             configured == null || configured.isBlank()
                 ? workspaceRoot().resolve("config/quickfix/fix-spec/FIX44.xml").toString()
@@ -317,7 +349,7 @@ class QuickFixPreparedSubmissionLiveCertificationTest {
   }
 
   private String requiredEnvironment(String name) {
-    final String value = System.getenv(name);
+    final String value = environmentValue(name);
     if (value == null || value.isBlank()) {
       throw new IllegalStateException(name + " is required for prepared FIX certification");
     }
@@ -325,8 +357,15 @@ class QuickFixPreparedSubmissionLiveCertificationTest {
   }
 
   private String environmentOrDefault(String name, String fallback) {
-    final String value = System.getenv(name);
+    final String value = environmentValue(name);
     return value == null || value.isBlank() ? fallback : value;
+  }
+
+  /**
+   * Supplies the external runner configuration; simulator tests provide an isolated environment.
+   */
+  protected String environmentValue(String name) {
+    return System.getenv(name);
   }
 
   private String jsonEscape(String value) {
@@ -388,8 +427,7 @@ class QuickFixPreparedSubmissionLiveCertificationTest {
         final long remainingNanos = deadlineNanos - System.nanoTime();
         final Message message =
             applicationMessages.poll(
-                Math.max(1L, TimeUnit.NANOSECONDS.toMillis(remainingNanos)),
-                TimeUnit.MILLISECONDS);
+                Math.max(1L, TimeUnit.NANOSECONDS.toMillis(remainingNanos)), TimeUnit.MILLISECONDS);
         if (message == null) {
           break;
         }

@@ -24,6 +24,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.UUID;
 import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.Executors;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicReference;
 import org.flywaydb.core.Flyway;
@@ -31,6 +32,8 @@ import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.junit.jupiter.api.io.TempDir;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.ValueSource;
 import org.springframework.boot.test.system.CapturedOutput;
 import org.springframework.boot.test.system.OutputCaptureExtension;
 import org.springframework.jdbc.datasource.DriverManagerDataSource;
@@ -68,6 +71,142 @@ class QuickFixCertificationEvidenceTest {
   private static final String ACCOUNT_ID = "0194a8f0-7c77-7b38-9e2d-2a5fdd0f7c13";
 
   @TempDir Path tempDir;
+
+  @ParameterizedTest
+  @ValueSource(booleans = {false, true})
+  void preparedClientPreservesReceiptModeAndWaitsForSelectedDelivery(boolean completionRequested)
+      throws Exception {
+    final int port = reservePort();
+    final Path dictionary = workspaceRoot().resolve("config/quickfix/fix-spec/FIX44.xml");
+    final Path walPath = tempDir.resolve("inbound.wal");
+    try (WalAppender wal = new WalAppender(walPath, StandardCharsets.UTF_8);
+        var executor = Executors.newSingleThreadExecutor()) {
+      final var acceptor =
+          new QuickFixAcceptorLifecycle(
+              new QuickFixApplicationAdapter(
+                  QuickFixIngressTestFixture.compose(
+                      wal,
+                      new AcceptingRiskSubmissionClient(),
+                      new QuickFixSessionMessageSender(),
+                      new OrderSessionRegistry(),
+                      new FixMessageMapper(),
+                      FIXED_CLOCK)),
+              new QuickFixGatewayRuntime("test", writeAcceptorConfig(port, dictionary), walPath),
+              new QuickFixJdbcAcceptorFactory(this::quickFixDataSource));
+      final Map<String, String> environment = preparedClientEnvironment(port, completionRequested);
+      final var client =
+          new QuickFixPreparedSubmissionLiveCertificationTest() {
+            @Override
+            protected String environmentValue(String name) {
+              return environment.get(name);
+            }
+          };
+      try {
+        acceptor.start();
+        final var finished =
+            executor.submit(
+                () -> {
+                  client.preparedSubmission();
+                  return null;
+                });
+        awaitFile(tempDir.resolve("ready"));
+        Files.writeString(tempDir.resolve("release"), "release");
+        awaitFile(tempDir.resolve("submit.json"));
+        assertThat(Files.readString(tempDir.resolve("submit.json")))
+            .contains("\"execType\":\"A\"", "\"ordStatus\":\"A\"");
+        if (completionRequested) {
+          assertPreparedClientResponds("before-completion");
+          Files.writeString(tempDir.resolve("complete"), "FINAL-DELIVERY\n");
+          sendPreparedFinalReport("UNRELATED-DELIVERY");
+          assertPreparedClientResponds("after-unrelated-delivery");
+          assertThat(tempDir.resolve("completed.json")).doesNotExist();
+          sendPreparedFinalReport("FINAL-DELIVERY");
+        }
+        finished.get(15, TimeUnit.SECONDS);
+        if (completionRequested) {
+          assertThat(Files.readString(tempDir.resolve("completed.json")))
+              .contains("\"execId\":\"FINAL-DELIVERY\"", "\"execType\":\"0\"");
+        }
+        assertThat(
+                Session.lookupSession(new SessionID("FIX.4.4", "SIMPLEMATCH", "CLIENT"))
+                    .isLoggedOn())
+            .isFalse();
+      } finally {
+        acceptor.stop();
+      }
+    }
+  }
+
+  private Map<String, String> preparedClientEnvironment(int port, boolean completionRequested) {
+    final Map<String, String> environment =
+        new java.util.HashMap<>(
+            Map.ofEntries(
+                Map.entry("SIMPLEMATCH_LIVE_FIX_HOST", "127.0.0.1"),
+                Map.entry("SIMPLEMATCH_LIVE_FIX_PORT", Integer.toString(port)),
+                Map.entry("SIMPLEMATCH_LIVE_FIX_ACCOUNT_ID", ACCOUNT_ID),
+                Map.entry("SIMPLEMATCH_LIVE_FIX_CL_ORD_ID", "PREPARED-ORDER"),
+                Map.entry("SIMPLEMATCH_LIVE_FIX_SYMBOL", "AAPL"),
+                Map.entry("SIMPLEMATCH_LIVE_FIX_QUANTITY", "10"),
+                Map.entry("SIMPLEMATCH_LIVE_FIX_PRICE", "101.25"),
+                Map.entry(
+                    "SIMPLEMATCH_RETAINED_FIX_STATE_DIR", tempDir.resolve("client").toString()),
+                Map.entry(
+                    "SIMPLEMATCH_RETAINED_FIX_EVIDENCE", tempDir.resolve("submit.json").toString()),
+                Map.entry(
+                    "SIMPLEMATCH_RETAINED_FIX_READY_FILE", tempDir.resolve("ready").toString()),
+                Map.entry(
+                    "SIMPLEMATCH_RETAINED_FIX_RELEASE_FILE", tempDir.resolve("release").toString()),
+                Map.entry("SIMPLEMATCH_RETAINED_FIX_TIMEOUT_SECONDS", "15")));
+    if (completionRequested) {
+      environment.put(
+          "SIMPLEMATCH_RETAINED_FIX_COMPLETION_FILE", tempDir.resolve("complete").toString());
+      environment.put(
+          "SIMPLEMATCH_RETAINED_FIX_COMPLETION_EVIDENCE",
+          tempDir.resolve("completed.json").toString());
+    }
+    return Map.copyOf(environment);
+  }
+
+  private void awaitFile(Path path) throws Exception {
+    final long deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(15);
+    while (!Files.exists(path) && System.nanoTime() < deadline) {
+      Thread.sleep(20);
+    }
+    assertThat(path).exists();
+  }
+
+  private void assertPreparedClientResponds(String requestId) throws Exception {
+    assertThat(
+            Session.sendToTarget(
+                new quickfix.fix44.TestRequest(new quickfix.field.TestReqID(requestId)),
+                new SessionID("FIX.4.4", "SIMPLEMATCH", "CLIENT")))
+        .isTrue();
+    final Path wireLog = tempDir.resolve("client/log/FIX.4.4-CLIENT-SIMPLEMATCH.messages.log");
+    final long deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(5);
+    while (System.nanoTime() < deadline) {
+      if (Files.readString(wireLog)
+          .lines()
+          .anyMatch(
+              line ->
+                  line.contains("35=0\u0001") && line.contains("112=" + requestId + "\u0001"))) {
+        return;
+      }
+      Thread.sleep(20);
+    }
+    throw new AssertionError("prepared client did not answer FIX TestRequest " + requestId);
+  }
+
+  private void sendPreparedFinalReport(String execId) throws Exception {
+    final var report =
+        new quickfix.fix44.ExecutionReport(
+            new quickfix.field.OrderID("O-PREPARED-ORDER"), new quickfix.field.ExecID(execId),
+            new quickfix.field.ExecType('0'), new quickfix.field.OrdStatus('0'),
+            new quickfix.field.Side('1'), new quickfix.field.LeavesQty(10),
+            new quickfix.field.CumQty(0), new quickfix.field.AvgPx(0));
+    report.setString(ClOrdID.FIELD, "PREPARED-ORDER");
+    assertThat(Session.sendToTarget(report, new SessionID("FIX.4.4", "SIMPLEMATCH", "CLIENT")))
+        .isTrue();
+  }
 
   @DisplayName("the QuickFIX simulator verifies the baseline connection and order flow")
   @Test
@@ -228,12 +367,7 @@ class QuickFixCertificationEvidenceTest {
       final QuickFixApplicationAdapter adapter =
           new QuickFixApplicationAdapter(
               QuickFixIngressTestFixture.compose(
-                  walAppender,
-                  risk,
-                  sender,
-                  registry,
-                  new FixMessageMapper(),
-                  FIXED_CLOCK));
+                  walAppender, risk, sender, registry, new FixMessageMapper(), FIXED_CLOCK));
       adapter.onLogon(sessionId);
       adapter.fromApp(newOrder("C1", "AAPL", "10", "101.25", ACCOUNT_ID), sessionId);
       adapter.fromApp(newOrder("C1", "AAPL", "10", "101.25", ACCOUNT_ID), sessionId);
