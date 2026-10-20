@@ -227,3 +227,22 @@ query_redis_keys_present() {
       return 1
   done
 }
+
+# Record restoration from the critical consumer observation contract.
+write_query_restoration_evidence() {
+  local matching_ready critical_ready
+  matching_ready="$(matching_ready_replicas)" || return 1
+  critical_ready=false
+  if critical_consumer_state_is_healthy "$evidence_dir/critical-after.json"; then
+    critical_ready=true
+  fi
+  jq -e '.queryPodCount == 0' "$evidence_dir/query-outage.json" >/dev/null ||
+    return 1
+  jq -n \
+    --argjson matchingReady "$matching_ready" \
+    --argjson criticalConsumersReady "$critical_ready" \
+    --argjson queryOutageObserved true \
+    '{redisKeysPresent:true,queryServiceReady:true,queryOutageObserved:$queryOutageObserved,
+      matchingReady:$matchingReady,criticalConsumersReady:$criticalConsumersReady}' \
+    >"$evidence_dir/restoration.json"
+}

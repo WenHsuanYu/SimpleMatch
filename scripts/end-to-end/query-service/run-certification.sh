@@ -305,23 +305,7 @@ current_stage="verify Redis rebuild and failure isolation"
 query_redis_keys_present || die "public reads did not rebuild the selected Redis keys"
 capture_consumer_state "$evidence_dir/critical-after.json" ||
   die "cannot capture critical consumer state after query replay"
-matching_ready="$(matching_ready_replicas)"
-critical_ready="$(jq -e '
-  .persistenceQuarantines == 0
-  and .accountQuarantines == 0
-  and .quickfixQuarantines == 0
-  and .riskQuarantines == 0
-  and .marketDataDeadLetters == 0
-' "$evidence_dir/critical-after.json" >/dev/null && echo true || echo false)"
-jq -e '.queryPodCount == 0' "$evidence_dir/query-outage.json" >/dev/null ||
-  die "query-service outage evidence is invalid"
-jq -n \
-  --argjson matchingReady "$matching_ready" \
-  --argjson criticalConsumersReady "$critical_ready" \
-  --argjson queryOutageObserved true \
-  '{redisKeysPresent:true,queryServiceReady:true,queryOutageObserved:$queryOutageObserved,
-    matchingReady:$matchingReady,criticalConsumersReady:$criticalConsumersReady}' \
-  >"$evidence_dir/restoration.json"
+write_query_restoration_evidence || die "cannot capture Query restoration evidence"
 
 current_stage="evaluate retained evidence"
 pending_verdict="$evidence_dir/verdict.pending.json"

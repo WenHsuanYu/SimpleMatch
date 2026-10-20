@@ -5,12 +5,18 @@ IFS=$'\n\t'
 script_dir="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
 # shellcheck source=scripts/end-to-end/query-service/lib/verdict.sh
 source "$script_dir/../lib/verdict.sh"
+source "$script_dir/../lib/active-liveness.sh"
+source "$script_dir/../lib/evidence.sh"
+source "$script_dir/../../critical-consumers/lib/cluster-data.sh"
+
+die() { printf '%s\n' "$*" >&2; exit 1; }
+matching_ready_replicas() { printf '15\n'; }
 
 fixture_dir="$(mktemp -d)"
 trap 'rm -rf -- "$fixture_dir"' EXIT
 
 cat >"$fixture_dir/critical-before.json" <<'JSON'
-{"persistenceProgress":[{"partition_id":0,"last_processed_offset":9}],"accountProgress":[],"quickfixProgress":[]}
+{"persistenceProgress":[{"partition_id":0,"last_processed_offset":9}],"accountProgress":[],"quickfixProgress":[],"persistenceQuarantines":0,"accountQuarantines":0,"quickfixQuarantines":0,"quickfixPendingIntents":0,"marketDataDeadLetters":0,"marketDataProgress":[{"partition_id":4,"last_processed_offset":101,"recovery_state":"READY"}]}
 JSON
 cp "$fixture_dir/critical-before.json" "$fixture_dir/critical-after.json"
 cp "$fixture_dir/critical-before.json" "$fixture_dir/critical-during-query-outage.json"
@@ -95,6 +101,7 @@ cat >"$fixture_dir/active-processing-liveness.json" <<'JSON'
     "accountId":"00000000-0000-0000-0000-000000000001",
     "clOrdId":"QUERY-LIVE-1",
     "orderId":"O-QUERY-LIVE-1",
+    "execId":"INITIAL-RECEIPT",
     "execType":"A",
     "ordStatus":"A",
     "timeInForce":"3",
@@ -135,6 +142,8 @@ cat >"$fixture_dir/active-processing-liveness.json" <<'JSON'
     "reservedNotional":0
   },
   "fixDeliveryIntent":{
+    "execId":"TERMINAL-CANCEL",
+    "clientOrderId":"QUERY-LIVE-1",
     "eventId":"0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef",
     "execType":"4",
     "ordStatus":"4",
@@ -162,11 +171,94 @@ cat >"$fixture_dir/active-processing-liveness.json" <<'JSON'
 }
 JSON
 
-evaluate_query_service_verdict "$fixture_dir" "$fixture_dir/verdict.json"
+# Exercise the real producers before the unchanged strict verdict. The literal
+# scenario above remains the independent contract example for each observation.
+evidence_dir="$fixture_dir"
+active_liveness_evidence_dir="$fixture_dir/active-liveness"
+active_liveness_started_epoch_ms=1000
+timeout_seconds=30
+mkdir -p "$active_liveness_evidence_dir/fix" "$active_liveness_evidence_dir/observer" \
+  "$evidence_dir/fix"
+cp "$fixture_dir/active-processing-liveness.json" "$fixture_dir/active-expected.json"
+while IFS='|' read -r property path; do
+  jq ".$property" "$fixture_dir/active-expected.json" >"$active_liveness_evidence_dir/$path"
+done <<'INPUTS'
+gatewayOpen|gateway-open-response.json
+riskAdmission|risk-admission.json
+matchingEvent|observer/matching-event-observation.json
+observerVerdict|observer/matching-event-observer-verdict.json
+orderProjection|order-projection.json
+accountReservation|account-reservation.json
+marketData|market-data-progress.json
+fixDeliveryIntent|fix-intent.json
+consumerState|consumer-state.json
+exactInboxCounts|exact-inbox-counts.json
+INPUTS
+jq '.fixSubmission | .terminalExecType = "" | .terminalOrdStatus = ""' \
+  "$fixture_dir/active-expected.json" >"$active_liveness_evidence_dir/fix/submit.json"
+jq '.fixSubmission | .execId = "TERMINAL-CANCEL" | .execType = "4" | .ordStatus = "4"' \
+  "$fixture_dir/active-expected.json" >"$evidence_dir/fix/completed.json"
+write_query_active_liveness_evidence 1600
+
+if ! evaluate_query_service_verdict "$fixture_dir" "$fixture_dir/verdict.json"; then
+  cat "$fixture_dir/verdict.json" >&2
+  exit 1
+fi
 jq -e '.status == "PASS" and (.checks | all(.passed == true))' \
   "$fixture_dir/verdict.json" >/dev/null
 jq -e '.activeProcessingLiveness.status == "PROVEN"' \
   "$fixture_dir/verdict.json" >/dev/null
+
+# A terminal report for another identity, or without terminal facts, cannot
+# supply delivery evidence even if the remaining business observations are valid.
+cp "$evidence_dir/fix/completed.json" "$fixture_dir/completion-valid.json"
+for mutation in '.execId = "OTHER-EXECUTION"' '.clOrdId = "OTHER-ORDER"' \
+  '.accountId = "OTHER-ACCOUNT"' '.timeInForce = "0"' 'del(.terminalExecType)'; do
+  jq "$mutation" "$fixture_dir/completion-valid.json" >"$evidence_dir/fix/completed.json"
+  if (write_query_active_liveness_evidence 1600) >/dev/null 2>&1; then
+    printf 'active evidence producer accepted unrelated or incomplete FIX completion: %s\n' "$mutation" >&2
+    exit 1
+  fi
+done
+cp "$fixture_dir/completion-valid.json" "$evidence_dir/fix/completed.json"
+write_query_active_liveness_evidence 1600
+jq -e '.execType == "A" and .ordStatus == "A"
+  and .terminalExecType == "" and .terminalOrdStatus == ""' \
+  "$active_liveness_evidence_dir/fix/submit.json" >/dev/null
+jq -e '.fixSubmission.execType == "A" and .fixSubmission.ordStatus == "A"
+  and .fixSubmission.terminalExecId == "TERMINAL-CANCEL"' \
+  "$fixture_dir/active-processing-liveness.json" >/dev/null
+
+# The actual shared consumer snapshot has no riskQuarantines field. Restoration
+# must consume its maintained health contract and still reject real unsafe data.
+write_query_restoration_evidence
+if ! evaluate_query_service_verdict "$fixture_dir" "$fixture_dir/producer-restoration-verdict.json"; then
+  cat "$fixture_dir/producer-restoration-verdict.json" >&2
+  exit 1
+fi
+# The runner invokes this producer in an OR-list. A failed observer must not
+# become successful restoration merely because it printed a plausible count.
+matching_ready_replicas() { printf '15\n'; return 1; }
+if write_query_restoration_evidence; then
+  printf 'restoration producer ignored a failed Matching readiness observation\n' >&2
+  exit 1
+fi
+matching_ready_replicas() { printf '15\n'; }
+write_query_restoration_evidence
+cp "$fixture_dir/critical-after.json" "$fixture_dir/critical-after-valid.json"
+for mutation in 'del(.quickfixQuarantines)' '.quickfixPendingIntents = 1' \
+  '.marketDataProgress[0].recovery_state = "REBUILDING"'; do
+  jq "$mutation" "$fixture_dir/critical-after-valid.json" >"$fixture_dir/critical-after.json"
+  write_query_restoration_evidence
+  if evaluate_query_service_verdict "$fixture_dir" "$fixture_dir/unsafe-restoration-verdict.json"; then
+    printf 'restoration producer accepted unsafe critical consumer state: %s\n' "$mutation" >&2
+    exit 1
+  fi
+  jq -e 'any(.checks[]; .name == "criticalPathIsolation" and .passed == false)' \
+    "$fixture_dir/unsafe-restoration-verdict.json" >/dev/null
+done
+cp "$fixture_dir/critical-after-valid.json" "$fixture_dir/critical-after.json"
+write_query_restoration_evidence
 
 jq '{postActiveEvent:true}' "$fixture_dir/critical-before.json" \
   >"$fixture_dir/critical-after.json"

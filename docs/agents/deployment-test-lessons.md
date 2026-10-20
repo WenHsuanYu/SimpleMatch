@@ -186,6 +186,29 @@ the daemon identity, canonical four nodes, registry, 21 volumes and 40 images we
 Repeat control-plane stability and all 15 helper execution probes after such a restart, and record
 host available memory and swap before starting another resource-intensive run.
 
+The 2026-10-20 R5 Query scenario received the actual final IOC cancellation and completed
+Risk, Matching, Account and projection processing, but its strict verdict correctly failed:
+the active-evidence producer copied the initial PendingNew receipt with empty terminal fields,
+and restoration compared an absent `riskQuarantines` field with zero. Preserve the original
+`out/verification/current-runtime-20261020/r5/gates/query/verdict.json` as FAIL. Bind the real
+completed FIX report to the original receipt and the exact SENT delivery intent before copying
+terminal metadata; retain the initial receipt identity. Consume the existing
+`critical_consumer_state_is_healthy` contract for restoration and explicitly propagate observer
+failures when the producer is called in an OR-list. Before deployment, run the actual producers
+through the unchanged nine-check verdict, including unrelated or incomplete completions, missing
+required health fields, pending delivery and observer nonzero exit. A corrected producer replay
+of retained data is diagnostic evidence only; it does not replace a source-aligned deployed run.
+
+The same run's Market Data and Streamer scenarios exited zero, but immediate external binding
+snapshots observed both new Ready Pods and old terminating Pods after restoration. Keep those
+failed snapshots, wait for the observed terminating Pods to disappear within a bounded window,
+then capture a new snapshot using the unchanged replica, ownership and image checks. Do not
+rerun a successful scenario or relax replica validation to conceal an observer timing error.
+The Streamer replacement acknowledgement intentionally has a zero-byte marker file; an independent
+audit must check that explicit signal exists while still checking nonempty client reports,
+actual two-snapshot recovery, group assignments and replacement timing. Preserve the original
+failed audit separately from its corrected read-only audit.
+
 ## Recurring lessons
 
 | ID | Symptom | Root cause | Prevention check | Safe fix | Last verified |

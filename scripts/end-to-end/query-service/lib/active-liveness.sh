@@ -243,14 +243,20 @@ run_query_active_liveness() {
   ' "$active_liveness_evidence_dir/consumer-state.json" >/dev/null ||
     die 'active liveness left quarantine, pending, active-order, or market-data failure state'
 
-  active_liveness_completed_epoch_ms="$(date +%s%3N)"
-  jq -n \
+  write_query_active_liveness_evidence "$(date +%s%3N)"
+}
+
+# Assemble the observed receipt, delivery and business evidence for the strict verdict.
+write_query_active_liveness_evidence() {
+  local active_liveness_completed_epoch_ms="$1"
+  jq -en \
     --argjson startedAtEpochMs "$active_liveness_started_epoch_ms" \
     --argjson completedAtEpochMs "$active_liveness_completed_epoch_ms" \
     --argjson timeoutSeconds "$timeout_seconds" \
     --slurpfile queryOutage "$evidence_dir/query-outage.json" \
     --slurpfile gatewayOpen "$active_liveness_evidence_dir/gateway-open-response.json" \
     --slurpfile fixSubmission "$active_liveness_evidence_dir/fix/submit.json" \
+    --slurpfile fixCompletion "$evidence_dir/fix/completed.json" \
     --slurpfile riskAdmission "$active_liveness_evidence_dir/risk-admission.json" \
     --slurpfile matchingEvent \
       "$active_liveness_evidence_dir/observer/matching-event-observation.json" \
@@ -263,7 +269,29 @@ run_query_active_liveness() {
     --slurpfile fixIntent "$active_liveness_evidence_dir/fix-intent.json" \
     --slurpfile consumerState "$active_liveness_evidence_dir/consumer-state.json" \
     --slurpfile exactInboxCounts "$active_liveness_evidence_dir/exact-inbox-counts.json" '
-      {
+      $fixSubmission[0] as $receipt
+      | $fixCompletion[0] as $completion
+      | $fixIntent[0] as $intent
+      | if ($fixSubmission | length) != 1 or ($fixCompletion | length) != 1
+          or ($fixIntent | length) != 1
+          or ($receipt.clOrdId | type != "string" or length == 0)
+          or ($completion.execId | type != "string" or length == 0)
+          or $completion.clOrdId != $receipt.clOrdId
+          or $intent.clientOrderId != $receipt.clOrdId
+          or $completion.accountId != $receipt.accountId
+          or $completion.orderId != $receipt.orderId
+          or $completion.timeInForce != $receipt.timeInForce
+          or $completion.sentAtEpochMs != $receipt.sentAtEpochMs
+          or $completion.execId != $intent.execId
+          or $completion.execType != $intent.execType
+          or $completion.ordStatus != $intent.ordStatus
+          or ($completion.terminalExecType | type != "string" or length == 0)
+          or ($completion.terminalOrdStatus | type != "string" or length == 0)
+          or $completion.terminalExecType != $completion.execType
+          or $completion.terminalOrdStatus != $completion.ordStatus
+          or $intent.status != "SENT"
+        then error("FIX completion does not match the observed receipt and delivery intent")
+        else {
         status:"PROVEN",
         startedAtEpochMs:$startedAtEpochMs,
         completedAtEpochMs:$completedAtEpochMs,
@@ -272,7 +300,11 @@ run_query_active_liveness() {
         queryOutage:$queryOutage[0],
         gatewayOpen:$gatewayOpen[0],
         timeInForce:"3",
-        fixSubmission:$fixSubmission[0],
+        fixSubmission:($receipt + {
+          terminalExecId:$completion.execId,
+          terminalExecType:$completion.terminalExecType,
+          terminalOrdStatus:$completion.terminalOrdStatus
+        }),
         riskAdmission:$riskAdmission[0],
         matchingEvent:$matchingEvent[0],
         observerVerdict:$observerVerdict[0],
@@ -282,7 +314,7 @@ run_query_active_liveness() {
         fixDeliveryIntent:$fixIntent[0],
         consumerState:$consumerState[0],
         exactInboxCounts:$exactInboxCounts[0]
-      }
+      } end
     ' >"$evidence_dir/active-processing-liveness.json" ||
     die 'active liveness evidence could not be serialized'
 }
