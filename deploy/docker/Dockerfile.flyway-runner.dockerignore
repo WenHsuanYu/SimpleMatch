@@ -1,0 +1,24 @@
+# Flyway evaluates the Gradle projects; unrelated repository inputs stay out.
+**
+!build.gradle.kts
+!settings.gradle.kts
+!gradle.lockfile
+!gradlew
+!gradlew.bat
+!gradle
+!gradle/**
+!build-logic
+!build-logic/**
+!config
+!config/**
+!proto
+!proto/**
+!services
+!services/**
+!shared-java
+!shared-java/**
+!tools
+!tools/**
+!deploy/docker/run-flyway
+**/build
+**/.gradle

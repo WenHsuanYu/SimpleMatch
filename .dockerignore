@@ -8,6 +8,7 @@
 all_code.txt
 build
 build-vcpkg*
+vcpkg_installed
 cmake-build-*
 graphify-out
 out
