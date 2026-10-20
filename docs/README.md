@@ -46,7 +46,7 @@
 
 - [繁體中文操作手冊](operations/operation-manual.zh-TW.md)：完整本機 lab 的建置、操作、認證、觀測與清理入口；首次做最小開發驗證可先走[本機開發](onboarding/local-development.md)。
 - [Market Reference 核准流程](operations/market-reference-approval-workflow.md)：candidate、review、approval 與每日 artifact 的交付。
-- [本機 registry 與資源生命週期](operations/local-registry-resource-lifecycle.md)：映像、namespace、資源 ownership 與清理順序。
+- [本機 registry 與資源生命週期](operations/local-registry-resource-lifecycle.md)：映像、建置快取、digest 保留、namespace ownership 與清理順序。
 
 ### 驗證、認證與執行紀錄
 

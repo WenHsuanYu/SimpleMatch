@@ -247,6 +247,69 @@ docker buildx prune --all
 
 The default hard reset does not remove unrelated project resources, `kindest/node` images, upstream Compose images, or daemon-wide builder/buildx cache merely because they are unused.
 
+## 8. Build contexts and host cache budget
+
+The root `.dockerignore` excludes host-generated `vcpkg_installed/`: the native
+Dockerfile resolves its own dependencies under its container build directory.
+The Flyway-specific `deploy/docker/Dockerfile.flyway-runner.dockerignore` takes
+precedence over that root file. It retains the Gradle projects, wrapper,
+configuration, contracts and runner entry point, excluding generated Gradle
+outputs and unrelated documentation/native sources. Keep complete Gradle project
+inputs together because migration configures the shared build; do not remove
+classpath dependencies from the packaged offline seed merely to reduce size.
+
+Validate context changes through a real image build and the existing Flyway
+entry point: all six owners must migrate offline with a read-only root, repeated
+migration must leave schema history unchanged, and packaged SQL must match the
+source. Use a separate verification tag; replacing a context or building a smaller
+image does not retire the previous image or establish aggregate certification.
+
+Use the existing BuildKit GC mechanism with `builder.gc.enabled=true` and an
+initial `defaultKeepStorage` budget of `20GB` per daemon. Check the effective
+builder policy before changing it; this is a GC policy budget, not a hard limit on
+all images, volumes or shared layers. Record build time and cache usage before
+lowering the budget, distinguishing a fully cold build from one with retained
+dependency caches and from an unchanged warm build. Keep high-cost native/Gradle
+caches while they are required by an active build. Paketo `pack-cache-*.build`
+and `.launch` volumes have a separate lifecycle: remove only individually
+inventoried, run-owned disposable volumes from completed tests or explicitly
+stale run-owned cache entries, after confirming no active build/container
+reference. Preserve unrelated caches unless their removal has separate explicit
+authorization.
+
+For Docker Desktop, compare host free space and the disk image's allocated blocks
+with VM filesystem usage. A successful reclaim/TRIM command is not proof that
+host space was recovered. Use the [supported reclaim procedure](https://docs.docker.com/desktop/troubleshoot-and-support/faqs/linuxfaqs/)
+and measure again; reducing the virtual disk maximum discards its existing data.
+BuildKit GC and node-local kubelet GC are independent policies; see the
+[BuildKit GC configuration](https://docs.docker.com/build/cache/garbage-collection/).
+
+## 9. Registry digest retention and dry-run
+
+Before retiring a digest, inventory the registry, Docker images, node-local
+references, live workloads/Jobs, image locks and retained evidence. Preserve
+current artifacts, explicitly required rollback versions and original artifacts
+needed to repeat retained verification, including Boot exports. A tag count or an
+absent container reference is not sufficient evidence of retirement. Distinguish
+OCI index/manifest digests from image config IDs and keep unknown references
+until their ownership is resolved.
+
+Write an exact preserve/retire/unknown inventory before any manifest deletion.
+For the repository's `registry:3` container, the non-destructive GC preview is:
+
+```bash
+docker --context desktop-linux exec simplematch-local-registry \
+  registry garbage-collect --dry-run /etc/distribution/config.yml
+```
+
+Verify the daemon, registry identity/config path and unchanged manifest inventory
+around the preview. GC finds blobs without manifest references; old untagged
+manifests can still retain layers, so a dry-run is not a retirement decision or a
+promise of recoverable bytes. Actual GC requires a reviewed retirement list,
+manifest deletion where appropriate, and a read-only registry or stopped writes
+throughout the mark/sweep operation. Follow the [Distribution GC contract](https://distribution.github.io/distribution/about/garbage-collection/).
+Registry GC does not remove host Docker images or worker containerd copies.
+
 ## Validation contract
 
 Deterministic validation covers:
