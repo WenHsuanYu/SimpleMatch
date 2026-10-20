@@ -91,6 +91,9 @@ delivery.
 
 ## Latest retained result
 
+The dated result below is historical. The replacement current baseline and its separately recorded
+market-data verdict are linked from [Current development verification](current-local-certification.md).
+
 The local production-like run on 2026-08-27 passed for source revision
 `10ba747c1ce8abd474468cd1b77042ebd1eaf505` and immutable projection image digest
 `sha256:f537b22e2ea35302230ecd4e5a84279cd0ff297e7df409880e409a029d7e624c`. The

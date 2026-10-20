@@ -11,6 +11,10 @@ audit records, automatic safety actions, and trading-day close coordination. Loc
 smoke evidence applies only to the behavior and source explicitly recorded below; later fixes do
 not inherit an earlier deployment's PASS.
 
+For the replacement current deployment baseline and its separately recorded normal FIX and
+Gateway recovery results, read [Current development verification](current-local-certification.md).
+The dated smoke results below retain their original source and scenario boundaries.
+
 ## Current implementation
 
 The Gateway operations module is the application seam for trading admission. Its public behavior is

@@ -70,14 +70,34 @@ reuse a runtime namespace whose source or image identity changed.
 
 | Improvement | Current implementation | Boundary |
 | --- | --- | --- |
-| Avoid repeated Gradle distribution downloads in one-shot migration Pods | The Flyway image prewarms the pinned wrapper distribution with a locked BuildKit cache, carries an immutable seed, and refreshes each Pod's writable cache on every invocation. The verifier image also uses a locked BuildKit Gradle cache (`53e990e`, `fe12230`). | This removes repeated distribution downloads without sharing mutable runtime state. Dependency resolution, migration execution, Job completion, and error evidence remain run-scoped. |
+| Prepare offline dependencies for one-shot migration Pods | The Flyway image prepares the pinned wrapper and all six registered owners' migration dependency closures at build time, packages an immutable seed, and creates a fresh writable home/workspace for each invocation. Runtime migrations use `--offline` (`49b1d8d`, `5f20a2f`). The verifier retains its locked BuildKit Gradle cache. | This avoids runtime Maven access without sharing mutable runtime state. Every new certification still executes its own service-scoped migrations and verifies completion/error evidence. The current local certification record links the full deployed migration result, including six successful service-scoped Jobs. |
 | Absorb a transient Matching Kafka coordinator race | The direct Kafka consumer retries only `RD_KAFKA_RESP_ERR_NOT_COORDINATOR`, for at most five attempts with `100/200/400/800 ms` backoff (`b2af17c`). | Non-retryable errors and exhausted retries remain fatal; no unknown recovery boundary is accepted and no certification phase is skipped. |
 | Preserve evidence across a history-only squash | The pre-squash certification evidence is retained after verifying that the squash produced the exact same runtime tree. | Evidence is not relabeled as exact-HEAD provenance; the existing commit-ID check may require a future refinement before dependent evidence is reused. |
+
+## Current local verification baseline (2026-10-20)
+
+This baseline follows the agreed development-environment and throughput scope. The current
+record includes fresh native single-CPU calibration and deployed Kafka/Matching small-batch
+measurements, with the existing integrity and recovery gates. These are measured rates for
+the documented workload, not a fixed minimum-TPS guarantee or full FIX-path saturation test.
+
+The [current local certification record](../verification/current-local-certification.md) identifies
+source `239e7b9b592e66669acd0f5332fa5cf4bdbc2fdc` and aggregate run
+`20261020-033756-224519`. The unskipped full aggregate exited 0 with 62/62 required phases passing;
+its plan, results and manifest agree, and an independent retained-file audit passed. The same
+record lists the separately accepted public-interface and recovery verdicts, environment events,
+resource limits and cleanup. Those scenario results must be read separately from the aggregate.
+
+Use that record for the current verification baseline. Earlier #119, r13 and r14 entries below
+retain their original source and claim boundaries; they are historical evidence. The new run does
+not reconstruct missing files, change the accepted Phase 1 scope or certify external production.
 
 ## Evidence availability audit (2026-10-18)
 
 The [historical certification evidence audit](../verification/local-certification-evidence-audit.md)
-separates directly available records from historical references and unconfirmed aggregate results.
+separates directly available records from historical references and unconfirmed aggregate results
+as of 2026-10-18. Its r13/r14 findings are superseded as the current baseline by the new record
+above; their historical classifications remain unchanged.
 The r13 run at `out/certification/issues-158-159-20260917-r13/` has a report, manifest and 61 matching
 PASS phase results at source `c7147e0aa232744250828be0c4cfdb5973dd1cc6`. It is the complete historical
 aggregate record directly inspected in this audit, not a certification of the current runtime.
@@ -109,7 +129,7 @@ not change accepted Phase 1 capability status or upgrade focused evidence to an 
 - The fresh #119 source-aligned production-like run passed all 59/59 phases in namespace
   `simplematch-local-cert-20260904-114743-479272`, using the approved 2026-08-27 Market Reference
   delivery artifact and registry transport. It includes the v2-only runtime/deployment contract,
-  seven service-scoped Flyway Jobs, Risk and Account outbox connector registration, the CDC
+  six service-scoped Flyway Jobs, Risk and Account outbox connector registration, the CDC
   pause/recovery and zero-traffic freshness observations, the 15-pod Matching fleet, and retained
   run provenance. Evidence is under
   `out/certification/issue-119-20260904-r2/`; its report is `PASSED` and its manifest records source

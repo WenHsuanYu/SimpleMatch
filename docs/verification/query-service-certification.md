@@ -5,6 +5,10 @@ production-like deployment. It does not certify external production infrastructu
 uses only a lifecycle-labelled disposable namespace whose retained evidence identifies the same
 clean repository revision and immutable verifier image.
 
+The replacement current deployment baseline and the separately recorded Query verdict are
+listed in [Current development verification](current-local-certification.md). This document defines
+the gate; each retained result identifies its own tested source and restoration outcome.
+
 ## Evidence contract
 
 The retained Kafka stream must contain an execution-backed order whose Account summary and active

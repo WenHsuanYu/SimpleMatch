@@ -1,5 +1,9 @@
 # Local Certification Evidence Audit
 
+**Historical audit, as of 2026-10-18.** For the replacement current verification baseline, read
+[Current development verification](current-local-certification.md). The original r13/r14 findings below
+remain unchanged; the new run cannot retroactively complete a historical run.
+
 Audit date: **2026-10-18**. Repository snapshot: `593c127cea5ae28e7561e8c011ad4f49940f8bd5`.
 This record reconciles historical evidence available in this workspace. It does not execute
 certification, change the original run artifacts, or certify the current runtime.
@@ -51,7 +55,8 @@ runner defect. The original summary remains unchanged as historical evidence.
 ## Disposition and future verification
 
 Use r13 as the complete historical aggregate record directly inspected in this audit, with its
-source revision stated. Keep r14 classified as **aggregate completion unconfirmed**, while retaining
+source revision stated. Use the [current certification record](current-local-certification.md)
+for the replacement current baseline. Keep r14 classified as **aggregate completion unconfirmed**, while retaining
 its nine phase records. This classification concerns evidence availability and does not reopen the
 accepted [Phase 1 capability inventory](../status/phase-1-capability-inventory.md).
 

@@ -10,6 +10,11 @@ later staging/production instructions define the environment and promotion templ
 must supply and execute separately. Selected-phase or focused diagnostic results retain their
 own scope and cannot substitute for an aggregate `full-local` PASS.
 
+For the tested source, aggregate manifest and separately recorded public-interface/recovery
+results of the replacement current baseline, read
+[Current development verification](current-local-certification.md). This runbook owns the procedure;
+the result record owns the dated outcome and evidence boundary.
+
 For availability and consistency of retained historical records, read the
 [2026-10-18 evidence audit](local-certification-evidence-audit.md). It distinguishes a complete
 historical aggregate record from an unconfirmed run summary and does not certify the current runtime.
@@ -132,6 +137,10 @@ trading day and trading session:
    test order identity, and rollback/cleanup decisions.
 
 ## Verification already completed or reconfirmed
+
+The following table preserves historical verification dates and sources. Use the
+[current certification record](current-local-certification.md) for the replacement current
+baseline; these older rows do not imply that every command was rerun for its tested source.
 
 The table combines evidence recorded on 2026-08-12 with native checks reconfirmed on 2026-08-14;
 rows that were not rerun retain their original date and boundary.
