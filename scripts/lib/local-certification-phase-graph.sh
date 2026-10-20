@@ -136,7 +136,7 @@ kubernetes-topic-provisioning|FRESH|REEXECUTE|manifest runtime-state|runtime-pro
 kubernetes-open-barriers|FRESH|FORBID|artifact image runtime-state|runtime-proof||1
 kubernetes-connect-apply|FRESH|REEXECUTE|manifest runtime-state|runtime-state|kubernetes-migrations kubernetes-topic-provisioning|1
 kubernetes-workload-apply|FRESH|REEXECUTE|manifest runtime-state|runtime-state|kubernetes-open-barriers|1
-kubernetes-matching-apply|FRESH|REEXECUTE|manifest runtime-state|runtime-state|kubernetes-open-barriers|1
+kubernetes-matching-apply|FRESH|REEXECUTE|manifest runtime-state|runtime-state|kubernetes-open-barriers kubernetes-matching-manifest|2
 kubernetes-risk-outbox-connector|FRESH|REEXECUTE|runtime-state configuration|runtime-state|kubernetes-connect-apply|1
 kubernetes-account-outbox-connector|FRESH|REEXECUTE|runtime-state configuration|runtime-state|kubernetes-connect-apply|1
 kubernetes-workloads|FRESH|REEXECUTE|runtime-state|runtime-proof|kubernetes-workload-apply kubernetes-risk-outbox-connector kubernetes-account-outbox-connector|1

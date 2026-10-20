@@ -108,6 +108,16 @@ skip_build=false
 skip_compose=false
 skip_kubernetes=false
 matching_fleet_only=true
+# The matching-only apply phase consumes a separately selected manifest. Its
+# producer must remain reachable even when Compose or Java workloads are omitted.
+for skip_compose in false true; do
+  matching_required="$(certification_required_phase_ids)" || fail 'Matching graph unresolved'
+  producer_position="$(awk '$0 == "kubernetes-matching-manifest" { print NR }' <<<"$matching_required")"
+  consumer_position="$(awk '$0 == "kubernetes-matching-apply" { print NR }' <<<"$matching_required")"
+  [[ -n "$producer_position" && -n "$consumer_position" && "$producer_position" -lt "$consumer_position" ]] ||
+    fail 'Matching apply has no preceding manifest producer'
+done
+skip_compose=false
 active_required="$(certification_required_phase_ids)" || \
   fail 'Matching-only profile could not be resolved'
 full_required="$(
