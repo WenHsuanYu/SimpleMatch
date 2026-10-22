@@ -66,12 +66,19 @@ spec:
             initialDelaySeconds: 10
             periodSeconds: 10
           volumeMounts:
+            - name: fix-tls
+              mountPath: /etc/simplematch/fix-tls
+              readOnly: true
             - name: quickfix-config
               mountPath: /etc/simplematch/quickfix/acceptor-continuity.cfg
               subPath: acceptor-continuity.cfg
             - name: quickfix-data
               mountPath: /var/lib/simplematch/quickfix-gateway
       volumes:
+        - name: fix-tls
+          secret:
+            secretName: quickfix-gateway-fix-tls
+            optional: false
         - name: quickfix-config
           configMap:
             name: quickfix-gateway-quickfix-config

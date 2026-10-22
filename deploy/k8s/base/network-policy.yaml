@@ -66,3 +66,31 @@ spec:
           port: 53
         - protocol: TCP
           port: 53
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: simplematch-fix-ingress
+  labels:
+    app.kubernetes.io/part-of: simplematch
+spec:
+  podSelector:
+    matchLabels:
+      app.kubernetes.io/name: quickfix-gateway
+  policyTypes:
+    - Ingress
+  ingress:
+    - from:
+        - podSelector:
+            matchLabels:
+              simplematch.io/fix-client: "true"
+      ports:
+        - protocol: TCP
+          port: 5001
+    - from:
+        - podSelector:
+            matchLabels:
+              app.kubernetes.io/part-of: simplematch
+      ports:
+        - protocol: TCP
+          port: 8080

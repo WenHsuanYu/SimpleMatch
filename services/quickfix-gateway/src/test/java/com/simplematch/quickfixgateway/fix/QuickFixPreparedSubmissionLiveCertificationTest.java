@@ -60,6 +60,10 @@ class QuickFixPreparedSubmissionLiveCertificationTest {
 
   @Test
   void preparedSubmission() throws Exception {
+    runPreparedSubmission();
+  }
+
+  void runPreparedSubmission() throws Exception {
     final String host = requiredEnvironment("SIMPLEMATCH_LIVE_FIX_HOST");
     final int port = positivePort("SIMPLEMATCH_LIVE_FIX_PORT");
     final String senderCompId =
@@ -95,8 +99,10 @@ class QuickFixPreparedSubmissionLiveCertificationTest {
         new SessionSettings(
             writeInitiatorConfig(stateDir, host, port, senderCompId, targetCompId, dictionary)
                 .toString());
+    FixInitiatorSecurity.configure(settings, this::environmentValue);
     final PreparedInitiatorApplication application = new PreparedInitiatorApplication();
-    final FixWireLogObserver wireObserver = new FixWireLogObserver(new FileLogFactory(settings));
+    final FixWireLogObserver wireObserver =
+        new FixWireLogObserver(new CredentialRedactingFixLogFactory(new FileLogFactory(settings)));
     final SocketInitiator initiator =
         new SocketInitiator(
             application,

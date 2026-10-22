@@ -74,6 +74,42 @@ class QuickFixCertificationEvidenceTest {
 
   @ParameterizedTest
   @ValueSource(booleans = {false, true})
+  void rejectsMissingOrUntrustedClientCertificateBeforeApplicationAdmission(boolean untrusted)
+      throws Exception {
+    final int port = reservePort();
+    final Path dictionary = workspaceRoot().resolve("config/quickfix/fix-spec/FIX44.xml");
+    final Path config = writeAcceptorConfig(port, dictionary);
+    final InboundFixMessageHandler handler =
+        org.mockito.Mockito.mock(InboundFixMessageHandler.class);
+    final var acceptor =
+        new QuickFixAcceptorLifecycle(
+            new QuickFixApplicationAdapter(handler),
+            new QuickFixGatewayRuntime("test", config, tempDir.resolve("unused.wal")),
+            new QuickFixJdbcAcceptorFactory(this::quickFixDataSource));
+    final Path clientIdentity =
+        untrusted
+            ? FixTestSecurity.tlsStore(Files.createDirectory(tempDir.resolve("untrusted-client")))
+            : null;
+    final var client =
+        FixTestSecurity.clientContext(FixTestSecurity.tlsStore(tempDir), clientIdentity);
+    try {
+      acceptor.start();
+      try (var socket =
+          (javax.net.ssl.SSLSocket) client.getSocketFactory().createSocket("127.0.0.1", port)) {
+        socket.setSoTimeout(5000);
+        socket.setEnabledProtocols(new String[] {"TLSv1.2"});
+        // The peer may close during the client's handshake write before its TLS alert is read.
+        org.assertj.core.api.Assertions.assertThatThrownBy(socket::startHandshake)
+            .isInstanceOfAny(javax.net.ssl.SSLHandshakeException.class, java.net.SocketException.class);
+      }
+      org.mockito.Mockito.verifyNoInteractions(handler);
+    } finally {
+      acceptor.stop();
+    }
+  }
+
+  @ParameterizedTest
+  @ValueSource(booleans = {false, true})
   void preparedClientPreservesReceiptModeAndWaitsForSelectedDelivery(boolean completionRequested)
       throws Exception {
     final int port = reservePort();
@@ -83,14 +119,11 @@ class QuickFixCertificationEvidenceTest {
         var executor = Executors.newSingleThreadExecutor()) {
       final var acceptor =
           new QuickFixAcceptorLifecycle(
-              new QuickFixApplicationAdapter(
-                  QuickFixIngressTestFixture.compose(
-                      wal,
-                      new AcceptingRiskSubmissionClient(),
-                      new QuickFixSessionMessageSender(),
-                      new OrderSessionRegistry(),
-                      new FixMessageMapper(),
-                      FIXED_CLOCK)),
+              secureAdapter(
+                  wal,
+                  new AcceptingRiskSubmissionClient(),
+                  new QuickFixSessionMessageSender(),
+                  new OrderSessionRegistry()),
               new QuickFixGatewayRuntime("test", writeAcceptorConfig(port, dictionary), walPath),
               new QuickFixJdbcAcceptorFactory(this::quickFixDataSource));
       final Map<String, String> environment = preparedClientEnvironment(port, completionRequested);
@@ -106,7 +139,7 @@ class QuickFixCertificationEvidenceTest {
         final var finished =
             executor.submit(
                 () -> {
-                  client.preparedSubmission();
+                  client.runPreparedSubmission();
                   return null;
                 });
         awaitFile(tempDir.resolve("ready"));
@@ -137,7 +170,8 @@ class QuickFixCertificationEvidenceTest {
     }
   }
 
-  private Map<String, String> preparedClientEnvironment(int port, boolean completionRequested) {
+  private Map<String, String> preparedClientEnvironment(int port, boolean completionRequested)
+      throws Exception {
     final Map<String, String> environment =
         new java.util.HashMap<>(
             Map.ofEntries(
@@ -157,6 +191,7 @@ class QuickFixCertificationEvidenceTest {
                 Map.entry(
                     "SIMPLEMATCH_RETAINED_FIX_RELEASE_FILE", tempDir.resolve("release").toString()),
                 Map.entry("SIMPLEMATCH_RETAINED_FIX_TIMEOUT_SECONDS", "15")));
+    environment.putAll(FixTestSecurity.clientEnvironment(tempDir));
     if (completionRequested) {
       environment.put(
           "SIMPLEMATCH_RETAINED_FIX_COMPLETION_FILE", tempDir.resolve("complete").toString());
@@ -224,14 +259,11 @@ class QuickFixCertificationEvidenceTest {
     final DriverManagerDataSource quickFixDataSource = quickFixDataSource();
     final QuickFixAcceptorLifecycle acceptorLifecycle =
         new QuickFixAcceptorLifecycle(
-            new QuickFixApplicationAdapter(
-                QuickFixIngressTestFixture.compose(
-                    walAppender,
-                    new AcceptingRiskSubmissionClient(),
-                    new QuickFixSessionMessageSender(),
-                    new OrderSessionRegistry(),
-                    new FixMessageMapper(),
-                    FIXED_CLOCK)),
+            secureAdapter(
+                walAppender,
+                new AcceptingRiskSubmissionClient(),
+                new QuickFixSessionMessageSender(),
+                new OrderSessionRegistry()),
             new QuickFixGatewayRuntime("test", acceptorConfigPath, walPath),
             new QuickFixJdbcAcceptorFactory(() -> quickFixDataSource));
     final TestInitiatorApplication initiatorApplication = new TestInitiatorApplication();
@@ -240,7 +272,8 @@ class QuickFixCertificationEvidenceTest {
             initiatorApplication,
             new FileStoreFactory(new SessionSettings(initiatorConfigPath.toString())),
             new SessionSettings(initiatorConfigPath.toString()),
-            new FileLogFactory(new SessionSettings(initiatorConfigPath.toString())),
+            new CredentialRedactingFixLogFactory(
+                new FileLogFactory(new SessionSettings(initiatorConfigPath.toString()))),
             new DefaultMessageFactory());
 
     try {
@@ -304,14 +337,11 @@ class QuickFixCertificationEvidenceTest {
     final DriverManagerDataSource quickFixDataSource = quickFixDataSource();
     final QuickFixAcceptorLifecycle acceptorLifecycle =
         new QuickFixAcceptorLifecycle(
-            new QuickFixApplicationAdapter(
-                QuickFixIngressTestFixture.compose(
-                    walAppender,
-                    new RejectingRiskSubmissionClient(),
-                    new QuickFixSessionMessageSender(),
-                    new OrderSessionRegistry(),
-                    new FixMessageMapper(),
-                    FIXED_CLOCK)),
+            secureAdapter(
+                walAppender,
+                new RejectingRiskSubmissionClient(),
+                new QuickFixSessionMessageSender(),
+                new OrderSessionRegistry()),
             new QuickFixGatewayRuntime("test", acceptorConfigPath, walPath),
             new QuickFixJdbcAcceptorFactory(() -> quickFixDataSource));
     final TestInitiatorApplication initiatorApplication = new TestInitiatorApplication();
@@ -320,7 +350,8 @@ class QuickFixCertificationEvidenceTest {
             initiatorApplication,
             new FileStoreFactory(new SessionSettings(initiatorConfigPath.toString())),
             new SessionSettings(initiatorConfigPath.toString()),
-            new FileLogFactory(new SessionSettings(initiatorConfigPath.toString())),
+            new CredentialRedactingFixLogFactory(
+                new FileLogFactory(new SessionSettings(initiatorConfigPath.toString()))),
             new DefaultMessageFactory());
 
     try {
@@ -364,10 +395,8 @@ class QuickFixCertificationEvidenceTest {
     final SessionID sessionId = new SessionID("FIX.4.4", "SIMPLEMATCH", "CLIENT1");
 
     try (WalAppender walAppender = new WalAppender(walPath, StandardCharsets.UTF_8)) {
-      final QuickFixApplicationAdapter adapter =
-          new QuickFixApplicationAdapter(
-              QuickFixIngressTestFixture.compose(
-                  walAppender, risk, sender, registry, new FixMessageMapper(), FIXED_CLOCK));
+      final QuickFixApplicationAdapter adapter = secureAdapter(walAppender, risk, sender, registry);
+      adapter.fromAdmin(FixTestSecurity.logon(), sessionId);
       adapter.onLogon(sessionId);
       adapter.fromApp(newOrder("C1", "AAPL", "10", "101.25", ACCOUNT_ID), sessionId);
       adapter.fromApp(newOrder("C1", "AAPL", "10", "101.25", ACCOUNT_ID), sessionId);
@@ -396,7 +425,22 @@ class QuickFixCertificationEvidenceTest {
     return cancel;
   }
 
-  private Path writeAcceptorConfig(int port, Path dictionaryPath) throws IOException {
+  private QuickFixApplicationAdapter secureAdapter(
+      WalAppender wal,
+      RiskSubmissionClient risk,
+      FixSessionMessageSender sender,
+      OrderSessionRegistry registry) {
+    final InboundFixMessageHandler handler =
+        QuickFixIngressTestFixture.compose(
+            wal, risk, sender, registry, new FixMessageMapper(), FIXED_CLOCK);
+    return new QuickFixApplicationAdapter(
+        handler,
+        new FixSessionOwnership(),
+        "certification",
+        FixTestSecurity.access(ACCOUNT_ID, registry));
+  }
+
+  private Path writeAcceptorConfig(int port, Path dictionaryPath) throws Exception {
     final Path configPath = tempDir.resolve("acceptor.cfg");
     Files.writeString(
         configPath,
@@ -423,13 +467,14 @@ class QuickFixCertificationEvidenceTest {
             + "FileLogPath="
             + tempDir.resolve("acceptor-log")
             + "\n"
+            + FixTestSecurity.acceptorSettings(tempDir)
             + "[SESSION]\n"
             + "SenderCompID=SIMPLEMATCH\n"
             + "TargetCompID=CLIENT\n");
     return configPath;
   }
 
-  private Path writeInitiatorConfig(int port, Path dictionaryPath) throws IOException {
+  private Path writeInitiatorConfig(int port, Path dictionaryPath) throws Exception {
     final Path configPath = tempDir.resolve("initiator.cfg");
     Files.writeString(
         configPath,
@@ -460,6 +505,11 @@ class QuickFixCertificationEvidenceTest {
             + "[SESSION]\n"
             + "SenderCompID=CLIENT\n"
             + "TargetCompID=SIMPLEMATCH\n");
+    final SessionSettings settings = new SessionSettings(configPath.toString());
+    FixInitiatorSecurity.configure(settings, FixTestSecurity.clientEnvironment(tempDir)::get);
+    try (var output = Files.newOutputStream(configPath)) {
+      settings.toStream(output);
+    }
     return configPath;
   }
 

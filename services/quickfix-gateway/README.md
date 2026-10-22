@@ -59,6 +59,64 @@ deployment smoke. Unit tests or rendered-manifest checks alone are not deploymen
 The runtime QuickFIX session config defaults to `config/quickfix/acceptor.cfg`, which uses
 `../../config/quickfix/fix-spec/FIX44.xml` as the shared FIX dictionary.
 
+## FIX authentication and account authorization
+
+FIX listeners require TLS with client certificates and explicit PKCS12 key and trust stores.
+The local configuration reads `config/quickfix/tls/server.p12` and `clients.p12`; Kubernetes mounts
+the required `quickfix-gateway-fix-tls` Secret's `server.p12` and `clients.p12` at
+`/etc/simplematch/fix-tls`. Provision these identities and trust only approved client issuers.
+The lifecycle rejects plaintext, disabled client authentication, absent store settings, and raw
+unknown-session logging before constructing the acceptor. QuickFIX's normal log destination is
+wrapped to redact credential-bearing incoming, outgoing, event, warning, and error entries.
+
+Each counterparty must also supply `Username(553)` and `Password(554)` on every Logon. Provision
+`simplematch.quickfix-gateway.fix-security` in an external Spring configuration file or the existing
+`quickfix-gateway-secrets` Secret's `application.yaml`:
+
+```yaml
+simplematch:
+  quickfix-gateway:
+    fix-security:
+      key-store-password: ${FIX_TLS_KEY_PASSWORD}
+      trust-store-password: ${FIX_TLS_TRUST_PASSWORD}
+      counterparties:
+        - session-id: "FIX.4.4:SIMPLEMATCH->CLIENT"
+          username: ${FIX_CLIENT_USERNAME}
+          password: ${FIX_CLIENT_PASSWORD}
+          account-ids:
+            - "0194a8f0-7c77-7b38-9e2d-2a5fdd0f7c13"
+```
+
+Use each session's complete acceptor-side `SessionID`, including configured SubIDs, LocationIDs,
+and qualifier. Accounts form an immutable UUID allowlist; equivalent UUID spellings use the same
+canonical account identity as the WAL. Missing configuration denies all Logons. The adapter checks
+the authenticated session and account before invoking order handling, so unauthorized new orders
+cannot append WAL or call Risk. Cancellations check the retained order's account against the current
+allowlist, including when the client omits Account. Malformed accounts retain the existing rejection.
+Logout and failed reauthentication revoke access; a later Logon requires fresh credentials.
+Policy or credential rotation requires a gateway restart, which disconnects existing sessions.
+
+The `simplematch-fix-ingress` policy selects gateway pods by name and denies ingress except
+TCP 5001 from same-namespace pods labelled `simplematch.io/fix-client: "true"` and management
+TCP 8080 from SimpleMatch pods. Restrict who may set the client label. This ingress policy preserves
+Kubernetes API bootstrap and dependency egress. Enforcing it requires a NetworkPolicy-capable CNI.
+
+Historical WAL records cannot retroactively prove that their originating peer authenticated.
+Before upgrading a previously exposed installation, audit and quarantine untrusted pre-fix WAL
+records; the v1 cancellation replay restriction described below remains in effect.
+
+Regression acceptance covers anonymous/invalid Logon, session aliases, logout/failed reconnect,
+unauthorized accounts with canonical UUID variants, unchanged authorized multi-account admission,
+malformed-account rejection, and credential redaction. Run `:services:quickfix-gateway:test`,
+`:services:quickfix-gateway:certificationTest`, `staticAnalysis`, and
+`bash scripts/test-kubernetes-overlays.sh`. Live certification clients additionally require
+`SIMPLEMATCH_LIVE_FIX_USERNAME`, `SIMPLEMATCH_LIVE_FIX_PASSWORD`, `SIMPLEMATCH_LIVE_FIX_KEY_STORE`,
+`SIMPLEMATCH_LIVE_FIX_KEY_STORE_PASSWORD`, `SIMPLEMATCH_LIVE_FIX_TRUST_STORE`, and
+`SIMPLEMATCH_LIVE_FIX_TRUST_STORE_PASSWORD`; stores must be PKCS12 and server names must match the
+certificate. In an isolated deployment, verify that absent/untrusted client certificates fail and
+an unlabelled pod cannot connect to TCP 5001. Unit and rendered-manifest checks do not establish
+runtime TLS or NetworkPolicy enforcement.
+
 Session-aware deployment baseline:
 
 - Stateful deployments should use stable owner ids that match pod identity, such as
@@ -89,7 +147,7 @@ knows about Risk ownership or outcome. Sidecar states are `UNKNOWN`, `PENDING`, 
 
 The WAL is a Gateway-owned persistence model, not a serialized Risk protobuf. Its current local
 `schemaVersion = v2` extends the stable flat JSON format with the complete authenticated FIX
-`SessionID`; it does **not** mean that the Gateway submits a v2 WAL contract. Live submission and
+`SessionID`; this Gateway-local schema version is independent of the Risk wire contract. Live submission and
 restart resubmission both use the same `RiskCommandMapper` and `RiskCommandSubmitter` to produce
 typed v2 `NewOrderCommand` or `CancelOrderCommand` messages directly from the durable WAL record.
 The reader retains v1 compatibility, but v1 records cannot restore cancellation authority and v1

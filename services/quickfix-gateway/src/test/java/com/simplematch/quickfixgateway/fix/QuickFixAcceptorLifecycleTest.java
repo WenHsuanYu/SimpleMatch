@@ -19,13 +19,77 @@ import quickfix.SocketAcceptor;
 class QuickFixAcceptorLifecycleTest {
   @TempDir Path directory;
 
+  @Test
+  void refusesPlaintextBeforeConstructingTheAcceptor() throws Exception {
+    final AtomicReference<SessionSettings> loaded = new AtomicReference<>();
+    assertThatThrownBy(lifecycle(settings("SocketUseSSL=N"), loaded)::start)
+        .hasRootCauseMessage("FIX requires SocketUseSSL=Y and NeedClientAuth=Y");
+    assertThat(loaded.get()).isNull();
+  }
+
   @ParameterizedTest
-  @ValueSource(strings = {"SenderCompID", "SenderSubID", "SenderLocationID", "TargetCompID",
-      "TargetSubID", "TargetLocationID", "SessionQualifier"})
+  @ValueSource(
+      strings = {
+        "SocketKeyStore",
+        "SocketKeyStorePassword",
+        "SocketTrustStore",
+        "SocketTrustStorePassword"
+      })
+  void refusesMissingExplicitTlsMaterialBeforeConstructingTheAcceptor(String setting)
+      throws Exception {
+    final AtomicReference<SessionSettings> loaded = new AtomicReference<>();
+    assertThatThrownBy(lifecycle(settings(setting + "="), loaded)::start)
+        .hasRootCauseMessage("FIX requires explicit " + setting);
+    assertThat(loaded.get()).isNull();
+  }
+
+  @Test
+  void refusesDisablingClientCertificateAuthenticationForAnIndividualSession() throws Exception {
+    final AtomicReference<SessionSettings> loaded = new AtomicReference<>();
+    assertThatThrownBy(lifecycle(settings("NeedClientAuth=N"), loaded)::start)
+        .hasRootCauseMessage("FIX requires SocketUseSSL=Y and NeedClientAuth=Y");
+    assertThat(loaded.get()).isNull();
+  }
+
+  @ParameterizedTest
+  @ValueSource(booleans = {false, true})
+  void refusesRawUnknownSessionLoggingWhetherEnabledOrImplicit(boolean explicit) throws Exception {
+    final AtomicReference<SessionSettings> loaded = new AtomicReference<>();
+    final String config =
+        settings("")
+            .replace(
+                "LogMessageWhenSessionNotFound=N\n",
+                explicit ? "LogMessageWhenSessionNotFound=Y\n" : "");
+    assertThatThrownBy(lifecycle(config, loaded)::start)
+        .hasRootCauseMessage("FIX unknown-session raw logging must be explicitly disabled");
+    assertThat(loaded.get()).isNull();
+  }
+
+  @ParameterizedTest
+  @ValueSource(strings = {"SocketKeyStore", "SocketTrustStore"})
+  void nonexistentTlsStoresCannotFallBackToImplicitTrust(String setting) throws Exception {
+    final AtomicReference<SessionSettings> loaded = new AtomicReference<>();
+    assertThatThrownBy(
+            lifecycle(settings(setting + "=" + directory.resolve("missing.p12")), loaded)::start)
+        .hasRootCauseMessage("FIX requires readable file for " + setting);
+    assertThat(loaded.get()).isNull();
+  }
+
+  @ParameterizedTest
+  @ValueSource(
+      strings = {
+        "SenderCompID",
+        "SenderSubID",
+        "SenderLocationID",
+        "TargetCompID",
+        "TargetSubID",
+        "TargetLocationID",
+        "SessionQualifier"
+      })
   void acceptsEachComponentAtItsDatabaseCapacity(String component) throws Exception {
     final AtomicReference<SessionSettings> loaded = new AtomicReference<>();
-    final QuickFixAcceptorLifecycle lifecycle = lifecycle(
-        settings(component + "=" + "S".repeat(64)), loaded);
+    final QuickFixAcceptorLifecycle lifecycle =
+        lifecycle(settings(component + "=" + "S".repeat(64)), loaded);
 
     lifecycle.start();
 
@@ -36,12 +100,20 @@ class QuickFixAcceptorLifecycleTest {
   }
 
   @ParameterizedTest
-  @ValueSource(strings = {"SenderCompID", "SenderSubID", "SenderLocationID", "TargetCompID",
-      "TargetSubID", "TargetLocationID", "SessionQualifier"})
+  @ValueSource(
+      strings = {
+        "SenderCompID",
+        "SenderSubID",
+        "SenderLocationID",
+        "TargetCompID",
+        "TargetSubID",
+        "TargetLocationID",
+        "SessionQualifier"
+      })
   void rejectsEachOversizedComponentBeforeCreatingAcceptor(String component) throws Exception {
     final AtomicReference<SessionSettings> loaded = new AtomicReference<>();
-    final QuickFixAcceptorLifecycle lifecycle = lifecycle(
-        settings(component + "=" + "S".repeat(65)), loaded);
+    final QuickFixAcceptorLifecycle lifecycle =
+        lifecycle(settings(component + "=" + "S".repeat(65)), loaded);
 
     assertThatThrownBy(lifecycle::start)
         .hasRootCauseInstanceOf(IllegalArgumentException.class)
@@ -66,7 +138,8 @@ class QuickFixAcceptorLifecycleTest {
   @Test
   void validatesAllSessionsIncludingInheritedDefaultComponents() throws Exception {
     final AtomicReference<SessionSettings> loaded = new AtomicReference<>();
-    final String config = """
+    final String config =
+        """
         [DEFAULT]
         BeginString=FIX.4.4
         SenderCompID=SIMPLEMATCH
@@ -77,7 +150,8 @@ class QuickFixAcceptorLifecycleTest {
         SenderLocationID=LOCAL
         [SESSION]
         TargetCompID=CLIENT-B
-        """.formatted("L".repeat(65));
+        """
+            .formatted("L".repeat(65));
 
     assertThatThrownBy(lifecycle(config, loaded)::start)
         .hasRootCauseMessage("SenderLocationID must contain at most 64 characters");
@@ -97,7 +171,8 @@ class QuickFixAcceptorLifecycleTest {
   void acceptsACompleteConfiguredIdentityLongerThan256Characters() throws Exception {
     final AtomicReference<SessionSettings> loaded = new AtomicReference<>();
     final String component = "S".repeat(64);
-    final String overrides = """
+    final String overrides =
+        """
         SenderCompID=%1$s
         SenderSubID=%1$s
         SenderLocationID=%1$s
@@ -105,7 +180,8 @@ class QuickFixAcceptorLifecycleTest {
         TargetSubID=%1$s
         TargetLocationID=%1$s
         SessionQualifier=%1$s
-        """.formatted(component);
+        """
+            .formatted(component);
     final QuickFixAcceptorLifecycle lifecycle = lifecycle(settings(overrides), loaded);
     lifecycle.start();
     assertThat(loaded.get().sectionIterator().next().toString().length()).isGreaterThan(256);
@@ -126,22 +202,35 @@ class QuickFixAcceptorLifecycleTest {
       String config, AtomicReference<SessionSettings> loaded) throws Exception {
     final Path configPath = Files.createTempFile(directory, "quickfix-", ".cfg");
     Files.writeString(configPath, config);
-    final QuickFixGatewayRuntime runtime = new QuickFixGatewayRuntime(
-        "test", configPath, directory.resolve("wal"), "gateway-test");
-    return new QuickFixAcceptorLifecycle(null, runtime, (application, settings) -> {
-      loaded.set(settings);
-      return mock(SocketAcceptor.class);
-    });
+    final QuickFixGatewayRuntime runtime =
+        new QuickFixGatewayRuntime("test", configPath, directory.resolve("wal"), "gateway-test");
+    return new QuickFixAcceptorLifecycle(
+        null,
+        runtime,
+        (application, settings) -> {
+          loaded.set(settings);
+          return mock(SocketAcceptor.class);
+        });
   }
 
-  private String settings(String override) {
+  private String settings(String override) throws java.io.IOException {
+    final Path store = directory.resolve("tls-store.p12");
+    Files.write(store, new byte[0]);
     return """
-        [DEFAULT]
-        BeginString=FIX.4.4
-        SenderCompID=SIMPLEMATCH
-        TargetCompID=CLIENT
-        [SESSION]
-        %s
-        """.formatted(override);
+    [DEFAULT]
+    BeginString=FIX.4.4
+    SenderCompID=SIMPLEMATCH
+    TargetCompID=CLIENT
+        LogMessageWhenSessionNotFound=N
+    SocketUseSSL=Y
+    NeedClientAuth=Y
+        SocketKeyStore=%1$s
+    SocketKeyStorePassword=test-password
+        SocketTrustStore=%1$s
+    SocketTrustStorePassword=test-password
+    [SESSION]
+        %2$s
+    """
+        .formatted(store, override);
   }
 }

@@ -28,6 +28,7 @@ import org.springframework.kafka.annotation.EnableKafka;
   QuickFixGatewayRiskClientProperties.class,
   QuickFixGatewayFinalMatchingEventConsumerProperties.class,
   QuickFixGatewayIngressProperties.class,
+  QuickFixGatewayFixSecurityProperties.class,
   QuickFixGatewayOperationsProperties.class
 })
 public class QuickFixGatewayConfiguration {

@@ -70,6 +70,38 @@ end
 quickfix = resources.fetch(["StatefulSet", "quickfix-gateway"])
 quickfix_container = quickfix.fetch("spec").fetch("template").fetch("spec").fetch("containers").first
 quickfix_environment = quickfix_container.fetch("env").to_h { |entry| [entry.fetch("name"), entry] }
+quickfix_labels = quickfix.dig("spec", "template", "metadata", "labels")
+abort "#{overlay}: QuickFIX is outside its ingress policy" unless
+  quickfix_labels.fetch("app.kubernetes.io/name") == "quickfix-gateway"
+fix_ingress = resources.fetch(["NetworkPolicy", "simplematch-fix-ingress"])
+abort "#{overlay}: FIX policy does not select the gateway" unless
+  fix_ingress.dig("spec", "podSelector", "matchLabels") ==
+    { "app.kubernetes.io/name" => "quickfix-gateway" }
+abort "#{overlay}: FIX ingress is not restricted to approved same-namespace clients" unless
+  fix_ingress.dig("spec", "ingress") == [
+    { "from" => [{ "podSelector" => { "matchLabels" => { "simplematch.io/fix-client" => "true" } } }],
+      "ports" => [{ "protocol" => "TCP", "port" => 5001 }] },
+    { "from" => [{ "podSelector" => { "matchLabels" => { "app.kubernetes.io/part-of" => "simplematch" } } }],
+      "ports" => [{ "protocol" => "TCP", "port" => 8080 }] }
+  ]
+java_ingress = resources.fetch(["NetworkPolicy", "simplematch-java-services"])
+abort "#{overlay}: generic Java ingress opens FIX" if java_ingress.dig("spec", "ingress")
+  .any? { |rule| rule.fetch("ports", []).any? { |port| port["port"] == 5001 } }
+fix_config = resources.fetch(["ConfigMap", "quickfix-gateway-quickfix-config"])
+  .fetch("data").fetch("acceptor-continuity.cfg")
+%w[SocketUseSSL=Y NeedClientAuth=Y LogMessageWhenSessionNotFound=N].each do |setting|
+  abort "#{overlay}: FIX transport missing #{setting}" unless fix_config.lines.map(&:strip).include?(setting)
+end
+%w[SocketKeyStore SocketTrustStore].each do |setting|
+  abort "#{overlay}: FIX TLS material is not mounted" unless
+    fix_config.match?(/^\s*#{setting}=\/etc\/simplematch\/fix-tls\/\S+/)
+end
+fix_volume = quickfix.dig("spec", "template", "spec", "volumes")
+  .find { |volume| volume["name"] == "fix-tls" }
+abort "#{overlay}: FIX TLS Secret is optional or missing" unless
+  fix_volume.fetch("secret") == { "secretName" => "quickfix-gateway-fix-tls", "optional" => false }
+abort "#{overlay}: FIX TLS mount must be read-only" unless quickfix_container.fetch("volumeMounts")
+  .any? { |mount| mount["name"] == "fix-tls" && mount["readOnly"] }
 quickfix_profile_entries = quickfix_container.fetch("env")
   .select { |entry| entry["name"] == "SPRING_PROFILES_ACTIVE" }
 abort "#{overlay}: QuickFIX Gateway does not use the #{expected_environment} Spring profile" unless

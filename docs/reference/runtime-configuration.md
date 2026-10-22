@@ -83,6 +83,15 @@ Useful canonical keys include:
 - `simplematch.quickfix-gateway.owner-id`
 - `simplematch.quickfix-gateway.quickfix-config-path`
 - `simplematch.quickfix-gateway.wal-path`
+- `simplematch.quickfix-gateway.fix-security.counterparties` (defaults to an empty list, denying
+  every FIX Logon; each secret-provisioned entry requires complete acceptor-side `session-id`,
+  `username`, `password`, and an `account-ids` UUID allowlist)
+- `simplematch.quickfix-gateway.fix-security.key-store-password` and
+  `simplematch.quickfix-gateway.fix-security.trust-store-password` (secret-only values resolving
+  `FIX_KEY_STORE_PASSWORD` and `FIX_TRUST_STORE_PASSWORD` in the QuickFIX configuration; mandatory
+  when starting the TLS acceptor). FIX requires `SocketUseSSL=Y`, `NeedClientAuth=Y`, and explicit
+  key/trust stores in every effective session. See the
+  [FIX provisioning contract](../../services/quickfix-gateway/README.md#fix-authentication-and-account-authorization).
 - `simplematch.quickfix-gateway.live-observation.enabled` (defaults to `false`; the Kubernetes
   Gateway ConfigMap enables the production collector)
 - `simplematch.quickfix-gateway.live-observation.request-timeout` (defaults to `1s`; bounds each

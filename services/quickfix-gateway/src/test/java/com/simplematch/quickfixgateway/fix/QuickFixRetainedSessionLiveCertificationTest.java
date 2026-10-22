@@ -72,9 +72,10 @@ class QuickFixRetainedSessionLiveCertificationTest {
         new SessionSettings(
             writeInitiatorConfig(stateDir, host, port, senderCompId, targetCompId, dictionary)
                 .toString());
+    FixInitiatorSecurity.configure(settings, System::getenv);
     final RetainedInitiatorApplication application = new RetainedInitiatorApplication();
     final FixWireLogObserver wireObserver =
-        new FixWireLogObserver(new FileLogFactory(settings));
+        new FixWireLogObserver(new CredentialRedactingFixLogFactory(new FileLogFactory(settings)));
     final SocketInitiator initiator =
         new SocketInitiator(
             application,
@@ -92,12 +93,7 @@ class QuickFixRetainedSessionLiveCertificationTest {
       switch (phase) {
         case RECEIVE_RESEND ->
             receiveAndResend(
-                application,
-                wireObserver,
-                sessionId,
-                evidencePath,
-                clOrdId,
-                timeoutSeconds);
+                application, wireObserver, sessionId, evidencePath, clOrdId, timeoutSeconds);
         case RESEND_ONLY ->
             resendOnly(wireObserver, sessionId, evidencePath, clOrdId, timeoutSeconds);
       }
@@ -116,9 +112,7 @@ class QuickFixRetainedSessionLiveCertificationTest {
       throws Exception {
     final ExecutionReport lifecycle =
         application.awaitExecutionReport(
-            clOrdId,
-            timeoutSeconds,
-            candidate -> !"A".equals(candidate.getString(ExecType.FIELD)));
+            clOrdId, timeoutSeconds, candidate -> !"A".equals(candidate.getString(ExecType.FIELD)));
     final int messageSequence = lifecycle.getHeader().getInt(MsgSeqNum.FIELD);
     final String executionId = lifecycle.getString(ExecID.FIELD);
     assertThat(executionId).isNotBlank();
@@ -216,8 +210,8 @@ class QuickFixRetainedSessionLiveCertificationTest {
     return configPath;
   }
 
-  private void writeEvidence(
-      Path path, String phase, FixWireLogObserver.WireMessage message) throws IOException {
+  private void writeEvidence(Path path, String phase, FixWireLogObserver.WireMessage message)
+      throws IOException {
     final String text = message.field(Text.FIELD) == null ? "" : message.field(Text.FIELD);
     final String json =
         "{\n"
@@ -319,8 +313,7 @@ class QuickFixRetainedSessionLiveCertificationTest {
         return Phase.valueOf(value.trim().toUpperCase(Locale.ROOT).replace('-', '_'));
       } catch (IllegalArgumentException invalid) {
         throw new IllegalArgumentException(
-            "SIMPLEMATCH_RETAINED_FIX_PHASE must be receive-resend or resend-only",
-            invalid);
+            "SIMPLEMATCH_RETAINED_FIX_PHASE must be receive-resend or resend-only", invalid);
       }
     }
   }
@@ -377,8 +370,7 @@ class QuickFixRetainedSessionLiveCertificationTest {
         final long remainingNanos = deadline - System.nanoTime();
         final Message message =
             applicationMessages.poll(
-                Math.max(1L, TimeUnit.NANOSECONDS.toMillis(remainingNanos)),
-                TimeUnit.MILLISECONDS);
+                Math.max(1L, TimeUnit.NANOSECONDS.toMillis(remainingNanos)), TimeUnit.MILLISECONDS);
         if (message == null) {
           break;
         }

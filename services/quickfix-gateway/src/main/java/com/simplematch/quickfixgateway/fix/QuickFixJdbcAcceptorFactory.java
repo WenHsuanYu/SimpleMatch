@@ -34,6 +34,11 @@ public final class QuickFixJdbcAcceptorFactory implements QuickFixAcceptorFactor
     final JdbcLogFactory logFactory = new JdbcLogFactory(settings);
     logFactory.setDataSource(dataSource);
     final MessageFactory messageFactory = new DefaultMessageFactory();
-    return new SocketAcceptor(application, storeFactory, settings, logFactory, messageFactory);
+    return new SocketAcceptor(
+        application,
+        storeFactory,
+        settings,
+        new CredentialRedactingFixLogFactory(logFactory),
+        messageFactory);
   }
 }

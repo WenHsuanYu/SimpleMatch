@@ -1,7 +1,9 @@
 package com.simplematch.quickfixgateway.config;
 
+import com.simplematch.quickfixgateway.fix.FixSessionAccess;
 import com.simplematch.quickfixgateway.fix.FixSessionOwnership;
 import com.simplematch.quickfixgateway.fix.InboundFixMessageHandler;
+import com.simplematch.quickfixgateway.fix.OrderSessionRegistry;
 import com.simplematch.quickfixgateway.fix.QuickFixAcceptorFactory;
 import com.simplematch.quickfixgateway.fix.QuickFixAcceptorLifecycle;
 import com.simplematch.quickfixgateway.fix.QuickFixApplicationAdapter;
@@ -65,9 +67,14 @@ public class QuickFixGatewayLifecycleConfiguration {
   QuickFixApplicationAdapter quickFixApplicationAdapter(
       InboundFixMessageHandler inboundFixMessageHandler,
       FixSessionOwnership sessionOwnership,
-      QuickFixGatewayRuntime runtime) {
+      QuickFixGatewayRuntime runtime,
+      QuickFixGatewayFixSecurityProperties fixSecurity,
+      OrderSessionRegistry orderSessionRegistry) {
     return new QuickFixApplicationAdapter(
-        inboundFixMessageHandler, sessionOwnership, runtime.ownerId());
+        inboundFixMessageHandler,
+        sessionOwnership,
+        runtime.ownerId(),
+        new FixSessionAccess(fixSecurity.counterparties(), orderSessionRegistry));
   }
 
   /** Creates the JDBC-backed persistence factory used only when the socket acceptor starts. */
@@ -84,7 +91,9 @@ public class QuickFixGatewayLifecycleConfiguration {
   QuickFixAcceptorLifecycle quickFixAcceptorLifecycle(
       QuickFixApplicationAdapter application,
       QuickFixGatewayRuntime runtime,
-      QuickFixAcceptorFactory acceptorFactory) {
-    return new QuickFixAcceptorLifecycle(application, runtime, acceptorFactory);
+      QuickFixAcceptorFactory acceptorFactory,
+      QuickFixGatewayFixSecurityProperties fixSecurity) {
+    return new QuickFixAcceptorLifecycle(
+        application, runtime, acceptorFactory, fixSecurity.quickfixVariables());
   }
 }

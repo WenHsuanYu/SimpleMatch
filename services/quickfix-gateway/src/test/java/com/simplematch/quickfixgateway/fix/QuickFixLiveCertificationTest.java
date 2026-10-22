@@ -58,31 +58,33 @@ class QuickFixLiveCertificationTest {
   void externalGatewayLogsOnAndReturnsAnAdmissionExecutionReport() throws Exception {
     final String host = requiredEnvironment("SIMPLEMATCH_LIVE_FIX_HOST");
     final int port = positivePort("SIMPLEMATCH_LIVE_FIX_PORT");
-    final String senderCompId = environmentOrDefault("SIMPLEMATCH_LIVE_FIX_SENDER_COMP_ID", "CLIENT");
+    final String senderCompId =
+        environmentOrDefault("SIMPLEMATCH_LIVE_FIX_SENDER_COMP_ID", "CLIENT");
     final String targetCompId =
         environmentOrDefault("SIMPLEMATCH_LIVE_FIX_TARGET_COMP_ID", "SIMPLEMATCH");
-    final String accountId = canonicalAccountId(requiredEnvironment("SIMPLEMATCH_LIVE_FIX_ACCOUNT_ID"));
+    final String accountId =
+        canonicalAccountId(requiredEnvironment("SIMPLEMATCH_LIVE_FIX_ACCOUNT_ID"));
     final String symbol = requiredEnvironment("SIMPLEMATCH_LIVE_FIX_SYMBOL");
     final String quantity = environmentOrDefault("SIMPLEMATCH_LIVE_FIX_QUANTITY", "10");
     final String price = environmentOrDefault("SIMPLEMATCH_LIVE_FIX_PRICE", "101.25");
     final String clOrdId =
         environmentOrDefault(
             "SIMPLEMATCH_LIVE_FIX_CL_ORD_ID", "LIVE-" + Instant.now().getEpochSecond());
-    final boolean expectAccepted =
-        booleanEnvironment("SIMPLEMATCH_LIVE_FIX_EXPECT_ACCEPTED", true);
+    final boolean expectAccepted = booleanEnvironment("SIMPLEMATCH_LIVE_FIX_EXPECT_ACCEPTED", true);
     final Path dictionary = dictionaryPath();
     assertThat(dictionary).exists().isRegularFile();
 
-    final Path initiatorConfig = writeInitiatorConfig(
-        host, port, senderCompId, targetCompId, dictionary);
+    final Path initiatorConfig =
+        writeInitiatorConfig(host, port, senderCompId, targetCompId, dictionary);
     final LiveInitiatorApplication application = new LiveInitiatorApplication();
     final SessionSettings settings = new SessionSettings(initiatorConfig.toString());
+    FixInitiatorSecurity.configure(settings, System::getenv);
     final SocketInitiator initiator =
         new SocketInitiator(
             application,
             new FileStoreFactory(settings),
             settings,
-            new FileLogFactory(settings),
+            new CredentialRedactingFixLogFactory(new FileLogFactory(settings)),
             new DefaultMessageFactory());
 
     try {
@@ -183,7 +185,8 @@ class QuickFixLiveCertificationTest {
   private Path workspaceRoot() {
     Path current = Path.of("").toAbsolutePath().normalize();
     while (current != null) {
-      if (Files.exists(current.resolve("settings.gradle.kts")) || Files.exists(current.resolve(".git"))) {
+      if (Files.exists(current.resolve("settings.gradle.kts"))
+          || Files.exists(current.resolve(".git"))) {
         return current;
       }
       current = current.getParent();

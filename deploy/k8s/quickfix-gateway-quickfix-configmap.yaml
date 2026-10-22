@@ -20,6 +20,15 @@ data:
 
     SocketAcceptPort=5001
     SocketReuseAddress=Y
+    SocketUseSSL=Y
+    NeedClientAuth=Y
+    KeyStoreType=PKCS12
+    TrustStoreType=PKCS12
+    SocketKeyStore=/etc/simplematch/fix-tls/server.p12
+    SocketKeyStorePassword=${FIX_KEY_STORE_PASSWORD}
+    SocketTrustStore=/etc/simplematch/fix-tls/clients.p12
+    SocketTrustStorePassword=${FIX_TRUST_STORE_PASSWORD}
+    LogMessageWhenSessionNotFound=N
 
     ResetOnLogon=N
     ResetOnLogout=N
