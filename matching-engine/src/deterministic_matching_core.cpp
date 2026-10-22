@@ -524,6 +524,9 @@ MatchingProcessResult DeterministicMatchingCore::process_cancel_order(
   if (found == orders.end()) {
     return MatchingProcessResult::kApplied;
   }
+  if (found->account_id != cancel.account_id) {
+    return MatchingProcessResult::kInvalidCommand;
+  }
   CoreEvent event{};
   event.type = CoreEventType::kOrderCancelled;
   event.output_index = 0;

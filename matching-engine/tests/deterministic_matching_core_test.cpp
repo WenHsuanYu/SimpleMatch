@@ -228,6 +228,29 @@ TEST(DeterministicMatchingCoreTest, StateChecksumChangesWithOrderBookState) {
   EXPECT_NE(engine.deterministic_state_checksum(), resting_checksum);
 }
 
+TEST(DeterministicMatchingCoreTest, RejectsCancellationFromDifferentAccount) {
+  auto engine = core();
+  const auto resting = new_order(
+      "0198a001-0000-7000-8000-000000000009",
+      "0198a001-0000-7000-8000-000000000019",
+      CoreSide::kBuy,
+      100,
+      1'000'000);
+  ASSERT_EQ(engine.process(resting), MatchingProcessResult::kApplied);
+
+  EXPECT_EQ(
+      engine.process(CoreCommand::cancel(
+          context(),
+          uuid("0198a001-0000-7000-8000-00000000000a"),
+          resting.new_order().order_id,
+          uuid("0198a001-0000-7000-8000-0000000000bb"),
+          instrument(),
+          CoreSide::kBuy)),
+      MatchingProcessResult::kInvalidCommand);
+  EXPECT_TRUE(engine.events().empty());
+  EXPECT_EQ(engine.resting_order_count(instrument()), 1U);
+}
+
 TEST(DeterministicMatchingCoreTest, RejectsOrderBookCapacityWithoutExpandingTheBook) {
   auto engine = DeterministicMatchingCore({instrument()}, 1, 0);
 
