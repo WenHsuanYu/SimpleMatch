@@ -73,6 +73,8 @@ spec:
       containers:
         - name: query-service
           env:
+            - name: SIMPLEMATCH_QUERY_SERVICE_REDIS_ENDPOINT
+              value: query-redis.staging.example.invalid:6380
             - name: SPRING_PROFILES_ACTIVE
               value: staging
 ---

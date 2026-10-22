@@ -261,6 +261,45 @@ production must replace the external IP placeholders with the approved PostgreSQ
 and OpenTelemetry endpoint ranges before apply. The Deployment environment carries stable OTEL
 service/resource identity; collector/agent installation remains an environment-owned prerequisite.
 
+### Query Redis transport and ACL contract
+
+Managed Query caching requires `redis_username` and `redis_password` in `query-service-secrets`
+and a `ca.crt` PEM CA bundle in the required `query-service-redis-tls` Secret. The client verifies
+the certificate chain and the configured DNS hostname; there is no insecure verification mode.
+Query refuses an enabled plaintext cache in staging/production and rejects missing credentials,
+the Redis `default` identity, and credentials on plaintext connections. Local/test lab settings and
+the market-data projection's existing shared Redis endpoint are independent of these Query inputs.
+
+The managed templates select `query-redis.{environment}.example.invalid:6380` and a Query-only
+`203.0.113.14/32` egress placeholder. Replace both with the approved TLS endpoint and its restricted
+network range before promotion. Configure the server's plaintext port off and default user off;
+provision a dedicated Query ACL identity with only this namespace and command allowlist:
+
+```text
+user query-cache on #<externally-provisioned-password-sha256> ~query:v2:tls:* -@all +hello +ping +client|setinfo +get +set +del +scan
+```
+
+Apply that policy through the provider's ACL mechanism and deliver the matching password through
+the Secret; do not commit credentials. `HELLO`, `PING`, and `CLIENT SETINFO` support the Lettuce
+handshake. Administrative commands, `KEYS`, other databases, and another service's values must be
+denied. Clearing uses `SCAN MATCH query:v2:tls:* COUNT 100` and at most 100 keys per `DEL`, checking
+every returned key against the literal namespace. Redis ACL key patterns do **not** restrict
+`SCAN`'s enumeration of key names: use a dedicated Query cache instance with no other service's
+keys, rather than claiming that the key ACL alone hides shared-instance metadata.
+
+Roll out in stages: provision the TLS-only endpoint, ACL, and Secrets first; then roll Query with
+the new `query:v2:tls` prefix. It starts cold and repopulates from its own PostgreSQL projections,
+so old plaintext `query:v1` entries are never trusted by new managed replicas. Keep PostgreSQL
+fallback available throughout; after old replicas drain, allow their 30-second entries to expire
+and retire their endpoint access. Do not dual-read the old unprotected cache. Credential rotation
+may overlap old/new provider-side passwords until the Secret rollout completes, then revoke the
+old password. External ACL enforcement and the promoted endpoint remain operator-owned checks.
+
+Run `bash scripts/test-query-redis-security.sh` with a TLS-capable `redis-server`, `openssl`, and
+the repository JDK/Gradle dependencies available to exercise trusted TLS cache operations,
+certificate-chain/hostname rejection, bad/missing credentials, ACL denial, invalid JSON, and durable
+fallback against isolated disposable Redis processes. This gate does not use an existing cluster.
+
 ## Fixed Matching fleet
 
 `matching-statefulset.yaml` defines the Phase 1 fleet: fifteen StatefulSet ordinals map directly to

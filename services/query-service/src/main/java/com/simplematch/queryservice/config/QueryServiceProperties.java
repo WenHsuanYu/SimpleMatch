@@ -49,7 +49,12 @@ public record QueryServiceProperties(
 
   /** Defines optional Redis read-through cache ownership. */
   public record Redis(
-      boolean enabled, String keyPrefix, Duration commandTimeout, Duration connectTimeout) {
+      boolean enabled,
+      String keyPrefix,
+      Duration commandTimeout,
+      Duration connectTimeout,
+      String endpoint,
+      RedisSecurity security) {
     private static final Duration DEFAULT_COMMAND_TIMEOUT = Duration.ofSeconds(2);
     private static final Duration DEFAULT_CONNECT_TIMEOUT = Duration.ofMillis(500);
     private static final Duration MAX_FAILURE_TIMEOUT = Duration.ofSeconds(10);
@@ -57,6 +62,12 @@ public record QueryServiceProperties(
     /** Keeps the original two-value construction seam while applying bounded client defaults. */
     public Redis(boolean enabled, String keyPrefix) {
       this(enabled, keyPrefix, null, null);
+    }
+
+    /** Preserves local cache configuration without requiring managed Redis credentials. */
+    public Redis(
+        boolean enabled, String keyPrefix, Duration commandTimeout, Duration connectTimeout) {
+      this(enabled, keyPrefix, commandTimeout, connectTimeout, null, null);
     }
 
     /** Validates the cache namespace and bounds each Redis failure wait. */
@@ -67,6 +78,8 @@ public record QueryServiceProperties(
           positiveOrDefault(commandTimeout, DEFAULT_COMMAND_TIMEOUT, "commandTimeout");
       connectTimeout =
           positiveOrDefault(connectTimeout, DEFAULT_CONNECT_TIMEOUT, "connectTimeout");
+      endpoint = endpoint == null ? "" : endpoint.trim();
+      security = security == null ? new RedisSecurity(false, null, null, null) : security;
     }
 
     private static Redis defaults() {
@@ -88,6 +101,49 @@ public record QueryServiceProperties(
         throw new IllegalArgumentException("query Redis " + name + " must be at least 1ms");
       }
       return value;
+    }
+  }
+
+  /**
+   * Defines Query's Redis server trust and dedicated ACL identity, independently of other caches.
+   *
+   * @param tlsEnabled whether to require TLS with full certificate and hostname verification
+   * @param trustCertificatePath mounted PEM CA bundle for the Redis endpoint
+   * @param username dedicated Redis ACL username supplied by the Query service Secret
+   * @param password Redis ACL password supplied by the Query service Secret
+   */
+  public record RedisSecurity(
+      boolean tlsEnabled, String trustCertificatePath, String username, String password) {
+    /** Requires complete authenticated TLS settings and never sends credentials in plaintext. */
+    public RedisSecurity {
+      trustCertificatePath = trustCertificatePath == null ? "" : trustCertificatePath.trim();
+      username = username == null ? "" : username;
+      password = password == null ? "" : password;
+      if (tlsEnabled) {
+        requireTlsCredentials(trustCertificatePath, username, password);
+      } else if (!username.isEmpty() || !password.isEmpty()) {
+        throw new IllegalArgumentException("query Redis credentials require authenticated TLS");
+      }
+    }
+
+    private static void requireTlsCredentials(
+        String trustCertificatePath, String username, String password) {
+      if (trustCertificatePath.isEmpty()) {
+        throw new IllegalArgumentException("query Redis TLS requires a trust-certificate path");
+      }
+      if (username.isBlank() || "default".equals(username) || password.isBlank()) {
+        throw new IllegalArgumentException("query Redis TLS requires dedicated ACL credentials");
+      }
+    }
+
+    /** Redacts credentials when enclosing configuration is included in diagnostics. */
+    @Override
+    public String toString() {
+      return "RedisSecurity[tlsEnabled="
+          + tlsEnabled
+          + ", trustCertificatePath="
+          + trustCertificatePath
+          + ", username=<redacted>, password=<redacted>]";
     }
   }
 

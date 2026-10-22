@@ -387,6 +387,22 @@ spec:
       containers:
         - name: query-service
           env:
+            - name: SIMPLEMATCH_QUERY_SERVICE_REDIS_KEY_PREFIX
+              value: query:v2:tls
+            - name: SIMPLEMATCH_QUERY_SERVICE_REDIS_SECURITY_TLS_ENABLED
+              value: "true"
+            - name: SIMPLEMATCH_QUERY_SERVICE_REDIS_SECURITY_TRUST_CERTIFICATE_PATH
+              value: /etc/simplematch/redis-tls/ca.crt
+            - name: SIMPLEMATCH_QUERY_SERVICE_REDIS_SECURITY_USERNAME
+              valueFrom:
+                secretKeyRef:
+                  name: query-service-secrets
+                  key: redis_username
+            - name: SIMPLEMATCH_QUERY_SERVICE_REDIS_SECURITY_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: query-service-secrets
+                  key: redis_password
             - name: SIMPLEMATCH_POSTGRES_DSN
               valueFrom:
                 secretKeyRef:
@@ -418,10 +434,17 @@ spec:
             - name: SPRING_KAFKA_PROPERTIES_SSL_ENDPOINT_IDENTIFICATION_ALGORITHM
               value: HTTPS
           volumeMounts:
+            - name: query-redis-tls
+              mountPath: /etc/simplematch/redis-tls
+              readOnly: true
             - name: postgres-tls
               mountPath: /etc/simplematch/postgres-tls
               readOnly: true
       volumes:
+        - name: query-redis-tls
+          secret:
+            secretName: query-service-redis-tls
+            optional: false
         - name: postgres-tls
           secret:
             secretName: simplematch-postgres-tls

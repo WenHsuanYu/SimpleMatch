@@ -2,7 +2,6 @@ package com.simplematch.queryservice.config;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.SerializationFeature;
-import com.simplematch.config.RedisProperties;
 import com.simplematch.queryservice.runtime.NoopQueryReadCache;
 import com.simplematch.queryservice.runtime.QueryMarketReferenceArtifactLoader;
 import com.simplematch.queryservice.runtime.QueryMarketReferenceInstallationService;
@@ -10,8 +9,6 @@ import com.simplematch.queryservice.runtime.QueryMarketReferenceStartupInstaller
 import com.simplematch.queryservice.runtime.QueryProjectionRebuildService;
 import com.simplematch.queryservice.runtime.QueryReadCache;
 import com.simplematch.queryservice.runtime.RedisQueryReadCache;
-import io.lettuce.core.ClientOptions;
-import io.lettuce.core.SocketOptions;
 import java.time.Clock;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.boot.context.properties.EnableConfigurationProperties;
@@ -19,9 +16,6 @@ import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.core.io.ResourceLoader;
 import org.springframework.data.redis.connection.RedisConnectionFactory;
-import org.springframework.data.redis.connection.RedisStandaloneConfiguration;
-import org.springframework.data.redis.connection.lettuce.LettuceClientConfiguration;
-import org.springframework.data.redis.connection.lettuce.LettuceConnectionFactory;
 import org.springframework.data.redis.core.RedisTemplate;
 import org.springframework.data.redis.serializer.RedisSerializer;
 import org.springframework.data.redis.serializer.StringRedisSerializer;
@@ -70,42 +64,6 @@ public class QueryServiceRuntimeConfiguration {
       matchIfMissing = true)
   QueryReadCache noopQueryReadCache() {
     return new NoopQueryReadCache();
-  }
-
-  /** Creates the optional Redis endpoint from the shared Redis capability property. */
-  @Bean(destroyMethod = "destroy")
-  @ConditionalOnProperty(name = "simplematch.query-service.redis.enabled", havingValue = "true")
-  RedisConnectionFactory queryRedisConnectionFactory(
-      RedisProperties properties, QueryServiceProperties queryServiceProperties) {
-    final String endpoint = properties.endpoints().split(",", 2)[0].trim();
-    final int separator = endpoint.lastIndexOf(':');
-    if (separator <= 0 || separator == endpoint.length() - 1) {
-      throw new IllegalArgumentException("Redis endpoint must use host:port syntax");
-    }
-    final int port;
-    try {
-      port = Integer.parseInt(endpoint.substring(separator + 1));
-    } catch (NumberFormatException invalid) {
-      throw new IllegalArgumentException("Redis endpoint port must be numeric", invalid);
-    }
-    if (port < 1 || port > 65_535) {
-      throw new IllegalArgumentException("Redis endpoint port must be between 1 and 65535");
-    }
-    final QueryServiceProperties.Redis redisProperties = queryServiceProperties.redis();
-    final LettuceClientConfiguration clientConfiguration =
-        LettuceClientConfiguration.builder()
-            .commandTimeout(redisProperties.commandTimeout())
-            .clientOptions(
-                ClientOptions.builder()
-                    .socketOptions(
-                        SocketOptions.builder()
-                            .connectTimeout(redisProperties.connectTimeout())
-                            .build())
-                    .build())
-            .build();
-    return new LettuceConnectionFactory(
-        new RedisStandaloneConfiguration(endpoint.substring(0, separator), port),
-        clientConfiguration);
   }
 
   /** Creates byte-preserving Redis values for versioned read responses. */

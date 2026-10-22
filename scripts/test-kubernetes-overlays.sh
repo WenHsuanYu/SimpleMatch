@@ -316,6 +316,37 @@ end
 end
 
 if %w[staging production].include?(overlay)
+  query_pod = resources.fetch(["Deployment", "query-service"]).dig("spec", "template", "spec")
+  query_container = query_pod.fetch("containers").first
+  query_env = query_container.fetch("env").to_h { |entry| [entry.fetch("name"), entry] }
+  {
+    "SIMPLEMATCH_QUERY_SERVICE_REDIS_ENDPOINT" => "query-redis.#{overlay}.example.invalid:6380",
+    "SIMPLEMATCH_QUERY_SERVICE_REDIS_KEY_PREFIX" => "query:v2:tls",
+    "SIMPLEMATCH_QUERY_SERVICE_REDIS_SECURITY_TLS_ENABLED" => "true",
+    "SIMPLEMATCH_QUERY_SERVICE_REDIS_SECURITY_TRUST_CERTIFICATE_PATH" => "/etc/simplematch/redis-tls/ca.crt"
+  }.each do |name, expected|
+    abort "#{overlay}: Query Redis security setting #{name} is missing" unless
+      query_env.dig(name, "value") == expected
+  end
+  %w[USERNAME PASSWORD].each do |name|
+    abort "#{overlay}: Query Redis #{name} is not Secret-backed" unless
+      query_env.dig("SIMPLEMATCH_QUERY_SERVICE_REDIS_SECURITY_#{name}", "valueFrom", "secretKeyRef") ==
+        { "name" => "query-service-secrets", "key" => "redis_#{name.downcase}" }
+  end
+  abort "#{overlay}: Query Redis CA Secret is optional or missing" unless
+    query_pod.fetch("volumes").find { |volume| volume["name"] == "query-redis-tls" } ==
+      { "name" => "query-redis-tls", "secret" => { "secretName" => "query-service-redis-tls", "optional" => false } }
+  abort "#{overlay}: Query Redis CA mount is missing or writable" unless
+    query_container.fetch("volumeMounts").include?(
+      { "name" => "query-redis-tls", "mountPath" => "/etc/simplematch/redis-tls", "readOnly" => true }
+    )
+  query_egress = resources.fetch(["NetworkPolicy", "simplematch-query-redis-external"])
+  abort "#{overlay}: Query Redis egress is not scoped to its TLS endpoint" unless
+    query_egress.dig("spec", "podSelector", "matchLabels") == { "app.kubernetes.io/name" => "query-service" } &&
+      query_egress.dig("spec", "egress") == [
+        { "to" => [{ "ipBlock" => { "cidr" => "203.0.113.14/32" } }],
+          "ports" => [{ "protocol" => "TCP", "port" => 6380 }] }
+      ]
   required_deployments.each do |name|
     image = resources.fetch(["Deployment", name]).fetch("spec").fetch("template").fetch("spec").fetch("containers").first.fetch("image")
     abort "#{overlay}: #{name} image is not digest pinned" unless image.match?(/@sha256:[0-9a-f]{64}\z/)

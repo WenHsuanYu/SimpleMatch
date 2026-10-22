@@ -21,6 +21,20 @@ sourceSets.test {
     resources.srcDir(rootProject.file("shared-java/market-reference-contract/src/test/resources"))
 }
 
+tasks.test {
+    exclude("**/QueryRedisSecurityIntegrationTest.class")
+}
+
+tasks.register<Test>("redisSecurityTest") {
+    group = "verification"
+    description = "Verifies Query TLS and ACL behavior against runner-owned Redis fixtures."
+    testClassesDirs = sourceSets.test.get().output.classesDirs
+    classpath = sourceSets.test.get().runtimeClasspath
+    filter.includeTestsMatching("com.simplematch.queryservice.config.QueryRedisSecurityIntegrationTest")
+    maxParallelForks = 1
+    outputs.upToDateWhen { false }
+}
+
 tasks.register<Test>("postgresJdbcTest") {
     group = "verification"
     description = "Runs Query JDBC contract tests against a runner-owned PostgreSQL scratch database."

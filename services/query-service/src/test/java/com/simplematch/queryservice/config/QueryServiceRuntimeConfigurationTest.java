@@ -8,18 +8,19 @@ import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.simplematch.config.EnvironmentProperties;
 import com.simplematch.config.RedisProperties;
 import com.simplematch.queryservice.model.QueryMarketReferenceView;
 import com.simplematch.queryservice.runtime.QueryReadCache;
 import java.time.Duration;
 import java.time.LocalDate;
 import org.junit.jupiter.api.Test;
+import org.mockito.ArgumentCaptor;
 import org.springframework.boot.context.properties.bind.Bindable;
 import org.springframework.boot.context.properties.bind.Binder;
 import org.springframework.core.env.MapPropertySource;
 import org.springframework.core.env.StandardEnvironment;
 import org.springframework.data.redis.connection.lettuce.LettuceConnectionFactory;
-import org.mockito.ArgumentCaptor;
 import org.springframework.data.redis.core.RedisTemplate;
 import org.springframework.data.redis.core.ValueOperations;
 
@@ -96,12 +97,13 @@ class QueryServiceRuntimeConfigurationTest {
                 true, "query:v1", Duration.ofSeconds(2), Duration.ofMillis(250)),
             null,
             null);
-    final QueryServiceRuntimeConfiguration configuration =
-        new QueryServiceRuntimeConfiguration();
+    final QueryRedisConnectionConfiguration configuration = new QueryRedisConnectionConfiguration();
     final LettuceConnectionFactory factory =
         (LettuceConnectionFactory)
             configuration.queryRedisConnectionFactory(
-                new RedisProperties("redis.example:6379"), properties);
+                new RedisProperties("redis.example:6379"),
+                properties,
+                new EnvironmentProperties("local"));
 
     assertThat(factory.getClientConfiguration().getCommandTimeout())
         .isEqualTo(Duration.ofSeconds(2));

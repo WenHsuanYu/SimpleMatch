@@ -128,6 +128,21 @@ Useful canonical keys include:
   Redis command before the durable PostgreSQL fallback runs)
 - `simplematch.query-service.redis.connect-timeout` (defaults to `500ms`; maximum `10s`; bounds
   establishing a Redis connection)
+- `simplematch.query-service.redis.endpoint` (one `host:port`; absent locally, preserving the first
+  shared `simplematch.redis.endpoints` entry; managed overlays use a separate Query TLS endpoint)
+- `simplematch.query-service.redis.security.tls-enabled` (required in staging and production when
+  the cache is enabled; local/test defaults preserve the disposable plaintext lab)
+- `simplematch.query-service.redis.security.trust-certificate-path` (required mounted PEM CA bundle
+  when TLS is enabled; the client always verifies both the certificate chain and hostname)
+- `simplematch.query-service.redis.security.username` and `.password` (required dedicated,
+  non-`default` ACL credentials when TLS is enabled; supplied by `query-service-secrets` in managed
+  overlays; credentials are rejected with plaintext transport)
+
+Query checks the effective Redis security settings at its connection factory, so an environment or
+command-line override cannot disable TLS in staging or production. Disabling the optional cache
+still permits PostgreSQL-only reads. See the [Query Redis provisioning and rollout
+contract](../../deploy/k8s/README.md#query-redis-transport-and-acl-contract) for ACL limits and the new
+managed cache namespace.
 
 The query-service rebuild adapter is disabled by default. A bounded local or CI certification run
 may enable it with `SIMPLEMATCH_QUERY_SERVICE_REBUILD_HTTP_ENABLED=true` and supply the transient
