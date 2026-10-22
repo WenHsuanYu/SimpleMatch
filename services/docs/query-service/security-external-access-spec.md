@@ -2,7 +2,9 @@
 
 Status: **Conditionally approved architecture; implementation approval pending.**
 Reference and inspected HEAD: `9e68995233f49319974b76f826a59f88f14538cb`.
-Revision basis: the Principal Engineer Review Resolution supplied in this conversation.
+Revision basis: the Principal Engineer Review Resolution and its Required Specification
+Amendments addendum supplied in this conversation. Section 12 incorporates A1–A5 as mandatory
+contracts; the decision register records precedence and unchanged clauses.
 This is the repository edition of the previously conversation-only specification; the
 resolution supersedes conflicting details in that original proposal. This document is a
 target contract, not a statement of implemented or certified capabilities.
@@ -203,8 +205,11 @@ an approved invariant before claiming correctness.
 | --- | --- |
 | Missing/invalid required HTTP credential | 401, suitable authentication challenge, no resource disclosure |
 | Authenticated unauthorized or absent resource | Same deliberate 404 existence semantics |
+| Non-resource-specific permission denial | 403 where appropriate; never override resource-existence concealment |
 | Authorized existing order without executions | 200 with empty collection |
 | Invalid resource UUID after authentication | 400 |
+| Unsupported method on an otherwise matched route | 405 where applicable after the applicable security checks |
+| Rate limit exceeded | 429 under the approved Gateway contract |
 | Required ownership/policy dependency unavailable | 503 or approved fail-closed unavailable response |
 | Invalid mandatory policy | Reject activation/readiness or protected reads; no permissive fallback |
 
@@ -213,7 +218,8 @@ leaking resource existence. Protected responses/errors use appropriate `Cache-Co
 Minimal health routes must remain probe-compatible. Rebuild remains explicitly operator-token
 authorized; adding Spring Security must neither bypass nor accidentally disable its protection.
 
-Market Reference is not exempt from correctness: review cache identity, normalization,
+Market Reference defaults to an explicit authenticated-client policy; public exposure requires
+separate approval. It is not exempt from correctness: review cache identity, normalization,
 replacement and consistency separately; no automatic account grants or public exposure.
 Freshness stays internal by default. External payloads require an approved schema containing
 only necessary freshness information; existing responses embed full checkpoints. An unpublished
@@ -315,3 +321,160 @@ Verify selected release compatibility before using examples; links are not capab
   [backend mTLS](https://gateway.envoyproxy.io/docs/tasks/security/backend-mtls/),
   [rate limiting](https://gateway.envoyproxy.io/docs/concepts/rate-limiting/),
   [NetworkPolicy](https://kubernetes.io/docs/concepts/services-networking/network-policies/).
+
+## 12. Required specification amendments A1–A5
+
+These contracts supplement D1–D5 and R1–R8 without authorizing implementation. Their exact
+phase/test mappings are in the [amendment traceability matrix](../../../docs/plans/query-security-cache-implementation.md#11-addendum-requirement-to-test-traceability).
+The [resolution addendum](security-decision-register.md#review-resolution-addendum-a1a7)
+identifies unchanged decisions, refinements and repository gaps. All completion gates below
+require future evidence; incorporation into this specification is not runtime acceptance.
+
+### A1 — Redis resource identity and authorization integrity
+
+Authentication, effective grants, trusted ownership and typed cache identity are independent
+checks. For an eligible protected cache path, establish the principal and grants, resolve trusted
+resource ownership and authorize before cache access; then validate the complete typed response
+envelope/schema and resource identity before disclosure. Account Summary uses the requested
+canonical account as selector and independently checks its grant; cached data proves neither
+authorization nor durable existence. Order/Executions require trusted parent ownership.
+
+| Resource | Mandatory cached-response checks |
+| --- | --- |
+| Account Summary | Response canonical account equals requested AND authorized account; envelope/schema valid. |
+| Order | Response order equals requested order and account equals the trusted ownership result. |
+| Executions | Parent exists and is authorized; EVERY element has the requested order and authorized parent's account. Reject a mixed collection as a whole, not a filtered subset. |
+
+Malformed JSON, incompatible schema or mismatched identity MUST NOT be returned. After successful
+authorization/ownership, an invalid entry MAY be bypassed for a fresh scoped PostgreSQL read.
+Failed/unavailable required ownership or authorization MUST NOT fall back to Redis. Record
+sanitized integrity failures without foreign account identifiers in client errors. Suspected
+broader integrity compromise should fail closed and be investigated, rather than be silently
+hidden by fallback. Matching identifiers do not prove freshness/revision validity; version
+correctness and authorization correctness must both pass. Same-cluster location is not trust.
+
+Phase 1 satisfies the sensitive-cache boundary by using neither its reads nor writes. Phase 2C
+may re-enable an endpoint only after A1 tests pass, including foreign accounts/orders, mixed
+collections, invalid schema, missing/empty parent, ownership outage, warm-cache revocation,
+obsolete generation and valid-identity/stale-revision data under the approved revision policy.
+
+### A2 — Certificate revocation and connection lifecycle
+
+Handshake validation and revocation on established connections are distinct controls. Before
+final mTLS deployment, define issuer/revoker, trusted CAs, supported CRL or equivalent mechanism,
+distribution and effective adoption on EVERY serving Envoy replica. Do not assume CRL updates
+close existing connections or that a single replica's update establishes global effectiveness.
+
+After effective revocation, new connections with the revoked certificate MUST be rejected.
+Existing keep-alive connections need an explicit allow-until-boundary or reject policy; if
+continued requests are forbidden, enforce termination, drain or request-level rejection.
+Test session resumption under the pinned runtime configuration. If necessary validation cannot
+be demonstrated, disable resumption on the affected listener or use another verified mitigation.
+No immediate-revocation claim without connection-lifecycle evidence.
+
+When certificate-bound tokens are selected, compare token thumbprint with trusted external-peer
+evidence. Specify bounded old/new certificate overlap and behavior of existing tokens during
+rotation. An old token cannot be accepted using a certificate that is no longer acceptable under
+effective policy; replacement certificate plus old token must fail binding. Token expiration
+alone does not satisfy emergency revocation. Token and certificate revocation remain separate.
+
+Phase 5 evidence must include CA/revocation architecture, verified mechanism support, effective
+configuration of all serving replicas, new/established/resumed connection tests, measured
+propagation, rotation/binding tests, limitations and emergency procedure. Include backend Gateway
+client-certificate rotation and rejection of unapproved Gateway identities. Fresh-handshake chain
+validation alone cannot complete this gate; Phase 6 extends, not postpones, these tests.
+
+### A3 — Principal, credential and policy lifecycle
+
+Principal IDs are immutable, unique and never reassigned after retirement. Document suspension,
+disablement, deletion, reactivation and retirement transitions. Disabled principals cannot
+establish an authorized Query identity under effective policy. Rotation preserves identity;
+new registration receives no automatically transferred grants. An issuer/subject change cannot
+silently inherit grants; approved external mapping requires uniqueness/non-reuse and rejects
+duplicates/conflicts. Old credentials cannot recreate a disabled principal or restore a grant.
+
+Document credential issuance/distribution, verifier storage, rotation/overlap, expiry/disablement,
+emergency revocation, audit and legacy retirement. Distinguish Grant Approval Authority,
+Credential Provisioning Operator, Deployment Operator and Query Enforcement Service. Kubernetes
+permission is not business account-access approval.
+
+Designate one authoritative security policy source per environment for principal registration/
+status, credential mappings, grants, policy version and revocation. Spring Environment remains
+runtime resolution authority; Secrets should hold sensitive verification material. Document
+ownership and precedence across Secrets, ConfigMaps, environment variables and any approved
+registry; no silent overrides or independent configuration framework.
+
+Before activation validate duplicate IDs/mappings, canonical accounts, required fields, supported
+policy schema, verifier configuration, grants referencing unknown/disabled/retired principals and
+invalid/regressing policy versions. Authentication and authorization use compatible coherent
+immutable snapshots. Invalid activation fails closed, never defaults open. The lifecycle design
+must specify atomic removal/deactivation of grants when disabling a principal so these rules do
+not conflict. A rejected update must not be mistaken for completed revocation.
+
+Specify how each replica obtains, validates, activates and reports policy, and when it stops
+protected serving if its lifecycle contract cannot be met. Secret environment updates require
+container replacement to observe changes; volume propagation and application reload must be
+verified separately. No Secret-update-equals-adoption assumption. Independently control application
+and policy rollback so old bundles cannot restore grants. Prove version non-regression across
+restart/rollback using the approved authority mechanism; a version label alone is not enforcement.
+
+### A4 — HTTP security and response contract
+
+The actual version-compatible Spring Security chain authenticates before protected controller
+operations and establishes QueryPrincipal. No unintended anonymous, Basic, Form Login or session
+fallback. Direct Query access follows the same rules as Gateway-routed requests.
+
+| Route | Default application access rule |
+| --- | --- |
+| GET account summary | Authenticated principal plus account grant. |
+| GET order | Authentication, trusted order ownership and account grant. |
+| GET order executions | Authentication, existing parent ownership and account grant. |
+| GET market-reference | Explicit authenticated-client policy; public exposure separately approved. |
+| GET freshness | Internal-only operations policy, not automatic permission from any network location. |
+| POST internal/query/rebuild | Separate operator authentication and controlled deployment. |
+| Actuator liveness/readiness | Minimal health for approved infrastructure. |
+| Other Actuator routes | Explicit internal operations policy. |
+| Unknown routes/methods | Default denial or appropriate routing error; test generated HEAD/OPTIONS behavior. |
+
+Section 7 defines status semantics. OAuth uses RFC 6750-compatible WWW-Authenticate: Bearer
+challenge for absent credentials and appropriate invalid_token for invalid access tokens.
+Account-specific denial preserves concealed 404 semantics without sensitive error descriptions.
+The initial provisioned opaque scheme documents HTTP Bearer use without claiming OAuth issuance.
+Do not expose tokens, verifier internals or confidential grants in challenges/errors.
+
+Sensitive Account/Order/Executions responses use no-store by default; internal Redis is a separate
+cache contract. Document ambient cookie credentials, if any. Stateless explicit-bearer chains
+MAY disable CSRF when justified; do not globally disable CSRF without reviewing every chain.
+Review the state-changing rebuild route separately and test its explicit operator credential/
+CSRF handling. Do not accidentally add session authentication.
+
+Phase 1 requires compatible Spring Security MockMvc/real filter-chain integration (entry points,
+exceptions and route rules) plus PostgreSQL integration, not controller-only tests. Test credential
+and principal failures, spoofed headers, cross-account reads, authentication-before-UUID parsing,
+methods/routes, rebuild separation, challenges, cache headers and required dependency failure.
+
+### A5 — Performance baseline and selective cache acceptance
+
+Measure authorized PostgreSQL-only first using the same grants, ownership, consistency, freshness,
+fixtures and response contract as the cache comparison. Assess Account, Order, Executions and
+Market Reference separately if proposed for caching. Numerical thresholds are proposed after
+baseline measurement and approved before Phase 2C, not invented ahead of measurements.
+
+Required measurements: JDBC counts for ownership/payload/freshness/generation/revision and total;
+rows, query latency and plans when needed; Redis GET/SET, hit/miss, invalid entry and timeout;
+p50/p95 and preferably p99 end-to-end latency; DB CPU/I/O/connection utilization; concurrency,
+request rate, dataset and hot-key distribution; cache enabled state, TTL, replicas and pools.
+Report hits and misses separately; aggregate means are insufficient. Count metadata and write
+overhead; a smaller query plus Redis round trip is not automatically cheaper than an indexed read.
+
+Before implementation approve per-endpoint hit/miss JDBC budgets. Exercise baseline, cold/warm
+cache, same-resource concurrency, different-account/order concurrency, Redis timeout/outage,
+PostgreSQL outage, rebuild/generation transition and multi-replica behavior when making cluster
+claims. Correctness and performance are independent gates; both must pass for an enabled cache.
+
+Define comparable per-resource revisions and atomic conditional writes or an equivalent verified
+mechanism where stale-fill regression must be prevented. Do not use distributed locks solely to
+suppress harmless duplicate misses. Account revision/source ordering precedes Account Cache;
+cache no-regression is distinct from client monotonic reads. End Phase 2 with one recorded outcome
+per endpoint: enabled with both gates proven; PostgreSQL-only retained due to cost/complexity;
+or deferred with named missing requirement/evidence. Reintroducing Redis is not a completion goal.

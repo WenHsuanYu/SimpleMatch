@@ -1,7 +1,8 @@
 # Query Security Decision Register
 
 Status: **Directions conditionally approved; mechanisms and runtime acceptance remain pending.**
-Authority: the user-supplied Principal Engineer Review Resolution. Scope is documentation only.
+Authority: the user-supplied Principal Engineer Review Resolution and A1–A7 addendum.
+Scope is documentation only; the addendum below supplements rather than replaces R1–R8.
 See the [revised specification](security-external-access-spec.md) and
 [implementation/evidence plan](../../../docs/plans/query-security-cache-implementation.md).
 
@@ -82,3 +83,70 @@ Evidence records must identify source, environment, exact command/scenario, outc
 restoration and limitations. Do not change an entry to Runtime accepted because a document or
 manifest was reviewed. No deadlines, production secrets or responsible human identities are
 invented by this register.
+
+## Review Resolution Addendum A1–A7
+
+Status: **Required Specification Amendments incorporated; implementation not authorized**.
+The five engineering contracts are normative in
+[specification section 12](security-external-access-spec.md#12-required-specification-amendments-a1a5).
+A6 traceability and A7 planning/handoff requirements are implemented in the
+[requirement-to-test matrix](../../../docs/plans/query-security-cache-implementation.md#11-addendum-requirement-to-test-traceability).
+No test listed there has been executed for this documentation change.
+
+### Precedence and unchanged clauses
+
+The following preceding clauses remain in force, with no change to their approval boundaries:
+
+| Previous clause | Unchanged requirement |
+| --- | --- |
+| D1–D5 | Stable principal; authentication distinct from account grants; Query-local policy; target Gateway boundary; verifiable proxy trust. No chosen IdP/PKI or forwarding mechanism. |
+| R1 / OD-16 | Synthetic-credential lab application evidence separate from production verified transport. |
+| R2 / Phase 1 | Account/Order/Executions bypass BOTH Redis response reads and writes. Market Reference reviewed independently. |
+| R3 / OD-06–09,14 | Binding/trust capability spike required; XFCC, backend mTLS details, PKI and versions remain conditional. |
+| R4 / OD-02–04,17 | Explicit effective/in-flight/emergency/rollback contract; five minutes only candidate operational SLO, no hard SLA claim. |
+| R5 / OD-13 | No cache-fill version regression; maintenance versus generation conditional; CAS not equivalent to client monotonicity; thirty seconds only candidate age budget. |
+| R6 / OD-18 | Approve external freshness disclosure/schema; no automatic v2 for an unpublished API. |
+| R7 / INV-10 | Gateway AND application allowlists; route attachment and additive NetworkPolicy enforcement. |
+| R8 / OD-05,15 | Explicit auth modes, no JWT-failure fallback, no final opaque-only/JWT-only bypass. |
+| Account finding / OD-19 | Reservation-event projection is not authoritative balance; Account Cache stays off without semantics/revision evidence. |
+| Phase 0–6 / INV-01–10 / CON-01–07 | Phase 2A/2B/2C split and selective caches, independent phase gates, downstream isolation, no implementation/release approval from documents. |
+
+### Amendment resolution and decision mapping
+
+| Amendment | Required refinement | Existing invariant / decision mapping | Gate |
+| --- | --- | --- | --- |
+| A1 | Independent principal/grant/ownership/typed identity checks; entire mixed collection rejected; authorized durable fallback only; sanitized integrity failures. | INV-02/03/04/07; CON-01/02/07; D3; OD-13/19; R2/R5 | Phase 1 no-use boundary; Phase 2C validation before any protected cache re-enablement. |
+| A2 | Separate new, established and resumed TLS behavior; all replicas; bounded rotation overlap and old token/certificate binding; backend identity rotation. | INV-06/07/09; D2/D5; OD-04/06/07/08/09/14; R3/R4 | Phase 5 pinned-runtime lifecycle evidence, extended in 6. |
+| A3 | Non-recycled immutable principal, explicit lifecycle, one policy authority, schema/version/reference validation, coherent snapshots, effective adoption and anti-rollback. | INV-01/03/05/07; D1/D2/D3; OD-01/02/03/04/05/15/17; R4/R8 | Phase 1 lifecycle gate, extended in 4/5. |
+| A4 | Route matrix, status/challenge/cache headers, no unintended authentication schemes, chain-specific CSRF/session review and real HTTP security tests. | INV-01–06/10; D2/D4; OD-10/11/12/15/16/18; R1/R2/R7/R8 | Phase 1 application gate; Gateway alignment in 3/5. |
+| A5 | Comparable authorized baseline, named workload profiles/metrics/query budgets and independent correctness/performance gates; explicit per-endpoint outcome. | CON-01–07; INV-02/04/08; OD-13/19; R5 | Phase 2A baseline, 2B approved budgets/design, 2C both gates. |
+
+OD-01–OD-19 retain their numbers. A4 establishes authenticated-client Market Reference as the
+default application rule; OD-10 still owns external publication and detailed disclosure/cache
+policy. A3 refines D3 responsibilities into Grant Approval Authority, Credential Provisioning
+Operator, Deployment Operator and Enforcement Service; who holds each role remains unresolved.
+A3 adds required rejection of regressing policy/schema versions and invalid principal references,
+without selecting storage/lease/coordination technology. No SLO, numeric performance threshold,
+PKI, generation or certificate-propagation candidate becomes approved by this amendment.
+
+### Repository compatibility and interpretation
+
+No conflict was found with the documented Query downstream ownership, Spring Environment,
+Flyway or phase-based verification rules. There are implementation gaps, not permission to
+weaken the amendments: current sensitive routes lack security, use eager PostgreSQL plus Redis,
+and have controller-focused tests; certification expects sensitive Redis keys. Account events
+lack a proven account revision. These are future scoped changes, not delivered capabilities.
+
+Account Summary's account selector is checked against grants independently of cached content;
+it does not require an invented Account Authority lookup. Existing-resource visibility remains
+the approved consistency contract. Order/Executions require Query-owned parent ownership.
+Principal disablement and grants-to-disabled rejection must be one coherent policy transition;
+do not keep an invalid new snapshot and report revocation complete. 405/other routing errors
+apply where appropriate after security handling, not as a bypass of authentication-first rules.
+Internal-only does not mean anonymous or universally trusted cluster traffic: define consumers
+and their operations policy. Market Reference and embedded freshness may change consumer access;
+inventory and approve compatibility before implementation.
+
+Completion of these document amendments restores planning requirements only. Every future phase
+needs its own approved scope and actual evidence; no new service/database dependency or security
+bypass is justified solely by implementation convenience.
