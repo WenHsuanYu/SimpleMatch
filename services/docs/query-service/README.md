@@ -5,6 +5,12 @@ consumes final `matching.events` and `account.lifecycle` facts in independent Ka
 groups. No critical service calls Query, and the HTTP API never scans Kafka or reads another
 service's database.
 
+The [Query security and cache specification](security-external-access-spec.md) records the
+conditionally approved target architecture, with a [decision register](security-decision-register.md),
+[Account semantics review](account-summary-semantics-review.md), and
+[phased implementation plan](../../../docs/plans/query-security-cache-implementation.md).
+These documents do not claim the security changes are implemented or runtime-certified.
+
 ## Read APIs
 
 The versioned API is rooted at `/api/v1`:
@@ -15,10 +21,11 @@ The versioned API is rooted at `/api/v1`:
 - `GET /market-reference/{tradingDay}/{venueMic}/{symbol}` — active artifact row.
 - `GET /freshness` — source partition offsets and `READY`/`GAP_DETECTED` state.
 
-Every data response carries the durable checkpoint freshness metadata. PostgreSQL is written first;
-Redis is an optional 30-second read-through cache with keys shaped as
-`query:v1:{order|executions|account-summary|market-reference}:...`. A missing, expired, or invalid
-Redis entry reads PostgreSQL and repopulates only that cache entry. Redis connections use bounded
+Every data response carries durable checkpoint freshness metadata. The current controller
+evaluates PostgreSQL reads before checking the optional 30-second Redis response cache, so a
+cache hit does not avoid those database reads and can select an older cached response. Keys are
+shaped as `query:v1:{order|executions|account-summary|market-reference}:...`. A cache miss uses the
+already evaluated durable result and repopulates that entry. Redis connections use bounded
 connect and command timeouts (`500ms` and `2s` by default), so an unavailable cache returns the
 durable PostgreSQL view instead of holding a public read until the client reconnect loop expires.
 
