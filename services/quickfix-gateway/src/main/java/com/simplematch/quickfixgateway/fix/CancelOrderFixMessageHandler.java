@@ -12,6 +12,10 @@ import quickfix.field.OrigClOrdID;
 
 /** Owns the durable admission path for a FIX OrderCancelRequest message. */
 final class CancelOrderFixMessageHandler {
+  private static final FixInboundValidationFailure UNKNOWN_ORDER =
+      new FixInboundValidationFailure(
+          "UNKNOWN_ORDER", "original order does not belong to FIX session");
+
   private final WalDurableCommandWriter durableCommandWriter;
   private final OrderSessionRegistry orderSessionRegistry;
   private final RiskSubmissionResponder riskSubmissionResponder;
@@ -58,8 +62,12 @@ final class CancelOrderFixMessageHandler {
       return;
     }
     final String orderId = FixInboundCommandFactory.orderIdFor(origClOrdId);
-    final OrderSessionState existing =
-        orderSessionRegistry.find(sessionId, orderId).orElse(null);
+    final OrderSessionState existing = orderSessionRegistry.find(sessionId, orderId).orElse(null);
+    if (existing == null) {
+      riskSubmissionResponder.rejectInbound(
+          UNKNOWN_ORDER, sessionId, orderId, cancelClOrdId, origClOrdId);
+      return;
+    }
     final WalRecord walRecord;
     try {
       walRecord =
@@ -76,8 +84,7 @@ final class CancelOrderFixMessageHandler {
     }
     durableCommandWriter.appendForSubmission(walRecord);
     if (!riskSubmissionResponder
-        .submitCancelOrder(
-            sessionId, walRecord, existing == null ? '8' : existing.lifecycle().currentOrdStatus())
+        .submitCancelOrder(sessionId, walRecord, existing.lifecycle().currentOrdStatus())
         .accepted()) {
       return;
     }

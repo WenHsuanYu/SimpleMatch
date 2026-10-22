@@ -3,6 +3,8 @@ package com.simplematch.quickfixgateway.fix;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.Mockito.clearInvocations;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
@@ -88,13 +90,14 @@ class InboundFixMessageHandlerTest {
     assertThat(walRecords).hasSize(1);
 
     final WalRecord walRecord = walRecords.getFirst();
-    assertThat(walRecord.schemaVersion()).isEqualTo("v1");
+    assertThat(walRecord.schemaVersion()).isEqualTo("v2");
     assertThat(walRecord.recordId()).isNotBlank();
     assertUuidVersionSeven(walRecord.recordId());
     assertThat(walRecord.createdAtUnixMs()).isEqualTo(FIXED_INSTANT.toEpochMilli());
     assertThat(walRecord.sourceService()).isEqualTo("quickfix-gateway");
     assertThat(walRecord.senderCompId()).isEqualTo("CLIENT1");
     assertThat(walRecord.targetCompId()).isEqualTo("SIMPLEMATCH");
+    assertThat(walRecord.session().authenticatedSessionId()).isEqualTo(sessionId.toString());
     assertThat(walRecord.messageType()).isEqualTo(NewOrderSingle.MSGTYPE);
     assertThat(walRecord.orderId()).isEqualTo("O-C1");
     assertThat(walRecord.clOrdId()).isEqualTo("C1");
@@ -233,6 +236,193 @@ class InboundFixMessageHandlerTest {
                 secondPendingNew, MsgType.FIELD, 37, 150, 39, 54, 151, 14, 6, 11, 55, 60))
         .isEqualTo(
             "35=8|37=O-C2|150=A|39=A|54=2|151=20|14=0|6=0|11=C2|55=MSFT|60=2024-03-27T08:09:10.123Z");
+  }
+
+  @DisplayName("a different FIX session cannot cancel an owned order")
+  @Test
+  void crossSessionCancelIsRejectedBeforeWalAndRisk() throws Exception {
+    final WalAppender walAppender =
+        new WalAppender(tempDir.resolve("cross-session-cancel.wal"), StandardCharsets.UTF_8);
+    final RiskSubmissionClient riskSubmissionClient = mock(RiskSubmissionClient.class);
+    when(riskSubmissionClient.submitNewOrder(any(NewOrderCommand.class)))
+        .thenReturn(new RiskSubmissionResult("accepted", true, "", ""));
+    final FixSessionMessageSender sender = mock(FixSessionMessageSender.class);
+    final OrderSessionRegistry registry = new OrderSessionRegistry();
+    final InboundFixMessageHandler handler =
+        QuickFixIngressTestFixture.compose(
+            walAppender,
+            riskSubmissionClient,
+            sender,
+            registry,
+            new FixMessageMapper(),
+            FIXED_CLOCK);
+    final SessionID owningSession = new SessionID("FIX.4.4", "SIMPLEMATCH", "CLIENT1");
+    final SessionID otherSession = new SessionID("FIX.4.4", "SIMPLEMATCH", "CLIENT2");
+    handler.handle(newNewOrder("C1", "AAPL", '1', "10", "101.25", ACCOUNT_ID), owningSession);
+    clearInvocations(riskSubmissionClient, sender);
+
+    handler.handle(newCancelRequest("C1", "CXL-1", ACCOUNT_ID), otherSession);
+
+    assertThat(walAppender.readAll()).hasSize(1);
+    verifyNoInteractions(riskSubmissionClient);
+    final ArgumentCaptor<Message> rejection = ArgumentCaptor.forClass(Message.class);
+    verify(sender).send(eq(otherSession), rejection.capture());
+    assertThat(rejection.getValue().getInt(102)).isEqualTo(1);
+    assertThat(rejection.getValue().getString(58))
+        .isEqualTo("UNKNOWN_ORDER: original order does not belong to FIX session");
+    assertThat(registry.find(owningSession, "O-C1").orElseThrow().lifecycle().lastCancelRequest())
+        .isNull();
+    assertThat(registry.find(otherSession, "O-C1")).isEmpty();
+  }
+
+  @DisplayName("a cancel for an unknown order is rejected despite caller routing fields")
+  @Test
+  void unknownOrderCancelIsRejectedBeforeWalAndRisk() throws Exception {
+    final WalAppender walAppender =
+        new WalAppender(tempDir.resolve("unknown-order-cancel.wal"), StandardCharsets.UTF_8);
+    final RiskSubmissionClient riskSubmissionClient = mock(RiskSubmissionClient.class);
+    final FixSessionMessageSender sender = mock(FixSessionMessageSender.class);
+    final InboundFixMessageHandler handler =
+        QuickFixIngressTestFixture.compose(
+            walAppender,
+            riskSubmissionClient,
+            sender,
+            new OrderSessionRegistry(),
+            new FixMessageMapper(),
+            FIXED_CLOCK);
+    final OrderCancelRequest cancel = newCancelRequest("C1", "CXL-1", ACCOUNT_ID);
+    cancel.setString(Symbol.FIELD, "AAPL");
+    cancel.setChar(quickfix.field.Side.FIELD, '1');
+    final SessionID sessionId = new SessionID("FIX.4.4", "SIMPLEMATCH", "CLIENT1");
+
+    handler.handle(cancel, sessionId);
+
+    assertThat(walAppender.readAll()).isEmpty();
+    verifyNoInteractions(riskSubmissionClient);
+    final ArgumentCaptor<Message> rejection = ArgumentCaptor.forClass(Message.class);
+    verify(sender).send(eq(sessionId), rejection.capture());
+    assertThat(rejection.getValue().getInt(102)).isEqualTo(1);
+    assertThat(rejection.getValue().getString(58))
+        .isEqualTo("UNKNOWN_ORDER: original order does not belong to FIX session");
+  }
+
+  @DisplayName("a cancel cannot replace the owning order account")
+  @Test
+  void mismatchedCancelAccountIsRejectedBeforeWalAndRisk() throws Exception {
+    final WalAppender walAppender =
+        new WalAppender(tempDir.resolve("mismatched-cancel-account.wal"), StandardCharsets.UTF_8);
+    final RiskSubmissionClient riskSubmissionClient = mock(RiskSubmissionClient.class);
+    when(riskSubmissionClient.submitNewOrder(any(NewOrderCommand.class)))
+        .thenReturn(new RiskSubmissionResult("accepted", true, "", ""));
+    final FixSessionMessageSender sender = mock(FixSessionMessageSender.class);
+    final OrderSessionRegistry registry = new OrderSessionRegistry();
+    final InboundFixMessageHandler handler =
+        QuickFixIngressTestFixture.compose(
+            walAppender,
+            riskSubmissionClient,
+            sender,
+            registry,
+            new FixMessageMapper(),
+            FIXED_CLOCK);
+    final SessionID sessionId = new SessionID("FIX.4.4", "SIMPLEMATCH", "CLIENT1");
+    handler.handle(newNewOrder("C1", "AAPL", '1', "10", "101.25", ACCOUNT_ID), sessionId);
+    clearInvocations(riskSubmissionClient, sender);
+
+    handler.handle(newCancelRequest("C1", "CXL-1", SECOND_ACCOUNT_ID), sessionId);
+
+    assertThat(walAppender.readAll()).hasSize(1);
+    verifyNoInteractions(riskSubmissionClient);
+    final ArgumentCaptor<Message> rejection = ArgumentCaptor.forClass(Message.class);
+    verify(sender).send(eq(sessionId), rejection.capture());
+    assertThat(rejection.getValue().getString(58))
+        .isEqualTo("INVALID_CANCEL: account_id does not match original order");
+    assertThat(registry.find(sessionId, "O-C1").orElseThrow().lifecycle().lastCancelRequest())
+        .isNull();
+  }
+
+  @DisplayName("a cancel cannot replace authoritative routing context")
+  @ParameterizedTest(name = "{0}")
+  @MethodSource("mismatchedCancelRoutingContexts")
+  void mismatchedCancelRoutingContextIsRejectedBeforeWalAndRisk(
+      String scenario, String symbol, Character side, String expectedReason) throws Exception {
+    final WalAppender walAppender =
+        new WalAppender(tempDir.resolve(scenario + ".wal"), StandardCharsets.UTF_8);
+    final RiskSubmissionClient riskSubmissionClient = mock(RiskSubmissionClient.class);
+    when(riskSubmissionClient.submitNewOrder(any(NewOrderCommand.class)))
+        .thenReturn(new RiskSubmissionResult("accepted", true, "", ""));
+    final FixSessionMessageSender sender = mock(FixSessionMessageSender.class);
+    final OrderSessionRegistry registry = new OrderSessionRegistry();
+    final InboundFixMessageHandler handler =
+        QuickFixIngressTestFixture.compose(
+            walAppender,
+            riskSubmissionClient,
+            sender,
+            registry,
+            new FixMessageMapper(),
+            FIXED_CLOCK);
+    final SessionID sessionId = new SessionID("FIX.4.4", "SIMPLEMATCH", "CLIENT1");
+    handler.handle(newNewOrder("C1", "AAPL", '1', "10", "101.25", ACCOUNT_ID), sessionId);
+    clearInvocations(riskSubmissionClient, sender);
+    final OrderCancelRequest cancel = newCancelRequest("C1", "CXL-1", ACCOUNT_ID);
+    if (symbol != null) {
+      cancel.setString(Symbol.FIELD, symbol);
+    }
+    if (side != null) {
+      cancel.setChar(quickfix.field.Side.FIELD, side);
+    }
+
+    handler.handle(cancel, sessionId);
+
+    assertThat(walAppender.readAll()).hasSize(1);
+    verifyNoInteractions(riskSubmissionClient);
+    final ArgumentCaptor<Message> rejection = ArgumentCaptor.forClass(Message.class);
+    verify(sender).send(eq(sessionId), rejection.capture());
+    assertThat(rejection.getValue().getString(58)).isEqualTo("INVALID_CANCEL: " + expectedReason);
+    assertThat(registry.find(sessionId, "O-C1").orElseThrow().lifecycle().lastCancelRequest())
+        .isNull();
+  }
+
+  @DisplayName("an owned cancel without optional account uses authoritative order context")
+  @Test
+  void ownedCancelWithoutAccountUsesAuthoritativeOrderContext() throws Exception {
+    final WalAppender walAppender =
+        new WalAppender(tempDir.resolve("owned-cancel.wal"), StandardCharsets.UTF_8);
+    final RiskSubmissionClient riskSubmissionClient = mock(RiskSubmissionClient.class);
+    when(riskSubmissionClient.submitNewOrder(any(NewOrderCommand.class)))
+        .thenReturn(new RiskSubmissionResult("accepted", true, "", ""));
+    when(riskSubmissionClient.submitCancel(any(CancelOrderCommand.class)))
+        .thenReturn(new RiskSubmissionResult("accepted", true, "", ""));
+    final FixSessionMessageSender sender = mock(FixSessionMessageSender.class);
+    final OrderSessionRegistry registry = new OrderSessionRegistry();
+    final InboundFixMessageHandler handler =
+        QuickFixIngressTestFixture.compose(
+            walAppender,
+            riskSubmissionClient,
+            sender,
+            registry,
+            new FixMessageMapper(),
+            FIXED_CLOCK);
+    final SessionID sessionId = new SessionID("FIX.4.4", "SIMPLEMATCH", "CLIENT1");
+    handler.handle(newNewOrder("C1", "AAPL", '1', "10", "101.25", ACCOUNT_ID), sessionId);
+    final OrderCancelRequest cancel = newCancelRequest("C1", "CXL-1", ACCOUNT_ID);
+    cancel.removeField(Account.FIELD);
+
+    handler.handle(cancel, sessionId);
+
+    final ArgumentCaptor<CancelOrderCommand> command =
+        ArgumentCaptor.forClass(CancelOrderCommand.class);
+    verify(riskSubmissionClient).submitCancel(command.capture());
+    assertThat(command.getValue().getAccountId()).isEqualTo(ACCOUNT_ID);
+    assertThat(command.getValue().getInstrument().getSymbol()).isEqualTo("AAPL");
+    assertThat(command.getValue().getSide()).isEqualTo(Side.SIDE_BUY);
+    assertThat(walAppender.readAll()).hasSize(2);
+  }
+
+  private static Stream<Arguments> mismatchedCancelRoutingContexts() {
+    return Stream.of(
+        Arguments.of(
+            "mismatched-cancel-symbol", "MSFT", null, "symbol does not match original order"),
+        Arguments.of("mismatched-cancel-side", null, '2', "side does not match original order"));
   }
 
   @DisplayName("Pending New ExecID uses the WAL recordId for traceability")

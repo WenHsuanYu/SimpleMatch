@@ -40,17 +40,6 @@ public record FixOrderSnapshot(
         new Quantity(record.quantity()));
   }
 
-  /** Creates the partial order facts available when a cancel arrives before local state exists. */
-  public static FixOrderSnapshot cancelFallback(WalRecord record) {
-    Objects.requireNonNull(record, "record");
-    return new FixOrderSnapshot(
-        new OrderId(record.orderId()),
-        new ClientOrderId(record.origClOrdId()),
-        new Symbol(""),
-        Side.SIDE_UNSPECIFIED,
-        new Quantity(""));
-  }
-
   /** Server-assigned order identity rendered in FIX tag 37. */
   public record OrderId(String value) {
     /** Requires a nonblank order identity. */
@@ -69,7 +58,7 @@ public record FixOrderSnapshot(
 
   /** Instrument symbol rendered in FIX tag 55. */
   public record Symbol(String value) {
-    /** Normalizes the absent symbol used by a cancellation fallback to an empty value. */
+    /** Normalizes an absent symbol to an empty value. */
     public Symbol {
       value = Objects.requireNonNullElse(value, "");
     }

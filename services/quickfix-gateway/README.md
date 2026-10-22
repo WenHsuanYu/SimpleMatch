@@ -88,10 +88,12 @@ knows about Risk ownership or outcome. Sidecar states are `UNKNOWN`, `PENDING`, 
 `REJECTED`.
 
 The WAL is a Gateway-owned persistence model, not a serialized Risk protobuf. Its current local
-`schemaVersion = v1` identifies the stable flat WAL JSON format; it does **not** mean that the
-Gateway submits a v1 Risk contract. Live submission and restart resubmission both use the same
-`RiskCommandMapper` and `RiskCommandSubmitter` to produce typed v2 `NewOrderCommand` or
-`CancelOrderCommand` messages directly from the durable WAL record.
+`schemaVersion = v2` extends the stable flat JSON format with the complete authenticated FIX
+`SessionID`; it does **not** mean that the Gateway submits a v2 WAL contract. Live submission and
+restart resubmission both use the same `RiskCommandMapper` and `RiskCommandSubmitter` to produce
+typed v2 `NewOrderCommand` or `CancelOrderCommand` messages directly from the durable WAL record.
+The reader retains v1 compatibility, but v1 records cannot restore cancellation authority and v1
+cancellations are never resubmitted because their original authenticated session was not durable.
 
 Startup recovery is state-aware rather than a blind WAL replay:
 
@@ -103,7 +105,9 @@ Startup recovery is state-aware rather than a blind WAL replay:
 - authoritative `NOT_FOUND` permits resubmission only after local `UNKNOWN`, reusing the original
   `command_id`; and
 - local `PENDING` combined with authoritative `NOT_FOUND` is an ownership contradiction and prevents
-  successful startup.
+  successful startup; and
+- cancellation replay requires a v2 authenticated session plus a matching, previously accepted
+  new-order record from the same session.
 
 `simplematch.quickfix-gateway.replay-enabled` controls this startup recovery phase and defaults to
 `true`.
@@ -191,6 +195,7 @@ The Java gateway includes:
 - v2 Risk submission with bounded retry and breaker protection;
 - Risk admission reconciliation during startup recovery;
 - canonical Account UUID validation before durable admission;
+- session-owned cancellation resolution with authoritative account and routing context before WAL;
 - deterministic FIX `OrderID = O-<ClOrdID>` plus a separate internal Risk order UUID;
 - final `matching.events` consumption with durable FIX delivery planning and dispatch; and
 - `/healthz`, `/healthz/liveness`, `/readyz`, and `/metrics` management endpoints.

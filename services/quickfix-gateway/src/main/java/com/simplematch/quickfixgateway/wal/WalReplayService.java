@@ -15,7 +15,6 @@ import quickfix.SessionID;
 /** Reconciles locally durable gateway commands with authoritative Risk state at startup. */
 public final class WalReplayService {
   private static final Logger logger = LoggerFactory.getLogger(WalReplayService.class);
-  private static final String FIX_BEGIN_STRING = "FIX.4.4";
 
   private final WalAppender walAppender;
   private final Path recoveryJournalPath;
@@ -65,6 +64,7 @@ public final class WalReplayService {
         restoreSessionContext(walRecord, localState);
         continue;
       }
+      requireAuthorizedCancellation(walRecord);
       if (localState == null) {
         recoveryJournal.appendAndFlush(walRecord.recordId(), WalRecoveryState.UNKNOWN);
         submitAndRecord(recoveryJournal, walRecord);
@@ -132,16 +132,45 @@ public final class WalReplayService {
     };
   }
 
+  private void requireAuthorizedCancellation(WalRecord walRecord) {
+    if (!(walRecord.command() instanceof WalCommand.Cancel)) {
+      return;
+    }
+    if (!WalMetadata.CURRENT_SCHEMA_VERSION.equals(walRecord.schemaVersion())) {
+      throw new IllegalStateException(
+          "legacy cancel WAL cannot be safely replayed: " + walRecord.recordId());
+    }
+    final SessionID sessionId = walRecord.session().requireAuthenticatedSessionId();
+    final WalRecord admittedOrder =
+        orderSessionRegistry
+            .findAdmittedOrder(sessionId, walRecord.orderId())
+            .orElseThrow(
+                () ->
+                    new IllegalStateException(
+                        "cancel WAL lacks a session-owned admitted order: "
+                            + walRecord.recordId()));
+    if (!admittedOrder.clOrdId().equals(walRecord.origClOrdId())
+        || !admittedOrder.accountId().equals(walRecord.accountId())
+        || !admittedOrder.symbol().equals(walRecord.symbol())
+        || admittedOrder.side() != walRecord.side()) {
+      throw new IllegalStateException(
+          "cancel WAL does not match its session-owned admitted order: " + walRecord.recordId());
+    }
+  }
+
   private void restoreSessionContext(WalRecord walRecord, WalRecoveryState state) {
     if (!(walRecord.command() instanceof WalCommand.NewOrder)
         || state == WalRecoveryState.REJECTED
         || state == WalRecoveryState.UNKNOWN) {
       return;
     }
-    final String senderCompId = walRecord.targetCompId();
-    final String targetCompId = walRecord.senderCompId();
-    final SessionID sessionId = new SessionID(FIX_BEGIN_STRING, senderCompId, targetCompId);
-    orderSessionRegistry.registerAcceptedOrder(sessionId, walRecord, 'A');
+    if (!walRecord.session().hasAuthenticatedSessionId()) {
+      logger.warn(
+          "not restoring cancellation authority for legacy WAL record {}", walRecord.recordId());
+      return;
+    }
+    orderSessionRegistry.registerAcceptedOrder(
+        walRecord.session().requireAuthenticatedSessionId(), walRecord, 'A');
   }
 
   private static RiskReconciliationClient reconciliationRequired() {

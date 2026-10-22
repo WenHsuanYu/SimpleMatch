@@ -10,6 +10,7 @@ import com.simplematch.quickfixgateway.wal.WalOrderReference;
 import com.simplematch.quickfixgateway.wal.WalOrderTerms;
 import com.simplematch.quickfixgateway.wal.WalRecord;
 import java.time.Instant;
+import java.util.Objects;
 import quickfix.FieldNotFound;
 import quickfix.Message;
 import quickfix.field.Account;
@@ -29,7 +30,8 @@ final class FixInboundCommandFactory {
     return new WalRecord(
         new WalMetadata(
             WalMetadata.CURRENT_SCHEMA_VERSION, commandId, now.toEpochMilli(), "quickfix-gateway"),
-        new FixSessionIdentity(identity.senderCompId(), identity.targetCompId()),
+        new FixSessionIdentity(
+            identity.senderCompId(), identity.targetCompId(), identity.authenticatedSessionId()),
         new WalOrderReference(orderIdFor(clOrdId), clOrdId, "", accountId),
         new WalCommand.NewOrder(
             new WalOrderTerms(
@@ -51,27 +53,33 @@ final class FixInboundCommandFactory {
       String commandId,
       Instant now)
       throws FieldNotFound {
+    Objects.requireNonNull(existing, "existing");
     final String origClOrdId = message.getString(quickfix.field.OrigClOrdID.FIELD);
     final String cancelClOrdId = message.getString(ClOrdID.FIELD);
     final String symbol =
-        FixInboundFieldValues.optionalString(
-            message, Symbol.FIELD, existing == null ? "" : existing.symbol());
+        FixInboundFieldValues.optionalString(message, Symbol.FIELD, existing.symbol());
+    if (!symbol.equals(existing.symbol())) {
+      throw new IllegalArgumentException("symbol does not match original order");
+    }
     final Character rawSide =
         FixInboundFieldValues.optionalChar(message, quickfix.field.Side.FIELD);
-    final Side side =
-        rawSide == null
-            ? existing == null ? Side.SIDE_UNSPECIFIED : existing.side()
-            : FixInboundFieldValues.mapSide(rawSide);
+    final Side side = rawSide == null ? existing.side() : FixInboundFieldValues.mapSide(rawSide);
+    if (side != existing.side()) {
+      throw new IllegalArgumentException("side does not match original order");
+    }
     final String accountId =
         canonicalAccountId(
-            FixInboundFieldValues.optionalString(
-                message, Account.FIELD, existing == null ? "" : existing.accountId()));
+            FixInboundFieldValues.optionalString(message, Account.FIELD, existing.accountId()));
+    if (!accountId.equals(existing.accountId())) {
+      throw new IllegalArgumentException("account_id does not match original order");
+    }
     return new WalRecord(
         new WalMetadata(
             WalMetadata.CURRENT_SCHEMA_VERSION, commandId, now.toEpochMilli(), "quickfix-gateway"),
-        new FixSessionIdentity(identity.senderCompId(), identity.targetCompId()),
+        new FixSessionIdentity(
+            identity.senderCompId(), identity.targetCompId(), identity.authenticatedSessionId()),
         new WalOrderReference(orderIdFor(origClOrdId), cancelClOrdId, origClOrdId, accountId),
-        new WalCommand.Cancel(symbol, side),
+        new WalCommand.Cancel(existing.symbol(), existing.side()),
         new RawFixMessage(message.toString()));
   }
 

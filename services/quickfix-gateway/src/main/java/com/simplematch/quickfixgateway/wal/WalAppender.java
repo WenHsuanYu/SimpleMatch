@@ -27,12 +27,12 @@ public final class WalAppender implements AutoCloseable {
    * Opens the durable UTF-8 WAL at the supplied path.
    *
    * @param walPath path of the durable WAL file
-   * @param charset character encoding, which must be UTF-8 for v1
+   * @param charset character encoding, which must be UTF-8
    * @throws IllegalArgumentException if {@code charset} is not UTF-8
    */
   public WalAppender(Path walPath, Charset charset) {
     if (!StandardCharsets.UTF_8.equals(charset)) {
-      throw new IllegalArgumentException("WAL v1 requires UTF-8");
+      throw new IllegalArgumentException("WAL requires UTF-8");
     }
     try {
       this.walPath = walPath;

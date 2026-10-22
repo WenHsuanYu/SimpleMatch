@@ -5,7 +5,7 @@ import java.util.HashSet;
 import java.util.Iterator;
 import java.util.Set;
 
-/** Strict reader for the field types and names in the v1 WAL JSON document. */
+/** Strict reader for the field types and names in a supported WAL JSON document. */
 final class WalJsonDocument {
   private static final Set<String> V1_FIELDS =
       Set.of(
@@ -28,6 +28,13 @@ final class WalJsonDocument {
           "tif",
           "commandType",
           "rawFix");
+  private static final Set<String> V2_FIELDS;
+
+  static {
+    final Set<String> fields = new HashSet<>(V1_FIELDS);
+    fields.add("authenticatedSessionId");
+    V2_FIELDS = Set.copyOf(fields);
+  }
 
   private final JsonNode json;
 
@@ -36,7 +43,7 @@ final class WalJsonDocument {
       throw new WalRecordCodecException("WAL line must be a JSON object");
     }
     this.json = json;
-    rejectUnknownFields();
+    rejectUnknownFields(fieldsFor(requiredText("schemaVersion")));
   }
 
   String requiredText(String fieldName) {
@@ -80,12 +87,21 @@ final class WalJsonDocument {
     }
   }
 
-  private void rejectUnknownFields() {
+  private Set<String> fieldsFor(String schemaVersion) {
+    return switch (schemaVersion) {
+      case WalMetadata.LEGACY_SCHEMA_VERSION -> V1_FIELDS;
+      case WalMetadata.CURRENT_SCHEMA_VERSION -> V2_FIELDS;
+      default -> throw new WalRecordCodecException(
+          "unsupported WAL schema version: " + schemaVersion);
+    };
+  }
+
+  private void rejectUnknownFields(Set<String> supportedFields) {
     final Iterator<String> names = json.fieldNames();
     final Set<String> unknown = new HashSet<>();
     while (names.hasNext()) {
       final String name = names.next();
-      if (!V1_FIELDS.contains(name)) {
+      if (!supportedFields.contains(name)) {
         unknown.add(name);
       }
     }

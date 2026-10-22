@@ -25,6 +25,7 @@ import java.util.UUID;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 import org.mockito.ArgumentCaptor;
+import quickfix.SessionID;
 
 class WalReplayServiceTest {
   private static final String COMMAND_ID = "0194a8f0-7c77-7b38-9e2d-2a5fdd0f7c11";
@@ -184,6 +185,8 @@ class WalReplayServiceTest {
     try (WalAppender wal = wal("cancel")) {
       final WalRecoveryJournal states = states(wal);
       final String cancelCommandId = UUID.randomUUID().toString();
+      wal.appendAndFlush(newOrder());
+      states.appendAndFlush(COMMAND_ID, WalRecoveryState.ACCEPTED);
       wal.appendAndFlush(cancel(cancelCommandId));
       states.appendAndFlush(cancelCommandId, WalRecoveryState.UNKNOWN);
       final RiskSubmissionClient risk = mock(RiskSubmissionClient.class);
@@ -215,6 +218,28 @@ class WalReplayServiceTest {
     }
   }
 
+  @Test
+  void legacyCancelIsNotReplayedWithoutDurableAuthenticatedSessionIdentity() throws Exception {
+    try (WalAppender wal = wal("legacy-cancel")) {
+      final WalRecoveryJournal states = states(wal);
+      final String cancelCommandId = UUID.randomUUID().toString();
+      wal.appendAndFlush(newOrder());
+      states.appendAndFlush(COMMAND_ID, WalRecoveryState.ACCEPTED);
+      wal.appendAndFlush(legacyCancel(cancelCommandId));
+      states.appendAndFlush(cancelCommandId, WalRecoveryState.UNKNOWN);
+      final RiskSubmissionClient risk = mock(RiskSubmissionClient.class);
+      final RiskReconciliationClient reconciliation = mock(RiskReconciliationClient.class);
+
+      assertThatThrownBy(
+              () ->
+                  replay(wal, states, risk, reconciliation, new OrderSessionRegistry()).replayAll())
+          .isInstanceOf(IllegalStateException.class)
+          .hasMessageContaining("legacy cancel WAL cannot be safely replayed");
+
+      verifyNoInteractions(risk, reconciliation);
+    }
+  }
+
   private WalAppender wal(String name) {
     return new WalAppender(tempDir.resolve(name + ".wal"), StandardCharsets.UTF_8);
   }
@@ -239,8 +264,8 @@ class WalReplayServiceTest {
 
   private WalRecord newOrder() {
     return new WalRecord(
-        new WalMetadata("v1", COMMAND_ID, 1L, "quickfix-gateway"),
-        new FixSessionIdentity("CLIENT", "SIMPLEMATCH"),
+        new WalMetadata(WalMetadata.CURRENT_SCHEMA_VERSION, COMMAND_ID, 1L, "quickfix-gateway"),
+        authenticatedSession(),
         new WalOrderReference(ORDER_ID, "C1", "", ACCOUNT_ID),
         new WalCommand.NewOrder(
             new WalOrderTerms(
@@ -255,10 +280,25 @@ class WalReplayServiceTest {
 
   private WalRecord cancel(String commandId) {
     return new WalRecord(
-        new WalMetadata("v1", commandId, 1L, "quickfix-gateway"),
+        new WalMetadata(
+            WalMetadata.CURRENT_SCHEMA_VERSION, commandId, 2L, "quickfix-gateway"),
+        authenticatedSession(),
+        new WalOrderReference(ORDER_ID, "CXL-1", "C1", ACCOUNT_ID),
+        new WalCommand.Cancel("2330", Side.SIDE_BUY),
+        new RawFixMessage("8=FIX.4.4|35=F"));
+  }
+
+  private WalRecord legacyCancel(String commandId) {
+    return new WalRecord(
+        new WalMetadata(WalMetadata.LEGACY_SCHEMA_VERSION, commandId, 2L, "quickfix-gateway"),
         new FixSessionIdentity("CLIENT", "SIMPLEMATCH"),
         new WalOrderReference(ORDER_ID, "CXL-1", "C1", ACCOUNT_ID),
         new WalCommand.Cancel("2330", Side.SIDE_BUY),
         new RawFixMessage("8=FIX.4.4|35=F"));
+  }
+
+  private FixSessionIdentity authenticatedSession() {
+    final SessionID sessionId = new SessionID("FIX.4.4", "SIMPLEMATCH", "CLIENT");
+    return new FixSessionIdentity("CLIENT", "SIMPLEMATCH", sessionId.toString());
   }
 }

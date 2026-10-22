@@ -53,7 +53,7 @@ class WalAppenderTest {
             IllegalArgumentException.class,
             () -> new WalAppender(tempDir.resolve("utf16.wal"), StandardCharsets.UTF_16));
 
-    assertThat(failure).hasMessage("WAL v1 requires UTF-8");
+    assertThat(failure).hasMessage("WAL requires UTF-8");
   }
 
   /**

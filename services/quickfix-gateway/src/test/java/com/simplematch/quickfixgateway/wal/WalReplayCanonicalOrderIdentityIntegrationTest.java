@@ -23,6 +23,16 @@ class WalReplayCanonicalOrderIdentityIntegrationTest {
   private static final String FIX_ORDER_ID = "O-C1";
   private static final String CANONICAL_ORDER_ID = "37e574ea-fecd-336a-bf4a-5afca74e7ac5";
   private static final String ACCOUNT_ID = "0194a8f0-7c77-7b38-9e2d-2a5fdd0f7c13";
+  private static final SessionID QUALIFIED_SESSION =
+      new SessionID(
+          "FIX.4.4",
+          "SIMPLEMATCH",
+          "GATEWAY_SUB",
+          "GATEWAY_LOCATION",
+          "CLIENT",
+          "CLIENT_SUB",
+          "CLIENT_LOCATION",
+          "PRIMARY");
 
   @TempDir Path tempDir;
 
@@ -52,17 +62,22 @@ class WalReplayCanonicalOrderIdentityIntegrationTest {
           .hasValueSatisfying(
               state -> {
                 assertThat(state.sessionId())
-                    .isEqualTo(new SessionID("FIX.4.4", "SIMPLEMATCH", "CLIENT"));
+                    .isEqualTo(QUALIFIED_SESSION);
                 assertThat(state.orderId()).isEqualTo(FIX_ORDER_ID);
                 assertThat(state.clOrdId()).isEqualTo("C1");
               });
+      assertThat(registry.find(QUALIFIED_SESSION, FIX_ORDER_ID)).isPresent();
+      assertThat(
+              registry.find(
+                  new SessionID("FIX.4.4", "SIMPLEMATCH", "CLIENT"), FIX_ORDER_ID))
+          .isEmpty();
     }
   }
 
   private WalRecord newOrder() {
     return new WalRecord(
-        new WalMetadata("v1", COMMAND_ID, 1L, "quickfix-gateway"),
-        new FixSessionIdentity("CLIENT", "SIMPLEMATCH"),
+        new WalMetadata(WalMetadata.CURRENT_SCHEMA_VERSION, COMMAND_ID, 1L, "quickfix-gateway"),
+        new FixSessionIdentity("CLIENT", "SIMPLEMATCH", QUALIFIED_SESSION.toString()),
         new WalOrderReference(FIX_ORDER_ID, "C1", "", ACCOUNT_ID),
         new WalCommand.NewOrder(
             new WalOrderTerms(

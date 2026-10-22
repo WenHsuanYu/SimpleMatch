@@ -56,37 +56,30 @@ public final class OrderSessionRegistry {
     Objects.requireNonNull(orderId, "orderId");
     final WalRecord canonical = admittedOrdersByCanonicalOrderId.get(orderId);
     if (canonical != null) {
-      return Optional.of(canonical);
+      return isOwnedBySession(orderId, sessionId) ? Optional.of(canonical) : Optional.empty();
     }
-    return identityIndex
-        .resolve(sessionId, orderId)
-        .map(admittedOrdersByCanonicalOrderId::get);
+    return identityIndex.resolve(sessionId, orderId).map(admittedOrdersByCanonicalOrderId::get);
   }
 
-  /** Registers a cancel request and retains its client correlation identifiers. */
+  /** Registers a cancel request for an accepted order owned by the supplied session. */
   public void registerCancelRequest(SessionID sessionId, WalRecord walRecord) {
     Objects.requireNonNull(sessionId, "sessionId");
     Objects.requireNonNull(walRecord, "walRecord");
     final String canonicalOrderId = orderIdentityDeriver.derive(walRecord);
-    identityIndex.register(sessionId, walRecord.orderId(), canonicalOrderId);
     statesByCanonicalOrderId.compute(
         canonicalOrderId,
         (ignored, existing) -> {
-          final OrderSessionState state =
-              existing == null
-                  ? new OrderSessionState(
-                      sessionId,
-                      walRecord.accountId(),
-                      FixOrderSnapshot.cancelFallback(walRecord),
-                      new OrderSessionLifecycle('A'))
-                  : existing;
-          return state.withLifecycle(
-              state
+          if (existing == null || !existing.sessionId().equals(sessionId)) {
+            throw new IllegalStateException("cancel request requires session-owned accepted order");
+          }
+          return existing.withLifecycle(
+              existing
                   .lifecycle()
                   .withLastCancelRequest(
                       new OrderSessionState.CancelRequestState(
                           walRecord.clOrdId(), walRecord.origClOrdId())));
         });
+    identityIndex.register(sessionId, walRecord.orderId(), canonicalOrderId);
   }
 
   /** Finds the session state for one session-scoped FIX order identity. */
@@ -95,7 +88,7 @@ public final class OrderSessionRegistry {
     Objects.requireNonNull(orderId, "orderId");
     final OrderSessionState canonical = statesByCanonicalOrderId.get(orderId);
     if (canonical != null) {
-      return Optional.of(canonical);
+      return canonical.sessionId().equals(sessionId) ? Optional.of(canonical) : Optional.empty();
     }
     return identityIndex.resolve(sessionId, orderId).map(statesByCanonicalOrderId::get);
   }
@@ -133,6 +126,11 @@ public final class OrderSessionRegistry {
                             .lifecycle()
                             .withCurrentOrdStatus(orderStatus)
                             .withLastCancelRequest(null))));
+  }
+
+  private boolean isOwnedBySession(String canonicalOrderId, SessionID sessionId) {
+    final OrderSessionState state = statesByCanonicalOrderId.get(canonicalOrderId);
+    return state != null && state.sessionId().equals(sessionId);
   }
 
   private static final class OrderIdentityIndex {

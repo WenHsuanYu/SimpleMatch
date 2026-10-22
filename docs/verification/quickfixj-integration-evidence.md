@@ -52,6 +52,7 @@ The automated evidence covers:
 - session creation, FIX logon, inbound application traffic, logout, and clean acceptor shutdown;
 - `35=D` reaching the durable WAL path before the supported business acknowledgement;
 - canonical Account UUID validation at the FIX boundary;
+- fail-closed cancellation ownership checks before WAL append and Risk submission;
 - stable external `OrderID(37)=O-<ClOrdID>` behavior;
 - duplicate and cancel behavior through the public Gateway boundary;
 - state-aware recovery rather than blind WAL resubmission;

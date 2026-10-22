@@ -1,10 +1,12 @@
 package com.simplematch.quickfixgateway.fix;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 import com.simplematch.contracts.common.v2.OrderType;
 import com.simplematch.contracts.common.v2.Side;
 import com.simplematch.contracts.common.v2.TimeInForce;
+import com.simplematch.quickfixgateway.risk.RiskOrderIdentityDeriver;
 import com.simplematch.quickfixgateway.wal.FixSessionIdentity;
 import com.simplematch.quickfixgateway.wal.RawFixMessage;
 import com.simplematch.quickfixgateway.wal.WalCommand;
@@ -56,22 +58,32 @@ class OrderSessionRegistryTest {
   }
 
   @Test
-  void cancelRegistrationCreatesTheExistingFallbackWhenOrderStateIsMissing() {
+  void cancelRegistrationRequiresAnAcceptedOrderOwnedByTheSession() {
     final OrderSessionRegistry registry = new OrderSessionRegistry();
 
-    registry.registerCancelRequest(SESSION_ID, cancelRecordWithoutAccount());
+    assertThatThrownBy(
+            () ->
+                registry.registerCancelRequest(
+                    new SessionID("FIX.4.4", "CLIENT2", "SIMPLEMATCH"),
+                    cancelRecordWithoutAccount()))
+        .isInstanceOf(IllegalStateException.class)
+        .hasMessage("cancel request requires session-owned accepted order");
 
-    final OrderSessionState state = registry.find("O-C1").orElseThrow();
-    assertThat(state.sessionId()).isEqualTo(SESSION_ID);
-    assertThat(state.accountId()).isEmpty();
-    assertThat(state.orderId()).isEqualTo("O-C1");
-    assertThat(state.clOrdId()).isEqualTo("C1");
-    assertThat(state.symbol()).isEmpty();
-    assertThat(state.side()).isEqualTo(Side.SIDE_UNSPECIFIED);
-    assertThat(state.quantity()).isEmpty();
-    assertThat(state.lifecycle().currentOrdStatus()).isEqualTo('A');
-    assertThat(state.lifecycle().lastCancelRequest())
-        .isEqualTo(new OrderSessionState.CancelRequestState("CXL-1", "C1"));
+    assertThat(registry.find("O-C1")).isEmpty();
+  }
+
+  @Test
+  void sessionScopedCanonicalLookupDoesNotReturnAnotherSessionsOrder() {
+    final OrderSessionRegistry registry = new OrderSessionRegistry();
+    final WalRecord accepted = newOrderRecord();
+    registry.registerAcceptedOrder(SESSION_ID, accepted, 'A');
+    final String canonicalOrderId = new RiskOrderIdentityDeriver().derive(accepted);
+    final SessionID otherSession = new SessionID("FIX.4.4", "CLIENT2", "SIMPLEMATCH");
+
+    assertThat(registry.find(SESSION_ID, canonicalOrderId)).isPresent();
+    assertThat(registry.findAdmittedOrder(SESSION_ID, canonicalOrderId)).contains(accepted);
+    assertThat(registry.find(otherSession, canonicalOrderId)).isEmpty();
+    assertThat(registry.findAdmittedOrder(otherSession, canonicalOrderId)).isEmpty();
   }
 
   private WalRecord newOrderRecord() {

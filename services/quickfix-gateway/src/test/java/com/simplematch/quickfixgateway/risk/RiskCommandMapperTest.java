@@ -20,6 +20,7 @@ import java.time.LocalDate;
 import java.time.temporal.ChronoUnit;
 import java.util.UUID;
 import org.junit.jupiter.api.Test;
+import quickfix.SessionID;
 
 class RiskCommandMapperTest {
   private static final Instant CREATED_AT = Instant.parse("2024-03-27T08:09:10.123Z");
@@ -120,6 +121,7 @@ class RiskCommandMapperTest {
   }
 
   private FixSessionIdentity session() {
-    return new FixSessionIdentity("CLIENT1", "SIMPLEMATCH");
+    final SessionID sessionId = new SessionID("FIX.4.4", "SIMPLEMATCH", "CLIENT1");
+    return new FixSessionIdentity("CLIENT1", "SIMPLEMATCH", sessionId.toString());
   }
 }
