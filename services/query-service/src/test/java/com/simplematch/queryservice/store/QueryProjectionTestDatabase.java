@@ -7,12 +7,13 @@ import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.jdbc.datasource.DriverManagerDataSource;
 
 /** Opens the isolated H2 fixture or an explicitly runner-owned PostgreSQL database. */
-final class QueryProjectionTestDatabase {
+public final class QueryProjectionTestDatabase {
   private static final String OWNER_MARKER = "simplematch-query-postgres-jdbc-test";
 
   private QueryProjectionTestDatabase() {}
 
-  static DriverManagerDataSource open() {
+  /** Opens and migrates only an isolated test database after validating its ownership. */
+  public static DriverManagerDataSource open() {
     final String backend = System.getProperty("simplematch.query.jdbc.backend", "h2");
     final DriverManagerDataSource dataSource = switch (backend) {
       case "h2" -> h2();

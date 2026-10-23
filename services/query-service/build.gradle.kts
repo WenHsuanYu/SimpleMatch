@@ -10,7 +10,9 @@ dependencies {
     implementation("org.springframework.boot:spring-boot-starter-kafka")
     implementation("org.springframework.boot:spring-boot-starter-data-redis")
     implementation("org.springframework.boot:spring-boot-starter-web")
+    implementation("org.springframework.boot:spring-boot-starter-security")
 
+    testImplementation("org.springframework.security:spring-security-test")
     testImplementation(libs.h2)
     testImplementation(libs.flyway.core)
     testImplementation("org.springframework:spring-jdbc")
@@ -37,10 +39,13 @@ tasks.register<Test>("redisSecurityTest") {
 
 tasks.register<Test>("postgresJdbcTest") {
     group = "verification"
-    description = "Runs Query JDBC contract tests against a runner-owned PostgreSQL scratch database."
+    description = "Runs Query JDBC and HTTP security contracts against owned PostgreSQL."
     testClassesDirs = sourceSets.test.get().output.classesDirs
     classpath = sourceSets.test.get().runtimeClasspath
     filter.includeTestsMatching("com.simplematch.queryservice.store.JdbcQueryProjectionStoreTest")
+    filter.includeTestsMatching("com.simplematch.queryservice.security.QueryHttpSecurityIntegrationTest")
+    filter.includeTestsMatching("com.simplematch.queryservice.security.QueryRebuildDisabledHttpTest")
+    filter.includeTestsMatching("com.simplematch.queryservice.security.QueryDirectHttpTest")
     systemProperty("simplematch.query.jdbc.backend", "postgresql")
     maxParallelForks = 1
     outputs.upToDateWhen { false }

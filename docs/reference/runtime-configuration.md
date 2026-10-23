@@ -120,6 +120,17 @@ Useful canonical keys include:
   budget is justified by measured environment latency.
 - `simplematch.risk-service.admission.maximum-metric-age` (defaults to `30s`; stale CDC evidence
   fails closed for new Risk admission)
+- `simplematch.query-service.security.schema-version` (required for HTTP serving; only `1`)
+- `simplematch.query-service.security.policy-version` (required positive approved version)
+- `simplematch.query-service.security.principals` (nonempty immutable registration list; stable
+  `id`, `status` ACTIVE/DISABLED/RETIRED, canonical `account-grants`, explicit `operations-read`)
+- `simplematch.query-service.security.credentials` (nonempty list; independent `id`, `principal-id`,
+  lowercase SHA-256 `sha256`, `enabled` and required `expires-at`; no plaintext credentials)
+  The complete security policy belongs to the existing Query Secret/import source in the Lab;
+  do not split competing mappings across ConfigMap and Secret. Spring Environment remains the
+  resolution authority. HTTP startup rejects missing/invalid policy; updates require restart.
+  See [Query opaque authentication](../../services/docs/query-service/opaque-authentication.md)
+  for private fixture provisioning, stateless route rules and verification boundaries.
 - `simplematch.query-service.rebuild.http-enabled` (defaults to `false`; enables only the
   authenticated operator reset seam)
 - `simplematch.query-service.rebuild.operator-token` (required when the reset seam is enabled;

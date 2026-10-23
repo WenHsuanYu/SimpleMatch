@@ -735,6 +735,21 @@ implementation blocker.
 - **Blocking dependencies:** MR-3, ME-3, and AC-1.
 - **GitHub issue:** [#137](https://github.com/WenHsuanYu/SimpleMatch/issues/137).
 
+### Query HTTP security follow-up — separate from historical QS-1 acceptance
+
+- **Current status:** `PARTIAL`
+- **Implemented boundary:** [QS1-01 / #188](https://github.com/WenHsuanYu/SimpleMatch/issues/188)
+  introduces validated opaque Query identities, operations-read Freshness, independent operator
+  rebuild and minimal probes. Unconverted Account/Order/Execution/Market routes deny by default.
+  Synthetic credentials are provisioned before deployment; Query receives verifiers only.
+- **Verification boundary:** Actual HTTP filter tests, immutable-policy/credential tests and the
+  existing runner-owned PostgreSQL test seam provide focused local evidence. This is not the
+  final Phase 1 security certification or a new production-like deployment claim. The
+  [slice runbook](../../services/docs/query-service/opaque-authentication.md) records exact checks.
+- **Remaining:** #189–#194 own business routes, minimal envelopes, deployed revocation/recovery,
+  collectors and final acceptance. Gateway/OAuth/mTLS/cache phases require their own approvals.
+  Historical #137/#138 results remain preserved; this follow-up does not reopen those issues.
+
 ### GO-1: Operate one Gateway admission authority
 
 - **Current status:** `COMPLETED`

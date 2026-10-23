@@ -180,6 +180,12 @@ public record QueryServiceProperties(
       operatorToken = operatorToken == null ? "" : operatorToken;
     }
 
+    /** Keeps the independent operator credential out of enclosing configuration diagnostics. */
+    @Override
+    public String toString() {
+      return "Rebuild[httpEnabled=" + httpEnabled + ", operatorToken=<redacted>]";
+    }
+
     private static Rebuild defaults() {
       return new Rebuild(false, "");
     }

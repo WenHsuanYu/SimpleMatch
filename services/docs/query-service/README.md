@@ -9,7 +9,23 @@ The [Query security and cache specification](security-external-access-spec.md) r
 conditionally approved target architecture, with a [decision register](security-decision-register.md),
 [Account semantics review](account-summary-semantics-review.md), and
 [phased implementation plan](../../../docs/plans/query-security-cache-implementation.md).
-These documents do not claim the security changes are implemented or runtime-certified.
+The first [opaque authentication slice](opaque-authentication.md) implements Operations Freshness
+security; full account authorization and later transport/cache phases remain independently gated.
+
+## Current HTTP security boundary
+
+QS1-01 enables GET /api/v1/freshness only for an active registered QueryPrincipal with explicit
+operations-read. Exact GET liveness/readiness endpoints expose minimal health; opt-in POST rebuild
+retains its independent operator credential. Other business/management routes and methods deny
+by default until their dedicated authorization tickets land. This deliberately changes direct
+HTTP behavior; no anonymous collector compatibility mode exists. The historical controller/cache
+behavior below is not reachable through the denied business routes in this slice.
+
+Every HTTP-serving process requires a complete validated startup policy under
+simplematch.query-service.security; it never generates credentials or reloads policy dynamically.
+Provision synthetic Local Lab credentials using the private fixture CLI and supply its verifier
+properties through Spring Environment. See the [configuration and test runbook](opaque-authentication.md).
+No production transport, multi-replica revocation or account-read security acceptance is claimed.
 
 ## Read APIs
 
