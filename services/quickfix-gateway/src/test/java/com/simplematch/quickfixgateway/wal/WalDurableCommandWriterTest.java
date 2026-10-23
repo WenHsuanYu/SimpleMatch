@@ -34,11 +34,11 @@ class WalDurableCommandWriterTest {
   private WalRecord newOrder() {
     return new WalRecord(
         new WalMetadata(
-            "v1",
+            WalMetadata.CURRENT_SCHEMA_VERSION,
             "0194a8f0-7c77-7b38-9e2d-2a5fdd0f7c11",
             1L,
             "quickfix-gateway"),
-        new FixSessionIdentity("CLIENT", "SIMPLEMATCH"),
+        new FixSessionIdentity("CLIENT", "SIMPLEMATCH", "FIX.4.4:SIMPLEMATCH->CLIENT"),
         new WalOrderReference(
             "O-C1", "C1", "", "0194a8f0-7c77-7b38-9e2d-2a5fdd0f7c13"),
         new WalCommand.NewOrder(

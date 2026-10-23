@@ -136,10 +136,6 @@ public final class WalReplayService {
     if (!(walRecord.command() instanceof WalCommand.Cancel)) {
       return;
     }
-    if (!WalMetadata.CURRENT_SCHEMA_VERSION.equals(walRecord.schemaVersion())) {
-      throw new IllegalStateException(
-          "legacy cancel WAL cannot be safely replayed: " + walRecord.recordId());
-    }
     final SessionID sessionId = walRecord.session().requireAuthenticatedSessionId();
     final WalRecord admittedOrder =
         orderSessionRegistry
@@ -162,11 +158,6 @@ public final class WalReplayService {
     if (!(walRecord.command() instanceof WalCommand.NewOrder)
         || state == WalRecoveryState.REJECTED
         || state == WalRecoveryState.UNKNOWN) {
-      return;
-    }
-    if (!walRecord.session().hasAuthenticatedSessionId()) {
-      logger.warn(
-          "not restoring cancellation authority for legacy WAL record {}", walRecord.recordId());
       return;
     }
     orderSessionRegistry.registerAcceptedOrder(

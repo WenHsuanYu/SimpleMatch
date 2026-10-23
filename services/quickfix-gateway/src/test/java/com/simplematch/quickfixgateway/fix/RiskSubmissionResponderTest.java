@@ -144,8 +144,8 @@ class RiskSubmissionResponderTest {
 
   private WalRecord newOrderRecord() {
     return new WalRecord(
-        new WalMetadata("v1", NEW_COMMAND_ID, NOW.toEpochMilli(), "quickfix-gateway"),
-        new FixSessionIdentity("CLIENT1", "SIMPLEMATCH"),
+        new WalMetadata(WalMetadata.CURRENT_SCHEMA_VERSION, NEW_COMMAND_ID, NOW.toEpochMilli(), "quickfix-gateway"),
+        new FixSessionIdentity("CLIENT1", "SIMPLEMATCH", "FIX.4.4:SIMPLEMATCH->CLIENT1"),
         new WalOrderReference("O-C1", "C1", "", ACCOUNT_ID),
         new WalCommand.NewOrder(
             new WalOrderTerms(
@@ -160,8 +160,8 @@ class RiskSubmissionResponderTest {
 
   private WalRecord cancelRecord() {
     return new WalRecord(
-        new WalMetadata("v1", CANCEL_COMMAND_ID, NOW.toEpochMilli(), "quickfix-gateway"),
-        new FixSessionIdentity("CLIENT1", "SIMPLEMATCH"),
+        new WalMetadata(WalMetadata.CURRENT_SCHEMA_VERSION, CANCEL_COMMAND_ID, NOW.toEpochMilli(), "quickfix-gateway"),
+        new FixSessionIdentity("CLIENT1", "SIMPLEMATCH", "FIX.4.4:SIMPLEMATCH->CLIENT1"),
         new WalOrderReference("O-C1", "CXL-1", "C1", ACCOUNT_ID),
         new WalCommand.Cancel("AAPL", Side.SIDE_BUY),
         new RawFixMessage("35=F"));

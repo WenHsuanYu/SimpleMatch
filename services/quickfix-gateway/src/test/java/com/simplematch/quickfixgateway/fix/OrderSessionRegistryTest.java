@@ -19,7 +19,7 @@ import quickfix.SessionID;
 
 class OrderSessionRegistryTest {
   private static final SessionID SESSION_ID =
-      new SessionID("FIX.4.4", "CLIENT1", "SIMPLEMATCH");
+      new SessionID("FIX.4.4", "SIMPLEMATCH", "CLIENT1");
 
   @Test
   void acceptedOrderStateComposesTheExistingFixOrderSnapshot() {
@@ -64,7 +64,7 @@ class OrderSessionRegistryTest {
     assertThatThrownBy(
             () ->
                 registry.registerCancelRequest(
-                    new SessionID("FIX.4.4", "CLIENT2", "SIMPLEMATCH"),
+                    new SessionID("FIX.4.4", "SIMPLEMATCH", "CLIENT2"),
                     cancelRecordWithoutAccount()))
         .isInstanceOf(IllegalStateException.class)
         .hasMessage("cancel request requires session-owned accepted order");
@@ -78,7 +78,7 @@ class OrderSessionRegistryTest {
     final WalRecord accepted = newOrderRecord();
     registry.registerAcceptedOrder(SESSION_ID, accepted, 'A');
     final String canonicalOrderId = new RiskOrderIdentityDeriver().derive(accepted);
-    final SessionID otherSession = new SessionID("FIX.4.4", "CLIENT2", "SIMPLEMATCH");
+    final SessionID otherSession = new SessionID("FIX.4.4", "SIMPLEMATCH", "CLIENT2");
 
     assertThat(registry.find(SESSION_ID, canonicalOrderId)).isPresent();
     assertThat(registry.findAdmittedOrder(SESSION_ID, canonicalOrderId)).contains(accepted);
@@ -88,8 +88,8 @@ class OrderSessionRegistryTest {
 
   private WalRecord newOrderRecord() {
     return new WalRecord(
-        new WalMetadata("v1", "cmd-1", 1L, "quickfix-gateway"),
-        new FixSessionIdentity("CLIENT1", "SIMPLEMATCH"),
+        new WalMetadata(WalMetadata.CURRENT_SCHEMA_VERSION, "cmd-1", 1L, "quickfix-gateway"),
+        new FixSessionIdentity("CLIENT1", "SIMPLEMATCH", "FIX.4.4:SIMPLEMATCH->CLIENT1"),
         new WalOrderReference("O-C1", "C1", "", "ACC-1"),
         new WalCommand.NewOrder(
             new WalOrderTerms(
@@ -104,8 +104,8 @@ class OrderSessionRegistryTest {
 
   private WalRecord cancelRecordWithoutAccount() {
     return new WalRecord(
-        new WalMetadata("v1", "cmd-2", 2L, "quickfix-gateway"),
-        new FixSessionIdentity("CLIENT1", "SIMPLEMATCH"),
+        new WalMetadata(WalMetadata.CURRENT_SCHEMA_VERSION, "cmd-2", 2L, "quickfix-gateway"),
+        new FixSessionIdentity("CLIENT1", "SIMPLEMATCH", "FIX.4.4:SIMPLEMATCH->CLIENT1"),
         new WalOrderReference("O-C1", "CXL-1", "C1", ""),
         new WalCommand.Cancel(),
         new RawFixMessage("raw-cancel"));

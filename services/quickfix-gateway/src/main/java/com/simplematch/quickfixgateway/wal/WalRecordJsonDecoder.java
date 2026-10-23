@@ -32,8 +32,7 @@ final class WalRecordJsonDecoder {
               document.requiredText("recordId"),
               document.requiredLong("createdAtUnixMs"),
               document.requiredText("sourceService"));
-      final FixSessionIdentity session =
-          decodeSession(document, metadata.schemaVersion());
+      final FixSessionIdentity session = decodeSession(document);
       final WalOrderReference reference =
           new WalOrderReference(
               document.requiredText("orderId"),
@@ -56,14 +55,11 @@ final class WalRecordJsonDecoder {
     }
   }
 
-  private FixSessionIdentity decodeSession(WalJsonDocument document, String schemaVersion) {
-    final String senderCompId = document.requiredText("senderCompId");
-    final String targetCompId = document.requiredText("targetCompId");
-    if (WalMetadata.CURRENT_SCHEMA_VERSION.equals(schemaVersion)) {
-      return new FixSessionIdentity(
-          senderCompId, targetCompId, document.requiredText("authenticatedSessionId"));
-    }
-    return new FixSessionIdentity(senderCompId, targetCompId);
+  private FixSessionIdentity decodeSession(WalJsonDocument document) {
+    return new FixSessionIdentity(
+        document.requiredText("senderCompId"),
+        document.requiredText("targetCompId"),
+        document.requiredText("authenticatedSessionId"));
   }
 
   private WalCommand decodeCommand(WalJsonDocument document, WalOrderReference reference) {

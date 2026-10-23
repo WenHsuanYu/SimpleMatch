@@ -7,7 +7,7 @@ import java.util.Set;
 
 /** Strict reader for the field types and names in a supported WAL JSON document. */
 final class WalJsonDocument {
-  private static final Set<String> V1_FIELDS =
+  private static final Set<String> SUPPORTED_FIELDS =
       Set.of(
           "schemaVersion",
           "recordId",
@@ -15,6 +15,7 @@ final class WalJsonDocument {
           "sourceService",
           "senderCompId",
           "targetCompId",
+          "authenticatedSessionId",
           "messageType",
           "orderId",
           "clOrdId",
@@ -28,14 +29,6 @@ final class WalJsonDocument {
           "tif",
           "commandType",
           "rawFix");
-  private static final Set<String> V2_FIELDS;
-
-  static {
-    final Set<String> fields = new HashSet<>(V1_FIELDS);
-    fields.add("authenticatedSessionId");
-    V2_FIELDS = Set.copyOf(fields);
-  }
-
   private final JsonNode json;
 
   WalJsonDocument(JsonNode json) {
@@ -43,7 +36,7 @@ final class WalJsonDocument {
       throw new WalRecordCodecException("WAL line must be a JSON object");
     }
     this.json = json;
-    rejectUnknownFields(fieldsFor(requiredText("schemaVersion")));
+    rejectUnknownFields();
   }
 
   String requiredText(String fieldName) {
@@ -83,25 +76,16 @@ final class WalJsonDocument {
   void requirePlaceholder(String fieldName, String expected) {
     if (!expected.equals(optionalText(fieldName))) {
       throw new WalRecordCodecException(
-          "WAL field " + fieldName + " must use the v1 placeholder " + expected);
+          "WAL field " + fieldName + " must use the placeholder " + expected);
     }
   }
 
-  private Set<String> fieldsFor(String schemaVersion) {
-    return switch (schemaVersion) {
-      case WalMetadata.LEGACY_SCHEMA_VERSION -> V1_FIELDS;
-      case WalMetadata.CURRENT_SCHEMA_VERSION -> V2_FIELDS;
-      default -> throw new WalRecordCodecException(
-          "unsupported WAL schema version: " + schemaVersion);
-    };
-  }
-
-  private void rejectUnknownFields(Set<String> supportedFields) {
+  private void rejectUnknownFields() {
     final Iterator<String> names = json.fieldNames();
     final Set<String> unknown = new HashSet<>();
     while (names.hasNext()) {
       final String name = names.next();
-      if (!supportedFields.contains(name)) {
+      if (!SUPPORTED_FIELDS.contains(name)) {
         unknown.add(name);
       }
     }

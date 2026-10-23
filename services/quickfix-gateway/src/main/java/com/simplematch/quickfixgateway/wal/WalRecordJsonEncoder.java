@@ -26,9 +26,7 @@ final class WalRecordJsonEncoder {
       json.put("sourceService", metadata.sourceService());
       json.put("senderCompId", session.senderCompId());
       json.put("targetCompId", session.targetCompId());
-      if (WalMetadata.CURRENT_SCHEMA_VERSION.equals(metadata.schemaVersion())) {
-        json.put("authenticatedSessionId", session.authenticatedSessionId());
-      }
+      json.put("authenticatedSessionId", session.authenticatedSessionId());
       json.put("messageType", record.command().messageType());
       json.put("orderId", reference.orderId());
       json.put("clOrdId", reference.clOrdId());

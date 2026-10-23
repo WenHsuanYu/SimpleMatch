@@ -5,6 +5,7 @@ import static org.junit.jupiter.api.Assertions.assertThrows;
 
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.fasterxml.jackson.databind.node.ObjectNode;
 import com.simplematch.contracts.common.v2.OrderType;
 import com.simplematch.contracts.common.v2.Side;
 import com.simplematch.contracts.common.v2.TimeInForce;
@@ -17,15 +18,60 @@ import java.util.List;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.NullSource;
+import org.junit.jupiter.params.provider.ValueSource;
 
 class WalAppenderTest {
   @TempDir Path tempDir;
 
   private final ObjectMapper objectMapper = new ObjectMapper();
 
-  @DisplayName("semantic new-order records persist as flat v1 JSON")
+  @ParameterizedTest
+  @ValueSource(strings = {"v1", "v3"})
+  void replayRejectsUnsupportedSchemaWithoutChangingWalBytes(String schemaVersion) throws Exception {
+    final Path walPath = tempDir.resolve("unsupported-version.wal");
+    try (WalAppender walAppender = new WalAppender(walPath, StandardCharsets.UTF_8)) {
+      walAppender.appendAndFlush(validNewOrderRecord());
+      final ObjectNode legacy = (ObjectNode) objectMapper.readTree(Files.readString(walPath));
+      legacy.put("schemaVersion", schemaVersion);
+      legacy.remove("authenticatedSessionId");
+      Files.writeString(walPath, legacy.toString(), StandardCharsets.UTF_8);
+      final byte[] originalBytes = Files.readAllBytes(walPath);
+
+      final WalReplayException failure = assertThrows(WalReplayException.class, walAppender::readAll);
+
+      assertThat(failure.lineNumber()).isEqualTo(1);
+      assertThat(failure).hasMessageContaining("unsupported WAL schema version: " + schemaVersion);
+      assertThat(Files.readAllBytes(walPath)).isEqualTo(originalBytes);
+    }
+  }
+
+  @ParameterizedTest
+  @NullSource
+  @ValueSource(strings = {"", " ", "FIX.4.4:OTHER->CLIENT"})
+  void replayRequiresMatchingAuthenticatedSessionIdentity(String sessionId) throws Exception {
+    final Path walPath = tempDir.resolve("invalid-session.wal");
+    try (WalAppender walAppender = new WalAppender(walPath, StandardCharsets.UTF_8)) {
+      walAppender.appendAndFlush(validNewOrderRecord());
+      final ObjectNode invalid = (ObjectNode) objectMapper.readTree(Files.readString(walPath));
+      if (sessionId == null) {
+        invalid.remove("authenticatedSessionId");
+      } else {
+        invalid.put("authenticatedSessionId", sessionId);
+      }
+      Files.writeString(walPath, invalid.toString(), StandardCharsets.UTF_8);
+      final byte[] originalBytes = Files.readAllBytes(walPath);
+
+      assertThrows(WalReplayException.class, walAppender::readAll);
+
+      assertThat(Files.readAllBytes(walPath)).isEqualTo(originalBytes);
+    }
+  }
+
+  @DisplayName("semantic new-order records persist as flat v2 JSON")
   @Test
-  void semanticNewOrderRecordPersistsAsFlatV1Json() throws Exception {
+  void semanticNewOrderRecordPersistsAsFlatV2Json() throws Exception {
     final Path walPath = tempDir.resolve("semantic-new-order.wal");
     final WalRecord record = validNewOrderRecord();
 
@@ -33,10 +79,11 @@ class WalAppenderTest {
       walAppender.appendAndFlush(record);
 
       final JsonNode json = objectMapper.readTree(Files.readString(walPath));
-      assertThat(json.path("schemaVersion").asText()).isEqualTo("v1");
+      assertThat(json.path("schemaVersion").asText()).isEqualTo("v2");
       assertThat(json.path("recordId").asText()).isEqualTo("cmd-1");
       assertThat(json.path("senderCompId").asText()).isEqualTo("CLIENT");
       assertThat(json.path("targetCompId").asText()).isEqualTo("GW");
+      assertThat(json.path("authenticatedSessionId").asText()).isEqualTo("FIX.4.4:GW->CLIENT");
       assertThat(json.path("messageType").asText()).isEqualTo("D");
       assertThat(json.path("orderId").asText()).isEqualTo("O-C1");
       assertThat(json.path("symbol").asText()).isEqualTo("AAPL");
@@ -45,7 +92,7 @@ class WalAppenderTest {
     }
   }
 
-  @DisplayName("the v1 WAL requires UTF-8 encoding")
+  @DisplayName("the WAL requires UTF-8 encoding")
   @Test
   void walRequiresUtf8Encoding() {
     final IllegalArgumentException failure =
@@ -71,8 +118,8 @@ class WalAppenderTest {
       final WalRecord first = validNewOrderRecord();
       final WalRecord second =
           new WalRecord(
-              new WalMetadata("v1", "cmd-2", 2L, "quickfix-gateway"),
-              new FixSessionIdentity("CLIENT", "GW"),
+              new WalMetadata(WalMetadata.CURRENT_SCHEMA_VERSION, "cmd-2", 2L, "quickfix-gateway"),
+              new FixSessionIdentity("CLIENT", "GW", "FIX.4.4:GW->CLIENT"),
               new WalOrderReference("O-C1", "CXL-1", "C1", "ACC-1"),
               new WalCommand.Cancel(),
               new RawFixMessage("8=FIX.4.4|35=F"));
@@ -111,7 +158,7 @@ class WalAppenderTest {
       assertThat(lines.getFirst()).startsWith("{").endsWith("}");
 
       final JsonNode json = objectMapper.readTree(lines.getFirst());
-      assertThat(json.path("schemaVersion").asText()).isEqualTo("v1");
+      assertThat(json.path("schemaVersion").asText()).isEqualTo("v2");
       assertThat(json.path("recordId").asText()).isEqualTo("cmd-1");
       assertThat(json.path("sourceService").asText()).isEqualTo("quickfix-gateway");
       assertThat(json.path("senderCompId").asText()).isEqualTo("CLIENT");
@@ -131,7 +178,7 @@ class WalAppenderTest {
       walAppender.appendAndFlush(validNewOrderRecord());
       Files.writeString(
           walPath,
-          System.lineSeparator() + "{\"schemaVersion\":\"v1\"}" + System.lineSeparator(),
+          System.lineSeparator() + "{\"schemaVersion\":\"v2\"}" + System.lineSeparator(),
           StandardCharsets.UTF_8,
           StandardOpenOption.APPEND);
       final byte[] bytesBeforeReplay = Files.readAllBytes(walPath);
@@ -160,7 +207,7 @@ class WalAppenderTest {
       final String validJson = Files.readString(walPath).trim();
       Files.writeString(
           walPath,
-          validJson + lineEnding + "{\"schemaVersion\":\"v1\"}" + lineEnding,
+          validJson + lineEnding + "{\"schemaVersion\":\"v2\"}" + lineEnding,
           StandardCharsets.UTF_8,
           StandardOpenOption.TRUNCATE_EXISTING);
       final byte[] bytesBeforeReplay = Files.readAllBytes(walPath);
@@ -319,8 +366,8 @@ class WalAppenderTest {
 
   private WalRecord validNewOrderRecord() {
     return new WalRecord(
-        new WalMetadata("v1", "cmd-1", 1L, "quickfix-gateway"),
-        new FixSessionIdentity("CLIENT", "GW"),
+        new WalMetadata(WalMetadata.CURRENT_SCHEMA_VERSION, "cmd-1", 1L, "quickfix-gateway"),
+        new FixSessionIdentity("CLIENT", "GW", "FIX.4.4:GW->CLIENT"),
         new WalOrderReference("O-C1", "C1", "", "ACC-1"),
         new WalCommand.NewOrder(
             new WalOrderTerms(

@@ -49,9 +49,12 @@ records what the Gateway currently knows about Risk ownership or outcome. They h
 responsibilities and neither replaces the Risk admission journal.
 
 The Gateway WAL is a Gateway-owned persistence model, not a serialized service contract. Its local
-`schemaVersion = v1` identifies the stable flat WAL encoding and does not mean that production Risk
-submission uses a v1 command. Live submission and restart resubmission both map the durable
-`WalRecord` directly into typed v2 `NewOrderCommand` or `CancelOrderCommand` messages.
+`schemaVersion = v2` identifies the flat WAL encoding containing the complete authenticated FIX
+SessionID; this Gateway-local version is independent of the Risk wire-contract version. Only WAL v2
+is supported after the pre-release cutover with no legacy data. A v1 or unknown-version record stops
+recovery before remote work and leaves the original WAL unchanged. Live submission and restart
+resubmission both map the durable `WalRecord` directly into typed v2 `NewOrderCommand` or
+`CancelOrderCommand` messages.
 
 Risk writes `PENDING` before the remote Account call. The Account call remains outside the Risk
 database transaction. Risk later commits the terminal admission state and the required outbox event

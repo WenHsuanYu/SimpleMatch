@@ -32,7 +32,7 @@ vocabulary as production code.
 
 The remaining parameter-safety refactoring changes only handwritten Java interfaces. Market
 snapshot source JSON fields, PostgreSQL schemas and column semantics, Spring configuration keys and
-defaults, FIX messages, WAL v1 JSON, protobuf contracts, and Kafka payloads remain unchanged.
+defaults, FIX messages, persisted WAL JSON, protobuf contracts, and Kafka payloads remain unchanged.
 Adapters and codecs flatten and rehydrate the semantic Java values. Any change to one of those
 external shapes requires a separate compatibility decision and, where applicable, a versioned
 migration.
@@ -243,15 +243,19 @@ automated parameter-count enforcement; Checkstyle does not set a parameter limit
 ## WAL persistence slice
 
 `WalRecord` is a FIX Gateway persistence representation rather than an aggregate. Its Java model
-may compose semantic representation groups, but its codec must continue to read existing `v1`
-line-delimited JSON and write the same flat `v1` field names and enum values. This protects WAL
-replay after an application upgrade. Any persisted-shape change requires a new schema version and
-an explicit migration or multi-version-read decision; grouping Java fields alone is not a version
-change. Because no historical WAL data needs permissive recovery, the codec validates every
-decoded record as strictly as a newly appended record, including the permitted FIX-message-type and
-command-type pairs.
+may compose semantic representation groups without changing the persisted shape. The original
+parameter-safety refactoring preserved flat `v1` JSON. The subsequent FIX security cutover requires
+the complete authenticated FIX SessionID in WAL `v2`. With no legacy data, active v1 producers, or
+external consumers to migrate, the approved pre-release retirement policy in
+[ADR-0007](0007-retire-pre-release-compatibility.md) applies: only WAL v2 is read and written.
+Unsupported versions fail before recovery performs remote work; their bytes are not rewritten,
+skipped, or silently upgraded. Existing v2 records retain restart recovery and session-owned
+cancellation checks. Future persisted-shape changes still require a new schema version and an
+explicit compatibility decision; grouping Java fields alone is not a version change. The codec
+validates every decoded record as strictly as a newly appended record, including the permitted
+FIX-message-type and command-type pairs.
 The strict reader also rejects unknown or duplicate fields, trailing JSON tokens, and malformed or
-unmappable character sequences before semantic rehydration. v1 WAL bytes are UTF-8; it writes
+unmappable character sequences before semantic rehydration. WAL bytes are UTF-8; it writes
 LF-delimited records and accepts LF, CRLF, or CR while reporting physical line numbers consistently
 across platforms.
 
@@ -290,7 +294,7 @@ parameter-safety slice.
 
 `WalCommand` is command-specific: a new-order command requires `WalOrderTerms`; a cancellation
 requires its cancellation identity and original client-order identity but has no order terms. The
-codec writes the existing blank or unspecified `v1` fields for a cancellation, rather than making
+codec writes the existing blank or unspecified fields for a cancellation, rather than making
 those placeholders part of the Java model.
 
 Replay is fail-fast. If a nonblank WAL line cannot be decoded or violates these invariants, replay
@@ -298,7 +302,7 @@ stops with its line number and leaves the WAL bytes unchanged for operator inves
 gateway never skips, silently repairs, or continues past a durable inbound command.
 
 `WalRecordJsonCodec` is a package-private FIX Gateway adapter. It alone flattens and rehydrates
-the `v1` JSON shape and applies WAL invariants. `WalAppender` owns line-oriented file I/O,
+the `v2` JSON shape and applies WAL invariants. `WalAppender` owns line-oriented file I/O,
 serialization durability, and synchronization; it does not know JSON field names. The codec does
 not know files, channels, locking, or replay orchestration.
 

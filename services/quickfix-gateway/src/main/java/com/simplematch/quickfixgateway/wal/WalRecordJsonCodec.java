@@ -2,7 +2,7 @@ package com.simplematch.quickfixgateway.wal;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
 
-/** Owns the v1 WAL compatibility seam while delegating focused encode and decode work. */
+/** Owns the v2 WAL encoding while delegating focused encode and decode work. */
 final class WalRecordJsonCodec {
   private final WalRecordJsonEncoder encoder;
   private final WalRecordJsonDecoder decoder;

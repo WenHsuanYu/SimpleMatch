@@ -193,8 +193,8 @@ class FinalMatchingEventFixLifecycleIntegrationTest {
     registry.registerAcceptedOrder(
         new SessionID("FIX.4.4", "SIMPLEMATCH", "CLIENT"),
         new WalRecord(
-            new WalMetadata("v1", UUID.randomUUID().toString(), 1L, "quickfix-gateway"),
-            new FixSessionIdentity("CLIENT", "SIMPLEMATCH"),
+            new WalMetadata(WalMetadata.CURRENT_SCHEMA_VERSION, UUID.randomUUID().toString(), 1L, "quickfix-gateway"),
+            new FixSessionIdentity("CLIENT", "SIMPLEMATCH", "FIX.4.4:SIMPLEMATCH->CLIENT"),
             new WalOrderReference(orderId, clientOrderId, "", ACCOUNT_ID),
             new WalCommand.NewOrder(
                 new WalOrderTerms(

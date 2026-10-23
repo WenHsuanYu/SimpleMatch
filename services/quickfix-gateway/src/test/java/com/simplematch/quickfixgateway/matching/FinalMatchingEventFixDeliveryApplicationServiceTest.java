@@ -246,8 +246,8 @@ class FinalMatchingEventFixDeliveryApplicationServiceTest {
   private WalRecord walRecord(
       String orderId, String clientOrderId, String accountId, Side side) {
     return new WalRecord(
-        new WalMetadata("v1", UUID.randomUUID().toString(), 1L, "quickfix-gateway"),
-        new FixSessionIdentity("CLIENT", "SIMPLEMATCH"),
+        new WalMetadata(WalMetadata.CURRENT_SCHEMA_VERSION, UUID.randomUUID().toString(), 1L, "quickfix-gateway"),
+        new FixSessionIdentity("CLIENT", "SIMPLEMATCH", "FIX.4.4:SIMPLEMATCH->CLIENT"),
         new WalOrderReference(orderId, clientOrderId, "", accountId),
         new WalCommand.NewOrder(
             new WalOrderTerms(

@@ -8,6 +8,8 @@ import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.when;
 
+import com.fasterxml.jackson.databind.ObjectMapper;
+import com.fasterxml.jackson.databind.node.ObjectNode;
 import com.simplematch.contracts.common.v2.OrderType;
 import com.simplematch.contracts.common.v2.Side;
 import com.simplematch.contracts.common.v2.TimeInForce;
@@ -20,7 +22,9 @@ import com.simplematch.quickfixgateway.risk.RiskSubmissionClient;
 import com.simplematch.quickfixgateway.risk.RiskSubmissionResult;
 import com.simplematch.quickfixgateway.risk.RiskTestSupport;
 import java.nio.charset.StandardCharsets;
+import java.nio.file.Files;
 import java.nio.file.Path;
+import java.util.List;
 import java.util.UUID;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
@@ -219,24 +223,30 @@ class WalReplayServiceTest {
   }
 
   @Test
-  void legacyCancelIsNotReplayedWithoutDurableAuthenticatedSessionIdentity() throws Exception {
+  void retiredV1WalStopsRecoveryBeforeAnyRemoteWork() throws Exception {
     try (WalAppender wal = wal("legacy-cancel")) {
       final WalRecoveryJournal states = states(wal);
       final String cancelCommandId = UUID.randomUUID().toString();
       wal.appendAndFlush(newOrder());
       states.appendAndFlush(COMMAND_ID, WalRecoveryState.ACCEPTED);
-      wal.appendAndFlush(legacyCancel(cancelCommandId));
-      states.appendAndFlush(cancelCommandId, WalRecoveryState.UNKNOWN);
+      wal.appendAndFlush(cancel(cancelCommandId));
+      final List<String> lines = Files.readAllLines(wal.walPath(), StandardCharsets.UTF_8);
+      final ObjectNode legacy = (ObjectNode) new ObjectMapper().readTree(lines.getLast());
+      legacy.put("schemaVersion", "v1");
+      legacy.remove("authenticatedSessionId");
+      Files.write(wal.walPath(), List.of(lines.getFirst(), legacy.toString()), StandardCharsets.UTF_8);
+      final byte[] originalBytes = Files.readAllBytes(wal.walPath());
       final RiskSubmissionClient risk = mock(RiskSubmissionClient.class);
       final RiskReconciliationClient reconciliation = mock(RiskReconciliationClient.class);
 
       assertThatThrownBy(
               () ->
                   replay(wal, states, risk, reconciliation, new OrderSessionRegistry()).replayAll())
-          .isInstanceOf(IllegalStateException.class)
-          .hasMessageContaining("legacy cancel WAL cannot be safely replayed");
+          .isInstanceOf(WalReplayException.class)
+          .hasMessageContaining("unsupported WAL schema version: v1");
 
       verifyNoInteractions(risk, reconciliation);
+      assertThat(Files.readAllBytes(wal.walPath())).isEqualTo(originalBytes);
     }
   }
 
@@ -283,15 +293,6 @@ class WalReplayServiceTest {
         new WalMetadata(
             WalMetadata.CURRENT_SCHEMA_VERSION, commandId, 2L, "quickfix-gateway"),
         authenticatedSession(),
-        new WalOrderReference(ORDER_ID, "CXL-1", "C1", ACCOUNT_ID),
-        new WalCommand.Cancel("2330", Side.SIDE_BUY),
-        new RawFixMessage("8=FIX.4.4|35=F"));
-  }
-
-  private WalRecord legacyCancel(String commandId) {
-    return new WalRecord(
-        new WalMetadata(WalMetadata.LEGACY_SCHEMA_VERSION, commandId, 2L, "quickfix-gateway"),
-        new FixSessionIdentity("CLIENT", "SIMPLEMATCH"),
         new WalOrderReference(ORDER_ID, "CXL-1", "C1", ACCOUNT_ID),
         new WalCommand.Cancel("2330", Side.SIDE_BUY),
         new RawFixMessage("8=FIX.4.4|35=F"));

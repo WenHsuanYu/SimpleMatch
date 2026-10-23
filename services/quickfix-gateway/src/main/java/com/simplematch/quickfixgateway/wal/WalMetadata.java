@@ -6,13 +6,9 @@ public record WalMetadata(
   /** Current stable command-WAL schema. Recovery state is versioned in its sidecar journal. */
   public static final String CURRENT_SCHEMA_VERSION = "v2";
 
-  /** Legacy schema that did not persist the complete authenticated FIX session identity. */
-  public static final String LEGACY_SCHEMA_VERSION = "v1";
-
   /** Requires the stable schema version and complete durable provenance. */
   public WalMetadata {
-    if (!CURRENT_SCHEMA_VERSION.equals(schemaVersion)
-        && !LEGACY_SCHEMA_VERSION.equals(schemaVersion)) {
+    if (!CURRENT_SCHEMA_VERSION.equals(schemaVersion)) {
       throw new IllegalArgumentException("unsupported WAL schema version: " + schemaVersion);
     }
     recordId = WalValidation.requiredText(recordId, "record_id");

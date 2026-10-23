@@ -66,6 +66,15 @@ The live baseline acknowledgement continues to verify the expected FIX 4.4 field
 Exact assertions remain authoritative in `QuickFixCertificationEvidenceTest` so this document does
 not duplicate every field literal and drift from the executable evidence.
 
+The ordinary Gateway module tests additionally enforce the v2-only WAL cutover.
+`WalAppenderTest` checks v2 encoding and round-trip identity, rejects retired v1 and unknown versions,
+and rejects missing, blank, or CompID-inconsistent authenticated SessionIDs without changing the WAL
+bytes. `WalReplayServiceTest` checks that an unsupported record prevents any Risk submission or
+reconciliation, including when valid records precede it. `WalReplayCanonicalOrderIdentityIntegrationTest`
+retains v2 restart correlation with complete SubIDs, LocationIDs, and qualifier; it does not infer
+authority from a CompID-only alias. These are local WAL/recovery tests, separate from the socket
+certification task and from deployed-system evidence.
+
 ## Retained-session retransmission evidence
 
 The production-like failure certification also exercises a retained external FIX session after the

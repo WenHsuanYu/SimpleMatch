@@ -19,10 +19,6 @@ public record WalRecord(
     Objects.requireNonNull(orderReference, "orderReference");
     Objects.requireNonNull(command, "command");
     Objects.requireNonNull(rawFixMessage, "rawFixMessage");
-    if (WalMetadata.CURRENT_SCHEMA_VERSION.equals(metadata.schemaVersion())
-        && !session.hasAuthenticatedSessionId()) {
-      throw new IllegalArgumentException("WAL v2 requires authenticated FIX session identity");
-    }
     if (command instanceof WalCommand.NewOrder && !orderReference.origClOrdId().isEmpty()) {
       throw new IllegalArgumentException("new order must not have orig_cl_ord_id");
     }

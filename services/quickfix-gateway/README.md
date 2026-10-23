@@ -146,12 +146,16 @@ knows about Risk ownership or outcome. Sidecar states are `UNKNOWN`, `PENDING`, 
 `REJECTED`.
 
 The WAL is a Gateway-owned persistence model, not a serialized Risk protobuf. Its current local
-`schemaVersion = v2` extends the stable flat JSON format with the complete authenticated FIX
-`SessionID`; this Gateway-local schema version is independent of the Risk wire contract. Live submission and
+`schemaVersion = v2` stores the complete authenticated FIX `SessionID` in the flat JSON format;
+this Gateway-local schema version is independent of the Risk wire contract. Live submission and
 restart resubmission both use the same `RiskCommandMapper` and `RiskCommandSubmitter` to produce
 typed v2 `NewOrderCommand` or `CancelOrderCommand` messages directly from the durable WAL record.
-The reader retains v1 compatibility, but v1 records cannot restore cancellation authority and v1
-cancellations are never resubmitted because their original authenticated session was not durable.
+Only WAL v2 is supported for writing and recovery. This pre-release cutover has no legacy data or
+active v1 producer to migrate. A v1 or unknown-version record fails recovery with its physical line
+number before any Risk submission or reconciliation; the WAL bytes remain unchanged. There is no
+CompID-only session fallback or legacy cancellation authority. Existing v2 WAL remains recoverable
+across restart with its exact authenticated SessionID, including SubIDs, LocationIDs, and qualifier.
+Future persisted-format changes still require an explicit version and compatibility decision.
 
 Startup recovery is state-aware rather than a blind WAL replay:
 
