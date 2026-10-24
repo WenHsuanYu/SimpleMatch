@@ -134,6 +134,8 @@ public class QueryHttpSecurityConfiguration {
                     .authenticated()
                     .requestMatchers(HttpMethod.GET, "/api/v1/orders/{orderId}")
                     .authenticated()
+                    .requestMatchers(HttpMethod.GET, "/api/v1/orders/{orderId}/executions")
+                    .authenticated()
                     .anyRequest()
                     .denyAll())
         .build();

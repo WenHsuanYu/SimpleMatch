@@ -49,6 +49,8 @@ tasks.register<Test>("postgresJdbcTest") {
     filter.includeTestsMatching("com.simplematch.queryservice.security.QueryAccountSummaryHttpTest")
     filter.includeTestsMatching("com.simplematch.queryservice.security.QueryAccountPolicySnapshotHttpTest")
     filter.includeTestsMatching("com.simplematch.queryservice.security.QueryOrderHttpTest")
+    filter.includeTestsMatching("com.simplematch.queryservice.security.QueryExecutionsHttpTest")
+    filter.includeTestsMatching("com.simplematch.queryservice.security.QueryExecutionsSnapshotHttpTest")
     systemProperty("simplematch.query.jdbc.backend", "postgresql")
     maxParallelForks = 1
     outputs.upToDateWhen { false }

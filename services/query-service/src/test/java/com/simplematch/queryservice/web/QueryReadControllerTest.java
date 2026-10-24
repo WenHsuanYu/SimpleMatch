@@ -2,10 +2,7 @@ package com.simplematch.queryservice.web;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.Mockito.mock;
-import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.when;
-import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
-import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
 import com.fasterxml.jackson.databind.JsonNode;
 import com.simplematch.queryservice.config.QueryServiceProperties;
@@ -18,11 +15,8 @@ import java.util.List;
 import java.util.Optional;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
-import org.junit.jupiter.params.ParameterizedTest;
-import org.junit.jupiter.params.provider.ValueSource;
 import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.http.HttpStatus;
-import org.springframework.test.web.servlet.setup.MockMvcBuilders;
 
 class QueryReadControllerTest {
   private static final QueryMarketReferenceView REFERENCE = new QueryMarketReferenceView(
@@ -61,19 +55,6 @@ class QueryReadControllerTest {
 
     assertThat(controller.marketReference("2026-08-27", "XTAI", "2330").getStatusCode())
         .isEqualTo(HttpStatus.OK);
-  }
-
-  @ParameterizedTest
-  @ValueSource(strings = {"/api/v1/orders/not-a-uuid/executions"})
-  void rejectsMalformedUuidBeforeDurableRead(String path) throws Exception {
-    final QueryProjectionStore store = mock(QueryProjectionStore.class);
-    final QueryReadController controller = new QueryReadController(
-        store, provider(new FailingCache(false, false)), properties());
-
-    MockMvcBuilders.standaloneSetup(controller).build().perform(get(path))
-        .andExpect(status().isBadRequest());
-
-    verifyNoInteractions(store);
   }
 
   private QueryServiceProperties properties() {

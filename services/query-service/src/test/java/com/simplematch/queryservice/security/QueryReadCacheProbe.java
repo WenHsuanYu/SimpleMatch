@@ -34,6 +34,13 @@ final class QueryReadCacheProbe implements QueryReadCache {
     entries.put("query:v1:order:" + selectedOrder, response);
   }
 
+  void seedLegacyExecutions(String selectedOrder, String payloadOrder, String payloadAccount) {
+    final var response = legacyEnvelope();
+    response.putArray("data").addObject().put("orderId", payloadOrder)
+        .put("accountId", payloadAccount).put("fillQuantityShares", 9999);
+    entries.put("query:v1:executions:" + selectedOrder, response);
+  }
+
   private com.fasterxml.jackson.databind.node.ObjectNode legacyEnvelope() {
     final var response = new ObjectMapper().createObjectNode();
     response.putObject("freshness").putArray("partitions").addObject()

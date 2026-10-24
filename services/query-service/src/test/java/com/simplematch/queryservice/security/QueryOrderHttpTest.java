@@ -221,8 +221,8 @@ class QueryOrderHttpTest {
   }
 
   @Test
-  void enablingOrderDoesNotEnableExecutionsOrUnknownSubroutes() throws Exception {
-    for (String suffix : new String[] {"/executions", "/unknown"}) {
+  void enablingOrderAndExecutionsDoesNotEnableUnknownSubroutes() throws Exception {
+    for (String suffix : new String[] {"/unknown", "/executions/unknown"}) {
       http.perform(get("/api/v1/orders/" + QueryOrderHttpFixtures.X_EXECUTED.orderId() + suffix)
           .header("Authorization", "Bearer " + QueryOrderHttpFixtures.POLICY.token("client-a")))
           .andExpect(status().isForbidden());

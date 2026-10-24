@@ -8,7 +8,6 @@ import com.simplematch.queryservice.store.QueryProjectionStore;
 import java.time.LocalDate;
 import java.util.Locale;
 import java.util.Optional;
-import java.util.UUID;
 import java.util.function.Supplier;
 import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.http.ResponseEntity;
@@ -33,17 +32,6 @@ public final class QueryReadController {
     this.store = store;
     this.cache = cacheProvider::getObject;
     this.cacheKeyPrefix = properties.redis().keyPrefix();
-  }
-
-  /** Returns all executions for one order in deterministic source order. */
-  @GetMapping("/orders/{orderId}/executions")
-  public ResponseEntity<?> executions(@PathVariable UUID orderId) {
-    final String canonicalOrderId = orderId.toString();
-    return read(
-        cacheKey("executions", canonicalOrderId),
-        Optional.of(
-            QueryReadResponse.fromProjection(
-                store.findExecutions(canonicalOrderId), store.freshness())));
   }
 
   /** Returns one active market-reference row by trading day and venue-qualified instrument. */

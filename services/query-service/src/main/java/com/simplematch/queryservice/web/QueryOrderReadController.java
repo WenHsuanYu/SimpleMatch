@@ -32,4 +32,17 @@ public final class QueryOrderReadController {
         .map(ResponseEntity::ok)
         .orElseGet(() -> ResponseEntity.notFound().build());
   }
+
+  /** Returns the complete execution collection only for an authorized existing parent Order. */
+  @GetMapping("/{orderId}/executions")
+  public ResponseEntity<?> executions(
+      @PathVariable String orderId, @AuthenticationPrincipal QueryPrincipal principal) {
+    final var canonicalOrderId = QueryResourceIds.canonical(orderId);
+    if (canonicalOrderId.isEmpty()) {
+      return ResponseEntity.badRequest().build();
+    }
+    return reads.executions(principal, canonicalOrderId.orElseThrow())
+        .map(ResponseEntity::ok)
+        .orElseGet(() -> ResponseEntity.notFound().build());
+  }
 }

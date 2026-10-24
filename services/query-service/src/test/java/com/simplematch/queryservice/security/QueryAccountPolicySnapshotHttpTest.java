@@ -121,4 +121,37 @@ class QueryAccountPolicySnapshotHttpTest {
         .andExpect(status().isUnauthorized()).andExpect(content().string(""));
     assertThat(cache.untouched()).isTrue();
   }
+
+  @Test
+  void warmExecutionsCannotRestoreCsRevokedYGrantOrRemoveCsXAndBsYAccess() throws Exception {
+    QueryOrderHttpFixtures.seed(jdbc);
+    final var x = QueryOrderHttpFixtures.X_EXECUTED;
+    final var y = QueryOrderHttpFixtures.Y_EXECUTED;
+    cache.seedLegacyExecutions(y.orderId().toString(), y.orderId().toString(), y.accountId().toString());
+    http.perform(get("/api/v1/orders/{id}/executions", y.orderId())
+        .header("Authorization", "Bearer " + V2.token("client-c")))
+        .andExpect(status().isNotFound()).andExpect(content().string(""))
+        .andExpect(header().string("X-SimpleMatch-Query-Policy-Version", "2"));
+    http.perform(get("/api/v1/orders/{id}/executions", x.orderId())
+        .header("Authorization", "Bearer " + V2.token("client-c")))
+        .andExpect(status().isOk()).andExpect(jsonPath("$.data[0].orderId").value(x.orderId().toString()))
+        .andExpect(jsonPath("$.data[0].accountId").value(QueryAccountHttpFixtures.X));
+    http.perform(get("/api/v1/orders/{id}/executions", y.orderId())
+        .header("Authorization", "Bearer " + V2.token("client-b")))
+        .andExpect(status().isOk()).andExpect(jsonPath("$.data[0].orderId").value(y.orderId().toString()))
+        .andExpect(jsonPath("$.data[0].accountId").value(QueryAccountHttpFixtures.Y));
+    assertThat(cache.untouched()).isTrue();
+    assertThat(cache.entries()).isEqualTo(3);
+  }
+
+  @Test
+  void disabledIdentityCannotUseAWarmExecutionCollection() throws Exception {
+    QueryOrderHttpFixtures.seed(jdbc);
+    final var parent = QueryOrderHttpFixtures.X_EXECUTED;
+    cache.seedLegacyExecutions(parent.orderId().toString(), parent.orderId().toString(), parent.accountId().toString());
+    http.perform(get("/api/v1/orders/{id}/executions", parent.orderId())
+        .header("Authorization", "Bearer " + V2.token("client-d")))
+        .andExpect(status().isUnauthorized()).andExpect(content().string(""));
+    assertThat(cache.untouched()).isTrue();
+  }
 }

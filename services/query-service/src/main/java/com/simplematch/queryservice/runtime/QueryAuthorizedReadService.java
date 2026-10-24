@@ -1,9 +1,11 @@
 package com.simplematch.queryservice.runtime;
 
 import com.simplematch.queryservice.model.QueryAccountSummaryView;
+import com.simplematch.queryservice.model.QueryExecutionView;
 import com.simplematch.queryservice.model.QueryOrderView;
 import com.simplematch.queryservice.security.QueryPrincipal;
 import com.simplematch.queryservice.store.QueryProjectionStore;
+import java.util.List;
 import java.util.Objects;
 import java.util.Optional;
 import java.util.UUID;
@@ -62,11 +64,44 @@ public final class QueryAuthorizedReadService {
     final String canonicalOrderId = orderId.toString();
     return Objects.requireNonNull(
         readSnapshot.execute(
-            status -> store.findOrder(canonicalOrderId)
-                .flatMap(order -> authorizedOrder(principal, canonicalOrderId, order))));
+            status -> authorizedParent(principal, canonicalOrderId)
+                .map(order -> QueryReadResponse.fromProjection(order, store.freshness()))));
   }
 
-  private Optional<QueryReadResponse<QueryOrderView>> authorizedOrder(
+  /**
+   * Reads executions only for an existing parent whose durable Account is explicitly granted.
+   *
+   * @param principal trusted identity and grants from the authenticated policy snapshot
+   * @param orderId canonical requested parent Order identity
+   * @return the authorized collection, or an indistinguishable denied/missing parent result
+   * @throws DataIntegrityViolationException if any parent or execution identity is inconsistent
+   */
+  public Optional<QueryReadResponse<List<QueryExecutionView>>> executions(
+      QueryPrincipal principal, UUID orderId) {
+    final String canonicalOrderId = orderId.toString();
+    return Objects.requireNonNull(
+        readSnapshot.execute(
+            status -> authorizedParent(principal, canonicalOrderId)
+                .map(this::authorizedExecutions)));
+  }
+
+  private QueryReadResponse<List<QueryExecutionView>> authorizedExecutions(QueryOrderView parent) {
+    final List<QueryExecutionView> executions = store.findExecutions(parent.orderId());
+    for (QueryExecutionView execution : executions) {
+      if (!parent.orderId().equals(execution.orderId())
+          || !parent.accountId().equals(execution.accountId())) {
+        throw new DataIntegrityViolationException(
+            "Query execution projection identity is inconsistent");
+      }
+    }
+    return QueryReadResponse.fromProjection(List.copyOf(executions), store.freshness());
+  }
+
+  private Optional<QueryOrderView> authorizedParent(QueryPrincipal principal, String orderId) {
+    return store.findOrder(orderId).flatMap(order -> authorizedOrder(principal, orderId, order));
+  }
+
+  private Optional<QueryOrderView> authorizedOrder(
       QueryPrincipal principal, String orderId, QueryOrderView order) {
     if (!orderId.equals(order.orderId())) {
       throw inconsistentOrderIdentity();
@@ -75,7 +110,7 @@ public final class QueryAuthorizedReadService {
     if (!principal.accountGrants().contains(owner)) {
       return Optional.empty();
     }
-    return Optional.of(QueryReadResponse.fromProjection(order, store.freshness()));
+    return Optional.of(order);
   }
 
   private static UUID trustedOrderOwner(String accountId) {
