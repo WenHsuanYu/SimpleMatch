@@ -1,5 +1,11 @@
 # Query-service production-like certification
 
+The secured Query contract now uses PostgreSQL-only business reads and authenticated Principals.
+QS1-05 removes the historical four-response-key restoration requirement; old #137 evidence remains
+historical. The standalone runner still requires #194's credential-aware collectors and approved
+fixture integration before a new secured deployment run. Focused shell-contract PASS does not
+certify that deployment. See the [Market contract](../../services/docs/query-service/market-read-authorization.md).
+
 This gate proves the required read-only query capability against a fresh retained local
 production-like deployment. It does not certify external production infrastructure. The runner
 uses only a lifecycle-labelled disposable namespace whose retained evidence identifies the same
@@ -34,7 +40,7 @@ an Account reservation row first; the only administrative fixture writes are the
 account-authority cash-limit and long-position seeds required by the public reservation use case.
 
 It captures the baseline, scales Redis to zero, and requires the same business view from the
-query-owned PostgreSQL fallback. It then restores Redis, scales query-service to zero, records
+query-owned PostgreSQL read path. It then restores Redis, scales query-service to zero, records
 that no query Pod exists, and captures the Risk admission, Account reservation, Persistence,
 QuickFIX, and market-data projection state while the query API is actually unavailable. The
 critical snapshot must remain unchanged through the quiet portion of this fault window. During the
@@ -88,8 +94,8 @@ certification boundary. The runner resets these two groups to the retained bound
 
 No critical consumer offset is changed. A rebuilt snapshot is eligible for comparison only after
 both query groups reach their captured offsets exactly and every disclosed checkpoint is `READY`.
-Public reads must then recreate the four exact versioned Redis keys selected by the fixture. The
-final verdict requires the expanded critical snapshots to remain identical before and during the
+Business reads no longer recreate response-cache keys, and their presence is not restoration
+evidence. The final verdict requires the expanded critical snapshots to remain identical before and during the
 quiescent portion of the query outage, all 15 Matching partitions to remain ready, all
 critical-path workload health samples to remain stable, the active public IOC event proof to pass,
 and the query deployment to be restored. The active event is allowed to change authoritative
@@ -118,7 +124,7 @@ bash scripts/run-query-service-certification.sh \
 ```
 
 The output directory must be empty. On success, `verdict.json` contains a `PASS` result and the
-individual deterministic-rebuild, PostgreSQL-fallback, freshness, market-identity, Redis-rebuild,
+individual deterministic-rebuild, PostgreSQL-read, freshness, market-identity,
 service-restoration, active-processing-liveness, quiescent-critical-path-isolation, and
 critical-path-isolation checks. Baseline, active-event, outage, probe samples, rebuilt,
 consumer-state, offset-reset, provenance, deployment, and diagnostic evidence remain beside it.

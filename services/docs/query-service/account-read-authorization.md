@@ -1,5 +1,9 @@
 # Account Summary authorization — QS1-02
 
+This note records the #189 slice and its handoff evidence. Later Order/Executions/Market routes
+and the retirement of all business response-cache handlers are described in the
+[current service contract](README.md) and [Market slice](market-read-authorization.md).
+
 The subsequent [QS1-03 Order slice](order-read-authorization.md) supersedes this first Account
 slice's Order-route denial. The #189 verification record retains its original scope and source.
 

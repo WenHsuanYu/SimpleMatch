@@ -14,8 +14,9 @@ security; the [Account Summary slice](account-read-authorization.md) adds explic
 minimal business diagnostics and a PostgreSQL-only consistent read. The
 [Order slice](order-read-authorization.md) extends the same module with trusted durable ownership
 and the corresponding Account Grant. The [Executions slice](execution-read-authorization.md)
-adds existing-parent authorization and whole-collection integrity. Market and later
-transport/cache phases remain independently gated.
+adds existing-parent authorization and whole-collection integrity. The
+[Market slice](market-read-authorization.md) enables authenticated artifact reads without Account
+Grants. Deployed policy maintenance and later transport/cache phases remain independently gated.
 
 ## Current HTTP security boundary
 
@@ -26,8 +27,10 @@ Account Grant and verified returned identity. Denied and missing accounts return
 expose minimal health; opt-in POST rebuild retains its independent operator credential.
 QS1-03 enables exact GET /api/v1/orders/{orderId} after trusted Order ownership and Account Grants.
 QS1-04 enables exact GET /api/v1/orders/{orderId}/executions using that authorized parent and
-validates every child Order/Account identity. Market, other management routes and unapproved methods deny by default until their
-dedicated tickets land. Direct HTTP follows the same policy; no anonymous compatibility mode exists.
+validates every child Order/Account identity. QS1-05 enables only the existing Market Reference GET
+shape for every enabled QueryPrincipal, including Operations and no-grant D. Other management
+routes and unapproved methods deny by default. Direct HTTP follows the same policy; no anonymous
+compatibility mode exists. This Local Lab policy does not approve external publication.
 
 Every HTTP-serving process requires a complete validated startup policy under
 simplematch.query-service.security; it never generates credentials or reloads policy dynamically.
@@ -46,21 +49,21 @@ The versioned API is rooted at `/api/v1`:
 - `GET /market-reference/{tradingDay}/{venueMic}/{symbol}` — active artifact row.
 - `GET /freshness` — source partition offsets and `READY`/`GAP_DETECTED` state.
 
-Account Summary, Order and Executions return `data` plus minimal `freshness.projectionState` from short
+All four business reads return `data` plus minimal `freshness.projectionState` from short
 PostgreSQL `REPEATABLE READ` snapshots. Account checks its grant before transaction acquisition;
 Order first establishes trusted ownership from the same durable row as its payload. Executions
 requires that parent before reading and validating the collection; missing/denied parents return
-404, while an authorized existing parent without executions returns an empty 200. These paths
+404, while an authorized existing parent without executions returns an empty 200. Market validates
+day/venue/symbol against its installed artifact row without Account Grants. These paths
 bypass response-cache reads and writes; old keys are retained. Required PostgreSQL/transaction
 failures return an empty 503.
 `NO_GAP_RECORDED` means only a nonempty recorded checkpoint set is all READY; it does not claim
 source coverage or catch-up. Full checkpoints remain restricted to operations-read `/freshness`.
 
-The shared v1 business envelope no longer contains raw checkpoint metadata. The unconverted
-Market Controller still evaluates durable reads before its optional Redis lookup,
-so its historical cache behavior does not avoid those reads or provide PostgreSQL-independent
-availability. That path is currently denied by HTTP security. Selective cache reintroduction and
-performance claims require the separately approved Phase 2 gates.
+The shared v1 business envelope no longer contains raw checkpoint metadata. No business route reads
+or fills Redis responses. Historical keys cannot hide a PostgreSQL failure or restore absent data.
+Market's snapshot-associated Kafka diagnostics do not establish artifact currency or catch-up.
+Selective cache reintroduction and performance claims require the separately approved Phase 2 gates.
 
 ## Projection and rebuild contract
 

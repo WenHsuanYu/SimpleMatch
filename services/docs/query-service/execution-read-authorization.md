@@ -1,5 +1,9 @@
 # Execution collection authorization — QS1-04
 
+This note records the #191 slice. The subsequent [Market slice](market-read-authorization.md)
+enables its independent route and retires the remaining legacy cache handler; the
+[service contract](README.md) records the current completed route set.
+
 Scope: [#191](https://github.com/WenHsuanYu/SimpleMatch/issues/191), one approved synthetic Local
 Lab slice after [Order authorization](order-read-authorization.md). Exact GET
 `/api/v1/orders/{orderId}/executions` is enabled. Market, deployed policy maintenance and final

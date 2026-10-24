@@ -1,5 +1,9 @@
 # Order authorization — QS1-03
 
+This note records the #190 slice. The subsequent [Market slice](market-read-authorization.md)
+removes the last legacy cache handler and replaces its obsolete Controller fallback tests while
+retaining the independent Redis TLS/ACL gate. See the [current route policy](README.md).
+
 Scope: [#190](https://github.com/WenHsuanYu/SimpleMatch/issues/190), one approved synthetic Local
 Lab slice after [Account Summary authorization](account-read-authorization.md). Exact GET
 `/api/v1/orders/{orderId}` is enabled. [Executions](execution-read-authorization.md) subsequently
