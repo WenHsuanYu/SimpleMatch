@@ -742,11 +742,13 @@ implementation blocker.
   introduces validated opaque Query identities, operations-read Freshness, independent operator
   rebuild and minimal probes. [QS1-02 / #189](https://github.com/WenHsuanYu/SimpleMatch/issues/189)
   adds explicit Account Summary grants, concealed 404, the minimal v1 projection-state envelope
-  and one PostgreSQL repeatable-read snapshot. Account cache reads/fills are bypassed. Unconverted
-  Executions/Market routes deny by default. [QS1-03 / #190](https://github.com/WenHsuanYu/SimpleMatch/issues/190)
+  and one PostgreSQL repeatable-read snapshot. Account cache reads/fills are bypassed. The unconverted
+  Market route denies by default. [QS1-03 / #190](https://github.com/WenHsuanYu/SimpleMatch/issues/190)
   adds trusted durable Order ownership, explicit grants and the same snapshot/minimal-envelope
   contract, with Order cache reads/fills bypassed. Synthetic credentials are provisioned before
-  deployment; Query receives verifiers only.
+  deployment; Query receives verifiers only. [QS1-04 / #191](https://github.com/WenHsuanYu/SimpleMatch/issues/191)
+  adds existing-parent authorization for Executions, rejects entire mixed-identity collections and
+  keeps parent/collection/diagnostics in the same snapshot with no response-cache reads/fills.
 - **Verification boundary:** Actual HTTP filter tests, immutable-policy/credential tests and the
   existing runner-owned PostgreSQL test seam provide focused local evidence. This is not the
   final Phase 1 security certification or a new production-like deployment claim. The
@@ -755,7 +757,9 @@ implementation blocker.
   exact checks and distinguish application policy snapshots from deployed revocation.
   The [Order runbook](../../services/docs/query-service/order-read-authorization.md) additionally
   bounds concurrent ownership changes and maintains the existing Redis TLS/ACL test boundary.
-- **Remaining:** #191–#194 own remaining business routes, deployed revocation/recovery,
+  The [Executions runbook](../../services/docs/query-service/execution-read-authorization.md)
+  maps whole-collection integrity and PostgreSQL concurrent update/deletion tests to requirements.
+- **Remaining:** #192–#194 own Market, deployed revocation/recovery,
   collectors and final acceptance. Gateway/OAuth/mTLS/cache phases require their own approvals.
   Historical #137/#138 results remain preserved; this follow-up does not reopen those issues.
 

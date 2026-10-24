@@ -2,7 +2,8 @@
 
 Scope: [#190](https://github.com/WenHsuanYu/SimpleMatch/issues/190), one approved synthetic Local
 Lab slice after [Account Summary authorization](account-read-authorization.md). Exact GET
-`/api/v1/orders/{orderId}` is enabled. Executions, Market and later phases keep their separate gates.
+`/api/v1/orders/{orderId}` is enabled. [Executions](execution-read-authorization.md) subsequently
+reuses this parent boundary in #191; Market and later phases keep their separate gates.
 This change introduces no new identity authority, schema, dependency version or deployment.
 
 ## Authentication, ownership and authorization
@@ -38,7 +39,8 @@ Account Grant. A mismatched returned Order ID or malformed durable identity is a
 
 Sensitive responses retain `Cache-Control: no-store`. Denied and missing Orders have the same
 status/body contract without foreign identifiers; no timing-equivalence guarantee is claimed.
-Enabling the Order route does not enable its `/executions` subroute or unknown child routes.
+The Order rule alone does not enable child routes. #191 adds a separate reviewed Executions rule;
+unknown child routes remain denied.
 
 Ownership, details and recorded diagnostics describe one PostgreSQL observation. The deterministic
 concurrent-writer test commits a changed owner, Order state and checkpoint while an earlier read
@@ -87,7 +89,7 @@ owned Query tables; it does not certify Matching event generation or Kafka repla
 
 The fixture check verifies Order ownership and Execution-to-Order/Account relationships through
 the HTTP read and existing projection port, then records only nonsecret canonical IDs. This does
-not expose the still-denied Executions HTTP endpoint. Corruption and ownership-update scenarios
+not enable Executions HTTP in #190; #191 independently adds its authorization. Corruption and ownership-update scenarios
 are isolated variants, not part of the valid baseline.
 
 HTTP tests cover all five principals across the four Orders, multiple grants, forged selectors,
