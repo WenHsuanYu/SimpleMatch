@@ -2,35 +2,24 @@ package com.simplematch.queryservice.config;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
-import static org.mockito.Mockito.mock;
-import static org.mockito.Mockito.when;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.simplematch.config.EnvironmentProperties;
 import com.simplematch.config.RedisProperties;
-import com.simplematch.queryservice.model.QueryFreshness;
-import com.simplematch.queryservice.model.QueryMarketReferenceView;
-import com.simplematch.queryservice.runtime.QueryReadCache;
 import com.simplematch.queryservice.runtime.RedisQueryReadCache;
-import com.simplematch.queryservice.store.QueryProjectionStore;
-import com.simplematch.queryservice.web.QueryReadController;
 import java.nio.charset.StandardCharsets;
-import java.time.LocalDate;
 import java.util.ArrayList;
 import java.util.List;
-import java.util.Optional;
 import java.util.concurrent.TimeUnit;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.ValueSource;
-import org.springframework.beans.factory.support.StaticListableBeanFactory;
 import org.springframework.data.redis.RedisConnectionFailureException;
 import org.springframework.data.redis.connection.RedisConnection;
 import org.springframework.data.redis.connection.RedisStandaloneConfiguration;
 import org.springframework.data.redis.connection.lettuce.LettuceConnectionFactory;
 import org.springframework.data.redis.core.RedisTemplate;
-import org.springframework.http.HttpStatus;
 
 /** Network regression gate run only by scripts/test-query-redis-security.sh. */
 class QueryRedisSecurityIntegrationTest {
@@ -121,30 +110,12 @@ class QueryRedisSecurityIntegrationTest {
   }
 
   @Test
-  void certificateFailureRetainsTheLegacyMarketAdaptersDurableResponse() {
-    final QueryProjectionStore store = mock(QueryProjectionStore.class);
-    final QueryMarketReferenceView reference = new QueryMarketReferenceView(
-        LocalDate.of(2026, 8, 27), "fixture-artifact", "XTAI", "2330", "rule",
-        100L, 90L, 110L, 0, 1L);
-    when(store.findMarketReference("2026-08-27", "XTAI", "2330"))
-        .thenReturn(Optional.of(reference));
-    when(store.freshness()).thenReturn(new QueryFreshness(List.of()));
+  void untrustedCertificateCannotAcceptCacheWrites() {
     final RedisQueryReadCache cache =
         cache(template(client("UNTRUSTED_PORT", "query-cache", required("PASSWORD"))));
-    final StaticListableBeanFactory beans = new StaticListableBeanFactory();
-    beans.addBean("cache", cache);
-    final QueryReadController controller =
-        new QueryReadController(
-            store,
-            beans.getBeanProvider(QueryReadCache.class),
-            properties("PORT", "query-cache", required("PASSWORD")));
-
-    final org.springframework.http.ResponseEntity<?> response =
-        controller.marketReference("2026-08-27", "XTAI", "2330");
-
-    assertThat(response.getStatusCode()).isEqualTo(HttpStatus.OK);
-    assertThat(response.getBody())
-        .isInstanceOf(com.simplematch.queryservice.runtime.QueryReadResponse.class);
+    assertThatThrownBy(() -> cache.put("query:v2:tls:order:1", java.util.Map.of("state", "RESTING")))
+        .isInstanceOf(RedisConnectionFailureException.class)
+        .hasStackTraceContaining("SSLHandshakeException");
   }
 
   private RedisQueryReadCache cache(RedisTemplate<String, byte[]> template) {

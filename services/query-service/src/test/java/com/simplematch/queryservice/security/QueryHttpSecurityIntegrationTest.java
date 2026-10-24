@@ -175,7 +175,7 @@ class QueryHttpSecurityIntegrationTest {
   @ParameterizedTest
   @ValueSource(
       strings = {
-        "/api/v1/market-reference/2026-10-23/XTAI/2330",
+        "/api/v1/market-reference/2026-10-23/XTAI/2330/extra",
         "/api/v1/unknown",
         "/actuator/metrics",
         "/actuator/info",
@@ -183,7 +183,7 @@ class QueryHttpSecurityIntegrationTest {
         "/internal/query/rebuild/extra",
         "/login"
       })
-  void convertedIdentityCannotEnableUnconvertedBusinessOrManagementRoutes(String path)
+  void convertedIdentityCannotEnableUnknownBusinessOrManagementRoutes(String path)
       throws Exception {
     http.perform(authenticated(get(path), "operations")).andExpect(status().isForbidden());
   }

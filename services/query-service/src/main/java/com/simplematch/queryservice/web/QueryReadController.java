@@ -1,37 +1,28 @@
 package com.simplematch.queryservice.web;
 
-import com.fasterxml.jackson.databind.JsonNode;
-import com.simplematch.queryservice.config.QueryServiceProperties;
-import com.simplematch.queryservice.runtime.QueryReadCache;
-import com.simplematch.queryservice.runtime.QueryReadResponse;
+import com.simplematch.marketreference.InstrumentRef;
+import com.simplematch.marketreference.MarketReferenceValidationException;
+import com.simplematch.queryservice.runtime.QueryAuthorizedReadService;
 import com.simplematch.queryservice.store.QueryProjectionStore;
 import java.time.LocalDate;
-import java.util.Locale;
-import java.util.Optional;
-import java.util.function.Supplier;
-import org.springframework.beans.factory.ObjectProvider;
+import java.time.format.DateTimeParseException;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
 
-/** Versioned read-only APIs backed by PostgreSQL and optionally accelerated by Redis. */
+/** Exposes authenticated Market reads and restricted operational checkpoints from PostgreSQL. */
 @RestController
 @RequestMapping("/api/v1")
 public final class QueryReadController {
   private final QueryProjectionStore store;
-  private final Supplier<QueryReadCache> cache;
-  private final String cacheKeyPrefix;
+  private final QueryAuthorizedReadService reads;
 
   /** Creates the query API without a Kafka dependency or critical-path callback. */
-  public QueryReadController(
-      QueryProjectionStore store,
-      ObjectProvider<QueryReadCache> cacheProvider,
-      QueryServiceProperties properties) {
+  public QueryReadController(QueryProjectionStore store, QueryAuthorizedReadService reads) {
     this.store = store;
-    this.cache = cacheProvider::getObject;
-    this.cacheKeyPrefix = properties.redis().keyPrefix();
+    this.reads = reads;
   }
 
   /** Returns one active market-reference row by trading day and venue-qualified instrument. */
@@ -40,51 +31,25 @@ public final class QueryReadController {
       @PathVariable String tradingDay,
       @PathVariable String venueMic,
       @PathVariable String symbol) {
-    LocalDate.parse(tradingDay);
-    return read(
-        cacheKey("market-reference", tradingDay, venueMic, symbol),
-        store.findMarketReference(
-                tradingDay,
-                venueMic.trim().toUpperCase(Locale.ROOT),
-                symbol.trim().toUpperCase(Locale.ROOT))
-            .map(reference -> QueryReadResponse.fromProjection(reference, store.freshness())));
+    final LocalDate day;
+    final InstrumentRef instrument;
+    try {
+      day = LocalDate.parse(tradingDay);
+      if (!day.toString().equals(tradingDay)) {
+        return ResponseEntity.badRequest().build();
+      }
+      instrument = new InstrumentRef(venueMic, symbol);
+    } catch (DateTimeParseException | MarketReferenceValidationException malformed) {
+      return ResponseEntity.badRequest().build();
+    }
+    return reads.marketReference(day, instrument)
+        .map(ResponseEntity::ok)
+        .orElseGet(() -> ResponseEntity.notFound().build());
   }
 
   /** Returns source checkpoints and explicit gap/replay state. */
   @GetMapping("/freshness")
   public ResponseEntity<?> freshness() {
     return ResponseEntity.ok(store.freshness());
-  }
-
-  private ResponseEntity<?> read(String key, Optional<?> durableValue) {
-    final Optional<JsonNode> cached = readCache(key);
-    if (cached.isPresent()) {
-      return ResponseEntity.ok(cached.get());
-    }
-    if (durableValue.isEmpty()) {
-      return ResponseEntity.notFound().build();
-    }
-    writeCache(key, durableValue.get());
-    return ResponseEntity.ok(durableValue.get());
-  }
-
-  private Optional<JsonNode> readCache(String key) {
-    try {
-      return cache.get().get(key);
-    } catch (RuntimeException ignored) {
-      return Optional.empty();
-    }
-  }
-
-  private void writeCache(String key, Object value) {
-    try {
-      cache.get().put(key, value);
-    } catch (RuntimeException ignored) {
-      // Redis is an acceleration layer; a cache outage must not fail a durable read.
-    }
-  }
-
-  private String cacheKey(String type, String... values) {
-    return cacheKeyPrefix + ":" + type + ":" + String.join(":", values);
   }
 }

@@ -136,6 +136,9 @@ public class QueryHttpSecurityConfiguration {
                     .authenticated()
                     .requestMatchers(HttpMethod.GET, "/api/v1/orders/{orderId}/executions")
                     .authenticated()
+                    .requestMatchers(HttpMethod.GET,
+                        "/api/v1/market-reference/{tradingDay}/{venueMic}/{symbol}")
+                    .authenticated()
                     .anyRequest()
                     .denyAll())
         .build();

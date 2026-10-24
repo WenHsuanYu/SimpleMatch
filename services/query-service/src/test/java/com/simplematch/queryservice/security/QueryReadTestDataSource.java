@@ -1,5 +1,6 @@
 package com.simplematch.queryservice.security;
 
+import com.simplematch.marketreference.InstrumentRef;
 import java.lang.reflect.InvocationTargetException;
 import java.lang.reflect.Method;
 import java.lang.reflect.Proxy;
@@ -7,6 +8,7 @@ import java.sql.Connection;
 import java.sql.PreparedStatement;
 import java.sql.ResultSet;
 import java.sql.SQLException;
+import java.time.LocalDate;
 import java.util.Locale;
 import java.util.Map;
 import java.util.UUID;
@@ -19,6 +21,7 @@ final class QueryReadTestDataSource extends DelegatingDataSource {
   private final ReadControl account = new ReadControl();
   private final ReadControl order = new ReadControl();
   private final ReadControl execution = new ReadControl();
+  private final ReadControl market = new ReadControl();
   private volatile boolean unavailable;
 
   QueryReadTestDataSource(DataSource delegate) {
@@ -41,6 +44,15 @@ final class QueryReadTestDataSource extends DelegatingDataSource {
     execution.afterRead.set(action);
   }
 
+  void afterMarketRead(Runnable action) {
+    market.afterRead.set(action);
+  }
+
+  void returnedMarketIdentity(LocalDate tradingDay, InstrumentRef instrument) {
+    market.identities = Map.of("trading_day", java.sql.Date.valueOf(tradingDay),
+        "venue_mic", instrument.venueMic(), "symbol", instrument.symbol());
+  }
+
   /** Replaces one JDBC execution reply while retaining the other valid rows in the collection. */
   void returnedExecutionIdentity(UUID executionId, UUID orderId, UUID accountId) {
     execution.selectedExecution = executionId;
@@ -60,6 +72,7 @@ final class QueryReadTestDataSource extends DelegatingDataSource {
     account.reset();
     order.reset();
     execution.reset();
+    market.reset();
   }
 
   /** Opens the real fixture connection unless this scenario disables the dependency. */
@@ -91,6 +104,9 @@ final class QueryReadTestDataSource extends DelegatingDataSource {
             if (sql.contains("FROM query_service.execution_read_model")) {
               return observeRows(statement, execution);
             }
+            if (sql.contains("FROM query_service.active_market_reference")) {
+              return observeRows(statement, market);
+            }
           }
           return value;
         });
@@ -114,13 +130,14 @@ final class QueryReadTestDataSource extends DelegatingDataSource {
   private ResultSet substituteIdentities(ResultSet rows, ReadControl control) {
     return (ResultSet) Proxy.newProxyInstance(ResultSet.class.getClassLoader(),
         new Class<?>[] {ResultSet.class}, (proxy, method, arguments) -> {
-          if ("getObject".equals(method.getName()) && arguments != null
+          if (("getObject".equals(method.getName()) || "getString".equals(method.getName())
+              || "getDate".equals(method.getName())) && arguments != null
               && arguments[0] instanceof Integer column) {
             if (control.selectedExecution != null
                 && !control.selectedExecution.equals(rows.getObject("execution_id", UUID.class))) {
               return invoke(rows, method, arguments);
             }
-            final UUID replacement = control.identities.get(
+            final Object replacement = control.identities.get(
                 rows.getMetaData().getColumnLabel(column).toLowerCase(Locale.ROOT));
             if (replacement != null) {
               return replacement;
@@ -146,7 +163,7 @@ final class QueryReadTestDataSource extends DelegatingDataSource {
 
   private static final class ReadControl {
     private final AtomicReference<Runnable> afterRead = new AtomicReference<>();
-    private volatile Map<String, UUID> identities = Map.of();
+    private volatile Map<String, Object> identities = Map.of();
     private volatile UUID selectedExecution;
 
     private void reset() {

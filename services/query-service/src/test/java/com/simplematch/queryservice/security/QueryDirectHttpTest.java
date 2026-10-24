@@ -82,6 +82,21 @@ class QueryDirectHttpTest {
     }
   }
 
+  @Test
+  void directMarketCallsAuthenticateBeforeSelectorValidationWithoutAccountGrants() throws Exception {
+    final URI uri = URI.create("http://127.0.0.1:" + port + "/api/v1/market-reference/invalid-day/XTAI/2330");
+    try (HttpClient client = HttpClient.newHttpClient()) {
+      final var anonymous = HttpRequest.newBuilder(uri).timeout(Duration.ofSeconds(5)).GET().build();
+      assertThat(client.send(anonymous, HttpResponse.BodyHandlers.discarding()).statusCode()).isEqualTo(401);
+      final var identified = HttpRequest.newBuilder(uri).timeout(Duration.ofSeconds(5))
+          .header("Authorization", "Bearer " + FIXTURES.token("client-d")).GET().build();
+      final var response = client.send(identified, HttpResponse.BodyHandlers.ofString());
+      assertThat(response.statusCode()).isEqualTo(400);
+      assertThat(response.body()).isEmpty();
+      assertThat(response.headers().firstValue("Cache-Control").orElse("")).contains("no-store");
+    }
+  }
+
   private HttpRequest freshness(String alias) {
     final var request =
         HttpRequest.newBuilder(URI.create("http://127.0.0.1:" + port + "/api/v1/freshness"))

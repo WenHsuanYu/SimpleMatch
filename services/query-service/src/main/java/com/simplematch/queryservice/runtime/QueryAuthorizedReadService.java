@@ -1,10 +1,13 @@
 package com.simplematch.queryservice.runtime;
 
+import com.simplematch.marketreference.InstrumentRef;
 import com.simplematch.queryservice.model.QueryAccountSummaryView;
 import com.simplematch.queryservice.model.QueryExecutionView;
+import com.simplematch.queryservice.model.QueryMarketReferenceView;
 import com.simplematch.queryservice.model.QueryOrderView;
 import com.simplematch.queryservice.security.QueryPrincipal;
 import com.simplematch.queryservice.store.QueryProjectionStore;
+import java.time.LocalDate;
 import java.util.List;
 import java.util.Objects;
 import java.util.Optional;
@@ -14,7 +17,7 @@ import org.springframework.transaction.PlatformTransactionManager;
 import org.springframework.transaction.TransactionDefinition;
 import org.springframework.transaction.support.TransactionTemplate;
 
-/** Owns explicit account authorization and short durable read transactions without a cache path. */
+/** Owns Account authorization and short durable business-read snapshots without a cache path. */
 public final class QueryAuthorizedReadService {
   private static final int READ_TRANSACTION_TIMEOUT_SECONDS = 5;
   private final QueryProjectionStore store;
@@ -83,6 +86,30 @@ public final class QueryAuthorizedReadService {
         readSnapshot.execute(
             status -> authorizedParent(principal, canonicalOrderId)
                 .map(this::authorizedExecutions)));
+  }
+
+  /**
+   * Reads installed artifact facts for the authenticated Market route without account grants.
+   *
+   * @param tradingDay requested artifact trading day, independent of the wall clock
+   * @param instrument validated canonical artifact instrument identity
+   * @return the installed row and snapshot-associated diagnostics, or a missing result
+   * @throws DataIntegrityViolationException if the returned artifact row targets another resource
+   */
+  public Optional<QueryReadResponse<QueryMarketReferenceView>> marketReference(
+      LocalDate tradingDay, InstrumentRef instrument) {
+    return Objects.requireNonNull(
+        readSnapshot.execute(status -> store.findMarketReference(
+                tradingDay.toString(), instrument.venueMic(), instrument.symbol())
+            .map(reference -> {
+              if (!tradingDay.equals(reference.tradingDay())
+                  || !instrument.venueMic().equals(reference.venueMic())
+                  || !instrument.symbol().equals(reference.symbol())) {
+                throw new DataIntegrityViolationException(
+                    "Query market-reference projection identity is inconsistent");
+              }
+              return QueryReadResponse.fromProjection(reference, store.freshness());
+            })));
   }
 
   private QueryReadResponse<List<QueryExecutionView>> authorizedExecutions(QueryOrderView parent) {

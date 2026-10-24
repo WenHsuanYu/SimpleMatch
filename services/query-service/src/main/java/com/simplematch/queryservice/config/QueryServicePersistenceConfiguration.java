@@ -58,7 +58,7 @@ public class QueryServicePersistenceConfiguration {
     return new QueryProjectionApplicationService(queryProjectionStore);
   }
 
-  /** Creates the shared read module; each operation owns its snapshot and grant sequence. */
+  /** Creates the shared business-read module with operation-owned snapshots. */
   @Bean
   QueryAuthorizedReadService queryAuthorizedReadService(
       QueryProjectionStore queryProjectionStore,

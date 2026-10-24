@@ -10,6 +10,8 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 
 import com.simplematch.queryservice.QueryServiceApplication;
 import com.simplematch.queryservice.runtime.QueryProjectionApplicationService;
+import com.simplematch.queryservice.runtime.QueryProjectionRebuildService;
+import com.simplematch.marketreference.InstrumentRef;
 import com.simplematch.queryservice.store.QueryProjectionStore;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
@@ -41,6 +43,7 @@ class QueryAccountPolicySnapshotHttpTest {
   @Autowired private WebApplicationContext context;
   @Autowired private QueryProjectionStore store;
   @Autowired private QueryProjectionApplicationService projections;
+  @Autowired private QueryProjectionRebuildService rebuild;
   @Autowired private QueryReadCacheProbe cache;
   @Autowired private JdbcTemplate jdbc;
   private MockMvc http;
@@ -152,6 +155,27 @@ class QueryAccountPolicySnapshotHttpTest {
     http.perform(get("/api/v1/orders/{id}/executions", parent.orderId())
         .header("Authorization", "Bearer " + V2.token("client-d")))
         .andExpect(status().isUnauthorized()).andExpect(content().string(""));
+    assertThat(cache.untouched()).isTrue();
+  }
+
+  @Test
+  void disabledPrincipalCannotReadMarketEvenWithAWarmResponse() throws Exception {
+    QueryMarketHttpFixtures.install(rebuild);
+    final var selected = new InstrumentRef("XTAI", "2330");
+    cache.seedLegacyMarket(QueryMarketHttpFixtures.DAY, selected, selected);
+    http.perform(get("/api/v1/market-reference/{day}/XTAI/2330", QueryMarketHttpFixtures.DAY)
+        .header("Authorization", "Bearer " + V2.token("client-d")))
+        .andExpect(status().isUnauthorized()).andExpect(content().string(""));
+    assertThat(cache.untouched()).isTrue();
+  }
+
+  @Test
+  void removingAnAccountGrantDoesNotRemoveIndependentMarketPermission() throws Exception {
+    final var artifact = QueryMarketHttpFixtures.install(rebuild);
+    http.perform(get("/api/v1/market-reference/{day}/XTAI/2330", QueryMarketHttpFixtures.DAY)
+        .header("Authorization", "Bearer " + V2.token("client-c")))
+        .andExpect(status().isOk())
+        .andExpect(jsonPath("$.data.artifactId").value(artifact.identity().value()));
     assertThat(cache.untouched()).isTrue();
   }
 }
