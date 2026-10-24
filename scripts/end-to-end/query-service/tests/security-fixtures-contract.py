@@ -19,6 +19,40 @@ PROVISIONER = Path(__file__).resolve().parents[1] / "provision-security-fixtures
 
 
 class SecurityFixtureContract(unittest.TestCase):
+    def test_rotation_preserves_identities_and_replaces_all_credentials_with_only_c_y_revoked(self):
+        with tempfile.TemporaryDirectory(prefix="query-security-rotation-") as temporary:
+            first = Path(temporary) / "generation-1"
+            second = Path(temporary) / "generation-2"
+            self.assertEqual(subprocess.run(
+                [sys.executable, str(PROVISIONER), str(first)], capture_output=True
+            ).returncode, 0)
+            result = subprocess.run(
+                [sys.executable, str(PROVISIONER), str(second), "--previous-directory", str(first),
+                 "--policy-version", "2", "--profile", "c-y-revoked"],
+                capture_output=True, text=True, check=False,
+            )
+            self.assertEqual(result.returncode, 0, "Controlled rotation must be supported")
+            self.assertEqual((first / "fixture-identities.json").read_bytes(),
+                             (second / "fixture-identities.json").read_bytes())
+            old = json.loads((first / "credentials.json").read_text())
+            new = json.loads((second / "credentials.json").read_text())
+            self.assertTrue({c["token"] for c in old.values()}.isdisjoint(
+                {c["token"] for c in new.values()}), "Every credential must be replaced")
+            identities = json.loads((second / "fixture-identities.json").read_text())
+            properties = dict(line.split("=", 1) for line in
+                              (second / "application.properties").read_text().splitlines())
+            prefix = "simplematch.query-service.security"
+            expected = {"client-a": {"X"}, "client-b": {"Y"}, "client-c": {"X"},
+                        "operations": set(), "client-d": set()}
+            for index, (alias, accounts) in enumerate(expected.items()):
+                self.assertEqual(new[alias]["principalId"], old[alias]["principalId"])
+                self.assertNotEqual(new[alias]["credentialId"], old[alias]["credentialId"])
+                grants = {value for key, value in properties.items()
+                          if key.startswith(f"{prefix}.principals[{index}].account-grants[")}
+                self.assertEqual(grants, {identities["accounts"][account] for account in accounts})
+                self.assertEqual(properties[f"{prefix}.principals[{index}].status"], "ACTIVE")
+                self.assertNotIn(new[alias]["token"], result.stdout + result.stderr)
+
     def test_creates_one_private_complete_fixture_bundle(self):
         with tempfile.TemporaryDirectory(prefix="query-security-contract-") as temporary:
             output = Path(temporary) / "new-run"
