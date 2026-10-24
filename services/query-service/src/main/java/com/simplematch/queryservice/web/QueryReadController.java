@@ -2,12 +2,10 @@ package com.simplematch.queryservice.web;
 
 import com.fasterxml.jackson.databind.JsonNode;
 import com.simplematch.queryservice.config.QueryServiceProperties;
-import com.simplematch.queryservice.model.QueryExecutionView;
 import com.simplematch.queryservice.runtime.QueryReadCache;
 import com.simplematch.queryservice.runtime.QueryReadResponse;
 import com.simplematch.queryservice.store.QueryProjectionStore;
 import java.time.LocalDate;
-import java.util.List;
 import java.util.Locale;
 import java.util.Optional;
 import java.util.UUID;
@@ -47,7 +45,7 @@ public final class QueryReadController {
     return read(
         cacheKey("order", canonicalOrderId),
         store.findOrder(canonicalOrderId)
-            .map(order -> new QueryReadResponse<>(order, store.freshness())));
+            .map(order -> QueryReadResponse.fromProjection(order, store.freshness())));
   }
 
   /** Returns all executions for one order in deterministic source order. */
@@ -57,7 +55,7 @@ public final class QueryReadController {
     return read(
         cacheKey("executions", canonicalOrderId),
         Optional.of(
-            new QueryReadResponse<List<QueryExecutionView>>(
+            QueryReadResponse.fromProjection(
                 store.findExecutions(canonicalOrderId), store.freshness())));
   }
 
@@ -68,7 +66,7 @@ public final class QueryReadController {
     return read(
         cacheKey("account-summary", canonicalAccountId),
         store.findAccountSummary(canonicalAccountId)
-            .map(summary -> new QueryReadResponse<>(summary, store.freshness())));
+            .map(summary -> QueryReadResponse.fromProjection(summary, store.freshness())));
   }
 
   /** Returns one active market-reference row by trading day and venue-qualified instrument. */
@@ -84,7 +82,7 @@ public final class QueryReadController {
                 tradingDay,
                 venueMic.trim().toUpperCase(Locale.ROOT),
                 symbol.trim().toUpperCase(Locale.ROOT))
-            .map(reference -> new QueryReadResponse<>(reference, store.freshness())));
+            .map(reference -> QueryReadResponse.fromProjection(reference, store.freshness())));
   }
 
   /** Returns source checkpoints and explicit gap/replay state. */
