@@ -1,6 +1,7 @@
 package com.simplematch.queryservice.config;
 
 import com.simplematch.config.SimpleMatchDataSourceSettings;
+import com.simplematch.queryservice.runtime.QueryAuthorizedReadService;
 import com.simplematch.queryservice.runtime.QueryProjectionApplicationService;
 import com.simplematch.queryservice.runtime.QueryProjectionRebuildService;
 import com.simplematch.queryservice.runtime.QueryReadCache;
@@ -55,6 +56,14 @@ public class QueryServicePersistenceConfiguration {
   QueryProjectionApplicationService queryProjectionApplicationService(
       QueryProjectionStore queryProjectionStore) {
     return new QueryProjectionApplicationService(queryProjectionStore);
+  }
+
+  /** Creates the authorized read module; it opens transactions only after account grant checks. */
+  @Bean
+  QueryAuthorizedReadService queryAuthorizedReadService(
+      QueryProjectionStore queryProjectionStore,
+      PlatformTransactionManager queryServiceTransactionManager) {
+    return new QueryAuthorizedReadService(queryProjectionStore, queryServiceTransactionManager);
   }
 
   /** Creates the explicit operator rebuild seam. */

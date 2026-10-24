@@ -740,13 +740,18 @@ implementation blocker.
 - **Current status:** `PARTIAL`
 - **Implemented boundary:** [QS1-01 / #188](https://github.com/WenHsuanYu/SimpleMatch/issues/188)
   introduces validated opaque Query identities, operations-read Freshness, independent operator
-  rebuild and minimal probes. Unconverted Account/Order/Execution/Market routes deny by default.
-  Synthetic credentials are provisioned before deployment; Query receives verifiers only.
+  rebuild and minimal probes. [QS1-02 / #189](https://github.com/WenHsuanYu/SimpleMatch/issues/189)
+  adds explicit Account Summary grants, concealed 404, the minimal v1 projection-state envelope
+  and one PostgreSQL repeatable-read snapshot. Account cache reads/fills are bypassed. Unconverted
+  Order/Execution/Market routes deny by default. Synthetic credentials are provisioned before
+  deployment; Query receives verifiers only.
 - **Verification boundary:** Actual HTTP filter tests, immutable-policy/credential tests and the
   existing runner-owned PostgreSQL test seam provide focused local evidence. This is not the
   final Phase 1 security certification or a new production-like deployment claim. The
-  [slice runbook](../../services/docs/query-service/opaque-authentication.md) records exact checks.
-- **Remaining:** #189–#194 own business routes, minimal envelopes, deployed revocation/recovery,
+  [authentication runbook](../../services/docs/query-service/opaque-authentication.md) and
+  [Account read runbook](../../services/docs/query-service/account-read-authorization.md) record
+  exact checks and distinguish application policy snapshots from deployed revocation.
+- **Remaining:** #190–#194 own remaining business routes, deployed revocation/recovery,
   collectors and final acceptance. Gateway/OAuth/mTLS/cache phases require their own approvals.
   Historical #137/#138 results remain preserved; this follow-up does not reopen those issues.
 

@@ -1,5 +1,9 @@
 # Query opaque authentication — QS1-01
 
+The subsequent [QS1-02 Account Summary slice](account-read-authorization.md) enables explicit
+Account Grants and supersedes this first-slice note's Account-route denial. The #188 verification
+record below retains its original scope and source identity.
+
 Scope: [#188](https://github.com/WenHsuanYu/SimpleMatch/issues/188), authorized for one
 implementation slice. This note records the accepted public test seams and implementation
 choices; runtime outcomes are recorded separately. Later business authorization slices remain

@@ -177,7 +177,6 @@ class QueryHttpSecurityIntegrationTest {
       strings = {
         "/api/v1/orders/not-a-uuid",
         "/api/v1/orders/not-a-uuid/executions",
-        "/api/v1/accounts/not-a-uuid/summary",
         "/api/v1/market-reference/2026-10-23/XTAI/2330",
         "/api/v1/unknown",
         "/actuator/metrics",

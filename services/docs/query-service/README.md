@@ -9,23 +9,27 @@ The [Query security and cache specification](security-external-access-spec.md) r
 conditionally approved target architecture, with a [decision register](security-decision-register.md),
 [Account semantics review](account-summary-semantics-review.md), and
 [phased implementation plan](../../../docs/plans/query-security-cache-implementation.md).
-The first [opaque authentication slice](opaque-authentication.md) implements Operations Freshness
-security; full account authorization and later transport/cache phases remain independently gated.
+The [opaque authentication slice](opaque-authentication.md) implements Operations Freshness
+security; the [Account Summary slice](account-read-authorization.md) adds explicit account grants,
+minimal business diagnostics and a PostgreSQL-only consistent read. Other routes and later
+transport/cache phases remain independently gated.
 
 ## Current HTTP security boundary
 
 QS1-01 enables GET /api/v1/freshness only for an active registered QueryPrincipal with explicit
-operations-read. Exact GET liveness/readiness endpoints expose minimal health; opt-in POST rebuild
-retains its independent operator credential. Other business/management routes and methods deny
-by default until their dedicated authorization tickets land. This deliberately changes direct
-HTTP behavior; no anonymous collector compatibility mode exists. The historical controller/cache
-behavior below is not reachable through the denied business routes in this slice.
+operations-read. QS1-02 enables exact GET /api/v1/accounts/{accountId}/summary with an explicit
+Account Grant and verified returned identity. Denied and missing accounts return the same empty
+404; malformed account UUIDs return 400 after authentication. Exact GET liveness/readiness endpoints
+expose minimal health; opt-in POST rebuild retains its independent operator credential.
+Order/Execution/Market, other management routes and unapproved methods deny by default until their
+dedicated tickets land. Direct HTTP follows the same policy; no anonymous compatibility mode exists.
 
 Every HTTP-serving process requires a complete validated startup policy under
 simplematch.query-service.security; it never generates credentials or reloads policy dynamically.
 Provision synthetic Local Lab credentials using the private fixture CLI and supply its verifier
 properties through Spring Environment. See the [configuration and test runbook](opaque-authentication.md).
-No production transport, multi-replica revocation or account-read security acceptance is claimed.
+Local HTTP/PostgreSQL account-read acceptance is separate from production transport, deployed
+multi-replica revocation and final Phase 1 certification.
 
 ## Read APIs
 
@@ -37,13 +41,17 @@ The versioned API is rooted at `/api/v1`:
 - `GET /market-reference/{tradingDay}/{venueMic}/{symbol}` — active artifact row.
 - `GET /freshness` — source partition offsets and `READY`/`GAP_DETECTED` state.
 
-Every data response carries durable checkpoint freshness metadata. The current controller
-evaluates PostgreSQL reads before checking the optional 30-second Redis response cache, so a
-cache hit does not avoid those database reads and can select an older cached response. Keys are
-shaped as `query:v1:{order|executions|account-summary|market-reference}:...`. A cache miss uses the
-already evaluated durable result and repopulates that entry. Redis connections use bounded
-connect and command timeouts (`500ms` and `2s` by default), so an unavailable cache returns the
-durable PostgreSQL view instead of holding a public read until the client reconnect loop expires.
+Account Summary returns `data` plus minimal `freshness.projectionState` from one short PostgreSQL
+`REPEATABLE READ` snapshot after the grant check. Account response-cache reads and writes are
+bypassed; old keys are retained. Required PostgreSQL/transaction failures return an empty 503.
+`NO_GAP_RECORDED` means only a nonempty recorded checkpoint set is all READY; it does not claim
+source coverage or catch-up. Full checkpoints remain restricted to operations-read `/freshness`.
+
+The shared v1 business envelope no longer contains raw checkpoint metadata. The unconverted
+Order/Execution/Market Controller still evaluates durable reads before its optional Redis lookup,
+so its historical cache behavior does not avoid those reads or provide PostgreSQL-independent
+availability. That path is currently denied by HTTP security. Selective cache reintroduction and
+performance claims require the separately approved Phase 2 gates.
 
 ## Projection and rebuild contract
 

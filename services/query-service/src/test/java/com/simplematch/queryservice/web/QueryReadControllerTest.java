@@ -62,8 +62,7 @@ class QueryReadControllerTest {
   }
 
   @ParameterizedTest
-  @ValueSource(strings = {"/api/v1/orders/not-a-uuid", "/api/v1/orders/not-a-uuid/executions",
-      "/api/v1/accounts/not-a-uuid/summary"})
+  @ValueSource(strings = {"/api/v1/orders/not-a-uuid", "/api/v1/orders/not-a-uuid/executions"})
   void rejectsMalformedUuidBeforeDurableRead(String path) throws Exception {
     final QueryProjectionStore store = mock(QueryProjectionStore.class);
     final QueryReadController controller = new QueryReadController(

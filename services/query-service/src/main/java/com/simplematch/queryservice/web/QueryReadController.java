@@ -11,10 +11,7 @@ import java.util.Optional;
 import java.util.UUID;
 import java.util.function.Supplier;
 import org.springframework.beans.factory.ObjectProvider;
-import org.springframework.dao.DataAccessException;
-import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
-import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.RequestMapping;
@@ -59,16 +56,6 @@ public final class QueryReadController {
                 store.findExecutions(canonicalOrderId), store.freshness())));
   }
 
-  /** Returns the latest Account lifecycle summary. */
-  @GetMapping("/accounts/{accountId}/summary")
-  public ResponseEntity<?> accountSummary(@PathVariable UUID accountId) {
-    final String canonicalAccountId = accountId.toString();
-    return read(
-        cacheKey("account-summary", canonicalAccountId),
-        store.findAccountSummary(canonicalAccountId)
-            .map(summary -> QueryReadResponse.fromProjection(summary, store.freshness())));
-  }
-
   /** Returns one active market-reference row by trading day and venue-qualified instrument. */
   @GetMapping("/market-reference/{tradingDay}/{venueMic}/{symbol}")
   public ResponseEntity<?> marketReference(
@@ -89,12 +76,6 @@ public final class QueryReadController {
   @GetMapping("/freshness")
   public ResponseEntity<?> freshness() {
     return ResponseEntity.ok(store.freshness());
-  }
-
-  /** Fails closed without disclosing database internals when the projection is unavailable. */
-  @ExceptionHandler(DataAccessException.class)
-  public ResponseEntity<Void> unavailableProjection() {
-    return ResponseEntity.status(HttpStatus.SERVICE_UNAVAILABLE).build();
   }
 
   private ResponseEntity<?> read(String key, Optional<?> durableValue) {

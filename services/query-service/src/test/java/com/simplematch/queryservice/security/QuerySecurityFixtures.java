@@ -43,12 +43,23 @@ final class QuerySecurityFixtures {
     properties.put("principals[2].account-grants[1]", y);
   }
 
+  QuerySecurityFixtures(QuerySecurityFixtures source) {
+    properties.putAll(source.properties);
+    tokens.putAll(source.tokens);
+    principalIds.putAll(source.principalIds);
+  }
+
   void register(DynamicPropertyRegistry registry) {
     properties.forEach((key, value) -> registry.add(prefix(key), () -> value));
   }
 
   QuerySecurityFixtures property(String key, String value) {
     properties.put(key, value);
+    return this;
+  }
+
+  QuerySecurityFixtures withoutProperty(String key) {
+    properties.remove(key);
     return this;
   }
 
