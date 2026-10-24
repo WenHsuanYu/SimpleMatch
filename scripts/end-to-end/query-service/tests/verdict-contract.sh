@@ -84,7 +84,7 @@ JSON
 cp "$fixture_dir/baseline.json" "$fixture_dir/redis-outage.json"
 cp "$fixture_dir/baseline.json" "$fixture_dir/rebuilt.json"
 cat >"$fixture_dir/restoration.json" <<'JSON'
-{"redisKeysPresent":true,"queryServiceReady":true,"queryOutageObserved":true,"matchingReady":15,"criticalConsumersReady":true}
+{"queryServiceReady":true,"queryOutageObserved":true,"matchingReady":15,"criticalConsumersReady":true}
 JSON
 
 cat >"$fixture_dir/active-processing-liveness.json" <<'JSON'

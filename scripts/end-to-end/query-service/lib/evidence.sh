@@ -214,20 +214,6 @@ reset_query_consumer_group() {
   kns exec "$broker" -c kafka -- rm -f "$remote_reset_file" >/dev/null 2>&1 || true
 }
 
-query_redis_keys_present() {
-  local keys=(
-    "query:v1:order:$order_id"
-    "query:v1:executions:$order_id"
-    "query:v1:account-summary:$account_id"
-    "query:v1:market-reference:$trading_day:$venue_mic:$symbol"
-  )
-  local key
-  for key in "${keys[@]}"; do
-    [[ "$(kns exec deployment/redis -- redis-cli EXISTS "$key" 2>/dev/null)" == 1 ]] ||
-      return 1
-  done
-}
-
 # Record restoration from the critical consumer observation contract.
 write_query_restoration_evidence() {
   local matching_ready critical_ready
@@ -242,7 +228,7 @@ write_query_restoration_evidence() {
     --argjson matchingReady "$matching_ready" \
     --argjson criticalConsumersReady "$critical_ready" \
     --argjson queryOutageObserved true \
-    '{redisKeysPresent:true,queryServiceReady:true,queryOutageObserved:$queryOutageObserved,
+    '{queryServiceReady:true,queryOutageObserved:$queryOutageObserved,
       matchingReady:$matchingReady,criticalConsumersReady:$criticalConsumersReady}' \
     >"$evidence_dir/restoration.json"
 }

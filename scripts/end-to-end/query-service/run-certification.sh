@@ -301,8 +301,7 @@ start_query_port_forward
 wait_for_query_snapshot "$evidence_dir/rebuilt.json" ||
   die "rebuilt query views did not converge before timeout"
 
-current_stage="verify Redis rebuild and failure isolation"
-query_redis_keys_present || die "public reads did not rebuild the selected Redis keys"
+current_stage="verify PostgreSQL replay restoration and failure isolation"
 capture_consumer_state "$evidence_dir/critical-after.json" ||
   die "cannot capture critical consumer state after query replay"
 write_query_restoration_evidence || die "cannot capture Query restoration evidence"

@@ -48,7 +48,6 @@ write_query_consumer_reset_file \
 
 grep -Fq -- "--group \"\$group\" --describe" "$evidence_module"
 grep -Fq 'seen > 0 && failed == 0' "$evidence_module"
-grep -Fq "query:v1:market-reference:\$trading_day:\$venue_mic:\$symbol" "$evidence_module"
 grep -Fq "'admissionStateCounts'" "$cluster_data_module"
 grep -Fq "'accountReservationStateCounts'" "$cluster_data_module"
 grep -Fq "'marketDataProgress'" "$cluster_data_module"

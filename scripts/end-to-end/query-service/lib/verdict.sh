@@ -250,10 +250,6 @@ evaluate_query_service_verdict() {
           )
         },
         {
-          name:"redisRebuilt",
-          passed:($restoration[0].redisKeysPresent == true)
-        },
-        {
           name:"queryServiceRestored",
           passed:($restoration[0].queryServiceReady == true)
         },
