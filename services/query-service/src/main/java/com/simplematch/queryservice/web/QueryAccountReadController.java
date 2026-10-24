@@ -2,7 +2,6 @@ package com.simplematch.queryservice.web;
 
 import com.simplematch.queryservice.runtime.QueryAuthorizedReadService;
 import com.simplematch.queryservice.security.QueryPrincipal;
-import java.util.UUID;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.web.bind.annotation.GetMapping;
@@ -25,16 +24,11 @@ public final class QueryAccountReadController {
   @GetMapping("/{accountId}/summary")
   public ResponseEntity<?> accountSummary(
       @PathVariable String accountId, @AuthenticationPrincipal QueryPrincipal principal) {
-    final UUID canonicalAccountId;
-    try {
-      canonicalAccountId = UUID.fromString(accountId);
-    } catch (IllegalArgumentException malformed) {
+    final var canonicalAccountId = QueryResourceIds.canonical(accountId);
+    if (canonicalAccountId.isEmpty()) {
       return ResponseEntity.badRequest().build();
     }
-    if (!canonicalAccountId.toString().equals(accountId)) {
-      return ResponseEntity.badRequest().build();
-    }
-    return reads.accountSummary(principal, canonicalAccountId)
+    return reads.accountSummary(principal, canonicalAccountId.orElseThrow())
         .map(ResponseEntity::ok)
         .orElseGet(() -> ResponseEntity.notFound().build());
   }
