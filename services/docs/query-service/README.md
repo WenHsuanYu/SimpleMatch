@@ -11,8 +11,10 @@ conditionally approved target architecture, with a [decision register](security-
 [phased implementation plan](../../../docs/plans/query-security-cache-implementation.md).
 The [opaque authentication slice](opaque-authentication.md) implements Operations Freshness
 security; the [Account Summary slice](account-read-authorization.md) adds explicit account grants,
-minimal business diagnostics and a PostgreSQL-only consistent read. Other routes and later
-transport/cache phases remain independently gated.
+minimal business diagnostics and a PostgreSQL-only consistent read. The
+[Order slice](order-read-authorization.md) extends the same module with trusted durable ownership
+and the corresponding Account Grant. Executions, Market and later transport/cache phases remain
+independently gated.
 
 ## Current HTTP security boundary
 
@@ -21,7 +23,8 @@ operations-read. QS1-02 enables exact GET /api/v1/accounts/{accountId}/summary w
 Account Grant and verified returned identity. Denied and missing accounts return the same empty
 404; malformed account UUIDs return 400 after authentication. Exact GET liveness/readiness endpoints
 expose minimal health; opt-in POST rebuild retains its independent operator credential.
-Order/Execution/Market, other management routes and unapproved methods deny by default until their
+QS1-03 enables exact GET /api/v1/orders/{orderId} after trusted Order ownership and Account Grants.
+Executions/Market, other management routes and unapproved methods deny by default until their
 dedicated tickets land. Direct HTTP follows the same policy; no anonymous compatibility mode exists.
 
 Every HTTP-serving process requires a complete validated startup policy under
@@ -41,14 +44,16 @@ The versioned API is rooted at `/api/v1`:
 - `GET /market-reference/{tradingDay}/{venueMic}/{symbol}` — active artifact row.
 - `GET /freshness` — source partition offsets and `READY`/`GAP_DETECTED` state.
 
-Account Summary returns `data` plus minimal `freshness.projectionState` from one short PostgreSQL
-`REPEATABLE READ` snapshot after the grant check. Account response-cache reads and writes are
-bypassed; old keys are retained. Required PostgreSQL/transaction failures return an empty 503.
+Account Summary and Order return `data` plus minimal `freshness.projectionState` from short
+PostgreSQL `REPEATABLE READ` snapshots. Account checks its grant before transaction acquisition;
+Order first establishes trusted ownership from the same durable row as its payload. Both paths
+bypass response-cache reads and writes; old keys are retained. Required PostgreSQL/transaction
+failures return an empty 503.
 `NO_GAP_RECORDED` means only a nonempty recorded checkpoint set is all READY; it does not claim
 source coverage or catch-up. Full checkpoints remain restricted to operations-read `/freshness`.
 
 The shared v1 business envelope no longer contains raw checkpoint metadata. The unconverted
-Order/Execution/Market Controller still evaluates durable reads before its optional Redis lookup,
+Executions/Market Controller still evaluates durable reads before its optional Redis lookup,
 so its historical cache behavior does not avoid those reads or provide PostgreSQL-independent
 availability. That path is currently denied by HTTP security. Selective cache reintroduction and
 performance claims require the separately approved Phase 2 gates.

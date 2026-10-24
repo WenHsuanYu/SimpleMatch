@@ -1,5 +1,8 @@
 # Account Summary authorization — QS1-02
 
+The subsequent [QS1-03 Order slice](order-read-authorization.md) supersedes this first Account
+slice's Order-route denial. The #189 verification record retains its original scope and source.
+
 Scope: [#189](https://github.com/WenHsuanYu/SimpleMatch/issues/189), one approved synthetic Local
 Lab slice after [opaque authentication](opaque-authentication.md). Account Summary is now an
 authorized PostgreSQL-only business read. Order, Executions and Market remain denied until their

@@ -7,18 +7,20 @@ import java.sql.Connection;
 import java.sql.PreparedStatement;
 import java.sql.ResultSet;
 import java.sql.SQLException;
+import java.util.Locale;
+import java.util.Map;
 import java.util.UUID;
 import java.util.concurrent.atomic.AtomicReference;
 import javax.sql.DataSource;
 import org.springframework.jdbc.datasource.DelegatingDataSource;
 
 /** Controls database failures and concurrent replies without replacing Query application modules. */
-final class QueryAccountTestDataSource extends DelegatingDataSource {
-  private final AtomicReference<Runnable> afterAccountRead = new AtomicReference<>();
+final class QueryReadTestDataSource extends DelegatingDataSource {
+  private final ReadControl account = new ReadControl();
+  private final ReadControl order = new ReadControl();
   private volatile boolean unavailable;
-  private volatile UUID returnedAccount;
 
-  QueryAccountTestDataSource(DataSource delegate) {
+  QueryReadTestDataSource(DataSource delegate) {
     super(delegate);
   }
 
@@ -27,17 +29,25 @@ final class QueryAccountTestDataSource extends DelegatingDataSource {
   }
 
   void afterAccountRead(Runnable action) {
-    afterAccountRead.set(action);
+    account.afterRead.set(action);
+  }
+
+  void afterOrderRead(Runnable action) {
+    order.afterRead.set(action);
   }
 
   void returnedAccount(UUID accountId) {
-    returnedAccount = accountId;
+    account.identities = Map.of("account_id", accountId);
+  }
+
+  void returnedOrderIdentity(UUID orderId, UUID accountId) {
+    order.identities = Map.of("order_id", orderId, "account_id", accountId);
   }
 
   void resetControls() {
     unavailable = false;
-    returnedAccount = null;
-    afterAccountRead.set(null);
+    account.reset();
+    order.reset();
   }
 
   /** Opens the real fixture connection unless this scenario disables the dependency. */
@@ -59,36 +69,43 @@ final class QueryAccountTestDataSource extends DelegatingDataSource {
         new Class<?>[] {Connection.class}, (proxy, method, arguments) -> {
           final Object value = invoke(connection, method, arguments);
           if (value instanceof PreparedStatement statement && arguments != null
-              && arguments.length > 0 && arguments[0] instanceof String sql
-              && sql.contains("FROM query_service.account_summary_read_model")) {
-            return observeAccount(statement);
+              && arguments.length > 0 && arguments[0] instanceof String sql) {
+            if (sql.contains("FROM query_service.account_summary_read_model")) {
+              return observeRows(statement, account);
+            }
+            if (sql.contains("FROM query_service.order_read_model")) {
+              return observeRows(statement, order);
+            }
           }
           return value;
         });
   }
 
-  private PreparedStatement observeAccount(PreparedStatement statement) {
+  private PreparedStatement observeRows(PreparedStatement statement, ReadControl control) {
     return (PreparedStatement) Proxy.newProxyInstance(PreparedStatement.class.getClassLoader(),
         new Class<?>[] {PreparedStatement.class}, (proxy, method, arguments) -> {
           final Object value = invoke(statement, method, arguments);
           if (value instanceof ResultSet rows) {
-            final Runnable action = afterAccountRead.getAndSet(null);
+            final Runnable action = control.afterRead.getAndSet(null);
             if (action != null) {
               action.run();
             }
-            return returnedAccount == null ? rows : substituteAccount(rows, returnedAccount);
+            return control.identities.isEmpty() ? rows : substituteIdentities(rows, control.identities);
           }
           return value;
         });
   }
 
-  private ResultSet substituteAccount(ResultSet rows, UUID accountId) {
+  private ResultSet substituteIdentities(ResultSet rows, Map<String, UUID> identities) {
     return (ResultSet) Proxy.newProxyInstance(ResultSet.class.getClassLoader(),
         new Class<?>[] {ResultSet.class}, (proxy, method, arguments) -> {
           if ("getObject".equals(method.getName()) && arguments != null
-              && arguments[0] instanceof Integer column
-              && "account_id".equalsIgnoreCase(rows.getMetaData().getColumnLabel(column))) {
-            return accountId;
+              && arguments[0] instanceof Integer column) {
+            final UUID replacement = identities.get(
+                rows.getMetaData().getColumnLabel(column).toLowerCase(Locale.ROOT));
+            if (replacement != null) {
+              return replacement;
+            }
           }
           return invoke(rows, method, arguments);
         });
@@ -105,6 +122,16 @@ final class QueryAccountTestDataSource extends DelegatingDataSource {
   private void requireAvailable() throws SQLException {
     if (unavailable) {
       throw new SQLException("injected owned test database unavailable");
+    }
+  }
+
+  private static final class ReadControl {
+    private final AtomicReference<Runnable> afterRead = new AtomicReference<>();
+    private volatile Map<String, UUID> identities = Map.of();
+
+    private void reset() {
+      afterRead.set(null);
+      identities = Map.of();
     }
   }
 }

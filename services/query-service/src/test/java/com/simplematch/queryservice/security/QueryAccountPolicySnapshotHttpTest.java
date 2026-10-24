@@ -17,6 +17,7 @@ import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.context.annotation.Import;
+import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.test.context.ActiveProfiles;
 import org.springframework.test.context.DynamicPropertyRegistry;
 import org.springframework.test.context.DynamicPropertySource;
@@ -40,7 +41,8 @@ class QueryAccountPolicySnapshotHttpTest {
   @Autowired private WebApplicationContext context;
   @Autowired private QueryProjectionStore store;
   @Autowired private QueryProjectionApplicationService projections;
-  @Autowired private QueryAccountCacheProbe cache;
+  @Autowired private QueryReadCacheProbe cache;
+  @Autowired private JdbcTemplate jdbc;
   private MockMvc http;
 
   @DynamicPropertySource
@@ -84,6 +86,37 @@ class QueryAccountPolicySnapshotHttpTest {
   @Test
   void disabledPrincipalCannotUseItsPreviouslyValidCredentialWithWarmCache() throws Exception {
     http.perform(get("/api/v1/accounts/{id}/summary", QueryAccountHttpFixtures.X)
+        .header("Authorization", "Bearer " + V2.token("client-d")))
+        .andExpect(status().isUnauthorized()).andExpect(content().string(""));
+    assertThat(cache.untouched()).isTrue();
+  }
+
+  @Test
+  void revokedAccountGrantCannotBeRestoredByAnOldOrderEnvelope() throws Exception {
+    QueryOrderHttpFixtures.seed(jdbc);
+    final var y = QueryOrderHttpFixtures.Y_EXECUTED;
+    cache.seedLegacyOrder(y.orderId().toString(), y.orderId().toString(), y.accountId().toString());
+    http.perform(get("/api/v1/orders/{id}", y.orderId())
+        .header("Authorization", "Bearer " + V2.token("client-c")))
+        .andExpect(status().isNotFound()).andExpect(content().string(""))
+        .andExpect(header().string("X-SimpleMatch-Query-Policy-Version", "2"));
+    http.perform(get("/api/v1/orders/{id}", QueryOrderHttpFixtures.X_EXECUTED.orderId())
+        .header("Authorization", "Bearer " + V2.token("client-c")))
+        .andExpect(status().isOk())
+        .andExpect(jsonPath("$.data.accountId").value(QueryAccountHttpFixtures.X));
+    http.perform(get("/api/v1/orders/{id}", y.orderId())
+        .header("Authorization", "Bearer " + V2.token("client-b")))
+        .andExpect(status().isOk())
+        .andExpect(jsonPath("$.data.accountId").value(QueryAccountHttpFixtures.Y));
+    assertThat(cache.untouched()).isTrue();
+  }
+
+  @Test
+  void disabledIdentityCannotUseAWarmOrderResponse() throws Exception {
+    QueryOrderHttpFixtures.seed(jdbc);
+    final var order = QueryOrderHttpFixtures.X_EXECUTED;
+    cache.seedLegacyOrder(order.orderId().toString(), order.orderId().toString(), order.accountId().toString());
+    http.perform(get("/api/v1/orders/{id}", order.orderId())
         .header("Authorization", "Bearer " + V2.token("client-d")))
         .andExpect(status().isUnauthorized()).andExpect(content().string(""));
     assertThat(cache.untouched()).isTrue();

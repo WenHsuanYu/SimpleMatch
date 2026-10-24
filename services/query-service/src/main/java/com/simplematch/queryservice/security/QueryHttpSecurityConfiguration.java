@@ -132,6 +132,8 @@ public class QueryHttpSecurityConfiguration {
                     .hasAuthority(QueryPrincipal.OPERATIONS_READ)
                     .requestMatchers(HttpMethod.GET, "/api/v1/accounts/{accountId}/summary")
                     .authenticated()
+                    .requestMatchers(HttpMethod.GET, "/api/v1/orders/{orderId}")
+                    .authenticated()
                     .anyRequest()
                     .denyAll())
         .build();

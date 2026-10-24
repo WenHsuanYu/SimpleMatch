@@ -58,7 +58,7 @@ public class QueryServicePersistenceConfiguration {
     return new QueryProjectionApplicationService(queryProjectionStore);
   }
 
-  /** Creates the authorized read module; it opens transactions only after account grant checks. */
+  /** Creates the shared read module; each operation owns its snapshot and grant sequence. */
   @Bean
   QueryAuthorizedReadService queryAuthorizedReadService(
       QueryProjectionStore queryProjectionStore,

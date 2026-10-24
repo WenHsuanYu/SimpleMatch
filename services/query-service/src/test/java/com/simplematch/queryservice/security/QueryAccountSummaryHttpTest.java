@@ -57,8 +57,8 @@ class QueryAccountSummaryHttpTest {
   @Autowired private WebApplicationContext context;
   @Autowired private QueryProjectionStore store;
   @Autowired private QueryProjectionApplicationService projections;
-  @Autowired private QueryAccountTestDataSource dataSource;
-  @Autowired private QueryAccountCacheProbe cache;
+  @Autowired private QueryReadTestDataSource dataSource;
+  @Autowired private QueryReadCacheProbe cache;
   @Autowired private PlatformTransactionManager transactionManager;
   private MockMvc http;
 
@@ -284,14 +284,14 @@ class QueryAccountSummaryHttpTest {
   @TestConfiguration(proxyBeanMethods = false)
   static class DatabaseConfiguration {
     @Bean
-    QueryAccountTestDataSource queryAccountTestDataSource() {
-      return new QueryAccountTestDataSource(QueryProjectionTestDatabase.open());
+    QueryReadTestDataSource queryAccountTestDataSource() {
+      return new QueryReadTestDataSource(QueryProjectionTestDatabase.open());
     }
 
     @Bean
     @Primary
-    QueryAccountCacheProbe queryAccountTestCache() {
-      return new QueryAccountCacheProbe();
+    QueryReadCacheProbe queryAccountTestCache() {
+      return new QueryReadCacheProbe();
     }
   }
 }

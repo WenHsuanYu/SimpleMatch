@@ -9,16 +9,16 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import com.simplematch.config.EnvironmentProperties;
 import com.simplematch.config.RedisProperties;
 import com.simplematch.queryservice.model.QueryFreshness;
-import com.simplematch.queryservice.model.QueryOrderView;
+import com.simplematch.queryservice.model.QueryMarketReferenceView;
 import com.simplematch.queryservice.runtime.QueryReadCache;
 import com.simplematch.queryservice.runtime.RedisQueryReadCache;
 import com.simplematch.queryservice.store.QueryProjectionStore;
 import com.simplematch.queryservice.web.QueryReadController;
 import java.nio.charset.StandardCharsets;
+import java.time.LocalDate;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Optional;
-import java.util.UUID;
 import java.util.concurrent.TimeUnit;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Test;
@@ -121,21 +121,13 @@ class QueryRedisSecurityIntegrationTest {
   }
 
   @Test
-  void certificateFailureFallsBackToTheDurableHttpResponse() {
+  void certificateFailureRetainsTheLegacyMarketAdaptersDurableResponse() {
     final QueryProjectionStore store = mock(QueryProjectionStore.class);
-    final UUID orderId = UUID.fromString("0198a001-0000-7000-8000-000000000002");
-    final QueryOrderView order =
-        new QueryOrderView(
-            orderId.toString(),
-            "0198a001-0000-7000-8000-000000000003",
-            "XTAI",
-            "2330",
-            "SIDE_BUY",
-            "RESTING",
-            10,
-            "event-1",
-            1);
-    when(store.findOrder(orderId.toString())).thenReturn(Optional.of(order));
+    final QueryMarketReferenceView reference = new QueryMarketReferenceView(
+        LocalDate.of(2026, 8, 27), "fixture-artifact", "XTAI", "2330", "rule",
+        100L, 90L, 110L, 0, 1L);
+    when(store.findMarketReference("2026-08-27", "XTAI", "2330"))
+        .thenReturn(Optional.of(reference));
     when(store.freshness()).thenReturn(new QueryFreshness(List.of()));
     final RedisQueryReadCache cache =
         cache(template(client("UNTRUSTED_PORT", "query-cache", required("PASSWORD"))));
@@ -147,7 +139,8 @@ class QueryRedisSecurityIntegrationTest {
             beans.getBeanProvider(QueryReadCache.class),
             properties("PORT", "query-cache", required("PASSWORD")));
 
-    final org.springframework.http.ResponseEntity<?> response = controller.order(orderId);
+    final org.springframework.http.ResponseEntity<?> response =
+        controller.marketReference("2026-08-27", "XTAI", "2330");
 
     assertThat(response.getStatusCode()).isEqualTo(HttpStatus.OK);
     assertThat(response.getBody())

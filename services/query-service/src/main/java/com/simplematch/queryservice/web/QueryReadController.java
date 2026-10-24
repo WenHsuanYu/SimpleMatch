@@ -35,16 +35,6 @@ public final class QueryReadController {
     this.cacheKeyPrefix = properties.redis().keyPrefix();
   }
 
-  /** Returns one order read model with durable freshness metadata. */
-  @GetMapping("/orders/{orderId}")
-  public ResponseEntity<?> order(@PathVariable UUID orderId) {
-    final String canonicalOrderId = orderId.toString();
-    return read(
-        cacheKey("order", canonicalOrderId),
-        store.findOrder(canonicalOrderId)
-            .map(order -> QueryReadResponse.fromProjection(order, store.freshness())));
-  }
-
   /** Returns all executions for one order in deterministic source order. */
   @GetMapping("/orders/{orderId}/executions")
   public ResponseEntity<?> executions(@PathVariable UUID orderId) {

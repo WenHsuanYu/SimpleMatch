@@ -7,9 +7,11 @@ import org.springframework.transaction.TransactionException;
 import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.RestControllerAdvice;
 
-/** Keeps projection and transaction failures out of both Query read HTTP contracts. */
+/** Keeps projection and transaction failures out of Query read HTTP contracts. */
 @RestControllerAdvice(
-    assignableTypes = {QueryReadController.class, QueryAccountReadController.class})
+    assignableTypes = {
+      QueryReadController.class, QueryAccountReadController.class, QueryOrderReadController.class
+    })
 public final class QueryReadFailureHandler {
   /** Fails closed without disclosing resource identifiers, SQL or connection details. */
   @ExceptionHandler({DataAccessException.class, TransactionException.class})
