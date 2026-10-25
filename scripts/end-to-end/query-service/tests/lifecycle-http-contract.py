@@ -44,7 +44,9 @@ class LifecycleHttpContract(unittest.TestCase):
         def docker(arguments, **_):
             if "node-b" in arguments:
                 direct_b.append(True)
-                status = "400" if len(direct_b) == 1 else "503"
+                if len(direct_b) == 1:
+                    return subprocess.CompletedProcess(arguments, 52, "\n000", "curl: Empty reply from server")
+                status = "503"
             else:
                 status = "503"
             return subprocess.CompletedProcess(arguments, 0, "\n" + status, "")

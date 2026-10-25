@@ -163,6 +163,16 @@ as FAIL with verified namespace/process/data teardown and no capture failures. I
 runtime cannot be resumed; the next source-aligned run may reuse validated image evidence but
 must establish a new namespace and complete lifecycle timeline.
 
+The eleventh #193 run completed V2 revocation, partial activation/recovery and all-replica
+grant/catch-up checks. V3 then failed because a nonzero direct-Pod curl observation aborted
+Block immediately; its exit code/stderr were not retained, so the exact transport outcome
+cannot be reconstructed. Indeterminate results are now recorded privately and retried within
+the unchanged Block deadline, without being counted as rejection. Real local curl/TCP
+contracts cover empty/partial responses, timeout, refusal, HTTP status and observer failure;
+they also force a hostile loopback proxy configuration to prove explicit proxy bypass.
+The retained r11 FAIL and successful exact-owned teardown are not upgraded to PASS. This
+was an observer/evidence defect, not proof of a Query cross-account disclosure.
+
 The second #164 recovery run completed the owner replacement and protocol/business
 observations but the strict verifier rejected `FIX.4.4 `: PostgreSQL had padded
 the existing `CHAR(8)` BeginString during JSON serialization. The read-only SQL

@@ -541,13 +541,18 @@ class Lab:
 
     def direct_status(self, endpoint, token):
         configuration = f'url = "http://{endpoint["ip"]}:8086/api/v1/accounts/not-a-uuid/summary"\nheader = "Authorization: Bearer {token}"\n'
-        result = self.docker("exec", "-i", endpoint["node"], "curl", "-sS", "--max-time", "1",
+        result = self.docker("exec", "-i", endpoint["node"], "curl", "--noproxy", "*", "-sS", "--max-time", "1",
                               "--write-out", "\n%{http_code}", "--config", "-", data=configuration,
                               timeout=3, check=False)
         if result.returncode == 7:
             return 0  # Observed connection refusal, never a timeout.
         if result.returncode:
-            raise RuntimeError("Direct Pod observation failed without proving rejection")
+            self.counter += 1
+            diagnostic = self.private / f"direct-probe-{self.counter}.json"
+            diagnostic.write_text(json.dumps({"exitCode": result.returncode,
+                "stdout": result.stdout, "stderr": result.stderr}) + "\n")
+            diagnostic.chmod(0o600)
+            return None  # Indeterminate: retry within Block's deadline; never count as rejection.
         return int(result.stdout.splitlines()[-1])
 
     def direct_rejected(self, endpoint, token):

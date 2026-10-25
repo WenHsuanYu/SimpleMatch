@@ -56,6 +56,9 @@ successful drain. Remaining exact-owned processes are terminated within the same
 Fast OS-process contracts separately verify normal completion, forced termination and
 deadline failure without depending on a narrow JVM-suspension race. Direct access is
 tested independently of the Service.
+Direct Pod probes explicitly bypass HTTP proxies. An indeterminate curl result is retained
+privately and retried only within the existing Block deadline; timeout, partial response or
+observer failure is never evidence of rejection. Failure to obtain positive rejection remains FAIL.
 
 The initial **20s drain**, **90s submit-to-stop verification** and **120s catch-up** limits are
 Lab acceptance parameters. Exceeding one produces FAIL. A larger stop-verification window
@@ -127,6 +130,7 @@ python3 scripts/end-to-end/query-service/tests/security-fixtures-contract.py
 python3 scripts/end-to-end/query-service/tests/policy-authority-contract.py
 python3 scripts/end-to-end/query-service/tests/lifecycle-deadline-contract.py
 python3 scripts/end-to-end/query-service/tests/lifecycle-drain-contract.py
+python3 scripts/end-to-end/query-service/tests/lifecycle-direct-contract.py
 python3 scripts/end-to-end/query-service/tests/lifecycle-cleanup-contract.py
 python3 scripts/end-to-end/query-service/tests/lifecycle-http-contract.py
 python3 scripts/end-to-end/query-service/tests/lifecycle-ownership-contract.py
