@@ -118,11 +118,19 @@ _certification_kubernetes_inputs_valid() {
   [[ "$(_certification_secret_value simplematch-postgres-secrets postgres_password)" == \
     "$local_postgres_password" ]] || return 1
   for service in \
-      account-service risk-service persistence market-data-projection \
-      query-service quickfix-gateway; do
+      account-service risk-service persistence market-data-projection; do
     [[ "$(_certification_secret_value "${service}-secrets" postgres_dsn)" == \
       "$local_postgres_dsn" ]] || return 1
   done
+  if [[ "${matching_fleet_only:-false}" == false ]]; then
+    for service in query-service quickfix-gateway; do
+      [[ "$(_certification_secret_value "${service}-secrets" postgres_dsn)" == \
+        "$local_postgres_dsn" ]] || return 1
+    done
+    python3 "$repo_root/scripts/end-to-end/query-service/lib/certification_security.py" \
+      --fixture-directory "$query_fixture_directory" \
+      --verify-context "$kind_context" --verify-namespace "$namespace" >/dev/null || return 1
+  fi
 }
 
 certification_phase_resume_validate() {
@@ -163,6 +171,12 @@ _certification_apply_or_validate_kubernetes_inputs() {
     return 0
   fi
   apply_local_kubernetes_inputs "$matching_digest" "$manifest"
+}
+
+_certification_validate_phase1_deployment_contracts() {
+  bash "$repo_root/scripts/test-phase1-deployment-contracts.sh" || return 1
+  python3 "$repo_root/scripts/end-to-end/query-service/tests/certification-fixtures-contract.py" || return 1
+  python3 "$repo_root/scripts/end-to-end/query-service/tests/certification-inputs-contract.py"
 }
 
 _certification_run_kafka_topic_create() {
@@ -253,8 +267,7 @@ certification_execute_phase() {
       run_logged "$phase_id" bash "$repo_root/scripts/test-kubernetes-overlays.sh"
       ;;
     static-phase1-deployment-contracts)
-      run_logged "$phase_id" bash \
-        "$repo_root/scripts/test-phase1-deployment-contracts.sh"
+      run_logged "$phase_id" _certification_validate_phase1_deployment_contracts
       ;;
     static-kubernetes-dependencies)
       run_logged "$phase_id" bash \

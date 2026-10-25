@@ -66,6 +66,17 @@ apply_local_kubernetes_inputs() {
   local delivery_manifest
   local artifact_manifest
   local manifest_name
+  if [[ "${matching_fleet_only:-false}" == false ]]; then
+    local current_security_digest
+    current_security_digest="$(python3 \
+      "$repo_root/scripts/end-to-end/query-service/lib/certification_security.py" \
+      --fixture-directory "${query_fixture_directory:?approved Query/FIX fixture bundle is required}" \
+      --fingerprint)" || return 1
+    [[ "$current_security_digest" == "${query_security_input_digest:?preflight security digest is required}" ]] || {
+      printf 'Security fixture inputs changed after preflight; no Kubernetes inputs were created.\n' >&2
+      return 1
+    }
+  fi
   delivery_manifest="${SIMPLEMATCH_MARKET_REFERENCE_DELIVERY_MANIFEST:-$repo_root/tools/market-reference-builder/data/${trading_day}/delivery/manifest.yaml}"
   artifact_manifest="$evidence_dir/matching-daily-artifact.yaml"
 
@@ -116,11 +127,29 @@ apply_local_kubernetes_inputs() {
     --from-literal=postgres_password="$local_postgres_password" \
     --dry-run=client -o yaml | kubectl apply -f - >/dev/null
 
-  for service in account-service risk-service persistence market-data-projection query-service quickfix-gateway; do
+  for service in account-service risk-service persistence market-data-projection; do
     kubectl -n "$namespace" create secret generic "${service}-secrets" \
       --from-literal=postgres_dsn="$local_postgres_dsn" \
       --dry-run=client -o yaml | kubectl apply -f - >/dev/null
   done
+
+  if [[ "${matching_fleet_only:-false}" == false ]]; then
+    local properties
+    for service in query-service quickfix-gateway; do
+      properties="$query_fixture_directory/application.properties"
+      [[ "$service" == quickfix-gateway ]] && properties="$query_fixture_directory/fix/application.properties"
+      kubectl --context "$kind_context" -n "$namespace" create secret generic "${service}-secrets" \
+        --from-literal=postgres_dsn="$local_postgres_dsn" \
+        --from-file="application.properties=$properties" --dry-run=client -o json \
+        | jq '.immutable = true' \
+        | kubectl --context "$kind_context" -n "$namespace" create -f - >/dev/null || return 1
+    done
+    kubectl --context "$kind_context" -n "$namespace" create secret generic quickfix-gateway-fix-tls \
+      --from-file="server.p12=$query_fixture_directory/fix/server.p12" \
+      --from-file="clients.p12=$query_fixture_directory/fix/clients.p12" --dry-run=client -o json \
+      | jq '.immutable = true' \
+      | kubectl --context "$kind_context" -n "$namespace" create -f - >/dev/null || return 1
+  fi
 }
 
 assert_certification_namespace_exclusive() {

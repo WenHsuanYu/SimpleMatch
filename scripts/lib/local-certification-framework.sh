@@ -12,6 +12,8 @@ Usage:
 Options:
   --tag TAG               Local image tag (default: SIMPLEMATCH_LOCAL_IMAGE_TAG or local).
   --image-transport MODE  Kubernetes image transport: registry (default) or kind-load fallback.
+  --query-fixture-directory PRIVATE_PATH
+                         Pre-provisioned Query/FIX synthetic bundle; required for full Kubernetes.
   --skip-build            Reuse local images without proving the image-build requirement.
   --skip-compose          Skip PostgreSQL, Redis, Kafka, and Kafka Connect runtime checks.
   --skip-kubernetes       Skip the live Kubernetes deployment and Matching fleet checks.

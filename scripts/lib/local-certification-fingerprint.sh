@@ -467,6 +467,17 @@ certification_phase_input_manifest() {
     static-phase1-deployment-contracts)
       _certification_paths_and_values_manifest \
         scripts/test-phase1-deployment-contracts.sh \
+        scripts/end-to-end/query-service/provision-certification-fixtures.py \
+        scripts/end-to-end/query-service/provision-security-fixtures.py \
+        scripts/end-to-end/query-service/policy-authority.py \
+        scripts/end-to-end/query-service/lib/query_http.py \
+        scripts/end-to-end/query-service/lib/certification_security.py \
+        scripts/end-to-end/query-service/tests/certification-fixtures-contract.py \
+        scripts/end-to-end/query-service/tests/certification-inputs-contract.py \
+        scripts/lib/local-certification-kubernetes.sh \
+        scripts/lib/local-certification-bootstrap.sh \
+        scripts/lib/local-certification-run.sh \
+        scripts/run-local-production-like-certification.sh \
         scripts/verify-outbox-connector-contracts.sh \
         scripts/test-local-resilience.sh scripts/validate-local-resilience-contract.sh \
         scripts/lib/local-resilience.sh deploy/compose/*-outbox-connector.json \
@@ -567,6 +578,21 @@ certification_phase_input_manifest() {
         scripts/testdata/matching-topic-profile config/kafka \
         scripts/lib/local-certification-fingerprint.sh \
         -- "phase=$phase_id" "version=$phase_version"
+      ;;
+    kubernetes-inputs)
+      _certification_paths_and_values_manifest \
+        scripts/lib/local-certification-kubernetes.sh \
+        scripts/lib/local-certification-bootstrap.sh \
+        scripts/lib/local-certification-run.sh \
+        scripts/end-to-end/query-service/provision-certification-fixtures.py \
+        scripts/end-to-end/query-service/provision-security-fixtures.py \
+        scripts/end-to-end/query-service/policy-authority.py \
+        scripts/end-to-end/query-service/lib/certification_security.py \
+        scripts/end-to-end/query-service/lib/query_http.py \
+        scripts/lib/local-certification-fingerprint.sh \
+        -- "phase=$phase_id" "version=$phase_version" \
+        "fixtureDigest=${query_security_input_digest:-unprovided}" \
+        "namespace=${namespace:-unknown}" "tradingDay=${certification_trading_day:-unknown}" "$@"
       ;;
     query-security-lifecycle)
       _certification_paths_and_values_manifest \

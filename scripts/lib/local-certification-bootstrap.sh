@@ -14,6 +14,10 @@ while [[ $# -gt 0 ]]; do
       image_transport="${2:?--image-transport requires a value}"
       shift 2
       ;;
+    --query-fixture-directory)
+      query_fixture_directory="${2:?--query-fixture-directory requires a value}"
+      shift 2
+      ;;
     --skip-build)
       skip_build=true
       shift
@@ -77,6 +81,15 @@ if [[ "$dry_run" == false ]]; then
     'jq is required for certification plan and evidence records.'
 fi
 
+if [[ "$dry_run" == false && "$skip_kubernetes" == false && "$matching_fleet_only" == false ]]; then
+  [[ -n "$query_fixture_directory" ]] || die \
+    '--query-fixture-directory is required for secured full-local deployment.'
+  query_security_input_digest="$(python3 \
+    "$repo_root/scripts/end-to-end/query-service/lib/certification_security.py" \
+    --fixture-directory "$query_fixture_directory" --fingerprint)" || die \
+    'Private Query/FIX certification material is missing, invalid or expired.'
+fi
+
 if [[ "$dry_run" == true ]]; then
   compose_prefix=(docker compose)
 elif command -v docker >/dev/null 2>&1 && docker compose version >/dev/null 2>&1; then
@@ -109,6 +122,7 @@ _certification_run_context() {
     "$image_tag" "$image_transport" "$source_signature" \
     "$cdc_runtime_signature" "$cdc_verifier_signature" \
     "$skip_build" "$skip_compose" "$skip_kubernetes" "$matching_fleet_only"
+  printf 'query_security_input_digest=%s\n' "$query_security_input_digest"
 }
 
 if [[ "$resume" == true ]]; then
