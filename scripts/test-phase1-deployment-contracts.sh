@@ -8,4 +8,7 @@ bash "$script_dir/test-local-certification-focused-diagnostic.sh"
 bash "$script_dir/verify-outbox-connector-contracts.sh"
 bash "$script_dir/test-local-resilience.sh"
 
+python3 "$script_dir/end-to-end/query-service/tests/certification-fixtures-contract.py"
+python3 "$script_dir/end-to-end/query-service/tests/certification-inputs-contract.py"
+
 printf '%s\n' 'Phase 1 connector, resilience orchestration, and sensitive-log contracts are valid.'
