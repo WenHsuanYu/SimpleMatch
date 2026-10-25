@@ -43,8 +43,13 @@ def bundle(path):
     credentials = json.loads(credential_bytes)
     aliases = ("client-a", "client-b", "client-c", "operations", "client-d")
     if (set(credentials) != set(aliases) or set(identities["principals"]) != set(aliases)
+            or set(identities["accounts"]) != {"X", "Y"}
             or properties[f"{PREFIX}.schema-version"] != "1"):
         raise ValueError("invalid controlled fixture shape")
+    identifiers = [*identities["accounts"].values(), *identities["principals"].values()]
+    if len(set(identifiers)) != 7 or any(str(uuid.UUID(value)) != value for value in identifiers):
+        raise ValueError("invalid controlled fixture identities")
+    expected = {f"{PREFIX}.schema-version": "1", f"{PREFIX}.policy-version": str(version)}
     for index, alias in enumerate(aliases):
         credential = credentials[alias]
         principal = identities["principals"][alias]
@@ -58,9 +63,29 @@ def bundle(path):
                 or hashlib.sha256(credential["token"].encode("ascii")).hexdigest()
                 != properties[credential_prefix + ".sha256"]):
             raise ValueError("client material does not match the approved verifier mapping")
+        if str(uuid.UUID(credential["credentialId"])) != credential["credentialId"]:
+            raise ValueError("invalid fixture credential identity")
+        principal_prefix = f"{PREFIX}.principals[{index}]"
+        status = properties[principal_prefix + ".status"]
+        if status not in ({"ACTIVE", "DISABLED"} if alias == "client-d" else {"ACTIVE"}):
+            raise ValueError("unsupported synthetic principal status")
+        grants = {"client-a": ("X",), "client-b": ("Y",), "client-c": ("X",),
+                  "operations": (), "client-d": ()}[alias]
+        if alias == "client-c" and properties.get(principal_prefix + ".account-grants[1]") == identities["accounts"]["Y"]:
+            grants = ("X", "Y")
+        expected.update({principal_prefix + ".id": principal,
+                         principal_prefix + ".status": status,
+                         principal_prefix + ".operations-read": str(alias == "operations").lower(),
+                         credential_prefix + ".id": credential["credentialId"],
+                         credential_prefix + ".principal-id": principal,
+                         credential_prefix + ".sha256": hashlib.sha256(credential["token"].encode("ascii")).hexdigest(),
+                         credential_prefix + ".enabled": "true",
+                         credential_prefix + ".expires-at": credential["expiresAt"],
+                         **{principal_prefix + f".account-grants[{position}]": identities["accounts"][account]
+                            for position, account in enumerate(grants)}})
     verifiers = {value for key, value in properties.items()
                  if key.startswith(PREFIX + ".credentials[") and key.endswith(".sha256")}
-    if not 0 < version <= 9_223_372_036_854_775_807 or len(verifiers) != 5:
+    if not 0 < version <= 9_223_372_036_854_775_807 or len(verifiers) != 5 or properties != expected:
         raise ValueError("invalid fixture policy")
     return {"version": version, "digest": hashlib.sha256(raw).hexdigest(),
             "identitiesDigest": hashlib.sha256((path / "fixture-identities.json").read_bytes()).hexdigest(),
@@ -259,7 +284,7 @@ def perform(record, arguments):
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("operation", choices=("create", "approve", "check", "status", "mark",
+    parser.add_argument("operation", choices=("inspect-bundle", "create", "approve", "check", "status", "mark",
                                              "verify", "failure", "activate", "collectors", "destroyed"))
     parser.add_argument("directory", type=Path)
     parser.add_argument("--bundle", type=Path)
@@ -277,6 +302,11 @@ def main():
     os.umask(0o077)
     try:
         directory = arguments.directory
+        if arguments.operation == "inspect-bundle":
+            candidate = bundle(directory)
+            print(json.dumps({key: candidate[key] for key in (
+                "version", "digest", "identitiesDigest", "credentialsDigest")}))
+            return 0
         if arguments.operation == "create":
             directory.mkdir(mode=0o700)
         private(directory, True)

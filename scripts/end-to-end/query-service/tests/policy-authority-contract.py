@@ -20,6 +20,31 @@ IMAGE = "sha256:" + "a" * 64
 
 
 class PolicyAuthorityContract(unittest.TestCase):
+    def test_bundle_inspection_is_read_only_and_rejects_broadened_synthetic_grants(self):
+        with tempfile.TemporaryDirectory(prefix="query-policy-inspection-") as temporary:
+            directory = Path(temporary) / "bundle"
+            subprocess.run([sys.executable, str(PROVISIONER), str(directory)],
+                           capture_output=True, check=True)
+            result = self.call("inspect-bundle", directory)
+            self.assertEqual(result.returncode, 0)
+            public = json.loads(result.stdout)
+            self.assertEqual(set(public), {"version", "digest", "identitiesDigest", "credentialsDigest"})
+            self.assertEqual(public["version"], 1)
+            self.assertEqual({p.name for p in directory.iterdir()},
+                             {"application.properties", "fixture-identities.json", "credentials.json"})
+            credentials = json.loads((directory / "credentials.json").read_text())
+            for item in credentials.values():
+                self.assertNotIn(item["token"], result.stdout + result.stderr)
+                self.assertNotIn(hashlib.sha256(item["token"].encode()).hexdigest(), result.stdout)
+            account_y = json.loads((directory / "fixture-identities.json").read_text())["accounts"]["Y"]
+            policy = directory / "application.properties"
+            policy.write_text(policy.read_text() +
+                              "simplematch.query-service.security.principals[0].account-grants[1]=" +
+                              account_y + "\n")
+            self.assertNotEqual(self.call("inspect-bundle", directory).returncode, 0)
+            self.assertFalse((directory / ".lock").exists())
+            self.assertFalse((directory / "current.json").exists())
+
     def call(self, *arguments):
         return subprocess.run([sys.executable, str(TOOL), *map(str, arguments)],
                               capture_output=True, text=True, check=False)
