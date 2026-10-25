@@ -806,6 +806,7 @@ bash scripts/run-local-java-placement-serving-check.sh \
   --namespace <run-namespace> \
   --namespace-run-id <namespace-run-id> \
   --retained-evidence-dir out/certification/<retained-run> \
+  --query-fixture-directory /private/query-fixture-bundle \
   --evidence-dir out/resilience/java-placement-serving-<run-id>
 ```
 
@@ -821,6 +822,12 @@ selector 與 endpoint 生成是 Kubernetes controller 的責任，不在此重�
 回應；startup/readiness/liveness 的 path、responsibility 與 liveness timing 由 shared contract
 validator 驗證，runtime observer 只記錄這些端點的實際健康結果與 Pod-level serving。若 deployed
 timing 偏離 bounded window 的依據，observer 會在 mutation 前 fail closed。
+
+`--query-fixture-directory` 必須指向部署前產生、與目前 Query Policy 相符的私密測試 Bundle。
+Freshness 使用其中的 operations-read 身分，兩個最小 Health Probe 保持匿名；不會退回匿名
+Freshness，也不會使用 Rebuild Operator Token。新版 diagnostic report 使用 schema version 2，
+記錄每種 Probe 的 authentication 類型並驗證完整 Operations Freshness 格式；舊版報告保留
+原始版本與範圍，不會重新標示為新版安全驗收。工具測試通過仍不等同於 deployed PASS。
 
 為了驗證依賴故障時的 health boundary，Runner 只把 run-owned Redis Deployment 從一副本縮到零，
 先確認零 Ready replica，再以預設 60 秒的 bounded observation window 等待 liveness failure threshold

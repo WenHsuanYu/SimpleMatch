@@ -2,9 +2,10 @@
 
 The secured Query contract now uses PostgreSQL-only business reads and authenticated Principals.
 QS1-05 removes the historical four-response-key restoration requirement; old #137 evidence remains
-historical. The standalone runner still requires #194's credential-aware collectors and approved
-fixture integration before a new secured deployment run. Focused shell-contract PASS does not
-certify that deployment. See the [Market contract](../../services/docs/query-service/market-read-authorization.md).
+historical. The [QS1-07 consumer slice](../../services/docs/query-service/certification-integration.md)
+adds credential-aware collectors, approved fixture selection and verdict contract
+`query-security-phase1/1`. Complete secured bootstrap and deployed aggregate acceptance remain
+pending under #194; focused tool/PostgreSQL PASS does not certify that deployment.
 
 This gate proves the required read-only query capability against a fresh retained local
 production-like deployment. It does not certify external production infrastructure. The runner
@@ -19,8 +20,9 @@ the gate; each retained result identifies its own tested source and restoration 
 
 The retained Kafka stream must contain an execution-backed order whose Account summary and active
 Market Reference row are queryable after the runner establishes its fixture. The runner rejects an
-empty execution set; a resting order alone is not trade-view evidence. It selects one such fixture
-from query-owned PostgreSQL,
+empty execution set; a resting order alone is not trade-view evidence. It selects only the run's
+recorded BUY Order/Account X from query-owned PostgreSQL, with matching parent ownership and
+instrument/day. It never chooses an arbitrary newer Account or broadens grants to fit it,
 then reads all business data through the public versioned API:
 
 - order state and executions;
@@ -29,15 +31,18 @@ then reads all business data through the public versioned API:
 - source-topic partition offsets and recovery state.
 
 The public runner establishes that prerequisite itself before selecting the fixture. It invokes the
-repository-owned RM-1 verifier twice through the public Risk gRPC boundary: a BUY order provisions
-an account cash limit and rests, then a SELL order provisions the same instrument's long position
-and crosses the resting order. Both commands use the same retained artifact-selected instrument,
+public FIX path twice: a BUY order uses pre-approved Account X with a seeded daily trading-notional
+limit and zero position, then a SELL order uses pre-approved Y with the same instrument's synthetic
+long position and crosses the resting order. Both commands use the same retained artifact-selected instrument,
 price, board lot, and partition; only their accounts and sides differ. The resulting evidence is
 kept under `matching-fixture/buy/` and `matching-fixture/sell/`, and the runner waits for the final
 Matching execution, Account lifecycle summary, and Market Reference joins to become visible in
 query PostgreSQL. A caller therefore does not need to run a separate Matching script or hand-seed
 an Account reservation row first; the only administrative fixture writes are the existing
-account-authority cash-limit and long-position seeds required by the public reservation use case.
+account-authority trading-limit and position seeds required by the public reservation use case.
+The private X/Y bundle must already be deployed as Query policy and authorized by the FIX session;
+ordinary reads use fixture-granted credentials, Market uses no-grant D, and full checkpoints use
+Operations. Minimal business envelopes contain no topic/partition/offset metadata.
 
 It captures the baseline, scales Redis to zero, and requires the same business view from the
 query-owned PostgreSQL read path. It then restores Redis, scales query-service to zero, records
@@ -67,7 +72,8 @@ query deployment still has zero Pods. The FIX client is held at its ready barrie
 quiescent outage probe runs; immediately before release, the Gateway is opened from three fresh
 system observations. This placement keeps the final observation inside the five-second
 `stale-status-after` window instead of allowing the probe to race the fail-closed safety monitor.
-The submitted order uses a newly seeded account limit and the immutable artifact-selected
+The submitted IOC uses approved Y with a newly seeded BUY limit, preserving X's Account baseline,
+and the immutable artifact-selected
 instrument. The active evidence must correlate the FIX acceptance, durable Risk admission, routed
 partition, exact `MATCHING_EVENT_TYPE_ORDER_CANCELLED`, terminal Persistence
 projection, market-data projection progress and inbox, all three critical-consumer inboxes, and a
@@ -108,7 +114,14 @@ freshness response still proves that every source checkpoint is present, contigu
 
 ## Run the gate
 
-First create a fresh production-like run at the committed source revision and retain its namespace:
+Before deployment, provision the private Query bundle and independent FIX credentials/TLS material
+for the approved X/Y Accounts, and arrange for the serving workloads to consume them. The current
+stock full-local input producer does not automatically perform this security bootstrap; that
+integration remains a #194 gate. Do not run an anonymous compatibility profile or treat the commands
+below as newly accepted deployed evidence.
+
+Once those inputs are supported, create a fresh production-like run at the committed source revision
+and retain its namespace:
 
 ```bash
 bash scripts/run-local-production-like-certification.sh --keep-resources
@@ -120,18 +133,19 @@ Then provide that run's namespace and evidence directory explicitly:
 bash scripts/run-query-service-certification.sh \
   --namespace "${SIMPLEMATCH_CERTIFICATION_NAMESPACE}" \
   --retained-evidence-dir "${SIMPLEMATCH_PRODUCTION_LIKE_EVIDENCE_DIR}" \
+  --query-fixture-directory "${SIMPLEMATCH_QUERY_FIXTURE_DIRECTORY}" \
   --evidence-dir "${SIMPLEMATCH_QUERY_CERTIFICATION_EVIDENCE_DIR}"
 ```
 
 The output directory must be empty. On success, `verdict.json` contains a `PASS` result and the
-individual deterministic-rebuild, PostgreSQL-read, freshness, market-identity,
+individual minimal-business-envelope, deterministic-rebuild, PostgreSQL-read, freshness, market-identity,
 service-restoration, active-processing-liveness, quiescent-critical-path-isolation, and
 critical-path-isolation checks. Baseline, active-event, outage, probe samples, rebuilt,
 consumer-state, offset-reset, provenance, deployment, and diagnostic evidence remain beside it.
 
 ## Safety and restoration
 
-The runner refuses the Docker Desktop context, an ordinary namespace, stale source provenance, a
+The runner requires the canonical kind Kubernetes context and refuses an ordinary namespace, stale source provenance, a
 different retained namespace, or pre-existing rebuild environment overrides. It restores the
 original Redis and query-service replica counts, removes only the two temporary query rebuild
 environment variables, stops the public FIX/Gateway/Kafka observer clients, removes only the

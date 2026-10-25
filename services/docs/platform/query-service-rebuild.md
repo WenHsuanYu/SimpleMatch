@@ -1,7 +1,8 @@
 # Query-service projection replay
 
-`query-service` owns rebuildable PostgreSQL read models and a disposable Redis cache. Neither is
-trading authority. A replay resets only query-owned state and the two query consumer groups; it
+`query-service` owns rebuildable PostgreSQL read models and an optional disposable Redis adapter.
+The four business reads currently bypass response caching; neither store is trading authority.
+A replay resets only query-owned state and the two query consumer groups; it
 must not modify Matching, Persistence, Account, QuickFIX, or admission state.
 
 The reset HTTP adapter is disabled by default. Enable it only for a controlled operator run with
@@ -41,5 +42,11 @@ an explicit fresh retained production-like evidence directory:
 bash scripts/run-query-service-certification.sh \
   --namespace "${SIMPLEMATCH_CERTIFICATION_NAMESPACE}" \
   --retained-evidence-dir "${SIMPLEMATCH_PRODUCTION_LIKE_EVIDENCE_DIR}" \
+  --query-fixture-directory "${SIMPLEMATCH_QUERY_FIXTURE_DIRECTORY}" \
   --evidence-dir "${SIMPLEMATCH_QUERY_CERTIFICATION_EVIDENCE_DIR}"
 ```
+
+The private fixture bundle must match the pre-deployed Query policy and approved X/Y FIX
+allowlists. It supplies separate read/operations identities; it is not the rebuild operator token.
+See [collector integration](../query-service/certification-integration.md) for the current evidence
+boundary and pending secured deployment acceptance.

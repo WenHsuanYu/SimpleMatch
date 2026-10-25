@@ -772,7 +772,11 @@ implementation blocker.
   `runtime-r13` evidence at source `f0cbe62`, including forced-stop attempts and verified process
   exit within the approved Lab bounds and two verified namespace/process/data teardowns. This covers Account lifecycle
   fixtures, Operations and Market permissions; it does not replace aggregate cross-route certification.
-- **Remaining:** #194 owns collector integration and final Phase 1 acceptance.
+- **Remaining:** #194 owns final Phase 1 acceptance. Its
+  [collector integration slice](../../services/docs/query-service/certification-integration.md)
+  wires private per-route credentials, run-bound fixture selection, minimal business envelopes
+  and operations-authenticated placement diagnostics. Tool/PostgreSQL evidence is distinct from
+  the still-pending deployed cross-route/cross-replica/cross-lifecycle aggregate.
   Gateway/OAuth/mTLS/cache phases require their own approvals.
   Historical #137/#138 results remain preserved; this follow-up does not reopen those issues.
 

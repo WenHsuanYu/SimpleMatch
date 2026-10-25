@@ -19,6 +19,9 @@ adds existing-parent authorization and whole-collection integrity. The
 Grants. The [Lab policy lifecycle](lab-policy-lifecycle.md) verifies controlled multi-replica
 revocation, credential replacement and recovery. Production maintenance, later transport/cache
 phases and the aggregate Phase 1 certification retain their independent gates.
+The [certification integration slice](certification-integration.md) connects private route-specific
+fixture credentials to existing collectors and the placement observer. Its tool/PostgreSQL
+contracts do not by themselves complete #194's deployed cross-route/cross-lifecycle acceptance.
 
 ## Current HTTP security boundary
 
