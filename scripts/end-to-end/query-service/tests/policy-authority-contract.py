@@ -24,15 +24,80 @@ class PolicyAuthorityContract(unittest.TestCase):
         return subprocess.run([sys.executable, str(TOOL), *map(str, arguments)],
                               capture_output=True, text=True, check=False)
 
-    def initial(self, directory):
+    def initial(self, directory, drain_seconds=20):
         first = directory / "g1"
         subprocess.run([sys.executable, str(PROVISIONER), str(first)],
                        capture_output=True, check=True)
         authority = directory / "authority"
         self.assertEqual(self.call("create", authority, "--run-id", str(uuid.uuid4()),
             "--namespace", "query-security-" + uuid.uuid4().hex[:12], "--namespace-uid",
-            str(uuid.uuid4()), "--image", IMAGE, "--bundle", first).returncode, 0)
+            str(uuid.uuid4()), "--image", IMAGE, "--bundle", first,
+            "--drain-seconds", drain_seconds).returncode, 0)
         return authority, first
+
+    def submitted(self, directory, drain_seconds=20):
+        authority, first = self.initial(directory, drain_seconds)
+        second = directory / "g2"
+        subprocess.run([sys.executable, str(PROVISIONER), str(second), "--previous-directory", str(first),
+            "--policy-version", "2", "--profile", "c-y-revoked"], capture_output=True, check=True)
+        digest = json.loads(self.call("status", authority).stdout)["digest"]
+        self.assertEqual(self.call("approve", authority, "--bundle", second,
+                                  "--expect-current-digest", digest).returncode, 0)
+        return authority
+
+    def event_file(self, authority, event):
+        facts = {"eligibleReplicas": 2, "newRequestsRejected": True,
+                 "existingConnectionsRejected": True, "directPathsRejected": True,
+                 "oldProcessesStopped": True, "allReplicasVerified": True,
+                 "oldCredentialsRejected": True, "catchupComplete": True}
+        path = authority.parent / (event + "-" + uuid.uuid4().hex + ".json")
+        path.write_text(json.dumps(self.proof(authority, event, facts)))
+        path.chmod(0o600)
+        return path
+
+    def test_out_of_order_transitions_and_all_pre_resume_collector_exports_are_denied(self):
+        with tempfile.TemporaryDirectory(prefix="query-policy-order-") as temporary:
+            directory = Path(temporary)
+            authority = self.submitted(directory)
+            premature = self.event_file(authority, "Trevoked")
+            self.assertNotEqual(self.call("mark", authority, "--event", "Trevoked",
+                "--evidence-file", premature).returncode, 0)
+            for next_event in ("Tblock", "Tdrained", "Trevoked"):
+                output = directory / (next_event + "-clients.json")
+                self.assertNotEqual(self.call("collectors", authority, "--output-file", output).returncode, 0)
+                self.assertFalse(output.exists())
+                self.assertEqual(self.call("mark", authority, "--event", next_event,
+                    "--evidence-file", self.event_file(authority, next_event)).returncode, 0)
+            self.assertNotEqual(self.call("collectors", authority,
+                "--output-file", directory / "revoked-clients.json").returncode, 0)
+            self.assertEqual(self.call("verify", authority).returncode, 0)
+            self.assertNotEqual(self.call("collectors", authority,
+                "--output-file", directory / "verifying-clients.json").returncode, 0)
+            old_proof = self.event_file(authority, "Tresume")
+            self.assertEqual(self.call("failure", authority).returncode, 0)
+            self.assertNotEqual(self.call("collectors", authority,
+                "--output-file", directory / "failed-clients.json").returncode, 0)
+            self.assertEqual(self.call("verify", authority).returncode, 0)
+            self.assertNotEqual(self.call("mark", authority, "--event", "Tresume",
+                "--evidence-file", old_proof).returncode, 0)
+            self.assertEqual(json.loads(self.call("status", authority).stdout)["phase"], "VERIFYING")
+            self.assertEqual(self.call("mark", authority, "--event", "Tresume",
+                "--evidence-file", self.event_file(authority, "Tresume")).returncode, 0)
+
+    def test_stop_verification_window_cannot_extend_an_expired_drain(self):
+        with tempfile.TemporaryDirectory(prefix="query-policy-drain-") as temporary:
+            directory = Path(temporary)
+            authority = self.submitted(directory, drain_seconds=0.15)
+            self.assertEqual(self.call("mark", authority, "--event", "Tblock",
+                "--evidence-file", self.event_file(authority, "Tblock")).returncode, 0)
+            time.sleep(0.16)
+            self.assertNotEqual(self.call("mark", authority, "--event", "Tdrained",
+                "--evidence-file", self.event_file(authority, "Tdrained")).returncode, 0)
+            self.assertNotEqual(self.call("mark", authority, "--event", "Trevoked",
+                "--evidence-file", self.event_file(authority, "Trevoked")).returncode, 0)
+            self.assertEqual(json.loads(self.call("status", authority).stdout)["phase"], "BLOCKED")
+            self.assertNotEqual(self.call("collectors", authority,
+                "--output-file", directory / "late-clients.json").returncode, 0)
 
     def proof(self, authority, event, facts):
         status = json.loads(self.call("status", authority).stdout)
