@@ -144,6 +144,7 @@ kubernetes-cdc-delivery|FRESH|REEXECUTE|runtime-state configuration|runtime-proo
 kubernetes-matching-workloads|FRESH|REEXECUTE|runtime-state|runtime-proof|kubernetes-matching-apply|1
 kubernetes-fleet|FRESH|REEXECUTE|runtime-state|runtime-proof||1
 retained-run-provenance|FRESH|REEXECUTE|runtime-proof source image-lock|provenance|kubernetes-fleet|1
+query-security-lifecycle|FRESH|REEXECUTE|source configuration image namespace runtime-state|revocation-proof|local-image-build/query-service|1
 EOF_PHASES
 }
 
@@ -323,6 +324,11 @@ certification_phase_dependencies() {
 
 _certification_profile_root_phase_ids() {
   local service selected_services
+
+  if [[ "${query_security_lifecycle_only:-false}" == true ]]; then
+    printf '%s\n' query-security-lifecycle
+    return 0
+  fi
 
   printf '%s\n' \
     static-kubernetes-overlays \

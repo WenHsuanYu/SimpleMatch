@@ -41,6 +41,7 @@ on:
       - 'scripts/run-critical-consumer-failure-certification.sh'
       - 'scripts/run-local-production-like-certification.sh'
       - 'scripts/run-query-service-certification.sh'
+      - 'scripts/run-query-security-lifecycle.sh'
       - 'scripts/run-market-data-certification.sh'
       - 'scripts/run-local-resilience.sh'
       - 'scripts/run-local-resilience-dependencies.sh'
@@ -119,6 +120,15 @@ jobs:
           bash scripts/end-to-end/critical-consumers/tests/business-recovery-failure-test.sh
           bash scripts/end-to-end/market-data/tests/verdict-contract.sh
           python3 scripts/end-to-end/query-service/tests/security-fixtures-contract.py
+          python3 scripts/end-to-end/query-service/tests/policy-authority-contract.py
+          python3 scripts/end-to-end/query-service/tests/lifecycle-deadline-contract.py
+          python3 scripts/end-to-end/query-service/tests/lifecycle-cleanup-contract.py
+          python3 scripts/end-to-end/query-service/tests/lifecycle-http-contract.py
+          python3 scripts/end-to-end/query-service/tests/lifecycle-ownership-contract.py
+          python3 scripts/end-to-end/query-service/tests/lifecycle-preflight-contract.py
+          python3 scripts/end-to-end/query-service/tests/lifecycle-manifest-contract.py
+          python3 scripts/end-to-end/query-service/tests/lifecycle-probe-contract.py
+          bash scripts/end-to-end/query-service/tests/lifecycle-plan-contract.sh
           bash scripts/end-to-end/query-service/tests/evidence-contract.sh
           bash scripts/end-to-end/query-service/tests/lifecycle-contract.sh
           bash scripts/end-to-end/query-service/tests/isolation-contract.sh

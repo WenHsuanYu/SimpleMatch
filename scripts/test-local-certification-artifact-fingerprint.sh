@@ -39,6 +39,9 @@ for path in \
   deploy/compose/account-service-outbox-connector.json \
   gradle/libs.versions.toml \
   services/account-service/source.txt \
+  services/query-service/source.txt \
+  deploy/docker/Dockerfile.kind-normalized \
+  scripts/run-query-security-lifecycle.sh \
   scripts/build-local-images.sh \
   scripts/publish-local-images.sh \
   scripts/test-flyway-services.sh \
@@ -123,6 +126,9 @@ simplematch_local_image_inventory_entry() {
     account-service)
       printf '%s\n' 'spring|account-service|services/account-service|account-service'
       ;;
+    query-service)
+      printf '%s\n' 'spring|query-service|services/query-service|query-service'
+      ;;
     *) return 1 ;;
   esac
 }
@@ -164,5 +170,13 @@ kafka_after="$(certification_phase_fingerprint kafka-producer-contract)" ||
   fail 'artifact-only change unnecessarily invalidated registry publication evidence'
 [[ "$kafka_before" == "$kafka_after" ]] ||
   fail 'artifact-only change unnecessarily invalidated Kafka producer evidence'
+
+query_security_lifecycle_only=true
+query_before="$(certification_image_input_fingerprint query-service)"
+printf '%s\n' 'changed normalization recipe' >>"$fixture_root/scripts/run-query-security-lifecycle.sh"
+query_after="$(certification_image_input_fingerprint query-service)"
+[[ "$query_before" != "$query_after" ]] ||
+  fail 'Query image reused evidence after its normalization recipe changed'
+unset query_security_lifecycle_only
 
 printf '%s\n' 'Artifact adapter fingerprint contracts are valid.'

@@ -311,6 +311,11 @@ certification_image_input_manifest() {
         scripts/lib/local-certification-images.sh \
         scripts/lib/local-certification-fingerprint.sh || return 1
       certification_fingerprint_paths "services/$service" || return 1
+      if [[ "${query_security_lifecycle_only:-false}" == true && "$service" == query-service ]]; then
+        certification_fingerprint_paths deploy/docker/Dockerfile.kind-normalized \
+          scripts/run-query-security-lifecycle.sh || return 1
+        printf 'transferProfile\tquery-security-normalized\n'
+      fi
       _certification_spring_toolchain_identity || return 1
       printf 'repository\t%s\n' "$repository"
       ;;
@@ -562,6 +567,18 @@ certification_phase_input_manifest() {
         scripts/testdata/matching-topic-profile config/kafka \
         scripts/lib/local-certification-fingerprint.sh \
         -- "phase=$phase_id" "version=$phase_version"
+      ;;
+    query-security-lifecycle)
+      _certification_paths_and_values_manifest \
+        scripts/run-query-security-lifecycle.sh \
+        scripts/end-to-end/query-service/policy-authority.py \
+        scripts/end-to-end/query-service/provision-security-fixtures.py \
+        scripts/end-to-end/query-service/security-lifecycle.py \
+        scripts/end-to-end/query-service/lib/security_lab.py \
+        services/query-service deploy/k8s \
+        scripts/lib/local-certification-phase-graph.sh \
+        scripts/lib/local-certification-fingerprint.sh \
+        -- "phase=$phase_id" "version=$phase_version" "run=${run_id:-unknown}" "$@"
       ;;
     local-image-build/*)
       service="${phase_id#local-image-build/}"
