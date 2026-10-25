@@ -214,6 +214,20 @@ The external interface remains the existing certification command:
 scripts/run-local-production-like-certification.sh --keep-resources
 ```
 
+Full Kubernetes runs also require a private synthetic Query/FIX fixture bundle through
+`--query-fixture-directory` or `SIMPLEMATCH_CERTIFICATION_QUERY_FIXTURE_DIRECTORY`; see the
+[secured input runbook](../../services/docs/query-service/certification-integration.md#secured-full-environment-inputs).
+The initial fixture uses the approved X/Y and five-Principal matrix. It does not authorize
+arbitrary existing Accounts. Dry-run and explicitly partial non-Query profiles retain their
+original claim boundaries.
+
+QS1-07 advances `static-phase1-deployment-contracts` and `kubernetes-inputs` to definition
+version 2. Static validation includes the private fixture/Secret producer contracts; inputs
+declare that gate as a dependency and bind the private material digest, source, namespace and
+trading day. Resume validates exact immutable policy/store bytes rather than updating a
+serving security snapshot. Hashes identify inputs; they do not approve entitlements or prove
+effective per-replica HTTP authorization. Full cross-route runtime evidence remains separate.
+
 No `--fast` mode is introduced.
 
 The implementation is divided into four modules behind the runner.

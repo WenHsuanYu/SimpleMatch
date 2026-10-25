@@ -46,12 +46,92 @@ Both `scripts/run-query-service-certification.sh` and
 `provision-security-fixtures.py`; credentials remain outside Git. The standalone Query runner
 accepts `SIMPLEMATCH_QUERY_CERTIFICATION_FIXTURE_DIRECTORY`; placement accepts
 `SIMPLEMATCH_JAVA_PLACEMENT_QUERY_FIXTURE_DIRECTORY` as equivalent private path inputs.
+Both also accept the common `SIMPLEMATCH_CERTIFICATION_QUERY_FIXTURE_DIRECTORY` fallback;
+their dedicated setting or explicit CLI option takes precedence.
 
 The bundle must already match the serving Query policy and the FIX Account allowlists before a
 real run. The tools neither register Principals nor change access policy. The Query runner checks
 the Operations identity before seeding/releasing its FIX fixture. Rebuild remains independent.
-The full-local input producer does not yet automatically supply all Query/FIX security material;
-completing secured deployment integration is still #194 work.
+The full-local input producer now consumes a composite synthetic bundle as described below.
+Actual secured multi-service deployment and complete cross-route acceptance remain #194 work.
+
+## Secured full-environment inputs
+
+`provision-certification-fixtures.py` reuses the existing five-Principal Query provisioner,
+then generates independent FIX Logon credentials and separate self-signed server/client PKCS12
+identities. The FIX allowlist contains exactly the same X/Y Accounts, on the existing acceptor
+SessionID `FIX.4.4:SIMPLEMATCH->CLIENT`. This does not model two business Clients or replace
+the separately planned onboarding model. Client and server truststores contain the exact
+approved synthetic peer certificates; no production CA, revocation system or Query incoming
+mTLS is introduced. Query, FIX and rebuild credentials retain separate purposes.
+
+The complete bundle is owner-private. Query's `application.properties` contains credential
+verifiers; FIX's private properties contain the Logon and store passwords required by the
+existing Gateway configuration. No credential or private store belongs in Git, image layers
+or public evidence. `certification_security.py` reuses the authority tool's read-only
+`inspect-bundle` operation to validate the complete synthetic Query policy, including exact
+Principal/credential mappings, allowed grants and Operations permission. Inspection neither
+approves a policy nor activates one. The consumer checks private file permissions, FIX
+configuration coherence and credential expiry, decrypts all four PKCS12 stores with their
+configured passwords, and verifies matching keys/certificates, exact peer trust, validity,
+TLS purposes and the loopback server identity before using the bundle. JDK `keytool` and
+OpenSSL are required; cryptographic processing uses those tools rather than custom crypto. Its client
+launcher passes FIX secrets in the child environment, never command arguments or shell `eval`.
+
+```bash
+fixture_parent="$(mktemp -d /tmp/simplematch-query-certification.XXXXXX)"
+python3 scripts/end-to-end/query-service/provision-certification-fixtures.py \
+  "$fixture_parent/bundle"
+export SIMPLEMATCH_CERTIFICATION_QUERY_FIXTURE_DIRECTORY="$fixture_parent/bundle"
+scripts/run-local-production-like-certification.sh --keep-resources
+# Use the actual retained namespace and report path produced by the deployment.
+python3 scripts/end-to-end/query-service/lib/certification_security.py \
+  --fixture-directory "$fixture_parent/bundle" --exec \
+  bash scripts/run-query-service-certification.sh \
+    --namespace RETAINED_NAMESPACE --retained-evidence-dir RETAINED_REPORT_DIRECTORY \
+    --query-fixture-directory "$fixture_parent/bundle" \
+    --evidence-dir NEW_QUERY_EVIDENCE_DIRECTORY
+```
+
+Full Kubernetes deployment requires this bundle through the common environment variable or
+`--query-fixture-directory`. Help, dry-run, Compose-only and Matching-fleet-only profiles do
+not require a bundle and do not prove Query security. Each full deployment creates immutable
+`query-service-secrets` and `quickfix-gateway-secrets` with their existing PostgreSQL key plus
+their respective `application.properties`; `quickfix-gateway-fix-tls` holds only the server key
+store and approved client truststore. All Query replicas use the same existing named Spring
+Environment Secret source. Store mounts and the FIX mTLS requirement are unchanged.
+
+The one-hour Query fixture lifetime is unchanged. Cold builds can exhaust it: input validation
+fails closed again before Kubernetes input mutation, rather than silently renewing credentials
+or broadening grants. Prepare/reuse validated images first when needed. Never use an expired
+bundle, silently replace an active run's identities, or treat a retained credential as production
+provisioning. The launcher does not redact arbitrary child output; callers must retain the
+existing credential-safe logging contract and must not run environment-dumping commands.
+
+The run context and `kubernetes-inputs` fingerprint bind the declared private input digest.
+The producer recomputes that validated digest before its first Kubernetes write and rejects
+post-preflight changes instead of deploying material different from the recorded inputs.
+Resume verifies the exact immutable deployed policy/store bytes and refuses changed inputs;
+it does not overwrite serving policy. Controlled revocation still follows #193's separate
+Block/Drain/Activate/Verify/Resume authority and anti-rollback contract. Hashes establish input
+identity, not business approval or proof of the policy actually serving HTTP requests.
+
+`static-phase1-deployment-contracts` and `kubernetes-inputs` definition versions are now 2.
+The static phase includes the fixture and input-producer contracts, and Kubernetes inputs
+depend on that gate. The source/input fingerprints include their implementations and tests.
+Older phase evidence cannot stand in for the new semantics.
+
+Focused checks:
+
+```bash
+python3 scripts/end-to-end/query-service/tests/certification-fixtures-contract.py
+python3 scripts/end-to-end/query-service/tests/certification-inputs-contract.py
+```
+
+The former exercises generated PKCS12 material through real loopback TLS, including client
+certificate and hostname rejection. The latter observes the input producer at the `kubectl`
+command seam, including immutable Secret bytes, no credential arguments and stale-input
+rejection. It is not a live Kubernetes API, Spring property binding, CNI or full trading test.
 
 The replay verdict declares `contractVersion: query-security-phase1/1`, validates minimal business
 envelopes in baseline/Redis-outage/rebuilt snapshots, and reports `postgresReadsDuringRedisOutage`
