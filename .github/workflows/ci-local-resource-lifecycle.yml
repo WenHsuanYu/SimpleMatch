@@ -122,6 +122,7 @@ jobs:
           python3 scripts/end-to-end/query-service/tests/security-fixtures-contract.py
           python3 scripts/end-to-end/query-service/tests/policy-authority-contract.py
           python3 scripts/end-to-end/query-service/tests/lifecycle-deadline-contract.py
+          python3 scripts/end-to-end/query-service/tests/lifecycle-drain-contract.py
           python3 scripts/end-to-end/query-service/tests/lifecycle-cleanup-contract.py
           python3 scripts/end-to-end/query-service/tests/lifecycle-http-contract.py
           python3 scripts/end-to-end/query-service/tests/lifecycle-ownership-contract.py

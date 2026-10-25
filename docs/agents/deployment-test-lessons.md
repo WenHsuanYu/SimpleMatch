@@ -152,6 +152,17 @@ ownership retains FAIL. Fast timeout/orphan-snapshot/foreign-owner contracts cov
 path, and preflight refuses surviving probe identities. No new runtime failure was needed
 to discover or correct this defect.
 
+The tenth #193 run passed V1 HTTP/catch-up and all V2 Block paths. Its artificial forced-drain
+precondition then failed because the admitted requests and old processes had already finished
+normally. The approved contract permits bounded normal completion; requiring a live JVM after
+Block was a verifier error. The runner now accepts positively verified normal exit and retains
+bounded forced termination for remaining owned processes. Real OS-process contracts cover normal
+completion, forced kill and an unresponsive process that must fail its deadline; they do not
+claim deployed Query forced termination when the runtime drains naturally. Retain `runtime-r10/`
+as FAIL with verified namespace/process/data teardown and no capture failures. Its destroyed
+runtime cannot be resumed; the next source-aligned run may reuse validated image evidence but
+must establish a new namespace and complete lifecycle timeline.
+
 The second #164 recovery run completed the owner replacement and protocol/business
 observations but the strict verifier rejected `FIX.4.4 `: PostgreSQL had padded
 the existing `CHAR(8)` BeginString during JSON serialization. The read-only SQL

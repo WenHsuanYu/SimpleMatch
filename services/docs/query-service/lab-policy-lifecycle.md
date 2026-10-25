@@ -50,8 +50,12 @@ The retained timeline separates **revocation** from **service recovery**:
 The runner stops the entire Query Deployment, so its Kafka consumers pause too. It uses
 existing graceful shutdown, observes runtime container/PID identity rather than trusting
 readiness or Pod deletion, and terminates an exact-owned old PID when necessary. The in-flight
-scenario holds an Account table lock, verifies admitted JDBC work, and suspends one observed
-old JVM to exercise forced drain. Direct access is tested independently of the Service.
+scenario holds an Account table lock and records admitted JDBC work before Block. Those
+requests may finish normally before the observer reaches Tblock; verified process exit is
+successful drain. Remaining exact-owned processes are terminated within the same budget.
+Fast OS-process contracts separately verify normal completion, forced termination and
+deadline failure without depending on a narrow JVM-suspension race. Direct access is
+tested independently of the Service.
 
 The initial **20s drain**, **90s submit-to-stop verification** and **120s catch-up** limits are
 Lab acceptance parameters. Exceeding one produces FAIL. A larger stop-verification window
@@ -122,6 +126,7 @@ GRADLE_USER_HOME="$HOME/.gradle" \
 python3 scripts/end-to-end/query-service/tests/security-fixtures-contract.py
 python3 scripts/end-to-end/query-service/tests/policy-authority-contract.py
 python3 scripts/end-to-end/query-service/tests/lifecycle-deadline-contract.py
+python3 scripts/end-to-end/query-service/tests/lifecycle-drain-contract.py
 python3 scripts/end-to-end/query-service/tests/lifecycle-cleanup-contract.py
 python3 scripts/end-to-end/query-service/tests/lifecycle-http-contract.py
 python3 scripts/end-to-end/query-service/tests/lifecycle-ownership-contract.py

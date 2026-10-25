@@ -179,6 +179,29 @@ def blocked(lab, endpoints, token, connections):
                                and row["directPodPathRejected"] for row in observations) else None
 
 
+def drain(lab, endpoints, seconds=20, force_after=8):
+    """Accept verified normal completion, or terminate remaining owned tasks within the budget."""
+    started = time.monotonic()
+    forced = []
+    while not all(lab.stopped(task) for task in endpoints):
+        elapsed = time.monotonic() - started
+        if elapsed >= seconds:
+            raise RuntimeError("20-second drain deadline exceeded; verification cannot extend it")
+        if elapsed >= force_after:
+            for task in endpoints:
+                if task["container"] not in forced and not lab.stopped(task):
+                    lab.signal(task, "KILL")
+                    forced.append(task["container"])
+        time.sleep(0.1)
+    remaining = lab.running_tasks("query-service")
+    elapsed = time.monotonic() - started
+    if elapsed > seconds:
+        raise RuntimeError("20-second drain deadline exceeded; verification cannot extend it")
+    if remaining:
+        raise RuntimeError("An old Query generation remains outside the captured endpoint set")
+    return {"forcedContainers": forced, "elapsedSeconds": elapsed, "remainingQueryTasks": remaining}
+
+
 def stop(lab, endpoints, old_bundle, slow=False):
     credentials = json.loads((old_bundle / "credentials.json").read_text())
     token = credentials["client-c"]["token"]
@@ -196,6 +219,7 @@ def stop(lab, endpoints, old_bundle, slow=False):
     lock = None
     executor = concurrent.futures.ThreadPoolExecutor(max_workers=32)
     futures = []
+    admitted_reads = 0
     try:
         running = lab.running_tasks("query-service")
         if {task["container"] for task in running} != {endpoint["container"] for endpoint in endpoints}:
@@ -216,8 +240,10 @@ def stop(lab, endpoints, old_bundle, slow=False):
                     connections.append(connection)
                     futures.append(executor.submit(lab.http, endpoint,
                         "/api/v1/accounts/" + identities["accounts"]["Y"] + "/summary", token, connection))
-            wait_for("real admitted JDBC reads", lambda: lab.sql(
-                "SELECT count(*) FROM pg_stat_activity WHERE wait_event_type='Lock'")[0] >= 2, 3)
+            def admitted():
+                count = lab.sql("SELECT count(*) FROM pg_stat_activity WHERE wait_event_type='Lock'")[0]
+                return count if count >= 2 else None
+            admitted_reads = wait_for("real admitted JDBC reads", admitted, 3)
         lab.guard()
         lab.kube("scale", "deployment/query-service", "--replicas=0")
         keep_alive = connections[:len(endpoints)]
@@ -226,32 +252,13 @@ def stop(lab, endpoints, old_bundle, slow=False):
         proof = lab.proof("Tblock", newRequestsRejected=True, existingConnectionsRejected=True,
                           directPathsRejected=True, observations=observations)
         lab.approval("mark", "--event", "Tblock", "--evidence-file", proof)
-        started = time.monotonic()
         pending_at_block = sum(not future.done() for future in futures)
-        if slow:
-            if pending_at_block == 0 or lab.stopped(endpoints[0]):
-                raise RuntimeError("No old in-flight generation remained to exercise forced drain")
-            lab.signal(endpoints[0], "STOP")
-        forced = []
-        while not all(lab.stopped(task) for task in endpoints):
-            elapsed = time.monotonic() - started
-            if elapsed >= 8:
-                for task in endpoints:
-                    if task["container"] not in forced and not lab.stopped(task):
-                        lab.signal(task, "KILL")
-                        forced.append(task["container"])
-            if elapsed >= 20:
-                raise RuntimeError("20-second drain deadline exceeded; verification cannot extend it")
-            time.sleep(0.1)
-        remaining = lab.running_tasks("query-service")
-        if remaining:
-            raise RuntimeError("An old Query generation remains outside the captured endpoint set")
+        drained = drain(lab, endpoints)
         proof = lab.proof("Tdrained", oldProcessesStopped=True, tasks=endpoints,
-                          forcedContainers=forced, elapsedSeconds=time.monotonic()-started,
-                          admittedRequests=len(futures), pendingAtBlock=pending_at_block,
+                          **drained, admittedRequests=len(futures), admittedBlockedReads=admitted_reads,
+                          pendingAtBlock=pending_at_block,
                           pendingAtTermination=sum(not f.done() for f in futures),
-                          jdbcStatementBudgetSeconds=5, httpClientBudgetSeconds=25,
-                          remainingQueryTasks=remaining)
+                          jdbcStatementBudgetSeconds=5, httpClientBudgetSeconds=25)
         lab.approval("mark", "--event", "Tdrained", "--evidence-file", proof)
         proof = lab.proof("Trevoked", oldProcessesStopped=True, tasks=endpoints)
         lab.approval("mark", "--event", "Trevoked", "--evidence-file", proof)
