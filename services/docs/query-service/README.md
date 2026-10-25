@@ -16,7 +16,9 @@ minimal business diagnostics and a PostgreSQL-only consistent read. The
 and the corresponding Account Grant. The [Executions slice](execution-read-authorization.md)
 adds existing-parent authorization and whole-collection integrity. The
 [Market slice](market-read-authorization.md) enables authenticated artifact reads without Account
-Grants. Deployed policy maintenance and later transport/cache phases remain independently gated.
+Grants. The [Lab policy lifecycle](lab-policy-lifecycle.md) verifies controlled multi-replica
+revocation, credential replacement and recovery. Production maintenance, later transport/cache
+phases and the aggregate Phase 1 certification retain their independent gates.
 
 ## Current HTTP security boundary
 
@@ -36,8 +38,8 @@ Every HTTP-serving process requires a complete validated startup policy under
 simplematch.query-service.security; it never generates credentials or reloads policy dynamically.
 Provision synthetic Local Lab credentials using the private fixture CLI and supply its verifier
 properties through Spring Environment. See the [configuration and test runbook](opaque-authentication.md).
-Local HTTP/PostgreSQL account-read acceptance is separate from production transport, deployed
-multi-replica revocation and final Phase 1 certification.
+Local HTTP/PostgreSQL account-read acceptance and focused deployed Lab lifecycle evidence are
+separate from production transport and final Phase 1 certification.
 
 ## Read APIs
 

@@ -164,7 +164,43 @@ Inspect `runtime/verdict.json` and all required phase results rather than one su
 | Failed activation | Actual unschedulable replica, `REVOKED_UNAVAILABLE`, same-V2 recovery |
 | INV-08; durable recovery | Paused-consumer publication, captured Kafka boundaries, exact inbox/hash and HTTP results |
 | Run separation | Namespace/task/data teardown and disjoint identities in a new V1 namespace |
-| Evidence / reuse | Four-phase planner, image execution, original FAIL reports and final owned-resource inventory |
+| Evidence / reuse | Four-phase planner, image execution, consolidated validation/delivery evidence and final owned-resource inventory |
 
 QS1-07 / #194 remains responsible for integrating the ordinary certification collectors and
 the complete Phase 1 coverage/evidence review. This focused lifecycle test does not replace it.
+
+## Recorded Local Lab acceptance
+
+The complete `runtime-r13` run passed on 2026-10-25 at source
+`f0cbe6270a1d66453fdcf42f05f849a488a1f83c`. Its runtime input fingerprint is
+`sha256:941fa4a3d9b3a6711184fafd6c4e9a8b043aa82c82ced5e8d05bb5137ffc5756`.
+The planner executed source preflight and runtime fresh, and reused validated image inventory/build
+evidence. All four required phases passed. The retained bundle is
+`out/verification/issue-193-lifecycle/runtime-r13`; it contains both required namespace scenarios
+within one complete certification run.
+
+| Policy update | Block to drained | Submit to revoked | Restart-inclusive catch-up | Forced-stop attempts |
+| --- | --- | --- | --- | --- |
+| V2: revoke C→Y | 9.44s | 11.10s | 23.37s | 2 |
+| V3: disable D | 0.67s | 2.22s | 16.74s | 0 |
+
+The attempt count records the controller's forced-stop path; positive process absence is the
+acceptance fact, independently of whether a process exits just before its signal is delivered.
+Both serving replicas passed the five-principal Account/Operations/Market checks, including
+C→Y 404, C→X 200 and B→Y 200 after V2. Partial V2 activation withheld collector credentials;
+the same approved V2 recovered. Old policies, edited same-version content, a lost record,
+reinitialization and incompatible image identity were rejected. Four acknowledged Account
+inputs were matched against durable inbox hashes/checkpoints without rebuild or offset reset.
+
+After the first namespace's verified teardown, a new namespace used disjoint Principal/Account
+identities and fresh data. Its two baseline inputs and V1 matrix passed, with 17.50s catch-up.
+Both teardowns proved namespace, process and data removal with zero capture failures. These are
+measured Lab results within the 20s/90s/120s bounds, not production SLAs or authoritative capacity.
+The focused Python contracts passed 42 tests; actual curl/TCP and OS-process tests cover transport
+ambiguity, normal/forced drain and deadline failure. The unchanged Query Java tree also retains
+the earlier service/static-analysis and native PostgreSQL verification evidence.
+
+At the owner's request, only this complete successful run and its consolidated validation/delivery
+evidence are retained for #193. Corrected failures remain documented in Git history; raw failed
+and intermediate run directories are excluded from the retained acceptance bundle. Final-head CI
+and delivery status are recorded on [#193](https://github.com/WenHsuanYu/SimpleMatch/issues/193).

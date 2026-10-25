@@ -752,6 +752,10 @@ implementation blocker.
   [QS1-05 / #192](https://github.com/WenHsuanYu/SimpleMatch/issues/192) adds the authenticated exact
   Market GET, shared artifact instrument validation and a PostgreSQL snapshot-associated envelope
   without Account Grant/operations-read requirements. All four business routes bypass Redis reads/fills.
+  [QS1-06 / #193](https://github.com/WenHsuanYu/SimpleMatch/issues/193) adds run-scoped deployment
+  approval, zero-overlap credential generations, controlled grant revocation and Principal disablement.
+  Its focused two-replica Lab verifies transport rejection or positive runtime fencing, failed V2
+  activation/recovery, captured-boundary Kafka catch-up and full teardown before fresh identities/data.
 - **Verification boundary:** Actual HTTP filter tests, immutable-policy/credential tests and the
   existing runner-owned PostgreSQL test seam provide focused local evidence. This is not the
   final Phase 1 security certification or a new production-like deployment claim. The
@@ -764,8 +768,12 @@ implementation blocker.
   maps whole-collection integrity and PostgreSQL concurrent update/deletion tests to requirements.
   The [Market runbook](../../services/docs/query-service/market-read-authorization.md) records verified
   artifact replacement/deletion snapshots, all-route cache non-use and revised key expectations.
-- **Remaining:** #193–#194 own deployed revocation/recovery,
-  collectors and final acceptance. Gateway/OAuth/mTLS/cache phases require their own approvals.
+  The [lifecycle runbook](../../services/docs/query-service/lab-policy-lifecycle.md) records complete
+  `runtime-r13` evidence at source `f0cbe62`, including forced-stop attempts and verified process
+  exit within the approved Lab bounds and two verified namespace/process/data teardowns. This covers Account lifecycle
+  fixtures, Operations and Market permissions; it does not replace aggregate cross-route certification.
+- **Remaining:** #194 owns collector integration and final Phase 1 acceptance.
+  Gateway/OAuth/mTLS/cache phases require their own approvals.
   Historical #137/#138 results remain preserved; this follow-up does not reopen those issues.
 
 ### GO-1: Operate one Gateway admission authority

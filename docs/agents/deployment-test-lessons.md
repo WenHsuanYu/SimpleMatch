@@ -56,131 +56,28 @@ observation cover that seam; no shell, schema or production endpoint was added.
 These are corrected verifier assumptions, not evidence of runtime corruption
 and not recurring platform failures in the table below.
 
-The first #193 focused Query lifecycle preflight stopped before namespace creation:
-`kind load docker-image` imported a locally incomplete multi-platform OCI index with
-`--all-platforms` and reported a missing content digest. This repeats the platform-export
-boundary covered by DT-014/DT-017. The focused adapter now exports only `linux/amd64`,
-derives the child configuration digest from that export, imports the selected platform,
-compares the corresponding CRI configuration identity, and executes the image on each
-eligible worker. It also checks node image-filesystem headroom before importing. No
-canonical tags, cluster, or runtime data are removed. Preserve
-`out/verification/issue-193-lifecycle/runtime-r1/runtime/verdict.json` and its private
-import diagnostic as FAIL; successful image metadata or export is not Runtime PASS.
+The #193 focused Query lifecycle completed its full synthetic Lab acceptance at source
+`f0cbe62` in `out/verification/issue-193-lifecycle/runtime-r13`. The
+[runbook](../../services/docs/query-service/lab-policy-lifecycle.md) records the measured
+revocation, recovery and teardown boundaries. The owner-approved retention scope keeps
+one complete successful run with consolidated validation/delivery evidence; corrected raw
+failures and intermediate directories are not retained acceptance evidence. Their original
+symptoms and fixes remain in Git history.
 
-The second #193 attempt completed all nine worker/image execution probes, then failed
-while converting the rendered overlay: its original namespace disagreed with the
-new run namespace. No platform workload was applied, and the owned namespace was
-destroyed and verified. The adapter now performs client-only rendering without an
-override namespace, parses kubectl's multiple JSON documents, then assigns the run
-namespace only to its explicit resource subset. Source preflight exercises that
-conversion before any deployment. Retain `runtime-r2/runtime/verdict.json` under
-the same evidence root as FAIL with its teardown proof; this was a corrected
-test adapter defect, not a Query or Kubernetes authorization result.
+The executable preflight and fast regressions now cover the known deterministic adapter
+boundaries: offline effective-manifest resources/keys/mounts and artifact `file:` URIs,
+actual producer timeout configuration, versioned Flyway history rather than a blind row
+count, unique worker slots and bounded command lifetimes. Platform-specific image export,
+typed digest comparison and execution on every eligible worker cover DT-014/DT-017.
+Raw containerd probes record exact ownership before launch and verify task/container/snapshot
+cleanup even when no namespace has yet been created.
 
-The third #193 attempt found that the existing PostgreSQL StatefulSet uses
-`OnDelete`, for which `kubectl rollout status` is unsupported. The adapter now
-observes the workload's actual desired/Ready replica counts without changing its
-update strategy. This failed before Query startup, and exact-owned teardown
-completed. Preserve `runtime-r3/runtime/verdict.json` and its teardown proof as
-FAIL rather than Query HTTP evidence.
-
-The fourth #193 attempt reached healthy PostgreSQL and all three brokers without
-restarts, but its adapter used a 120s wait for the existing topic-provisioning Job,
-whose manifest allows 600s for bounded topic describe/create/configuration work.
-The Job was progressing when that adapter wait expired. The focused runner now
-uses the existing 600s startup contract; it does not change the later 20s drain,
-90s stop or 120s catch-up acceptance limits. Preserve the original timeout and
-verified teardown in `runtime-r4/runtime/`; no Query process had started.
-
-The fifth #193 attempt completed topic provisioning and the existing Query Flyway
-task, but its verifier counted all successful history rows as versioned migrations.
-The corrected check retains the actual history, distinguishes versioned entries
-from schema-management entries, and requires successful V1/V2/V3 migrations.
-The attempt stopped before Query startup and completed owned teardown. Preserve
-`runtime-r5/runtime/verdict.json` as FAIL; an exit-zero Flyway command alone does
-not replace history validation.
-
-The sixth #193 attempt validated the actual Flyway history, then its synthetic
-publisher failed at Kafka Producer construction: its delivery timeout did not
-cover the client's request timeout plus linger. A no-broker regression now
-executes the real constructor through the fixture's configuration-check mode;
-the original three-second RED reproduces that exact exception, and explicit
-request/delivery budgets correct it. Failed Job logs are retained before teardown.
-The original publisher log is `31-fixture-kafka-red.log`; retain the attempt's
-FAIL/teardown under `runtime-r6/`. The recovery observer also captures source
-boundaries before Query restart and includes startup in its 120s catch-up budget.
-
-The seventh #193 attempt delivered its baseline fixture, then Query replicas did
-not start: the focused adapter supplied a new artifact ConfigMap name while the
-existing local overlay still required `matching-daily-artifact`. The adapter now
-supplies that existing name/mount and checks all required volume references before
-deploying Query. It retains Pod/event diagnostics privately before teardown, and
-the cleanup race regression ensures stale running-container observations cannot
-prevent namespace deletion; capture failures remain FAIL even after verified
-cleanup. Preserve `runtime-r7/runtime/` as FAIL, not HTTP authorization evidence.
-
-The eighth #193 attempt started Query containers but their startup installer
-reported `FileNotFoundException`: the adapter passed a bare container path to
-Spring's web resource loader. It now matches the existing Query Kubernetes
-configuration's `file:/etc/simplematch/market-reference/...` URIs. The files
-remain the same ConfigMap-mounted artifact/checksum; neither JVM tuning nor
-application authorization changes are required. Retain the private startup logs,
-Pod/event diagnostics and FAIL/teardown in `runtime-r8/`.
-
-The ninth #193 attempt passed initial V1 HTTP matrices and captured-boundary catch-up,
-then the Block observer failed with `http.client.CannotSendRequest: Request-sent` after
-a connection reset. A real loopback TCP regression reproduces that error in under one
-second. Failed HTTP exchanges now close the client connection, and Block retains a
-confirmed rejection of each original keep-alive socket instead of reopening it during
-another replica's probes. Positive CRI exit with PID zero is distinguished from an
-unverified running process during cleanup. Keep `runtime-r9/` as FAIL, even though its
-owned namespace/tasks/data were removed.
-
-After these deterministic adapter failures, further runtime attempts are gated on one
-consolidated fast-contract pass and Standards/Spec re-review. Offline effective-manifest
-checks cover required resources, keys, mounts and artifact URIs; preflight also pins the
-negative rollback image and bounds external command lifetimes. Namespace creation records
-the returned UID directly; an ambiguous creation may recover positive ownership for
-cleanup only. Image reuse fingerprints include the wrapper's normalization recipe.
-These checks prevent known defects before applying workloads; they are not replacements
-for real HTTP, multi-replica, revocation, recovery and teardown evidence.
-The ensuing Standards re-review also found that an ambiguous `ctr run --rm` launch can
-leave raw containerd work before namespace ownership exists. Probe node/IDs are now
-persisted before launch and labelled with the run identity. Bounded exact-owned cleanup
-verifies task/container/snapshot absence independently of namespace cleanup; uncertain
-ownership retains FAIL. Fast timeout/orphan-snapshot/foreign-owner contracts cover this
-path, and preflight refuses surviving probe identities. No new runtime failure was needed
-to discover or correct this defect.
-
-The tenth #193 run passed V1 HTTP/catch-up and all V2 Block paths. Its artificial forced-drain
-precondition then failed because the admitted requests and old processes had already finished
-normally. The approved contract permits bounded normal completion; requiring a live JVM after
-Block was a verifier error. The runner now accepts positively verified normal exit and retains
-bounded forced termination for remaining owned processes. Real OS-process contracts cover normal
-completion, forced kill and an unresponsive process that must fail its deadline; they do not
-claim deployed Query forced termination when the runtime drains naturally. Retain `runtime-r10/`
-as FAIL with verified namespace/process/data teardown and no capture failures. Its destroyed
-runtime cannot be resumed; the next source-aligned run may reuse validated image evidence but
-must establish a new namespace and complete lifecycle timeline.
-
-The eleventh #193 run completed V2 revocation, partial activation/recovery and all-replica
-grant/catch-up checks. V3 then failed because a nonzero direct-Pod curl observation aborted
-Block immediately; its exit code/stderr were not retained, so the exact transport outcome
-cannot be reconstructed. Indeterminate results are now recorded privately and retried within
-the unchanged Block deadline, without being counted as rejection. Real local curl/TCP
-contracts cover empty/partial responses, timeout, refusal, HTTP status and observer failure;
-they also force a hostile loopback proxy configuration to prove explicit proxy bypass.
-The retained r11 FAIL and successful exact-owned teardown are not upgraded to PASS. This
-was an observer/evidence defect, not proof of a Query cross-account disclosure.
-
-The twelfth #193 run again completed V2, then retained repeated direct curl exit 28 during
-V3 Block. A read-only diagnostic against its recorded old Query identities proved both
-generations were stopped while both removed Pod IPs still timed out. Requiring a network
-refusal from an absent server was an invalid observation contract. Block now records either
-positive transport rejection or positively verified CRI/task/original-PID fencing; timeout
-alone and unknown runtime state cannot pass. The same recorded endpoints verify this
-correction without another deployment. Retain r12 as FAIL with complete owned teardown;
-the targeted diagnostic is not a substitute for a fresh full lifecycle result.
+For shutdown verification, a completed normal drain is valid; a test must not require an
+artificially live JVM afterward. A removed Pod IP may time out after its server has stopped.
+Accept positive transport rejection or independently verified CRI/task/original-PID fencing,
+record the mechanism, and never accept timeout or unknown runtime state alone. Direct probes
+bypass HTTP proxies and preserve indeterminate diagnostics privately. The 20s drain and 90s
+stop-verification limits remain separate; restart-inclusive catch-up retains its 120s limit.
 
 The second #164 recovery run completed the owner replacement and protocol/business
 observations but the strict verifier rejected `FIX.4.4 `: PostgreSQL had padded
