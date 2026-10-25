@@ -15,6 +15,9 @@ on:
       - 'scripts/lib/local-kind.sh'
       - 'scripts/lib/local-registry.sh'
       - 'scripts/lib/local-resource.sh'
+      - 'scripts/lib/local-java-placement-serving.sh'
+      - 'scripts/run-local-java-placement-serving-check.sh'
+      - 'scripts/test-local-java-placement-serving.sh'
       - 'scripts/lib/local-resilience.sh'
       - 'scripts/lib/local-resilience-dependencies.sh'
       - 'scripts/lib/local-kind.sh'
@@ -120,6 +123,8 @@ jobs:
           bash scripts/end-to-end/critical-consumers/tests/business-recovery-failure-test.sh
           bash scripts/end-to-end/market-data/tests/verdict-contract.sh
           python3 scripts/end-to-end/query-service/tests/security-fixtures-contract.py
+          python3 scripts/end-to-end/query-service/tests/collector-http-contract.py
+          bash scripts/test-local-java-placement-serving.sh
           python3 scripts/end-to-end/query-service/tests/policy-authority-contract.py
           python3 scripts/end-to-end/query-service/tests/lifecycle-deadline-contract.py
           python3 scripts/end-to-end/query-service/tests/lifecycle-drain-contract.py

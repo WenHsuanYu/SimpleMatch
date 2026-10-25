@@ -15,7 +15,7 @@ evaluate_query_service_verdict() {
     --slurpfile queryOutage "$evidence_dir/query-outage.json" \
     --slurpfile isolationProbe "$evidence_dir/critical-query-isolation-probe.json" \
     --slurpfile baseline "$evidence_dir/baseline.json" \
-    --slurpfile fallback "$evidence_dir/redis-outage.json" \
+    --slurpfile redisOutage "$evidence_dir/redis-outage.json" \
     --slurpfile rebuilt "$evidence_dir/rebuilt.json" \
     --slurpfile restoration "$evidence_dir/restoration.json" \
     "${active_evidence_args[@]}" '
@@ -26,6 +26,15 @@ evaluate_query_service_verdict() {
           accountSummary:(.accountSummary.data | del(.updatedAtUnixMs)),
           marketReference:(.marketReference.data | del(.updatedAtUnixMs))
         };
+      def minimal_business_envelopes:
+        [.order,.executions,.accountSummary,.marketReference]
+        | all(.[];
+          type == "object"
+          and (keys == ["data","freshness"])
+          and (.freshness | type == "object")
+          and (.freshness | keys == ["projectionState"])
+          and (.freshness.projectionState |
+            . == "UNKNOWN" or . == "RECOVERY_REQUIRED" or . == "NO_GAP_RECORDED"));
       def healthy_freshness:
         (.freshness.partitions | length) > 0
         and ([.freshness.partitions[].sourceTopic] | unique | sort)
@@ -228,6 +237,10 @@ evaluate_query_service_verdict() {
       | ($active | healthy_active_liveness($queryOutage[0])) as $activePassed
       | [
         {
+          name:"minimalBusinessEnvelopes",
+          passed:([$baseline[0],$redisOutage[0],$rebuilt[0]] | all(.[]; minimal_business_envelopes))
+        },
+        {
           name:"deterministicRebuild",
           passed:(
             ($baseline[0] | business_view) == ($rebuilt[0] | business_view)
@@ -235,12 +248,12 @@ evaluate_query_service_verdict() {
           )
         },
         {
-          name:"postgresFallback",
-          passed:(($baseline[0] | business_view) == ($fallback[0] | business_view))
+          name:"postgresReadsDuringRedisOutage",
+          passed:(($baseline[0] | business_view) == ($redisOutage[0] | business_view))
         },
         {
           name:"freshnessRestored",
-          passed:(($baseline[0] | healthy_freshness) and ($rebuilt[0] | healthy_freshness))
+          passed:([$baseline[0],$redisOutage[0],$rebuilt[0]] | all(.[]; healthy_freshness))
         },
         {
           name:"marketReferenceIdentity",
@@ -272,6 +285,7 @@ evaluate_query_service_verdict() {
         }
       ] as $checks
       | {
+          contractVersion:"query-security-phase1/1",
           status:(if all($checks[]; .passed) then "PASS" else "FAIL" end),
           activeProcessingLiveness:{
             status:(if $activePassed then "PROVEN" else "NOT_PROVEN" end),

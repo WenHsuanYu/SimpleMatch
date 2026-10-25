@@ -24,6 +24,7 @@ context="${SIMPLEMATCH_KUBE_CONTEXT:-kind-$cluster_name}"
 namespace="${SIMPLEMATCH_JAVA_PLACEMENT_NAMESPACE:-}"
 namespace_run_id="${SIMPLEMATCH_JAVA_PLACEMENT_NAMESPACE_RUN_ID:-}"
 retained_evidence_dir="${SIMPLEMATCH_JAVA_PLACEMENT_RETAINED_EVIDENCE_DIR:-}"
+query_fixture_directory="${SIMPLEMATCH_JAVA_PLACEMENT_QUERY_FIXTURE_DIRECTORY:-}"
 evidence_dir="${SIMPLEMATCH_JAVA_PLACEMENT_EVIDENCE_DIR:-}"
 timeout_seconds="${SIMPLEMATCH_JAVA_PLACEMENT_TIMEOUT_SECONDS:-300}"
 observe_seconds="${SIMPLEMATCH_JAVA_PLACEMENT_OBSERVE_SECONDS:-$JAVA_PLACEMENT_SERVING_MIN_OBSERVE_SECONDS}"
@@ -54,6 +55,7 @@ Usage:
     --namespace NAME \
     --namespace-run-id RUN_ID \
     --retained-evidence-dir PATH \
+    --query-fixture-directory PRIVATE_PATH \
     --evidence-dir PATH \
     [--timeout-seconds N] [--observe-seconds N]
 
@@ -66,6 +68,8 @@ restart, restores Redis, and writes diagnostic-only evidence. The default outage
 window is 60 seconds: it covers the 20-second liveness initial delay, three
 10-second failures, and one extra period for restart detection. It never applies
 manifests or claims a full-local aggregate certification PASS.
+The private fixture bundle must match the pre-deployed Query policy. Freshness
+uses only its operations-read identity; readiness/liveness remain anonymous.
 EOF_USAGE
 }
 
@@ -151,7 +155,8 @@ write_failure_report() {
     --arg stage "$current_stage" \
     --arg reason "${failure_reason:-observer did not complete}" \
     --argjson exit_status "$exit_status" \
-    '{schema_version:1,profile:$profile,status:"FAIL",cluster:$cluster,
+    --argjson schema_version "$JAVA_PLACEMENT_SERVING_SCHEMA_VERSION" \
+    '{schema_version:$schema_version,profile:$profile,status:"FAIL",cluster:$cluster,
       context:$context,namespace:$namespace,namespace_run_id:$namespace_run_id,
       stage:$stage,exit_status:$exit_status,failure_reason:$reason,
       claim_boundary:["focused local Java placement and serving diagnostic"]}' \
@@ -482,13 +487,17 @@ validate_namespace_and_provenance() {
 validate_tools_and_cluster() {
   local tool clusters nodes_json worker_count ready_workers control_plane_count
   local worker_index worker_json worker_name ready_state
-  for tool in jq curl date find grep sed tail sleep timeout sha256sum tr awk docker; do
+  for tool in jq curl python3 date find grep sed tail sleep timeout sha256sum tr awk docker; do
     command -v "$tool" >/dev/null 2>&1 || die "$tool is required"
   done
   command -v "$SIMPLEMATCH_KIND_KUBECTL_BIN" >/dev/null 2>&1 ||
     die "$SIMPLEMATCH_KIND_KUBECTL_BIN is required"
   command -v "$SIMPLEMATCH_KIND_BIN" >/dev/null 2>&1 ||
     die "$SIMPLEMATCH_KIND_BIN is required"
+  [[ -n "$query_fixture_directory" ]] || die '--query-fixture-directory is required'
+  run_bounded python3 "$script_dir/end-to-end/query-service/lib/query_http.py" \
+    --fixture-directory "$query_fixture_directory" --validate-only ||
+    die 'approved private Query fixture bundle is invalid'
   [[ "$cluster_name" == simplematch-live && "$context" == kind-simplematch-live ]] ||
     die 'observer requires the canonical simplematch-live/kind-simplematch-live target'
   run_bounded docker info >/dev/null 2>&1 || die 'Docker daemon is not reachable'
@@ -580,49 +589,16 @@ start_port_forward() {
   done
 }
 
-capture_http_probe() {
-  local stage="$1"
-  local name="$2"
-  local path="$3"
-  local body_file="$evidence_dir/health/${stage}-${name}.json"
-  local relative_file="health/${stage}-${name}.json"
-  local status body_status body_type body_is_up digest
-
-  status="$(curl --connect-timeout 2 \
-    --max-time "$(remaining_seconds)" -sS -o "$body_file" -w '%{http_code}' \
-    "http://127.0.0.1:${port_forward_port}${path}")" ||
-    die "$stage $name request failed"
-  [[ "$status" == 200 ]] || die "$stage $name returned HTTP $status"
-  IFS=$'\t' read -r body_type body_is_up < <(
-    jq -er '[type, (.status == "UP")] | @tsv' "$body_file"
-  ) || die "$stage $name response is not JSON"
-  if [[ "$name" == readiness || "$name" == liveness ]]; then
-    [[ "$body_type" == object && "$body_is_up" == true ]] ||
-      die "$stage $name response did not report UP"
-    body_status=UP
-  else
-    [[ "$body_type" == object ]] || die "$stage serving response is not an object"
-    body_status=SERVING
-  fi
-  digest="$(java_placement_serving_sha256_digest "$body_file")" ||
-    die "$stage $name response digest is invalid"
-  jq -n \
-    --arg path "$path" --arg file "$relative_file" --arg status "$status" \
-    --arg body_status "$body_status" --arg digest "$digest" \
-    '{path:$path,http_status:($status|tonumber),body_status:$body_status,
-      body_file:$file,body_sha256:$digest}'
-}
-
 capture_health() {
   local stage="$1"
   local output_file="$evidence_dir/health/${stage}.json"
   local readiness liveness serving
 
-  readiness="$(capture_http_probe "$stage" readiness \
+  readiness="$(java_placement_serving_capture_http_probe "$stage" readiness \
     "$JAVA_PLACEMENT_SERVING_READINESS_PATH")"
-  liveness="$(capture_http_probe "$stage" liveness \
+  liveness="$(java_placement_serving_capture_http_probe "$stage" liveness \
     "$JAVA_PLACEMENT_SERVING_LIVENESS_PATH")"
-  serving="$(capture_http_probe "$stage" serving \
+  serving="$(java_placement_serving_capture_http_probe "$stage" serving \
     "$JAVA_PLACEMENT_SERVING_APPLICATION_PATH")"
   jq -n --argjson readiness "$readiness" --argjson liveness "$liveness" \
     --argjson serving "$serving" \
@@ -759,6 +735,7 @@ while [[ $# -gt 0 ]]; do
     --namespace) namespace="${2:?--namespace requires a value}"; shift 2 ;;
     --namespace-run-id) namespace_run_id="${2:?--namespace-run-id requires a value}"; shift 2 ;;
     --retained-evidence-dir) retained_evidence_dir="${2:?--retained-evidence-dir requires a value}"; shift 2 ;;
+    --query-fixture-directory) query_fixture_directory="${2:?--query-fixture-directory requires a value}"; shift 2 ;;
     --evidence-dir) evidence_dir="${2:?--evidence-dir requires a value}"; shift 2 ;;
     --timeout-seconds) timeout_seconds="${2:?--timeout-seconds requires a value}"; shift 2 ;;
     --observe-seconds) observe_seconds="${2:?--observe-seconds requires a value}"; shift 2 ;;

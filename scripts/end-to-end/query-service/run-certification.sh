@@ -42,6 +42,7 @@ fix_state_dir=""
 fix_state_dir_owned=false
 fix_wait_for_delivery=true
 retained_evidence_dir=""
+query_fixture_directory="${SIMPLEMATCH_QUERY_CERTIFICATION_FIXTURE_DIRECTORY:-}"
 timeout_seconds="${SIMPLEMATCH_QUERY_CERTIFICATION_TIMEOUT_SECONDS:-180}"
 query_isolation_probe_seconds="${SIMPLEMATCH_QUERY_ISOLATION_PROBE_SECONDS:-5}"
 query_isolation_command_timeout_seconds="${SIMPLEMATCH_QUERY_ISOLATION_COMMAND_TIMEOUT_SECONDS:-5}"
@@ -95,13 +96,16 @@ Usage:
   scripts/end-to-end/query-service/run-certification.sh \
     --namespace NAME \
     --retained-evidence-dir PATH \
+    --query-fixture-directory PRIVATE_PATH \
     --evidence-dir PATH \
     [--timeout-seconds N]
 
-Certifies deterministic query-service replay, PostgreSQL fallback, Redis
-rebuild, freshness metadata, quiescent critical-path isolation, a public FIX
+Certifies deterministic query-service replay, PostgreSQL-only reads during a Redis
+outage, minimal business envelopes, operations checkpoints, quiescent critical-path isolation, a public FIX
 execution-backed cross fixture, and one controlled public IOC FIX event while
 query-service has zero Pods in a retained production-like namespace.
+The private synthetic X/Y bundle must match the pre-deployed Query policy and FIX
+account allowlists. The runner does not register Principals or broaden grants.
 EOF_USAGE
 }
 
@@ -150,6 +154,10 @@ while (($# > 0)); do
       retained_evidence_dir="${2:?--retained-evidence-dir requires a value}"
       shift 2
       ;;
+    --query-fixture-directory)
+      query_fixture_directory="${2:?--query-fixture-directory requires a value}"
+      shift 2
+      ;;
     --evidence-dir) evidence_dir="${2:?--evidence-dir requires a value}"; shift 2 ;;
     --timeout-seconds)
       timeout_seconds="${2:?--timeout-seconds requires a value}"
@@ -163,6 +171,7 @@ done
 [[ -n "$namespace" ]] || die "--namespace is required"
 [[ -n "$retained_evidence_dir" ]] || die "--retained-evidence-dir is required"
 [[ -n "$evidence_dir" ]] || die "--evidence-dir is required"
+[[ -n "$query_fixture_directory" ]] || die "--query-fixture-directory is required"
 [[ "$timeout_seconds" =~ ^[1-9][0-9]*$ ]] || die "--timeout-seconds must be positive"
 (( timeout_seconds <= 300 )) || die "--timeout-seconds must not exceed 300"
 [[ "$query_isolation_probe_seconds" =~ ^[1-9][0-9]*$ ]] ||
@@ -173,9 +182,11 @@ done
   die "SIMPLEMATCH_QUERY_ISOLATION_COMMAND_TIMEOUT_SECONDS must be positive"
 (( query_isolation_command_timeout_seconds <= 30 )) ||
   die "SIMPLEMATCH_QUERY_ISOLATION_COMMAND_TIMEOUT_SECONDS must not exceed 30"
-for tool in kubectl docker jq curl git awk sed grep date seq sleep timeout tr cp mv cat wc; do
+for tool in kubectl docker jq curl python3 git awk sed grep date seq sleep timeout tr cp mv cat wc; do
   command -v "$tool" >/dev/null 2>&1 || die "$tool is required"
 done
+python3 "$script_dir/lib/query_http.py" --fixture-directory "$query_fixture_directory" \
+  --validate-only || die "approved private Query fixture bundle is invalid"
 [[ "$(kubectl config current-context)" == "$context" ]] ||
   die "current Kubernetes context must be $context"
 kubectl get namespace "$namespace" >/dev/null 2>&1 || die "namespace does not exist"
@@ -206,6 +217,11 @@ original_redis_replicas="$(workload_replicas deployment redis)"
 (( original_query_replicas > 0 )) || die "query-service must be running"
 (( original_redis_replicas == 1 )) || die "expected one Redis replica"
 
+current_stage="verify pre-provisioned Query operations identity"
+start_query_port_forward
+fetch_query_json /api/v1/freshness "$evidence_dir/diagnostics/initial-freshness.json" ||
+  die "pre-deployed Query policy does not accept the approved operations fixture"
+
 current_stage="establish execution-backed query fixture"
 run_matching_fixture || die "Matching execution fixture could not be established"
 wait_for_query_fixture || die "query projection did not expose the Matching fixture"
@@ -227,14 +243,13 @@ jq -n \
   --arg retainedEvidenceDir "$retained_evidence_dir" \
   '{sourceRevision:$sourceRevision,namespace:$namespace,
     retainedEvidenceDir:$retainedEvidenceDir}' >"$evidence_dir/provenance.json"
-start_query_port_forward
 capture_query_snapshot "$evidence_dir/baseline.json" || die "cannot capture baseline query views"
 
-current_stage="verify PostgreSQL fallback during Redis outage"
+current_stage="verify PostgreSQL-only reads during Redis outage"
 redis_scaled=true
 scale_deployment redis 0 || die "Redis could not be scaled down for fallback verification"
 capture_query_snapshot "$evidence_dir/redis-outage.json" ||
-  die "query APIs did not fall back to PostgreSQL while Redis was unavailable"
+  die "authorized PostgreSQL query APIs failed while Redis was unavailable"
 scale_deployment redis "$original_redis_replicas" ||
   die "Redis could not be restored after fallback verification"
 redis_scaled=false

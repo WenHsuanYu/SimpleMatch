@@ -142,6 +142,7 @@ run_query_postgres_jdbc_tests() (
   export QUERY_SERVICE_JDBC_TEST_USER="$postgres_user"
   export QUERY_SERVICE_JDBC_TEST_PASSWORD="$postgres_password"
   ./gradlew -q --no-daemon --stacktrace :services:query-service:postgresJdbcTest
+  python3 scripts/end-to-end/query-service/tests/collector-postgres-contract.py
 )
 
 cd "$repo_root"

@@ -112,8 +112,10 @@ query_fixture_run_impl() {
   evidence_dir="$fixture_dir"
   select_market_input || return 1
 
-  buy_account_id="$(cat /proc/sys/kernel/random/uuid)" || return 1
-  sell_account_id="$(cat /proc/sys/kernel/random/uuid)" || return 1
+  buy_account_id="$(jq -er '.accounts.X' \
+    "${query_fixture_directory:?approved Query fixture bundle is required}/fixture-identities.json")" || return 1
+  sell_account_id="$(jq -er '.accounts.Y' \
+    "$query_fixture_directory/fixture-identities.json")" || return 1
 
   kafka_observer_pod="critical-consumer-kafka-observer"
   kafka_observer_manifest="$repo_root/deploy/k8s/verification/critical-consumer-kafka-observer-pod.yaml"

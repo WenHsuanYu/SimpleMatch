@@ -134,7 +134,10 @@ prepare_query_active_liveness() {
   [[ "$symbol" == "$fixture_symbol" ]] ||
     die 'active liveness selected a different instrument from the query fixture'
 
-  active_liveness_account_id="$(cat /proc/sys/kernel/random/uuid)"
+  # Y already belongs to the approved FIX/Query fixture. X is the replay baseline;
+  # using Y keeps the active IOC's reservation activity out of X's comparison.
+  active_liveness_account_id="$(jq -er '.accounts.Y' \
+    "${query_fixture_directory:?approved Query fixture bundle is required}/fixture-identities.json")" || return 1
   active_liveness_cl_ord_id="QUERY-LIVE-$(date -u +%Y%m%d-%H%M%S)-$$"
   account_id="$active_liveness_account_id"
   cl_ord_id="$active_liveness_cl_ord_id"

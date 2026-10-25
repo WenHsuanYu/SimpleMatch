@@ -19,6 +19,29 @@ grep -Fq 'wait_market_data_through' "$active_module"
 grep -Fq 'wait_fix_intent_status SENT' "$active_module"
 grep -Fq 'RESERVATION_STATUS_RELEASED' "$active_module"
 
+python3 "$script_dir/../provision-security-fixtures.py" "$temporary_directory/query-bundle" >/dev/null
+if ! (
+  source "$active_module"
+  evidence_dir="$temporary_directory/approved-active"
+  query_fixture_directory="$temporary_directory/query-bundle"
+  expected_account="$(jq -er '.accounts.Y' "$query_fixture_directory/fixture-identities.json")"
+  account_id="$(jq -er '.accounts.X' "$query_fixture_directory/fixture-identities.json")"
+  trading_day=2026-08-11 venue_mic=XTAI symbol=2330 quantity=100 price=100
+  select_market_input() { :; }
+  seed_account_limit() {
+    [[ "$account_id" == "$expected_account" ]] || {
+      printf '%s\n' 'Active IOC must use the pre-approved Y account, leaving baseline X unchanged.' >&2
+      exit 1
+    }
+    exit 0  # Stop at the external seed interface; do not claim a FIX/runtime test.
+  }
+  prepare_query_active_liveness
+  exit 1
+); then
+  printf '%s\n' 'Active liveness selected an unapproved account.' >&2
+  exit 1
+fi
+
 active_function_start="$(grep -n '^run_query_active_liveness()' "$active_module" | cut -d: -f1)"
 active_function_end="$(grep -n '^restore_query_active_liveness()' "$active_module" | cut -d: -f1)"
 active_function_body="$temporary_directory/active-liveness-body.sh"

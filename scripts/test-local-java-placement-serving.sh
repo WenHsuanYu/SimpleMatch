@@ -161,14 +161,17 @@ write_health_stage() {
     --arg serving_digest "$serving_digest" '
       {
         readiness: {path:"/actuator/health/readiness", http_status:200,
+          authentication:"anonymous-health",
           body_status:"UP",
           body_file:("health/" + $stage + "-readiness.json"),
           body_sha256:$readiness_digest},
         liveness: {path:"/actuator/health/liveness", http_status:200,
+          authentication:"anonymous-health",
           body_status:"UP",
           body_file:("health/" + $stage + "-liveness.json"),
           body_sha256:$liveness_digest},
         serving: {path:"/api/v1/freshness", http_status:200,
+          authentication:"query-operations-read",
           body_status:"SERVING",
           body_file:("health/" + $stage + "-serving.json"),
           body_sha256:$serving_digest}
@@ -279,6 +282,18 @@ expect_reject 'invalid linked readiness body after digest update' \
   "$fixture_dir/report-invalid-readiness.json"
 mv "$fixture_dir/baseline-readiness.original" "$fixture_dir/health/baseline-readiness.json"
 
+cp "$fixture_dir/health/baseline-serving.json" "$fixture_dir/baseline-serving.original"
+printf '%s\n' '{"status":"UP"}' >"$fixture_dir/health/baseline-serving.json"
+invalid_serving_digest="$(java_placement_serving_sha256_digest \
+  "$fixture_dir/health/baseline-serving.json")"
+jq --arg digest "$invalid_serving_digest" \
+  '.observations.baseline.serving.body_sha256 = $digest' "$report" \
+  >"$fixture_dir/report-invalid-serving.json"
+expect_reject 'health body substituted for operations Freshness after digest update' \
+  java_placement_serving_report_is_passed \
+  "$fixture_dir/report-invalid-serving.json"
+mv "$fixture_dir/baseline-serving.original" "$fixture_dir/health/baseline-serving.json"
+
 cp "$fixture_dir/placement/redis-outage.json" "$fixture_dir/redis-outage.original"
 jq '.pods[0].uid = "replacement-uid"' \
   "$fixture_dir/placement/redis-outage.json" \
@@ -315,6 +330,9 @@ mv "$fixture_dir/redis-outage.original" "$fixture_dir/placement/redis-outage.jso
 
 expect_report_rejects 'report-liveness-failed' \
   '.observations.redis_outage.liveness.http_status = 503'
+expect_report_rejects 'legacy-anonymous-report-schema' '.schema_version = 1'
+expect_report_rejects 'anonymous-operations-serving' \
+  '.observations.baseline.serving.authentication = "anonymous-health"'
 expect_report_rejects 'report-serving-metadata-mismatch' \
   '.observations.baseline.serving.body_status = "DOWN"'
 expect_report_rejects 'report-redis-snapshot-mismatch' \

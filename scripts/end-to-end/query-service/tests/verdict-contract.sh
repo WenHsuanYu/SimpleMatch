@@ -81,6 +81,10 @@ jq -n --slurpfile state "$fixture_dir/critical-before.json" '
 cat >"$fixture_dir/baseline.json" <<'JSON'
 {"order":{"data":{"orderId":"order-1","state":"FILLED","updatedAtUnixMs":100}},"executions":{"data":[{"executionId":"execution-1","orderId":"order-1","executedAtUnixMs":200}]},"accountSummary":{"data":{"accountId":"account-1","lifecycleState":"ACTIVE","updatedAtUnixMs":300}},"marketReference":{"data":{"tradingDay":"2026-08-31","artifactId":"artifact-1","venueMic":"XTAI","symbol":"1101","updatedAtUnixMs":400}},"freshness":{"partitions":[{"sourceTopic":"account.lifecycle","partition":0,"lastProcessedOffset":4,"recoveryState":"READY"},{"sourceTopic":"matching.events","partition":0,"lastProcessedOffset":9,"recoveryState":"READY"}]}}
 JSON
+jq '(.order,.executions,.accountSummary,.marketReference).freshness =
+  {projectionState:"NO_GAP_RECORDED"}' "$fixture_dir/baseline.json" \
+  >"$fixture_dir/minimal-baseline.json"
+mv "$fixture_dir/minimal-baseline.json" "$fixture_dir/baseline.json"
 cp "$fixture_dir/baseline.json" "$fixture_dir/redis-outage.json"
 cp "$fixture_dir/baseline.json" "$fixture_dir/rebuilt.json"
 cat >"$fixture_dir/restoration.json" <<'JSON'
@@ -171,7 +175,7 @@ cat >"$fixture_dir/active-processing-liveness.json" <<'JSON'
 }
 JSON
 
-# Exercise the real producers before the unchanged strict verdict. The literal
+# Exercise the real producers before the strict trading and envelope verdict. The literal
 # scenario above remains the independent contract example for each observation.
 evidence_dir="$fixture_dir"
 active_liveness_evidence_dir="$fixture_dir/active-liveness"
@@ -204,10 +208,22 @@ if ! evaluate_query_service_verdict "$fixture_dir" "$fixture_dir/verdict.json"; 
   cat "$fixture_dir/verdict.json" >&2
   exit 1
 fi
-jq -e '.status == "PASS" and (.checks | all(.passed == true))' \
+jq -e '.contractVersion == "query-security-phase1/1"
+  and .status == "PASS" and (.checks | all(.passed == true))' \
   "$fixture_dir/verdict.json" >/dev/null
 jq -e '.activeProcessingLiveness.status == "PROVEN"' \
   "$fixture_dir/verdict.json" >/dev/null
+
+cp "$fixture_dir/redis-outage.json" "$fixture_dir/minimal-outage.json"
+jq '.order.freshness = {partitions:[{sourceTopic:"matching.events",partition:0,
+  lastProcessedOffset:9,recoveryState:"READY"}]}' "$fixture_dir/redis-outage.json" \
+  >"$fixture_dir/legacy-outage.json"
+cp "$fixture_dir/legacy-outage.json" "$fixture_dir/redis-outage.json"
+if evaluate_query_service_verdict "$fixture_dir" "$fixture_dir/legacy-envelope-verdict.json"; then
+  printf 'query-service verdict accepted embedded business checkpoint metadata\n' >&2
+  exit 1
+fi
+cp "$fixture_dir/minimal-outage.json" "$fixture_dir/redis-outage.json"
 
 # A terminal report for another identity, or without terminal facts, cannot
 # supply delivery evidence even if the remaining business observations are valid.

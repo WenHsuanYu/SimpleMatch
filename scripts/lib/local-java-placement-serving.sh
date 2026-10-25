@@ -6,6 +6,7 @@ set -euo pipefail
 # target.  It proves the shared deployment contract and health boundaries
 # without becoming a second full-local certification orchestrator.
 JAVA_PLACEMENT_SERVING_PROFILE=java-placement-serving
+JAVA_PLACEMENT_SERVING_SCHEMA_VERSION=2
 JAVA_PLACEMENT_SERVING_CLUSTER=simplematch-live
 JAVA_PLACEMENT_SERVING_CONTEXT='kind-simplematch-live'
 JAVA_PLACEMENT_SERVING_SERVICE=query-service
@@ -295,7 +296,16 @@ java_placement_serving_report_evidence_files_are_valid() {
               "$path" >/dev/null || return 1
             ;;
           *-serving.json)
-            jq -e -s 'length == 1 and (.[0] | type) == "object"' \
+            jq -e -s 'length == 1 and (.[0] |
+              type == "object" and keys == ["partitions"]
+              and (.partitions | type == "array")
+              and all(.partitions[];
+                type == "object"
+                and keys == ["lastProcessedOffset","partition","recoveryState","sourceTopic","updatedAtUnixMs"]
+                and (.sourceTopic | type == "string")
+                and (.recoveryState | type == "string")
+                and ([.partition,.lastProcessedOffset,.updatedAtUnixMs] |
+                  all(.[]; type == "number" and . >= 0 and floor == .))))' \
               "$path" >/dev/null || return 1
             ;;
         esac
@@ -340,6 +350,57 @@ java_placement_serving_report_evidence_files_are_valid() {
     ' "$report_file" >/dev/null || return 1
 }
 
+# Uses the observer's existing evidence/deadline state. Only the serving request
+# consumes private synthetic credentials; infrastructure probes remain anonymous.
+java_placement_serving_capture_http_probe() {
+  local stage="$1" name="$2" path="$3"
+  local body_file="$evidence_dir/health/${stage}-${name}.json"
+  local relative_file="health/${stage}-${name}.json"
+  local status body_status body_type body_is_up digest module_dir request_seconds authentication
+
+  case "$name:$path" in
+    readiness:/actuator/health/readiness|liveness:/actuator/health/liveness)
+      authentication=anonymous-health
+      status="$(curl --noproxy '*' --connect-timeout 2 \
+        --max-time "$(remaining_seconds)" -sS -o "$body_file" -w '%{http_code}' \
+        "http://127.0.0.1:${port_forward_port}${path}")" ||
+        die "$stage $name request failed"
+      ;;
+    serving:/api/v1/freshness)
+      authentication=query-operations-read
+      module_dir="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
+      request_seconds="$(remaining_seconds)" || return 1
+      if (( request_seconds > 20 )); then request_seconds=20; fi
+      status="$(run_bounded python3 "$module_dir/../end-to-end/query-service/lib/query_http.py" \
+        --fixture-directory "${query_fixture_directory:?approved Query fixture bundle is required}" \
+        --base-url "http://127.0.0.1:${port_forward_port}" --path "$path" \
+        --timeout-seconds "$request_seconds" --output "$body_file")" ||
+        die "$stage serving request failed"
+      ;;
+    *) die 'unapproved placement HTTP probe'; return 1 ;;
+  esac
+  [[ "$status" == 200 ]] || die "$stage $name returned HTTP $status"
+  IFS=$'\t' read -r body_type body_is_up < <(
+    jq -er '[type, (.status == "UP")] | @tsv' "$body_file"
+  ) || die "$stage $name response is not JSON"
+  if [[ "$name" == readiness || "$name" == liveness ]]; then
+    [[ "$body_type" == object && "$body_is_up" == true ]] ||
+      die "$stage $name response did not report UP"
+    body_status=UP
+  else
+    [[ "$body_type" == object ]] || die "$stage serving response is not an object"
+    body_status=SERVING
+  fi
+  digest="$(java_placement_serving_sha256_digest "$body_file")" ||
+    die "$stage $name response digest is invalid"
+  jq -n \
+    --arg path "$path" --arg file "$relative_file" --arg status "$status" \
+    --arg body_status "$body_status" --arg digest "$digest" \
+    --arg authentication "$authentication" \
+    '{path:$path,http_status:($status|tonumber),body_status:$body_status,
+      body_file:$file,body_sha256:$digest,authentication:$authentication}'
+}
+
 java_placement_serving_write_pass_report() {
   local evidence_dir="$1"
   local observed_seconds="$2"
@@ -367,6 +428,7 @@ java_placement_serving_write_pass_report() {
 
   temporary_file="$(mktemp "$evidence_dir/.java-placement-serving.XXXXXX")" || return 1
   if ! jq -n \
+    --argjson schema_version "$JAVA_PLACEMENT_SERVING_SCHEMA_VERSION" \
     --arg profile "$JAVA_PLACEMENT_SERVING_PROFILE" \
     --arg cluster "$JAVA_PLACEMENT_SERVING_CLUSTER" \
     --arg context "$JAVA_PLACEMENT_SERVING_CONTEXT" \
@@ -405,7 +467,7 @@ java_placement_serving_write_pass_report() {
       | ($restored[0]) as $restored_snapshot
       | ($baseline_snapshot.pods | sort_by(.name) | .[0]) as $target
       | {
-          schema_version: 1,
+          schema_version: $schema_version,
           profile: $profile,
           status: "PASS",
           cluster: $cluster,
@@ -482,6 +544,7 @@ java_placement_serving_report_is_passed() {
 
   [[ -s "$report_file" ]] || return 1
   jq -e \
+    --argjson schema_version "$JAVA_PLACEMENT_SERVING_SCHEMA_VERSION" \
     --arg profile "$JAVA_PLACEMENT_SERVING_PROFILE" \
     --arg cluster "$JAVA_PLACEMENT_SERVING_CLUSTER" \
     --arg context "$JAVA_PLACEMENT_SERVING_CONTEXT" \
@@ -500,17 +563,19 @@ java_placement_serving_report_is_passed() {
       def healthy_probe($probe; $expected_path):
         ($probe.http_status == 200)
         and ($probe.path == $expected_path)
-        and ($probe.body_status == "UP");
+        and ($probe.body_status == "UP")
+        and ($probe.authentication == "anonymous-health");
       def healthy_serving($probe):
         ($probe.http_status == 200)
         and ($probe.path == $application_path)
-        and ($probe.body_status == "SERVING");
+        and ($probe.body_status == "SERVING")
+        and ($probe.authentication == "query-operations-read");
       def healthy_observation($observation):
         healthy_probe($observation.readiness; $readiness_path)
         and healthy_probe($observation.liveness; $liveness_path)
         and healthy_serving($observation.serving);
       def identity_contract:
-        (.schema_version == 1)
+        (.schema_version == $schema_version)
         and (.profile == $profile)
         and (.status == "PASS")
         and (.cluster == $cluster)
