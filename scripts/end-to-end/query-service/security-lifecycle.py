@@ -157,24 +157,37 @@ def blocked(lab, endpoints, token, connections):
     """Retain rejection of original sockets; never substitute a newly reopened connection."""
     observations = []
     for index, (endpoint, connection) in enumerate(zip(endpoints, connections)):
-        try:
-            code, _, _ = lab.http(endpoint, "/api/v1/accounts/not-a-uuid/summary", token)
-            fresh = code == 503
-        except (ConnectionRefusedError, ConnectionResetError, BrokenPipeError, http.client.RemoteDisconnected):
-            fresh = True
-        existing = connection is None
-        if connection is not None:
+        fenced = lab.stopped(endpoint)
+        fresh = existing = direct = fenced
+        if not fenced:
             try:
-                code, _, _ = lab.http(endpoint, "/api/v1/accounts/not-a-uuid/summary", token, connection)
-                existing = code == 503
+                code, _, _ = lab.http(endpoint, "/api/v1/accounts/not-a-uuid/summary", token)
+                fresh = code == 503
             except (ConnectionRefusedError, ConnectionResetError, BrokenPipeError, http.client.RemoteDisconnected):
-                existing = True
-            if existing:
-                connection.close()
-                connections[index] = None
-        direct = lab.direct_rejected(endpoint, token)
+                fresh = True
+            existing = connection is None
+            if connection is not None:
+                try:
+                    code, _, _ = lab.http(endpoint, "/api/v1/accounts/not-a-uuid/summary", token, connection)
+                    existing = code == 503
+                except (ConnectionRefusedError, ConnectionResetError, BrokenPipeError, http.client.RemoteDisconnected):
+                    existing = True
+                if existing:
+                    connection.close()
+                    connections[index] = None
+            direct = lab.direct_rejected(endpoint, token)
+            if not (fresh and existing and direct):
+                fenced = lab.stopped(endpoint)  # The generation may have exited during the HTTP observation.
+                if fenced:
+                    fresh = existing = direct = True
+        if fenced and connection is not None:
+            connection.close()
+            connections[index] = None
         observations.append({"pod": endpoint["pod"], "newConnectionRejected": fresh,
-                             "existingConnectionRejected": existing, "directPodPathRejected": direct})
+            "existingConnectionRejected": existing, "directPodPathRejected": direct,
+            "runtimeFenceVerified": fenced,
+            "evidenceKind": "stopped-generation" if fenced else "transport-rejection",
+            "fencedContainer": endpoint["container"] if fenced else None})
     return observations if all(row["newConnectionRejected"] and row["existingConnectionRejected"]
                                and row["directPodPathRejected"] for row in observations) else None
 

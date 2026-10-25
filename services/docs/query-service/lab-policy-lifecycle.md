@@ -57,8 +57,11 @@ Fast OS-process contracts separately verify normal completion, forced terminatio
 deadline failure without depending on a narrow JVM-suspension race. Direct access is
 tested independently of the Service.
 Direct Pod probes explicitly bypass HTTP proxies. An indeterminate curl result is retained
-privately and retried only within the existing Block deadline; timeout, partial response or
-observer failure is never evidence of rejection. Failure to obtain positive rejection remains FAIL.
+privately; timeout, partial response or observer failure is never evidence of rejection.
+An already stopped generation cannot accept reads even if its removed Pod IP only times out.
+Block therefore accepts either positive transport rejection or positive CRI/containerd/original-PID
+fencing. Each observation records which mechanism established the boundary. Uncertain runtime
+state remains FAIL, and the later drain still checks all eligible workers for uncaptured tasks.
 
 The initial **20s drain**, **90s submit-to-stop verification** and **120s catch-up** limits are
 Lab acceptance parameters. Exceeding one produces FAIL. A larger stop-verification window

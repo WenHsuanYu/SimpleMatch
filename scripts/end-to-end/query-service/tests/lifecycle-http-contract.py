@@ -22,6 +22,50 @@ from lib.security_lab import Lab
 
 
 class LifecycleHttpContract(unittest.TestCase):
+    def test_uncertain_runtime_observation_cannot_become_a_successful_fence(self):
+        spec = importlib.util.spec_from_file_location("query_lifecycle", Path(__file__).resolve().parents[1] / "security-lifecycle.py")
+        lifecycle = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(lifecycle)
+        endpoint = {"pod": "old-query", "node": "worker", "container": "old-container", "port": 9}
+        with tempfile.TemporaryDirectory(prefix="query-uncertain-fence-") as temporary:
+            lab = Lab(Path(__file__).resolve().parents[4], Path(temporary) / "run", "lab", "lab", "query:test")
+            with patch("subprocess.run", return_value=subprocess.CompletedProcess([], 1, "", "CRI unavailable")):
+                with self.assertRaisesRegex(RuntimeError, "absence is unproven"):
+                    lifecycle.blocked(lab, [endpoint], secrets.token_urlsafe(32), [None])
+
+    def test_verified_runtime_fence_proves_block_even_when_removed_pod_ip_times_out(self):
+        spec = importlib.util.spec_from_file_location("query_lifecycle", Path(__file__).resolve().parents[1] / "security-lifecycle.py")
+        lifecycle = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(lifecycle)
+        actual_run = subprocess.run
+        child = subprocess.Popen([sys.executable, "-c", "pass"])
+        child.wait(timeout=2)
+        endpoint = {"pod": "old-query", "uid": "old-uid", "node": "worker", "container": "old-container",
+                    "pid": child.pid, "start": "retired-start", "port": 9, "ip": "127.0.0.1"}
+        commands = []
+
+        def external(arguments, **options):
+            commands.append(arguments)
+            if "crictl" in arguments:
+                return subprocess.CompletedProcess(arguments, 0, '{"status":{"state":"CONTAINER_EXITED"}}', "")
+            if "tasks" in arguments:
+                return subprocess.CompletedProcess(arguments, 0, "", "")
+            if "cat" in arguments:
+                return actual_run(["cat", arguments[-1]], **options)
+            if "curl" in arguments:
+                return subprocess.CompletedProcess(arguments, 28, "\n000", "Operation timed out")
+            raise AssertionError(arguments)
+
+        with tempfile.TemporaryDirectory(prefix="query-fence-contract-") as temporary:
+            lab = Lab(Path(__file__).resolve().parents[4], Path(temporary) / "run", "lab", "lab", "query:test")
+            with patch("subprocess.run", side_effect=external):
+                result = lifecycle.blocked(lab, [endpoint], secrets.token_urlsafe(32), [None])
+            self.assertIsNotNone(result)
+            self.assertTrue(result[0]["runtimeFenceVerified"])
+            self.assertEqual(result[0]["evidenceKind"], "stopped-generation")
+            self.assertFalse(any("curl" in command for command in commands),
+                             "An absent server need not produce a network-level rejection")
+
     def test_confirmed_original_connection_is_not_reused_during_other_replica_probes(self):
         spec = importlib.util.spec_from_file_location("query_lifecycle", Path(__file__).resolve().parents[1] / "security-lifecycle.py")
         lifecycle = importlib.util.module_from_spec(spec)
@@ -42,6 +86,8 @@ class LifecycleHttpContract(unittest.TestCase):
                 pass
 
         def docker(arguments, **_):
+            if "crictl" in arguments:
+                return subprocess.CompletedProcess(arguments, 0, '{"status":{"state":"CONTAINER_RUNNING"}}', "")
             if "node-b" in arguments:
                 direct_b.append(True)
                 if len(direct_b) == 1:
@@ -59,7 +105,8 @@ class LifecycleHttpContract(unittest.TestCase):
                 with tempfile.TemporaryDirectory(prefix="query-block-contract-") as temporary:
                     lab = Lab(Path(__file__).resolve().parents[4], Path(temporary) / "run", "lab", "lab", "query:test")
                     token = secrets.token_urlsafe(32)
-                    endpoints = [{"pod": alias, "node": "node-" + alias, "ip": "127.0.0.1", "port": server.server_address[1]}
+                    endpoints = [{"pod": alias, "container": "container-" + alias,
+                                  "node": "node-" + alias, "ip": "127.0.0.1", "port": server.server_address[1]}
                                  for alias in ("a", "b")]
                     for endpoint, connection in zip(endpoints, originals):
                         lab.http(endpoint, "/baseline", token, connection)

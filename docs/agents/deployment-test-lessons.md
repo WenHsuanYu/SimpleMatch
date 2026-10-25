@@ -173,6 +173,15 @@ they also force a hostile loopback proxy configuration to prove explicit proxy b
 The retained r11 FAIL and successful exact-owned teardown are not upgraded to PASS. This
 was an observer/evidence defect, not proof of a Query cross-account disclosure.
 
+The twelfth #193 run again completed V2, then retained repeated direct curl exit 28 during
+V3 Block. A read-only diagnostic against its recorded old Query identities proved both
+generations were stopped while both removed Pod IPs still timed out. Requiring a network
+refusal from an absent server was an invalid observation contract. Block now records either
+positive transport rejection or positively verified CRI/task/original-PID fencing; timeout
+alone and unknown runtime state cannot pass. The same recorded endpoints verify this
+correction without another deployment. Retain r12 as FAIL with complete owned teardown;
+the targeted diagnostic is not a substitute for a fresh full lifecycle result.
+
 The second #164 recovery run completed the owner replacement and protocol/business
 observations but the strict verifier rejected `FIX.4.4 `: PostgreSQL had padded
 the existing `CHAR(8)` BeginString during JSON serialization. The read-only SQL
