@@ -2,6 +2,19 @@
 
 # External FIX, Kafka Connect, and Gateway operations interfaces used by the test.
 
+# Send a generated operator credential through stdin and a Secret reference, never process argv.
+set_certification_operator_env() {
+  local resource="$1" variable="$2" token="$3"
+  local container="${resource#*/}"
+  [[ "$token" =~ ^[0-9a-f-]{32,36}$ && "$variable" =~ ^[A-Z_]+$ ]] || return 1
+  certification_operator_secret="certification-operator-$(cat /proc/sys/kernel/random/uuid)"
+  printf '{"apiVersion":"v1","kind":"Secret","metadata":{"name":"%s"},"immutable":true,"stringData":{"%s":"%s"}}' \
+    "$certification_operator_secret" "$variable" "$token" | kns create -f - >/dev/null || return 1
+  printf '{"spec":{"template":{"spec":{"containers":[{"name":"%s","env":[{"name":"%s","valueFrom":{"secretKeyRef":{"name":"%s","key":"%s"}}}]}]}}}}' \
+    "$container" "$variable" "$certification_operator_secret" "$variable" | \
+    kns patch "$resource" --type=strategic --patch-file=/dev/stdin >/dev/null
+}
+
 start_port_forward() {
   local resource="$1"
   local remote_port="$2"
@@ -349,12 +362,14 @@ enable_gateway_operations() {
       die "QuickFIX Gateway already defines certification override $name"
   done
   gateway_operator_token="$(cat /proc/sys/kernel/random/uuid)"
+  gateway_env_modified=true
+  set_certification_operator_env statefulset/quickfix-gateway \
+    SIMPLEMATCH_QUICKFIX_GATEWAY_OPERATIONS_OPERATOR_TOKEN "$gateway_operator_token" ||
+    die 'QuickFIX Gateway operator Secret could not be installed'
   kns set env statefulset/quickfix-gateway \
     SIMPLEMATCH_QUICKFIX_GATEWAY_OPERATIONS_HTTP_ENABLED=true \
-    "SIMPLEMATCH_QUICKFIX_GATEWAY_OPERATIONS_AUTOMATIC_CLOSE_ENABLED=$automatic_close_enabled" \
-    SIMPLEMATCH_QUICKFIX_GATEWAY_OPERATIONS_OPERATOR_TOKEN="$gateway_operator_token" >/dev/null ||
+    "SIMPLEMATCH_QUICKFIX_GATEWAY_OPERATIONS_AUTOMATIC_CLOSE_ENABLED=$automatic_close_enabled" >/dev/null ||
     die 'QuickFIX Gateway certification overrides could not be applied'
-  gateway_env_modified=true
   kns rollout status statefulset/quickfix-gateway --timeout="${timeout_seconds}s" >/dev/null ||
     die 'QuickFIX Gateway did not become ready with certification overrides'
 }
@@ -539,7 +554,7 @@ gateway_request() {
   local -a request=(
     curl --connect-timeout 5 --max-time "$request_timeout" -sS -o "$destination" -w '%{http_code}'
     -X "$method"
-    -H "X-SimpleMatch-Operator-Token: $gateway_operator_token"
+    --config -
   )
   if [[ -n "$payload" ]]; then
     request+=(-H 'Content-Type: application/json' --data-binary "@$payload")
@@ -555,7 +570,8 @@ gateway_request() {
 
   local status
   local request_status=0
-  status="$("${request[@]}" "http://127.0.0.1:${gateway_port}${path}")" ||
+  status="$(printf 'header = "X-SimpleMatch-Operator-Token: %s"\n' "$gateway_operator_token" | \
+    "${request[@]}" "http://127.0.0.1:${gateway_port}${path}")" ||
     request_status="$?"
 
   if [[ -n "$observation_attempt_dir" ]]; then

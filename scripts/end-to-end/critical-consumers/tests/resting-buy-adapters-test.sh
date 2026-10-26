@@ -13,6 +13,7 @@ kns() {
   # Test the external kubectl arguments, without printing the operator token.
   case "$1" in
     get) return 0 ;;
+    create|patch) cat >/dev/null; return 0 ;;
     set)
       case " $* " in
         *'SIMPLEMATCH_QUICKFIX_GATEWAY_OPERATIONS_AUTOMATIC_CLOSE_ENABLED=true'*) [[ "$expected_close" == true ]] ;;
