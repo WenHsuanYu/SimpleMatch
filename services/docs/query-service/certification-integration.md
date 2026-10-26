@@ -1,7 +1,8 @@
 # Query certification consumers — QS1-07
 
-Scope: [#194](https://github.com/WenHsuanYu/SimpleMatch/issues/194), first collector/placement
-integration slice. **Final Phase 1 deployed acceptance remains incomplete.** This slice changes
+Scope: [#194](https://github.com/WenHsuanYu/SimpleMatch/issues/194), Local Lab Phase 1 integration
+and certification. The source-aligned runtime gates below passed; final-head CI and delivery are
+recorded on the owning issue. This work changes
 tools, CI and documentation; it does not add Client ownership, Account provisioning, new grants,
 Gateway/OAuth/mTLS, Redis optimization or production readiness.
 
@@ -53,7 +54,39 @@ The bundle must already match the serving Query policy and the FIX Account allow
 real run. The tools neither register Principals nor change access policy. The Query runner checks
 the Operations identity before seeding/releasing its FIX fixture. Rebuild remains independent.
 The full-local input producer now consumes a composite synthetic bundle as described below.
-Actual secured multi-service deployment and complete cross-route acceptance remain #194 work.
+Secured multi-service deployment and complete cross-route acceptance have separate evidence below.
+
+## Complete deployed acceptance
+
+The controlled lifecycle runner now seeds explicit migrated Query-owned Order/Execution DML:
+each X/Y Account has one parent with an Execution and one with an empty collection, plus a
+durably verified absent parent. These rows prove HTTP ownership/authorization; they are not
+Matching publication or replay evidence. Account lifecycle publication, captured Kafka boundaries,
+persisted checkpoints and restart without reset remain independent recovery evidence.
+
+Every serving Query Pod receives the full five-Principal read matrix at V1, after C-to-Y
+revocation at V2, and after D disablement at V3. C-to-X and B-to-Y remain allowed. The shared
+verifier checks canonical response identities, all Execution members, minimal business envelopes,
+Operations-only full checkpoints, policy-version headers and `no-store` on successful reads.
+The lifecycle runner rejects uncommitted runtime inputs before Docker access; its phase version
+and input manifest include the fixture/HTTP modules and regression tests.
+
+The separate full trading runner uses the real public FIX cross fixture for X/Y Orders,
+checks both Query replicas directly, and independently proves the selected absent parent in
+PostgreSQL. Before business reads it seeds all four obsolete `query:v1` response keys with
+old full-checkpoint envelopes and mismatched fixture content. Typed HTTP reads must succeed
+from durable projections while those bytes remain unchanged. These are deliberately obsolete
+cache fixtures, not requirements to re-enable Redis. Redis outage, Query outage/trading
+independence and deterministic replay retain their separate gates.
+
+After explicitly enabling the independent rebuild adapter, all five Query credentials must fail
+rebuild, and the operator credential must fail Account reads as either a Bearer or operator
+header. The subsequent legitimate reset/replay proves operator functionality. Generated Query
+and Gateway operator tokens travel through stdin and immutable Secret references rather than
+process arguments or captured Deployment environment values. The Query verdict contract
+`query-security-phase1/2` requires matrix, obsolete-cache and operator-separation evidence in
+addition to the existing recovery gates. Each scenario must pass in its own runtime; focused
+lifecycle PASS is never relabeled as full-system certification PASS.
 
 ## Secured full-environment inputs
 
@@ -79,12 +112,16 @@ OpenSSL are required; cryptographic processing uses those tools rather than cust
 launcher passes FIX secrets in the child environment, never command arguments or shell `eval`.
 
 ```bash
+# Select the approved artifact's actual day, including for a historical Lab run.
+export SIMPLEMATCH_CERTIFICATION_TRADING_DAY=2026-08-19
+export SIMPLEMATCH_MARKET_REFERENCE_DELIVERY_MANIFEST="$PWD/config/market-reference/approved/$SIMPLEMATCH_CERTIFICATION_TRADING_DAY/delivery/manifest.yaml"
 fixture_parent="$(mktemp -d /tmp/simplematch-query-certification.XXXXXX)"
 python3 scripts/end-to-end/query-service/provision-certification-fixtures.py \
   "$fixture_parent/bundle"
 export SIMPLEMATCH_CERTIFICATION_QUERY_FIXTURE_DIRECTORY="$fixture_parent/bundle"
 scripts/run-local-production-like-certification.sh --keep-resources
 # Use the actual retained namespace and report path produced by the deployment.
+export SIMPLEMATCH_QUERY_ISOLATION_COMMAND_TIMEOUT_SECONDS=30
 python3 scripts/end-to-end/query-service/lib/certification_security.py \
   --fixture-directory "$fixture_parent/bundle" --exec \
   bash scripts/run-query-service-certification.sh \
@@ -93,13 +130,33 @@ python3 scripts/end-to-end/query-service/lib/certification_security.py \
     --evidence-dir NEW_QUERY_EVIDENCE_DIRECTORY
 ```
 
+The complete Query runner creates its X/Y trading fixtures once. It does not resume a failed
+scenario or reprovision existing Account limits/positions. If it fails after seeding, use a new
+disposable full-environment namespace and newly provisioned identities, with validated image and
+phase reuse. Do not delete ledger rows, reset reservations or broaden grants to make a retry pass.
+The isolation collector's supported command budget is configurable; 30 seconds retains all five
+observations without requiring each Kafka CLI process to finish within the 5-second default.
+
 Full Kubernetes deployment requires this bundle through the common environment variable or
 `--query-fixture-directory`. Help, dry-run, Compose-only and Matching-fleet-only profiles do
 not require a bundle and do not prove Query security. Each full deployment creates immutable
 `query-service-secrets` and `quickfix-gateway-secrets` with their existing PostgreSQL key plus
-their respective `application.properties`; `quickfix-gateway-fix-tls` holds only the server key
+their respective `query-service.properties` / `quickfix-gateway.properties` file keys;
+`quickfix-gateway-fix-tls` holds only the server key
 store and approved client truststore. All Query replicas use the same existing named Spring
 Environment Secret source. Store mounts and the FIX mTLS requirement are unchanged.
+The service-named keys are required by the installed Spring Cloud Kubernetes multi-key Secret
+parser; a generic `application.properties` key alongside `postgres_dsn` is skipped. A test invokes
+the installed parser for both application names before deployment. Resume rejects additional
+profile/property keys that could override the approved policy.
+
+Query and Gateway also explicitly select `spring.cloud.kubernetes.secrets.read-type=SINGLE`.
+The framework's default BATCH mode requires Secret LIST permission, while the existing service
+accounts deliberately permit only GET on their named Secrets. ConfigMap `read-type` does not
+set Secret `read-type`. The maintained locator regression reads both actual service YAMLs,
+binds their settings and invokes the real Kubernetes Secret locator/client against an HTTP API
+that permits named GET and rejects LIST. Its negative omits only the Secret read mode to
+reproduce the absent security configuration. This preserves the existing RBAC boundary.
 
 The one-hour Query fixture lifetime is unchanged. Cold builds can exhaust it: input validation
 fails closed again before Kubernetes input mutation, rather than silently renewing credentials
@@ -109,6 +166,9 @@ provisioning. The launcher does not redact arbitrary child output; callers must 
 existing credential-safe logging contract and must not run environment-dumping commands.
 
 The run context and `kubernetes-inputs` fingerprint bind the declared private input digest.
+The context also binds a separate digest of the server-side policy/store subset. Focused
+CDC/Connect continuations recompute it from decoded immutable Kubernetes Secrets, without
+needing client credentials or private keys on disk, and reject changed or competing settings.
 The producer recomputes that validated digest before its first Kubernetes write and rejects
 post-preflight changes instead of deploying material different from the recorded inputs.
 Resume verifies the exact immutable deployed policy/store bytes and refuses changed inputs;
@@ -116,7 +176,7 @@ it does not overwrite serving policy. Controlled revocation still follows #193's
 Block/Drain/Activate/Verify/Resume authority and anti-rollback contract. Hashes establish input
 identity, not business approval or proof of the policy actually serving HTTP requests.
 
-`static-phase1-deployment-contracts` and `kubernetes-inputs` definition versions are now 2.
+`static-phase1-deployment-contracts` and `kubernetes-inputs` definition versions are now 3.
 The static phase includes the fixture and input-producer contracts, and Kubernetes inputs
 depend on that gate. The source/input fingerprints include their implementations and tests.
 Older phase evidence cannot stand in for the new semantics.
@@ -133,7 +193,7 @@ certificate and hostname rejection. The latter observes the input producer at th
 command seam, including immutable Secret bytes, no credential arguments and stale-input
 rejection. It is not a live Kubernetes API, Spring property binding, CNI or full trading test.
 
-The replay verdict declares `contractVersion: query-security-phase1/1`, validates minimal business
+The replay verdict declares `contractVersion: query-security-phase1/2`, validates minimal business
 envelopes in baseline/Redis-outage/rebuilt snapshots, and reports `postgresReadsDuringRedisOutage`
 instead of the old fallback name. It retains the existing deterministic replay, operations
 checkpoints and trading-isolation/active-processing conditions.
@@ -163,14 +223,35 @@ parent or proof of Query HTTP authorization.
 | Requirement | Existing/new executable evidence | Limit or remaining work |
 | --- | --- | --- |
 | INV-01/03, A3/A4: identity, policy, routes, challenges and denial | `QueryHttpSecurityIntegrationTest`, `QuerySecurityPolicyTest`, `QuerySecurityStartupTest`, `QueryDirectHttpTest` | Reuse actual FilterChain suites; client-tool fixtures alone are insufficient. |
-| INV-02: grants and trusted parent ownership | `QueryAccountSummaryHttpTest`, `QueryOrderHttpTest`, `QueryExecutionsHttpTest` and snapshot tests | Deployed multi-replica cross-route matrix still required. |
-| INV-04, A1: cache non-use/identity and minimal responses | Existing business HTTP suites with cache probes; `collector-http-contract.py`; `verdict-contract.sh` | Actual legacy Redis preseed across the deployed surface remains pending. |
-| INV-05/06: independent operator/FIX/direct trust | Existing FilterChain/direct/rebuild suites; collector route allowlist; independent operator route unchanged | Preserve full deployed operator and negative-credential evidence in aggregate acceptance. |
-| INV-07, A3: revoke/disable/rollback | #193 `runtime-r13` at its recorded source; unchanged lifecycle contracts | Historical focused PASS is not a newly executed aggregate; expanded Order/Executions lifecycle checks remain pending. |
-| INV-08: no trading dependency on Query | Existing active-liveness/isolation/verdict contracts | Fresh secured full-runtime IOC/isolation and separate rebuild/replay evidence remain required. |
+| INV-02: grants and trusted parent ownership | `QueryAccountSummaryHttpTest`, `QueryOrderHttpTest`, `QueryExecutionsHttpTest` and snapshot tests | Final deployed matrices cover both replicas, including lifecycle Order/Executions fixtures. |
+| INV-04, A1: cache non-use/identity and minimal responses | Existing business HTTP suites with cache probes; `collector-http-contract.py`; `verdict-contract.sh` | Four actual obsolete Redis entries were ignored and remained unchanged. |
+| INV-05/06: independent operator/FIX/direct trust | Existing FilterChain/direct/rebuild suites; per-Pod matrix; enabled operator boundary | All nine deployed negative credential checks passed; independent authorized rebuild succeeded. |
+| INV-07, A3: revoke/disable/rollback | Final-source `lifecycle-final` proof, separate from historical #193 | V1/V2/V3, rollback rejection, failed activation, no-reset recovery and fresh-run isolation passed. |
+| INV-08: no trading dependency on Query | Full Query verdict and actual public IOC/isolation evidence | Public FIX processing with zero Query Pods and separate deterministic rebuild/replay passed. |
 | A4, LAB consumer compatibility | `collector-http-contract.py`, `collector-postgres-contract.py`, placement contract | Tests prove tool behavior/real SQL, not NetworkPolicy or production transport. |
 
 INV-09 and later Gateway/certificate portions of INV-10 retain their independent phase approvals.
+
+## Accepted Local Lab evidence
+
+The retained acceptance set is under
+`out/verification/issue-194-certification/completion/`. Older local runs were removed at the
+owner's request; closed issues and their original contracts/history were not rewritten.
+
+| Gate | Actual result | Retained evidence |
+| --- | --- | --- |
+| Complete full-local profile | PASS; 62 phases, no SKIP: 32 EXECUTE, 20 REUSE, 10 REVALIDATE | `full-local-r3/report.md`, `plan.json` and phase source evidence |
+| Complete Query certification | PASS; all 12 checks, 100 per-Pod matrix observations, four obsolete cache entries, nine operator negatives | `query-runtime/verdict.json` and linked observations |
+| Placement/serving | PASS; two unchanged Query Pods, 60-second Redis outage, authenticated Operations and minimal anonymous health | `placement/java-placement-serving.json`; diagnostic-only scope |
+| Controlled policy lifecycle | PASS; two disposable runs, 560 matrix observations, V2/V3 transitions, rollback/failure fencing and no-reset catch-up | `lifecycle-final/runtime/verdict.json` and event proofs |
+| Query/Gateway suites and static analysis | Query: 361 tests, zero failures/errors, five skipped; Gateway: 251 tests, zero failures/errors/skips; static analysis PASS | Local test summaries and final-head CI on #194 |
+| Actual dependency integration | 217 HTTP/JDBC tests and five collector/fixture tests against PostgreSQL; six Redis TLS/ACL/namespace tests, all without skips | PostgreSQL and Redis result summaries |
+
+Runtime execution used `95273ed` before this reporting-only amendment. The published implementation
+anchor is `4b9a602`; their runtime, verifier, test and build inputs are identical. Final delivery
+adds only reporting/operational documentation, with source compatibility recorded alongside the
+evidence. Local Lab transport, revocation and synthetic-policy results do not establish production
+readiness, a hard revocation SLA, OAuth, Query incoming mTLS or Phase 2 cache performance.
 
 Focused checks:
 

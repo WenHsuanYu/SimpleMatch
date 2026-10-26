@@ -72,6 +72,28 @@ typed digest comparison and execution on every eligible worker cover DT-014/DT-0
 Raw containerd probes record exact ownership before launch and verify task/container/snapshot
 cleanup even when no namespace has yet been created.
 
+The first #194 full deployment at `6ceccbd` passed platform provisioning and migrations but
+Query failed with `unsupported Query security policy schema` and Gateway failed with
+`FIX requires explicit SocketKeyStorePassword`. The uploaded immutable Secret bytes were
+correct. Spring Cloud Kubernetes 5.0.2 defaults **Secret** reads to `BATCH`, independently of
+`config.read-type: SINGLE`; BATCH attempted LIST while these service accounts allow only GET
+of their named Secrets. The optional Secret failure left the security properties absent.
+The narrow correction explicitly sets `secrets.read-type: SINGLE` for Query and Gateway,
+preserving GET-only RBAC. Before another dependent deployment, run
+`KubernetesNamedSecretsContractTest` and `NamedSecuritySecretContractTest`: the former binds
+both actual service YAMLs and invokes the real Secret locator against a named-GET-only API;
+its negative reproduces LIST/403 when the setting is omitted. The latter independently checks
+the service-named property-file format. A parser-only test cannot prove the API read contract.
+The owner subsequently authorized removal of old local reports. The original failure remains a
+failure; its symptom, correction and source history are retained here rather than relabeled PASS.
+
+The final #194 lifecycle preflight also stopped before namespace creation when a new image build
+raised worker image-filesystem use from 74% to the 75% gate. Clearing inventoried, unreferenced Pack
+caches and one obsolete native-build cache restored 72%, while every image and application data
+volume remained intact. Check headroom **after builds**, before image loading or workload creation;
+reuse the completed image-build phase when retrying the fresh lifecycle gate. The previously passed
+full Query/placement gates need no rerun for this environment-only cleanup.
+
 For shutdown verification, a completed normal drain is valid; a test must not require an
 artificially live JVM afterward. A removed Pod IP may time out after its server has stopped.
 Accept positive transport rejection or independently verified CRI/task/original-PID fencing,
