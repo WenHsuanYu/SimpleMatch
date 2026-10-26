@@ -115,6 +115,22 @@ select_query_fixture
         self.assertEqual(selected["accountId"], self.accounts["X"])
         self.assertEqual(selected["orderId"], self.orders["X"])
 
+    def test_lifecycle_parents_cover_each_account_with_and_without_executions(self):
+        sys.path.insert(0, str(REPOSITORY / "scripts/end-to-end/query-service"))
+        from lib.read_fixtures import lifecycle_orders
+        identities = json.loads((self.bundle / "fixture-identities.json").read_text())
+        resources, statement = lifecycle_orders(identities, "2026-08-11:approved-fixture")
+        self.sql(statement)
+        for order in resources["orders"]:
+            facts = json.loads(self.sql("SELECT json_build_object('accountId', parent.account_id, "
+                "'executions', (SELECT count(*) FROM query_service.execution_read_model execution "
+                "WHERE execution.order_id=parent.order_id)) FROM query_service.order_read_model parent "
+                f"WHERE parent.order_id='{order['orderId']}';"))
+            self.assertEqual(facts["accountId"], identities["accounts"][order["account"]])
+            self.assertEqual(facts["executions"], 1 if order["hasExecutions"] else 0)
+        self.assertEqual(self.sql("SELECT count(*) FROM query_service.order_read_model "
+            f"WHERE order_id='{resources['missingOrderId']}';").strip(), "0")
+
     def test_missing_expected_order_does_not_select_another_accounts_execution(self):
         self.sql(f"DELETE FROM query_service.execution_read_model WHERE order_id='{self.orders['X']}';"
                  f"DELETE FROM query_service.order_read_model WHERE order_id='{self.orders['X']}';")
