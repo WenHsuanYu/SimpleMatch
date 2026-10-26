@@ -87,6 +87,9 @@ jq '(.order,.executions,.accountSummary,.marketReference).freshness =
 mv "$fixture_dir/minimal-baseline.json" "$fixture_dir/baseline.json"
 cp "$fixture_dir/baseline.json" "$fixture_dir/redis-outage.json"
 cp "$fixture_dir/baseline.json" "$fixture_dir/rebuilt.json"
+printf '%s\n' '{"status":"PASS","replicas":2,"observations":100}' >"$fixture_dir/read-matrix.json"
+printf '%s\n' '{"status":"PASS","seededEntries":4,"unchangedAfterReads":true}' >"$fixture_dir/legacy-cache.json"
+jq -n '{status:"PASS",observations:[range(0;9)|{status:401}]}' >"$fixture_dir/operator-boundary.json"
 cat >"$fixture_dir/restoration.json" <<'JSON'
 {"queryServiceReady":true,"queryOutageObserved":true,"matchingReady":15,"criticalConsumersReady":true}
 JSON
@@ -208,7 +211,7 @@ if ! evaluate_query_service_verdict "$fixture_dir" "$fixture_dir/verdict.json"; 
   cat "$fixture_dir/verdict.json" >&2
   exit 1
 fi
-jq -e '.contractVersion == "query-security-phase1/1"
+jq -e '.contractVersion == "query-security-phase1/2"
   and .status == "PASS" and (.checks | all(.passed == true))' \
   "$fixture_dir/verdict.json" >/dev/null
 jq -e '.activeProcessingLiveness.status == "PROVEN"' \

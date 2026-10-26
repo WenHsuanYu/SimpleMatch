@@ -474,6 +474,15 @@ certification_phase_input_manifest() {
         scripts/end-to-end/query-service/lib/certification_security.py \
         scripts/end-to-end/query-service/tests/certification-fixtures-contract.py \
         scripts/end-to-end/query-service/tests/certification-inputs-contract.py \
+        scripts/end-to-end/query-service/tests/read-matrix-contract.py \
+        scripts/end-to-end/query-service/tests/operator-boundary-contract.py \
+        scripts/end-to-end/query-service/lib/read_matrix.py \
+        scripts/end-to-end/query-service/lib/operator_boundary.py \
+        scripts/end-to-end/critical-consumers/lib/test-interfaces.sh \
+        scripts/end-to-end/critical-consumers/tests/operator-credential-contract.sh \
+        scripts/test-local-certification-focused-diagnostic.sh \
+        scripts/lib/local-certification-focused-diagnostic.sh \
+        scripts/lib/local-certification-runtime-provenance.sh \
         scripts/lib/local-certification-kubernetes.sh \
         scripts/lib/local-certification-bootstrap.sh \
         scripts/lib/local-certification-run.sh \
@@ -601,6 +610,12 @@ certification_phase_input_manifest() {
         scripts/end-to-end/query-service/provision-security-fixtures.py \
         scripts/end-to-end/query-service/security-lifecycle.py \
         scripts/end-to-end/query-service/lib/security_lab.py \
+        scripts/end-to-end/query-service/lib/read_matrix.py \
+        scripts/end-to-end/query-service/lib/read_fixtures.py \
+        scripts/end-to-end/query-service/lib/query_http.py \
+        scripts/end-to-end/query-service/tests/read-matrix-contract.py \
+        scripts/end-to-end/query-service/tests/collector-postgres-contract.py \
+        scripts/lib/local-certification-runtime-provenance.sh \
         services/query-service deploy/k8s \
         scripts/lib/local-certification-phase-graph.sh \
         scripts/lib/local-certification-fingerprint.sh \

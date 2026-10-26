@@ -10,7 +10,7 @@ expected=$'source-preflight\nlocal-image-inventory\nlocal-image-build/query-serv
   exit 1
 }
 [[ "$(certification_phase_policy query-security-lifecycle)" == FRESH ]]
-[[ "$(certification_phase_definition_version query-security-lifecycle)" == 1 ]]
+[[ "$(certification_phase_definition_version query-security-lifecycle)" == 2 ]]
 bash "$root/scripts/run-query-security-lifecycle.sh" --help | grep -Fq -- '--directory'
 if bash "$root/scripts/run-query-security-lifecycle.sh" --resume 2>/dev/null; then
   printf '%s\n' 'A lifecycle proof cannot resume by initializing another V1.' >&2

@@ -14,6 +14,9 @@ import time
 import uuid
 from pathlib import Path
 
+from .read_fixtures import lifecycle_orders
+from .read_matrix import reader, verify
+
 
 LABEL = "simplematch.io/query-security-run"
 
@@ -347,8 +350,31 @@ class Lab:
 
     def sql(self, statement):
         result = self.kube("exec", "postgres-0", "--", "psql", "-U", "simplematch", "-d", "simplematch",
-                           "-At", "-v", "ON_ERROR_STOP=1", "-c", statement)
+                           "-qAt", "-v", "ON_ERROR_STOP=1", "-c", statement)
         return [json.loads(line) for line in result.stdout.splitlines() if line]
+
+    def seed_orders(self, bundle):
+        """Seed migrated read rows for HTTP security; do not represent these rows as replay evidence."""
+        identities = json.loads((bundle / "fixture-identities.json").read_text())
+        self.read_resources, statement = lifecycle_orders(identities, self.artifact_id)
+        self.sql(statement)
+        facts = []
+        for order in self.read_resources["orders"]:
+            rows = self.sql("SELECT json_build_object('accountId',parent.account_id,'executionCount',"
+                "(SELECT count(*) FROM query_service.execution_read_model execution "
+                "WHERE execution.order_id=parent.order_id)) FROM query_service.order_read_model parent "
+                f"WHERE parent.order_id='{order['orderId']}';")
+            if (len(rows) != 1 or rows[0]["accountId"] != identities["accounts"][order["account"]]
+                    or rows[0]["executionCount"] != int(order["hasExecutions"])):
+                raise RuntimeError("Durable parent fixture differs from the approved resource facts")
+            facts.append({"orderId": order["orderId"], **rows[0]})
+        missing = self.sql("SELECT json_build_object('count',count(*)) FROM query_service.order_read_model "
+            f"WHERE order_id='{self.read_resources['missingOrderId']}';")
+        if missing != [{"count": 0}]:
+            raise RuntimeError("The missing-parent fixture is not absent")
+        self.save("read-fixture-durable-facts.json", {"source": "Query DML; not Matching replay", "parents": facts,
+                                                     "missingParentCount": 0})
+        self.save("read-resources.json", self.read_resources)
 
     def forward(self, target, remote):
         with socket.socket() as server:
@@ -561,8 +587,7 @@ class Lab:
     def matrix(self, endpoints, bundle, version, disabled=False):
         credentials = json.loads((bundle / "credentials.json").read_text())
         identities = json.loads((bundle / "fixture-identities.json").read_text())
-        allowed = {"client-a": {"X"}, "client-b": {"Y"}, "client-c": {"X", "Y"} if version == 1 else {"X"},
-                   "operations": set(), "client-d": set()}
+        profile = "d-disabled" if disabled else ("initial" if version == 1 else "c-y-revoked")
         observations = []
         for endpoint in endpoints:
             pod = json.loads(self.kube("get", "pod", endpoint["pod"], "-o", "json").stdout)
@@ -580,28 +605,14 @@ class Lab:
             actual_image = json.loads(self.docker("exec", endpoint["node"], "crictl", "inspecti", self.image).stdout)
             if actual_image["status"]["id"] != self.image_config_id:
                 raise RuntimeError("Runtime image no longer matches this run's approved image")
-            for alias, grants in allowed.items():
-                token = credentials[alias]["token"]
-                for account in ("X", "Y"):
-                    expected = 401 if disabled and alias == "client-d" else (200 if account in grants else 404)
-                    code, body, active_version = self.http(endpoint,
-                        "/api/v1/accounts/" + identities["accounts"][account] + "/summary", token)
-                    if code != expected or (expected != 401 and active_version != str(version)):
-                        raise RuntimeError("Account matrix or active policy version mismatch")
-                    if code == 200 and (json.loads(body)["data"]["accountId"] != identities["accounts"][account]
-                                        or json.loads(body)["data"]["reservedNotionalUnits"] != self.expected[account]):
-                        raise RuntimeError("Account projection does not match the captured source facts")
-                    if code in (401, 404) and body:
-                        raise RuntimeError("Denied resource exposed an error body")
-                    observations.append({"pod": endpoint["pod"], "principal": alias, "account": account, "status": code})
-                code, _, _ = self.http(endpoint, "/api/v1/freshness", token)
-                if code != (401 if disabled and alias == "client-d" else (200 if alias == "operations" else 403)):
-                    raise RuntimeError("Operations permission changed")
-                code, body, _ = self.http(endpoint, "/api/v1/market-reference/2026-08-11/XTAI/2330", token)
-                if code != (401 if disabled and alias == "client-d" else 200):
-                    raise RuntimeError("Independent Market permission changed")
-                if code == 200 and json.loads(body)["data"]["artifactId"] != self.artifact_id:
-                    raise RuntimeError("Historical artifact identity changed")
+            read = reader("http://127.0.0.1:" + str(endpoint["port"]))
+            observations += [{"pod": endpoint["pod"], **row} for row in verify(
+                read, identities, credentials, self.read_resources, version, profile)]
+            for account, alias in (("X", "client-a"), ("Y", "client-b")):
+                code, body, _ = read("/api/v1/accounts/" + identities["accounts"][account] + "/summary",
+                                     credentials[alias]["token"])
+                if code != 200 or json.loads(body)["data"]["reservedNotionalUnits"] != self.expected[account]:
+                    raise RuntimeError("Account projection does not match the captured source facts")
         return observations
 
     def publish(self, bundle, batch):

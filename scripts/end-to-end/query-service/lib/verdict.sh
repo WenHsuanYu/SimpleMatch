@@ -18,6 +18,9 @@ evaluate_query_service_verdict() {
     --slurpfile redisOutage "$evidence_dir/redis-outage.json" \
     --slurpfile rebuilt "$evidence_dir/rebuilt.json" \
     --slurpfile restoration "$evidence_dir/restoration.json" \
+    --slurpfile readMatrix "$evidence_dir/read-matrix.json" \
+    --slurpfile legacyCache "$evidence_dir/legacy-cache.json" \
+    --slurpfile operatorBoundary "$evidence_dir/operator-boundary.json" \
     "${active_evidence_args[@]}" '
       def business_view:
         {
@@ -284,9 +287,18 @@ evaluate_query_service_verdict() {
           )
         }
       ] as $checks
+      | ($checks + [
+          {name:"deployedReadMatrix",passed:($readMatrix[0].status == "PASS"
+            and $readMatrix[0].replicas >= 2 and $readMatrix[0].observations >= 100)},
+          {name:"obsoleteCacheIgnored",passed:($legacyCache[0].status == "PASS"
+            and $legacyCache[0].seededEntries == 4 and $legacyCache[0].unchangedAfterReads == true)},
+          {name:"operatorCredentialSeparation",passed:($operatorBoundary[0].status == "PASS"
+            and ($operatorBoundary[0].observations | length) == 9
+            and all($operatorBoundary[0].observations[]; .status == 401))}
+        ]) as $securityChecks
       | {
-          contractVersion:"query-security-phase1/1",
-          status:(if all($checks[]; .passed) then "PASS" else "FAIL" end),
+          contractVersion:"query-security-phase1/2",
+          status:(if all($securityChecks[]; .passed) then "PASS" else "FAIL" end),
           activeProcessingLiveness:{
             status:(if $activePassed then "PROVEN" else "NOT_PROVEN" end),
             reason:(if $activePassed
@@ -294,7 +306,7 @@ evaluate_query_service_verdict() {
               else "active processing evidence is missing or does not prove the public IOC event path"
               end)
           },
-          checks:$checks
+          checks:$securityChecks
         }
     ' >"$destination"
 

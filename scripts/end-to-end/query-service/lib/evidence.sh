@@ -37,6 +37,7 @@ select_query_fixture() {
       'orderId', execution.order_id,
       'accountId', execution.account_id,
       'tradingDay', reference.trading_day,
+      'artifactId', reference.artifact_id,
       'venueMic', TRIM(execution.venue_mic),
       'symbol', execution.symbol
     )
@@ -61,6 +62,96 @@ select_query_fixture() {
   " "$evidence_dir/selected-fixture.json" || return 1
   jq -e -s 'length == 1 and (.[0] | type == "object")' \
     "$evidence_dir/selected-fixture.json" >/dev/null
+}
+
+capture_query_read_matrix() {
+  local matrix_dir="$evidence_dir/read-matrix" pod selector expected
+  mkdir -m 700 "$matrix_dir"
+  jq -n --slurpfile selected "$evidence_dir/selected-fixture.json" \
+    --slurpfile fixture "$evidence_dir/matching-fixture/fixture.json" \
+    --arg missing "$(cat /proc/sys/kernel/random/uuid)" '
+      {orders:[{account:"X",orderId:$fixture[0].buy.orderId,hasExecutions:true},
+               {account:"Y",orderId:$fixture[0].sell.orderId,hasExecutions:true}],
+       missingOrderId:$missing,
+       market:($selected[0] | {tradingDay,venueMic,symbol,artifactId})}
+    ' >"$matrix_dir/resources.json"
+  chmod 600 "$matrix_dir/resources.json"
+  local missing_order
+  missing_order="$(jq -er '.missingOrderId' "$matrix_dir/resources.json")"
+  query_postgres_json "SELECT json_build_object('count',count(*)) FROM query_service.order_read_model
+    WHERE order_id='$missing_order';" "$matrix_dir/missing-parent.json" || return 1
+  jq -e '.count == 0' "$matrix_dir/missing-parent.json" >/dev/null || return 1
+  kns get deployment query-service -o json >"$matrix_dir/deployment.json"
+  expected="$(jq -er '.spec.replicas | select(. >= 2)' "$matrix_dir/deployment.json")" || return 1
+  selector="$(jq -r '.spec.selector.matchLabels | to_entries | map(.key+"="+.value) | join(",")' \
+    "$matrix_dir/deployment.json")"
+  kns get pods -l "$selector" -o json >"$matrix_dir/pods-before.json"
+  jq -e --argjson expected "$expected" '
+    (.items | length) == $expected and all(.items[];
+      .metadata.deletionTimestamp == null and any(.status.conditions[]; .type == "Ready" and .status == "True"))
+    ' "$matrix_dir/pods-before.json" >/dev/null || return 1
+  stop_query_port_forward || return 1
+  while IFS= read -r pod; do
+    start_port_forward "pod/$pod" 8086 "$matrix_dir/$pod-forward.log" query_port_forward_pid query_port || {
+      stop_query_port_forward
+      return 1
+    }
+    if ! python3 "$script_dir/lib/read_matrix.py" --fixture-directory "$query_fixture_directory" \
+      --resources "$matrix_dir/resources.json" --base-url "http://127.0.0.1:$query_port" \
+      --policy-version 1 --profile initial --output "$matrix_dir/$pod.json"; then
+      stop_query_port_forward
+      return 1
+    fi
+    stop_query_port_forward || return 1
+  done < <(jq -r '.items[].metadata.name' "$matrix_dir/pods-before.json")
+  start_query_port_forward
+  kns get pods -l "$selector" -o json >"$matrix_dir/pods-after.json"
+  jq -e -s '([.[0].items[].metadata.uid] | sort) == ([.[1].items[].metadata.uid] | sort)' \
+    "$matrix_dir/pods-before.json" "$matrix_dir/pods-after.json" >/dev/null || return 1
+  jq -s --argjson expected "$expected" \
+    'select(length == $expected and all(.[]; .status == "PASS")) |
+     {status:"PASS",replicas:length,observations:(map(.observations|length)|add)}' \
+    "$matrix_dir"/query-service-*.json >"$evidence_dir/read-matrix.json"
+  jq -e '.status == "PASS"' "$evidence_dir/read-matrix.json" >/dev/null
+}
+
+seed_legacy_query_cache() {
+  local key kind payload="$evidence_dir/diagnostics/legacy-cache-payload.json"
+  mkdir -m 700 "$evidence_dir/legacy-cache"
+  jq -n --slurpfile ids "$query_fixture_directory/fixture-identities.json" --arg order "$order_id" '
+    {data:{orderId:$order,accountId:$ids[0].accounts.Y,artifactId:"legacy-cache-poison"},
+     freshness:{partitions:[{sourceTopic:"legacy-cache-poison",partition:0,
+       lastProcessedOffset:0,recoveryState:"READY",updatedAtUnixMs:1}]}}
+    ' >"$payload"
+  for kind in order executions account-summary market-reference; do
+    case "$kind" in
+      order|executions) key="query:v1:$kind:$order_id" ;;
+      account-summary) key="query:v1:$kind:$account_id" ;;
+      market-reference) key="query:v1:$kind:$trading_day:$venue_mic:$symbol" ;;
+    esac
+    kns exec -i deployment/redis -c redis -- redis-cli -x SET "$key" <"$payload" \
+      >"$evidence_dir/legacy-cache/$kind-set.txt" || return 1
+    kns exec deployment/redis -c redis -- redis-cli --raw GET "$key" \
+      >"$evidence_dir/legacy-cache/$kind-before.json" || return 1
+    jq -e '.freshness.partitions[0].sourceTopic == "legacy-cache-poison"' \
+      "$evidence_dir/legacy-cache/$kind-before.json" >/dev/null || return 1
+  done
+}
+
+verify_legacy_query_cache_unchanged() {
+  local kind key
+  for kind in order executions account-summary market-reference; do
+    case "$kind" in
+      order|executions) key="query:v1:$kind:$order_id" ;;
+      account-summary) key="query:v1:$kind:$account_id" ;;
+      market-reference) key="query:v1:$kind:$trading_day:$venue_mic:$symbol" ;;
+    esac
+    kns exec deployment/redis -c redis -- redis-cli --raw GET "$key" \
+      >"$evidence_dir/legacy-cache/$kind-after.json" || return 1
+    cmp "$evidence_dir/legacy-cache/$kind-before.json" "$evidence_dir/legacy-cache/$kind-after.json" || return 1
+  done
+  printf '%s\n' '{"status":"PASS","seededEntries":4,"unchangedAfterReads":true}' \
+    >"$evidence_dir/legacy-cache.json"
 }
 
 wait_for_query_fixture() {

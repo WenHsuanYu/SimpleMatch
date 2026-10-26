@@ -2,7 +2,7 @@
 
 # Reversible lifecycle for query certification. The caller owns run state.
 stop_query_port_forward() {
-  stop_background_process "${query_port_forward_pid:-}"
+  stop_background_process "${query_port_forward_pid:-}" || return 1
   query_port_forward_pid=""
   query_port=""
 }
@@ -28,7 +28,7 @@ restore_query_certification_environment() {
   if declare -F restore_gateway_environment >/dev/null 2>&1; then
     restore_gateway_environment
   fi
-  stop_query_port_forward
+  stop_query_port_forward || restoration_failed=true
   if [[ "$redis_scaled" == true && -n "$original_redis_replicas" ]]; then
     if scale_deployment redis "$original_redis_replicas"; then
       redis_scaled=false

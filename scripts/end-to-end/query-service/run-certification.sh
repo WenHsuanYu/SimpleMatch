@@ -141,8 +141,9 @@ reset_query_state() {
   local response="$evidence_dir/reset-response.json"
   local status
   status="$(curl --connect-timeout 2 --max-time 30 -sS -o "$response" -w '%{http_code}' \
-    -X POST -H "X-SimpleMatch-Query-Token: $operator_token" \
-    "http://127.0.0.1:${query_port}/internal/query/rebuild")" || return 1
+    -X POST --config - \
+    "http://127.0.0.1:${query_port}/internal/query/rebuild" \
+    <<<"header = \"X-SimpleMatch-Query-Token: $operator_token\"")" || return 1
   [[ "$status" == 200 ]] || return 1
   jq -e '.status == "RESET_COMPLETE"' "$response" >/dev/null
 }
@@ -182,7 +183,7 @@ done
   die "SIMPLEMATCH_QUERY_ISOLATION_COMMAND_TIMEOUT_SECONDS must be positive"
 (( query_isolation_command_timeout_seconds <= 30 )) ||
   die "SIMPLEMATCH_QUERY_ISOLATION_COMMAND_TIMEOUT_SECONDS must not exceed 30"
-for tool in kubectl docker jq curl python3 git awk sed grep date seq sleep timeout tr cp mv cat wc; do
+for tool in kubectl docker jq curl python3 git awk sed grep date seq sleep timeout tr cp mv cat wc cmp; do
   command -v "$tool" >/dev/null 2>&1 || die "$tool is required"
 done
 python3 "$script_dir/lib/query_http.py" --fixture-directory "$query_fixture_directory" \
@@ -236,6 +237,8 @@ account_id="$(jq -er '.accountId | select(length > 0)' "$evidence_dir/selected-f
 trading_day="$(jq -er '.tradingDay | select(length == 10)' "$evidence_dir/selected-fixture.json")"
 venue_mic="$(jq -er '.venueMic | select(length == 4)' "$evidence_dir/selected-fixture.json")"
 symbol="$(jq -er '.symbol | select(length > 0)' "$evidence_dir/selected-fixture.json")"
+current_stage="seed obsolete Redis response envelopes"
+seed_legacy_query_cache || die "cannot establish the obsolete Redis response fixtures"
 kns get deployment query-service redis -o json >"$evidence_dir/deployments-before.json"
 jq -n \
   --arg sourceRevision "$(git -C "$repo_root" rev-parse HEAD)" \
@@ -244,6 +247,8 @@ jq -n \
   '{sourceRevision:$sourceRevision,namespace:$namespace,
     retainedEvidenceDir:$retainedEvidenceDir}' >"$evidence_dir/provenance.json"
 capture_query_snapshot "$evidence_dir/baseline.json" || die "cannot capture baseline query views"
+capture_query_read_matrix || die "deployed Query replicas failed the approved read matrix"
+verify_legacy_query_cache_unchanged || die "business reads modified the obsolete Redis fixtures"
 
 current_stage="verify PostgreSQL-only reads during Redis outage"
 redis_scaled=true
@@ -291,12 +296,21 @@ operator_token="$(tr -d '-' </proc/sys/kernel/random/uuid)"
 query_scaled=true
 scale_deployment query-service 1 || die "query-service could not be scaled for rebuild"
 query_environment_modified=true
+set_certification_operator_env deployment/query-service \
+  SIMPLEMATCH_QUERY_SERVICE_REBUILD_OPERATOR_TOKEN "$operator_token" || die "cannot install the independent operator Secret"
 kns set env deployment/query-service \
-  SIMPLEMATCH_QUERY_SERVICE_REBUILD_HTTP_ENABLED=true \
-  SIMPLEMATCH_QUERY_SERVICE_REBUILD_OPERATOR_TOKEN="$operator_token" >/dev/null
+  SIMPLEMATCH_QUERY_SERVICE_REBUILD_HTTP_ENABLED=true >/dev/null
 wait_deployment_replicas query-service 1 || die "query rebuild adapter is not ready"
 stop_query_port_forward
 start_query_port_forward
+
+current_stage="verify independent operator authorization"
+mkdir -m 700 "$evidence_dir/private"
+printf '{"token":"%s"}\n' "$operator_token" >"$evidence_dir/private/rebuild-operator.json"
+chmod 600 "$evidence_dir/private/rebuild-operator.json"
+python3 "$script_dir/lib/operator_boundary.py" --fixture-directory "$query_fixture_directory" \
+  --operator-token-file "$evidence_dir/private/rebuild-operator.json" --base-url "http://127.0.0.1:$query_port" \
+  --output "$evidence_dir/operator-boundary.json" || die "Query/operator credentials are not independent"
 
 current_stage="reset and replay retained query sources"
 replay_boundary_dir="$evidence_dir/replay-boundary"

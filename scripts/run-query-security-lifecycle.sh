@@ -32,6 +32,8 @@ evidence_dir="$(realpath -m "$evidence_dir")"
 mkdir -p "$(dirname "$evidence_dir")"
 mkdir -m 700 "$evidence_dir"
 cd "$repo_root"
+source "$repo_root/scripts/lib/local-certification-runtime-provenance.sh"
+source_signature="$(simplematch_certification_source_revision "$repo_root")"
 export DOCKER_HOST
 DOCKER_HOST="$(docker context inspect "$docker_context" --format '{{.Endpoints.docker.Host}}')"
 unset DOCKER_CONTEXT
@@ -41,7 +43,6 @@ query_security_lifecycle_only=true
 dry_run=false
 resume=false
 run_id="query-security-$(date -u +%Y%m%dT%H%M%S)-$$"
-source_signature="$(git rev-parse HEAD)"
 source "$repo_root/scripts/lib/local-certification-phase-graph.sh"
 source "$repo_root/scripts/lib/local-certification-fingerprint.sh"
 source "$repo_root/scripts/lib/local-certification-evidence.sh"

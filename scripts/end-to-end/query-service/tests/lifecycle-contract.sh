@@ -33,6 +33,15 @@ environment_mutation_line="$(grep -n 'SIMPLEMATCH_QUERY_SERVICE_REBUILD_HTTP_ENA
 
 (
   source "$lifecycle_module"
+(
+  query_port_forward_pid=12345 query_port=9999
+  stop_background_process() { return 1; }
+  if stop_query_port_forward; then
+    printf '%s\n' 'A failed port-forward stop cannot erase its cleanup identity.' >&2
+    exit 1
+  fi
+  [[ "$query_port_forward_pid" == 12345 && "$query_port" == 9999 ]]
+)
   original_redis_replicas=1
   original_query_replicas=1
   redis_scaled=true

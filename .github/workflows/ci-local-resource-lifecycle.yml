@@ -111,6 +111,7 @@ jobs:
           bash scripts/end-to-end/critical-consumers/tests/verdict-contract.sh
           bash scripts/end-to-end/critical-consumers/tests/admission-contract.sh
           bash scripts/end-to-end/critical-consumers/tests/gateway-close-contract.sh
+          bash scripts/end-to-end/critical-consumers/tests/operator-credential-contract.sh
           bash scripts/end-to-end/critical-consumers/tests/verifier-helper-contract.sh
           bash scripts/end-to-end/critical-consumers/tests/verifier-image-identity-test.sh
           ruby scripts/end-to-end/critical-consumers/tests/resting-buy-verification-test.rb
@@ -126,6 +127,8 @@ jobs:
           python3 scripts/end-to-end/query-service/tests/certification-fixtures-contract.py
           python3 scripts/end-to-end/query-service/tests/certification-inputs-contract.py
           python3 scripts/end-to-end/query-service/tests/collector-http-contract.py
+          python3 scripts/end-to-end/query-service/tests/read-matrix-contract.py
+          python3 scripts/end-to-end/query-service/tests/operator-boundary-contract.py
           bash scripts/test-local-java-placement-serving.sh
           python3 scripts/end-to-end/query-service/tests/policy-authority-contract.py
           python3 scripts/end-to-end/query-service/tests/lifecycle-deadline-contract.py

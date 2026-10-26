@@ -370,6 +370,7 @@ def run(arguments):
                 lab.image_config_id = labs[0].image_config_id
             first = lab.create()
             lab.platform()
+            lab.seed_orders(first)
             lab.publish(first, "baseline")
             lab.deploy(first)
             endpoints = lab.endpoints(lab.ready())
