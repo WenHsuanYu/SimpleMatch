@@ -50,6 +50,7 @@ simplematch_certification_source_revision() {
 simplematch_certification_cdc_runtime_source_paths() {
   printf '%s\n' \
     scripts/lib/local-certification-runtime-provenance.sh \
+    scripts/end-to-end/query-service/lib/certification_security.py \
     scripts/lib/local-certification-provenance.sh \
     scripts/lib/local-common.sh \
     scripts/lib/local-certification-phase-graph.sh \

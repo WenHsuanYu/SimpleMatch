@@ -169,7 +169,7 @@ simplematch_focused_load_context() {
     value="${line#*=}"
     case "$key" in
       run_id|namespace|cluster|trading_day|image_tag|image_transport|source_signature|\
-      cdc_runtime_signature|cdc_verifier_signature|\
+      cdc_runtime_signature|cdc_verifier_signature|query_security_input_digest|query_security_deployed_digest|\
       skip_build|skip_compose|skip_kubernetes|matching_fleet_only)
         ;;
       *)
@@ -182,9 +182,16 @@ simplematch_focused_load_context() {
     [[ -n "$value" && "$value" != *[[:space:]]* ]] || \
       simplematch_focused_fail "retained run context has an invalid value for $key" ||
       return 1
+    if [[ "$key" == query_security_*_digest && "$value" != not-required && ! "$value" =~ ^[0-9a-f]{64}$ ]]; then
+      simplematch_focused_fail 'retained Query security input digest is invalid' || return 1
+    fi
     seen["$key"]=true
     SIMPLEMATCH_FOCUSED_CONTEXT["$key"]="$value"
   done <"$context_file"
+  if [[ "${SIMPLEMATCH_FOCUSED_CONTEXT[query_security_input_digest]:-not-required}" != not-required &&
+        ! "${SIMPLEMATCH_FOCUSED_CONTEXT[query_security_deployed_digest]:-}" =~ ^[0-9a-f]{64}$ ]]; then
+    simplematch_focused_fail 'secured retained run is missing its deployed security identity' || return 1
+  fi
 
   for key in \
       run_id namespace cluster trading_day image_tag image_transport source_signature \
@@ -489,6 +496,14 @@ simplematch_focused_validate_kubernetes_inputs() {
   secrets_json="$(simplematch_focused_kubectl --context \
     "$SIMPLEMATCH_FOCUSED_KIND_CONTEXT" -n "$namespace" get secrets -o json)" ||
     simplematch_focused_fail 'could not read retained PostgreSQL secrets' || return 1
+  if [[ "${SIMPLEMATCH_FOCUSED_CONTEXT[query_security_input_digest]:-not-required}" != not-required ]]; then
+    local security_digest
+    security_digest="$(python3 "$focused_repo_root/scripts/end-to-end/query-service/lib/certification_security.py" \
+      --observed-fingerprint <<<"$secrets_json")" || simplematch_focused_fail \
+      'retained Query/FIX security snapshots are invalid' || return 1
+    [[ "$security_digest" == "${SIMPLEMATCH_FOCUSED_CONTEXT[query_security_deployed_digest]}" ]] ||
+      simplematch_focused_fail 'retained Query/FIX security snapshots changed' || return 1
+  fi
 
   [[ "$(simplematch_focused_secret_value "$secrets_json" \
     simplematch-flyway-secrets postgres_dsn)" == "$expected_dsn" ]] ||

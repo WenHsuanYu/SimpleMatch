@@ -121,8 +121,8 @@ def validate_stores(directory, client_environment):
 def secret_files(directory):
     """Declare only the secret keys owned by this synthetic input producer."""
     return {
-        "query-service-secrets": {"application.properties": directory / "application.properties"},
-        "quickfix-gateway-secrets": {"application.properties": directory / "fix/application.properties"},
+        "query-service-secrets": {"query-service.properties": directory / "application.properties"},
+        "quickfix-gateway-secrets": {"quickfix-gateway.properties": directory / "fix/application.properties"},
         "quickfix-gateway-fix-tls": {name: directory / "fix" / name
                                      for name in ("server.p12", "clients.p12")},
     }
@@ -141,6 +141,22 @@ def fingerprint(directory):
     return digest.hexdigest()
 
 
+def deployed_fingerprint(document=None, directory=None):
+    """Bind the server-side subset without retaining plaintext or requiring client private material."""
+    declared = secret_files(directory or Path("."))
+    observed = {item["metadata"]["name"]: item for item in document["items"]} if document else None
+    hashes = {}
+    for name, files in declared.items():
+        if observed is not None:
+            secret = observed[name]
+            allowed = set(files) | ({"postgres_dsn"} if name.endswith("-secrets") else set())
+            if secret.get("immutable") is not True or set(secret["data"]) != allowed:
+                raise ValueError("Unexpected deployed security snapshot")
+        hashes[name] = {key: hashlib.sha256(base64.b64decode(observed[name]["data"][key], validate=True)
+            if observed is not None else private_bytes(path)).hexdigest() for key, path in files.items()}
+    return hashlib.sha256(json.dumps(hashes, sort_keys=True, separators=(",", ":")).encode()).hexdigest()
+
+
 def verify_secrets(directory, context, namespace):
     """Reject retained inputs that differ from this run's private bundle, without logging values."""
     expected = secret_files(directory)
@@ -152,6 +168,9 @@ def verify_secrets(directory, context, namespace):
         secret = secrets[name]
         if secret.get("immutable") is not True:
             raise ValueError("Certification security snapshots must be immutable")
+        allowed = set(files) | ({"postgres_dsn"} if name.endswith("-secrets") else set())
+        if set(secret["data"]) != allowed:
+            raise ValueError("Retained security snapshot contains missing or competing configuration keys")
         for key, path in files.items():
             if base64.b64decode(secret["data"][key], validate=True) != private_bytes(path):
                 raise ValueError("Retained security inputs differ from this fixture bundle")
@@ -159,19 +178,31 @@ def verify_secrets(directory, context, namespace):
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--fixture-directory", type=Path, required=True)
+    parser.add_argument("--fixture-directory", type=Path)
     parser.add_argument("--verify-context")
     parser.add_argument("--verify-namespace")
     parser.add_argument("--fingerprint", action="store_true")
+    parser.add_argument("--deployed-fingerprint", action="store_true")
+    parser.add_argument("--observed-fingerprint", action="store_true")
     parser.add_argument("--exec", dest="command", nargs=argparse.REMAINDER)
     arguments = parser.parse_args()
     try:
+        if arguments.observed_fingerprint:
+            if (arguments.fixture_directory or arguments.fingerprint or arguments.deployed_fingerprint
+                    or arguments.command is not None or arguments.verify_context or arguments.verify_namespace):
+                raise ValueError("Observed fingerprinting is a separate read-only operation")
+            print(deployed_fingerprint(document=json.load(sys.stdin)))
+            return 0
+        if arguments.fixture_directory is None:
+            raise ValueError("Private certification inputs are required")
         directory = arguments.fixture_directory.absolute()
         environment = load(directory)
-        if arguments.fingerprint:
+        if arguments.fingerprint or arguments.deployed_fingerprint:
+            if arguments.fingerprint and arguments.deployed_fingerprint:
+                raise ValueError("Choose one input identity")
             if arguments.command is not None or arguments.verify_context or arguments.verify_namespace:
                 raise ValueError("Fingerprinting is a separate operation")
-            print(fingerprint(directory))
+            print(fingerprint(directory) if arguments.fingerprint else deployed_fingerprint(directory=directory))
             return 0
         if bool(arguments.verify_context) != bool(arguments.verify_namespace):
             raise ValueError("Verification requires an explicit context and namespace")

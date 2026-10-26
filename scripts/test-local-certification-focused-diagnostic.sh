@@ -87,6 +87,14 @@ write_secrets_json() {
       --arg dsn "$(encode "$dsn")" \
       '. + [{metadata:{name:$name},data:{postgres_dsn:$dsn}}]' <<<"$secrets")"
   done
+  secrets="$(jq --arg policy "$(encode 'synthetic-approved-policy')" \
+    --arg store "$(encode 'synthetic-approved-store')" '
+    map(if .metadata.name == "query-service-secrets" then
+      .immutable=true | .data["query-service.properties"]=$policy
+      elif .metadata.name == "quickfix-gateway-secrets" then
+      .immutable=true | .data["quickfix-gateway.properties"]=$policy else . end)
+    + [{metadata:{name:"quickfix-gateway-fix-tls"},immutable:true,
+        data:{"server.p12":$store,"clients.p12":$store}}]' <<<"$secrets")"
   jq -n --argjson items "$secrets" '{apiVersion:"v1",kind:"SecretList",items:$items}' >"$output_file"
 }
 
@@ -263,6 +271,7 @@ write_fixture() {
     "source_signature=$source_signature" \
     "cdc_runtime_signature=$runtime_signature" \
     "cdc_verifier_signature=$verifier_signature" \
+    'query_security_input_digest=aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa' \
     "skip_build=${profile_override:-false}" \
     'skip_compose=false' \
     'skip_kubernetes=false' \
@@ -275,6 +284,10 @@ write_fixture() {
   jq -n '{data:{"application.yaml":"simplematch:\n  maximum-metric-age: 60s\n"}}' \
     >"$evidence_dir/risk-service-config.json"
   write_secrets_json "$evidence_dir/secrets.json"
+  local security_digest
+  security_digest="$(python3 "$repo_root/scripts/end-to-end/query-service/lib/certification_security.py" \
+    --observed-fingerprint <"$evidence_dir/secrets.json")"
+  printf 'query_security_deployed_digest=%s\n' "$security_digest" >>"$evidence_dir/run-context"
   write_workload_json "$image_lock" "$evidence_dir/workloads.json"
   write_dependencies "$evidence_dir"
   printf '%s\n' "$(git -C "$repo_root" rev-parse HEAD)" \
@@ -395,6 +408,19 @@ replace_context_value() {
 base_fixture="$fixture_root/base"
 write_fixture "$base_fixture" "$source_signature" \
   "$current_runtime_signature" "$fake_verifier_signature"
+
+security_fixture="$fixture_root/security-drift"
+cp -R -- "$base_fixture" "$security_fixture"
+jq '(.items[] | select(.metadata.name == "query-service-secrets") |
+  .data["query-service.properties"]) = "Y2hhbmdlZC1wb2xpY3k="' \
+  "$security_fixture/secrets.json" >"$security_fixture/secrets.json.tmp"
+mv -- "$security_fixture/secrets.json.tmp" "$security_fixture/secrets.json"
+run_preflight_expect_failure security-drift "$security_fixture"
+
+security_identity_fixture="$fixture_root/missing-security-identity"
+cp -R -- "$base_fixture" "$security_identity_fixture"
+sed -i '/^query_security_deployed_digest=/d' "$security_identity_fixture/run-context"
+run_preflight_expect_failure missing-security-identity "$security_identity_fixture"
 
 missing_context="$fixture_root/missing-context"
 cp -R -- "$base_fixture" "$missing_context"

@@ -140,7 +140,7 @@ apply_local_kubernetes_inputs() {
       [[ "$service" == quickfix-gateway ]] && properties="$query_fixture_directory/fix/application.properties"
       kubectl --context "$kind_context" -n "$namespace" create secret generic "${service}-secrets" \
         --from-literal=postgres_dsn="$local_postgres_dsn" \
-        --from-file="application.properties=$properties" --dry-run=client -o json \
+        --from-file="$service.properties=$properties" --dry-run=client -o json \
         | jq '.immutable = true' \
         | kubectl --context "$kind_context" -n "$namespace" create -f - >/dev/null || return 1
     done

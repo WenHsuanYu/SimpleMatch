@@ -18,6 +18,7 @@ spring:
           - name: ${spring.application.name}-config
       secrets:
         enabled: ${SIMPLEMATCH_KUBERNETES_ENABLED:false}
+        read-type: SINGLE
         enable-api: ${SIMPLEMATCH_KUBERNETES_ENABLED:false}
         sources:
           - name: ${spring.application.name}-secrets

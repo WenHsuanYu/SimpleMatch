@@ -23,6 +23,14 @@ sourceSets.test {
     resources.srcDir(rootProject.file("shared-java/market-reference-contract/src/test/resources"))
 }
 
+tasks.processTestResources {
+    listOf("query-service", "quickfix-gateway").forEach { service ->
+        from(rootProject.file("services/$service/src/main/resources/application.yaml")) {
+            into("kubernetes-secret-contract/$service")
+        }
+    }
+}
+
 tasks.test {
     exclude("**/QueryRedisSecurityIntegrationTest.class")
 }

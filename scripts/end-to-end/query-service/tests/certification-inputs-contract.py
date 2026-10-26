@@ -111,8 +111,8 @@ apply_local_kubernetes_inputs sha256:synthetic "$CONTRACT_DIRECTORY/dictionary.y
                                     capture_output=True, text=True, timeout=15)
             self.assertEqual(result.returncode, 0, "Kubernetes input production must succeed")
             expected = {
-                "query-service-secrets": {"application.properties": bundle / "application.properties"},
-                "quickfix-gateway-secrets": {"application.properties": bundle / "fix/application.properties"},
+                "query-service-secrets": {"query-service.properties": bundle / "application.properties"},
+                "quickfix-gateway-secrets": {"quickfix-gateway.properties": bundle / "fix/application.properties"},
                 "quickfix-gateway-fix-tls": {name: bundle / "fix" / name
                                              for name in ("server.p12", "clients.p12")},
             }
@@ -136,9 +136,26 @@ apply_local_kubernetes_inputs sha256:synthetic "$CONTRACT_DIRECTORY/dictionary.y
                                        "isolated-query-test"], env=environment,
                                       capture_output=True, text=True, timeout=15)
             self.assertEqual(verified.returncode, 0, "Retained security inputs must validate")
+            expected_digest = subprocess.run([sys.executable, str(CLIENT), "--fixture-directory", str(bundle),
+                "--deployed-fingerprint"], capture_output=True, text=True, check=True, timeout=15).stdout.strip()
+            observed = {"items": [json.loads((root / (name + ".json")).read_text()) for name in expected]}
+            observed_digest = subprocess.run([sys.executable, str(CLIENT), "--observed-fingerprint"],
+                input=json.dumps(observed), capture_output=True, text=True, check=True, timeout=15).stdout.strip()
+            self.assertEqual(expected_digest, observed_digest, "Bind the exact deployed server subset")
             query = root / "query-service-secrets.json"
+            original = json.loads(query.read_text())
+            competing = json.loads(query.read_text())
+            competing["data"]["query-service-production.properties"] = base64.b64encode(
+                b"simplematch.query-service.security.policy-version=999\n").decode()
+            query.write_text(json.dumps(competing))
+            rejected = subprocess.run([sys.executable, str(CLIENT), "--fixture-directory", str(bundle),
+                                       "--verify-context", "kind-simplematch-live", "--verify-namespace",
+                                       "isolated-query-test"], env=environment,
+                                      capture_output=True, text=True, timeout=15)
+            self.assertNotEqual(rejected.returncode, 0, "Reject competing profile properties")
+            query.write_text(json.dumps(original))
             stale = json.loads(query.read_text())
-            stale["data"]["application.properties"] = base64.b64encode(b"stale-policy").decode()
+            stale["data"]["query-service.properties"] = base64.b64encode(b"stale-policy").decode()
             query.write_text(json.dumps(stale))
             rejected = subprocess.run([sys.executable, str(CLIENT), "--fixture-directory", str(bundle),
                                        "--verify-context", "kind-simplematch-live", "--verify-namespace",
