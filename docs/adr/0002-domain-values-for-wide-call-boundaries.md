@@ -151,55 +151,68 @@ The market snapshot source remains flat JSON. A source codec owns that external 
 rehydrates a semantically grouped `SourceInstrument` before normalization produces a
 `MarketInstrument`. JSON field names and nesting do not dictate the handwritten Java interface.
 
-`MarketInstrument` composes instrument identity, trading rules, and an eligibility reason. Trading
-rules compose board lot, tick table, and a reference-price band, which owns the lower-reference-upper
-bracketing invariant. A well-formed source instrument from an unsupported venue or security type
-remains in the snapshot with an explicit ineligibility reason; it is not filtered out or treated as
-malformed. Instrument identity therefore retains a normalized venue value without requiring that
-the venue be supported for trading.
+`MarketInstrument` combines instrument identity, trading rules, and an eligibility reason.
+Trading rules combine board lot, tick table, and a reference-price band. The band requires the
+reference price to lie between the lower and upper limits.
+
+A well-formed source instrument remains in the snapshot even if its venue or security type is
+unsupported. It has an explicit ineligibility reason. The model does not omit it or treat it as
+malformed. Instrument identity retains a normalized venue value even when the system does not support
+trading on that venue.
 
 ## SubmissionResult slice
 
 The first migration slice grouped the durable submission outcome. `SubmissionResult` owns the
-complete semantic result assembled from `SubmissionReference`, `FixSubmissionIdentity`,
-`PersistedFixIdentity`, `SubmissionOutcome`, and its creation timestamp. It does not normalize
-identifiers or decide acceptance; `SubmissionDecisionFactory` owns those decisions. The JDBC adapter
-only flattens these values into the existing row and rehydrates them when reading it.
+complete result from `SubmissionReference`, `FixSubmissionIdentity`, `PersistedFixIdentity`,
+`SubmissionOutcome`, and its creation timestamp. It does not normalize identifiers or decide
+acceptance. `SubmissionDecisionFactory` owns those decisions. The JDBC adapter only flattens these
+values into the existing row and rehydrates them when reading it.
 
-Test fixtures use a test-only semantic factory with complete named scenarios such as accepted and
-rejected outcomes. The factory does not expose a generic builder, a parameter bag, or arbitrary
-primitive overrides that could create invalid combinations. Accepted outcomes have no rejection;
-rejected outcomes require stable nonblank code and detail; persisted FIX identity and its surrogate
-flag are inseparable.
+Test fixtures use a test-only semantic factory with complete named scenarios, such as accepted and
+rejected outcomes. The factory exposes no generic builder, parameter bag, or arbitrary primitive
+overrides that could create invalid combinations. Accepted outcomes have no rejection. Rejected
+outcomes require stable, nonblank code and detail. Persisted FIX identity and its surrogate flag
+remain inseparable.
 
-The original completion criteria required removal of the flat constructors and their suppressions,
-migration of all production callers, fixtures, and tests, accepted and rejected JDBC round-trips,
-preservation of persisted FIX identity and surrogate state, and unchanged outbox payload and
-database schema.
+The original completion criteria required:
+
+- Removal of flat constructors and their suppressions.
+- Migration of all production callers, fixtures, and tests.
+- JDBC round-trips for accepted and rejected outcomes.
+- Preservation of persisted FIX identity and surrogate state.
+- Unchanged outbox payload and database schema.
 
 ## Account Authority lifecycle slice
 
 Account Authority keeps Reservation, Account limit, and Account position as separate aggregate
-roots. `AccountReservation` composes its stable identity, account ownership, immutable reservation
-terms, and a `ReservationLifecycle`. That lifecycle owns the fields that change together: remaining
-and filled quantity, held authority, outcome, and revision history. It rejects state combinations
-that cannot occur in the lifecycle: rejected reservations hold no authority and have a stable
-reason; released reservations have no remaining authority; and applied reservations are fully
-filled. Release ends unused authority only; it neither reverses a fill nor cancels the matching
-order.
+roots. `AccountReservation` combines stable identity, account ownership, immutable reservation
+terms, and a `ReservationLifecycle`. That lifecycle owns remaining and filled quantity, held
+authority, outcome, and revision history.
 
-`AccountLimit` and `AccountPosition` retain separate identity, state, and revision values. A daily
-notional ledger is not a symbol-level inventory even though both use optimistic versions. The
-transaction-owning `AccountReservationApplicationService` is the only supported reservation write
-path. The older direct-row reservation path is removed rather than refactored into a second,
-weaker lifecycle.
+The lifecycle rejects impossible combinations:
 
-`AccountLifecycleOutbox` remains account-service infrastructure. It composes event identity,
-destination, serialized payload, aggregate reference, and creation time; its JDBC adapter alone
-flattens those values. The original completion criteria required semantic reservation, limit,
-position, legacy-response, and outbox Java interfaces; removal of the legacy direct writer; account
-transaction tests for reserve, partial fill, release, rejection, and duplicate replay; and unchanged
-SQL and account lifecycle event shapes.
+- Rejected reservations hold no authority and have a stable reason.
+- Released reservations have no remaining authority.
+- Applied reservations are fully filled.
+
+Release ends unused authority only. It neither reverses a fill nor cancels the matching order.
+
+`AccountLimit` and `AccountPosition` retain separate identity, state, and revision values.
+A daily notional ledger is not a symbol-level inventory, although both use optimistic versions.
+`AccountReservationApplicationService` owns the transaction and is the only supported reservation
+write path. The repository removed the older direct-row reservation path. It did not create a
+second, weaker lifecycle.
+
+`AccountLifecycleOutbox` remains account-service infrastructure. It combines event identity,
+destination, serialized payload, aggregate reference, and creation time. Only its JDBC adapter
+flattens those values.
+
+The original completion criteria required:
+
+- Semantic Java interfaces for reservation, limit, position, legacy response, and outbox.
+- Removal of the legacy direct writer.
+- Account transaction tests for reserve, partial fill, release, rejection, and duplicate replay.
+- Unchanged SQL and account lifecycle event shapes.
 
 ## Risk Admission journal slice
 
