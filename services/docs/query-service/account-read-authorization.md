@@ -122,9 +122,9 @@ Account caching remains conditional on Phase 2 consistency and performance gates
 ./gradlew -q staticAnalysis
 ```
 
-The PostgreSQL task requires the existing private `QUERY_SERVICE_JDBC_TEST_*` environment and
-ownership marker; never aim it at an application database. See the authentication runbook for
-the fixture contract. Actual outcomes, source fingerprints, retained failures and cleanup are
+The PostgreSQL task requires Docker, Python 3, and `psql`.
+Testcontainers creates an isolated database with an ownership marker. The task also runs the existing Python collector contract.
+See the authentication runbook for the fixture contract. Actual outcomes, source fingerprints, retained failures and cleanup are
 recorded in the issue handoff and `out/verification/issue-189-account-summary/`.
 
 ## Certification consumers and historical evidence

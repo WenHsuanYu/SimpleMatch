@@ -114,10 +114,14 @@ are skipped there and run in `postgresJdbcTest` against the owned PostgreSQL fix
 bash scripts/test-query-redis-security.sh
 ```
 
-The PostgreSQL task requires the existing private `QUERY_SERVICE_JDBC_TEST_*` environment and
-ownership marker. The current Redis runner requires Docker and OpenSSL.
+The PostgreSQL task requires Docker, Python 3, and `psql`.
+Testcontainers creates an isolated database. The test fixture sets its ownership marker before Flyway migrations or fixture writes.
+The task supplies private connection settings to the existing Python collector contract.
+
+The current Redis runner requires Docker and OpenSSL.
 It generates private certificate and ACL files. Testcontainers manages the disposable Redis containers.
 See the [Redis test requirements](../../../deploy/k8s/README.md#query-redis-transport-and-acl-contract).
+
 Actual
 commands, native/container fixture identities, fresh reports, source fingerprints and cleanup are
 retained under `out/verification/issue-190-order/` and summarized in the issue handoff.

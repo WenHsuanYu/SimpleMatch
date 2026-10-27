@@ -93,10 +93,14 @@ one, reuse an old certification result, or execute full-local deployment work.
 bash scripts/test-query-redis-security.sh
 ```
 
-PostgreSQL requires the existing private test environment and database ownership marker; ordinary
-tests explicitly skip its concurrency cases. The current Redis runner requires Docker and OpenSSL.
+The PostgreSQL task requires Docker, Python 3, and `psql`.
+Testcontainers manages its isolated database with an ownership marker. The task also runs the existing Python collector contract.
+Ordinary tests use H2 and skip PostgreSQL-specific concurrency cases.
+
+The current Redis runner requires Docker and OpenSSL.
 Testcontainers manages the disposable Redis containers with private credentials.
 See the [Redis test requirements](../../../deploy/k8s/README.md#query-redis-transport-and-acl-contract).
+
 Exact source inputs,
 commands, original red/failure evidence, review, cleanup and final-head CI are recorded in #192.
 No source-event replay, multi-replica revocation, inbound TLS or production readiness is inferred.

@@ -103,7 +103,8 @@ TLS, Gateway, OAuth, certificate binding, Redis performance or production-readin
 ./gradlew -q staticAnalysis
 ```
 
-The PostgreSQL task requires the existing private `QUERY_SERVICE_JDBC_TEST_*` environment and
-database ownership marker. Ordinary tests use H2 and explicitly skip PostgreSQL-only concurrency
-cases. Runtime counts, input fingerprints, original red tests, review, cleanup and final-head CI
+The PostgreSQL task requires Docker, Python 3, and `psql`.
+Testcontainers creates an isolated database with an ownership marker. The task also runs the existing Python collector contract.
+Ordinary tests use H2 and skip PostgreSQL-only concurrency cases.
+Runtime counts, input fingerprints, original red tests, review, cleanup and final-head CI
 are recorded in the #191 handoff; do not infer a PASS from this runbook.

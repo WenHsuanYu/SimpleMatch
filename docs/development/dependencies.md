@@ -64,6 +64,11 @@ This repo's Java dependencies use an explicit ownership model.
 - Query Redis security tests use Testcontainers core and its JUnit extension as test-only dependencies.
   Versionless catalog aliases use the Spring Boot BOM. Run `bash scripts/test-query-redis-security.sh` with Docker and OpenSSL.
   The script prepares certificates. Testcontainers owns Redis startup, mapped ports, readiness, and cleanup.
+- Query PostgreSQL contracts use the Testcontainers PostgreSQL module as a test-only dependency.
+  Run `./gradlew -q :services:query-service:postgresJdbcTest` with Docker, Python 3, and `psql`.
+  Testcontainers manages one disposable PostgreSQL instance for the test JVM. Flyway migrates its isolated database.
+  The task runs the existing JDBC, HTTP, and Python collector contracts against that database.
+  Ordinary `test` tasks use H2 and do not require Docker.
 - `services/query-service` owns the CQRS read-side runtime dependencies: the shared market-reference
   contract, Spring JDBC, Kafka, Redis, Web, and the service-owned Flyway plugin. Its PostgreSQL
   datasource is supplied by the shared `simplematch-config` auto-configuration, not by a second

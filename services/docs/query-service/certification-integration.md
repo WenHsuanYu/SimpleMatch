@@ -262,14 +262,14 @@ bash scripts/end-to-end/query-service/tests/active-liveness-contract.sh
 bash scripts/end-to-end/query-service/tests/verdict-contract.sh
 bash scripts/test-local-java-placement-serving.sh
 ./gradlew -q :services:query-service:test
-# Supply the existing runner-owned QUERY_SERVICE_JDBC_TEST_* environment first.
+# Requires Docker, Python 3, and psql. The task also runs the PostgreSQL collector contract.
 ./gradlew -q :services:query-service:postgresJdbcTest
-python3 scripts/end-to-end/query-service/tests/collector-postgres-contract.py
 ./gradlew -q staticAnalysis
 ```
 
-The SQL contract is included after JDBC checks in `run-flyway-ci-checks.sh`; HTTP/placement contracts
-run in Local Resource Lifecycle CI. Before expensive deployed acceptance, classify every required
+The PostgreSQL task runs the SQL contract and JDBC checks against the same Testcontainers database.
+`run-flyway-ci-checks.sh` invokes that task. HTTP/placement contracts run in Local Resource Lifecycle CI.
+Before expensive deployed acceptance, classify every required
 phase through the existing planner/evidence contract. No required phase may be silently skipped,
 and no focused diagnostic or tool PASS may be promoted to aggregate Phase 1 PASS.
 

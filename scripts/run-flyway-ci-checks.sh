@@ -106,45 +106,6 @@ assert_schema_isolation() {
   done < <(flyway_known_services)
 }
 
-# This subshell owns exactly one newly-created database; never reset a caller-selected database.
-run_query_postgres_jdbc_tests() (
-  local jdbc_database
-  local ownership_marker='simplematch-query-postgres-jdbc-test'
-  jdbc_database="simplematch_query_jdbc_$(printf '%x%x' "$BASHPID" "$(date +%s)")"
-
-  psql_exec "$postgres_admin_db" "CREATE DATABASE \"$jdbc_database\";"
-  cleanup_query_jdbc_database() {
-    local original_status="$?"
-    local actual_marker
-    trap - EXIT
-    if ! actual_marker="$(psql_exec "$postgres_admin_db" \
-      "SELECT shobj_description(oid, 'pg_database') FROM pg_database WHERE datname = '$jdbc_database';")"; then
-      echo "Cannot verify ownership of JDBC scratch database $jdbc_database; preserving it." >&2
-      exit 1
-    fi
-    if [[ "$actual_marker" != "$ownership_marker" ]]; then
-      echo "JDBC scratch database $jdbc_database changed ownership; preserving it." >&2
-      exit 1
-    fi
-    if ! psql_exec "$postgres_admin_db" "DROP DATABASE \"$jdbc_database\";"; then
-      echo "Could not remove owned JDBC scratch database $jdbc_database." >&2
-      exit 1
-    fi
-    exit "$original_status"
-  }
-  trap cleanup_query_jdbc_database EXIT
-
-  psql_exec "$postgres_admin_db" \
-    "COMMENT ON DATABASE \"$jdbc_database\" IS '$ownership_marker';"
-
-  export QUERY_SERVICE_JDBC_TEST_DATABASE="$jdbc_database"
-  export QUERY_SERVICE_JDBC_TEST_URL="jdbc:postgresql://$postgres_host:$postgres_port/$jdbc_database"
-  export QUERY_SERVICE_JDBC_TEST_USER="$postgres_user"
-  export QUERY_SERVICE_JDBC_TEST_PASSWORD="$postgres_password"
-  ./gradlew -q --no-daemon --stacktrace :services:query-service:postgresJdbcTest
-  python3 scripts/end-to-end/query-service/tests/collector-postgres-contract.py
-)
-
 cd "$repo_root"
 
 if [[ "$(psql_exec "$postgres_admin_db" 'SHOW server_encoding;')" != UTF8 ]]; then
@@ -182,6 +143,6 @@ PGPASSWORD="$postgres_password" psql \
   --dbname "$database_name" --set ON_ERROR_STOP=1 \
   --file "$repo_root/scripts/check-service-schema-contracts.sql"
 
-run_query_postgres_jdbc_tests
+./gradlew -q --no-daemon --stacktrace :services:query-service:postgresJdbcTest
 
 echo "Verified shared database $database_name with service-local schemas and Flyway histories, plus PostgreSQL JDBC round trips."

@@ -106,11 +106,14 @@ python3 scripts/end-to-end/query-service/tests/security-fixtures-contract.py
 ./gradlew -q staticAnalysis
 ```
 
-The PostgreSQL task includes JDBC, real FilterChain and loopback HTTP tests and requires the
-existing runner-owned QUERY_SERVICE_JDBC_TEST_* environment/ownership marker. It must not target
-an application database. The ordinary suite uses isolated migrated H2 fixtures; it does not
-substitute for PostgreSQL evidence. Real loopback HTTP tests require local socket permission.
-Do not run the full multi-service Flyway/reset runner just to provision this one scratch database.
+The PostgreSQL task requires Docker, Python 3, and `psql`.
+Testcontainers creates an isolated database and removes its container after the test JVM exits.
+The fixture sets an ownership marker before Flyway migrations or fixture writes.
+The task includes JDBC, real FilterChain, loopback HTTP, and the existing Python collector contracts.
+
+The ordinary suite uses isolated migrated H2 fixtures. It does not establish PostgreSQL behavior.
+Real loopback HTTP tests require local socket permission.
+Run the PostgreSQL task directly for this fixture. The multi-service Flyway/reset runner uses a separate database.
 Security fixture CLI checks also run in the existing local-resource lifecycle CI workflow.
 
 Known compatibility impact: anonymous Freshness collectors now need an operations-read identity.

@@ -18,6 +18,7 @@ dependencies {
     testImplementation("org.springframework:spring-jdbc")
     testImplementation(libs.testcontainers.core)
     testImplementation(libs.testcontainers.junit.jupiter)
+    testImplementation(libs.testcontainers.postgresql)
     testRuntimeOnly(libs.flyway.database.postgresql)
 }
 
@@ -35,6 +36,7 @@ tasks.processTestResources {
 
 tasks.test {
     exclude("**/QueryRedisSecurityIntegrationTest.class")
+    exclude("**/QueryCollectorPostgresContractTest.class")
 }
 
 tasks.register<Test>("redisSecurityTest") {
@@ -49,10 +51,11 @@ tasks.register<Test>("redisSecurityTest") {
 
 tasks.register<Test>("postgresJdbcTest") {
     group = "verification"
-    description = "Runs Query JDBC and HTTP security contracts against owned PostgreSQL."
+    description = "Runs Query JDBC, HTTP, and collector contracts against Testcontainers PostgreSQL."
     testClassesDirs = sourceSets.test.get().output.classesDirs
     classpath = sourceSets.test.get().runtimeClasspath
     filter.includeTestsMatching("com.simplematch.queryservice.store.JdbcQueryProjectionStoreTest")
+    filter.includeTestsMatching("com.simplematch.queryservice.store.QueryCollectorPostgresContractTest")
     filter.includeTestsMatching("com.simplematch.queryservice.security.QueryHttpSecurityIntegrationTest")
     filter.includeTestsMatching("com.simplematch.queryservice.security.QueryRebuildDisabledHttpTest")
     filter.includeTestsMatching("com.simplematch.queryservice.security.QueryDirectHttpTest")
@@ -64,6 +67,7 @@ tasks.register<Test>("postgresJdbcTest") {
     filter.includeTestsMatching("com.simplematch.queryservice.security.QueryMarketHttpTest")
     filter.includeTestsMatching("com.simplematch.queryservice.security.QueryMarketSnapshotHttpTest")
     systemProperty("simplematch.query.jdbc.backend", "postgresql")
+    systemProperty("simplematch.repositoryRoot", rootProject.projectDir.absolutePath)
     maxParallelForks = 1
     outputs.upToDateWhen { false }
 }

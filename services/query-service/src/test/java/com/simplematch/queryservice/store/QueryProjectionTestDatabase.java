@@ -1,12 +1,14 @@
 package com.simplematch.queryservice.store;
 
 import java.net.URI;
+import java.util.Map;
 import java.util.UUID;
 import org.flywaydb.core.Flyway;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.jdbc.datasource.DriverManagerDataSource;
+import org.testcontainers.postgresql.PostgreSQLContainer;
 
-/** Opens the isolated H2 fixture or an explicitly runner-owned PostgreSQL database. */
+/** Opens an isolated H2 fixture or a PostgreSQL container owned by the test JVM. */
 public final class QueryProjectionTestDatabase {
   private static final String OWNER_MARKER = "simplematch-query-postgres-jdbc-test";
 
@@ -43,18 +45,19 @@ public final class QueryProjectionTestDatabase {
   }
 
   private static DriverManagerDataSource postgres() {
-    final String url = requiredEnvironment("QUERY_SERVICE_JDBC_TEST_URL");
-    final String database = requiredEnvironment("QUERY_SERVICE_JDBC_TEST_DATABASE");
+    final PostgreSQLContainer container = PostgresFixture.CONTAINER;
+    final String url = container.getJdbcUrl();
+    final String database = container.getDatabaseName();
     if (!database.matches("simplematch_query_jdbc_[0-9a-f]+")
         || !url.startsWith("jdbc:postgresql://")
         || !("/" + database).equals(URI.create(url.substring(5)).getPath())) {
-      throw new IllegalStateException("query JDBC tests require a runner-owned scratch database");
+      throw new IllegalStateException("query JDBC tests require a test-owned scratch database");
     }
     final DriverManagerDataSource dataSource = new DriverManagerDataSource();
     dataSource.setDriverClassName("org.postgresql.Driver");
     dataSource.setUrl(url);
-    dataSource.setUsername(requiredEnvironment("QUERY_SERVICE_JDBC_TEST_USER"));
-    dataSource.setPassword(requiredEnvironment("QUERY_SERVICE_JDBC_TEST_PASSWORD"));
+    dataSource.setUsername(container.getUsername());
+    dataSource.setPassword(container.getPassword());
     final JdbcTemplate jdbc = new JdbcTemplate(dataSource);
     final Boolean owned = jdbc.queryForObject(
         "SELECT current_database() = ? AND shobj_description(oid, 'pg_database') = ? "
@@ -66,11 +69,33 @@ public final class QueryProjectionTestDatabase {
     return dataSource;
   }
 
-  private static String requiredEnvironment(String name) {
-    final String value = System.getenv(name);
-    if (value == null || value.isBlank()) {
-      throw new IllegalStateException(name + " is required for PostgreSQL JDBC tests");
+  /** Migrates the shared fixture and supplies the existing Python collector environment. */
+  static Map<String, String> collectorEnvironment() {
+    final DriverManagerDataSource dataSource = open();
+    return Map.of(
+        "QUERY_SERVICE_JDBC_TEST_URL", dataSource.getUrl(),
+        "QUERY_SERVICE_JDBC_TEST_DATABASE", PostgresFixture.CONTAINER.getDatabaseName(),
+        "QUERY_SERVICE_JDBC_TEST_USER", dataSource.getUsername(),
+        "QUERY_SERVICE_JDBC_TEST_PASSWORD", dataSource.getPassword());
+  }
+
+  /** Starts one container for all PostgreSQL test classes. Ryuk removes it at JVM exit. */
+  private static final class PostgresFixture {
+    private static final PostgreSQLContainer CONTAINER = start();
+
+    private PostgresFixture() {}
+
+    private static PostgreSQLContainer start() {
+      final PostgreSQLContainer container = new PostgreSQLContainer("postgres:18.4")
+          .withDatabaseName("simplematch_query_jdbc_" + UUID.randomUUID().toString().replace("-", ""))
+          .withUsername("query_test")
+          .withPassword(UUID.randomUUID().toString());
+      container.start();
+      final DriverManagerDataSource dataSource = new DriverManagerDataSource(
+          container.getJdbcUrl(), container.getUsername(), container.getPassword());
+      new JdbcTemplate(dataSource).execute(
+          "COMMENT ON DATABASE \"" + container.getDatabaseName() + "\" IS '" + OWNER_MARKER + "'");
+      return container;
     }
-    return value;
   }
 }
