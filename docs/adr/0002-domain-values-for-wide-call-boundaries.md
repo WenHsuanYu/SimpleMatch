@@ -459,23 +459,24 @@ overload remains. JSON compatibility belongs solely to the codec.
 
 - **Generic parameter bags:** names such as `Parameters`, `Arguments`, `Context`, or `Dependencies`
   hide the same coupling without adding language or invariants.
-- **Builder-only repair:** a builder improves visual labeling but does not make equal-typed fields
-  unexchangeable and can permit partially initialized invalid states.
-- **One shared order model for every service:** this would couple bounded contexts and allow FIX,
-  persistence, and matching concerns to leak across service ownership.
-- **Wide-carrier exception:** mirroring an external shape is not a reason to retain a handwritten
-  Java interface that fails to express a semantic boundary.
-- **Mechanical wrapping:** a wrapper that does not express a semantic group, lifecycle, or invariant
-  merely hides a wide interface and is rejected.
+- **Builder-only repair:** a builder labels values at the call site. It does not prevent exchanges
+  between fields of equal type. It can permit partially initialized invalid states.
+- **One shared order model for every service:** this would couple bounded contexts. It would also
+  let FIX, persistence, and matching concerns cross service ownership.
+- **Wide-carrier exception:** an external format does not justify a handwritten Java interface that
+  fails to express a semantic boundary.
+- **Mechanical wrapping:** a wrapper must express a related group, lifecycle, or invariant.
+  Otherwise, it only hides a wide interface and does not qualify as a repair.
 
 ## Consequences
 
-Call sites express intent through domain terms, and the compiler rejects the most dangerous
+Call sites express intent through domain terms. The compiler rejects the most dangerous
 positional mistakes. Tests create one complete semantic value and vary only the fact under
-examination. Persistence and wire compatibility remain intact because adapters preserve the external
-shape and schemas are unchanged. The cost is a larger number of small types and explicit adapter
-mapping; this is accepted because every field group must have stable meaning, a shared lifecycle, or
-an invariant.
+examination. Adapters preserve the external shape and schemas, so persistence and wire contracts
+remain compatible.
+
+The cost is more small types and explicit adapter mapping. This decision accepts that cost only
+when each field group has stable meaning, a shared lifecycle, or an invariant.
 
 The root [`CONTEXT.md`](../../CONTEXT.md) is the canonical context map and ubiquitous-language
 reference. Service READMEs own service-local terminology, while cross-service contracts remain under
@@ -483,24 +484,37 @@ reference. Service READMEs own service-local terminology, while cross-service co
 
 ## Current verification
 
-Required verification includes value-object invariant tests, account transaction integration tests
-for duplicate and oversized fills, risk validator tests for accepted and rejected outcomes, FIX
-golden-message tests, WAL v2 round-trips, unsupported-version rejection, and `./gradlew staticAnalysis`.
+Required verification includes:
+
+- Value-object invariant tests.
+- Account transaction integration tests for duplicate and oversized fills.
+- Risk validator tests for accepted and rejected outcomes.
+- FIX golden-message tests.
+- WAL v2 round-trips and unsupported-version rejection.
+- `./gradlew staticAnalysis`.
+
 WAL tests cover short writes, write failures, and signed 64-bit integer range checks. Invalid
-records must report the physical line and leave the WAL bytes unchanged. Retired WAL v1 readers
-and command adapters are not compatibility test targets. The refactoring must not
-change SQL schema, protobuf schema, event payload, transaction boundary, idempotency key, or FIX
-field output.
+records must report the physical line and leave WAL bytes unchanged. Retired WAL v1 readers and
+command adapters are not compatibility test targets.
+
+Refactoring must preserve SQL schema, protobuf schema, event payload, transaction boundary,
+idempotency key, and FIX field output.
 
 ## Historical migration sequence
 
-The original migration used five independently verifiable slices: durable submission outcomes, Account
-Authority lifecycle state, Risk Admission journal state, QuickFIX ingress and WAL state, then
-QuickFIX configuration and runtime policy. Each slice converted production callers, tests, and
-supporting tools before removing positional Java members. The
-[development reference](../development/domain-parameter-safety-refactor.md) retains the completion
-evidence and its original scope. Later source changes require review against the current policy;
-those historical inventories do not establish current constructor counts or compatibility support.
+The original migration used five independently verifiable slices:
+
+1. Durable submission outcomes.
+2. Account Authority lifecycle state.
+3. Risk Admission journal state.
+4. QuickFIX ingress and WAL state.
+5. QuickFIX configuration and runtime policy.
+
+Each slice migrated production callers, tests, and supporting tools before removing positional
+Java members. The [development reference](../development/domain-parameter-safety-refactor.md)
+retains the completion evidence and its original scope. Later source changes require review
+against the current policy. Historical inventories do not establish current constructor counts or
+compatibility support.
 
 ## References
 
