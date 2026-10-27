@@ -1,6 +1,12 @@
-# ADR 0002: Domain values for parameter-safe call boundaries
+# ADR 0002: Value objects and typed application interfaces
 
 Status: accepted.
+
+This ADR records the design decision and its migration history. The
+[parameter-safety development reference](../development/domain-parameter-safety-refactor.md)
+owns the current review policy and historical verification records. Later compatibility decisions,
+including [ADR-0007](0007-retire-pre-release-compatibility.md), take precedence over the original
+external-format preservation requirements.
 
 ## Context
 
@@ -8,9 +14,9 @@ The blocking PMD `ExcessiveParameterList` rule exposed several boundaries where 
 `UUID`,
 `BigDecimal`, timestamp, and status values were passed positionally. The highest-risk examples were
 account reserve, release, and fill application; durable risk admission and submission outcomes; FIX
-execution-report mapping; and v2-to-v1 command adaptation. Those APIs required the caller to
-remember a positional contract, and the compiler could not detect exchanges such as request ID
-versus order ID, sender versus target, quantity versus price, or reason code versus reason detail.
+execution-report mapping; and the now-retired v2-to-v1 command adapter. Those APIs required the
+caller to remember a positional contract. The compiler could not detect exchanges such as request
+ID versus order ID, sender versus target, quantity versus price, or reason code versus reason detail.
 
 SimpleMatch already separates service-owned authoritative state from transport and persistence
 concerns. The solution must therefore improve the model without creating a shared enterprise domain
@@ -22,15 +28,14 @@ The previous policy allowed a handwritten Java persistence snapshot, protocol en
 configuration record, or deprecated compatibility overload to remain wide when it mirrored an
 external shape. That exception kept positional Java interfaces in the model and made the threshold
 optional. The repository now uses PMD's existing `ExcessiveParameterList` rule as the sole
-automated parameter-count gate, with its default threshold of ten. Independently, handwritten
-production Java interfaces targeted by parameter-safety work should have no more than six
-parameters. A seven-to-ten-parameter member is acceptable only when semantic composition or module
-deepening would create an artificial wrapper, and the review must record that reason. This is a
-design-review exception, not a wide-carrier exception or an authorization to suppress or weaken the
-PMD rule. Generated sources are outside this rule; tests must use the same semantic construction
-vocabulary as production code.
+automated parameter-count gate. Its default minimum is ten: a member with ten or more parameters
+violates the rule. The design-review target for handwritten production Java is six or fewer
+parameters. A member with seven to nine parameters requires a recorded review showing why a
+parameter object or a simpler module interface would create an artificial abstraction. That review
+does not authorize ten parameters, PMD suppression, or a weaker rule. Generated sources are outside
+this rule; tests use the same construction vocabulary as production code.
 
-The remaining parameter-safety refactoring changes only handwritten Java interfaces. Market
+Parameter-safety refactoring changes handwritten Java interfaces. Market
 snapshot source JSON fields, PostgreSQL schemas and column semantics, Spring configuration keys and
 defaults, FIX messages, persisted WAL JSON, protobuf contracts, and Kafka payloads remain unchanged.
 Adapters and codecs flatten and rehydrate the semantic Java values. Any change to one of those
@@ -39,17 +44,28 @@ migration.
 
 ## Decision
 
-Use a deliberately small tactical DDD model at boundaries that have stable language and invariants.
-The design uses three complementary techniques:
+Use tactical domain-driven design (DDD) where the owning domain has stable language and invariants.
+Use adapters and data models for transport, persistence, and configuration concerns. The design
+uses four complementary techniques:
 
 1. **Value objects** give same-shaped values distinct Java types and validate context-free
-   invariants at creation.
+   invariants at creation. A Java record is a value object only when its domain meaning and value
+   semantics support that role.
 2. **Application commands** group the values required by one use case instead of grouping fields
-   merely to reduce a numeric parameter count.
-3. **Anti-corruption-layer values** translate external FIX and protobuf representations before
-   business behavior is invoked.
-4. **Semantic representation groups** compose handwritten persistence, WAL, event, and
-   configuration models. Their adapters alone flatten and rehydrate the unchanged external shape.
+   merely to reduce a numeric parameter count. A command is a use-case input; it is not necessarily
+   a DDD value object.
+3. **Adapters and anti-corruption layers** translate external FIX and protobuf models before
+   business behavior is invoked. An anti-corruption layer protects one model from another model's
+   semantics. A DTO or value object used by that layer is not itself the architectural pattern.
+4. **Composition of data models** groups related fields in persistence models, event DTOs, WAL
+   records, and configuration properties. Each group has a named responsibility or local invariant.
+   Adapters map these groups to and from external formats. These infrastructure models do not
+   become domain objects merely because they use composition.
+
+An introduced parameter object must express a stable concept. A deep module must hide useful
+complexity behind a simple interface and reduce what callers need to know. Splitting a class or
+reducing a parameter count alone does not establish module depth. Durable Risk Admission is the
+project's name for a business workflow, not a separate standard design pattern.
 
 The implemented model is:
 
@@ -66,20 +82,20 @@ The implemented model is:
   reason.
 - `AdmissionFailure` is the transport-independent reason an order cannot enter durable admission.
   Named factories expose the current risk validation vocabulary.
-- `FixOrderSnapshot` and `FixExecutionIdentity` are gateway-local anti-corruption-layer values. They
-  improve QuickFIX mapping without pretending that FIX fields are the shared order domain.
-- `V1OrderCommandAdapter` receives the source protobuf command directly. Version translation remains
-  explicit at the compatibility boundary instead of flattening the command into an eight-argument
-  helper.
+- `FixOrderSnapshot` and `FixExecutionIdentity` are gateway-specific value objects used by FIX
+  adapters. They support protocol translation without creating a shared order model.
+- The earlier `V1OrderCommandAdapter` accepted the source protobuf command instead of eight
+  positional fields. That adapter is retired under ADR-0007 and is not a current test target.
 
-The completed slices removed public positional constructors and methods with more than seven
-parameters from their compatibility adapters. For future work, migrate every in-repository caller
+The recorded migration slices removed public positional constructors and methods with more than
+seven parameters from their compatibility adapters. This is historical evidence for those slices,
+not a statement about every current signature. For future work, migrate every in-repository caller
 to the semantic interface before removing the positional Java member. This is an intentional Java
 source and binary compatibility break; SQL, protobuf, FIX, WAL, Kafka, and configuration contracts
 remain compatible through their adapters. PMD is the only automated parameter-count gate; a
 deprecated overload is never a semantic-boundary exception.
 
-### CDC delivery semantic composition
+### CDC event metadata and delivery tracking
 
 `CdcDeliveryEnvelope` composes the six immutable Debezium values that must be compared with the
 authoritative Risk outbox: event identity, message key, payload bytes, event type, serialized
@@ -114,7 +130,7 @@ the venue be supported for trading.
 
 ## SubmissionResult slice
 
-The first migration slice deepens the durable submission outcome module. `SubmissionResult` owns the
+The first migration slice grouped the durable submission outcome. `SubmissionResult` owns the
 complete semantic result assembled from `SubmissionReference`, `FixSubmissionIdentity`,
 `PersistedFixIdentity`, `SubmissionOutcome`, and its creation timestamp. It does not normalize
 identifiers or decide acceptance; `SubmissionDecisionFactory` owns those decisions. The JDBC adapter
@@ -126,10 +142,10 @@ primitive overrides that could create invalid combinations. Accepted outcomes ha
 rejected outcomes require stable nonblank code and detail; persisted FIX identity and its surrogate
 flag are inseparable.
 
-The slice is complete only when the flat constructors and their suppressions are removed, all
-production callers, fixtures, and tests use semantic construction, accepted and rejected JDBC
-round-trips pass, persisted FIX identity and surrogate state round-trip, and the outbox payload and
-database schema remain unchanged.
+The original completion criteria required removal of the flat constructors and their suppressions,
+migration of all production callers, fixtures, and tests, accepted and rejected JDBC round-trips,
+preservation of persisted FIX identity and surrogate state, and unchanged outbox payload and
+database schema.
 
 ## Account Authority lifecycle slice
 
@@ -150,10 +166,10 @@ weaker lifecycle.
 
 `AccountLifecycleOutbox` remains account-service infrastructure. It composes event identity,
 destination, serialized payload, aggregate reference, and creation time; its JDBC adapter alone
-flattens those values. The slice is complete only when the reservation, limit, position, legacy
-response, and outbox Java interfaces are semantic; the legacy direct writer is gone; account
-transaction tests cover reserve, partial fill, release, rejection, and duplicate replay; and the
-existing SQL and account lifecycle event shapes remain compatible.
+flattens those values. The original completion criteria required semantic reservation, limit,
+position, legacy-response, and outbox Java interfaces; removal of the legacy direct writer; account
+transaction tests for reserve, partial fill, release, rejection, and duplicate replay; and unchanged
+SQL and account lifecycle event shapes.
 
 ## Risk Admission journal slice
 
@@ -166,19 +182,32 @@ no decision, accepted new orders have a reservation reference, accepted cancella
 require none, and rejection has a stable nonblank code and detail. Revision and timestamps belong
 to that lifecycle.
 
-`AdmissionResult` is a separate projection of Admission identity, decision, artifact provenance,
-and delivery route; it does not copy journal revision history or full order facts. The JDBC adapter
-alone flattens and rehydrates the journal row. When an admission begins, risk-service resolves the
+`AdmissionResult` is an application result model containing Admission identity, decision, artifact
+provenance, and delivery route. It does not copy journal revision history or full order facts. The
+JDBC adapter alone flattens and rehydrates the journal row. When an admission begins, risk-service resolves the
 approved daily artifact exactly once, records its identity, algorithm version, and explicit
-partition with the pending journal entry, and publishes with the normalized venue-qualified
-instrument key and that partition. Finalization and pending recovery reuse the recorded route
+partition with the pending journal entry, and publishes with the durable command identity as the
+message key and that explicit partition. Finalization and pending recovery reuse the recorded route
 rather than re-resolving it.
+
+The Java route type enforces local consistency: an optional partition is non-negative, and artifact
+identity and algorithm version are present together. It still permits routes without an assigned
+partition or artifact provenance. `unassigned()`, `assigned(int)`, and the single-partition
+constructor support isolated lifecycle and failure tests; they are not valid production delivery
+routes. `DailyArtifactAdmissionRoutingResolver` supplies complete routes for new admissions.
+`AdmissionJournalRowMapper` rejects persisted rows without routing provenance, and
+`AdmissionOutboxFactory` requires the partition, artifact identity, and algorithm version before
+creating a Matching command. Artifact approval and instrument-to-partition membership are resolver
+responsibilities; constructing a route does not prove them.
+
+This result model is not an independently maintained CQRS read model. It selects fields from the
+journal entry for an application response; it has no separate projection store or update process.
 
 The ingress `routingSnapshotId` remains optional and opaque; it is never an authority for routing.
 The retired nullable `routing_policy_id` compatibility column and policy projection are absent from
-the current schema. This slice is complete when journal and result constructors remain semantic,
-pending/accepted/rejected JDBC round-trips and recovery retain artifact identity and partition, and
-accepted outbox records use the normalized venue-qualified key and explicit partition.
+the current schema. Current regression coverage must retain semantic journal and result
+construction, pending/accepted/rejected JDBC round-trips, artifact identity and partition on
+recovery, and accepted outbox records with the command-identity message key and explicit partition.
 
 ## Risk Admission application modules
 
@@ -193,7 +222,7 @@ remote reservation work outside a transaction, delegates terminal persistence to
 `AdmissionLifecycleTransactions`, and leaves failures eligible for a later retry. Aggregate state
 transitions remain in `AdmissionJournalEntry`; repositories remain thin adapters.
 
-## Configuration capability slices
+## Configuration properties grouped by responsibility
 
 QuickFIX Gateway configuration is split into independently injectable file settings, runtime
 identity and capability settings, and risk-client resilience settings. Shared platform configuration
@@ -211,21 +240,33 @@ The gateway-local QuickFIX split and shared capability migration were completed 
 time with context and configuration tests. Shared startup validation now operates directly on the
 capability modules, and persistence tests assert the environment capability without a root facade.
 
-## Domain invariants and ownership
+## Validation and business invariants
+
+Structural validation checks a value without loading authoritative state. It includes field
+validity and local cross-field invariants. Distinct identifier types prevent positional exchanges;
+they do not prove ownership of a stored reservation or approval of a routing artifact.
 
 | Term                         | Owner            | Invariant                                                                                        |
 |------------------------------|------------------|--------------------------------------------------------------------------------------------------|
 | Reservation request identity | account-service  | request, order, and account identifiers are present and cannot be exchanged by type              |
 | Reservation terms            | account-service  | symbol and side are present; quantity is positive; limit price is absent or positive             |
-| Reservation identity         | account-service  | request, reservation, and order identifiers are present and refer to one locked reservation      |
+| Reservation identity         | account-service  | request, reservation, and order identifiers are present and have distinct UUID-backed types      |
 | Execution fill               | account-service  | execution ID is present; sequence is non-negative when supplied; quantity and price are positive |
-| Admission command            | risk-service     | validated identity, order facts, FIX identity, trading day, and routing reference are complete   |
+| Admission command            | risk-service     | required identity, order facts, FIX identity, and trading day are valid; the routing snapshot reference is optional and opaque |
 | Submission reference         | risk-service     | request/order reference and normalized command type travel together                              |
 | FIX submission identity      | risk-service     | sender, target, trading day, and client-order identifiers form one business identity             |
 | Persisted FIX identity       | risk-service     | storage-safe identifiers and the surrogate flag cannot be separated                              |
 | Submission outcome           | risk-service     | acceptance has no rejection; rejection always has a stable code and detail                       |
 | Admission failure            | risk-service     | validation failure has a stable code and nonblank detail                                         |
 | FIX order snapshot           | quickfix-gateway | execution-report mapping receives one coherent order view, not positional wire fields            |
+
+State-dependent business invariants require authoritative state and its owning application flow:
+
+| Business invariant | Owner and enforcement |
+|---|---|
+| Reservation and order belong to the requested account operation | account-service loads or locks authoritative reservation state and checks the supplied identities inside its transaction. |
+| Reserve, fill, and release preserve account authority | account-service coordinates reservation, account limit, account position, and required event publication in the owning transaction. |
+| An admission uses the approved artifact and assigned partition | risk-service resolves the instrument against the verified daily artifact and persists the complete route; recovery reuses that recorded route. |
 
 ## Boundary and transaction rules
 
@@ -243,11 +284,13 @@ automated parameter-count enforcement; Checkstyle does not set a parameter limit
 ## WAL persistence slice
 
 `WalRecord` is a FIX Gateway persistence representation rather than an aggregate. Its Java model
-may compose semantic representation groups without changing the persisted shape. The original
+composes persistence values without changing the persisted shape. The original
 parameter-safety refactoring preserved flat `v1` JSON. The subsequent FIX security cutover requires
 the complete authenticated FIX SessionID in WAL `v2`. With no legacy data, active v1 producers, or
 external consumers to migrate, the approved pre-release retirement policy in
 [ADR-0007](0007-retire-pre-release-compatibility.md) applies: only WAL v2 is read and written.
+That later security decision supersedes the earlier v1 preservation requirement; the two
+requirements apply to different migration stages.
 Unsupported versions fail before recovery performs remote work; their bytes are not rewritten,
 skipped, or silently upgraded. Existing v2 records retain restart recovery and session-owned
 cancellation checks. Future persisted-shape changes still require a new schema version and an
@@ -281,10 +324,18 @@ and cancel handlers. Those handlers remain separate because their required data 
 differ. `NewOrderFixMessageHandler` owns validation, WAL append, risk submission, session
 registration and response, and compatibility publication in that order. Its
 `NewOrderCommandPreparer`, `NewOrderDurableAdmission`, `AcceptedNewOrderResponder`, and
-`NewOrderRejectionResponder` collaborators expose those behaviors as deep modules rather than
-appearing in a generic dependency or context bag. Spring composes these concrete modules in
+`NewOrderRejectionResponder` collaborators encapsulate those path responsibilities.
+`NewOrderDurableAdmission` owns the sequencing invariant that WAL persistence succeeds before Risk
+submission starts. This responsibility explains its purpose without claiming that every extracted
+collaborator is a deep module. Spring composes these concrete modules in
 `QuickFixGatewayIngressConfiguration`; the public inbound dispatcher receives only the two path
 handlers.
+
+`NewOrderFixMessageHandler` currently has seven constructor parameters: four path collaborators,
+the admission gate, a clock, and the session registry used for duplicate detection. This is a
+reviewed seven-to-nine-parameter exception. Each dependency has a distinct role and type; combining
+them in `Dependencies` would hide coordination without adding an invariant. Keep these dependencies
+explicit and reassess the constructor if its responsibilities grow.
 
 `OrderSessionState` remains a gateway-local correlation snapshot rather than an aggregate. It
 composes the owning FIX session, account identity used for cancellation fallback, the existing
@@ -303,12 +354,16 @@ gateway never skips, silently repairs, or continues past a durable inbound comma
 
 `WalRecordJsonCodec` is a package-private FIX Gateway adapter. It alone flattens and rehydrates
 the `v2` JSON shape and applies WAL invariants. `WalAppender` owns line-oriented file I/O,
-serialization durability, and synchronization; it does not know JSON field names. The codec does
-not know files, channels, locking, or replay orchestration.
+complete record writes, and file-content synchronization; it does not know JSON field names.
+`appendAndFlush` writes until the record buffer, including the final LF byte, has no remaining
+bytes. Only then does it call `FileChannel.force(false)`. A write that makes no progress or fails
+must fail the append before synchronization. This is not an atomic-record-write guarantee: an I/O
+failure can leave an incomplete record, which replay must report without changing the file. The
+codec does not know files, channels, locking, or replay orchestration.
 
-The public nineteen-argument `WalRecord` construction is removed in the same slice. Every
-in-repository factory, test, and caller migrates to semantic construction; no deprecated positional
-constructor or compatibility overload remains. JSON compatibility belongs solely to the codec.
+The original slice removed the public nineteen-argument `WalRecord` constructor and migrated every
+in-repository factory, test, and caller. No deprecated positional constructor or compatibility
+overload remains. JSON compatibility belongs solely to the codec.
 
 ## Rejected alternatives
 
@@ -336,17 +391,36 @@ The root [`CONTEXT.md`](../../CONTEXT.md) is the canonical context map and ubiqu
 reference. Service READMEs own service-local terminology, while cross-service contracts remain under
 `services/docs/contracts/`.
 
-## Verification and migration
+## Current verification
 
 Required verification includes value-object invariant tests, account transaction integration tests
 for duplicate and oversized fills, risk validator tests for accepted and rejected outcomes, FIX
-golden-message tests, v1/v2 adapter tests, and `./gradlew staticAnalysis`. The refactoring must not
+golden-message tests, WAL v2 round-trips, unsupported-version rejection, and `./gradlew staticAnalysis`.
+WAL tests cover short writes, write failures, and signed 64-bit integer range checks. Invalid
+records must report the physical line and leave the WAL bytes unchanged. Retired WAL v1 readers
+and command adapters are not compatibility test targets. The refactoring must not
 change SQL schema, protobuf schema, event payload, transaction boundary, idempotency key, or FIX
 field output.
 
-Migration proceeds in five independently verifiable slices: durable submission outcomes, Account
+## Historical migration sequence
+
+The original migration used five independently verifiable slices: durable submission outcomes, Account
 Authority lifecycle state, Risk Admission journal state, QuickFIX ingress and WAL state, then
-QuickFIX configuration and runtime policy. In each slice, convert production callers, tests, and
-supporting tools before removing positional Java members that do not express a semantic boundary.
-Repository search, PMD, and the relevant integration and compatibility tests must prove that the
-external contract is unchanged before the slice closes.
+QuickFIX configuration and runtime policy. Each slice converted production callers, tests, and
+supporting tools before removing positional Java members. The
+[development reference](../development/domain-parameter-safety-refactor.md) retains the completion
+evidence and its original scope. Later source changes require review against the current policy;
+those historical inventories do not establish current constructor counts or compatibility support.
+
+## References
+
+- [PMD ExcessiveParameterList](https://pmd.github.io/pmd/pmd_rules_java_design.html#excessiveparameterlist)
+  defines the inclusive reporting threshold.
+- [Anti-Corruption Layer](https://learn.microsoft.com/en-us/azure/architecture/patterns/anti-corruption-layer)
+  describes semantic isolation between models.
+- [Ousterhout: Modular Design](https://web.stanford.edu/~ouster/cgi-bin/cs190-spring16/lecture.php?topic=modularDesign)
+  explains simple interfaces, information hiding, and module depth.
+- [FileChannel](https://docs.oracle.com/en/java/javase/21/docs/api/java.base/java/nio/channels/FileChannel.html)
+  defines write completion and file synchronization separately.
+- [Jackson JsonNode](https://fasterxml.github.io/jackson-databind/javadoc/2.11/com/fasterxml/jackson/databind/JsonNode.html)
+  defines `isIntegralNumber()` and `canConvertToLong()`.

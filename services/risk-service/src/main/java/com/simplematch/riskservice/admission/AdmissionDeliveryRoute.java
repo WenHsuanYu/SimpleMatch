@@ -6,8 +6,15 @@ import java.util.Objects;
 /**
  * Persisted delivery route associated with one admission journal entry.
  *
- * @param routingPartition explicit Kafka partition, or {@code null} when the producer assigns it
- * @param artifactIdentity immutable daily artifact identity, or {@code null} for a historical row
+ * <p>Production persistence and Matching delivery require a partition and complete artifact
+ * provenance. This type also represents incomplete routes for isolated lifecycle and failure
+ * tests. The resolver supplies complete production routes; the JDBC mapper and outbox factory
+ * reject missing routing fields. Construction alone does not verify artifact approval or that an
+ * instrument belongs to the partition.
+ *
+ * @param routingPartition explicit Kafka partition, or {@code null} for an incomplete test route
+ * @param artifactIdentity immutable daily artifact identity, or {@code null} for an incomplete
+ *     route
  * @param routingAlgorithmVersion artifact-declared routing algorithm, paired with artifact identity
  */
 public record AdmissionDeliveryRoute(
@@ -28,17 +35,17 @@ public record AdmissionDeliveryRoute(
     }
   }
 
-  /** Creates a route with an optional explicit partition and no artifact provenance. */
+  /** Creates an incomplete test route; it must not be persisted or published to Matching. */
   public AdmissionDeliveryRoute(Integer routingPartition) {
     this(routingPartition, null, null);
   }
 
-  /** Returns a route without an explicit partition assignment. */
+  /** Returns an unassigned route for isolated lifecycle tests, not production persistence. */
   public static AdmissionDeliveryRoute unassigned() {
     return new AdmissionDeliveryRoute(null, null, null);
   }
 
-  /** Returns a route with an explicit partition assignment. */
+  /** Returns a partition-only route for tests, including missing-provenance rejection tests. */
   public static AdmissionDeliveryRoute assigned(int routingPartition) {
     return new AdmissionDeliveryRoute(routingPartition, null, null);
   }

@@ -12,6 +12,8 @@ The migration tables, class shapes, and "remaining" descriptions below belong to
 implementation stages; the completion sections preserve their original verification boundaries.
 For example, `ReserveOperation` later gained a required business `tradingDay` alongside identity and
 terms. Use current source for exact signatures and the owning GitHub Issue for live workflow state.
+The WAL v1 and v2-to-v1 command adapters described in those records were later retired under
+[ADR-0007](../adr/0007-retire-pre-release-compatibility.md). Current WAL readers and writers use v2.
 
 ## Completed production migrations
 
@@ -25,7 +27,7 @@ terms. Use current source for exact signatures and the owning GitHub Issue for l
 | flat nine-field Risk Submission outbox event descriptor                          | `OutboxEvent(EventInfo, Routing, SerializedPayload, AggregateRef)`                                   | event identity, delivery route, payload type, and aggregate provenance are named   |
 | `buildPendingNew` / `buildRejected` positional FIX values                        | `FixOrderSnapshot` plus `FixExecutionIdentity`                                                         | order ID, ClOrdID, symbol, quantity, and ExecID cannot be exchanged                |
 | eight-value v2-to-v1 helper                                                      | adapter receives the source protobuf command                                                           | compatibility mapping is explicit and source-oriented                              |
-| eight-parameter new-order handler and seven/eight-parameter inbound composition  | deep new-order path modules plus a two-handler inbound dispatcher                                     | ingress owns path behavior while Spring owns concrete composition                  |
+| eight-parameter new-order handler and seven/eight-parameter inbound composition  | new-order path modules plus a two-handler inbound dispatcher                                          | ingress owns path behavior while Spring owns concrete composition                  |
 | eight-field `QuickFixGatewayProperties` configuration root                       | file, runtime-capability, and risk-client property modules                                             | each capability binds the unchanged namespace independently                        |
 | eight-collaborator `OrderAdmissionApplicationService`                            | four-value coordinator plus `AdmissionLifecycleTransactions`                                             | local transaction ownership and journal/outbox atomicity have a named seam        |
 
@@ -121,8 +123,8 @@ rejections have a stable code and detail. Its revision owns version and timestam
 At begin admission, risk-service resolves the partition for the command symbol from the approved
 daily artifact, persists the artifact identity and explicit partition with the pending journal
 entry, and later publishes to `matching.commands` using the durable command identity as message key.
-Recovery uses the recorded route rather than recomputing it. `AdmissionResult` is a separate
-projection of admission identity, decision, artifact provenance, and delivery route.
+Recovery uses the recorded route rather than recomputing it. `AdmissionResult` is an application
+result model containing admission identity, decision, artifact provenance, and delivery route.
 
 The existing optional ingress `routingSnapshotId` remains opaque and is not an authority for route
 selection. Completion requires semantic journal/result constructors, journal and recovery route
@@ -147,7 +149,7 @@ verification for this source directory.
 
 The QuickFIX ingress slice keeps the public application seam at `InboundFixMessageHandler`, which
 dispatches only by FIX message type to `NewOrderFixMessageHandler` or
-`CancelOrderFixMessageHandler`. `NewOrderFixMessageHandler` now receives four behavior-rich
+`CancelOrderFixMessageHandler`. In that migration, `NewOrderFixMessageHandler` received four
 modules: `NewOrderCommandPreparer` validates and normalizes the message,
 `NewOrderDurableAdmission` appends the WAL before invoking Risk Admission,
 `AcceptedNewOrderResponder` registers the session and performs the accepted FIX and compatibility
@@ -178,9 +180,16 @@ and leaves failures retryable. JDBC repositories remain thin adapters.
 
 ## Review checklist
 
-A new handwritten production Java method or constructor should be reviewed for a shorter semantic
-interface before merge; PMD blocks members that exceed its existing default threshold. Review must
-answer these questions:
+A new handwritten production Java method or constructor must follow this policy:
+
+| Parameter count | Policy |
+|---|---|
+| Six or fewer | Design-review target; review domain meaning and coupling even below the limit. |
+| Seven to nine | Record why a parameter object or a simpler module interface would create an artificial abstraction. |
+| Ten or more | PMD `ExcessiveParameterList` violation at the default inclusive threshold; a design-review exception cannot override it. |
+
+Keep `config/pmd/simplematch-design.xml` unchanged. Do not suppress the parameter rule or add a
+second parameter-count gate. Review must answer these questions:
 
 1. Which external shape, if any, must its adapter preserve?
 2. Do multiple values form a stable use-case command or value object in the owning bounded context?
@@ -191,9 +200,20 @@ answer these questions:
 6. Is the transaction owner still explicit after the change?
 7. Have all in-repository callers migrated so the positional Java member can be removed?
 
-The accepted solution is the smallest deep module that answers the business problem. Builders and
-generic parameter bags are not accepted as the sole repair because they do not create type safety,
-domain meaning, leverage, or locality.
+The accepted solution is the smallest module or parameter object that expresses the required
+behavior and invariants. A deep module hides useful complexity behind a simple interface; class
+extraction or a lower parameter count alone does not establish depth. Builders and generic
+parameter bags are not accepted as the sole repair because they do not establish domain meaning or
+prevent equal-typed argument swaps.
+
+### Reviewed constructor exception
+
+`NewOrderFixMessageHandler` has seven constructor parameters: four path collaborators, the admission
+gate, a clock, and the session registry for duplicate detection. Retain this explicit coordination.
+The dependencies have distinct types and responsibilities; a `Dependencies` wrapper would not add
+a shared invariant. This review permits the existing seven-parameter constructor, subject to the
+same review if responsibilities change. It does not extend the historical six-parameter inventory
+below to current code.
 
 ## Completion evidence for Issues #39 and #44
 
@@ -225,7 +245,7 @@ member above six parameters. Representative maximums are `PreparedMarketSnapshot
 `PublishedMarketSnapshot` (4), `SourceInstrument` (4), `OrderSessionState` (4), and
 `AdmissionResult` (4). The shared capability records and QuickFIX gateway-local property records
 are smaller still. The former `PlatformProperties` facade and all in-repository consumers were
-removed; no seven-to-ten parameter exception was needed.
+removed; no review exception above six parameters was needed at that verification stage.
 
 The external JSON, SQL, FIX, WAL v1, protobuf, Kafka, transaction, idempotency, routing, and
 recovery contracts remain unchanged. Codecs and JDBC adapters continue to flatten and rehydrate
