@@ -123,9 +123,11 @@ the deliberately conservative all-together envelope; none is an observed RSS pea
 
 ### Local production-like version contract
 
-The executable local profile is checked against this stable version set as of 2026-08-12. The
-versions are explicit rather than `latest`; update them together with the upstream compatibility
-review and the local contract test.
+The executable local profile uses the explicit versions below. The baseline was reviewed on
+2026-08-12; the Redis pin was updated on 2026-10-28 to match the
+[Redis 8.10.3 release](https://github.com/redis/redis/releases/tag/8.10.3) and its
+[official Alpine image](https://github.com/docker-library/official-images/blob/master/library/redis).
+Update version pins together with the upstream compatibility review and the local contract test.
 
 | Component | Version | Repository source |
 | --- | --- | --- |
@@ -134,7 +136,7 @@ review and the local contract test.
 | vcpkg | 2026.07.29 | `ci-native.yml`, `Dockerfile.matching` |
 | Apache Kafka | 4.3.1 | `kafka-kraft.yaml` and local Compose profile |
 | PostgreSQL | 18.4 | `postgresql.yaml` and local Compose/Flyway CI |
-| Redis | 8.8.1-alpine | `redis.yaml` and local Compose profile |
+| Redis | 8.10.3-alpine | `redis.yaml` and local Compose profile |
 | Debezium Kafka Connect | 3.6.0.Final | `debezium-kafka-connect-local.yaml` and local Compose profile |
 | Matching build base | Ubuntu 26.04 LTS | `Dockerfile.matching` |
 

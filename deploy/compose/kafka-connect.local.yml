@@ -10,7 +10,7 @@ services:
       - "${SIMPLEMATCH_POSTGRES_PORT:-5432}:5432"
 
   redis:
-    image: redis:8.8.1-alpine
+    image: redis:8.10.3-alpine
     command: ["redis-server", "--appendonly", "yes"]
     ports:
       - "${SIMPLEMATCH_REDIS_PORT:-6379}:6379"

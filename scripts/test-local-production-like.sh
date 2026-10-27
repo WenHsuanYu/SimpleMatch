@@ -50,7 +50,7 @@ for version_contract in \
   'gradle-9.7.0-bin.zip' \
   'spring-boot = "4.1.0"' \
   'postgres:18.4' \
-  'redis:8.8.1-alpine' \
+  'redis:8.10.3-alpine' \
   'apache/kafka:4.3.1' \
   'quay.io/debezium/connect:3.6.0.Final' \
   'ubuntu:26.04' \

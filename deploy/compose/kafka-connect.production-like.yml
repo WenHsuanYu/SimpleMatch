@@ -15,7 +15,7 @@ services:
       - "${SIMPLEMATCH_POSTGRES_PRODUCTION_LIKE_PORT:-15432}:5432"
 
   redis:
-    image: redis:8.8.1-alpine
+    image: redis:8.10.3-alpine
     command: ["redis-server", "--appendonly", "yes"]
     healthcheck:
       test: ["CMD", "redis-cli", "ping"]

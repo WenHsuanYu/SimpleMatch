@@ -73,7 +73,7 @@ spec:
       terminationGracePeriodSeconds: 30
       containers:
         - name: redis
-          image: redis:8.8.1-alpine
+          image: redis:8.10.3-alpine
           imagePullPolicy: IfNotPresent
           command: ["redis-server", "--appendonly", "yes", "--dir", "/data"]
           ports:

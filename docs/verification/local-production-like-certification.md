@@ -89,9 +89,12 @@ diagnostic evidence, and migration-first apply sequence, is recorded in
 
 The local dependency/build versions are checked in the deployment documentation and contract test:
 Gradle 9.7.0, Spring Boot 4.1.0, vcpkg 2026.07.29, Apache Kafka 4.3.1, PostgreSQL 18.4, Redis
-8.8.1-alpine, Debezium 3.6.0.Final, and Ubuntu 26.04 LTS for the native image builder/runtime.
-These are the latest stable versions verified on 2026-08-12 for this local compatibility profile;
-the contract intentionally avoids mutable `latest` and prerelease tags.
+8.10.3-alpine, Debezium 3.6.0.Final, and Ubuntu 26.04 LTS for the native image builder/runtime.
+The baseline version review dates to 2026-08-12; the Redis pin was updated on 2026-10-28 using the
+[upstream release](https://github.com/redis/redis/releases/tag/8.10.3) and
+[official image listing](https://github.com/docker-library/official-images/blob/master/library/redis).
+The contract intentionally avoids mutable `latest` and prerelease tags. Runtime certification
+evidence remains tied to the image identities retained for each run.
 
 ### Normal resting-buy integration baseline (#162)
 
