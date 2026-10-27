@@ -5,69 +5,77 @@ Status: accepted.
 ## Context
 
 Manual Kafka partition assignment keeps instrument ownership stable and avoids consumer-group
-rebalance, but it does not by itself prevent two processes from consuming the same partition. The
-trading system also needs one place to combine Market Reference identity, Matching recovery,
-critical-consumer lag, quarantine, and session time into admission decisions.
+rebalance. It does not by itself prevent two processes from consuming the same partition. The
+trading system also needs one place to combine operational facts for admission decisions:
 
-The current QuickFIX StatefulSet has two replica slots but only one configured FIX session and
-process-local ownership. It is unfinished scale-out scaffolding, not a safe multi-owner deployment.
+- Market Reference identity.
+- Matching recovery.
+- Critical-consumer lag.
+- Quarantine.
+- Session time.
+
+Before this decision, the QuickFIX StatefulSet declared two replica slots. It configured only one
+FIX session and stored ownership inside each process. That incomplete scale-out design did not
+provide a safe deployment with multiple owners.
 
 ## Decision
 
 Phase 1 runs one QuickFIX Gateway and 15 native Matching pods. `matching-N` maps directly to
-partition `N`. Each Matching ordinal is protected by StatefulSet identity, its own
-`ReadWriteOncePod` PVC, and a renewable Kubernetes Lease. A pod cannot poll, replay, match, publish,
-or become Ready without a valid infrastructure-owned `PartitionOwnershipPermit`. Lease uncertainty
-for five seconds self-fences the process. Force deletion is prohibited by the normal recovery
-runbook.
+partition `N`. StatefulSet identity, a dedicated `ReadWriteOncePod` PVC, and a renewable Kubernetes
+Lease protect each Matching ordinal. A pod requires a valid infrastructure-owned
+`PartitionOwnershipPermit` before it can poll, replay, match, publish, or become Ready. The process
+fences itself after five seconds of Lease uncertainty. The normal recovery runbook prohibits force
+deletion.
 
-The Gateway starts `PRE_OPEN` and owns the admission state machine:
+The Gateway starts in `PRE_OPEN` and owns the admission state machine:
 
-- `PRE_OPEN`: new and cancel closed.
-- `OPEN`: new and cancel open.
-- `NEW_ORDERS_PAUSED`: new closed, cancel open.
-- `MARKET_INTERRUPTED`: new and cancel closed.
-- `CLOSED`: terminal for the trading day.
+- `PRE_OPEN`: the Gateway rejects new orders and cancels.
+- `OPEN`: the Gateway accepts new orders and cancels.
+- `NEW_ORDERS_PAUSED`: the Gateway rejects new orders and accepts cancels.
+- `MARKET_INTERRUPTED`: the Gateway rejects new orders and cancels.
+- `CLOSED`: the Gateway remains closed for the rest of the trading day.
 
 Operators use `status`, `open`, `pause-new-orders`, `interrupt-market`, and `close-day`. Only `open`
-can open admission and it always repeats the complete readiness validation. Session close
-automatically closes admission; failure recovery never automatically reopens.
+can open admission. It always repeats the complete readiness validation. Session close
+automatically closes admission. Failure recovery never automatically reopens admission.
 
 Infrastructure adapters collect Risk status, Matching pod/Lease/recovery status, Kafka end offsets,
-and Persistence/Account/QuickFIX critical-consumer status. Gateway domain logic sees only
-service-specific status values combined as `TradingSystemStatus`; it does not depend directly on
+and Persistence/Account/QuickFIX critical-consumer status. Gateway domain logic sees only status
+values for those services, combined as `TradingSystemStatus`. It does not depend directly on
 Kubernetes or Kafka client types.
 
 State silence over five seconds pauses new orders. A critical consumer's oldest unprocessed record
-warns at 30 seconds and pauses at 120 seconds. Zero market activity has no pending record and remains
-Ready. Artifact, session, schema, algorithm, or event-payload identity conflict interrupts the
-market and requires operator investigation. Market-data projection is non-critical and does not
-participate in admission readiness.
+triggers a warning at 30 seconds and a pause at 120 seconds. Zero market activity creates no pending
+record and remains compatible with Ready status. An artifact, session, schema, algorithm, or
+event-payload identity conflict interrupts the market. It requires operator investigation.
 
+Market-data projection is non-critical and does not participate in admission readiness.
 Persistence, Account, and QuickFIX use independent critical consumer groups and durable inboxes.
 Persistence stores immutable trades and two order-fill legs. Account atomically applies fill and
-reservation transitions. QuickFIX stores event receipt and per-order delivery intent durably and
-uses stable FIX execution identity with a JDBC-backed session message store. Market-data projection
-is rebuildable and may use delayed retry/DLQ.
+reservation transitions.
+
+QuickFIX durably stores event receipt and delivery intent for each order. It uses stable FIX
+execution identity and a JDBC-backed session message store. Market-data projection is rebuildable
+and may use delayed retry and a dead-letter queue (DLQ).
 
 ## Consequences
 
-The Gateway becomes the single Phase 1 operational admission authority but not a new standalone
-coordination service. Healthy Matching partitions continue existing work during a global new-order
-pause; cancels remain accepted and wait durably for a recovering partition. No partition is
-reassigned and no order book is added intraday.
+The Gateway becomes the single Phase 1 authority for operational admission. It does not become a
+separate coordination service. Healthy Matching partitions continue existing work during a global
+pause of new orders. Cancels remain accepted and wait durably for a recovering partition. The
+system neither reassigns partitions nor adds order books intraday.
 
-Production Matching requires three integer CPUs per pod, Guaranteed QoS, CPU pinning/static CPU
-Manager certification, and a capacity/recovery benchmark. Local development may run with reduced
-durability and scheduling but cannot satisfy production readiness.
+Production Matching requires three integer CPUs per pod and Guaranteed QoS. It also requires CPU
+pinning/static CPU Manager certification and a capacity/recovery benchmark. Local development may
+use reduced durability and scheduling guarantees, but cannot satisfy production readiness.
 
 ## Considered options
 
-- Multiple QuickFIX owners were deferred because shared session ownership, fencing, and failover are
-  not complete.
-- Consumer-group rebalance was rejected because a failed partition must not move to another
+- This decision defers multiple QuickFIX owners because shared session ownership, fencing, and
+  failover are incomplete.
+- This decision rejects consumer-group rebalance. A failed partition must not move to another
   Matching process.
-- A standalone Operational Coordination service was rejected; the single Gateway can compose the
-  required operational facts through adapters.
-- Kubernetes readiness alone was rejected because it does not express artifact identity, Kafka
-  progress, quarantine, or deterministic recovery.
+- This decision rejects a standalone Operational Coordination service. The single Gateway can
+  combine the required operational facts through adapters.
+- This decision rejects Kubernetes readiness as the only admission check. Kubernetes readiness does
+  not express artifact identity, Kafka progress, quarantine, or deterministic recovery.
