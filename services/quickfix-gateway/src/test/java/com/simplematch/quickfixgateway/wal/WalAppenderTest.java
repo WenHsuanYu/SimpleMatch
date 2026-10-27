@@ -2,6 +2,13 @@ package com.simplematch.quickfixgateway.wal;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.junit.jupiter.api.Assertions.assertThrows;
+import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.Mockito.doAnswer;
+import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.mockStatic;
+import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.when;
 
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
@@ -9,8 +16,10 @@ import com.fasterxml.jackson.databind.node.ObjectNode;
 import com.simplematch.contracts.common.v2.OrderType;
 import com.simplematch.contracts.common.v2.Side;
 import com.simplematch.contracts.common.v2.TimeInForce;
+import java.io.IOException;
 import java.math.BigInteger;
 import java.nio.ByteBuffer;
+import java.nio.channels.FileChannel;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
@@ -22,11 +31,100 @@ import org.junit.jupiter.api.io.TempDir;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.NullSource;
 import org.junit.jupiter.params.provider.ValueSource;
+import org.mockito.MockedStatic;
 
 class WalAppenderTest {
   @TempDir Path tempDir;
 
   private final ObjectMapper objectMapper = new ObjectMapper();
+
+  @DisplayName("append completes short writes before forcing the full WAL record")
+  @Test
+  void appendCompletesShortWritesBeforeForce() throws Exception {
+    final Path walPath = tempDir.resolve("short-write.wal");
+    final FileChannel channel = mock(FileChannel.class);
+    try (FileChannel delegate =
+        FileChannel.open(
+            walPath, StandardOpenOption.CREATE, StandardOpenOption.WRITE, StandardOpenOption.APPEND)) {
+      when(channel.write(any(ByteBuffer.class)))
+          .thenAnswer(invocation -> {
+            final ByteBuffer buffer = invocation.getArgument(0);
+            final ByteBuffer fragment = buffer.slice();
+            fragment.limit(Math.min(fragment.remaining(), 7));
+            final int written = delegate.write(fragment);
+            buffer.position(buffer.position() + written);
+            return written;
+          });
+      doAnswer(invocation -> {
+            assertThat(Files.readString(walPath)).endsWith("\n");
+            delegate.force(false);
+            return null;
+          })
+          .when(channel)
+          .force(false);
+
+      appendUsingChannel(walPath, channel);
+      verify(channel).force(false);
+    }
+    try (WalAppender walAppender = new WalAppender(walPath, StandardCharsets.UTF_8)) {
+      assertThat(walAppender.readAll()).containsExactly(validNewOrderRecord());
+    }
+  }
+
+  @DisplayName("append fails without forcing when a write makes no progress")
+  @Test
+  void appendRejectsWriteWithoutProgress() throws Exception {
+    final FileChannel channel = mock(FileChannel.class);
+    when(channel.write(any(ByteBuffer.class)))
+        .thenReturn(0)
+        .thenThrow(new IOException("unexpected retry after a stalled write"));
+
+    final IllegalStateException failure =
+        assertThrows(
+            IllegalStateException.class,
+            () -> appendUsingChannel(tempDir.resolve("stalled-write.wal"), channel));
+
+    assertThat(failure).hasCauseInstanceOf(IOException.class);
+    assertThat(failure.getCause()).hasMessage("WAL write made no progress");
+    verify(channel, never()).force(false);
+  }
+
+  @DisplayName("append fails without forcing when a later write throws")
+  @Test
+  void appendRejectsFailureAfterPartialWrite() throws Exception {
+    final FileChannel channel = mock(FileChannel.class);
+    when(channel.write(any(ByteBuffer.class)))
+        .thenAnswer(invocation -> {
+          final ByteBuffer buffer = invocation.getArgument(0);
+          buffer.position(buffer.position() + 3);
+          return 3;
+        })
+        .thenThrow(new IOException("disk write failed"));
+
+    final IllegalStateException failure =
+        assertThrows(
+            IllegalStateException.class,
+            () -> appendUsingChannel(tempDir.resolve("failed-write.wal"), channel));
+
+    assertThat(failure).hasCauseInstanceOf(IOException.class);
+    assertThat(failure.getCause()).hasMessage("disk write failed");
+    verify(channel, never()).force(false);
+  }
+
+  private void appendUsingChannel(Path walPath, FileChannel channel) throws Exception {
+    try (MockedStatic<FileChannel> channels = mockStatic(FileChannel.class)) {
+      channels.when(() ->
+          FileChannel.open(
+              walPath,
+              StandardOpenOption.CREATE,
+              StandardOpenOption.WRITE,
+              StandardOpenOption.APPEND))
+          .thenReturn(channel);
+      try (WalAppender walAppender = new WalAppender(walPath, StandardCharsets.UTF_8)) {
+        walAppender.appendAndFlush(validNewOrderRecord());
+      }
+    }
+  }
 
   @DisplayName("replay rejects integers outside the signed 64-bit range without changing WAL bytes")
   @ParameterizedTest

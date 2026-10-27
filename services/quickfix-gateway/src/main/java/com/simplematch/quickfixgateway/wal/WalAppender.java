@@ -53,12 +53,22 @@ public final class WalAppender implements AutoCloseable {
     }
   }
 
-  /** Appends a record and forces its bytes to the operating-system file channel. */
+  /**
+   * Writes the complete record and line terminator, then forces file contents to storage.
+   *
+   * @param walRecord validated record to persist
+   * @throws IllegalStateException if a write makes no progress or file I/O fails
+   */
   public void appendAndFlush(WalRecord walRecord) {
     try {
       final byte[] payload = (codec.encode(walRecord) + "\n").getBytes(charset);
       synchronized (monitor) {
-        fileChannel.write(ByteBuffer.wrap(payload));
+        final ByteBuffer buffer = ByteBuffer.wrap(payload);
+        while (buffer.hasRemaining()) {
+          if (fileChannel.write(buffer) <= 0) {
+            throw new IOException("WAL write made no progress");
+          }
+        }
         fileChannel.force(false);
       }
     } catch (IOException exception) {
