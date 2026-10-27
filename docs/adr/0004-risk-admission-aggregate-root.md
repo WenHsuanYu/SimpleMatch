@@ -2,14 +2,20 @@
 
 Status: accepted
 
-Risk Admission models one Admission aggregate root per command identity. The root owns the
-normalized decision facts, the alternate FIX business key used for idempotency, and the lifecycle
-from PENDING to ACCEPTED or REJECTED; equivalent retries reproduce the stored outcome while
-conflicting identities are rejected. Account reservations, matching orders, and outbox delivery
-remain separate context-owned concerns, so the admission application service coordinates a local
-finalization boundary and recovers remote reservation work without a distributed transaction.
-`OrderAdmissionApplicationService` owns synchronous admission orchestration,
-`AdmissionLifecycleTransactions` owns pending and terminal local transaction boundaries, and
-`PendingAdmissionRecovery` owns scheduled retry orchestration. These are application modules:
-repositories remain thin adapters, account reservation RPCs remain outside database transactions,
-and terminal journal state plus its outbox record remain one atomic local outcome.
+Risk Admission models one Admission aggregate root per command identity. The root owns normalized
+decision facts and the alternate FIX business key for idempotency. It also owns the lifecycle from
+PENDING to ACCEPTED or REJECTED. Equivalent retries reproduce the stored outcome. Admission rejects
+conflicting identities.
+
+Account reservations, matching orders, and outbox delivery remain separate concerns in their
+owning contexts. The admission application service coordinates local finalization and recovers
+remote reservation work without a distributed transaction.
+
+Three application modules divide this work:
+
+- `OrderAdmissionApplicationService` owns synchronous admission orchestration.
+- `AdmissionLifecycleTransactions` owns pending and terminal local transactions.
+- `PendingAdmissionRecovery` owns scheduled retries.
+
+Repositories remain thin adapters. Account reservation RPCs remain outside database transactions.
+Terminal journal state and its outbox record remain one atomic local outcome.
