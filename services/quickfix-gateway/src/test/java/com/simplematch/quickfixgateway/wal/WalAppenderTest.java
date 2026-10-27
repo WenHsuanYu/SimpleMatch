@@ -9,6 +9,7 @@ import com.fasterxml.jackson.databind.node.ObjectNode;
 import com.simplematch.contracts.common.v2.OrderType;
 import com.simplematch.contracts.common.v2.Side;
 import com.simplematch.contracts.common.v2.TimeInForce;
+import java.math.BigInteger;
 import java.nio.ByteBuffer;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
@@ -26,6 +27,47 @@ class WalAppenderTest {
   @TempDir Path tempDir;
 
   private final ObjectMapper objectMapper = new ObjectMapper();
+
+  @DisplayName("replay rejects integers outside the signed 64-bit range without changing WAL bytes")
+  @ParameterizedTest
+  @ValueSource(
+      strings = {
+        "9223372036854775808", "-9223372036854775809",
+        "18446744073709551616", "-18446744073709551616"
+      })
+  void replayRejectsOutOfRangeIntegers(String value) throws Exception {
+    final Path walPath = tempDir.resolve("out-of-range-integer.wal");
+    try (WalAppender walAppender = new WalAppender(walPath, StandardCharsets.UTF_8)) {
+      walAppender.appendAndFlush(validNewOrderRecord());
+      final ObjectNode invalid = (ObjectNode) objectMapper.readTree(Files.readString(walPath));
+      invalid.put("createdAtUnixMs", new BigInteger(value));
+      Files.writeString(walPath, invalid + "\n", StandardCharsets.UTF_8, StandardOpenOption.APPEND);
+      final byte[] originalBytes = Files.readAllBytes(walPath);
+
+      final WalReplayException failure = assertThrows(WalReplayException.class, walAppender::readAll);
+
+      assertThat(failure.lineNumber()).isEqualTo(2);
+      assertThat(failure)
+          .hasMessageContaining(
+              "createdAtUnixMs must be an integer JSON number in the signed 64-bit range");
+      assertThat(Files.readAllBytes(walPath)).isEqualTo(originalBytes);
+    }
+  }
+
+  @DisplayName("replay preserves valid timestamp limits without numeric conversion loss")
+  @ParameterizedTest
+  @ValueSource(longs = {0L, Long.MAX_VALUE})
+  void replayPreservesValidTimestampLimits(long value) throws Exception {
+    final Path walPath = tempDir.resolve("timestamp-limits.wal");
+    try (WalAppender walAppender = new WalAppender(walPath, StandardCharsets.UTF_8)) {
+      walAppender.appendAndFlush(validNewOrderRecord());
+      final ObjectNode json = (ObjectNode) objectMapper.readTree(Files.readString(walPath));
+      json.put("createdAtUnixMs", value);
+      Files.writeString(walPath, json + "\n", StandardCharsets.UTF_8);
+
+      assertThat(walAppender.readAll().getFirst().createdAtUnixMs()).isEqualTo(value);
+    }
+  }
 
   @ParameterizedTest
   @ValueSource(strings = {"v1", "v3"})

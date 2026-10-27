@@ -57,8 +57,9 @@ final class WalJsonDocument {
 
   long requiredLong(String fieldName) {
     final JsonNode value = json.get(fieldName);
-    if (value == null || !value.isIntegralNumber()) {
-      throw new WalRecordCodecException(fieldName + " must be an integer JSON number");
+    if (value == null || !value.isIntegralNumber() || !value.canConvertToLong()) {
+      throw new WalRecordCodecException(
+          fieldName + " must be an integer JSON number in the signed 64-bit range");
     }
     return value.longValue();
   }
