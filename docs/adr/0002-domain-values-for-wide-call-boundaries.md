@@ -216,72 +216,91 @@ The original completion criteria required:
 
 ## Risk Admission journal slice
 
-`AdmissionJournalEntry` composes a validated `AdmissionCommand`, an `AdmissionDeliveryRoute`, and
+`AdmissionJournalEntry` combines a validated `AdmissionCommand`, an `AdmissionDeliveryRoute`, and
 an `AdmissionLifecycle`. The command retains order facts, FIX business identity, and the opaque
-`routingSnapshotId` supplied at ingress. The delivery route owns the explicit partition, artifact
-identity, and routing-algorithm version resolved from the approved daily artifact. The lifecycle
-uses state-specific decisions rather than a state enum plus unrelated nullable fields: pending has
-no decision, accepted new orders have a reservation reference, accepted cancellations explicitly
-require none, and rejection has a stable nonblank code and detail. Revision and timestamps belong
-to that lifecycle.
+`routingSnapshotId` from ingress. The delivery route contains the explicit partition, artifact
+identity, and routing-algorithm version from the approved daily artifact.
 
-`AdmissionResult` is an application result model containing Admission identity, decision, artifact
-provenance, and delivery route. It does not copy journal revision history or full order facts. The
-JDBC adapter alone flattens and rehydrates the journal row. When an admission begins, risk-service resolves the
-approved daily artifact exactly once, records its identity, algorithm version, and explicit
-partition with the pending journal entry, and publishes with the durable command identity as the
-message key and that explicit partition. Finalization and pending recovery reuse the recorded route
-rather than re-resolving it.
+The lifecycle uses decisions for each state, not a state enum with unrelated nullable fields:
 
-The Java route type enforces local consistency: an optional partition is non-negative, and artifact
-identity and algorithm version are present together. It still permits routes without an assigned
-partition or artifact provenance. `unassigned()`, `assigned(int)`, and the single-partition
-constructor support isolated lifecycle and failure tests; they are not valid production delivery
-routes. `DailyArtifactAdmissionRoutingResolver` supplies complete routes for new admissions.
-`AdmissionJournalRowMapper` rejects persisted rows without routing provenance, and
+- Pending admissions have no terminal decision.
+- Accepted new orders have a reservation reference.
+- Accepted cancellations explicitly require no reservation reference.
+- Rejections have a stable, nonblank code and detail.
+
+Revision and timestamps belong to that lifecycle.
+
+`AdmissionResult` is an application result model. It contains Admission identity, decision,
+artifact provenance, and delivery route. It does not copy journal revision history or full order
+facts. Only the JDBC adapter flattens and rehydrates the journal row.
+
+When an admission starts, risk-service resolves the approved daily artifact exactly once. It
+persists the artifact identity, algorithm version, and explicit partition with the pending journal
+entry. It publishes with the durable command identity as message key and that explicit partition.
+Finalization and pending recovery reuse the recorded route. They do not resolve it again.
+
+The Java route type checks two local invariants:
+
+- An optional partition is non-negative.
+- Artifact identity and algorithm version are present together.
+
+The type still permits routes without an assigned partition or artifact provenance. `unassigned()`,
+`assigned(int)`, and the single-partition constructor support isolated lifecycle and failure tests.
+These routes are not valid for production delivery.
+
+`DailyArtifactAdmissionRoutingResolver` supplies complete routes for new admissions.
+`AdmissionJournalRowMapper` rejects persisted rows without routing provenance.
 `AdmissionOutboxFactory` requires the partition, artifact identity, and algorithm version before
-creating a Matching command. Artifact approval and instrument-to-partition membership are resolver
-responsibilities; constructing a route does not prove them.
+creating a Matching command. The resolver owns artifact approval and instrument-to-partition
+membership checks. Constructing a route does not prove either condition.
 
 This result model is not an independently maintained CQRS read model. It selects fields from the
-journal entry for an application response; it has no separate projection store or update process.
+journal entry for an application response. It has no separate projection store or update process.
 
-The ingress `routingSnapshotId` remains optional and opaque; it is never an authority for routing.
-The retired nullable `routing_policy_id` compatibility column and policy projection are absent from
-the current schema. Current regression coverage must retain semantic journal and result
-construction, pending/accepted/rejected JDBC round-trips, artifact identity and partition on
-recovery, and accepted outbox records with the command-identity message key and explicit partition.
+The ingress `routingSnapshotId` remains optional and opaque. It is never an authority for routing.
+The current schema excludes the retired nullable `routing_policy_id` compatibility column and
+policy projection.
+
+Current regression coverage must preserve:
+
+- Semantic journal and result construction.
+- JDBC round-trips for pending, accepted, and rejected states.
+- Artifact identity and partition during recovery.
+- Accepted outbox records with the command-identity message key and explicit partition.
 
 ## Risk Admission application modules
 
-`OrderAdmissionApplicationService` owns synchronous new-order and cancel orchestration: validation,
-backpressure, and account reservation outside a database transaction. It delegates pending and
-terminal local work to `AdmissionLifecycleTransactions`, an application module that owns the
-transaction template, journal, outbox, event factory, and clock. Beginning an admission is one local
-transaction; final journal state and its outbox record are another atomic local transaction.
+`OrderAdmissionApplicationService` owns synchronous orchestration for new orders and cancels.
+It validates commands, applies backpressure, and requests account reservations outside a database
+transaction. It delegates pending and terminal local work to `AdmissionLifecycleTransactions`.
+That application module owns the transaction template, journal, outbox, event factory, and clock.
 
-`PendingAdmissionRecovery` owns scheduled recovery. It retains the bounded age and batch, performs
-remote reservation work outside a transaction, delegates terminal persistence to
-`AdmissionLifecycleTransactions`, and leaves failures eligible for a later retry. Aggregate state
-transitions remain in `AdmissionJournalEntry`; repositories remain thin adapters.
+Beginning an admission uses one local transaction. Final journal state and its outbox record form
+another atomic local transaction.
+
+`PendingAdmissionRecovery` owns scheduled recovery. It retains bounded age and batch limits.
+It requests remote reservations outside a transaction. It delegates terminal persistence to
+`AdmissionLifecycleTransactions`. Failures remain eligible for a later retry.
+
+`AdmissionJournalEntry` owns aggregate state transitions. Repositories remain thin adapters.
 
 ## Configuration properties grouped by responsibility
 
-QuickFIX Gateway configuration is split into independently injectable file settings, runtime
-identity and capability settings, and risk-client resilience settings. Shared platform configuration
-is split into environment, Kafka, PostgreSQL, Redis, gRPC, routing, observability, and market
-property modules. Consumers receive only the capabilities they use, and validation follows the same
-capability seams.
+QuickFIX Gateway configuration has independently injectable property groups. These groups cover
+file settings, runtime identity and capabilities, and risk-client resilience. Shared platform
+configuration has separate modules for environment, Kafka, PostgreSQL, Redis, gRPC, routing,
+observability, and market properties. Consumers receive only the capabilities they use.
+Validation follows those same groups.
 
-Existing Spring property keys and defaults remain unchanged; multiple property records may bind
-different subsets of an existing prefix. The former `QuickFixGatewayProperties` migration facade
-was removed by Issue #67. Issue #75 subsequently removed the shared `PlatformProperties` facade
-after its final production consumers migrated; it is not replaced by another arbitrary root
-configuration group.
+Existing Spring property keys and defaults remain unchanged. Multiple property records may bind
+different subsets of an existing prefix. Issue #67 removed the former `QuickFixGatewayProperties`
+migration facade. Issue #75 later removed the shared `PlatformProperties` facade after its final
+production consumers migrated. No arbitrary root configuration group replaces it.
 
-The gateway-local QuickFIX split and shared capability migration were completed one service at a
-time with context and configuration tests. Shared startup validation now operates directly on the
-capability modules, and persistence tests assert the environment capability without a root facade.
+The repository completed the gateway-local QuickFIX split and shared capability migration one
+service at a time. Context and configuration tests covered those changes. Shared startup
+validation now uses the capability modules directly. Persistence tests check the environment
+capability without a root facade.
 
 ## Validation and business invariants
 
