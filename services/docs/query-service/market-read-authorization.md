@@ -94,7 +94,9 @@ bash scripts/test-query-redis-security.sh
 ```
 
 PostgreSQL requires the existing private test environment and database ownership marker; ordinary
-tests explicitly skip its concurrency cases. The Redis runner requires a TLS-capable executable,
-OpenSSL and loopback networking and uses private disposable credentials. Exact source inputs,
+tests explicitly skip its concurrency cases. The current Redis runner requires Docker and OpenSSL.
+Testcontainers manages the disposable Redis containers with private credentials.
+See the [Redis test requirements](../../../deploy/k8s/README.md#query-redis-transport-and-acl-contract).
+Exact source inputs,
 commands, original red/failure evidence, review, cleanup and final-head CI are recorded in #192.
 No source-event replay, multi-replica revocation, inbound TLS or production readiness is inferred.

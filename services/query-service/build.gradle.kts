@@ -16,6 +16,8 @@ dependencies {
     testImplementation(libs.h2)
     testImplementation(libs.flyway.core)
     testImplementation("org.springframework:spring-jdbc")
+    testImplementation(libs.testcontainers.core)
+    testImplementation(libs.testcontainers.junit.jupiter)
     testRuntimeOnly(libs.flyway.database.postgresql)
 }
 
@@ -37,7 +39,7 @@ tasks.test {
 
 tasks.register<Test>("redisSecurityTest") {
     group = "verification"
-    description = "Verifies Query TLS and ACL behavior against runner-owned Redis fixtures."
+    description = "Verifies Query TLS and ACL behavior against Testcontainers Redis fixtures."
     testClassesDirs = sourceSets.test.get().output.classesDirs
     classpath = sourceSets.test.get().runtimeClasspath
     filter.includeTestsMatching("com.simplematch.queryservice.config.QueryRedisSecurityIntegrationTest")

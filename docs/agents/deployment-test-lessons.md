@@ -8,6 +8,12 @@ that those failures are expected to recur.
 
 ## Run preflight
 
+The 2026-10-28 Redis fixture preparation failed before container startup.
+The host OpenSSL reported CLI version 3.0.13 and library version 3.5.5.
+An isolated `req -x509 -addext` probe reproduced SIGSEGV (exit 139).
+The fixture now signs its untrusted certificate through a CSR and an extension file.
+Check every OpenSSL exit status before starting the tests. A partial certificate file does not establish success.
+
 Before applying deployment resources or injecting a deployment fault:
 
 1. Read the lessons below and run every prevention check that applies to the selected profile.

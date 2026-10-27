@@ -8,6 +8,8 @@ import com.simplematch.config.EnvironmentProperties;
 import com.simplematch.config.RedisProperties;
 import com.simplematch.queryservice.runtime.RedisQueryReadCache;
 import java.nio.charset.StandardCharsets;
+import java.nio.file.Path;
+import java.time.Duration;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.concurrent.TimeUnit;
@@ -20,9 +22,19 @@ import org.springframework.data.redis.connection.RedisConnection;
 import org.springframework.data.redis.connection.RedisStandaloneConfiguration;
 import org.springframework.data.redis.connection.lettuce.LettuceConnectionFactory;
 import org.springframework.data.redis.core.RedisTemplate;
+import org.testcontainers.containers.GenericContainer;
+import org.testcontainers.containers.wait.strategy.Wait;
+import org.testcontainers.junit.jupiter.Container;
+import org.testcontainers.junit.jupiter.Testcontainers;
+import org.testcontainers.utility.MountableFile;
 
-/** Network regression gate run only by scripts/test-query-redis-security.sh. */
+/** Tests Query TLS and ACL behavior with disposable Redis containers and private certificate files. */
+@Testcontainers
 class QueryRedisSecurityIntegrationTest {
+  private static final int REDIS_PORT = 6379;
+  @Container private static final GenericContainer<?> TRUSTED = redis("trusted");
+  @Container private static final GenericContainer<?> MISMATCH = redis("mismatch");
+  @Container private static final GenericContainer<?> UNTRUSTED = redis("untrusted");
   private final List<LettuceConnectionFactory> factories = new ArrayList<>();
 
   @AfterEach
@@ -98,7 +110,7 @@ class QueryRedisSecurityIntegrationTest {
         .hasStackTraceContaining("WRONGPASS");
 
     final RedisStandaloneConfiguration server =
-        new RedisStandaloneConfiguration("localhost", Integer.parseInt(required("PORT")));
+        new RedisStandaloneConfiguration(TRUSTED.getHost(), TRUSTED.getMappedPort(REDIS_PORT));
     final LettuceConnectionFactory anonymous =
         new LettuceConnectionFactory(server, wrong.getClientConfiguration());
     factories.add(anonymous);
@@ -140,6 +152,12 @@ class QueryRedisSecurityIntegrationTest {
   }
 
   private QueryServiceProperties properties(String port, String username, String password) {
+    final GenericContainer<?> container = switch (port) {
+      case "PORT" -> TRUSTED;
+      case "MISMATCH_PORT" -> MISMATCH;
+      case "UNTRUSTED_PORT" -> UNTRUSTED;
+      default -> throw new IllegalArgumentException("Unknown Redis test endpoint: " + port);
+    };
     return new QueryServiceProperties(
         null,
         null,
@@ -148,13 +166,35 @@ class QueryRedisSecurityIntegrationTest {
             "query:v2:tls",
             null,
             null,
-            "localhost:" + required(port),
+            container.getHost() + ":" + container.getMappedPort(REDIS_PORT),
             new QueryServiceProperties.RedisSecurity(true, required("CA"), username, password)),
         null,
         null);
   }
 
-  private String required(String name) {
+  /** Copies only the server credentials and starts one bounded TLS endpoint. */
+  private static GenericContainer<?> redis(String identity) {
+    final Path directory = Path.of(required("DIRECTORY"));
+    return new GenericContainer<>("redis:8.10.3-alpine")
+        .withCopyFileToContainer(
+            MountableFile.forHostPath(directory.resolve(identity + ".crt"), 0444), "/tls/server.crt")
+        .withCopyFileToContainer(
+            MountableFile.forHostPath(directory.resolve(identity + ".key"), 0444), "/tls/server.key")
+        .withCopyFileToContainer(
+            MountableFile.forHostPath(directory.resolve("ca.crt"), 0444), "/tls/ca.crt")
+        .withCopyFileToContainer(
+            MountableFile.forHostPath(directory.resolve("users.acl"), 0444), "/tls/users.acl")
+        .withExposedPorts(REDIS_PORT)
+        .withCommand(
+            "redis-server", "--bind", "0.0.0.0", "--port", "0", "--tls-port", "6379",
+            "--tls-cert-file", "/tls/server.crt", "--tls-key-file", "/tls/server.key",
+            "--tls-ca-cert-file", "/tls/ca.crt", "--tls-auth-clients", "no",
+            "--aclfile", "/tls/users.acl", "--save", "", "--appendonly", "no")
+        .waitingFor(Wait.forListeningPort())
+        .withStartupTimeout(Duration.ofSeconds(30));
+  }
+
+  private static String required(String name) {
     final String value = System.getenv("SIMPLEMATCH_REDIS_TEST_" + name);
     if (value == null || value.isBlank()) {
       throw new IllegalStateException(

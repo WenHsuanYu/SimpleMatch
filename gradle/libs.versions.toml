@@ -47,6 +47,8 @@ spring-boot-bom = { module = "org.springframework.boot:spring-boot-dependencies"
 spring-cloud-bom = { module = "org.springframework.cloud:spring-cloud-dependencies", version.ref = "spring-cloud" }
 spotbugs-gradle-plugin = { module = "com.github.spotbugs.snom:spotbugs-gradle-plugin", version.ref = "spotbugs-gradle-plugin" }
 spotbugs-annotations = { module = "com.github.spotbugs:spotbugs-annotations", version.ref = "spotbugs-tool" }
+testcontainers-core = { module = "org.testcontainers:testcontainers" }
+testcontainers-junit-jupiter = { module = "org.testcontainers:testcontainers-junit-jupiter" }
 uuid-creator = { module = "com.github.f4b6a3:uuid-creator", version.ref = "uuid-creator" }
 
 [plugins]

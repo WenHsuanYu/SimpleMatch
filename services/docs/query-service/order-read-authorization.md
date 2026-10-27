@@ -115,8 +115,10 @@ bash scripts/test-query-redis-security.sh
 ```
 
 The PostgreSQL task requires the existing private `QUERY_SERVICE_JDBC_TEST_*` environment and
-ownership marker. The Redis runner requires a TLS-capable executable, OpenSSL and loopback access;
-it generates private short-lived CA/ACL material and cleans its owned processes/files. Actual
+ownership marker. The current Redis runner requires Docker and OpenSSL.
+It generates private certificate and ACL files. Testcontainers manages the disposable Redis containers.
+See the [Redis test requirements](../../../deploy/k8s/README.md#query-redis-transport-and-acl-contract).
+Actual
 commands, native/container fixture identities, fresh reports, source fingerprints and cleanup are
 retained under `out/verification/issue-190-order/` and summarized in the issue handoff.
 

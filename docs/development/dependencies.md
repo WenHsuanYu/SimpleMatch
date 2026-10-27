@@ -61,6 +61,9 @@ This repo's Java dependencies use an explicit ownership model.
   `--stacktrace` for failure diagnosis.
 - After changing dependency wiring, validate with a focused module compile or test before running
   broader static analysis.
+- Query Redis security tests use Testcontainers core and its JUnit extension as test-only dependencies.
+  Versionless catalog aliases use the Spring Boot BOM. Run `bash scripts/test-query-redis-security.sh` with Docker and OpenSSL.
+  The script prepares certificates. Testcontainers owns Redis startup, mapped ports, readiness, and cleanup.
 - `services/query-service` owns the CQRS read-side runtime dependencies: the shared market-reference
   contract, Spring JDBC, Kafka, Redis, Web, and the service-owned Flyway plugin. Its PostgreSQL
   datasource is supplied by the shared `simplematch-config` auto-configuration, not by a second

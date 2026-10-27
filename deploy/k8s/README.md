@@ -297,10 +297,11 @@ and retire their endpoint access. Do not dual-read the old unprotected cache. Cr
 may overlap old/new provider-side passwords until the Secret rollout completes, then revoke the
 old password. External ACL enforcement and the promoted endpoint remain operator-owned checks.
 
-Run `bash scripts/test-query-redis-security.sh` with a TLS-capable `redis-server`, `openssl`, and
-the repository JDK/Gradle dependencies available to exercise trusted TLS cache operations,
-certificate-chain/hostname rejection, bad/missing credentials, ACL denial, invalid JSON, and durable
-fallback against isolated disposable Redis processes. This gate does not use an existing cluster.
+Run `bash scripts/test-query-redis-security.sh` with Docker, OpenSSL, and the repository JDK/Gradle dependencies available.
+The script prepares private certificate and ACL files. Testcontainers starts three disposable
+`redis:8.10.3-alpine` containers, selects their mapped ports, waits for startup, and removes them after the tests.
+The six cases check trusted cache operations, certificate rejection, authentication failures, ACL restrictions, and cache namespace isolation.
+Java CI runs this gate explicitly. Docker or fixture failures fail the gate instead of skipping it.
 
 ## Fixed Matching fleet
 
