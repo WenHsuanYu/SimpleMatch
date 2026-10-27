@@ -144,6 +144,13 @@ skill inventory; the repository workflow remains applicable when no such skill i
 
 Run validation in the order that gives the fastest useful feedback.
 
+### Markdown changes
+
+Run `git diff --check` for Markdown changes. Compare factual claims with the relevant source and evidence.
+The owner retired automated Markdown link checking and its dedicated regression suite on 2026-10-28.
+Do not restore these checks as a default documentation gate.
+Historical verification records retain the results of checks that ran before retirement.
+
 ### Java changes
 
 1. Run the narrowest relevant unit or integration tests first.

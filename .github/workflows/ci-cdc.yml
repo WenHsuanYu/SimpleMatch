@@ -6,44 +6,24 @@ on:
       - master
       - main
     paths:
-      - '.github/workflows/ci-cdc.yml'
+      - '.github/workflows/**'
       - 'deploy/compose/**'
-      - 'deploy/k8s/base/java-services-configmaps.yaml'
+      - 'deploy/k8s/base/**'
       - 'config/kafka/**'
-      - 'scripts/run-local-production-like-certification.sh'
-      - 'scripts/run-outbox-cdc-contract-check.sh'
-      - 'scripts/test-cdc-verifier.sh'
-      - 'scripts/verify-outbox-connector-contracts.sh'
-      - 'scripts/lib/cdc-verifier.sh'
-      - 'scripts/lib/matching-topic-profile.sh'
-      - 'scripts/provision-matching-topics.sh'
-      - 'scripts/test-matching-topic-cutover.sh'
-      - 'scripts/test-matching-topic-profile.sh'
-      - 'scripts/validate-matching-topic-profile.sh'
-      - 'scripts/check-markdown-links.sh'
-      - 'scripts/test-check-markdown-links.sh'
+      - 'scripts/*'
+      - 'scripts/lib/**'
       - 'shared-java/**'
       - 'proto/**'
       - 'services/account-service/**'
       - 'services/risk-service/**'
   pull_request:
     paths:
-      - '.github/workflows/ci-cdc.yml'
+      - '.github/workflows/**'
       - 'deploy/compose/**'
-      - 'deploy/k8s/base/java-services-configmaps.yaml'
+      - 'deploy/k8s/base/**'
       - 'config/kafka/**'
-      - 'scripts/run-local-production-like-certification.sh'
-      - 'scripts/run-outbox-cdc-contract-check.sh'
-      - 'scripts/test-cdc-verifier.sh'
-      - 'scripts/verify-outbox-connector-contracts.sh'
-      - 'scripts/lib/cdc-verifier.sh'
-      - 'scripts/lib/matching-topic-profile.sh'
-      - 'scripts/provision-matching-topics.sh'
-      - 'scripts/test-matching-topic-cutover.sh'
-      - 'scripts/test-matching-topic-profile.sh'
-      - 'scripts/validate-matching-topic-profile.sh'
-      - 'scripts/check-markdown-links.sh'
-      - 'scripts/test-check-markdown-links.sh'
+      - 'scripts/*'
+      - 'scripts/lib/**'
       - 'shared-java/**'
       - 'proto/**'
       - 'services/account-service/**'
@@ -70,8 +50,6 @@ jobs:
           persist-credentials: false
       - name: Verify diff hygiene
         run: git diff --check HEAD^1 HEAD
-      - name: Verify CDC documentation links
-        run: bash scripts/test-check-markdown-links.sh
       - name: Verify connector contracts
         run: bash scripts/verify-outbox-connector-contracts.sh
       - name: Test CDC verifier interface

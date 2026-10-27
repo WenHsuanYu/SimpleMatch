@@ -20,7 +20,7 @@
 
 選擇能獨立滿足驗收條件的最小改動，優先重用既有 module、interface 和 public test seam。編輯前閱讀 [badCodeSmell.md](../../badCodeSmell.md)，辨識這次容易引入的重複、責任混雜、命名不清或過度一般化；界面與 domain-value 的既有原則可查 [parameter-safety 指引](../development/domain-parameter-safety-refactor.md)。
 
-非平凡程式變更先寫能重現缺失行為的 focused test，再做最小 implementation。PostgreSQL schema 變更先設計 versioned Flyway migration、SQL review 和驗證方案，依 [database implementation guide](../development/database-implementation-guide.md) 進行。純文件或路徑調整則先列語意與連結檢查計畫，使用既有 checker 驗證對應風險。
+非平凡程式變更先寫能重現缺失行為的 focused test，再做最小 implementation。PostgreSQL schema 變更先設計 versioned Flyway migration、SQL review 和驗證方案，依 [database implementation guide](../development/database-implementation-guide.md) 進行。純文件調整則確認內容與目前規格及證據一致，再執行 `git diff --check`。
 
 修改期間保持每個 commit 單一目的，檢查工作目錄中是否有其他人的變更，只處理本次範圍。Java 的 Javadocs、transaction、PMD 與其他規則直接依 [AGENTS.md](../../AGENTS.md) 執行；不要藉由改 gate 或放寬規則讓局部修改通過。
 
@@ -33,14 +33,12 @@
 | Java 行為或 wiring | Focused tests → owning module/service suite → `./gradlew staticAnalysis` → 適用的 service smoke 或 certification。Integration tests 所需 dependencies 應先準備完成。 |
 | Native 行為 | Focused target/tests → 正常 `dev-debug` build/CTest；重現 CI 或 sanitizer 問題時選對應 preset。 |
 | PostgreSQL schema 或 repository SQL | Migration-focused 與受影響的 tests、適用的 Flyway tasks，再檢查 SQL/index/query implications 和必要的 service verification。 |
-| Markdown 文件或導覽 | 受影響文件的 Markdown links/fragments、checker regression、`git diff --check`，再比較規格含義與證據邊界。 |
+| Markdown 文件或導覽 | `git diff --check`，並比較規格含義與證據邊界。 |
 | 跨服務、messaging 或 deployment | 依契約選 integration/smoke/certification，先完成適用的 deployment preflight 和 planner/reuse 判定。 |
 
-文件修改的基本檢查可使用下列指令，將路徑換成實際受影響的文件：
+文件修改的基本檢查使用下列指令：
 
 ```bash
-bash scripts/check-markdown-links.sh docs/onboarding/first-change.md
-bash scripts/test-check-markdown-links.sh
 git diff --check
 ```
 

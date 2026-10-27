@@ -296,7 +296,7 @@ The generic Compose Risk fixtures here preserve transport coverage but do not re
 Java test suite, including Account/Risk transaction tests and the narrow Query duplicate-safety
 regressions.
 
-`CDC CI` checks `git diff --check`, Markdown links, connector ownership/no-direct-producer contracts,
+`CDC CI` checks `git diff --check`, connector ownership/no-direct-producer contracts,
 the shared verifier Interface, Matching Kafka contracts, and the live Compose CDC scenarios.
 
 `Flyway CI` remains required because this change adds the Risk migration
@@ -330,7 +330,6 @@ Run the focused checks first:
   --tests '*JdbcQueryProjectionStoreTest'
 bash scripts/verify-outbox-connector-contracts.sh
 bash scripts/test-cdc-verifier.sh
-bash scripts/test-check-markdown-links.sh
 git diff --check HEAD^ HEAD
 ```
 
