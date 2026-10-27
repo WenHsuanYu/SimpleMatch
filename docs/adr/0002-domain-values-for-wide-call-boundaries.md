@@ -305,22 +305,22 @@ capability without a root facade.
 ## Validation and business invariants
 
 Structural validation checks a value without loading authoritative state. It includes field
-validity and local cross-field invariants. Distinct identifier types prevent positional exchanges;
-they do not prove ownership of a stored reservation or approval of a routing artifact.
+validity and local cross-field invariants. Distinct identifier types prevent positional exchanges.
+They do not prove ownership of a stored reservation or approval of a routing artifact.
 
-| Term                         | Owner            | Invariant                                                                                        |
-|------------------------------|------------------|--------------------------------------------------------------------------------------------------|
-| Reservation request identity | account-service  | request, order, and account identifiers are present and cannot be exchanged by type              |
-| Reservation terms            | account-service  | symbol and side are present; quantity is positive; limit price is absent or positive             |
-| Reservation identity         | account-service  | request, reservation, and order identifiers are present and have distinct UUID-backed types      |
-| Execution fill               | account-service  | execution ID is present; sequence is non-negative when supplied; quantity and price are positive |
-| Admission command            | risk-service     | required identity, order facts, FIX identity, and trading day are valid; the routing snapshot reference is optional and opaque |
-| Submission reference         | risk-service     | request/order reference and normalized command type travel together                              |
-| FIX submission identity      | risk-service     | sender, target, trading day, and client-order identifiers form one business identity             |
-| Persisted FIX identity       | risk-service     | storage-safe identifiers and the surrogate flag cannot be separated                              |
-| Submission outcome           | risk-service     | acceptance has no rejection; rejection always has a stable code and detail                       |
-| Admission failure            | risk-service     | validation failure has a stable code and nonblank detail                                         |
-| FIX order snapshot           | quickfix-gateway | execution-report mapping receives one coherent order view, not positional wire fields            |
+| Term | Owner | Invariant |
+|---|---|---|
+| Reservation request identity | account-service | Request, order, and account identifiers are present. Their distinct types prevent positional exchanges. |
+| Reservation terms | account-service | Symbol and side are present. Quantity is positive. Limit price is absent or positive. |
+| Reservation identity | account-service | Request, reservation, and order identifiers are present and have distinct UUID-backed types. |
+| Execution fill | account-service | Execution ID is present. A supplied sequence is non-negative. Quantity and price are positive. |
+| Admission command | risk-service | Required identity, order facts, FIX identity, and trading day are valid. The routing snapshot reference is optional and opaque. |
+| Submission reference | risk-service | Request/order reference and normalized command type travel together. |
+| FIX submission identity | risk-service | Sender, target, trading day, and client-order identifiers form one business identity. |
+| Persisted FIX identity | risk-service | Storage-safe identifiers and the surrogate flag remain inseparable. |
+| Submission outcome | risk-service | Acceptance has no rejection. Rejection always has a stable code and detail. |
+| Admission failure | risk-service | Validation failure has a stable code and nonblank detail. |
+| FIX order snapshot | quickfix-gateway | Execution-report mapping receives one coherent order view instead of positional wire fields. |
 
 State-dependent business invariants require authoritative state and its owning application flow:
 
@@ -328,100 +328,128 @@ State-dependent business invariants require authoritative state and its owning a
 |---|---|
 | Reservation and order belong to the requested account operation | account-service loads or locks authoritative reservation state and checks the supplied identities inside its transaction. |
 | Reserve, fill, and release preserve account authority | account-service coordinates reservation, account limit, account position, and required event publication in the owning transaction. |
-| An admission uses the approved artifact and assigned partition | risk-service resolves the instrument against the verified daily artifact and persists the complete route; recovery reuses that recorded route. |
+| An admission uses the approved artifact and assigned partition | risk-service resolves the instrument against the verified daily artifact and persists the complete route. Recovery reuses that recorded route. |
 
 ## Boundary and transaction rules
 
-Domain records do not perform persistence, networking, logging, or Spring work. gRPC and FIX
+Domain records do not persist data, call networks, write logs, or depend on Spring. gRPC and FIX
 adapters parse and map wire values. JDBC adapters flatten and rehydrate persistence rows.
-Application services continue to own transactions and state-dependent checks after loading or
-locking authoritative state. Context-free validation such as nonblank IDs, positive quantity, and
-positive price occurs before transaction work.
+Application services own transactions. They check state-dependent rules after loading or locking
+authoritative state.
 
-An SQL row, protobuf message, WAL record, event envelope, or configuration namespace may remain
-wide only as an external shape. A handwritten Java representation should instead compose semantic
-groups, and its adapter is the sole place that flattens or rehydrates that shape. PMD is the only
-automated parameter-count enforcement; Checkstyle does not set a parameter limit.
+Context-free validation occurs before transaction work. Examples include nonblank IDs, positive
+quantity, and positive price.
+
+SQL rows, protobuf messages, WAL records, event envelopes, and configuration namespaces may remain
+wide only as external shapes. A handwritten Java representation should instead compose related
+values. Only its adapter flattens and rehydrates the external shape. PMD is the only automated
+parameter-count gate. Checkstyle does not set a parameter limit.
 
 ## WAL persistence slice
 
-`WalRecord` is a FIX Gateway persistence representation rather than an aggregate. Its Java model
-composes persistence values without changing the persisted shape. The original
-parameter-safety refactoring preserved flat `v1` JSON. The subsequent FIX security cutover requires
-the complete authenticated FIX SessionID in WAL `v2`. With no legacy data, active v1 producers, or
-external consumers to migrate, the approved pre-release retirement policy in
-[ADR-0007](0007-retire-pre-release-compatibility.md) applies: only WAL v2 is read and written.
-That later security decision supersedes the earlier v1 preservation requirement; the two
-requirements apply to different migration stages.
-Unsupported versions fail before recovery performs remote work; their bytes are not rewritten,
-skipped, or silently upgraded. Existing v2 records retain restart recovery and session-owned
-cancellation checks. Future persisted-shape changes still require a new schema version and an
-explicit compatibility decision; grouping Java fields alone is not a version change. The codec
-validates every decoded record as strictly as a newly appended record, including the permitted
-FIX-message-type and command-type pairs.
-The strict reader also rejects unknown or duplicate fields, trailing JSON tokens, and malformed or
-unmappable character sequences before semantic rehydration. WAL bytes are UTF-8; it writes
-LF-delimited records and accepts LF, CRLF, or CR while reporting physical line numbers consistently
-across platforms.
+`WalRecord` is a FIX Gateway persistence model, not an aggregate. Its Java model combines
+persistence values without changing the persisted shape. The original parameter-safety refactoring
+preserved flat `v1` JSON. The later FIX security cutover requires the complete authenticated FIX
+SessionID in WAL `v2`.
+
+No legacy data, active v1 producers, or external consumers require migration. The approved
+pre-release retirement policy in [ADR-0007](0007-retire-pre-release-compatibility.md) therefore
+applies. The WAL reads and writes only v2. That later security decision supersedes the earlier v1
+preservation requirement. The two requirements apply to different migration stages.
+
+Recovery rejects unsupported versions before remote work. It does not rewrite, skip, or silently
+upgrade their bytes. Existing v2 records retain restart recovery and cancellation checks for the
+owning session. Future changes to the persisted shape require a new schema version and an explicit
+compatibility decision. Grouping Java fields alone is not a version change.
+
+The codec validates each decoded record as strictly as a newly appended record. It checks the
+permitted FIX-message-type and command-type pairs. Before semantic rehydration, the strict reader
+rejects unknown or duplicate fields and trailing JSON tokens. It also rejects malformed or
+unmappable character sequences.
+
+WAL bytes use UTF-8. The writer produces LF-delimited records. The reader accepts LF, CRLF, or CR.
+It reports physical line numbers consistently across platforms.
 
 The canonical Java representation is `WalRecord(WalMetadata, FixSessionIdentity,
 WalOrderReference, WalCommand, RawFixMessage)`. `WalCommand` retains the FIX message type and
-command type; its new-order variant composes `WalOrderTerms`. These gateway-local values express
-persistence roles without becoming a shared order-domain model.
+command type. Its new-order variant contains `WalOrderTerms`. These gateway-local values express
+persistence roles without creating a shared order-domain model.
 
-The WAL accepts only gateway-locally complete normalized commands: durable identity, raw FIX,
-message-type/command-type consistency, and command-specific required fields must be valid before
-append. It does not duplicate Risk Admission's account-authority, market-eligibility, trading-day,
-routing, idempotency, or reservation decisions.
+Only normalized commands that are complete within the gateway may enter the WAL. Before append,
+these command values must be valid:
 
-FIX ingress constructs the semantic command before calling `WalAppender`. Missing or oversized FIX
-identities, missing required fields, and invalid normalized command values become explicit protocol
-rejections before WAL append and before Risk Admission submission. The rejection renderer uses only
-the wire values that are available, so an incomplete message is never forced into a valid order
-snapshot. This is gateway-local completeness and basic value validation; account authority, market
-eligibility, trading-day, routing, idempotency, and reservation policy remain Risk Admission rules.
+- Durable identity.
+- Raw FIX.
+- Consistent message type and command type.
+- Required fields for that command type.
 
-`InboundFixMessageHandler` is only the public message-type dispatcher and depends on the new-order
-and cancel handlers. Those handlers remain separate because their required data and failure behavior
-differ. `NewOrderFixMessageHandler` owns validation, WAL append, risk submission, session
-registration and response, and compatibility publication in that order. Its
-`NewOrderCommandPreparer`, `NewOrderDurableAdmission`, `AcceptedNewOrderResponder`, and
-`NewOrderRejectionResponder` collaborators encapsulate those path responsibilities.
-`NewOrderDurableAdmission` owns the sequencing invariant that WAL persistence succeeds before Risk
-submission starts. This responsibility explains its purpose without claiming that every extracted
-collaborator is a deep module. Spring composes these concrete modules in
-`QuickFixGatewayIngressConfiguration`; the public inbound dispatcher receives only the two path
-handlers.
+The WAL does not repeat Risk Admission decisions about account authority, market eligibility,
+trading day, routing, idempotency, or reservations.
 
-`NewOrderFixMessageHandler` currently has seven constructor parameters: four path collaborators,
-the admission gate, a clock, and the session registry used for duplicate detection. This is a
-reviewed seven-to-nine-parameter exception. Each dependency has a distinct role and type; combining
-them in `Dependencies` would hide coordination without adding an invariant. Keep these dependencies
-explicit and reassess the constructor if its responsibilities grow.
+FIX ingress constructs the semantic command before calling `WalAppender`. It rejects missing or
+oversized FIX identities, missing required fields, and invalid normalized command values. These
+protocol rejections precede WAL append and Risk Admission submission.
 
-`OrderSessionState` remains a gateway-local correlation snapshot rather than an aggregate. It
-composes the owning FIX session, account identity used for cancellation fallback, the existing
-`FixOrderSnapshot`, and `OrderSessionLifecycle`. The lifecycle continues to own current order status
-and outstanding cancel correlation. Eviction and distributed session ownership are outside this
-parameter-safety slice.
+The rejection renderer uses only available wire values. It does not force an incomplete message
+into a valid order snapshot. These checks establish completeness within the gateway and basic
+value validity. Risk Admission retains account authority, market eligibility, trading-day,
+routing, idempotency, and reservation policy.
 
-`WalCommand` is command-specific: a new-order command requires `WalOrderTerms`; a cancellation
-requires its cancellation identity and original client-order identity but has no order terms. The
-codec writes the existing blank or unspecified fields for a cancellation, rather than making
-those placeholders part of the Java model.
+`InboundFixMessageHandler` is the public message-type dispatcher. It depends only on the new-order
+and cancel handlers. Those handlers remain separate because their required data and failure
+behavior differ. `NewOrderFixMessageHandler` coordinates these steps in order:
 
-Replay is fail-fast. If a nonblank WAL line cannot be decoded or violates these invariants, replay
-stops with its line number and leaves the WAL bytes unchanged for operator investigation. The
-gateway never skips, silently repairs, or continues past a durable inbound command.
+1. Validate the command.
+2. Append the WAL record.
+3. Submit the command to Risk.
+4. Register the session.
+5. Respond to the session.
+6. Publish compatibility output.
 
-`WalRecordJsonCodec` is a package-private FIX Gateway adapter. It alone flattens and rehydrates
-the `v2` JSON shape and applies WAL invariants. `WalAppender` owns line-oriented file I/O,
-complete record writes, and file-content synchronization; it does not know JSON field names.
-`appendAndFlush` writes until the record buffer, including the final LF byte, has no remaining
-bytes. Only then does it call `FileChannel.force(false)`. A write that makes no progress or fails
-must fail the append before synchronization. This is not an atomic-record-write guarantee: an I/O
-failure can leave an incomplete record, which replay must report without changing the file. The
-codec does not know files, channels, locking, or replay orchestration.
+Its collaborators are `NewOrderCommandPreparer`, `NewOrderDurableAdmission`,
+`AcceptedNewOrderResponder`, and `NewOrderRejectionResponder`. They encapsulate those path
+responsibilities. `NewOrderDurableAdmission` requires successful WAL persistence before Risk
+submission starts. This responsibility explains its purpose. It does not prove that every
+extracted collaborator is a deep module.
+
+Spring composes these modules in `QuickFixGatewayIngressConfiguration`. The public inbound
+dispatcher receives only the two path handlers.
+
+The `NewOrderFixMessageHandler` constructor currently accepts seven parameters. Four are path
+collaborators. The others are the admission gate, a clock, and the session registry for duplicate
+detection. This is a reviewed seven-to-nine-parameter exception.
+
+Each dependency has a distinct role and type. Combining them in `Dependencies` would hide
+coordination without adding an invariant. Keep these dependencies explicit. Reassess the
+constructor if its responsibilities grow.
+
+`OrderSessionState` remains a gateway-local correlation snapshot, not an aggregate. It combines
+the owning FIX session, account identity for cancellation fallback, `FixOrderSnapshot`, and
+`OrderSessionLifecycle`. The lifecycle owns current order status and outstanding cancel
+correlation. Eviction and distributed session ownership remain outside this parameter-safety
+slice.
+
+`WalCommand` depends on command type. A new-order command requires `WalOrderTerms`. A cancellation
+requires its cancellation identity and original client-order identity, but no order terms. The
+codec writes the existing blank or unspecified fields for a cancellation. Those placeholders do
+not become part of the Java model.
+
+Replay is fail-fast. It stops if it cannot decode a nonblank WAL line or if the record violates
+these invariants. It reports the physical line number and preserves the WAL bytes for operator
+investigation. The gateway never skips, silently repairs, or continues past a durable inbound
+command.
+
+`WalRecordJsonCodec` is a package-private FIX Gateway adapter. Only this codec flattens and
+rehydrates the `v2` JSON shape and applies WAL invariants. It does not know files, channels, locking,
+or replay orchestration.
+
+`WalAppender` owns line-oriented file I/O, complete record writes, and file-content synchronization.
+It does not know JSON field names. `appendAndFlush` drains the record buffer, including the final
+LF byte. Only then does it call `FileChannel.force(false)`. A write failure or lack of progress must
+fail the append before synchronization.
+
+This does not guarantee atomic record writes. An I/O failure can leave an incomplete record.
+Replay must report that record without changing the file.
 
 The original slice removed the public nineteen-argument `WalRecord` constructor and migrated every
 in-repository factory, test, and caller. No deprecated positional constructor or compatibility
