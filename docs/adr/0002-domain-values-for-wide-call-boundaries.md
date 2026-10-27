@@ -10,37 +10,57 @@ external-format preservation requirements.
 
 ## Context
 
-The blocking PMD `ExcessiveParameterList` rule exposed several boundaries where multiple `String`,
-`UUID`,
-`BigDecimal`, timestamp, and status values were passed positionally. The highest-risk examples were
-account reserve, release, and fill application; durable risk admission and submission outcomes; FIX
-execution-report mapping; and the now-retired v2-to-v1 command adapter. Those APIs required the
-caller to remember a positional contract. The compiler could not detect exchanges such as request
-ID versus order ID, sender versus target, quantity versus price, or reason code versus reason detail.
+PMD's blocking `ExcessiveParameterList` rule exposed interfaces with positional `String`, `UUID`,
+`BigDecimal`, timestamp, and status parameters. The highest-risk interfaces included:
 
-SimpleMatch already separates service-owned authoritative state from transport and persistence
-concerns. The solution must therefore improve the model without creating a shared enterprise domain
-model or moving Spring, QuickFIX/J, protobuf, JDBC, or Kafka types into core business concepts. It
-also must not move transaction ownership out of the application services or alter existing wire,
-schema, idempotency, and event contracts.
+- Account reserve, release, and fill application.
+- Durable risk admission and submission outcomes.
+- FIX execution-report mapping.
+- The now-retired v2-to-v1 command adapter.
 
-The previous policy allowed a handwritten Java persistence snapshot, protocol envelope,
-configuration record, or deprecated compatibility overload to remain wide when it mirrored an
-external shape. That exception kept positional Java interfaces in the model and made the threshold
-optional. The repository now uses PMD's existing `ExcessiveParameterList` rule as the sole
-automated parameter-count gate. Its default minimum is ten: a member with ten or more parameters
-violates the rule. The design-review target for handwritten production Java is six or fewer
-parameters. A member with seven to nine parameters requires a recorded review showing why a
-parameter object or a simpler module interface would create an artificial abstraction. That review
-does not authorize ten parameters, PMD suppression, or a weaker rule. Generated sources are outside
-this rule; tests use the same construction vocabulary as production code.
+Callers had to remember each positional contract. The compiler could not detect these exchanges:
 
-Parameter-safety refactoring changes handwritten Java interfaces. Market
-snapshot source JSON fields, PostgreSQL schemas and column semantics, Spring configuration keys and
-defaults, FIX messages, persisted WAL JSON, protobuf contracts, and Kafka payloads remain unchanged.
-Adapters and codecs flatten and rehydrate the semantic Java values. Any change to one of those
-external shapes requires a separate compatibility decision and, where applicable, a versioned
-migration.
+- Request ID and order ID.
+- Sender and target.
+- Quantity and price.
+- Reason code and reason detail.
+
+SimpleMatch separates authoritative state in each service from transport and persistence concerns.
+The refactoring must preserve four conditions:
+
+- Do not create a shared enterprise domain model.
+- Keep Spring, QuickFIX/J, protobuf, JDBC, and Kafka types outside core business concepts.
+- Keep transaction ownership in application services.
+- Preserve existing wire, schema, idempotency, and event contracts.
+
+The previous policy allowed some handwritten Java models to remain wide when they mirrored an
+external shape. These models included persistence snapshots, protocol envelopes, configuration
+records, and deprecated compatibility overloads. That exception kept positional Java interfaces
+and made the threshold optional.
+
+PMD's existing `ExcessiveParameterList` rule remains the only automated parameter-count gate.
+Its default minimum is ten. A member with ten or more parameters violates the rule. Design review
+targets six or fewer parameters for handwritten production Java interfaces.
+
+Members with seven to nine parameters require a recorded review. The review must explain why a
+parameter object or simpler module interface would create an artificial abstraction. No review
+authorizes ten parameters, PMD suppression, or a weaker rule. Generated sources remain outside the
+rule. Tests use the same construction vocabulary as production code.
+
+Parameter-safety refactoring changes handwritten Java interfaces. These external contracts remain
+unchanged:
+
+- Market snapshot source JSON fields.
+- PostgreSQL schemas and column semantics.
+- Spring configuration keys and defaults.
+- FIX messages.
+- Persisted WAL JSON.
+- Protobuf contracts.
+- Kafka payloads.
+
+Adapters and codecs flatten and rehydrate the semantic Java values. Changing an external shape
+requires a separate compatibility decision. It also requires a versioned migration where
+applicable.
 
 ## Decision
 
@@ -48,19 +68,18 @@ Use tactical domain-driven design (DDD) where the owning domain has stable langu
 Use adapters and data models for transport, persistence, and configuration concerns. The design
 uses four complementary techniques:
 
-1. **Value objects** give same-shaped values distinct Java types and validate context-free
+1. **Value objects** give values of the same shape distinct Java types. They validate context-free
    invariants at creation. A Java record is a value object only when its domain meaning and value
    semantics support that role.
-2. **Application commands** group the values required by one use case instead of grouping fields
-   merely to reduce a numeric parameter count. A command is a use-case input; it is not necessarily
-   a DDD value object.
+2. **Application commands** group the values for one use case. They do not group fields merely to
+   reduce a parameter count. A command is a use-case input. It is not necessarily a DDD value object.
 3. **Adapters and anti-corruption layers** translate external FIX and protobuf models before
-   business behavior is invoked. An anti-corruption layer protects one model from another model's
-   semantics. A DTO or value object used by that layer is not itself the architectural pattern.
+   business behavior starts. An anti-corruption layer protects one model from another model's
+   semantics. A DTO or value object within that layer is not itself the architectural pattern.
 4. **Composition of data models** groups related fields in persistence models, event DTOs, WAL
    records, and configuration properties. Each group has a named responsibility or local invariant.
-   Adapters map these groups to and from external formats. These infrastructure models do not
-   become domain objects merely because they use composition.
+   Adapters map these groups to and from external formats. Composition alone does not make these
+   infrastructure models domain objects.
 
 An introduced parameter object must express a stable concept. A deep module must hide useful
 complexity behind a simple interface and reduce what callers need to know. Splitting a class or
@@ -74,41 +93,52 @@ The implemented model is:
 - `ReservationIdentity`, `ReleaseReservationOperation`, `ExecutionFill`, and `ApplyFillOperation`
   express reservation lifecycle commands. Separate `FillQuantity` and `FillPrice` types make
   positional exchange a compile-time error.
-- `AdmissionCommand` is composed from `Identity`, `Order`, `FixIdentity`, and `RoutingReference`.
+- `AdmissionCommand` combines `Identity`, `Order`, `FixIdentity`, and `RoutingReference`.
   Its typed UUID and FIX identifiers prevent command/order/account and sender/target/client-order
   exchanges.
 - `SubmissionReference`, `FixSubmissionIdentity`, `PersistedFixIdentity`, `SubmissionOutcome`, and
-  `SubmissionRejection` compose `SubmissionResult`; each value owns one invariant and one change
-  reason.
+  `SubmissionRejection` compose `SubmissionResult`. Each value owns one invariant and one reason
+  to change.
 - `AdmissionFailure` is the transport-independent reason an order cannot enter durable admission.
   Named factories expose the current risk validation vocabulary.
-- `FixOrderSnapshot` and `FixExecutionIdentity` are gateway-specific value objects used by FIX
-  adapters. They support protocol translation without creating a shared order model.
+- FIX adapters use `FixOrderSnapshot` and `FixExecutionIdentity` as gateway-specific value objects.
+  They support protocol translation without creating a shared order model.
 - The earlier `V1OrderCommandAdapter` accepted the source protobuf command instead of eight
-  positional fields. That adapter is retired under ADR-0007 and is not a current test target.
+  positional fields. The repository retired that adapter under ADR-0007. It is not a current test
+  target.
 
 The recorded migration slices removed public positional constructors and methods with more than
-seven parameters from their compatibility adapters. This is historical evidence for those slices,
-not a statement about every current signature. For future work, migrate every in-repository caller
-to the semantic interface before removing the positional Java member. This is an intentional Java
-source and binary compatibility break; SQL, protobuf, FIX, WAL, Kafka, and configuration contracts
-remain compatible through their adapters. PMD is the only automated parameter-count gate; a
-deprecated overload is never a semantic-boundary exception.
+seven parameters from their compatibility adapters. This evidence describes those historical
+slices, not every current signature. For future work, migrate every in-repository caller to the
+semantic interface before removing the positional Java member.
+
+This intentionally breaks Java source and binary compatibility. Adapters preserve SQL, protobuf,
+FIX, WAL, Kafka, and configuration contracts. PMD remains the only automated parameter-count gate.
+A deprecated overload never qualifies for a semantic-boundary exception.
 
 ### CDC event metadata and delivery tracking
 
-`CdcDeliveryEnvelope` composes the six immutable Debezium values that must be compared with the
-authoritative Risk outbox: event identity, message key, payload bytes, event type, serialized
-headers, and publication time. `CdcDeliveryObservation` then combines that envelope with the exact
-Kafka position and observation time, reducing the public observation boundary to three named
-values. The store can therefore keep its exact-match invariant without a positional eight-field
-constructor.
+`CdcDeliveryEnvelope` groups six immutable Debezium values:
 
-`CdcDeliveryMonitorContext` composes the metric identity, topic, and durable refresh clock used by
-one monitor. `CdcDeliveryMonitor` accepts that context with its three behavior ports and
-transaction boundary, reducing its constructor to five parameters while keeping storage,
-progress, telemetry, and transaction ownership explicit. These carriers add stable CDC vocabulary
-and validation; they are not generic parameter bags or exceptions to PMD's existing rule.
+- Event identity.
+- Message key.
+- Payload bytes.
+- Event type.
+- Serialized headers.
+- Publication time.
+
+The store must compare these values with the authoritative Risk outbox. `CdcDeliveryObservation`
+combines the envelope, exact Kafka position, and observation time. The public observation interface
+therefore has three named values. The store keeps its exact-match invariant without a positional
+eight-field constructor.
+
+`CdcDeliveryMonitorContext` groups the metric identity, topic, and durable refresh clock for one
+monitor. `CdcDeliveryMonitor` accepts that context, three behavior ports, and the transaction
+boundary. Its constructor therefore has five parameters. Storage, progress, telemetry, and
+transaction ownership remain explicit.
+
+These carriers add stable CDC vocabulary and validation. They are not generic parameter bags or
+exceptions to PMD's existing rule.
 
 ## Market Reference publication representation
 
