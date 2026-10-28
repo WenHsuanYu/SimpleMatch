@@ -224,7 +224,7 @@ parent or proof of Query HTTP authorization.
 | --- | --- | --- |
 | INV-01/03, A3/A4: identity, policy, routes, challenges and denial | `QueryHttpSecurityIntegrationTest`, `QuerySecurityPolicyTest`, `QuerySecurityStartupTest`, `QueryDirectHttpTest` | Reuse actual FilterChain suites; client-tool fixtures alone are insufficient. |
 | INV-02: grants and trusted parent ownership | `QueryAccountSummaryHttpTest`, `QueryOrderHttpTest`, `QueryExecutionsHttpTest` and snapshot tests | Final deployed matrices cover both replicas, including lifecycle Order/Executions fixtures. |
-| INV-04, A1: cache non-use/identity and minimal responses | Existing business HTTP suites with cache probes; `collector-http-contract.py`; `verdict-contract.sh` | Four actual obsolete Redis entries were ignored and remained unchanged. |
+| INV-04, A1: cache non-use/identity and minimal responses | Existing business HTTP suites with cache probes; `collector-http-contract.py`; `QueryEvidenceVerifierTest` | Four actual obsolete Redis entries were ignored and remained unchanged. |
 | INV-05/06: independent operator/FIX/direct trust | Existing FilterChain/direct/rebuild suites; per-Pod matrix; enabled operator boundary | All nine deployed negative credential checks passed; independent authorized rebuild succeeded. |
 | INV-07, A3: revoke/disable/rollback | Final-source `lifecycle-final` proof, separate from historical #193 | V1/V2/V3, rollback rejection, failed activation, no-reset recovery and fresh-run isolation passed. |
 | INV-08: no trading dependency on Query | Full Query verdict and actual public IOC/isolation evidence | Public FIX processing with zero Query Pods and separate deterministic rebuild/replay passed. |
@@ -259,7 +259,7 @@ Focused checks:
 python3 scripts/end-to-end/query-service/tests/collector-http-contract.py
 bash scripts/end-to-end/query-service/tests/evidence-contract.sh
 bash scripts/end-to-end/query-service/tests/active-liveness-contract.sh
-bash scripts/end-to-end/query-service/tests/verdict-contract.sh
+./gradlew -q :tools:query-evidence-verifier:check
 bash scripts/test-local-java-placement-serving.sh
 ./gradlew -q :services:query-service:test
 # Requires Docker, Python 3, and psql. The task also runs the PostgreSQL collector contract.

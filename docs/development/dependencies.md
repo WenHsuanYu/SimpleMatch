@@ -69,6 +69,10 @@ This repo's Java dependencies use an explicit ownership model.
   Testcontainers manages one disposable PostgreSQL instance for the test JVM. Flyway migrates its isolated database.
   The task runs the existing JDBC, HTTP, and Python collector contracts against that database.
   Ordinary `test` tasks use H2 and do not require Docker.
+- `tools/query-evidence-verifier` evaluates retained Query certification JSON with Jackson.
+  JUnit tests its evidence interface and command exit status.
+  It uses the existing version catalog and BOM, outside the Query service runtime.
+  Run `./gradlew -q :tools:query-evidence-verifier:check` without Docker.
 - `services/query-service` owns the CQRS read-side runtime dependencies: the shared market-reference
   contract, Spring JDBC, Kafka, Redis, Web, and the service-owned Flyway plugin. Its PostgreSQL
   datasource is supplied by the shared `simplematch-config` auto-configuration, not by a second

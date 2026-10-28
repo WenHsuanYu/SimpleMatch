@@ -26,8 +26,6 @@ source "$repo_root/scripts/end-to-end/critical-consumers/lib/gateway-close-verif
 source "$script_dir/lib/active-liveness.sh"
 # shellcheck source=scripts/end-to-end/query-service/lib/execution-fixture.sh
 source "$script_dir/lib/execution-fixture.sh"
-# shellcheck source=scripts/end-to-end/query-service/lib/verdict.sh
-source "$script_dir/lib/verdict.sh"
 # shellcheck source=scripts/end-to-end/query-service/lib/evidence.sh
 source "$script_dir/lib/evidence.sh"
 # shellcheck source=scripts/end-to-end/query-service/lib/run-lifecycle.sh
@@ -183,9 +181,13 @@ done
   die "SIMPLEMATCH_QUERY_ISOLATION_COMMAND_TIMEOUT_SECONDS must be positive"
 (( query_isolation_command_timeout_seconds <= 30 )) ||
   die "SIMPLEMATCH_QUERY_ISOLATION_COMMAND_TIMEOUT_SECONDS must not exceed 30"
-for tool in kubectl docker jq curl python3 git awk sed grep date seq sleep timeout tr cp mv cat wc cmp; do
+for tool in kubectl docker jq curl python3 java git awk sed grep date seq sleep timeout tr cp mv cat wc cmp; do
   command -v "$tool" >/dev/null 2>&1 || die "$tool is required"
 done
+current_stage="prepare Query evidence verifier"
+"$repo_root/gradlew" -q -p "$repo_root" :tools:query-evidence-verifier:installDist ||
+  die "cannot prepare the Query evidence verifier"
+query_evidence_verifier="$repo_root/tools/query-evidence-verifier/build/install/query-evidence-verifier/bin/query-evidence-verifier"
 python3 "$script_dir/lib/query_http.py" --fixture-directory "$query_fixture_directory" \
   --validate-only || die "approved private Query fixture bundle is invalid"
 [[ "$(kubectl config current-context)" == "$context" ]] ||
@@ -337,7 +339,7 @@ write_query_restoration_evidence || die "cannot capture Query restoration eviden
 
 current_stage="evaluate retained evidence"
 pending_verdict="$evidence_dir/verdict.pending.json"
-evaluate_query_service_verdict "$evidence_dir" "$pending_verdict" ||
+"$query_evidence_verifier" "$evidence_dir" "$pending_verdict" ||
   die "query-service evidence did not satisfy the deterministic verdict"
 
 current_stage="restore certification environment"

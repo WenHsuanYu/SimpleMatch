@@ -1,0 +1,521 @@
+{
+  "active-processing-liveness": {
+    "status": "PROVEN",
+    "startedAtEpochMs": 1000,
+    "completedAtEpochMs": 1600,
+    "elapsedMilliseconds": 600,
+    "timeoutSeconds": 30,
+    "queryOutage": {
+      "queryPodCount": 0,
+      "queryPodNames": []
+    },
+    "gatewayOpen": {
+      "accepted": true,
+      "gateState": "OPEN",
+      "occurredAt": "2026-08-31T00:00:00Z"
+    },
+    "timeInForce": "3",
+    "fixSubmission": {
+      "accountId": "00000000-0000-0000-0000-000000000001",
+      "clOrdId": "QUERY-LIVE-1",
+      "orderId": "O-QUERY-LIVE-1",
+      "execId": "INITIAL-RECEIPT",
+      "execType": "A",
+      "ordStatus": "A",
+      "timeInForce": "3",
+      "terminalExecType": "4",
+      "terminalOrdStatus": "4",
+      "sentAtEpochMs": 1100
+    },
+    "riskAdmission": {
+      "commandId": "00000000-0000-0000-0000-000000000003",
+      "orderId": "00000000-0000-0000-0000-000000000002",
+      "accountId": "00000000-0000-0000-0000-000000000001",
+      "clOrdId": "QUERY-LIVE-1",
+      "state": "ACCEPTED",
+      "routingPartition": 4
+    },
+    "matchingEvent": {
+      "topic": "matching.events",
+      "partition": 4,
+      "startOffset": 100,
+      "offset": 101,
+      "eventId": "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef",
+      "eventType": "MATCHING_EVENT_TYPE_ORDER_CANCELLED",
+      "sourceCommandId": "00000000-0000-0000-0000-000000000003",
+      "orderId": "00000000-0000-0000-0000-000000000002"
+    },
+    "observerVerdict": {
+      "status": "PASS"
+    },
+    "orderProjection": {
+      "orderId": "00000000-0000-0000-0000-000000000002",
+      "status": "CANCELLED",
+      "lastEventId": "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+    },
+    "accountReservation": {
+      "orderId": "00000000-0000-0000-0000-000000000002",
+      "accountId": "00000000-0000-0000-0000-000000000001",
+      "status": "RESERVATION_STATUS_RELEASED",
+      "remainingQuantity": 0,
+      "filledQuantity": 0,
+      "reservedNotional": 0
+    },
+    "fixDeliveryIntent": {
+      "execId": "TERMINAL-CANCEL",
+      "clientOrderId": "QUERY-LIVE-1",
+      "eventId": "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef",
+      "execType": "4",
+      "ordStatus": "4",
+      "status": "SENT"
+    },
+    "marketData": {
+      "partition": 4,
+      "lastProcessedOffset": 101,
+      "recoveryState": "READY",
+      "inboxCount": 1
+    },
+    "consumerState": {
+      "persistenceQuarantines": 0,
+      "accountQuarantines": 0,
+      "quickfixQuarantines": 0,
+      "persistenceQuarantineHistory": 0,
+      "accountQuarantineHistory": 0,
+      "quickfixQuarantineHistory": 0,
+      "quickfixPendingIntents": 0,
+      "activeMatchingOrders": 0,
+      "marketDataDeadLetters": 0,
+      "marketDataProgress": [
+        {
+          "partition_id": 4,
+          "last_processed_offset": 101,
+          "recovery_state": "READY"
+        }
+      ]
+    },
+    "exactInboxCounts": {
+      "persistence": 1,
+      "account": 1,
+      "quickfix": 1,
+      "marketData": 1
+    }
+  },
+  "baseline": {
+    "order": {
+      "data": {
+        "orderId": "order-1",
+        "state": "FILLED",
+        "updatedAtUnixMs": 100
+      },
+      "freshness": {
+        "projectionState": "NO_GAP_RECORDED"
+      }
+    },
+    "executions": {
+      "data": [
+        {
+          "executionId": "execution-1",
+          "orderId": "order-1",
+          "executedAtUnixMs": 200
+        }
+      ],
+      "freshness": {
+        "projectionState": "NO_GAP_RECORDED"
+      }
+    },
+    "accountSummary": {
+      "data": {
+        "accountId": "account-1",
+        "lifecycleState": "ACTIVE",
+        "updatedAtUnixMs": 300
+      },
+      "freshness": {
+        "projectionState": "NO_GAP_RECORDED"
+      }
+    },
+    "marketReference": {
+      "data": {
+        "tradingDay": "2026-08-31",
+        "artifactId": "artifact-1",
+        "venueMic": "XTAI",
+        "symbol": "1101",
+        "updatedAtUnixMs": 400
+      },
+      "freshness": {
+        "projectionState": "NO_GAP_RECORDED"
+      }
+    },
+    "freshness": {
+      "partitions": [
+        {
+          "sourceTopic": "account.lifecycle",
+          "partition": 0,
+          "lastProcessedOffset": 4,
+          "recoveryState": "READY"
+        },
+        {
+          "sourceTopic": "matching.events",
+          "partition": 0,
+          "lastProcessedOffset": 9,
+          "recoveryState": "READY"
+        }
+      ]
+    }
+  },
+  "critical-before": {
+    "persistenceProgress": [
+      {
+        "partition_id": 0,
+        "last_processed_offset": 9
+      }
+    ],
+    "accountProgress": [],
+    "quickfixProgress": [],
+    "persistenceQuarantines": 0,
+    "accountQuarantines": 0,
+    "quickfixQuarantines": 0,
+    "quickfixPendingIntents": 0,
+    "marketDataDeadLetters": 0,
+    "marketDataProgress": [
+      {
+        "partition_id": 4,
+        "last_processed_offset": 101,
+        "recovery_state": "READY"
+      }
+    ]
+  },
+  "critical-query-isolation-probe": {
+    "probeDurationSeconds": 2,
+    "probeStartedEpochMs": 1000,
+    "probeCompletedEpochMs": 4800,
+    "elapsedMilliseconds": 3800,
+    "commandTimeoutSeconds": 1,
+    "sampleCount": 2,
+    "samples": [
+      {
+        "sampleIndex": 0,
+        "queryPodCount": 0,
+        "matchingReady": 15,
+        "criticalConsumersReady": true,
+        "criticalPathHealth": {
+          "paths": [
+            {
+              "path": "admission",
+              "resource": "deployment/risk-service",
+              "desiredReplicas": 1,
+              "readyReplicas": 1,
+              "podCount": 1,
+              "readyPodCount": 1,
+              "restartCount": 0,
+              "pods": [
+                {
+                  "name": "admission-0",
+                  "uid": "admission-uid",
+                  "phase": "Running",
+                  "ready": true,
+                  "restartCount": 0
+                }
+              ]
+            },
+            {
+              "path": "reservation",
+              "resource": "deployment/account-service",
+              "desiredReplicas": 1,
+              "readyReplicas": 1,
+              "podCount": 1,
+              "readyPodCount": 1,
+              "restartCount": 0,
+              "pods": [
+                {
+                  "name": "reservation-0",
+                  "uid": "reservation-uid",
+                  "phase": "Running",
+                  "ready": true,
+                  "restartCount": 0
+                }
+              ]
+            },
+            {
+              "path": "matching",
+              "resource": "statefulset/matching",
+              "desiredReplicas": 15,
+              "readyReplicas": 15,
+              "podCount": 15,
+              "readyPodCount": 15,
+              "restartCount": 0,
+              "pods": [
+                {
+                  "name": "matching-0",
+                  "uid": "matching-uid-0",
+                  "phase": "Running",
+                  "ready": true,
+                  "restartCount": 0
+                }
+              ]
+            },
+            {
+              "path": "persistence",
+              "resource": "deployment/persistence",
+              "desiredReplicas": 1,
+              "readyReplicas": 1,
+              "podCount": 1,
+              "readyPodCount": 1,
+              "restartCount": 0,
+              "pods": [
+                {
+                  "name": "persistence-0",
+                  "uid": "persistence-uid",
+                  "phase": "Running",
+                  "ready": true,
+                  "restartCount": 0
+                }
+              ]
+            },
+            {
+              "path": "account",
+              "resource": "deployment/account-service",
+              "desiredReplicas": 1,
+              "readyReplicas": 1,
+              "podCount": 1,
+              "readyPodCount": 1,
+              "restartCount": 0,
+              "pods": [
+                {
+                  "name": "account-0",
+                  "uid": "account-uid",
+                  "phase": "Running",
+                  "ready": true,
+                  "restartCount": 0
+                }
+              ]
+            },
+            {
+              "path": "quickfix",
+              "resource": "statefulset/quickfix-gateway",
+              "desiredReplicas": 1,
+              "readyReplicas": 1,
+              "podCount": 1,
+              "readyPodCount": 1,
+              "restartCount": 0,
+              "pods": [
+                {
+                  "name": "quickfix-0",
+                  "uid": "quickfix-uid",
+                  "phase": "Running",
+                  "ready": true,
+                  "restartCount": 0
+                }
+              ]
+            },
+            {
+              "path": "marketData",
+              "resource": "deployment/market-data-projection",
+              "desiredReplicas": 1,
+              "readyReplicas": 1,
+              "podCount": 1,
+              "readyPodCount": 1,
+              "restartCount": 0,
+              "pods": [
+                {
+                  "name": "marketData-0",
+                  "uid": "marketData-uid",
+                  "phase": "Running",
+                  "ready": true,
+                  "restartCount": 0
+                }
+              ]
+            }
+          ],
+          "matchingTopology": {
+            "statefulset": {
+              "name": "matching",
+              "uid": "matching-statefulset-uid",
+              "desiredReplicas": 15,
+              "readyReplicas": 15,
+              "currentRevision": "matching-revision",
+              "updateRevision": "matching-revision"
+            },
+            "expectedOrdinals": [
+              "0",
+              "1",
+              "2",
+              "3",
+              "4",
+              "5",
+              "6",
+              "7",
+              "8",
+              "9",
+              "10",
+              "11",
+              "12",
+              "13",
+              "14"
+            ],
+            "pods": [
+              {
+                "name": "matching-0",
+                "uid": "matching-uid-0",
+                "ordinal": "0",
+                "node": "worker-0",
+                "ready": true,
+                "ownerStatefulSet": true,
+                "controllerRevisionHash": "matching-revision",
+                "pvc": "matching-baseline-matching-0",
+                "pvcPhase": "Bound",
+                "pvcAccessModes": [
+                  "ReadWriteOncePod"
+                ],
+                "pv": "pv-0",
+                "pvNodeAffinityNodes": [
+                  "worker-0"
+                ]
+              }
+            ],
+            "unownedMatchingPods": [],
+            "unexpectedMatchingPods": []
+          }
+        },
+        "consumerState": {
+          "persistenceProgress": [
+            {
+              "partition_id": 0,
+              "last_processed_offset": 9
+            }
+          ],
+          "accountProgress": [],
+          "quickfixProgress": [],
+          "persistenceQuarantines": 0,
+          "accountQuarantines": 0,
+          "quickfixQuarantines": 0,
+          "quickfixPendingIntents": 0,
+          "marketDataDeadLetters": 0,
+          "marketDataProgress": [
+            {
+              "partition_id": 4,
+              "last_processed_offset": 101,
+              "recovery_state": "READY"
+            }
+          ]
+        },
+        "matchingCommittedOffsets": {
+          "topic": "matching.commands",
+          "partitions": [
+            {
+              "partition": 0,
+              "committedOffset": 20
+            },
+            {
+              "partition": 1,
+              "committedOffset": 21
+            },
+            {
+              "partition": 2,
+              "committedOffset": 22
+            },
+            {
+              "partition": 3,
+              "committedOffset": 23
+            },
+            {
+              "partition": 4,
+              "committedOffset": 24
+            },
+            {
+              "partition": 5,
+              "committedOffset": 25
+            },
+            {
+              "partition": 6,
+              "committedOffset": 26
+            },
+            {
+              "partition": 7,
+              "committedOffset": 27
+            },
+            {
+              "partition": 8,
+              "committedOffset": 28
+            },
+            {
+              "partition": 9,
+              "committedOffset": 29
+            },
+            {
+              "partition": 10,
+              "committedOffset": 30
+            },
+            {
+              "partition": 11,
+              "committedOffset": 31
+            },
+            {
+              "partition": 12,
+              "committedOffset": 32
+            },
+            {
+              "partition": 13,
+              "committedOffset": 33
+            },
+            {
+              "partition": 14,
+              "committedOffset": 34
+            }
+          ]
+        }
+      }
+    ]
+  },
+  "legacy-cache": {
+    "status": "PASS",
+    "seededEntries": 4,
+    "unchangedAfterReads": true
+  },
+  "operator-boundary": {
+    "status": "PASS",
+    "observations": [
+      {
+        "status": 401
+      },
+      {
+        "status": 401
+      },
+      {
+        "status": 401
+      },
+      {
+        "status": 401
+      },
+      {
+        "status": 401
+      },
+      {
+        "status": 401
+      },
+      {
+        "status": 401
+      },
+      {
+        "status": 401
+      },
+      {
+        "status": 401
+      }
+    ]
+  },
+  "query-outage": {
+    "queryPodCount": 0,
+    "queryPodNames": []
+  },
+  "read-matrix": {
+    "status": "PASS",
+    "replicas": 2,
+    "observations": 100
+  },
+  "restoration": {
+    "queryServiceReady": true,
+    "queryOutageObserved": true,
+    "matchingReady": 15,
+    "criticalConsumersReady": true
+  }
+}

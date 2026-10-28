@@ -29,6 +29,7 @@ include(
     ":services:risk-service",
     ":tools:market-reference-builder",
     ":tools:risk-matching-e2e-verifier",
+    ":tools:query-evidence-verifier",
 )
 
 project(":shared-java:simplematch-config").projectDir = file("shared-java/simplematch-config")
@@ -43,3 +44,4 @@ project(":services:quickfix-gateway").projectDir = file("services/quickfix-gatew
 project(":services:risk-service").projectDir = file("services/risk-service")
 project(":tools:market-reference-builder").projectDir = file("tools/market-reference-builder")
 project(":tools:risk-matching-e2e-verifier").projectDir = file("tools/risk-matching-e2e-verifier")
+project(":tools:query-evidence-verifier").projectDir = file("tools/query-evidence-verifier")

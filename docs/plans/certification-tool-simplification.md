@@ -83,3 +83,29 @@ Wall-clock adjustments make those assertions unstable.
 The separate timing fixture checks timestamp arithmetic with fixed inputs.
 
 The [reuse comparison](certification-reuse-alternatives.md) records the separate assessment of certification phase planning and evidence reuse.
+
+## Query migration
+
+The standalone [Java verifier](../../tools/query-evidence-verifier/README.md) owns Query evidence evaluation.
+The shell runner builds it before deployment mutations and calls it with the evidence directory.
+The existing environment restoration and final verdict publication remain in the runner.
+
+JUnit retains cases for the twelve current certification requirements and meaningful interface failures.
+It does not translate every historical fixture mutation or duplicate standard JSON parser tests.
+The existing evidence test retains FIX completion correlation and restoration-producer failures.
+The migration removes the jq evaluator and its shell verdict suite.
+It also removes duplicate tests that inspect runner source.
+
+## Decision on evidence reuse
+
+Keep fresh live observations, source and image identity, explicit partial-run status, and owned-resource cleanup.
+Keep Gradle and container-build caches for deterministic build work.
+Do not create a Java planner that preserves all current custom reuse behavior.
+
+The next simplification should remove custom historical PASS reuse for cheap static checks.
+Retain custom artifact reuse only when measurements establish a necessary benefit beyond existing build caches.
+Retire one-time measurement and debug tools when no current workflow needs them.
+This decision favors less custom machinery over preserving every optimization.
+
+The current phase declarations still enforce the existing reuse contract.
+Implement its reduction as one aligned change to phase declarations, fingerprints, evidence, tests, and specifications.

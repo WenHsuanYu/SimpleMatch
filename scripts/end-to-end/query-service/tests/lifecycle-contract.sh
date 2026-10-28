@@ -8,6 +8,8 @@ cluster_data_module="$script_dir/../../critical-consumers/lib/cluster-data.sh"
 temporary_directory="$(mktemp -d)"
 trap 'rm -rf -- "$temporary_directory"' EXIT
 
+"$runner" --help | grep -Fq -- '--retained-evidence-dir PATH'
+
 redis_flag_line="$(grep -n '^redis_scaled=true$' "$runner" | head -n 1 | cut -d: -f1)"
 redis_mutation_line="$(grep -n 'scale_deployment redis 0' "$runner" | head -n 1 | cut -d: -f1)"
 query_flag_line="$(grep -n '^query_scaled=true$' "$runner" | head -n 1 | cut -d: -f1)"
