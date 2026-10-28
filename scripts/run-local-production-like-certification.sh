@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
 
 set -euo pipefail
+umask 077
 
 script_dir="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
 repo_root="$(cd -- "$script_dir/.." && pwd)"
@@ -15,11 +16,12 @@ source "$script_dir/lib/local-docker-storage.sh"
 # shellcheck source=scripts/lib/local-certification-provenance.sh
 source "$script_dir/lib/local-certification-provenance.sh"
 
+run_id="$(date -u +%Y%m%d-%H%M%S)-$$"
 compose_file="$repo_root/deploy/compose/kafka-connect.production-like.yml"
-compose_project="${SIMPLEMATCH_CERTIFICATION_COMPOSE_PROJECT:-simplematch-local-production-like}"
+compose_project="${SIMPLEMATCH_CERTIFICATION_COMPOSE_PROJECT:-simplematch-local-production-like-${run_id}}"
 image_tag="${SIMPLEMATCH_LOCAL_IMAGE_TAG:-local}"
 image_transport="${SIMPLEMATCH_LOCAL_IMAGE_TRANSPORT:-$SIMPLEMATCH_LOCAL_IMAGE_TRANSPORT_DEFAULT}"
-evidence_dir="${SIMPLEMATCH_CERTIFICATION_EVIDENCE_DIR:-$repo_root/out/certification/local-production-like}"
+evidence_dir="${SIMPLEMATCH_CERTIFICATION_EVIDENCE_DIR:-$repo_root/out/certification/local-production-like/$run_id}"
 image_lock="${SIMPLEMATCH_LOCAL_IMAGE_LOCK:-$evidence_dir/local-images.lock}"
 matching_producer_config_file="${SIMPLEMATCH_KAFKA_PRODUCER_CONFIG_FILE:-$evidence_dir/matching-producer.config.txt}"
 matching_capacity_evidence_file="${SIMPLEMATCH_KAFKA_CAPACITY_EVIDENCE_FILE:-$evidence_dir/kafka-capacity.properties}"
@@ -42,7 +44,6 @@ skip_compose=false
 skip_kubernetes=false
 matching_fleet_only=false
 keep_resources=false
-resume=false
 compose_started=false
 kubernetes_namespace_created=false
 failure_reason=""
@@ -54,25 +55,20 @@ namespace_cleanup_timeout="${SIMPLEMATCH_NAMESPACE_CLEANUP_TIMEOUT_SECONDS:-180}
 kubernetes_job_evidence_interval_seconds="${SIMPLEMATCH_KUBERNETES_JOB_EVIDENCE_INTERVAL_SECONDS:-10}"
 kafka_topic_provisioning_supervisor_seconds="${SIMPLEMATCH_KAFKA_TOPIC_PROVISIONING_SUPERVISOR_SECONDS:-630}"
 certification_deadline_epoch=0
-phase_marker_directory=""
 run_context_file=""
 source_signature=""
 cdc_runtime_signature=""
 cdc_verifier_signature=""
+required_phases=""
 compose_prefix=()
 compose_command=()
 
-# Policy modules load before concrete artifact adapters. The generic artifact
-# seam is loaded after image and Kafka adapters so Planner calls one interface
-# without either adapter depending on the other.
+# Existing adapters execute fresh phases and retain only current-run results.
 for certification_lib in \
   local-certification-phase-graph.sh \
-  local-certification-fingerprint.sh \
   local-certification-evidence.sh \
-  local-certification-planner.sh \
   local-certification-images.sh \
   local-certification-kafka.sh \
-  local-certification-artifacts.sh \
   local-certification-framework.sh \
   local-certification-job.sh \
   local-certification-kubernetes.sh \
@@ -84,12 +80,15 @@ done
 unset certification_lib
 
 # Bootstrap validates configuration and runtime preconditions only. The run
-# module maps phase IDs to adapters and the planner owns dependency order.
+# module maps selected phase IDs to their existing command adapters.
 # shellcheck source=/dev/null
 source "$script_dir/lib/local-certification-bootstrap.sh"
+trap cleanup EXIT
 export SIMPLEMATCH_LOCAL_IMAGE_TRANSPORT="$image_transport"
 # shellcheck source=/dev/null
 source "$script_dir/lib/local-certification-run.sh"
 
-certification_plan_finalize || die \
-  'Certification plan does not have complete successful phase evidence.'
+if [[ "$dry_run" == false ]]; then
+  certification_write_completion_manifest "$evidence_dir" "$required_phases" || die \
+    'Certification does not have complete current-run PASS results.'
+fi

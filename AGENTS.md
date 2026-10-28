@@ -23,21 +23,15 @@ These instructions apply to the whole repository.
   the dependent test. After a new or repeated deployment-test failure, record the symptom, root
   cause, safe fix, prevention check, and redacted evidence in that document before declaring the
   run complete.
-- Before an expensive local certification rerun, classify changed inputs through the certification
-  planner (`scripts/lib/local-certification-planner.sh`) and phase graph
-  (`scripts/lib/local-certification-phase-graph.sh`), following the [reuse contract](docs/verification/local-certification-phase-dag.md).
-  For an unskipped complete run, classification is complete only when `plan.json` records one
-  `EXECUTE`, `REUSE`, or `REVALIDATE` decision, input fingerprint, and reason for every required
-  phase. `SKIP` is valid only for an explicit partial profile; it has no fingerprint or PASS evidence
-  and can never be reused or reported as complete. `FRESH` executes in every new production-like
-  certification run. `CONTENT_ADDRESSED` evidence may be reused only after the PhaseGraph,
-  Fingerprint, and EvidenceStore contracts validate declared inputs, dependencies, immutable outputs,
-  and identities; `REVALIDATE` additionally performs its declared current external check. Unchanged
-  reusable evidence must not be rerun merely for reassurance. Pure issue metadata or non-normative
-  documentation changes that do not alter phase semantics require no runtime rerun; changes to phase
-  semantics, acceptance contracts, or reuse policy require planner/spec review and a corresponding
-  definition-version or effective-input update. If prose and executable phase declarations disagree,
-  treat reuse as unavailable and report the mismatch before testing.
+- Before an expensive certification run, review the selected profile, current source, and image
+  inputs against the [execution contract](docs/verification/local-certification-phase-dag.md).
+  Each run requires a new evidence directory and executes every selected phase.
+  Use normal Gradle and image-builder caches for deterministic build work.
+  Explicit partial profiles remain PARTIAL and create no PASS result for omitted phases.
+  Interrupted certification starts a new run. Retained-environment diagnostics require their
+  documented current-state and ownership checks and cannot upgrade an earlier aggregate result.
+  Documentation or issue metadata changes that do not alter executable inputs require no runtime rerun.
+  Changes to execution or acceptance semantics require corresponding contract and fixture review.
 - Use a focused CDC/Connect continuation only through a documented runner such as
   `scripts/run-local-cdc-delivery-focused-diagnostic.sh` or
   `scripts/run-local-connect-worker-loss.sh`. Its preflight must validate the retained runtime

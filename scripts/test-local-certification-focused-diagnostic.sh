@@ -29,7 +29,6 @@ fail() {
 fixture_root="$(mktemp -d "${TMPDIR:-/tmp}/simplematch-focused-cdc.XXXXXX")"
 trap 'rm -rf -- "$fixture_root"' EXIT
 export SIMPLEMATCH_LOCAL_REGISTRY_PORT=5001
-export SIMPLEMATCH_CERTIFICATION_CACHE_DIR="$fixture_root/cache"
 
 encode() {
   printf '%s' "$1" | base64 | tr -d '\n'
@@ -157,10 +156,7 @@ EOF_CONTRACT
 }
 
 write_dependencies() {
-  local evidence_dir="$1"
-  local dependency image_lock_digest result_file input_fingerprint definition_version
-  local lock_content_base64 source_revision plan_phases='[]' evidence_digest
-  local phase_policy plan_decision result_decision target_policy
+  local evidence_dir="$1" dependency result_file source_revision
 
   image_transport=registry
   image_tag=focused
@@ -168,81 +164,20 @@ write_dependencies() {
   skip_compose=false
   skip_kubernetes=false
   matching_fleet_only=false
-  certification_phase_graph_initialize || return 1
   SIMPLEMATCH_FOCUSED_DEPENDENCIES=()
   declare -gA SIMPLEMATCH_FOCUSED_DEPENDENCY_SEEN=()
   simplematch_focused_collect_dependencies kubernetes-cdc-delivery || return 1
   source_revision="$(git -C "$repo_root" rev-parse HEAD)"
   for dependency in "${SIMPLEMATCH_FOCUSED_DEPENDENCIES[@]}"; do
-    mkdir -p "$evidence_dir/phases/$dependency"
-    input_fingerprint="sha256:$(printf '%s' "$dependency" | sha256sum | awk '{print $1}')"
-    definition_version="$(certification_phase_definition_version "$dependency")"
     result_file="$evidence_dir/phases/$dependency/result.json"
-    if [[ "$dependency" == registry-image-lock ]]; then
-      image_lock_digest="$(sha256sum "$evidence_dir/local-images.lock" | awk '{print $1}')"
-      lock_content_base64="$(base64 <"$evidence_dir/local-images.lock" | tr -d '\n')"
-      jq -n --arg phase "$dependency" --arg identity "sha256:$image_lock_digest" \
-        --arg input "$input_fingerprint" --argjson definition "$definition_version" \
-        --arg content "$lock_content_base64" \
-        --arg source "$source_revision" \
-        '{schemaVersion:1,phaseId:$phase,definitionVersion:$definition,
-          decision:"EXECUTED",reason:"focused fixture",planning:{lookupDurationMillis:0,revalidationDurationMillis:0},
-          execution:{startedAtUtc:"2026-09-03T00:00:00Z",completedAtUtc:"2026-09-03T00:00:01Z",durationMillis:1000,sourceRevision:$source},
-          inputFingerprint:$input,status:"PASS",
-          outputs:[{kind:"image-lock",name:"local-images",identity:$identity,
-            contentBase64:$content}]}' \
-        >"$result_file"
-    else
-      jq -n --arg phase "$dependency" --arg input "$input_fingerprint" \
-        --argjson definition "$definition_version" --arg source "$source_revision" \
-        '{schemaVersion:1,phaseId:$phase,definitionVersion:$definition,
-          decision:"EXECUTED",reason:"focused fixture",planning:{lookupDurationMillis:0,revalidationDurationMillis:0},
-          execution:{startedAtUtc:"2026-09-03T00:00:00Z",completedAtUtc:"2026-09-03T00:00:01Z",durationMillis:1000,sourceRevision:$source},
-          inputFingerprint:$input,status:"PASS",outputs:[]}' \
-        >"$result_file"
-    fi
-    phase_policy="$(certification_phase_policy "$dependency")"
-    plan_decision=EXECUTE
-    result_decision=EXECUTED
-    case "$phase_policy" in
-      CONTENT_ADDRESSED)
-        result_decision=REUSED
-        ;;
-      REVALIDATE)
-        result_decision=REVALIDATED
-        ;;
-      FRESH) ;;
-      *) return 1 ;;
-    esac
-    plan_decision="$(simplematch_focused_plan_decision_for_result \
-      "$result_decision")" || return 1
-    if [[ "$phase_policy" != FRESH ]]; then
-      evidence_digest="$(certification_evidence_publish \
-        "$dependency" "$input_fingerprint" "$result_file")" || return 1
-      jq --arg evidence "$evidence_digest" --arg decision "$result_decision" \
-        '.evidenceDigest = $evidence | .decision = $decision' \
-        "$result_file" >"$result_file.tmp" || return 1
-      mv -f -- "$result_file.tmp" "$result_file"
-    fi
-    evidence_digest="$(jq -r '.evidenceDigest // ""' "$result_file")"
-    plan_phases="$(jq --arg phase "$dependency" --arg input "$input_fingerprint" \
-      --arg policy "$phase_policy" \
-      --arg decision "$plan_decision" \
-      --arg evidence "$evidence_digest" \
-      '. + [{phaseId:$phase,policy:$policy,
-        decision:$decision,inputFingerprint:$input,
-        lookupDurationMillis:0,revalidationDurationMillis:0,
-        evidenceDigest:(if $evidence == "" then null else $evidence end)}]' <<<"$plan_phases")"
+    mkdir -p "$(dirname -- "$result_file")"
+    jq -n --arg phase "$dependency" --arg source "$source_revision" \
+      --arg signature "$source_signature" \
+      '{schemaVersion:2,runId:"20260903-123456-1",phaseId:$phase,
+        status:"PASS",exitCode:0,sourceSignature:$signature,
+        execution:{sourceRevision:$source}}' >"$result_file"
   done
-  mkdir -p "$evidence_dir/phases/kubernetes-cdc-delivery"
-  jq -n '{schemaVersion:1,phaseId:"kubernetes-cdc-delivery",status:"FAIL"}' \
-    >"$evidence_dir/phases/kubernetes-cdc-delivery/result.json"
-  target_policy="$(certification_phase_policy kubernetes-cdc-delivery)"
-  plan_phases="$(jq --arg policy "$target_policy" \
-    '. + [{phaseId:"kubernetes-cdc-delivery",policy:$policy,decision:"EXECUTE",
-      inputFingerprint:null,lookupDurationMillis:0,revalidationDurationMillis:0,
-      evidenceDigest:null}]' <<<"$plan_phases")"
-  jq -n --argjson phases "$plan_phases" '{schemaVersion:1,phases:$phases}' >"$evidence_dir/plan.json"
+  sha256sum "$evidence_dir/local-images.lock" | awk '{print $1}' >"$evidence_dir/image-lock.sha256"
 }
 
 write_fixture() {
@@ -471,9 +406,9 @@ mv -f -- "$image_lock_fixture/local-images.lock.tmp" \
 run_preflight_expect_failure image-lock-drift "$image_lock_fixture"
 
 unrelated_fixture="$fixture_root/unrelated-source-drift"
-cp -R -- "$base_fixture" "$unrelated_fixture"
-replace_context_value "$unrelated_fixture/run-context" source_signature \
-  0000000000000000000000000000000000000000000000000000000000000000
+write_fixture "$unrelated_fixture" \
+  0000000000000000000000000000000000000000000000000000000000000000 \
+  "$current_runtime_signature" "$fake_verifier_signature"
 unrelated_marker="$fixture_root/unrelated-observer-marker"
 if ! FAKE_KUBECTL_ROOT="$unrelated_fixture" \
     FAKE_OBSERVER_MARKER="$unrelated_marker" \
@@ -554,72 +489,18 @@ jq -e '.schemaVersion == 2 and
   .verifierContractEvidenceFile == "verifier-contract.sh"' \
   "$preflight_file" >/dev/null || fail 'focused preflight schema/linkage is invalid'
 
-plan_mismatch_fixture="$fixture_root/plan-mismatch"
-cp -R -- "$base_fixture" "$plan_mismatch_fixture"
-jq '(.phases[] | select(.phaseId == "static-matching-profile")).decision = "EXECUTE"' \
-  "$plan_mismatch_fixture/plan.json" >"$plan_mismatch_fixture/plan.json.tmp"
-mv -f -- "$plan_mismatch_fixture/plan.json.tmp" "$plan_mismatch_fixture/plan.json"
-run_preflight_expect_failure plan-mismatch "$plan_mismatch_fixture"
+wrong_run_fixture="$fixture_root/wrong-run"
+cp -R -- "$base_fixture" "$wrong_run_fixture"
+wrong_run_result="$wrong_run_fixture/phases/kubernetes-workloads/result.json"
+jq '.runId = "another-run"' "$wrong_run_result" >"$wrong_run_result.tmp"
+mv -f -- "$wrong_run_result.tmp" "$wrong_run_result"
+run_preflight_expect_failure wrong-run "$wrong_run_fixture"
 
-revalidate_mismatch_fixture="$fixture_root/revalidate-mismatch"
-cp -R -- "$base_fixture" "$revalidate_mismatch_fixture"
-jq '(.phases[] | select(.phaseId == "registry-publish/account-service")).decision = "REUSE"' \
-  "$revalidate_mismatch_fixture/plan.json" >"$revalidate_mismatch_fixture/plan.json.tmp"
-mv -f -- "$revalidate_mismatch_fixture/plan.json.tmp" "$revalidate_mismatch_fixture/plan.json"
-jq '.decision = "REUSED"' \
-  "$revalidate_mismatch_fixture/phases/registry-publish/account-service/result.json" \
-  >"$revalidate_mismatch_fixture/phases/registry-publish/account-service/result.json.tmp"
-mv -f -- \
-  "$revalidate_mismatch_fixture/phases/registry-publish/account-service/result.json.tmp" \
-  "$revalidate_mismatch_fixture/phases/registry-publish/account-service/result.json"
-run_preflight_expect_failure revalidate-mismatch "$revalidate_mismatch_fixture"
-
-binding_result="$valid_fixture/phases/registry-image-lock/result.json"
-binding_digest="$(jq -er '.evidenceDigest' "$binding_result")"
-binding_object="$(_certification_evidence_object_path "$binding_digest")"
-binding_valid_result="$fixture_root/binding-valid-result.json"
-cp -- "$binding_result" "$binding_valid_result"
-simplematch_focused_result_is_bound_to_object \
-  "$binding_valid_result" "$binding_object" "$binding_digest" || fail \
-  'reused phase metadata was rejected despite matching immutable evidence'
-jq '.decision = "REVALIDATED" |
-  .reason = "current external validation" |
-  .planning.lookupDurationMillis = 999 |
-  .planning.revalidationDurationMillis = 17 |
-  .execution.startedAtUtc = "2026-09-06T00:00:00Z" |
-  .execution.completedAtUtc = "2026-09-06T00:00:02Z" |
-  .execution.durationMillis = 2000' "$binding_valid_result" \
-  >"$binding_result.tmp"
-mv -f -- "$binding_result.tmp" "$binding_result"
-simplematch_focused_result_is_bound_to_object \
-  "$binding_result" "$binding_object" "$binding_digest" || fail \
-  'revalidated phase metadata was rejected despite matching immutable evidence'
-cp -- "$binding_result" "$binding_valid_result"
-for mutation in \
-    '.schemaVersion = 2' \
-    '.phaseId = "tampered-phase"' \
-    '.definitionVersion = (.definitionVersion + 1)' \
-    '.status = "FAIL"' \
-    '.inputFingerprint = "sha256:0000000000000000000000000000000000000000000000000000000000000000"' \
-    '.outputs = []'; do
-  jq "$mutation" "$binding_valid_result" >"$binding_result.tmp"
-  mv -f -- "$binding_result.tmp" "$binding_result"
-  if simplematch_focused_result_is_bound_to_object \
-      "$binding_result" "$binding_object" "$binding_digest"; then
-    fail "immutable evidence drift was accepted: $mutation"
-  fi
-done
-cp -- "$binding_valid_result" "$binding_result"
-if simplematch_focused_result_is_bound_to_object \
-    "$binding_result" "$binding_object" \
-    sha256:0000000000000000000000000000000000000000000000000000000000000000; then
-  fail 'wrong evidence digest was accepted by the binding seam'
-fi
-wrong_object="$fixture_root/wrong-evidence-object.json"
-jq '.outputs = []' "$binding_object" >"$wrong_object"
-if simplematch_focused_result_is_bound_to_object \
-    "$binding_result" "$wrong_object" "$binding_digest"; then
-  fail 'wrong-address evidence object was accepted by the binding seam'
-fi
+historical_fixture="$fixture_root/historical-result"
+cp -R -- "$base_fixture" "$historical_fixture"
+historical_result="$historical_fixture/phases/kubernetes-workloads/result.json"
+jq '.schemaVersion = 1' "$historical_result" >"$historical_result.tmp"
+mv -f -- "$historical_result.tmp" "$historical_result"
+run_preflight_expect_failure historical-result "$historical_fixture"
 
 printf '%s\n' 'Local focused CDC diagnostic contracts are valid.'

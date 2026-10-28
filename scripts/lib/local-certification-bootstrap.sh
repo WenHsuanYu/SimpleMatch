@@ -39,8 +39,7 @@ while [[ $# -gt 0 ]]; do
       shift
       ;;
     --resume)
-      resume=true
-      shift
+      die '--resume was retired. Start a new certification with a new evidence directory.'
       ;;
     --dry-run)
       dry_run=true
@@ -95,6 +94,11 @@ if [[ "$dry_run" == false && "$skip_kubernetes" == false && "$matching_fleet_onl
 fi
 query_security_deployed_digest="${query_security_deployed_digest:-not-required}"
 
+# Reject retained evidence before daemon queries, trap installation, or report writes.
+if [[ "$dry_run" == false && ( -e "$evidence_dir" || -L "$evidence_dir" ) ]]; then
+  die "Certification evidence directory already exists: $evidence_dir. Select a new directory."
+fi
+
 if [[ "$dry_run" == true ]]; then
   compose_prefix=(docker compose)
 elif command -v docker >/dev/null 2>&1 && docker compose version >/dev/null 2>&1; then
@@ -106,15 +110,7 @@ else
 fi
 compose_command=("${compose_prefix[@]}" --project-name "$compose_project" --file "$compose_file")
 
-if [[ "$dry_run" == false ]]; then
-  simplematch_docker_storage_preflight || die \
-    'Docker host-capacity preflight failed; no production-like phase was started.'
-fi
-
-generated_run_id="$(date -u +%Y%m%d-%H%M%S)-$$"
-run_id="$generated_run_id"
 namespace="${SIMPLEMATCH_CERTIFICATION_NAMESPACE:-simplematch-local-cert-${run_id}}"
-phase_marker_directory="$evidence_dir/phase-markers"
 run_context_file="$evidence_dir/run-context"
 certification_deadline_epoch=$(( $(date +%s) + certification_timeout_seconds ))
 source_signature="$(simplematch_certification_source_signature "$repo_root")"
@@ -131,40 +127,14 @@ _certification_run_context() {
   printf 'query_security_deployed_digest=%s\n' "$query_security_deployed_digest"
 }
 
-if [[ "$resume" == true ]]; then
-  [[ -n "${SIMPLEMATCH_CERTIFICATION_EVIDENCE_DIR:-}" ]] || die \
-    '--resume requires SIMPLEMATCH_CERTIFICATION_EVIDENCE_DIR.'
-  [[ -n "${SIMPLEMATCH_CERTIFICATION_NAMESPACE:-}" ]] || die \
-    '--resume requires SIMPLEMATCH_CERTIFICATION_NAMESPACE.'
-  [[ -f "$run_context_file" ]] || die "Resume context is missing: $run_context_file"
-  retained_run_id="$(awk -F= '$1 == "run_id" { print substr($0, index($0, "=") + 1); exit }' \
-    "$run_context_file")"
-  [[ "$retained_run_id" =~ ^[0-9]{8}-[0-9]{6}-[0-9]+$ ]] || die \
-    "Resume context has an invalid run identity: ${retained_run_id:-<missing>}"
-  run_id="$retained_run_id"
-  expected_context="$(_certification_run_context)"
-  actual_context="$(cat "$run_context_file")"
-  [[ "$actual_context" == "$expected_context" ]] || die \
-    'Resume context does not match the current run identity, namespace, cluster, trading day, image identity, source, or proof profile.'
-  if [[ "$dry_run" == false ]]; then
-    kubectl --context "$kind_context" get namespace "$namespace" >/dev/null 2>&1 || die \
-      "Resume namespace does not exist: $namespace"
-    simplematch_kind_namespace_is_disposable \
-      "$kind_context" "$namespace" local-production-like-certification || die \
-      "Resume namespace is not owned as a disposable local certification namespace: $namespace"
-    namespace_run_id="$(kubectl --context "$kind_context" get namespace "$namespace" \
-      -o jsonpath='{.metadata.labels.simplematch\.io/run-id}')" || die \
-      "Unable to read resume namespace run identity: $namespace"
-    [[ "$namespace_run_id" == "$run_id" ]] || die \
-      "Resume namespace belongs to run ${namespace_run_id:-<missing>}, expected $run_id"
-  fi
-  kubernetes_namespace_created=true
-else
-  if [[ "$dry_run" == false ]]; then
-    mkdir -p "$evidence_dir" || die \
-      "Unable to create certification evidence directory: $evidence_dir"
-    _certification_run_context >"$run_context_file" || die \
-      "Unable to write certification run context: $run_context_file"
+if [[ "$dry_run" == false ]]; then
+  simplematch_docker_storage_preflight || die \
+    'Docker host-capacity preflight failed; no production-like phase was started.'
+  if [[ "$skip_compose" == false ]]; then
+    existing_compose_containers="$("${compose_command[@]}" ps --all --quiet)" || \
+      die 'Cannot inspect the selected Compose project.'
+    [[ -z "$existing_compose_containers" ]] || \
+      die 'The selected Compose project already has containers. Select an unused project.'
   fi
 fi
 
@@ -189,5 +159,10 @@ else
   export SIMPLEMATCH_PRODUCTION_LIKE_NETWORK_EXTERNAL="${SIMPLEMATCH_PRODUCTION_LIKE_NETWORK_EXTERNAL:-false}"
 fi
 
-certification_plan_initialize "$evidence_dir" || die \
-  'Certification phase graph or plan initialization failed.'
+certification_phase_validate_graph || die 'Certification phase dependencies are invalid.'
+if [[ "$dry_run" == false ]]; then
+  mkdir -p "$(dirname -- "$evidence_dir")" || die 'Cannot create the evidence parent directory.'
+  mkdir -m 700 "$evidence_dir" || die 'Cannot reserve the new evidence directory.'
+  _certification_run_context >"$run_context_file" || die 'Cannot write the certification run context.'
+  git -C "$repo_root" rev-parse HEAD >"$evidence_dir/source-revision" || die 'Cannot record the source revision.'
+fi

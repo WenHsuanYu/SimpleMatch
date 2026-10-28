@@ -375,8 +375,6 @@ expect_runner_rejects 'symlinked evidence path' 'path contains a symlink compone
 retained_gate_fixture="$fixture_dir/retained-gate"
 mkdir -p "$retained_gate_fixture"
 printf '%s\n' '- status: PASSED' >"$retained_gate_fixture/report.md"
-jq -n '{schemaVersion:1,phases:[{phaseId:"source-preflight",decision:"EXECUTE"}]}' \
-  >"$retained_gate_fixture/plan.json"
 expect_runner_rejects 'incomplete retained PASS' 'evidence manifest is missing' \
   --namespace simplematch-java-run \
   --namespace-run-id run-1 \

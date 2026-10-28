@@ -1,280 +1,98 @@
 #!/usr/bin/env bash
 
-# Content-addressed PASS evidence for local production-like certification. The
-# cache is an optimization and is never trusted without validating object
-# content, phase identity, input identity, and declared outputs.
+# Current-run results only. Historical PASS results never select or skip work.
 
-certification_cache_directory() {
-  printf '%s\n' \
-    "${SIMPLEMATCH_CERTIFICATION_CACHE_DIR:-$repo_root/out/certification-cache}"
-}
+declare -g evidence_dir run_id source_signature
 
-_certification_evidence_validate_identity() {
-  [[ "$1" =~ ^sha256:[0-9a-f]{64}$ ]]
-}
+certification_write_phase_result() {
+  local phase="$1" status="$2" exit_code="${3:-null}"
+  local result="$evidence_dir/phases/$phase/result.json" temporary revision
 
-_certification_evidence_object_path() {
-  local evidence_digest="$1"
-  local cache_dir hex
-
-  _certification_evidence_validate_identity "$evidence_digest" || return 1
-  cache_dir="$(certification_cache_directory)"
-  hex="${evidence_digest#sha256:}"
-  printf '%s/objects/sha256/%s/%s.json\n' \
-    "$cache_dir" "${hex:0:2}" "${hex:2}"
-}
-
-_certification_evidence_index_path() {
-  local phase_id="$1"
-  local input_fingerprint="$2"
-  local cache_dir fingerprint_hex
-
-  certification_phase_policy "$phase_id" >/dev/null || return 1
-  _certification_evidence_validate_identity "$input_fingerprint" || return 1
-  cache_dir="$(certification_cache_directory)"
-  fingerprint_hex="${input_fingerprint#sha256:}"
-  printf '%s/index/v1/%s/%s.ref\n' \
-    "$cache_dir" "$phase_id" "$fingerprint_hex"
-}
-
-_certification_evidence_file_digest() {
-  local path="$1"
-  local digest
-
-  digest="$(sha256sum "$path" | awk '{print $1}')" || return 1
-  [[ "$digest" =~ ^[0-9a-f]{64}$ ]] || return 1
-  printf 'sha256:%s\n' "$digest"
-}
-
-certification_evidence_validate_object() {
-  local object_path="$1"
-  local expected_digest="$2"
-  local expected_phase="${3:-}"
-  local expected_input="${4:-}"
-  local actual_digest phase_id input_fingerprint
-  local definition_version current_definition_version
-
-  [[ -f "$object_path" ]] || return 1
-  _certification_evidence_validate_identity "$expected_digest" || return 1
-  actual_digest="$(_certification_evidence_file_digest "$object_path")" || return 1
-  [[ "$actual_digest" == "$expected_digest" ]] || return 1
-  jq -e '
-    .schemaVersion == 1 and
-    (.phaseId | type == "string") and
-    (.definitionVersion | type == "number") and
-    (.definitionVersion >= 1) and
-    .status == "PASS" and
-    (.inputFingerprint | test("^sha256:[0-9a-f]{64}$")) and
-    (.outputs | type == "array")
-  ' "$object_path" >/dev/null 2>&1 || return 1
-
-  phase_id="$(jq -r '.phaseId' "$object_path")" || return 1
-  input_fingerprint="$(jq -r '.inputFingerprint' "$object_path")" || return 1
-  definition_version="$(jq -r '.definitionVersion' "$object_path")" || return 1
-  [[ -z "$expected_phase" || "$phase_id" == "$expected_phase" ]] || return 1
-  [[ -z "$expected_input" || "$input_fingerprint" == "$expected_input" ]] || return 1
-  current_definition_version="$(
-    certification_phase_definition_version "$phase_id" 2>/dev/null
-  )" || return 1
-  [[ "$definition_version" == "$current_definition_version" ]]
-}
-
-_certification_evidence_probe_result() {
-  local status="$1"
-  local reason="$2"
-  local evidence_digest="${3:-}"
-
-  jq -cn \
-    --arg status "$status" \
-    --arg reason "$reason" \
-    --arg evidence "$evidence_digest" '{
-      status: $status,
-      reason: $reason,
-      evidenceDigest: (if $evidence == "" then null else $evidence end)
-    }'
-}
-
-certification_evidence_probe() {
-  local phase_id="$1"
-  local input_fingerprint="$2"
-  local index_path evidence_digest object_path
-
-  index_path="$(_certification_evidence_index_path \
-    "$phase_id" "$input_fingerprint")" || return 1
-  if [[ ! -f "$index_path" ]]; then
-    _certification_evidence_probe_result MISS 'cache index is missing'
-    return 0
+  _certification_require_known_phase "$phase" || return 1
+  revision="$(cat "$evidence_dir/source-revision")" || return 1
+  mkdir -p "$(dirname -- "$result")" || return 1
+  temporary="$(mktemp "${result}.tmp.XXXXXX")" || return 1
+  if ! jq -n --arg phase "$phase" --arg status "$status" \
+      --arg run "$run_id" --arg signature "$source_signature" \
+      --arg revision "$revision" --arg recorded "$(date -u +%Y-%m-%dT%H:%M:%SZ)" \
+      --argjson exitCode "$exit_code" '{schemaVersion:2,runId:$run,phaseId:$phase,
+        status:$status,exitCode:$exitCode,sourceSignature:$signature,
+        execution:{sourceRevision:$revision,recordedAtUtc:$recorded}}' >"$temporary"; then
+    rm -f -- "$temporary"
+    return 1
   fi
+  mv -f -- "$temporary" "$result"
+}
 
-  evidence_digest="$(tr -d '\r\n' <"$index_path")" || return 1
-  if ! _certification_evidence_validate_identity "$evidence_digest"; then
-    _certification_evidence_probe_result \
-      REJECTED 'cache index contains an invalid evidence digest'
-    return 0
+certification_validate_phase_result() {
+  local directory="$1" phase="$2"
+  local result="$directory/phases/$phase/result.json"
+
+  _certification_require_known_phase "$phase" || return 1
+  [[ -f "$result" && ! -L "$result" && -f "$directory/run-context" && \
+    ! -L "$directory/run-context" && -f "$directory/source-revision" && \
+    ! -L "$directory/source-revision" ]] || return 1
+  [[ "$(realpath -ms -- "$result")" == "$(realpath -m -- "$result")" ]] || return 1
+  jq -e -s --arg phase "$phase" --rawfile context "$directory/run-context" \
+      --rawfile revision "$directory/source-revision" '
+    def context_value($key):
+      [$context | split("\n")[] | select(startswith($key + "=")) |
+        ltrimstr($key + "=")] |
+      if length == 1 then .[0] else error("invalid run context") end;
+    context_value("run_id") as $run |
+    context_value("source_signature") as $signature |
+    ($revision | sub("[\r\n]+$"; "")) as $source |
+    length == 1 and (.[0] as $result |
+      ($run | test("^[A-Za-z0-9_.-]+$")) and
+      ($signature | test("^[0-9a-f]{64}$")) and
+      ($source | test("^[0-9a-f]{40}$")) and
+      $result.schemaVersion == 2 and $result.phaseId == $phase and
+      $result.runId == $run and $result.sourceSignature == $signature and
+      $result.status == "PASS" and $result.exitCode == 0 and
+      $result.execution.sourceRevision == $source)
+  ' "$result" >/dev/null
+}
+
+certification_write_completion_manifest() {
+  local directory="$1" required="$2" phase temporary
+  local -a results=()
+
+  while IFS= read -r phase; do
+    [[ -n "$phase" ]] || continue
+    certification_validate_phase_result "$directory" "$phase" || {
+      printf 'Certification phase has no current-run PASS: %s\n' "$phase" >&2
+      return 1
+    }
+    results+=("$directory/phases/$phase/result.json")
+  done <<<"$required"
+  ((${#results[@]} > 0)) || return 1
+  temporary="$(mktemp "$directory/evidence-manifest.json.tmp.XXXXXX")" || return 1
+  if ! jq -s '{schemaVersion:2,runId:.[0].runId,sourceSignature:.[0].sourceSignature,
+      sourceRevision:.[0].execution.sourceRevision,phases:map(.phaseId)}' \
+      "${results[@]}" >"$temporary"; then
+    rm -f -- "$temporary"
+    return 1
   fi
-
-  object_path="$(_certification_evidence_object_path "$evidence_digest")" || return 1
-  if [[ ! -f "$object_path" ]]; then
-    _certification_evidence_probe_result \
-      REJECTED 'indexed evidence object is missing' "$evidence_digest"
-    return 0
-  fi
-  if ! certification_evidence_validate_object \
-      "$object_path" "$evidence_digest" "$phase_id" "$input_fingerprint"; then
-    _certification_evidence_probe_result \
-      REJECTED \
-      'evidence object failed integrity, schema, phase, definition, or input validation' \
-      "$evidence_digest"
-    return 0
-  fi
-
-  _certification_evidence_probe_result HIT 'valid reusable evidence' "$evidence_digest"
+  mv -f -- "$temporary" "$directory/evidence-manifest.json"
 }
 
-certification_evidence_find_valid() {
-  local phase_id="$1"
-  local input_fingerprint="$2"
-  local probe_json status evidence_digest
+certification_validate_completion() {
+  local directory="$1" required="$2" phase first="" phase_json
+  local manifest="$directory/evidence-manifest.json"
 
-  probe_json="$(certification_evidence_probe \
-    "$phase_id" "$input_fingerprint")" || return 1
-  status="$(jq -r '.status' <<<"$probe_json")" || return 1
-  [[ "$status" == HIT ]] || return 1
-  evidence_digest="$(jq -r '.evidenceDigest' <<<"$probe_json")" || return 1
-  _certification_evidence_validate_identity "$evidence_digest" || return 1
-  printf '%s\n' "$evidence_digest"
-}
-
-_certification_evidence_install_object() {
-  local object_temp="$1"
-  local object_path="$2"
-  local evidence_digest="$3"
-
-  if ln -- "$object_temp" "$object_path" 2>/dev/null; then
-    rm -f -- "$object_temp"
-    return 0
-  fi
-  if [[ -f "$object_path" ]] && \
-      certification_evidence_validate_object "$object_path" "$evidence_digest"; then
-    rm -f -- "$object_temp"
-    return 0
-  fi
-  rm -f -- "$object_temp"
-  return 1
-}
-
-certification_evidence_publish() {
-  local phase_id="$1"
-  local input_fingerprint="$2"
-  local result_file="$3"
-  local cache_dir object_temp evidence_digest object_path index_path index_temp
-  local definition_version
-
-  certification_phase_policy "$phase_id" >/dev/null || return 1
-  _certification_evidence_validate_identity "$input_fingerprint" || return 1
-  [[ -f "$result_file" ]] || return 1
-  definition_version="$(certification_phase_definition_version "$phase_id")" || return 1
-  jq -e \
-    --arg phase "$phase_id" \
-    --arg input "$input_fingerprint" \
-    --argjson definitionVersion "$definition_version" '
-      .schemaVersion == 1 and
-      .phaseId == $phase and
-      .definitionVersion == $definitionVersion and
-      .inputFingerprint == $input and
-      .status == "PASS" and
-      (.outputs | type == "array")
-    ' "$result_file" >/dev/null 2>&1 || return 1
-
-  cache_dir="$(certification_cache_directory)"
-  mkdir -p "$cache_dir/objects/sha256" "$cache_dir/index/v1/$phase_id" || return 1
-  object_temp="$(mktemp "$cache_dir/objects/.evidence.XXXXXX")" || return 1
-  cp -- "$result_file" "$object_temp" || {
-    rm -f -- "$object_temp"
-    return 1
-  }
-  evidence_digest="$(_certification_evidence_file_digest "$object_temp")" || {
-    rm -f -- "$object_temp"
-    return 1
-  }
-  object_path="$(_certification_evidence_object_path "$evidence_digest")" || {
-    rm -f -- "$object_temp"
-    return 1
-  }
-  mkdir -p "$(dirname -- "$object_path")" || {
-    rm -f -- "$object_temp"
-    return 1
-  }
-  _certification_evidence_install_object \
-    "$object_temp" "$object_path" "$evidence_digest" || return 1
-  certification_evidence_validate_object \
-    "$object_path" "$evidence_digest" "$phase_id" "$input_fingerprint" || return 1
-
-  index_path="$(_certification_evidence_index_path "$phase_id" "$input_fingerprint")" || return 1
-  mkdir -p "$(dirname -- "$index_path")" || return 1
-  index_temp="$(mktemp "${index_path}.tmp.XXXXXX")" || return 1
-  printf '%s\n' "$evidence_digest" >"$index_temp" || {
-    rm -f -- "$index_temp"
-    return 1
-  }
-  mv -f -- "$index_temp" "$index_path" || {
-    rm -f -- "$index_temp"
-    return 1
-  }
-  printf '%s\n' "$evidence_digest"
-}
-
-certification_evidence_materialize() {
-  local evidence_digest="$1"
-  local destination="$2"
-  local object_path temp_path
-
-  object_path="$(_certification_evidence_object_path "$evidence_digest")" || return 1
-  certification_evidence_validate_object "$object_path" "$evidence_digest" || return 1
-  mkdir -p "$(dirname -- "$destination")" || return 1
-  temp_path="$(mktemp "${destination}.tmp.XXXXXX")" || return 1
-  cp -- "$object_path" "$temp_path" || {
-    rm -f -- "$temp_path"
-    return 1
-  }
-  mv -f -- "$temp_path" "$destination" || {
-    rm -f -- "$temp_path"
-    return 1
-  }
-}
-
-certification_evidence_output_identity() {
-  local evidence_digest="$1"
-  local kind="$2"
-  local name="$3"
-  local object_path identity
-
-  object_path="$(_certification_evidence_object_path "$evidence_digest")" || return 1
-  certification_evidence_validate_object "$object_path" "$evidence_digest" || return 1
-  identity="$(
-    jq -er --arg kind "$kind" --arg name "$name" '
-      [.outputs[] | select(.kind == $kind and .name == $name)] as $matches |
-      if ($matches | length) == 1 then $matches[0].identity else error("output mismatch") end
-    ' "$object_path"
-  )" || return 1
-  _certification_evidence_validate_identity "$identity" || return 1
-  printf '%s\n' "$identity"
-}
-
-certification_evidence_output_location() {
-  local evidence_digest="$1"
-  local kind="$2"
-  local name="$3"
-  local object_path location
-
-  object_path="$(_certification_evidence_object_path "$evidence_digest")" || return 1
-  certification_evidence_validate_object "$object_path" "$evidence_digest" || return 1
-  location="$(
-    jq -er --arg kind "$kind" --arg name "$name" '
-      [.outputs[] | select(.kind == $kind and .name == $name)] as $matches |
-      if ($matches | length) == 1 then ($matches[0].location // "") else error("output mismatch") end
-    ' "$object_path"
-  )" || return 1
-  [[ -n "$location" && "$location" != *[[:space:]]* ]] || return 1
-  printf '%s\n' "$location"
+  [[ -f "$manifest" && ! -L "$manifest" ]] || return 1
+  while IFS= read -r phase; do
+    [[ -n "$phase" ]] || continue
+    certification_validate_phase_result "$directory" "$phase" || return 1
+    [[ -n "$first" ]] || first="$directory/phases/$phase/result.json"
+  done <<<"$required"
+  [[ -n "$first" ]] || return 1
+  phase_json="$(printf '%s\n' "$required" | jq -Rsc 'split("\n") | map(select(length > 0))')" || return 1
+  jq -e -s --argjson required "$phase_json" --slurpfile result "$first" '
+    length == 1 and (.[0] as $manifest |
+      $manifest.schemaVersion == 2 and $manifest.phases == $required and
+      $manifest.runId == $result[0].runId and
+      $manifest.sourceSignature == $result[0].sourceSignature and
+      $manifest.sourceRevision == $result[0].execution.sourceRevision)
+  ' "$manifest" >/dev/null
 }

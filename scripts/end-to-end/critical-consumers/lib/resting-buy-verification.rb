@@ -27,21 +27,23 @@ module RestingBuyVerification
     equal(true, statuses.size == 1 && %w[PASS PASSED PARTIAL].include?(statuses.first), "deployment completion")
     source = File.read(File.join(directory, "source-revision")).strip
     manifest = JSON.parse(File.read(File.join(directory, "evidence-manifest.json")))
-    equal(1, manifest.fetch("schemaVersion"), "deployment manifest schema")
+    equal(2, manifest.fetch("schemaVersion"), "deployment manifest schema")
     phases = manifest.fetch("phases")
     equal(Array, phases.class, "deployment phases")
     required = %w[kubernetes-inputs kubernetes-topic-provisioning kubernetes-migrations
       kubernetes-open-barriers kubernetes-risk-outbox-connector kubernetes-account-outbox-connector
       kubernetes-workloads kubernetes-cdc-delivery kubernetes-fleet]
     required.each do |phase|
-      entries = phases.select { |entry| entry.fetch("phaseId") == phase }
-      equal(1, entries.size, "deployment #{phase} manifest entry")
+      equal(1, phases.count(phase), "deployment #{phase} manifest entry")
       result = JSON.parse(File.read(File.join(directory, "phases", phase, "result.json")))
-      equal(1, result.fetch("schemaVersion"), "deployment #{phase} result schema")
-      same_fields(entries.first, result, %w[phaseId definitionVersion decision status inputFingerprint execution], phase)
+      equal(2, result.fetch("schemaVersion"), "deployment #{phase} result schema")
+      equal(phase, result.fetch("phaseId"), "deployment #{phase} identity")
+      equal(manifest.fetch("runId"), result.fetch("runId"), "deployment #{phase} run")
+      equal(manifest.fetch("sourceSignature"), result.fetch("sourceSignature"), "deployment #{phase} source identity")
+      equal(0, result.fetch("exitCode"), "deployment #{phase} exit status")
       equal("PASS", result.fetch("status"), "deployment #{phase}")
       equal(source, result.fetch("execution").fetch("sourceRevision"), "deployment #{phase} source")
-      equal(true, /\Asha256:[0-9a-f]{64}\z/.match?(result.fetch("inputFingerprint")), "deployment #{phase} fingerprint")
+      equal(source, manifest.fetch("sourceRevision"), "deployment source")
     end
     {"status" => "PASS", "deploymentStatus" => statuses.first,
       "sourceRevision" => source, "prerequisitePhases" => required}

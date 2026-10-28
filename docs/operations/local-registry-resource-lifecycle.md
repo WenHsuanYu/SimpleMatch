@@ -91,11 +91,11 @@ SIMPLEMATCH_LOCAL_IMAGE_TRANSPORT=kind-load \
   bash scripts/run-local-production-like-certification.sh
 ```
 
-The top-level certification runner does not implement registry publication or direct kind import itself. `PhaseGraph` selects the required transport phases and `CertificationPlanner` owns reuse/revalidation decisions. Concrete Docker, registry, and kind behavior remains behind the existing image adapters.
-
-For a new full run, local image builds are `CONTENT_ADDRESSED`: an unchanged image may be reused only when its effective inputs and immutable OCI identity validate. Registry publication is `REVALIDATE`: the expected digest must still be addressable, otherwise the verified source image is published again. `kind-load` node import remains `FRESH` because node-local containerd state is mutable.
-
-The public `prepare-local-kubernetes-images.sh` command remains useful for explicit image-transport preparation and debugging. The certification runner no longer treats complete image preparation as one all-or-nothing reusable phase.
+The phase declarations select the required transport operations and their dependency order.
+Every selected operation executes in the current run.
+Build tools retain their ordinary caches, and registry publication still supplies immutable runtime image references.
+The existing image adapters own Docker, registry, and kind behavior.
+The public `prepare-local-kubernetes-images.sh` command remains available for explicit image preparation.
 
 ## 4. Publication and digest lock
 
@@ -135,7 +135,7 @@ Publication tags each selected local image under `localhost:<port>/<repository>:
 
 Lock validation binds every entry to the canonical inventory: service identity, source repository, source/registry tag agreement, registry tag/digest repository agreement, configured local registry endpoint, uniqueness, and lowercase `sha256` digest shape are checked before use.
 
-During certification, per-image publication results are combined into one complete immutable `local-images.lock`. Deployment consumes the complete lock and does not need to know which individual images were rebuilt, reused, or republished.
+During certification, per-image publication results are combined into one complete immutable `local-images.lock`. Deployment consumes the complete lock with immutable runtime references.
 
 ## 5. Digest-based Kustomize rendering
 
@@ -158,44 +158,19 @@ For Matching, registry mode uses the registry OCI manifest digest as runtime/ses
 
 ## Certification runner boundary
 
-`run-local-production-like-certification.sh` remains the only normal full-certification entry point. The current implementation separates policy from external behavior:
+`run-local-production-like-certification.sh` remains the normal full-certification entry point.
+The [execution contract](../verification/local-certification-phase-dag.md) defines the current profile, result, and ownership rules.
 
-```text
-local-certification-phase-graph.sh
-    phase identity, dependencies, policy, resume mode, topological order
+The phase list selects and orders work.
+Existing command adapters execute the selected phases.
+Current-run results and the completion inventory replace custom historical PASS lookup and output materialization.
+Registry image locks retain their recorded byte identity.
 
-local-certification-fingerprint.sh
-    canonical effective-input manifests and fingerprints
-
-local-certification-evidence.sh
-    content-addressed PASS evidence and cache validation
-
-local-certification-planner.sh
-    execute/reuse/revalidate decisions and current-run completeness
-
-local-certification-images.sh
-    image build/publication identity adapters
-
-local-certification-artifacts.sh
-    generic output validation/materialization seam
-
-local-certification-framework.sh
-    common execution, timing, resume, and result lifecycle
-
-local-certification-kafka.sh
-local-certification-kubernetes.sh
-local-certification-connect.sh
-local-certification-workloads.sh
-    concrete runtime adapters
-```
-
-These files are sourced modules, not public entry points. Cross-run evidence reuse is automatic and independent of `--resume`. `--resume` continues only one retained run and is bound to the original run identity, namespace, cluster, trading day, image identity, source signature, and proof profile.
-
-A same-run completion marker is only a resume candidate. The PhaseGraph resume policy decides whether a phase may reuse its run-local result, must re-execute, must validate current state, or must reject continuation because a side effect cannot be safely replayed. Ambiguous non-replayable phases fail closed.
-
-The reusable cache defaults to `out/certification-cache/`. Required evidence and immutable artifact identity are materialized into each retained run, so dependent certification does not require that cache directory to survive.
-
-See `docs/verification/local-certification-phase-dag.md` for the architecture and `docs/verification/local-certification-phase-dag-implementation.md` for the current module/interface contract.
+Each run requires a new evidence directory.
+The default Compose project includes the run ID. An explicitly selected project must contain no existing containers.
+`--resume`, the content-addressed PASS cache, and reuse measurement retired on 2026-10-28.
+Interrupted certification starts a new run.
+Focused diagnostics retain their separate current-state checks and limited claims.
 
 ## 6. Kubelet image-cache policy
 
@@ -321,7 +296,7 @@ Deterministic validation covers:
 - legacy normalizer isolation from the registry path;
 - semantic digest locks and atomic publication;
 - registry digest rendering and kind-load rendering;
-- Phase-DAG transport propagation, per-image reuse/revalidation, and resume identity;
+- phase selection, fresh transport execution, current-run results, and partial-profile reporting;
 - kubelet image-GC configuration;
 - hard-reset manager delegation and aggressive-mode boundaries.
 

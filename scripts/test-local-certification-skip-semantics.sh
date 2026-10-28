@@ -4,156 +4,142 @@ IFS=$'\n\t'
 
 script_dir="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
 repo_root="$(cd -- "$script_dir/.." && pwd)"
-bootstrap_lib="$script_dir/lib/local-certification-bootstrap.sh"
+
+# A fresh run must reject occupied evidence before any external preflight or report write.
+fresh_fixture="$(mktemp -d)"
+trap 'rm -rf -- "$fresh_fixture"' EXIT
+mkdir -p "$fresh_fixture/retained" "$fresh_fixture/bin"
+printf '%s\n' 'retained original report' >"$fresh_fixture/retained/report.md"
+cat >"$fresh_fixture/bin/docker" <<'EOF_DOCKER'
+#!/usr/bin/env bash
+printf '%s\n' invoked >"${C_EXTERNAL_MARKER:?}"
+exit 23
+EOF_DOCKER
+chmod 755 "$fresh_fixture/bin/docker"
+if C_EXTERNAL_MARKER="$fresh_fixture/external" PATH="$fresh_fixture/bin:$PATH" \
+    SIMPLEMATCH_CERTIFICATION_EVIDENCE_DIR="$fresh_fixture/retained" \
+    bash "$script_dir/run-local-production-like-certification.sh" \
+    --skip-build --skip-compose --skip-kubernetes >"$fresh_fixture/rejected.log" 2>&1; then
+  printf 'Occupied certification evidence was accepted.\n' >&2
+  exit 1
+fi
+[[ ! -e "$fresh_fixture/external" ]] || {
+  printf 'Occupied evidence reached an external command before rejection.\n' >&2
+  exit 1
+}
+[[ "$(cat "$fresh_fixture/retained/report.md")" == 'retained original report' ]] || {
+  printf 'Rejected run changed retained evidence.\n' >&2
+  exit 1
+}
+rm -rf -- "$fresh_fixture"
+trap - EXIT
 
 # shellcheck source=scripts/lib/local-certification-phase-graph.sh
 source "$script_dir/lib/local-certification-phase-graph.sh"
-# shellcheck source=scripts/lib/local-certification-fingerprint.sh
-source "$script_dir/lib/local-certification-fingerprint.sh"
 # shellcheck source=scripts/lib/local-certification-evidence.sh
 source "$script_dir/lib/local-certification-evidence.sh"
-# shellcheck source=scripts/lib/local-certification-planner.sh
-source "$script_dir/lib/local-certification-planner.sh"
+# shellcheck source=scripts/lib/local-certification-framework.sh
+source "$script_dir/lib/local-certification-framework.sh"
 
-fail() {
-  printf 'certification skip contract failed: %s\n' "$*" >&2
-  exit 1
-}
-
-assert_plan_skip() {
-  local plan_file="$1"
-  local phase_id="$2"
-  local expected_reason="$3"
-
-  jq -e \
-    --arg phase "$phase_id" \
-    --arg reason "$expected_reason" '
-      [.phases[] | select(.phaseId == $phase)] as $matches |
-      ($matches | length) == 1 and
-      $matches[0].decision == "SKIP" and
-      $matches[0].inputFingerprint == null and
-      $matches[0].evidenceDigest == null and
-      $matches[0].reason == $reason
-    ' "$plan_file" >/dev/null || \
-    fail "plan does not record explicit SKIP for $phase_id"
-}
-
-assert_all_omissions_planned() {
-  local plan_file="$1"
-  local active_output="$2"
-  local full_output="$3"
-  local phase_id
-  local -A active=()
-
-  while IFS= read -r phase_id; do
-    [[ -n "$phase_id" ]] && active["$phase_id"]=true
-  done <<<"$active_output"
-  while IFS= read -r phase_id; do
-    [[ -n "$phase_id" ]] || continue
-    [[ -n "${active[$phase_id]+x}" ]] && continue
-    jq -e --arg phase "$phase_id" '
-      [.phases[] | select(.phaseId == $phase and .decision == "SKIP")] |
-      length == 1
-    ' "$plan_file" >/dev/null || \
-      fail "omitted full-profile phase has no SKIP entry: $phase_id"
-  done <<<"$full_output"
-}
-
+fail() { printf 'Certification execution contract failed: %s\n' "$*" >&2; exit 1; }
 fixture_root="$(mktemp -d)"
-trap 'rm -rf "$fixture_root"' EXIT
-export SIMPLEMATCH_CERTIFICATION_CACHE_DIR="$fixture_root/cache"
+trap 'rm -rf -- "$fixture_root"' EXIT
+evidence_dir="$fixture_root/run"
+mkdir "$evidence_dir"
+run_id=current-run
+source_signature=aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
+printf 'run_id=%s\nsource_signature=%s\n' "$run_id" "$source_signature" >"$evidence_dir/run-context"
+git -C "$repo_root" rev-parse HEAD >"$evidence_dir/source-revision"
 dry_run=false
-resume=false
-certification_trading_day=2026-08-28
-source_signature=skip-contract
-run_id=skip-contract
-image_transport=registry
-unset SIMPLEMATCH_KAFKA_PRODUCER_CONFIG_FILE || true
-
-# Every explicit skip flag must be distinguishable from verified reuse.
+certification_deadline_epoch=0
 skip_build=true
 skip_compose=true
 skip_kubernetes=true
 matching_fleet_only=false
-active_required="$(certification_required_phase_ids)" || \
-  fail 'active explicit-skip profile could not be resolved'
-full_required="$(
-  (
-    skip_build=false
-    skip_compose=false
-    skip_kubernetes=false
-    matching_fleet_only=false
-    certification_required_phase_ids
-  )
-)" || fail 'full comparison profile could not be resolved'
-evidence_dir="$fixture_root/all-skipped"
-certification_plan_initialize "$evidence_dir" || \
-  fail 'planner could not initialize explicit-skip profile'
-assert_plan_skip "$evidence_dir/plan.json" \
-  local-image-build/quickfix-gateway 'operator set --skip-build'
-assert_plan_skip "$evidence_dir/plan.json" \
-  compose-up 'operator set --skip-compose'
-assert_plan_skip "$evidence_dir/plan.json" \
-  registry-publish/quickfix-gateway 'operator set --skip-kubernetes'
-assert_plan_skip "$evidence_dir/plan.json" \
-  kubernetes-namespace 'operator set --skip-kubernetes'
-assert_all_omissions_planned \
-  "$evidence_dir/plan.json" "$active_required" "$full_required"
-[[ ! -e "$evidence_dir/phases/local-image-build/quickfix-gateway/result.json" ]] || \
-  fail 'explicit SKIP created phase PASS evidence'
+image_transport=registry
+image_tag='test'
+image_lock="$fixture_root/local-images.lock"
+compose_project='test'
+compose_file="$fixture_root/compose.yml"
+namespace=""
+certification_trading_day=2026-10-28
+failed_phase=""
+failure_reason=""
+completed_phases=()
+command_log="$fixture_root/commands"
+record_command() { printf '%s\n' called >>"$command_log"; }
 
-# Matching-only is an explicit partial profile, not cache reuse. It records work
-# omitted relative to the full profile while keeping Matching phases selected.
-skip_build=false
-skip_compose=false
-skip_kubernetes=false
-matching_fleet_only=true
-# The matching-only apply phase consumes a separately selected manifest. Its
-# producer must remain reachable even when Compose or Java workloads are omitted.
-for skip_compose in false true; do
-  matching_required="$(certification_required_phase_ids)" || fail 'Matching graph unresolved'
-  producer_position="$(awk '$0 == "kubernetes-matching-manifest" { print NR }' <<<"$matching_required")"
-  consumer_position="$(awk '$0 == "kubernetes-matching-apply" { print NR }' <<<"$matching_required")"
-  [[ -n "$producer_position" && -n "$consumer_position" && "$producer_position" -lt "$consumer_position" ]] ||
-    fail 'Matching apply has no preceding manifest producer'
-done
-skip_compose=false
-active_required="$(certification_required_phase_ids)" || \
-  fail 'Matching-only profile could not be resolved'
-full_required="$(
-  (
-    matching_fleet_only=false
-    certification_required_phase_ids
-  )
-)" || fail 'full comparison profile could not be resolved'
-evidence_dir="$fixture_root/matching-only"
-certification_plan_initialize "$evidence_dir" || \
-  fail 'planner could not initialize Matching-only profile'
-assert_plan_skip "$evidence_dir/plan.json" \
-  local-image-build/quickfix-gateway 'operator selected --matching-fleet-only'
-assert_plan_skip "$evidence_dir/plan.json" \
-  registry-publish/quickfix-gateway 'operator selected --matching-fleet-only'
-assert_plan_skip "$evidence_dir/plan.json" \
-  kubernetes-migrations 'operator selected --matching-fleet-only'
-assert_plan_skip "$evidence_dir/plan.json" \
-  retained-run-provenance 'operator selected --matching-fleet-only'
-assert_all_omissions_planned \
-  "$evidence_dir/plan.json" "$active_required" "$full_required"
-if jq -e '
-  any(.phases[]; .phaseId == "local-image-build/matching" and .decision == "SKIP")
-' "$evidence_dir/plan.json" >/dev/null; then
-  fail 'Matching-only profile skipped its required Matching image build'
+# An identical command executes again. A retained PASS does not skip the call.
+run_logged source-preflight record_command
+run_logged source-preflight record_command
+[[ "$(wc -l <"$command_log")" -eq 2 ]] || fail 'A previous PASS skipped execution.'
+certification_validate_phase_result "$evidence_dir" source-preflight || fail 'Current PASS is invalid.'
+
+# A failure replaces the old PASS and stops the rest of a shell function.
+fail_early() { false; printf '%s\n' unexpected >"$fixture_root/after-failure"; }
+set +e
+(set -e; run_logged source-preflight fail_early) >"$fixture_root/failure.log" 2>&1
+status=$?
+set -e
+[[ "$status" -ne 0 && ! -e "$fixture_root/after-failure" ]] || fail 'Command failure did not stop execution.'
+jq -e '.status == "FAIL" and .exitCode != 0' \
+  "$evidence_dir/phases/source-preflight/result.json" >/dev/null || fail 'Failure retained a PASS result.'
+
+set +e
+(set -e; run_capture compose-config "$fixture_root/captured.txt" bash -c 'printf failure-output; exit 7') \
+  >"$fixture_root/capture.log" 2>&1
+status=$?
+set -e
+[[ "$status" -eq 7 && "$(cat "$fixture_root/captured.txt")" == failure-output ]] || fail 'Capture lost output or exit status.'
+
+# A selected partial profile has only its actual execution results.
+required="$(certification_required_phase_ids)"
+while IFS= read -r phase; do
+  [[ -n "$phase" ]] || continue
+  run_logged "$phase" true
+done <<<"$required"
+# The earlier failed capture is not an omitted phase PASS.
+jq -e '.status == "FAIL"' "$evidence_dir/phases/compose-config/result.json" >/dev/null 2>&1 && \
+  fail 'Selected compose-config did not execute again.'
+[[ ! -e "$evidence_dir/phases/compose-up/result.json" ]] || fail 'An omitted phase acquired a result.'
+certification_write_completion_manifest "$evidence_dir" "$required"
+certification_validate_completion "$evidence_dir" "$required" || fail 'Complete partial-profile results are invalid.'
+mv "$evidence_dir/phases" "$fixture_root/aliased-phases"
+ln -s "$fixture_root/aliased-phases" "$evidence_dir/phases"
+if certification_validate_completion "$evidence_dir" "$required" >/dev/null 2>&1; then
+  fail 'A symlinked phase ancestor satisfied completion.'
+fi
+rm "$evidence_dir/phases"
+mv "$fixture_root/aliased-phases" "$evidence_dir/phases"
+write_report 0
+grep -Fq -- '- status: PARTIAL' "$evidence_dir/report.md" || fail 'Partial profile became aggregate PASS.'
+
+cp "$evidence_dir/phases/source-preflight/result.json" "$fixture_root/pass.json"
+jq '.runId = "another-run"' "$fixture_root/pass.json" >"$evidence_dir/phases/source-preflight/result.json"
+if certification_validate_completion "$evidence_dir" "$required" >/dev/null 2>&1; then
+  fail 'A different run satisfied completion.'
+fi
+cp "$fixture_root/pass.json" "$evidence_dir/phases/source-preflight/result.json"
+rm "$evidence_dir/phases/source-preflight/result.json"
+if certification_write_completion_manifest "$evidence_dir" "$required" >/dev/null 2>&1; then
+  fail 'Missing selected evidence satisfied completion.'
 fi
 
-# Same-run resume must bind to the proof profile, not only namespace, cluster,
-# trading day, image tag, transport, and source revision.
-for profile_key in \
-  skip_build \
-  skip_compose \
-  skip_kubernetes \
-  matching_fleet_only; do
-  grep -Fq "${profile_key}=%s" "$bootstrap_lib" || \
-    fail "resume run-context omits $profile_key"
-done
+# Retired resume fails before creating an execution directory.
+if SIMPLEMATCH_CERTIFICATION_EVIDENCE_DIR="$fixture_root/resume" \
+    bash "$script_dir/run-local-production-like-certification.sh" --resume \
+    >"$fixture_root/resume.log" 2>&1; then
+  fail 'Retired resume was accepted.'
+fi
+grep -Fq -- '--resume was retired' "$fixture_root/resume.log" || fail 'Resume rejection is unclear.'
+[[ ! -e "$fixture_root/resume" ]] || fail 'Rejected resume created evidence.'
 
-printf '%s\n' 'Local certification explicit skip semantics are valid.'
+SIMPLEMATCH_CERTIFICATION_EVIDENCE_DIR="$fixture_root/dry-run" \
+  bash "$script_dir/run-local-production-like-certification.sh" \
+  --dry-run --skip-build --skip-compose --skip-kubernetes >"$fixture_root/dry-run.log"
+[[ ! -e "$fixture_root/dry-run" ]] || fail 'Dry-run created evidence.'
+grep -Fxq 'PHASE source-preflight' "$fixture_root/dry-run.log" || fail 'Dry-run omitted selected commands.'
+grep -Eq -- '--project-name simplematch-local-production-like-[0-9]{8}-[0-9]{6}-[0-9]+' \
+  "$fixture_root/dry-run.log" || fail 'Default Compose project is not run-owned.'
+
+printf '%s\n' 'Local certification fresh execution and partial-profile contracts are valid.'

@@ -54,6 +54,11 @@ The authoritative entrypoint is:
 bash scripts/run-local-production-like-certification.sh
 ~~~
 
+Each invocation uses a new directory under `out/certification/local-production-like/<run-id>/`.
+Every selected phase executes. Gradle and image builders retain their ordinary build caches.
+Custom historical PASS reuse and `--resume` retired on 2026-10-28.
+Read the [execution contract](local-certification-phase-dag.md) for result formats and partial-profile rules.
+
 Before building images, a fresh resource-budget phase renders the local overlay and compares the
 selected profile's staged memory requests with the currently selected Docker daemon's memory.
 The reference 38 GiB local host fits the existing `--matching-fleet-only` reduced profile by

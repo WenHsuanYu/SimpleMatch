@@ -54,12 +54,9 @@ simplematch_certification_cdc_runtime_source_paths() {
     scripts/lib/local-certification-provenance.sh \
     scripts/lib/local-common.sh \
     scripts/lib/local-certification-phase-graph.sh \
-    scripts/lib/local-certification-fingerprint.sh \
     scripts/lib/local-certification-evidence.sh \
-    scripts/lib/local-certification-planner.sh \
     scripts/lib/local-certification-images.sh \
     scripts/lib/local-certification-kafka.sh \
-    scripts/lib/local-certification-artifacts.sh \
     scripts/lib/local-certification-framework.sh \
     scripts/lib/local-certification-job.sh \
     scripts/lib/local-certification-connect.sh \

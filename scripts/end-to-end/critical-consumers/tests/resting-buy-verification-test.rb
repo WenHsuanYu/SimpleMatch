@@ -109,7 +109,8 @@ class RestingBuyVerificationTest < Minitest::Test
       File.write(File.join(phase_directory, "result.json"), JSON.generate(result))
       result
     end
-    File.write(File.join(directory, "evidence-manifest.json"), JSON.generate({"schemaVersion" => 1, "phases" => phases}))
+    File.write(File.join(directory, "evidence-manifest.json"), JSON.generate({"schemaVersion" => 2, "runId" => deployment.fetch("runId"),
+      "sourceRevision" => deployment.fetch("sourceRevision"), "sourceSignature" => deployment.fetch("sourceSignature"), "phases" => phases.map { |phase| phase.fetch("phaseId") }}))
   end
 
   def test_does_not_publish_baseline_pass_when_requested_recovery_is_incomplete
@@ -173,7 +174,6 @@ class RestingBuyVerificationTest < Minitest::Test
         certification_trading_day=20260917
         failed_phase=
         failure_reason=
-        certification_plan_file="$2/absent-plan.json"
         write_report 0
       BASH
       result = RestingBuyVerification.verify_deployment(directory)

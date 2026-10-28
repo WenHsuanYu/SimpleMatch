@@ -32,7 +32,7 @@ external production certification occurred.
 bash scripts/provision-matching-topics.sh \
   --bootstrap-server localhost:19092,localhost:19093,localhost:19094 \
   --profile production \
-  --broker-config-file out/certification/local-production-like/kafka-fixture/broker.config.txt \
+  --broker-config-file "$SIMPLEMATCH_PRODUCTION_LIKE_EVIDENCE_DIR/kafka-fixture/broker.config.txt" \
   --producer-config-file scripts/testdata/matching-topic-profile/valid/matching.producer.config.txt \
   --capacity-evidence-file scripts/testdata/matching-topic-profile/valid/capacity.properties \
   --certify-production
@@ -44,11 +44,13 @@ accepted by both scripts.
 
 The local deployment must configure the broker safety properties before provisioning:
 
+Set `SIMPLEMATCH_PRODUCTION_LIKE_EVIDENCE_DIR` to the exact retained certification run directory before these commands.
+
 ```bash
 bash scripts/provision-matching-topics.sh \
   --bootstrap-server localhost:19092,localhost:19093,localhost:19094 \
   --profile production \
-  --broker-config-file out/certification/local-production-like/kafka-fixture/broker.config.txt \
+  --broker-config-file "$SIMPLEMATCH_PRODUCTION_LIKE_EVIDENCE_DIR/kafka-fixture/broker.config.txt" \
   --producer-config-file scripts/testdata/matching-topic-profile/valid/matching.producer.config.txt \
   --capacity-evidence-file scripts/testdata/matching-topic-profile/valid/capacity.properties \
   --certify-production

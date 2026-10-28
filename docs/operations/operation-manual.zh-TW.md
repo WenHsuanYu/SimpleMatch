@@ -120,7 +120,6 @@ findmnt -T "$(docker info --format '{{.DockerRootDir}}')"
 | 發布 images 並產生 digest lock | `scripts/publish-local-images.sh` |
 | Render local Kubernetes manifest | `scripts/render-local-kubernetes-manifest.sh` |
 | Local production-like gate | `scripts/run-local-production-like-certification.sh` |
-| 測量 certification reuse | `scripts/measure-local-certification-reuse.sh` |
 | Static resilience contract | `scripts/run-local-resilience.sh --profile contract` |
 | Runtime recovery diagnostics | 使用第 13 節的 property-specific focused runners |
 | 資源報告 | `scripts/local-resource-report.sh` |
@@ -517,7 +516,7 @@ bash scripts/render-local-kubernetes-manifest.sh \
 bash scripts/run-local-production-like-certification.sh
 ```
 
-一般完整 run 不需要先手動執行 `build-local-images.sh` 或 `prepare-local-kubernetes-images.sh`。Certification runner 會依 Phase DAG 決定哪些 prerequisite 必須 `EXECUTE`、哪些 unchanged content-addressed evidence 可以 `REUSE`、哪些外部 artifact 必須 `REVALIDATE`。跨 run reuse 是 runner 的正常行為，不需要 `--resume`。
+一般完整 run 不需要先手動執行 `build-local-images.sh` 或 `prepare-local-kubernetes-images.sh`。Runner 依階段相依關係執行必要命令。每個選定階段都會執行，Gradle 與映像建置工具繼續使用各自的快取。自製歷史 PASS 快取與 `--resume` 已於 2026-10-28 移除。
 
 建議顯式指定核准的 trading day 與 delivery manifest：
 
@@ -531,7 +530,7 @@ bash scripts/manage-simplematch-live.sh verify
 bash scripts/run-local-production-like-certification.sh
 ```
 
-新的完整 run 仍會建立 fresh Kubernetes runtime。Namespace、migrations、topics、Open Barriers、workloads、Matching fleet verification 與 retained provenance 等 runtime-state-dependent phases 不會因 cache 存在就跨 run 重用。
+每次完整 run 使用新的證據目錄與執行身分。預設 Compose project 名稱包含 run ID；明確指定的 project 必須沒有既存容器。Namespace、migrations、topics、Open Barriers、workloads、Matching fleet verification 與 provenance 都在本次執行。
 
 Compose phase 與 Kubernetes local overlay 是不同驗證邊界；Kubernetes workloads 不應被理解為依賴已淘汰的 Compose bridge。
 
@@ -543,7 +542,7 @@ bash scripts/run-local-cdc-delivery-focused-diagnostic.sh \
   --timeout-seconds 180
 ```
 
-它只接受 full proof profile，並從 `run-context` 驗證 namespace/run-id、依賴 phase、immutable image lock、實際 workload image、session ConfigMap 與 PostgreSQL Secret。Focused preflight 另外確認 retained `registry-image-lock` PASS 的 output identity 等於目前 `local-images.lock` 的 SHA-256，避免呼叫端替換 generated lock 後仍通過。`run-context` 保存兩個 scoped identity：`cdc_runtime_signature` 涵蓋建立保留 namespace 所需的 manifest、Risk CDC runtime、image/fingerprint 與 orchestration 輸入；`cdc_verifier_signature` 涵蓋 observer、fixture、focused verifier，以及選定 contract 的 canonical path/content digest。無關 source commit 不會改變 runtime signature，因此不必重建 deployment；若只有 verifier signature 改變，會先執行快速 `test-cdc-observer-fixture-contract.sh`，再對同一個 retained runtime 執行 observer。runtime signature、namespace、image、input 或 dependency 任一漂移，或舊 `run-context` 沒有 scoped identity，都會在 observer side effect 前 fail-closed，必須重新建立完整 certification run。
+它只接受 full proof profile，並從 `run-context` 驗證 namespace/run-id、依賴 phase、immutable image lock、實際 workload image、session ConfigMap 與 PostgreSQL Secret。Focused preflight 另外確認 `local-images.lock` 的 SHA-256 等於該次執行留下的 `image-lock.sha256`。`run-context` 保存兩個 scoped identity：`cdc_runtime_signature` 涵蓋建立保留 namespace 所需的 manifest、Risk CDC runtime、image 與 orchestration 輸入；`cdc_verifier_signature` 涵蓋 observer、fixture、focused verifier，以及選定 contract 的 canonical path/content digest。無關 source commit 不會改變 runtime signature，因此不必重建 deployment；若只有 verifier signature 改變，會先執行快速 `test-cdc-observer-fixture-contract.sh`，再對同一個 retained runtime 執行 observer。runtime signature、namespace、image、input 或 dependency 任一漂移，或舊 `run-context` 沒有 scoped identity，都會在 observer side effect 前 fail-closed，必須重新建立完整 certification run。
 
 Verifier identity 也會綁定 observer script 的 canonical path/content digest；每次 focused report 會
 另外保存 `verifier-observer.sh` 與 `verifier-contract.sh` 的相對 evidence copy。這些副本讓封存後
@@ -568,7 +567,7 @@ script，因為它可能需要從自身目錄載入 shared library。
 --skip-kubernetes
 --matching-fleet-only
 --keep-resources
---resume
+--query-fixture-directory PRIVATE_PATH
 --dry-run
 ```
 
@@ -578,12 +577,8 @@ script，因為它可能需要從自身目錄載入 shared library。
 bash scripts/run-local-production-like-certification.sh --dry-run
 ```
 
-`plan.json` 會記錄 machine-readable decision。正常完整 run 的主要 planner decisions 是：
-
-- `EXECUTE`：本次必須真的執行 phase。
-- `REUSE`：exact effective inputs 與 immutable outputs 都驗證成功，因此接受既有 PASS evidence。
-- `REVALIDATE`：接受既有昂貴結果前，先重新驗證目前外部 artifact 或 registry 狀態。
-- `SKIP`：operator 明確省略 requirement；這不是 reuse。
+Dry-run 會列出選定階段及其命令，不建立執行證據。正式執行會為每個選定階段保存目前的結果。
+不再產生 `plan.json`、重用決策或續跑標記。
 
 ### 12.2 不要把 partial run 當成完整 certification
 
@@ -610,65 +605,37 @@ kubectl kustomize deploy/k8s/overlays/local --load-restrictor LoadRestrictionsNo
 正式 runner 不使用它，因此完整 profile 即使超額仍會留下警告並繼續。若要檢查 repository
 固定的 38 GiB 參考值與已審查 baseline，執行 `ruby scripts/test-local-resource-budget.rb`。
 
-相反地，正常 full run 中由 planner 安全判定的 `REUSE` / `REVALIDATE` 仍可得到 `PASSED`，因為 requirement 仍有可驗證 evidence，而不是被跳過。
 
-### 12.3 Run evidence 與 reusable cache
+### 12.3 Run evidence
 
-一般 runner 的預設 run evidence directory：
+預設證據目錄是 `out/certification/local-production-like/<run-id>/`。
+也可用 `SIMPLEMATCH_CERTIFICATION_EVIDENCE_DIR` 指定新的目錄。
+已存在的路徑會在 daemon 查詢與報告寫入前被拒絕，原有證據不會被覆寫。
 
-```text
-out/certification/local-production-like/
-```
-
-預設 reusable evidence cache：
-
-```text
-out/certification-cache/
-```
-
-Run evidence 會保存 `run-context`、`plan.json`、`evidence-manifest.json`、各 phase 的 `result.json`、`local-images.lock`、logs 與 report。即使某個 phase 從 cache reuse，該次 run 需要的 evidence 與 artifact identity 仍會 materialize 到 run directory。
-
-因此 cache 是 performance mechanism，不是 retained certification 的 correctness dependency。刪除 reusable cache不應讓已保留的 PASS run失去 dependent certification 所需的 provenance。
+Run evidence 保存 `run-context`、`source-revision`、`evidence-manifest.json`、各階段的 `result.json`、映像鎖檔、日誌與報告。
+結果與完成清單使用 schema version 2，並綁定相同 run ID 與來源身分。
+完成清單只列出階段 ID，不複製整份結果。
+目前不再使用 `out/certification-cache/`。
 
 ### 12.4 `--keep-resources`
 
 這只保留目前 run 擁有的 Compose project 與 Kubernetes namespace，方便現場檢查。不要因為保留資源就改用 prefix 猜測 ownership；namespace 的 `simplematch.io/lifecycle=disposable` label 才是 routine cleanup 的自動刪除依據。
 
-### 12.5 `--resume` 只繼續同一個 interrupted run
+<a id="125---resume-只繼續同一個-interrupted-run"></a>
+### 12.5 中斷後重新執行
 
-Resume 不是跨 run cache reuse，也不是「看到舊 log 就跳過」。必須明確指定原 evidence dir 與 namespace：
+`--resume` 已退役。中斷後應使用新的證據目錄重新執行選定流程。
+先依既有 ownership 規則處理不再需要的舊資源，不要讓新 run 接管其他 run 的 namespace 或 Compose project。
+若只需在保留環境檢查必要情境，使用上列 documented focused diagnostic。
+它必須重新驗證目前環境，也不會把原本的失敗或部分結果升級為完整 PASS。
+目前讀取端不接受舊 schema version 1 的結果作為新的診斷前置證據。
 
-```bash
-export SIMPLEMATCH_CERTIFICATION_EVIDENCE_DIR='<existing-evidence-dir>'
-export SIMPLEMATCH_CERTIFICATION_NAMESPACE='<existing-namespace>'
-bash scripts/run-local-production-like-certification.sh --resume
-```
+<a id="126-測量-coldwarm-reuse"></a>
+### 12.6 重用量測已退役
 
-Runner 會恢復原本的 `run_id`，並比對 namespace、cluster、trading day、image tag、image transport、source signature 與 proof profile。任一項不一致都會拒絕 resume。
-
-Completion marker只代表「可能可以繼續」，不是無條件跳過phase。PhaseGraph會依每個phase的resume policy決定重新執行、接受run-local result、驗證current state，或在side effect無法安全判定時拒絕resume。Open Barrier這類不可安全重播的phase若留下started-but-not-completed evidence，runner會fail closed，而不是冒險發布第二次。
-
-如果你只是要讓新的完整run利用前一次相同輸入的static/image evidence，不要加`--resume`；cross-run reuse由planner與content-addressed evidence自動處理。
-
-### 12.6 測量 cold/warm reuse
-
-需要量測Phase DAG reuse是否真的降低重複工作時，使用：
-
-```bash
-scripts/measure-local-certification-reuse.sh --trading-day YYYY-MM-DD
-```
-
-這個wrapper仍然呼叫同一個full production-like runner兩次，不是第二條certification pipeline。Cold run使用空的isolated evidence cache；warm run使用cold建立的cache，但仍建立fresh runtime並重新執行所有`FRESH` phases。
-
-Measurement會檢查warm plan的policy decisions，並以warm wall-clock扣除已記錄FRESH execution time後的residual，保守估計non-FRESH與orchestration overhead。只有non-FRESH wall-clock沒有主導warm run，`acceptanceVerdict`才會是`PASS`。
-
-單一cold/warm pair只產生`IMPROVED`、`UNCHANGED`或`REGRESSED`的wall-clock observation，不是統計效能結論。需要跨機器或長期效能claim時，應在可比較的host load下重複量測或另行定義benchmark。
-
-詳細設計與操作說明：
-
-- `docs/verification/local-certification-phase-dag.md`
-- `docs/verification/local-certification-phase-dag-implementation.md`
-- `docs/verification/local-certification-reuse-measurement.md`
+歷史 PASS 快取及其 cold/warm 量測腳本一起移除，不再為了驗證這項快取而執行兩次部署。
+目前執行規則見 [認證執行契約](../verification/local-certification-phase-dag.md)。
+舊設計的歷史入口保留在 [量測退役說明](../verification/local-certification-reuse-measurement.md)。
 
 ---
 
@@ -1033,7 +1000,7 @@ export SIMPLEMATCH_CERTIFICATION_TRADING_DAY=2026-08-11
 export SIMPLEMATCH_MARKET_REFERENCE_DELIVERY_MANIFEST=\
 tools/market-reference-builder/data/2026-08-11/delivery/manifest.yaml
 
-# 4. 跑完整 local gate；runner 會自動 build/reuse/revalidate images
+# 4. 跑完整 local gate；runner 執行本次建置與映像發布
 bash scripts/run-local-production-like-certification.sh
 
 # 5. 觀察 cleanup 後的資源狀態
@@ -1160,11 +1127,10 @@ test -w "$VCPKG_ROOT" && echo writable || echo read-only
 
 若 root 不可寫，換成使用者擁有的 vcpkg checkout。不要修改 repository 的 CMake policy 來掩蓋 host toolchain 權限問題。
 
-### 18.11 Resume 被拒絕
+### 18.11 舊的 resume 命令被拒絕
 
-`--resume` 只允許同一個 retained run繼續。Runner會驗證原本的run identity、source signature、namespace、cluster、trading day、image identity與proof profile；其中任一項改變都應建立新run，而不是繞過resume guard。
-
-即使run context完全相同，某些phase仍會重新執行或重新驗證current state。若不可安全重播的phase留下ambiguous started marker，runner會拒絕resume；這是保護side effect correctness，不是cache failure。
+`--resume` 已於 2026-10-28 退役。請選擇新的證據目錄並重新執行。
+既有的 schema version 1 報告保留原日期與來源，不可修改成新的認證結果。
 
 ---
 
@@ -1174,8 +1140,8 @@ test -w "$VCPKG_ROOT" && echo writable || echo read-only
 2. **先等 namespace/PV lifecycle 完成，再 prune node image cache。** 不要平行化這兩個步驟。
 3. **Registry runtime identity 使用 digest，不使用 mutable `:local`。** `:local` 只是 source/build identity。
 4. **`kind-load` 是 compatibility fallback。** Registry path 不應執行 legacy normalizer。
-5. **Cross-run reuse 不需要 `--resume`。** 新run由planner自動驗證content-addressed evidence；`--resume`只延續同一個interrupted run。
-6. **`--skip-*` 不是 reuse。** 明確省略required phase會保留`PARTIAL`語意，不可用cache evidence掩蓋。
+5. **每次認證使用新證據目錄。** 選定階段在本次執行，建置工具繼續使用自己的快取。
+6. **明確省略階段會得到 `PARTIAL`。** 舊的 PASS 不會補足本次省略的驗證。
 7. **不要直接刪 containerd snapshot files。** 讓 Kubernetes、kubelet 與 containerd 管理 runtime lifecycle。
 8. **Routine cleanup 與 hard reset 是不同工具。** 前者維持 reusable lab；後者是重建手段。
 9. **Daemon-global prune 必須是明確 aggressive opt-in。** 不能因為資源目前 unused 就假設屬於 SimpleMatch。
@@ -1190,9 +1156,9 @@ test -w "$VCPKG_ROOT" && echo writable || echo read-only
 - `README.md`：系統目標與 service landscape。
 - `docs/development/dependencies.md`：Java/Gradle、CMake、vcpkg 與 dependency policy。
 - `deploy/k8s/README.md`：local/staging/production overlays、Secrets、Matching fleet 與 local cluster contract。
-- `docs/verification/local-certification-phase-dag.md`：local certification Phase DAG、reuse policy與evidence architecture。
-- `docs/verification/local-certification-phase-dag-implementation.md`：目前PhaseGraph、Planner、fingerprint、evidence與resume Interface。
-- `docs/verification/local-certification-reuse-measurement.md`：cold/warm reuse量測方式與結果解讀。
+- `docs/verification/local-certification-phase-dag.md`：目前認證的相依順序、執行結果與 ownership 規則。
+- `docs/verification/local-certification-phase-dag-implementation.md`：目前模組責任與舊設計的歷史入口。
+- `docs/verification/local-certification-reuse-measurement.md`：自製重用量測的退役說明。
 - `docs/operations/local-registry-resource-lifecycle.md`：local registry、digest transport、baseline 與 cleanup 設計。
 - `docs/verification/local-production-like-certification.md`：local gate 與 staging/production certification boundary。
 - `config/market-reference/README.md`：Market Reference builder。

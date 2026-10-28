@@ -1,21 +1,15 @@
 #!/usr/bin/env bash
 
 # Phase definitions for local production-like certification. This module owns
-# dependency, active-profile selection, reuse/resume policy, declared input and
-# output kinds, and topological ordering. It does not execute phases or inspect
-# reusable evidence.
+# dependencies, active-profile selection, and execution order. It does not cache
+# phase results or execute commands.
 
 _phase_graph_dir="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
 # shellcheck source=scripts/lib/local-image-inventory.sh
 source "$_phase_graph_dir/local-image-inventory.sh"
 unset _phase_graph_dir
 
-declare -gA SIMPLEMATCH_CERTIFICATION_PHASE_POLICY=()
 declare -gA SIMPLEMATCH_CERTIFICATION_PHASE_DEPENDENCIES=()
-declare -gA SIMPLEMATCH_CERTIFICATION_PHASE_VERSION=()
-declare -gA SIMPLEMATCH_CERTIFICATION_PHASE_INPUT_KINDS=()
-declare -gA SIMPLEMATCH_CERTIFICATION_PHASE_OUTPUT_KINDS=()
-declare -gA SIMPLEMATCH_CERTIFICATION_PHASE_RESUME_MODE=()
 declare -ga SIMPLEMATCH_CERTIFICATION_PHASE_ORDER=()
 SIMPLEMATCH_CERTIFICATION_PHASE_GRAPH_INITIALIZED=false
 
@@ -36,115 +30,74 @@ _certification_require_phase_id() {
 }
 
 _certification_register_phase() {
-  local phase_id="$1"
-  local policy="$2"
-  local resume_mode="$3"
-  local input_kinds="$4"
-  local output_kinds="$5"
-  local dependencies="${6:-}"
-  local definition_version="${7:-1}"
+  local phase_id="$1" dependencies="${2:-}"
 
   _certification_require_phase_id "$phase_id" || return 1
-  case "$policy" in
-    FRESH|CONTENT_ADDRESSED|REVALIDATE) ;;
-    *)
-      printf 'invalid certification phase policy for %s: %s\n' \
-        "$phase_id" "$policy" >&2
-      return 1
-      ;;
-  esac
-  case "$resume_mode" in
-    REEXECUTE|REUSE_RESULT|VALIDATE|FORBID) ;;
-    *)
-      printf 'invalid certification resume mode for %s: %s\n' \
-        "$phase_id" "$resume_mode" >&2
-      return 1
-      ;;
-  esac
-  [[ -n "$input_kinds" && -n "$output_kinds" ]] || {
-    printf 'certification phase %s must declare input and output kinds\n' \
-      "$phase_id" >&2
-    return 1
-  }
-  [[ "$definition_version" =~ ^[1-9][0-9]*$ ]] || {
-    printf 'invalid certification phase definition version for %s: %s\n' \
-      "$phase_id" "$definition_version" >&2
-    return 1
-  }
-  [[ -z "${SIMPLEMATCH_CERTIFICATION_PHASE_POLICY[$phase_id]+x}" ]] || {
+  [[ -z "${SIMPLEMATCH_CERTIFICATION_PHASE_DEPENDENCIES[$phase_id]+x}" ]] || {
     printf 'duplicate certification phase id: %s\n' "$phase_id" >&2
     return 1
   }
-
-  SIMPLEMATCH_CERTIFICATION_PHASE_POLICY["$phase_id"]="$policy"
-  SIMPLEMATCH_CERTIFICATION_PHASE_RESUME_MODE["$phase_id"]="$resume_mode"
-  SIMPLEMATCH_CERTIFICATION_PHASE_INPUT_KINDS["$phase_id"]="$input_kinds"
-  SIMPLEMATCH_CERTIFICATION_PHASE_OUTPUT_KINDS["$phase_id"]="$output_kinds"
   SIMPLEMATCH_CERTIFICATION_PHASE_DEPENDENCIES["$phase_id"]="$dependencies"
-  SIMPLEMATCH_CERTIFICATION_PHASE_VERSION["$phase_id"]="$definition_version"
   SIMPLEMATCH_CERTIFICATION_PHASE_ORDER+=("$phase_id")
 }
 
 _certification_register_fixed_phases() {
-  local phase_id policy resume_mode input_kinds output_kinds dependencies version
+  local phase_id dependencies
 
-  while IFS='|' read -r \
-      phase_id policy resume_mode input_kinds output_kinds dependencies version; do
+  while IFS='|' read -r phase_id dependencies; do
     [[ -n "$phase_id" ]] || continue
-    _certification_register_phase \
-      "$phase_id" "$policy" "$resume_mode" "$input_kinds" "$output_kinds" \
-      "$dependencies" "${version:-1}" || return 1
+    _certification_register_phase "$phase_id" "$dependencies" || return 1
   done <<'EOF_PHASES'
-source-preflight|FRESH|REEXECUTE|source|source-revision||1
-local-resource-budget|FRESH|REEXECUTE|source configuration runtime-state|budget-report|static-kubernetes-overlays|1
-static-kubernetes-overlays|CONTENT_ADDRESSED|REUSE_RESULT|source configuration|validation-result|source-preflight|1
-static-phase1-deployment-contracts|CONTENT_ADDRESSED|REUSE_RESULT|source configuration|validation-result|source-preflight|3
-static-kubernetes-dependencies|CONTENT_ADDRESSED|REUSE_RESULT|source configuration|validation-result|source-preflight|1
-static-matching-manifests|CONTENT_ADDRESSED|REUSE_RESULT|source configuration|validation-result|source-preflight|1
-static-matching-profile|CONTENT_ADDRESSED|REUSE_RESULT|source configuration|validation-result|source-preflight|1
-static-flyway-services|CONTENT_ADDRESSED|REUSE_RESULT|source configuration|validation-result|source-preflight|1
-compose-config|CONTENT_ADDRESSED|REUSE_RESULT|source configuration|validation-result|source-preflight|1
-cdc-outbox-failure-live|FRESH|REEXECUTE|runtime-state configuration|fault-proof|static-phase1-deployment-contracts compose-config|1
-local-image-inventory|CONTENT_ADDRESSED|REUSE_RESULT|source configuration|image-inventory|source-preflight|1
-kafka-producer-contract|CONTENT_ADDRESSED|REUSE_RESULT|source configuration|producer-config|static-matching-profile|1
-compose-up|FRESH|REEXECUTE|configuration runtime|runtime-state|compose-config cdc-outbox-failure-live|1
-compose-wait|FRESH|REEXECUTE|runtime-state|runtime-proof|compose-up|1
-compose-status|FRESH|REEXECUTE|runtime-state|runtime-proof|compose-wait|1
-kafka-capacity-evidence|FRESH|REEXECUTE|runtime-state workload|capacity-evidence|compose-wait|1
-kafka-create-matching-commands|FRESH|REEXECUTE|runtime-state configuration|runtime-state|compose-wait|1
-kafka-create-matching-events|FRESH|REEXECUTE|runtime-state configuration|runtime-state|compose-wait|1
-kafka-create-account-lifecycle|FRESH|REEXECUTE|runtime-state configuration|runtime-state|compose-wait|1
-kafka-create-marketdata-events|FRESH|REEXECUTE|runtime-state configuration|runtime-state|compose-wait|1
-kafka-describe-matching-commands|FRESH|REEXECUTE|runtime-state|captured-output|kafka-create-matching-commands|1
-kafka-config-matching-commands|FRESH|REEXECUTE|runtime-state|captured-output|kafka-create-matching-commands|1
-kafka-describe-matching-events|FRESH|REEXECUTE|runtime-state|captured-output|kafka-create-matching-events|1
-kafka-config-matching-events|FRESH|REEXECUTE|runtime-state|captured-output|kafka-create-matching-events|1
-kafka-broker-config|FRESH|REEXECUTE|runtime-state|captured-output|compose-wait|1
-kafka-profile-validation|FRESH|REEXECUTE|runtime-state captured-output configuration|runtime-proof||1
-kafka-broker-failure-live|FRESH|REEXECUTE|runtime-state configuration|fault-proof|kafka-profile-validation|1
-compose-down-before-kubernetes|FRESH|REEXECUTE|runtime-state|runtime-transition|kafka-broker-failure-live|1
-registry-connectivity|FRESH|REEXECUTE|registry runtime-state|runtime-proof||1
-registry-image-lock|CONTENT_ADDRESSED|REUSE_RESULT|registry-image configuration|image-lock||1
-kind-load-import|FRESH|REEXECUTE|docker-image runtime-state|runtime-proof||1
-kubernetes-manifest-split|FRESH|REEXECUTE|source configuration image-lock|manifest| |2
-kubernetes-namespace|FRESH|VALIDATE|runtime-state configuration|namespace| |1
-kubernetes-inputs|FRESH|REEXECUTE|source configuration artifact namespace|runtime-state|kubernetes-namespace static-phase1-deployment-contracts|3
-kubernetes-platform-apply|FRESH|REEXECUTE|manifest namespace|runtime-state|kubernetes-inputs|1
-kubernetes-migrations|FRESH|REEXECUTE|manifest runtime-state|migration-proof|kubernetes-platform-apply static-flyway-services kubernetes-topic-provisioning|1
-kubernetes-matching-manifest|FRESH|REEXECUTE|manifest runtime-state|manifest|kubernetes-platform-apply|1
-kubernetes-topic-provisioning|FRESH|REEXECUTE|manifest runtime-state|runtime-proof|kubernetes-platform-apply|1
-kubernetes-open-barriers|FRESH|FORBID|artifact image runtime-state|runtime-proof||1
-kubernetes-connect-apply|FRESH|REEXECUTE|manifest runtime-state|runtime-state|kubernetes-migrations kubernetes-topic-provisioning|1
-kubernetes-workload-apply|FRESH|REEXECUTE|manifest runtime-state|runtime-state|kubernetes-open-barriers|1
-kubernetes-matching-apply|FRESH|REEXECUTE|manifest runtime-state|runtime-state|kubernetes-open-barriers kubernetes-matching-manifest|2
-kubernetes-risk-outbox-connector|FRESH|REEXECUTE|runtime-state configuration|runtime-state|kubernetes-connect-apply|1
-kubernetes-account-outbox-connector|FRESH|REEXECUTE|runtime-state configuration|runtime-state|kubernetes-connect-apply|1
-kubernetes-workloads|FRESH|REEXECUTE|runtime-state|runtime-proof|kubernetes-workload-apply kubernetes-risk-outbox-connector kubernetes-account-outbox-connector|1
-kubernetes-cdc-delivery|FRESH|REEXECUTE|runtime-state configuration|runtime-proof|kubernetes-workloads|1
-kubernetes-matching-workloads|FRESH|REEXECUTE|runtime-state|runtime-proof|kubernetes-matching-apply|1
-kubernetes-fleet|FRESH|REEXECUTE|runtime-state|runtime-proof||1
-retained-run-provenance|FRESH|REEXECUTE|runtime-proof source image-lock|provenance|kubernetes-fleet|1
-query-security-lifecycle|FRESH|REEXECUTE|source configuration image namespace runtime-state|revocation-proof|local-image-build/query-service|2
+source-preflight|
+local-resource-budget|static-kubernetes-overlays
+static-kubernetes-overlays|source-preflight
+static-phase1-deployment-contracts|source-preflight
+static-kubernetes-dependencies|source-preflight
+static-matching-manifests|source-preflight
+static-matching-profile|source-preflight
+static-flyway-services|source-preflight
+compose-config|source-preflight
+cdc-outbox-failure-live|static-phase1-deployment-contracts compose-config
+local-image-inventory|source-preflight
+kafka-producer-contract|static-matching-profile
+compose-up|compose-config cdc-outbox-failure-live
+compose-wait|compose-up
+compose-status|compose-wait
+kafka-capacity-evidence|compose-wait
+kafka-create-matching-commands|compose-wait
+kafka-create-matching-events|compose-wait
+kafka-create-account-lifecycle|compose-wait
+kafka-create-marketdata-events|compose-wait
+kafka-describe-matching-commands|kafka-create-matching-commands
+kafka-config-matching-commands|kafka-create-matching-commands
+kafka-describe-matching-events|kafka-create-matching-events
+kafka-config-matching-events|kafka-create-matching-events
+kafka-broker-config|compose-wait
+kafka-profile-validation|
+kafka-broker-failure-live|kafka-profile-validation
+compose-down-before-kubernetes|kafka-broker-failure-live
+registry-connectivity|
+registry-image-lock|
+kind-load-import|
+kubernetes-manifest-split|
+kubernetes-namespace|
+kubernetes-inputs|kubernetes-namespace static-phase1-deployment-contracts
+kubernetes-platform-apply|kubernetes-inputs
+kubernetes-migrations|kubernetes-platform-apply static-flyway-services kubernetes-topic-provisioning
+kubernetes-matching-manifest|kubernetes-platform-apply
+kubernetes-topic-provisioning|kubernetes-platform-apply
+kubernetes-open-barriers|
+kubernetes-connect-apply|kubernetes-migrations kubernetes-topic-provisioning
+kubernetes-workload-apply|kubernetes-open-barriers
+kubernetes-matching-apply|kubernetes-open-barriers kubernetes-matching-manifest
+kubernetes-risk-outbox-connector|kubernetes-connect-apply
+kubernetes-account-outbox-connector|kubernetes-connect-apply
+kubernetes-workloads|kubernetes-workload-apply kubernetes-risk-outbox-connector kubernetes-account-outbox-connector
+kubernetes-cdc-delivery|kubernetes-workloads
+kubernetes-matching-workloads|kubernetes-matching-apply
+kubernetes-fleet|
+retained-run-provenance|kubernetes-fleet
+query-security-lifecycle|local-image-build/query-service
 EOF_PHASES
 }
 
@@ -157,11 +110,9 @@ certification_phase_graph_initialize() {
   while IFS='|' read -r _ service _ _; do
     [[ -n "$service" ]] || continue
     _certification_register_phase \
-      "local-image-build/$service" CONTENT_ADDRESSED REUSE_RESULT \
-      'source configuration toolchain' docker-image local-image-inventory 1 || return 1
+      "local-image-build/$service" local-image-inventory || return 1
     _certification_register_phase \
-      "registry-publish/$service" REVALIDATE REEXECUTE \
-      'docker-image registry configuration' registry-image '' 1 || return 1
+      "registry-publish/$service" || return 1
   done <<<"$inventory_entries"
   SIMPLEMATCH_CERTIFICATION_PHASE_GRAPH_INITIALIZED=true
 }
@@ -171,7 +122,7 @@ _certification_require_known_phase() {
 
   _certification_require_phase_id "$phase_id" || return 1
   certification_phase_graph_initialize || return 1
-  [[ -n "${SIMPLEMATCH_CERTIFICATION_PHASE_POLICY[$phase_id]+x}" ]] || {
+  [[ -n "${SIMPLEMATCH_CERTIFICATION_PHASE_DEPENDENCIES[$phase_id]+x}" ]] || {
     printf 'unknown certification phase: %s\n' "$phase_id" >&2
     return 1
   }
@@ -180,36 +131,6 @@ _certification_require_known_phase() {
 certification_phase_ids() {
   certification_phase_graph_initialize || return 1
   printf '%s\n' "${SIMPLEMATCH_CERTIFICATION_PHASE_ORDER[@]}"
-}
-
-certification_phase_policy() {
-  local phase_id="${1:-}"
-  _certification_require_known_phase "$phase_id" || return 1
-  printf '%s\n' "${SIMPLEMATCH_CERTIFICATION_PHASE_POLICY[$phase_id]}"
-}
-
-certification_phase_definition_version() {
-  local phase_id="${1:-}"
-  _certification_require_known_phase "$phase_id" || return 1
-  printf '%s\n' "${SIMPLEMATCH_CERTIFICATION_PHASE_VERSION[$phase_id]}"
-}
-
-certification_phase_input_kinds() {
-  local phase_id="${1:-}"
-  _certification_require_known_phase "$phase_id" || return 1
-  printf '%s\n' "${SIMPLEMATCH_CERTIFICATION_PHASE_INPUT_KINDS[$phase_id]}"
-}
-
-certification_phase_output_kinds() {
-  local phase_id="${1:-}"
-  _certification_require_known_phase "$phase_id" || return 1
-  printf '%s\n' "${SIMPLEMATCH_CERTIFICATION_PHASE_OUTPUT_KINDS[$phase_id]}"
-}
-
-certification_phase_resume_mode() {
-  local phase_id="${1:-}"
-  _certification_require_known_phase "$phase_id" || return 1
-  printf '%s\n' "${SIMPLEMATCH_CERTIFICATION_PHASE_RESUME_MODE[$phase_id]}"
 }
 
 certification_selected_image_services() {
@@ -398,69 +319,6 @@ certification_required_phase_ids() {
   done <<<"$root_output"
 
   printf '%s\n' "${ordered[@]}"
-}
-
-_certification_emit_skip_difference() {
-  local restored_output="$1"
-  local previous_output="$2"
-  local reason="$3"
-  local phase_id
-  local -A previous=()
-
-  while IFS= read -r phase_id; do
-    [[ -n "$phase_id" ]] && previous["$phase_id"]=true
-  done <<<"$previous_output"
-  while IFS= read -r phase_id; do
-    [[ -n "$phase_id" ]] || continue
-    if [[ -z "${previous[$phase_id]+x}" ]]; then
-      printf '%s|%s\n' "$phase_id" "$reason"
-    fi
-  done <<<"$restored_output"
-  return 0
-}
-
-certification_explicit_skip_entries() {
-  local inherited_skip_build="${skip_build:-false}"
-  local inherited_skip_compose="${skip_compose:-false}"
-  local inherited_skip_kubernetes="${skip_kubernetes:-false}"
-  local inherited_matching_fleet_only="${matching_fleet_only:-false}"
-  local skip_build="$inherited_skip_build"
-  local skip_compose="$inherited_skip_compose"
-  local skip_kubernetes="$inherited_skip_kubernetes"
-  local matching_fleet_only="$inherited_matching_fleet_only"
-  local previous_output restored_output
-
-  previous_output="$(certification_required_phase_ids)" || return 1
-
-  if [[ "$skip_build" == true ]]; then
-    skip_build=false
-    restored_output="$(certification_required_phase_ids)" || return 1
-    _certification_emit_skip_difference \
-      "$restored_output" "$previous_output" 'operator set --skip-build' || return 1
-    previous_output="$restored_output"
-  fi
-  if [[ "$skip_compose" == true ]]; then
-    skip_compose=false
-    restored_output="$(certification_required_phase_ids)" || return 1
-    _certification_emit_skip_difference \
-      "$restored_output" "$previous_output" 'operator set --skip-compose' || return 1
-    previous_output="$restored_output"
-  fi
-  if [[ "$skip_kubernetes" == true ]]; then
-    skip_kubernetes=false
-    restored_output="$(certification_required_phase_ids)" || return 1
-    _certification_emit_skip_difference \
-      "$restored_output" "$previous_output" 'operator set --skip-kubernetes' || return 1
-    previous_output="$restored_output"
-  fi
-  if [[ "$matching_fleet_only" == true ]]; then
-    matching_fleet_only=false
-    restored_output="$(certification_required_phase_ids)" || return 1
-    _certification_emit_skip_difference \
-      "$restored_output" "$previous_output" \
-      'operator selected --matching-fleet-only' || return 1
-  fi
-  return 0
 }
 
 _certification_validate_phase_visit() {

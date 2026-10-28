@@ -102,10 +102,26 @@ Keep fresh live observations, source and image identity, explicit partial-run st
 Keep Gradle and container-build caches for deterministic build work.
 Do not create a Java planner that preserves all current custom reuse behavior.
 
-The next simplification should remove custom historical PASS reuse for cheap static checks.
-Retain custom artifact reuse only when measurements establish a necessary benefit beyond existing build caches.
-Retire one-time measurement and debug tools when no current workflow needs them.
-This decision favors less custom machinery over preserving every optimization.
+Category C removes custom historical PASS reuse, same-run resume, output lineage, and the measurement wrapper in one batch.
+Every selected phase executes in a new run directory.
+The existing phase list retains required dependency order and explicit partial profiles.
+Current-run results and a small completion inventory replace the former cache objects and plan joins.
+Retained-environment diagnostics preserve source, image, input, and ownership checks.
 
-The current phase declarations still enforce the existing reuse contract.
-Implement its reduction as one aligned change to phase declarations, fingerprints, evidence, tests, and specifications.
+## Category C acceptance criteria
+
+The owner authorized one complete reduction batch on 2026-10-28.
+Use the existing runner and build caches. Retire the custom historical PASS cache and same-run resume.
+
+- Every selected phase executes in a new run directory. Existing evidence remains unchanged.
+- Explicit partial profiles remain PARTIAL. An omitted phase cannot acquire a PASS result.
+- Preserve required execution order, command failures, deadline handling, logs, and owned-resource cleanup.
+- Keep a small current-run result and completion inventory. Retire cache fingerprints, object storage, output lineage, and reuse measurements.
+- Preserve source, image, namespace, and runtime identity checks required by retained-environment diagnostics.
+- Reject historical result formats when a current diagnostic requires the new execution contract.
+- Retire tests whose only purpose was the retired cache or resume feature. Keep necessary execution and ownership behavior tests.
+- Align entry points, consumers, CI, agent instructions, and current documentation in this batch.
+- Add no shell entry point, replacement planner, Java framework, or third-party dependency.
+
+Verification uses existing command, result, report, and diagnostic interfaces with isolated fixtures.
+No deployment certification claim follows from those fixture results.

@@ -1,8 +1,8 @@
 #!/usr/bin/env bash
 
 # Sourced by run-local-production-like-certification.sh. This file maps phase
-# identifiers to execution adapters. PhaseGraph and CertificationPlanner own
-# which phases run and in what order.
+# identifiers to existing command adapters. The phase list owns selection and
+# dependency order; every selected adapter executes.
 
 rendered_manifest="$evidence_dir/local-kubernetes.yaml"
 platform_manifest="$evidence_dir/local-kubernetes-platform.yaml"
@@ -70,107 +70,6 @@ _certification_matching_reference_argument() {
     return 0
   fi
   _certification_matching_reference
-}
-
-_certification_namespace_state_valid() {
-  local namespace_run_id
-
-  kubectl --context "$kind_context" get namespace "$namespace" >/dev/null 2>&1 || \
-    return 1
-  simplematch_kind_namespace_is_disposable \
-    "$kind_context" "$namespace" local-production-like-certification || return 1
-  namespace_run_id="$(kubectl --context "$kind_context" get namespace "$namespace" \
-    -o jsonpath='{.metadata.labels.simplematch\.io/run-id}')" || return 1
-  [[ "$namespace_run_id" == "$run_id" ]]
-}
-
-_certification_secret_value() {
-  local secret_name="$1"
-  local key="$2"
-  local encoded
-
-  encoded="$(kubectl --context "$kind_context" -n "$namespace" \
-    get secret "$secret_name" -o "jsonpath={.data.${key}}")" || return 1
-  [[ -n "$encoded" ]] || return 1
-  printf '%s' "$encoded" | base64 --decode
-}
-
-_certification_kubernetes_inputs_valid() {
-  local matching_digest session_values service
-
-  _certification_namespace_state_valid || return 1
-  matching_digest="$(_certification_matching_digest)" || return 1
-  [[ "$(kubectl --context "$kind_context" -n "$namespace" \
-      get configmap matching-daily-artifact -o jsonpath='{.immutable}')" == true ]] || return 1
-  [[ "$(kubectl --context "$kind_context" -n "$namespace" \
-      get configmap quickfix-gateway-fix-spec -o jsonpath='{.immutable}')" == true ]] || return 1
-  session_values="$(kubectl --context "$kind_context" -n "$namespace" \
-    get configmap matching-session-config \
-    -o jsonpath='{.data.trading_day}|{.data.trading_session_id}|{.data.matching_image_digest}')" || \
-    return 1
-  [[ "$session_values" == \
-    "$certification_trading_day|${certification_trading_day}-regular|$matching_digest" ]] || return 1
-
-  [[ "$(_certification_secret_value simplematch-flyway-secrets postgres_dsn)" == \
-    "$local_postgres_dsn" ]] || return 1
-  [[ "$(_certification_secret_value simplematch-postgres-secrets postgres_user)" == \
-    simplematch ]] || return 1
-  [[ "$(_certification_secret_value simplematch-postgres-secrets postgres_password)" == \
-    "$local_postgres_password" ]] || return 1
-  for service in \
-      account-service risk-service persistence market-data-projection; do
-    [[ "$(_certification_secret_value "${service}-secrets" postgres_dsn)" == \
-      "$local_postgres_dsn" ]] || return 1
-  done
-  if [[ "${matching_fleet_only:-false}" == false ]]; then
-    for service in query-service quickfix-gateway; do
-      [[ "$(_certification_secret_value "${service}-secrets" postgres_dsn)" == \
-        "$local_postgres_dsn" ]] || return 1
-    done
-    python3 "$repo_root/scripts/end-to-end/query-service/lib/certification_security.py" \
-      --fixture-directory "$query_fixture_directory" \
-      --verify-context "$kind_context" --verify-namespace "$namespace" >/dev/null || return 1
-  fi
-}
-
-certification_phase_resume_validate() {
-  case "$1" in
-    kubernetes-namespace)
-      _certification_namespace_state_valid
-      ;;
-    *)
-      return 1
-      ;;
-  esac
-}
-
-_certification_create_or_validate_namespace() {
-  if [[ "$resume" == true ]]; then
-    _certification_namespace_state_valid || {
-      printf 'retained certification namespace no longer matches run ownership: %s\n' \
-        "$namespace" >&2
-      return 1
-    }
-    printf 'Validated retained certification namespace %s.\n' "$namespace"
-    return 0
-  fi
-  create_certification_namespace
-}
-
-_certification_apply_or_validate_kubernetes_inputs() {
-  local matching_digest="$1"
-  local manifest="$2"
-
-  if [[ "$resume" == true ]]; then
-    _certification_kubernetes_inputs_valid || {
-      printf '%s\n' \
-        'retained Kubernetes inputs do not match the current run identity and configuration' >&2
-      return 1
-    }
-    printf '%s\n' 'Validated retained Kubernetes inputs.'
-    return 0
-  fi
-  apply_local_kubernetes_inputs "$matching_digest" "$manifest"
 }
 
 _certification_run_kafka_topic_create() {
@@ -354,11 +253,11 @@ certification_execute_phase() {
       run_logged "$phase_id" _certification_render_and_split_kubernetes_manifest
       ;;
     kubernetes-namespace)
-      run_logged "$phase_id" _certification_create_or_validate_namespace
+      run_logged "$phase_id" create_certification_namespace
       ;;
     kubernetes-inputs)
       matching_digest="$(_certification_matching_digest_argument)" || return 1
-      run_logged "$phase_id" _certification_apply_or_validate_kubernetes_inputs \
+      run_logged "$phase_id" apply_local_kubernetes_inputs \
         "$matching_digest" "$input_manifest"
       ;;
     kubernetes-platform-apply)
@@ -429,7 +328,10 @@ certification_execute_phase() {
   esac
 }
 
-certification_plan_execute certification_execute_phase || die \
-  'Certification phase execution failed.'
+required_phases="$(certification_required_phase_ids)" || die 'Cannot select certification phases.'
+while IFS= read -r phase_id; do
+  [[ -n "$phase_id" ]] || continue
+  certification_execute_phase "$phase_id"
+done <<<"$required_phases"
 
-printf '%s\n' 'Local production-like certification workflow completed.'
+printf 'Local production-like certification workflow completed. Evidence: %s\n' "$evidence_dir"

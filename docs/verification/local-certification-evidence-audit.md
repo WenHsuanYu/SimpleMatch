@@ -13,8 +13,8 @@ certification, change the original run artifacts, or certify the current runtime
 A report is a human-readable summary. A phase result records one completed action; a plan entry
 records an intended action and is not proof of completion. The aggregate manifest ties the phase
 results and their identities together. Source revision identifies the tested version, while input
-fingerprints and output identities determine whether evidence can be reused under the
-[Phase DAG contract](local-certification-phase-dag.md#12-planner-decisions).
+fingerprints and output identities supported the historical cache contract.
+The [current execution contract](local-certification-phase-dag.md) retired that cache on 2026-10-28.
 
 The paths below are generated local evidence under `out/certification/`, not tracked repository
 documents. Availability describes this workspace on the audit date; another checkout may not
@@ -65,11 +65,9 @@ phase results, source, output identities and completion records that can be chec
 Do not fill missing history with another run's results, the current HEAD or a newly executed test.
 Any recovered index must identify its reconstruction basis and preserve the original files.
 
-For a new claim about the current runtime, use a new source-aligned run and the existing
-[planner and evidence interfaces](local-certification-phase-dag-implementation.md#certificationplanner).
-The planner validates declared inputs, dependencies and immutable outputs before deciding
-`EXECUTE`, `REUSE` or `REVALIDATE`; missing or invalid reusable evidence requires execution.
-`FRESH` phases execute in every new production-like run. Explicit skips preserve partial scope.
+For a new claim about the current runtime, use a new source-aligned run under the
+[current execution contract](local-certification-phase-dag.md).
+Every selected phase executes. Explicit skips preserve partial scope.
 A new result has its own run identity and cannot retroactively complete r14.
 
 Documentation navigation changes alone do not require deployment verification. Changes to phase

@@ -26,7 +26,11 @@ simplematch_certification_source_signature() {
       "${runtime_source_paths[@]}" | LC_ALL=C sort -u |
       while IFS= read -r path; do
         [[ -n "$path" ]] || continue
-        sha256sum "$repo_root/$path"
+        if [[ -e "$repo_root/$path" || -L "$repo_root/$path" ]]; then
+          sha256sum "$repo_root/$path" || return 1
+        else
+          printf 'deleted\t%s\n' "$path"
+        fi
       done
   } | sha256sum | awk '{print $1}'
 }
@@ -255,7 +259,7 @@ simplematch_certification_verifier_image() {
   run_context="$production_like_evidence_dir/run-context"
 
   [[ -f "$run_context" ]] || {
-    printf 'production-like run context is missing: %s\n' "$run_context" >&2
+    printf 'Production-like run context is missing: %s. Set SIMPLEMATCH_PRODUCTION_LIKE_EVIDENCE_DIR to the retained run directory.\n' "$run_context" >&2
     return 1
   }
   [[ -f "$production_like_evidence_dir/source-revision" ]] || {

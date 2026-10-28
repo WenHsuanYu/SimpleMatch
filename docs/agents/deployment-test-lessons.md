@@ -22,8 +22,8 @@ Before applying deployment resources or injecting a deployment fault:
 3. Resolve runtime identities from the deployed artifact and API objects. Do not substitute a unit
    test fixture, expected ordinal, or remembered symbol for an observed assignment.
 4. Confirm that the run has an isolated namespace and clean, run-owned evidence directory. Reuse
-   prior phase evidence only when the runner's resume contract verifies the same source, cluster,
-   trading day, and namespace.
+   an existing runtime only through a documented focused diagnostic with current source, image,
+   input, and namespace ownership checks. Full certification requires a new run directory.
 5. Inventory Docker resources and generated caches before and after the run. Cleanup must preserve
    active resources and remove only exact run-owned disposable resources.
 6. Select an explicit trading day and readable approved delivery manifest before expensive builds.

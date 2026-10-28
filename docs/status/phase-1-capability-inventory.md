@@ -30,6 +30,12 @@ pushed to `origin/master`. Retained evidence is therefore tree-aligned, while th
 exact-commit-ID provenance helper remains a non-blocking workflow follow-up for future dependent
 certifications.
 
+Certification tooling changed on 2026-10-28.
+Current runs execute selected phases in a new evidence directory and retain schema version 2 results.
+Historical PASS reuse, same-run resume, output lineage, and reuse measurement retired together.
+This tooling change does not establish a new deployed certification result.
+See the [execution contract](../verification/local-certification-phase-dag.md).
+
 ## Status vocabulary
 
 | Status | Meaning |

@@ -8,9 +8,14 @@ historical evidence in the [evidence audit](local-certification-evidence-audit.m
 
 The accepted scope is development-environment correctness, cross-service integration and the
 repository's existing throughput measurements. Read the [execution runbook](local-production-like-certification.md)
-and [Phase DAG contract](local-certification-phase-dag.md) for commands and evidence-reuse rules.
+and [Phase DAG contract](local-certification-phase-dag.md) for current commands and execution rules.
 The runtime-tested revision remains authoritative after a later documentation-only commit.
 Evidence is retained in this workspace's ignored `out/`; another checkout needs the evidence bundle.
+
+The certification tooling changed on 2026-10-28.
+The dated results below retain their original source, schema, cache decisions, and outcome.
+They do not establish a new PASS for the simplified runner.
+Current diagnostics require schema version 2 results from a fresh run.
 
 ## Identity and complete aggregate
 

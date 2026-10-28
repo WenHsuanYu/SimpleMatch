@@ -14,9 +14,7 @@ bootstrap_lib="$script_dir/lib/local-certification-bootstrap.sh"
 run_lib="$script_dir/lib/local-certification-run.sh"
 transport_lib="$script_dir/lib/local-image-transport.sh"
 phase_graph_lib="$script_dir/lib/local-certification-phase-graph.sh"
-fingerprint_lib="$script_dir/lib/local-certification-fingerprint.sh"
 evidence_lib="$script_dir/lib/local-certification-evidence.sh"
-planner_lib="$script_dir/lib/local-certification-planner.sh"
 images_lib="$script_dir/lib/local-certification-images.sh"
 docker_storage_lib="$script_dir/lib/local-docker-storage.sh"
 docker_storage_test="$script_dir/test-local-docker-storage-preflight.sh"
@@ -29,13 +27,13 @@ job_supervision_test="$script_dir/test-local-certification-job-supervision.sh"
 normalizer="$script_dir/normalize-local-images-for-kind.sh"
 normalizer_dockerfile="$repo_root/deploy/docker/Dockerfile.kind-normalized"
 
-trap 'status=$?; printf "Local production-like contract failed at line %s: %s\n" "$LINENO" "$BASH_COMMAND" >&2; exit "$status"' ERR
+trap 'printf "Local production-like contract failed at line %s: %s\n" "$LINENO" "$BASH_COMMAND" >&2' ERR
 
 for file in \
   "$runner" "$framework_lib" "$kafka_lib" "$kubernetes_lib" \
   "$connect_lib" "$workloads_lib" "$bootstrap_lib" "$run_lib" \
-  "$transport_lib" "$phase_graph_lib" "$fingerprint_lib" \
-  "$evidence_lib" "$planner_lib" "$images_lib" "$docker_storage_lib" \
+  "$transport_lib" "$phase_graph_lib" \
+  "$evidence_lib" "$images_lib" "$docker_storage_lib" \
   "$cdc_fixture_lib" \
   "$focused_diagnostic_lib" "$script_dir/lib/local-resilience-dependencies.sh"; do
   bash -n "$file"
@@ -112,7 +110,6 @@ grep -Fq -- '--resume' "$bootstrap_lib"
 grep -Fq -- '--image-transport' "$framework_lib" "$bootstrap_lib"
 grep -Fq 'simplematch_local_image_transport_validate "$image_transport"' "$bootstrap_lib"
 grep -Fq 'image_transport=%s' "$bootstrap_lib"
-grep -Fq 'phase_marker_directory' "$framework_lib" "$bootstrap_lib"
 grep -Fq 'SIMPLEMATCH_CERTIFICATION_TIMEOUT_SECONDS' \
   "$runner" "$framework_lib" "$bootstrap_lib"
 grep -Fq 'SIMPLEMATCH_KAFKA_CAPACITY_WORKLOAD_FILE' "$runner"
@@ -128,10 +125,9 @@ grep -Fq 'market-reference-${trading_day//-/}' "$kubernetes_lib"
 grep -Fq 'kubectl -n "$namespace" create -f "$artifact_manifest"' "$kubernetes_lib"
 grep -Fq 'create_certification_namespace' "$kubernetes_lib"
 grep -Fq 'Certification namespace already exists' "$kubernetes_lib"
-grep -Fq 'simplematch_kind_namespace_is_disposable' "$bootstrap_lib"
 grep -Fq 'simplematch_kind_delete_disposable_namespace' "$framework_lib"
 
-# Default certification must expose incremental registry work instead of the
+# Default certification must expose each registry publication instead of the
 # old all-at-once image-preparation command. Artifact rendering stays behind the
 # Kubernetes manifest phase adapter and is tested independently below.
 certification_dry_run="$($runner --dry-run --skip-build --skip-compose)"
@@ -162,73 +158,8 @@ if grep -Fq 'kind load docker-image' <<<"$fallback_dry_run"; then
   exit 1
 fi
 
-# Ordering is owned by PhaseGraph rather than by source-file line order.
-# Concrete command adapters remain separately visible in the run module.
-# shellcheck source=scripts/lib/local-certification-phase-graph.sh
-source "$phase_graph_lib"
-skip_build=false
-skip_compose=false
-skip_kubernetes=false
-matching_fleet_only=false
-image_transport=registry
-unset SIMPLEMATCH_KAFKA_PRODUCER_CONFIG_FILE || true
-
-grep -Fxq kubernetes-open-barriers \
-  <<<"$(certification_phase_dependencies kubernetes-workload-apply)" || {
-  printf '%s\n' 'Workload application must depend on the durable Matching barrier.' >&2
-  exit 1
-}
-grep -Fxq kubernetes-connect-apply \
-  <<<"$(certification_phase_dependencies kubernetes-risk-outbox-connector)" || {
-  printf '%s\n' 'Connector registration must depend on Connect application.' >&2
-  exit 1
-}
-grep -Fxq kubernetes-connect-apply \
-  <<<"$(certification_phase_dependencies kubernetes-account-outbox-connector)" || {
-  printf '%s\n' 'Account connector registration must depend on Connect application.' >&2
-  exit 1
-}
-grep -Fxq kubernetes-migrations \
-  <<<"$(certification_phase_dependencies kubernetes-connect-apply)" || {
-  printf '%s\n' 'Connect application must wait for Flyway migrations.' >&2
-  exit 1
-}
-grep -Fxq kubernetes-topic-provisioning \
-  <<<"$(certification_phase_dependencies kubernetes-connect-apply)" || {
-  printf '%s\n' 'Connect application must wait for Kafka topic provisioning.' >&2
-  exit 1
-}
-grep -Fxq kubernetes-topic-provisioning \
-  <<<"$(certification_phase_dependencies kubernetes-migrations)" || {
-  printf '%s\n' 'Flyway migrations must consume the single topic-provisioning phase.' >&2
-  exit 1
-}
-grep -Fxq kubernetes-workload-apply \
-  <<<"$(certification_phase_dependencies kubernetes-workloads)" || {
-  printf '%s\n' 'Workload readiness must wait for Java workload application.' >&2
-  exit 1
-}
-grep -Fxq kubernetes-risk-outbox-connector \
-  <<<"$(certification_phase_dependencies kubernetes-workloads)" || {
-  printf '%s\n' 'Workload readiness must wait for the Risk connector.' >&2
-  exit 1
-}
-grep -Fxq kubernetes-account-outbox-connector \
-  <<<"$(certification_phase_dependencies kubernetes-workloads)" || {
-  printf '%s\n' 'Workload readiness must wait for the Account connector.' >&2
-  exit 1
-}
-grep -Fxq kubernetes-workloads \
-  <<<"$(certification_phase_dependencies kubernetes-cdc-delivery)" || {
-  printf '%s\n' 'Risk CDC evidence must wait for all retained connectors and workloads.' >&2
-  exit 1
-}
-grep -Fxq kubernetes-cdc-delivery \
-  <<<"$(certification_phase_dependencies kubernetes-fleet)" || {
-  printf '%s\n' 'Full Kubernetes certification must include Risk CDC evidence.' >&2
-  exit 1
-}
-phase_order="$(certification_required_phase_ids)"
+# Check the actual dry-run adapter sequence instead of repeating graph declarations.
+phase_order="$(awk '$1 == "PHASE" {print $2}' <<<"$certification_dry_run")"
 phase_index() {
   awk -v target="$1" '$0 == target { print NR; exit }' <<<"$phase_order"
 }
@@ -255,4 +186,4 @@ ruby -r yaml -e 'YAML.load_file(ARGV.fetch(0), aliases: true)' \
 bash "$repo_root/scripts/test-local-resource-budget-evidence.sh"
 
 printf '%s\n' \
-  'Local production-like incremental image and certification contracts are valid.'
+  'Local production-like image and certification contracts are valid.'

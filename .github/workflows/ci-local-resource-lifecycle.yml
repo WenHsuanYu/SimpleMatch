@@ -88,15 +88,9 @@ jobs:
           bash scripts/test-local-certification-job-supervision.sh
           bash scripts/test-local-certification-trading-day.sh
           bash scripts/test-local-kubernetes-dependencies.sh
-          bash scripts/test-local-certification-incremental.sh
           bash scripts/test-local-certification-workloads.sh
-          bash scripts/test-local-certification-reuse-safety.sh
           bash scripts/test-local-certification-skip-semantics.sh
-          bash scripts/test-local-certification-review-hardening.sh
-          bash scripts/test-local-certification-output-lineage.sh
-          bash scripts/test-local-certification-artifact-fingerprint.sh
           bash scripts/test-local-certification-provenance.sh
-          bash scripts/test-local-certification-reuse-measurement.sh
           bash scripts/test-local-production-like.sh
           bash scripts/test-connect-rest-tunnel.sh
           bash scripts/test-local-connect-worker-loss.sh

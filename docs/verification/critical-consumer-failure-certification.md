@@ -85,10 +85,9 @@ be recreated on the current source. If a Kafka observer Pod still fails to
 become Ready, its Pod YAML, `describe` output, and container log are retained
 under `diagnostics/kafka-observer-startup` before cleanup.
 
-The production-like evidence directory defaults to
-`out/certification/local-production-like`. If the retained run used another
-directory, set `SIMPLEMATCH_PRODUCTION_LIKE_EVIDENCE_DIR` to that directory when
-running failure certification.
+Each production-like run has a separate evidence directory under
+`out/certification/local-production-like/<run-id>/` unless the operator selects another new path.
+Set `SIMPLEMATCH_PRODUCTION_LIKE_EVIDENCE_DIR` to the exact retained run directory before dependent certification.
 
 ## Why the order is admitted before failure injection
 
@@ -336,22 +335,16 @@ Gateway-attempt-specific path before a later retry can reuse the original path.
 
 Use a disposable namespace from a production-like certification that completed
 on the same repository revision. Retain that namespace with `--keep-resources`.
-For the default evidence location:
+Select a new evidence path for the parent run:
 
 ```bash
+export SIMPLEMATCH_CERTIFICATION_EVIDENCE_DIR=/path/to/new-production-like-evidence
 bash scripts/run-local-production-like-certification.sh --keep-resources
-
+export SIMPLEMATCH_PRODUCTION_LIKE_EVIDENCE_DIR="$SIMPLEMATCH_CERTIFICATION_EVIDENCE_DIR"
 export SIMPLEMATCH_CERTIFICATION_NAMESPACE="$(
   awk -F= '$1 == "namespace" {print $2}' \
-    out/certification/local-production-like/run-context
+    "$SIMPLEMATCH_PRODUCTION_LIKE_EVIDENCE_DIR/run-context"
 )"
-```
-
-If the production-like run used a custom evidence directory, preserve that path
-for the dependent failure certification:
-
-```bash
-export SIMPLEMATCH_PRODUCTION_LIKE_EVIDENCE_DIR=/path/to/production-like-evidence
 ```
 
 The failure evidence directory must be new and empty. Canonical command:
