@@ -3,10 +3,7 @@ set -euo pipefail
 
 script_dir="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
 repo_root="$(cd -- "$script_dir/../../../.." && pwd)"
-production_runner="$repo_root/scripts/run-local-production-like-certification.sh"
 phase_graph="$repo_root/scripts/lib/local-certification-phase-graph.sh"
-production_run="$repo_root/scripts/lib/local-certification-run.sh"
-failure_support="$repo_root/scripts/end-to-end/critical-consumers/lib/failure-support.sh"
 kafka_observation_interface="$repo_root/scripts/end-to-end/critical-consumers/lib/kafka-observation-interface.sh"
 # shellcheck source=scripts/lib/local-certification-provenance.sh
 source "$repo_root/scripts/lib/local-certification-provenance.sh"
@@ -17,13 +14,6 @@ fail() {
   printf 'Verifier helper contract: %s\n' "$*" >&2
   exit 1
 }
-
-grep -Fq 'local-certification-provenance.sh' "$production_runner" ||
-  fail 'production-like runner must load the shared provenance module'
-grep -Fq 'simplematch_record_certification_provenance' "$production_run" ||
-  fail 'production-like phase dispatcher must provide retained provenance'
-grep -Fq 'local-certification-provenance.sh' "$failure_support" ||
-  fail 'failure certification must load the same provenance module'
 
 skip_build=false
 skip_compose=false

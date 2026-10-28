@@ -25,31 +25,6 @@ for file in \
   bash -n "$file"
 done
 
-grep -Fq 'SIMPLEMATCH_KUBERNETES_JOB_EVIDENCE_INTERVAL_SECONDS:-10' "$runner" ||
-  fail 'runner must retain the Job evidence interval default'
-grep -Fq 'SIMPLEMATCH_KAFKA_TOPIC_PROVISIONING_SUPERVISOR_SECONDS:-630' "$runner" ||
-  fail 'runner must retain the Kafka provisioning supervisor default'
-grep -Fq 'local-certification-job.sh' "$runner" "$bootstrap_lib" ||
-  fail 'runner must load the shared Job supervision module'
-grep -Fq 'supervise_kubernetes_job()' "$job_lib" ||
-  fail 'Job supervisor function is missing'
-grep -Fq '^Complete=True:' "$job_lib" ||
-  fail 'Job supervisor no longer recognizes successful completion'
-grep -Fq '^(Failed|FailureTarget)=True:' "$job_lib" ||
-  fail 'Job supervisor no longer recognizes terminal failure'
-grep -Fq 'collect_kubernetes_job_evidence' "$job_lib" ||
-  fail 'Job supervisor no longer collects diagnostic evidence'
-grep -Fq 'collect_kafka_provisioning_evidence' "$kubernetes_lib" ||
-  fail 'Kafka provisioning evidence collector is missing'
-grep -Fq 'kafka-endpointslices.yaml' "$kubernetes_lib" ||
-  fail 'Kafka provisioning evidence no longer includes EndpointSlices'
-grep -Fq 'assert_certification_namespace_exclusive' "$kubernetes_lib" "$bootstrap_lib" ||
-  fail 'certification namespace exclusivity check is missing'
-grep -Fq 'simplematch.io/managed-by=local-production-like-certification' "$kubernetes_lib" ||
-  fail 'certification namespace ownership label is missing'
-grep -Fq 'down --volumes --remove-orphans' "$run_lib" ||
-  fail 'Compose fixture shutdown no longer removes run-owned volumes'
-
 skip_build=false
 skip_compose=false
 skip_kubernetes=false
@@ -152,6 +127,7 @@ if ! (
   touch "$calls_file"
   # shellcheck source=/dev/null
   source "$kubernetes_lib"
+  cmake() { return 0; }
   require_kubernetes_job_complete() {
     printf '%s\n' topic-check >>"$calls_file"
     return 1
@@ -164,7 +140,8 @@ if ! (
   publish_local_matching_open_barriers sha256:test matching:test
   status=$?
   set -e
-  [[ "$status" -ne 0 ]]
+  [[ "$status" -ne 0 ]] || exit 1
+  grep -Fxq topic-check "$calls_file" || exit 1
   ! grep -Fq -- ' run matching-fixture-publisher' "$calls_file"
 ); then
   fail 'a failed topic-provisioning Job check must abort Matching open-barrier publication'

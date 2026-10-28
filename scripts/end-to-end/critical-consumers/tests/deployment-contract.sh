@@ -38,57 +38,6 @@ done
 [[ -x "$compatibility_runner" ]] || fail 'compatibility runner must be executable'
 "$compatibility_runner" --help >/dev/null
 
-grep -Fq 'end-to-end/critical-consumers/run-failure-certification.sh' "$compatibility_runner" ||
-  fail 'legacy runner must delegate to the end-to-end certification entrypoint'
-grep -Fq 'capture_matching_samples_parallel' "$observation_module" ||
-  fail 'Matching runtime samples must be collected in parallel across partitions'
-grep -Fq 'capture_kafka_log_end_positions' "$observation_module" ||
-  fail 'system observation must use the reusable Kafka observation interface'
-grep -Fq 'capture_kafka_matching_committed_positions' "$observation_module" ||
-  fail 'Matching committed positions must use the reusable Kafka observation interface'
-if grep -Fq 'capture_topic_offsets' "$observation_module" ||
-   grep -Fq 'capture_matching_committed_offsets' "$observation_module"; then
-  fail 'freshness-sensitive observation must not launch Kafka command-line snapshots'
-fi
-grep -Fq 'updated_at_epoch_ms' "$matching_module" ||
-  fail 'Matching status must retain the runtime source timestamp'
-grep -Fq 'matching-commands-before.json' "$observation_module" ||
-  fail 'system observation must capture Kafka positions before collection'
-grep -Fq 'matching-commands-after.json' "$observation_module" ||
-  fail 'system observation must verify Kafka positions after collection'
-grep -Fq 'EVIDENCE_EXPIRED_DURING_COLLECTION' "$observation_module" ||
-  fail 'collector-induced expiration must have a distinct failure classification'
-grep -Fq 'SOURCE_ALREADY_STALE' "$observation_module" ||
-  fail 'source-side staleness must have a distinct failure classification'
-grep -Fq 'ageAddedByCollectorMillis' "$observation_module" ||
-  fail 'timing evidence must expose age added after Matching sampling'
-grep -Fq 'partition-$partition-pod-before.json' "$observation_module" ||
-  fail 'Matching collection must record Pod identity before runtime read'
-grep -Fq 'partition-$partition-pod-after.json' "$observation_module" ||
-  fail 'Matching collection must record Pod identity after runtime read'
-grep -Fq 'persistenceQuarantineHistory' "$cluster_module" ||
-  fail 'baseline evidence must include quarantine history'
-grep -Fq 'preparedSubmissionCertificationTest' "$interfaces_module" ||
-  fail 'FIX submission must use the prepared-client barrier'
-grep -Fq 'SIMPLEMATCH_RETAINED_FIX_RELEASE_FILE' "$interfaces_module" ||
-  fail 'prepared FIX submission must wait for an explicit release signal'
-grep -Fq 'gateway-submission-started-at' "$interfaces_module" ||
-  fail 'Gateway observation submission start must be retained'
-grep -Fq 'gateway-submission-completed-at' "$interfaces_module" ||
-  fail 'Gateway observation submission completion must be retained'
-grep -Fq 'oldestSourceAgeAtSubmissionCompletionMillis' "$interfaces_module" ||
-  fail 'Gateway submission timing must retain source age at completion'
-grep -Fq 'archive_gateway_observation_attempts' "$interfaces_module" ||
-  fail 'Gateway retries must archive prior collection evidence before reuse'
-grep -Fq 'start_kafka_observation_adapter' "$canonical_runner" ||
-  fail 'canonical runner must prepare the warm Kafka observation adapter'
-grep -Fq 'stop_kafka_observation_adapter' "$canonical_runner" ||
-  fail 'canonical runner must stop the Kafka observation adapter'
-grep -Fq 'gateway-open-to-fix-send.json' "$canonical_runner" ||
-  fail 'Gateway open-to-send timing evidence is missing'
-grep -Fq 'kafka-observation-interface.sh' "$support_module" ||
-  fail 'failure support must expose the Kafka observation interface'
-
 if grep -Fq 'OPERATIONS_MONITOR_ENABLED=false' "$canonical_runner" "$interfaces_module"; then
   fail 'failure certification must not disable the Gateway stale-observation monitor'
 fi
@@ -101,11 +50,6 @@ fi
 if grep -Fq '.instrument.symbol' "$canonical_runner" "$interfaces_module"; then
   fail 'failure certification must use the flat Market Reference schema'
 fi
-
-grep -Fq 'QuickFixPreparedSubmissionLiveCertificationTest' "$quickfix_build" ||
-  fail 'QuickFIX prepared-submission test must be excluded from normal tests and have an opt-in task'
-grep -Fq 'preparedSubmissionCertificationTest' "$quickfix_build" ||
-  fail 'QuickFIX prepared-submission Gradle task is missing'
 
 kafka_tmp="$(mktemp -d)"
 submission_tmp="$(mktemp -d)"

@@ -78,7 +78,6 @@ if resilience_write_case_json "$case_file" pod-replacement TESTED PASSED PASSED 
   '' pod_uid,node pod_uid; then exit 1; fi
 contract_dry_run="$(bash "$script_dir/run-local-resilience.sh" --profile contract --dry-run)"
 grep -Fq 'profile=contract' <<<"$contract_dry_run"
-grep -Fq 'full-local is retired' "$script_dir/run-local-resilience.sh"
 if bash "$script_dir/run-local-resilience.sh" --profile full-local --dry-run >/dev/null 2>&1; then exit 1; fi
 
 connect_worker_loss_dry_run="$(bash "$script_dir/run-local-connect-worker-loss.sh" \

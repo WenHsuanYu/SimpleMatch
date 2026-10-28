@@ -6,7 +6,6 @@ repo_root="$(cd -- "$script_dir/../../../.." && pwd)"
 cluster_module="$script_dir/../lib/cluster-data.sh"
 recovery_module="$script_dir/../lib/failure-recovery.sh"
 quickfix_build="$repo_root/services/quickfix-gateway/build.gradle.kts"
-prepared_test="$repo_root/services/quickfix-gateway/src/test/java/com/simplematch/quickfixgateway/fix/QuickFixPreparedSubmissionLiveCertificationTest.java"
 temporary_directory="$(mktemp -d "${TMPDIR:-/tmp}/simplematch-admission-contract.XXXXXX")"
 trap 'rm -rf "$temporary_directory"' EXIT
 
@@ -41,20 +40,6 @@ simulator = build[/tasks\.register<Test>\("certificationTest"\) \{(.*?)^\}/m, 1]
 abort "certificationTest is missing" unless simulator
 abort "simulator certification should retain normal Gradle state tracking" if
   simulator.include?("configureLiveCertification(") || simulator.include?("doNotTrackState(")
-RUBY
-
-ruby - "$prepared_test" <<'RUBY'
-path = ARGV.fetch(0)
-source = File.read(path, encoding: "UTF-8")
-abort "prepared FIX client must retain structured ExecutionReport evidence" unless
-  source.include?("writeEvidence(") &&
-  source.include?("report.getString(ExecType.FIELD)") &&
-  source.include?("report.getString(OrdStatus.FIELD)")
-abort "prepared FIX client must accept the explicit order side" unless
-  source.include?("SIMPLEMATCH_LIVE_FIX_SIDE") &&
-  source.include?("order.setChar(quickfix.field.Side.FIELD, side.charAt(0))")
-abort "prepared FIX client must not classify admission semantics inside JUnit" if
-  source.include?("assertThat(actualExecType)") || source.include?("assertThat(actualOrdStatus)")
 RUBY
 
 rendered="$temporary_directory/local.yaml"

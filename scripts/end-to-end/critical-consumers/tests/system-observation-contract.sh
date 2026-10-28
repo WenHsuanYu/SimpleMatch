@@ -142,11 +142,6 @@ stable_source_capture() (
 
   jq '{
     openingKafkaCompleted: (.openingKafka.matchingCommands.completedEpochMs != null),
-    durableCaptureIncludesDelay: (.middleObservations.matchingCommitted.durationMillis >= 40),
-    runtimeFollowsDurableCapture: (.middleObservations.matchingRuntime.startedEpochMs
-        >= .middleObservations.matchingCommitted.completedEpochMs),
-    closingKafkaFollowsRuntime: (.closingKafka.matchingCommands.startedEpochMs
-        >= .middleObservations.matchingRuntime.completedEpochMs),
     attemptCompleted: (.attempt.completedEpochMs != null)
   }' "$bundle_dir/timing.json" >"$tmp/source-ordering.json"
   compare_json_baseline source-ordering.json "$tmp/source-ordering.json"

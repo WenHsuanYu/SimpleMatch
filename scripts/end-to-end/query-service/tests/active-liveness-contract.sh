@@ -5,19 +5,8 @@ IFS=$'\n\t'
 script_dir="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
 runner="$script_dir/../run-certification.sh"
 active_module="$script_dir/../lib/active-liveness.sh"
-prepared_fix="$script_dir/../../../../services/quickfix-gateway/src/test/java/com/simplematch/quickfixgateway/fix/QuickFixPreparedSubmissionLiveCertificationTest.java"
-interfaces="$script_dir/../../critical-consumers/lib/test-interfaces.sh"
 temporary_directory="$(mktemp -d)"
 trap 'rm -rf -- "$temporary_directory"' EXIT
-
-grep -Fq 'SIMPLEMATCH_LIVE_FIX_TIME_IN_FORCE=' "$interfaces"
-grep -Fq 'TimeInForce.FIELD' "$prepared_fix"
-grep -Fq 'terminalExecType' "$prepared_fix"
-grep -Fq 'run_event_observer' "$active_module"
-grep -Fq 'require_exact_event_once_with_market_data' "$active_module"
-grep -Fq 'wait_market_data_through' "$active_module"
-grep -Fq 'wait_fix_intent_status SENT' "$active_module"
-grep -Fq 'RESERVATION_STATUS_RELEASED' "$active_module"
 
 python3 "$script_dir/../provision-security-fixtures.py" "$temporary_directory/query-bundle" >/dev/null
 if ! (

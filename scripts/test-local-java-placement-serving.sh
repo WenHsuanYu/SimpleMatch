@@ -184,6 +184,13 @@ write_workload_fixture
 mkdir -p "$fixture_dir/placement" "$fixture_dir/health"
 java_placement_serving_probe_contract_is_valid "$deployment" ||
   fail 'valid probe contract was rejected'
+jq '.spec.template.spec.containers = []' "$deployment" >"$fixture_dir/no-container.json"
+expect_reject 'missing application container' \
+  java_placement_serving_probe_contract_is_valid "$fixture_dir/no-container.json"
+jq '.spec.template.spec.containers += .spec.template.spec.containers' "$deployment" \
+  >"$fixture_dir/duplicate-container.json"
+expect_reject 'duplicate application containers' \
+  java_placement_serving_probe_contract_is_valid "$fixture_dir/duplicate-container.json"
 java_placement_serving_runtime_snapshot_is_ready "$deployment" "$pods" "$nodes" ||
   fail 'valid placement snapshot was rejected'
 snapshot_json="$(java_placement_serving_runtime_snapshot "$deployment" "$pods" "$nodes")" ||

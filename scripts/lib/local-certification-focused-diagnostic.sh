@@ -134,7 +134,7 @@ simplematch_focused_result_is_bound_to_object() {
   jq -e -s --arg evidence "$evidence_digest" \
     --slurpfile object "$object_path" '
       length == 1 and ($object | length) == 1 and
-      .[0] as $result | $object[0] as $source |
+      (.[0] as $result | $object[0] as $source |
       ($result.evidenceDigest == $evidence) and
       ($result.decision == "EXECUTED" or
         $result.decision == "REUSED" or
@@ -144,7 +144,7 @@ simplematch_focused_result_is_bound_to_object() {
       $result.definitionVersion == $source.definitionVersion and
       $result.status == $source.status and
       $result.inputFingerprint == $source.inputFingerprint and
-      $result.outputs == $source.outputs
+      $result.outputs == $source.outputs)
     ' "$result_path" >/dev/null
 }
 

@@ -53,7 +53,7 @@ java_placement_serving_probe_contract_is_valid() {
     '
       ([.spec.template.spec.containers[]?
         | select(.name == $container)] | length) == 1
-      and ([.spec.template.spec.containers[]?
+      and (([.spec.template.spec.containers[]?
         | select(.name == $container)][0]) as $containerSpec
       | ($containerSpec.startupProbe // {}) as $startup
       | ($containerSpec.readinessProbe // {}) as $readiness
@@ -66,7 +66,7 @@ java_placement_serving_probe_contract_is_valid() {
            and $liveness.httpGet.port == $port
            and $liveness.initialDelaySeconds == $liveness_initial_delay
            and $liveness.periodSeconds == $liveness_period
-           and $liveness.failureThreshold == $liveness_failure_threshold)
+           and $liveness.failureThreshold == $liveness_failure_threshold))
     ' "$deployment_file" >/dev/null
 }
 

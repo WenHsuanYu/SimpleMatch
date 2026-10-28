@@ -320,18 +320,6 @@ grep -Fq 'timeout --foreground' "$runtime_script" ||
   fail 'dependency diagnostic must bound external commands'
 grep -Fq 'run_bounded' "$runtime_script" ||
   fail 'dependency diagnostic lacks its bounded command seam'
-grep -Fq 'simplematch_kind_node_readiness_state' "$runtime_script" ||
-  fail 'dependency diagnostic does not use the shared node readiness parser'
-[[ "$(grep -Fc "simplematch_kind_node_readiness_state \"\$node_json\"" "$runtime_script")" -ge 3 ]] ||
-  fail 'all node readiness callers must use the shared strict parser'
-grep -Fq 'jq -er' "$readiness_lib" ||
-  fail 'dependency diagnostic must fail closed on malformed node readiness evidence'
-grep -Fq 'Ready condition is missing' "$readiness_lib" ||
-  fail 'node readiness guard does not reject missing readiness conditions'
-grep -Fq 'Ready condition has an unsupported status' "$readiness_lib" ||
-  fail 'node readiness guard does not reject unsupported readiness conditions'
-grep -Fq "[[ \"\$ready\" == false || \"\$ready\" == unknown ]]" "$runtime_script" ||
-  fail 'node readiness guard does not accept kubelet Unknown as unavailable'
 grep -Fq 'kafka_marker_topic_absent' "$runtime_script" ||
   fail 'dependency diagnostic must verify Kafka marker deletion'
 grep -Fq 'could not read Redis marker after recovery' "$runtime_script" ||

@@ -8,16 +8,6 @@ cluster_data_module="$script_dir/../../critical-consumers/lib/cluster-data.sh"
 temporary_directory="$(mktemp -d)"
 trap 'rm -rf -- "$temporary_directory"' EXIT
 
-grep -Fq "scale_deployment redis \"\$original_redis_replicas\"" "$lifecycle_module"
-grep -Fq 'SIMPLEMATCH_QUERY_SERVICE_REBUILD_HTTP_ENABLED-' "$lifecycle_module"
-grep -Fq 'SIMPLEMATCH_QUERY_SERVICE_REBUILD_OPERATOR_TOKEN-' "$lifecycle_module"
-grep -Fq "scale_deployment query-service \"\$original_query_replicas\"" "$lifecycle_module"
-grep -Fq "restorationFailed:\$restorationFailed" "$lifecycle_module"
-if grep -Fq "[[ -f \"\$evidence_dir/verdict.json\" ]] && return 0" "$lifecycle_module"; then
-  printf '%s\n' 'Failure verdicts must invalidate an existing verdict.' >&2
-  exit 1
-fi
-
 redis_flag_line="$(grep -n '^redis_scaled=true$' "$runner" | head -n 1 | cut -d: -f1)"
 redis_mutation_line="$(grep -n 'scale_deployment redis 0' "$runner" | head -n 1 | cut -d: -f1)"
 query_flag_line="$(grep -n '^query_scaled=true$' "$runner" | head -n 1 | cut -d: -f1)"

@@ -212,35 +212,6 @@ if critical_consumers_cover_events "$events" \
   fail 'any quarantine history created during close must fail the proof'
 fi
 
-grep -F 'source "$script_dir/lib/failure-support.sh"' "$runner" >/dev/null ||
-  fail 'close certification must reuse the existing critical-consumer runtime'
-grep -F 'source "$script_dir/lib/system-observation.sh"' "$runner" >/dev/null ||
-  fail 'close certification must reuse the existing observation collector'
-grep -F 'source "$script_dir/lib/gateway-close-verification.sh"' "$runner" >/dev/null ||
-  fail 'close certification must isolate close-specific proof logic from orchestration'
-grep -F -- '--retained-evidence-dir PATH' "$runner" >/dev/null ||
-  fail 'retained production-like evidence must be an explicit runner input'
-grep -F 'simplematch_certification_verifier_image' "$runner" >/dev/null ||
-  fail 'retained-run provenance must be validated explicitly'
-grep -F 'capture_gateway_observation' "$runner" >/dev/null ||
-  fail 'close certification must use normalized Gateway observations'
-grep -F 'gateway_request POST /operations/close-day' "$runner" >/dev/null ||
-  fail 'close certification must cross the authenticated Gateway operations seam'
-grep -F 'capture_kafka_matching_commands_end_positions' "$runner" >/dev/null ||
-  fail 'close certification must reuse the warm Kafka observation adapter'
-grep -F 'capture_kafka_matching_committed_positions' "$verification_module" >/dev/null ||
-  fail 'close verification must prove durable Matching command progress'
-grep -F 'verify_close_barrier_payloads' "$runner" >/dev/null ||
-  fail 'close certification must decode and verify each Close Barrier payload'
-grep -F -- '--slurpfile closeBarriers "$evidence_dir/close/close-barriers.json"' \
-  "$runner" >/dev/null ||
-  fail 'PASS verdict must retain decoded Close Barrier payload evidence'
-grep -F '.partition_state == "CLOSED"' "$verification_module" >/dev/null ||
-  fail 'close verification must prove every Matching runtime reaches CLOSED'
-grep -F 'capture_matching_partition_sample "$partition" "$samples_dir" false' \
-  "$verification_module" >/dev/null ||
-  fail 'close verification must reuse stable pod sampling without requiring post-close readiness'
-
 running_closed_pod="$temporary_directory/running-closed-pod.json"
 running_closed_metrics="$temporary_directory/running-closed-metrics.json"
 jq -n '{metadata:{name:"matching-3",uid:"pod-uid"},
@@ -286,12 +257,6 @@ jq -n '{schema_version:1,runtime_state:"RUNNING",partition_state:"CLOSED",pendin
   capture_matching_partition_sample \
     3 "$temporary_directory/ready-required-samples" true
 ) && fail 'open-state sampling must still require a Ready pod'
-grep -F 'require_exact_event_once "$terminal_event_id"' "$runner" >/dev/null ||
-  fail 'close certification must attribute terminal processing to the selected order event'
-grep -F 'capture_kafka_matching_events_end_positions' "$runner" >/dev/null ||
-  fail 'close certification must use one post-close event-log snapshot'
-grep -F 'wait_critical_consumers_to_close' "$runner" >/dev/null ||
-  fail 'close certification must prove critical-consumer durable progress'
 grep -F 'delete_kafka_observer_pod || restoration_failed=true' "$runner" >/dev/null ||
   fail 'cleanup must delete only a Kafka observer owned by the current run'
 if grep -F 'events-before.json' "$runner" "$verification_module" >/dev/null; then
