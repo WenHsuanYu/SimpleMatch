@@ -1,4 +1,4 @@
 #!/usr/bin/env bash
 set -euo pipefail
 repo_root="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/../../../.." && pwd)"
-exec "$repo_root/gradlew" -q :tools:dependency-tests:postgresTest "$@"
+exec "$repo_root/gradlew" -p "$repo_root" -q :tools:dependency-tests:postgresTest "$@"

@@ -9,4 +9,4 @@ if [[ "${1:-}" == --help || "${1:-}" == -h ]]; then
   exit 0
 fi
 [[ $# -eq 0 ]] || { printf 'Unknown argument: %s\n' "$1" >&2; exit 2; }
-exec "$repo_root/gradlew" -q :tools:dependency-tests:postgresLiveTest
+exec "$repo_root/gradlew" -p "$repo_root" -q :tools:dependency-tests:postgresLiveTest
