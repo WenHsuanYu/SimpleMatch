@@ -1,0 +1,139 @@
+{
+  "schemaVersion": 1,
+  "sourceCommit": "7b9d2fd035632aa6797ad1d771a90c96b5062a87",
+  "scope": "S0 bounded static/fixture evidence. No deployment, daemon mutation, Java/native build, or certification was run.",
+  "checks": [
+    {
+      "name": "All baseline Shell syntax",
+      "command": "bash -n for each path in the frozen baseline",
+      "exitCode": 0,
+      "scope": "170 parsers, no execution"
+    },
+    {
+      "name": "Market Data verdict",
+      "command": "bash scripts/end-to-end/market-data/tests/verdict-contract.sh",
+      "exitCode": 0,
+      "scope": "Synthetic JSON fixtures only"
+    },
+    {
+      "name": "Critical verdict publication",
+      "command": "bash scripts/end-to-end/critical-consumers/tests/verdict-contract.sh",
+      "exitCode": 0,
+      "scope": "Source-shape restoration ordering only"
+    },
+    {
+      "name": "Archived Phase 5",
+      "command": "bash scripts/archive/check-phase-5-gate.sh",
+      "exitCode": 1,
+      "scope": "Obsolete generic HTTP matcher also rejects internal service HTTP"
+    },
+    {
+      "name": "Archived Phase 6/7",
+      "command": "bash scripts/archive/check-phase-6-7-gate.sh",
+      "exitCode": 0,
+      "scope": "Historical checklist/artifact shape only"
+    },
+    {
+      "name": "Matching topic cutover",
+      "command": "bash scripts/test-matching-topic-cutover.sh",
+      "exitCode": 1,
+      "scope": "Static obsolete function lookup; independent of the open PR repair"
+    },
+    {
+      "name": "Current phase selection",
+      "command": "source scripts/lib/local-certification-phase-graph.sh; certification_required_phase_ids",
+      "exitCode": 0,
+      "scope": "62 default phase declarations only, no adapters executed"
+    },
+    {
+      "name": "Compose cleanup failure propagation",
+      "exitCode": 0,
+      "scope": "Real cleanup function with Compose command returning 17; report sink replaced; no Docker calls",
+      "finding": "Unexpected reported_exit=0 despite the confirmed Compose failure"
+    }
+  ],
+  "defaultPhaseIds": [
+    "source-preflight",
+    "static-kubernetes-overlays",
+    "static-phase1-deployment-contracts",
+    "static-kubernetes-dependencies",
+    "static-matching-manifests",
+    "static-matching-profile",
+    "static-flyway-services",
+    "compose-config",
+    "local-image-inventory",
+    "local-resource-budget",
+    "local-image-build/account-service",
+    "local-image-build/risk-service",
+    "local-image-build/persistence",
+    "local-image-build/market-data-projection",
+    "local-image-build/marketdata-streamer",
+    "local-image-build/query-service",
+    "local-image-build/quickfix-gateway",
+    "local-image-build/flyway-runner",
+    "local-image-build/risk-matching-e2e-verifier",
+    "local-image-build/matching",
+    "cdc-outbox-failure-live",
+    "compose-up",
+    "compose-wait",
+    "kafka-create-matching-commands",
+    "kafka-describe-matching-commands",
+    "kafka-config-matching-commands",
+    "kafka-create-matching-events",
+    "kafka-describe-matching-events",
+    "kafka-config-matching-events",
+    "kafka-broker-config",
+    "kafka-capacity-evidence",
+    "kafka-producer-contract",
+    "kafka-profile-validation",
+    "kafka-broker-failure-live",
+    "compose-down-before-kubernetes",
+    "registry-connectivity",
+    "registry-publish/account-service",
+    "registry-publish/risk-service",
+    "registry-publish/persistence",
+    "registry-publish/market-data-projection",
+    "registry-publish/marketdata-streamer",
+    "registry-publish/query-service",
+    "registry-publish/quickfix-gateway",
+    "registry-publish/flyway-runner",
+    "registry-publish/risk-matching-e2e-verifier",
+    "registry-publish/matching",
+    "registry-image-lock",
+    "kubernetes-manifest-split",
+    "kubernetes-namespace",
+    "kubernetes-inputs",
+    "kubernetes-platform-apply",
+    "kubernetes-topic-provisioning",
+    "kubernetes-migrations",
+    "kubernetes-connect-apply",
+    "kubernetes-open-barriers",
+    "kubernetes-workload-apply",
+    "kubernetes-risk-outbox-connector",
+    "kubernetes-account-outbox-connector",
+    "kubernetes-workloads",
+    "kubernetes-cdc-delivery",
+    "kubernetes-fleet",
+    "retained-run-provenance"
+  ],
+  "cleanupReproduction": {
+    "commandScope": "Real cleanup function; Compose subprocess replaced by exit-17 function; report sink replaced; no external calls",
+    "composeStubExecuted": true,
+    "observedProcessExit": 0,
+    "expectedRequiredFailureExit": "nonzero",
+    "stdout": "reported_exit=0\n",
+    "stderr": ""
+  },
+  "topicCutoverFailure": "Production-like Kafka module has no create_kafka_topics function.",
+  "archivePhase5Failure": "The generic HttpClient/URL matcher rejects Gateway internal observation endpoints. The original external-exchange requirement is distinct.",
+  "githubReadback": {
+    "querySecurityIssue194": "CLOSED; final comment accepts synthetic Local Lab scope with source/evidence boundaries",
+    "topicCutoverPR195": "OPEN draft, head f3d3dc5c78daba8e435fc477f209d85ea3a60271",
+    "repositoryVisibility": "PUBLIC"
+  },
+  "localCommitHook": {
+    "command": "code-review-graph",
+    "error": "ModuleNotFoundError: No module named code_review_graph",
+    "scope": "Local hook environment; Git commit succeeded. MCP graph navigation and two-axis review completed before commit. Automatic indexing is unconfirmed."
+  }
+}
