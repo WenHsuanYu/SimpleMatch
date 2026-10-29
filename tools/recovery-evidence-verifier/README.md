@@ -1,6 +1,6 @@
 # Recovery evidence verifier
 
-This executable owns the data rules for dependency recovery, Query placement, and Connect task reassignment.
+This executable owns the data rules for dependency recovery, Query placement, Connect task reassignment, and Market Data rebuild evidence.
 It uses the project's existing Jackson and JUnit libraries.
 The existing diagnostic commands collect live observations, enforce resource ownership, and restore their resources.
 
@@ -23,6 +23,7 @@ verifier=tools/recovery-evidence-verifier/build/install/recovery-evidence-verifi
 "$verifier" dependency kafka REPORT_FILE
 "$verifier" placement verify REPORT_FILE
 "$verifier" connect verify REPORT_FILE
+"$verifier" market-data EVIDENCE_DIRECTORY VERDICT_FILE
 ```
 
 Successful commands print their checked local scope and exit with zero.
@@ -41,6 +42,7 @@ Keep earlier reports as historical records. Create new evidence for the current 
 | Dependency | Pod or worker fault identity, PostgreSQL durable storage and marker, Redis disposable state, Kafka storage, ISR and catch-up | `run-local-resilience-dependencies.sh` |
 | Placement | Two Ready Pods on different workers, consistent immutable image, stable Pod identities and restarts, health and serving during a sufficient Redis outage | `run-local-java-placement-serving-check.sh` |
 | Connect | Exact task-owning Pod deletion, changed task worker and Pod identity, temporal order, baseline-aware Account event and publication linkage | `run-local-connect-worker-loss.sh` |
+| Market Data | Seven named isolation, deterministic-rebuild, repair, and restoration checks from five retained JSON files | `end-to-end/market-data/run-certification.sh` |
 
 The placement window follows the observed liveness probe configuration.
 A new Connect Pod can use the original node. Task reassignment does not require node loss.
@@ -56,6 +58,26 @@ It does not independently repeat the shared CDC byte checks.
 The collectors also use `placement snapshot`, `placement redis`, `placement probe`, `placement write`, `connect prerequisites`,
 `connect owner`, `connect reassigned`, and `connect draft` to normalize their observations.
 These are file operations. They do not connect to Kubernetes, PostgreSQL, or Kafka.
+
+## Market Data verdict
+
+The Market Data command reads `critical-before.json`, `critical-after.json`, `baseline-snapshot.json`,
+`rebuilt-snapshot.json`, and `restoration.json` from the supplied evidence directory.
+It writes the existing `status` and seven-entry `checks` JSON contract.
+The check names remain `criticalConsumerIsolation`, `deterministicRebuild`, `redisRepair`,
+`projectionRestored`, `streamerRestored`, `matchingIsolation`, and `criticalConsumersRestored`.
+
+Successful evaluation exits zero. Failed checks write a FAIL verdict and exit one.
+Missing or malformed input and output errors exit one.
+The command removes an earlier destination before reading evidence, so invalid input cannot preserve an earlier PASS there.
+The destination cannot use one of the five input names.
+Required snapshot fields and consumer progress arrays must exist. Equal missing facts cannot establish success.
+Numeric JSON representations compare by value. Array order and business values remain significant.
+Snapshot observation fields outside the ten business fields do not affect deterministic equality.
+
+The live runner builds the executable before environment changes and evaluates a pending verdict.
+It publishes the final PASS only after successful environment restoration.
+The evaluator does not independently prove current source, image, namespace identity, or live recovery.
 
 ## Scope
 

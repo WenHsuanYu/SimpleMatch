@@ -64,6 +64,11 @@ focused test results; it does not manufacture an invalid record in a shared auth
 
 ## Evidence and verdict
 
+The existing recovery evidence executable evaluates the five retained JSON files through its `market-data` command.
+See the [evaluator contract](../../tools/recovery-evidence-verifier/README.md#market-data-verdict) for check names and failure behavior.
+Its Jupiter tests replace the former Shell verdict contract.
+The deployed runner retains environment ownership and publishes PASS only after successful restoration.
+
 The certification writes machine-readable evidence under a run-owned directory and publishes
 `verdict.json` only after environment restoration. A passing verdict includes:
 

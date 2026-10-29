@@ -12,8 +12,6 @@ source "$repo_root/scripts/lib/local-kind.sh"
 source "$repo_root/scripts/end-to-end/critical-consumers/lib/cluster-data.sh"
 # shellcheck source=scripts/end-to-end/critical-consumers/lib/test-interfaces.sh
 source "$repo_root/scripts/end-to-end/critical-consumers/lib/test-interfaces.sh"
-# shellcheck source=scripts/end-to-end/market-data/lib/verdict.sh
-source "$script_dir/lib/verdict.sh"
 
 cluster_name="${SIMPLEMATCH_KIND_CLUSTER_NAME:-simplematch-live}"
 context="kind-$cluster_name"
@@ -351,9 +349,13 @@ done
 [[ -n "$evidence_dir" ]] || die "--evidence-dir is required"
 [[ "$timeout_seconds" =~ ^[1-9][0-9]*$ ]] || die "--timeout-seconds must be positive"
 (( timeout_seconds <= 300 )) || die "--timeout-seconds must not exceed 300"
-for tool in kubectl docker jq curl awk sed grep date seq sleep tr cp mv git; do
+for tool in kubectl docker jq curl awk sed grep date seq sleep tr cp mv git timeout; do
   command -v "$tool" >/dev/null 2>&1 || die "$tool is required"
 done
+timeout --foreground 120 "$repo_root/gradlew" -q -p "$repo_root" \
+  :tools:recovery-evidence-verifier:installDist || die "cannot prepare Market Data evidence verifier"
+evidence_verifier="$repo_root/tools/recovery-evidence-verifier/build/install/recovery-evidence-verifier/bin/recovery-evidence-verifier"
+[[ -x "$evidence_verifier" ]] || die "Market Data evidence verifier is unavailable"
 [[ "$(kubectl config current-context)" == "$context" ]] ||
   die "current Kubernetes context must be $context"
 kubectl get namespace "$namespace" >/dev/null 2>&1 || die "namespace does not exist"
@@ -469,7 +471,7 @@ jq -n \
 
 current_stage="evaluate retained evidence"
 pending_verdict="$evidence_dir/verdict.pending.json"
-evaluate_market_data_verdict "$evidence_dir" "$pending_verdict" ||
+"$evidence_verifier" market-data "$evidence_dir" "$pending_verdict" ||
   die "market-data evidence did not satisfy the deterministic verdict"
 
 current_stage="restore certification environment"

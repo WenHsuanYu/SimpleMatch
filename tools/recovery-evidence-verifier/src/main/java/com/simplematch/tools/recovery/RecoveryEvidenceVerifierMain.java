@@ -26,6 +26,12 @@ public final class RecoveryEvidenceVerifierMain {
         }
         case "placement" -> PlacementCommands.execute(arguments);
         case "connect" -> ConnectCommands.execute(arguments);
+        case "market-data" -> {
+          ReportFields.require(
+              arguments.length == 3, "Provide Market Data evidence and verdict paths.");
+          yield new MarketDataEvidenceVerifier().write(
+              Path.of(arguments[1]), Path.of(arguments[2]));
+        }
         default -> throw new IllegalArgumentException("Unknown recovery operation.");
       };
       System.out.println(result);

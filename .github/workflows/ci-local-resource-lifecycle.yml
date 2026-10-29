@@ -67,7 +67,6 @@ jobs:
           bash scripts/end-to-end/critical-consumers/tests/resting-buy-adapters-test.sh
           bash scripts/end-to-end/critical-consumers/tests/business-recovery-lifecycle-test.sh
           bash scripts/end-to-end/critical-consumers/tests/business-recovery-failure-test.sh
-          bash scripts/end-to-end/market-data/tests/verdict-contract.sh
           python3 scripts/end-to-end/query-service/tests/security-fixtures-contract.py
           python3 scripts/end-to-end/query-service/tests/collector-http-contract.py
           python3 scripts/end-to-end/query-service/tests/policy-authority-contract.py
