@@ -5,9 +5,10 @@ repo_root="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd)"
 account_config="$repo_root/deploy/k8s/base/java-services-configmaps.yaml"
 matching_provisioner="$repo_root/scripts/provision-matching-topics.sh"
 production_like_runner="$repo_root/scripts/run-local-production-like-certification.sh"
-production_like_kafka="$repo_root/scripts/lib/local-certification-kafka.sh"
+production_like_phases="$repo_root/scripts/lib/local-certification-phase-graph.sh"
+production_like_run="$repo_root/scripts/lib/local-certification-run.sh"
 
-for path in "$account_config" "$matching_provisioner" "$production_like_runner" "$production_like_kafka"; do
+for path in "$account_config" "$matching_provisioner" "$production_like_runner" "$production_like_phases" "$production_like_run"; do
   [[ -f "$path" ]] || {
     printf 'Matching topic cutover input does not exist: %s\n' "$path" >&2
     exit 1
@@ -34,13 +35,13 @@ abort "production-shaped Account must enable the final matching.events consumer"
   config.dig("final-matching-events", "enabled") == true
 RUBY
 
-if rg -n 'matching\.executions|contracts\.matching\.v1' \
+if grep -R -n -E 'matching\.executions|contracts\.matching\.v1' \
   "$repo_root/services/account-service/src/main"; then
   printf '%s\n' 'Account production source still contains the legacy matching execution path.' >&2
   exit 1
 fi
 
-if rg -n 'matching\.executions|contracts\.matching\.v1' \
+if grep -R -n -E 'matching\.executions|contracts\.matching\.v1' \
   "$repo_root/services/quickfix-gateway/src/main"; then
   printf '%s\n' 'QuickFIX production source still contains the legacy matching execution path.' >&2
   exit 1
@@ -67,23 +68,25 @@ if grep -Fq 'matching.executions' "$matching_provisioner"; then
   exit 1
 fi
 
-create_topics_block="$(awk '
-  /^create_kafka_topics\(\) \{/ { inside=1 }
-  inside { print }
-  inside && /^}$/ { exit }
-' "$production_like_kafka")"
-[[ -n "$create_topics_block" ]] || {
-  printf '%s\n' 'Production-like Kafka module has no create_kafka_topics function.' >&2
-  exit 1
-}
+# Certification now creates topics through its phase graph and dispatch adapter.
+# Check the actual phase wiring rather than parsing an obsolete shell function.
 for topic in matching.commands matching.events; do
-  grep -Fq "$topic" <<<"$create_topics_block" || {
-    printf 'Production-like topic bootstrap is missing %s.\n' "$topic" >&2
+  phase="kafka-create-matching-${topic#matching.}"
+  grep -Fq "${phase}|" "$production_like_phases" || {
+    printf 'Production-like phase graph is missing %s.\n' "$phase" >&2
+    exit 1
+  }
+  grep -Fq "${phase}) printf '%s\\n' ${topic} ;;" "$production_like_run" || {
+    printf 'Production-like topic phase mapping is missing %s.\n' "$topic" >&2
     exit 1
   }
 done
-if grep -Fq 'matching.executions' <<<"$create_topics_block"; then
-  printf '%s\n' 'Production-like topic bootstrap must not provision legacy matching.executions.' >&2
+grep -Fq '_certification_run_kafka_topic_create "$phase_id"' "$production_like_run" || {
+  printf '%s\n' 'Production-like Kafka topic creation is not dispatched.' >&2
+  exit 1
+}
+if grep -Fq 'matching.executions' "$production_like_phases" "$production_like_run"; then
+  printf '%s\n' 'Production-like topic bootstrap retains legacy matching.executions.' >&2
   exit 1
 fi
 
