@@ -1,5 +1,9 @@
 # S0 resource inputs and task interface
 
+The [subsequent owner decision](../verification-ci-scope-decision.md) supersedes this note's mandatory complete-CI gate.
+It adopts focused business CI after assessing the limits of staging the current complete profile.
+The resource calculations below remain the recorded S0 analysis.
+
 Source baseline: `7b9d2fd035632aa6797ad1d771a90c96b5062a87`.
 Research date: 2026-10-29. Scope: S0 analysis for Issue #197.
 The numbers below describe declared resources and planning estimates. They do not establish current runtime capacity or certification PASS.
