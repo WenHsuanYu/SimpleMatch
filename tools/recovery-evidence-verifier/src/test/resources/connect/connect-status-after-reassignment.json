@@ -1,0 +1,14 @@
+{
+  "name": "account-service-outbox",
+  "connector": {
+    "state": "RUNNING",
+    "worker_id": "10.244.0.33:8083"
+  },
+  "tasks": [
+    {
+      "id": 0,
+      "state": "RUNNING",
+      "worker_id": "10.244.0.33:8083"
+    }
+  ]
+}

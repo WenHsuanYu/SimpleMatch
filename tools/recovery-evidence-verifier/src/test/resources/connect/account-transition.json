@@ -1,0 +1,9 @@
+{
+  "schema_version": 1,
+  "aggregate_id": "connect-worker-loss-run-1-reservation",
+  "event_id": "00000000-0000-7000-8000-000000000001",
+  "payload_type": "simplematch.account.v2.AccountLifecycleEvent",
+  "transition_created_at_unix_ms": 1700000001003,
+  "reassignment_observed_at_unix_ms": 1700000001002,
+  "transition": "post-reassignment Account lifecycle fixture"
+}

@@ -1,0 +1,8 @@
+{
+  "stage": "during",
+  "deployment_name": "redis",
+  "desired_replicas": 0,
+  "ready_replicas": 0,
+  "ready_pod_count": 0,
+  "pods": []
+}

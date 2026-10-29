@@ -57,18 +57,16 @@ These words describe different responsibilities; they are not interchangeable:
   `scripts/lib/connect-worker-loss.sh` owns task-owner identity, Pod-loss, reassignment, and report
   linkage. A caller should not repeat those rules.
 
-The worker-loss diagnostic now separates three operational Modules behind stable Interfaces, with
-`connect-worker-loss-cli.sh` as a fourth, deliberately shallow request Adapter:
-`connect-rest-tunnel.sh` owns the recoverable REST tunnel, `connect-worker-loss-scenario.sh` owns the
-ordered fault lifecycle behind the unchanged command, and `connect-worker-loss-evidence.rb` parses
-the report and linked files into explicit data objects before checking cross-file semantics,
-including deployment, image-cache, control-plane, and topic prerequisites. Shell remains the
-Adapter for `kubectl`, PostgreSQL, and Kafka commands. Tests exercise returned status,
-phase outcomes, CLI output, and accepted/rejected evidence fixtures; they do not require function
-names, source layout, or an exact set of optional diagnostic fields to remain unchanged.
-The deployment preflight therefore captures raw prerequisite objects and invokes the same typed
-prerequisite verifier used by the final report gate; it does not maintain a second jq/grep copy of
-the connector, topic, image, or Job semantics.
+The worker-loss command separates request parsing, REST tunnel ownership, live fault execution, and data evaluation.
+`connect-worker-loss-cli.sh` parses the request.
+`connect-rest-tunnel.sh` owns the recoverable tunnel.
+`connect-worker-loss-scenario.sh` performs the ordered operations and restores the fixture before PASSED publication.
+The Java [recovery verifier](../../tools/recovery-evidence-verifier/README.md) checks task identities, deletion, reassignment, and event linkage.
+The shared CDC validator checks exact Kafka bytes and metadata.
+
+The deployment preflight captures relevant prerequisite objects and invokes Java before fault injection.
+The final report links the recovery observations without repeating the full prerequisite or retained-runtime checks.
+Tests exercise command results, cleanup, and accepted or rejected evidence through the actual interfaces.
 
 The #156 focused contract test applies the same separation to its own test
 harness.  It exercises deterministic preflight rejections through the public

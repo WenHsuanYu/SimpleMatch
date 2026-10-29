@@ -120,7 +120,7 @@ findmnt -T "$(docker info --format '{{.DockerRootDir}}')"
 | 發布 images 並產生 digest lock | `scripts/publish-local-images.sh` |
 | Render local Kubernetes manifest | `scripts/render-local-kubernetes-manifest.sh` |
 | Local production-like gate | `scripts/run-local-production-like-certification.sh` |
-| Static resilience contract | `scripts/run-local-resilience.sh --profile contract` |
+| Static resilience contract | `scripts/validate-local-resilience-contract.sh` |
 | Runtime recovery diagnostics | 使用第 13 節的 property-specific focused runners |
 | 資源報告 | `scripts/local-resource-report.sh` |
 | 日常清理 | `scripts/simplematch-clean-local-disk.sh` |
@@ -641,13 +641,20 @@ Run evidence 保存 `run-context`、`source-revision`、`evidence-manifest.json`
 
 ## 13. Local resilience
 
-### 13.1 Static contract profile
+<a id="131-static-contract-profile"></a>
+
+### 13.1 Static deployment contract
 
 ```bash
-bash scripts/run-local-resilience.sh --profile contract
+bash scripts/validate-local-resilience-contract.sh
 ```
 
-這個 profile 驗證 repository-rendered topology、placement、PDB、resource、dependency、probe 等 contract；其中五個複製的 Java workload 必須共用兩副本、local-resilience worker、hostname `maxSkew=1`／`DoNotSchedule`、`minAvailable=1` PDB，以及 portable-workload、`not-ready`、`unreachable` 三個 30 秒 `NoExecute` toleration。不會停止 worker，因此不能當成 runtime resilience evidence。
+此命令驗證 repository-rendered topology、placement、PDB、resource、dependency、probe 等 contract；其中五個複製的 Java workload 必須共用兩副本、local-resilience worker、hostname `maxSkew=1`／`DoNotSchedule`、`minAvailable=1` PDB，以及 portable-workload、`not-ready`、`unreachable` 三個 30 秒 `NoExecute` toleration。不會停止 worker，因此不能當成 runtime resilience evidence。
+
+部署與故障工具的完整本機回歸檢查使用 `bash scripts/test-phase1-deployment-contracts.sh`。
+CI 使用同一入口，個別測試不再串接其他測試。
+原 `run-local-resilience.sh --profile contract` 集合入口與其 `run-result.json` 已退役。
+直接執行 static validator 時，以命令退出狀態與錯誤訊息判斷結果。
 
 ### 13.2 Runtime recovery diagnostics
 
@@ -659,6 +666,15 @@ failure/recovery path，不能升級成完整 resilience、production HA 或其�
 
 
 ### 13.3 依賴生命週期 focused diagnostic
+
+依賴恢復報告使用 schema version 2，由 Java 的 `recovery-evidence-verifier` 判定。
+runner 會先透過既有 Gradle application task 準備程式，再建立 marker 或注入故障。
+因此執行環境需具備本專案的 JDK 與 Gradle 建置條件。
+判定器先檢查恢復事實，再依元件與故障種類界定 local scope，不再要求英文宣稱逐字相等。
+既有 schema version 1 報告保留為歷史紀錄。
+目前判定器只接受新產生的 version 2 報告，不可直接更改舊報告的版本。
+
+必要規則及本輪 E 尚待分開評估的責任，見 [E 重審](../plans/category-e-reassessment.md)。
 
 當只需要驗證 PostgreSQL/Redis/Kafka 的 worker-loss 或 Pod restart 行為時，不需要先執行已退休的 aggregate runner。對一個已存在、具 `disposable` ownership label 的 namespace 執行下列
 其中一個 focused diagnostic；state-changing 執行必須同時提供與 namespace label 完全相符的
@@ -676,12 +692,12 @@ bash scripts/run-local-resilience-dependencies.sh \
 每次執行只注入一個明確的 fault，使用單一 300 秒 monotonic deadline；所有可能阻塞的
 `kubectl`、`docker`、`kind`、Pod exec 與等待命令都套用剩餘 deadline 的 bounded timeout；失敗
 清理則另有 30 秒 best-effort 上限，並在
-`out/resilience/dependencies-<run-id>/` 保存一份 component report。PostgreSQL 報告必須證明
+`out/resilience/dependencies-<run-id>/` 保存一份 component report。collector 必須驗證並記錄
 原本的 worker slot、Pod、RWO PVC/PV 與 Flyway 管理的 `risk_service.local_resilience_marker` row
 在 recovery observation 時存在並被記錄；worker-stop 期間並確認沒有 PostgreSQL replacement Pod
 被指派到其他 worker；該 marker
 與 observer-owned 的 `risk_service.cdc_delivery_lag` 分離，不可用來偽造
-CDC 健康資料。Kafka 報告必須證明
+CDC 健康資料。Kafka collector 必須驗證並記錄
 三個固定 ordinal 的 cluster/node identity、RF3 marker、兩個存活 broker 與恢復後 ISR3；
 Redis worker-stop 報告必須觀察到新的 Ready Pod 已移到另一個 worker。Redis 同時明確容忍
 自訂 `simplematch.io/portable-workload` 與 Kubernetes node controller 實際使用的
@@ -705,22 +721,12 @@ parent #151 聚合的 fault-family verdict。
 的 Account outbox 變更是否仍精確送達 Kafka，不需要先執行已退休的 aggregate runner。對一個已存在、
 具 `disposable` ownership label 的 production-like namespace 執行：
 
-這裡的術語有明確分工：**證據契約**是可執行的 schema、predicate、順序與 fail-closed 條件，
-不是一份自稱 `PASS` 的 YAML/JSON；**Module** 是擁有這些規則的深模組，目前由
-`scripts/lib/cdc-verifier.sh` 負責 outbox/Kafka 精確觀測、由
-`scripts/lib/connect-worker-loss.sh` 負責 task owner、Pod loss、reassignment 與 evidence
-linkage。**Seam** 是可以替換實作而不必修改 Module 的位置；本例的
-`CDC_OUTBOX_EXEC`、`CDC_KAFKA_EXEC`、`CDC_CONNECT_STATUS_EXEC` 就是 seam，測試 fake、Compose
-或 Kubernetes 都能接上同一個位置。**Adapter** 是接入 seam 的具體實作，例如 runner 裡的
-`postgres_exec`、`kafka_exec`、`connect_status`；它只負責把 kubectl/CLI/REST 結果送進 Module，
-不負責自行判定 PASS。**Runner** 則是 shell 編排器，負責 preflight、故障注入、cleanup 與
-證據檔案順序。業界通常用 shell 做 CI/CD、deployment smoke、受控 chaos/fault injection
-的 glue；不會把複雜 domain 判定、非同步狀態機或第二份驗證規則堆在 shell 裡。
+共用 `scripts/lib/cdc-verifier.sh` 負責 outbox 定位與 Kafka 精確觀測。
+Java `recovery-evidence-verifier` 負責 task owner、Pod deletion、reassignment 與事件關係。
+既有 runner 負責 preflight、故障操作與清理，透過既有命令 adapter 接入外部服務。
 
-因此，shell runner 只有在仍是支援中的 operator/CI 入口時才保留；未來若由 typed tool 取代，
-必須先保持相同的 Interface、evidence schema 與 regression coverage，才可把舊 runner 移到
-`scripts/archive/`。契約、schema、Module 不是一次 certification 後就能刪除的暫存物；歷史
-fixture/evidence 則可在不再是 current authority 時移到 `docs/archive/` 或對應 evidence archive。
+保留規則前先確認它保護的實際風險。已解決問題的 debug 檢查、重複摘要與來源寫法檢查可以刪除。
+必要的 ownership、故障後資料正確性與清理結果則必須透過實際介面保留。
 
 ```bash
 bash scripts/run-local-connect-worker-loss.sh \
@@ -734,9 +740,10 @@ bash scripts/run-local-connect-worker-loss.sh \
 run-id、`cdc_runtime_signature` 與 `cdc_verifier_signature` 都要存在。命令在任何 Pod mutation
 前比較 runtime fingerprint；runtime 不一致會 fail-closed，必須建立新的 source-aligned full
 run。verifier fingerprint 不一致不會重用舊 diagnostic，而是記錄 drift、先執行
-`test-cdc-observer-fixture-contract.sh`，再用目前 verifier 產生新的 report。命令會先確認 Kafka topic provisioning、六個 Flyway Job、PostgreSQL、兩個無 PVC 的 Connect
-worker、RF3/minISR2 internal topic、PDB、service-owned connector table/header 邊界與嚴格的
-Pod identity。這些應用層 prerequisite 通過後，才用一個 bounded runtime precondition 檢查
+`test-cdc-observer-fixture-contract.sh`，再用目前 verifier 產生新的 report。命令先確認 Kafka topic provisioning、Account 與 Risk 的
+Flyway Job、PostgreSQL、兩個無 PVC 的 Connect worker、RF3/minISR2 internal topic、
+service-owned connector table 與 task-owning Pod identity。直接刪除 Pod 不測試 PDB eviction，
+因此不要求 PDB 或與此操作無關的其他服務 migration。這些應用層 prerequisite 通過後，才用一個 bounded runtime precondition 檢查
 Deployment 指向的 Connect image 在 eligible kind worker 上有一致的 node-local identity，且
 containerd 能以 `/bin/sh -c true` 啟動；這不重複驗證 Docker/Kubernetes 工具本身。`--deadline-seconds`
 只計算真正 Pod deletion 後的 worker-loss/reassignment recovery window（預設 600 秒，上限
@@ -746,16 +753,14 @@ task id 改由不同 worker 與新 Pod UID 執行；單獨的 `RUNNING` status�
 REST task listing 不能通過 recovery gate。故障恢復後由共用 `cdc-verifier.sh` 先捕捉 aggregate
 outbox baseline，再定位唯一的 post-transition row 並核對 Kafka exact record。
 
-PASS report 會連結所有 prerequisite snapshot、目前 verifier contract、刪除前 UID recheck、
-`target-delete-observation.json`、`account-transition.json` 與
-`account-publication.json`。`target-delete-observation.json` 是 schema-versioned 的
-機器可讀紀錄，包含被刪除的 Pod UID、replacement/not-found 結果、replacement UID（若有）及
-原 UID 已消失的確認；原始 delete log 僅供事故診斷。`account-publication.json` 使用 schema
-version 2，由共用 verifier 在確認 partition/offset、broker timestamp、event identity/type、
-key/payload/完整 headers/`headers_json` digest 與每一項 exact-record check 後才產生，且不保留
-raw payload 或未遮罩 headers。
-因此後續 consumer 可以重建觀測鏈，不必把 report 中的
-`exact_kafka_record=true` 當成自我宣告。
+Connect 報告使用 schema version 3。Java 驗證刪除前 UID、原始 Pod 消失、相同 task 的新 worker
+與新 Pod UID，以及 baseline、transition、publication 的事件關係。新 Pod 可以位於原節點。
+共用 `cdc-verifier.sh` 負責 Kafka payload、key、timestamp 與完整 headers 的精確比對。
+最終報告不再重複驗證整套 prerequisite 或保留環境的前置檢查。
+
+`target-delete-observation.json` 記錄原始 Pod name 與 UID 已不存在。
+`account-publication.json` 仍使用共用 CDC schema version 2。命令必須先清除自己的 outbox fixture
+並關閉 REST tunnel，才發布 PASSED。任何清理失敗都保留 FAILED。舊版報告保留原日期與來源。
 
 這個報告是 diagnostic-only：其中的 run-owned Account lifecycle row 是 transport-level fixture，
 只證明 outbox → Debezium → Kafka 的重指派後傳輸，不宣稱 Account RPC 或完整 business
@@ -792,19 +797,19 @@ timing 偏離 bounded window 的依據，observer 會在 mutation 前 fail close
 
 `--query-fixture-directory` 必須指向部署前產生、與目前 Query Policy 相符的私密測試 Bundle。
 Freshness 使用其中的 operations-read 身分，兩個最小 Health Probe 保持匿名；不會退回匿名
-Freshness，也不會使用 Rebuild Operator Token。新版 diagnostic report 使用 schema version 2，
-記錄每種 Probe 的 authentication 類型並驗證完整 Operations Freshness 格式；舊版報告保留
+Freshness，也不會使用 Rebuild Operator Token。Placement diagnostic report 使用 schema version 3，
+由 Java 驗證各階段 placement、health、authentication 與相關檔案；舊版報告保留
 原始版本與範圍，不會重新標示為新版安全驗收。工具測試通過仍不等同於 deployed PASS。
 
 為了驗證依賴故障時的 health boundary，Runner 只把 run-owned Redis Deployment 從一副本縮到零，
-先確認零 Ready replica，再以預設 60 秒的 bounded observation window 等待 liveness failure threshold
-可能發生的時間，醒來時再次確認 outage 仍然成立。60 秒涵蓋 20 秒 liveness initial delay、三次
-10 秒 failure period，以及一個用來觀察 restart 的額外 period；可用 `--observe-seconds` 增加，但
-不能縮短。Runner 接著
+先確認零 Ready replica，再依 live liveness probe 的 initial delay、period 與 failure threshold
+決定最低觀察時間。目前部署設定對應 60 秒，包含一個額外 period 以觀察 restart。
+`--observe-seconds` 可以增加時間。若設定低於 live probe 所需窗口，命令會在故障操作前拒絕。
+等待結束時再次確認 outage 仍然成立。Runner 接著
 重新觀察 query-service 的 readiness、liveness、serving、Pod UID、Node 與 restart count，再將 Redis
 恢復一副本並重複檢查。Redis outage 是此 diagnostic 的可逆 mutation；cleanup 另有 30 秒上限，
 失敗會讓報告 fail closed。PASS report 保留各階段 placement/health snapshots、response digest、
-replica 轉換與 claim boundary，且明確標示 diagnostic-only，不能直接升級成 #151 的 full-local
+replica 轉換，且明確標示 diagnostic-only，不能直接升級成 #151 的 full-local
 aggregate PASS。舊 retained evidence 若與目前 source revision 不同，必須先建立新的 source-aligned
 run。
 

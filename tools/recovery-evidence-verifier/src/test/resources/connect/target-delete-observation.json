@@ -1,0 +1,9 @@
+{
+  "schema_version": 1,
+  "target_pod": "kafka-connect-a",
+  "target_pod_uid": "uid-a",
+  "outcome": "not-found",
+  "replacement_pod_uid": null,
+  "target_uid_absent": true,
+  "observed_at_utc": "2026-09-03T00:00:00Z"
+}

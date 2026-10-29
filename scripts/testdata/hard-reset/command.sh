@@ -5,6 +5,17 @@ set -eu
 # isolated repository with a PATH that cannot reach host Docker/kind commands.
 tool="${0##*/}"
 case "$tool:$*" in
+  'kubectl:'*'get namespaces '*)
+    [[ "$HARD_RESET_SCENARIO" != namespace-api-failed ]] || exit 42
+    printf '%s\n' disposable-fixture
+    exit 0
+    ;;
+  'kubectl:'*'get namespace disposable-fixture '*) printf '%s\n' disposable; exit 0 ;;
+  'kubectl:'*'delete namespace disposable-fixture '*)
+    printf '%s\n' 'disposable namespace deletion' >>"$HARD_RESET_CALLS"
+    exit 0
+    ;;
+  'kubectl:'*'get pv '*) exit 42 ;;
   'docker:info'|'docker:system df') exit 0 ;;
   'docker:compose version') exit 1 ;;
   'docker:ps -aq --filter label=io.x-k8s.kind.cluster='*)
@@ -12,7 +23,15 @@ case "$tool:$*" in
     ;;
   'docker:ps -aq --filter label=io.x-k8s.kind.cluster') ;;
   'docker:ps '*|'docker:volume ls -q'|'docker:network ls '*|'docker:image ls '*) exit 0 ;;
-  'docker:inspect simplematch-local-registry'|'docker:volume inspect '*) exit 1 ;;
+  'docker:inspect simplematch-local-registry')
+    [[ "$HARD_RESET_SCENARIO" == registry-refused ]]
+    exit $?
+    ;;
+  'docker:volume inspect '*) exit 1 ;;
+  'docker:rm --force simplematch-local-registry')
+    printf '%s\n' 'registry deletion refused' >>"$HARD_RESET_CALLS"
+    exit 42
+    ;;
   'docker:inspect '*)
     case "$*" in
       *io.x-k8s.kind.cluster*) printf '%s\n' simplematch-live ;;

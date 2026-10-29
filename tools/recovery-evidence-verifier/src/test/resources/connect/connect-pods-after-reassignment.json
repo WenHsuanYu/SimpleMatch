@@ -1,0 +1,60 @@
+{
+  "items": [
+    {
+      "metadata": {
+        "name": "kafka-connect-b",
+        "uid": "uid-b",
+        "labels": {
+          "app.kubernetes.io/name": "kafka-connect",
+          "app.kubernetes.io/component": "connector"
+        }
+      },
+      "spec": {
+        "nodeName": "simplematch-live-worker2",
+        "volumes": [
+          {
+            "name": "runtime-tmp",
+            "emptyDir": {}
+          }
+        ]
+      },
+      "status": {
+        "podIP": "10.244.0.22",
+        "conditions": [
+          {
+            "type": "Ready",
+            "status": "True"
+          }
+        ]
+      }
+    },
+    {
+      "metadata": {
+        "name": "kafka-connect-c",
+        "uid": "uid-c",
+        "labels": {
+          "app.kubernetes.io/name": "kafka-connect",
+          "app.kubernetes.io/component": "connector"
+        }
+      },
+      "spec": {
+        "nodeName": "simplematch-live-worker3",
+        "volumes": [
+          {
+            "name": "runtime-tmp",
+            "emptyDir": {}
+          }
+        ]
+      },
+      "status": {
+        "podIP": "10.244.0.33",
+        "conditions": [
+          {
+            "type": "Ready",
+            "status": "True"
+          }
+        ]
+      }
+    }
+  ]
+}

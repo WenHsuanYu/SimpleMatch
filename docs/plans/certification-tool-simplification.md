@@ -125,3 +125,37 @@ Use the existing runner and build caches. Retire the custom historical PASS cach
 
 Verification uses existing command, result, report, and diagnostic interfaces with isolated fixtures.
 No deployment certification claim follows from those fixture results.
+
+## Category E acceptance criteria
+
+The owner approved the deployment and fault-runner reduction after category C.
+Use the existing command interfaces, generated evidence, and exit status as the test interfaces.
+
+- Give deployment contract tests one explicit collection entry point. Execute each selected test once in its CI job.
+- Remove unused generic resilience report helpers and their dedicated tests. Preserve live diagnostic checks and sensitive-log rejection.
+- Retire the extra static resilience collection and its custom result envelope. Keep the rendered deployment validator and focused diagnostic commands.
+- Remove assertions about source spelling and redundant test composition. Preserve necessary behavior through existing command and evidence interfaces.
+- Preserve task reassignment, placement, durable-data recovery, resource ownership, restoration, and failure propagation checks.
+- Align CI and current contributor instructions in one batch. Preserve directory filters and unrelated worktree changes.
+- Add no shell entry point, test framework, or third-party dependency. Report implementation and test reductions separately.
+
+Contract fixtures establish local regression coverage. They do not establish a new deployed recovery or aggregate certification result.
+
+## Category E decision
+
+The [E necessity assessment](category-e-reassessment.md) records each retained and removed responsibility.
+The shared Java recovery verifier owns dependency, placement, and Connect data evaluation.
+Existing Bash commands retain ownership, collection, fault execution, and restoration.
+The shared CDC validator retains exact Kafka record verification.
+
+Keep direct behavior tests for immutable inputs, sensitive logs, authenticated HTTP requests, and command failure propagation.
+Keep one Phase 1 collection and invoke the Java suite once from that collection.
+Retire both archived source-check suites after preserving their distinct safety behavior through existing command tests.
+
+Remove exact claim prose, duplicate report summaries, unused readers, repeated prerequisites, and unreachable replacement fixtures.
+Remove the single-adapter Connect phase callback.
+Complete fixture cleanup and tunnel closure before publishing PASSED.
+
+This batch uses existing Jackson and JUnit libraries. It adds no library type, shell entry point, or fault framework.
+Dependency reports use schema version 2. Placement and Connect reports use schema version 3.
+Earlier reports remain historical evidence for their original source.

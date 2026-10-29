@@ -16,10 +16,27 @@ source "$script_dir/lib/local-kind.sh"
 source "$script_dir/lib/local-certification-provenance.sh"
 # shellcheck source=scripts/lib/local-certification-phase-graph.sh
 source "$script_dir/lib/local-certification-phase-graph.sh"
+# shellcheck source=scripts/lib/local-certification-evidence.sh
 source "$script_dir/lib/local-certification-evidence.sh"
+# shellcheck source=scripts/lib/local-certification-images.sh
 source "$script_dir/lib/local-certification-images.sh"
+# shellcheck source=scripts/lib/local-resilience.sh
+source "$script_dir/lib/local-resilience.sh"
+
 # shellcheck source=scripts/lib/local-java-placement-serving.sh
 source "$script_dir/lib/local-java-placement-serving.sh"
+
+JAVA_PLACEMENT_SERVING_PROFILE=java-placement-serving
+JAVA_PLACEMENT_SERVING_SCHEMA_VERSION=3
+JAVA_PLACEMENT_SERVING_CLUSTER=simplematch-live
+JAVA_PLACEMENT_SERVING_SERVICE=query-service
+JAVA_PLACEMENT_SERVING_CONTAINER=query-service
+JAVA_PLACEMENT_SERVING_PORT=8086
+JAVA_PLACEMENT_SERVING_REDIS_DEPLOYMENT=redis
+JAVA_PLACEMENT_SERVING_READINESS_PATH=/actuator/health/readiness
+JAVA_PLACEMENT_SERVING_LIVENESS_PATH=/actuator/health/liveness
+JAVA_PLACEMENT_SERVING_APPLICATION_PATH=/api/v1/freshness
+JAVA_PLACEMENT_SERVING_MIN_OBSERVE_SECONDS=60
 
 cluster_name="${SIMPLEMATCH_KIND_CLUSTER_NAME:-$JAVA_PLACEMENT_SERVING_CLUSTER}"
 context="${SIMPLEMATCH_KUBE_CONTEXT:-kind-$cluster_name}"
@@ -39,6 +56,7 @@ cleanup_deadline_epoch=0
 failure_reason=""
 current_stage=preflight
 evidence_initialized=false
+cluster_validated=false
 redis_scaled=false
 report_published=false
 port_forward_pid=""
@@ -49,6 +67,19 @@ target_pod_uid=""
 target_node=""
 target_restart_count=""
 outage_observed_seconds=0
+
+java_placement_serving_path_has_symlink_component() {
+  local candidate="$1"
+
+  while [[ "$candidate" != "/" && "$candidate" != "." && -n "$candidate" ]]; do
+    [[ -L "$candidate" ]] && return 0
+    [[ "$candidate" == */* ]] || break
+    candidate="${candidate%/*}"
+    [[ -n "$candidate" ]] || candidate=.
+  done
+  return 1
+}
+
 
 usage() {
   cat <<'EOF_USAGE'
@@ -67,8 +98,7 @@ It records the representative
 query-service placement and health endpoint responses. It then scales only Redis
 to zero for a bounded outage, proves query-service remains serving without a Pod
 restart, restores Redis, and writes diagnostic-only evidence. The default outage
-window is 60 seconds: it covers the 20-second liveness initial delay, three
-10-second failures, and one extra period for restart detection. It never applies
+window is at least 60 seconds and must cover the actual liveness probe window. It never applies
 manifests or claims a full-local aggregate certification PASS.
 The private fixture bundle must match the pre-deployed Query policy. Freshness
 uses only its operations-read identity; readiness/liveness remain anonymous.
@@ -180,7 +210,7 @@ cleanup() {
     [[ -n "$failure_reason" ]] ||
       failure_reason='Redis restoration failed during observer cleanup'
   fi
-  if [[ "$evidence_initialized" == true ]]; then
+  if [[ "$cluster_validated" == true ]]; then
     run_cleanup_bounded docker system df >"$evidence_dir/docker-system-df-after.txt" ||
       {
         cleanup_status=1
@@ -340,7 +370,6 @@ validate_namespace_and_provenance() {
   [[ -n "$retained_evidence_dir" ]] || die '--retained-evidence-dir is required'
   [[ -d "$retained_evidence_dir" ]] ||
     die "retained evidence directory does not exist: $retained_evidence_dir"
-  validate_retained_certification_pass
 
   namespace_json="$(kube get namespace "$namespace" -o json)" ||
     die "namespace does not exist: $namespace"
@@ -368,11 +397,12 @@ validate_namespace_and_provenance() {
     die 'retained production-like provenance or verifier identity is invalid'
 
   jq -n \
+    --arg cluster "$cluster_name" --arg context "$context" \
     --arg namespace "$namespace" \
     --arg run_id "$labels_run_id" \
     --arg manager "$labels_manager" \
     --arg source_revision "$source_revision" \
-    '{namespace:$namespace,namespace_run_id:$run_id,managed_by:$manager,
+    '{cluster:$cluster,context:$context,namespace:$namespace,namespace_run_id:$run_id,managed_by:$manager,
       source_revision:$source_revision}' >"$evidence_dir/provenance.json"
 }
 
@@ -445,15 +475,11 @@ capture_placement() {
     die "cannot capture query-service Pods during $stage"
   kube get nodes -o json >"$nodes_file" || die "cannot capture kind nodes during $stage"
   if [[ "$stage" == baseline ]]; then
-    java_placement_serving_probe_contract_is_valid "$deployment_file" ||
-      die 'query-service probe wiring is invalid in the deployed baseline'
     validate_deployed_query_image "$deployment_file"
   fi
-  java_placement_serving_runtime_snapshot \
-    "$deployment_file" "$pods_file" "$nodes_file" >"$summary_file" ||
-    die "query-service placement snapshot could not be normalized during $stage"
-  java_placement_serving_snapshot_file_is_ready "$summary_file" ||
-    die "query-service placement is not two Ready, spread Pods during $stage"
+  resilience_verify_evidence placement snapshot \
+    "$deployment_file" "$pods_file" "$nodes_file" "$observe_seconds" >"$summary_file" ||
+    die "query-service placement or probe window is invalid during $stage"
   print_placement_summary "$stage"
 }
 
@@ -599,8 +625,8 @@ capture_redis_snapshot() {
         }
     ' >"$snapshot_file" ||
     die "cannot normalize Redis snapshot during $stage"
-  java_placement_serving_redis_snapshot_is_expected \
-    "$snapshot_file" "$expected_replicas" ||
+  resilience_verify_evidence placement redis \
+    "$snapshot_file" "$expected_replicas" >/dev/null ||
     die "Redis snapshot is not the expected $expected_replicas-replica state during $stage"
   print_redis_summary "$stage"
 }
@@ -642,11 +668,14 @@ done
 (( observe_seconds >= JAVA_PLACEMENT_SERVING_MIN_OBSERVE_SECONDS )) ||
   die "--observe-seconds must be at least $JAVA_PLACEMENT_SERVING_MIN_OBSERVE_SECONDS"
 (( observe_seconds <= 120 )) || die '--observe-seconds must not exceed 120'
+prepare_evidence_dir
+validate_retained_certification_pass
+resilience_prepare_evidence_verifier "$repo_root" || die 'could not prepare recovery evidence verifier'
 deadline_epoch=$((SECONDS + timeout_seconds))
 
-prepare_evidence_dir
 validate_namespace_and_provenance
 validate_tools_and_cluster
+cluster_validated=true
 printf 'Java placement observer preflight passed: cluster=%s context=%s namespace=%s run-id=%s\n' \
   "$cluster_name" "$context" "$namespace" "$namespace_run_id"
 
@@ -698,7 +727,7 @@ assert_target_identity_unchanged restored
 capture_health restored
 
 current_stage='publish placement and serving evidence'
-java_placement_serving_write_pass_report "$evidence_dir" "$outage_observed_seconds" ||
+resilience_verify_evidence placement write "$evidence_dir" "$outage_observed_seconds" >/dev/null ||
   die 'published Java placement/serving report failed its evidence contract'
 report_published=true
 printf 'Java placement/serving observer passed: %s\n' "$evidence_dir/java-placement-serving.json"

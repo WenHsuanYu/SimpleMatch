@@ -190,6 +190,10 @@ Docker daemon, canonical kind context and worker topology, observed runtime iden
 namespace/evidence directory, and before/after resource inventory. Stop before fault injection if
 any preflight check fails.
 
+`test-phase1-deployment-contracts.sh` is the shared local and CI collection for deployment and fault-tool regression checks.
+Its individual tests do not invoke other test suites. A failed test stops the collection with a nonzero exit status.
+These fixtures do not establish a deployed recovery result.
+
 ~~~bash
 cmake --build --preset full-native-dev --parallel
 ctest --preset full-native-dev --output-on-failure

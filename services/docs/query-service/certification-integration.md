@@ -260,7 +260,7 @@ python3 scripts/end-to-end/query-service/tests/collector-http-contract.py
 bash scripts/end-to-end/query-service/tests/evidence-contract.sh
 bash scripts/end-to-end/query-service/tests/active-liveness-contract.sh
 ./gradlew -q :tools:query-evidence-verifier:check
-bash scripts/test-local-java-placement-serving.sh
+./gradlew :tools:recovery-evidence-verifier:test
 ./gradlew -q :services:query-service:test
 # Requires Docker, Python 3, and psql. The task also runs the PostgreSQL collector contract.
 ./gradlew -q :services:query-service:postgresJdbcTest

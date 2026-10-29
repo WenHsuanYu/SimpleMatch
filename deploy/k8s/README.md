@@ -67,14 +67,17 @@ run namespace and resources owned by that run.
 Static deployment contracts can be checked with:
 
 ```text
-bash scripts/run-local-resilience.sh --profile contract
 bash scripts/validate-local-resilience-contract.sh
 ```
 
-The contract profile is static and cannot produce runtime recovery evidence. Runtime recovery is
-verified by property-specific focused diagnostics. The former `full-local` workload-by-fault
-scenario matrix is retired; a focused report supports only the recovery property it actually
-observes and cannot be promoted to a broader resilience or production-HA claim.
+The validator checks rendered deployment policy. Its result cannot establish runtime recovery.
+Use `bash scripts/test-phase1-deployment-contracts.sh` for the shared local and CI regression collection.
+The project retired the extra static collection and its custom result envelope.
+
+Runtime recovery uses focused diagnostics for a specific property.
+The project retired the former `full-local` workload-by-fault scenario matrix.
+A focused report supports only the recovery property that it observes.
+It cannot establish broader resilience or production HA.
 
 ### Local host memory budget
 
@@ -175,7 +178,12 @@ cross-node storage HA or production certification.
 
 The dependency lifecycle seam is available without rerunning the full local runner:
 `scripts/run-local-resilience-dependencies.sh --component postgresql|redis|kafka --namespace NAME --namespace-run-id ID`
-consumes an existing lifecycle-labelled disposable namespace only after proving the exact run-id,
+
+The dependency diagnostic prepares its Java report verifier before it creates markers or injects a fault.
+Use the project's normal JDK and Gradle environment. Current reports use schema version 2.
+See the [verifier instructions](../../tools/recovery-evidence-verifier/README.md) for acceptance rules and report scope.
+
+The diagnostic consumes an existing lifecycle-labelled disposable namespace only after proving the exact run-id,
 captures exact Pod/Node/PVC/PV and data identity, injects one bounded worker-stop (or Pod restart),
 and writes a diagnostic-only report. Before fault injection it also requires a bounded stable window
 with Ready `etcd`, `kube-controller-manager`, and `kube-scheduler`, unchanged restart counts,

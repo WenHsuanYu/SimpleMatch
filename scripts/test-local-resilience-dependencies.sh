@@ -44,10 +44,107 @@ fi
 
 fake_bin="$fixture_dir/bin"
 mkdir -p "$fake_bin"
+namespace_fixture="$fixture_dir/namespace.json"
+nodes_fixture="$fixture_dir/nodes.json"
+jq -n '{items: [
+  {metadata:{name:"control-plane",labels:{"node-role.kubernetes.io/control-plane":""}}},
+  (range(3) | {metadata:{name:("worker-" + tostring),
+    labels:{"simplematch.io/node-pool":"local-resilience"}},
+    status:{conditions:[{type:"Ready",status:"True"}]}})
+]}' >"$nodes_fixture"
 cat >"$fake_bin/kubectl" <<'EOF_KUBECTL'
 #!/usr/bin/env bash
 set -euo pipefail
+if [[ -n "${RESILIENCE_TEST_EVENTS:-}" ]]; then
+  printf 'kubectl %s\n' "$*" >>"$RESILIENCE_TEST_EVENTS"
+fi
+argument_after() {
+  local previous='' argument
+  local key="$1"
+  shift
+  for argument in "$@"; do
+    [[ "$previous" != "$key" ]] || { printf '%s\n' "$argument"; return; }
+    previous="$argument"
+  done
+  return 1
+}
+emit_pods() {
+  local component="$1" name="${2:-}" stage=before
+  [[ ! -f "$RESILIENCE_TEST_EVENTS.fault" ]] || stage=after
+  jq --arg component "$component" --arg name "$name" --arg stage "$stage" '
+    def pod: {metadata:{name:.pod,uid:.pod_uid,
+      labels:{"apps.kubernetes.io/pod-index":((.node_id // 0)|tostring)}},
+      spec:{nodeName:.node,volumes:[{name:(if $component == "postgresql"
+        then "postgres-data" else "kafka-data" end),persistentVolumeClaim:{claimName:.pvc}}]},
+      status:{conditions:[{type:"Ready",status:"True"}]}};
+    (if $component == "postgresql" then [.target[$stage]] else .brokers_before end)
+    | map(pod) | if $name == "" then {items:.}
+      else .[] | select(.metadata.name == $name) end
+  ' "$RESILIENCE_TEST_REPORTS/$component.json"
+}
+storage_identity() {
+  local kind="$1" name="$2"
+  jq -n --arg kind "$kind" --arg name "$name" \
+    --slurpfile postgres "$RESILIENCE_TEST_REPORTS/postgresql.json" \
+    --slurpfile kafka "$RESILIENCE_TEST_REPORTS/kafka.json" '
+    ([$postgres[0].target.before] + $kafka[0].brokers_before)[]
+    | select(if $kind == "pvc" then .pvc == $name else .pv == $name end)
+    | if $kind == "pvc" then {status:{phase:"Bound"},spec:{volumeName:.pv}}
+      else {spec:{nodeAffinity:{required:{nodeSelectorTerms:[{matchExpressions:[{
+        key:"kubernetes.io/hostname",values:[.node]}]}]}}}} end
+  '
+}
 case "$*" in
+  'config get-contexts -o name') printf '%s\n' kind-simplematch-live ;;
+  *'get nodes -o json') cat "$RESILIENCE_TEST_NODES" ;;
+  *'get namespace '*'-o json') cat "$RESILIENCE_TEST_NAMESPACE" ;;
+  *'get pods -l app.kubernetes.io/name=postgres '*) emit_pods postgresql ;;
+  *'get pod postgres-0 -o json'*) emit_pods postgresql postgres-0 ;;
+  *'get pods -l app.kubernetes.io/name=kafka,'*) emit_pods kafka ;;
+  *'get pod kafka-'*) emit_pods kafka "$(argument_after pod "$@")" ;;
+  *'get pvc '*) storage_identity pvc "$(argument_after pvc "$@")" ;;
+  *'get pv '*) storage_identity pv "$(argument_after pv "$@")" ;;
+  *'get node '*)
+    node="$(argument_after node "$@")"
+    jq -n --arg name "$node" '{metadata:{name:$name,labels:{
+      "simplematch.io/node-pool":"local-resilience","simplematch.io/worker-slot":
+      (if $name|endswith("worker2") then "1" elif $name|endswith("worker3") then "2" else "0" end)}}}'
+    ;;
+  *'delete pod postgres-0 '*) touch "$RESILIENCE_TEST_EVENTS.fault" ;;
+  *'exec '*'/meta.properties'*)
+    pod="$(argument_after exec "$@")"
+    printf 'cluster.id=5L6g3nShT-eMCtK--X86sw\nnode.id=%s\n' "${pod#kafka-}"
+    ;;
+  *'exec '*'psql '*)
+    sql="${*: -1}"
+    if [[ "$sql" == *'DELETE FROM'* ]]; then
+      printf '%s\n' marker-cleanup-failed >>"$RESILIENCE_TEST_EVENTS"
+      exit 17
+    fi
+    [[ ! -f "$RESILIENCE_TEST_EVENTS.fault" ]] || \
+      printf '%s\n' marker-observed-after-recovery >>"$RESILIENCE_TEST_EVENTS"
+    printf '1\n'
+    ;;
+  *'kafka-topics.sh '*|*'kafka-configs.sh '*)
+    if [[ "$*" == *'--list'* ]]; then
+      [[ ! -f "$RESILIENCE_TEST_EVENTS.topic" ]] || cat "$RESILIENCE_TEST_EVENTS.topic"
+    elif [[ "$*" == *'--create'* ]]; then
+      argument_after --topic "$@" >"$RESILIENCE_TEST_EVENTS.topic"
+      exit 17
+    elif [[ "$*" == *'--describe'* ]]; then
+      topic="$(argument_after --topic "$@" || argument_after --entity-name "$@")"
+      partitions=15; policy=delete
+      case "$topic" in
+        simplematch-connect-configs) partitions=1; policy=compact ;;
+        simplematch-connect-offsets) partitions=25; policy=compact ;;
+        simplematch-connect-status) partitions=3; policy=compact ;;
+      esac
+      printf 'PartitionCount: %s ReplicationFactor: 3 unclean.leader.election.enable=false cleanup.policy=%s min.insync.replicas=2 retention.ms=2592000000\n' \
+        "$partitions" "$policy"
+    else
+      exit 19
+    fi
+    ;;
   *'get --raw=/readyz?verbose'*)
     printf '%s\n' 'readyz check passed'
     ;;
@@ -70,6 +167,19 @@ EOF_PODS
 esac
 EOF_KUBECTL
 chmod +x "$fake_bin/kubectl"
+cat >"$fake_bin/docker" <<'EOF_DOCKER'
+#!/usr/bin/env bash
+set -euo pipefail
+case "$*" in
+  info) ;;
+  inspect*'io.x-k8s.kind.cluster'*) printf '%s\n' simplematch-live ;;
+  inspect*'io.x-k8s.kind.role'*) printf '%s\n' worker ;;
+  *) printf 'unexpected Docker command: %s\n' "$*" >>"$RESILIENCE_TEST_EVENTS"; exit 19 ;;
+esac
+EOF_DOCKER
+printf '%s\n' '#!/usr/bin/env bash' \
+  '[[ "$*" == "get clusters" ]] && printf "%s\n" simplematch-live' >"$fake_bin/kind"
+chmod +x "$fake_bin/docker" "$fake_bin/kind"
 control_plane_evidence="$fixture_dir/control-plane"
 PATH="$fake_bin:$PATH" simplematch_kind_validate_control_plane_stability \
   fake-context 1 5 "$control_plane_evidence" ||
@@ -89,199 +199,7 @@ if resilience_dependency_redis_marker_state unexpected "$redis_marker_value" >/d
   fail 'unexpected Redis marker response was accepted'
 fi
 
-worker_stop='{"node":"simplematch-live-worker","container_id":"0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef","container_id_after":"0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef","node_not_ready_observed":true,"same_container_restarted":true}'
-
-postgres_report="$fixture_dir/postgresql.json"
-jq -n --argjson worker_stop "$worker_stop" '
-  {
-    schema_version: 1,
-    profile: "dependency-recovery",
-    component: "postgresql",
-    status: "PASSED",
-    cluster: "simplematch-live",
-    context: "kind-simplematch-live",
-    namespace: "simplematch-resilience-run-1",
-    run_id: "run-1",
-    fault_mode: "worker-stop",
-    deadline_seconds: 300,
-    target: {
-      before: {pod:"postgres-0",pod_uid:"postgres-before",node:"simplematch-live-worker",worker_slot:"0",pvc:"postgres-data-postgres-0",pv:"postgres-pv"},
-      after: {pod:"postgres-0",pod_uid:"postgres-after",node:"simplematch-live-worker",worker_slot:"0",pvc:"postgres-data-postgres-0",pv:"postgres-pv"}
-    },
-    worker_stop: $worker_stop,
-    recovery: {ready:true, durable_marker:"marker-1", durable_before:true, durable_after:true, data_preserved:true, owner_worker_replacement_absent:true},
-    failure_reason: null,
-    claim_boundary: ["local PostgreSQL same-worker PVC and durable-row recovery"]
-  }
-' >"$postgres_report"
-resilience_dependency_report_is_valid postgresql "$postgres_report" || fail 'valid PostgreSQL report was rejected'
-resilience_dependency_report_is_passed postgresql "$postgres_report" || fail 'valid PostgreSQL report did not pass'
-resilience_dependency_valid_component postgresql || fail 'PostgreSQL component was rejected'
-if resilience_dependency_valid_component unknown; then fail 'unknown component was accepted'; fi
-[[ "$(resilience_dependency_report_status "$postgres_report")" == PASSED ]] || fail 'report status was not exposed'
-[[ -z "$(resilience_dependency_report_failure_reason "$postgres_report")" ]] || fail 'successful report exposed a failure reason'
-jq '.worker_stop.container_id = "short-id"' "$postgres_report" >"$fixture_dir/postgresql-short-worker-id.json"
-if resilience_dependency_report_is_passed postgresql "$fixture_dir/postgresql-short-worker-id.json"; then
-  fail 'short worker container identity unexpectedly passed'
-fi
-jq '.worker_stop.node = "simplematch-live-worker2"' "$postgres_report" >"$fixture_dir/postgresql-unrelated-worker.json"
-if resilience_dependency_report_is_passed postgresql "$fixture_dir/postgresql-unrelated-worker.json"; then
-  fail 'unrelated worker evidence unexpectedly passed'
-fi
-jq '.claim_boundary = []' "$postgres_report" >"$fixture_dir/postgresql-empty-claim-boundary.json"
-if resilience_dependency_report_is_passed postgresql "$fixture_dir/postgresql-empty-claim-boundary.json"; then
-  fail 'PostgreSQL PASS with an empty claim boundary unexpectedly passed'
-fi
-jq '.fault_mode = "pod-restart" | .worker_stop = null | .target.after.pod_uid = .target.before.pod_uid' "$postgres_report" >"$fixture_dir/postgresql-unchanged-pod-restart.json"
-if resilience_dependency_report_is_passed postgresql "$fixture_dir/postgresql-unchanged-pod-restart.json"; then
-  fail 'unchanged Pod restart evidence unexpectedly passed'
-fi
-jq '.fault_mode = "pod-restart" | .worker_stop = null | .target.after.pod_uid = "postgres-after" | .claim_boundary = ["local PostgreSQL same-worker PVC and durable-row recovery"]' "$postgres_report" >"$fixture_dir/postgresql-wrong-pod-restart-claim.json"
-if resilience_dependency_report_is_passed postgresql "$fixture_dir/postgresql-wrong-pod-restart-claim.json"; then
-  fail 'PostgreSQL Pod-restart evidence with a worker-stop claim unexpectedly passed'
-fi
-jq '.failure_reason = "misleading pass reason"' "$postgres_report" >"$fixture_dir/postgresql-pass-reason.json"
-if resilience_dependency_report_is_passed postgresql "$fixture_dir/postgresql-pass-reason.json"; then
-  fail 'successful report with a failure reason unexpectedly passed'
-fi
-
-jq '.target.after.node = "simplematch-live-worker2"' "$postgres_report" >"$fixture_dir/postgresql-cross-node.json"
-if resilience_dependency_report_is_passed postgresql "$fixture_dir/postgresql-cross-node.json"; then
-  fail 'PostgreSQL cross-node recovery unexpectedly passed'
-fi
-jq '.recovery.durable_after = false | .recovery.data_preserved = false' "$postgres_report" >"$fixture_dir/postgresql-empty.json"
-if resilience_dependency_report_is_passed postgresql "$fixture_dir/postgresql-empty.json"; then
-  fail 'PostgreSQL empty replacement unexpectedly passed'
-fi
-jq 'del(.recovery.owner_worker_replacement_absent)' "$postgres_report" >"$fixture_dir/postgresql-missing-replacement-probe.json"
-if resilience_dependency_report_is_passed postgresql "$fixture_dir/postgresql-missing-replacement-probe.json"; then
-  fail 'PostgreSQL missing owner-worker replacement evidence unexpectedly passed'
-fi
-jq '.recovery.owner_worker_replacement_absent = false' "$postgres_report" >"$fixture_dir/postgresql-replacement-probe-failed.json"
-if resilience_dependency_report_is_passed postgresql "$fixture_dir/postgresql-replacement-probe-failed.json"; then
-  fail 'PostgreSQL failed owner-worker replacement evidence unexpectedly passed'
-fi
-
-redis_report="$fixture_dir/redis.json"
-jq -n --argjson worker_stop "$worker_stop" '
-  {
-    schema_version: 1,
-    profile: "dependency-recovery",
-    component: "redis",
-    status: "PASSED",
-    cluster: "simplematch-live",
-    context: "kind-simplematch-live",
-    namespace: "simplematch-resilience-run-1",
-    run_id: "run-1",
-    fault_mode: "worker-stop",
-    deadline_seconds: 300,
-    target: {
-      before: {pod:"redis-abc",pod_uid:"redis-before",node:"simplematch-live-worker2",worker_slot:"2",pvc:null},
-      after: {pod:"redis-def",pod_uid:"redis-after",node:"simplematch-live-worker3",worker_slot:"1",pvc:null}
-    },
-    worker_stop: ($worker_stop | .node = "simplematch-live-worker2"),
-    recovery: {ready:true, portable:true, rescheduled_after_worker_loss:true, disposable_state:true, marker_before:true, marker_after:false, marker_required_after:false},
-    failure_reason: null,
-    claim_boundary: ["local Redis readiness after portable worker recovery", "Redis state is disposable"]
-  }
-' >"$redis_report"
-resilience_dependency_report_is_valid redis "$redis_report" || fail 'valid Redis report was rejected'
-resilience_dependency_report_is_passed redis "$redis_report" || fail 'valid Redis report did not pass'
-jq '.recovery.rescheduled_after_worker_loss = false' "$redis_report" >"$fixture_dir/redis-no-reschedule.json"
-if resilience_dependency_report_is_passed redis "$fixture_dir/redis-no-reschedule.json"; then
-  fail 'Redis worker-loss evidence without rescheduling unexpectedly passed'
-fi
-jq '.claim_boundary = []' "$redis_report" >"$fixture_dir/redis-empty-claim-boundary.json"
-if resilience_dependency_report_is_passed redis "$fixture_dir/redis-empty-claim-boundary.json"; then
-  fail 'Redis PASS with an empty claim boundary unexpectedly passed'
-fi
-jq '.fault_mode = "pod-restart" | .recovery.rescheduled_after_worker_loss = false | .target.after.pod_uid = "redis-after" | .claim_boundary = ["local Redis readiness after portable worker recovery", "Redis state is disposable"]' "$redis_report" >"$fixture_dir/redis-wrong-pod-restart-claim.json"
-if resilience_dependency_report_is_passed redis "$fixture_dir/redis-wrong-pod-restart-claim.json"; then
-  fail 'Redis Pod-restart evidence with a worker-loss claim unexpectedly passed'
-fi
-jq '.target.after.node = .target.before.node' "$redis_report" >"$fixture_dir/redis-same-worker.json"
-if resilience_dependency_report_is_passed redis "$fixture_dir/redis-same-worker.json"; then
-  fail 'Redis worker-loss evidence on the original worker unexpectedly passed'
-fi
-jq '.target.after.pvc = "unexpected-pvc"' "$redis_report" >"$fixture_dir/redis-pvc.json"
-if resilience_dependency_report_is_valid redis "$fixture_dir/redis-pvc.json"; then
-  fail 'Redis PVC report unexpectedly passed validation'
-fi
-
-kafka_report="$fixture_dir/kafka.json"
-jq -n --argjson worker_stop "$worker_stop" '
-  {
-    schema_version: 1,
-    profile: "dependency-recovery",
-    component: "kafka",
-    status: "PASSED",
-    cluster: "simplematch-live",
-    context: "kind-simplematch-live",
-    namespace: "simplematch-resilience-run-1",
-    run_id: "run-1",
-    fault_mode: "worker-stop",
-    deadline_seconds: 300,
-    target: {
-      ordinal: 1,
-      before: {pod:"kafka-1",pod_uid:"kafka-before",node:"simplematch-live-worker",worker_slot:"0",pvc:"kafka-data-kafka-1",pv:"kafka-pv-1",cluster_id:"5L6g3nShT-eMCtK--X86sw",node_id:1},
-      after: {pod:"kafka-1",pod_uid:"kafka-after",node:"simplematch-live-worker",worker_slot:"0",pvc:"kafka-data-kafka-1",pv:"kafka-pv-1",cluster_id:"5L6g3nShT-eMCtK--X86sw",node_id:1}
-    },
-    brokers_before: [
-      {pod:"kafka-0",pod_uid:"k0-before",node:"simplematch-live-worker2",worker_slot:"1",pvc:"kafka-data-kafka-0",pv:"kafka-pv-0",cluster_id:"5L6g3nShT-eMCtK--X86sw",node_id:0},
-      {pod:"kafka-1",pod_uid:"k1-before",node:"simplematch-live-worker",worker_slot:"0",pvc:"kafka-data-kafka-1",pv:"kafka-pv-1",cluster_id:"5L6g3nShT-eMCtK--X86sw",node_id:1},
-      {pod:"kafka-2",pod_uid:"k2-before",node:"simplematch-live-worker3",worker_slot:"2",pvc:"kafka-data-kafka-2",pv:"kafka-pv-2",cluster_id:"5L6g3nShT-eMCtK--X86sw",node_id:2}
-    ],
-    brokers_after: [
-      {pod:"kafka-0",pod_uid:"k0-after",node:"simplematch-live-worker2",worker_slot:"1",pvc:"kafka-data-kafka-0",pv:"kafka-pv-0",cluster_id:"5L6g3nShT-eMCtK--X86sw",node_id:0},
-      {pod:"kafka-1",pod_uid:"k1-after",node:"simplematch-live-worker",worker_slot:"0",pvc:"kafka-data-kafka-1",pv:"kafka-pv-1",cluster_id:"5L6g3nShT-eMCtK--X86sw",node_id:1},
-      {pod:"kafka-2",pod_uid:"k2-after",node:"simplematch-live-worker3",worker_slot:"2",pvc:"kafka-data-kafka-2",pv:"kafka-pv-2",cluster_id:"5L6g3nShT-eMCtK--X86sw",node_id:2}
-    ],
-    worker_stop: $worker_stop,
-    quorum: {ready_before:true, available_during:2, isr_before:3, isr_after:3, restored:true},
-    marker: {topic:"simplematch-resilience-run-1",key:"marker-1",committed_before:true,preserved_after:true,record_count_before:1,record_count_after:1},
-    topic_contract: {verified:true, topics:["matching.commands", "matching.events", "account.lifecycle", "marketdata.events", "simplematch-connect-configs", "simplematch-connect-offsets", "simplematch-connect-status"], producer_acks:"all", producer_idempotence:true},
-    recovery: {ready:true, rejoined:true, formatted_again:false, catch_up_complete:true, catch_up_probe:"log-dirs-offset-lag-zero"},
-    failure_reason: null,
-    claim_boundary: ["local Kafka RF3 committed-marker recovery after one worker stop"]
-  }
-' >"$kafka_report"
-resilience_dependency_report_is_valid kafka "$kafka_report" || fail 'valid Kafka report was rejected'
-resilience_dependency_report_is_passed kafka "$kafka_report" || fail 'valid Kafka report did not pass'
-jq '.target.after.cluster_id = "wrong-cluster"' "$kafka_report" >"$fixture_dir/kafka-cluster-mismatch.json"
-if resilience_dependency_report_is_passed kafka "$fixture_dir/kafka-cluster-mismatch.json"; then
-  fail 'Kafka cluster identity mismatch unexpectedly passed'
-fi
-jq '.claim_boundary = []' "$kafka_report" >"$fixture_dir/kafka-empty-claim-boundary.json"
-if resilience_dependency_report_is_passed kafka "$fixture_dir/kafka-empty-claim-boundary.json"; then
-  fail 'Kafka PASS with an empty claim boundary unexpectedly passed'
-fi
-jq '.fault_mode = "pod-restart" | .worker_stop = null | .target.after.pod_uid = "kafka-after" | .claim_boundary = ["local Kafka RF3 committed-marker recovery after one worker stop"]' "$kafka_report" >"$fixture_dir/kafka-wrong-pod-restart-claim.json"
-if resilience_dependency_report_is_passed kafka "$fixture_dir/kafka-wrong-pod-restart-claim.json"; then
-  fail 'Kafka Pod-restart evidence with a worker-stop claim unexpectedly passed'
-fi
-jq 'del(.worker_stop)' "$kafka_report" >"$fixture_dir/kafka-missing-worker-evidence.json"
-if resilience_dependency_report_is_passed kafka "$fixture_dir/kafka-missing-worker-evidence.json"; then
-  fail 'Kafka missing worker evidence unexpectedly passed'
-fi
-jq '.recovery.catch_up_probe = "ready-only"' "$kafka_report" >"$fixture_dir/kafka-unobserved-catch-up.json"
-if resilience_dependency_report_is_passed kafka "$fixture_dir/kafka-unobserved-catch-up.json"; then
-  fail 'Kafka unobserved catch-up unexpectedly passed'
-fi
-jq '.brokers_after[2].worker_slot = "0"' "$kafka_report" >"$fixture_dir/kafka-duplicate-worker-slot.json"
-if resilience_dependency_report_is_passed kafka "$fixture_dir/kafka-duplicate-worker-slot.json"; then
-  fail 'Kafka duplicate worker slot unexpectedly passed'
-fi
-
-unsupported="$fixture_dir/unsupported.json"
-jq -n '{schema_version:1,profile:"dependency-recovery",component:"kafka",status:"UNSUPPORTED",cluster:"simplematch-live",context:"kind-simplematch-live",namespace:"simplematch-resilience-run-1",run_id:"run-1",fault_mode:"worker-stop",deadline_seconds:300,target:{},failure_reason:"cluster unavailable",claim_boundary:[]}' >"$unsupported"
-resilience_dependency_report_is_valid kafka "$unsupported" || fail 'unsupported report was rejected'
-if resilience_dependency_report_is_passed kafka "$unsupported"; then
-  fail 'unsupported report unexpectedly passed'
-fi
-
 runtime_script="$script_dir/run-local-resilience-dependencies.sh"
-readiness_lib="$script_dir/lib/local-kind.sh"
-bash -n "$runtime_script"
 missing_run_id_output="$fixture_dir/missing-run-id.txt"
 if "$runtime_script" --component postgresql --namespace simplematch-resilience-test \
     >"$missing_run_id_output" 2>&1; then
@@ -289,61 +207,50 @@ if "$runtime_script" --component postgresql --namespace simplematch-resilience-t
 fi
 grep -Fq 'namespace-run-id is required for fault injection' "$missing_run_id_output" ||
   fail 'fault injection did not require an exact namespace run-id'
-dry_run="$("$runtime_script" --component postgresql --namespace simplematch-resilience-test --dry-run)"
-grep -Fq 'capture exact identity' <<<"$dry_run" || fail 'runtime diagnostic dry-run is incomplete'
-grep -Fq 'simplematch.io/lifecycle' "$runtime_script" || fail 'runtime diagnostic lacks namespace ownership guard'
-grep -Fq 'PVC/PV' "$runtime_script" || fail 'runtime diagnostic lacks storage continuity guard'
-grep -Fq 'container identity' "$runtime_script" || fail 'runtime diagnostic lacks worker identity guard'
-grep -Fq 'config get-contexts -o name' "$runtime_script" ||
-  fail 'runtime diagnostic does not validate the selected Kubernetes context'
-grep -Fq 'wait_for_kafka_set_ready ""' "$runtime_script" || fail 'runtime diagnostic lacks a stable Kafka baseline wait'
-grep -Fq 'validate_control_plane_stability' "$runtime_script" || fail 'runtime diagnostic lacks control-plane stability preflight'
-grep -Fq 'restart_count' "$readiness_lib" || fail 'control-plane stability preflight lacks restart-count continuity'
-grep -Fq 'kube-controller-manager-' "$readiness_lib" || fail 'control-plane stability preflight lacks controller-manager coverage'
-grep -Fq 'kube-scheduler-' "$readiness_lib" || fail 'control-plane stability preflight lacks scheduler coverage'
-grep -Fq 'etcd-' "$readiness_lib" || fail 'control-plane stability preflight lacks etcd coverage'
-grep -Fq 'DELETE FROM risk_service.local_resilience_marker' "$runtime_script" ||
-  fail 'PostgreSQL marker cleanup is missing'
-grep -Fq 'cleanup_status=1' "$runtime_script" ||
-  fail 'cleanup failures are not propagated to the diagnostic result'
-if grep -Fq 'CREATE TABLE' "$runtime_script"; then
-  fail 'dependency diagnostic must not perform runtime PostgreSQL DDL'
-fi
-if grep -Fq 'risk_service.cdc_delivery_lag' "$runtime_script"; then
-  fail 'dependency diagnostic must not write observer-owned CDC lag data'
-fi
-grep -Fq 'risk_service.local_resilience_marker' "$runtime_script" ||
-  fail 'PostgreSQL marker must use the dedicated Flyway-owned table'
-grep -Fq 'owner_worker_replacement_absent' "$runtime_script" ||
-  fail 'PostgreSQL diagnostic must record owner-worker replacement absence'
-grep -Fq 'timeout --foreground' "$runtime_script" ||
-  fail 'dependency diagnostic must bound external commands'
-grep -Fq 'run_bounded' "$runtime_script" ||
-  fail 'dependency diagnostic lacks its bounded command seam'
-grep -Fq 'kafka_marker_topic_absent' "$runtime_script" ||
-  fail 'dependency diagnostic must verify Kafka marker deletion'
-grep -Fq 'could not read Redis marker after recovery' "$runtime_script" ||
-  fail 'Redis marker read failures must fail closed'
-grep -Fq 'Redis marker returned an unexpected value' "$runtime_script" ||
-  fail 'Redis marker output must be validated after recovery'
-grep -Fq 'wait_for_redis_reschedule' "$runtime_script" ||
-  fail 'Redis worker-loss diagnostic must observe portable rescheduling'
-grep -Fq 'rescheduled_after_worker_loss' "$runtime_script" ||
-  fail 'Redis report must record worker-loss rescheduling evidence'
-grep -Fq 'could not list Kafka topics before marker creation' "$runtime_script" ||
-  fail 'Kafka marker creation must prove topic-list availability'
-if grep -Fq -- '--create --if-not-exists' "$runtime_script"; then
-  fail 'Kafka marker creation must reject a topic-created race instead of adopting it'
-fi
-grep -Fq 'could not resolve Kafka marker creation outcome' "$runtime_script" ||
-  fail 'Kafka marker creation must resolve uncertain command side effects'
-grep -Fq 'Kafka marker creation outcome is ambiguous' "$runtime_script" ||
-  fail 'Kafka marker creation must fail closed when ownership is uncertain'
-grep -Fq 'kafka-log-dirs.sh' "$runtime_script" || fail 'Kafka diagnostic lacks a follower catch-up probe'
-grep -Fq -- '--producer-property acks=all' "$runtime_script" || fail 'Kafka marker producer lacks a durable acknowledgement contract'
-grep -Fq 'matching.commands' "$runtime_script" || fail 'Kafka diagnostic lacks topic contract verification'
-if grep -Fq 'kubectl delete namespace' "$runtime_script"; then
-  fail 'dependency diagnostic must not delete the caller namespace'
+
+expect_diagnostic_rejection() {
+  local label="$1" expected_message="$2" component="${3:-postgresql}"
+  local output="$fixture_dir/$label.log"
+  local evidence="$fixture_dir/$label"
+
+  if PATH="$fake_bin:$PATH" RESILIENCE_TEST_NODES="$nodes_fixture" \
+      RESILIENCE_TEST_NAMESPACE="$namespace_fixture" \
+      RESILIENCE_TEST_EVENTS="$fixture_dir/$label.events" \
+      RESILIENCE_TEST_REPORTS="$script_dir/../tools/recovery-evidence-verifier/src/test/resources" \
+      "$runtime_script" --component "$component" --namespace simplematch-resilience-test \
+      --namespace-run-id expected-run --context kind-simplematch-live \
+      --fault-mode pod-restart --deadline-seconds 30 --evidence-dir "$evidence" >"$output" 2>&1; then
+    fail "$label was accepted"
+  fi
+  grep -Fq "$expected_message" "$output" || fail "$label did not reach the expected rejection"
+  [[ "$(jq -r .status "$evidence/$component.json")" == FAILED ]] ||
+    fail "$label did not publish a failure report"
+}
+
+printf '%s\n' '{"metadata":{"labels":{}}}' >"$namespace_fixture"
+expect_diagnostic_rejection unowned-namespace 'namespace is not an owned disposable'
+jq -n '{metadata:{labels:{"simplematch.io/lifecycle":"disposable",
+  "simplematch.io/managed-by":"local-resilience","simplematch.io/run-id":"another-run"}}}' \
+  >"$namespace_fixture"
+expect_diagnostic_rejection wrong-run 'namespace belongs to run another-run, not expected-run'
+
+jq -n '{metadata:{labels:{"simplematch.io/lifecycle":"disposable",
+  "simplematch.io/managed-by":"local-resilience","simplematch.io/run-id":"expected-run"}}}' \
+  >"$namespace_fixture"
+expect_diagnostic_rejection cleanup-failure 'could not clean up PostgreSQL durable marker'
+grep -Fq marker-observed-after-recovery "$fixture_dir/cleanup-failure.events" ||
+  fail 'cleanup fixture did not reach recovery observation'
+grep -Fq marker-cleanup-failed "$fixture_dir/cleanup-failure.events" ||
+  fail 'cleanup fixture did not reach cleanup failure'
+observed_line="$(awk '/marker-observed-after-recovery/ {print NR; exit}' "$fixture_dir/cleanup-failure.events")"
+cleanup_line="$(awk '/marker-cleanup-failed/ {print NR; exit}' "$fixture_dir/cleanup-failure.events")"
+[[ "$observed_line" -lt "$cleanup_line" ]] || fail 'cleanup did not follow recovery observation'
+expect_diagnostic_rejection uncertain-topic 'Kafka marker creation outcome is ambiguous' kafka
+[[ "$(grep -c -- '--create' "$fixture_dir/uncertain-topic.events")" == 1 ]] ||
+  fail 'uncertain marker creation was retried'
+if grep -Eq -- '--delete|kafka-console-producer| delete |Docker command: (stop|start)' \
+    "$fixture_dir/uncertain-topic.events"; then
+  fail 'uncertain topic ownership allowed a mutation or cleanup'
 fi
 
 printf '%s\n' 'Local dependency resilience report contracts passed.'

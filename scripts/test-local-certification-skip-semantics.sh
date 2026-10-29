@@ -143,3 +143,24 @@ grep -Eq -- '--project-name simplematch-local-production-like-[0-9]{8}-[0-9]{6}-
   "$fixture_root/dry-run.log" || fail 'Default Compose project is not run-owned.'
 
 printf '%s\n' 'Local certification fresh execution and partial-profile contracts are valid.'
+
+# Observe dependency order through the actual dry-run entry point.
+certification_dry_run="$("$script_dir/run-local-production-like-certification.sh" --dry-run --skip-build --skip-compose)"
+# Check the actual dry-run adapter sequence instead of repeating graph declarations.
+phase_order="$(awk '$1 == "PHASE" {print $2}' <<<"$certification_dry_run")"
+phase_index() {
+  awk -v target="$1" '$0 == target { print NR; exit }' <<<"$phase_order"
+}
+assert_phase_precedes() {
+  local first second
+  first="$(phase_index "$1")"
+  second="$(phase_index "$2")"
+  [[ -n "$first" && -n "$second" && "$first" -lt "$second" ]] || {
+    printf 'Certification phase order is invalid: %s must precede %s.\n' "$1" "$2" >&2
+    exit 1
+  }
+}
+assert_phase_precedes kubernetes-topic-provisioning kubernetes-connect-apply
+assert_phase_precedes kubernetes-connect-apply kubernetes-open-barriers
+assert_phase_precedes kubernetes-open-barriers kubernetes-workload-apply
+assert_phase_precedes kubernetes-workload-apply kubernetes-workloads

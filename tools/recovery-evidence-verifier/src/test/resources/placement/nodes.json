@@ -1,0 +1,28 @@
+{
+  "items": [
+    {
+      "metadata": {
+        "name": "simplematch-live-worker",
+        "labels": {
+          "simplematch.io/node-pool": "local-resilience"
+        }
+      }
+    },
+    {
+      "metadata": {
+        "name": "simplematch-live-worker2",
+        "labels": {
+          "simplematch.io/node-pool": "local-resilience"
+        }
+      }
+    },
+    {
+      "metadata": {
+        "name": "simplematch-live-control-plane",
+        "labels": {
+          "simplematch.io/node-pool": "control-plane"
+        }
+      }
+    }
+  ]
+}

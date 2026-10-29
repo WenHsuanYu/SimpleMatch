@@ -1,0 +1,11 @@
+{
+  "task_id": 0,
+  "worker_id": "10.244.0.33:8083",
+  "worker_host": "10.244.0.33",
+  "pod": "kafka-connect-c",
+  "pod_uid": "uid-c",
+  "node": "simplematch-live-worker3",
+  "pod_ip": "10.244.0.33",
+  "ready": true,
+  "worker_slot": "2"
+}

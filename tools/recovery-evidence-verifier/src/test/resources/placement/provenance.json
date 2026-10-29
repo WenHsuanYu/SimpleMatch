@@ -1,0 +1,8 @@
+{
+  "namespace": "simplematch-java-run",
+  "namespace_run_id": "run-1",
+  "managed_by": "local-resilience",
+  "source_revision": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+  "cluster": "simplematch-live",
+  "context": "kind-simplematch-live"
+}

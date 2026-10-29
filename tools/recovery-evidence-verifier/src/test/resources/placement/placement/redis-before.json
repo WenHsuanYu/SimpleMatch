@@ -1,0 +1,18 @@
+{
+  "stage": "before",
+  "deployment_name": "redis",
+  "desired_replicas": 1,
+  "ready_replicas": 1,
+  "ready_pod_count": 1,
+  "pods": [
+    {
+      "name": "redis-0",
+      "uid": "redis-pod",
+      "node": "simplematch-live-worker",
+      "phase": "Running",
+      "ready": true,
+      "restart_count": 0,
+      "image_id": "docker-pullable://redis@sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+    }
+  ]
+}

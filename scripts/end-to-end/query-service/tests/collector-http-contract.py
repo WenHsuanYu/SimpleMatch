@@ -19,6 +19,12 @@ PROVISIONER = REPOSITORY / "scripts/end-to-end/query-service/provision-security-
 
 
 class CollectorHttpContract(unittest.TestCase):
+    @classmethod
+    def setUpClass(cls):
+        subprocess.run([str(REPOSITORY / "gradlew"), "-q", "-p", str(REPOSITORY),
+                        ":tools:recovery-evidence-verifier:installDist"],
+                       check=True, capture_output=True, timeout=120)
+
     def setUp(self):
         self.temporary = tempfile.TemporaryDirectory(prefix="query-collector-http-")
         self.addCleanup(self.temporary.cleanup)
@@ -101,6 +107,9 @@ class CollectorHttpContract(unittest.TestCase):
         environment = os.environ | {
             "MODULE": str(MODULE), "evidence_dir": str(self.evidence),
             "PLACEMENT": str(PLACEMENT),
+            "RESILIENCE_EVIDENCE_VERIFIER_EXECUTABLE": str(REPOSITORY / (
+                "tools/recovery-evidence-verifier/build/install/"
+                "recovery-evidence-verifier/bin/recovery-evidence-verifier")),
             "query_fixture_directory": str(self.bundle),
             "query_port": str(self.server.server_port), "account_id": self.account,
             "order_id": self.order, "trading_day": "2026-08-11", "venue_mic": "XTAI",

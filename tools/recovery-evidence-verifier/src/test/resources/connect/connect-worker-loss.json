@@ -1,0 +1,15 @@
+{
+  "cluster": "simplematch-live",
+  "context": "kind-simplematch-live",
+  "namespace": "simplematch-cert-run",
+  "namespace_run_id": "run-1",
+  "run_id": "connect-worker-loss-run-1",
+  "deadline_seconds": 300,
+  "schema_version": 3,
+  "profile": "connect-worker-loss",
+  "status": "PASSED",
+  "source_revision": "0000000000000000000000000000000000000000",
+  "fault_mode": "pod-delete",
+  "recovery_deadline_started_at_unix_ms": 1700000001000,
+  "failure_reason": null
+}

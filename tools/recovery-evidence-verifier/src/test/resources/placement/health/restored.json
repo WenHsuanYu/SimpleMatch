@@ -1,0 +1,26 @@
+{
+  "readiness": {
+    "path": "/actuator/health/readiness",
+    "http_status": 200,
+    "authentication": "anonymous-health",
+    "body_status": "UP",
+    "body_file": "health/restored-readiness.json",
+    "body_sha256": "sha256:c64cc4bcf4ba8cbc10e68932cb03bc790252d326f2bd08afb6247a2c615a0e7b"
+  },
+  "liveness": {
+    "path": "/actuator/health/liveness",
+    "http_status": 200,
+    "authentication": "anonymous-health",
+    "body_status": "UP",
+    "body_file": "health/restored-liveness.json",
+    "body_sha256": "sha256:c64cc4bcf4ba8cbc10e68932cb03bc790252d326f2bd08afb6247a2c615a0e7b"
+  },
+  "serving": {
+    "path": "/api/v1/freshness",
+    "http_status": 200,
+    "authentication": "query-operations-read",
+    "body_status": "SERVING",
+    "body_file": "health/restored-serving.json",
+    "body_sha256": "sha256:fd50f4e64be10fec2236e8f3e5b9e93e9073b8cf01aca01e9ff00b01b008efd8"
+  }
+}

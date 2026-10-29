@@ -3,7 +3,11 @@ name: Local Resource Lifecycle CI
 on:
   pull_request:
     paths:
+      - '*'
+      - 'gradle/**'
+      - 'build-logic/**'
       - '.github/workflows/**'
+      - '.github/actions/setup-java-gradle/**'
       - 'deploy/kind/**'
       - 'deploy/k8s/**'
       - 'deploy/docker/**'
@@ -13,6 +17,8 @@ on:
       - 'scripts/*'
       - 'scripts/lib/**'
       - 'scripts/testdata/hard-reset/**'
+      - 'scripts/testdata/focused-diagnostic/**'
+      - 'scripts/testdata/recovery-runners/**'
       - 'scripts/archive/**'
       - 'services/quickfix-gateway/*'
       - 'services/quickfix-gateway/src/test/java/com/simplematch/quickfixgateway/fix/**'
@@ -20,6 +26,7 @@ on:
       - 'docs/operations/**'
       - 'docs/agents/**'
       - 'tools/query-evidence-verifier/src/test/resources/**'
+      - 'tools/recovery-evidence-verifier/**'
   workflow_dispatch:
 
 concurrency:
@@ -39,18 +46,17 @@ jobs:
         with:
           fetch-depth: 1
           persist-credentials: false
+      - name: Set up Java and Gradle
+        uses: ./.github/actions/setup-java-gradle
       - name: Validate shell lifecycle contracts
         run: |
-          bash scripts/archive/test-local-lifecycle-safety.sh
           ruby scripts/test-hard-reset-safety.rb
-          bash scripts/archive/test-local-registry-resource-lifecycle.sh
           bash scripts/end-to-end/critical-consumers/tests/matching-status-contract.sh
           bash scripts/end-to-end/critical-consumers/tests/system-observation-contract.sh
           bash scripts/end-to-end/critical-consumers/tests/deployment-contract.sh
           bash scripts/end-to-end/critical-consumers/tests/verdict-contract.sh
           bash scripts/end-to-end/critical-consumers/tests/admission-contract.sh
           bash scripts/end-to-end/critical-consumers/tests/gateway-close-contract.sh
-          bash scripts/end-to-end/critical-consumers/tests/operator-credential-contract.sh
           bash scripts/end-to-end/critical-consumers/tests/verifier-helper-contract.sh
           bash scripts/end-to-end/critical-consumers/tests/verifier-image-identity-test.sh
           ruby scripts/end-to-end/critical-consumers/tests/resting-buy-verification-test.rb
@@ -63,12 +69,7 @@ jobs:
           bash scripts/end-to-end/critical-consumers/tests/business-recovery-failure-test.sh
           bash scripts/end-to-end/market-data/tests/verdict-contract.sh
           python3 scripts/end-to-end/query-service/tests/security-fixtures-contract.py
-          python3 scripts/end-to-end/query-service/tests/certification-fixtures-contract.py
-          python3 scripts/end-to-end/query-service/tests/certification-inputs-contract.py
           python3 scripts/end-to-end/query-service/tests/collector-http-contract.py
-          python3 scripts/end-to-end/query-service/tests/read-matrix-contract.py
-          python3 scripts/end-to-end/query-service/tests/operator-boundary-contract.py
-          bash scripts/test-local-java-placement-serving.sh
           python3 scripts/end-to-end/query-service/tests/policy-authority-contract.py
           python3 scripts/end-to-end/query-service/tests/lifecycle-deadline-contract.py
           python3 scripts/end-to-end/query-service/tests/lifecycle-drain-contract.py
@@ -85,17 +86,13 @@ jobs:
           bash scripts/end-to-end/query-service/tests/isolation-contract.sh
           bash scripts/test-local-image-transport.sh
           bash scripts/test-local-image-rendering.sh
-          bash scripts/test-local-certification-job-supervision.sh
           bash scripts/test-local-certification-trading-day.sh
           bash scripts/test-local-kubernetes-dependencies.sh
           bash scripts/test-local-certification-workloads.sh
           bash scripts/test-local-certification-skip-semantics.sh
           bash scripts/test-local-certification-provenance.sh
-          bash scripts/test-local-production-like.sh
-          bash scripts/test-connect-rest-tunnel.sh
-          bash scripts/test-local-connect-worker-loss.sh
+          bash scripts/test-phase1-deployment-contracts.sh
           bash scripts/test-local-resource-report.sh
-          bash scripts/test-local-resilience.sh
           bash scripts/test-simplematch-kind-manager.sh
 
   kind-integration-smoke:

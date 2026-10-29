@@ -1,0 +1,51 @@
+{
+  "metadata": {
+    "name": "query-service"
+  },
+  "spec": {
+    "replicas": 2,
+    "template": {
+      "spec": {
+        "nodeSelector": {
+          "simplematch.io/node-pool": "local-resilience"
+        },
+        "containers": [
+          {
+            "name": "query-service",
+            "image": "localhost:5001/simplematch/query-service@sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+            "ports": [
+              {
+                "name": "http",
+                "containerPort": 8086
+              }
+            ],
+            "startupProbe": {
+              "httpGet": {
+                "path": "/actuator/health/readiness",
+                "port": "http"
+              }
+            },
+            "readinessProbe": {
+              "httpGet": {
+                "path": "/actuator/health/readiness",
+                "port": "http"
+              }
+            },
+            "livenessProbe": {
+              "httpGet": {
+                "path": "/actuator/health/liveness",
+                "port": "http"
+              },
+              "initialDelaySeconds": 20,
+              "periodSeconds": 10,
+              "failureThreshold": 3
+            }
+          }
+        ]
+      }
+    }
+  },
+  "status": {
+    "readyReplicas": 2
+  }
+}

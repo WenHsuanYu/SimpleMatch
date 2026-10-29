@@ -1,0 +1,8 @@
+{
+  "metadata": {
+    "name": "account-service-outbox-connector"
+  },
+  "data": {
+    "connector.json": "{\"name\":\"account-service-outbox\",\"config\":{\"table.include.list\":\"account_service.outbox\",\"transforms.outbox.table.fields.additional.placement\":\"headers_json:header:headers_json,payload_type:header:eventType\"}}"
+  }
+}

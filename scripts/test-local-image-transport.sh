@@ -175,4 +175,58 @@ SIMPLEMATCH_LOCAL_IMAGE_TRANSPORT=kind-load \
     --matching-only --dry-run >"$dry_run_file"
 grep -Fq 'kind load docker-image --name simplematch-live simplematch-matching:local' "$dry_run_file"
 
+boot_override_dry_run="$(SIMPLEMATCH_BOOT_RUN_IMAGE=local/paketo-run:amd64 \
+  "$script_dir/build-local-images.sh" --dry-run --service account-service)"
+grep -Fq -- '--runImage=local/paketo-run:amd64' <<<"$boot_override_dry_run"
+grep -Fq -- '--pullPolicy=IF_NOT_PRESENT' <<<"$boot_override_dry_run"
+
 printf '%s\n' 'Local image inventory, registry publication, and staged dual-transport contract passed.'
+
+# Validate the public publisher boundary before any external command.
+if SIMPLEMATCH_LOCAL_REGISTRY_HOST=registry.example.com \
+    bash "$script_dir/publish-local-images.sh" --service matching --dry-run >/dev/null 2>&1; then
+  printf 'Publisher accepted a remote registry host.\n' >&2; exit 1
+fi
+for port in 0 65536 not-a-port; do
+  if SIMPLEMATCH_LOCAL_REGISTRY_PORT="$port" \
+      bash "$script_dir/publish-local-images.sh" --service matching --dry-run >/dev/null 2>&1; then
+    printf 'Publisher accepted an invalid port: %s\n' "$port" >&2; exit 1
+  fi
+done
+
+# A failed push or missing digest must preserve the previous valid lock.
+publisher_fixture="$(mktemp -d)"
+trap 'rm -rf -- "$publisher_fixture"; rm -f "$lock_file" "$duplicate_file" "$malformed_file" "$dry_run_file" "$inventory_expected" "$inventory_actual"' EXIT
+mkdir "$publisher_fixture/bin"
+cat >"$publisher_fixture/bin/docker" <<'EOF_DOCKER'
+#!/usr/bin/env bash
+set -euo pipefail
+case "$*" in
+  *'{{.State.Running}}'*) printf '%s\n' true ;;
+  *'{{.Config.Image}}'*) printf '%s\n' registry:3 ;;
+  *'{{.HostConfig.RestartPolicy.Name}}'*) printf '%s\n' unless-stopped ;;
+  *'.Mounts'*) printf '%s\n' simplematch-local-registry-data ;;
+  'port simplematch-local-registry 5000/tcp') printf '%s\n' "127.0.0.1:${SIMPLEMATCH_LOCAL_REGISTRY_PORT:-5001}" ;;
+  'inspect simplematch-local-registry'|'volume inspect '*|'image inspect '*|'tag '*|'image rm '*) ;;
+  'push '*)
+    printf '%s\n' push >>"${PUBLISHER_CALLS:?}"
+    [[ "${PUBLISHER_FAILURE:?}" != push ]] || exit 42
+    printf '%s\n' 'push completed without digest'
+    ;;
+  *) printf 'Unexpected Docker call: %s\n' "$*" >&2; exit 99 ;;
+esac
+EOF_DOCKER
+chmod 755 "$publisher_fixture/bin/docker"
+for failure in push digest; do
+  if PATH="$publisher_fixture/bin:$PATH" PUBLISHER_FAILURE="$failure" \
+      PUBLISHER_CALLS="$publisher_fixture/calls" \
+      bash "$script_dir/publish-local-images.sh" --service matching --output "$lock_file" \
+      >"$publisher_fixture/output" 2>&1; then
+    printf 'Publisher accepted %s failure.\n' "$failure" >&2; exit 1
+  fi
+  [[ -f "$publisher_fixture/calls" ]] || { cat "$publisher_fixture/output" >&2; exit 1; }
+  [[ "$(simplematch_local_image_lock_digest "$lock_file" matching)" == "$digest" ]]
+  [[ "$(wc -l <"$lock_file")" == 1 ]]
+  rm "$publisher_fixture/calls"
+done
+printf '%s\n' 'Publisher failures preserve the previous image lock.'

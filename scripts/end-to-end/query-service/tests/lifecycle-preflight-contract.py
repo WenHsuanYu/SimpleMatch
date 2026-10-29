@@ -5,6 +5,7 @@ import importlib.util
 import json
 import subprocess
 import sys
+from types import SimpleNamespace
 import unittest
 from pathlib import Path
 from unittest.mock import patch
@@ -18,6 +19,12 @@ SPEC.loader.exec_module(LIFECYCLE)
 
 
 class LifecyclePreflightContract(unittest.TestCase):
+    def setUp(self):
+        # Process-boundary fixtures must not depend on the host's free disk space.
+        disk = patch("shutil.disk_usage", return_value=SimpleNamespace(free=80 * 1024**3))
+        disk.start()
+        self.addCleanup(disk.stop)
+
     def external(self, arguments, **options):
         self.assertGreater(options.get("timeout", 0), 0, str(arguments))
         self.assertLessEqual(options["timeout"], 30)
@@ -74,6 +81,14 @@ class LifecyclePreflightContract(unittest.TestCase):
             with self.assertRaises(subprocess.CalledProcessError):
                 LIFECYCLE.preflight("kind-lab", "lab")
         self.assertFalse(any("apply" in c or "create" in c for c in calls))
+
+    def test_low_disk_space_blocks_deployment(self):
+        with patch("subprocess.check_output", side_effect=self.external), \
+                patch("shutil.disk_usage", return_value=SimpleNamespace(free=39 * 1024**3)), \
+                patch("subprocess.run") as run:
+            with self.assertRaisesRegex(RuntimeError, "40 GiB"):
+                LIFECYCLE.preflight("kind-lab", "lab")
+        run.assert_not_called()
 
     def test_raw_probe_survivors_and_duplicate_worker_slots_block_a_new_run(self):
         for failure in ("tasks", "containers", "snapshots", "slots"):

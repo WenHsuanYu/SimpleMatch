@@ -1,0 +1,14 @@
+{
+  "kind": "Job",
+  "metadata": {
+    "name": "risk-service-flyway"
+  },
+  "status": {
+    "conditions": [
+      {
+        "type": "Complete",
+        "status": "True"
+      }
+    ]
+  }
+}

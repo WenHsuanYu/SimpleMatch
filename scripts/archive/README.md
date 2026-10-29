@@ -12,10 +12,6 @@ Archived here:
 
 - `check-phase-5-gate.sh`: completed Phase 5 fixture and source-shape gate.
 - `check-phase-6-7-gate.sh`: completed Phase 6/7 checklist and artifact gate.
-- `test-local-lifecycle-safety.sh`: fail-closed observation and destructive
-  ownership meta-contracts.
-- `test-local-registry-resource-lifecycle.sh`: source-level contract for the
-  accepted seven-step registry/resource-lifecycle design.
 
 The functional transport, rendering, resource-report, live kind, resilience,
 and cluster-manager tests remain under `scripts/` because they validate
@@ -27,3 +23,6 @@ is still an explicitly supported compatibility fallback.
 continuously enforces that cross-cutting transaction policy. The Account v2
 cutover guard also remains active because it prevents production callers from
 regressing to the retained v1 RPC.
+
+Category E retired the lifecycle and registry source-check suites.
+Existing command tests retain API-failure, manager-refusal, and publisher-lock safety checks.

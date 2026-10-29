@@ -1,0 +1,8 @@
+{
+  "metadata": {
+    "name": "risk-service-outbox-connector"
+  },
+  "data": {
+    "connector.json": "{\"name\":\"risk-service-outbox\",\"config\":{\"table.include.list\":\"risk_service.outbox\",\"transforms.outbox.table.fields.additional.placement\":\"headers_json:header:headers_json,payload_type:header:eventType\"}}"
+  }
+}

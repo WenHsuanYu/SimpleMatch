@@ -1,0 +1,1 @@
+Topic: simplematch-connect-status TopicId: fixture-status PartitionCount: 3 ReplicationFactor: 3 Configs: cleanup.policy=compact,min.insync.replicas=2

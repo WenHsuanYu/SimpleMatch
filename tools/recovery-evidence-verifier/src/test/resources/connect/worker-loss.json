@@ -1,0 +1,16 @@
+{
+  "fault": "pod-delete",
+  "target_pod": "kafka-connect-a",
+  "target_pod_uid": "uid-a",
+  "delete_selector": "simplematch.io/worker-loss-run=connect-worker-loss-run-1",
+  "delete_output": "pod/kafka-connect-a deletion requested",
+  "delete_requested": true,
+  "uid_precondition_test": true,
+  "pre_delete_recheck": true,
+  "selector_target_count": 1,
+  "delete_output_contains_target": true,
+  "target_uid_absent": true,
+  "recovery_deadline_started_at_unix_ms": 1700000001000,
+  "requested_at_unix_ms": 1700000001001,
+  "requested_at": "2026-09-03T00:00:00Z"
+}

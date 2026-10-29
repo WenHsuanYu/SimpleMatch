@@ -1,0 +1,31 @@
+{
+  "schema_version": 2,
+  "status": "PASS",
+  "topic": "account.lifecycle",
+  "event_id": "00000000-0000-7000-8000-000000000001",
+  "partition": 1,
+  "offset": 2,
+  "expected_message_key": "account-1",
+  "expected_timestamp_unix_ms": 1700000001003,
+  "expected_headers_json_sha256": "ac3a66e834e7f2be7d9151385c994248747632d4a1f298f49b3c1b4b0841c233",
+  "expected_event_type": "simplematch.account.v2.AccountLifecycleEvent",
+  "expected_payload_sha256": "8f434346648f6b96df89dda901c5176b10a6d83961dd3c1ac88b59b2dc327aa4",
+  "observed": {
+    "partition": 1,
+    "offset": 2,
+    "timestamp_unix_ms": 1700000001003,
+    "key_sha256": "a6a9a0384f30bc062640efa0c16e07bd0b5f025b85cd4bdf98a319865eaeb9f1",
+    "payload_sha256": "8f434346648f6b96df89dda901c5176b10a6d83961dd3c1ac88b59b2dc327aa4",
+    "headers_sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+    "headers_json_sha256": "ac3a66e834e7f2be7d9151385c994248747632d4a1f298f49b3c1b4b0841c233",
+    "event_id": "00000000-0000-7000-8000-000000000001",
+    "event_type": "simplematch.account.v2.AccountLifecycleEvent",
+    "header_count": 7
+  },
+  "verification": {
+    "headers_exact": true,
+    "key_exact": true,
+    "timestamp_exact": true,
+    "payload_exact": true
+  }
+}

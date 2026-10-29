@@ -21,10 +21,10 @@ class HardResetSafetyTest < Minitest::Test
         FileUtils.mkdir_p([scripts, bin, File.join(sandbox, '.git')])
         FileUtils.cp_r(File.join(ROOT, 'scripts/lib'), scripts)
         %w[hard-reset-local.sh manage-simplematch-live.sh manage-local-registry.sh
-           build-local-images.sh].each do |name|
+           build-local-images.sh simplematch-clean-local-disk.sh].each do |name|
           FileUtils.cp(File.join(ROOT, 'scripts', name), scripts)
         end
-        %w[bash dirname grep].each do |name|
+        %w[bash dirname grep sleep].each do |name|
           executable = ENV.fetch('PATH').split(File::PATH_SEPARATOR)
                           .map { |path| File.join(path, name) }
                           .find { |path| File.executable?(path) && !File.directory?(path) }
@@ -47,10 +47,10 @@ class HardResetSafetyTest < Minitest::Test
           'HARD_RESET_SCENARIO' => expected.fetch('scenario'),
           'HARD_RESET_STATE' => state, 'HARD_RESET_CALLS' => calls
         }
-        arguments = %w[--yes --keep-project-build-state --keep-registry-cache]
+        arguments = expected.fetch('arguments', %w[--yes --keep-project-build-state --keep-registry-cache])
         arguments << '--dry-run' if expected.fetch('scenario') == 'dry-run'
         output, status = Open3.capture2e(environment, File.join(bin, 'bash'),
-                                        File.join(scripts, 'hard-reset-local.sh'),
+                                        File.join(scripts, expected.fetch('runner', 'hard-reset-local.sh')),
                                         *arguments, unsetenv_others: true)
         actual = { 'status' => status.exitstatus,
                    'mutations' => File.readlines(calls, chomp: true) }

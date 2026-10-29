@@ -1,0 +1,9 @@
+{
+  "schema_version": 1,
+  "schema": "account_service",
+  "aggregate_type": "account_reservation",
+  "aggregate_id": "connect-worker-loss-run-1-reservation",
+  "event_ids": [
+    "00000000-0000-7000-8000-000000000002"
+  ]
+}

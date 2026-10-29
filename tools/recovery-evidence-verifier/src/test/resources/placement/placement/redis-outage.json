@@ -1,0 +1,29 @@
+{
+  "deployment_name": "query-service",
+  "deployment_image": "localhost:5001/simplematch/query-service@sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+  "desired_replicas": 2,
+  "deployment_node_pool": "local-resilience",
+  "eligible_node_names": [
+    "simplematch-live-worker",
+    "simplematch-live-worker2"
+  ],
+  "pods": [
+    {
+      "name": "query-service-a",
+      "uid": "pod-query-a",
+      "node": "simplematch-live-worker",
+      "ready": true,
+      "restart_count": 0,
+      "image_id": "docker-pullable://simplematch/query-service@sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+    },
+    {
+      "name": "query-service-b",
+      "uid": "pod-query-b",
+      "node": "simplematch-live-worker2",
+      "ready": true,
+      "restart_count": 0,
+      "image_id": "docker-pullable://simplematch/query-service@sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+    }
+  ],
+  "liveness_window_seconds": 60
+}

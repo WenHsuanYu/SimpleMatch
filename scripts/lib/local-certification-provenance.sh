@@ -55,7 +55,9 @@ simplematch_certification_cdc_verifier_source_paths() {
     scripts/lib/cdc-observer-fixture.sh \
     scripts/lib/cdc-verifier.sh \
     scripts/lib/connect-rest-tunnel.sh \
-    scripts/lib/connect-worker-loss-evidence.rb \
+    tools/recovery-evidence-verifier/src/main \
+    tools/recovery-evidence-verifier/build.gradle.kts \
+    tools/recovery-evidence-verifier/gradle.lockfile \
     scripts/lib/connect-worker-loss-cli.sh \
     scripts/lib/connect-worker-loss-scenario.sh \
     scripts/lib/connect-worker-loss.sh \

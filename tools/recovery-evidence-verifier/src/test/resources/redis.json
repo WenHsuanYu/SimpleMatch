@@ -1,0 +1,45 @@
+{
+  "schema_version": 2,
+  "profile": "dependency-recovery",
+  "component": "redis",
+  "status": "PASSED",
+  "cluster": "simplematch-live",
+  "context": "kind-simplematch-live",
+  "namespace": "simplematch-resilience-run-1",
+  "run_id": "run-1",
+  "fault_mode": "worker-stop",
+  "deadline_seconds": 300,
+  "target": {
+    "before": {
+      "pod": "redis-abc",
+      "pod_uid": "redis-before",
+      "node": "simplematch-live-worker2",
+      "worker_slot": "2",
+      "pvc": null
+    },
+    "after": {
+      "pod": "redis-def",
+      "pod_uid": "redis-after",
+      "node": "simplematch-live-worker3",
+      "worker_slot": "1",
+      "pvc": null
+    }
+  },
+  "worker_stop": {
+    "node": "simplematch-live-worker2",
+    "container_id": "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef",
+    "container_id_after": "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef",
+    "node_not_ready_observed": true,
+    "same_container_restarted": true
+  },
+  "recovery": {
+    "ready": true,
+    "portable": true,
+    "rescheduled_after_worker_loss": true,
+    "disposable_state": true,
+    "marker_before": true,
+    "marker_after": false,
+    "marker_required_after": false
+  },
+  "failure_reason": null
+}

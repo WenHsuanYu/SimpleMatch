@@ -1,9 +1,79 @@
 [
-  {"scenario":"missing-kind","status":1,"message":"kind is required","mutations":[]},
-  {"scenario":"discovery-failed","status":1,"message":"kind cluster simplematch-live does not exist","mutations":[]},
-  {"scenario":"invalid-role","status":1,"message":"invalid kind role: invalid","mutations":[]},
-  {"scenario":"healthy","status":0,"message":"SimpleMatch hard reset completed successfully","mutations":["verified kind deletion"]},
-  {"scenario":"absent","status":0,"message":"canonical kind cluster already absent","mutations":[]},
-  {"scenario":"dry-run","status":0,"message":"Hard-reset dry run completed","mutations":[]},
-  {"scenario":"observation-failed","status":1,"message":"cannot observe Docker containers for kind cluster","mutations":[]}
+  {
+    "scenario": "missing-kind",
+    "status": 1,
+    "message": "kind is required",
+    "mutations": []
+  },
+  {
+    "scenario": "discovery-failed",
+    "status": 1,
+    "message": "kind cluster simplematch-live does not exist",
+    "mutations": []
+  },
+  {
+    "scenario": "invalid-role",
+    "status": 1,
+    "message": "invalid kind role: invalid",
+    "mutations": []
+  },
+  {
+    "scenario": "healthy",
+    "status": 0,
+    "message": "SimpleMatch hard reset completed successfully",
+    "mutations": [
+      "verified kind deletion"
+    ]
+  },
+  {
+    "scenario": "absent",
+    "status": 0,
+    "message": "canonical kind cluster already absent",
+    "mutations": []
+  },
+  {
+    "scenario": "dry-run",
+    "status": 0,
+    "message": "Hard-reset dry run completed",
+    "mutations": []
+  },
+  {
+    "scenario": "observation-failed",
+    "status": 1,
+    "message": "cannot observe Docker containers for kind cluster",
+    "mutations": []
+  },
+  {
+    "scenario": "registry-refused",
+    "status": 42,
+    "message": "Remove local registry through registry manager",
+    "mutations": [
+      "verified kind deletion",
+      "registry deletion refused"
+    ]
+  },
+  {
+    "scenario": "namespace-api-failed",
+    "runner": "simplematch-clean-local-disk.sh",
+    "arguments": [
+      "--namespace-timeout",
+      "1"
+    ],
+    "status": 1,
+    "message": "failed to list lifecycle-labeled",
+    "mutations": []
+  },
+  {
+    "scenario": "pv-api-failed",
+    "runner": "simplematch-clean-local-disk.sh",
+    "arguments": [
+      "--namespace-timeout",
+      "1"
+    ],
+    "status": 1,
+    "message": "PV cleanup could not be confirmed",
+    "mutations": [
+      "disposable namespace deletion"
+    ]
+  }
 ]

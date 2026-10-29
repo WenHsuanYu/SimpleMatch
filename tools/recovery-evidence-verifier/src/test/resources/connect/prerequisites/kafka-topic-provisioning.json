@@ -1,0 +1,14 @@
+{
+  "kind": "Job",
+  "metadata": {
+    "name": "kafka-topic-provisioning"
+  },
+  "status": {
+    "conditions": [
+      {
+        "type": "Complete",
+        "status": "True"
+      }
+    ]
+  }
+}

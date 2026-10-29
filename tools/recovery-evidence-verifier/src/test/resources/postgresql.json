@@ -1,0 +1,46 @@
+{
+  "schema_version": 2,
+  "profile": "dependency-recovery",
+  "component": "postgresql",
+  "status": "PASSED",
+  "cluster": "simplematch-live",
+  "context": "kind-simplematch-live",
+  "namespace": "simplematch-resilience-run-1",
+  "run_id": "run-1",
+  "fault_mode": "worker-stop",
+  "deadline_seconds": 300,
+  "target": {
+    "before": {
+      "pod": "postgres-0",
+      "pod_uid": "postgres-before",
+      "node": "simplematch-live-worker",
+      "worker_slot": "0",
+      "pvc": "postgres-data-postgres-0",
+      "pv": "postgres-pv"
+    },
+    "after": {
+      "pod": "postgres-0",
+      "pod_uid": "postgres-after",
+      "node": "simplematch-live-worker",
+      "worker_slot": "0",
+      "pvc": "postgres-data-postgres-0",
+      "pv": "postgres-pv"
+    }
+  },
+  "worker_stop": {
+    "node": "simplematch-live-worker",
+    "container_id": "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef",
+    "container_id_after": "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef",
+    "node_not_ready_observed": true,
+    "same_container_restarted": true
+  },
+  "recovery": {
+    "ready": true,
+    "durable_marker": "marker-1",
+    "durable_before": true,
+    "durable_after": true,
+    "data_preserved": true,
+    "owner_worker_replacement_absent": true
+  },
+  "failure_reason": null
+}

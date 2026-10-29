@@ -45,11 +45,13 @@ grep -Fxq scripts/lib/local-certification-runtime-provenance.sh <<<"$verifier_sc
 for diagnostic_input in \
     scripts/lib/cdc-verifier.sh \
     scripts/lib/connect-rest-tunnel.sh \
-    scripts/lib/connect-worker-loss-evidence.rb \
     scripts/lib/connect-worker-loss-cli.sh \
     scripts/lib/connect-worker-loss-scenario.sh \
     scripts/lib/connect-worker-loss.sh \
-    scripts/run-local-connect-worker-loss.sh; do
+    scripts/run-local-connect-worker-loss.sh \
+    tools/recovery-evidence-verifier/src/main \
+    tools/recovery-evidence-verifier/build.gradle.kts \
+    tools/recovery-evidence-verifier/gradle.lockfile; do
   if grep -Fxq "$diagnostic_input" <<<"$runtime_scope"; then
     fail "diagnostic input leaked into the CDC runtime scope: $diagnostic_input"
   fi

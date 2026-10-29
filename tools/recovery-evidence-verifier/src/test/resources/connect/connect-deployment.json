@@ -1,0 +1,21 @@
+{
+  "metadata": {
+    "name": "kafka-connect"
+  },
+  "spec": {
+    "replicas": 2,
+    "template": {
+      "spec": {
+        "nodeSelector": {
+          "simplematch.io/node-pool": "local-resilience"
+        },
+        "containers": [
+          {
+            "name": "kafka-connect",
+            "image": "quay.io/debezium/connect:3.6.0.Final"
+          }
+        ]
+      }
+    }
+  }
+}

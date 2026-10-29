@@ -1,0 +1,28 @@
+{
+  "metadata": {
+    "name": "kafka-connect-a",
+    "uid": "uid-a",
+    "labels": {
+      "app.kubernetes.io/name": "kafka-connect",
+      "app.kubernetes.io/component": "connector"
+    }
+  },
+  "spec": {
+    "nodeName": "simplematch-live-worker",
+    "volumes": [
+      {
+        "name": "runtime-tmp",
+        "emptyDir": {}
+      }
+    ]
+  },
+  "status": {
+    "podIP": "10.244.0.11",
+    "conditions": [
+      {
+        "type": "Ready",
+        "status": "True"
+      }
+    ]
+  }
+}

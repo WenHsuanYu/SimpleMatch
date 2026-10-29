@@ -1,0 +1,10 @@
+{
+  "status": "PASS",
+  "cluster": "simplematch-live",
+  "context": "kind-simplematch-live",
+  "namespace": "simplematch-cert-run",
+  "namespace_run_id": "run-1",
+  "run_id": "connect-worker-loss-run-1",
+  "current_commit": "0000000000000000000000000000000000000000",
+  "deadline_seconds": 300
+}
