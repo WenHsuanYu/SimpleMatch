@@ -31,6 +31,7 @@ include(
     ":tools:risk-matching-e2e-verifier",
     ":tools:query-evidence-verifier",
     ":tools:recovery-evidence-verifier",
+    ":tools:dependency-tests",
 )
 
 project(":shared-java:simplematch-config").projectDir = file("shared-java/simplematch-config")
@@ -47,3 +48,5 @@ project(":tools:market-reference-builder").projectDir = file("tools/market-refer
 project(":tools:risk-matching-e2e-verifier").projectDir = file("tools/risk-matching-e2e-verifier")
 project(":tools:query-evidence-verifier").projectDir = file("tools/query-evidence-verifier")
 project(":tools:recovery-evidence-verifier").projectDir = file("tools/recovery-evidence-verifier")
+
+project(":tools:dependency-tests").projectDir = file("tools/dependency-tests")

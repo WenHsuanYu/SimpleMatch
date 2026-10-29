@@ -8,6 +8,14 @@ that those failures are expected to recur.
 
 ## Run preflight
 
+The S2 PostgreSQL harness initially allowed convention tests and nested Gradle migration tasks
+to use generated plugin output concurrently. Eight convention tests failed with missing plugin
+classes, although the class files and JAR existed after execution.
+The harness now completes the included build's tests before starting its nested migration tasks.
+The ordered complete entry passed twice. Preserve the failed run in
+`out/verification/s2-b-r1/final-run1.log` and the ordered results in `final-run2.log` and `final-run3.log`.
+Before changing nested Gradle execution, verify this dependency ordering and run the complete entry.
+
 The 2026-10-28 Redis fixture preparation failed before container startup.
 The host OpenSSL reported CLI version 3.0.13 and library version 3.5.5.
 An isolated `req -x509 -addext` probe reproduced SIGSEGV (exit 139).

@@ -268,7 +268,7 @@ bash scripts/end-to-end/query-service/tests/active-liveness-contract.sh
 ```
 
 The PostgreSQL task runs the SQL contract and JDBC checks against the same Testcontainers database.
-`run-flyway-ci-checks.sh` invokes that task. HTTP/placement contracts run in Local Resource Lifecycle CI.
+`./gradlew verifyPostgres` invokes that task. HTTP/placement contracts run in Local Resource Lifecycle CI.
 Before expensive deployed acceptance, classify every required
 phase through the existing planner/evidence contract. No required phase may be silently skipped,
 and no focused diagnostic or tool PASS may be promoted to aggregate Phase 1 PASS.

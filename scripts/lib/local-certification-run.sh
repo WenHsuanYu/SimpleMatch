@@ -175,7 +175,7 @@ certification_execute_phase() {
       run_logged "$phase_id" bash "$repo_root/scripts/test-matching-topic-profile.sh"
       ;;
     static-flyway-services)
-      run_logged "$phase_id" bash "$repo_root/scripts/test-flyway-services.sh"
+      run_logged "$phase_id" "$repo_root/gradlew" -q :tools:dependency-tests:test
       ;;
     compose-config)
       run_logged "$phase_id" "${compose_command[@]}" config

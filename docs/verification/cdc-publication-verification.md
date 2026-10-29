@@ -300,8 +300,8 @@ the shared verifier Interface, Matching Kafka contracts, and the live Compose CD
 `Flyway CI` remains required because this change adds the Risk migration
 `V10__record_cdc_delivery_observations.sql` and the strict artifact-route `V11__require_admission_artifact_route.sql`
 under the shared Flyway service convention. The migration contract gate must pass
-`bash scripts/test-flyway-services.sh`; the PostgreSQL smoke gate must run
-`bash scripts/run-flyway-ci-checks.sh`, and Java CI must pass
+`./gradlew -q :tools:dependency-tests:test`; the PostgreSQL smoke gate must run
+`./gradlew -q verifyPostgres`, and Java CI must pass
 `com.simplematch.riskservice.store.RiskServiceFlywayMigrationTest`.
 
 The PR is not ready until the latest head has successful Java CI, CDC CI, and Flyway CI results.

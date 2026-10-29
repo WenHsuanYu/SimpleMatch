@@ -66,7 +66,7 @@ active tables. Query retains mixed-source text event IDs while its canonical acc
 IDs are native UUIDs. Market-data projection accepts the same 12-character symbol capacity as the
 shared instrument contract.
 
-`run-flyway-ci-checks.sh` also executes `check-service-schema-contracts.sql` against PostgreSQL.
+`./gradlew verifyPostgres` also executes `check-service-schema-contracts.sql` against PostgreSQL.
 These probes first insert valid rows, reject individual invalid values with specific SQLSTATEs,
 and roll back every fixture. They complement H2/JDBC tests; they do not certify a live deployment.
 The [completed follow-up record](../verification/schema-contract-followup-record.md) documents the existing Query JDBC

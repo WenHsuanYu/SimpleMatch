@@ -1,0 +1,114 @@
+{
+  "account-service": {
+    "tables": [
+      "account_limits",
+      "account_positions",
+      "account_reservations"
+    ],
+    "plans": [
+      {
+        "description": "account reservation idempotency lookup",
+        "index": "uq_account_reservations_request_id",
+        "sql": "SELECT reservation_id FROM account_service.account_reservations WHERE request_id = '00000000-0000-0000-0000-000000000001'"
+      }
+    ]
+  },
+  "market-data-projection": {
+    "tables": [
+      "matching_event_inbox",
+      "instrument_market_data",
+      "market_data_events_outbox"
+    ],
+    "plans": [
+      {
+        "description": "market-data top-five bid lookup",
+        "index": "order_book_entries_top_five_idx",
+        "sql": "SELECT price_units FROM market_data_projection.order_book_entries WHERE venue_mic = 'XTAI' AND symbol = '2330' AND side = 'B' ORDER BY price_units DESC LIMIT 5"
+      },
+      {
+        "description": "market-data pending outbox scan",
+        "index": "market_data_events_outbox_pending_idx",
+        "sql": "SELECT event_id FROM market_data_projection.market_data_events_outbox WHERE published_at_unix_ms IS NULL ORDER BY created_at_unix_ms LIMIT 1"
+      }
+    ]
+  },
+  "persistence": {
+    "tables": [
+      "trades",
+      "order_fills",
+      "matching_order_projections",
+      "matching_event_inbox"
+    ],
+    "plans": [
+      {
+        "description": "persistence inbox deduplication lookup",
+        "index": "matching_event_inbox_pkey",
+        "sql": "SELECT received_at_unix_ms FROM persistence.matching_event_inbox WHERE consumer_name = 'persistence-matching-events' AND event_id = decode(repeat('00', 32), 'hex')"
+      }
+    ]
+  },
+  "query-service": {
+    "tables": [
+      "order_read_model",
+      "execution_read_model",
+      "account_summary_read_model",
+      "active_market_reference"
+    ],
+    "plans": [
+      {
+        "description": "query order history by account",
+        "index": "order_read_model_account_idx",
+        "sql": "SELECT order_id FROM query_service.order_read_model WHERE account_id = '00000000-0000-0000-0000-000000000001' ORDER BY updated_at_unix_ms"
+      },
+      {
+        "description": "query executions by order chronology",
+        "index": "execution_read_model_order_idx",
+        "sql": "SELECT execution_id FROM query_service.execution_read_model WHERE order_id = '00000000-0000-0000-0000-000000000002' ORDER BY executed_at_unix_ms, execution_id"
+      },
+      {
+        "description": "query active market reference artifact",
+        "index": "active_market_reference_artifact_idx",
+        "sql": "SELECT symbol FROM query_service.active_market_reference WHERE trading_day = DATE '2026-07-28' AND artifact_id = 'artifact'",
+        "alternate": "active_market_reference_symbol_unique"
+      }
+    ]
+  },
+  "quickfix-gateway": {
+    "tables": [
+      "matching_event_inbox",
+      "fix_delivery_intents",
+      "gateway_operation_audit"
+    ],
+    "plans": [
+      {
+        "description": "Gateway pending FIX delivery scan",
+        "index": "idx_qfg_delivery_pending",
+        "sql": "SELECT delivery_id FROM quickfix_gateway.fix_delivery_intents WHERE status = 'PENDING' ORDER BY source_partition, source_offset, delivery_index LIMIT 1"
+      },
+      {
+        "description": "Gateway operation audit chronology scan",
+        "index": "idx_qfg_operation_audit_recorded_at",
+        "sql": "SELECT audit_id FROM quickfix_gateway.gateway_operation_audit ORDER BY recorded_at_unix_ms, audit_id LIMIT 1"
+      }
+    ]
+  },
+  "risk-service": {
+    "tables": [
+      "admission_journal",
+      "outbox",
+      "local_resilience_marker"
+    ],
+    "plans": [
+      {
+        "description": "risk admission business-key lookup",
+        "index": "uq_admission_business_key",
+        "sql": "SELECT command_id FROM risk_service.admission_journal WHERE sender_comp_id = 'sender' AND target_comp_id = 'target' AND trading_day = DATE '2026-07-27' AND cl_ord_id = 'clord'"
+      },
+      {
+        "description": "risk outbox chronological CDC scan",
+        "index": "idx_outbox_created_at",
+        "sql": "SELECT event_id FROM risk_service.outbox ORDER BY created_at_unix_ms, id LIMIT 1"
+      }
+    ]
+  }
+}

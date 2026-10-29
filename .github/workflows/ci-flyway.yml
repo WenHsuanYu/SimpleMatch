@@ -11,6 +11,7 @@ on:
       - '*'
       - 'gradle/**'
       - 'build-logic/**'
+      - 'tools/dependency-tests/**'
       - 'scripts/*'
       - 'scripts/lib/**'
       - 'scripts/end-to-end/query-service/*'
@@ -32,6 +33,7 @@ on:
       - '*'
       - 'gradle/**'
       - 'build-logic/**'
+      - 'tools/dependency-tests/**'
       - 'scripts/*'
       - 'scripts/lib/**'
       - 'scripts/end-to-end/query-service/*'
@@ -60,20 +62,6 @@ jobs:
     name: Flyway / PostgreSQL
     runs-on: ubuntu-latest
     timeout-minutes: 30
-    services:
-      postgres:
-        image: postgres:18.4
-        env:
-          POSTGRES_USER: simplematch
-          POSTGRES_PASSWORD: simplematch
-          POSTGRES_DB: postgres
-        ports:
-          - 5432:5432
-        options: >-
-          --health-cmd "pg_isready -U simplematch -d postgres"
-          --health-interval 10s
-          --health-timeout 5s
-          --health-retries 5
     steps:
       - name: Checkout
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -83,19 +71,10 @@ jobs:
       - name: Set up Java and Gradle
         uses: ./.github/actions/setup-java-gradle
       - name: Validate Flyway service contracts
-        run: bash scripts/test-flyway-services.sh
+        run: ./gradlew --no-daemon --stacktrace :tools:dependency-tests:test
       - name: Install PostgreSQL client
         run: |
           sudo apt-get update
           sudo apt-get install -y postgresql-client
       - name: Run Flyway, PostgreSQL and JDBC checks
-        env:
-          CI_POSTGRES_HOST: 127.0.0.1
-          CI_POSTGRES_PORT: '5432'
-          CI_POSTGRES_USER: simplematch
-          CI_POSTGRES_PASSWORD: simplematch
-          CI_POSTGRES_ADMIN_DB: postgres
-          CI_POSTGRES_DATABASE: simplematch_ci
-        run: |
-          bash scripts/run-flyway-ci-checks.sh
-          bash scripts/end-to-end/critical-consumers/tests/gateway-session-sql-test.sh
+        run: ./gradlew --no-daemon --stacktrace verifyPostgres

@@ -39,8 +39,8 @@ not create a broker cluster, a PostgreSQL server, a Kubernetes cluster, or a FIX
 The repository contains fail-closed provisioning/verification tools and deployment contracts; an
 operator with access to those systems must supply the environment-specific values.
 
-The following commands are read-only unless explicitly marked as provisioning. Do not run
-scripts/run-flyway-ci-checks.sh against production: it drops and recreates a database.
+The following commands are read-only unless explicitly marked as provisioning. `./gradlew verifyPostgres` creates disposable Testcontainers databases.
+Use `scripts/verify-postgres-live-certification.sh` for explicit read-only external checks.
 
 ## Local production-like certification
 
@@ -204,7 +204,7 @@ ctest --preset dev-debug --output-on-failure
 bash scripts/test-matching-kubernetes-manifests.sh
 bash scripts/test-matching-topic-profile.sh
 bash scripts/test-phase1-deployment-contracts.sh
-bash scripts/test-flyway-services.sh
+./gradlew -q :tools:dependency-tests:test
 bash scripts/run-outbox-cdc-contract-check.sh
 
 # The following phase is normally invoked by the full local certification runner after the
