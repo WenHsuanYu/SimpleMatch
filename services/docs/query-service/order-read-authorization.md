@@ -111,14 +111,14 @@ are skipped there and run in `postgresJdbcTest` against the owned PostgreSQL fix
 ./gradlew -q :services:query-service:test :services:query-service:bootJar
 ./gradlew -q :services:query-service:postgresJdbcTest
 ./gradlew -q staticAnalysis
-bash scripts/test-query-redis-security.sh
+./gradlew -q :services:query-service:redisSecurityTest
 ```
 
 The PostgreSQL task requires Docker, Python 3, and `psql`.
 Testcontainers creates an isolated database. The test fixture sets its ownership marker before Flyway migrations or fixture writes.
 The task supplies private connection settings to the existing Python collector contract.
 
-The current Redis runner requires Docker and OpenSSL.
+The Redis task requires Docker and OpenSSL.
 It generates private certificate and ACL files. Testcontainers manages the disposable Redis containers.
 See the [Redis test requirements](../../../deploy/k8s/README.md#query-redis-transport-and-acl-contract).
 

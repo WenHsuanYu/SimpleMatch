@@ -17,7 +17,6 @@ dependencies {
     testImplementation(libs.flyway.core)
     testImplementation("org.springframework:spring-jdbc")
     testImplementation(libs.testcontainers.core)
-    testImplementation(libs.testcontainers.junit.jupiter)
     testImplementation(libs.testcontainers.postgresql)
     testRuntimeOnly(libs.flyway.database.postgresql)
 }

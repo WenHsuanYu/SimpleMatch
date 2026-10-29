@@ -61,9 +61,10 @@ This repo's Java dependencies use an explicit ownership model.
   `--stacktrace` for failure diagnosis.
 - After changing dependency wiring, validate with a focused module compile or test before running
   broader static analysis.
-- Query Redis security tests use Testcontainers core and its JUnit extension as test-only dependencies.
-  Versionless catalog aliases use the Spring Boot BOM. Run `bash scripts/test-query-redis-security.sh` with Docker and OpenSSL.
-  The script prepares certificates. Testcontainers owns Redis startup, mapped ports, readiness, and cleanup.
+- Query Redis security tests use Testcontainers core as a test-only dependency.
+  Versionless catalog aliases use the Spring Boot BOM. Run `./gradlew -q :services:query-service:redisSecurityTest` with Docker and OpenSSL.
+  JUnit owns private temporary certificates and credentials. Testcontainers provides Redis startup, mapped ports, and readiness.
+  JUnit closes the containers after the suite, including setup failures.
 - Query PostgreSQL contracts use the Testcontainers PostgreSQL module as a test-only dependency.
   Run `./gradlew -q :services:query-service:postgresJdbcTest` with Docker, Python 3, and `psql`.
   Testcontainers manages one disposable PostgreSQL instance for the test JVM. Flyway migrates its isolated database.

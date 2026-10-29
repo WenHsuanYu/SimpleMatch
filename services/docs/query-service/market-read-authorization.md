@@ -90,14 +90,14 @@ one, reuse an old certification result, or execute full-local deployment work.
 ./gradlew -q :services:query-service:test :services:query-service:bootJar
 ./gradlew -q :services:query-service:postgresJdbcTest
 ./gradlew -q staticAnalysis
-bash scripts/test-query-redis-security.sh
+./gradlew -q :services:query-service:redisSecurityTest
 ```
 
 The PostgreSQL task requires Docker, Python 3, and `psql`.
 Testcontainers manages its isolated database with an ownership marker. The task also runs the existing Python collector contract.
 Ordinary tests use H2 and skip PostgreSQL-specific concurrency cases.
 
-The current Redis runner requires Docker and OpenSSL.
+The Redis task requires Docker and OpenSSL.
 Testcontainers manages the disposable Redis containers with private credentials.
 See the [Redis test requirements](../../../deploy/k8s/README.md#query-redis-transport-and-acl-contract).
 

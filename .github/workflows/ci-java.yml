@@ -84,7 +84,7 @@ jobs:
       - name: Run Java test suite
         run: ./gradlew --no-daemon --stacktrace test :services:quickfix-gateway:certificationTest
       - name: Run Query Redis TLS and ACL tests
-        run: bash scripts/test-query-redis-security.sh --no-daemon --stacktrace
+        run: ./gradlew :services:query-service:redisSecurityTest --no-daemon --stacktrace
       - name: Upload Java reports
         if: always()
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1

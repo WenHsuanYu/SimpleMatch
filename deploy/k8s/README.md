@@ -305,9 +305,11 @@ and retire their endpoint access. Do not dual-read the old unprotected cache. Cr
 may overlap old/new provider-side passwords until the Secret rollout completes, then revoke the
 old password. External ACL enforcement and the promoted endpoint remain operator-owned checks.
 
-Run `bash scripts/test-query-redis-security.sh` with Docker, OpenSSL, and the repository JDK/Gradle dependencies available.
-The script prepares private certificate and ACL files. Testcontainers starts three disposable
-`redis:8.10.3-alpine` containers, selects their mapped ports, waits for startup, and removes them after the tests.
+Run `./gradlew -q :services:query-service:redisSecurityTest` with Docker, OpenSSL, and the repository JDK/Gradle dependencies available.
+JUnit prepares private certificate and ACL files in a temporary directory. Testcontainers starts three disposable
+`redis:8.10.3-alpine` containers, selects their mapped ports, and waits for startup.
+JUnit closes every container after the suite, including setup failures. It then removes the temporary files.
+Each OpenSSL operation has a 30-second deadline. Fixture errors fail before container startup.
 The six cases check trusted cache operations, certificate rejection, authentication failures, ACL restrictions, and cache namespace isolation.
 Java CI runs this gate explicitly. Docker or fixture failures fail the gate instead of skipping it.
 
