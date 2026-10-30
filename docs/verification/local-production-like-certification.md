@@ -161,7 +161,7 @@ rows that were not rerun retain their original date and boundary.
 | Native capacity harness | scripts/run-matching-capacity-certification.sh | Repository gate available; report is non-certifying until run on pinned production-shaped hardware |
 | Kubernetes manifest contract | bash scripts/test-matching-kubernetes-manifests.sh | Passed; static contract only |
 | Kafka profile fixtures | bash scripts/test-matching-topic-profile.sh | Passed; includes RF/ISR/safety and duplicate-replica rejection |
-| Outbox contracts | bash scripts/verify-outbox-connector-contracts.sh; bash scripts/run-outbox-cdc-contract-check.sh | Passed in the disposable CDC environment |
+| Outbox contracts | ./gradlew verifyCdc | Passed in the disposable CDC environment |
 | Java services | Persistence, Account, QuickFIX, and Market Data module tests | Passed in the controlled Gradle environment |
 | Java quality gate | GRADLE_USER_HOME=/tmp/simplematch-gradle-cache ./gradlew --no-daemon -q staticAnalysis | Passed in the historical 2026-08-14 run; current-head validation is required after the #138 CDC changes |
 | Local production-like gate | `SIMPLEMATCH_CERTIFICATION_TRADING_DAY=2026-08-11 SIMPLEMATCH_MARKET_REFERENCE_DELIVERY_MANIFEST=tools/market-reference-builder/data/2026-08-11/delivery/manifest.yaml bash scripts/run-local-production-like-certification.sh --skip-build --skip-compose` | Fresh 2026-08-15 canonical three-worker Kubernetes run passed static contracts, image load, ordered Flyway migrations, workload rollout, Risk outbox connector, Open Barriers, and the 15-pod Matching fleet. The report is intentionally `PARTIAL` because build and Compose runtime phases were skipped; it is not a Compose or full local certification claim. |
@@ -205,7 +205,7 @@ bash scripts/test-matching-kubernetes-manifests.sh
 bash scripts/test-matching-topic-profile.sh
 bash scripts/test-phase1-deployment-contracts.sh
 ./gradlew -q :tools:dependency-tests:test
-bash scripts/run-outbox-cdc-contract-check.sh
+./gradlew verifyCdc
 
 # The following phase is normally invoked by the full local certification runner after the
 # Kubernetes workloads and retained connectors are Ready. It is shown separately for operators

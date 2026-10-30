@@ -5,7 +5,7 @@ script_dir="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
 
 bash "$script_dir/test-cdc-observer-fixture-contract.sh"
 bash "$script_dir/test-local-certification-focused-diagnostic.sh"
-bash "$script_dir/verify-outbox-connector-contracts.sh"
+"$script_dir/../gradlew" -p "$script_dir/.." :tools:dependency-tests:test
 bash "$script_dir/validate-local-resilience-contract.sh"
 bash "$script_dir/test-local-production-like.sh"
 bash "$script_dir/validate-matching-producer-contract.sh"

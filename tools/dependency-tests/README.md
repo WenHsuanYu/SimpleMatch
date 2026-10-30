@@ -41,3 +41,33 @@ They do not substitute for deployed application or aggregate certification evide
 
 The Gateway SQL compatibility entry delegates to `postgresTest`.
 S5-B1 owns its final path removal. It contains no duplicate verdict.
+
+## CDC publication and recovery
+
+Run `./gradlew verifyCdc` with Java 25 and Docker. Local and CI use this same entry.
+It runs canonical connector contracts, compiled producer-boundary checks, and the shared Java
+CDC verifier regressions. Each fresh RF1 and RF3 environment applies canonical Risk and Account
+Flyway migrations and observes actual JDBC, Kafka, and Connect REST interfaces.
+
+The scenarios preserve exact event identity, post-baseline offsets, key and payload bytes,
+logical timestamps, explicit partitions, the seven Debezium headers, and retained outbox rows.
+They cover historical Account event selection, connector pause/resume, all-broker stop/start,
+and a forced Connect process exit before source-offset commit. Redelivery must contain the
+same durable event after a newly captured Kafka baseline. No offset reset creates that result.
+RF3 checks fifteen Matching partitions, distinct replicas, minimum ISR 2, and disabled unclean election.
+
+Each live task executes again. A run owns its containers and network by a unique run ID.
+Kafka and Connect keep run-selected loopback port bindings across actual restart faults.
+Reports in `build/reports/dependency-tests/cdc/<run-id>/report.json` retain source revision,
+input fingerprint, actual image config IDs and repository digests, and publication digests.
+A report becomes `PASS` only after exact container and network removal checks.
+JUnit XML remains available in `build/test-results/cdcTest/`.
+
+The `recovery-evidence-verifier cdc` CLI owns the same assertions for retained Kubernetes collectors.
+The shared Shell library retains system reads and bounded polling until S5-G migrates its final consumer.
+S2-A removes the five assigned deployment/verification scripts. The old source-text producer grep is
+replaced by a Java Class-File API guard over actual owner classes, with a rejecting producer fixture.
+
+Run `./gradlew verifyDependencies` for the complete S2 PostgreSQL, CDC, and Query Redis acceptance.
+These results establish dependency and transport behavior. Application transactions, full-local
+certification, and deployed Kubernetes recovery keep their own acceptance boundaries.

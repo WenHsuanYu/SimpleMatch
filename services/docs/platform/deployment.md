@@ -15,10 +15,10 @@ path. Their configuration belongs with deployment assets; the reliability guaran
 specified in the architecture area.
 
 The local CDC contract check is
-`bash scripts/run-outbox-cdc-contract-check.sh`. It starts isolated PostgreSQL, Kafka, and Kafka
+`./gradlew verifyCdc`. It starts isolated PostgreSQL, Kafka, and Kafka
 Connect containers, applies one connector per owning outbox schema, and verifies binary payload
 bytes, keys, headers, timestamps, explicit partitions, and outbox retention across pause/resume.
-Set `SIMPLEMATCH_POSTGRES_PORT` when the host's default PostgreSQL port is occupied.
+It uses dynamic host ports and runs both RF1 and RF3 with real dependency and worker faults.
 
 ## Kubernetes target
 

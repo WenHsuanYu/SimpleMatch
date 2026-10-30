@@ -13,6 +13,9 @@ dependencies {
     testImplementation(libs.jackson.databind)
     testImplementation(libs.flyway.core)
     testImplementation(libs.testcontainers.postgresql)
+    testImplementation(libs.testcontainers.kafka)
+    testImplementation("org.apache.kafka:kafka-clients")
+    testImplementation(project(":tools:recovery-evidence-verifier"))
     testRuntimeOnly("org.postgresql:postgresql")
     testImplementation("org.springframework:spring-jdbc")
     testRuntimeOnly(libs.flyway.database.postgresql)
@@ -43,6 +46,9 @@ tasks.withType<Test>().configureEach {
             .map { fileTree(it.removePrefix("filesystem:")) }
     })
     inputs.file("src/test/resources/postgres-contracts.json")
+    inputs.files(listOf("risk-service", "account-service").map {
+        rootProject.file("deploy/compose/$it-outbox-connector.json")
+    })
     inputs.files(listOf("scripts/lib/flyway-services.sh", "deploy/docker/run-flyway",
         "scripts/check-service-schema-contracts.sql",
         "scripts/end-to-end/critical-consumers/sql/gateway-session-state.sql",
@@ -55,7 +61,18 @@ tasks.withType<Test>().configureEach {
 }
 
 tasks.test {
-    exclude("**/PostgresIntegrationTest.class", "**/PostgresLiveTest.class", "**/PostgresQueryPlansTest.class")
+    val owners = listOf(":services:risk-service", ":services:account-service")
+    dependsOn(owners.map { "$it:classes" })
+    val classes = owners.associateWith {
+        project(it).extensions.getByType<JavaPluginExtension>().sourceSets.getByName("main").output.classesDirs
+    }
+    inputs.files(classes.values)
+    doFirst {
+        systemProperty("dependencyOutboxClasses", JsonOutput.toJson(classes.mapValues { entry ->
+            entry.value.files.map { it.absolutePath }
+        }))
+    }
+    exclude("**/PostgresIntegrationTest.class", "**/PostgresLiveTest.class", "**/PostgresQueryPlansTest.class", "**/OutboxCdcIntegrationTest.class")
 }
 
 fun registerLiveTest(name: String, testClass: String) = tasks.register<Test>(name) {
@@ -78,4 +95,16 @@ rootProject.tasks.register("verifyPostgres") {
     group = "verification"
     description = "Verifies all Flyway owners and Query JDBC contracts with disposable PostgreSQL."
     dependsOn(tasks.test, postgresTest, ":services:query-service:postgresJdbcTest")
+}
+
+val cdcTest = registerLiveTest("cdcTest", "OutboxCdcIntegrationTest")
+rootProject.tasks.register("verifyCdc") {
+    group = "verification"
+    description = "Verifies exact outbox delivery and dependency recovery with real Kafka and Connect."
+    dependsOn(tasks.test, cdcTest, ":tools:recovery-evidence-verifier:test")
+}
+rootProject.tasks.register("verifyDependencies") {
+    group = "verification"
+    description = "Runs all S2 dependency and transport contracts locally or in CI."
+    dependsOn("verifyPostgres", "verifyCdc", ":services:query-service:redisSecurityTest")
 }

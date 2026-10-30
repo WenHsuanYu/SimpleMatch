@@ -7,6 +7,13 @@ on:
       - main
     paths:
       - '.github/workflows/**'
+      - '.github/actions/setup-java-gradle/**'
+      - 'tools/dependency-tests/**'
+      - 'tools/recovery-evidence-verifier/**'
+      - 'build.gradle.kts'
+      - 'settings.gradle.kts'
+      - 'build-logic/**'
+      - 'gradle/**'
       - 'deploy/compose/**'
       - 'deploy/k8s/base/**'
       - 'config/kafka/**'
@@ -19,6 +26,13 @@ on:
   pull_request:
     paths:
       - '.github/workflows/**'
+      - '.github/actions/setup-java-gradle/**'
+      - 'tools/dependency-tests/**'
+      - 'tools/recovery-evidence-verifier/**'
+      - 'build.gradle.kts'
+      - 'settings.gradle.kts'
+      - 'build-logic/**'
+      - 'gradle/**'
       - 'deploy/compose/**'
       - 'deploy/k8s/base/**'
       - 'config/kafka/**'
@@ -50,13 +64,20 @@ jobs:
           persist-credentials: false
       - name: Verify diff hygiene
         run: git diff --check HEAD^1 HEAD
-      - name: Verify connector contracts
-        run: bash scripts/verify-outbox-connector-contracts.sh
-      - name: Test CDC verifier interface
-        run: bash scripts/test-cdc-verifier.sh
+      - name: Set up Java and Gradle
+        uses: ./.github/actions/setup-java-gradle
       - name: Validate Matching topic cutover
         run: bash scripts/test-matching-topic-cutover.sh
       - name: Validate Matching Kafka durability profile
         run: bash scripts/test-matching-topic-profile.sh
       - name: Run live CDC contract check
-        run: bash scripts/run-outbox-cdc-contract-check.sh
+        run: ./gradlew verifyCdc --no-daemon
+      - name: Retain dependency test evidence
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: cdc-dependency-evidence
+          path: |
+            tools/dependency-tests/build/reports/
+            tools/dependency-tests/build/test-results/
+            tools/recovery-evidence-verifier/build/test-results/

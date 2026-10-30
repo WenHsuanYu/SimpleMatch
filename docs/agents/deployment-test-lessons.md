@@ -8,6 +8,17 @@ that those failures are expected to recur.
 
 ## Run preflight
 
+The S2 CDC restart test found that Docker reallocated an ephemeral host port after a
+container stop/start. Kafka retained its originally advertised address, so a running broker
+remained unreachable. The isolated regression observed port `32806` change to `32807`.
+The test now binds a run-selected loopback port for the lifetime of each Kafka and Connect
+container. A competing bind fails startup. Before fault injection, verify the actual binding.
+After restart, require that binding and the real broker/connector interfaces to recover.
+The original failure remains in `out/verification/s2-a-r1/rf1-development-lock-update.log`.
+The port regression and its correction are in `kafka-restart-diagnostic-resolved.log` and
+`kafka-restart-diagnostic-fixed.log` in the same directory.
+
+
 The S2 PostgreSQL harness initially allowed convention tests and nested Gradle migration tasks
 to use generated plugin output concurrently. Eight convention tests failed with missing plugin
 classes, although the class files and JAR existed after execution.

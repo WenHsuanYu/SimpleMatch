@@ -8,7 +8,7 @@ reassignment. They share how the CDC data path is observed and verified.
 ## Evidence layers
 
 Account application integration and CDC publication integration remain separate seams. The current
-Compose profile does not start Account application code, so its direct SQL outbox fixtures certify
+Testcontainers scenario does not start Account application code, so its direct SQL outbox fixtures certify
 Debezium EventRouter/Kafka mapping and recovery; they are not described as a single-path Account
 application-to-Kafka E2E.
 
@@ -17,19 +17,23 @@ application-to-Kafka E2E.
   Account topic, message-key, and lifecycle-event contract.
 - `OrderAdmissionApplicationServiceTransactionTest` proves terminal Risk admission state and its
   outbox row share one transaction.
-- `scripts/verify-outbox-connector-contracts.sh` verifies each retained connector reads only its
-  owning outbox table, publishes `payload_type` as the Debezium `eventType` header together with
-  `headers_json`, and rejects current direct Kafka producer types in Risk and Account production
-  Java sources.
+- `CdcConnectorContractsTest` verifies each canonical connector reads only its owner's outbox
+  and preserves the key, payload, timestamp, partition, and header mappings.
+  `CompiledOutboxPublisherGuardTest` rejects direct producer dependencies in compiled Risk and
+  Account classes. Source formatting is outside this contract.
 - `scripts/test-cdc-observer-fixture-contract.sh` verifies that the Kubernetes CDC observer fixture
   writes the same `event_id`, `content_type`, and `payload_type` header shape as a normal outbox
   event. It runs as part of the Phase 1 preflight, before migrations or workload startup.
-- `scripts/run-outbox-cdc-contract-check.sh` owns Compose lifecycle and fault injection only. It
-  provides environment-specific Adapters to the shared verification Module.
+- `./gradlew verifyCdc` runs the shared Java contracts and real disposable PostgreSQL, Kafka,
+  and Connect scenarios. It applies the owners' versioned Flyway migrations and exercises RF1 and
+  RF3, connector pause/resume, broker stop/start, and actual Connect crash-induced redelivery.
 
 ## Shared CDC verification Module
 
-`scripts/lib/cdc-verifier.sh` exposes one Interface for #92 and future #156 callers:
+`CdcPublicationVerifier`, `CdcOutboxProbe`, and `CdcPublicationEvidence` own the publication,
+selection, and evidence rules. The installed `recovery-evidence-verifier cdc` CLI exposes these
+rules to retained collectors. `scripts/lib/cdc-verifier.sh` builds the current tool before adapter
+configuration and exposes the compatibility interface for #156 callers:
 
 1. `cdc_capture_topic_end_offsets <topic> <snapshot-file>`
 2. `cdc_wait_for_connector_state <connector-name> <expected-state> [timeout-seconds]`
@@ -105,10 +109,11 @@ Three dependency seams are injected through environment-specific Adapters:
 - `CDC_CONNECT_STATUS_EXEC` returns one connector status document.
 - `CDC_KAFKA_EXEC` executes Kafka CLI reads.
 
-The live Compose harness, `scripts/test-cdc-verifier.sh` fakes, and the #156 focused Kubernetes
-runner are concrete Adapters at each seam. They supply environment-specific execution without
-copying the Module Implementation. Docker Compose commands, Pod/node manipulation, worker
-selection, task-owner reassignment, and namespace lifecycle do not belong in this Module.
+The #156 focused Kubernetes runner retains these collector adapters.
+`scripts/test-cdc-verifier.sh` is a compatibility entry for the Java contract suite.
+The new Testcontainers scenario observes JDBC, Kafka, and REST interfaces.
+It calls the same Java verifier. The adapters supply observations from each environment.
+The verifier does not manage Compose, Pods, worker selection, task reassignment, or namespaces.
 
 ## CdcProbeIdentity
 
@@ -326,22 +331,25 @@ Run the focused checks first:
   --tests '*OrderAdmissionApplicationServiceTransactionTest'
 ./gradlew :services:query-service:test \
   --tests '*JdbcQueryProjectionStoreTest'
-bash scripts/verify-outbox-connector-contracts.sh
-bash scripts/test-cdc-verifier.sh
+./gradlew :tools:dependency-tests:test :tools:recovery-evidence-verifier:test
 git diff --check HEAD^ HEAD
 ```
 
-Then run the live transport fault test on a machine with Docker Compose:
+Then run the live transport fault test with Docker and Java 25:
 
 ```bash
-bash scripts/run-outbox-cdc-contract-check.sh
+./gradlew verifyCdc
 ```
 
-Before that Docker run, follow `docs/agents/deployment-test-lessons.md` preflight requirements and
-confirm the configured PostgreSQL/Kafka/Connect ports are free. Each invocation generates a unique,
-run-owned Compose project. An explicitly supplied `SIMPLEMATCH_CDC_COMPOSE_PROJECT` must own no
-existing container, network, or volume. Cleanup removes only resources with that exact project label,
-removes its disposable volumes, and fails the run if any run-owned resource remains.
+Follow `docs/agents/deployment-test-lessons.md` before starting the containers.
+Each profile creates a new run-owned network and containers. Kafka and Connect use dynamically
+selected loopback ports that remain bound to their containers across real stop/start faults.
+The live task always executes again. Normal build and dependency caches remain available.
+A run report records the source fingerprint, actual image config IDs, repository digests, and exact
+publication evidence. It writes `PASS` only after verifying removal of every owned container and
+network. Reports are in `tools/dependency-tests/build/reports/dependency-tests/cdc/<run-id>/`.
+This is dependency transport evidence. It does not establish a complete application path or
+Kubernetes recovery certification.
 
 When a retained full production-like run has already passed every predecessor of the Risk CDC
 observer but that observer ended with a transient failure, use the focused diagnostic instead of

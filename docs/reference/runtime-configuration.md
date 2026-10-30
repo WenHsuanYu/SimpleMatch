@@ -210,14 +210,12 @@ The following environment variables belong only to the local/CI CDC verification
 not Spring `Environment` properties and do not create a second runtime configuration authority for
 Risk or Account services:
 
-- `SIMPLEMATCH_CONNECT_OFFSET_FLUSH_INTERVAL_MS` controls Kafka Connect's worker offset-flush
-  interval in `deploy/compose/kafka-connect.local.yml`. The Compose default is `60000` ms. The live
-  CDC fault script defaults it to `120000` ms so it can observe a publication and terminate Connect
-  before the next source-offset flush; callers may override it for diagnostic runs.
-- `SIMPLEMATCH_CDC_COMPOSE_PROJECT` optionally supplies the run-owned Docker Compose project name for
-  `scripts/run-outbox-cdc-contract-check.sh`. If unset, the script generates a unique name from the
-  GitHub run identity (when present), wall-clock epoch, and process ID. An explicitly selected name
-  must not already own Compose resources; collision is a preflight failure, never a cleanup signal.
+- `SIMPLEMATCH_CONNECT_OFFSET_FLUSH_INTERVAL_MS` sets the Compose offset-flush interval.
+  The optional profile is `deploy/compose/kafka-connect.local.yml`.
+  The default is `60000` milliseconds.
+  The Testcontainers CDC test owns its own worker configuration and verifies a source checkpoint
+  before publication, then confirms it remains unchanged before the controlled crash.
+  S2 removes `SIMPLEMATCH_CDC_COMPOSE_PROJECT` with the former Compose test harness.
 - `SIMPLEMATCH_CDC_OBSERVER_TIMEOUT_SECONDS` is the single end-to-end deadline for the Kubernetes
   Risk CDC outage/recovery observer, including rollout, port-forward, polling, and bounded cleanup.
   The observer reserves 30 seconds of that budget for connector recovery and diagnostics (default
