@@ -1,0 +1,42 @@
+{
+  "topic": "account.lifecycle",
+  "partition": 1,
+  "offset": 2,
+  "timestamp_unix_ms": 2000,
+  "key_hex": "6163636f756e742d3432",
+  "payload_hex": "6163636f756e742d7061796c6f61642d7632",
+  "partitions": [
+    0,
+    1
+  ],
+  "headers": [
+    {
+      "name": "id",
+      "value_hex": "30303030303030302d303030302d303030302d303030302d303030303030303030303432"
+    },
+    {
+      "name": "headers_json",
+      "value_hex": "7b2274726163652d6964223a226163636f756e742d3432227d"
+    },
+    {
+      "name": "eventType",
+      "value_hex": "73696d706c656d617463682e6163636f756e742e76322e4163636f756e744c6966656379636c654576656e74"
+    },
+    {
+      "name": "__debezium.context.connectorLogicalName",
+      "value_hex": "73696d706c656d617463682d6163636f756e742d73657276696365"
+    },
+    {
+      "name": "__debezium.context.taskId",
+      "value_hex": "30"
+    },
+    {
+      "name": "__debezium.context.connectorName",
+      "value_hex": "706f737467726573716c"
+    },
+    {
+      "name": "__debezium.context.runId",
+      "value_hex": "31313131313131312d323232322d343333332d383434342d353535353535353535353535"
+    }
+  ]
+}

@@ -1,0 +1,15 @@
+{
+  "event_id": "00000000-0000-0000-0000-000000000042",
+  "business_identity": "reservation-42",
+  "reservation_id": "reservation-42",
+  "account_id": "account-42",
+  "message_key": "account-42",
+  "topic": "account.lifecycle",
+  "payload_hex": "6163636f756e742d7061796c6f61642d7632",
+  "payload_sha256": "f560b43be9b0078ff515e74219966d50a1d025a0063ff405cf3b551459f0aec6",
+  "payload_type": "simplematch.account.v2.AccountLifecycleEvent",
+  "created_at_unix_ms": 2000,
+  "headers_json": "{\"trace-id\":\"account-42\"}",
+  "aggregate_type": "account_reservation",
+  "explicit_partition": null
+}

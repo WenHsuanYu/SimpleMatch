@@ -18,26 +18,30 @@ public final class RecoveryEvidenceVerifierMain {
       return;
     }
     try {
-      ReportFields.require(arguments.length > 0, "Provide a recovery operation.");
-      final String result = switch (arguments[0]) {
-        case "dependency" -> {
-          ReportFields.require(arguments.length == 3, "Provide a dependency and report file.");
-          yield new DependencyRecoveryVerifier().verify(arguments[1], Path.of(arguments[2]));
-        }
-        case "placement" -> PlacementCommands.execute(arguments);
-        case "connect" -> ConnectCommands.execute(arguments);
-        case "market-data" -> {
-          ReportFields.require(
-              arguments.length == 3, "Provide Market Data evidence and verdict paths.");
-          yield new MarketDataEvidenceVerifier().write(
-              Path.of(arguments[1]), Path.of(arguments[2]));
-        }
-        default -> throw new IllegalArgumentException("Unknown recovery operation.");
-      };
+      final String result = execute(arguments);
       System.out.println(result);
     } catch (IOException | IllegalArgumentException failure) {
       System.err.println("Recovery evidence rejected: " + failure.getMessage());
       System.exit(1);
     }
+  }
+
+  private static String execute(String[] arguments) throws IOException {
+    ReportFields.require(arguments.length > 0, "Provide a recovery operation.");
+    return switch (arguments[0]) {
+      case "dependency" -> {
+        ReportFields.require(arguments.length == 3, "Provide a dependency and report file.");
+        yield new DependencyRecoveryVerifier().verify(arguments[1], Path.of(arguments[2]));
+      }
+      case "placement" -> PlacementCommands.execute(arguments);
+      case "connect" -> ConnectCommands.execute(arguments);
+      case "cdc" -> CdcCommands.execute(arguments);
+      case "market-data" -> {
+        ReportFields.require(
+            arguments.length == 3, "Provide Market Data evidence and verdict paths.");
+        yield new MarketDataEvidenceVerifier().write(Path.of(arguments[1]), Path.of(arguments[2]));
+      }
+      default -> throw new IllegalArgumentException("Unknown recovery operation.");
+    };
   }
 }

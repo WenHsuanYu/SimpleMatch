@@ -49,8 +49,24 @@ final class EvidenceFiles {
 
   static Path safeFile(Path path) {
     final Path safe = withoutSymlinks(path);
-    ReportFields.require(Files.isRegularFile(safe, LinkOption.NOFOLLOW_LINKS),
-        "Missing evidence file: " + path);
+    ReportFields.require(
+        Files.isRegularFile(safe, LinkOption.NOFOLLOW_LINKS), "Missing evidence file: " + path);
+    return safe;
+  }
+
+  /**
+   * Validates a new report destination without following a linked parent or replacing a directory.
+   */
+  static Path outputFile(Path path) {
+    final Path safe = withoutSymlinks(path);
+    final Path parent = safe.getParent();
+    if (parent == null) {
+      throw new IllegalArgumentException("Missing evidence destination directory.");
+    }
+    ReportFields.require(Files.isDirectory(parent), "Missing evidence destination directory.");
+    ReportFields.require(
+        !Files.exists(safe) || Files.isRegularFile(safe, LinkOption.NOFOLLOW_LINKS),
+        "Invalid evidence destination.");
     return safe;
   }
 
