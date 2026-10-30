@@ -1,9 +1,9 @@
 package com.simplematch.quickfixgateway.health;
 
+import org.jspecify.annotations.NonNull;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.context.SmartLifecycle;
-import org.springframework.lang.NonNull;
 
 /** Runs startup recovery before the QuickFIX acceptor starts accepting client traffic. */
 public final class QuickFixGatewayStartupLifecycle implements SmartLifecycle {

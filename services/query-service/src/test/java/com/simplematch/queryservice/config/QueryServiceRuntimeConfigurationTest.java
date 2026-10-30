@@ -48,7 +48,7 @@ class QueryServiceRuntimeConfigurationTest {
 
   @Test
   void redisCacheRoundTripsMarketReferenceWithConfiguredMapper() {
-    final ValueOperations<String, byte[]> valueOperations = mock(ValueOperations.class);
+    final ValueOperations<String, byte[]> valueOperations = mock();
     final RedisTemplate<String, byte[]> redisTemplate =
         new RedisTemplate<>() {
           @Override

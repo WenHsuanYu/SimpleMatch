@@ -115,7 +115,7 @@ final class CdcRunEvidence {
     }
     for (CdcOwner owner : CdcOwner.values()) {
       for (String location :
-          FlywayOwners.configurations().get(owner.service).get("flyway.locations").split(",")) {
+          FlywayOwners.configurations().get(owner.service).get("flyway.locations").split(",", 0)) {
         try (var files = Files.walk(Path.of(location.replaceFirst("^filesystem:", "")))) {
           files.filter(Files::isRegularFile).forEach(paths::add);
         }
