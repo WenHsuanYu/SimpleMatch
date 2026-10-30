@@ -66,10 +66,13 @@ This repo's Java dependencies use an explicit ownership model.
   JUnit owns private temporary certificates and credentials. Testcontainers provides Redis startup, mapped ports, and readiness.
   JUnit closes the containers after the suite, including setup failures.
 - Query PostgreSQL contracts use the Testcontainers PostgreSQL module as a test-only dependency.
-  Run `./gradlew -q :services:query-service:postgresJdbcTest` with Docker, Python 3, and `psql`.
-  Testcontainers manages one disposable PostgreSQL instance for the test JVM. Flyway migrates its isolated database.
-  The task runs the existing JDBC, HTTP, and Python collector contracts against that database.
-  Ordinary `test` tasks use H2 and do not require Docker.
+  Both `:services:query-service:test` and `:services:query-service:postgresJdbcTest` use PostgreSQL
+  for every database-backed Query test. Testcontainers owns one disposable PostgreSQL instance per
+  test JVM, and Flyway applies the canonical Query migrations. Migration and reset tests receive
+  separate databases; HTTP fixtures retain their transaction and cleanup boundaries.
+  The ordinary task needs Docker. The focused PostgreSQL task additionally runs the existing Python
+  collector contract and needs Python 3 and `psql`. Pure tests do not start a database when selected
+  alone. Neither task falls back to H2 or skips PostgreSQL snapshot assertions.
 - `tools/query-evidence-verifier` evaluates retained Query certification JSON with Jackson.
   JUnit tests its evidence interface and command exit status.
   It uses the existing version catalog and BOM, outside the Query service runtime.

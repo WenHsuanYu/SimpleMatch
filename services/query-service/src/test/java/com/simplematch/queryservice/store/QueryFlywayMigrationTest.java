@@ -4,7 +4,6 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 import java.util.UUID;
-import org.flywaydb.core.Flyway;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
@@ -20,12 +19,7 @@ class QueryFlywayMigrationTest {
 
   @BeforeEach
   void migrate() {
-    final DriverManagerDataSource dataSource = new DriverManagerDataSource();
-    dataSource.setDriverClassName("org.h2.Driver");
-    dataSource.setUrl("jdbc:h2:mem:queryschema" + UUID.randomUUID()
-        + ";MODE=PostgreSQL;DB_CLOSE_DELAY=-1");
-    Flyway.configure().dataSource(dataSource)
-        .locations("classpath:db/migration/query-service").load().migrate();
+    final DriverManagerDataSource dataSource = QueryProjectionTestDatabase.openIsolated();
     jdbc = new JdbcTemplate(dataSource);
   }
 

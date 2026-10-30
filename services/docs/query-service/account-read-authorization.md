@@ -112,9 +112,10 @@ Account caching remains conditional on Phase 2 consistency and performance gates
   retains deployment activation, anti-rollback and effective revocation ownership.
 - The public envelope factory has focused tests for empty, absent, READY, gap, unsupported and
   mixed state sets, including gap precedence and the exact minimal JSON shape.
-- Ordinary tests use migrated H2. The existing `postgresJdbcTest` additionally includes both new
-  HTTP classes; its concurrent snapshot case runs only with the PostgreSQL backend. Each HTTP
-  fixture clears its runner-owned projection data after the test, including failure scenarios.
+- Ordinary and focused `postgresJdbcTest` database tests use the same owned PostgreSQL fixture
+  and canonical migrations, including the concurrent snapshot case. Each HTTP fixture clears its
+  test-owned projection data after the test, including failure scenarios. Both tasks require Docker;
+  the focused task also runs the Python collector contract.
 
 ```bash
 ./gradlew -q :services:query-service:test

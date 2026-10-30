@@ -13,7 +13,6 @@ dependencies {
     implementation("org.springframework.boot:spring-boot-starter-security")
 
     testImplementation("org.springframework.security:spring-security-test")
-    testImplementation(libs.h2)
     testImplementation(libs.flyway.core)
     testImplementation("org.springframework:spring-jdbc")
     testImplementation(libs.testcontainers.core)
@@ -34,6 +33,8 @@ tasks.processTestResources {
 }
 
 tasks.test {
+    maxParallelForks = 1
+    outputs.upToDateWhen { false }
     exclude("**/QueryRedisSecurityIntegrationTest.class")
     exclude("**/QueryCollectorPostgresContractTest.class")
 }
@@ -53,6 +54,9 @@ tasks.register<Test>("postgresJdbcTest") {
     description = "Runs Query JDBC, HTTP, and collector contracts against Testcontainers PostgreSQL."
     testClassesDirs = sourceSets.test.get().output.classesDirs
     classpath = sourceSets.test.get().runtimeClasspath
+    filter.includeTestsMatching("com.simplematch.queryservice.QueryServiceApplicationTest")
+    filter.includeTestsMatching("com.simplematch.queryservice.runtime.QueryProjectionRebuildServiceTest")
+    filter.includeTestsMatching("com.simplematch.queryservice.store.QueryFlywayMigrationTest")
     filter.includeTestsMatching("com.simplematch.queryservice.store.JdbcQueryProjectionStoreTest")
     filter.includeTestsMatching("com.simplematch.queryservice.store.QueryCollectorPostgresContractTest")
     filter.includeTestsMatching("com.simplematch.queryservice.security.QueryHttpSecurityIntegrationTest")
@@ -65,7 +69,6 @@ tasks.register<Test>("postgresJdbcTest") {
     filter.includeTestsMatching("com.simplematch.queryservice.security.QueryExecutionsSnapshotHttpTest")
     filter.includeTestsMatching("com.simplematch.queryservice.security.QueryMarketHttpTest")
     filter.includeTestsMatching("com.simplematch.queryservice.security.QueryMarketSnapshotHttpTest")
-    systemProperty("simplematch.query.jdbc.backend", "postgresql")
     systemProperty("simplematch.repositoryRoot", rootProject.projectDir.absolutePath)
     maxParallelForks = 1
     outputs.upToDateWhen { false }

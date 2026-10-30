@@ -18,7 +18,6 @@ import java.util.concurrent.TimeUnit;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
-import org.junit.jupiter.api.condition.EnabledIfSystemProperty;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.context.annotation.Import;
@@ -38,7 +37,6 @@ import org.springframework.web.context.WebApplicationContext;
     properties = "spring.main.web-application-type=servlet")
 @ActiveProfiles("test")
 @Import(QueryAccountSummaryHttpTest.DatabaseConfiguration.class)
-@EnabledIfSystemProperty(named = "simplematch.query.jdbc.backend", matches = "postgresql")
 class QueryExecutionsSnapshotHttpTest {
   @Autowired private WebApplicationContext context;
   @Autowired private QueryProjectionStore store;

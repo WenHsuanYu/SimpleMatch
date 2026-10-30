@@ -105,6 +105,8 @@ TLS, Gateway, OAuth, certificate binding, Redis performance or production-readin
 
 The PostgreSQL task requires Docker, Python 3, and `psql`.
 Testcontainers creates an isolated database with an ownership marker. The task also runs the existing Python collector contract.
-Ordinary tests use H2 and skip PostgreSQL-only concurrency cases.
+The ordinary Query task also uses the owned PostgreSQL fixture and executes these concurrent
+snapshot assertions. It requires Docker. Only the focused task needs the collector's Python 3 and
+`psql` prerequisites.
 Runtime counts, input fingerprints, original red tests, review, cleanup and final-head CI
 are recorded in the #191 handoff; do not infer a PASS from this runbook.

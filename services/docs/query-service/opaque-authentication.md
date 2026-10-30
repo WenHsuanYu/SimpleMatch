@@ -111,7 +111,10 @@ Testcontainers creates an isolated database and removes its container after the 
 The fixture sets an ownership marker before Flyway migrations or fixture writes.
 The task includes JDBC, real FilterChain, loopback HTTP, and the existing Python collector contracts.
 
-The ordinary suite uses isolated migrated H2 fixtures. It does not establish PostgreSQL behavior.
+The ordinary and focused database suites now use Testcontainers PostgreSQL with the same
+canonical migrations. The ordinary task requires Docker; the focused task additionally needs
+Python 3 and `psql` for the collector. The managed Spring pool uses a dynamic canonical DSN,
+while HTTP tests retain their narrower fault-injection DataSource wrappers.
 Real loopback HTTP tests require local socket permission.
 Run the PostgreSQL task directly for this fixture. The multi-service Flyway/reset runner uses a separate database.
 Security fixture CLI checks also run in the existing local-resource lifecycle CI workflow.

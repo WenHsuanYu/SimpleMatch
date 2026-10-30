@@ -68,12 +68,17 @@ shared instrument contract.
 
 `./gradlew verifyPostgres` also executes `check-service-schema-contracts.sql` against PostgreSQL.
 These probes first insert valid rows, reject individual invalid values with specific SQLSTATEs,
-and roll back every fixture. They complement H2/JDBC tests; they do not certify a live deployment.
+and roll back every fixture. They complement service JDBC tests; they do not certify a live deployment.
 The [completed follow-up record](../verification/schema-contract-followup-record.md) documents the existing Query JDBC
 contract suite on PostgreSQL, exercising the production ON CONFLICT branch and actual transaction
 rollback.
-The runner creates a uniquely named scratch database, records ownership, and removes only that
-owned database after the explicit JDBC task. The ordinary Java suite keeps its fast H2 coverage.
+Query's ordinary and focused JDBC tasks use the same Testcontainers PostgreSQL fixture and
+canonical Flyway migrations. The fixture records database ownership before migration or writes.
+Migration and reset tests use separate databases inside the owned container. Spring's managed-pool
+context supplies its canonical DSN dynamically; HTTP fixtures use their narrower DataSource
+wrappers. No Query test switches to H2, and concurrent snapshot assertions run in both tasks.
+Testcontainers removes the container and its databases at test JVM exit. The ordinary Query task
+requires Docker; the focused task also needs Python 3 and `psql` for the collector contract.
 
 The [canonical reason revision](../verification/schema-contract-followup-record.md#canonical-reason-storage-revision)
 supersedes the Unicode whitespace CHECKs with Account V12 and Risk V15. Rejection codes have a

@@ -104,8 +104,9 @@ application policy-snapshot evidence, not multi-replica convergence or effective
 
 The existing JDBC reply/concurrency and external cache probes are shared with Account tests.
 They remain test-only; no private application methods or internal collaborators are mocked.
-Ordinary tests use migrated H2. PostgreSQL-specific Account and Order concurrent-writer cases
-are skipped there and run in `postgresJdbcTest` against the owned PostgreSQL fixture instead.
+Ordinary and focused `postgresJdbcTest` database tests share the owned PostgreSQL fixture and
+canonical migrations. Account and Order concurrent-writer cases execute in both tasks. Both tasks
+require Docker; the focused task additionally runs the Python collector contract.
 
 ```bash
 ./gradlew -q :services:query-service:test :services:query-service:bootJar

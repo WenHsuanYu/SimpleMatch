@@ -22,7 +22,6 @@ import org.hamcrest.Matchers;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
-import org.junit.jupiter.api.condition.EnabledIfSystemProperty;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.CsvSource;
 import org.junit.jupiter.params.provider.ValueSource;
@@ -232,7 +231,6 @@ class QueryAccountSummaryHttpTest {
   }
 
   @Test
-  @EnabledIfSystemProperty(named = "simplematch.query.jdbc.backend", matches = "postgresql")
   void concurrentWriterCannotMixOldAccountDataWithNewCheckpointState() throws Exception {
     final CountDownLatch accountRead = new CountDownLatch(1);
     final CountDownLatch writerCommitted = new CountDownLatch(1);

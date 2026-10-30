@@ -2,9 +2,9 @@ simplematch:
   environment: test
 
   postgres:
-    # The test profile owns only the H2 endpoint. Schema creation and selection remain
-    # the responsibility of SimpleMatchDataSourceAutoConfiguration.
-    dsn: "jdbc:h2:mem:query-context;MODE=PostgreSQL;DB_CLOSE_DELAY=-1"
+    # HTTP tests supply their owned PostgreSQL DataSource. The managed-pool test
+    # replaces this unreachable placeholder through DynamicPropertySource.
+    dsn: "jdbc:postgresql://127.0.0.1:1/unused-query-context"
 
   query-service:
     matching-events:

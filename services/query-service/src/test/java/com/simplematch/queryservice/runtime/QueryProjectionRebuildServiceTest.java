@@ -9,11 +9,10 @@ import com.simplematch.contracts.account.v2.AccountLifecycleState;
 import com.simplematch.contracts.common.v2.EventMetadata;
 import com.simplematch.contracts.common.v2.TwdNotional;
 import com.simplematch.queryservice.store.JdbcQueryProjectionStore;
+import com.simplematch.queryservice.store.QueryProjectionTestDatabase;
 import com.simplematch.queryservice.store.QueryProjectionSource;
 import com.simplematch.queryservice.store.QueryProjectionStore;
 import java.util.Optional;
-import java.util.UUID;
-import org.flywaydb.core.Flyway;
 import org.junit.jupiter.api.Test;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.jdbc.datasource.DataSourceTransactionManager;
@@ -25,7 +24,7 @@ class QueryProjectionRebuildServiceTest {
 
   @Test
   void retainsCommittedResetWhenDisposableCacheCleanupFails() {
-    final DriverManagerDataSource dataSource = dataSource();
+    final DriverManagerDataSource dataSource = QueryProjectionTestDatabase.openIsolated();
     final QueryProjectionStore store = new JdbcQueryProjectionStore(new JdbcTemplate(dataSource));
     final AccountLifecycleEvent event = accountEvent();
     store.projectAccountLifecycle(
@@ -44,23 +43,6 @@ class QueryProjectionRebuildServiceTest {
 
     assertThat(store.findAccountSummary(ACCOUNT_ID)).isEmpty();
     assertThat(store.freshness().partitions()).isEmpty();
-  }
-
-  private DriverManagerDataSource dataSource() {
-    final DriverManagerDataSource dataSource = new DriverManagerDataSource();
-    dataSource.setDriverClassName("org.h2.Driver");
-    dataSource.setUrl(
-        "jdbc:h2:mem:queryrebuild"
-            + UUID.randomUUID().toString().replace("-", "")
-            + ";MODE=PostgreSQL;DB_CLOSE_DELAY=-1;"
-            + "INIT=CREATE SCHEMA IF NOT EXISTS query_service\\;"
-            + "SET SCHEMA query_service");
-    Flyway.configure()
-        .dataSource(dataSource)
-        .locations("classpath:db/migration/query-service")
-        .load()
-        .migrate();
-    return dataSource;
   }
 
   private AccountLifecycleEvent accountEvent() {
