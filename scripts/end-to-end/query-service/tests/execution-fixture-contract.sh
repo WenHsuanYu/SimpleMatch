@@ -42,11 +42,6 @@ release_line="$(grep -n '^  release_fix_submit_client$' "$fixture_module" | head
   exit 1
 }
 
-if grep -Fq 'run-risk-matching-command-e2e.sh' "$fixture_module"; then
-  printf '%s\n' 'Execution fixture must use public FIX, not direct RM-1 helper commands.' >&2
-  exit 1
-fi
-
 temporary_directory="$(mktemp -d "${TMPDIR:-/tmp}/simplematch-query-fixture-contract.XXXXXX")"
 trap 'rm -rf "$temporary_directory"' EXIT
 

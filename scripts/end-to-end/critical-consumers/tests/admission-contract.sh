@@ -17,6 +17,35 @@ fail() {
 bash -n "$cluster_module"
 bash -n "$recovery_module"
 
+# The shared decoder is still used by critical-consumer admission fixtures.
+(
+  # shellcheck source=scripts/end-to-end/critical-consumers/lib/cluster-data.sh
+  source "$cluster_module"
+  binary_payload='{"marketSnapshot":{"instruments":[{"venueMic":"XTAI","symbol":"2330","eligibility":"ELIGIBLE","referencePriceUnits":10000000,"lowerPriceLimitUnits":9000000,"upperPriceLimitUnits":11000000}]}}'
+
+  for configmap_field in binaryData data; do
+    kns() {
+      [[ "${1:-}" == get && "${2:-}" == configmap/matching-daily-artifact ]] || return 1
+      if [[ "$configmap_field" == binaryData ]]; then
+        jq -n --arg payload "$binary_payload" \
+          '{binaryData:{"market_reference.json":($payload|@base64)}}'
+      else
+        jq -n --arg payload "$binary_payload" \
+          '{data:{"market_reference.json":$payload}}'
+      fi
+    }
+
+    kns get configmap/matching-daily-artifact -o json >/dev/null
+    decoded_artifact="$(decode_configmap_file matching-daily-artifact market_reference.json)"
+    jq -e '.marketSnapshot.instruments[0].referencePriceUnits == 10000000' \
+      <<<"$decoded_artifact" >/dev/null || {
+      printf 'Shared critical-consumer ConfigMap seam must decode %s market_reference.json.\n' \
+        "$configmap_field" >&2
+      exit 1
+    }
+  done
+)
+
 ruby - "$quickfix_build" <<'RUBY'
 path = ARGV.fetch(0)
 build = File.read(path, encoding: "UTF-8")

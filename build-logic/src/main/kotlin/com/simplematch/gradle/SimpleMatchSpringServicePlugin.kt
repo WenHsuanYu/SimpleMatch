@@ -28,11 +28,11 @@ class SimpleMatchSpringServicePlugin : Plugin<Project> {
 
             add(
                 "implementation",
-                project.project(":shared-java:simplematch-config")
+                this.project(":shared-java:simplematch-config")
             )
             add(
                 "implementation",
-                project.project(":shared-java:simplematch-contracts")
+                this.project(":shared-java:simplematch-contracts")
             )
 
             add(

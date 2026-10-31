@@ -15,3 +15,6 @@ out
 third_party
 **/build
 **/.gradle
+
+# Kubernetes orchestration runs on the host; images need only its Gradle project metadata.
+tools/kubernetes-tests/src

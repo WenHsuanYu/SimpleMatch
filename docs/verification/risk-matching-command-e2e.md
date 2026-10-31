@@ -1,269 +1,212 @@
 # RM-1 Risk-to-Matching deployed E2E verification
 
-This runbook covers the repository-owned local production-like evidence for RM-1 / issue #126. It
-proves one real accepted Risk command travels through the durable Risk admission/outbox boundary,
-the retained Debezium connector, and the production-shaped `matching.commands` topic. It does not
-claim external staging or production certification.
+`./gradlew verifyKubernetes` builds current images and uses Jupiter to prove one fresh BUY command
+crosses the durable Risk admission/outbox boundary, Debezium, and `matching.commands`. The host
+adapter creates real kind nodes in the selected Docker engine and deploys real PostgreSQL, Kafka,
+Account, Risk, Connect and verifier workloads. This is local deployed evidence; its scope ends at
+the command topic. Matching execution, restart/replay, HA and aggregate `full-local` certification
+have separate gates.
 
-## Design
+## Ownership and design
 
-The verifier is split into stable layers so each concern has one owner:
+`tools/kubernetes-tests` owns preflight, image-build receipts, cluster and namespace lifecycle,
+fixture provisioning, bounded diagnostics, evidence collection and cross-layer Jupiter assertions.
+The existing `tools/risk-matching-e2e-verifier` owns typed Market Reference validation, scenario
+selection, gRPC submission/reconciliation, Kafka observation, protobuf decoding and semantic checks.
+The host reuses that verifier rather than duplicating its protocol assertions.
 
-- `tools/risk-matching-e2e-verifier` owns typed Market Reference validation, deterministic scenario
-  construction, Risk gRPC submission/reconciliation, Kafka observation, protobuf decoding, and
-  semantic assertions.
-- `RiskAdmissionProbe` treats the initial submission response and durable reconciliation as one
-  bounded state machine. It can observe `GetAdmissionOutcome`, but it never resubmits the order and
-  never owns saga recovery.
-- `deploy/docker/Dockerfile.risk-matching-e2e-verifier` builds that tool into a dedicated runtime
-  image. Gradle is used while building the image, not inside the deployed verification Pod.
-- `deploy/k8s/verification/risk-matching-e2e-verifier-job.yaml` owns Kubernetes execution policy:
-  Job retry/deadline semantics, security contexts, resource limits, volume mounts, and CLI wiring.
-- `scripts/run-risk-matching-command-e2e.sh` owns orchestration only: prerequisite checks, the
-  run-scoped Account fixture, immutable run configuration, evidence collection, PostgreSQL
-  cross-checks, and cleanup.
+`deploy/k8s/verification/risk-matching-e2e-verifier-job.yaml` owns the verifier's execution policy,
+security, resource limits, mounts and CLI arguments. `matching-open-barrier-job.yaml` invokes the
+native fixture publisher before Risk starts. Run ConfigMaps are immutable and contain only test
+inputs. Versioned Account/Risk Flyway migrations, canonical RF3 Kafka topics with 15 command
+partitions, and the Risk outbox connector remain required.
 
-The shell harness must not embed Kubernetes YAML, reimplement protobuf parsing, recalculate routing,
-or drive Risk recovery. Production Risk and Matching code are not bypassed.
+The selected boundary needs no Redis, Account outbox connector or running Matching fleet. The
+native Open Barrier still carries the actual built Matching image identity. Removing these unused
+workloads narrows dependencies without changing the selected business assertion. Other scenarios
+retain their own required deployments and interfaces.
 
-The verifier has one end-to-end timeout budget. Submission, reconciliation, and Kafka observation
-all consume the same remaining budget; a later stage cannot receive a fresh copy of the original
-timeout.
+Each run receives a fresh UUID, namespace, account and evidence directory. A cross-process lease
+serializes runs using the same Docker daemon. The adapter rejects existing evidence destinations,
+foreign or abandoned resources, invalid topology, changed source/image identities and unsupported
+capacity. It never adopts an older namespace or resumes an interrupted verdict.
 
-## Admission completion semantics
+## Preconditions and local verification
 
-Two admission paths are valid and must satisfy the same terminal assertions.
+Run from the repository root with the project's Java/Gradle toolchain, Docker, kind, kubectl, Bash,
+Ruby, jq, GNU tar and timeout available. The command does not install software or acquire credentials.
+Image builds and initial platform-image pulls need their normal dependency network access.
 
-`SYNCHRONOUS_ACCEPTED` means `SubmitNewOrder` returned an accepted response within the initial RPC.
-The response identity and artifact-assigned partition are validated before Kafka observation.
+Select the Docker engine explicitly. On this workstation use `desktop-linux`; its kind node
+containers are real Docker Desktop containers. The managed Desktop Kubernetes system containers
+belong to a separate cluster. The harness uses its own private kubeconfig, so the current kubectl
+context does not choose its target.
 
-`RECOVERED_ACCEPTED` covers an ambiguous remote outcome. If `SubmitNewOrder` returns gRPC
-`UNAVAILABLE`, the verifier queries the existing public `GetAdmissionOutcome(command_id)` API. A
-durable `PENDING` result is observed until Risk's own scheduled recovery reaches a terminal state.
-The verifier does not call `SubmitNewOrder` again. `ACCEPTED` continues to Kafka verification;
-`REJECTED`, `NOT_FOUND`, an identity mismatch, a non-recoverable gRPC error, or expiration of the
-shared deadline fails the gate.
+Docker Desktop must share `/tmp/simplematch-kubernetes-coordination`. The adapter stores private
+per-run ownership markers and kubeconfigs below that directory. The latest creation receipt is atomically mirrored there
+before updating evidence, so interrupted dedicated creation cannot be adopted as prepared and an
+old partial receipt cannot later delete a completed dedicated cluster. Each new node receives its run's
+UUID marker as a read-only bind mount. Keep this directory and the original ownership receipt until
+retained resources have been cleaned. Configure the exact share in Desktop's Resources > File
+sharing before running; the adapter does not change Desktop settings or restart it.
 
-This distinction is required because an Account reservation can commit before the caller receives
-the response. `UNAVAILABLE` therefore describes uncertainty at the synchronous boundary; it is not
-itself proof that the durable admission failed.
+The current selected workload requests total 8 GiB and 3.5 CPU. Preflight adds the verifier's
+512 MiB request and a 4 GiB kind/control-plane reserve, and requires at least eight Docker CPUs.
+Native Docker requires that complete budget in current host available memory. Desktop requires it
+in current guest available memory and retains a separate 1 GiB of host-tool headroom. A new
+read-only, 32 MiB observer uses the selected PostgreSQL image to read the VM's memory; it removes
+its own container and anonymous volumes. This avoids reserving the VM's existing memory twice,
+without changing Desktop settings. The shared storage guard checks Desktop's actual backing filesystem. Worker image filesystems must remain below 75% use before and
+after import, before a new build against existing workers, and after bootstrap. The control plane
+must pass its stability observation after bootstrap and before namespace deletion. Requests describe declared
+scheduling requirements; they are not measurements of peak RSS.
 
-## Static verification
-
-Before running the deployed check:
+Run the offline suite and static analysis before a deployment:
 
 ```bash
+./gradlew :tools:kubernetes-tests:check staticAnalysis --no-daemon
 bash scripts/test-risk-matching-e2e-manifest.sh
 bash scripts/test-matching-topic-cutover.sh
-
-./gradlew --no-daemon \
-  :tools:risk-matching-e2e-verifier:test
 ```
 
-The manifest test protects the verifier's Job type, no-retry behavior, security context, image,
-resource budget, Market Reference mount, run-ConfigMap argument contract, normalized Admission
-evidence contract, and fail-closed evidence-directory behavior. The topic cutover test protects the
-production-shaped `matching.commands` / `matching.events` contract and prevents retired execution
-topic configuration from being re-enabled by deployment or local certification.
+The ordinary `test` task excludes the `kubernetes-live` tag. Its process, filesystem and real
+kubectl/API-fixture tests validate adapter behavior; only `verifyKubernetes` executes the deployed
+business scenario.
 
-## Build the dedicated verifier image
+## Run with a dedicated or disposable cluster
 
-For an already-retained certification namespace, build and load only the verifier image:
+The default `dedicated` mode validates and reuses `simplematch-live`, or creates it when missing.
+It requires one Ready control-plane node and three Ready workers with the canonical pool and unique
+slots `0`, `1`, `2`, bound to the original kind Docker containers. Each invocation still creates a
+fresh namespace and data. Successful preparation preserves the dedicated cluster after namespace
+and PVC/PV cleanup. A partial cluster created by this run can be removed only with its exact owner
+proof; an existing dedicated cluster is never deleted by this harness.
+
+Use a new evidence path on every invocation:
 
 ```bash
-scripts/build-local-images.sh \
-  --service risk-matching-e2e-verifier
-
-kind load docker-image \
-  --name simplematch-live \
-  simplematch/risk-matching-e2e-verifier:local
+JAVA_TOOL_OPTIONS='-Xms32m -Xmx512m -XX:+UseSerialGC' \
+./gradlew verifyKubernetes --no-daemon --max-workers=2 \
+  -Dorg.gradle.jvmargs='-Xmx512m -Xms32m -XX:MaxMetaspaceSize=384m -XX:+UseSerialGC -Dfile.encoding=UTF-8' \
+  -PkubernetesDockerContext=desktop-linux \
+  -PkubernetesMode=dedicated \
+  -PkubernetesTradingDay=2026-08-17 \
+  -PkubernetesEvidence=out/verification/rm1-dedicated-01
 ```
 
-A fresh normal `scripts/run-local-production-like-certification.sh` build/load also includes this
-image because it is part of the repository local-image inventory.
+The bounded Gradle heap and host-side child JVM options avoid reserving the workstation's larger
+default heaps during capacity-sensitive work. These options do not enter the deployed application
+Pods. It does not lower any workload request. The approved historical delivery
+keeps its original trading day. `kubernetesDeliveryManifest` may select another readable approved
+manifest for the explicitly matching `kubernetesTradingDay`.
 
-The running verifier does not copy the repository, start Gradle, or compile build logic. The image
-contains the Gradle `installDist` application produced during image build.
+Set `-PkubernetesMode=disposable` to create a unique four-node `simplematch-s3-<run-prefix>` cluster.
+Normal teardown removes its namespace/PVs and its exact owned node containers and volumes.
+Disposable mode is the isolation boundary for node-level faults; a namespace in the dedicated
+cluster does not isolate shared nodes.
 
-## Preconditions
+The normal entry acquires platform images, builds the selected application/helper images using
+ordinary deterministic caches, and writes a new build-input receipt. Every invocation executes the
+selected live checks anew. Receipt checks bind source bytes, executed Gradle metadata, daemon and
+immutable image identities. Each selected image is exported as a separate `linux/amd64` archive. Its config digest is checked
+against the actual bytes while the host reference remains unchanged. Worker CRI identities must
+match those exported config digests; the filtered index can differ from the host's multi-platform
+index. Spring probes use the launcher's `--` direct execution strategy, as defined by the
+[CNB platform specification](https://github.com/buildpacks/spec/blob/main/platform.md#launcher),
+so the tiny run image needs no Bash. Worker execution probes establish usability, and actual deployed Pod image IDs are checked
+before and after the command assertion. A tag or image listing alone is
+insufficient proof.
 
-Create and retain the local environment first:
+## Retention and exact cleanup
+
+Add `-PkubernetesRetain=true` for explicit local inspection. `summary.json` records the business
+assertion result and `cleanup: RETAINED`; retention never counts as successful cleanup. Do not
+manually start another conflicting run against retained resources.
+
+To clean that run, pass its original `ownership.json` and a new cleanup-report destination:
 
 ```bash
-scripts/manage-simplematch-live.sh create
-
-SIMPLEMATCH_CERTIFICATION_TRADING_DAY=2026-08-17 \
-SIMPLEMATCH_MARKET_REFERENCE_DELIVERY_MANIFEST="$(
-  realpath tools/market-reference-builder/config/market-reference/approved/2026-08-17/delivery/manifest.yaml
-)" \
-SIMPLEMATCH_CERTIFICATION_NAMESPACE=simplematch-rm1-20260817 \
-SIMPLEMATCH_CERTIFICATION_EVIDENCE_DIR="$PWD/out/certification/rm1-20260817" \
-scripts/run-local-production-like-certification.sh --keep-resources
+./gradlew cleanupKubernetesRun --no-daemon \
+  -Dorg.gradle.jvmargs='-Xmx1g -Xms128m -XX:MaxMetaspaceSize=512m -Dfile.encoding=UTF-8' \
+  -PkubernetesOwnership="$PWD/out/verification/rm1-dedicated-01/ownership.json" \
+  -PkubernetesCleanupEvidence="$PWD/out/verification/rm1-cleanup-01"
 ```
 
-The retained namespace must contain Ready Risk, Account, PostgreSQL, Matching, Kafka, and Kafka
-Connect workloads, the `matching-daily-artifact` ConfigMap, and a RUNNING
-`risk-service-outbox` connector/task.
+Cleanup rechecks the recorded Docker engine, exact node IDs, cluster/namespace identities, current
+creation state and read-only owner mounts. Disposable teardown addresses each validated full
+container ID directly; it does not reselect targets through a cluster-name deletion command. Namespace and disposable-node cleanup have independent attempts, so an
+unavailable API does not block deletion when independent Docker ownership is proven. An already
+removed disposable target succeeds without querying its old API. A prepared dedicated cluster
+remains intact. Unrelated images, named volumes and Desktop system containers are preserved.
 
-## Run
+The cleanup command writes a separate cleanup-only result and never changes the original run's
+business verdict. If an ownership check fails, preserve the evidence and investigate that exact
+resource; do not use a blanket prune or delete another cluster to obtain a green report.
 
-From the repository root, use a new or empty evidence directory:
+Connect registration uses REST inside an owned Ready Connect Pod. Its ingress policy permits
+Connect peers on port 8083; the API Service Proxy originates on the control-plane node and is
+not an authorized peer. The harness preserves that policy, checks any existing connector's
+configuration, does not blindly repeat an uncertain POST, and requires the connector and its
+tasks to reach `RUNNING` before admission. A namespace or service rollout is not sufficient
+proof that the harness's chosen management path is reachable.
 
-```bash
-scripts/run-risk-matching-command-e2e.sh \
-  --namespace simplematch-rm1-20260817 \
-  --trading-day 2026-08-17 \
-  --evidence-dir out/certification/rm1-20260817/rm1-02 \
-  --retained-evidence-dir out/certification/rm1-20260817 \
-  --verifier-image "$(tr -d '\r\n' < out/certification/rm1-20260817/verifier-image-reference)"
-```
+## Business assertion
 
-A non-empty evidence directory is rejected. Certification artifacts from separate runs must never be
-mixed or silently overwritten.
+After migrations, topic provisioning, native Open Barriers and service readiness, the adapter
+registers the Risk outbox connector and requires its connector/tasks to be `RUNNING`. It provisions
+a fresh Account daily cash limit for the explicit trading day, then starts the verifier Job.
 
-The script intentionally allows only one verifier run at a time in one disposable namespace. It
-uses the stable helper identities:
+The verifier validates the mounted artifact and checksum, selects an eligible instrument using
+`RiskMatchingScenario`, and snapshots all 15 command-partition end offsets before submission. It
+submits one real BUY/LIMIT/ROD board-lot order through
+`simplematch.risk.v2.OrderAdmissionService/SubmitNewOrder`. One timeout budget covers submission,
+reconciliation and Kafka observation.
 
-```text
-Job/risk-matching-e2e-verifier
-ConfigMap/risk-matching-e2e-run
-```
+`SYNCHRONOUS_ACCEPTED` means the initial response contains validated accepted identities and route.
+`RECOVERED_ACCEPTED` permits an ambiguous gRPC `UNAVAILABLE` result only when the existing public
+`GetAdmissionOutcome(command_id)` reaches durable `ACCEPTED`. The verifier never resubmits the order
+or drives Risk recovery. `REJECTED`, `NOT_FOUND`, identity mismatch or deadline expiry fails.
 
-The ConfigMap is immutable and contains only run data: trading day, run-scoped account UUID, order
-side, run ID, and timeout. A second invocation refuses to replace retained helper resources because
-doing so could destroy failure evidence or correlate two commands to one run. The required retained
-evidence directory is also the provenance authority: the selected image must be the exact retained
-digest/reference for the namespace, and kind-load runs probe that image through every schedulable
-kind worker before the verifier Job is created.
+Only records after the pre-submit offsets count. At-least-once duplicates are accepted only on the
+same partition with byte-identical payloads; conflicting same-key records fail. Host Jupiter then
+compares the durable admission journal, Risk outbox and delivered Kafka record: account/order/
+command IDs, trading day, artifact hash, routing version and partition must agree, and outbox payload
+bytes must exactly equal the Kafka bytes.
 
-`--keep-helper` preserves the Job and ConfigMap after the run. Remove them explicitly before a later
-run:
+The local overlay explicitly disables Risk's CDC backpressure controller. This scenario directly
+proves durable outbox delivery and does not insert synthetic CDC health. Production defaults and
+the separately verified CDC lag safety controller retain their own scope; this acceptance does not
+certify that controller.
 
-```bash
-kubectl -n simplematch-rm1-20260817 delete \
-  job/risk-matching-e2e-verifier \
-  configmap/risk-matching-e2e-run
-```
+## Evidence and failure handling
 
-## What the gate proves
+The evidence root contains `preflight.json`, `ownership.json`, `summary.json`, observed worker image
+and filesystem identities, control-plane stability observations, bounded diagnostics, and the durable
+`risk-admission.json` / `risk-outbox.json` cross-check inputs. `summary.json` separates `assertions`,
+`diagnostics` and `cleanup`, and retains redacted primary, diagnostic and cleanup failure causes.
+A required failure prevents overall PASS.
 
-The harness performs these checks:
+The `verifier/` subdirectory contains `selected-instrument.json`, `request.json`,
+`admission-submit.json`, `admission-outcome.json`, `matching-offsets-before.json`,
+`matching-command-record.json`, `matching-command-decoded.json` and `verifier-verdict.json`.
+The typed verdict must pass, the normalized outcome must be terminal `ACCEPTED`, and the outer
+Jupiter assertions and lifecycle must succeed. A helper's marker file is not a business verdict.
 
-1. verifies the canonical `kind-simplematch-live` context and retained namespace;
-2. waits for Risk, Account, Kafka Connect, PostgreSQL, and the Matching fleet;
-3. verifies the retained `risk-service-outbox` connector and its task are `RUNNING`;
-4. creates a run-scoped Account UUID and provisions either an `ACCOUNT/*` daily cash limit for BUY
-   or the selected instrument's long position for SELL;
-5. creates the immutable `risk-matching-e2e-run` ConfigMap;
-6. creates the repository-owned verifier Job without rendering YAML in shell;
-7. validates the exact mounted Market Reference bytes and external checksum with the shared startup
-   validator;
-8. deterministically selects the first eligible `(venueMic, symbol)` instrument with final price
-   facts and reads its explicit artifact partition;
-9. snapshots all 15 `matching.commands` end offsets before submission;
-10. submits a real BUY or SELL/LIMIT/ROD board-lot order through
-    `simplematch.risk.v2.OrderAdmissionService/SubmitNewOrder`;
-11. accepts either a validated synchronous Risk acceptance or an `UNAVAILABLE` submission that
-    subsequently reaches durable `ACCEPTED` through Risk-owned recovery and `GetAdmissionOutcome`;
-12. consumes only records after the pre-submit offset boundary, decodes `MatchingCommand`, and
-    rejects wrong-partition or conflicting same-key payloads;
-13. copies verifier-owned JSON evidence while the image's bounded evidence hand-off wrapper keeps
-    the container alive;
-14. acknowledges evidence collection so the Job exits with the original Java verifier status;
-15. reads the owner-owned `risk_service.admission_journal` and `risk_service.outbox` rows;
-16. requires the Admission artifact identity/partition, outbox key/partition/payload type, and exact
-    outbox payload bytes to agree with the Kafka record.
+The image wrapper writes `.exit-code` and `.ready`, waits while the host copies `/tmp/evidence`,
+and exits with the verifier status after `.collected`. This bounded hand-off exists because
+`kubectl cp` requires a running container. The Job deadline remains a separate upper bound.
 
-At-least-once Kafka delivery is handled intentionally: multiple physical records with the same
-`commandId` are accepted only when they are on the same partition and have byte-identical payloads.
-A same-key record on another partition or with different bytes fails the gate.
+Before deletion, diagnostics preserve bounded inventory, events, owned Job/Pod termination state
+and available logs, including failed attempts of retryable migration Jobs. A successful retry
+satisfies the canonical Job policy; an earlier failed attempt remains visible in the evidence.
+The verifier itself retains `backoffLimit: 0`. Partial kind creation retains owned nodes long enough
+for diagnostics before exact teardown. Diagnostics and cleanup failures remain separate from the
+original business/setup failure.
 
-## CDC backpressure boundary
+## Certification boundary
 
-The local RM-1 overlay explicitly sets
-`SIMPLEMATCH_RISK_SERVICE_ADMISSION_CDC_BACKPRESSURE_ENABLED=false`. This is a scoped certification
-boundary, not a healthy-CDC simulation and not a production default. RM-1 verifies the real durable
-Risk outbox -> Debezium -> `matching.commands` path directly, including connector state and exact
-Kafka bytes, so manually refreshing `risk_service.cdc_delivery_lag` would add synthetic health data
-without strengthening the RM-1 claim.
-
-The production/default Risk configuration keeps CDC backpressure enabled. Its Risk-owned
-`CdcDeliveryMonitor` derives delivery lag from outbox/Kafka progress and refreshes the durable
-measurement only after proving its observation consumer is caught up. The
-[deployment capability record](../status/phase-1-capability-inventory.md#pd-1-harden-the-cross-service-deployment-and-security-baseline)
-indexes the separate #138 implementation and source-specific outage/recovery evidence. This RM-1
-baseline still disables the controller in its own overlay, so its accepted-command evidence does
-not independently certify the CDC lag safety controller.
-
-## Evidence hand-off
-
-The Java verifier writes structured JSON under `/tmp/evidence`. The dedicated image entrypoint runs a
-small repository-owned hand-off wrapper:
-
-```text
-Java verifier exits
-→ wrapper writes .exit-code and .ready
-→ host harness copies /tmp/evidence
-→ host writes .collected
-→ wrapper exits with the original verifier status
-→ Kubernetes Job becomes Complete or Failed
-```
-
-This exists because `kubectl cp` requires a running container. The hand-off is bounded and the Job
-also has `activeDeadlineSeconds`, so a disconnected harness cannot leave the verifier alive
-indefinitely.
-
-## Evidence
-
-The requested evidence directory contains, at minimum:
-
-```text
-run-metadata.json
-market-reference-configmap.json
-connector-status.json
-account-fixture.log
-verifier-run-config.json
-selected-instrument.json
-request.json
-admission-submit.json
-admission-outcome.json
-matching-offsets-before.json
-matching-command-record.json
-matching-command-decoded.json
-risk-admission.json
-risk-outbox.json
-verifier-verdict.json
-verdict.json
-verifier.log
-```
-
-`admission-submit.json` records the initial gRPC code and any synchronous response facts.
-`admission-outcome.json` normalizes both valid paths into one terminal result and records the path,
-identities, whether `PENDING` was observed, reconciliation attempt count, elapsed time, and terminal
-status. The older `response.json` artifact is intentionally retired because a valid recovered path
-may have no synchronous accepted response.
-
-Failures use stable `stage` and `failureCode` fields rather than requiring automation to parse Java
-exception class names. The hidden hand-off files `.exit-code`, `.ready`, and `.collected` are
-implementation evidence and are not business assertions.
-
-`verdict.json` is the outer cross-layer verdict. `verifier-verdict.json` is the typed Java
-gRPC/Kafka verdict. A successful run requires both to report `PASS` and the normalized Admission
-outcome to be terminal `ACCEPTED`.
-
-On failure the harness also captures bounded Pod/workload inventory, recent Risk and Account logs,
-the verifier Job description/logs, and the run ConfigMap. Diagnostic collection is best-effort and
-must not overwrite the original failure.
-
-## Current boundary
-
-This baseline verifier proves the deployed **accepted New Order** path, including valid Risk
-admission recovery, and checks initial at-least-once duplicate consistency. The separate
-[Risk restart and equivalent-replay gate](risk-matching-restart-replay.md) verifies that the same
-durable command preserves artifact identity, partition, and semantics after restart/replay.
-Complete RM-1 verification requires the applicable gates and their source-aligned evidence; the
-baseline's narrower PASS does not acquire the second gate's coverage merely by linking to it.
-
-Use the [capability inventory](../status/phase-1-capability-inventory.md#rm-1-load-the-artifact-in-risk-and-publish-matching-commands)
-for the recorded RM-1 status and evidence. The existence of either script does not establish a new
-source version's PASS; certification claims require retained evidence for the version being claimed.
+The [restart/equivalent-replay gate](risk-matching-restart-replay.md) has its own retained-environment
+workflow. This Jupiter entry does not adopt that workflow or grant its coverage to a command-topic
+PASS. The [capability inventory](../status/phase-1-capability-inventory.md#rm-1-load-the-artifact-in-risk-and-publish-matching-commands)
+records source-specific RM-1 status. An executable entry or a passing adapter fixture does not
+establish deployed, aggregate or production acceptance for a new source revision.

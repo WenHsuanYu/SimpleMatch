@@ -32,6 +32,7 @@ include(
     ":tools:query-evidence-verifier",
     ":tools:recovery-evidence-verifier",
     ":tools:dependency-tests",
+    ":tools:kubernetes-tests",
 )
 
 project(":shared-java:simplematch-config").projectDir = file("shared-java/simplematch-config")
@@ -50,3 +51,5 @@ project(":tools:query-evidence-verifier").projectDir = file("tools/query-evidenc
 project(":tools:recovery-evidence-verifier").projectDir = file("tools/recovery-evidence-verifier")
 
 project(":tools:dependency-tests").projectDir = file("tools/dependency-tests")
+
+project(":tools:kubernetes-tests").projectDir = file("tools/kubernetes-tests")

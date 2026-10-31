@@ -1,0 +1,45 @@
+# The existing native publisher creates the canonical 15 Open Barriers before RM-1 submission.
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: matching-open-barrier-fixture
+spec:
+  backoffLimit: 0
+  activeDeadlineSeconds: 180
+  template:
+    spec:
+      restartPolicy: Never
+      automountServiceAccountToken: false
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 10001
+        runAsGroup: 10001
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+        - name: publisher
+          image: simplematch/kafka-fixture-publisher:local
+          imagePullPolicy: IfNotPresent
+          args:
+            - kafka:9092
+            - matching.commands
+            - $(TRADING_DAY)
+            - $(TRADING_SESSION)
+            - $(ARTIFACT_SHA256)
+            - $(ROUTING_VERSION)
+            - $(MATCHING_IMAGE_DIGEST)
+          envFrom:
+            - configMapRef:
+                name: matching-open-barrier-run
+          resources:
+            requests:
+              cpu: 100m
+              memory: 128Mi
+            limits:
+              cpu: 500m
+              memory: 512Mi
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop: ["ALL"]

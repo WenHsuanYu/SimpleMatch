@@ -11,10 +11,7 @@ manifest="$repo_root/deploy/k8s/verification/risk-matching-e2e-verifier-job.yaml
 
 dockerfile="$repo_root/deploy/docker/Dockerfile.risk-matching-e2e-verifier"
 wrapper="$repo_root/deploy/docker/run-risk-matching-e2e-verifier"
-orchestrator="$repo_root/scripts/run-risk-matching-command-e2e.sh"
-cluster_data="$repo_root/scripts/end-to-end/critical-consumers/lib/cluster-data.sh"
-
-for path in "$dockerfile" "$wrapper" "$orchestrator" "$cluster_data"; do
+for path in "$dockerfile" "$wrapper"; do
   [[ -f "$path" ]] || {
     printf 'RM-1 verifier support file does not exist: %s\n' "$path" >&2
     exit 1
@@ -22,120 +19,6 @@ for path in "$dockerfile" "$wrapper" "$orchestrator" "$cluster_data"; do
 done
 
 bash -n "$wrapper"
-bash -n "$orchestrator"
-
-grep -Fq 'critical-consumers/lib/cluster-data.sh' "$orchestrator" || {
-  printf '%s\n' 'RM-1 orchestrator must decode the mounted artifact through the shared ConfigMap seam.' >&2
-  exit 1
-}
-
-(
-  # shellcheck source=scripts/end-to-end/critical-consumers/lib/cluster-data.sh
-  source "$cluster_data"
-  binary_payload='{"marketSnapshot":{"instruments":[{"venueMic":"XTAI","symbol":"2330","eligibility":"ELIGIBLE","referencePriceUnits":10000000,"lowerPriceLimitUnits":9000000,"upperPriceLimitUnits":11000000}]}}'
-
-  for configmap_field in binaryData data; do
-    kns() {
-      [[ "${1:-}" == get && "${2:-}" == configmap/matching-daily-artifact ]] || return 1
-      if [[ "$configmap_field" == binaryData ]]; then
-        jq -n --arg payload "$binary_payload" \
-          '{binaryData:{"market_reference.json":($payload|@base64)}}'
-      else
-        jq -n --arg payload "$binary_payload" \
-          '{data:{"market_reference.json":$payload}}'
-      fi
-    }
-
-    kns get configmap/matching-daily-artifact -o json >/dev/null
-    decoded_artifact="$(decode_configmap_file matching-daily-artifact market_reference.json)"
-    jq -e '.marketSnapshot.instruments[0].referencePriceUnits == 10000000' \
-      <<<"$decoded_artifact" >/dev/null || {
-      printf 'RM-1 shared ConfigMap seam must decode %s market_reference.json.\n' \
-        "$configmap_field" >&2
-      exit 1
-    }
-  done
-)
-
-grep -Fq "command_id=\"\$(jq -r '.commandId' \"\$evidence_dir/request.json\")\"" \
-  "$orchestrator" || {
-    printf '%s\n' 'RM-1 orchestrator must derive commandId from the submitted request evidence.' >&2
-    exit 1
-  }
-if grep -Fq 'response.json' "$orchestrator"; then
-  printf '%s\n' 'RM-1 orchestrator must not depend on a synchronous response.json artifact.' >&2
-  exit 1
-fi
-grep -Fq 'admission-outcome.json' "$orchestrator" || {
-  printf '%s\n' 'RM-1 orchestrator must require normalized terminal Admission evidence.' >&2
-  exit 1
-}
-grep -Fq 'evidence directory must be empty before verification' "$orchestrator" || {
-  printf '%s\n' 'RM-1 orchestrator must fail closed when the evidence directory is non-empty.' >&2
-  exit 1
-}
-grep -Fq -- '--verifier-image' "$orchestrator" || {
-  printf '%s\n' 'RM-1 orchestrator must accept the retained verifier image reference.' >&2
-  exit 1
-}
-grep -Fq -- '--retained-evidence-dir' "$orchestrator" || {
-  printf '%s\n' 'RM-1 orchestrator must require retained provenance before creating a verifier Job.' >&2
-  exit 1
-}
-grep -Fq 'simplematch_verify_kind_loaded_verifier_image_execution' "$orchestrator" || {
-  printf '%s\n' 'RM-1 orchestrator must probe the retained kind-loaded image before Job creation.' >&2
-  exit 1
-}
-grep -Fq 'simplematch_verify_kind_loaded_verifier_image_execution' \
-  "$repo_root/scripts/lib/local-certification-provenance.sh" || {
-  printf '%s\n' 'RM-1 provenance module must own the kind-loaded execution probe.' >&2
-  exit 1
-}
-grep -Fq 'ctr -n k8s.io run --rm' \
-  "$repo_root/scripts/lib/local-certification-provenance.sh" || {
-  printf '%s\n' 'RM-1 kind-loaded probe must execute the image through node containerd.' >&2
-  exit 1
-}
-grep -Fq -- '--side' "$orchestrator" || {
-  printf '%s\n' 'RM-1 orchestrator must select BUY or SELL for the public fixture.' >&2
-  exit 1
-}
-grep -Fq 'simplematch_render_verifier_helper_manifest' "$orchestrator" || {
-  printf '%s\n' 'RM-1 orchestrator must render the verifier Job with its retained image reference.' >&2
-  exit 1
-}
-grep -Fq "DATE '\$trading_day'" "$orchestrator" || {
-  printf '%s\n' 'RM-1 Account fixture must use the explicit certification trading day.' >&2
-  exit 1
-}
-grep -Fq 'selected Market Reference symbol is not a safe alphanumeric identifier' "$orchestrator" || {
-  printf '%s\n' 'RM-1 fixture must validate the selected symbol before SQL construction.' >&2
-  exit 1
-}
-grep -Fq 'selected Market Reference board lot quantity is not a safe positive integer' "$orchestrator" || {
-  printf '%s\n' 'RM-1 fixture must validate the selected quantity before SQL construction.' >&2
-  exit 1
-}
-if grep -Fq 'account_limit_day' "$orchestrator"; then
-  printf '%s\n' 'RM-1 Account fixture must not derive its limit day from the host wall clock.' >&2
-  exit 1
-fi
-
-invalid_account_evidence="$(mktemp -d)"
-trap 'rm -rf -- "$invalid_account_evidence"' EXIT
-if invalid_account_output="$($orchestrator \
-  --namespace simplematch-test \
-  --trading-day 2026-08-27 \
-  --evidence-dir "$invalid_account_evidence" \
-  --account-id not-a-uuid 2>&1)"; then
-  printf '%s\n' 'RM-1 orchestrator accepted an invalid deterministic account UUID.' >&2
-  exit 1
-fi
-grep -Fq -- '--account-id must be a canonical lowercase UUID' \
-  <<<"$invalid_account_output" || {
-    printf '%s\n' 'RM-1 orchestrator did not fail closed on an invalid account UUID.' >&2
-    exit 1
-  }
 
 image_inventory="$("$repo_root/scripts/build-local-images.sh" --list)"
 grep -Fq \

@@ -1,20 +1,19 @@
 # Verification-only Kubernetes resources
 
-This directory contains repository-owned Kubernetes resources that are applied only by retained
-verification harnesses. They are deliberately excluded from the normal application overlays under
+This directory contains repository-owned Kubernetes resources that are applied only by verification harnesses. They are deliberately excluded from the normal application overlays under
 `deploy/k8s/overlays/`.
 
 The separation is intentional:
 
 - application overlays describe the SimpleMatch runtime;
 - verification manifests describe bounded, disposable test workloads that observe that runtime;
-- orchestration scripts provide run-specific data and lifecycle control without embedding Kubernetes
+- environment adapters provide run-specific data and lifecycle control without embedding Kubernetes
   YAML or duplicating deployment policy.
 
 ## RM-1 Risk-to-Matching verifier
 
 `risk-matching-e2e-verifier-job.yaml` is the stable Kubernetes contract for
-`scripts/run-risk-matching-command-e2e.sh`.
+the `verifyKubernetes` Jupiter entry in `tools/kubernetes-tests`.
 
 The manifest owns:
 
@@ -26,7 +25,7 @@ The manifest owns:
 - the writable `/tmp` volume used for verifier evidence;
 - the exact Java CLI argument wiring.
 
-Run-specific facts are not templated into this file. The orchestration script creates one immutable
+Run-specific facts are not templated into this file. The environment adapter creates one immutable
 `risk-matching-e2e-run` ConfigMap containing:
 
 - `SIMPLEMATCH_RM1_TRADING_DAY`;
@@ -39,10 +38,13 @@ The Job consumes that ConfigMap through `envFrom`, and its argument list referen
 This keeps deployment policy reviewable while preserving a strict boundary between static Kubernetes
 configuration and per-run test data.
 
-Before creating the Job, the RM-1 script requires the retained production-like evidence directory
-and verifies that the selected verifier image has the same source revision, transport, and immutable
-digest. In a `kind-load` run it also checks the digest and executes a minimal shell probe through
-each schedulable kind worker's containerd.
+Before creating the Job, the environment binds source and image identities to the selected Docker
+daemon, validates the exact four-node topology, and executes each selected runtime image on all
+three workers. It checks actual deployed image identities before and after the business assertion.
+Each run has a new namespace, account UUID, evidence directory and ownership receipt. The
+`matching-open-barrier-job.yaml` resource publishes native Open Barriers for the same approved
+artifact before Risk is started. See the [RM-1 runbook](../../../docs/verification/risk-matching-command-e2e.md)
+for supported cluster modes and exact retained-run cleanup.
 
 Validate the manifest contract with:
 

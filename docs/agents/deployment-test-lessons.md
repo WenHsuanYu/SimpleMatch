@@ -8,6 +8,69 @@ that those failures are expected to recur.
 
 ## Run preflight
 
+The first fresh S3 Desktop cluster also exposed the helper variant of DT-014/DT-017.
+The ten prepared business images imported successfully in an isolated diagnostic, but
+`kindest/local-path-helper:v20260131-7181c60a` failed through the default multi-platform import
+with missing layer `sha256:959433f9f27b9fe6ab8867d229431c2fefa961c9d624acbb3aa14939bc491a89`.
+An explicit `docker image save --platform linux/amd64` archive imported successfully, and CRI's
+config digest matched its exact config bytes. Use a platform-specific export for every selected image, validate its actual config digest,
+and execute it on every eligible worker before deployment or PVC creation. Preserve the failed run in
+`out/verification/s3-disposable-r5` and diagnostics in `s3-image-import-diagnostic-r{1,2,3,4}`;
+none is business PASS. Desktop also translates kind's bind Source from `/tmp/...` to
+`/host_mnt/tmp/...`; owner validation accepts this exact translation only on Desktop while retaining
+read-only, full run identity and original node-ID checks. Focused negative tests reject writable,
+foreign-run and wrong-context mounts.
+
+The reviewed S3 attempt `out/verification/s3-acceptance-disposable-r3` exposed the same failure
+outside the helper path: the normal all-platform import failed with missing content digest
+`sha256:1464d11a6f842657624811ea9edb070d105be0bf28a2aa6903021b396def5e5a`.
+Its diagnostics and exact namespace/node cleanup passed; business assertions did not execute.
+An offline Kafka export independently contains absent ARM64 and attestation manifest descriptors.
+The host adapter now uses the same `linux/amd64` archive exporter for every selected image, binds
+its config bytes to the unchanged host reference, and compares that config with the node's CRI
+identity. A filtered archive's index need not equal the original multi-platform host index.
+Validate the corrected export/import path with a focused diagnostic before another full scenario.
+The actual Pod may report the filtered archive's index digest under containerd's generated
+`import-<date>` name. Later imports can replace that name. Resolve the reported digest directly
+from the original node's content store, verify the bytes, select its sole `linux/amd64` manifest,
+and compare the config digest with the source-verified archive. A mutable tag lookup cannot
+establish which content the Pod executed.
+
+The retained S3 R5 deployment completed all image probes, bootstrap Jobs and application rollouts,
+but connector registration through the API Service Proxy timed out. This was a deterministic
+management-path mismatch: the Connect ingress policy permits Connect Pods on port 8083, while the
+API server originates on the control-plane node. Live kindnet enforced that policy. Control-plane
+curl timed out; the target Pod's worker, Pod-forward and Pod-local REST all succeeded. Do not
+increase the timeout or weaken the policy. Use an owned Ready Connect Pod's local REST client,
+compare an existing connector configuration, and resolve an uncertain POST by observation rather
+than blindly resubmitting it. The current Jupiter business assertion passed on the same retained
+runtime in `out/verification/s3-retained-business-diagnostic-r1`; this is diagnostic-only and does
+not upgrade R5's failed report. Validate the permitted management path before the next full run.
+
+The S3 host-capacity gate also stopped before creation when the user-level Gradle configuration
+reserved a 2 GiB initial heap (`-Xms2g`). At that time the selected RM-1 requests were 8.125 GiB steady
+plus 512 MiB for the verifier and 4 GiB for kind/control-plane reserve: 12.625 GiB in total.
+The reviewed profile removes unused Redis and now requires 8 GiB steady, 12.5 GiB with that reserve.
+Use a bounded Gradle heap for this focused run, then check available memory from inside the running
+Gradle/Jupiter invocation. The preflight error reports the measured memory and CPU values; do not
+lower Kubernetes requests or bypass the gate to compensate for build-tool memory.
+On Desktop, the workload budget belongs to the guest memory pool. A later preflight stopped
+with 7.882 GiB host availability while the guest had approximately 35 GiB available. Requiring
+the full budget in both pools counted the VM's allocated memory twice. The adapter now observes
+current guest availability through a new bounded, read-only container, requires the unchanged
+12.5 GiB there, and keeps a separate 1 GiB host-tool headroom check. Native Docker still requires
+the complete budget in host availability. Insufficient guest, host, CPU or configured memory
+remains a failure; no Desktop setting is changed.
+
+The first S3 Docker Desktop run failed during kind node creation because the ownership marker
+was under host `/tmp`, which was not shared with the Desktop VM. kind removed its partial nodes;
+the run remains FAIL with successful cleanup in `out/verification/s3-disposable-r1`.
+The owner requires the private marker and kubeconfig to remain under `/tmp`. Share only
+`/tmp/simplematch-kubernetes-coordination` with Desktop, keep private permissions and exact per-run
+ownership, and confirm that sharing is active before creation. Do not weaken cleanup ownership
+checks or share all host temporary files.
+
+
 The S2 CDC restart test found that Docker reallocated an ephemeral host port after a
 container stop/start. Kafka retained its originally advertised address, so a running broker
 remained unreachable. The isolated regression observed port `32806` change to `32807`.

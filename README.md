@@ -76,7 +76,8 @@ parameter-safe APIs are recorded in
 intentional exceptions are listed in
 the [domain parameter-safety refactor](docs/development/domain-parameter-safety-refactor.md).
 
-The deployed RM-1 Risk-to-`matching.commands` certification is documented in the
+The `./gradlew verifyKubernetes` entry builds and verifies one deployed RM-1 BUY command through
+Risk and `matching.commands`. Its lifecycle and supported cluster modes are documented in the
 [accepted-command E2E runbook](docs/verification/risk-matching-command-e2e.md) and the retained
 [restart/equivalent-replay runbook](docs/verification/risk-matching-restart-replay.md). Risk and Account
 transactional-outbox publication, outage recovery, duplicate delivery, and exact Kafka-record
