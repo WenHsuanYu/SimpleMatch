@@ -1,6 +1,9 @@
 FROM ubuntu:26.04 AS builder
 
 ARG VCPKG_VERSION=2026.07.29
+ARG SIMPLEMATCH_BUILD_FIXTURE_TOOLS=OFF
+ARG SIMPLEMATCH_BUILD_PARALLELISM=2
+ENV VCPKG_MAX_CONCURRENCY=$SIMPLEMATCH_BUILD_PARALLELISM
 
 ENV DEBIAN_FRONTEND=noninteractive
 ENV VCPKG_ROOT=/opt/vcpkg
@@ -17,15 +20,20 @@ RUN apt-get update \
 WORKDIR /src
 COPY . /src/
 
-RUN cmake -S . -B out/build/container-native -G Ninja \
+RUN --mount=type=cache,target=/root/.cache/vcpkg,sharing=locked \
+    cmake -S . -B out/build/container-native -G Ninja \
       -DCMAKE_BUILD_TYPE=Release \
       -DCMAKE_TOOLCHAIN_FILE="$VCPKG_ROOT/scripts/buildsystems/vcpkg.cmake" \
       -DVCPKG_MANIFEST_FEATURES='messaging;json-config' \
       -DSIMPLEMATCH_ENABLE_MESSAGING=ON \
       -DBUILD_TESTING=OFF \
-    && cmake --build out/build/container-native --target simplematch-matching --parallel
+      -DSIMPLEMATCH_BUILD_FIXTURE_TOOLS="$SIMPLEMATCH_BUILD_FIXTURE_TOOLS" \
+    && cmake --build out/build/container-native --target simplematch-matching --parallel "$SIMPLEMATCH_BUILD_PARALLELISM" \
+    && if [ "$SIMPLEMATCH_BUILD_FIXTURE_TOOLS" = ON ]; then \
+         cmake --build out/build/container-native --target simplematch-matching-kafka-fixture-publisher --parallel "$SIMPLEMATCH_BUILD_PARALLELISM"; \
+       fi
 
-FROM ubuntu:26.04
+FROM ubuntu:26.04 AS runtime
 
 ENV DEBIAN_FRONTEND=noninteractive
 
@@ -37,11 +45,16 @@ RUN apt-get update \
     && mkdir -p /app /var/lib/simplematch/matching /tmp \
     && chown -R 10001:10001 /app /var/lib/simplematch /tmp
 
-COPY --from=builder /src/out/build/container-native/simplematch-matching /app/simplematch-matching
 COPY --from=builder /src/out/build/container-native/vcpkg_installed/x64-linux/lib/ /usr/local/lib/
 
 RUN ldconfig
 
 USER 10001:10001
 WORKDIR /app
+FROM runtime AS fixture-publisher
+COPY --from=builder /src/out/build/container-native/simplematch-matching-kafka-fixture-publisher /app/fixture-publisher
+ENTRYPOINT ["/app/fixture-publisher"]
+
+FROM runtime AS matching
+COPY --from=builder /src/out/build/container-native/simplematch-matching /app/simplematch-matching
 ENTRYPOINT ["/app/simplematch-matching"]

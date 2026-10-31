@@ -1,0 +1,17 @@
+# Native builds require only CMake, dependency policy, native source and protobuf definitions.
+# Host-side test orchestration edits must not invalidate the native compiler layers.
+**
+!CMakeLists.txt
+!CMakePresets.json
+!vcpkg.json
+!vcpkg-configuration.json
+!triplets/
+!triplets/**
+!matching-engine/
+!matching-engine/**
+!proto/
+!proto/**
+!cmake/
+!cmake/**
+!config/
+!config/**

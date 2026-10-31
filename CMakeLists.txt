@@ -6,6 +6,7 @@ include(CTest)
 option(SIMPLEMATCH_ENABLE_WARNINGS "Enable compiler warnings" ON)
 option(SIMPLEMATCH_ENABLE_SANITIZERS "Enable AddressSanitizer + UndefinedBehaviorSanitizer" OFF)
 option(SIMPLEMATCH_ENABLE_MESSAGING "Build native Kafka runtime adapters" OFF)
+option(SIMPLEMATCH_BUILD_FIXTURE_TOOLS "Build Kafka deployment fixture tools" OFF)
 
 function(simplematch_enable_warnings target_name)
   if(NOT SIMPLEMATCH_ENABLE_WARNINGS)
@@ -99,7 +100,7 @@ if(SIMPLEMATCH_ENABLE_MESSAGING)
   simplematch_enable_warnings(simplematch-matching)
   simplematch_enable_sanitizers(simplematch-matching)
 
-  if(BUILD_TESTING)
+  if(BUILD_TESTING OR SIMPLEMATCH_BUILD_FIXTURE_TOOLS)
     add_executable(
         simplematch-matching-kafka-fixture-publisher
         matching-engine/tests/matching_kafka_fixture_publisher.cpp)
@@ -110,7 +111,9 @@ if(SIMPLEMATCH_ENABLE_MESSAGING)
         PRIVATE simplematch_matching_ingress RdKafka::rdkafka)
     simplematch_enable_warnings(simplematch-matching-kafka-fixture-publisher)
     simplematch_enable_sanitizers(simplematch-matching-kafka-fixture-publisher)
+  endif()
 
+  if(BUILD_TESTING)
     add_executable(
         simplematch-matching-e2e-certification
         matching-engine/tests/matching_e2e_certification.cpp)
