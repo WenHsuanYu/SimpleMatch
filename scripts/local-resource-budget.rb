@@ -32,7 +32,9 @@ class LocalResourceBudget
   def report
     workloads = selected_workloads.map { |document| workload_request(document) }
     steady, bootstrap = workloads.partition { |workload| workload.fetch("phase") == "steady" }
-    platform_names = @configuration.fetch("bootstrap_platform_workloads")
+    platform_names = @configuration.fetch("bootstrap_platform_workloads").select do |name|
+      @selection == "all" || @selection.include?(name)
+    end
     platform = steady.select { |workload| platform_names.include?("#{workload.fetch('kind')}/#{workload.fetch('name')}") }
     raise ArgumentError, "bootstrap platform selection is incomplete" unless platform.length == platform_names.length
 

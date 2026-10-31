@@ -92,6 +92,16 @@ Dir.mktmpdir("simplematch-resource-budget-") do |directory|
   manifest = File.join(directory, "rendered.yaml")
   File.write(manifest, rendered)
 
+  risk_args = ["ruby", calculator, "--manifest", manifest, "--profile", "risk-command",
+               "--report", report, "--check"]
+  stdout, stderr, status = Open3.capture3(*risk_args)
+  abort "Risk command budget failed: #{stdout}#{stderr}" unless status.success?
+  risk_report = JSON.parse(File.read(report))
+  abort "Risk command must exclude unused Redis and Matching runtimes" if
+    risk_report.fetch("workloads").any? { |workload| %w[redis matching].include?(workload.fetch("name")) }
+  abort "Risk command must retain three Kafka replicas" unless
+    risk_report.fetch("workloads").any? { |workload| workload.fetch("name") == "kafka" && workload.fetch("replicas") == 3 }
+
   %w[full matching-fleet-only].each do |profile|
     args = ["ruby", calculator, "--manifest", manifest, "--profile", profile, "--report", report]
     args << "--check" if profile == "matching-fleet-only"

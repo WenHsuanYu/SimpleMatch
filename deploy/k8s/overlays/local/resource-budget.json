@@ -14,6 +14,16 @@
       "StatefulSet/kafka",
       "StatefulSet/matching",
       "StatefulSet/postgres"
+    ],
+    "risk-command": [
+      "Deployment/account-service",
+      "Deployment/risk-service",
+      "Deployment/kafka-connect",
+      "StatefulSet/kafka",
+      "StatefulSet/postgres",
+      "Job/account-service-flyway",
+      "Job/risk-service-flyway",
+      "Job/kafka-topic-provisioning"
     ]
   }
 }

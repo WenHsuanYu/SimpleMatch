@@ -78,3 +78,7 @@ simplematch_docker_storage_preflight() {
   printf 'Docker host-capacity preflight passed: available=%s bytes, disk-limit=%s bytes, filesystem=%s bytes.\n' \
     "$available_bytes" "$disk_limit_bytes" "$filesystem_bytes"
 }
+
+if [[ "${BASH_SOURCE[0]}" == "$0" ]]; then
+  simplematch_docker_storage_preflight
+fi

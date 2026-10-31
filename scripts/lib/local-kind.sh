@@ -68,7 +68,7 @@ _simplematch_kind_control_plane_snapshot() {
     "$SIMPLEMATCH_KIND_KUBECTL_BIN" --context "$context" get pods -n kube-system -o json | jq -c '
       [.items[]
        | select((.metadata.name // "") | test("^(etcd-|kube-controller-manager-|kube-scheduler-)"))
-       | {name:.metadata.name,
+       | {name:.metadata.name, uid:.metadata.uid,
           phase:(.status.phase // ""),
           ready:any(.status.conditions[]?; .type == "Ready" and .status == "True"),
           restart_count:([.status.containerStatuses[]?.restartCount] | add // 0)}]
@@ -414,3 +414,10 @@ simplematch_kind_resource_report() {
     printf 'exited_containers=%s notready_sandboxes=%s\n' "$exited_count" "$notready_count"
   done <<<"$nodes"
 }
+
+
+if [[ "${BASH_SOURCE[0]}" == "$0" ]]; then
+  [[ "$#" == 4 && "$1" == control-plane-stability ]] || exit 2
+  SIMPLEMATCH_KIND_KUBECTL_BIN=kubectl KUBECONFIG="$2" \
+    simplematch_kind_validate_control_plane_stability "$3" 5 15 "$4" 70
+fi
