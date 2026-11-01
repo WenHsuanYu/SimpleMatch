@@ -51,10 +51,9 @@ _certification_register_fixed_phases() {
 source-preflight|
 local-resource-budget|static-kubernetes-overlays
 static-kubernetes-overlays|source-preflight
-static-phase1-deployment-contracts|source-preflight
 static-flyway-services|source-preflight
 compose-config|source-preflight
-cdc-outbox-failure-live|static-phase1-deployment-contracts compose-config
+cdc-outbox-failure-live|static-kubernetes-overlays compose-config
 local-image-inventory|source-preflight
 kafka-producer-contract|static-kubernetes-overlays
 compose-up|compose-config cdc-outbox-failure-live
@@ -78,7 +77,7 @@ registry-image-lock|
 kind-load-import|
 kubernetes-manifest-split|
 kubernetes-namespace|
-kubernetes-inputs|kubernetes-namespace static-phase1-deployment-contracts
+kubernetes-inputs|kubernetes-namespace
 kubernetes-platform-apply|kubernetes-inputs
 kubernetes-migrations|kubernetes-platform-apply static-flyway-services kubernetes-topic-provisioning
 kubernetes-matching-manifest|kubernetes-platform-apply
@@ -248,7 +247,6 @@ _certification_profile_root_phase_ids() {
 
   printf '%s\n' \
     static-kubernetes-overlays \
-    static-phase1-deployment-contracts \
     static-flyway-services \
     compose-config \
     local-image-inventory

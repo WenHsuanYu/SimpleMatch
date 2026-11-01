@@ -159,10 +159,6 @@ certification_execute_phase() {
     static-kubernetes-overlays)
       run_logged "$phase_id" "$repo_root/gradlew" -p "$repo_root" manifestCheck
       ;;
-    static-phase1-deployment-contracts)
-      run_logged "$phase_id" bash \
-        "$repo_root/scripts/test-phase1-deployment-contracts.sh"
-      ;;
     static-flyway-services)
       run_logged "$phase_id" "$repo_root/gradlew" -p "$repo_root" -q :tools:dependency-tests:test
       ;;

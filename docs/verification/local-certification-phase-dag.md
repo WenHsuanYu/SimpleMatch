@@ -33,7 +33,7 @@ Image publication and node import use the selected transport.
 The runner does not maintain a second build cache or output-materialization layer.
 
 The `static-kubernetes-overlays` phase calls the shared [manifestCheck task](manifest-validation.md).
-S4 retires the separate static dependency, Matching-manifest, and topic-fixture phases.
+S4 retires the separate static dependency, Matching-manifest, topic-fixture, and Phase 1 collection phases.
 Their old assertions are not translated individually or reported as newly passed.
 See the [owner-amended S4 scope](../plans/shell-test-reduction-s4.md) for the resulting coverage.
 

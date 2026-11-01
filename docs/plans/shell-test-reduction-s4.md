@@ -33,13 +33,14 @@ S4 retires the following paths. Their source remains available at the preceding 
 | `scripts/test-risk-matching-e2e-manifest.sh` | Replace schema responsibility. Retire exact Job, wrapper, and image-builder shape assertions. Keep the real RM-1 Kubernetes scenario. |
 | `scripts/test-risk-matching-restart-replay-manifest.sh` | Replace schema responsibility. Retire exact Job and orchestration-source matchers. Keep the actual replay entry point and verifier. |
 | `scripts/test-local-production-like.sh` | Retire the legacy runner's ConfigMap failure stub and synthetic placement/provenance framework. Remove its collection caller. Keep actual deployment and RM-1 verification. |
+| `scripts/test-phase1-deployment-contracts.sh` | Retire the Shell test-selection collector, its static phase, and its local/CI callers. Do not recreate its command list elsewhere. |
 
 The Kafka startup implementation still checks persistent cluster and node identity.
 Retiring its dedicated fixtures changes regression coverage, not that runtime behavior.
 The reduction provides no execution evidence for those branches.
 The same limit applies to retired TLS, selector, resource-value, and topic-fixture snapshots.
 
-Existing native liveness verification, the Phase 1 collection, and producer-evidence generation retain active consumers outside this replacement.
+Existing native liveness verification and producer-evidence generation retain active consumers outside this replacement.
 They are not translated into new Java tests here.
 The three narrow topic operator tools remain available.
 The local renderer remains compatibility for aggregate callers until S5-G, as the S0 plan requires.
@@ -48,7 +49,7 @@ S4-B transaction-policy and hook work remains outside this manifest slice.
 ## Caller and evidence contract
 
 Local certification and CI call one authoritative `manifestCheck` task.
-S4 removes the old `static-kubernetes-dependencies`, `static-matching-manifests`, and `static-matching-profile` phases.
+S4 removes `static-kubernetes-dependencies`, `static-matching-manifests`, `static-matching-profile`, and `static-phase1-deployment-contracts`.
 Their retired assertions receive no new PASS result.
 Runtime phase ordering, real scenario assertions, ownership, diagnostics, and cleanup remain in their existing owners.
 Current provenance includes the replacement module and its pinned configuration.

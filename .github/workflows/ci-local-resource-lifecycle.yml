@@ -93,7 +93,6 @@ jobs:
           bash scripts/test-local-certification-workloads.sh
           bash scripts/test-local-certification-skip-semantics.sh
           bash scripts/test-local-certification-provenance.sh
-          bash scripts/test-phase1-deployment-contracts.sh
           bash scripts/test-local-resource-report.sh
           bash scripts/test-simplematch-kind-manager.sh
 

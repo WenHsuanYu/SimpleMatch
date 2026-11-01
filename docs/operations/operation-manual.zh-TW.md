@@ -651,8 +651,8 @@ bash scripts/validate-local-resilience-contract.sh
 
 此命令驗證 repository-rendered topology、placement、PDB、resource、dependency、probe 等 contract；其中五個複製的 Java workload 必須共用兩副本、local-resilience worker、hostname `maxSkew=1`／`DoNotSchedule`、`minAvailable=1` PDB，以及 portable-workload、`not-ready`、`unreachable` 三個 30 秒 `NoExecute` toleration。不會停止 worker，因此不能當成 runtime resilience evidence。
 
-部署與故障工具的完整本機回歸檢查使用 `bash scripts/test-phase1-deployment-contracts.sh`。
-CI 使用同一入口，個別測試不再串接其他測試。
+部署前的渲染清單檢查使用 `./gradlew manifestCheck`，CI 使用相同的 Gradle 任務。
+S4 已退役原 Phase 1 Shell 回歸集合。部署、故障與業務行為由各自的 runtime 入口驗證。
 原 `run-local-resilience.sh --profile contract` 集合入口與其 `run-result.json` 已退役。
 直接執行 static validator 時，以命令退出狀態與錯誤訊息判斷結果。
 

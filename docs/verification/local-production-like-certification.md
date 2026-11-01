@@ -190,9 +190,10 @@ Docker daemon, canonical kind context and worker topology, observed runtime iden
 namespace/evidence directory, and before/after resource inventory. Stop before fault injection if
 any preflight check fails.
 
-`test-phase1-deployment-contracts.sh` is the shared local and CI collection for deployment and fault-tool regression checks.
-Its individual tests do not invoke other test suites. A failed test stops the collection with a nonzero exit status.
-These fixtures do not establish a deployed recovery result.
+Use `./gradlew manifestCheck` for rendered schemas and basic workload probes.
+S4 retires the former Phase 1 Shell collection and its static phase.
+Existing dependency and runtime entry points retain their own scope.
+See the [owner-amended S4 disposition](../plans/shell-test-reduction-s4.md).
 
 ~~~bash
 cmake --build --preset full-native-dev --parallel
@@ -202,7 +203,6 @@ cmake --build --preset dev-debug --parallel
 ctest --preset dev-debug --output-on-failure
 
 ./gradlew manifestCheck
-bash scripts/test-phase1-deployment-contracts.sh
 ./gradlew -q :tools:dependency-tests:test
 ./gradlew verifyCdc
 
