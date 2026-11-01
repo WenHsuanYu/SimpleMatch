@@ -1,0 +1,690 @@
+{
+  "schemaVersion": 1,
+  "sourceCommit": "7b9d2fd035632aa6797ad1d771a90c96b5062a87",
+  "scope": "All tracked paths ending in .sh at sourceCommit. Exclude untracked and generated files.",
+  "lineDefinition": "LF bytes plus one for a nonempty final line without LF. Include blank lines and comments.",
+  "fileCount": 170,
+  "lineCount": 34923,
+  "files": [
+    {
+      "path": "deploy/compose/apply-account-service-outbox-connector.sh",
+      "lines": 6
+    },
+    {
+      "path": "deploy/compose/apply-outbox-connector.sh",
+      "lines": 70
+    },
+    {
+      "path": "deploy/compose/apply-risk-service-outbox-connector.sh",
+      "lines": 7
+    },
+    {
+      "path": "scripts/archive/check-phase-5-gate.sh",
+      "lines": 36
+    },
+    {
+      "path": "scripts/archive/check-phase-6-7-gate.sh",
+      "lines": 32
+    },
+    {
+      "path": "scripts/build-local-images.sh",
+      "lines": 183
+    },
+    {
+      "path": "scripts/check-account-reservation-v2-cutover.sh",
+      "lines": 89
+    },
+    {
+      "path": "scripts/check-flyway-migration-layout.sh",
+      "lines": 139
+    },
+    {
+      "path": "scripts/check-flyway-query-plans.sh",
+      "lines": 115
+    },
+    {
+      "path": "scripts/check-transaction-acceptance-criteria.sh",
+      "lines": 94
+    },
+    {
+      "path": "scripts/end-to-end/critical-consumers/lib/business-recovery-lifecycle.sh",
+      "lines": 48
+    },
+    {
+      "path": "scripts/end-to-end/critical-consumers/lib/cluster-data.sh",
+      "lines": 773
+    },
+    {
+      "path": "scripts/end-to-end/critical-consumers/lib/failure-recovery.sh",
+      "lines": 413
+    },
+    {
+      "path": "scripts/end-to-end/critical-consumers/lib/failure-support.sh",
+      "lines": 14
+    },
+    {
+      "path": "scripts/end-to-end/critical-consumers/lib/gateway-close-verification.sh",
+      "lines": 265
+    },
+    {
+      "path": "scripts/end-to-end/critical-consumers/lib/gateway-owner-recovery.sh",
+      "lines": 136
+    },
+    {
+      "path": "scripts/end-to-end/critical-consumers/lib/kafka-observation-interface.sh",
+      "lines": 259
+    },
+    {
+      "path": "scripts/end-to-end/critical-consumers/lib/matching-business-recovery.sh",
+      "lines": 169
+    },
+    {
+      "path": "scripts/end-to-end/critical-consumers/lib/matching-status.sh",
+      "lines": 155
+    },
+    {
+      "path": "scripts/end-to-end/critical-consumers/lib/system-observation.sh",
+      "lines": 1099
+    },
+    {
+      "path": "scripts/end-to-end/critical-consumers/lib/test-interfaces.sh",
+      "lines": 585
+    },
+    {
+      "path": "scripts/end-to-end/critical-consumers/run-failure-certification.sh",
+      "lines": 487
+    },
+    {
+      "path": "scripts/end-to-end/critical-consumers/run-gateway-close-certification.sh",
+      "lines": 603
+    },
+    {
+      "path": "scripts/end-to-end/critical-consumers/run-resting-buy-certification.sh",
+      "lines": 192
+    },
+    {
+      "path": "scripts/end-to-end/critical-consumers/tests/admission-contract.sh",
+      "lines": 361
+    },
+    {
+      "path": "scripts/end-to-end/critical-consumers/tests/business-recovery-failure-test.sh",
+      "lines": 96
+    },
+    {
+      "path": "scripts/end-to-end/critical-consumers/tests/business-recovery-lifecycle-test.sh",
+      "lines": 97
+    },
+    {
+      "path": "scripts/end-to-end/critical-consumers/tests/deployment-contract.sh",
+      "lines": 210
+    },
+    {
+      "path": "scripts/end-to-end/critical-consumers/tests/gateway-close-contract.sh",
+      "lines": 273
+    },
+    {
+      "path": "scripts/end-to-end/critical-consumers/tests/gateway-session-sql-test.sh",
+      "lines": 22
+    },
+    {
+      "path": "scripts/end-to-end/critical-consumers/tests/matching-recovery-adapters-test.sh",
+      "lines": 118
+    },
+    {
+      "path": "scripts/end-to-end/critical-consumers/tests/matching-status-contract.sh",
+      "lines": 99
+    },
+    {
+      "path": "scripts/end-to-end/critical-consumers/tests/operator-credential-contract.sh",
+      "lines": 46
+    },
+    {
+      "path": "scripts/end-to-end/critical-consumers/tests/resting-buy-adapters-test.sh",
+      "lines": 250
+    },
+    {
+      "path": "scripts/end-to-end/critical-consumers/tests/system-observation-contract.sh",
+      "lines": 512
+    },
+    {
+      "path": "scripts/end-to-end/critical-consumers/tests/verdict-contract.sh",
+      "lines": 42
+    },
+    {
+      "path": "scripts/end-to-end/critical-consumers/tests/verifier-helper-contract.sh",
+      "lines": 251
+    },
+    {
+      "path": "scripts/end-to-end/critical-consumers/tests/verifier-image-identity-test.sh",
+      "lines": 58
+    },
+    {
+      "path": "scripts/end-to-end/market-data/lib/streamer-recovery-lifecycle.sh",
+      "lines": 84
+    },
+    {
+      "path": "scripts/end-to-end/market-data/lib/streamer-recovery-verdict.sh",
+      "lines": 36
+    },
+    {
+      "path": "scripts/end-to-end/market-data/lib/verdict.sh",
+      "lines": 73
+    },
+    {
+      "path": "scripts/end-to-end/market-data/run-certification.sh",
+      "lines": 481
+    },
+    {
+      "path": "scripts/end-to-end/market-data/run-streamer-recovery-certification.sh",
+      "lines": 525
+    },
+    {
+      "path": "scripts/end-to-end/market-data/tests/streamer-recovery-contract.sh",
+      "lines": 187
+    },
+    {
+      "path": "scripts/end-to-end/market-data/tests/verdict-contract.sh",
+      "lines": 38
+    },
+    {
+      "path": "scripts/end-to-end/query-service/lib/active-liveness.sh",
+      "lines": 354
+    },
+    {
+      "path": "scripts/end-to-end/query-service/lib/evidence.sh",
+      "lines": 357
+    },
+    {
+      "path": "scripts/end-to-end/query-service/lib/execution-fixture.sh",
+      "lines": 215
+    },
+    {
+      "path": "scripts/end-to-end/query-service/lib/run-lifecycle.sh",
+      "lines": 88
+    },
+    {
+      "path": "scripts/end-to-end/query-service/run-certification.sh",
+      "lines": 351
+    },
+    {
+      "path": "scripts/end-to-end/query-service/tests/active-liveness-contract.sh",
+      "lines": 101
+    },
+    {
+      "path": "scripts/end-to-end/query-service/tests/evidence-contract.sh",
+      "lines": 117
+    },
+    {
+      "path": "scripts/end-to-end/query-service/tests/execution-fixture-contract.sh",
+      "lines": 74
+    },
+    {
+      "path": "scripts/end-to-end/query-service/tests/isolation-contract.sh",
+      "lines": 237
+    },
+    {
+      "path": "scripts/end-to-end/query-service/tests/lifecycle-contract.sh",
+      "lines": 138
+    },
+    {
+      "path": "scripts/end-to-end/query-service/tests/lifecycle-plan-contract.sh",
+      "lines": 22
+    },
+    {
+      "path": "scripts/hard-reset-local.sh",
+      "lines": 358
+    },
+    {
+      "path": "scripts/install-git-hooks.sh",
+      "lines": 9
+    },
+    {
+      "path": "scripts/lib/cdc-observer-fixture.sh",
+      "lines": 24
+    },
+    {
+      "path": "scripts/lib/cdc-verifier.sh",
+      "lines": 1124
+    },
+    {
+      "path": "scripts/lib/connect-rest-tunnel.sh",
+      "lines": 166
+    },
+    {
+      "path": "scripts/lib/connect-worker-loss-cli.sh",
+      "lines": 120
+    },
+    {
+      "path": "scripts/lib/connect-worker-loss-scenario.sh",
+      "lines": 713
+    },
+    {
+      "path": "scripts/lib/connect-worker-loss.sh",
+      "lines": 35
+    },
+    {
+      "path": "scripts/lib/critical-consumer-certification-matching.sh",
+      "lines": 5
+    },
+    {
+      "path": "scripts/lib/flyway-services.sh",
+      "lines": 163
+    },
+    {
+      "path": "scripts/lib/local-certification-bootstrap.sh",
+      "lines": 168
+    },
+    {
+      "path": "scripts/lib/local-certification-connect.sh",
+      "lines": 243
+    },
+    {
+      "path": "scripts/lib/local-certification-evidence.sh",
+      "lines": 98
+    },
+    {
+      "path": "scripts/lib/local-certification-focused-diagnostic.sh",
+      "lines": 587
+    },
+    {
+      "path": "scripts/lib/local-certification-framework.sh",
+      "lines": 211
+    },
+    {
+      "path": "scripts/lib/local-certification-images.sh",
+      "lines": 62
+    },
+    {
+      "path": "scripts/lib/local-certification-job.sh",
+      "lines": 93
+    },
+    {
+      "path": "scripts/lib/local-certification-kafka.sh",
+      "lines": 73
+    },
+    {
+      "path": "scripts/lib/local-certification-kubernetes.sh",
+      "lines": 314
+    },
+    {
+      "path": "scripts/lib/local-certification-phase-graph.sh",
+      "lines": 366
+    },
+    {
+      "path": "scripts/lib/local-certification-provenance.sh",
+      "lines": 409
+    },
+    {
+      "path": "scripts/lib/local-certification-run.sh",
+      "lines": 337
+    },
+    {
+      "path": "scripts/lib/local-certification-runtime-provenance.sh",
+      "lines": 173
+    },
+    {
+      "path": "scripts/lib/local-certification-workloads.sh",
+      "lines": 49
+    },
+    {
+      "path": "scripts/lib/local-common.sh",
+      "lines": 66
+    },
+    {
+      "path": "scripts/lib/local-docker-storage.sh",
+      "lines": 80
+    },
+    {
+      "path": "scripts/lib/local-image-inventory.sh",
+      "lines": 197
+    },
+    {
+      "path": "scripts/lib/local-image-transport.sh",
+      "lines": 241
+    },
+    {
+      "path": "scripts/lib/local-java-placement-serving.sh",
+      "lines": 33
+    },
+    {
+      "path": "scripts/lib/local-kind.sh",
+      "lines": 416
+    },
+    {
+      "path": "scripts/lib/local-registry.sh",
+      "lines": 251
+    },
+    {
+      "path": "scripts/lib/local-resilience-dependencies.sh",
+      "lines": 29
+    },
+    {
+      "path": "scripts/lib/local-resilience.sh",
+      "lines": 211
+    },
+    {
+      "path": "scripts/lib/local-resource.sh",
+      "lines": 429
+    },
+    {
+      "path": "scripts/lib/matching-e2e.sh",
+      "lines": 73
+    },
+    {
+      "path": "scripts/lib/matching-topic-profile.sh",
+      "lines": 263
+    },
+    {
+      "path": "scripts/local-resource-report.sh",
+      "lines": 169
+    },
+    {
+      "path": "scripts/manage-local-registry.sh",
+      "lines": 106
+    },
+    {
+      "path": "scripts/manage-simplematch-live.sh",
+      "lines": 333
+    },
+    {
+      "path": "scripts/normalize-local-images-for-kind.sh",
+      "lines": 87
+    },
+    {
+      "path": "scripts/pre-commit-java-fast-check.sh",
+      "lines": 105
+    },
+    {
+      "path": "scripts/prepare-local-kubernetes-images.sh",
+      "lines": 110
+    },
+    {
+      "path": "scripts/provision-matching-topics.sh",
+      "lines": 121
+    },
+    {
+      "path": "scripts/publish-local-images.sh",
+      "lines": 147
+    },
+    {
+      "path": "scripts/render-local-kubernetes-manifest.sh",
+      "lines": 157
+    },
+    {
+      "path": "scripts/run-critical-consumer-failure-certification.sh",
+      "lines": 5
+    },
+    {
+      "path": "scripts/run-critical-consumer-restart-certification.sh",
+      "lines": 360
+    },
+    {
+      "path": "scripts/run-flyway-ci-checks.sh",
+      "lines": 148
+    },
+    {
+      "path": "scripts/run-local-cdc-delivery-focused-diagnostic.sh",
+      "lines": 313
+    },
+    {
+      "path": "scripts/run-local-connect-worker-loss.sh",
+      "lines": 13
+    },
+    {
+      "path": "scripts/run-local-java-placement-serving-check.sh",
+      "lines": 734
+    },
+    {
+      "path": "scripts/run-local-production-like-certification.sh",
+      "lines": 94
+    },
+    {
+      "path": "scripts/run-local-resilience-dependencies.sh",
+      "lines": 1027
+    },
+    {
+      "path": "scripts/run-market-data-certification.sh",
+      "lines": 5
+    },
+    {
+      "path": "scripts/run-matching-capacity-certification.sh",
+      "lines": 75
+    },
+    {
+      "path": "scripts/run-matching-deployed-certification.sh",
+      "lines": 237
+    },
+    {
+      "path": "scripts/run-matching-e2e-certification.sh",
+      "lines": 521
+    },
+    {
+      "path": "scripts/run-matching-kafka-failure-check.sh",
+      "lines": 135
+    },
+    {
+      "path": "scripts/run-matching-local-depth-certification.sh",
+      "lines": 118
+    },
+    {
+      "path": "scripts/run-outbox-cdc-contract-check.sh",
+      "lines": 556
+    },
+    {
+      "path": "scripts/run-query-security-lifecycle.sh",
+      "lines": 98
+    },
+    {
+      "path": "scripts/run-query-service-certification.sh",
+      "lines": 5
+    },
+    {
+      "path": "scripts/run-quickfix-live-certification.sh",
+      "lines": 61
+    },
+    {
+      "path": "scripts/run-risk-cdc-delivery-observer-check.sh",
+      "lines": 726
+    },
+    {
+      "path": "scripts/run-risk-matching-command-e2e.sh",
+      "lines": 598
+    },
+    {
+      "path": "scripts/run-risk-matching-restart-replay-e2e.sh",
+      "lines": 508
+    },
+    {
+      "path": "scripts/simplematch-clean-local-disk.sh",
+      "lines": 164
+    },
+    {
+      "path": "scripts/test-cdc-observer-fixture-contract.sh",
+      "lines": 36
+    },
+    {
+      "path": "scripts/test-cdc-verifier.sh",
+      "lines": 415
+    },
+    {
+      "path": "scripts/test-check-transaction-acceptance-criteria.sh",
+      "lines": 58
+    },
+    {
+      "path": "scripts/test-connect-rest-tunnel.sh",
+      "lines": 110
+    },
+    {
+      "path": "scripts/test-critical-consumer-certification-matching.sh",
+      "lines": 5
+    },
+    {
+      "path": "scripts/test-critical-consumer-kubernetes-config.sh",
+      "lines": 5
+    },
+    {
+      "path": "scripts/test-flyway-services.sh",
+      "lines": 188
+    },
+    {
+      "path": "scripts/test-kafka-kraft-manifests.sh",
+      "lines": 364
+    },
+    {
+      "path": "scripts/test-kubernetes-overlays.sh",
+      "lines": 492
+    },
+    {
+      "path": "scripts/test-local-certification-focused-diagnostic.sh",
+      "lines": 296
+    },
+    {
+      "path": "scripts/test-local-certification-job-supervision.sh",
+      "lines": 173
+    },
+    {
+      "path": "scripts/test-local-certification-provenance.sh",
+      "lines": 96
+    },
+    {
+      "path": "scripts/test-local-certification-skip-semantics.sh",
+      "lines": 166
+    },
+    {
+      "path": "scripts/test-local-certification-trading-day.sh",
+      "lines": 61
+    },
+    {
+      "path": "scripts/test-local-certification-workloads.sh",
+      "lines": 39
+    },
+    {
+      "path": "scripts/test-local-connect-worker-loss.sh",
+      "lines": 70
+    },
+    {
+      "path": "scripts/test-local-docker-storage-preflight.sh",
+      "lines": 34
+    },
+    {
+      "path": "scripts/test-local-image-rendering.sh",
+      "lines": 173
+    },
+    {
+      "path": "scripts/test-local-image-transport.sh",
+      "lines": 232
+    },
+    {
+      "path": "scripts/test-local-kind-image-cache-preflight.sh",
+      "lines": 143
+    },
+    {
+      "path": "scripts/test-local-kubernetes-dependencies.sh",
+      "lines": 336
+    },
+    {
+      "path": "scripts/test-local-production-like.sh",
+      "lines": 111
+    },
+    {
+      "path": "scripts/test-local-resilience-dependencies.sh",
+      "lines": 256
+    },
+    {
+      "path": "scripts/test-local-resilience.sh",
+      "lines": 24
+    },
+    {
+      "path": "scripts/test-local-resource-budget-evidence.sh",
+      "lines": 44
+    },
+    {
+      "path": "scripts/test-local-resource-kind-integration.sh",
+      "lines": 184
+    },
+    {
+      "path": "scripts/test-local-resource-report.sh",
+      "lines": 158
+    },
+    {
+      "path": "scripts/test-matching-e2e-certification.sh",
+      "lines": 166
+    },
+    {
+      "path": "scripts/test-matching-kubernetes-manifests.sh",
+      "lines": 168
+    },
+    {
+      "path": "scripts/test-matching-liveness-probe.sh",
+      "lines": 34
+    },
+    {
+      "path": "scripts/test-matching-topic-cutover.sh",
+      "lines": 90
+    },
+    {
+      "path": "scripts/test-matching-topic-profile.sh",
+      "lines": 186
+    },
+    {
+      "path": "scripts/test-phase1-deployment-contracts.sh",
+      "lines": 29
+    },
+    {
+      "path": "scripts/test-postgresql-redis-manifests.sh",
+      "lines": 201
+    },
+    {
+      "path": "scripts/test-query-redis-security.sh",
+      "lines": 45
+    },
+    {
+      "path": "scripts/test-risk-matching-e2e-manifest.sh",
+      "lines": 271
+    },
+    {
+      "path": "scripts/test-risk-matching-restart-replay-manifest.sh",
+      "lines": 107
+    },
+    {
+      "path": "scripts/test-simplematch-kind-manager.sh",
+      "lines": 90
+    },
+    {
+      "path": "scripts/testdata/focused-diagnostic/fixture.sh",
+      "lines": 234
+    },
+    {
+      "path": "scripts/testdata/hard-reset/command.sh",
+      "lines": 77
+    },
+    {
+      "path": "scripts/validate-local-resilience-contract.sh",
+      "lines": 190
+    },
+    {
+      "path": "scripts/validate-matching-producer-contract.sh",
+      "lines": 75
+    },
+    {
+      "path": "scripts/validate-matching-topic-profile.sh",
+      "lines": 275
+    },
+    {
+      "path": "scripts/verify-local-boot-run-image.sh",
+      "lines": 49
+    },
+    {
+      "path": "scripts/verify-matching-fleet-live.sh",
+      "lines": 192
+    },
+    {
+      "path": "scripts/verify-outbox-connector-contracts.sh",
+      "lines": 104
+    },
+    {
+      "path": "scripts/verify-postgres-live-certification.sh",
+      "lines": 164
+    }
+  ]
+}
