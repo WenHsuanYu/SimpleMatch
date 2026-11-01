@@ -113,6 +113,11 @@ Use an available workflow skill whenever its description matches the task. Read 
 skill that is unavailable; apply the relevant guidance in this file and
 `docs/development/development-workflow.md` directly instead.
 
+- Use `asd-ste100` when writing or editing documentation. Let the skill select the mode from the text type.
+  Use Strict for procedures, error messages, and tool descriptions.
+  Use STE-flavored for READMEs, PR descriptions, and explanatory prose.
+  In STE-flavored mode, apply the sentence rules and treat the vocabulary rules as guidance.
+  Preserve technical terms, identifiers, and the meaning of requirements.
 - Use `diagnosing-bugs` to investigate reported failures, errors, regressions, or performance
   problems. Diagnose first; implement a fix only when requested.
 - Use `tdd` when the request explicitly asks for test-first development, red-green-refactor, or
