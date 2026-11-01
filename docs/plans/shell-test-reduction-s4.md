@@ -32,6 +32,7 @@ S4 retires the following paths. Their source remains available at the preceding 
 | `scripts/test-matching-topic-profile.sh` | Retire the dedicated fixture matrix. Keep the existing topic validator and provisioner for actual operator/runtime use. |
 | `scripts/test-risk-matching-e2e-manifest.sh` | Replace schema responsibility. Retire exact Job, wrapper, and image-builder shape assertions. Keep the real RM-1 Kubernetes scenario. |
 | `scripts/test-risk-matching-restart-replay-manifest.sh` | Replace schema responsibility. Retire exact Job and orchestration-source matchers. Keep the actual replay entry point and verifier. |
+| `scripts/test-local-production-like.sh` | Retire the legacy runner's ConfigMap failure stub and synthetic placement/provenance framework. Remove its collection caller. Keep actual deployment and RM-1 verification. |
 
 The Kafka startup implementation still checks persistent cluster and node identity.
 Retiring its dedicated fixtures changes regression coverage, not that runtime behavior.
