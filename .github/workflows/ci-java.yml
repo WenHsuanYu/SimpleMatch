@@ -21,7 +21,7 @@ on:
       - 'services/quickfix-gateway/**'
       - 'services/risk-service/**'
       - 'deploy/docker/**'
-      - 'deploy/k8s/verification/**'
+      - 'deploy/k8s/**'
       - 'scripts/**'
       - 'config/checkstyle/**'
       - 'config/pmd/**'
@@ -45,7 +45,7 @@ on:
       - 'services/quickfix-gateway/**'
       - 'services/risk-service/**'
       - 'deploy/docker/**'
-      - 'deploy/k8s/verification/**'
+      - 'deploy/k8s/**'
       - 'scripts/**'
       - 'config/checkstyle/**'
       - 'config/pmd/**'
@@ -72,13 +72,11 @@ jobs:
         with:
           fetch-depth: 1
           persist-credentials: false
-      - name: Verify RM-1 deployment contracts
-        run: |
-          bash scripts/test-risk-matching-e2e-manifest.sh
-          bash scripts/test-risk-matching-restart-replay-manifest.sh
       - name: Set up Java and Gradle
         id: java-gradle
         uses: ./.github/actions/setup-java-gradle
+      - name: Validate supported manifests
+        run: ./gradlew manifestCheck --no-daemon --stacktrace
       - name: Run repo-wide Java static analysis
         run: ./gradlew --no-daemon --stacktrace staticAnalysis
       - name: Run Java test suite

@@ -28,7 +28,27 @@ tasks.withType<Test>().configureEach {
     systemProperty("verificationRepoRoot", rootProject.projectDir.absolutePath)
 }
 
-tasks.test { useJUnitPlatform { excludeTags("kubernetes-live") } }
+tasks.test { useJUnitPlatform { excludeTags("kubernetes-live", "manifest") } }
+
+val manifestTest = tasks.register<Test>("manifestTest") {
+    group = "verification"
+    description = "Validates rendered profiles with content-pinned tools and strict schemas."
+    testClassesDirs = sourceSets.test.get().output.classesDirs
+    classpath = sourceSets.test.get().runtimeClasspath
+    useJUnitPlatform { includeTags("manifest") }
+    inputs.dir(rootProject.file("deploy/k8s"))
+    inputs.file(rootProject.file("config/manifest-check.json"))
+    outputs.upToDateWhen { false }
+    outputs.cacheIf { false }
+    maxParallelForks = 1
+    mustRunAfter(tasks.test)
+}
+
+rootProject.tasks.register("manifestCheck") {
+    group = "verification"
+    description = "Checks every supported rendered profile before live deployment."
+    dependsOn(manifestTest)
+}
 
 val kubernetesTest = tasks.register<Test>("kubernetesTest") {
     group = "verification"
@@ -63,6 +83,7 @@ fun registerBuildInputs(name: String, operation: String) = tasks.register<JavaEx
     args(operation)
 }
 val preflight = registerBuildInputs("kubernetesBuildPreflight", "begin")
+preflight.configure { dependsOn(manifestTest) }
 val platformImages = registerBuildInputs("acquireKubernetesPlatformImages", "pull")
 platformImages.configure { dependsOn(preflight) }
 var previous: TaskProvider<out Task> = platformImages
@@ -116,6 +137,7 @@ for (service in listOf("account-service", "risk-service")) {
 val buildInputs = registerBuildInputs("kubernetesBuildInputs", "finish")
 buildInputs.configure { dependsOn(previous) }
 kubernetesTest.configure {
+    dependsOn(manifestTest)
     systemProperties(runProperties)
     doFirst { systemProperty("kubernetesDockerContext", dockerContext.get()) }
 }

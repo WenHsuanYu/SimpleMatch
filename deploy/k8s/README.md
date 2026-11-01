@@ -71,7 +71,7 @@ bash scripts/validate-local-resilience-contract.sh
 ```
 
 The validator checks rendered deployment policy. Its result cannot establish runtime recovery.
-Use `bash scripts/test-phase1-deployment-contracts.sh` for the shared local and CI regression collection.
+Use `./gradlew manifestCheck` for the shared rendered-manifest check.
 The project retired the extra static collection and its custom result envelope.
 
 Runtime recovery uses focused diagnostics for a specific property.
@@ -164,8 +164,7 @@ manifest mirror.
 Render and validate them with:
 
 ```text
-bash scripts/test-kubernetes-overlays.sh
-bash scripts/test-local-kubernetes-dependencies.sh
+./gradlew manifestCheck
 ```
 
 The local dependency contract is deliberately small. PostgreSQL is a node-local singleton on worker
@@ -350,8 +349,8 @@ ConfigMap volume with an `emptyDir` populated by a digest-pinned data-image init
 preserving the same runtime artifact path. Replace the placeholder digests in both manifests with
 approved image digests before deployment.
 
-`bash scripts/test-matching-kubernetes-manifests.sh` verifies the structural deployment contract
-without requiring a live cluster. The normal recovery procedure is in
+`./gradlew manifestCheck` validates rendered schemas and basic workload probes
+without a live cluster. See the [validation scope](../../docs/verification/manifest-validation.md). The normal recovery procedure is in
 [Matching fleet recovery](../../services/docs/platform/matching-fleet-recovery.md).
 
 The strict live gate is bash scripts/verify-matching-fleet-live.sh. It requires all 15 pods to be

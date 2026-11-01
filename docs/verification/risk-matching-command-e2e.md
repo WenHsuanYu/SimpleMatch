@@ -65,8 +65,7 @@ Run the offline suite and static analysis before a deployment:
 
 ```bash
 ./gradlew :tools:kubernetes-tests:check staticAnalysis --no-daemon
-bash scripts/test-risk-matching-e2e-manifest.sh
-bash scripts/test-matching-topic-cutover.sh
+./gradlew manifestCheck
 ```
 
 The ordinary `test` task excludes the `kubernetes-live` tag. Its process, filesystem and real

@@ -863,10 +863,11 @@ implementation blocker.
   PostgreSQL CA mounts/TLS parameters, and Account/Risk gRPC mTLS. Spring services include Actuator,
   all application services expose the basic health/info/metrics endpoint, and critical delivery
   paths register Micrometer counters and observations. The local resilience contract also rejects
-  raw FIX message logging and unsafe account-payload templates. `scripts/test-kubernetes-overlays.sh`
-  renders and structurally validates all four overlays. The executable local overlay now also contains the node-local PostgreSQL
+  raw FIX message logging and unsafe account-payload templates. `./gradlew manifestCheck`
+  validates schemas and basic workload probes across all four overlays. The executable local overlay now also contains the node-local PostgreSQL
   singleton, disposable Redis cache, three-broker KRaft StatefulSet, bounded Flyway/PostgreSQL
-  readiness gates, and explicit Kafka topic provisioning; focused manifest tests pass. PostgreSQL
+  readiness gates, and explicit Kafka topic provisioning. S4 retires the older static fixture matrices
+  under the [owner-amended scope](../plans/shell-test-reduction-s4.md). PostgreSQL
   URI TLS parameters are preserved by the shared adapter.
   Risk now owns a durable `matching.commands` delivery observer that correlates exact Debezium
   event identities, proves its Kafka consumer group is caught up before refreshing admission lag,

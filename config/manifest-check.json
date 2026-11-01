@@ -1,0 +1,65 @@
+{
+  "kubernetesVersion": "1.36.1",
+  "kubeconformVersion": "v0.8.0",
+  "kustomizeVersion": "v5.8.1",
+  "schemaRevision": "e0c72a1bc5f409d1685c0e1323460c8a98cd7459",
+  "profiles": [
+    "local",
+    "test",
+    "staging",
+    "production"
+  ],
+  "tools": {
+    "kubeconform": {
+      "linux-amd64": {
+        "url": "https://github.com/yannh/kubeconform/releases/download/v0.8.0/kubeconform-linux-amd64.tar.gz",
+        "sha256": "9bc2bffbf71f261128533edaf912153948b7ff238f9a531ae6d34466ec287883"
+      },
+      "linux-arm64": {
+        "url": "https://github.com/yannh/kubeconform/releases/download/v0.8.0/kubeconform-linux-arm64.tar.gz",
+        "sha256": "1f53fc8e81258197a35e8603054162a5af1de8c5af13746c71ab680d9534ed87"
+      },
+      "darwin-amd64": {
+        "url": "https://github.com/yannh/kubeconform/releases/download/v0.8.0/kubeconform-darwin-amd64.tar.gz",
+        "sha256": "71dbc87ac9f24099a62b93570e65aa06312ba6ac8aea63b7f86e9d999edf5a92"
+      },
+      "darwin-arm64": {
+        "url": "https://github.com/yannh/kubeconform/releases/download/v0.8.0/kubeconform-darwin-arm64.tar.gz",
+        "sha256": "f84f4dfbebf4a6b0b230385fa065a39ea35e02608c2b50d025dcf64775a69d67"
+      }
+    },
+    "kustomize": {
+      "linux-amd64": {
+        "url": "https://github.com/kubernetes-sigs/kustomize/releases/download/kustomize/v5.8.1/kustomize_v5.8.1_linux_amd64.tar.gz",
+        "sha256": "029a7f0f4e1932c52a0476cf02a0fd855c0bb85694b82c338fc648dcb53a819d"
+      },
+      "linux-arm64": {
+        "url": "https://github.com/kubernetes-sigs/kustomize/releases/download/kustomize/v5.8.1/kustomize_v5.8.1_linux_arm64.tar.gz",
+        "sha256": "0953ea3e476f66d6ddfcd911d750f5167b9365aa9491b2326398e289fef2c142"
+      },
+      "darwin-amd64": {
+        "url": "https://github.com/kubernetes-sigs/kustomize/releases/download/kustomize/v5.8.1/kustomize_v5.8.1_darwin_amd64.tar.gz",
+        "sha256": "ee7cf0c1e3592aa7bb66ba82b359933a95e7f2e0b36e5f53ed0a4535b017f2f8"
+      },
+      "darwin-arm64": {
+        "url": "https://github.com/kubernetes-sigs/kustomize/releases/download/kustomize/v5.8.1/kustomize_v5.8.1_darwin_arm64.tar.gz",
+        "sha256": "8886f8a78474e608cc81234f729fda188a9767da23e28925802f00ece2bab288"
+      }
+    }
+  },
+  "schemas": {
+    "deployment-apps-v1.json": "3725782fb01e3f27d8be2da565e2d653d7b78bf6debe5440804cea993c87b8f9",
+    "statefulset-apps-v1.json": "cfa6579916fc2a1be0deb6372a3c67c3747a212131d0cb7b342d645f65639987",
+    "job-batch-v1.json": "f49fee30367890a492146d63c3c433a7853e9088ebfe9e25cc792ec4b1400f18",
+    "lease-coordination-v1.json": "aad2ed7cc103e999e3e195a575545a5b5259e9b165da6d15aeef13a388fd7f95",
+    "networkpolicy-networking-v1.json": "f6324cc464f62228b0418f438d167208e4f86c7e3677ba30f608e79a8b26ba79",
+    "poddisruptionbudget-policy-v1.json": "92b2b2cf7c193b9d10943e7785ebe6eefce439d9e1e34e5fd9e820155a657137",
+    "role-rbac-v1.json": "dfe8fb03b1642f985b57b12edd1727b6867c13ed4b6761ef81bdd51b1d236711",
+    "rolebinding-rbac-v1.json": "b12ea4163fc37df2e02192b4291b1b7c28836e3e7665d989dd538bfcffa10076",
+    "configmap-v1.json": "e0eaddebd677c08aa092b2da2264d86ac4fc34eed112b9fac2945b3f00c1e9b1",
+    "pod-v1.json": "6f99b68397fd3fe1756eb434f756698415544c15facf923e6e1bd97fd89395fa",
+    "service-v1.json": "8bf019854daed511e7c174896a898173fa65d88ec5937c687a37303d4cc9351b",
+    "serviceaccount-v1.json": "8193d6c3561475c6d3d5c44e1faedb1df53905373d904bc17015694326d659cf"
+  },
+  "customResourceExceptions": []
+}

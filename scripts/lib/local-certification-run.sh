@@ -157,22 +157,11 @@ certification_execute_phase() {
       run_logged "$phase_id" _certification_check_local_resource_budget
       ;;
     static-kubernetes-overlays)
-      run_logged "$phase_id" bash "$repo_root/scripts/test-kubernetes-overlays.sh"
+      run_logged "$phase_id" "$repo_root/gradlew" -p "$repo_root" manifestCheck
       ;;
     static-phase1-deployment-contracts)
       run_logged "$phase_id" bash \
         "$repo_root/scripts/test-phase1-deployment-contracts.sh"
-      ;;
-    static-kubernetes-dependencies)
-      run_logged "$phase_id" bash \
-        "$repo_root/scripts/test-local-kubernetes-dependencies.sh"
-      ;;
-    static-matching-manifests)
-      run_logged "$phase_id" bash \
-        "$repo_root/scripts/test-matching-kubernetes-manifests.sh"
-      ;;
-    static-matching-profile)
-      run_logged "$phase_id" bash "$repo_root/scripts/test-matching-topic-profile.sh"
       ;;
     static-flyway-services)
       run_logged "$phase_id" "$repo_root/gradlew" -p "$repo_root" -q :tools:dependency-tests:test

@@ -27,6 +27,8 @@ on:
       - 'docs/agents/**'
       - 'tools/query-evidence-verifier/src/test/resources/**'
       - 'tools/recovery-evidence-verifier/**'
+      - 'tools/kubernetes-tests/**'
+      - 'config/manifest-check.json'
   workflow_dispatch:
 
 concurrency:
@@ -48,6 +50,8 @@ jobs:
           persist-credentials: false
       - name: Set up Java and Gradle
         uses: ./.github/actions/setup-java-gradle
+      - name: Validate supported manifests
+        run: ./gradlew manifestCheck --no-daemon
       - name: Validate shell lifecycle contracts
         run: |
           ruby scripts/test-hard-reset-safety.rb
@@ -86,7 +90,6 @@ jobs:
           bash scripts/test-local-image-transport.sh
           bash scripts/test-local-image-rendering.sh
           bash scripts/test-local-certification-trading-day.sh
-          bash scripts/test-local-kubernetes-dependencies.sh
           bash scripts/test-local-certification-workloads.sh
           bash scripts/test-local-certification-skip-semantics.sh
           bash scripts/test-local-certification-provenance.sh

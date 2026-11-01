@@ -83,7 +83,7 @@ Replace only environment-owned placeholders in a disposable promotion overlay. D
 credentials, private keys, DSNs, registry values, or real endpoint CIDRs.
 
 ```bash
-bash scripts/test-kubernetes-overlays.sh
+./gradlew manifestCheck
 bash scripts/check-account-reservation-v2-cutover.sh
 kubectl config current-context
 kubectl auth can-i get secrets -n "$SIMPLEMATCH_NAMESPACE"

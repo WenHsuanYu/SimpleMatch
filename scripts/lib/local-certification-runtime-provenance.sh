@@ -114,8 +114,9 @@ simplematch_certification_cdc_runtime_source_paths() {
     services/risk-service/src/main/resources/db/migration/risk-service/V10__record_cdc_delivery_observations.sql \
     services/risk-service/src/main/resources/db/migration/risk-service/V11__require_admission_artifact_route.sql \
     services/risk-service/src/main/resources/application.yaml \
-    scripts/test-kubernetes-overlays.sh \
-    scripts/test-local-kubernetes-dependencies.sh
+    tools/kubernetes-tests/src \
+    tools/kubernetes-tests/build.gradle.kts \
+    tools/kubernetes-tests/gradle.lockfile
 }
 
 simplematch_certification_scoped_source_signature() {

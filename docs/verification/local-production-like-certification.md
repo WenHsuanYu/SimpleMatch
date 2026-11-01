@@ -159,8 +159,8 @@ rows that were not rerun retain their original date and boundary.
 | Native full feature tests | ctest --preset full-native-dev --output-on-failure | 75/75 passed from the current full-native build tree on 2026-08-16 |
 | Native reduced feature tests | cmake --build --preset dev-debug --parallel; ctest --preset dev-debug --output-on-failure | 38/38 passed in the historical 2026-08-12 run; not rerun after #127 changes |
 | Native capacity harness | scripts/run-matching-capacity-certification.sh | Repository gate available; report is non-certifying until run on pinned production-shaped hardware |
-| Kubernetes manifest contract | bash scripts/test-matching-kubernetes-manifests.sh | Passed; static contract only |
-| Kafka profile fixtures | bash scripts/test-matching-topic-profile.sh | Passed; includes RF/ISR/safety and duplicate-replica rejection |
+| Kubernetes manifest contract | [Historical manifest contract](https://github.com/WenHsuanYu/SimpleMatch/blob/b3405a9d3c8da82d570e982eb67cf7bac5220586/scripts/test-matching-kubernetes-manifests.sh) | Passed; static contract only; retired in S4 |
+| Kafka profile fixtures | [Historical profile fixtures](https://github.com/WenHsuanYu/SimpleMatch/blob/b3405a9d3c8da82d570e982eb67cf7bac5220586/scripts/test-matching-topic-profile.sh) | Passed; includes RF/ISR/safety and duplicate-replica rejection; retired in S4 |
 | Outbox contracts | ./gradlew verifyCdc | Passed in the disposable CDC environment |
 | Java services | Persistence, Account, QuickFIX, and Market Data module tests | Passed in the controlled Gradle environment |
 | Java quality gate | GRADLE_USER_HOME=/tmp/simplematch-gradle-cache ./gradlew --no-daemon -q staticAnalysis | Passed in the historical 2026-08-14 run; current-head validation is required after the #138 CDC changes |
@@ -201,8 +201,7 @@ ctest --preset full-native-dev --output-on-failure
 cmake --build --preset dev-debug --parallel
 ctest --preset dev-debug --output-on-failure
 
-bash scripts/test-matching-kubernetes-manifests.sh
-bash scripts/test-matching-topic-profile.sh
+./gradlew manifestCheck
 bash scripts/test-phase1-deployment-contracts.sh
 ./gradlew -q :tools:dependency-tests:test
 ./gradlew verifyCdc

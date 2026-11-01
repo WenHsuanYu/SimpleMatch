@@ -9,13 +9,15 @@ on:
       - '.github/workflows/**'
       - '.github/actions/setup-java-gradle/**'
       - 'tools/dependency-tests/**'
+      - 'tools/kubernetes-tests/**'
       - 'tools/recovery-evidence-verifier/**'
       - 'build.gradle.kts'
       - 'settings.gradle.kts'
       - 'build-logic/**'
       - 'gradle/**'
       - 'deploy/compose/**'
-      - 'deploy/k8s/base/**'
+      - 'deploy/k8s/**'
+      - 'config/manifest-check.json'
       - 'config/kafka/**'
       - 'scripts/*'
       - 'scripts/lib/**'
@@ -28,13 +30,15 @@ on:
       - '.github/workflows/**'
       - '.github/actions/setup-java-gradle/**'
       - 'tools/dependency-tests/**'
+      - 'tools/kubernetes-tests/**'
       - 'tools/recovery-evidence-verifier/**'
       - 'build.gradle.kts'
       - 'settings.gradle.kts'
       - 'build-logic/**'
       - 'gradle/**'
       - 'deploy/compose/**'
-      - 'deploy/k8s/base/**'
+      - 'deploy/k8s/**'
+      - 'config/manifest-check.json'
       - 'config/kafka/**'
       - 'scripts/*'
       - 'scripts/lib/**'
@@ -66,10 +70,8 @@ jobs:
         run: git diff --check HEAD^1 HEAD
       - name: Set up Java and Gradle
         uses: ./.github/actions/setup-java-gradle
-      - name: Validate Matching topic cutover
-        run: bash scripts/test-matching-topic-cutover.sh
-      - name: Validate Matching Kafka durability profile
-        run: bash scripts/test-matching-topic-profile.sh
+      - name: Validate supported manifests
+        run: ./gradlew manifestCheck --no-daemon
       - name: Run live CDC contract check
         run: ./gradlew verifyCdc --no-daemon
       - name: Retain dependency test evidence
@@ -81,3 +83,5 @@ jobs:
             tools/dependency-tests/build/reports/
             tools/dependency-tests/build/test-results/
             tools/recovery-evidence-verifier/build/test-results/
+            tools/kubernetes-tests/build/reports/tests/manifestTest/
+            tools/kubernetes-tests/build/test-results/manifestTest/

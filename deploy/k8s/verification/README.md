@@ -49,7 +49,7 @@ for supported cluster modes and exact retained-run cleanup.
 Validate the manifest contract with:
 
 ```bash
-scripts/test-risk-matching-e2e-manifest.sh
+./gradlew manifestCheck
 ```
 
 Do not add production credentials or Secrets to verification ConfigMaps. If a future verifier needs

@@ -52,14 +52,11 @@ source-preflight|
 local-resource-budget|static-kubernetes-overlays
 static-kubernetes-overlays|source-preflight
 static-phase1-deployment-contracts|source-preflight
-static-kubernetes-dependencies|source-preflight
-static-matching-manifests|source-preflight
-static-matching-profile|source-preflight
 static-flyway-services|source-preflight
 compose-config|source-preflight
 cdc-outbox-failure-live|static-phase1-deployment-contracts compose-config
 local-image-inventory|source-preflight
-kafka-producer-contract|static-matching-profile
+kafka-producer-contract|static-kubernetes-overlays
 compose-up|compose-config cdc-outbox-failure-live
 compose-wait|compose-up
 compose-status|compose-wait
@@ -155,7 +152,7 @@ certification_phase_dependencies() {
   case "$phase_id" in
     kafka-profile-validation)
       printf '%s\n' \
-        static-matching-profile \
+        static-kubernetes-overlays \
         kafka-describe-matching-commands \
         kafka-config-matching-commands \
         kafka-describe-matching-events \
@@ -201,9 +198,7 @@ certification_phase_dependencies() {
     kubernetes-manifest-split)
       printf '%s\n' \
         local-resource-budget \
-        static-kubernetes-overlays \
-        static-kubernetes-dependencies \
-        static-matching-manifests
+        static-kubernetes-overlays
       if [[ "${image_transport:-registry}" == registry ]]; then
         printf '%s\n' registry-image-lock
       else
@@ -254,9 +249,6 @@ _certification_profile_root_phase_ids() {
   printf '%s\n' \
     static-kubernetes-overlays \
     static-phase1-deployment-contracts \
-    static-kubernetes-dependencies \
-    static-matching-manifests \
-    static-matching-profile \
     static-flyway-services \
     compose-config \
     local-image-inventory

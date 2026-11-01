@@ -4,6 +4,10 @@ Status: analysis deliverable for [#197](https://github.com/WenHsuanYu/SimpleMatc
 Program authority: [approved specification #196](https://github.com/WenHsuanYu/SimpleMatch/issues/196).
 The owner authorized S0 analysis. No executable deletion or deployment occurs in this slice.
 
+For current S4 work, read the [2026-11-02 owner amendment and disposition](../shell-test-reduction-s4.md).
+It narrows verification to core behavior and basic checks, and permits retirement without individual assertion translation.
+The budgets and findings below remain the historical S0 analysis.
+
 ## Acceptance and affected scope
 
 S0 must account for all 170 baseline files and 34,923 physical lines.

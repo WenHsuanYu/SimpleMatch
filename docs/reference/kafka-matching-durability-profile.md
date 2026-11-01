@@ -136,15 +136,12 @@ not a completion condition for this project.
 
 Alert immediately on under-replicated partitions, any ISR below 2, topic/profile drift, disabled idempotence or `acks!=all`, automatic topic creation, unclean election, or disk consumption beyond the certified headroom. Future Gateway admission automation consumes those signals in #135; this profile deliberately does not make a local shell script claim to pause live trading.
 
-Run the repository fixture checks with:
+The owner retired the dedicated topic-fixture matrix in S4 on 2026-11-02.
+The validator and provisioner remain available for actual operator and runtime use.
+The earlier fixture outcomes above are historical, not a current matrix execution claim.
+Use `./gradlew manifestCheck` for current rendered schemas and basic workload probes.
+It does not certify RF/ISR, producer safety, capacity, or broker-loss behavior.
+See the [S4 disposition](../plans/shell-test-reduction-s4.md) and the actual runtime verification entry points.
 
-```bash
-bash scripts/test-matching-topic-profile.sh
-```
-
-The tests cover the valid RF3/ISR2 profile, one- and two-broker loss, absent leaders, invalid
-replica/ISR membership, unsafe broker policy, insufficient capacity, unsafe producer settings,
-refusal to use the RF1 local profile, command-config forwarding, and generated provisioning
-commands. The local production-like certification run remains the project-level integration gate.
 External cluster ownership, external credentials, and external production measurements remain
 promotion-template inputs; they are not required to close this local issue.

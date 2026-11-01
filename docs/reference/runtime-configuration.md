@@ -197,7 +197,7 @@ to this repository.
 contains only non-sensitive data.
 The complete cross-service base/overlay contract and external Secret keys are documented in
 [`deploy/k8s/README.md`](../../deploy/k8s/README.md#cross-service-base-and-overlays), with a local
-rendering gate in `scripts/test-kubernetes-overlays.sh`.
+rendering gate in [`manifestCheck`](../verification/manifest-validation.md).
 
 The Risk and Account Debezium connector templates resolve their database usernames and passwords
 from Kafka Connect environment variables. Those environment variables must be injected from a

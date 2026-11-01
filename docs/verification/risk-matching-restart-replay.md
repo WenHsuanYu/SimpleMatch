@@ -81,8 +81,7 @@ kind load docker-image \
 Run the static deployment contracts and focused verifier/Risk tests first:
 
 ```bash
-bash scripts/test-risk-matching-e2e-manifest.sh
-bash scripts/test-risk-matching-restart-replay-manifest.sh
+./gradlew manifestCheck
 
 ./gradlew --no-daemon \
   :tools:risk-matching-e2e-verifier:test \
