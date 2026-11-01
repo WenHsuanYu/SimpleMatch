@@ -1,6 +1,7 @@
 # Account Summary Semantics and Revision Review
 
-Status: source-backed review; **external account-status semantics and revision contract unresolved**.
+Status: source-backed review; **Phase 1 reservation-projection scope approved; future authority
+and external account-status revision contract unresolved**.
 Inspected HEAD: `9e68995233f49319974b76f826a59f88f14538cb`, including the existing dirty worktree.
 No runtime/replay/concurrency tests were executed for this review. See
 [OD-19](security-decision-register.md) and the [security specification](security-external-access-spec.md).
@@ -102,3 +103,73 @@ unavailable response when the floor cannot be met. All are candidates, not appro
 
 Until these gates pass, Account Summary stays PostgreSQL-only and there is no external promise
 of authoritative balance, immediate available capacity or complete client-observed monotonicity.
+
+## 5. Phase 0 user decision and domain priority assessment
+
+On 2026-10-23 the user approved protecting the existing reservation-related projection in
+Phase 1. Round 2 selects authoritative available trading capacity as the future objective and
+excludes cash-balance engineering from this roadmap. This is
+approval of the bounded semantic scope, not new domain implementation. The focused authority
+audit below was refreshed at `8362a165e9ce05dc91247b55c9587866840a32ce`; no runtime tests ran.
+
+### Existing authority versus the proposed product
+
+[AccountLimitLedger](../../account-service/src/main/java/com/simplematch/accountservice/authority/AccountLimitLedger.java)
+enforces `availableNotional = limitTotalNotional - reservedNotional - utilizedNotional`.
+[AccountAuthorityTransitions](../../account-service/src/main/java/com/simplematch/accountservice/reservation/AccountAuthorityTransitions.java)
+checks and updates the account/day limit for buys and account/symbol long inventory for sells.
+Its sell availability is `longQuantity - reservedLongQuantity`. Reserve, partial fill and
+release run under the existing application transaction, with their respective limit/position
+revisions. These are existing admission-capacity authorities, not a proven cash ledger.
+
+The current application has internal limit/position read methods; the protobuf service exposes
+Reserve, not a new public capacity-query RPC. Current lifecycle publication carries one
+reservation's state and amounts without limit availability, aggregate positions or revision.
+Consequently, Query cannot reconstruct an authoritative account snapshot merely by renaming
+its current fields. Reuse the separate limit/position/reservation roots under
+[CONTEXT](../../../CONTEXT.md); do not create authority in Query or merge roots solely to
+obtain one version counter.
+
+The approved product focus is available trading capacity. Cash balances, withdrawal eligibility,
+funding and settlement are excluded from this roadmap, not prerequisites or deferred required
+phases. Existing sellable-inventory rules remain source context; the user's choice does not
+automatically authorize a new external inventory API. Preserve the Account Authority capacity
+contract rather than introducing Query-side cash checks or a second admission decision.
+
+### Selected priority and remaining domain design
+
+| Order | Work | Dependency and rationale |
+| --- | --- | --- |
+| Now | Available trading capacity is selected; complete remaining Query Phase 0 decisions. | Define capacity dimensions and source responsibility before selecting a schema/event design. |
+| First implementation | Approved Phase 1 authentication, grants, ownership and PostgreSQL-only reads. | Do not delay the existing disclosure fix for a broader account redesign. No claim of authoritative balance follows. |
+| Next domain slice | Validate existing capacity authority and design source-owned snapshots, revisions and publication. | Required before Query publishes new capacity semantics. Reuse existing roots; decide exact external fields separately. |
+| Then account data product | Approved Query-owned capacity projection and external schema/freshness contract. | Authority values at a source revision remain lagging snapshots in Query. No cross-schema reads or Query dependency in admission. |
+| After semantics/evidence | Optional Account Redis and strict client monotonic-read design. | Source ordering/revision/snapshot/replay precede cache CAS. Cache need and benefit still require Phase 2 gates. |
+
+The authority/revision/publication design blocks the new external account-data meaning and
+Account Cache, not Order/Executions security or an independently approved Gateway/JWT lab.
+Discovery can proceed alongside security planning; implementation of any domain slice requires
+its own approval and tickets. Production publication retains all transport/security gates.
+
+The user's statement that successful trading consumes capacity must be expressed through the
+existing reservation lifecycle. Admission reserves capacity so concurrent unfilled orders
+cannot all spend the same allowance. A fill converts the corresponding reservation into utilized
+capacity, with the existing execution-price adjustment; it must not subtract the same allowance
+twice. Cancellation/release restores only unused reserved capacity, not completed utilization.
+For example, with total 1,000 and no prior use, reserving 200 leaves available 800. A complete
+fill using exactly 200 leaves reserved 0, utilized 200 and available 800, not 600. This is an
+illustration of the existing equation, not a newly executed test or an approved arithmetic change.
+Precise partial-fill, price-difference, release and trading-day rules require the separate domain
+review before a new capacity projection is implemented. Query only reports authorized snapshots.
+
+Even an authoritative capacity read cannot promise a later order will fit: another order may
+reserve between read and submission. Account Authority's atomic reserve remains the admission
+decision. A stronger guarantee would require a separately designed reservation/quote contract;
+displaying a fresher number or bypassing Redis cannot provide it.
+
+Minimum evidence for a future domain slice includes concurrent same-account reservations,
+aggregate amounts, partial fills and price differences, release without reversing completed
+fills, duplicates/ordering/replay, trading-day transitions, coherent limit/position snapshots,
+atomic source state/publication and equivalent Query rebuild results. Existing per-root
+versions do not prove one comparable account-wide revision. These are required future tests,
+not passing results from this review.

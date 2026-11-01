@@ -1,13 +1,18 @@
 # Query Security and Cache Architecture Specification
 
-Status: **Conditionally approved architecture; implementation approval pending.**
-Reference and inspected HEAD: `9e68995233f49319974b76f826a59f88f14538cb`.
+Status: **Conditionally approved architecture. Phase 1 planning history retained.**
+Original reference: `9e68995233f49319974b76f826a59f88f14538cb`.
+Phase 0 source refresh: `8362a165e9ce05dc91247b55c9587866840a32ce` (2026-10-23),
+with a clean worktree before this documentation-only decision round.
 Revision basis: the Principal Engineer Review Resolution and its Required Specification
 Amendments addendum supplied in this conversation. Section 12 incorporates A1–A5 as mandatory
 contracts; the decision register records precedence and unchanged clauses.
 This is the repository edition of the previously conversation-only specification; the
 resolution supersedes conflicting details in that original proposal. This document is a
 target contract, not a statement of implemented or certified capabilities.
+
+Phase 1 authorization and source-state statements below describe their recorded planning baseline.
+For current delivery status and evidence, see [QS1-07 / #194](https://github.com/WenHsuanYu/SimpleMatch/issues/194).
 
 Companion documents:
 
@@ -31,13 +36,21 @@ An approved direction is not approval of a candidate mechanism, production SLO o
 Use the repository development workflow, Spring Environment configuration authority, existing
 Gradle conventions, Flyway migrations, Kustomize overlays and certification planner.
 
-The inspected worktree contains pre-existing Query Redis TLS/ACL/namespace, FIX and deployment
-changes. Preserve these; do not treat them as committed or deployed. The Query controller has
-no general client authentication or account authorization. Its PostgreSQL arguments are
+The Query Redis TLS/ACL/namespace, FIX and deployment changes discussed in the original review
+are now committed in the refreshed source baseline. They do not establish Query HTTP identity,
+incoming transport security or deployed acceptance. The Query controller still has no general
+client authentication or account authorization. Its PostgreSQL arguments are
 evaluated before Redis lookup. Query has a ClusterIP Service on 8086 and two replicas in the
 reviewed overlays. No Gateway resources were found in the preceding four-overlay static
 review. Spring Boot is 4.1.0; Query has no explicit Resource Server dependency. These baseline
-facts must be rechecked before implementation; they do not establish live deployment state.
+facts were rechecked against the refreshed source; they do not establish live deployment state.
+No Query issuer/JWKS, principal or account-grants configuration was found in the inspected runtime
+and manifests; availability of an approved IdP outside this repository remains unresolved.
+Known HTTP consumers include certification collectors and the Java placement freshness observer;
+their unauthenticated loopback requests require an explicit Phase 1 compatibility decision.
+The [decision register](security-decision-register.md#phase-0-decision-round-1) records the current
+question frontier and source pointers. The user approved round 1 M2M clients, Local Lab delivery
+and the existing projection scope; remaining recommendations are not approvals.
 
 ## 2. Architectural invariants
 
@@ -62,7 +75,7 @@ authorization semantics; lab-only transport is an explicit evidence boundary, no
 ## 3. D1 — Stable Query client principal
 
 Approved in principle: an immutable Query-specific principal represents a provisioned API
-client. M2M/institutional consumers remain an assumption awaiting OD-01 confirmation. One
+client. Phase 0 round 1 confirms M2M/API clients for Phase 1, without individual-user delegation. One
 institution may have multiple principals; one principal may have multiple grants; multiple
 principals may read the same account. Machine identity does not establish individual-user
 attribution. Account ID, FIX session, JWT bytes and certificate serial are not principal identity.
@@ -82,9 +95,10 @@ and account policy; do not build a custom OAuth server or JWT crypto framework.
 
 ### Initial mode and transport gate
 
-Provisioned opaque bearer credentials are a conditional transition, not an unconditional
-requirement. Before Phase 1, determine whether an approved IdP is already available. Direct JWT
-adoption may avoid temporary credential infrastructure but requires explicit phase reapproval.
+Phase 0 selects security-boundary-first Phase 1 with opaque credentials and OAuth evaluation
+deferred. Q7 confirms through the project owner that no approved usable IdP exists, satisfying
+the initial-mode prerequisite. This is owner confirmation, not repository-derived proof. If a usable
+approved IdP is discovered, reopen the initial-mode decision without silently adding OAuth work.
 Otherwise use independently generated high-entropy credentials, protected provisioning, secure
 verifiers/comparison, disabled-state checks and bounded approved rotation overlap. Never reuse
 FIX passwords or rebuild tokens. Do not log tokens, secret policy material or authorization headers.
@@ -95,6 +109,22 @@ security. Staging/production MUST use an approved encrypted, server-authenticate
 real bearer credentials are used. Native Query HTTPS is a candidate; Envoy/client mTLS need not
 be introduced in Phase 1. An unprotected production listener carrying real credentials fails
 the transport gate. No production disable-auth flag is allowed.
+
+Phase 0 round 1 selects the isolated Local Security Lab for initial delivery. Later security
+phases MUST remain testable in development with synthetic identities and independently supplied
+trust material. A self-signed local test CA with distinct client/Gateway/server certificates is
+a candidate; explicitly trusted leaf certificates are an alternative subject to capability and
+lifecycle verification. A test CA still provides PKI responsibilities. Neither choice permits
+trust-all validation, skipped server identity checks or a final certificate-binding bypass.
+Keep trust stores, expected identities, issuer/audience and provisioning references configurable
+through Spring Environment and existing overlays; do not add a generic certificate framework.
+Production substitution requires fresh environment-specific trust/rotation/revocation evidence,
+not merely a configuration swap. No production CA/provider or certificate mechanism is selected.
+
+These distinctions follow [TLS service identity verification](https://www.rfc-editor.org/rfc/rfc9525.html)
+and [RFC 8705](https://www.rfc-editor.org/rfc/rfc8705.html): its self-signed OAuth client
+authentication method does not by itself prove the selected Gateway listener supports that
+trust model or that a proxy preserves trustworthy certificate evidence.
 
 ### OAuth mode
 
@@ -137,6 +167,58 @@ procedure, failed-rollout behavior and rollback protection. Secret updates, Read
 rollout command alone do not prove enforcement convergence. Observe policy versions without
 revealing grant contents, and verify old instances, direct paths and existing connections.
 Never report effective revocation before its approved completion conditions are satisfied.
+
+For the Local Lab only, the user approves the test Principal/synthetic Account grant matrix;
+a controlled Fixture Provisioning process generates synthetic credentials before deployment and
+securely distributes client material and the same approved credential mapping/Policy Version to
+all replicas. Query Pods MUST load and validate policy, not independently generate credentials.
+QS1-01 owns application policy loading/validation; QS1-06 owns cross-deployment rotation/revocation
+proof. Credential Generation 1 → Generation 2 preserves Principal IDs and changes only credentials
+and explicitly approved grants. Test credentials MUST NOT be hardcoded in source, committed to
+the repository or disclosed in logs, API responses or evidence. Nonsecret
+fixture identities and grant matrices may be versioned. Test credential rotation, disabled
+principals, revoked grants and cross-principal denial. This lab arrangement establishes no
+permanent customer-grant governance; production authorization owners, Secret management and
+emergency revocation responsibilities require independent decisions.
+
+The five-principal Lab matrix is approved in principle: A→X, B→Y, C→X/Y, Operations→operations-read
+only, D→no accounts/operations; all enabled principals may read Market Reference. Provide X/Y
+Orders with and without Executions and a verified missing parent. V2 removes only C→Y; prove
+C→Y denial plus C→X and B→Y success across the relevant routes. The rebuild operator remains
+outside this matrix, with negative tests for credential misuse in both directions.
+
+Q8 approves the Local Lab transition: Block new protected reads; Drain admitted requests under
+the selected in-flight contract; establish revocation; Activate/Verify validated V2 and Resume.
+The subsequent simplification defines Tsubmit → Tblock → Tdrained → Trevoked → Tresume:
+Trevoked proves no old-policy server path can disclose data, independently of Tresume, which
+records successful new-policy verification and reopened queries. Failure after Trevoked may
+leave queries unavailable; it must not restore V1. Q10 selects a temporary full Query shutdown, including
+projection consumers, for the Local Lab. Q11 allows bounded completion of requests admitted
+before completed Block, then termination/isolation. Failure MUST leave protected reads unavailable or in
+an explicitly approved safe state that cannot restore revoked grants. Define the actual Block
+boundary across existing connections and direct paths; readiness alone is insufficient.
+The policy authority/version floor MUST survive application rollback independently. A YAML
+version field alone is not rollback protection. For the disposable Local Lab, preserve a protected
+current approved version/digest independently of the image throughout the same run, including
+runner restart and application rollback. No central policy database, enterprise approval system
+or cross-Lab permanent retirement registry is required. After verified full run teardown, a new
+namespace with new synthetic identities/data may start from its own initial version. This does
+not permit resetting the authority record while old run resources or identities survive.
+The accepted initial drain/statement/isolation/catch-up test budgets are 20/5/90/120 seconds;
+they are hypotheses for tests, not performance results or SLAs. Record policy-change
+submission separately from completed Block: a scale command cannot establish instantaneous
+cluster-wide refusal. No old-policy response may be generated after effective revocation;
+previously sent or network-buffered bytes cannot be recalled or given a server-guaranteed
+client receipt deadline. Do not promise emergency immediate cutoff from routine bounded drain.
+Query's HTTP and Kafka projection consumers share the process: shutting down every Query Pod
+pauses projection consumption and introduces catch-up requirements. A policy change MUST NOT
+implicitly reset projection data or consumer offsets.
+
+Credential rollover with fresh material withheld until Resume is an accepted Lab verification
+isolation fallback; zero overlap is sufficient for that fallback. It is not mandatory for every
+policy change if an existing read gate or traffic control proves equivalent isolation. Record
+and test the selected mechanism. Neither new credential issuance nor a gate replaces proof that
+old-policy instances cannot serve. Production mechanisms remain separately scoped.
 
 Five minutes is only an **operational SLO candidate**, not an approved SLA or hard guarantee.
 Hard bounds require an evidenced mechanism such as a policy lease, mandatory version check or
@@ -187,10 +269,11 @@ key. Limits, distributed enforcement and failure behavior remain decisions, not 
 
 ## 7. Phase 1 authorized PostgreSQL read contract
 
-Account Summary, Order and Executions MUST bypass both Redis response reads and writes in Phase 1.
-Old sensitive keys must never become an alternate response path. Physical cleanup of old keys
+Account Summary, Order, Executions AND Market Reference MUST bypass both Redis response reads
+and writes in Phase 1 under the user's simplification. Old keys must never become an alternate response path. Physical cleanup of old keys
 is separate from proving non-use; do not perform broad Redis deletion. Update certification
-key-presence expectations explicitly. This is an approved temporary compatibility change.
+key-presence expectations for all four business routes explicitly. This is an approved temporary
+compatibility change. Typed caching is deferred until Phase 2A measurement and later cache gates.
 
 Authenticate first. Account Summary compares the requested canonical account to active grants,
 then reads Query PostgreSQL and validates returned identity. Order obtains trustworthy ownership
@@ -221,15 +304,59 @@ authorized; adding Spring Security must neither bypass nor accidentally disable 
 Market Reference defaults to an explicit authenticated-client policy; public exposure requires
 separate approval. It is not exempt from correctness: review cache identity, normalization,
 replacement and consistency separately; no automatic account grants or public exposure.
-Freshness stays internal by default. External payloads require an approved schema containing
-only necessary freshness information; existing responses embed full checkpoints. An unpublished
-external DTO does not automatically require v2. Existing consumers must be inventoried first.
+Q9 approves the Lab route matrix below. operations-read is a Query-local permission, independent
+of Account Grants and not assumed to be an OAuth scope. Principal credentials cannot replace
+the rebuild operator token; that token cannot establish ordinary read identity.
+
+| Route | Local Lab access |
+| --- | --- |
+| GET /api/v1/orders/{orderId} | QueryPrincipal, trusted ownership, Account Grant |
+| GET /api/v1/orders/{orderId}/executions | QueryPrincipal, existing parent ownership, Account Grant |
+| GET /api/v1/accounts/{accountId}/summary | QueryPrincipal, Account Grant |
+| GET /api/v1/market-reference/{tradingDay}/{venueMic}/{symbol} | Authenticated QueryPrincipal; no external publication approval |
+| GET /api/v1/freshness | QueryPrincipal with explicit operations-read permission |
+| POST /internal/query/rebuild | Independent operator credential; opt-in route remains controlled |
+| Minimal liveness/readiness | Infrastructure probes, minimal disclosure |
+| Other management routes | Default deny |
+
+Match actual routes/methods; a family wildcard is not authorization for future children.
+An operations-only principal can also read Market Reference by the authenticated-client rule,
+but has no implicit account grants. Integrate rebuild with an exact security-chain boundary
+and route-specific CSRF review; no broad /internal/** exemption or Query bearer prerequisite.
+Test valid operator-only requests as well as read-token-only rejection through real HTTP filters.
+
+Q12 removes full checkpoint metadata from all ordinary response envelopes, including Market
+Reference; /freshness and internal checkpoint/rebuild verification retain full operations data.
+Keep approved minimal business freshness with proven meanings; no fabricated asOf, authority
+revision or zero-lag claim. Update DTOs, old cache response handling and all known consumers.
+The selected v1 envelope retains data and freshness.projectionState, including NO_GAP_RECORDED
+with the conservative mapping in the plan. That state never means caught up to Kafka. A claim
+that data and freshness share a snapshot requires a consistent PostgreSQL read snapshot; otherwise
+identify freshness explicitly as an independent diagnostic observation. Full internal checkpoint
+and replay validation remain required. Do not introduce v2, duplicate DTO support or a deprecation
+window solely for this unpublished contract revision.
+The project owner confirms no formal publication commitments. Revise the existing v1 contract
+in place with coordinated repository consumer/cache updates; this change does not require a
+legacy-field support window or v2. This confirmation does not authorize external publication or
+establish that there have never been informal consumers. Future supported contracts require
+explicit migration before a breaking release, not a legacy anonymous endpoint or disclosure
+bypass. See the
+[consolidated Phase 1 proposal](../../../docs/plans/query-security-cache-implementation.md#phase-1-consolidated-design-review-package)
+for exact proposed fields and acceptance boundaries. These rules align with
+[OWASP response-property minimization](https://owasp.org/API-Security/editions/2023/en/0xa3-broken-object-property-level-authorization/)
+and [AIP-180 compatibility guidance](https://google.aip.dev/180); the no-commitment premise comes
+from the project owner rather than those references.
 
 ## 8. Phase 2 consistency contracts
 
 Account Summary is currently a last-applied reservation lifecycle projection, not demonstrated
 account balance aggregation; see the [source review](account-summary-semantics-review.md).
 It stays PostgreSQL-only until semantics, revision ordering and cache guarantees are verified.
+The user approved this bounded Phase 1 interpretation and selected authoritative available
+trading capacity as the future domain objective. Cash-balance engineering is excluded from this
+roadmap. Establish the owning Account/Risk contract
+before publishing those new meanings; Query remains a downstream projection. This objective
+does not authorize domain implementation or make it a prerequisite for the current security fix.
 
 | ID | Required consistency property |
 | --- | --- |
