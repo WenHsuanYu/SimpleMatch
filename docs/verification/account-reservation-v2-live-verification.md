@@ -48,8 +48,9 @@ verifies pending recovery replays the same typed request without a second reserv
 ## Repository-local recovery scenario
 
 The repository-local test is the #139 project-scope evidence. It needs no Kubernetes cluster,
-external endpoint, registry image, credential, Kafka broker, or Debezium installation. The test
-creates two disposable H2 databases, starts an ephemeral Account v2 gRPC server over the real
+external endpoint, registry image, credential, Kafka broker, or Debezium installation.
+Docker is required for the disposable PostgreSQL fixture. The test
+creates two isolated PostgreSQL databases through Testcontainers, starts an ephemeral Account v2 gRPC server over the real
 Account Authority application service, and runs Risk's durable Admission journal/outbox with an
 independent local transaction manager.
 

@@ -36,6 +36,11 @@ Historical PASS reuse, same-run resume, output lineage, and reuse measurement re
 This tooling change does not establish a new deployed certification result.
 See the [execution contract](../verification/local-certification-phase-dag.md).
 
+Database-test source changed under [#202](https://github.com/WenHsuanYu/SimpleMatch/issues/202) on 2026-11-02.
+Active H2 fixtures and runtime compatibility are removed. H2 results quoted below remain historical evidence.
+The [cutover record](../plans/h2-removal.md) records the completed P2 PostgreSQL/component suites (1,083 cases) and seven-case local FIX certification rerun;
+the old H2 results do not prove the new PostgreSQL paths.
+
 ## Status vocabulary
 
 | Status | Meaning |

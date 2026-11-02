@@ -6,6 +6,11 @@ supplements the Phase 1 remaining-work inventory; it does not replace the
 repository-owned local production-like certification required before those
 capabilities can be marked complete.
 
+The current tests use PostgreSQL or mocks according to scenario ownership after the #202 cutover.
+Earlier recorded H2 results remain historical. See the [cutover record](../plans/h2-removal.md)
+for the completed P2 PostgreSQL/component suites and separately recorded local FIX certification rerun.
+This does not complete the deployed or aggregate #202 acceptance.
+
 ## Verification scope
 
 Verification is performed through the application Interfaces that own each
@@ -17,7 +22,7 @@ state instead of reconstructing in-memory status directly.
 ### Persistence
 
 `MatchingEventPersistenceApplicationServiceTest` exercises the Persistence
-application Interface with Flyway, H2 in PostgreSQL compatibility mode, JDBC,
+application Interface with Flyway, PostgreSQL, JDBC,
 and a real transaction manager. A simulated failure before transaction commit
 proves that the final-event inbox, immutable trade, both order-fill legs, order
 projections, and partition progress roll back together. Replaying an identical
