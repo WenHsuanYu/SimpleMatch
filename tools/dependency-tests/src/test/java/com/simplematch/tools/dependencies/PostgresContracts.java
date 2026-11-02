@@ -1,6 +1,5 @@
 package com.simplematch.tools.dependencies;
 
-import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
@@ -77,28 +76,6 @@ final class PostgresContracts {
             .replace("\\set ON_ERROR_STOP on", "");
     try (var statement = connection.createStatement()) {
       statement.execute(sql);
-    }
-  }
-
-  static void gatewayIdentity(Connection connection) throws Exception {
-    final var directory = FlywayOwners.root().resolve("scripts/end-to-end/critical-consumers");
-    try (var statement = connection.createStatement()) {
-      statement.execute(
-          Files.readString(directory.resolve("tests/fixtures/gateway-session-padding.sql")));
-      try {
-        try (var result =
-            statement.executeQuery(
-                Files.readString(directory.resolve("sql/gateway-session-state.sql")))) {
-          assertTrue(result.next());
-          final var mapper = new ObjectMapper();
-          assertEquals(
-              mapper.readTree(
-                  directory.resolve("tests/baselines/gateway-session-identity.json").toFile()),
-              mapper.readTree(result.getString(1)).get("identity"));
-        }
-      } finally {
-        statement.execute("ROLLBACK");
-      }
     }
   }
 

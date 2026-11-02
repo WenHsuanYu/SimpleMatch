@@ -198,10 +198,10 @@ GitHub owns the current remote-delivery status.
   `lib/gateway-recovery-verification.rb` redacts owner/WAL observations and checks
   recovery against the same business baseline. Its independent fixtures and
   `tests/baselines/gateway-recovery-result.json` cover negative evidence as well.
-  PostgreSQL CI runs `:tools:dependency-tests:postgresTest` against a disposable migrated
-  database. The legacy `tests/gateway-session-sql-test.sh` delegates to that task until S5-B1 removes it.
-  Its rollback fixture and identity baseline verify the real SQL
-  removes `CHAR(8)` padding without trimming significant `VARCHAR` identities.
+  S5 retires the dedicated SQL padding snapshot, its fixture/baseline, and its Shell alias.
+  The runtime SQL collector remains in use by the recovery scenario.
+  PostgreSQL smoke verifies migrations and core constraints without repeating this collector-report check.
+  See the [disposition](../../../docs/plans/shell-test-reduction-s5.md) for the intentional coverage loss.
 - `run-failure-certification.sh` owns only the failure and recovery scenario.
 - `lib/matching-status.sh` validates Matching runtime evidence and normalizes
   Kafka committed positions. It performs no Kubernetes or Kafka I/O.

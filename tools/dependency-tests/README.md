@@ -13,9 +13,8 @@ The entry runs:
 - The actual service Flyway configuration and retained operator inventory contracts.
 - Missing and wrapper-only runtime-cache seed rejection through the real operational entry.
 - The build convention tests, including actual dependency preparation.
-- All six owners' real Gradle Flyway info, migrate, repeat-migrate, and validate tasks.
-- Service-local histories, required tables, PostgreSQL constraint probes, and eleven index plans.
-- Gateway session SQL against the checked-in CHAR/VARCHAR identity baseline.
+- All six owners' actual Gradle Flyway migrate and validate tasks, with applied migration evidence.
+- Existing PostgreSQL constraint probes while service test databases migrate from H2.
 - The existing Query PostgreSQL JDBC, HTTP, concurrency, and collector contracts.
 
 Each live invocation creates new databases and executes its checks again.
@@ -36,11 +35,12 @@ TLS hostname verification remains required. Connections default to read-only tra
 It never runs migration or fixture methods.
 
 `scripts/check-flyway-query-plans.sh DATABASE SERVICE` invokes `queryPlanTest` with the existing `CI_POSTGRES_*` connection interface.
-Both operators use the same assertions and plan cases as disposable verification.
+Both operators retain their explicit schema and plan assertions.
+The local migration smoke no longer repeats the table catalog and forced-plan checks.
 They do not substitute for deployed application or aggregate certification evidence.
 
-The Gateway SQL compatibility entry delegates to `postgresTest`.
-S5-B1 owns its final path removal. It contains no duplicate verdict.
+S5 retires the Gateway SQL snapshot check, its dedicated fixture/baseline, and its compatibility entry.
+The runtime SQL collector remains with its current scenario consumers.
 
 ## CDC publication and recovery
 

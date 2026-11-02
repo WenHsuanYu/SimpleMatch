@@ -50,10 +50,7 @@ tasks.withType<Test>().configureEach {
         rootProject.file("deploy/compose/$it-outbox-connector.json")
     })
     inputs.files(listOf("scripts/lib/flyway-services.sh", "deploy/docker/run-flyway",
-        "scripts/check-service-schema-contracts.sql",
-        "scripts/end-to-end/critical-consumers/sql/gateway-session-state.sql",
-        "scripts/end-to-end/critical-consumers/tests/fixtures/gateway-session-padding.sql",
-        "scripts/end-to-end/critical-consumers/tests/baselines/gateway-session-identity.json")
+        "scripts/check-service-schema-contracts.sql")
         .map(rootProject::file))
     doFirst {
         systemProperty("dependencyFlywayOwners", JsonOutput.toJson(ownerConfiguration()))

@@ -28,6 +28,15 @@ The dispositions below supersede only the named responsibilities.
 Other S0 requirements remain unresolved for S5 until reviewed and recorded here.
 An unresolved requirement blocks its deletion and complete acceptance.
 
+## Remaining review rule
+
+The owner reiterated: do not over-engineer or over-verify.
+The S0 list does not automatically make every historical scenario or assertion mandatory.
+Use existing service, dependency, native, and Kubernetes owners for current core behavior.
+Review each remaining legacy responsibility for an independent current purpose before retaining it.
+Record a coherent retirement and its coverage loss before deleting its dedicated support.
+Do not build a second verification framework or copy historical Shell assertions into Java.
+
 ## Completed phase and source checks
 
 This disposition precedes deletion and execution of the remaining verification.
@@ -48,8 +57,9 @@ Existing test owners include:
 - `AccountReservationSagaRecoveryIntegrationTest`: actual Account v2 RPC, separate local transactions, and pending recovery without duplicate reservation.
 - `GrpcAccountReservationClientAccountIdentityTest`: Account identity across the typed client seam.
 
-The transaction suites use disposable H2 databases.
-Their results do not establish PostgreSQL or deployed Kubernetes behavior.
+At the S5 starting revision, these transaction suites used disposable H2 databases.
+Those historical results do not establish PostgreSQL or deployed Kubernetes behavior.
+The owner now requires removal of H2, with a separate mock-or-PostgreSQL decision for every case.
 The existing `verifyPostgres` and `verifyKubernetes` owners retain those distinct scopes.
 No service implementation, immutable analysis policy, historical report, or runtime deployment changes in this retirement group.
 
@@ -106,3 +116,20 @@ Retain `BUILD_TESTING=ON`, `SIMPLEMATCH_ENABLE_MESSAGING=ON`, and all existing n
 The optional capability definitions and dependency versions remain unchanged.
 This removes unused dependency preparation from the actual verification path, not a native test or product capability.
 Validate the corrected preset through the same Gradle/CMake/CTest interface with a new evidence directory.
+
+## PostgreSQL smoke scope
+
+R02 retains actual service-owned migrations and validation against disposable PostgreSQL.
+The smoke exercises actual Gradle task wiring, which direct Flyway API tests do not cover.
+`PostgresIntegrationTest` remains the small owner for one migrate/validate invocation and evidence that each configured owner has applied migrations.
+Existing SQL constraint probes remain during the H2 cutover.
+After service suites use real PostgreSQL, retire duplicate probes whose current behavior those suites own.
+Existing Query HTTP/JDBC tests retain their own real PostgreSQL business behavior.
+
+Retire the local smoke's repeated Flyway run, empty-history checks, default-encoding assertion, table-name catalog, forced query-plan checks, and Gateway collector snapshot check.
+These checks are not all necessary to establish that current service migrations work on PostgreSQL.
+The intentional loss is independent local verification of those catalog, plan, repeat, and collector-report details.
+External plan/schema operators keep their existing explicit scope and current consumers.
+The retired Gateway snapshot helper loses its dedicated padding fixture, JSON baseline, Gradle inputs, and Shell alias.
+Keep the Gateway runtime SQL collector while it still has live scenario consumers.
+No new Java verification layer or assertion matrix replaces the retired checks.
