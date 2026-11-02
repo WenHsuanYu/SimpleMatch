@@ -4,27 +4,29 @@ import static org.assertj.core.api.Assertions.assertThat;
 
 import com.simplematch.config.delivery.CriticalDeliveryController;
 import com.simplematch.config.delivery.DeliveryPosition;
+import com.simplematch.config.testsupport.PostgresTestDatabase;
 import com.simplematch.persistence.kafka.PersistenceMatchingEventStatus;
 import com.simplematch.persistence.matching.MatchingEventPersistenceHandler;
 import com.simplematch.persistence.matching.MatchingEventPersistenceOutcome;
 import com.simplematch.persistence.store.JdbcMatchingEventStore;
 import java.time.Clock;
-import java.util.UUID;
 import org.flywaydb.core.Flyway;
 import org.junit.jupiter.api.Test;
 import org.springframework.boot.autoconfigure.AutoConfigurations;
 import org.springframework.boot.kafka.autoconfigure.KafkaAutoConfiguration;
 import org.springframework.boot.test.context.runner.ApplicationContextRunner;
 import org.springframework.jdbc.core.JdbcTemplate;
-import org.springframework.jdbc.datasource.SingleConnectionDataSource;
+import org.springframework.jdbc.datasource.DriverManagerDataSource;
 
 /** Verifies restart restoration of Persistence's durable critical-consumer state. */
 class PersistenceMatchingEventProgressRestartTest {
   @Test
   void restartRestoresNextKafkaPositionFromDurableProgress() {
-    final SingleConnectionDataSource dataSource = newDataSource();
+    final DriverManagerDataSource dataSource = newDataSource();
     Flyway.configure()
         .dataSource(dataSource)
+        .schemas("persistence")
+        .defaultSchema("persistence")
         .locations("classpath:db/migration/persistence")
         .load()
         .migrate();
@@ -47,9 +49,11 @@ class PersistenceMatchingEventProgressRestartTest {
 
   @Test
   void restartRestoresOpenQuarantine() {
-    final SingleConnectionDataSource dataSource = newDataSource();
+    final DriverManagerDataSource dataSource = newDataSource();
     Flyway.configure()
         .dataSource(dataSource)
+        .schemas("persistence")
+        .defaultSchema("persistence")
         .locations("classpath:db/migration/persistence")
         .load()
         .migrate();
@@ -105,16 +109,7 @@ class PersistenceMatchingEventProgressRestartTest {
                 (envelope, partition, offset) -> MatchingEventPersistenceOutcome.APPLIED);
   }
 
-  private SingleConnectionDataSource newDataSource() {
-    final SingleConnectionDataSource dataSource =
-        new SingleConnectionDataSource(
-            "jdbc:h2:mem:persistence_progress_restart_"
-                + UUID.randomUUID().toString().replace("-", "")
-                + ";MODE=PostgreSQL;DB_CLOSE_DELAY=-1",
-            "sa",
-            "",
-            true);
-    dataSource.setDriverClassName("org.h2.Driver");
-    return dataSource;
+  private DriverManagerDataSource newDataSource() {
+    return PostgresTestDatabase.create("persistence");
   }
 }

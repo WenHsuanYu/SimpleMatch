@@ -4,6 +4,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 import com.google.protobuf.ByteString;
+import com.simplematch.config.testsupport.PostgresTestDatabase;
 import com.simplematch.contracts.common.v2.Side;
 import com.simplematch.contracts.common.v2.VenueInstrument;
 import com.simplematch.contracts.matching.runtime.v1.ArtifactIdentity;
@@ -18,11 +19,10 @@ import com.simplematch.contracts.matching.runtime.v1.TradeLegState;
 import com.simplematch.persistence.matching.MatchingEventPersistenceOutcome;
 import java.util.UUID;
 import org.flywaydb.core.Flyway;
-import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.jdbc.core.JdbcTemplate;
-import org.springframework.jdbc.datasource.SingleConnectionDataSource;
+import org.springframework.jdbc.datasource.DriverManagerDataSource;
 
 /** Verifies the Persistence inbox transaction's durable final-event facts. */
 class JdbcMatchingEventStoreTest {
@@ -40,31 +40,20 @@ class JdbcMatchingEventStoreTest {
 
   private JdbcTemplate jdbcTemplate;
   private JdbcMatchingEventStore store;
-  private SingleConnectionDataSource dataSource;
+  private DriverManagerDataSource dataSource;
 
   @BeforeEach
   void setUp() {
-    dataSource =
-        new SingleConnectionDataSource(
-            "jdbc:h2:mem:"
-                + UUID.randomUUID().toString().replace("-", "")
-                + ";MODE=PostgreSQL;DB_CLOSE_DELAY=-1",
-            "sa",
-            "",
-            true);
-    dataSource.setDriverClassName("org.h2.Driver");
+    dataSource = PostgresTestDatabase.create("persistence");
     Flyway.configure()
         .dataSource(dataSource)
+        .schemas("persistence")
+        .defaultSchema("persistence")
         .locations("classpath:db/migration/persistence")
         .load()
         .migrate();
     jdbcTemplate = new JdbcTemplate(dataSource);
     store = new JdbcMatchingEventStore(jdbcTemplate);
-  }
-
-  @AfterEach
-  void tearDown() {
-    dataSource.destroy();
   }
 
   @Test

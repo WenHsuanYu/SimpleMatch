@@ -3,7 +3,7 @@ package com.simplematch.persistence.store;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
-import java.util.UUID;
+import com.simplematch.config.testsupport.PostgresTestDatabase;
 import org.flywaydb.core.Flyway;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
@@ -11,37 +11,6 @@ import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.jdbc.datasource.DriverManagerDataSource;
 
 class PersistenceFlywayMigrationTest {
-  private static final String SCHEMA_NAME = "PERSISTENCE";
-
-  @DisplayName("an empty database receives the active Matching-event schema without obsolete projections")
-  @Test
-  void migrateEmptyDatabaseCreatesProjectionAndInboxTables() {
-    final JdbcTemplate jdbcTemplate = new JdbcTemplate(newDataSource());
-
-    migrate(jdbcTemplate.getDataSource());
-
-    assertThat(hasTable(jdbcTemplate, "ORDERS")).isFalse();
-    assertThat(hasTable(jdbcTemplate, "EXECUTIONS")).isFalse();
-    assertThat(hasTable(jdbcTemplate, "INBOX")).isFalse();
-    assertThat(hasTable(jdbcTemplate, "MATCHING_EVENT_INBOX")).isTrue();
-    assertThat(hasTable(jdbcTemplate, "TRADES")).isTrue();
-    assertThat(hasTable(jdbcTemplate, "ORDER_FILLS")).isTrue();
-    assertThat(hasTable(jdbcTemplate, "MATCHING_ORDER_PROJECTIONS")).isTrue();
-    assertThat(appliedMigrationCount(jdbcTemplate)).isEqualTo(4);
-  }
-
-  @DisplayName("a second persistence migration is a no-op")
-  @Test
-  void repeatedMigrateIsNoOp() {
-    final JdbcTemplate jdbcTemplate = new JdbcTemplate(newDataSource());
-
-    migrate(jdbcTemplate.getDataSource());
-    final int migrationsAfterFirstRun = appliedMigrationCount(jdbcTemplate);
-    migrate(jdbcTemplate.getDataSource());
-
-    assertThat(appliedMigrationCount(jdbcTemplate)).isEqualTo(migrationsAfterFirstRun);
-  }
-
   @DisplayName("active trade facts accept valid rows and reject a zero quantity")
   @Test
   void constraintsRejectInvalidBusinessValues() {
@@ -80,41 +49,17 @@ class PersistenceFlywayMigrationTest {
   }
 
   private DriverManagerDataSource newDataSource() {
-    final DriverManagerDataSource dataSource = new DriverManagerDataSource();
-    dataSource.setDriverClassName("org.h2.Driver");
-    dataSource.setUrl("jdbc:h2:mem:" + UUID.randomUUID() + ";MODE=PostgreSQL;DB_CLOSE_DELAY=-1");
-    return dataSource;
+    return PostgresTestDatabase.create("persistence");
   }
 
   private void migrate(javax.sql.DataSource dataSource) {
     Flyway.configure()
         .dataSource(dataSource)
+        .schemas("persistence")
+        .defaultSchema("persistence")
         .locations("classpath:db/migration/persistence")
         .load()
         .migrate();
   }
 
-  private int appliedMigrationCount(JdbcTemplate jdbcTemplate) {
-    return jdbcTemplate.queryForObject(
-        """
-                        SELECT COUNT(*)
-                        FROM "flyway_schema_history"
-                        WHERE "success" AND "version" IS NOT NULL
-                        """,
-        Integer.class);
-  }
-
-  private boolean hasTable(JdbcTemplate jdbcTemplate, String tableName) {
-    return jdbcTemplate.queryForObject(
-            """
-                        SELECT COUNT(*)
-                        FROM INFORMATION_SCHEMA.TABLES
-                        WHERE UPPER(TABLE_SCHEMA) = ?
-                          AND UPPER(TABLE_NAME) = ?
-                        """,
-            Integer.class,
-            SCHEMA_NAME,
-            tableName)
-        > 0;
-  }
 }

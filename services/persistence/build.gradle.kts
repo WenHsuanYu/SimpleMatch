@@ -9,7 +9,7 @@ dependencies {
     implementation("org.springframework.boot:spring-boot-starter-kafka")
     implementation("org.springframework.boot:spring-boot-starter-web")
 
-    testImplementation(libs.h2)
+    testImplementation(testFixtures(project(":shared-java:simplematch-config")))
     testImplementation(libs.flyway.core)
     testImplementation("org.springframework:spring-jdbc")
     testImplementation("org.springframework.kafka:spring-kafka-test")

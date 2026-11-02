@@ -18,7 +18,7 @@ public class JdbcMatchingEventStore {
   private final MatchingEventFactStore factStore;
   private final MatchingConsumerProgressStore progressStore;
 
-  /** Creates the PostgreSQL/H2-compatible final Matching Event storage facade. */
+  /** Creates the PostgreSQL final Matching Event storage facade. */
   public JdbcMatchingEventStore(JdbcTemplate jdbcTemplate) {
     final JdbcMatchingOrderProjectionStore projectionStore =
         new JdbcMatchingOrderProjectionStore(jdbcTemplate);

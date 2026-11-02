@@ -1,9 +1,7 @@
 package com.simplematch.persistence.store;
 
 import java.util.HashMap;
-import java.util.Locale;
 import java.util.Map;
-import org.springframework.jdbc.core.ConnectionCallback;
 import org.springframework.jdbc.core.JdbcTemplate;
 
 /** Stores Persistence's completed final-event input position for each Kafka partition. */
@@ -16,27 +14,14 @@ final class MatchingConsumerProgressStore {
   }
 
   void advance(MatchingEventKafkaPosition position) {
-    if (isPostgres()) {
-      jdbcTemplate.update(
-          """
-          INSERT INTO persistence.matching_consumer_progress (
-            consumer_name, partition_id, last_processed_offset, updated_at_unix_ms
-          ) VALUES (?, ?, ?, ?)
-          ON CONFLICT (consumer_name, partition_id) DO UPDATE SET
-            last_processed_offset = EXCLUDED.last_processed_offset,
-            updated_at_unix_ms = EXCLUDED.updated_at_unix_ms
-          """,
-          CONSUMER_NAME,
-          position.partition(),
-          position.offset(),
-          position.receivedAtUnixMs());
-      return;
-    }
     jdbcTemplate.update(
         """
-        MERGE INTO persistence.matching_consumer_progress (
+        INSERT INTO persistence.matching_consumer_progress (
           consumer_name, partition_id, last_processed_offset, updated_at_unix_ms
-        ) KEY(consumer_name, partition_id) VALUES (?, ?, ?, ?)
+        ) VALUES (?, ?, ?, ?)
+        ON CONFLICT (consumer_name, partition_id) DO UPDATE SET
+          last_processed_offset = EXCLUDED.last_processed_offset,
+          updated_at_unix_ms = EXCLUDED.updated_at_unix_ms
         """,
         CONSUMER_NAME,
         position.partition(),
@@ -61,17 +46,5 @@ final class MatchingConsumerProgressStore {
           return Map.copyOf(offsets);
         },
         CONSUMER_NAME);
-  }
-
-  private boolean isPostgres() {
-    return Boolean.TRUE.equals(
-        jdbcTemplate.execute(
-            (ConnectionCallback<Boolean>)
-                connection ->
-                    connection
-                        .getMetaData()
-                        .getDatabaseProductName()
-                        .toLowerCase(Locale.ROOT)
-                        .contains("postgresql")));
   }
 }

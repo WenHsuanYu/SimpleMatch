@@ -4,6 +4,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 import com.google.protobuf.ByteString;
+import com.simplematch.config.testsupport.PostgresTestDatabase;
 import com.simplematch.contracts.common.v2.Side;
 import com.simplematch.contracts.common.v2.VenueInstrument;
 import com.simplematch.contracts.matching.runtime.v1.ArtifactIdentity;
@@ -20,12 +21,11 @@ import java.time.Instant;
 import java.time.ZoneOffset;
 import java.util.UUID;
 import org.flywaydb.core.Flyway;
-import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.jdbc.datasource.DataSourceTransactionManager;
-import org.springframework.jdbc.datasource.SingleConnectionDataSource;
+import org.springframework.jdbc.datasource.DriverManagerDataSource;
 import org.springframework.transaction.support.TransactionTemplate;
 
 /** Verifies the Persistence application Interface owns one atomic final-event database outcome. */
@@ -44,24 +44,18 @@ class MatchingEventPersistenceApplicationServiceTest {
   private static final int OUTPUT_INDEX = 0;
   private static final int MATCH_INDEX = 0;
 
-  private SingleConnectionDataSource dataSource;
+  private DriverManagerDataSource dataSource;
   private JdbcTemplate jdbcTemplate;
   private MatchingEventPersistenceHandler handler;
   private TransactionTemplate transactions;
 
   @BeforeEach
   void setUp() {
-    dataSource =
-        new SingleConnectionDataSource(
-            "jdbc:h2:mem:"
-                + UUID.randomUUID().toString().replace("-", "")
-                + ";MODE=PostgreSQL;DB_CLOSE_DELAY=-1",
-            "sa",
-            "",
-            true);
-    dataSource.setDriverClassName("org.h2.Driver");
+    dataSource = PostgresTestDatabase.create("persistence");
     Flyway.configure()
         .dataSource(dataSource)
+        .schemas("persistence")
+        .defaultSchema("persistence")
         .locations("classpath:db/migration/persistence")
         .load()
         .migrate();
@@ -70,11 +64,6 @@ class MatchingEventPersistenceApplicationServiceTest {
         new MatchingEventPersistenceApplicationService(
             new JdbcMatchingEventStore(jdbcTemplate), CLOCK);
     transactions = new TransactionTemplate(new DataSourceTransactionManager(dataSource));
-  }
-
-  @AfterEach
-  void tearDown() {
-    dataSource.destroy();
   }
 
   @Test

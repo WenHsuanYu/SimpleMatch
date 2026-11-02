@@ -4,11 +4,13 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.verifyNoInteractions;
 
 import com.simplematch.config.delivery.CriticalDeliveryController;
 import com.simplematch.config.delivery.DeliveryPosition;
 import com.simplematch.config.delivery.QuarantineEvidence;
 import com.simplematch.config.delivery.QuarantineStore;
+import com.simplematch.config.testsupport.PostgresTestDatabase;
 import com.simplematch.persistence.matching.MatchingEventPersistenceApplicationService;
 import com.simplematch.persistence.matching.MatchingEventPersistenceHandler;
 import com.simplematch.persistence.matching.MatchingEventPersistenceOutcome;
@@ -22,17 +24,14 @@ import java.time.ZoneOffset;
 import java.util.ArrayList;
 import java.util.HexFormat;
 import java.util.List;
-import java.util.UUID;
 import org.apache.kafka.clients.consumer.Consumer;
 import org.apache.kafka.clients.consumer.ConsumerRecord;
 import org.apache.kafka.common.TopicPartition;
 import org.flywaydb.core.Flyway;
-import org.junit.jupiter.api.AfterEach;
-import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.jdbc.datasource.DataSourceTransactionManager;
-import org.springframework.jdbc.datasource.SingleConnectionDataSource;
+import org.springframework.jdbc.datasource.DriverManagerDataSource;
 import org.springframework.kafka.support.Acknowledgment;
 import org.springframework.transaction.support.TransactionTemplate;
 
@@ -44,23 +43,16 @@ class PersistenceMatchingEventConsumerTest {
       "436c95c15c97744324aaaf0cfd6cd27b371839e944df9ae40ebab37a207cbb6f";
   private static final byte[] EVENT_ID = HexFormat.of().parseHex(EVENT_ID_HEX);
 
-  private SingleConnectionDataSource dataSource;
+  private DriverManagerDataSource dataSource;
   private JdbcTemplate jdbcTemplate;
   private TransactionTemplate transactions;
 
-  @BeforeEach
-  void setUp() {
-    dataSource =
-        new SingleConnectionDataSource(
-            "jdbc:h2:mem:"
-                + UUID.randomUUID().toString().replace("-", "")
-                + ";MODE=PostgreSQL;DB_CLOSE_DELAY=-1",
-            "sa",
-            "",
-            true);
-    dataSource.setDriverClassName("org.h2.Driver");
+  private void usePostgres() {
+    dataSource = PostgresTestDatabase.create("persistence");
     Flyway.configure()
         .dataSource(dataSource)
+        .schemas("persistence")
+        .defaultSchema("persistence")
         .locations("classpath:db/migration/persistence")
         .load()
         .migrate();
@@ -68,13 +60,9 @@ class PersistenceMatchingEventConsumerTest {
     transactions = new TransactionTemplate(new DataSourceTransactionManager(dataSource));
   }
 
-  @AfterEach
-  void tearDown() {
-    dataSource.destroy();
-  }
-
   @Test
   void nativeTradeReachesTheRealPersistenceApplicationBeforeKafkaCommit() throws IOException {
+    usePostgres();
     final Acknowledgment acknowledgment = mock(Acknowledgment.class);
     final Consumer<?, ?> kafkaConsumer = mockConsumer();
     final PersistenceMatchingEventConsumer matchingConsumer =
@@ -96,6 +84,7 @@ class PersistenceMatchingEventConsumerTest {
   @Test
   void restoredQuarantineStopsDeliveryBeforeApplicationTransaction() throws IOException {
     final RecordingQuarantineStore quarantines = new RecordingQuarantineStore();
+    final MatchingEventPersistenceHandler handler = mock(MatchingEventPersistenceHandler.class);
     final CriticalDeliveryController controller = controller(quarantines, 2);
     final DeliveryPosition blocked = new DeliveryPosition("matching.events", 0, 42L);
     controller.restoreQuarantines(List.of(blocked));
@@ -104,7 +93,7 @@ class PersistenceMatchingEventConsumerTest {
     final Acknowledgment acknowledgment = mock(Acknowledgment.class);
     final Consumer<?, ?> kafkaConsumer = mockConsumer();
     final PersistenceMatchingEventConsumer matchingConsumer =
-        new PersistenceMatchingEventConsumer(realHandler(), controller, status);
+        new PersistenceMatchingEventConsumer(handler, controller, status);
     final TopicPartition topicPartition = new TopicPartition("matching.events", 0);
 
     matchingConsumer.onMatchingEvent(record(EVENT_ID), acknowledgment, kafkaConsumer);
@@ -112,20 +101,18 @@ class PersistenceMatchingEventConsumerTest {
     verify(kafkaConsumer).seek(topicPartition, 42L);
     verify(kafkaConsumer).pause(List.of(topicPartition));
     verify(acknowledgment, never()).acknowledge();
-    assertThat(count("matching_event_inbox")).isZero();
-    assertThat(count("trades")).isZero();
-    assertThat(count("order_fills")).isZero();
-    assertThat(count("matching_consumer_progress")).isZero();
+    verifyNoInteractions(handler);
   }
 
   @Test
   void quarantinesWhenTheKafkaKeyDisagreesWithNativePayloadIdentity() throws IOException {
     final RecordingQuarantineStore quarantines = new RecordingQuarantineStore();
+    final MatchingEventPersistenceHandler handler = mock(MatchingEventPersistenceHandler.class);
     final Acknowledgment acknowledgment = mock(Acknowledgment.class);
     final Consumer<?, ?> kafkaConsumer = mockConsumer();
     final PersistenceMatchingEventConsumer matchingConsumer =
         new PersistenceMatchingEventConsumer(
-            (envelope, partition, offset) -> MatchingEventPersistenceOutcome.APPLIED,
+            handler,
             controller(quarantines, 2),
             new PersistenceMatchingEventStatus());
     final ConsumerRecord<byte[], byte[]> record = record(new byte[32]);
@@ -137,6 +124,7 @@ class PersistenceMatchingEventConsumerTest {
     verify(kafkaConsumer).seek(topicPartition, 42L);
     verify(kafkaConsumer).pause(List.of(topicPartition));
     verify(acknowledgment, never()).acknowledge();
+    verifyNoInteractions(handler);
     assertThat(quarantines.evidence)
         .singleElement()
         .satisfies(evidence -> assertThat(evidence.record().eventId()).isEqualTo(EVENT_ID_HEX));
