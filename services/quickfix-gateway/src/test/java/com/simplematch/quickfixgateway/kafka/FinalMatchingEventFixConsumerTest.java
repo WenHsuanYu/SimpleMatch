@@ -4,11 +4,13 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.verifyNoInteractions;
 
 import com.simplematch.config.delivery.CriticalDeliveryController;
 import com.simplematch.config.delivery.DeliveryPosition;
 import com.simplematch.config.delivery.QuarantineEvidence;
 import com.simplematch.config.delivery.QuarantineStore;
+import com.simplematch.config.testsupport.PostgresTestDatabase;
 import com.simplematch.contracts.common.v2.OrderType;
 import com.simplematch.contracts.common.v2.Side;
 import com.simplematch.contracts.common.v2.TimeInForce;
@@ -40,12 +42,10 @@ import org.apache.kafka.clients.consumer.Consumer;
 import org.apache.kafka.clients.consumer.ConsumerRecord;
 import org.apache.kafka.common.TopicPartition;
 import org.flywaydb.core.Flyway;
-import org.junit.jupiter.api.AfterEach;
-import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.jdbc.datasource.DataSourceTransactionManager;
-import org.springframework.jdbc.datasource.SingleConnectionDataSource;
+import org.springframework.jdbc.datasource.DriverManagerDataSource;
 import org.springframework.kafka.support.Acknowledgment;
 import org.springframework.transaction.support.TransactionTemplate;
 import quickfix.SessionID;
@@ -61,23 +61,16 @@ class FinalMatchingEventFixConsumerTest {
   private static final String MAKER_ORDER_ID = "0198a001-0000-7000-8000-000000000011";
   private static final String TAKER_ORDER_ID = "0198a001-0000-7000-8000-000000000012";
 
-  private SingleConnectionDataSource dataSource;
+  private DriverManagerDataSource dataSource;
   private JdbcTemplate jdbcTemplate;
   private TransactionTemplate transactions;
 
-  @BeforeEach
-  void setUp() {
-    dataSource =
-        new SingleConnectionDataSource(
-            "jdbc:h2:mem:"
-                + UUID.randomUUID().toString().replace("-", "")
-                + ";MODE=PostgreSQL;DB_CLOSE_DELAY=-1",
-            "sa",
-            "",
-            true);
-    dataSource.setDriverClassName("org.h2.Driver");
+  private void usePostgres() {
+    dataSource = PostgresTestDatabase.create("quickfix-gateway");
     Flyway.configure()
         .dataSource(dataSource)
+        .schemas("quickfix_gateway")
+        .defaultSchema("quickfix_gateway")
         .locations("classpath:db/migration/quickfix-gateway")
         .load()
         .migrate();
@@ -85,13 +78,9 @@ class FinalMatchingEventFixConsumerTest {
     transactions = new TransactionTemplate(new DataSourceTransactionManager(dataSource));
   }
 
-  @AfterEach
-  void tearDown() {
-    dataSource.destroy();
-  }
-
   @Test
   void nativeTradeReachesTheRealDeliveryApplicationBeforeKafkaCommit() throws IOException {
+    usePostgres();
     final Acknowledgment acknowledgment = mock(Acknowledgment.class);
     final Consumer<?, ?> kafkaConsumer = mockConsumer();
     final FinalMatchingEventFixConsumer finalEventConsumer =
@@ -112,6 +101,7 @@ class FinalMatchingEventFixConsumerTest {
   @Test
   void restoredQuarantineStopsDeliveryBeforeApplicationTransaction() throws IOException {
     final RecordingQuarantineStore quarantines = new RecordingQuarantineStore();
+    final FinalMatchingEventFixDeliveryHandler handler = mock(FinalMatchingEventFixDeliveryHandler.class);
     final CriticalDeliveryController controller = controller(quarantines, 2);
     final DeliveryPosition blocked = new DeliveryPosition("matching.events", 0, 42L);
     controller.restoreQuarantines(List.of(blocked));
@@ -120,7 +110,7 @@ class FinalMatchingEventFixConsumerTest {
     final Acknowledgment acknowledgment = mock(Acknowledgment.class);
     final Consumer<?, ?> kafkaConsumer = mockConsumer();
     final FinalMatchingEventFixConsumer finalEventConsumer =
-        new FinalMatchingEventFixConsumer(realHandler(), controller, status);
+        new FinalMatchingEventFixConsumer(handler, controller, status);
     final TopicPartition topicPartition = new TopicPartition("matching.events", 0);
 
     finalEventConsumer.onMatchingEvent(record(EVENT_ID), acknowledgment, kafkaConsumer);
@@ -128,19 +118,18 @@ class FinalMatchingEventFixConsumerTest {
     verify(kafkaConsumer).seek(topicPartition, 42L);
     verify(kafkaConsumer).pause(List.of(topicPartition));
     verify(acknowledgment, never()).acknowledge();
-    assertThat(count("matching_event_inbox")).isZero();
-    assertThat(count("fix_delivery_intents")).isZero();
-    assertThat(count("matching_consumer_progress")).isZero();
+    verifyNoInteractions(handler);
   }
 
   @Test
   void quarantinesWhenTheKafkaKeyDisagreesWithNativePayloadIdentity() throws IOException {
     final RecordingQuarantineStore quarantines = new RecordingQuarantineStore();
+    final FinalMatchingEventFixDeliveryHandler handler = mock(FinalMatchingEventFixDeliveryHandler.class);
     final Acknowledgment acknowledgment = mock(Acknowledgment.class);
     final Consumer<?, ?> kafkaConsumer = mockConsumer();
     final FinalMatchingEventFixConsumer finalEventConsumer =
         new FinalMatchingEventFixConsumer(
-            (envelope, partition, offset) -> FinalMatchingEventFixDeliveryOutcome.APPLIED,
+            handler,
             controller(quarantines, 2),
             new QuickFixFinalMatchingEventStatus());
     final ConsumerRecord<byte[], byte[]> record = record(new byte[32]);
@@ -152,6 +141,7 @@ class FinalMatchingEventFixConsumerTest {
     verify(kafkaConsumer).seek(topicPartition, 42L);
     verify(kafkaConsumer).pause(List.of(topicPartition));
     verify(acknowledgment, never()).acknowledge();
+    verifyNoInteractions(handler);
     assertThat(quarantines.evidence)
         .singleElement()
         .satisfies(evidence -> assertThat(evidence.record().eventId()).isEqualTo(EVENT_ID_HEX));

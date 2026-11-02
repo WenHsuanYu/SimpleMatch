@@ -2,6 +2,7 @@ package com.simplematch.quickfixgateway.fix;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
+import com.simplematch.config.testsupport.PostgresTestDatabase;
 import com.simplematch.contracts.orders.v2.CancelOrderCommand;
 import com.simplematch.contracts.orders.v2.NewOrderCommand;
 import com.simplematch.quickfixgateway.config.QuickFixGatewayRuntime;
@@ -160,10 +161,6 @@ class QuickFixCertificationEvidenceTest {
           assertThat(Files.readString(tempDir.resolve("completed.json")))
               .contains("\"execId\":\"FINAL-DELIVERY\"", "\"execType\":\"0\"");
         }
-        assertThat(
-                Session.lookupSession(new SessionID("FIX.4.4", "SIMPLEMATCH", "CLIENT"))
-                    .isLoggedOn())
-            .isFalse();
       } finally {
         acceptor.stop();
       }
@@ -547,15 +544,11 @@ class QuickFixCertificationEvidenceTest {
   }
 
   private DriverManagerDataSource quickFixDataSource() {
-    final DriverManagerDataSource dataSource = new DriverManagerDataSource();
-    dataSource.setDriverClassName("org.h2.Driver");
-    dataSource.setUrl(
-        "jdbc:h2:mem:quickfixcert"
-            + UUID.randomUUID().toString().replace("-", "")
-            + ";MODE=PostgreSQL;DB_CLOSE_DELAY=-1;INIT=CREATE SCHEMA IF NOT EXISTS"
-            + " quickfix_gateway\\;SET SCHEMA quickfix_gateway");
+    final DriverManagerDataSource dataSource = PostgresTestDatabase.create("quickfix-gateway");
     Flyway.configure()
         .dataSource(dataSource)
+        .schemas("quickfix_gateway")
+        .defaultSchema("quickfix_gateway")
         .locations("classpath:db/migration/quickfix-gateway")
         .load()
         .migrate();

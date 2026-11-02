@@ -22,7 +22,7 @@ import org.springframework.test.context.bean.override.mockito.MockitoBean;
 /** Exercises live adapter composition without starting Kafka polling or the delivery data plane. */
 @SpringBootTest(
     properties = {
-      "simplematch.postgres.dsn=jdbc:h2:mem:quickfixlivecontext;MODE=PostgreSQL;DB_CLOSE_DELAY=-1;INIT=CREATE SCHEMA IF NOT EXISTS quickfix_gateway\\;SET SCHEMA quickfix_gateway",
+      "simplematch.postgres.dsn=postgresql://configuration.invalid:5432/quickfix_gateway",
       "simplematch.quickfix-gateway.acceptor-enabled=false",
       "simplematch.quickfix-gateway.data-plane-enabled=false",
       "simplematch.quickfix-gateway.replay-enabled=false",

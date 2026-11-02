@@ -16,7 +16,7 @@ import org.springframework.test.context.ActiveProfiles;
 
 @SpringBootTest(
     properties = {
-      "simplematch.postgres.dsn=jdbc:h2:mem:quickfixcontext;MODE=PostgreSQL;DB_CLOSE_DELAY=-1;INIT=CREATE SCHEMA IF NOT EXISTS quickfix_gateway\\;SET SCHEMA quickfix_gateway",
+      "simplematch.postgres.dsn=postgresql://configuration.invalid:5432/quickfix_gateway",
       "simplematch.quickfix-gateway.acceptor-enabled=false",
       "simplematch.quickfix-gateway.data-plane-enabled=false",
       "simplematch.quickfix-gateway.replay-enabled=false",
@@ -54,7 +54,7 @@ class QuickFixGatewayApplicationTest {
     assertThat(grpcProperties.targets().riskService()).isEqualTo("dns:///risk-service:50052");
     assertThat(kafkaProperties.topics().matchingEvents()).isEqualTo("matching.events");
     assertThat(environment.getProperty("simplematch.postgres.dsn"))
-        .contains("jdbc:h2:mem:quickfixcontext");
+        .isEqualTo("postgresql://configuration.invalid:5432/quickfix_gateway");
     assertThat(environment.getProperty("spring.kafka.consumer.group-id"))
         .isEqualTo("quickfix-gateway-0");
   }

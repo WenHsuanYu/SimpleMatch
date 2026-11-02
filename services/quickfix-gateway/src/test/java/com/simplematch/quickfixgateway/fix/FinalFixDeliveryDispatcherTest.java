@@ -2,6 +2,7 @@ package com.simplematch.quickfixgateway.fix;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
+import com.simplematch.config.testsupport.PostgresTestDatabase;
 import com.simplematch.contracts.common.v2.OrderType;
 import com.simplematch.contracts.common.v2.Side;
 import com.simplematch.contracts.common.v2.TimeInForce;
@@ -21,10 +22,9 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.UUID;
 import org.flywaydb.core.Flyway;
-import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
-import org.springframework.jdbc.datasource.SingleConnectionDataSource;
+import org.springframework.jdbc.datasource.DriverManagerDataSource;
 import quickfix.Message;
 import quickfix.SessionID;
 
@@ -34,23 +34,17 @@ class FinalFixDeliveryDispatcherTest {
       Clock.fixed(Instant.parse("2026-08-11T00:00:00Z"), ZoneOffset.UTC);
   private static final UUID ORDER_ID = UUID.fromString("0198a001-0000-7000-8000-000000000011");
 
-  private SingleConnectionDataSource dataSource;
+  private DriverManagerDataSource dataSource;
   private JdbcFinalFixDeliveryStore store;
   private OrderSessionRegistry registry;
 
   @BeforeEach
   void setUp() {
-    dataSource =
-        new SingleConnectionDataSource(
-            "jdbc:h2:mem:"
-                + UUID.randomUUID().toString().replace("-", "")
-                + ";MODE=PostgreSQL;DB_CLOSE_DELAY=-1",
-            "sa",
-            "",
-            true);
-    dataSource.setDriverClassName("org.h2.Driver");
+    dataSource = PostgresTestDatabase.create("quickfix-gateway");
     Flyway.configure()
         .dataSource(dataSource)
+        .schemas("quickfix_gateway")
+        .defaultSchema("quickfix_gateway")
         .locations("classpath:db/migration/quickfix-gateway")
         .load()
         .migrate();
@@ -74,11 +68,6 @@ class FinalFixDeliveryDispatcherTest {
                     TimeInForce.TIME_IN_FORCE_ROD)),
             new RawFixMessage("raw")),
         'A');
-  }
-
-  @AfterEach
-  void tearDown() {
-    dataSource.destroy();
   }
 
   @Test

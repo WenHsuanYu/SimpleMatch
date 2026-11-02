@@ -4,28 +4,20 @@ import static org.assertj.core.api.Assertions.assertThat;
 
 import com.simplematch.config.delivery.CriticalDeliveryController;
 import com.simplematch.config.delivery.DeliveryPosition;
+import com.simplematch.config.testsupport.PostgresTestDatabase;
 import com.simplematch.quickfixgateway.fix.FixSessionMessageSender;
 import com.simplematch.quickfixgateway.fix.OrderSessionRegistry;
 import com.simplematch.quickfixgateway.matching.QuickFixFinalMatchingEventStatus;
 import java.time.Clock;
-import java.util.UUID;
 import org.flywaydb.core.Flyway;
-import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.boot.test.context.runner.ApplicationContextRunner;
 import org.springframework.jdbc.core.JdbcTemplate;
-import org.springframework.jdbc.datasource.SingleConnectionDataSource;
+import org.springframework.jdbc.datasource.DriverManagerDataSource;
 
 /** Verifies restart restoration of the Gateway's durable final-event consumer state. */
 class QuickFixFinalMatchingEventProgressRestartTest {
-  private SingleConnectionDataSource dataSource;
-
-  @AfterEach
-  void tearDown() {
-    if (dataSource != null) {
-      dataSource.destroy();
-    }
-  }
+  private DriverManagerDataSource dataSource;
 
   @Test
   void restartRestoresNextKafkaPositionFromDurableProgress() {
@@ -90,6 +82,8 @@ class QuickFixFinalMatchingEventProgressRestartTest {
     dataSource = newDataSource();
     Flyway.configure()
         .dataSource(dataSource)
+        .schemas("quickfix_gateway")
+        .defaultSchema("quickfix_gateway")
         .locations("classpath:db/migration/quickfix-gateway")
         .load()
         .migrate();
@@ -108,16 +102,7 @@ class QuickFixFinalMatchingEventProgressRestartTest {
         .withBean(FixSessionMessageSender.class, () -> (sessionId, message) -> {});
   }
 
-  private SingleConnectionDataSource newDataSource() {
-    final SingleConnectionDataSource singleConnectionDataSource =
-        new SingleConnectionDataSource(
-            "jdbc:h2:mem:quickfix_progress_restart_"
-                + UUID.randomUUID().toString().replace("-", "")
-                + ";MODE=PostgreSQL;DB_CLOSE_DELAY=-1",
-            "sa",
-            "",
-            true);
-    singleConnectionDataSource.setDriverClassName("org.h2.Driver");
-    return singleConnectionDataSource;
+  private DriverManagerDataSource newDataSource() {
+    return PostgresTestDatabase.create("quickfix-gateway");
   }
 }

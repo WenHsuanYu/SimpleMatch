@@ -3,6 +3,7 @@ package com.simplematch.quickfixgateway.matching;
 import static org.assertj.core.api.Assertions.assertThat;
 
 import com.google.protobuf.ByteString;
+import com.simplematch.config.testsupport.PostgresTestDatabase;
 import com.simplematch.contracts.common.v2.OrderType;
 import com.simplematch.contracts.common.v2.Side;
 import com.simplematch.contracts.common.v2.TimeInForce;
@@ -34,12 +35,11 @@ import java.util.UUID;
 import java.util.function.Function;
 import java.util.stream.Collectors;
 import org.flywaydb.core.Flyway;
-import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.jdbc.datasource.DataSourceTransactionManager;
-import org.springframework.jdbc.datasource.SingleConnectionDataSource;
+import org.springframework.jdbc.datasource.DriverManagerDataSource;
 import org.springframework.transaction.support.TransactionTemplate;
 import quickfix.SessionID;
 
@@ -62,24 +62,18 @@ class FinalMatchingEventFixLifecycleIntegrationTest {
   private static final String ROD_ORDER_ID = "0198a001-0000-7000-8000-000000000013";
   private static final String EXPIRED_ORDER_ID = "0198a001-0000-7000-8000-000000000014";
 
-  private SingleConnectionDataSource dataSource;
+  private DriverManagerDataSource dataSource;
   private JdbcFinalFixDeliveryStore store;
   private FinalMatchingEventFixDeliveryHandler handler;
   private TransactionTemplate transactions;
 
   @BeforeEach
   void setUp() {
-    dataSource =
-        new SingleConnectionDataSource(
-            "jdbc:h2:mem:"
-                + UUID.randomUUID().toString().replace("-", "")
-                + ";MODE=PostgreSQL;DB_CLOSE_DELAY=-1",
-            "sa",
-            "",
-            true);
-    dataSource.setDriverClassName("org.h2.Driver");
+    dataSource = PostgresTestDatabase.create("quickfix-gateway");
     Flyway.configure()
         .dataSource(dataSource)
+        .schemas("quickfix_gateway")
+        .defaultSchema("quickfix_gateway")
         .locations("classpath:db/migration/quickfix-gateway")
         .load()
         .migrate();
@@ -94,11 +88,6 @@ class FinalMatchingEventFixLifecycleIntegrationTest {
         new FinalMatchingEventFixDeliveryApplicationService(
             store, new FinalMatchingEventFixDeliveryPlanner(registry), CLOCK);
     transactions = new TransactionTemplate(new DataSourceTransactionManager(dataSource));
-  }
-
-  @AfterEach
-  void tearDown() {
-    dataSource.destroy();
   }
 
   @Test

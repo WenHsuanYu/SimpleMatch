@@ -3,6 +3,7 @@ package com.simplematch.quickfixgateway.fix;
 import static org.assertj.core.api.Assertions.assertThat;
 
 import com.google.protobuf.ByteString;
+import com.simplematch.config.testsupport.PostgresTestDatabase;
 import com.simplematch.contracts.common.v2.Side;
 import com.simplematch.contracts.common.v2.VenueInstrument;
 import com.simplematch.contracts.matching.runtime.v1.ArtifactIdentity;
@@ -38,7 +39,7 @@ import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.jdbc.datasource.DataSourceTransactionManager;
-import org.springframework.jdbc.datasource.SingleConnectionDataSource;
+import org.springframework.jdbc.datasource.DriverManagerDataSource;
 import org.springframework.transaction.support.TransactionTemplate;
 import quickfix.Message;
 import quickfix.SessionID;
@@ -74,24 +75,18 @@ class FinalMatchingEventFixAdmissionIntegrationTest {
 
   @TempDir Path tempDir;
 
-  private SingleConnectionDataSource dataSource;
+  private DriverManagerDataSource dataSource;
   private JdbcFinalFixDeliveryStore store;
   private TransactionTemplate transactions;
   private WalAppender walAppender;
 
   @BeforeEach
   void setUp() {
-    dataSource =
-        new SingleConnectionDataSource(
-            "jdbc:h2:mem:"
-                + UUID.randomUUID().toString().replace("-", "")
-                + ";MODE=PostgreSQL;DB_CLOSE_DELAY=-1",
-            "sa",
-            "",
-            true);
-    dataSource.setDriverClassName("org.h2.Driver");
+    dataSource = PostgresTestDatabase.create("quickfix-gateway");
     Flyway.configure()
         .dataSource(dataSource)
+        .schemas("quickfix_gateway")
+        .defaultSchema("quickfix_gateway")
         .locations("classpath:db/migration/quickfix-gateway")
         .load()
         .migrate();
@@ -103,8 +98,9 @@ class FinalMatchingEventFixAdmissionIntegrationTest {
 
   @AfterEach
   void tearDown() throws Exception {
-    walAppender.close();
-    dataSource.destroy();
+    if (walAppender != null) {
+      walAppender.close();
+    }
   }
 
   @Test
