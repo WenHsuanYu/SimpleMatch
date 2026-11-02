@@ -40,8 +40,8 @@ public record PostgresJdbcUrl(String jdbcUrl, String username, String password) 
   /**
    * Parses a DSN for a staging or production deployment and requires verified PostgreSQL TLS.
    *
-   * <p>The secure environment contract deliberately rejects H2 and plain or merely encrypted
-   * PostgreSQL connections. Hostname verification and a configured CA are required so a deployed
+   * <p>The secure environment contract rejects plain or merely encrypted PostgreSQL connections.
+   * Hostname verification and a configured CA are required so a deployed
    * service cannot silently downgrade its database transport.
    *
    * @param rawDsn configured JDBC URL or PostgreSQL URI
@@ -50,10 +50,6 @@ public record PostgresJdbcUrl(String jdbcUrl, String username, String password) 
    */
   public static PostgresJdbcUrl parseSecure(String rawDsn) {
     final PostgresJdbcUrl parsed = parse(rawDsn);
-    if (!parsed.jdbcUrl().startsWith("jdbc:postgresql:")) {
-      throw new IllegalStateException(
-          "secure postgres.dsn requires a PostgreSQL JDBC URL with verified TLS");
-    }
     final String sslMode = queryParameter(parsed.jdbcUrl(), "sslmode");
     final String sslRootCertificate = queryParameter(parsed.jdbcUrl(), "sslrootcert");
     if (!"verify-full".equalsIgnoreCase(sslMode)
@@ -88,7 +84,7 @@ public record PostgresJdbcUrl(String jdbcUrl, String username, String password) 
   }
 
   private static boolean isSupportedJdbcUrl(String rawDsn) {
-    return rawDsn.startsWith("jdbc:postgresql:") || rawDsn.startsWith("jdbc:h2:");
+    return rawDsn.startsWith("jdbc:postgresql:");
   }
 
   private static String queryParameter(String jdbcUrl, String parameterName) {

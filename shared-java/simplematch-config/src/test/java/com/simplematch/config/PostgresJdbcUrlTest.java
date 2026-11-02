@@ -62,12 +62,6 @@ class PostgresJdbcUrlTest {
   void rejectsNonPostgresOrUnverifiedSecureSettings() {
     assertThatIllegalStateException()
         .isThrownBy(
-            () ->
-                PostgresJdbcUrl.parseSecure(
-                    "jdbc:h2:mem:local;MODE=PostgreSQL;DB_CLOSE_DELAY=-1"))
-        .withMessageContaining("requires a PostgreSQL JDBC URL");
-    assertThatIllegalStateException()
-        .isThrownBy(
             () -> PostgresJdbcUrl.parseSecure("jdbc:postgresql://db.example/simplematch"))
         .withMessageContaining("sslmode=verify-full");
     assertThatIllegalStateException()
@@ -82,6 +76,18 @@ class PostgresJdbcUrlTest {
                 PostgresJdbcUrl.parseSecure(
                     "jdbc:postgresql://db.example/simplematch?sslmode=verify-full"))
         .withMessageContaining("sslrootcert");
+  }
+
+  @Test
+  void rejectsH2InEveryEnvironment() {
+    final String unsupportedDsn = "jdbc:h2:mem:local";
+
+    assertThatIllegalStateException()
+        .isThrownBy(() -> PostgresJdbcUrl.parse(unsupportedDsn))
+        .withMessage("unsupported postgres.dsn JDBC scheme");
+    assertThatIllegalStateException()
+        .isThrownBy(() -> PostgresJdbcUrl.parseSecure(unsupportedDsn))
+        .withMessage("unsupported postgres.dsn JDBC scheme");
   }
 
   @Test
