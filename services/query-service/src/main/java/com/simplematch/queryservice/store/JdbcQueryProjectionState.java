@@ -4,7 +4,6 @@ import java.util.Arrays;
 import java.util.List;
 import java.util.Optional;
 import org.springframework.dao.DuplicateKeyException;
-import org.springframework.jdbc.core.ConnectionCallback;
 import org.springframework.jdbc.core.JdbcOperations;
 
 /** Owns inbox, contiguous checkpoint, and replay state for JDBC query projections. */
@@ -135,56 +134,19 @@ final class JdbcQueryProjectionState {
     if (!READY.equals(state) && !GAP_DETECTED.equals(state)) {
       throw new IllegalArgumentException("unsupported query projection recovery state");
     }
-    if (isPostgres(jdbcTemplate)) {
-      jdbcTemplate.update(
-          "INSERT INTO query_service.projection_checkpoint "
-              + "(source_topic, partition_id, last_processed_offset, recovery_state, "
-              + "updated_at_unix_ms) VALUES (?, ?, ?, ?, ?) "
-              + "ON CONFLICT (source_topic, partition_id) DO UPDATE SET "
-              + "last_processed_offset = EXCLUDED.last_processed_offset, "
-              + "recovery_state = EXCLUDED.recovery_state, "
-              + "updated_at_unix_ms = EXCLUDED.updated_at_unix_ms",
-          sourceTopic,
-          position.partition(),
-          position.offset(),
-          state,
-          position.observedAtUnixMs());
-    } else {
-      final int updated =
-          jdbcTemplate.update(
-              "UPDATE query_service.projection_checkpoint "
-                  + "SET last_processed_offset = ?, recovery_state = ?, "
-                  + "updated_at_unix_ms = ? "
-                  + "WHERE source_topic = ? AND partition_id = ?",
-              position.offset(),
-              state,
-              position.observedAtUnixMs(),
-              sourceTopic,
-              position.partition());
-      if (updated == 0) {
-        jdbcTemplate.update(
-            "INSERT INTO query_service.projection_checkpoint "
-                + "(source_topic, partition_id, last_processed_offset, recovery_state, "
-                + "updated_at_unix_ms) VALUES (?, ?, ?, ?, ?)",
-            sourceTopic,
-            position.partition(),
-            position.offset(),
-            state,
-            position.observedAtUnixMs());
-      }
-    }
-  }
-
-  private static boolean isPostgres(JdbcOperations jdbcTemplate) {
-    return Boolean.TRUE.equals(
-        jdbcTemplate.execute(
-            (ConnectionCallback<Boolean>)
-                connection ->
-                    connection
-                        .getMetaData()
-                        .getDatabaseProductName()
-                        .toLowerCase(java.util.Locale.ROOT)
-                        .contains("postgresql")));
+    jdbcTemplate.update(
+        "INSERT INTO query_service.projection_checkpoint "
+            + "(source_topic, partition_id, last_processed_offset, recovery_state, "
+            + "updated_at_unix_ms) VALUES (?, ?, ?, ?, ?) "
+            + "ON CONFLICT (source_topic, partition_id) DO UPDATE SET "
+            + "last_processed_offset = EXCLUDED.last_processed_offset, "
+            + "recovery_state = EXCLUDED.recovery_state, "
+            + "updated_at_unix_ms = EXCLUDED.updated_at_unix_ms",
+        sourceTopic,
+        position.partition(),
+        position.offset(),
+        state,
+        position.observedAtUnixMs());
   }
 
   private static final class Inbox {

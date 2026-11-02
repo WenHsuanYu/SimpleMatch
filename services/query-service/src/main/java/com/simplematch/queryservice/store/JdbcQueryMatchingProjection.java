@@ -4,7 +4,6 @@ import com.simplematch.contracts.DeterministicTextIdentity;
 import com.simplematch.contracts.matching.runtime.v1.MatchingEvent;
 import com.simplematch.contracts.matching.runtime.v1.TradeLeg;
 import java.util.UUID;
-import org.springframework.jdbc.core.ConnectionCallback;
 import org.springframework.jdbc.core.JdbcOperations;
 
 /** Writes final Matching Event order and execution projections. */
@@ -170,29 +169,20 @@ final class JdbcQueryMatchingProjection {
       projection.source().position().offset(),
       projection.source().position().observedAtUnixMs()
     };
-    if (isPostgres(jdbcTemplate)) {
-      jdbcTemplate.update(
-          "INSERT INTO query_service.order_read_model "
-              + ORDER_INSERT_COLUMNS
-              + " "
-              + ORDER_VALUES
-              + " ON CONFLICT (order_id) DO UPDATE SET "
-              + "account_id = EXCLUDED.account_id, venue_mic = EXCLUDED.venue_mic, "
-              + "symbol = EXCLUDED.symbol, side = EXCLUDED.side, state = EXCLUDED.state, "
-              + "leaves_quantity_shares = EXCLUDED.leaves_quantity_shares, "
-              + "last_event_id = EXCLUDED.last_event_id, "
-              + "source_partition_id = EXCLUDED.source_partition_id, "
-              + "source_offset_value = EXCLUDED.source_offset_value, "
-              + "updated_at_unix_ms = EXCLUDED.updated_at_unix_ms",
-          values);
-    } else {
-      jdbcTemplate.update(
-          "MERGE INTO query_service.order_read_model "
-              + ORDER_INSERT_COLUMNS
-              + " KEY(order_id) "
-              + ORDER_VALUES,
-          values);
-    }
+    jdbcTemplate.update(
+        "INSERT INTO query_service.order_read_model "
+            + ORDER_INSERT_COLUMNS
+            + " "
+            + ORDER_VALUES
+            + " ON CONFLICT (order_id) DO UPDATE SET "
+            + "account_id = EXCLUDED.account_id, venue_mic = EXCLUDED.venue_mic, "
+            + "symbol = EXCLUDED.symbol, side = EXCLUDED.side, state = EXCLUDED.state, "
+            + "leaves_quantity_shares = EXCLUDED.leaves_quantity_shares, "
+            + "last_event_id = EXCLUDED.last_event_id, "
+            + "source_partition_id = EXCLUDED.source_partition_id, "
+            + "source_offset_value = EXCLUDED.source_offset_value, "
+            + "updated_at_unix_ms = EXCLUDED.updated_at_unix_ms",
+        values);
   }
 
   private static void upsertExecution(
@@ -215,45 +205,24 @@ final class JdbcQueryMatchingProjection {
       projection.source().position().offset(),
       projection.source().position().observedAtUnixMs()
     };
-    if (isPostgres(jdbcTemplate)) {
-      jdbcTemplate.update(
-          "INSERT INTO query_service.execution_read_model "
-              + EXECUTION_INSERT_COLUMNS
-              + " "
-              + EXECUTION_VALUES
-              + " ON CONFLICT (execution_id) DO UPDATE SET "
-              + "order_id = EXCLUDED.order_id, account_id = EXCLUDED.account_id, "
-              + "venue_mic = EXCLUDED.venue_mic, symbol = EXCLUDED.symbol, "
-              + "side = EXCLUDED.side, fill_quantity_shares = EXCLUDED.fill_quantity_shares, "
-              + "fill_price_units = EXCLUDED.fill_price_units, "
-              + "cumulative_quantity_shares = EXCLUDED.cumulative_quantity_shares, "
-              + "leaves_quantity_shares = EXCLUDED.leaves_quantity_shares, "
-              + "average_price_units = EXCLUDED.average_price_units, "
-              + "source_event_id = EXCLUDED.source_event_id, "
-              + "source_partition_id = EXCLUDED.source_partition_id, "
-              + "source_offset_value = EXCLUDED.source_offset_value, "
-              + "executed_at_unix_ms = EXCLUDED.executed_at_unix_ms",
-          values);
-    } else {
-      jdbcTemplate.update(
-          "MERGE INTO query_service.execution_read_model "
-              + EXECUTION_INSERT_COLUMNS
-              + " KEY(execution_id) "
-              + EXECUTION_VALUES,
-          values);
-    }
-  }
-
-  private static boolean isPostgres(JdbcOperations jdbcTemplate) {
-    return Boolean.TRUE.equals(
-        jdbcTemplate.execute(
-            (ConnectionCallback<Boolean>)
-                connection ->
-                    connection
-                        .getMetaData()
-                        .getDatabaseProductName()
-                        .toLowerCase(java.util.Locale.ROOT)
-                        .contains("postgresql")));
+    jdbcTemplate.update(
+        "INSERT INTO query_service.execution_read_model "
+            + EXECUTION_INSERT_COLUMNS
+            + " "
+            + EXECUTION_VALUES
+            + " ON CONFLICT (execution_id) DO UPDATE SET "
+            + "order_id = EXCLUDED.order_id, account_id = EXCLUDED.account_id, "
+            + "venue_mic = EXCLUDED.venue_mic, symbol = EXCLUDED.symbol, "
+            + "side = EXCLUDED.side, fill_quantity_shares = EXCLUDED.fill_quantity_shares, "
+            + "fill_price_units = EXCLUDED.fill_price_units, "
+            + "cumulative_quantity_shares = EXCLUDED.cumulative_quantity_shares, "
+            + "leaves_quantity_shares = EXCLUDED.leaves_quantity_shares, "
+            + "average_price_units = EXCLUDED.average_price_units, "
+            + "source_event_id = EXCLUDED.source_event_id, "
+            + "source_partition_id = EXCLUDED.source_partition_id, "
+            + "source_offset_value = EXCLUDED.source_offset_value, "
+            + "executed_at_unix_ms = EXCLUDED.executed_at_unix_ms",
+        values);
   }
 
   private record OrderProjection(

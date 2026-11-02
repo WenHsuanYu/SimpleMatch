@@ -11,7 +11,7 @@ import java.util.Optional;
 import java.util.UUID;
 import org.springframework.jdbc.core.JdbcOperations;
 
-/** Reads durable query projections and source freshness from PostgreSQL or H2. */
+/** Reads durable query projections and source freshness from PostgreSQL. */
 final class JdbcQueryProjectionReads {
   private JdbcQueryProjectionReads() {}
 

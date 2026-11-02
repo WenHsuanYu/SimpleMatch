@@ -9,7 +9,6 @@ import com.simplematch.marketreference.VerifiedMarketReferenceArtifact;
 import java.sql.Date;
 import java.util.Map;
 import java.util.stream.Collectors;
-import org.springframework.jdbc.core.ConnectionCallback;
 import org.springframework.jdbc.core.JdbcOperations;
 
 /** Replaces active market-reference rows from one verified final artifact. */
@@ -71,39 +70,18 @@ final class JdbcQueryMarketReferenceProjection {
       routingPartition,
       installedAtUnixMs
     };
-    if (isPostgres(jdbcTemplate)) {
-      jdbcTemplate.update(
-          "INSERT INTO query_service.active_market_reference "
-              + INSERT_COLUMNS
-              + " "
-              + VALUES
-              + " ON CONFLICT (trading_day, venue_mic, symbol) DO UPDATE SET "
-              + "artifact_id = EXCLUDED.artifact_id, market_rule_id = EXCLUDED.market_rule_id, "
-              + "reference_price_units = EXCLUDED.reference_price_units, "
-              + "lower_price_limit_units = EXCLUDED.lower_price_limit_units, "
-              + "upper_price_limit_units = EXCLUDED.upper_price_limit_units, "
-              + "routing_partition = EXCLUDED.routing_partition, "
-              + "updated_at_unix_ms = EXCLUDED.updated_at_unix_ms",
-          values);
-    } else {
-      jdbcTemplate.update(
-          "MERGE INTO query_service.active_market_reference "
-              + INSERT_COLUMNS
-              + " KEY(trading_day, venue_mic, symbol) "
-              + VALUES,
-          values);
-    }
-  }
-
-  private static boolean isPostgres(JdbcOperations jdbcTemplate) {
-    return Boolean.TRUE.equals(
-        jdbcTemplate.execute(
-            (ConnectionCallback<Boolean>)
-                connection ->
-                connection
-                    .getMetaData()
-                    .getDatabaseProductName()
-                    .toLowerCase(java.util.Locale.ROOT)
-                    .contains("postgresql")));
+    jdbcTemplate.update(
+        "INSERT INTO query_service.active_market_reference "
+            + INSERT_COLUMNS
+            + " "
+            + VALUES
+            + " ON CONFLICT (trading_day, venue_mic, symbol) DO UPDATE SET "
+            + "artifact_id = EXCLUDED.artifact_id, market_rule_id = EXCLUDED.market_rule_id, "
+            + "reference_price_units = EXCLUDED.reference_price_units, "
+            + "lower_price_limit_units = EXCLUDED.lower_price_limit_units, "
+            + "upper_price_limit_units = EXCLUDED.upper_price_limit_units, "
+            + "routing_partition = EXCLUDED.routing_partition, "
+            + "updated_at_unix_ms = EXCLUDED.updated_at_unix_ms",
+        values);
   }
 }
