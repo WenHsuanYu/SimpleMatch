@@ -13,7 +13,7 @@ class RiskCommandProfileTest {
   void rendersTheCanonicalRm1DependenciesWithoutTheUnobservedMatchingFleet() throws Exception {
     final Path root = Path.of(System.getProperty("verificationRepoRoot"));
     final var commands = new BoundedCommand(root, java.util.Map.of());
-    final var profile = RiskCommandProfile.render(root, commands);
+    final var profile = KubernetesProfile.render(root, commands);
     final var workloads = profile.documents().stream()
         .filter(document -> Set.of("Deployment", "StatefulSet", "Job")
             .contains(document.path("kind").asText()))

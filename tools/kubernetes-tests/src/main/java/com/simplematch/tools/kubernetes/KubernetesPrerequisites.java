@@ -10,7 +10,7 @@ import java.util.List;
 
 /** Checks host capacity and canonical inputs before creating deployment resources. */
 record KubernetesPrerequisites(DockerIdentity docker, KubernetesInput input,
-    RiskCommandProfile profile, JsonNode budget, String sourceFingerprint,
+    KubernetesProfile profile, JsonNode budget, String sourceFingerprint,
     String verificationFingerprint) {
   static KubernetesPrerequisites observe(KubernetesSettings settings) throws Exception {
     if (Files.exists(settings.evidence(), LinkOption.NOFOLLOW_LINKS)) {
@@ -22,7 +22,7 @@ record KubernetesPrerequisites(DockerIdentity docker, KubernetesInput input,
         settings.dockerContext().command("info", "--format", "{{json .}}"), "",
         Duration.ofSeconds(30)).checked());
     final var input = KubernetesInput.load(settings.delivery(), settings.day());
-    final var profile = RiskCommandProfile.render(settings.root(), commands);
+    final var profile = KubernetesProfile.render(settings.root(), commands);
     final var yaml = new ObjectMapper(new YAMLFactory());
     final var manifest = new StringBuilder();
     for (var document : profile.documents()) {

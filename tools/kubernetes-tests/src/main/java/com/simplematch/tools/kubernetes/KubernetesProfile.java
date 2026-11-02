@@ -9,8 +9,8 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.Set;
 
-/** Selects canonical RM-1 resources without altering replication, resources or storage policy. */
-record RiskCommandProfile(List<JsonNode> documents) {
+/** Selects canonical scenario resources without changing their runtime policy. */
+record KubernetesProfile(List<JsonNode> documents) {
   private static final Set<String> OWNERS = Set.of(
       "account-service", "risk-service", "kafka-connect", "kafka", "postgres");
   private static final Set<String> EXTRA = Set.of(
@@ -20,11 +20,31 @@ record RiskCommandProfile(List<JsonNode> documents) {
       "NetworkPolicy/simplematch-java-services-kubernetes-api",
       "NetworkPolicy/simplematch-kafka-connect");
 
-  RiskCommandProfile {
+  private enum Scope { RISK_COMMAND, RESTING_BUY }
+
+  private static final Set<String> TRADING_OWNERS = Set.of(
+      "account-service", "risk-service", "persistence", "quickfix-gateway", "matching",
+      "kafka-connect", "kafka", "postgres");
+  private static final Set<String> TRADING_EXTRA = Set.of(
+      "Role/matching-partition-lease-holder", "RoleBinding/matching-partition-lease-holder",
+      "Service/matching-headless", "Service/quickfix-gateway-headless",
+      "Service/quickfix-gateway-owner-0", "ConfigMap/quickfix-gateway-quickfix-config",
+      "ConfigMap/quickfix-gateway-fix-spec", "NetworkPolicy/simplematch-fix-ingress");
+
+  KubernetesProfile {
     documents = List.copyOf(documents);
   }
 
-  static RiskCommandProfile render(Path root, BoundedCommand commands) throws Exception {
+  static KubernetesProfile restingBuy(Path root, BoundedCommand commands) throws Exception {
+    return render(root, commands, Scope.RESTING_BUY);
+  }
+
+  static KubernetesProfile render(Path root, BoundedCommand commands) throws Exception {
+    return render(root, commands, Scope.RISK_COMMAND);
+  }
+
+  private static KubernetesProfile render(Path root, BoundedCommand commands, Scope scope)
+      throws Exception {
     final String rendered = commands.run(List.of("kubectl", "kustomize",
         "--load-restrictor", "LoadRestrictionsNone",
         root.resolve("deploy/k8s/overlays/local").toString()), "", Duration.ofMinutes(1))
@@ -34,12 +54,12 @@ record RiskCommandProfile(List<JsonNode> documents) {
     try (var parser = yaml.getFactory().createParser(rendered)) {
       while (parser.nextToken() != null) {
         final JsonNode document = yaml.readTree(parser);
-        if (includes(document)) {
+        if (includes(document, scope)) {
           selected.add(document);
         }
       }
     }
-    return new RiskCommandProfile(selected);
+    return new KubernetesProfile(selected);
   }
 
   Set<String> platformImages() {
@@ -57,16 +77,23 @@ record RiskCommandProfile(List<JsonNode> documents) {
     return Set.copyOf(images);
   }
 
-  private static boolean includes(JsonNode document) {
+  private static boolean includes(JsonNode document, Scope scope) {
     final String kind = document.path("kind").asText();
     final String name = document.path("metadata").path("name").asText();
     if (EXTRA.contains(kind + "/" + name)) {
       return true;
     }
-    if ("Lease".equals(kind) || "account-service-outbox-connector".equals(name)) {
+    if ("Lease".equals(kind)) {
+      return scope == Scope.RESTING_BUY && name.matches("matching-partition-[0-9]{2}");
+    }
+    if (scope == Scope.RESTING_BUY && TRADING_EXTRA.contains(kind + "/" + name)) {
+      return true;
+    }
+    if (scope == Scope.RISK_COMMAND && "account-service-outbox-connector".equals(name)) {
       return false;
     }
-    return OWNERS.contains(name) || OWNERS.stream().anyMatch(owner ->
+    final Set<String> owners = scope == Scope.RESTING_BUY ? TRADING_OWNERS : OWNERS;
+    return owners.contains(name) || owners.stream().anyMatch(owner ->
         Set.of(owner + "-config", owner + "-kraft-config", owner + "-configuration-reader",
             owner + "-outbox-connector", owner + "-flyway").contains(name));
   }

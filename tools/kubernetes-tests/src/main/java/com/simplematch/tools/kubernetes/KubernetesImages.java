@@ -24,7 +24,7 @@ final class KubernetesImages {
     this.identities = new LinkedHashMap<>(identities);
   }
 
-  static KubernetesImages observe(KubernetesSettings settings, RiskCommandProfile profile)
+  static KubernetesImages observe(KubernetesSettings settings, KubernetesProfile profile)
       throws Exception {
     final var commands = settings.dockerContext().commands(settings.root());
     final var identities = new LinkedHashMap<String, String>();
