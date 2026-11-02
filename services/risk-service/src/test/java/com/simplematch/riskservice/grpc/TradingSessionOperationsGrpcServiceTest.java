@@ -1,6 +1,9 @@
 package com.simplematch.riskservice.grpc;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.when;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.simplematch.contracts.risk.v2.CloseTradingSessionRequest;
@@ -23,8 +26,8 @@ import java.util.Set;
 import org.junit.jupiter.api.Test;
 import org.springframework.dao.DataAccessResourceFailureException;
 import org.springframework.dao.DataIntegrityViolationException;
-import org.springframework.jdbc.datasource.DataSourceTransactionManager;
-import org.springframework.jdbc.datasource.DriverManagerDataSource;
+import org.springframework.transaction.PlatformTransactionManager;
+import org.springframework.transaction.support.SimpleTransactionStatus;
 import org.springframework.transaction.support.TransactionTemplate;
 
 class TradingSessionOperationsGrpcServiceTest {
@@ -102,14 +105,13 @@ class TradingSessionOperationsGrpcServiceTest {
             artifact(),
             "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
             Clock.fixed(Instant.ofEpochMilli(100L), ZoneOffset.UTC));
-    final DriverManagerDataSource dataSource = new DriverManagerDataSource();
-    dataSource.setDriverClassName("org.h2.Driver");
-    dataSource.setUrl("jdbc:h2:mem:trading-session-close;DB_CLOSE_DELAY=-1");
+    final var transactions = mock(PlatformTransactionManager.class);
+    when(transactions.getTransaction(any())).thenReturn(new SimpleTransactionStatus());
     final TradingSessionBarrierService barriers =
         new TradingSessionBarrierService(
             factory,
             outbox,
-            new TransactionTemplate(new DataSourceTransactionManager(dataSource)));
+            new TransactionTemplate(transactions));
     return new TradingSessionOperationsGrpcService(barriers);
   }
 
