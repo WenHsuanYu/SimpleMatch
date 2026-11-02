@@ -22,14 +22,12 @@ public class JdbcAccountAuthorityLifecycleWriter implements AccountAuthorityLife
 
   @Override
   public void claimReservationRequest(String requestId, long claimedAtUnixMs) {
-    final String insert =
-        jdbc.isPostgres()
-            ? "INSERT INTO account_service.reservation_request_locks "
-                + "(request_id, created_at_unix_ms) VALUES (?, ?) "
-                + "ON CONFLICT (request_id) DO NOTHING"
-            : "MERGE INTO account_service.reservation_request_locks "
-                + "(request_id, created_at_unix_ms) KEY(request_id) VALUES (?, ?)";
-    jdbc.update(insert, UUID.fromString(requestId), claimedAtUnixMs);
+    jdbc.update(
+        "INSERT INTO account_service.reservation_request_locks "
+            + "(request_id, created_at_unix_ms) VALUES (?, ?) "
+            + "ON CONFLICT (request_id) DO NOTHING",
+        UUID.fromString(requestId),
+        claimedAtUnixMs);
     jdbc.queryForUpdate(
         "SELECT request_id FROM account_service.reservation_request_locks "
             + "WHERE request_id = ? FOR UPDATE",
@@ -167,23 +165,10 @@ public class JdbcAccountAuthorityLifecycleWriter implements AccountAuthorityLife
       String aggregateId,
       Long aggregateSequence,
       long receivedAt) {
-    final Integer inboxCount =
-        jdbc.queryForObject(
-            "SELECT COUNT(*) FROM account_service.inbox WHERE consumer_name = ? AND event_id = ?",
-            Integer.class,
-            consumerName,
-            UUID.fromString(eventId));
-    if (!jdbc.isPostgres() && inboxCount != null && inboxCount > 0) {
-      return false;
-    }
     final String insert =
-        jdbc.isPostgres()
-            ? "INSERT INTO account_service.inbox "
-                + "(consumer_name, event_id, aggregate_id, aggregate_sequence, "
-                + "received_at_unix_ms) VALUES (?, ?, ?, ?, ?) ON CONFLICT DO NOTHING"
-            : "MERGE INTO account_service.inbox "
-                + "(consumer_name, event_id, aggregate_id, aggregate_sequence, "
-                + "received_at_unix_ms) KEY(consumer_name, event_id) VALUES (?, ?, ?, ?, ?)";
+        "INSERT INTO account_service.inbox "
+            + "(consumer_name, event_id, aggregate_id, aggregate_sequence, "
+            + "received_at_unix_ms) VALUES (?, ?, ?, ?, ?) ON CONFLICT DO NOTHING";
     try {
       return jdbc.update(
               insert,

@@ -5,10 +5,8 @@ import java.util.Arrays;
 import java.util.HashMap;
 import java.util.HexFormat;
 import java.util.List;
-import java.util.Locale;
 import java.util.Map;
 import org.springframework.dao.DuplicateKeyException;
-import org.springframework.jdbc.core.ConnectionCallback;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Repository;
 
@@ -79,30 +77,17 @@ public class JdbcFinalMatchingEventAccountInbox {
     if (kafkaPartition < 0 || kafkaPartition > 14 || kafkaOffset < 0 || observedAtUnixMs < 0) {
       throw new IllegalArgumentException("Account final event Kafka position is invalid");
     }
-    if (isPostgres()) {
-      jdbcTemplate.update(
-          """
-          INSERT INTO account_service.matching_event_consumer_progress (
-            consumer_name, partition_id, last_processed_offset, updated_at_unix_ms
-          ) VALUES (?, ?, ?, ?)
-          ON CONFLICT (consumer_name, partition_id) DO UPDATE SET
-            last_processed_offset = GREATEST(
-                account_service.matching_event_consumer_progress.last_processed_offset,
-                EXCLUDED.last_processed_offset
-            ),
-            updated_at_unix_ms = EXCLUDED.updated_at_unix_ms
-          """,
-          CONSUMER_NAME,
-          kafkaPartition,
-          kafkaOffset,
-          observedAtUnixMs);
-      return;
-    }
     jdbcTemplate.update(
         """
-        MERGE INTO account_service.matching_event_consumer_progress (
+        INSERT INTO account_service.matching_event_consumer_progress (
           consumer_name, partition_id, last_processed_offset, updated_at_unix_ms
-        ) KEY(consumer_name, partition_id) VALUES (?, ?, ?, ?)
+        ) VALUES (?, ?, ?, ?)
+        ON CONFLICT (consumer_name, partition_id) DO UPDATE SET
+          last_processed_offset = GREATEST(
+              account_service.matching_event_consumer_progress.last_processed_offset,
+              EXCLUDED.last_processed_offset
+          ),
+          updated_at_unix_ms = EXCLUDED.updated_at_unix_ms
         """,
         CONSUMER_NAME,
         kafkaPartition,
@@ -141,17 +126,5 @@ public class JdbcFinalMatchingEventAccountInbox {
     if (!Arrays.equals(existing, observed)) {
       throw new DeterministicEventConflictException(HexFormat.of().formatHex(eventId));
     }
-  }
-
-  private boolean isPostgres() {
-    return Boolean.TRUE.equals(
-        jdbcTemplate.execute(
-            (ConnectionCallback<Boolean>)
-                connection ->
-                    connection
-                        .getMetaData()
-                        .getDatabaseProductName()
-                        .toLowerCase(Locale.ROOT)
-                        .contains("postgresql")));
   }
 }

@@ -130,15 +130,6 @@ final class AccountAuthorityJdbcSupport {
     return jdbcTemplate.update(sql, arguments);
   }
 
-  boolean isPostgres() {
-    return Objects.requireNonNull(
-        jdbcTemplate.execute(
-            (ConnectionCallback<Boolean>)
-                connection ->
-                    connection.getMetaData().getDatabaseProductName().contains("PostgreSQL")),
-        "database product name");
-  }
-
   String reservationSelect() {
     return
         """
