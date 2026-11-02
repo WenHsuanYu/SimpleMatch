@@ -1,9 +1,9 @@
 package com.simplematch.riskservice.store;
 
-import static com.simplematch.riskservice.testsupport.H2TestDatabaseUrl.uniqueRiskServiceUrl;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
+import com.simplematch.config.testsupport.PostgresTestDatabase;
 import com.simplematch.contracts.matching.runtime.v1.MatchingCommand;
 import com.simplematch.riskservice.outbox.OutboxRecord;
 import com.simplematch.riskservice.outbox.OutboxRepository;
@@ -23,12 +23,12 @@ class JdbcOutboxRepositoryTest {
 
   @BeforeEach
   void setUp() {
-    final DriverManagerDataSource dataSource = new DriverManagerDataSource();
-    dataSource.setDriverClassName("org.h2.Driver");
-    dataSource.setUrl(uniqueRiskServiceUrl());
+    final DriverManagerDataSource dataSource = PostgresTestDatabase.create("risk-service");
     jdbcTemplate = new JdbcTemplate(dataSource);
     Flyway.configure()
         .dataSource(dataSource)
+        .schemas("risk_service")
+        .defaultSchema("risk_service")
         .locations("classpath:db/migration/risk-service")
         .load()
         .migrate();

@@ -9,6 +9,7 @@ import com.simplematch.accountservice.store.JdbcAccountAuthorityLifecycleWriter;
 import com.simplematch.accountservice.store.JdbcAccountAuthorityReader;
 import com.simplematch.accountservice.store.JdbcAccountOutboxRepository;
 import com.simplematch.config.GrpcProperties;
+import com.simplematch.config.testsupport.PostgresTestDatabase;
 import com.simplematch.contracts.common.v2.Currency;
 import com.simplematch.contracts.common.v2.EventMetadata;
 import com.simplematch.contracts.common.v2.OrderType;
@@ -67,7 +68,7 @@ class AccountReservationSagaRecoveryIntegrationTest {
   @BeforeEach
   void setUp() throws Exception {
     final DriverManagerDataSource accountDataSource =
-        dataSource("accountreservationaccount", "account_service");
+        PostgresTestDatabase.create("account-service");
     migrate(accountDataSource, "account-service");
     accountJdbc = new JdbcTemplate(accountDataSource);
     final AccountReservationApplicationService accounts =
@@ -84,7 +85,7 @@ class AccountReservationSagaRecoveryIntegrationTest {
             .start();
 
     final DriverManagerDataSource riskDataSource =
-        dataSource("accountreservationrisk", "risk_service");
+        PostgresTestDatabase.create("risk-service");
     migrate(riskDataSource, "risk-service");
     riskJdbc = new JdbcTemplate(riskDataSource);
     final TransactionTemplate transactionTemplate =
@@ -206,23 +207,11 @@ class AccountReservationSagaRecoveryIntegrationTest {
         .build();
   }
 
-  private DriverManagerDataSource dataSource(String name, String schema) {
-    final DriverManagerDataSource dataSource = new DriverManagerDataSource();
-    dataSource.setDriverClassName("org.h2.Driver");
-    dataSource.setUrl(
-        "jdbc:h2:mem:"
-            + name
-            + UUID.randomUUID().toString().replace("-", "")
-            + ";MODE=PostgreSQL;DB_CLOSE_DELAY=-1;INIT=CREATE SCHEMA IF NOT EXISTS "
-            + schema
-            + "\\;SET SCHEMA "
-            + schema);
-    return dataSource;
-  }
-
   private void migrate(DriverManagerDataSource dataSource, String service) {
     Flyway.configure()
         .dataSource(dataSource)
+        .schemas(service.replace('-', '_'))
+        .defaultSchema(service.replace('-', '_'))
         .locations("classpath:db/migration/" + service)
         .load()
         .migrate();

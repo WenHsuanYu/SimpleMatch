@@ -1,13 +1,16 @@
 package com.simplematch.riskservice.store;
 
-import static com.simplematch.riskservice.testsupport.H2TestDatabaseUrl.uniqueRiskServiceUrl;
 import static org.assertj.core.api.Assertions.assertThat;
 
 import com.simplematch.config.delivery.DeliveryPosition;
+import com.simplematch.config.testsupport.PostgresTestDatabase;
 import com.simplematch.riskservice.cdc.CdcDeliveryEnvelope;
 import com.simplematch.riskservice.cdc.CdcDeliveryObservation;
 import com.simplematch.riskservice.cdc.CdcDeliveryObservationResult;
+import java.sql.Timestamp;
+import java.time.Instant;
 import java.util.UUID;
+import org.flywaydb.core.Flyway;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
@@ -29,37 +32,24 @@ class JdbcCdcDeliveryProgressStoreTest {
 
   @BeforeEach
   void setUp() {
-    final DriverManagerDataSource dataSource =
-        new DriverManagerDataSource(uniqueRiskServiceUrl(), "sa", "");
+    final DriverManagerDataSource dataSource = PostgresTestDatabase.create("risk-service");
+    Flyway.configure().dataSource(dataSource).schemas("risk_service")
+        .defaultSchema("risk_service").locations("classpath:db/migration/risk-service")
+        .load().migrate();
     jdbc = new JdbcTemplate(dataSource);
-    jdbc.execute(
-        "CREATE TABLE risk_service.outbox ("
-            + "event_id UUID PRIMARY KEY, topic VARCHAR(255) NOT NULL, "
-            + "message_key VARCHAR(255) NOT NULL, kafka_partition_id INTEGER, "
-            + "payload VARBINARY NOT NULL, payload_type VARCHAR(255) NOT NULL, "
-            + "headers_json VARCHAR(2000) NOT NULL, created_at_unix_ms BIGINT NOT NULL)");
-    jdbc.execute(
-        "CREATE TABLE risk_service.cdc_delivery_observation ("
-            + "event_id UUID PRIMARY KEY, topic VARCHAR(255) NOT NULL, "
-            + "partition_id INTEGER NOT NULL, kafka_offset BIGINT NOT NULL, "
-            + "observed_at_unix_ms BIGINT NOT NULL)");
-    jdbc.execute(
-        "CREATE TABLE risk_service.cdc_delivery_lag ("
-            + "metric_name VARCHAR(128) PRIMARY KEY, lag_events BIGINT NOT NULL, "
-            + "updated_at_unix_ms BIGINT NOT NULL)");
-    jdbc.update("INSERT INTO risk_service.cdc_delivery_lag VALUES (?, 0, 0)", "matching.commands");
     store = new JdbcCdcDeliveryProgressStore(jdbc);
   }
 
   @Test
   @DisplayName("derives lag from Risk outbox rows missing an exact Kafka observation")
   void derivesLagFromRiskOutboxRowsMissingAnExactKafkaObservation() {
-    insertOutbox(DELIVERED, 1_000L, 2);
-    insertOutbox(PENDING, 2_000L, 4);
-    assertThat(store.observe(observation(DELIVERED, 2, 14, 1_000L, 3_000L)))
+    insertOutbox(DELIVERED, 1_700_000_001_000L, 2);
+    insertOutbox(PENDING, 1_700_000_002_000L, 4);
+    assertThat(store.observe(observation(
+        DELIVERED, 2, 3_000_000_000L, 1_700_000_001_000L, 1_700_000_003_000L)))
         .isEqualTo(CdcDeliveryObservationResult.RECORDED);
 
-    final var snapshot = store.refresh("matching.commands", "matching.commands", 5_000L);
+    final var snapshot = store.refresh("matching.commands", "matching.commands", 1_700_000_005_000L);
 
     assertThat(snapshot.lagEvents()).isEqualTo(1);
     assertThat(snapshot.oldestUndeliveredAgeMillis()).isEqualTo(3_000);
@@ -67,7 +57,7 @@ class JdbcCdcDeliveryProgressStoreTest {
             "SELECT updated_at_unix_ms FROM risk_service.cdc_delivery_lag WHERE metric_name = ?",
             Long.class,
             "matching.commands"))
-        .isEqualTo(5_000L);
+        .isEqualTo(1_700_000_005_000L);
   }
 
   @Test
@@ -207,7 +197,8 @@ class JdbcCdcDeliveryProgressStoreTest {
     jdbc.update(
         "INSERT INTO risk_service.outbox ("
             + "event_id, topic, message_key, kafka_partition_id, payload, payload_type, "
-            + "headers_json, created_at_unix_ms) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+            + "headers_json, created_at_unix_ms, aggregate_type, aggregate_id, created_at) "
+            + "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
         eventId,
         "matching.commands",
         eventId.toString(),
@@ -215,6 +206,9 @@ class JdbcCdcDeliveryProgressStoreTest {
         PAYLOAD,
         PAYLOAD_TYPE,
         HEADERS_JSON,
-        createdAtUnixMs);
+        createdAtUnixMs,
+        "risk_submission",
+        eventId.toString(),
+        Timestamp.from(Instant.ofEpochMilli(createdAtUnixMs)));
   }
 }

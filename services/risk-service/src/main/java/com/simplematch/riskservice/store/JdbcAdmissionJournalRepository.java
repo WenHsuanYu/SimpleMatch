@@ -9,12 +9,10 @@ import com.simplematch.riskservice.admission.AdmissionJournalRepository;
 import com.simplematch.riskservice.admission.AdmissionOrder;
 import java.time.Instant;
 import java.util.List;
-import java.util.Objects;
 import java.util.Optional;
 import java.util.UUID;
 import lombok.NonNull;
 import lombok.RequiredArgsConstructor;
-import org.springframework.jdbc.core.ConnectionCallback;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.jdbc.core.RowMapper;
 import org.springframework.stereotype.Repository;
@@ -51,7 +49,6 @@ public class JdbcAdmissionJournalRepository implements AdmissionJournalRepositor
 
   @Override
   public boolean insert(AdmissionJournalEntry entry) {
-    final String suffix = isPostgres() ? " ON CONFLICT DO NOTHING" : "";
     final AdmissionCommand command = entry.command();
     final AdmissionIdentity identity = command.identity();
     final AdmissionOrder order = command.order();
@@ -72,8 +69,8 @@ public class JdbcAdmissionJournalRepository implements AdmissionJournalRepositor
               created_at_unix_ms, updated_at_unix_ms)
             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?,
                     ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-            """
-                + suffix,
+            ON CONFLICT DO NOTHING
+            """,
             identity.commandId().value(),
             identity.orderId().value(),
             identity.accountId().value(),
@@ -150,14 +147,5 @@ public class JdbcAdmissionJournalRepository implements AdmissionJournalRepositor
           reason_code, reason_detail, version, created_at_unix_ms, updated_at_unix_ms
         FROM risk_service.admission_journal
         """;
-  }
-
-  private boolean isPostgres() {
-    return Objects.requireNonNull(
-        jdbcTemplate.execute(
-            (ConnectionCallback<Boolean>)
-                connection ->
-                    connection.getMetaData().getDatabaseProductName().contains("PostgreSQL")),
-        "database product name");
   }
 }

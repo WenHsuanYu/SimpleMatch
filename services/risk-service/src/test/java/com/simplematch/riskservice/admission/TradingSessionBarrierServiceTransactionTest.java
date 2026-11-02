@@ -4,12 +4,12 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.simplematch.config.testsupport.PostgresTestDatabase;
 import com.simplematch.marketreference.MarketReferenceArtifactStartupValidator;
 import com.simplematch.marketreference.VerifiedMarketReferenceArtifact;
 import com.simplematch.riskservice.outbox.OutboxRecord;
 import com.simplematch.riskservice.outbox.OutboxRepository;
 import com.simplematch.riskservice.store.JdbcOutboxRepository;
-import com.simplematch.riskservice.testsupport.H2TestDatabaseUrl;
 import java.io.IOException;
 import java.nio.charset.StandardCharsets;
 import java.time.Clock;
@@ -34,9 +34,7 @@ class TradingSessionBarrierServiceTransactionTest {
 
   @BeforeEach
   void setUp() {
-    final DriverManagerDataSource dataSource = new DriverManagerDataSource();
-    dataSource.setDriverClassName("org.h2.Driver");
-    dataSource.setUrl(H2TestDatabaseUrl.uniqueRiskServiceUrl());
+    final DriverManagerDataSource dataSource = PostgresTestDatabase.create("risk-service");
     migrate(dataSource);
     jdbcTemplate = new JdbcTemplate(dataSource);
     transactionTemplate = new TransactionTemplate(new DataSourceTransactionManager(dataSource));
@@ -89,6 +87,8 @@ class TradingSessionBarrierServiceTransactionTest {
   private static void migrate(DataSource dataSource) {
     Flyway.configure()
         .dataSource(dataSource)
+        .schemas("risk_service")
+        .defaultSchema("risk_service")
         .locations("classpath:db/migration/risk-service")
         .load()
         .migrate();

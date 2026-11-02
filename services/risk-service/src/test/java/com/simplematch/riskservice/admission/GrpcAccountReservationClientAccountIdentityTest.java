@@ -9,6 +9,7 @@ import com.simplematch.accountservice.store.JdbcAccountAuthorityLifecycleWriter;
 import com.simplematch.accountservice.store.JdbcAccountAuthorityReader;
 import com.simplematch.accountservice.store.JdbcAccountOutboxRepository;
 import com.simplematch.config.GrpcProperties;
+import com.simplematch.config.testsupport.PostgresTestDatabase;
 import io.grpc.Server;
 import io.grpc.ServerBuilder;
 import java.math.BigDecimal;
@@ -69,7 +70,7 @@ class GrpcAccountReservationClientAccountIdentityTest {
           jdbc.queryForObject(
               "SELECT account_id FROM account_service.account_reservations WHERE order_id = ?",
               (rows, row) -> rows.getObject("account_id", UUID.class),
-              command.identity().orderId().value().toString());
+              command.identity().orderId().value());
       final String outboxMessageKey =
           jdbc.queryForObject(
               "SELECT message_key FROM account_service.outbox WHERE aggregate_id = ?",
@@ -102,19 +103,15 @@ class GrpcAccountReservationClientAccountIdentityTest {
   }
 
   private DriverManagerDataSource accountDataSource() {
-    final DriverManagerDataSource dataSource = new DriverManagerDataSource();
-    dataSource.setDriverClassName("org.h2.Driver");
-    dataSource.setUrl(
-        "jdbc:h2:mem:account-identity-"
-            + UUID.randomUUID()
-            + ";MODE=PostgreSQL;DB_CLOSE_DELAY=-1;"
-            + "INIT=CREATE SCHEMA IF NOT EXISTS account_service\\;SET SCHEMA account_service");
+    final DriverManagerDataSource dataSource = PostgresTestDatabase.create("account-service");
     return dataSource;
   }
 
   private void migrateAccountService(DriverManagerDataSource dataSource) {
     Flyway.configure()
         .dataSource(dataSource)
+        .schemas("account_service")
+        .defaultSchema("account_service")
         .locations("classpath:db/migration/account-service")
         .load()
         .migrate();

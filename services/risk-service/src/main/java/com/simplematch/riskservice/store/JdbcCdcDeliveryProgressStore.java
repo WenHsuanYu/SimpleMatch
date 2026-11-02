@@ -7,7 +7,6 @@ import com.simplematch.riskservice.cdc.CdcDeliveryProgressStore;
 import com.simplematch.riskservice.cdc.CdcDeliverySnapshot;
 import java.util.Objects;
 import java.util.UUID;
-import org.springframework.jdbc.core.ConnectionCallback;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.jdbc.core.ResultSetExtractor;
 
@@ -29,7 +28,6 @@ public final class JdbcCdcDeliveryProgressStore implements CdcDeliveryProgressSt
   public CdcDeliveryObservationResult observe(CdcDeliveryObservation observation) {
     Objects.requireNonNull(observation, "observation");
     final DeliveryPosition position = observation.position();
-    final String conflictClause = isPostgres() ? " ON CONFLICT (event_id) DO NOTHING" : "";
     final int insertedRows =
         jdbc.update(
             """
@@ -46,7 +44,8 @@ public final class JdbcCdcDeliveryProgressStore implements CdcDeliveryProgressSt
               AND created_at_unix_ms = ?
               AND NOT EXISTS (
                 SELECT 1 FROM risk_service.cdc_delivery_observation WHERE event_id = ?)
-            """ + conflictClause,
+            ON CONFLICT (event_id) DO NOTHING
+            """,
             position.topic(),
             position.partition(),
             position.offset(),
@@ -111,15 +110,6 @@ public final class JdbcCdcDeliveryProgressStore implements CdcDeliveryProgressSt
             observation.headersJson(),
             position.partition(),
             observation.publishedAtUnixMs()));
-  }
-
-  private boolean isPostgres() {
-    return Objects.requireNonNull(
-        jdbc.execute(
-            (ConnectionCallback<Boolean>)
-                connection ->
-                    connection.getMetaData().getDatabaseProductName().contains("PostgreSQL")),
-        "database product name");
   }
 
   @Override

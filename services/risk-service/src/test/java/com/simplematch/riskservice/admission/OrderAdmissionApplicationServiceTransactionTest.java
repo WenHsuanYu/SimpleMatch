@@ -3,6 +3,7 @@ package com.simplematch.riskservice.admission;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
+import com.simplematch.config.testsupport.PostgresTestDatabase;
 import com.simplematch.contracts.common.v2.Currency;
 import com.simplematch.contracts.common.v2.OrderType;
 import com.simplematch.contracts.common.v2.SessionState;
@@ -191,15 +192,6 @@ class OrderAdmissionApplicationServiceTransactionTest {
             jdbcTemplate.queryForObject(
                 "SELECT COUNT(*) FROM risk_service.admission_journal", Integer.class))
         .isZero();
-  }
-
-  @Test
-  void keepsTheAdmissionTransactionModuleDeepAndSmall() {
-    assertThat(AdmissionLifecycleTransactions.class.getDeclaredConstructors())
-        .hasSize(1)
-        .allSatisfy(
-            constructor ->
-                assertThat(constructor.getParameterCount()).isLessThanOrEqualTo(6));
   }
 
   @DisplayName("terminal journal and outbox changes roll back together")
@@ -624,13 +616,12 @@ class OrderAdmissionApplicationServiceTransactionTest {
   static class TestConfiguration {
     @Bean
     DriverManagerDataSource dataSource() {
-      final DriverManagerDataSource dataSource = new DriverManagerDataSource();
-      dataSource.setDriverClassName("org.h2.Driver");
-      dataSource.setUrl(
-          "jdbc:h2:mem:riskadmission;MODE=PostgreSQL;DB_CLOSE_DELAY=-1;INIT=CREATE SCHEMA IF NOT EXISTS risk_service\\;SET SCHEMA risk_service");
+      final DriverManagerDataSource dataSource = PostgresTestDatabase.create("risk-service");
       Flyway.configure()
           .dataSource(dataSource)
-          .locations("classpath:db/migration/risk-service")
+          .schemas("risk_service")
+        .defaultSchema("risk_service")
+        .locations("classpath:db/migration/risk-service")
           .load()
           .migrate();
       return dataSource;

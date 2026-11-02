@@ -1,16 +1,15 @@
 package com.simplematch.riskservice;
 
-import static com.simplematch.riskservice.testsupport.H2TestDatabaseUrl.riskServiceUrl;
 import static org.assertj.core.api.Assertions.assertThat;
 
 import com.simplematch.config.EnvironmentProperties;
 import com.simplematch.config.GrpcProperties;
 import com.simplematch.config.PostgresProperties;
+import com.simplematch.marketreference.VerifiedMarketReferenceArtifact;
 import com.simplematch.riskservice.admission.AdmissionOutboxFactory;
 import com.simplematch.riskservice.admission.OrderAdmissionApplicationService;
 import com.simplematch.riskservice.bootstrap.RiskServiceRuntime;
 import com.simplematch.riskservice.outbox.OutboxRepository;
-import com.simplematch.marketreference.VerifiedMarketReferenceArtifact;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -43,7 +42,7 @@ class RiskServiceApplicationTest {
 
   @DynamicPropertySource
   static void configureDataSource(DynamicPropertyRegistry registry) {
-    registry.add("simplematch.postgres.dsn", () -> riskServiceUrl("riskcontext"));
+    registry.add("simplematch.postgres.dsn", () -> "postgresql://configuration.invalid:5432/risk");
   }
 
   // Verify that risk-service loads shared config, overrides the database DSN, and creates its
@@ -55,7 +54,7 @@ class RiskServiceApplicationTest {
   void contextLoadsWithSharedConfig() {
     assertThat(environmentProperties.environment()).isEqualTo("test");
     assertThat(runtime.grpcPort()).isEqualTo(50052);
-    assertThat(postgresProperties.dsn()).isEqualTo(riskServiceUrl("riskcontext"));
+    assertThat(postgresProperties.dsn()).isEqualTo("postgresql://configuration.invalid:5432/risk");
     assertThat(
             RiskServiceRuntime.from(
                     new GrpcProperties(

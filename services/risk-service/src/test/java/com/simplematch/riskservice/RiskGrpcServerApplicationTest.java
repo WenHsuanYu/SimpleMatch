@@ -1,6 +1,5 @@
 package com.simplematch.riskservice;
 
-import static com.simplematch.riskservice.testsupport.H2TestDatabaseUrl.riskServiceUrl;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
@@ -42,7 +41,7 @@ class RiskGrpcServerApplicationTest {
 
   @DynamicPropertySource
   static void configureDataSource(DynamicPropertyRegistry registry) {
-    registry.add("simplematch.postgres.dsn", () -> riskServiceUrl("riskgrpc"));
+    registry.add("simplematch.postgres.dsn", () -> "postgresql://configuration.invalid:5432/risk");
     registry.add(
         "simplematch.grpc.targets.risk-service", () -> "dns:///127.0.0.1:" + SERVER_PORT);
   }

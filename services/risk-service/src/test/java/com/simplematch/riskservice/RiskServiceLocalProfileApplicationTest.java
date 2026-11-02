@@ -1,6 +1,5 @@
 package com.simplematch.riskservice;
 
-import static com.simplematch.riskservice.testsupport.H2TestDatabaseUrl.riskServiceUrl;
 import static org.assertj.core.api.Assertions.assertThat;
 
 import com.simplematch.config.EnvironmentProperties;
@@ -27,7 +26,7 @@ class RiskServiceLocalProfileApplicationTest {
 
   @DynamicPropertySource
   static void configureDataSource(DynamicPropertyRegistry registry) {
-    registry.add("simplematch.postgres.dsn", () -> riskServiceUrl("risklocal"));
+    registry.add("simplematch.postgres.dsn", () -> "postgresql://configuration.invalid:5432/risk");
   }
 
   @Test

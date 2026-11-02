@@ -15,7 +15,7 @@ dependencies {
     compileOnly(libs.errorprone.annotations)
 
     testImplementation(project(":services:account-service"))
-    testImplementation(libs.h2)
+    testImplementation(testFixtures(project(":shared-java:simplematch-config")))
     testImplementation(libs.flyway.core)
 }
 
