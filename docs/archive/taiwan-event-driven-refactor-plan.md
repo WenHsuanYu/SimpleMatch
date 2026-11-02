@@ -310,9 +310,10 @@ further. Every commit runs the narrowest relevant tests before the broader phase
 The required `Transaction Acceptance Criteria` sections below reference the
 canonical [Cross-Cutting Transaction and Consistency Policy](../reference/transaction-and-consistency-policy.md).
 They are a readiness gate: criteria must be complete before a phase begins, and the mapped
-PostgreSQL-backed integration tests must pass before a phase is complete. Run
-`bash scripts/check-transaction-acceptance-criteria.sh` to verify the documentation structure; it
-does not replace behavioral review or tests.
+PostgreSQL-backed integration tests must pass before a phase is complete.
+S5 retired the historical documentation-structure checker.
+Behavioral review and tests remain authoritative.
+See the [retirement disposition](../plans/shell-test-reduction-s5.md).
 
 ### Phase 0: Establish a trustworthy baseline
 

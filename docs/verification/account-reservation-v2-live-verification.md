@@ -27,8 +27,6 @@ old pending rows with the original command identity.
 Run these commands from the repository root:
 
 ```bash
-bash scripts/check-account-reservation-v2-cutover.sh
-
 GRADLE_USER_HOME=/tmp/simplematch-gradle-home ./gradlew --no-daemon \
   :services:risk-service:test \
   --tests 'com.simplematch.riskservice.admission.AccountReservationSagaRecoveryIntegrationTest' \
@@ -41,9 +39,9 @@ GRADLE_USER_HOME=/tmp/simplematch-gradle-home ./gradlew --no-daemon \
 GRADLE_USER_HOME=/tmp/simplematch-gradle-home ./gradlew --no-daemon -q staticAnalysis
 ```
 
-The caller guard rejects any Account v1 server or client surface after the #119 cutover. It requires
-Risk's v2 stub and Account's v2 server wiring, and checks the secure Kubernetes target contract. The
-first focused test uses the real Account v2 gRPC adapter and independent Account/Risk database
+S5 retired the completed Account v1/v2 source cutover guard.
+The [disposition](../plans/shell-test-reduction-s5.md) records the loss of source-pattern enforcement.
+The first focused test uses the real Account v2 gRPC adapter and independent Account/Risk database
 transactions; it forces Risk's local terminal transaction to fail after Account succeeds, then
 verifies pending recovery replays the same typed request without a second reservation.
 
@@ -84,7 +82,6 @@ credentials, private keys, DSNs, registry values, or real endpoint CIDRs.
 
 ```bash
 ./gradlew manifestCheck
-bash scripts/check-account-reservation-v2-cutover.sh
 kubectl config current-context
 kubectl auth can-i get secrets -n "$SIMPLEMATCH_NAMESPACE"
 ```

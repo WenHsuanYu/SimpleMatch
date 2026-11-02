@@ -230,7 +230,9 @@ not change accepted Phase 1 capability status or upgrade focused evidence to an 
 - The Account v2 source/configuration cutover guard and the repository-local
   `AccountReservationSagaRecoveryIntegrationTest` pass. The test uses real Account v2 gRPC and
   independent H2 transactions to prove remote success followed by Risk failure recovers the same
-  reservation without a second Account mutation.
+  reservation without a second Account mutation. S5 later retired the completed source guard.
+  Its earlier result remains historical evidence. The [S5 disposition](../plans/shell-test-reduction-s5.md)
+  records current test owners and the intentional loss of source-pattern enforcement.
 - The first same-day gate attempt failed closed at `kubernetes-inputs` because the default current
   day had no approved delivery manifest. That was an input-fixture blocker, not a Kubernetes
   workload failure; rerunning with the repository's approved historical fixture passed. No external

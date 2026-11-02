@@ -51,12 +51,12 @@ and the documentation authority rules. The following documents were intentionall
 
 The review moved only the PMD research document because its own status says it is a pre-rollout
 proposal and the current PMD policy has superseded its implementation guidance. Forwarding pages
-and already-archived documents remain unchanged so historical links and static contract checks keep
-working.
+and already-archived documents preserve historical links.
 
-The archive is not a second source of truth for implementation status or release evidence. The
-transaction-criteria scripts intentionally read the archived plan to check that its historical
-acceptance sections remain structurally complete; that is a static contract check, not a claim that
-the archived checklist is the current implementation frontier. New implementation, deployment, or
+The archive is not a second source of truth for implementation status or release evidence.
+S5 retired the transaction-criteria structure checker and its dedicated CI workflow.
+The historical acceptance sections remain available for review.
+See the [retirement disposition](../plans/shell-test-reduction-s5.md) for current owners and coverage limits.
+New implementation, deployment, or
 certification links must target the active documents above; the forwarding pages at the two formerly
 referenced paths exist only to preserve older links.

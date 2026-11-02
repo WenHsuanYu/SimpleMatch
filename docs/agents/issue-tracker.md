@@ -11,8 +11,8 @@ Issues and PRDs for this repo live as GitHub issues. Use the `gh` CLI for all op
 - `docs/reference/transaction-and-consistency-policy.md` owns transaction and consistency
   rules; `docs/verification/local-production-like-certification.md` owns the current local final-gate runbook.
 - `docs/archive/taiwan-event-driven-refactor-plan.md` preserves the historical phase, transaction,
-  rollback, and decision plan; its acceptance sections remain a static CI contract, not a current
-  task, status, or release-evidence authority.
+  rollback, and decision plan. S5 retired the acceptance-section structure checker and its CI workflow.
+  The archive is not a current task, status, or release-evidence authority.
 - `tasks.md` is historical navigation. File or update an issue instead of adding a live checkbox.
 - The Taiwan architecture program is #10 and is completed. Future work should use a new issue (or a
   clearly scoped follow-up), with real prerequisites encoded through GitHub `blocked by` dependencies.

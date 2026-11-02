@@ -214,5 +214,6 @@ equivalent criteria before implementing any later persisted consistency boundary
 
 A phase cannot begin implementation until its transaction criteria are complete. It cannot be marked
 complete until its mapped PostgreSQL-backed integration tests pass.
-`scripts/check-transaction-acceptance-criteria.sh` checks documentation structure only; review and
-integration tests remain authoritative for mechanism selection and behavior.
+Review and integration tests remain authoritative for mechanism selection and behavior.
+S5 retired the documentation-structure checker and its dedicated CI workflow.
+See the [retirement disposition](../plans/shell-test-reduction-s5.md) for remaining owners and coverage limits.

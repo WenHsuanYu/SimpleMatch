@@ -1,17 +1,8 @@
 # Archived development contract scripts
 
-This directory contains shell checks that were useful while specific staged
-refactors were being assembled. They inspect source or document structure,
-completed phase checklists, and delegation boundaries rather than normal
-operator workflows.
-
-They are not operator entry points and are not part of the normal local-lab
-workflow. CI may still execute selected archived checks as regression evidence.
-
-Archived here:
-
-- `check-phase-5-gate.sh`: completed Phase 5 fixture and source-shape gate.
-- `check-phase-6-7-gate.sh`: completed Phase 6/7 checklist and artifact gate.
+S5 retired the completed Phase 5 and Phase 6/7 source and checklist checks.
+Their source remains in Git history.
+The [S5 disposition](../../docs/plans/shell-test-reduction-s5.md) records remaining owners and intentional verification losses.
 
 The functional transport, rendering, resource-report, live kind, resilience,
 and cluster-manager tests remain under `scripts/` because they validate
@@ -19,10 +10,8 @@ externally meaningful behavior rather than temporary implementation shape.
 `normalize-local-images-for-kind.sh` also remains active because `kind-load`
 is still an explicitly supported compatibility fallback.
 
-`check-transaction-acceptance-criteria.sh` remains active because dedicated CI
-continuously enforces that cross-cutting transaction policy. The Account v2
-cutover guard also remains active because it prevents production callers from
-regressing to the retained v1 RPC.
+S5 also retired the transaction Markdown-heading framework and completed Account v2 cutover guard.
+Transaction policy review and existing Account/Risk behavior tests remain required.
 
 Category E retired the lifecycle and registry source-check suites.
 Existing command tests retain API-failure, manager-refusal, and publisher-lock safety checks.
