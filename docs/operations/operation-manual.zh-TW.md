@@ -120,7 +120,7 @@ findmnt -T "$(docker info --format '{{.DockerRootDir}}')"
 | 發布 images 並產生 digest lock | `scripts/publish-local-images.sh` |
 | Render local Kubernetes manifest | `scripts/render-local-kubernetes-manifest.sh` |
 | Local production-like gate | `scripts/run-local-production-like-certification.sh` |
-| Static resilience contract | `scripts/validate-local-resilience-contract.sh` |
+| Rendered manifest checks | `./gradlew manifestCheck` |
 | Runtime recovery diagnostics | 使用第 13 節的 property-specific focused runners |
 | 資源報告 | `scripts/local-resource-report.sh` |
 | 日常清理 | `scripts/simplematch-clean-local-disk.sh` |
@@ -646,15 +646,15 @@ Run evidence 保存 `run-context`、`source-revision`、`evidence-manifest.json`
 ### 13.1 Static deployment contract
 
 ```bash
-bash scripts/validate-local-resilience-contract.sh
+./gradlew manifestCheck
 ```
 
-此命令驗證 repository-rendered topology、placement、PDB、resource、dependency、probe 等 contract；其中五個複製的 Java workload 必須共用兩副本、local-resilience worker、hostname `maxSkew=1`／`DoNotSchedule`、`minAvailable=1` PDB，以及 portable-workload、`not-ready`、`unreachable` 三個 30 秒 `NoExecute` toleration。不會停止 worker，因此不能當成 runtime resilience evidence。
+此命令檢查渲染清單的 schema 與基本 probe policy。S5 已退役獨立的 resilience snapshot validator，不再逐項比對 replica、placement、PDB、toleration 與 probe timing 的固定值。這是刻意移除的靜態驗證責任，不代表已執行 runtime resilience 測試。詳見 [S5 disposition](../plans/shell-test-reduction-s5.md)。
 
 部署前的渲染清單檢查使用 `./gradlew manifestCheck`，CI 使用相同的 Gradle 任務。
 S4 已退役原 Phase 1 Shell 回歸集合。部署、故障與業務行為由各自的 runtime 入口驗證。
 原 `run-local-resilience.sh --profile contract` 集合入口與其 `run-result.json` 已退役。
-直接執行 static validator 時，以命令退出狀態與錯誤訊息判斷結果。
+以 Gradle 結果與 named test report 判斷渲染清單檢查結果。
 
 ### 13.2 Runtime recovery diagnostics
 

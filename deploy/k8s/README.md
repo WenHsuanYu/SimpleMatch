@@ -64,15 +64,16 @@ bash scripts/manage-simplematch-live.sh delete
 Normal local resilience cleanup never deletes this reusable cluster. It deletes only the generated
 run namespace and resources owned by that run.
 
-Static deployment contracts can be checked with:
+Check rendered manifest schemas and basic probe policy with:
 
 ```text
-bash scripts/validate-local-resilience-contract.sh
+./gradlew manifestCheck
 ```
 
-The validator checks rendered deployment policy. Its result cannot establish runtime recovery.
-Use `./gradlew manifestCheck` for the shared rendered-manifest check.
-The project retired the extra static collection and its custom result envelope.
+The result cannot establish runtime recovery.
+S5 retires the separate resilience snapshot validator and its exact-setting assertions.
+See the [disposition](../../docs/plans/shell-test-reduction-s5.md) for intentional verification losses.
+The project also retired the extra static collection and its custom result envelope.
 
 Runtime recovery uses focused diagnostics for a specific property.
 The project retired the former `full-local` workload-by-fault scenario matrix.

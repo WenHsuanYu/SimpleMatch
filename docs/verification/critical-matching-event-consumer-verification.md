@@ -128,12 +128,12 @@ Matching Event consumer for Account, Persistence, and QuickFIX. The application
 resource defaults remain disabled, so repository deployment configuration must
 opt into the critical consumer deliberately.
 
-`scripts/test-critical-consumer-kubernetes-config.sh` verifies that requirement
-through the ConfigMap `application.yaml` Interface. It reports the exact missing
-ConfigMap or configuration path rather than relying on implementation-specific
-parsing failures. `Local Resource Lifecycle CI` executes this contract together
-with the existing image, rendering, production-like configuration, resource
-lifecycle, and live kind registry/resource checks.
+S4 retired the standalone configuration snapshots in favor of shared manifest schema checks and basic probe policy.
+S5 removes the unused `test-critical-consumer-kubernetes-config.sh` alias.
+The canonical `scripts/end-to-end/critical-consumers/tests/deployment-contract.sh` still has current CI consumers.
+Those checks do not independently prove that the rendered ConfigMap enables each critical consumer.
+Review current configuration and use actual deployed behavior for that requirement.
+See the [S5 disposition](../plans/shell-test-reduction-s5.md) for retained owners and intentional verification losses.
 
 The TDD tracer first failed in Local Resource Lifecycle CI #141 because
 `quickfix-gateway-config` did not contain
@@ -141,8 +141,8 @@ The TDD tracer first failed in Local Resource Lifecycle CI #141 because
 setting, Local Resource Lifecycle CI #142 passed both the repository contracts
 and the live kind registry/resource smoke.
 
-This proves the retained Kubernetes configuration activates the consumer. It is
-not evidence that a deployed QuickFIX session has completed disconnect, resend,
+These historical results prove that the checked configuration activated the consumer at that source.
+They are not evidence that current configuration passed the retired check or that a deployed QuickFIX session completed disconnect, resend,
 or PostgreSQL/Kafka failure-and-restart certification.
 
 ## Domain and architecture records

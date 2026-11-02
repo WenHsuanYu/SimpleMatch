@@ -72,3 +72,24 @@ The intentional loss is the independent repeated 102,000-command calibration and
 Repeated calibration adds no separate basic functional requirement under the amended scope.
 Historical ten-cycle reports remain unchanged. This retirement makes no new soak, throughput, or deployed recovery claim.
 The separately consumed capacity launcher and deployed Matching scenarios remain pending their own cutover.
+
+## Remaining static snapshots and unused aliases
+
+R01 retains the shared `manifestCheck` owner from S4.
+Retire `scripts/validate-local-resilience-contract.sh` and its inline Ruby snapshot assertions.
+Its current callers are documentation procedures, not the deployed recovery runners.
+The intentional loss is independent matching of exact replica counts, placement, PDB values, tolerations, probe timing, and logging source patterns.
+Retirement also removes independent checks for declared resource requests/limits, Flyway deadlines and PostgreSQL wait initialization, and application metrics exposure.
+Canonical kind/StorageClass file-presence checks and the topic-provisioning Job presence check also retire.
+Schema validation and basic probe policy remain. They do not replace those exact assertions or prove runtime recovery.
+Runtime placement, dependency recovery, and serving requirements remain pending their own S5 dispositions and execution.
+
+Remove three compatibility aliases without adding replacements:
+
+- `scripts/lib/critical-consumer-certification-matching.sh` only sources the canonical `matching-status.sh` helper. Current runners source that canonical helper directly.
+- `scripts/test-critical-consumer-certification-matching.sh` only invokes the canonical `matching-status-contract.sh` test.
+- `scripts/test-critical-consumer-kubernetes-config.sh` only invokes the canonical `deployment-contract.sh` test.
+
+The canonical helpers and tests remain available for their current consumers.
+Alias deletion removes alternate invocation paths and no independent assertion.
+The frozen S0 inventory remains unchanged.
