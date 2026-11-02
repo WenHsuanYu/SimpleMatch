@@ -1,5 +1,6 @@
 plugins {
     `java-library`
+    `java-test-fixtures`
     id("simplematch.java-conventions")
     id("simplematch.java-quality")
 }
@@ -18,4 +19,9 @@ dependencies {
     testImplementation(libs.junit.jupiter)
     testRuntimeOnly(libs.junit.jupiter.engine)
     testRuntimeOnly(libs.junit.platform.launcher)
+    testFixturesApi(platform(libs.spring.boot.bom))
+    testFixturesApi("org.springframework:spring-jdbc")
+    testFixturesImplementation(libs.testcontainers.postgresql)
+    testFixturesRuntimeOnly("org.postgresql:postgresql")
+    testFixturesRuntimeOnly(libs.flyway.database.postgresql)
 }
