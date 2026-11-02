@@ -2,9 +2,7 @@ package com.simplematch.marketdataprojection.kafka;
 
 import com.simplematch.config.delivery.DeadLetterEvidence;
 import com.simplematch.config.delivery.DeadLetterStore;
-import java.util.Locale;
 import java.util.Objects;
-import org.springframework.jdbc.core.ConnectionCallback;
 import org.springframework.jdbc.core.JdbcTemplate;
 
 /** Stores non-critical delivery evidence durably before its source offset may be released. */
@@ -31,41 +29,18 @@ public final class JdbcMarketDataProjectionDeadLetterStore implements DeadLetter
       truncate(evidence.reason()),
       evidence.deadLetteredAt().toEpochMilli()
     };
-    if (isPostgres()) {
-      jdbcTemplate.update(
-          """
-          INSERT INTO market_data_projection.matching_event_dead_letters (
-            consumer_name, event_id, topic, partition_id, offset_value, payload, attempts,
-            failure_reason, dead_lettered_at_unix_ms
-          ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
-          ON CONFLICT (consumer_name, topic, partition_id, offset_value) DO NOTHING
-          """,
-          values);
-      return;
-    }
     jdbcTemplate.update(
         """
-        MERGE INTO market_data_projection.matching_event_dead_letters (
+        INSERT INTO market_data_projection.matching_event_dead_letters (
           consumer_name, event_id, topic, partition_id, offset_value, payload, attempts,
           failure_reason, dead_lettered_at_unix_ms
-        ) KEY(consumer_name, topic, partition_id, offset_value) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+        ON CONFLICT (consumer_name, topic, partition_id, offset_value) DO NOTHING
         """,
         values);
   }
 
   private String truncate(String value) {
     return value.length() <= MAX_REASON_LENGTH ? value : value.substring(0, MAX_REASON_LENGTH);
-  }
-
-  private boolean isPostgres() {
-    return Boolean.TRUE.equals(
-        jdbcTemplate.execute(
-            (ConnectionCallback<Boolean>)
-                connection ->
-                    connection
-                        .getMetaData()
-                        .getDatabaseProductName()
-                        .toLowerCase(Locale.ROOT)
-                        .contains("postgresql")));
   }
 }

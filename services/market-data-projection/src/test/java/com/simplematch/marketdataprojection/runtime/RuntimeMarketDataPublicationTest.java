@@ -3,6 +3,7 @@ package com.simplematch.marketdataprojection.runtime;
 import static org.assertj.core.api.Assertions.assertThat;
 
 import com.google.protobuf.ByteString;
+import com.simplematch.config.testsupport.PostgresTestDatabase;
 import com.simplematch.contracts.common.v2.Side;
 import com.simplematch.contracts.common.v2.VenueInstrument;
 import com.simplematch.contracts.matching.runtime.v1.ArtifactIdentity;
@@ -25,12 +26,11 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.UUID;
 import org.flywaydb.core.Flyway;
-import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.jdbc.datasource.DataSourceTransactionManager;
-import org.springframework.jdbc.datasource.SingleConnectionDataSource;
+import org.springframework.jdbc.datasource.DriverManagerDataSource;
 import org.springframework.transaction.support.TransactionTemplate;
 
 /** Verifies output and cache adapters recover independently from the durable projection state. */
@@ -39,23 +39,17 @@ class RuntimeMarketDataPublicationTest {
       Clock.fixed(Instant.parse("2026-08-11T01:02:03Z"), ZoneOffset.UTC);
   private static final String COMMAND_ID = "0198a001-0000-7000-8000-000000000001";
   private JdbcTemplate jdbcTemplate;
-  private SingleConnectionDataSource dataSource;
+  private DriverManagerDataSource dataSource;
   private JdbcMarketDataProjectionStore store;
   private MarketDataProjectionApplicationService service;
 
   @BeforeEach
   void setUp() {
-    dataSource =
-        new SingleConnectionDataSource(
-            "jdbc:h2:mem:"
-                + UUID.randomUUID().toString().replace("-", "")
-                + ";MODE=PostgreSQL;DB_CLOSE_DELAY=-1",
-            "sa",
-            "",
-            true);
-    dataSource.setDriverClassName("org.h2.Driver");
+    dataSource = PostgresTestDatabase.create("market-data-projection");
     Flyway.configure()
         .dataSource(dataSource)
+        .schemas("market_data_projection")
+        .defaultSchema("market_data_projection")
         .locations("classpath:db/migration/market-data-projection")
         .load()
         .migrate();
@@ -64,11 +58,6 @@ class RuntimeMarketDataPublicationTest {
     service =
         new MarketDataProjectionApplicationService(
             store, new TransactionTemplate(new DataSourceTransactionManager(dataSource)), CLOCK);
-  }
-
-  @AfterEach
-  void tearDown() {
-    dataSource.destroy();
   }
 
   @Test

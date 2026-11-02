@@ -9,10 +9,8 @@ import com.simplematch.marketdataprojection.runtime.LastTrade;
 import com.simplematch.marketdataprojection.runtime.MarketDataProjectionGapException;
 import com.simplematch.marketdataprojection.runtime.PriceLevel;
 import java.util.List;
-import java.util.Locale;
 import java.util.Optional;
 import java.util.UUID;
-import org.springframework.jdbc.core.ConnectionCallback;
 import org.springframework.jdbc.core.JdbcTemplate;
 
 /** Applies final Matching Event mutations to the rebuildable order-book projection. */
@@ -79,28 +77,18 @@ final class MarketDataOrderBookStore {
       rested.getLeavesQuantityShares(),
       eventId
     };
-    if (isPostgres()) {
-      jdbcTemplate.update(
-          """
-          INSERT INTO market_data_projection.order_book_entries (
-            order_id, venue_mic, symbol, side, price_units, leaves_quantity_shares, last_event_id
-          ) VALUES (?, ?, ?, ?, ?, ?, ?)
-          ON CONFLICT (order_id) DO UPDATE SET
-            venue_mic = EXCLUDED.venue_mic,
-            symbol = EXCLUDED.symbol,
-            side = EXCLUDED.side,
-            price_units = EXCLUDED.price_units,
-            leaves_quantity_shares = EXCLUDED.leaves_quantity_shares,
-            last_event_id = EXCLUDED.last_event_id
-          """,
-          values);
-      return;
-    }
     jdbcTemplate.update(
         """
-        MERGE INTO market_data_projection.order_book_entries (
+        INSERT INTO market_data_projection.order_book_entries (
           order_id, venue_mic, symbol, side, price_units, leaves_quantity_shares, last_event_id
-        ) KEY(order_id) VALUES (?, ?, ?, ?, ?, ?, ?)
+        ) VALUES (?, ?, ?, ?, ?, ?, ?)
+        ON CONFLICT (order_id) DO UPDATE SET
+          venue_mic = EXCLUDED.venue_mic,
+          symbol = EXCLUDED.symbol,
+          side = EXCLUDED.side,
+          price_units = EXCLUDED.price_units,
+          leaves_quantity_shares = EXCLUDED.leaves_quantity_shares,
+          last_event_id = EXCLUDED.last_event_id
         """,
         values);
   }
@@ -136,17 +124,5 @@ final class MarketDataOrderBookStore {
     jdbcTemplate.update(
         "DELETE FROM market_data_projection.order_book_entries WHERE order_id = ?",
         UUID.fromString(terminal.getOrderId()));
-  }
-
-  private boolean isPostgres() {
-    return Boolean.TRUE.equals(
-        jdbcTemplate.execute(
-            (ConnectionCallback<Boolean>)
-                connection ->
-                    connection
-                        .getMetaData()
-                        .getDatabaseProductName()
-                        .toLowerCase(Locale.ROOT)
-                        .contains("postgresql")));
   }
 }

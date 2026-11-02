@@ -4,9 +4,7 @@ import com.simplematch.marketdataprojection.cache.MarketDataSnapshotCacheEntry;
 import com.simplematch.marketdataprojection.runtime.LastTrade;
 import com.simplematch.marketdataprojection.runtime.MarketDataSnapshotView;
 import java.util.List;
-import java.util.Locale;
 import java.util.Optional;
-import org.springframework.jdbc.core.ConnectionCallback;
 import org.springframework.jdbc.core.JdbcTemplate;
 
 /** Stores the rebuildable complete per-instrument snapshot and Redis cache-repair state. */
@@ -50,35 +48,23 @@ final class MarketDataViewStore {
       true,
       view.generatedAtUnixMs()
     };
-    if (isPostgres()) {
-      jdbcTemplate.update(
-          """
-          INSERT INTO market_data_projection.instrument_market_data (
-            venue_mic, symbol, instrument_sequence, last_trade_price_units,
-            last_trade_quantity_shares, snapshot_event_id, snapshot_payload, source_partition_id,
-            source_offset_value, redis_snapshot_pending, updated_at_unix_ms
-          ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-          ON CONFLICT (venue_mic, symbol) DO UPDATE SET
-            instrument_sequence = EXCLUDED.instrument_sequence,
-            last_trade_price_units = EXCLUDED.last_trade_price_units,
-            last_trade_quantity_shares = EXCLUDED.last_trade_quantity_shares,
-            snapshot_event_id = EXCLUDED.snapshot_event_id,
-            snapshot_payload = EXCLUDED.snapshot_payload,
-            source_partition_id = EXCLUDED.source_partition_id,
-            source_offset_value = EXCLUDED.source_offset_value,
-            redis_snapshot_pending = EXCLUDED.redis_snapshot_pending,
-            updated_at_unix_ms = EXCLUDED.updated_at_unix_ms
-          """,
-          values);
-      return;
-    }
     jdbcTemplate.update(
         """
-        MERGE INTO market_data_projection.instrument_market_data (
+        INSERT INTO market_data_projection.instrument_market_data (
           venue_mic, symbol, instrument_sequence, last_trade_price_units,
           last_trade_quantity_shares, snapshot_event_id, snapshot_payload, source_partition_id,
           source_offset_value, redis_snapshot_pending, updated_at_unix_ms
-        ) KEY(venue_mic, symbol) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        ON CONFLICT (venue_mic, symbol) DO UPDATE SET
+          instrument_sequence = EXCLUDED.instrument_sequence,
+          last_trade_price_units = EXCLUDED.last_trade_price_units,
+          last_trade_quantity_shares = EXCLUDED.last_trade_quantity_shares,
+          snapshot_event_id = EXCLUDED.snapshot_event_id,
+          snapshot_payload = EXCLUDED.snapshot_payload,
+          source_partition_id = EXCLUDED.source_partition_id,
+          source_offset_value = EXCLUDED.source_offset_value,
+          redis_snapshot_pending = EXCLUDED.redis_snapshot_pending,
+          updated_at_unix_ms = EXCLUDED.updated_at_unix_ms
         """,
         values);
   }
@@ -116,17 +102,5 @@ final class MarketDataViewStore {
 
   void reset() {
     jdbcTemplate.update("DELETE FROM market_data_projection.instrument_market_data");
-  }
-
-  private boolean isPostgres() {
-    return Boolean.TRUE.equals(
-        jdbcTemplate.execute(
-            (ConnectionCallback<Boolean>)
-                connection ->
-                    connection
-                        .getMetaData()
-                        .getDatabaseProductName()
-                        .toLowerCase(Locale.ROOT)
-                        .contains("postgresql")));
   }
 }

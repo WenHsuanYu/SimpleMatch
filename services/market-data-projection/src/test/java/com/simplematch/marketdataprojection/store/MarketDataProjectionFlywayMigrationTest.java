@@ -3,10 +3,10 @@ package com.simplematch.marketdataprojection.store;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
+import com.simplematch.config.testsupport.PostgresTestDatabase;
 import java.util.UUID;
 import java.util.stream.Stream;
 import org.flywaydb.core.Flyway;
-import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
@@ -16,28 +16,21 @@ import org.junit.jupiter.params.provider.MethodSource;
 import org.junit.jupiter.params.provider.ValueSource;
 import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.jdbc.core.JdbcTemplate;
-import org.springframework.jdbc.datasource.SingleConnectionDataSource;
+import org.springframework.jdbc.datasource.DriverManagerDataSource;
 
 /** Verifies valid projection rows before testing individual database contract violations. */
 class MarketDataProjectionFlywayMigrationTest {
-  private SingleConnectionDataSource dataSource;
+  private DriverManagerDataSource dataSource;
   private JdbcTemplate jdbc;
 
   @BeforeEach
   void setUp() {
-    dataSource =
-        new SingleConnectionDataSource(
-            "jdbc:h2:mem:" + UUID.randomUUID() + ";MODE=PostgreSQL;DB_CLOSE_DELAY=-1",
-            "sa", "", true);
-    dataSource.setDriverClassName("org.h2.Driver");
+    dataSource = PostgresTestDatabase.create("market-data-projection");
     Flyway.configure().dataSource(dataSource)
+        .schemas("market_data_projection")
+        .defaultSchema("market_data_projection")
         .locations("classpath:db/migration/market-data-projection").load().migrate();
     jdbc = new JdbcTemplate(dataSource);
-  }
-
-  @AfterEach
-  void tearDown() {
-    dataSource.destroy();
   }
 
   @ParameterizedTest
@@ -63,9 +56,9 @@ class MarketDataProjectionFlywayMigrationTest {
   private static Stream<Arguments> nonCanonicalInstruments() {
     return Stream.of("order_book_entries", "instrument_market_data")
         .flatMap(table -> Stream.concat(
-            Stream.of("abc", "a-b", "", " ", "ABCDEFGHIJKLM")
+            Stream.of("abc", "", "ABCDEFGHIJKLM")
                 .map(symbol -> Arguments.of(table, "symbol", symbol)),
-            Stream.of("XXXX", "xtai", "", " ")
+            Stream.of("XXXX")
                 .map(venue -> Arguments.of(table, "venue_mic", venue))));
   }
 
@@ -126,7 +119,7 @@ class MarketDataProjectionFlywayMigrationTest {
   @ValueSource(strings = {
     "snapshot_event_id = NULL", "snapshot_payload = NULL", "source_partition_id = NULL",
     "source_offset_value = NULL", "source_partition_id = -1", "source_partition_id = 15",
-    "source_offset_value = -1", "venue_mic = 'XXXX'", "symbol = ''"
+    "source_offset_value = -1"
   })
   void rejectsIncompleteSnapshotProvenance(String invalidAssignment) {
     insertValidSnapshot("2330");

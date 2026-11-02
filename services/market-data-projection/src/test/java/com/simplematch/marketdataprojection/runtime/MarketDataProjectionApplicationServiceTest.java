@@ -4,6 +4,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 import com.google.protobuf.ByteString;
+import com.simplematch.config.testsupport.PostgresTestDatabase;
 import com.simplematch.contracts.common.v2.Side;
 import com.simplematch.contracts.common.v2.VenueInstrument;
 import com.simplematch.contracts.marketdata.runtime.v1.MarketDataSnapshot;
@@ -24,12 +25,11 @@ import java.time.ZoneOffset;
 import java.util.Optional;
 import java.util.UUID;
 import org.flywaydb.core.Flyway;
-import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.jdbc.datasource.DataSourceTransactionManager;
-import org.springframework.jdbc.datasource.SingleConnectionDataSource;
+import org.springframework.jdbc.datasource.DriverManagerDataSource;
 import org.springframework.transaction.support.TransactionTemplate;
 
 /** Verifies the public transaction seam for the rebuildable runtime market-data projection. */
@@ -47,22 +47,16 @@ class MarketDataProjectionApplicationServiceTest {
   private static final String TRADE_COMMAND_ID = "0198a001-0000-7000-8000-000000000003";
 
   private JdbcTemplate jdbcTemplate;
-  private SingleConnectionDataSource dataSource;
+  private DriverManagerDataSource dataSource;
   private MarketDataProjectionApplicationService service;
 
   @BeforeEach
   void setUp() {
-    dataSource =
-        new SingleConnectionDataSource(
-            "jdbc:h2:mem:"
-                + UUID.randomUUID().toString().replace("-", "")
-                + ";MODE=PostgreSQL;DB_CLOSE_DELAY=-1",
-            "sa",
-            "",
-            true);
-    dataSource.setDriverClassName("org.h2.Driver");
+    dataSource = PostgresTestDatabase.create("market-data-projection");
     Flyway.configure()
         .dataSource(dataSource)
+        .schemas("market_data_projection")
+        .defaultSchema("market_data_projection")
         .locations("classpath:db/migration/market-data-projection")
         .load()
         .migrate();
@@ -72,11 +66,6 @@ class MarketDataProjectionApplicationServiceTest {
             new JdbcMarketDataProjectionStore(jdbcTemplate),
             new TransactionTemplate(new DataSourceTransactionManager(dataSource)),
             Clock.fixed(Instant.parse("2026-08-11T01:02:03Z"), ZoneOffset.UTC));
-  }
-
-  @AfterEach
-  void tearDown() {
-    dataSource.destroy();
   }
 
   @Test
