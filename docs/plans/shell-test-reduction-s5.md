@@ -93,3 +93,16 @@ Remove three compatibility aliases without adding replacements:
 The canonical helpers and tests remain available for their current consumers.
 Alias deletion removes alternate invocation paths and no independent assertion.
 The frozen S0 inventory remains unchanged.
+
+## Native dependency preparation blocker
+
+The first `full-native-dev` invocation exceeded its 15-minute configure deadline while vcpkg built gRPC.
+This was a failed invocation, not a native-test PASS. No child compiler remained after termination.
+Its dependency plan selected future RPC, PostgreSQL, Redis, and observability libraries.
+Current CMake targets do not consume those capabilities.
+
+Keep `full-native-dev` on `tests`, `messaging`, and `json-config` plus the manifest's core dependencies.
+Retain `BUILD_TESTING=ON`, `SIMPLEMATCH_ENABLE_MESSAGING=ON`, and all existing native targets and test registrations.
+The optional capability definitions and dependency versions remain unchanged.
+This removes unused dependency preparation from the actual verification path, not a native test or product capability.
+Validate the corrected preset through the same Gradle/CMake/CTest interface with a new evidence directory.

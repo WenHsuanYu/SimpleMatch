@@ -110,8 +110,8 @@ This repo is primarily a Gradle/Java workspace today.
   mixing vcpkg Config mode with CMake's legacy `FindProtobuf` Module mode or manually rediscovering
   headers and archives that the package targets already describe.
 - CMake presets select only the capability features required by each configuration policy. The
-  `ci-fast` preset enables only the current native test closure, while `full-native-dev` enables the
-  complete planned native dependency set.
+  `ci-fast` preset enables the current core test closure. `full-native-dev` also enables the active
+  Kafka adapters and their tests. It does not build unused future RPC, database, cache, or tracing libraries.
 - `ci-fast` and `ci-sanitize` use the repository-owned `x64-linux-ci` overlay triplet. SimpleMatch
   remains a Debug build for CI correctness checks, while vcpkg builds third-party target and host
   dependencies as Release-only packages to reduce cold-cache work. Local `dev-debug` and
@@ -151,8 +151,9 @@ The main configuration policies are:
   vcpkg dependencies use the release-only `x64-linux-ci` triplet.
 - `ci-sanitize`: the `ci-fast` policy with ASan/UBSan enabled and the same release-only dependency
   triplet.
-- `full-native-dev`: all currently declared native capability features for broader future
-  development work, using the standard vcpkg Linux triplet.
+- `full-native-dev`: current native core and Kafka runtime adapters, fixture tools, and tests,
+  using the standard vcpkg Linux triplet. Optional future capability features remain available
+  in the manifest but are not prerequisites for this verification preset.
 
 All presets inherit the common Ninja and vcpkg toolchain configuration from the hidden
 `vcpkg-base` preset. `VCPKG_ROOT` must point to the vcpkg checkout before configuring locally.

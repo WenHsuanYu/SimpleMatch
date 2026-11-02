@@ -63,7 +63,7 @@ ctest --preset dev-debug
 
 三步分別解析依賴並建立 build tree、編譯、執行 CTest。`dev-debug` 的 build tree 在 `out/build/dev-debug/`；成功條件是 configure 與 build 皆成功，CTest 沒有 failed tests。若 configure 已失敗，先處理第一個 toolchain 或 dependency 錯誤，再繼續 build。
 
-`dev-debug` 包含目前核心 native 開發與測試所需的 features；Kafka runtime adapters 另受 `SIMPLEMATCH_ENABLE_MESSAGING` 控制。需要重現 PR gate 時用 `ci-fast`，需要 ASan/UBSan 時用 `ci-sanitize`；`full-native-dev` 啟用更廣的 capability features。各 preset 的精確開關以 [CMakePresets.json](../../CMakePresets.json) 和 [CMakeLists.txt](../../CMakeLists.txt) 為準，選擇前先確認該任務實際需要的範圍。
+`dev-debug` 包含目前核心 native 開發與測試所需的 features；Kafka runtime adapters 另受 `SIMPLEMATCH_ENABLE_MESSAGING` 控制。需要重現 PR gate 時用 `ci-fast`，需要 ASan/UBSan 時用 `ci-sanitize`；`full-native-dev` 加入現有 Kafka runtime adapters、fixture tools 與測試，不會預先建置沒有使用者的 RPC、PostgreSQL、Redis 或 observability libraries。各 preset 的精確開關以 [CMakePresets.json](../../CMakePresets.json) 和 [CMakeLists.txt](../../CMakeLists.txt) 為準，選擇前先確認該任務實際需要的範圍。
 
 ## 何時需要完整環境
 
