@@ -3,7 +3,11 @@ import java.util.UUID
 import javax.xml.parsers.DocumentBuilderFactory
 
 // CMake and CTest remain the only owners of native builds and assertions.
-val nativePreset = providers.gradleProperty("nativePreset").orElse("dev-debug").get()
+val completeInvocation = gradle.startParameter.taskNames.any {
+    it.substringAfterLast(':') == "verifyAll"
+}
+val nativePreset = providers.gradleProperty("nativePreset")
+    .orElse(if (completeInvocation) "full-native-dev" else "dev-debug").get()
 require(nativePreset in setOf("dev-debug", "full-native-dev", "ci-fast", "ci-sanitize")) {
     "nativePreset must name a supported CMake preset"
 }

@@ -3,6 +3,7 @@ plugins {
 }
 
 apply(from = "gradle/native-verification.gradle.kts")
+apply(from = "gradle/complete-verification.gradle.kts")
 
 allprojects {
     group = "com.simplematch"
