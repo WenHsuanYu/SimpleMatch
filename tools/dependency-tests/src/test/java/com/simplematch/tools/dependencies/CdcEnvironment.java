@@ -92,6 +92,8 @@ final class CdcEnvironment implements AutoCloseable {
             .withNetwork(network)
             .withEnv("BOOTSTRAP_SERVERS", internalBootstrap)
             .withEnv("GROUP_ID", "s2-" + runId)
+            // This single-worker fixture has no absent peer to await after a broker outage.
+            .withEnv("CONNECT_SCHEDULED_REBALANCE_MAX_DELAY_MS", "0")
             .withEnv("CONFIG_STORAGE_TOPIC", "s2-config")
             .withEnv("OFFSET_STORAGE_TOPIC", "s2-offsets")
             .withEnv("STATUS_STORAGE_TOPIC", "s2-status")

@@ -5,6 +5,7 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import com.fasterxml.jackson.databind.JsonNode;
 import com.simplematch.tools.recovery.CdcPublicationVerifier;
+import java.time.Duration;
 import java.time.Instant;
 import java.util.EnumMap;
 import org.junit.jupiter.api.Timeout;
@@ -52,6 +53,10 @@ class OutboxCdcIntegrationTest {
           brokerBaselines.put(owner, kafka.baseline(owner));
         }
         environment.stopBrokers();
+        if (replication == 3) {
+          // Exercise membership expiry independently of the host's broker shutdown speed.
+          Thread.sleep(Duration.ofSeconds(30));
+        }
         for (CdcOwner owner : CdcOwner.values()) {
           outbox.insert(owner, "broker-unavailable", 3);
           brokerProbes.put(owner, outbox.probe(owner, "broker-unavailable", null));

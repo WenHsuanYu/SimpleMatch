@@ -8,6 +8,20 @@ that those failures are expected to recur.
 
 ## Run preflight
 
+The RF3 CDC fixture exposed a Connect timing mismatch after all brokers stopped.
+The worker lost group membership and received an empty assignment with `delay=300000`.
+The default [cooperative rebalance delay](https://kafka.apache.org/43/kafka-connect/administration/)
+exceeded the fixture's 90-second recovery bound.
+The single-worker fixture now sets `CONNECT_SCHEDULED_REBALANCE_MAX_DELAY_MS=0`.
+It has no absent peer that needs delayed reassignment.
+The existing RF3 scenario holds the outage for 30 seconds so host shutdown speed cannot hide membership expiry.
+Keep the `RUNNING`, exact publication, actual crash/redelivery, and owned-cleanup assertions.
+Do not mask this delay with a longer observer wait or a connector restart.
+The [original CI failure](https://github.com/WenHsuanYu/SimpleMatch/actions/runs/41336494755/job/124937325562)
+reported `UNASSIGNED`. Local diagnostic `issue201-cdc-repro-r2` reproduced the empty delayed assignment
+and missing physical publication. The identical diagnostic passed in `issue201-cdc-repro-r3` after only the worker setting changed.
+Their redacted logs and test results remain under `.scratch/`.
+
 The first fresh S3 Desktop cluster also exposed the helper variant of DT-014/DT-017.
 The ten prepared business images imported successfully in an isolated diagnostic, but
 `kindest/local-path-helper:v20260131-7181c60a` failed through the default multi-platform import

@@ -58,3 +58,8 @@ Historical evidence retains its original commands and claims.
 The [Helm assessment](../research/helm-adoption-assessment.md) recommends retaining Kustomize in this slice.
 S4 introduces no chart. These offline changes provide no complete local or production certification result.
 The final handoff records executed checks and exact Shell/language deltas against the source revision.
+
+Final CDC CI exposed a bounded fixture blocker: cooperative reassignment could wait five minutes after broker loss.
+The single-worker fixture now disables that delay while retaining the original recovery deadline and exact delivery assertions.
+The existing RF3 scenario holds broker loss for 30 seconds to exercise the regression.
+See the [failure, fix, and prevention record](../agents/deployment-test-lessons.md#run-preflight).
