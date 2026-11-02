@@ -54,6 +54,7 @@
 
 | 要驗證或查核的範圍 | 文件及角色 |
 | --- | --- |
+| Native build 與 CTest | [Native verification](verification/native-verification.md)：透過 `./gradlew nativeTest` 執行既有 CMake/CTest suite，並保留新的 JUnit 結果。 |
 | Risk → Account reservation | [Account v2 live verification](verification/account-reservation-v2-live-verification.md)：跨 gRPC、Account、DB 與 outbox 的本機驗收程序。 |
 | Risk → Matching 與 replay | [Risk-to-Matching deployed E2E](verification/risk-matching-command-e2e.md)、[Risk restart／equivalent replay](verification/risk-matching-restart-replay.md)：基線與依賴該基線的恢復程序。 |
 | CDC publication | [Risk／Account CDC verification](verification/cdc-publication-verification.md)：應用交易與 Connect／Kafka 觀察的證據分層、retained evidence 與共用觀察介面。 |

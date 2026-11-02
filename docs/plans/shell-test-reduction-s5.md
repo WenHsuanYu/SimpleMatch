@@ -55,3 +55,20 @@ No service implementation, immutable analysis policy, historical report, or runt
 
 Current documentation removes the retired commands.
 The frozen S0 inventory and baseline remain historical records of the old paths.
+
+## Native verification owner
+
+R22 retains the native CMake/CTest suite and its actual command processing, replay, and integrity checks.
+Gradle `nativeTest` configures, builds, and executes those existing tests directly.
+The public test seam is the Gradle task and its fresh CTest JUnit report.
+The initial acceptance invocation failed because that task did not exist.
+Acceptance requires an actual native suite run, positive discovered tests, and no skipped or disabled results.
+Normal CMake/vcpkg build caches remain permitted. CTest executes again on every invocation.
+
+Retire `scripts/run-matching-local-depth-certification.sh` without translating its ten-cycle loop or aggregate report.
+The existing `MatchingPartitionRuntimeDriver` local-day test owns bounded 10,000-command replay.
+The existing `simplematch_matching_capacity_benchmark` CTest owns command/event integrity and deterministic checksums.
+The intentional loss is the independent repeated 102,000-command calibration and its report schema.
+Repeated calibration adds no separate basic functional requirement under the amended scope.
+Historical ten-cycle reports remain unchanged. This retirement makes no new soak, throughput, or deployed recovery claim.
+The separately consumed capacity launcher and deployed Matching scenarios remain pending their own cutover.

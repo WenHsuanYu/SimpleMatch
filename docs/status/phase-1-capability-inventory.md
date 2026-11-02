@@ -193,6 +193,8 @@ not change accepted Phase 1 capability status or upgrade focused evidence to an 
   deterministic state and serialized-event checksums, zero loss, and zero duplicates. Evidence is
   under `out/certification/matching-local-depth/final-20260815/`. This is the side-project's
   bounded local-day and soak profile, not a 24-hour wall-clock endurance run.
+  S5 later retired the separate ten-cycle loop. Its historical measurements remain unchanged.
+  Current basic native verification uses the [existing CTest suite through Gradle](../verification/native-verification.md).
 - The Docker data move was corrected before the fresh 2026-08-15 run: Docker now uses a
   Linux-backed root, the repository preflight verified `simplematch-live` as one control-plane plus
   three labelled workers, and the canonical Kubernetes workload run completed. The earlier NTFS
@@ -963,7 +965,9 @@ implementation blocker.
   local-day profile fixes 150 books, 34 measured iterations, 10 cycles, 102,000 commands/events,
   a 256 resting-order bound, warmup, rate, deterministic checksums, RSS, latency percentiles,
   throughput, and zero loss/duplicates. The local PVC request envelope is 87 GiB and is logical
-  local-path reservation rather than immediate allocation. Those earlier resource totals were
+  local-path reservation rather than immediate allocation. S5 retired that separate repeated native calibration profile.
+  The [disposition](../plans/shell-test-reduction-s5.md) records the coverage loss and retained CTest owners.
+  Historical resource totals remain evidence for their original profiles. Those earlier totals were
   about 38.63 GiB steady and 45.75 GiB including one-shot Jobs. The current rendered full overlay
   requests 41.7421875 GiB steady and 47.8671875 GiB including all Jobs; the explicitly partial
   Matching fleet selection requests 34.2421875 GiB steady and 34.3671875 GiB including its Job

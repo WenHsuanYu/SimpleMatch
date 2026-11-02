@@ -255,12 +255,13 @@ process's effective CPU affinity when the operator supplies `SIMPLEMATCH_BENCHMA
 is evidence about the benchmark process only; it does not prove Kubernetes CPU Manager placement
 or live Matching writer isolation. The operator must record the actual CPU-manager policy, cgroup
 quota, governor, workload/depth/rate, and ring occupancy alongside the JSON report. A direct-core
-pass therefore does not satisfy the production gate by itself. The
-For this side project, the local completion profile uses the bounded local-day envelope and the
-10-cycle repeated checksum run below. A later production-shaped promotion may choose a 24-hour
-wall-clock soak or larger replay profile, but those are not required for the repository-owned local
-completion gate. The local gate still measures Kafka end-to-end percentiles and the 60-second
-lag/120-second replacement bounds.
+pass therefore does not satisfy the production gate by itself.
+S5 retires the separate ten-cycle local-depth loop and its aggregate report.
+The existing CTest suite retains bounded 10,000-command replay and the native integrity benchmark.
+Use `./gradlew nativeTest` to configure, build, and execute that suite with a fresh JUnit report.
+The [S5 disposition](../plans/shell-test-reduction-s5.md) records the intentional loss of repeated calibration.
+Historical ten-cycle results remain evidence for their original source and date.
+This native task does not establish Kafka latency, deployed recovery, or production endurance.
 
 For repository-owned deployed evidence, use the read-only collector:
 

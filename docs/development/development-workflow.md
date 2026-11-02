@@ -203,6 +203,9 @@ Historical verification records retain the results of checks that ran before ret
     - GitHub Actions uses the `ci-fast` CMake preset for the current native dependency and test
       closure.
 - Native build:
+    - `./gradlew nativeTest` configures, builds, and executes the existing `dev-debug` CTest suite.
+      Use `-PnativePreset=<preset>` to select `full-native-dev`, `ci-fast`, or `ci-sanitize`.
+      See the [native verification interface](../verification/native-verification.md).
     - `cmake --preset dev-debug`
     - `cmake --build --preset dev-debug --parallel`
     - `ctest --preset dev-debug`
