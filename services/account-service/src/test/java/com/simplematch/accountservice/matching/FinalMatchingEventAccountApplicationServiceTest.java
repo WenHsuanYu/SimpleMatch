@@ -3,6 +3,7 @@ package com.simplematch.accountservice.matching;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
+import com.simplematch.config.testsupport.PostgresTestDatabase;
 import com.simplematch.accountservice.authority.AccountId;
 import com.simplematch.accountservice.reservation.AccountMatchingExecutionHandler;
 import com.simplematch.accountservice.reservation.ExecutionFill;
@@ -21,12 +22,10 @@ import java.util.Arrays;
 import java.util.List;
 import java.util.UUID;
 import org.flywaydb.core.Flyway;
-import org.junit.jupiter.api.AfterEach;
-import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.jdbc.datasource.DataSourceTransactionManager;
-import org.springframework.jdbc.datasource.SingleConnectionDataSource;
+import org.springframework.jdbc.datasource.DriverManagerDataSource;
 import org.springframework.transaction.support.TransactionTemplate;
 
 /** Verifies Account's final-event application Interface owns one local transaction. */
@@ -38,23 +37,16 @@ class FinalMatchingEventAccountApplicationServiceTest {
   private static final FinalMatchingEventAccountCommand.PayloadFingerprint PAYLOAD_FINGERPRINT =
       new FinalMatchingEventAccountCommand.PayloadFingerprint(bytes(2));
 
-  private SingleConnectionDataSource dataSource;
+  private DriverManagerDataSource dataSource;
   private JdbcTemplate jdbcTemplate;
   private JdbcFinalMatchingEventAccountInbox inbox;
 
-  @BeforeEach
-  void setUp() {
-    dataSource =
-        new SingleConnectionDataSource(
-            "jdbc:h2:mem:"
-                + UUID.randomUUID().toString().replace("-", "")
-                + ";MODE=PostgreSQL;DB_CLOSE_DELAY=-1",
-            "sa",
-            "",
-            true);
-    dataSource.setDriverClassName("org.h2.Driver");
+  private void usePostgres() {
+    dataSource = PostgresTestDatabase.create("account-service");
     Flyway.configure()
         .dataSource(dataSource)
+        .schemas("account_service")
+        .defaultSchema("account_service")
         .locations("classpath:db/migration/account-service")
         .load()
         .migrate();
@@ -62,13 +54,9 @@ class FinalMatchingEventAccountApplicationServiceTest {
     inbox = new JdbcFinalMatchingEventAccountInbox(jdbcTemplate);
   }
 
-  @AfterEach
-  void tearDown() {
-    dataSource.destroy();
-  }
-
   @Test
   void appliesTranslatedEffectsAndProgressAfterClaimingTheExactEvent() {
+    usePostgres();
     final List<MatchingAccountEffect> applied = new ArrayList<>();
     final FinalMatchingEventAccountApplicationService service = service(applied::add);
     final FinalMatchingEventAccountCommand command = command(PAYLOAD_FINGERPRINT, effects());
@@ -83,6 +71,7 @@ class FinalMatchingEventAccountApplicationServiceTest {
 
   @Test
   void deduplicatesExactReplayBeforeApplyingAccountEffects() {
+    usePostgres();
     final List<MatchingAccountEffect> applied = new ArrayList<>();
     final FinalMatchingEventAccountApplicationService service = service(applied::add);
     final FinalMatchingEventAccountCommand command = command(PAYLOAD_FINGERPRINT, effects());
@@ -97,6 +86,7 @@ class FinalMatchingEventAccountApplicationServiceTest {
 
   @Test
   void failsClosedWhenTheSameEventIdentityHasDifferentRawValueEvidence() {
+    usePostgres();
     final FinalMatchingEventAccountApplicationService service = service(ignored -> {});
 
     assertThat(service.apply(command(PAYLOAD_FINGERPRINT, List.of()), 0, 42L))
@@ -111,6 +101,7 @@ class FinalMatchingEventAccountApplicationServiceTest {
 
   @Test
   void rollsBackInboxAndProgressWhenAnAccountEffectFails() {
+    usePostgres();
     final FinalMatchingEventAccountApplicationService service =
         service(
             effect -> {

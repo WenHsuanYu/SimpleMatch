@@ -5,6 +5,7 @@ import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 
+import com.simplematch.config.testsupport.PostgresTestDatabase;
 import com.google.protobuf.InvalidProtocolBufferException;
 import com.simplematch.accountservice.matching.AccountFinalMatchingEventStatus;
 import com.simplematch.accountservice.matching.FinalMatchingEventAccountApplicationService;
@@ -44,12 +45,11 @@ import org.apache.kafka.clients.consumer.Consumer;
 import org.apache.kafka.clients.consumer.ConsumerRecord;
 import org.apache.kafka.common.TopicPartition;
 import org.flywaydb.core.Flyway;
-import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.jdbc.datasource.DataSourceTransactionManager;
-import org.springframework.jdbc.datasource.SingleConnectionDataSource;
+import org.springframework.jdbc.datasource.DriverManagerDataSource;
 import org.springframework.kafka.support.Acknowledgment;
 import org.springframework.transaction.support.TransactionTemplate;
 
@@ -65,24 +65,18 @@ class FinalMatchingEventAccountConsumerTest {
   private static final String MAKER_ORDER_ID = "0198a001-0000-7000-8000-000000000011";
   private static final String TAKER_ORDER_ID = "0198a001-0000-7000-8000-000000000012";
 
-  private SingleConnectionDataSource dataSource;
+  private DriverManagerDataSource dataSource;
   private JdbcTemplate jdbcTemplate;
   private TransactionTemplate transactions;
   private AccountReservationApplicationService reservationService;
 
   @BeforeEach
   void setUp() {
-    dataSource =
-        new SingleConnectionDataSource(
-            "jdbc:h2:mem:"
-                + UUID.randomUUID().toString().replace("-", "")
-                + ";MODE=PostgreSQL;DB_CLOSE_DELAY=-1",
-            "sa",
-            "",
-            true);
-    dataSource.setDriverClassName("org.h2.Driver");
+    dataSource = PostgresTestDatabase.create("account-service");
     Flyway.configure()
         .dataSource(dataSource)
+        .schemas("account_service")
+        .defaultSchema("account_service")
         .locations("classpath:db/migration/account-service")
         .load()
         .migrate();
@@ -96,11 +90,6 @@ class FinalMatchingEventAccountConsumerTest {
             new JdbcAccountOutboxRepository(jdbcTemplate),
             CLOCK);
     provisionNativeTradeReservations();
-  }
-
-  @AfterEach
-  void tearDown() {
-    dataSource.destroy();
   }
 
   @Test

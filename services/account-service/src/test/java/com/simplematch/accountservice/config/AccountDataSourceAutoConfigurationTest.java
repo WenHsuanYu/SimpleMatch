@@ -5,8 +5,6 @@ import static org.assertj.core.api.Assertions.assertThat;
 import com.simplematch.config.PostgresProperties;
 import com.simplematch.config.SimpleMatchDataSourceAutoConfiguration;
 import com.zaxxer.hikari.HikariDataSource;
-import java.sql.Connection;
-import java.sql.SQLException;
 import javax.sql.DataSource;
 import org.junit.jupiter.api.Test;
 import org.springframework.boot.autoconfigure.AutoConfigurations;
@@ -29,7 +27,7 @@ class AccountDataSourceAutoConfigurationTest {
     contextRunner
         .withPropertyValues(
             "simplematch.postgres.dsn=postgresql://alice:secret@db.example:5433/simplematch?sslmode=require",
-            "spring.datasource.url=jdbc:h2:mem:wrong-source")
+            "spring.datasource.url=jdbc:postgresql://configuration.invalid:5432/wrong-source")
         .run(
             context -> {
               assertThat(context).hasNotFailed();
@@ -44,39 +42,6 @@ class AccountDataSourceAutoConfigurationTest {
               assertThat(dataSource.getSchema()).isEqualTo("account_service");
               assertThat(dataSource.getMaximumPoolSize()).isEqualTo(4);
               assertThat(dataSource.getPoolName()).isEqualTo("account-service-hikari");
-            });
-  }
-
-  @Test
-  void keepsH2TestDsnUsableWithAccountSchemaAndPoolPolicy() {
-    contextRunner
-        .withPropertyValues(
-            "simplematch.postgres.dsn=jdbc:h2:mem:account_auto_config;MODE=PostgreSQL;DB_CLOSE_DELAY=-1;INIT=CREATE SCHEMA IF NOT EXISTS account_service\\;SET SCHEMA account_service",
-            "spring.datasource.url=jdbc:h2:mem:wrong-source")
-        .run(
-            context -> {
-              assertThat(context).hasNotFailed();
-              final HikariDataSource dataSource = context.getBean(HikariDataSource.class);
-
-              assertThat(dataSource.getJdbcUrl()).startsWith("jdbc:h2:mem:account_auto_config");
-              assertThat(dataSource.getMaximumPoolSize()).isEqualTo(4);
-              assertThat(dataSource.getPoolName()).isEqualTo("account-service-hikari");
-              assertThat(currentSchema(dataSource)).isEqualTo("account_service");
-            });
-  }
-
-  @Test
-  void createsAndSelectsAccountSchemaWhenH2DsnHasNoInitClause() {
-    contextRunner
-        .withPropertyValues(
-            "simplematch.postgres.dsn=jdbc:h2:mem:account_auto_config_without_init;MODE=PostgreSQL;DB_CLOSE_DELAY=-1",
-            "spring.datasource.url=jdbc:h2:mem:wrong-source")
-        .run(
-            context -> {
-              assertThat(context).hasNotFailed();
-              final HikariDataSource dataSource = context.getBean(HikariDataSource.class);
-
-              assertThat(currentSchema(dataSource)).isEqualTo("account_service");
             });
   }
 
@@ -129,14 +94,6 @@ class AccountDataSourceAutoConfigurationTest {
       current = current.getCause();
     }
     return current;
-  }
-
-  private static String currentSchema(HikariDataSource dataSource) {
-    try (Connection connection = dataSource.getConnection()) {
-      return connection.getSchema();
-    } catch (SQLException exception) {
-      throw new AssertionError("H2 DataSource could not open a connection", exception);
-    }
   }
 
   @Configuration(proxyBeanMethods = false)

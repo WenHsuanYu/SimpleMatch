@@ -7,25 +7,44 @@ import com.simplematch.config.EnvironmentProperties;
 import com.simplematch.config.GrpcProperties;
 import com.simplematch.config.PostgresProperties;
 import com.simplematch.config.SimpleMatchDataSourceSettings;
+import com.simplematch.config.testsupport.PostgresTestDatabase;
 import com.zaxxer.hikari.HikariDataSource;
 import javax.sql.DataSource;
+import org.flywaydb.core.Flyway;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.jdbc.core.JdbcTemplate;
+import org.springframework.jdbc.datasource.DriverManagerDataSource;
 import org.springframework.test.context.ActiveProfiles;
+import org.springframework.test.context.DynamicPropertyRegistry;
+import org.springframework.test.context.DynamicPropertySource;
 
 @SpringBootTest(
     properties = {
-      "simplematch.postgres.dsn=jdbc:h2:mem:account_context;MODE=PostgreSQL;DB_CLOSE_DELAY=-1;INIT=CREATE SCHEMA IF NOT EXISTS account_service\\\\;SET SCHEMA account_service",
-      "spring.datasource.url=jdbc:h2:mem:wrong-source",
+      "spring.datasource.url=jdbc:postgresql://configuration.invalid:5432/wrong-source",
       "simplematch.account-service.grpc.enabled=false",
       "spring.flyway.enabled=false",
       "spring.main.web-application-type=none"
     })
 @ActiveProfiles("test")
 class AccountServiceApplicationTest {
+  private static final DriverManagerDataSource DATABASE = database();
+
+  @DynamicPropertySource
+  static void databaseProperties(DynamicPropertyRegistry registry) {
+    registry.add("simplematch.postgres.dsn", () -> PostgresTestDatabase.dsn(DATABASE));
+  }
+
+  private static DriverManagerDataSource database() {
+    final var source = PostgresTestDatabase.create("account-service");
+    Flyway.configure().dataSource(source).schemas("account_service")
+        .defaultSchema("account_service").locations("classpath:db/migration/account-service")
+        .load().migrate();
+    return source;
+  }
+
   @Autowired private EnvironmentProperties environmentProperties;
 
   @Autowired private PostgresProperties postgresProperties;
@@ -46,9 +65,7 @@ class AccountServiceApplicationTest {
   void contextLoadsWithSharedConfig() {
     assertThat(environmentProperties.environment()).isEqualTo("test");
     assertThat(runtime.grpcPort()).isEqualTo(50051);
-    assertThat(postgresProperties.dsn())
-        .isEqualTo(
-            "jdbc:h2:mem:account_context;MODE=PostgreSQL;DB_CLOSE_DELAY=-1;INIT=CREATE SCHEMA IF NOT EXISTS account_service\\;SET SCHEMA account_service");
+    assertThat(postgresProperties.dsn()).isEqualTo(PostgresTestDatabase.dsn(DATABASE));
     assertThat(
             AccountServiceRuntime.from(
                     new GrpcProperties(
@@ -66,9 +83,7 @@ class AccountServiceApplicationTest {
     assertThat(dataSourceSettings.poolName()).isEqualTo("account-service-hikari");
 
     final HikariDataSource hikariDataSource = (HikariDataSource) dataSource;
-    assertThat(hikariDataSource.getJdbcUrl())
-        .isEqualTo(
-            "jdbc:h2:mem:account_context;MODE=PostgreSQL;DB_CLOSE_DELAY=-1;INIT=CREATE SCHEMA IF NOT EXISTS account_service\\;SET SCHEMA account_service");
+    assertThat(hikariDataSource.getJdbcUrl()).isEqualTo(DATABASE.getUrl());
     assertThat(hikariDataSource.getMaximumPoolSize()).isEqualTo(4);
     assertThat(hikariDataSource.getPoolName()).isEqualTo("account-service-hikari");
     assertThat(jdbcTemplate.queryForObject("SELECT CURRENT_SCHEMA()", String.class))

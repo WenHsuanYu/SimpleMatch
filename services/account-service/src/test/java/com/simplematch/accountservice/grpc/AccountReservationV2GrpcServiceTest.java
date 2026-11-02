@@ -4,7 +4,9 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.when;
+import static org.mockito.Mockito.verifyNoInteractions;
 
+import com.simplematch.config.testsupport.PostgresTestDatabase;
 import com.simplematch.accountservice.reservation.AccountReservationApplicationService;
 import com.simplematch.accountservice.reservation.AccountReservationInvariantException;
 import com.simplematch.accountservice.reservation.ReserveOperation;
@@ -44,18 +46,21 @@ class AccountReservationV2GrpcServiceTest {
 
   private JdbcTemplate jdbcTemplate;
   private AccountReservationV2GrpcService service;
+  private AccountReservationApplicationService application;
 
   @BeforeEach
   void setUp() {
-    final DriverManagerDataSource dataSource = new DriverManagerDataSource();
-    dataSource.setDriverClassName("org.h2.Driver");
-    dataSource.setUrl(
-        "jdbc:h2:mem:"
-            + UUID.randomUUID()
-            + ";MODE=PostgreSQL;DB_CLOSE_DELAY=-1;INIT=CREATE SCHEMA IF NOT EXISTS account_service\\;SET SCHEMA account_service");
+    application = mock(AccountReservationApplicationService.class);
+    service = new AccountReservationV2GrpcService(application);
+  }
+
+  private void usePostgres() {
+    final DriverManagerDataSource dataSource = PostgresTestDatabase.create("account-service");
     jdbcTemplate = new JdbcTemplate(dataSource);
     Flyway.configure()
         .dataSource(dataSource)
+        .schemas("account_service")
+        .defaultSchema("account_service")
         .locations("classpath:db/migration/account-service")
         .load()
         .migrate();
@@ -73,6 +78,7 @@ class AccountReservationV2GrpcServiceTest {
   @DisplayName("v2 reserve returns a typed lifecycle outcome and replays equivalent requests")
   @Test
   void reserveReturnsTypedOutcomeAndReplaysEquivalentRequest() {
+    usePostgres();
     final ReservationCommand request = validRequest();
     final TestStreamObserver<AccountLifecycleEvent> first = new TestStreamObserver<>();
     final TestStreamObserver<AccountLifecycleEvent> second = new TestStreamObserver<>();
@@ -99,6 +105,7 @@ class AccountReservationV2GrpcServiceTest {
   @DisplayName("v2 reserve distinguishes conflicting command reuse")
   @Test
   void reserveRejectsConflictingCommandReuse() {
+    usePostgres();
     service.reserve(validRequest(), new TestStreamObserver<>());
     final ReservationCommand conflicting =
         validRequest().toBuilder()
@@ -118,6 +125,7 @@ class AccountReservationV2GrpcServiceTest {
   @DisplayName("v2 reserve treats a changed venue as a request conflict")
   @Test
   void reserveRejectsChangedVenueForTheSameCommand() {
+    usePostgres();
     service.reserve(validRequest(), new TestStreamObserver<>());
     final ReservationCommand conflicting =
         validRequest()
@@ -149,10 +157,7 @@ class AccountReservationV2GrpcServiceTest {
 
     assertThat(Status.fromThrowable(observer.error()).getCode())
         .isEqualTo(Status.Code.INVALID_ARGUMENT);
-    assertThat(
-            jdbcTemplate.queryForObject(
-                "SELECT COUNT(*) FROM account_service.account_reservations", Integer.class))
-        .isZero();
+    verifyNoInteractions(application);
   }
 
   @DisplayName("v2 reserve rejects malformed event metadata before persistence")
@@ -171,10 +176,7 @@ class AccountReservationV2GrpcServiceTest {
     assertThat(observer.error()).isNotNull();
     assertThat(Status.fromThrowable(observer.error()).getCode())
         .isEqualTo(Status.Code.INVALID_ARGUMENT);
-    assertThat(
-            jdbcTemplate.queryForObject(
-                "SELECT COUNT(*) FROM account_service.account_reservations", Integer.class))
-        .isZero();
+    verifyNoInteractions(application);
   }
 
   @DisplayName("v2 reserve requires an explicit business trading day")
@@ -188,10 +190,7 @@ class AccountReservationV2GrpcServiceTest {
         .isEqualTo(Status.Code.INVALID_ARGUMENT);
     assertThat(Status.fromThrowable(observer.error()).getDescription())
         .isEqualTo("trading_day.iso_date must not be blank");
-    assertThat(
-            jdbcTemplate.queryForObject(
-                "SELECT COUNT(*) FROM account_service.account_reservations", Integer.class))
-        .isZero();
+    verifyNoInteractions(application);
   }
 
   @DisplayName("v2 reserve reports Account invariant failures as failed precondition")

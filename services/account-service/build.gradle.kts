@@ -13,7 +13,7 @@ dependencies {
     implementation(libs.grpc.protobuf)
     implementation(libs.grpc.stub)
 
-    testImplementation(libs.h2)
+    testImplementation(testFixtures(project(":shared-java:simplematch-config")))
     testImplementation(libs.flyway.core)
     testImplementation("org.springframework:spring-jdbc")
 }

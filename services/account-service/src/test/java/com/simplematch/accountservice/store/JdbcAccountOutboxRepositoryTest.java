@@ -3,6 +3,7 @@ package com.simplematch.accountservice.store;
 import static org.assertj.core.api.Assertions.assertThat;
 
 import com.simplematch.accountservice.authority.AccountLifecycleOutbox;
+import com.simplematch.config.testsupport.PostgresTestDatabase;
 import java.util.UUID;
 import org.flywaydb.core.Flyway;
 import org.junit.jupiter.api.DisplayName;
@@ -67,15 +68,11 @@ class JdbcAccountOutboxRepositoryTest {
   }
 
   private DriverManagerDataSource dataSource() {
-    final DriverManagerDataSource dataSource = new DriverManagerDataSource();
-    dataSource.setDriverClassName("org.h2.Driver");
-    dataSource.setUrl(
-        "jdbc:h2:mem:account-outbox-"
-            + UUID.randomUUID()
-            + ";MODE=PostgreSQL;DB_CLOSE_DELAY=-1;"
-            + "INIT=CREATE SCHEMA IF NOT EXISTS account_service\\;SET SCHEMA account_service");
+    final DriverManagerDataSource dataSource = PostgresTestDatabase.create("account-service");
     Flyway.configure()
         .dataSource(dataSource)
+        .schemas("account_service")
+        .defaultSchema("account_service")
         .locations("classpath:db/migration/account-service")
         .load()
         .migrate();

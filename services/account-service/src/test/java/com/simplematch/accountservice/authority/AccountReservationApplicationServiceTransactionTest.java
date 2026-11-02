@@ -3,6 +3,7 @@ package com.simplematch.accountservice.authority;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
+import com.simplematch.config.testsupport.PostgresTestDatabase;
 import com.google.protobuf.InvalidProtocolBufferException;
 import com.simplematch.accountservice.reservation.AccountReservationApplicationService;
 import com.simplematch.accountservice.reservation.ApplyFillOperation;
@@ -506,14 +507,12 @@ class AccountReservationApplicationServiceTransactionTest {
   static class TestConfiguration {
     @Bean
     DriverManagerDataSource dataSource() {
-      final DriverManagerDataSource dataSource = new DriverManagerDataSource();
-      dataSource.setDriverClassName("org.h2.Driver");
-      dataSource.setUrl(
-          "jdbc:h2:mem:account-authority;MODE=PostgreSQL;DB_CLOSE_DELAY=-1;"
-              + "INIT=CREATE SCHEMA IF NOT EXISTS account_service\\;SET SCHEMA account_service");
+      final DriverManagerDataSource dataSource = PostgresTestDatabase.create("account-service");
       Flyway.configure()
           .dataSource(dataSource)
-          .locations("classpath:db/migration/account-service")
+          .schemas("account_service")
+        .defaultSchema("account_service")
+        .locations("classpath:db/migration/account-service")
           .load()
           .migrate();
       return dataSource;
