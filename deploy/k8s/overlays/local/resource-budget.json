@@ -24,6 +24,21 @@
       "Job/account-service-flyway",
       "Job/risk-service-flyway",
       "Job/kafka-topic-provisioning"
+    ],
+    "resting-buy": [
+      "Deployment/account-service",
+      "Deployment/risk-service",
+      "Deployment/kafka-connect",
+      "StatefulSet/kafka",
+      "StatefulSet/postgres",
+      "Job/account-service-flyway",
+      "Job/risk-service-flyway",
+      "Job/kafka-topic-provisioning",
+      "Deployment/persistence",
+      "StatefulSet/quickfix-gateway",
+      "StatefulSet/matching",
+      "Job/persistence-flyway",
+      "Job/quickfix-gateway-flyway"
     ]
   }
 }

@@ -20,6 +20,12 @@ dependencies {
     testRuntimeOnly(libs.junit.platform.launcher)
 }
 
+val scenario = providers.gradleProperty("kubernetesScenario").orElse("risk-command").get()
+require(scenario in setOf("risk-command", "resting-buy")) { "Unsupported Kubernetes scenario" }
+val javaServices = if (scenario == "resting-buy")
+    listOf("account-service", "risk-service", "persistence", "quickfix-gateway")
+else listOf("account-service", "risk-service")
+
 val dockerContext = providers.gradleProperty("kubernetesDockerContext").orElse(providers.exec {
     commandLine("docker", "context", "show")
 }.standardOutput.asText.map { it.trim() })
@@ -87,7 +93,7 @@ preflight.configure { dependsOn(manifestTest) }
 val platformImages = registerBuildInputs("acquireKubernetesPlatformImages", "pull")
 platformImages.configure { dependsOn(preflight) }
 var previous: TaskProvider<out Task> = platformImages
-for (service in listOf("account-service", "risk-service")) {
+for (service in javaServices) {
     evaluationDependsOn(":services:$service")
     val owner = project(":services:$service")
     val predecessor = previous
@@ -129,7 +135,7 @@ for (image in listOf("flyway-runner", "risk-matching-e2e-verifier")) {
         it.replaceFirstChar(Char::uppercaseChar)
     } + "Image", listOf("-f", "deploy/docker/Dockerfile.$image", "-t", "simplematch/$image:$imageTag"))
 }
-for (service in listOf("account-service", "risk-service")) {
+for (service in javaServices) {
     dockerBuild("normalizeKubernetes" + service.substringBefore('-').replaceFirstChar(Char::uppercaseChar),
         listOf("-f", "deploy/docker/Dockerfile.kind-normalized", "--build-arg",
             "SOURCE_IMAGE=simplematch/$service:$imageTag-boot", "-t", "simplematch/$service:$imageTag"))

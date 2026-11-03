@@ -22,14 +22,16 @@ record KubernetesPrerequisites(DockerIdentity docker, KubernetesInput input,
         settings.dockerContext().command("info", "--format", "{{json .}}"), "",
         Duration.ofSeconds(30)).checked());
     final var input = KubernetesInput.load(settings.delivery(), settings.day());
-    final var profile = KubernetesProfile.render(settings.root(), commands);
+    final var profile = "resting-buy".equals(settings.scenario())
+        ? KubernetesProfile.restingBuy(settings.root(), commands)
+        : KubernetesProfile.render(settings.root(), commands);
     final var yaml = new ObjectMapper(new YAMLFactory());
     final var manifest = new StringBuilder();
     for (var document : profile.documents()) {
       manifest.append(yaml.writeValueAsString(document));
     }
     final JsonNode budget = json.readTree(commands.run(List.of("ruby",
-        "scripts/local-resource-budget.rb", "--manifest", "-", "--profile", "risk-command",
+        "scripts/local-resource-budget.rb", "--manifest", "-", "--profile", settings.scenario(),
         "--host-memory-bytes", info.path("MemTotal").asText(), "--check"),
         manifest.toString(), Duration.ofSeconds(30)).checked());
     requireTools(commands);

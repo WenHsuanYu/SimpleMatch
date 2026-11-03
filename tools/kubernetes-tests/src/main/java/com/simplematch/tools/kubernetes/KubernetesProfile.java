@@ -62,6 +62,28 @@ record KubernetesProfile(List<JsonNode> documents) {
     return new KubernetesProfile(selected);
   }
 
+  Set<String> javaServices() {
+    return documents.stream().filter(document ->
+        Set.of("Deployment", "StatefulSet").contains(document.path("kind").asText()))
+        .map(document -> document.path("metadata").path("name").asText())
+        .filter(Set.of("account-service", "risk-service",
+            "persistence", "quickfix-gateway")::contains)
+        .collect(java.util.stream.Collectors.toUnmodifiableSet());
+  }
+
+  boolean runsMatching() {
+    return documents.stream().anyMatch(document ->
+        "StatefulSet".equals(document.path("kind").asText())
+            && "matching".equals(document.path("metadata").path("name").asText()));
+  }
+
+  /** Keeps schema initialization ahead of service startup for every selected database owner. */
+  List<String> migrationJobs() {
+    final var services = javaServices();
+    return List.of("account-service", "risk-service", "persistence", "quickfix-gateway")
+        .stream().filter(services::contains).map(service -> service + "-flyway").toList();
+  }
+
   Set<String> platformImages() {
     final var images = new java.util.TreeSet<String>();
     for (var document : documents) {

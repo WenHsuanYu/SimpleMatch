@@ -4,6 +4,7 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import java.nio.file.Path;
+import java.util.List;
 import java.util.Set;
 import java.util.stream.Collectors;
 import org.junit.jupiter.api.Test;
@@ -17,6 +18,12 @@ class RestingBuyProfileTest {
     final var identities = profile.documents().stream().map(document ->
         document.path("kind").asText() + "/" + document.path("metadata").path("name").asText())
         .collect(Collectors.toSet());
+    assertEquals(Set.of("account-service", "risk-service", "persistence", "quickfix-gateway"),
+        profile.javaServices());
+    assertTrue(profile.runsMatching());
+    assertEquals(List.of("account-service-flyway", "risk-service-flyway",
+        "persistence-flyway", "quickfix-gateway-flyway"), profile.migrationJobs());
+    assertTrue(profile.migrationJobs().stream().allMatch(name -> identities.contains("Job/" + name)));
     assertTrue(identities.containsAll(Set.of(
         "Deployment/account-service", "Deployment/risk-service", "Deployment/persistence",
         "StatefulSet/quickfix-gateway", "StatefulSet/matching", "StatefulSet/kafka",

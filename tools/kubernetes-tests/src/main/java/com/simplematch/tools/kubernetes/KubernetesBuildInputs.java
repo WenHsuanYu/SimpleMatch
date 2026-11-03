@@ -1,5 +1,6 @@
 package com.simplematch.tools.kubernetes;
 
+import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import java.nio.file.Files;
 import java.nio.file.Path;
@@ -47,23 +48,23 @@ public final class KubernetesBuildInputs {
     Files.createDirectories(parent);
     Files.write(receipt, json.writeValueAsBytes(Map.of("source_fingerprint",
         observed.sourceFingerprint(), "daemon_id", observed.daemonId(),
-        "docker_context", observed.docker().context().name(), "stage", "BUILDING")),
+        "docker_context", observed.docker().context().name(),
+        "scenario", observed.budget().path("profile").asText(), "stage", "BUILDING")),
         StandardOpenOption.CREATE_NEW);
   }
 
   private static void finish(KubernetesSettings settings, KubernetesPrerequisites observed,
       Path receipt, ObjectMapper json) throws Exception {
     final var before = json.readTree(receipt.toFile());
-    if (!"BUILDING".equals(before.path("stage").asText())
-        || !observed.sourceFingerprint().equals(before.path("source_fingerprint").asText())
-        || !observed.daemonId().equals(before.path("daemon_id").asText())
-        || !observed.docker().context().name().equals(before.path("docker_context").asText())) {
+    requireIdentity(before, observed);
+    if (!"BUILDING".equals(before.path("stage").asText())) {
       throw new IllegalStateException("runtime source or Docker changed during image building");
     }
     final var images = KubernetesImages.observe(settings, observed.profile());
     Files.write(receipt, json.writeValueAsBytes(Map.of("source_fingerprint",
         observed.sourceFingerprint(), "daemon_id", observed.daemonId(),
-        "docker_context", observed.docker().context().name(), "stage", "IMAGES_BUILT",
+        "docker_context", observed.docker().context().name(),
+        "scenario", observed.budget().path("profile").asText(), "stage", "IMAGES_BUILT",
         "images", images.identities())));
   }
 
@@ -75,13 +76,23 @@ public final class KubernetesBuildInputs {
     }
     final var json = new ObjectMapper();
     final var receipt = json.readTree(Path.of(selected).toFile());
+    requireIdentity(receipt, inputs);
     if (!"IMAGES_BUILT".equals(receipt.path("stage").asText())
-        || !inputs.daemonId().equals(receipt.path("daemon_id").asText())
-        || !inputs.docker().context().name().equals(receipt.path("docker_context").asText())
-        || !inputs.sourceFingerprint().equals(receipt.path("source_fingerprint").asText())
         || !json.valueToTree(images.identities()).equals(receipt.path("images"))) {
       throw new IllegalStateException(
           "current source, daemon or image identities differ from the build");
     }
   }
+
+  private static void requireIdentity(JsonNode receipt, KubernetesPrerequisites inputs) {
+    final var expected = Map.of("source_fingerprint", inputs.sourceFingerprint(),
+        "scenario", inputs.budget().path("profile").asText(), "daemon_id", inputs.daemonId(),
+        "docker_context", inputs.docker().context().name());
+    for (var field : expected.entrySet()) {
+      if (!field.getValue().equals(receipt.path(field.getKey()).textValue())) {
+        throw new IllegalStateException("build receipt identity differs: " + field.getKey());
+      }
+    }
+  }
+
 }

@@ -14,6 +14,8 @@ class RiskCommandProfileTest {
     final Path root = Path.of(System.getProperty("verificationRepoRoot"));
     final var commands = new BoundedCommand(root, java.util.Map.of());
     final var profile = KubernetesProfile.render(root, commands);
+    assertEquals(java.util.List.of("account-service-flyway", "risk-service-flyway"),
+        profile.migrationJobs());
     final var workloads = profile.documents().stream()
         .filter(document -> Set.of("Deployment", "StatefulSet", "Job")
             .contains(document.path("kind").asText()))

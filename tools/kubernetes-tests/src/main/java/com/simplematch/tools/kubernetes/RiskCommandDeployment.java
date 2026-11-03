@@ -37,8 +37,9 @@ final class RiskCommandDeployment {
     }
     target.client().waitFor("jsonpath={.status.readyReplicas}=3", "statefulset/kafka");
     target.client().waitFor("jsonpath={.status.readyReplicas}=1", "statefulset/postgres");
-    for (String name : java.util.List.of("account-service-flyway", "risk-service-flyway",
-        "kafka-topic-provisioning")) {
+    final var jobs = new java.util.ArrayList<>(inputs.profile().migrationJobs());
+    jobs.add("kafka-topic-provisioning");
+    for (String name : jobs) {
       createNamed(name);
       KubernetesJobs.awaitComplete(target.client(), name, target.run());
     }
@@ -66,8 +67,9 @@ final class RiskCommandDeployment {
     final String dsn = "postgres://simplematch:" + password + "@postgres:5432/simplematch";
     target.create(KubernetesDocuments.data("Secret", "simplematch-postgres-secrets", Map.of(
         "postgres_user", "simplematch", "postgres_password", password)));
-    for (String owner : java.util.List.of(
-        "simplematch-flyway", "account-service", "risk-service")) {
+    final var databaseOwners = new java.util.TreeSet<>(inputs.profile().javaServices());
+    databaseOwners.add("simplematch-flyway");
+    for (String owner : databaseOwners) {
       target.create(KubernetesDocuments.data(
           "Secret", owner + "-secrets", Map.of("postgres_dsn", dsn)));
     }
@@ -175,8 +177,10 @@ final class RiskCommandDeployment {
       if (name.equals(document.path("metadata").path("name").asText())
           && Set.of("Deployment", "StatefulSet", "Job").contains(document.path("kind").asText())) {
         target.create(document);
+        return;
       }
     }
+    throw new IllegalStateException("selected deployment resource is missing: " + name);
   }
 
 }

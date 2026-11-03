@@ -35,7 +35,9 @@ class KubernetesSourceTest {
     final var commands = new BoundedCommand(repository, Map.of());
     commands.run(List.of("git", "init", "--quiet"), "", Duration.ofSeconds(5)).checked();
     for (String name : List.of("tools/kubernetes-tests/build.gradle.kts", "gradle.lockfile",
-        "gradlew", "services/query-service/build.gradle.kts", "tools/other/gradle.lockfile")) {
+        "gradlew", "services/query-service/build.gradle.kts", "tools/other/gradle.lockfile",
+        "services/quickfix-gateway/src/main/java/Gateway.java",
+        "services/persistence/src/main/java/Persistence.java")) {
       final Path file = repository.resolve(name);
       Files.createDirectories(file.getParent());
       final String before = KubernetesSource.fingerprint(repository, commands);

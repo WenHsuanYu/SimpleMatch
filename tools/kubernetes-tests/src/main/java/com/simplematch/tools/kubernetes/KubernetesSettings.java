@@ -3,9 +3,13 @@ package com.simplematch.tools.kubernetes;
 import java.nio.file.Path;
 import java.time.LocalDate;
 
-/** Explicit inputs for one fresh RM-1 run; historical artifacts keep their original trading day. */
+/**
+ * Explicit inputs for one fresh Kubernetes scenario.
+ * Historical artifacts keep their original trading day.
+ */
 record KubernetesSettings(Path root, Path evidence, Path coordination, LocalDate day,
-    Path delivery, String tag, KindMode mode, boolean retain, DockerContext dockerContext) {
+    Path delivery, String tag, KindMode mode, boolean retain, DockerContext dockerContext,
+    String scenario) {
   static Path coordinationDirectory() {
     return Path.of("/tmp/simplematch-kubernetes-coordination");
   }
@@ -22,12 +26,16 @@ record KubernetesSettings(Path root, Path evidence, Path coordination, LocalDate
     if (!tag.matches("[a-zA-Z0-9_][a-zA-Z0-9_.-]{0,100}")) {
       throw new IllegalArgumentException("invalid Kubernetes image tag");
     }
+    final String scenario = System.getProperty("kubernetesScenario", "risk-command");
+    if (!java.util.Set.of("risk-command", "resting-buy").contains(scenario)) {
+      throw new IllegalArgumentException("unsupported Kubernetes scenario: " + scenario);
+    }
     return new KubernetesSettings(root, root.resolve(evidence).normalize(),
         coordinationDirectory(),
         LocalDate.parse(day), root.resolve(System.getProperty("kubernetesDeliveryManifest",
             "tools/market-reference-builder/config/market-reference/approved/" + day
                 + "/delivery/manifest.yaml")), tag, mode,
         Boolean.parseBoolean(System.getProperty("kubernetesRetain", "false")),
-        new DockerContext(System.getProperty("kubernetesDockerContext")));
+        new DockerContext(System.getProperty("kubernetesDockerContext")), scenario);
   }
 }

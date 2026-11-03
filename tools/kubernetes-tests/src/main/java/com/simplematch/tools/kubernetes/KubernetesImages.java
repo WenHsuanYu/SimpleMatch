@@ -13,14 +13,18 @@ import java.util.concurrent.TimeoutException;
 final class KubernetesImages {
   private final BoundedCommand commands;
   private final DockerContext context;
+  private final boolean matchingRuntime;
+  private final java.util.Set<String> javaServices;
   private final Map<String, String> identities;
   private final Map<String, String> configs = new LinkedHashMap<>();
   private final ObjectMapper json = new ObjectMapper();
 
   private KubernetesImages(BoundedCommand commands, DockerContext context,
-      Map<String, String> identities) {
+      Map<String, String> identities, KubernetesProfile profile) {
     this.commands = commands;
     this.context = context;
+    this.matchingRuntime = profile.runsMatching();
+    this.javaServices = profile.javaServices();
     this.identities = new LinkedHashMap<>(identities);
   }
 
@@ -29,16 +33,20 @@ final class KubernetesImages {
     final var commands = settings.dockerContext().commands(settings.root());
     final var identities = new LinkedHashMap<String, String>();
     final var json = new ObjectMapper();
-    for (String repository : List.of("simplematch/account-service", "simplematch/risk-service",
+    for (String repository : List.of(
         "simplematch/flyway-runner", "simplematch/risk-matching-e2e-verifier",
         "simplematch-matching", "simplematch/kafka-fixture-publisher")) {
       inspect(commands, settings.dockerContext(), json, identities,
           repository + ":" + settings.tag());
     }
+    for (String service : profile.javaServices().stream().sorted().toList()) {
+      inspect(commands, settings.dockerContext(), json, identities,
+          "simplematch/" + service + ":" + settings.tag());
+    }
     for (String image : profile.platformImages()) {
       inspect(commands, settings.dockerContext(), json, identities, image);
     }
-    return new KubernetesImages(commands, settings.dockerContext(), identities);
+    return new KubernetesImages(commands, settings.dockerContext(), identities, profile);
   }
 
   private static void inspect(BoundedCommand commands, DockerContext context, ObjectMapper json,
@@ -66,7 +74,7 @@ final class KubernetesImages {
         "simplematch.io/node-pool=local-resilience", "-o", "json").path("items")) {
       final String node = worker.path("metadata").path("name").asText();
       for (var image : identities.entrySet()) {
-        if (!image.getKey().startsWith("simplematch-matching:")) {
+        if (!image.getKey().startsWith("simplematch-matching:") || matchingRuntime) {
           requireNodeIdentity(node, image.getKey());
           probe(kind, run, node, image.getKey(), "image-probe-" + number++);
         }
@@ -95,7 +103,7 @@ final class KubernetesImages {
 
   private void importImages(KindEnvironment kind, VerificationContext run) throws Exception {
     for (var image : identities.entrySet()) {
-      if (image.getKey().startsWith("simplematch-matching:")) {
+      if (image.getKey().startsWith("simplematch-matching:") && !matchingRuntime) {
         continue;
       }
       final var archive = kind.temporaryImageArchive();
@@ -115,8 +123,9 @@ final class KubernetesImages {
   private void probe(KindEnvironment kind, VerificationContext run, String node, String image,
       String name) throws Exception {
     // CNB's direct strategy avoids requiring Bash in the tiny Spring run images.
-    final var command = image.startsWith("simplematch/account-service:")
-        || image.startsWith("simplematch/risk-service:")
+    final var command = java.util.Set.of(
+        "account-service", "risk-service", "persistence", "quickfix-gateway").stream()
+        .anyMatch(service -> image.startsWith("simplematch/" + service + ":"))
         ? List.of("/cnb/lifecycle/launcher", "--", "java", "-version")
         : List.of("/bin/sh", "-c", "true");
     final var pod = json.valueToTree(Map.of("apiVersion", "v1", "kind", "Pod", "metadata",
@@ -160,10 +169,16 @@ final class KubernetesImages {
     final var result = new LinkedHashMap<String, String>();
     identities.keySet().stream().filter(ref -> !ref.startsWith("simplematch-matching:"))
         .forEach(ref -> result.put(ref, ref));
-    for (String repository : List.of("simplematch/account-service", "simplematch/risk-service",
+    for (String repository : List.of(
         "simplematch/flyway-runner", "simplematch/risk-matching-e2e-verifier",
         "simplematch/kafka-fixture-publisher")) {
       result.put(repository + ":local", repository + ":" + tag);
+    }
+    for (String service : javaServices) {
+      result.put("simplematch/" + service + ":local", "simplematch/" + service + ":" + tag);
+    }
+    if (matchingRuntime) {
+      result.put("simplematch-matching:local", "simplematch-matching:" + tag);
     }
     return Map.copyOf(result);
   }

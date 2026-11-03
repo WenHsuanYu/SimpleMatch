@@ -48,7 +48,9 @@ final class KubernetesSource {
 
   private static boolean runtimeInput(String file) {
     return file.startsWith("services/account-service/") || file.startsWith("services/risk-service/")
-        || file.startsWith("shared-java/") || file.startsWith("proto/")
+        || file.startsWith("services/quickfix-gateway/")
+        || file.startsWith("services/persistence/") || file.startsWith("shared-java/")
+        || file.startsWith("proto/")
         || file.startsWith("tools/risk-matching-e2e-verifier/")
         || file.startsWith("build-logic/") || file.startsWith("gradle/")
         || file.startsWith("matching-engine/") || file.startsWith("deploy/docker/")

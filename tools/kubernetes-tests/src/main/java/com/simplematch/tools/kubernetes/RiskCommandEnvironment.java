@@ -32,6 +32,9 @@ final class RiskCommandEnvironment implements VerificationResources {
 
   @Override
   public String preflight() throws Exception {
+    if (!"risk-command".equals(settings.scenario())) {
+      throw new IllegalArgumentException("RM-1 cannot establish resting-buy behavior");
+    }
     inputs = KubernetesPrerequisites.observe(settings);
     images = KubernetesImages.observe(settings, inputs.profile());
     KubernetesBuildInputs.requireCurrent(inputs, images);
