@@ -8,22 +8,7 @@ require "tmpdir"
 root = File.expand_path("..", __dir__)
 calculator = File.join(root, "scripts", "local-resource-budget.rb")
 fixture = File.join(root, "scripts", "testdata", "local-resource-budget", "fixture.yaml")
-baseline_dir = File.join(root, "scripts", "testdata", "local-resource-budget")
 host_bytes = 35 * 1024**3
-
-def review_lines(report)
-  fields = %w[profile host_memory_bytes steady_memory_bytes bootstrap_memory_bytes
-              bootstrap_phase_memory_bytes steady_plus_bootstrap_memory_bytes
-              peak_phase_memory_bytes steady_cpu_millicores
-              bootstrap_cpu_millicores bootstrap_phase_cpu_millicores
-              peak_phase_cpu_millicores requests_within_host_budget]
-  summary = fields.map { |field| "#{field}=#{report.fetch(field)}" }
-  workloads = report.fetch("workloads").map do |workload|
-    %w[kind name phase replicas memory_bytes cpu_millicores]
-      .map { |field| workload.fetch(field) }.join("|")
-  end
-  (summary + workloads).join("\n") + "\n"
-end
 
 Dir.mktmpdir("simplematch-resource-budget-") do |directory|
   report = File.join(directory, "report.json")
@@ -85,34 +70,6 @@ Dir.mktmpdir("simplematch-resource-budget-") do |directory|
   abort "init container peak was not multiplied by Kafka replicas" unless
     init_report.fetch("steady_memory_bytes") == matching_report.fetch("steady_memory_bytes") + 3 * 1024**3
 
-  rendered, stderr, status = Open3.capture3("kubectl", "kustomize",
-                                           File.join(root, "deploy", "k8s", "overlays", "local"),
-                                           "--load-restrictor", "LoadRestrictionsNone")
-  abort "local overlay render failed: #{stderr}" unless status.success?
-  manifest = File.join(directory, "rendered.yaml")
-  File.write(manifest, rendered)
-
-  risk_args = ["ruby", calculator, "--manifest", manifest, "--profile", "risk-command",
-               "--report", report, "--check"]
-  stdout, stderr, status = Open3.capture3(*risk_args)
-  abort "Risk command budget failed: #{stdout}#{stderr}" unless status.success?
-  risk_report = JSON.parse(File.read(report))
-  abort "Risk command must exclude unused Redis and Matching runtimes" if
-    risk_report.fetch("workloads").any? { |workload| %w[redis matching].include?(workload.fetch("name")) }
-  abort "Risk command must retain three Kafka replicas" unless
-    risk_report.fetch("workloads").any? { |workload| workload.fetch("name") == "kafka" && workload.fetch("replicas") == 3 }
-
-  %w[full matching-fleet-only].each do |profile|
-    args = ["ruby", calculator, "--manifest", manifest, "--profile", profile, "--report", report]
-    args << "--check" if profile == "matching-fleet-only"
-    stdout, stderr, status = Open3.capture3(*args)
-    abort "#{profile} render budget check failed: #{stdout}#{stderr}" unless status.success?
-    review = File.join(directory, "#{profile}.txt")
-    File.write(review, review_lines(JSON.parse(File.read(report))))
-    expected = File.join(baseline_dir, "#{profile}.txt")
-    diff, _, diff_status = Open3.capture3("diff", "-u", expected, review)
-    abort "#{profile} resource baseline drifted:\n#{diff}" unless diff_status.success?
-  end
 end
 
 puts "Local resource budget checks passed."

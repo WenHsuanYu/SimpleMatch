@@ -82,48 +82,45 @@ It cannot establish broader resilience or production HA.
 
 ### Local host memory budget
 
-All three kind workers share the Docker daemon's host memory. The repository's reference local
-budget is 38 GiB, recorded in `overlays/local/resource-budget.json`; the Docker Desktop daemon
-used to set this reference reported about 38.26 GiB on 2026-10-06. The production-like runner
-reads the *selected daemon's current* memory capacity and runs the fresh `local-resource-budget`
-phase before image builds or Kubernetes apply. Its report is retained at
-`local-resource-budget.json` in the run evidence directory and the final report links its verdict.
-If declared requests exceed that capacity, the runner warns but still permits the runtime attempt.
-This comparison is an early capacity signal, not a scheduling guarantee or a measurement of live
-memory, swap use, per-worker placement, or available space during a rollout.
+All three kind workers share the Docker daemon's memory pool. The 38 GiB reference in
+`overlays/local/resource-budget.json` is a planning value, not a current measurement.
+Gradle prerequisites read the selected daemon, check workload requests plus the existing runtime
+reserve, and check host-tool headroom separately. Host swap is not additional Docker guest RAM.
+The legacy aggregate warns without blocking when its calculator omits `--check`; that path remains
+only during the S5 cutover.
 
-The full local overlay currently renders 41.7421875 GiB of steady requests and 6.125 GiB from
-its seven Jobs. The actual bootstrap stage runs platform services alongside Jobs (10.25 GiB of
-requests), then starts the full steady set after Jobs complete; its declared stage peak is thus
-41.7421875 GiB, above the 38 GiB reference. The 47.8671875 GiB all-together sum is only a
-conservative review envelope, not the startup gate. The existing `--matching-fleet-only` runner
-profile fits this reference by declared requests: it applies PostgreSQL, Redis, three Kafka brokers, the
-topic-provisioning Job, and all 15 Matching owners. Its exact workload selection is recorded in
-`overlays/local/resource-budget.json`; it renders 34.2421875 GiB steady, 4.25 GiB during
-bootstrap, and a 34.2421875 GiB declared stage peak. This is a `PARTIAL` Matching fleet gate.
-The full profile may still run here: actual memory can be below requests and swap may help, as
-earlier runtime attempts suggest, but neither a prior run nor swap certifies today's request fit
-or guarantees success. A full certification verdict still requires its own live evidence.
+The current local overlay has these declared memory stages:
 
-The Matching main container retains the observed, successful 2 GiB local fleet limit and its
-bounded 1,024-order and 524,288-slot configuration. Fifteen main containers therefore request
-30 GiB; the status sidecars add 120 MiB. The native direct-core RSS benchmark is a different
-workload from a full Kafka-connected pod and does not justify lowering the pod to 1 GiB. Kafka's
-three 1 GiB broker requests, PostgreSQL's 1 GiB request, and Redis's 128 MiB request complete the
-reduced steady set. The Kafka storage-format init container now declares a bounded request and
-limit; its 1 GiB memory request does not add to each pod's effective request because that pod's
-broker already requests 1 GiB. These are local sizing choices; the base and promotion templates
-retain their separate production resource contract.
+| Profile | Steady requests | Platform plus bootstrap Jobs | Declared stage peak |
+| --- | ---: | ---: | ---: |
+| `full` | 26.7421875 GiB | 10.25 GiB | 26.7421875 GiB |
+| `matching-fleet-only` | 19.2421875 GiB | 4.25 GiB | 19.2421875 GiB |
+| `risk-command` | 8 GiB | 6.125 GiB | 8 GiB |
+| `resting-buy` | 24.3671875 GiB | 8.125 GiB | 24.3671875 GiB |
 
-Run the focused render/resource check with `ruby scripts/test-local-resource-budget.rb`. It
-re-renders the local overlay, compares each profile's review lines with checked-in text baselines using
-`diff`, and verifies that the reduced profile fits the 38 GiB reference while strict `--check`
-rejects an over-budget fixture. Without `--check`, the calculator warns and records excess but
-exits successfully so the runner can continue. To inspect current numbers directly, pipe `kubectl kustomize
-deploy/k8s/overlays/local --load-restrictor LoadRestrictionsNone` into `ruby
-scripts/local-resource-budget.rb --manifest - --profile full` (or
-`--profile matching-fleet-only`). The JSON separates bootstrap, steady, actual stage peak, and
-the deliberately conservative all-together envelope; none is an observed RSS peak.
+Jobs complete before business workloads start. Adding all Jobs to the steady set produces a
+conservative review envelope, not the actual startup peak. The profiles remain partial scopes;
+only execution of every retained requirement can establish a complete-local result.
+
+Each Matching main container requests 1 GiB and retains its 2 GiB limit. Fifteen main containers
+therefore request 15 GiB; status sidecars add 120 MiB. The 1,024-order and 524,288-slot local
+capacities, fifteen owners, ownership fencing, and production templates remain unchanged.
+This local reservation candidate follows the owner's resource assessment: the current native
+runtime initialized the largest approved partition, including its rings and Kafka adapters, at
+about 164.7 MiB peak RSS. That observation stopped at unavailable-broker startup and does not prove
+connected Pod or transaction behavior. Live verification must still validate the functional workload.
+See `out/verification/issue-202-p3-memory-assessment-02/` for the local observation and its limits.
+
+Requests reserve scheduling capacity; limits bound a container's permitted memory use.
+Neither their sum nor an allocation-only observation proves simultaneous peak capacity for every Pod.
+See the [Kubernetes resource model](https://v1-36.docs.kubernetes.io/docs/concepts/configuration/manage-resources-containers/).
+The base and promotion templates retain their separate production resource contract.
+
+The remaining calculator fixture checks run with `ruby scripts/test-local-resource-budget.rb`
+during cutover. They protect phase-budget calculation, malformed quantities, and init-container
+peaks. Frozen rendered-text snapshots and duplicate RM-1 profile checks were retired; current
+profile selection belongs to the Kubernetes tests and preflight. Resource decisions use the fresh
+structured budget rather than a second baseline of presentation text.
 
 ### Local production-like version contract
 

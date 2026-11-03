@@ -4,6 +4,7 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.dataformat.yaml.YAMLFactory;
 import java.nio.file.Files;
 import java.time.Duration;
+import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
@@ -33,9 +34,12 @@ final class KubernetesImages {
     final var commands = settings.dockerContext().commands(settings.root());
     final var identities = new LinkedHashMap<String, String>();
     final var json = new ObjectMapper();
-    for (String repository : List.of(
-        "simplematch/flyway-runner", "simplematch/risk-matching-e2e-verifier",
-        "simplematch-matching", "simplematch/kafka-fixture-publisher")) {
+    final var repositories = new ArrayList<>(List.of("simplematch/flyway-runner",
+        "simplematch-matching", "simplematch/kafka-fixture-publisher"));
+    if ("risk-command".equals(settings.scenario())) {
+      repositories.add("simplematch/risk-matching-e2e-verifier");
+    }
+    for (String repository : repositories) {
       inspect(commands, settings.dockerContext(), json, identities,
           repository + ":" + settings.tag());
     }

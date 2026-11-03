@@ -4,6 +4,13 @@
 .vscode
 .cache
 .codex
+.scratch
+# Exclude host-local credentials from image build contexts.
+/.env
+/.env.*
+/.secret
+/.secret.*
+/secrets
 .code-review-graph
 all_code.txt
 build
