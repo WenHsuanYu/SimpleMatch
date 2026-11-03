@@ -39,7 +39,7 @@ final class KubernetesMatchingRecovery {
     final var rested = events.observe(original, delivery, "resting");
     replaceOwner(original.required("routingPartition").asInt(),
         rested.required("context").required("sourceInputOffset").asLong());
-    context.admission().open(context.target());
+    context.admission().open(context.target(), "matching-recovered");
     Files.writeString(fix.resolve("cancel-release.next"),
         Long.toString(System.currentTimeMillis() + remaining().toMillis()));
     Files.move(fix.resolve("cancel-release.next"), fix.resolve("cancel-release"),

@@ -14,6 +14,32 @@ final class KubernetesConnectors {
     this.target = target;
   }
 
+  /** Applies one idempotent pause/resume request, then observes the connector and every task. */
+  void setState(String name, String state) throws Exception {
+    if (!java.util.Set.of("PAUSED", "RUNNING").contains(state)) {
+      throw new IllegalArgumentException("expected PAUSED or RUNNING connector state");
+    }
+    final String pod = connectPod();
+    connectRest(pod, "PUT", "/connectors/" + name
+        + ("PAUSED".equals(state) ? "/pause" : "/resume"), "");
+    final var json = new ObjectMapper();
+    final long deadline = System.nanoTime() + Duration.ofSeconds(60).toNanos();
+    do {
+      final var status = json.readTree(
+          connectRest(pod, "GET", "/connectors/" + name + "/status", "").checked());
+      java.nio.file.Files.writeString(target.run().evidence().resolve(name + "-state.json"),
+          DiagnosticText.redact(status.toPrettyString()));
+      if (state.equals(status.path("connector").path("state").asText())
+          && !status.path("tasks").isEmpty()
+          && java.util.stream.StreamSupport.stream(status.path("tasks").spliterator(), false)
+              .allMatch(task -> state.equals(task.path("state").asText()))) {
+        return;
+      }
+      Thread.sleep(250);
+    } while (System.nanoTime() < deadline);
+    throw new TimeoutException("connector/tasks did not reach " + state + ": " + name);
+  }
+
   /** Registers through an owned Pod's local REST endpoint and reconciles uncertain writes. */
   void register(String name) throws Exception {
     final var json = new ObjectMapper();
@@ -77,7 +103,7 @@ final class KubernetesConnectors {
         "--max-time", "45", "--request", method, "--header", "Content-Type: application/json"));
     if ("POST".equals(method)) {
       args.addAll(java.util.List.of("--data-binary", "@-"));
-    } else {
+    } else if ("GET".equals(method)) {
       args.addAll(java.util.List.of(
           "--retry", "2", "--retry-delay", "1", "--retry-max-time", "10"));
     }

@@ -123,6 +123,8 @@ public class PreparedFixSubmission {
 
       final ExecutionReport report = application.awaitExecutionReport(clOrdId, timeoutSeconds);
       writeEvidence(evidencePath, report, sentAtEpochMs, accountId, timeInForce, null);
+      rejectIfRequested(application,
+          new FixRecoveryProbe.Exchange(sessionId, order, report), timeoutSeconds);
       completeDeliveryIfRequested(
           application, report, sentAtEpochMs, accountId, timeInForce, timeoutSeconds);
       application.recoveryProbe.completeIfRequested(
@@ -135,6 +137,25 @@ public class PreparedFixSubmission {
     } finally {
       initiator.stop(true);
     }
+  }
+
+  private void rejectIfRequested(PreparedInitiatorApplication application,
+      FixRecoveryProbe.Exchange exchange, int timeoutSeconds) throws Exception {
+    final String release = environmentValue("SIMPLEMATCH_RETAINED_FIX_REJECT_RELEASE");
+    if (release == null || release.isBlank()) {
+      return;
+    }
+    awaitRelease(Path.of(release), timeoutSeconds);
+    final var rejected = (NewOrderSingle) exchange.order().clone();
+    final String identity = "REJ-" + rejected.getString(ClOrdID.FIELD);
+    rejected.setString(ClOrdID.FIELD, identity);
+    final long sentAt = System.currentTimeMillis();
+    assertThat(Session.sendToTarget(rejected, exchange.sessionId())).isTrue();
+    final var report = application.awaitExecutionReport(identity, timeoutSeconds);
+    assertThat(report.getChar(ExecType.FIELD)).isEqualTo('8');
+    assertThat(report.getChar(OrdStatus.FIELD)).isEqualTo('8');
+    writeEvidence(requiredPath("SIMPLEMATCH_RETAINED_FIX_REJECT_EVIDENCE"), report, sentAt,
+        rejected.getString(Account.FIELD), rejected.getString(quickfix.field.TimeInForce.FIELD), null);
   }
 
   private void completeDeliveryIfRequested(

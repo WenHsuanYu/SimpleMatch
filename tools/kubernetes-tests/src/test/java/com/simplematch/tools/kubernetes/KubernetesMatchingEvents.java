@@ -5,48 +5,75 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.dataformat.yaml.YAMLFactory;
+import java.net.URI;
+import java.net.http.HttpClient;
+import java.net.http.HttpRequest;
+import java.net.http.HttpResponse;
 import java.nio.file.Files;
 import java.time.Duration;
 import java.util.List;
 
 /** Reuses the existing Kafka observer and exact-byte redelivery implementation inside kind. */
 final class KubernetesMatchingEvents {
-  private static final String POD = "matching-event-outage-observer";
+  private static final String POD = "critical-consumer-kafka-observer";
   private final KubernetesScenarioTarget target;
   private final ObjectMapper json = new ObjectMapper();
 
   KubernetesMatchingEvents(KubernetesBusinessEnvironment.PublicOrder context) throws Exception {
     target = context.target();
     final var manifest = new ObjectMapper(new YAMLFactory()).readTree(context.settings().root()
-        .resolve("deploy/k8s/verification/matching-event-observer-pod.yaml").toFile());
+        .resolve("deploy/k8s/verification/critical-consumer-kafka-observer-pod.yaml").toFile());
     target.create(manifest);
     target.client().waitFor("condition=Ready", "pod/" + POD);
   }
 
   JsonNode observe(JsonNode command, JsonNode delivery, String phase) throws Exception {
-    invoke("MatchingEventObservationMain", command, delivery, phase);
-    final var observed = result(phase, "matching-event-observation.json");
+    assertEquals(command.required("routingPartition").asInt(),
+        delivery.required("sourcePartition").asInt());
+    final var observed = observeAccepted(command, delivery.required("sourceOffset").asLong(), phase);
     assertEquals(delivery.required("eventId"), observed.required("eventId"));
     assertEquals(delivery.required("sourceOffset").asLong(), observed.required("offset").asLong());
     return observed;
   }
 
   JsonNode redeliver(JsonNode command, JsonNode delivery) throws Exception {
-    invoke("MatchingEventRedeliveryMain", command, delivery, "redelivery");
+    invoke("MatchingEventRedeliveryMain", command, delivery.required("sourceOffset").asLong(),
+        "redelivery");
     final var observed = result("redelivery", "redelivery.json");
     assertEquals(delivery.required("eventId"), observed.required("eventId"));
     return observed;
   }
 
-  private void invoke(String main, JsonNode command, JsonNode delivery, String phase)
+  JsonNode observeAccepted(JsonNode command, long offset, String phase) throws Exception {
+    invoke("MatchingEventObservationMain", command, offset, phase);
+    return result(phase, "matching-event-observation.json");
+  }
+
+  JsonNode positions() throws Exception {
+    final var log = target.run().evidence().resolve("kafka-positions-forward.log");
+    final JsonNode snapshot;
+    try (var forward = target.client().forward("pod/" + POD, 8081, log);
+        var http = HttpClient.newBuilder().connectTimeout(Duration.ofSeconds(3)).build()) {
+      final var request = HttpRequest.newBuilder(URI.create(
+          "http://127.0.0.1:" + forward.port() + "/log-end-positions"))
+          .timeout(Duration.ofSeconds(5)).POST(HttpRequest.BodyPublishers.noBody()).build();
+      final var response = http.send(request, HttpResponse.BodyHandlers.ofString());
+      if (response.statusCode() != 200) {
+        throw new java.io.IOException("Kafka positions observer returned HTTP " + response.statusCode());
+      }
+      snapshot = json.readTree(response.body());
+    }
+    Files.delete(log); // Keep failed transport diagnostics; successful polling needs no separate log.
+    return snapshot;
+  }
+
+  private void invoke(String main, JsonNode command, long offset, String phase)
       throws Exception {
-    assertEquals(command.required("routingPartition").asInt(),
-        delivery.required("sourcePartition").asInt());
     final var arguments = List.of("exec", POD, "-c", "observer", "--", "java", "-cp",
         "/app/lib/*", "com.simplematch.tools.riskmatchinge2e." + main,
         "--bootstrap", "kafka:9092", "--topic", "matching.events",
         "--partition", command.required("routingPartition").asText(),
-        "--start-offset", delivery.required("sourceOffset").asText(),
+        "--start-offset", Long.toString(offset),
         "--command-id", command.required("commandId").asText(),
         "--order-id", command.required("orderId").asText(),
         "--timeout-seconds", "60", "--evidence-dir", "/tmp/" + phase);

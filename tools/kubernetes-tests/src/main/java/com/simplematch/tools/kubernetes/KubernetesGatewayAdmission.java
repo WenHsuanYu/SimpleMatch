@@ -26,12 +26,12 @@ final class KubernetesGatewayAdmission {
         "simplematch.quickfix-gateway.operations.operator-token=" + token, "");
   }
 
-  JsonNode open(KubernetesScenarioTarget target) throws Exception {
+  JsonNode open(KubernetesScenarioTarget target, String phase) throws Exception {
     final String pod = target.gatewayPod();
     try (var forward = target.client().forward("pod/" + pod, 8080,
-        target.run().evidence().resolve("gateway-management-forward.log"))) {
+        target.run().evidence().resolve(phase + "-management-forward.log"))) {
       final var result = open(forward.port(), Duration.ofMinutes(2));
-      Files.writeString(target.run().evidence().resolve("gateway-open.json"),
+      Files.writeString(target.run().evidence().resolve(phase + "-open.json"),
           DiagnosticText.redact(result.toPrettyString()));
       return result;
     }
@@ -56,6 +56,13 @@ final class KubernetesGatewayAdmission {
       } while (System.nanoTime() < deadline);
     }
     throw new TimeoutException("Gateway did not accept OPEN from its live observations");
+  }
+
+  /** Reads status without invoking an operator transition or creating an observation. */
+  JsonNode status(int port, Duration budget) throws Exception {
+    try (var client = HttpClient.newBuilder().connectTimeout(Duration.ofSeconds(3)).build()) {
+      return request(client, port, "status", deadline(budget));
+    }
   }
 
   private static long deadline(Duration budget) {

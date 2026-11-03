@@ -14,6 +14,7 @@ import java.math.BigDecimal;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.nio.file.StandardCopyOption;
 import java.time.Duration;
 import java.util.Comparator;
 import java.util.HashMap;
@@ -23,7 +24,6 @@ import java.util.concurrent.Executors;
 import java.util.concurrent.Future;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.TimeoutException;
-import java.util.function.Predicate;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
@@ -60,7 +60,7 @@ class RestingBuyKubernetesTest {
     Files.writeString(target.run().evidence().resolve("public-order.json"),
         json.writeValueAsString(order));
     final var events = new KubernetesMatchingEvents(context);
-    context.admission().open(target);
+    context.admission().open(target, "gateway-initial");
     final Path fix = Files.createDirectory(target.run().evidence().resolve("fix"));
     try (var forward = target.client().forward("pod/" + target.gatewayPod(), 5001,
         fix.resolve("forward.log"));
@@ -82,33 +82,32 @@ class RestingBuyKubernetesTest {
         awaitFile(fix.resolve("receipt.json"), finished);
         final var receipt = json.readTree(fix.resolve("receipt.json").toFile());
         assertEquals("A", receipt.path("execType").asText());
-        final var admission = awaitSql(postgres, legacy(context, "resting-buy-admission.sql"),
-            variables, value -> "ACCEPTED".equals(value.path("state").asText()));
-        final var delivery = awaitSql(postgres, resource("/resting-buy/gateway-delivery.sql"),
-            variables, value -> "SENT".equals(value.path("status").asText()));
+        final var admission = postgres.await(legacy(context, "resting-buy-admission.sql"),
+            variables, value -> "ACCEPTED".equals(value.path("state").asText()), Duration.ofSeconds(90));
+        final var delivery = postgres.await(resource("/resting-buy/gateway-delivery.sql"),
+            variables, value -> "SENT".equals(value.path("status").asText()), Duration.ofSeconds(90));
         final var durableVariables = new HashMap<>(variables);
         durableVariables.put("order_id", admission.path("orderId").asText());
         durableVariables.put("event_id", delivery.path("eventId").asText());
-        final var durable = awaitSql(postgres, legacy(context, "resting-buy-durable-state.sql"),
+        final var durable = postgres.await(legacy(context, "resting-buy-durable-state.sql"),
             durableVariables, value -> value.path("events").path("accountCount").asInt() > 0
-                && value.path("events").path("persistenceCount").asInt() > 0);
-        Files.writeString(target.run().evidence().resolve("admission.json"), admission.toPrettyString());
-        Files.writeString(target.run().evidence().resolve("durable.json"), durable.toPrettyString());
-        Files.writeString(target.run().evidence().resolve("delivery.json"), delivery.toPrettyString());
-        Files.writeString(fix.resolve("complete"), delivery.path("execId").asText());
+                && value.path("events").path("persistenceCount").asInt() > 0, Duration.ofSeconds(90));
+        Files.writeString(fix.resolve("complete.next"), delivery.path("execId").asText());
+        Files.move(fix.resolve("complete.next"), fix.resolve("complete"), StandardCopyOption.ATOMIC_MOVE);
         awaitFile(fix.resolve("completed.json"), finished);
         final var completed = json.readTree(fix.resolve("completed.json").toFile());
-        assertFacts(context, order, admission, delivery, durable, completed);
+        final var baseline = new KubernetesOrderFacts(admission, delivery, durable, completed);
+        Files.writeString(target.run().evidence().resolve("order-facts.json"), json.writeValueAsString(baseline));
+        assertFacts(context, order, baseline, 1);
         try (var recovered = new KubernetesGatewayRecovery(context, fix, finished).replace(forward)) {
           final var afterAdmission = json.readTree(postgres.execute(
               legacy(context, "resting-buy-admission.sql"), variables));
           final var afterDurable = json.readTree(postgres.execute(
               legacy(context, "resting-buy-durable-state.sql"), durableVariables));
-          Files.writeString(target.run().evidence().resolve("admission.json"),
-              afterAdmission.toPrettyString());
-          Files.writeString(target.run().evidence().resolve("durable.json"),
-              afterDurable.toPrettyString());
-          assertFacts(context, order, afterAdmission, delivery, afterDurable, completed);
+          final var recoveredFacts = new KubernetesOrderFacts(afterAdmission, delivery, afterDurable, completed);
+          Files.writeString(target.run().evidence().resolve("order-facts.json"),
+              json.writeValueAsString(recoveredFacts));
+          assertFacts(context, order, recoveredFacts, 1);
           new KubernetesMatchingRecovery(context, fix, finished)
               .verify(events, admission, delivery, durableVariables);
           finished.get(60, TimeUnit.SECONDS);
@@ -117,10 +116,15 @@ class RestingBuyKubernetesTest {
         finished.cancel(true);
       }
     }
+    verifyDelayedOrder(context, credentials, order, events);
   }
 
   private void assertFacts(KubernetesBusinessEnvironment.PublicOrder context, Order order,
-      JsonNode admission, JsonNode delivery, JsonNode durable, JsonNode completed) {
+      KubernetesOrderFacts facts, int expectedOrders) {
+    final var admission = facts.admission();
+    final var delivery = facts.delivery();
+    final var durable = facts.durable();
+    final var completed = facts.completed();
     final var projection = durable.path("persistence");
     final var reservation = durable.path("account");
     final var events = durable.path("events");
@@ -135,11 +139,11 @@ class RestingBuyKubernetesTest {
     assertEquals(delivery.path("execId"), completed.path("execId"));
     assertEquals("0", completed.path("terminalExecType").asText());
     assertEquals("RESTING", projection.path("status").asText());
-    assertEquals(1, projection.path("projectionCount").asInt());
+    assertEquals(expectedOrders, projection.path("projectionCount").asInt());
     assertEquals(0, projection.path("fillCount").asInt());
     assertEquals(order.rule().boardLotShares(), projection.path("leavesQuantityShares").asLong());
     assertEquals(delivery.path("eventId"), projection.path("lastEventId"));
-    assertEquals(1, reservation.path("reservationCount").asInt());
+    assertEquals(expectedOrders, reservation.path("reservationCount").asInt());
     assertEquals(admission.path("reservationId"), reservation.path("reservationId"));
     assertEquals("RESERVATION_STATUS_ACCEPTED", reservation.path("status").asText());
     final var notional = BigDecimal.valueOf(order.instrument().referencePriceUnits(), 4)
@@ -153,6 +157,53 @@ class RestingBuyKubernetesTest {
     assertEquals(events.path("persistencePayloadSha256"), events.path("accountPayloadSha256"));
     assertEquals(events.path("persistencePayloadSha256"), events.path("quickfixPayloadSha256"));
     assertEquals(0, events.path("quarantineCount").asInt());
+  }
+
+  private void verifyDelayedOrder(KubernetesBusinessEnvironment.PublicOrder context,
+      KubernetesFixCredentials credentials, Order original, KubernetesMatchingEvents events)
+      throws Exception {
+    final var target = context.target();
+    final var order = new Order(original.account(), "OUT-" + target.run().runId(),
+        original.instrument(), original.rule(), original.route());
+    final Path fix = Files.createDirectory(target.run().evidence().resolve("fix-outage"));
+    final var variables = Map.of("account_id", order.account().toString(),
+        "trading_day", context.settings().day().toString(), "cl_ord_id", order.clOrdId(),
+        "exec_type", "0");
+    try (var faults = new KubernetesCriticalDelivery(context, events, variables);
+        var forward = target.client().forward("pod/" + target.gatewayPod(), 5001,
+            fix.resolve("forward.log"));
+        var executor = Executors.newVirtualThreadPerTaskExecutor()) {
+      final var environment = new HashMap<>(clientEnvironment(fix, credentials, order, forward.port()));
+      environment.put("SIMPLEMATCH_RETAINED_FIX_STATE_DIR",
+          target.run().evidence().resolve("fix/client-state").toString());
+      environment.put("SIMPLEMATCH_RETAINED_FIX_RECOVERY", "false");
+      environment.put("SIMPLEMATCH_RETAINED_FIX_CANCEL", "false");
+      environment.put("SIMPLEMATCH_RETAINED_FIX_REJECT_RELEASE", fix.resolve("reject-release").toString());
+      environment.put("SIMPLEMATCH_RETAINED_FIX_REJECT_EVIDENCE", fix.resolve("rejected.json").toString());
+      final var client = new PreparedFixSubmission() {
+        @Override
+        protected String environmentValue(String name) {
+          return environment.get(name);
+        }
+      };
+      final Future<?> finished = executor.submit(() -> {
+        client.runPreparedSubmission();
+        return null;
+      });
+      try {
+        awaitFile(fix.resolve("ready"), finished);
+        faults.prepare();
+        context.admission().open(target, "outage-ready");
+        Files.writeString(fix.resolve("release"), "release\n");
+        awaitFile(fix.resolve("receipt.json"), finished);
+        assertEquals("A", json.readTree(fix.resolve("receipt.json").toFile()).path("execType").asText());
+        final var facts = faults.recover(finished, fix);
+        assertFacts(context, order, facts, 2);
+        finished.get(60, TimeUnit.SECONDS);
+      } finally {
+        finished.cancel(true);
+      }
+    }
   }
 
   private static Order order(KubernetesBusinessEnvironment.PublicOrder context, UUID account) {
@@ -194,22 +245,6 @@ class RestingBuyKubernetesTest {
     values.put("SIMPLEMATCH_RETAINED_FIX_CANCEL_RELEASE", fix.resolve("cancel-release").toString());
     values.put("SIMPLEMATCH_RETAINED_FIX_CANCEL_EVIDENCE", fix.resolve("cancel.json").toString());
     return Map.copyOf(values);
-  }
-
-  private JsonNode awaitSql(KubernetesPostgres postgres, String sql, Map<String, String> variables,
-      Predicate<JsonNode> ready) throws Exception {
-    final long deadline = System.nanoTime() + Duration.ofSeconds(90).toNanos();
-    do {
-      final String observed = postgres.execute(sql, variables);
-      if (!observed.isBlank()) {
-        final var value = json.readTree(observed);
-        if (ready.test(value)) {
-          return value;
-        }
-      }
-      Thread.sleep(500);
-    } while (System.nanoTime() < deadline);
-    throw new TimeoutException("public order durable effects did not converge within 90 seconds");
   }
 
   private static void awaitFile(Path file, Future<?> client) throws Exception {

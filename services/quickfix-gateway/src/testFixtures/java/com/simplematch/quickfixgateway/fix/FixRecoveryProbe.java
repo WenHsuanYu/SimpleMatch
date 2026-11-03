@@ -107,6 +107,9 @@ final class FixRecoveryProbe {
         .put("originalOrderBodySha256", bodyDigest(exchange.order()))
         .put("retrySentAtEpochMs", System.currentTimeMillis());
     assertThat(Session.sendToTarget(retry, exchange.sessionId())).isTrue();
+    assertThat(retry.getHeader().getInt(MsgSeqNum.FIELD))
+        .isGreaterThan(exchange.order().getHeader().getInt(MsgSeqNum.FIELD));
+    assertThat(bodyDigest(retry)).isEqualTo(bodyDigest(exchange.order()));
     evidence.put("retryMessageSequence", retry.getHeader().getInt(MsgSeqNum.FIELD))
         .put("retryOrderBodySha256", bodyDigest(retry))
         .put("clOrdId", retry.getString(ClOrdID.FIELD))
