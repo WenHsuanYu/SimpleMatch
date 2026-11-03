@@ -64,6 +64,12 @@ final class KubernetesClient {
     run(json.writeValueAsString(document), "create", "-f", "-");
   }
 
+  KubernetesPortForward forward(String resource, int remotePort, Path log) throws Exception {
+    final var command = new ArrayList<>(prefix);
+    command.addAll(List.of("port-forward", "--address=127.0.0.1", resource, ":" + remotePort));
+    return KubernetesPortForward.start(command, log, remotePort);
+  }
+
   void waitFor(String condition, String object) throws Exception {
     execute("", Duration.ofMinutes(11), "wait", "--for=" + condition, object,
         "--timeout=600s").checked();

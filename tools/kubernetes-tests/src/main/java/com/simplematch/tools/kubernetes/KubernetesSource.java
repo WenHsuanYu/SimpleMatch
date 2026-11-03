@@ -23,6 +23,7 @@ final class KubernetesSource {
     return fingerprintSelected(root, commands, file -> !file.endsWith(".md")
         && (runtimeInput(file) || file.startsWith("tools/kubernetes-tests/")
             || file.startsWith("deploy/k8s/") || file.startsWith("deploy/kind/")
+            || file.startsWith("scripts/end-to-end/critical-consumers/sql/")
             || file.equals("scripts/local-resource-budget.rb")
             || file.equals("scripts/lib/local-docker-storage.sh")
             || file.equals("scripts/lib/local-kind.sh")));

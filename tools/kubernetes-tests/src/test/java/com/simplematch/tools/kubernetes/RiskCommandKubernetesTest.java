@@ -12,12 +12,12 @@ class RiskCommandKubernetesTest {
   @Test
   void acceptedAdmissionAndKafkaRecordPreserveTheDurableOutboxBytesAndArtifactRoute()
       throws Exception {
-    final var environment = new RiskCommandEnvironment();
+    final var environment = new KubernetesBusinessEnvironment();
     VerificationRun.verify(environment.request(), environment,
         run -> assertFacts(environment.submitAndObserve(run)));
   }
 
-  static void assertFacts(RiskCommandEnvironment.Facts facts) {
+  static void assertFacts(RiskCommandProbe.Facts facts) {
     final var selected = facts.selected();
     final var admission = facts.admission();
     final var outbox = facts.outbox();

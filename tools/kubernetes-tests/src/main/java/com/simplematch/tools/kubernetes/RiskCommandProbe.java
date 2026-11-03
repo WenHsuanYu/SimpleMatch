@@ -7,8 +7,6 @@ import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.time.Duration;
-import java.util.ArrayList;
-import java.util.List;
 import java.util.Map;
 import java.util.UUID;
 import java.util.concurrent.TimeoutException;
@@ -27,9 +25,9 @@ final class RiskCommandProbe {
     this.target = target;
   }
 
-  RiskCommandEnvironment.Facts execute() throws Exception {
+  Facts execute() throws Exception {
     final UUID accountId = UUID.randomUUID();
-    final String postgres = postgresPod();
+    final var postgres = new KubernetesPostgres(target);
     final var variables = Map.of("account_id", accountId.toString(), "trading_day",
         settings.day().toString(), "now_ms", Long.toString(System.currentTimeMillis()));
     sql(postgres, "account-buy.sql", variables);
@@ -63,31 +61,20 @@ final class RiskCommandProbe {
     final var expected = json.valueToTree(Map.of("accountId", accountId.toString(),
         "tradingDay", settings.day().toString(), "runId", target.run().runId(),
         "artifactContentSha256", inputs.input().artifact().identity().contentSha256()));
-    return new RiskCommandEnvironment.Facts(expected, read(evidence, "selected-instrument.json"),
+    return new Facts(expected, read(evidence, "selected-instrument.json"),
         admission, outbox, read(evidence, "verifier-verdict.json"),
         read(evidence, "admission-outcome.json"), request,
         read(evidence, "matching-command-record.json"));
   }
 
-  private String postgresPod() throws Exception {
-    final var pods = target.client().read("get", "pods", "-l", "app.kubernetes.io/name=postgres",
-        "-o", "json").path("items");
-    if (pods.size() != 1) {
-      throw new IllegalStateException("PostgreSQL Pod identity is ambiguous or absent");
-    }
-    return pods.get(0).path("metadata").path("name").asText();
-  }
-
-  private String sql(String pod, String resource, Map<String, String> variables) throws Exception {
-    final var arguments = new ArrayList<>(List.of("exec", "-i", pod, "--", "psql",
-        "--no-psqlrc", "-U", "simplematch", "-d", "simplematch", "-Atq", "-v", "ON_ERROR_STOP=1"));
-    variables.forEach((name, value) -> arguments.addAll(List.of("-v", name + "=" + value)));
+  private String sql(KubernetesPostgres postgres, String resource,
+      Map<String, String> variables) throws Exception {
     final String statement;
     try (var stream = java.util.Objects.requireNonNull(RiskCommandProbe.class
         .getResourceAsStream("/risk-command/" + resource), "missing SQL fixture")) {
       statement = new String(stream.readAllBytes(), StandardCharsets.UTF_8);
     }
-    return target.client().run(statement, arguments.toArray(String[]::new));
+    return postgres.execute(statement, variables);
   }
 
   private String awaitVerifierPod() throws Exception {
@@ -127,4 +114,7 @@ final class RiskCommandProbe {
   private JsonNode read(Path directory, String name) throws Exception {
     return json.readTree(directory.resolve(name).toFile());
   }
+
+  record Facts(JsonNode expected, JsonNode selected, JsonNode admission, JsonNode outbox,
+      JsonNode verifier, JsonNode outcome, JsonNode request, JsonNode record) {}
 }

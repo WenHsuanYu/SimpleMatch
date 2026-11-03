@@ -62,6 +62,10 @@ val kubernetesTest = tasks.register<Test>("kubernetesTest") {
     testClassesDirs = sourceSets.test.get().output.classesDirs
     classpath = sourceSets.test.get().runtimeClasspath
     useJUnitPlatform { includeTags("kubernetes-live") }
+    filter {
+        includeTestsMatching("com.simplematch.tools.kubernetes." +
+            if (scenario == "resting-buy") "RestingBuyKubernetesTest" else "RiskCommandKubernetesTest")
+    }
     outputs.upToDateWhen { false }
     maxParallelForks = 1
     providers.gradlePropertiesPrefixedBy("kubernetes").get().forEach { (name, value) ->

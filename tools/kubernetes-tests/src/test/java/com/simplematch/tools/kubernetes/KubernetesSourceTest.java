@@ -51,6 +51,7 @@ class KubernetesSourceTest {
     final var commands = new BoundedCommand(repository, Map.of());
     commands.run(List.of("git", "init", "--quiet"), "", Duration.ofSeconds(5)).checked();
     for (String name : List.of("tools/kubernetes-tests/src/test/java/Scenario.java",
+        "scripts/end-to-end/critical-consumers/sql/resting-buy-admission.sql",
         "services/quickfix-gateway/src/testFixtures/java/PreparedFixSubmission.java")) {
       final Path scenario = repository.resolve(name);
       Files.createDirectories(scenario.getParent());

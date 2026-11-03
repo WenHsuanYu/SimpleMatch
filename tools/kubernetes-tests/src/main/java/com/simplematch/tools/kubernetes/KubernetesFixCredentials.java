@@ -112,6 +112,6 @@ final class KubernetesFixCredentials implements AutoCloseable {
     for (String name : FILES) {
       Files.deleteIfExists(directory.resolve(name));
     }
-    Files.delete(directory);
+    Files.deleteIfExists(directory);
   }
 }

@@ -13,4 +13,14 @@ record KubernetesScenarioTarget(KubernetesClient client, String namespace,
   void create(JsonNode document) throws Exception {
     client.create(KubernetesDocuments.relocate(document, namespace, run.runId(), replacements));
   }
+
+  String gatewayPod() throws Exception {
+    final var pods = client.read("get", "pods", "-l",
+        "app.kubernetes.io/name=quickfix-gateway," + OwnedNamespace.OWNER_LABEL + "="
+            + run.runId(), "-o", "json").path("items");
+    if (pods.size() != 1 || pods.get(0).path("metadata").path("uid").asText().isBlank()) {
+      throw new IllegalStateException("run-owned Gateway Pod identity is ambiguous or absent");
+    }
+    return pods.get(0).path("metadata").path("name").asText();
+  }
 }

@@ -1,14 +1,13 @@
 package com.simplematch.tools.kubernetes;
 
-import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.dataformat.yaml.YAMLFactory;
 import java.nio.file.Files;
 import java.util.List;
 import java.util.Map;
 
-/** Owns the fresh RM-1 environment and its independent namespace/node cleanup boundaries. */
-final class RiskCommandEnvironment implements VerificationResources {
+/** Owns a fresh business environment and its independent namespace/node cleanup boundaries. */
+final class KubernetesBusinessEnvironment implements VerificationResources {
   private final KubernetesSettings settings = KubernetesSettings.selected();
   private final ObjectMapper json = new ObjectMapper();
   private final BoundedCommand commands = settings.dockerContext().commands(settings.root());
@@ -19,21 +18,39 @@ final class RiskCommandEnvironment implements VerificationResources {
   private KubernetesNamespace namespace;
   private KubernetesScenarioTarget target;
 
+  private final KubernetesFixCredentials credentials;
+  private final KubernetesGatewayAdmission admission;
+
+  KubernetesBusinessEnvironment() {
+    credentials = null;
+    admission = null;
+  }
+
+  KubernetesBusinessEnvironment(KubernetesFixCredentials credentials) {
+    this.credentials = java.util.Objects.requireNonNull(credentials);
+    admission = new KubernetesGatewayAdmission();
+  }
+
+  PublicOrder publicOrder() {
+    return new PublicOrder(settings, inputs.input(), target, admission);
+  }
+
   VerificationRequest request() {
     return new VerificationRequest(settings.evidence(), settings.coordination(), settings.retain());
   }
 
-  Facts submitAndObserve(VerificationContext run) throws Exception {
+  RiskCommandProbe.Facts submitAndObserve(VerificationContext run) throws Exception {
     final var facts = new RiskCommandProbe(settings, inputs, target).execute();
-    workloadImages.verify(kind.client(), run, "after-admission");
-    requireVerificationSource();
+    verifyRuntime(run);
     return facts;
   }
 
   @Override
   public String preflight() throws Exception {
-    if (!"risk-command".equals(settings.scenario())) {
-      throw new IllegalArgumentException("RM-1 cannot establish resting-buy behavior");
+    final String expected = credentials == null ? "risk-command" : "resting-buy";
+    if (!expected.equals(settings.scenario())) {
+      throw new IllegalArgumentException(
+          "selected Jupiter scenario differs from the build profile");
     }
     inputs = KubernetesPrerequisites.observe(settings);
     images = KubernetesImages.observe(settings, inputs.profile());
@@ -46,7 +63,8 @@ final class RiskCommandEnvironment implements VerificationResources {
     inputs.docker().requireCurrent(commands);
     requireVerificationSource();
     Files.write(run.evidence().resolve("preflight.json"), json.writeValueAsBytes(Map.of(
-        "verification_scope", "RM-1 BUY admission/outbox to matching.commands",
+        "verification_scope", credentials == null ? "RM-1 BUY admission/outbox to matching.commands"
+            : "public FIX BUY to Matching, Persistence, Account and FIX delivery",
         "source_fingerprint", inputs.sourceFingerprint(), "daemon_id", inputs.daemonId(),
         "verification_source_fingerprint", inputs.verificationFingerprint(),
         "docker_context", settings.dockerContext().name(), "mode", settings.mode().value(),
@@ -62,7 +80,7 @@ final class RiskCommandEnvironment implements VerificationResources {
     requireStorageClass();
     target = new KubernetesScenarioTarget(kind.client(), kind.namespace(), run,
         images.replacements(settings.tag()));
-    new RiskCommandDeployment(settings, inputs, images, target).start();
+    new RiskCommandDeployment(settings, inputs, images, target).start(credentials, admission);
     workloadImages.verify(kind.client(), run, "before-admission");
   }
 
@@ -114,6 +132,11 @@ final class RiskCommandEnvironment implements VerificationResources {
     });
   }
 
+  void verifyRuntime(VerificationContext run) throws Exception {
+    workloadImages.verify(kind.client(), run, "after-business");
+    requireVerificationSource();
+  }
+
   private void requireVerificationSource() throws Exception {
     if (!inputs.verificationFingerprint().equals(
         KubernetesSource.verificationFingerprint(settings.root(), commands))) {
@@ -121,6 +144,6 @@ final class RiskCommandEnvironment implements VerificationResources {
     }
   }
 
-  record Facts(JsonNode expected, JsonNode selected, JsonNode admission, JsonNode outbox,
-      JsonNode verifier, JsonNode outcome, JsonNode request, JsonNode record) {}
+  record PublicOrder(KubernetesSettings settings, KubernetesInput input,
+      KubernetesScenarioTarget target, KubernetesGatewayAdmission admission) {}
 }

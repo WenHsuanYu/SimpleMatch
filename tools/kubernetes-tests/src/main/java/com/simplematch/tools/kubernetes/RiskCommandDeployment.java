@@ -24,19 +24,20 @@ final class RiskCommandDeployment {
   }
 
   void start() throws Exception {
-    start(null);
+    start(null, null);
   }
 
-  void start(KubernetesFixCredentials credentials) throws Exception {
-    if (inputs.profile().runsMatching() && credentials == null) {
-      throw new IllegalArgumentException("public FIX deployment requires run-owned credentials");
+  void start(KubernetesFixCredentials credentials, KubernetesGatewayAdmission admission)
+      throws Exception {
+    if (inputs.profile().runsMatching() && (credentials == null || admission == null)) {
+      throw new IllegalArgumentException("public FIX deployment requires run-owned access");
     }
     for (var document : inputs.profile().documents()) {
       if (!Set.of("Deployment", "StatefulSet", "Job").contains(document.path("kind").asText())) {
         target.create(document);
       }
     }
-    configureInputs(credentials);
+    configureInputs(credentials, admission);
     for (String name : java.util.List.of("postgres", "kafka")) {
       createNamed(name);
     }
@@ -77,7 +78,8 @@ final class RiskCommandDeployment {
         kind + "/" + name, "--timeout=600s").checked();
   }
 
-  private void configureInputs(KubernetesFixCredentials credentials) throws Exception {
+  private void configureInputs(KubernetesFixCredentials credentials,
+      KubernetesGatewayAdmission admission) throws Exception {
     final ObjectNode artifact = inputs.input().configMap();
     artifact.withObject("metadata").put("name", "matching-daily-artifact");
     target.create(artifact);
@@ -93,7 +95,11 @@ final class RiskCommandDeployment {
     databaseOwners.add("simplematch-flyway");
     for (String owner : databaseOwners) {
       if ("quickfix-gateway".equals(owner)) {
-        target.create(credentials.gatewaySecret(dsn));
+        final var secret = credentials.gatewaySecret(dsn);
+        final var data = secret.withObject("stringData");
+        data.put("quickfix-gateway.properties",
+            data.path("quickfix-gateway.properties").asText() + admission.properties());
+        target.create(secret);
         target.create(credentials.tlsSecret());
       } else {
         target.create(KubernetesDocuments.data(
