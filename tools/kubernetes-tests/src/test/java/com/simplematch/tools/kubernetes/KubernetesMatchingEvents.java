@@ -54,18 +54,31 @@ final class KubernetesMatchingEvents {
     return request("log-end-positions", "");
   }
 
+  JsonNode positions(Duration budget) throws Exception {
+    return request("log-end-positions", "", budget);
+  }
+
   JsonNode closeBarriers(CloseBarrierExpectation expectation) throws Exception {
     return request("close-barriers", json.writeValueAsString(expectation));
   }
 
   private JsonNode request(String operation, String body) throws Exception {
+    return request(operation, body,
+        Duration.ofSeconds("close-barriers".equals(operation) ? 60 : 35));
+  }
+
+  private JsonNode request(String operation, String body, Duration duration) throws Exception {
+    final var budget = OperationBudget.start(duration);
     final var log = target.run().evidence().resolve("kafka-" + operation + "-forward.log");
     final JsonNode snapshot;
-    try (var forward = target.client().forward("pod/" + POD, 8081, log);
-        var http = HttpClient.newBuilder().connectTimeout(Duration.ofSeconds(3)).build()) {
+    try (var forward = target.client().forward("pod/" + POD, 8081, log, 0,
+            budget.remaining(Duration.ofSeconds(30)));
+        var http = HttpClient.newBuilder()
+            .connectTimeout(budget.remaining(Duration.ofSeconds(3))).build()) {
       final var request = HttpRequest.newBuilder(URI.create(
           "http://127.0.0.1:" + forward.port() + "/" + operation))
-          .timeout(Duration.ofSeconds("close-barriers".equals(operation) ? 30 : 5))
+          .timeout(budget.remaining(
+              Duration.ofSeconds("close-barriers".equals(operation) ? 30 : 5)))
           .header("Content-Type", "application/json")
           .POST(HttpRequest.BodyPublishers.ofString(body)).build();
       final var response = http.send(request, HttpResponse.BodyHandlers.ofString());
@@ -73,6 +86,7 @@ final class KubernetesMatchingEvents {
         throw new java.io.IOException("Kafka " + operation + " observer returned HTTP " + response.statusCode());
       }
       snapshot = json.readTree(response.body());
+      budget.remaining();
     }
     Files.delete(log); // Keep failed transport diagnostics; successful polling needs no separate log.
     return snapshot;

@@ -26,10 +26,15 @@ final class KubernetesPostgres {
   }
 
   String execute(String statement, Map<String, String> variables) throws Exception {
+    return execute(statement, variables, Duration.ofSeconds(45));
+  }
+
+  String execute(String statement, Map<String, String> variables, Duration budget)
+      throws Exception {
     final var arguments = new ArrayList<>(List.of("exec", "-i", pod, "--", "psql",
         "--no-psqlrc", "-U", "simplematch", "-d", "simplematch", "-Atq", "-v", "ON_ERROR_STOP=1"));
     variables.forEach((name, value) -> arguments.addAll(List.of("-v", name + "=" + value)));
-    return client.run(statement, arguments.toArray(String[]::new));
+    return client.execute(statement, budget, arguments.toArray(String[]::new)).checked();
   }
 
   /**

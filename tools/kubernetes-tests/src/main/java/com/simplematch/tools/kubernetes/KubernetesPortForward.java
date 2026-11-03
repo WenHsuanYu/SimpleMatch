@@ -7,7 +7,6 @@ import java.nio.file.Path;
 import java.time.Duration;
 import java.util.List;
 import java.util.concurrent.TimeUnit;
-import java.util.concurrent.TimeoutException;
 import java.util.regex.Pattern;
 
 /** Owns a direct kubectl forwarder and the loopback port it actually bound. */
@@ -21,14 +20,20 @@ final class KubernetesPortForward implements AutoCloseable {
 
   static KubernetesPortForward start(List<String> command, Path log, int remotePort)
       throws Exception {
+    return start(command, log, remotePort, Duration.ofSeconds(30));
+  }
+
+  static KubernetesPortForward start(List<String> command, Path log, int remotePort,
+      Duration budget) throws Exception {
     if (remotePort < 1 || remotePort > 65_535) {
       throw new IllegalArgumentException("remote port is out of range");
     }
+    final var deadline = OperationBudget.start(budget);
     Files.createFile(log);
     final var forward = new KubernetesPortForward(new ProcessBuilder(command)
         .redirectErrorStream(true).redirectOutput(log.toFile()).start());
     try {
-      forward.awaitPort(log, remotePort);
+      forward.awaitPort(log, remotePort, deadline);
       return forward;
     } catch (Exception failure) {
       try {
@@ -47,11 +52,11 @@ final class KubernetesPortForward implements AutoCloseable {
     return port;
   }
 
-  private void awaitPort(Path log, int remotePort) throws Exception {
+  private void awaitPort(Path log, int remotePort, OperationBudget budget) throws Exception {
     final var ready = Pattern.compile(
         "(?m)^Forwarding from 127\\.0\\.0\\.1:([0-9]{1,5}) -> " + remotePort + "\\s*$");
-    final long deadline = System.nanoTime() + Duration.ofSeconds(30).toNanos();
-    do {
+    while (true) {
+      budget.remaining();
       final var match = ready.matcher(startupOutput(log));
       if (match.find()) {
         port = Integer.parseInt(match.group(1));
@@ -60,9 +65,8 @@ final class KubernetesPortForward implements AutoCloseable {
         }
         return;
       }
-      Thread.sleep(50);
-    } while (System.nanoTime() < deadline);
-    throw new TimeoutException("port-forward did not publish loopback readiness within 30 seconds");
+      Thread.sleep(budget.remaining(Duration.ofMillis(50)));
+    }
   }
 
   private String startupOutput(Path log) throws IOException {

@@ -12,8 +12,12 @@ record DockerIdentity(DockerContext context, String daemonId) {
   }
 
   void requireCurrent(BoundedCommand commands) throws Exception {
+    requireCurrent(commands, Duration.ofSeconds(30));
+  }
+
+  void requireCurrent(BoundedCommand commands, Duration budget) throws Exception {
     final String observed = commands.run(context.command("info", "--format", "{{.ID}}"), "",
-        Duration.ofSeconds(30)).checked().trim();
+        budget).checked().trim();
     if (!daemonId.equals(observed)) {
       throw new IllegalStateException("Docker daemon changed; refusing deployment or cleanup");
     }

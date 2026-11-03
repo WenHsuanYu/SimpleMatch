@@ -104,10 +104,15 @@ class RestingBuyKubernetesTest {
               legacy(context, "resting-buy-admission.sql"), variables));
           final var afterDurable = json.readTree(postgres.execute(
               legacy(context, "resting-buy-durable-state.sql"), durableVariables));
-          final var recoveredFacts = new KubernetesOrderFacts(afterAdmission, delivery, afterDurable, completed);
-          Files.writeString(target.run().evidence().resolve("order-facts.json"),
+          final var afterDelivery = json.readTree(postgres.execute(
+              resource("/resting-buy/gateway-delivery.sql"), variables));
+          final var recoveredFacts = new KubernetesOrderFacts(
+              afterAdmission, afterDelivery, afterDurable, completed);
+          Files.writeString(target.run().evidence().resolve("gateway-recovery-facts.json"),
               json.writeValueAsString(recoveredFacts));
-          assertFacts(context, order, recoveredFacts, 1);
+          assertEquals(baseline.admission(), afterAdmission, "retry must preserve the original admission");
+          assertEquals(baseline.delivery(), afterDelivery, "retry must preserve singular delivery intent");
+          assertEquals(baseline.durable(), afterDurable, "retry must not change durable state or revisions");
           new KubernetesMatchingRecovery(context, fix, finished)
               .verify(events, admission, delivery, durableVariables);
           finished.get(60, TimeUnit.SECONDS);

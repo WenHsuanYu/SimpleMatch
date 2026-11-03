@@ -16,28 +16,33 @@ final class KubernetesConnectors {
 
   /** Applies one idempotent pause/resume request, then observes the connector and every task. */
   void setState(String name, String state) throws Exception {
+    setState(name, state, Duration.ofSeconds(60));
+  }
+
+  void setState(String name, String state, Duration duration) throws Exception {
     if (!java.util.Set.of("PAUSED", "RUNNING").contains(state)) {
       throw new IllegalArgumentException("expected PAUSED or RUNNING connector state");
     }
-    final String pod = connectPod();
+    final var budget = OperationBudget.start(duration);
+    final String pod = connectPod(budget.remaining());
     connectRest(pod, "PUT", "/connectors/" + name
-        + ("PAUSED".equals(state) ? "/pause" : "/resume"), "");
+        + ("PAUSED".equals(state) ? "/pause" : "/resume"), "", budget.remaining());
     final var json = new ObjectMapper();
-    final long deadline = System.nanoTime() + Duration.ofSeconds(60).toNanos();
-    do {
+    while (true) {
       final var status = json.readTree(
-          connectRest(pod, "GET", "/connectors/" + name + "/status", "").checked());
+          connectRest(pod, "GET", "/connectors/" + name + "/status", "",
+              budget.remaining()).checked());
       java.nio.file.Files.writeString(target.run().evidence().resolve(name + "-state.json"),
           DiagnosticText.redact(status.toPrettyString()));
       if (state.equals(status.path("connector").path("state").asText())
           && !status.path("tasks").isEmpty()
           && java.util.stream.StreamSupport.stream(status.path("tasks").spliterator(), false)
               .allMatch(task -> state.equals(task.path("state").asText()))) {
+        budget.remaining();
         return;
       }
-      Thread.sleep(250);
-    } while (System.nanoTime() < deadline);
-    throw new TimeoutException("connector/tasks did not reach " + state + ": " + name);
+      Thread.sleep(budget.remaining(Duration.ofMillis(250)));
+    }
   }
 
   /** Registers through an owned Pod's local REST endpoint and reconciles uncertain writes. */
@@ -82,7 +87,11 @@ final class KubernetesConnectors {
   }
 
   private String connectPod() throws Exception {
-    for (var pod : target.client().read("get", "pods", "-l",
+    return connectPod(Duration.ofSeconds(45));
+  }
+
+  private String connectPod(Duration budget) throws Exception {
+    for (var pod : target.client().readWithin(budget, "get", "pods", "-l",
         "app.kubernetes.io/name=kafka-connect," + OwnedNamespace.OWNER_LABEL + "="
             + target.run().runId(), "-o", "json").path("items")) {
       for (var condition : pod.path("status").path("conditions")) {
@@ -98,6 +107,11 @@ final class KubernetesConnectors {
 
   private BoundedCommand.Result connectRest(String pod, String method, String path, String body)
       throws Exception {
+    return connectRest(pod, method, path, body, Duration.ofSeconds(65));
+  }
+
+  private BoundedCommand.Result connectRest(String pod, String method, String path, String body,
+      Duration budget) throws Exception {
     final var args = new java.util.ArrayList<>(java.util.List.of("exec", "-i", pod, "--", "curl",
         "--fail-with-body", "--silent", "--show-error", "--connect-timeout", "5",
         "--max-time", "45", "--request", method, "--header", "Content-Type: application/json"));
@@ -108,7 +122,7 @@ final class KubernetesConnectors {
           "--retry", "2", "--retry-delay", "1", "--retry-max-time", "10"));
     }
     args.add("http://localhost:8083" + path);
-    return target.client().execute(body, Duration.ofSeconds(65), args.toArray(String[]::new));
+    return target.client().execute(body, budget, args.toArray(String[]::new));
   }
 
   private void requireConnectorConfig(String pod, String name, JsonNode expected) throws Exception {

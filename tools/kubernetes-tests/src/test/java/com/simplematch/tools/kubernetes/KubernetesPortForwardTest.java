@@ -3,6 +3,7 @@ package com.simplematch.tools.kubernetes;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertThrows;
+import static org.junit.jupiter.api.Assertions.assertTimeout;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import java.io.IOException;
@@ -10,7 +11,9 @@ import java.net.ServerSocket;
 import java.net.Socket;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.time.Duration;
 import java.util.List;
+import java.util.concurrent.TimeoutException;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 
@@ -39,6 +42,13 @@ class KubernetesPortForwardTest {
     assertTrue(failure.getMessage().contains("17"));
   }
 
+  @Test
+  void aShortFaultBudgetBoundsAForwarderThatNeverBecomesReady() {
+    assertTimeout(Duration.ofSeconds(3), () -> assertThrows(TimeoutException.class,
+        () -> KubernetesPortForward.start(command("silent", temporary.resolve("silent-pid")),
+            temporary.resolve("silent.log"), 5001, Duration.ofMillis(200))));
+  }
+
   private static List<String> command(String mode, Path pid) throws Exception {
     final String classes = Path.of(Forwarder.class.getProtectionDomain()
         .getCodeSource().getLocation().toURI()).toString();
@@ -57,8 +67,10 @@ class KubernetesPortForwardTest {
       }
       try (var server = new ServerSocket(0, 1,
           java.net.InetAddress.getByAddress(new byte[] {127, 0, 0, 1}))) {
-        System.out.println("Forwarding from 127.0.0.1:" + server.getLocalPort() + " -> 5001");
-        System.out.flush();
+        if (!"silent".equals(arguments[0])) {
+          System.out.println("Forwarding from 127.0.0.1:" + server.getLocalPort() + " -> 5001");
+          System.out.flush();
+        }
         try (var connection = server.accept()) {
           connection.getOutputStream().write(42);
           Thread.sleep(120_000);

@@ -48,7 +48,7 @@ final class KubernetesGatewayRecovery {
     assertEquals(before.path("volume"), after.path("volume"));
     original.close();
     final var replacement = target.client().forward("pod/" + target.gatewayPod(), 5001,
-        fix.resolve("recovery-forward.log"), original.port());
+        fix.resolve("recovery-forward.log"), original.port(), Duration.ofSeconds(30));
     try {
       try (var management = target.client().forward("pod/" + target.gatewayPod(), 8080,
           fix.resolve("recovery-management-forward.log"))) {

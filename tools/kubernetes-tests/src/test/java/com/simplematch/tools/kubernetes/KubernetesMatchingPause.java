@@ -19,6 +19,7 @@ final class KubernetesMatchingPause implements AutoCloseable {
   private final String container;
   private final long pid;
   private boolean stopped;
+  private OperationBudget pausedBudget;
   private String pausedState = "";
   private final ObjectMapper json = new ObjectMapper();
 
@@ -64,8 +65,10 @@ final class KubernetesMatchingPause implements AutoCloseable {
     final var pause = new KubernetesMatchingPause(context, partition);
     try {
       pause.stopped = true;
-      pause.signal("SIGSTOP");
-      pause.pausedState = pause.awaitStopped(true);
+      // Leave room for restoration before the native 30s stale-file/probe failure window.
+      pause.pausedBudget = OperationBudget.start(Duration.ofSeconds(20));
+      pause.signal("SIGSTOP", pause.pausedBudget);
+      pause.pausedState = pause.awaitStopped(true, pause.pausedBudget);
       pause.save();
       return pause;
     } catch (Exception failure) {
@@ -79,8 +82,12 @@ final class KubernetesMatchingPause implements AutoCloseable {
   }
 
   private JsonNode inspect() throws Exception {
+    return inspect(Duration.ofSeconds(15));
+  }
+
+  private JsonNode inspect(Duration budget) throws Exception {
     final var status = json.readTree(commands.run(owner.docker().context().command("exec", node,
-        "crictl", "inspect", container), "", Duration.ofSeconds(15)).checked());
+        "crictl", "inspect", container), "", budget).checked());
     if (!container.equals(status.path("status").path("id").asText())
         || !podUid.equals(status.path("status").path("labels").path("io.kubernetes.pod.uid").asText())) {
       throw new IllegalStateException("Matching task no longer belongs to the selected Pod");
@@ -88,20 +95,25 @@ final class KubernetesMatchingPause implements AutoCloseable {
     return status;
   }
 
-  private void signal(String signal) throws Exception {
-    owner.docker().requireCurrent(commands);
+  private void signal(String signal, OperationBudget budget) throws Exception {
+    owner.docker().requireCurrent(commands, budget.remaining());
     final String currentNode = json.readTree(commands.run(owner.docker().context()
-        .command("inspect", node), "", Duration.ofSeconds(15)).checked()).get(0).path("Id").asText();
-    if (!nodeId.equals(currentNode) || inspect().path("info").path("pid").asLong() != pid) {
+        .command("inspect", node), "", budget.remaining()).checked()).get(0).path("Id").asText();
+    if (!nodeId.equals(currentNode)
+        || inspect(budget.remaining()).path("info").path("pid").asLong() != pid) {
       throw new IllegalStateException("Matching task or node changed; refusing signal");
     }
     commands.run(owner.docker().context().command("exec", node, "ctr", "--namespace", "k8s.io",
-        "tasks", "kill", "--signal", signal, container), "", Duration.ofSeconds(15)).checked();
+        "tasks", "kill", "--signal", signal, container), "", budget.remaining()).checked();
   }
 
   private String processState() throws Exception {
+    return processState(Duration.ofSeconds(10));
+  }
+
+  private String processState(Duration budget) throws Exception {
     final String status = commands.run(owner.docker().context().command("exec", node, "cat",
-        "/proc/" + pid + "/status"), "", Duration.ofSeconds(10)).checked();
+        "/proc/" + pid + "/status"), "", budget).checked();
     final var state = Pattern.compile("(?m)^State:\\s+(\\S)").matcher(status);
     if (!state.find()) {
       throw new IllegalStateException("Matching process state is unavailable");
@@ -116,16 +128,20 @@ final class KubernetesMatchingPause implements AutoCloseable {
             "restored", !stopped)));
   }
 
-  private String awaitStopped(boolean expected) throws Exception {
-    final long deadline = System.nanoTime() + Duration.ofSeconds(5).toNanos();
-    do {
-      final String state = processState();
+  private String awaitStopped(boolean expected, OperationBudget budget) throws Exception {
+    final var observation = OperationBudget.start(budget.remaining(Duration.ofSeconds(5)));
+    while (true) {
+      final String state = processState(observation.remaining());
       if ("T".equals(state) == expected) {
         return state;
       }
-      Thread.sleep(50);
-    } while (System.nanoTime() < deadline);
-    throw new IllegalStateException("Matching process did not reach the requested stop/resume state");
+      Thread.sleep(observation.remaining(Duration.ofMillis(50)));
+    }
+  }
+
+  /** Caps fault work while stopped; resumed work retains the caller's scenario budget. */
+  Duration limit(Duration available) throws java.util.concurrent.TimeoutException {
+    return stopped ? pausedBudget.remaining(available) : available;
   }
 
   /** Resumes only the original task, including when the scenario was interrupted. */
@@ -134,8 +150,9 @@ final class KubernetesMatchingPause implements AutoCloseable {
     final boolean interrupted = Thread.interrupted();
     try {
       if (stopped) {
-        signal("SIGCONT");
-        awaitStopped(false);
+        final var restoration = OperationBudget.start(Duration.ofSeconds(10));
+        signal("SIGCONT", restoration);
+        awaitStopped(false, restoration);
         stopped = false;
         save();
       }

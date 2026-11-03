@@ -28,6 +28,7 @@ final class KubernetesCriticalDelivery implements AutoCloseable {
   private JsonNode held;
   private boolean riskPaused;
   private boolean postgresStopped;
+  private KubernetesMatchingPause pausedMatching;
 
   KubernetesCriticalDelivery(KubernetesBusinessEnvironment.PublicOrder context,
       KubernetesMatchingEvents events, Map<String, String> variables) throws Exception {
@@ -58,8 +59,12 @@ final class KubernetesCriticalDelivery implements AutoCloseable {
     assertEquals(start, end(events.positions(), "matchingCommands", partition),
         "the accepted command must still be held before failure injection");
     final JsonNode observed;
-    try (var matching = KubernetesMatchingPause.stop(context, partition)) {
-      requirePausedIngress(fix);
+    final var target = context.target();
+    try (var management = target.client().forward("pod/" + target.gatewayPod(), 8080,
+            fix.resolve("paused-management-forward.log"));
+        var matching = KubernetesMatchingPause.stop(context, partition)) {
+      pausedMatching = matching;
+      requirePausedIngress(fix, management.port());
       Files.writeString(fix.resolve("reject-release"), "reject\n");
       awaitFile(fix.resolve("rejected.json"), client);
       assertEquals("8", json.readTree(fix.resolve("rejected.json").toFile()).path("execType").asText());
@@ -67,23 +72,23 @@ final class KubernetesCriticalDelivery implements AutoCloseable {
       rejected.put("cl_ord_id", "REJ-" + variables.get("cl_ord_id"));
       final String rejectionSql = "SELECT count(*) FROM risk_service.admission_journal "
           + "WHERE account_id = :'account_id'::uuid AND cl_ord_id = :'cl_ord_id';";
-      assertEquals("0", postgres.execute(rejectionSql, rejected).strip());
-      connectors.setState("risk-service-outbox", "RUNNING");
+      assertEquals("0", postgres.execute(rejectionSql, rejected, remaining()).strip());
+      connectors.setState("risk-service-outbox", "RUNNING", remaining());
       riskPaused = false;
       long published;
       do {
         remaining();
-        published = end(events.positions(), "matchingCommands", partition);
+        published = end(events.positions(remaining()), "matchingCommands", partition);
         if (published > start) {
           break;
         }
         Thread.sleep(250);
       } while (true);
-      final long eventStart = end(events.positions(), "matchingEvents", partition);
+      final long eventStart = end(events.positions(remaining()), "matchingEvents", partition);
       postgresStopped = true;
-      scalePostgres(0);
-      context.target().client().run("", "delete", "pod", "postgres-0", "--ignore-not-found",
-          "--grace-period=1", "--wait=false");
+      scalePostgres(0, remaining());
+      target.client().execute("", remaining(), "delete", "pod", "postgres-0", "--ignore-not-found",
+          "--grace-period=1", "--wait=false").checked();
       do {
         remaining();
         if (postgresPods() == 0) {
@@ -124,34 +129,37 @@ final class KubernetesCriticalDelivery implements AutoCloseable {
     return facts;
   }
 
-  private void requirePausedIngress(Path fix) throws Exception {
-    final var target = context.target();
-    try (var forward = target.client().forward("pod/" + target.gatewayPod(), 8080,
-        fix.resolve("paused-management-forward.log"))) {
-      do {
-        final var status = context.admission().status(forward.port(), remaining());
-        if ("NEW_ORDERS_PAUSED".equals(status.path("gateState").asText())) {
-          Files.writeString(fix.resolve("gateway-paused.json"), status.toPrettyString());
-          return;
-        }
-        Thread.sleep(250);
-      } while (true);
-    }
+  private void requirePausedIngress(Path fix, int port) throws Exception {
+    do {
+      final var status = context.admission().status(port, remaining());
+      if ("NEW_ORDERS_PAUSED".equals(status.path("gateState").asText())) {
+        Files.writeString(fix.resolve("gateway-paused.json"), status.toPrettyString());
+        return;
+      }
+      Thread.sleep(250);
+    } while (true);
   }
 
   private int postgresPods() throws Exception {
-    return context.target().client().read("get", "pods", "-l",
+    return context.target().client().readWithin(remaining(), "get", "pods", "-l",
         "app.kubernetes.io/name=postgres," + OwnedNamespace.OWNER_LABEL + "="
             + context.target().run().runId(), "-o", "json").path("items").size();
   }
 
   private void scalePostgres(int replicas) throws Exception {
+    scalePostgres(replicas, Duration.ofSeconds(45));
+  }
+
+  private void scalePostgres(int replicas, Duration duration) throws Exception {
+    final var budget = OperationBudget.start(duration);
     final var target = context.target();
-    final var current = target.client().read("get", "statefulset", "postgres", "-o", "json");
+    final var current = target.client().readWithin(budget.remaining(),
+        "get", "statefulset", "postgres", "-o", "json");
     if (!postgresUid.equals(current.path("metadata").path("uid").asText())) {
       throw new IllegalStateException("PostgreSQL workload identity changed; refusing scale");
     }
-    target.client().run("", "scale", "statefulset/postgres", "--replicas=" + replicas);
+    target.client().execute("", budget.remaining(), "scale", "statefulset/postgres",
+        "--replicas=" + replicas).checked();
   }
 
   private void restorePostgres() throws Exception {
@@ -190,7 +198,8 @@ final class KubernetesCriticalDelivery implements AutoCloseable {
     if (nanos <= 0) {
       throw new TimeoutException("critical delivery recovery exceeded three minutes");
     }
-    return Duration.ofNanos(nanos);
+    final Duration available = Duration.ofNanos(nanos);
+    return pausedMatching == null ? available : pausedMatching.limit(available);
   }
 
   /** Restores this run's database and connector even when the scenario was interrupted. */
