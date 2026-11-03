@@ -90,7 +90,8 @@ record KubernetesProfile(List<JsonNode> documents) {
       for (String group : List.of("containers", "initContainers")) {
         for (var container : document.path("spec").path("template").path("spec").path(group)) {
           final String image = container.path("image").asText();
-          if (!image.startsWith("simplematch/") && !image.startsWith("simplematch-")) {
+          if (!image.startsWith("simplematch/") && !image.startsWith("simplematch-")
+              && !image.equals("quickfix-gateway:local")) {
             images.add(image);
           }
         }

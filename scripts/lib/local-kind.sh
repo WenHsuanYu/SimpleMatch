@@ -139,14 +139,14 @@ simplematch_kind_validate_control_plane_stability() {
     printf 'could not capture kind control-plane readiness for %s\n' "$context" >&2
     return 1
   }
+  if [[ -n "$evidence_dir" ]]; then
+    printf '%s\n' "$before" >"$evidence_dir/before.json" || return 1
+  fi
   jq -e 'length == 3 and all(.[]; .phase == "Running" and .ready == true)' \
     <<<"$before" >/dev/null || {
     printf 'kind control-plane components are not all Ready for %s\n' "$context" >&2
     return 1
   }
-  if [[ -n "$evidence_dir" ]]; then
-    printf '%s\n' "$before" >"$evidence_dir/before.json" || return 1
-  fi
 
   command_timeout="$(_simplematch_kind_control_plane_timeout "$deadline_at" \
     "$((window_seconds + 1))")" || {
@@ -170,14 +170,14 @@ simplematch_kind_validate_control_plane_stability() {
       "$context" >&2
     return 1
   }
+  if [[ -n "$evidence_dir" ]]; then
+    printf '%s\n' "$after" >"$evidence_dir/after.json" || return 1
+  fi
   jq -n -e --argjson before "$before" --argjson after "$after" \
     '$before == $after' >/dev/null || {
     printf 'kind control-plane readiness or restart counts changed for %s\n' "$context" >&2
     return 1
   }
-  if [[ -n "$evidence_dir" ]]; then
-    printf '%s\n' "$after" >"$evidence_dir/after.json" || return 1
-  fi
 
   command_timeout="$(_simplematch_kind_control_plane_timeout "$deadline_at" \
     "$command_timeout_seconds")" || {

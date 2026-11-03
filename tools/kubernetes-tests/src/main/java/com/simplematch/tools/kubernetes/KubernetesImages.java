@@ -181,6 +181,9 @@ final class KubernetesImages {
     for (String service : javaServices) {
       result.put("simplematch/" + service + ":local", "simplematch/" + service + ":" + tag);
     }
+    if (javaServices.contains("quickfix-gateway")) {
+      result.put("quickfix-gateway:local", "simplematch/quickfix-gateway:" + tag);
+    }
     if (matchingRuntime) {
       result.put("simplematch-matching:local", "simplematch-matching:" + tag);
     }

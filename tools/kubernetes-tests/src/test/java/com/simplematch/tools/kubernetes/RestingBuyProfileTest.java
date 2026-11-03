@@ -21,6 +21,8 @@ class RestingBuyProfileTest {
     assertEquals(Set.of("account-service", "risk-service", "persistence", "quickfix-gateway"),
         profile.javaServices());
     assertTrue(profile.runsMatching());
+    assertTrue(profile.platformImages().stream()
+        .noneMatch(image -> image.startsWith("quickfix-gateway:")));
     assertEquals(List.of("account-service-flyway", "risk-service-flyway",
         "persistence-flyway", "quickfix-gateway-flyway"), profile.migrationJobs());
     assertTrue(profile.migrationJobs().stream().allMatch(name -> identities.contains("Job/" + name)));

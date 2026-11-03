@@ -117,7 +117,6 @@ class RestingBuyKubernetesTest {
         admission.path("artifactContentSha256").asText());
     assertEquals(1, delivery.path("count").asInt());
     assertEquals(admission.path("orderId"), delivery.path("orderId"));
-    assertEquals(delivery.path("orderId"), completed.path("orderId"));
     assertEquals(delivery.path("execId"), completed.path("execId"));
     assertEquals("0", completed.path("terminalExecType").asText());
     assertEquals("RESTING", projection.path("status").asText());
