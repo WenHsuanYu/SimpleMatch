@@ -35,10 +35,8 @@ final class KubernetesImages {
     final var identities = new LinkedHashMap<String, String>();
     final var json = new ObjectMapper();
     final var repositories = new ArrayList<>(List.of("simplematch/flyway-runner",
-        "simplematch-matching", "simplematch/kafka-fixture-publisher"));
-    if ("risk-command".equals(settings.scenario())) {
-      repositories.add("simplematch/risk-matching-e2e-verifier");
-    }
+        "simplematch-matching", "simplematch/kafka-fixture-publisher",
+        "simplematch/risk-matching-e2e-verifier"));
     for (String repository : repositories) {
       inspect(commands, settings.dockerContext(), json, identities,
           repository + ":" + settings.tag());

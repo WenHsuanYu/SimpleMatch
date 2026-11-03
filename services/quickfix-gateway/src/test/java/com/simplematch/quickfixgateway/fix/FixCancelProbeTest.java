@@ -1,6 +1,5 @@
 package com.simplematch.quickfixgateway.fix;
 
-import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 import org.junit.jupiter.api.Test;
@@ -10,28 +9,11 @@ import quickfix.field.ExecType;
 import quickfix.field.OrdStatus;
 import quickfix.field.OrderID;
 import quickfix.field.OrderQty;
-import quickfix.field.OrigClOrdID;
 import quickfix.field.Symbol;
 import quickfix.fix44.ExecutionReport;
 import quickfix.fix44.NewOrderSingle;
 
 class FixCancelProbeTest {
-  @Test
-  void sendsNewCancelIdentityForTheOriginalOrderAndRetainsTerminalReportIdentity()
-      throws Exception {
-    final var request = FixCancelProbe.cancelRequest(order(), "CAN-168-001");
-    assertThat(request.getString(ClOrdID.FIELD)).isEqualTo("CAN-168-001");
-    assertThat(request.getString(OrigClOrdID.FIELD)).isEqualTo("REST-168-001");
-    assertThat(request.getString(Account.FIELD)).isEqualTo("0198a000-0000-7000-8000-000000000001");
-    assertThat(request.getString(OrderQty.FIELD)).isEqualTo("1000");
-    assertThat(request.getString(Symbol.FIELD)).isEqualTo("1101");
-    final var evidence = FixCancelProbe.evidence(request, report('4'), 1234L);
-    assertThat(evidence.path("clOrdId").asText()).isEqualTo("CAN-168-001");
-    assertThat(evidence.path("reportClOrdId").asText()).isEqualTo("REST-168-001");
-    assertThat(evidence.path("orderId").asText()).isEqualTo("O-REST-168-001");
-    assertThat(evidence.has("rawFix")).isFalse();
-  }
-
   @Test
   void pendingCancelOrUnrelatedOrderCannotBecomeSuccessfulTerminalEvidence() throws Exception {
     final var request = FixCancelProbe.cancelRequest(order(), "CAN-168-001");

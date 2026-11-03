@@ -10,10 +10,12 @@ import java.nio.file.StandardCopyOption;
 import java.time.LocalDateTime;
 import java.time.ZoneOffset;
 import java.util.concurrent.TimeUnit;
+import java.util.function.Function;
 import quickfix.FieldNotFound;
 import quickfix.Session;
 import quickfix.field.Account;
 import quickfix.field.ClOrdID;
+import quickfix.field.ExecID;
 import quickfix.field.ExecType;
 import quickfix.field.OrdStatus;
 import quickfix.field.OrderID;
@@ -27,13 +29,17 @@ import quickfix.fix44.OrderCancelRequest;
 
 /** Keeps the original real FIX session alive for one post-Matching-recovery cancel. */
 final class FixCancelProbe {
-  private FixCancelProbe() {}
+  private final Function<String, String> environment;
+
+  FixCancelProbe(Function<String, String> environment) {
+    this.environment = environment;
+  }
 
   /** Releases a new cancel only after the runner observes actual Matching recovery and reopen. */
-  static void completeIfRequested(
+  void completeIfRequested(
       FixRecoveryProbe.Exchange exchange, TerminalReportObserver observer, int timeoutSeconds)
       throws Exception {
-    if (!"true".equals(System.getenv("SIMPLEMATCH_RETAINED_FIX_CANCEL"))) {
+    if (!"true".equals(environment.apply("SIMPLEMATCH_RETAINED_FIX_CANCEL"))) {
       return;
     }
     final Path release = environmentPath("SIMPLEMATCH_RETAINED_FIX_CANCEL_RELEASE");
@@ -83,6 +89,7 @@ final class FixCancelProbe {
         .put("reportClOrdId", report.getString(ClOrdID.FIELD))
         .put("accountId", request.getString(Account.FIELD))
         .put("orderId", report.getString(OrderID.FIELD))
+        .put("execId", report.getString(ExecID.FIELD))
         .put("execType", report.getString(ExecType.FIELD))
         .put("ordStatus", report.getString(OrdStatus.FIELD))
         .put("sentAtEpochMs", sentAtEpochMs);
@@ -97,8 +104,8 @@ final class FixCancelProbe {
     }
   }
 
-  private static Path environmentPath(String name) {
-    final String value = System.getenv(name);
+  private Path environmentPath(String name) {
+    final String value = environment.apply(name);
     assertThat(value).as(name).isNotBlank();
     return Path.of(value).toAbsolutePath().normalize();
   }

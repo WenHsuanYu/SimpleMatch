@@ -10,6 +10,7 @@ import java.nio.file.Path;
 import java.security.MessageDigest;
 import java.util.HexFormat;
 import java.util.concurrent.TimeUnit;
+import java.util.function.Function;
 import quickfix.Message;
 import quickfix.Session;
 import quickfix.SessionID;
@@ -30,10 +31,15 @@ import quickfix.fix44.TestRequest;
 
 /** Records actual session callbacks, independently of Pod readiness. */
 final class FixRecoveryProbe {
+  private final Function<String, String> environment;
   private int logonCount;
   private int logoutCount;
   private long logoutAtEpochMs;
   private long reconnectedAtEpochMs;
+
+  FixRecoveryProbe(Function<String, String> environment) {
+    this.environment = environment;
+  }
 
   synchronized void onLogon() {
     logonCount++;
@@ -58,7 +64,7 @@ final class FixRecoveryProbe {
   /** Keeps the same initiator alive until the runner has replaced and reopened its Gateway. */
   void completeIfRequested(Exchange exchange, FixWireLogObserver observer, int timeoutSeconds)
       throws Exception {
-    if (!"true".equals(System.getenv("SIMPLEMATCH_RETAINED_FIX_RECOVERY"))) {
+    if (!"true".equals(environment.apply("SIMPLEMATCH_RETAINED_FIX_RECOVERY"))) {
       return;
     }
     final Path release = environmentPath("SIMPLEMATCH_RETAINED_FIX_RECOVERY_RELEASE");
@@ -68,10 +74,7 @@ final class FixRecoveryProbe {
     }
     assertThat(release).as("Gateway recovery release").exists();
     final long deadlineEpochMs = Long.parseLong(Files.readString(release).strip());
-    final ObjectNode evidence = connectionEvidence();
-    assertThat(evidence.path("logonCount").asInt()).as("actual FIX reconnect").isGreaterThanOrEqualTo(2);
-    assertThat(evidence.path("logoutCount").asInt()).as("actual FIX disconnect").isPositive();
-    assertThat(Session.lookupSession(exchange.sessionId()).isLoggedOn()).isTrue();
+    final ObjectNode evidence = awaitReconnect(exchange.sessionId(), deadlineEpochMs);
 
     final ExecutionReport original = exchange.report();
     final String clOrdId = original.getString(ClOrdID.FIELD);
@@ -133,8 +136,21 @@ final class FixRecoveryProbe {
     return Math.toIntExact((remaining + 999) / 1000);
   }
 
-  private static Path environmentPath(String name) {
-    final String value = System.getenv(name);
+  private ObjectNode awaitReconnect(SessionID session, long deadlineEpochMs) throws Exception {
+    do {
+      secondsRemaining(deadlineEpochMs);
+      final var evidence = connectionEvidence();
+      if (evidence.path("logonCount").asInt() >= 2
+          && evidence.path("logoutCount").asInt() > 0
+          && Session.lookupSession(session).isLoggedOn()) {
+        return evidence;
+      }
+      Thread.sleep(20);
+    } while (true);
+  }
+
+  private Path environmentPath(String name) {
+    final String value = environment.apply(name);
     assertThat(value).as(name).isNotBlank();
     return Path.of(value).toAbsolutePath().normalize();
   }

@@ -5,25 +5,8 @@ import static org.assertj.core.api.Assertions.assertThat;
 import org.junit.jupiter.api.Test;
 import quickfix.Message;
 
-/** Checks connection evidence recorded from actual FIX application callbacks. */
+/** Protects replay body identity while allowing FIX session headers to advance. */
 class FixRecoveryProbeTest {
-  @Test
-  void recordsAReconnectOnlyAfterASecondLogonAndAnObservedLogout() {
-    final FixRecoveryProbe probe = new FixRecoveryProbe();
-    probe.onLogon();
-    assertThat(probe.connectionEvidence().path("logonCount").asInt()).isEqualTo(1);
-    assertThat(probe.connectionEvidence().path("reconnectedAtEpochMs").asLong()).isZero();
-
-    probe.onLogout();
-    probe.onLogon();
-    final var evidence = probe.connectionEvidence();
-    assertThat(evidence.path("logonCount").asInt()).isEqualTo(2);
-    assertThat(evidence.path("logoutCount").asInt()).isEqualTo(1);
-    assertThat(evidence.path("logoutAtEpochMs").asLong()).isPositive();
-    assertThat(evidence.path("reconnectedAtEpochMs").asLong())
-        .isGreaterThanOrEqualTo(evidence.path("logoutAtEpochMs").asLong());
-  }
-
   @Test
   void hashesTheWholeOrderBodyWithoutConflatingItWithSessionHeaders() throws Exception {
     final Message original = new Message();

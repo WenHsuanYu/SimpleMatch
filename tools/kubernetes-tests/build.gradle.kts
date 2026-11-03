@@ -135,8 +135,7 @@ dockerBuild("buildKubernetesBarrierImage", listOf("-f", "deploy/docker/Dockerfil
 dockerBuild("buildKubernetesMatchingImage", listOf("-f", "deploy/docker/Dockerfile.matching",
     "--build-arg", "SIMPLEMATCH_BUILD_FIXTURE_TOOLS=ON", "--target", "matching",
     "-t", "simplematch-matching:$imageTag"))
-val auxiliaryImages = listOf("flyway-runner") +
-    if (scenario == "risk-command") listOf("risk-matching-e2e-verifier") else emptyList()
+val auxiliaryImages = listOf("flyway-runner", "risk-matching-e2e-verifier")
 for (image in auxiliaryImages) {
     dockerBuild("buildKubernetes" + image.split('-').joinToString("") {
         it.replaceFirstChar(Char::uppercaseChar)

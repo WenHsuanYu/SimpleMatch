@@ -35,7 +35,7 @@ class RestingBuyKubernetesTest {
   @TempDir Path privateFiles;
 
   @Test
-  void publicBuyRestsOnceAndReturnsItsDurableMatchingDelivery() throws Exception {
+  void publicBuySurvivesOwnerRestartsAndDuplicateDelivery() throws Exception {
     final UUID account = UUID.randomUUID();
     try (var credentials = KubernetesFixCredentials.create(privateFiles.resolve("fix"), account)) {
       final var environment = new KubernetesBusinessEnvironment(credentials);
@@ -55,10 +55,11 @@ class RestingBuyKubernetesTest {
     final var order = order(context, account);
     final var variables = Map.of("account_id", account.toString(),
         "trading_day", context.settings().day().toString(), "cl_ord_id", order.clOrdId(),
-        "now_ms", Long.toString(System.currentTimeMillis()));
+        "now_ms", Long.toString(System.currentTimeMillis()), "exec_type", "0");
     postgres.execute(resource("/risk-command/account-buy.sql"), variables);
     Files.writeString(target.run().evidence().resolve("public-order.json"),
         json.writeValueAsString(order));
+    final var events = new KubernetesMatchingEvents(context);
     context.admission().open(target);
     final Path fix = Files.createDirectory(target.run().evidence().resolve("fix"));
     try (var forward = target.client().forward("pod/" + target.gatewayPod(), 5001,
@@ -95,9 +96,23 @@ class RestingBuyKubernetesTest {
         Files.writeString(target.run().evidence().resolve("durable.json"), durable.toPrettyString());
         Files.writeString(target.run().evidence().resolve("delivery.json"), delivery.toPrettyString());
         Files.writeString(fix.resolve("complete"), delivery.path("execId").asText());
-        finished.get(60, TimeUnit.SECONDS);
+        awaitFile(fix.resolve("completed.json"), finished);
         final var completed = json.readTree(fix.resolve("completed.json").toFile());
         assertFacts(context, order, admission, delivery, durable, completed);
+        try (var recovered = new KubernetesGatewayRecovery(context, fix, finished).replace(forward)) {
+          final var afterAdmission = json.readTree(postgres.execute(
+              legacy(context, "resting-buy-admission.sql"), variables));
+          final var afterDurable = json.readTree(postgres.execute(
+              legacy(context, "resting-buy-durable-state.sql"), durableVariables));
+          Files.writeString(target.run().evidence().resolve("admission.json"),
+              afterAdmission.toPrettyString());
+          Files.writeString(target.run().evidence().resolve("durable.json"),
+              afterDurable.toPrettyString());
+          assertFacts(context, order, afterAdmission, delivery, afterDurable, completed);
+          new KubernetesMatchingRecovery(context, fix, finished)
+              .verify(events, admission, delivery, durableVariables);
+          finished.get(60, TimeUnit.SECONDS);
+        }
       } finally {
         finished.cancel(true);
       }
@@ -172,6 +187,12 @@ class RestingBuyKubernetesTest {
     values.put("SIMPLEMATCH_RETAINED_FIX_EVIDENCE", fix.resolve("receipt.json").toString());
     values.put("SIMPLEMATCH_RETAINED_FIX_COMPLETION_FILE", fix.resolve("complete").toString());
     values.put("SIMPLEMATCH_RETAINED_FIX_COMPLETION_EVIDENCE", fix.resolve("completed.json").toString());
+    values.put("SIMPLEMATCH_RETAINED_FIX_RECOVERY", "true");
+    values.put("SIMPLEMATCH_RETAINED_FIX_RECOVERY_RELEASE", fix.resolve("recovery-release").toString());
+    values.put("SIMPLEMATCH_RETAINED_FIX_RECOVERY_EVIDENCE", fix.resolve("recovery.json").toString());
+    values.put("SIMPLEMATCH_RETAINED_FIX_CANCEL", "true");
+    values.put("SIMPLEMATCH_RETAINED_FIX_CANCEL_RELEASE", fix.resolve("cancel-release").toString());
+    values.put("SIMPLEMATCH_RETAINED_FIX_CANCEL_EVIDENCE", fix.resolve("cancel.json").toString());
     return Map.copyOf(values);
   }
 

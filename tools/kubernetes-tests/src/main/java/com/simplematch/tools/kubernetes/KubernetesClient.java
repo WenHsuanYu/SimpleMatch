@@ -65,8 +65,18 @@ final class KubernetesClient {
   }
 
   KubernetesPortForward forward(String resource, int remotePort, Path log) throws Exception {
+    return forward(resource, remotePort, log, 0);
+  }
+
+  /** Rebinds the retained client's endpoint after its original Pod is replaced. */
+  KubernetesPortForward forward(String resource, int remotePort, Path log, int localPort)
+      throws Exception {
+    if (localPort < 0 || localPort > 65_535) {
+      throw new IllegalArgumentException("local port is out of range");
+    }
     final var command = new ArrayList<>(prefix);
-    command.addAll(List.of("port-forward", "--address=127.0.0.1", resource, ":" + remotePort));
+    command.addAll(List.of("port-forward", "--address=127.0.0.1", resource,
+        (localPort == 0 ? "" : Integer.toString(localPort)) + ":" + remotePort));
     return KubernetesPortForward.start(command, log, remotePort);
   }
 

@@ -123,15 +123,15 @@ public class PreparedFixSubmission {
 
       final ExecutionReport report = application.awaitExecutionReport(clOrdId, timeoutSeconds);
       writeEvidence(evidencePath, report, sentAtEpochMs, accountId, timeInForce, null);
+      completeDeliveryIfRequested(
+          application, report, sentAtEpochMs, accountId, timeInForce, timeoutSeconds);
       application.recoveryProbe.completeIfRequested(
           new FixRecoveryProbe.Exchange(sessionId, order, report), wireObserver, timeoutSeconds);
-      FixCancelProbe.completeIfRequested(
+      new FixCancelProbe(this::environmentValue).completeIfRequested(
           new FixRecoveryProbe.Exchange(sessionId, order, report),
           (originalId, remaining) ->
               application.awaitExecutionReport(originalId, remaining, FixCancelProbe::isCancelled),
           timeoutSeconds);
-      completeDeliveryIfRequested(
-          application, report, sentAtEpochMs, accountId, timeInForce, timeoutSeconds);
     } finally {
       initiator.stop(true);
     }
@@ -373,12 +373,13 @@ public class PreparedFixSubmission {
     return value.replace("\\", "\\\\").replace("\"", "\\\"");
   }
 
-  private static final class PreparedInitiatorApplication implements Application {
+  private final class PreparedInitiatorApplication implements Application {
     private final java.util.concurrent.CountDownLatch logonLatch =
         new java.util.concurrent.CountDownLatch(1);
     private final AtomicReference<SessionID> sessionId = new AtomicReference<>();
     private final LinkedBlockingQueue<Message> applicationMessages = new LinkedBlockingQueue<>();
-    private final FixRecoveryProbe recoveryProbe = new FixRecoveryProbe();
+    private final FixRecoveryProbe recoveryProbe =
+        new FixRecoveryProbe(PreparedFixSubmission.this::environmentValue);
 
     @Override
     public void onCreate(SessionID createdSessionId) {
