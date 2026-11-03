@@ -50,13 +50,16 @@ class KubernetesSourceTest {
   void recordsHostScenarioChangesWithoutInvalidatingUnchangedRuntimeBuildInputs() throws Exception {
     final var commands = new BoundedCommand(repository, Map.of());
     commands.run(List.of("git", "init", "--quiet"), "", Duration.ofSeconds(5)).checked();
-    final Path scenario = repository.resolve("tools/kubernetes-tests/src/test/java/Scenario.java");
-    Files.createDirectories(scenario.getParent());
-    Files.writeString(scenario, "initial scenario");
-    final String runtime = KubernetesSource.fingerprint(repository, commands);
-    final String verification = KubernetesSource.verificationFingerprint(repository, commands);
-    Files.writeString(scenario, "changed actual assertion");
-    assertEquals(runtime, KubernetesSource.fingerprint(repository, commands));
-    assertNotEquals(verification, KubernetesSource.verificationFingerprint(repository, commands));
+    for (String name : List.of("tools/kubernetes-tests/src/test/java/Scenario.java",
+        "services/quickfix-gateway/src/testFixtures/java/PreparedFixSubmission.java")) {
+      final Path scenario = repository.resolve(name);
+      Files.createDirectories(scenario.getParent());
+      Files.writeString(scenario, "initial scenario");
+      final String runtime = KubernetesSource.fingerprint(repository, commands);
+      final String verification = KubernetesSource.verificationFingerprint(repository, commands);
+      Files.writeString(scenario, "changed actual assertion");
+      assertEquals(runtime, KubernetesSource.fingerprint(repository, commands), name);
+      assertNotEquals(verification, KubernetesSource.verificationFingerprint(repository, commands), name);
+    }
   }
 }

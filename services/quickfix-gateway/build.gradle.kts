@@ -1,4 +1,5 @@
 plugins {
+    `java-test-fixtures`
     id("simplematch.spring-service")
     id("simplematch.flyway-service")
     id("simplematch.contract-test-fixtures")
@@ -20,6 +21,19 @@ dependencies {
     testImplementation(libs.flyway.core)
     testImplementation("org.springframework:spring-jdbc")
     testImplementation("org.springframework.kafka:spring-kafka-test")
+    testFixturesImplementation(platform(libs.spring.boot.bom))
+    testFixturesImplementation(libs.quickfixj.core)
+    testFixturesImplementation(libs.quickfixj.messages.fix44)
+    testFixturesImplementation(libs.jackson.databind)
+    testFixturesImplementation("org.assertj:assertj-core")
+}
+
+// Fixtures use the main JAR's FIX log redaction, but declare their own client libraries.
+// Do not export the server's Spring/Kubernetes runtime to protocol-test consumers.
+configurations.named("testFixturesApi") {
+    dependencies.withType<org.gradle.api.artifacts.ProjectDependency>().configureEach {
+        isTransitive = false
+    }
 }
 
 simpleMatchFlyway {

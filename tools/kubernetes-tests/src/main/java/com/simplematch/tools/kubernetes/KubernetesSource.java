@@ -15,7 +15,8 @@ final class KubernetesSource {
 
   static String fingerprint(Path root, BoundedCommand commands) throws Exception {
     return fingerprintSelected(root, commands, file -> runtimeInput(file)
-        && !file.endsWith(".md") && !file.contains("/src/test/"));
+        && !file.endsWith(".md") && !file.contains("/src/test/")
+        && !file.contains("/src/testFixtures/"));
   }
 
   static String verificationFingerprint(Path root, BoundedCommand commands) throws Exception {

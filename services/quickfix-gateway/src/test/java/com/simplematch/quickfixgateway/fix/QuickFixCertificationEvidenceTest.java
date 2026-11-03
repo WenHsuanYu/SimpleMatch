@@ -129,7 +129,7 @@ class QuickFixCertificationEvidenceTest {
               new QuickFixJdbcAcceptorFactory(this::quickFixDataSource));
       final Map<String, String> environment = preparedClientEnvironment(port, completionRequested);
       final var client =
-          new QuickFixPreparedSubmissionLiveCertificationTest() {
+          new PreparedFixSubmission() {
             @Override
             protected String environmentValue(String name) {
               return environment.get(name);

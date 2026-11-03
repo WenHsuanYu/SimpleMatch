@@ -15,6 +15,7 @@ dependencies {
     implementation(project(":shared-java:market-reference-contract"))
     implementation(project(":shared-java:simplematch-contracts"))
     implementation(project(":tools:risk-matching-e2e-verifier"))
+    testImplementation(testFixtures(project(":services:quickfix-gateway")))
     testImplementation(libs.junit.jupiter)
     testRuntimeOnly(libs.junit.jupiter.engine)
     testRuntimeOnly(libs.junit.platform.launcher)
