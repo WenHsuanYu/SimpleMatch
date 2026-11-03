@@ -16,7 +16,6 @@ import java.util.List;
 import java.util.Map;
 import java.util.concurrent.Future;
 import java.util.concurrent.TimeoutException;
-import java.util.function.Predicate;
 
 /** Proves recovered command processing and separately controlled Kafka duplicate delivery. */
 final class KubernetesMatchingRecovery {
@@ -57,8 +56,8 @@ final class KubernetesMatchingRecovery {
     variables.put("cl_ord_id", "CAN-" + original.required("clOrdId").asText());
     variables.put("exec_type", "4");
     variables.put("partition", original.required("routingPartition").asText());
-    final var cancel = await(legacy("resting-buy-admission.sql"), variables,
-        value -> "ACCEPTED".equals(value.path("state").asText()));
+    final var cancel = postgres.await(legacy("resting-buy-admission.sql"), variables,
+        value -> "ACCEPTED".equals(value.path("state").asText()), remaining());
     assertEquals(1, cancel.path("count").asInt());
     assertEquals(1, cancel.path("outboxCount").asInt());
     assertNotEquals(original.path("commandId"), cancel.path("commandId"));
@@ -68,8 +67,8 @@ final class KubernetesMatchingRecovery {
         .getResourceAsStream("/resting-buy/gateway-delivery.sql"))) {
       deliverySql = new String(input.readAllBytes(), java.nio.charset.StandardCharsets.UTF_8);
     }
-    final var cancellation = await(deliverySql, variables,
-        value -> "SENT".equals(value.path("status").asText()));
+    final var cancellation = postgres.await(deliverySql, variables,
+        value -> "SENT".equals(value.path("status").asText()), remaining());
     assertEquals(1, cancellation.path("count").asInt());
     final var wire = json.readTree(fix.resolve("cancel.json").toFile());
     assertEquals(cancellation.path("execId"), wire.path("execId"));
@@ -78,15 +77,15 @@ final class KubernetesMatchingRecovery {
         cancelledEvent.path("terminalOrder").path("leavesQuantityShares").asLong());
     variables.put("event_id", cancellation.required("eventId").asText());
     final String durableSql = legacy("resting-buy-durable-state.sql");
-    final var cancelled = await(durableSql, variables,
+    final var cancelled = postgres.await(durableSql, variables,
         value -> "RESERVATION_STATUS_RELEASED".equals(value.path("account").path("status").asText())
-            && value.path("events").path("persistenceCount").asInt() == 1);
+            && value.path("events").path("persistenceCount").asInt() == 1, remaining());
     assertCancelled(cancelled);
     final var repeated = events.redeliver(cancel, cancellation);
     final long offset = repeated.required("observedOffset").asLong();
-    await(legacy("matching-recovery-progress.sql"), variables,
+    postgres.await(legacy("matching-recovery-progress.sql"), variables,
         value -> List.of("persistence", "account", "quickfix").stream().allMatch(owner ->
-            value.path(owner + "LastProcessedOffset").asLong(-1) >= offset));
+            value.path(owner + "LastProcessedOffset").asLong(-1) >= offset), remaining());
     final var after = json.readTree(postgres.execute(durableSql, variables));
     save("matching-cancel-state.json", cancelled);
     save("matching-redelivery-state.json", after);
@@ -162,21 +161,6 @@ final class KubernetesMatchingRecovery {
         .map(value -> value.path("persistentVolumeClaim").path("claimName").asText())
         .findFirst().orElseThrow();
     return context.target().client().read("get", "pvc", name, "-o", "json");
-  }
-
-  private JsonNode await(String sql, Map<String, String> variables, Predicate<JsonNode> ready)
-      throws Exception {
-    do {
-      remaining();
-      final String output = postgres.execute(sql, variables);
-      if (!output.isBlank()) {
-        final var value = json.readTree(output);
-        if (ready.test(value)) {
-          return value;
-        }
-      }
-      Thread.sleep(250);
-    } while (true);
   }
 
   private static void assertCancelled(JsonNode durable) {

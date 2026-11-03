@@ -1,8 +1,13 @@
 package com.simplematch.tools.kubernetes;
 
+import com.fasterxml.jackson.databind.JsonNode;
+import com.fasterxml.jackson.databind.ObjectMapper;
+import java.time.Duration;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
+import java.util.concurrent.TimeoutException;
+import java.util.function.Predicate;
 
 /** Executes fixture SQL through the single run-owned PostgreSQL Pod without exposing its Secret. */
 final class KubernetesPostgres {
@@ -25,5 +30,28 @@ final class KubernetesPostgres {
         "--no-psqlrc", "-U", "simplematch", "-d", "simplematch", "-Atq", "-v", "ON_ERROR_STOP=1"));
     variables.forEach((name, value) -> arguments.addAll(List.of("-v", name + "=" + value)));
     return client.run(statement, arguments.toArray(String[]::new));
+  }
+
+  /**
+   * Polls successful SQL observations until convergence; command failures propagate immediately.
+   */
+  JsonNode await(String statement, Map<String, String> variables, Predicate<JsonNode> ready,
+      Duration budget) throws Exception {
+    final long deadline = System.nanoTime() + budget.toNanos();
+    final var json = new ObjectMapper();
+    while (System.nanoTime() < deadline) {
+      final String output = execute(statement, variables);
+      if (System.nanoTime() >= deadline) {
+        break;
+      }
+      if (!output.isBlank()) {
+        final var value = json.readTree(output);
+        if (ready.test(value)) {
+          return value;
+        }
+      }
+      Thread.sleep(250);
+    }
+    throw new TimeoutException("PostgreSQL observation did not converge within its budget");
   }
 }

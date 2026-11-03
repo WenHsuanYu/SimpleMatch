@@ -71,6 +71,8 @@ final class KubernetesImages {
     Files.write(run.evidence().resolve("helper-image-identity.json"), json.writeValueAsBytes(
         Map.of("reference", helper, "host_index_id", identities.get(helper),
             "platform", "linux/amd64", "platform_config_id", configs.get(helper))));
+    KindHealth.requireImageHeadroom(commands, context, client, run.evidence(), "after-import");
+    KindHealth.requireStable(client, run.evidence(), "after-import");
     int number = 0;
     for (var worker : client.read("get", "nodes", "-l",
         "simplematch.io/node-pool=local-resilience", "-o", "json").path("items")) {
@@ -86,8 +88,6 @@ final class KubernetesImages {
         json.writeValueAsBytes(identities));
     Files.write(run.evidence().resolve("platform-config-identities.json"),
         json.writeValueAsBytes(configs));
-    KindHealth.requireImageHeadroom(commands, context, client, run.evidence(), "after-import");
-    KindHealth.requireStable(client, run.evidence(), "after-import");
     return new KubernetesWorkloadImages(commands, context, kind.state().nodeIds(), configs);
   }
 
