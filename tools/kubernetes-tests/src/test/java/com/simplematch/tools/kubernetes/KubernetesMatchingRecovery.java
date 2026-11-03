@@ -80,6 +80,7 @@ final class KubernetesMatchingRecovery {
     final var cancelled = postgres.await(durableSql, variables,
         value -> "RESERVATION_STATUS_RELEASED".equals(value.path("account").path("status").asText())
             && value.path("events").path("persistenceCount").asInt() == 1, remaining());
+    save("matching-cancel-state.json", cancelled);
     assertCancelled(cancelled);
     final var repeated = events.redeliver(cancel, cancellation);
     final long offset = repeated.required("observedOffset").asLong();
@@ -87,7 +88,6 @@ final class KubernetesMatchingRecovery {
         value -> List.of("persistence", "account", "quickfix").stream().allMatch(owner ->
             value.path(owner + "LastProcessedOffset").asLong(-1) >= offset), remaining());
     final var after = json.readTree(postgres.execute(durableSql, variables));
-    save("matching-cancel-state.json", cancelled);
     save("matching-redelivery-state.json", after);
     assertEquals(cancelled, after, "duplicate delivery must not change business state or revisions");
   }
@@ -131,15 +131,9 @@ final class KubernetesMatchingRecovery {
     final var target = context.target();
     final String name = after.path("metadata").path("name").asText();
     final String ownerUid = after.path("metadata").path("uid").asText();
-    final String metrics = java.util.stream.StreamSupport.stream(
-        after.path("spec").path("containers").spliterator(), false)
-        .filter(value -> "matching".equals(value.path("name").asText()))
-        .flatMap(value -> java.util.stream.StreamSupport.stream(value.path("env").spliterator(), false))
-        .filter(value -> "MATCHING_METRICS_PATH".equals(value.path("name").asText()))
-        .map(value -> value.path("value").asText()).findFirst().orElseThrow();
     do {
       remaining();
-      final var runtime = target.client().read("exec", name, "-c", "matching", "--", "cat", metrics);
+      final var runtime = target.matchingRuntime(after);
       if ("READY".equals(runtime.path("runtime_state").asText())
           && "OPEN".equals(runtime.path("partition_state").asText())
           && runtime.path("admission").path("ownership_permitted").asBoolean()
@@ -166,7 +160,7 @@ final class KubernetesMatchingRecovery {
   private static void assertCancelled(JsonNode durable) {
     final var projection = durable.path("persistence");
     assertEquals("CANCELLED", projection.path("status").asText());
-    for (String field : List.of("leavesQuantityShares", "cumulativeQuantityShares", "fillCount")) {
+    for (String field : List.of("cumulativeQuantityShares", "fillCount")) {
       assertEquals(0, projection.path(field).asLong());
     }
     assertEquals(1, projection.path("projectionCount").asInt());

@@ -36,10 +36,17 @@ class KubernetesGatewayAdmissionTest {
         reply(exchange, 200, """
             {"gateState":"PRE_OPEN","tradingSystemStatus":{"openEligible":true}}
             """);
-      } else if ("POST".equals(exchange.getRequestMethod())) {
+      } else if ("POST".equals(exchange.getRequestMethod())
+          && "/operations/open".equals(exchange.getRequestURI().getPath())) {
         posts.incrementAndGet();
         reply(exchange, 200, """
             {"accepted":true,"gateState":"OPEN","tradingSystemStatus":{"openEligible":true}}
+            """);
+      } else if ("POST".equals(exchange.getRequestMethod())
+          && "/operations/close-day".equals(exchange.getRequestURI().getPath())) {
+        posts.incrementAndGet();
+        reply(exchange, 200, """
+            {"accepted":true,"gateState":"CLOSED","reason":"MARKET_CLOSED"}
             """);
       } else {
         reply(exchange, 405, "{}");
@@ -50,6 +57,9 @@ class KubernetesGatewayAdmissionTest {
       final var result = admission.open(server.getAddress().getPort(), Duration.ofSeconds(5));
       assertEquals("OPEN", result.path("gateState").asText());
       assertEquals(1, posts.get());
+      final var closed = admission.closeDay(server.getAddress().getPort(), Duration.ofSeconds(5));
+      assertEquals("CLOSED", closed.path("gateState").asText());
+      assertEquals(2, posts.get());
     } finally {
       server.stop(0);
     }

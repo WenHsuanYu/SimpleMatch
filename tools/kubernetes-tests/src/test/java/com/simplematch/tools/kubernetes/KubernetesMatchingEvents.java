@@ -5,6 +5,7 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.dataformat.yaml.YAMLFactory;
+import com.simplematch.tools.riskmatchinge2e.KafkaObservationSession.CloseBarrierExpectation;
 import java.net.URI;
 import java.net.http.HttpClient;
 import java.net.http.HttpRequest;
@@ -50,16 +51,26 @@ final class KubernetesMatchingEvents {
   }
 
   JsonNode positions() throws Exception {
-    final var log = target.run().evidence().resolve("kafka-positions-forward.log");
+    return request("log-end-positions", "");
+  }
+
+  JsonNode closeBarriers(CloseBarrierExpectation expectation) throws Exception {
+    return request("close-barriers", json.writeValueAsString(expectation));
+  }
+
+  private JsonNode request(String operation, String body) throws Exception {
+    final var log = target.run().evidence().resolve("kafka-" + operation + "-forward.log");
     final JsonNode snapshot;
     try (var forward = target.client().forward("pod/" + POD, 8081, log);
         var http = HttpClient.newBuilder().connectTimeout(Duration.ofSeconds(3)).build()) {
       final var request = HttpRequest.newBuilder(URI.create(
-          "http://127.0.0.1:" + forward.port() + "/log-end-positions"))
-          .timeout(Duration.ofSeconds(5)).POST(HttpRequest.BodyPublishers.noBody()).build();
+          "http://127.0.0.1:" + forward.port() + "/" + operation))
+          .timeout(Duration.ofSeconds("close-barriers".equals(operation) ? 30 : 5))
+          .header("Content-Type", "application/json")
+          .POST(HttpRequest.BodyPublishers.ofString(body)).build();
       final var response = http.send(request, HttpResponse.BodyHandlers.ofString());
       if (response.statusCode() != 200) {
-        throw new java.io.IOException("Kafka positions observer returned HTTP " + response.statusCode());
+        throw new java.io.IOException("Kafka " + operation + " observer returned HTTP " + response.statusCode());
       }
       snapshot = json.readTree(response.body());
     }

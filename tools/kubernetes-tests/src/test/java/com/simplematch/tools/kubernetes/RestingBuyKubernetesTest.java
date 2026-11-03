@@ -200,6 +200,7 @@ class RestingBuyKubernetesTest {
         final var facts = faults.recover(finished, fix);
         assertFacts(context, order, facts, 2);
         finished.get(60, TimeUnit.SECONDS);
+        new KubernetesTradingClose(context, events).verify(facts.admission());
       } finally {
         finished.cancel(true);
       }

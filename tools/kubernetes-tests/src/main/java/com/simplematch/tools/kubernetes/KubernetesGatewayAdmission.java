@@ -65,6 +65,13 @@ final class KubernetesGatewayAdmission {
     }
   }
 
+  /** Starts the terminal Risk-owned workflow through the authenticated Gateway operation. */
+  JsonNode closeDay(int port, Duration budget) throws Exception {
+    try (var client = HttpClient.newBuilder().connectTimeout(Duration.ofSeconds(3)).build()) {
+      return request(client, port, "close-day", deadline(budget));
+    }
+  }
+
   private static long deadline(Duration budget) {
     if (budget.isNegative() || budget.isZero() || budget.compareTo(Duration.ofMinutes(5)) > 0) {
       throw new IllegalArgumentException("Gateway admission requires a positive bounded budget");
@@ -82,7 +89,7 @@ final class KubernetesGatewayAdmission {
         URI.create("http://127.0.0.1:" + port + "/operations/" + operation))
         .timeout(Duration.ofNanos(Math.min(Duration.ofSeconds(5).toNanos(), remaining)))
         .header("X-SimpleMatch-Operator-Token", token);
-    if ("open".equals(operation)) {
+    if (!"status".equals(operation)) {
       request.header("Content-Type", "application/json").POST(HttpRequest.BodyPublishers.ofString(
           "{\"actor\":\"gradle-certification\",\"reason\":\"run-owned public FIX scenario\"}"));
     }

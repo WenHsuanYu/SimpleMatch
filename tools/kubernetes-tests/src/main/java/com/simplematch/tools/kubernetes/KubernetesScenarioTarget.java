@@ -23,4 +23,17 @@ record KubernetesScenarioTarget(KubernetesClient client, String namespace,
     }
     return pods.get(0).path("metadata").path("name").asText();
   }
+
+  /** Reads the native runtime file configured on the observed Matching container. */
+  JsonNode matchingRuntime(JsonNode pod) throws Exception {
+    final String metrics = java.util.stream.StreamSupport.stream(
+        pod.path("spec").path("containers").spliterator(), false)
+        .filter(value -> "matching".equals(value.path("name").asText()))
+        .flatMap(value -> java.util.stream.StreamSupport.stream(
+            value.path("env").spliterator(), false))
+        .filter(value -> "MATCHING_METRICS_PATH".equals(value.path("name").asText()))
+        .map(value -> value.path("value").asText()).findFirst().orElseThrow();
+    return client.read("exec", pod.required("metadata").required("name").asText(),
+        "-c", "matching", "--", "cat", metrics);
+  }
 }
