@@ -16,6 +16,7 @@ import sys
 import tempfile
 
 from query_http import fixture, private_json
+from policy_bundle import inspect_bundle
 
 
 def private_bytes(path):
@@ -33,10 +34,8 @@ def private_bytes(path):
 def load(directory):
     """Check fixture coherence; serving applications still authenticate and authorize independently."""
     identities, credentials = fixture(directory)
-    # Reuse the Lab authority's controlled-format parser; inspection never approves policy.
-    subprocess.run([sys.executable, str(Path(__file__).resolve().parents[1] / "policy-authority.py"),
-                    "inspect-bundle", str(directory)],
-                   capture_output=True, check=True, timeout=10)
+    # Read-only fixture coherence check. No Lab approval process or mutable registry.
+    inspect_bundle(directory)
     if any(datetime.fromisoformat(item["expiresAt"].replace("Z", "+00:00")) <= datetime.now(timezone.utc)
            for item in credentials.values()):
         raise ValueError("Generate fresh synthetic credentials before deployment")

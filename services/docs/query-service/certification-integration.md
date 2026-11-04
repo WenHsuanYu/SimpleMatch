@@ -106,8 +106,8 @@ mTLS is introduced. Query, FIX and rebuild credentials retain separate purposes.
 The complete bundle is owner-private. Query's `application.properties` contains credential
 verifiers; FIX's private properties contain the Logon and store passwords required by the
 existing Gateway configuration. No credential or private store belongs in Git, image layers
-or public evidence. `certification_security.py` reuses the authority tool's read-only
-`inspect-bundle` operation to validate the complete synthetic Query policy, including exact
+or public evidence. `certification_security.py` uses the shared read-only
+`policy_bundle.py` parser to validate the complete synthetic Query policy, including exact
 Principal/credential mappings, allowed grants and Operations permission. Inspection neither
 approves a policy nor activates one. The consumer checks private file permissions, FIX
 configuration coherence and credential expiry, decrypts all four PKCS12 stores with their

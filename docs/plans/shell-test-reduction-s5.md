@@ -303,6 +303,29 @@ callers** and remain an R19 unfinished migration obligation. Authority-only
 tests and historical #193 evidence are not relabelled as product policy
 revocation or fresh source-aligned deployment acceptance.
 
+The existing full-local Query/FIX fixture checker also used
+`policy-authority.py` as a subprocess just to run its read-only
+`inspect-bundle` command. Before retiring the stateful Lab approval
+service, the controlled private-bundle parser was extracted into
+`lib/policy_bundle.py`. `certification_security.py` now calls this
+pure function directly, while the interim Lab CLI imports the same
+function. The parser still rejects invalid grants, duplicate keys,
+incoherent verifier/token identities, foreign ownership and widened
+file permissions. It is explicitly included in the CDC/full-local
+runtime source fingerprint, so a changed parser invalidates retained
+source identity. This is a necessary shared input-security component,
+**not** a replacement approval database. The stateful authority's
+remaining runtime callers must be removed before that CLI can retire.
+
+The read-only extraction passed all seven Query/FIX certification
+fixture tests, both production-like input contracts, all nine interim
+Lab authority tests, and all 17 Query lifecycle CI contracts. The two
+strict provenance checks passed in an isolated clean source snapshot.
+`verifyAllScope` remains fail-closed. This is not a fresh deployed
+Kubernetes policy-rotation PASS. The tracked source now has **113 Shell
+files / 23,665 physical lines**, **four Ruby files** and **29 Python
+files**. Both Shell reduction gates remain unmet.
+
 The retained 17 Query lifecycle CI contracts and interim policy-authority
 test passed. Managed PostgreSQL/JUnit and Query Java suites, static analysis,
 clean-source provenance and the S5 fail-closed preflight also passed.
