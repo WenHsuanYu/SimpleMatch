@@ -438,6 +438,32 @@ collector, and policy lifecycle still have active callers and are not
 retired by this slice. R18 deployed business-read coverage and R19 two-replica
 policy replacement therefore remain open for P4 integration.
 
+#### P4 R22 deployed-report and capacity-wrapper retirement
+
+`scripts/run-matching-deployed-certification.sh` had no active project caller.
+Its sole command dependency was `scripts/run-matching-capacity-certification.sh`,
+which also had no separate active caller. CI, Gradle, and the full-local phase
+graph do not invoke either entry point. S5 retires both wrappers and their
+separate CPU-affinity, Pod/image inventory and aggregate report checks rather
+than translating them into Java or requiring their optional evidence format.
+
+`./gradlew nativeTest` still runs the native CTest capacity benchmark and
+integrity/replay checks. The benchmark binary and CMake target remain.
+`run-matching-e2e-certification.sh` and the shared `matching-e2e.sh` functions
+remain unchanged because existing fault-mode scenarios and their contracts
+use them. Kubernetes/Jupiter still observes deployed Matching owner identity,
+selected recovery, and terminal close. None of these tests now claims the
+retired CPU pinning check, whole-fleet deployed report, production performance,
+or full-topic catch-up. R22's abrupt process-crash recovery requirement is
+still unresolved for final-source complete verification. Dated historical
+benchmark and deployed-collector results remain unchanged and non-transferable.
+
+After the R18 and R22 retirements the tracked worktree contains **121 Shell
+files and 25,547 physical Shell lines**. The minimum S5 gates remain **51
+files and 10,476 lines**. This change removes 2 Shell files and 312 lines
+from the R18 checkpoint without creating replacement scripts. It does not
+close P4, P5b, P6, or the full S5 acceptance gate.
+
 #### P3 milestone Standards / Spec review
 
 **Standards:** Review used `HEAD` (`3b340a6`) as the fixed point and compared

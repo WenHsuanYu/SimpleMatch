@@ -19,6 +19,15 @@ For availability and consistency of retained historical records, read the
 [2026-10-18 evidence audit](local-certification-evidence-audit.md). It distinguishes a complete
 historical aggregate record from an unconfirmed run summary and does not certify the current runtime.
 
+Issue #202 retired the separate Matching capacity/CPU-affinity wrapper and
+read-only deployed-report collector after confirming that no active CI,
+Gradle, or full-local phase calls either script. The older command names and
+reports below describe historical source-scoped evidence, not runnable
+verification entry points. Native integrity and capacity checks remain in
+CTest through `./gradlew nativeTest`; deployed runtime assertions remain in
+the Kubernetes verification owner. Neither replacement claims pinned-CPU
+performance or comprehensive deployed latency measurement.
+
 ## Target and hard boundaries
 
 The production target is:
@@ -158,7 +167,7 @@ rows that were not rerun retain their original date and boundary.
 | Native build | cmake --build --preset full-native-dev --parallel | Passed |
 | Native full feature tests | ctest --preset full-native-dev --output-on-failure | 75/75 passed from the current full-native build tree on 2026-08-16 |
 | Native reduced feature tests | cmake --build --preset dev-debug --parallel; ctest --preset dev-debug --output-on-failure | 38/38 passed in the historical 2026-08-12 run; not rerun after #127 changes |
-| Native capacity harness | scripts/run-matching-capacity-certification.sh | Repository gate available; report is non-certifying until run on pinned production-shaped hardware |
+| Historical native capacity wrapper (retired by #202) | `scripts/run-matching-capacity-certification.sh` (removed) | Older source-scoped wrapper result; current native capacity/integrity coverage remains in CTest |
 | Kubernetes manifest contract | [Historical manifest contract](https://github.com/WenHsuanYu/SimpleMatch/blob/b3405a9d3c8da82d570e982eb67cf7bac5220586/scripts/test-matching-kubernetes-manifests.sh) | Passed; static contract only; retired in S4 |
 | Kafka profile fixtures | [Historical profile fixtures](https://github.com/WenHsuanYu/SimpleMatch/blob/b3405a9d3c8da82d570e982eb67cf7bac5220586/scripts/test-matching-topic-profile.sh) | Passed; includes RF/ISR/safety and duplicate-replica rejection; retired in S4 |
 | Outbox contracts | ./gradlew verifyCdc | Passed in the disposable CDC environment |
@@ -171,7 +180,7 @@ rows that were not rerun retain their original date and boundary.
 | Disposable kind restart | Delete/recreate one Matching pod normally | Old Lease blocked handover until expiry; new UID replayed baseline; no duplicate output |
 | Canonical three-worker Matching E2E | `bash scripts/run-matching-e2e-certification.sh --fault-mode pod-delete`, `--fault-mode process-crash`, and `--fault-mode worker-stop` | Fresh local runs passed with zero loss/duplicates. The worker-stop case observed `simplematch-live-worker2` become NotReady, restarted the same container, retained the same Pod UID/Node/PVC/PV, completed replacement in 76.956s, and reached replay catch-up in 3.542s. Evidence: `out/certification/local-production-like/worker-stop-prep-20260816-r3/worker-stop-e2e-r2/`. The claim is temporary same-worker recovery, not PVC loss, cross-node takeover, 24-hour endurance, or production certification. |
 | Canonical three-broker Kafka replacement | Delete only `kafka-0`, run the real E2E helper during loss and after rejoin | Passed: two brokers remained usable for an 8-command/8-event batch with zero loss/duplicates; replacement returned on the same node and PVC/PV; all 15 partitions of both Matching topics restored ISR 0,1,2 and KRaft follower lag was zero. Evidence: `out/certification/matching-deployed/kafka-broker-replacement-20260815/`. |
-| Deployed Matching collector | `bash scripts/run-matching-deployed-certification.sh --namespace <local-run-namespace>` with the fresh E2E metrics report | Fresh report passed all deployed-local gates: 15/15 fleet, 5/5/5 placement, 15 writer CPU-allowance records, native capacity benchmark, and worker-stop E2E evidence. Evidence: `out/certification/local-production-like/worker-stop-prep-20260816-r3/deployed-certification-local/report.json`. The bounded native local-day profile separately passed 10 cycles / 102,000 commands and events with deterministic checksums. These remain local bounded evidence, not a 24-hour endurance run, production latency, or production certification. |
+| Historical deployed Matching collector (retired by #202) | `scripts/run-matching-deployed-certification.sh` (removed) | The earlier report passed 15/15 fleet, 5/5/5 placement, 15 writer CPU-allowance records, native capacity benchmark, and worker-stop E2E evidence. Evidence: `out/certification/local-production-like/worker-stop-prep-20260816-r3/deployed-certification-local/report.json`. This is historical bounded evidence, not a current-run PASS, production latency, or production certification. |
 | Gateway kind inspection | Apply Gateway resources and inspect API objects | API-level checks passed, but placeholder image caused ErrImagePull; no runtime claim |
 
 The disposable kind scenario was intentionally small: an Open Barrier followed by one sell and one
@@ -236,46 +245,35 @@ bash scripts/run-risk-cdc-delivery-observer-check.sh \
 In a restricted development environment, prefix the Gradle commands with
 GRADLE_USER_HOME=/tmp/simplematch-gradle-cache.
 
-The repository-side capacity gate is separate from the live dependency gates:
+The repository-side native integrity/capacity gate is separate from the live
+dependency gates. The current entry point is:
 
 ~~~bash
-cmake --build --preset full-native-dev --target simplematch-matching-capacity-benchmark --parallel
-SIMPLEMATCH_BENCHMARK_CPUSET='0' \
-SIMPLEMATCH_REQUIRE_PINNED=true \
-SIMPLEMATCH_BENCHMARK_REPORT=/secure/certification/matching-capacity.json \
-bash scripts/run-matching-capacity-certification.sh \
-  --warmup 100 --iterations 1000 --maximum-resting-orders 256
+./gradlew nativeTest -PnativePreset=full-native-dev
 ~~~
 
-The benchmark exercises 150 books and checks the measured command/event stream for loss,
-duplicate event identities, state checksum equality, and deterministic serialized event bytes.
-Its latency samples cover the direct native core call; the report does
-not include Kafka, ring wait, publication, or recovery time. The report records the benchmark
-process's effective CPU affinity when the operator supplies `SIMPLEMATCH_BENCHMARK_CPUSET`. This
-is evidence about the benchmark process only; it does not prove Kubernetes CPU Manager placement
-or live Matching writer isolation. The operator must record the actual CPU-manager policy, cgroup
-quota, governor, workload/depth/rate, and ring occupancy alongside the JSON report. A direct-core
-pass therefore does not satisfy the production gate by itself.
+The CTest capacity benchmark exercises a fixed 150-book distribution and
+checks the command/event stream for loss, duplicate identities, state
+checksum equality, and deterministic serialized event bytes. Its latency
+samples cover the native core, not Kafka, ring wait, publication, or
+recovery time. The retired wrapper additionally captured host/CPU metadata
+and an optional taskset-constrained report. Those measurements are no longer
+part of S5 complete-local acceptance. A direct-core pass never establishes
+Kubernetes CPU pinning or production performance.
 S5 retires the separate ten-cycle local-depth loop and its aggregate report.
 The existing CTest suite retains bounded 10,000-command replay and the native integrity benchmark.
-Use `./gradlew nativeTest` to configure, build, and execute that suite with a fresh JUnit report.
+`nativeTest` configures, builds, and executes that suite with a fresh JUnit report.
 The [S5 disposition](../plans/shell-test-reduction-s5.md) records the intentional loss of repeated calibration.
 Historical ten-cycle results remain evidence for their original source and date.
 This native task does not establish Kafka latency, deployed recovery, or production endurance.
 
-For repository-owned deployed evidence, use the read-only collector:
-
-~~~bash
-bash scripts/run-matching-deployed-certification.sh \
-  --namespace <local-run-namespace> \
-  --report out/certification/matching-deployed/report.json
-~~~
-
-It records the actual Matching Pod UID/Node/image mapping, 5/5/5 placement, process CPU
-allowance, cgroup quota, PVC/Lease snapshots, and the native benchmark report. It returns
-`INCOMPLETE` until the same run also supplies Kafka E2E latency, ring occupancy, loss/duplicate,
-replay, and replacement measurements through `SIMPLEMATCH_E2E_METRICS_FILE`. It never deletes or
-modifies the cluster and does not claim external production certification.
+The independent deployed report collector is also retired. Existing
+Kubernetes/Jupiter scenarios still observe actual Matching owners, selected
+recovery and terminal close, while the remaining Matching E2E scenario owns
+its explicitly selected real-failure mode. These owners do not reproduce
+the old collector's comprehensive fleet/image/CPU/e2e metrics report. The
+R22 abrupt process-crash acceptance boundary remains unresolved until its
+actual retained behavior has a final-source owner.
 
 The local native Kafka fixture publisher is:
 

@@ -947,6 +947,13 @@ implementation blocker.
 
 ### PC-1: Certify capacity, latency, and recovery
 
+Issue #202 subsequently retired the standalone CPU-affinity/capacity
+report wrapper and the separate deployed Matching report collector. Their
+results below are historical evidence for their original source, not current
+executable commands. The current S5 native owner is `./gradlew nativeTest`;
+selected deployed behavior belongs to Kubernetes verification. This does
+not establish new performance or abrupt process-crash acceptance.
+
 - **Current status:** `COMPLETED`
 - **Target behavior:** A reproducible benchmark fixes hardware, CPU affinity, wait strategy,
   150-book distribution, workload mix/depth/rate, warmup, and measurement definitions.
