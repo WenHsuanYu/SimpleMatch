@@ -208,14 +208,6 @@ certification_execute_phase() {
         --capacity-evidence-file "$matching_capacity_evidence_file" \
         --certify-production
       ;;
-    kafka-broker-failure-live)
-      run_logged "$phase_id" bash \
-        "$repo_root/scripts/run-matching-kafka-failure-check.sh" \
-        --compose-project "$compose_project" --compose-file "$compose_file" \
-        --evidence-dir "$evidence_dir/kafka-failure" \
-        --producer-config-file "$matching_producer_config_file" \
-        --capacity-evidence-file "$matching_capacity_evidence_file"
-      ;;
     compose-down-before-kubernetes)
       run_logged "$phase_id" "${compose_command[@]}" \
         down --volumes --remove-orphans || return 1

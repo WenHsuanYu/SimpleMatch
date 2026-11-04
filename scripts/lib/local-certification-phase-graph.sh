@@ -70,8 +70,7 @@ kafka-describe-matching-events|kafka-create-matching-events
 kafka-config-matching-events|kafka-create-matching-events
 kafka-broker-config|compose-wait
 kafka-profile-validation|
-kafka-broker-failure-live|kafka-profile-validation
-compose-down-before-kubernetes|kafka-broker-failure-live
+compose-down-before-kubernetes|kafka-profile-validation
 registry-connectivity|
 registry-image-lock|
 kind-load-import|
@@ -261,7 +260,7 @@ _certification_profile_root_phase_ids() {
   fi
 
   if [[ "${skip_compose:-false}" != true ]]; then
-    printf '%s\n' kafka-broker-failure-live
+    printf '%s\n' kafka-profile-validation
   fi
 
   if [[ "${skip_kubernetes:-false}" != true ]]; then

@@ -464,6 +464,39 @@ files and 10,476 lines**. This change removes 2 Shell files and 312 lines
 from the R18 checkpoint without creating replacement scripts. It does not
 close P4, P5b, P6, or the full S5 acceptance gate.
 
+#### P4 R22 obsolete Kafka broker-classification phase
+
+`kafka-broker-failure-live` was the only active caller of
+`scripts/run-matching-kafka-failure-check.sh`. That script stopped one and
+then two Compose brokers, captured topic/configuration metadata, and invoked
+the existing topic-profile validator. It did not publish or verify actual
+business events through the broker interruption. The amended R22 disposition
+retires this redundant three-state metadata classification run; it does not
+replace the launcher with a Java translation.
+
+The full-local phase graph now selects `kafka-profile-validation` directly
+after Compose/topic setup. `compose-down-before-kubernetes` depends on that
+validation, so actual broker/topic/producer configuration checks remain
+fail-closed before the cluster transition. `OutboxCdcIntegrationTest` retains
+RF1/RF3 broker outage, recovered publication, connector resume, source
+checkpoint and crash-induced redelivery checks. Neither the static profile
+check nor this CDC test establishes native Matching process-crash recovery.
+The old broker-loss metadata PASS/reject/recovery report is intentionally
+retired. Historical reports still represent their original source and scope.
+
+Following this removal, the tracked worktree has **120 Shell files and
+25,403 physical Shell lines**. The minimum S5 gates of 51 files and 10,476
+lines are still unmet; P4/P5b/P6 and R22 abrupt process-crash proof remain
+open. No new deployed recovery or performance claim follows from deletion.
+
+Focused validation executed the retained `OutboxCdcIntegrationTest` for RF1
+and RF3: two tests passed, with no failures, errors, or skips. The actual
+full-local dry-run preserves the order Compose setup → Kafka profile
+validation → Compose teardown → Kubernetes namespace creation. The existing
+fresh-execution/skip-semantics contract, ShellCheck, and source/image
+provenance contract in an isolated clean snapshot also passed. These checks
+do not constitute a live Kubernetes Matching process-crash acceptance run.
+
 #### P3 milestone Standards / Spec review
 
 **Standards:** Review used `HEAD` (`3b340a6`) as the fixed point and compared
