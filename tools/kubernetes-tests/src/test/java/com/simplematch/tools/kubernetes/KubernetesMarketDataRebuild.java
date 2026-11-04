@@ -82,13 +82,18 @@ final class KubernetesMarketDataRebuild {
     this.market = market;
   }
 
-  void verify(KubernetesMarketData.Instrument instrument) throws Exception {
-    replayAndRestore(instrument);
+  void verify(KubernetesMarketData.Instrument instrument, KubernetesQueryHealth queryHealth,
+      KubernetesQueryBusinessRead business)
+      throws Exception {
+    replayAndRestore(instrument, queryHealth, business);
     verifyRestoration();
   }
 
-  private void replayAndRestore(KubernetesMarketData.Instrument instrument) throws Exception {
+  private void replayAndRestore(KubernetesMarketData.Instrument instrument,
+      KubernetesQueryHealth queryHealth, KubernetesQueryBusinessRead business) throws Exception {
     market.save("critical-before.json", market.query(CONSUMER_STATE));
+    queryHealth.baseline();
+    business.baseline();
     try (var streamer = market.client().forward("service/marketdata-streamer", 50053,
         market.evidence().resolve("r16-streamer-forward.log"))) {
       observe("baseline", streamer.port(), instrument, true);
@@ -102,7 +107,11 @@ final class KubernetesMarketDataRebuild {
     assertTrue(outage.path("pendingRedisCount").asInt() > 0,
         "real Redis outage must leave durable repair work");
     assertEquals(0, outage.path("deadLetterCount").asInt(-1));
+    business.redisUnavailable();
+    queryHealth.redisUnavailable();
     market.restoreRedis();
+    business.redisRestored();
+    queryHealth.redisRestored();
     final var budget = OperationBudget.start(OBSERVATION_BUDGET);
     JsonNode repair = market.query(PENDING_REPAIR);
     while (repair.path("pendingRedisCount").asInt(-1) != 0) {

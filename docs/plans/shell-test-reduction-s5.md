@@ -879,15 +879,15 @@ inventory is historical and remains unchanged.
 | R15 | `KubernetesMatchingRecovery` in the resting-buy scenario; native replay/inbox tests | `verifyKubernetes`, `nativeTest`, and component suites; Native CI invokes its own CTest gate. | Fresh deployed cancel/replay acceptance. |
 | R16 | `KubernetesMarketDataRebuild` in `RestingBuyKubernetesTest`, reusing `MarketDataEvidenceVerifier`; retained operator `end-to-end/market-data/run-certification.sh` | `verifyAll` selects the deployed R16 path through `verifyKubernetes`; hosted CI executes service and evidence tests, not live R16. The canonical operator Shell path remains available. | Execute and accept fresh final-source Redis outage, projection replay, repair, and seven-check public-snapshot evidence in P6. |
 | R17 | `KubernetesMarketDataStreamer` in the same run, reusing `MarketDataSnapshotRecoveryObserver`; retained operator `end-to-end/market-data/run-streamer-recovery-certification.sh` | `verifyAll` selects the deployed R17 path through `verifyKubernetes`; hosted CI executes the streamer lifecycle contract, not live R17. The canonical operator Shell path remains available. | Execute and accept fresh final-source public gRPC disconnect, Recreate replacement, and resubscription in P6. |
-| R18 | `end-to-end/query-service/run-certification.sh`, `QueryEvidenceVerifier` and Query HTTP/JDBC suites | Operator canonical Shell runner; Java/CDC Gradle and CI own component/JDBC checks, not deployed Query reads/replay. | Integrate and execute the public Kafka-to-HTTP and Redis fault path. |
+| R18 | `end-to-end/query-service/run-certification.sh`, `QueryEvidenceVerifier`, Query HTTP/JDBC suites, and partial `KubernetesQueryBusinessRead` in `RestingBuyKubernetesTest` | `verifyAll` selects an actual run-owned FIX Order → Query PostgreSQL → authenticated HTTP read before, during and after R16's Redis outage. Hosted CI runs component checks, not this live path. The canonical Shell runner remains the full operator owner. | Add a real public FIX execution-backed cross, nonempty Executions, Query zero-Pod active isolation, independently authorized bounded Query reset/replay and full evidence verdict. Execute source-aligned live acceptance in P6. |
 | R19 | `run-query-security-lifecycle.sh` / `security-lifecycle.py` and Query authorization tests | Operator lifecycle runner; lifecycle CI runs focused Python contracts, while Gradle runs service tests. No Gradle live lifecycle owner yet. | Integrate and execute two-replica policy replacement and revocation. |
 | R20 | `OutboxCdcIntegrationTest` for broker/connector/worker crash and exact redelivery; selected PostgreSQL and Redis faults remain with R11/R16 | `verifyDependencies` → `verifyCdc`; CDC CI calls `verifyCdc`. `run-local-resilience-dependencies.sh` remains a distinct focused operator diagnostic. | Fresh final-source dependency acceptance; do not restore retired Kubernetes Connect-only claims. |
-| R21 | Query runner's existing Redis fault and Pod-health/serving observations; Query HTTP tests | Same canonical R18 operator runner; Java CI checks HTTP/TLS but Gradle does not select the deployed R21 observation. | Integrate and execute live readiness/liveness and authenticated serving. |
+| R21 | `KubernetesQueryHealth` observes both Query Pods during the R16 Redis outage in `RestingBuyKubernetesTest`; retained canonical Query operator runner and Query HTTP tests | `verifyAll` now selects the R21 deployed observation through the existing `verifyKubernetes` owner; hosted CI executes HTTP/component tests, not live R21. The canonical Query Shell runner remains an R18/R21 operator entry. | Execute and accept fresh final-source Query health, startup-policy authentication, Pod identity and zero-Redis serving in P6; R18 business-data replay remains separate. |
 | R22 | `nativeTest` CTest integrity/replay; `RestingBuyKubernetesTest` real Matching SIGKILL; separate manual E2E diagnostic | `verifyAll` selects `nativeTest` and resting-buy `verifyKubernetes`; Native CI runs CTest; the retained Shell E2E runner is operator-only. | Fresh final-source process-crash/recovery evidence; no inferred crash-induced uncommitted redelivery. |
 
 The old 62-phase aggregate still has real operator references and shared
-provenance/phase-graph consumers. Its removal is blocked until R18–R19/R21
-owners are integrated and the deployed R16–R17 path is accepted with fresh
+provenance/phase-graph consumers. Its removal is blocked until R18–R19
+owners are integrated and the deployed R16–R17/R21 path is accepted with fresh
 source-aligned evidence. Deleting it now would leave retained checks unverified.
 `verifyAllScope` continues to block all R11–R22 pending fresh acceptance.
 This slice neither creates a second orchestration system nor changes the
@@ -942,3 +942,77 @@ and inspect actual run-owned evidence, restoration, and image identities.
 `verifyAllScope` must remain blocked. The legacy operator scripts and aggregate
 are not yet safe to retire. The Shell inventory remains **111 files** and is
 now **23,666 lines**. The issue's reduction minimums remain unmet.
+
+## P5b R21 Query Gradle observation integration
+
+The existing `resting-buy` `VerificationRun` now builds and loads
+`query-service`, includes its canonical two-replica Deployment, ConfigMap,
+Service and Flyway Job, and fingerprints its runtime source. The existing
+run-owned Kubernetes resource lifecycle provisions a fresh startup-only Query
+Secret with a current-account reader and separate operations Principal;
+the Secret contains credential SHA-256 verifiers, not plaintext Bearer tokens.
+No private operator fixture, retained namespace, independent policy approval
+database, or new cluster manager was adopted.
+
+`KubernetesQueryHealth` reuses R16's **one real Redis outage** instead of
+starting another one. It requires two Ready Query Pods on distinct workers,
+with stable Pod UIDs, node names, image IDs and restart counts.
+It checks the run image against the Deployment template and Pod specifications.
+Each stage also checks node/CRI image contents against the run's image receipt.
+It checks the declared readiness and liveness probes.
+It observes the configured liveness window (60–120 seconds).
+Redis must have zero Ready replicas before and after this window.
+Each concrete Pod must serve unauthenticated health probes and the authenticated
+PostgreSQL-backed operations freshness endpoint. The baseline also rejects
+anonymous freshness requests and an account reader's attempt to use operations
+authority. It checks the same Pod identities and serving after Redis restoration.
+Run-owned evidence saves observed Kubernetes identities, verified image
+contents, actual health/freshness response bodies and HTTP status codes
+without persisting either Bearer credential.
+The existing Market Data and outer `VerificationRun` lifecycle remain the
+fail-closed Redis-restoration and namespace-cleanup owners.
+
+This is **R21 selection, not live acceptance**. The new `query-health`
+evidence is produced only by a future actual deployed run; no R21 runtime
+observation or image build was executed in this P5b slice. Java module tests,
+`manifestCheck`, `staticAnalysis`, rendered resource budget and
+`verifyAll --dry-run` selection succeeded. Actual two-Pod startup, policy
+loading, Redis loss and recovery, host memory pressure, and HTTP probing
+remain unverified until P6. The original Query operator runner is retained
+because R18's executed FIX-to-Kafka-to-Query business evidence and replay
+are not integrated, and R19 still requires real policy generation replacement.
+The shared R18/R21 canonical Shell runner and R19 Lab cannot be retired
+merely because the R21 Gradle path is selected. The Shell count stays
+**111 files / 23,666 physical lines** and both S5 reduction minimums remain
+unmet. `verifyAllScope` remains intentionally blocked.
+
+## P5b R18 authenticated business-read slice
+
+`KubernetesQueryBusinessRead` uses the actual Order ID and Account ID
+from the existing public FIX admission in `RestingBuyKubernetesTest`.
+It does not create a second FIX client, service deployment, or fixture owner.
+The verifier requires this Order, Account summary, and Market Reference
+to exist in the run-owned Query PostgreSQL projection.
+It then reads all four public business routes with the run's reader Bearer token.
+It reads source freshness with the separate operations Bearer token.
+The Order must identify its original Account and instrument and retain a source event.
+The Order must reach the `CANCELED` state before the baseline.
+This is the state of the existing R15 public FIX cancellation in Query.
+Freshness must include recorded READY checkpoints for both Kafka topics.
+
+The verifier saves the actual response bodies for the baseline, Redis outage,
+and Redis restoration phases. It compares stable business data across these phases.
+An HTTP failure saves its status and a bounded, redacted response excerpt.
+It ignores response timestamps that do not define business identity.
+The same `KubernetesMarketDataRebuild` Redis mutation is the single fault owner.
+The existing R21 checks still own both Query Pods' liveness and runtime image evidence.
+The existing `VerificationRun` still owns namespace teardown and failure diagnostics.
+
+This slice does **not** assert that the selected Order has a fill.
+It does not claim a nonempty Executions result or a completed Query replay.
+It does not cover the Query zero-Pod active-processing isolation test.
+The canonical R18 runner retains these contracts and its operator last callers.
+R19 effective revocation and two-replica policy replacement remain separate.
+The new Gradle path is selected but has no fresh deployed evidence.
+Do not report a complete R18 PASS or retire the canonical Shell runner.
+Keep `verifyAllScope` blocked until the remaining owners pass live acceptance.

@@ -19,6 +19,7 @@ import java.util.UUID;
 /** Uses the current business run and its owned namespace for Market Data replay and restoration. */
 final class KubernetesMarketData implements AutoCloseable {
   private static final Duration RESTORE_BUDGET = Duration.ofMinutes(3);
+  private final KubernetesBusinessEnvironment.PublicOrder context;
   private final KubernetesScenarioTarget target;
   private final KubernetesPostgres postgres;
   private final Path evidence;
@@ -31,12 +32,13 @@ final class KubernetesMarketData implements AutoCloseable {
   private boolean redisReplicasChanged;
 
   KubernetesMarketData(KubernetesBusinessEnvironment.PublicOrder context) throws Exception {
+    this.context = context;
     target = context.target();
     postgres = new KubernetesPostgres(target);
     evidence = Files.createDirectory(target.run().evidence().resolve("market-data"));
   }
 
-  void verify() throws Exception {
+  void verify(KubernetesQueryBusinessRead business) throws Exception {
     final var projection = requireDeployment("market-data-projection");
     final var redis = requireDeployment("redis");
     requireDeployment("marketdata-streamer");
@@ -59,7 +61,8 @@ final class KubernetesMarketData implements AutoCloseable {
     requireTopicProfile();
     enableProjection();
     final Instrument instrument = instrument();
-    new KubernetesMarketDataRebuild(this).verify(instrument);
+    new KubernetesMarketDataRebuild(this).verify(
+        instrument, new KubernetesQueryHealth(context), business);
     enableProjection();
     new KubernetesMarketDataStreamer(this).verify(instrument);
   }

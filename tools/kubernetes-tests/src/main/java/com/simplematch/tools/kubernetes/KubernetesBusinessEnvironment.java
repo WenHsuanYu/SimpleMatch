@@ -5,6 +5,7 @@ import com.fasterxml.jackson.dataformat.yaml.YAMLFactory;
 import java.nio.file.Files;
 import java.util.List;
 import java.util.Map;
+import java.util.UUID;
 
 /** Owns a fresh business environment and its independent namespace/node cleanup boundaries. */
 final class KubernetesBusinessEnvironment implements VerificationResources {
@@ -20,19 +21,23 @@ final class KubernetesBusinessEnvironment implements VerificationResources {
 
   private final KubernetesFixCredentials credentials;
   private final KubernetesGatewayAdmission admission;
+  private final KubernetesQueryCredentials queryCredentials;
 
   KubernetesBusinessEnvironment() {
     credentials = null;
     admission = null;
+    queryCredentials = null;
   }
 
-  KubernetesBusinessEnvironment(KubernetesFixCredentials credentials) {
+  KubernetesBusinessEnvironment(KubernetesFixCredentials credentials, UUID account) {
     this.credentials = java.util.Objects.requireNonNull(credentials);
     admission = new KubernetesGatewayAdmission();
+    queryCredentials = new KubernetesQueryCredentials(account);
   }
 
   PublicOrder publicOrder() {
-    return new PublicOrder(settings, inputs.input(), target, admission);
+    return new PublicOrder(settings, inputs.input(), target, admission, queryCredentials,
+        workloadImages);
   }
 
   VerificationRequest request() {
@@ -82,7 +87,7 @@ final class KubernetesBusinessEnvironment implements VerificationResources {
         images.replacements(settings.tag()));
     new RiskCommandDeployment(settings, inputs, images, target,
         KindApiEgress.controlPlaneIp(kind.client(), kind.cluster()))
-        .start(credentials, admission);
+        .start(credentials, admission, queryCredentials);
     workloadImages.verify(kind.client(), run, "before-admission");
   }
 
@@ -147,5 +152,6 @@ final class KubernetesBusinessEnvironment implements VerificationResources {
   }
 
   record PublicOrder(KubernetesSettings settings, KubernetesInput input,
-      KubernetesScenarioTarget target, KubernetesGatewayAdmission admission) {}
+      KubernetesScenarioTarget target, KubernetesGatewayAdmission admission,
+      KubernetesQueryCredentials queryCredentials, KubernetesWorkloadImages workloadImages) {}
 }

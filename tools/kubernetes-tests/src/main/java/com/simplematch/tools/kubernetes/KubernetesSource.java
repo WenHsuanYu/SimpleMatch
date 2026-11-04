@@ -54,6 +54,7 @@ final class KubernetesSource {
         || file.startsWith("services/persistence/") || file.startsWith("shared-java/")
         || file.startsWith("services/market-data-projection/")
         || file.startsWith("services/marketdata-streamer/")
+        || file.startsWith("services/query-service/")
         || file.startsWith("proto/")
         || file.startsWith("tools/risk-matching-e2e-verifier/")
         || file.startsWith("build-logic/") || file.startsWith("gradle/")

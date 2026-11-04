@@ -33,7 +33,7 @@ require(!completeVerification || scenario == "resting-buy") {
 }
 val javaServices = if (scenario == "resting-buy")
     listOf("account-service", "risk-service", "persistence", "quickfix-gateway",
-        "market-data-projection", "marketdata-streamer")
+        "market-data-projection", "marketdata-streamer", "query-service")
 else listOf("account-service", "risk-service")
 
 val dockerContext = providers.gradleProperty("kubernetesDockerContext").orElse(providers.exec {

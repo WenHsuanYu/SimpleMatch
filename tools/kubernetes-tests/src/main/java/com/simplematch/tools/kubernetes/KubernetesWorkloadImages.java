@@ -46,6 +46,29 @@ final class KubernetesWorkloadImages {
     }
   }
 
+  /** Checks actual immutable node content for one live workload, without scanning other owners. */
+  void verifySelected(KubernetesClient client, VerificationContext run, String phase,
+      String workload, int expectedContainers) throws Exception {
+    final var facts = new ArrayList<Map<String, String>>();
+    final var nodes = new LinkedHashMap<String, String>();
+    final var resolved = new LinkedHashMap<String, String>();
+    final var pods = client.read("get", "pods", "-l",
+        "app.kubernetes.io/name=" + workload + "," + OwnedNamespace.OWNER_LABEL
+            + "=" + run.runId(), "-o", "json").required("items");
+    if (pods.size() != expectedContainers) {
+      throw new IllegalStateException("selected workload has unexpected Pod count: " + workload);
+    }
+    for (var pod : pods) {
+      verifyPod(pod, nodes, resolved, facts);
+    }
+    if (facts.size() != expectedContainers) {
+      throw new IllegalStateException(
+          "selected workload image identity is incomplete: " + workload);
+    }
+    Files.write(run.evidence().resolve("workload-image-identities-" + phase + ".json"),
+        json.writeValueAsBytes(facts));
+  }
+
   private String nodeIdentity(String name, Map<String, String> nodes) throws Exception {
     if (!nodes.containsKey(name)) {
       final String id = json.readTree(commands.run(context.command("inspect", name), "",
@@ -64,7 +87,8 @@ final class KubernetesWorkloadImages {
       throw new IllegalStateException("workload Pod has no identity");
     }
     final boolean failed = "Failed".equals(pod.path("status").path("phase").asText());
-    if (failed && !hasExecutionStatus(pod)) {
+    if (failed && pod.path("status").path("containerStatuses").isEmpty()
+        && pod.path("status").path("initContainerStatuses").isEmpty()) {
       return; // No container executed; the historical attempt remains in Job diagnostics.
     }
     final String node = nodeIdentity(pod.path("spec").path("nodeName").asText(), nodes);
@@ -72,11 +96,6 @@ final class KubernetesWorkloadImages {
     if (!failed) {
       requireCompleteStatuses(pod);
     }
-  }
-
-  private static boolean hasExecutionStatus(JsonNode pod) {
-    return !pod.path("status").path("containerStatuses").isEmpty()
-        || !pod.path("status").path("initContainerStatuses").isEmpty();
   }
 
   private static void requireCompleteStatuses(JsonNode pod) {

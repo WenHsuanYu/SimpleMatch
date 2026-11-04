@@ -25,7 +25,7 @@ record KubernetesProfile(List<JsonNode> documents) {
   private static final Set<String> TRADING_OWNERS = Set.of(
       "account-service", "risk-service", "persistence", "quickfix-gateway", "matching",
       "kafka-connect", "kafka", "postgres", "redis", "market-data-projection",
-      "marketdata-streamer");
+      "marketdata-streamer", "query-service");
   private static final Set<String> TRADING_EXTRA = Set.of(
       "Role/matching-partition-lease-holder", "RoleBinding/matching-partition-lease-holder",
       "Service/matching-headless", "Service/quickfix-gateway-headless",
@@ -69,7 +69,7 @@ record KubernetesProfile(List<JsonNode> documents) {
         .map(document -> document.path("metadata").path("name").asText())
         .filter(Set.of("account-service", "risk-service",
             "persistence", "quickfix-gateway", "market-data-projection",
-            "marketdata-streamer")::contains)
+            "marketdata-streamer", "query-service")::contains)
         .collect(java.util.stream.Collectors.toUnmodifiableSet());
   }
 
@@ -83,7 +83,7 @@ record KubernetesProfile(List<JsonNode> documents) {
   List<String> migrationJobs() {
     final var services = javaServices();
     return List.of("account-service", "risk-service", "persistence", "quickfix-gateway",
-        "market-data-projection")
+        "market-data-projection", "query-service")
         .stream().filter(services::contains).map(service -> service + "-flyway").toList();
   }
 

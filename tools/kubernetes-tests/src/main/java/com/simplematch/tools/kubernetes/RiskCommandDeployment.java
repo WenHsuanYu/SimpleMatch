@@ -27,16 +27,18 @@ final class RiskCommandDeployment {
   }
 
   void start() throws Exception {
-    start(null, null);
+    start(null, null, null);
   }
 
-  void start(KubernetesFixCredentials credentials, KubernetesGatewayAdmission admission)
+  void start(KubernetesFixCredentials credentials, KubernetesGatewayAdmission admission,
+      KubernetesQueryCredentials queryCredentials)
       throws Exception {
-    if (inputs.profile().runsMatching() && (credentials == null || admission == null)) {
+    if (inputs.profile().runsMatching()
+        && (credentials == null || admission == null || queryCredentials == null)) {
       throw new IllegalArgumentException("public FIX deployment requires run-owned access");
     }
     createInfrastructure();
-    configureInputs(credentials, admission);
+    configureInputs(credentials, admission, queryCredentials);
     for (String name : java.util.List.of("postgres", "kafka")) {
       createNamed(name);
     }
@@ -82,7 +84,7 @@ final class RiskCommandDeployment {
     }
     for (String name : java.util.List.of(
         "account-service", "risk-service", "persistence", "kafka-connect",
-        "market-data-projection", "marketdata-streamer")) {
+        "market-data-projection", "marketdata-streamer", "query-service")) {
       if ("kafka-connect".equals(name) || inputs.profile().javaServices().contains(name)) {
         startWorkload("deployment", name);
       }
@@ -103,7 +105,8 @@ final class RiskCommandDeployment {
   }
 
   private void configureInputs(KubernetesFixCredentials credentials,
-      KubernetesGatewayAdmission admission) throws Exception {
+      KubernetesGatewayAdmission admission, KubernetesQueryCredentials queryCredentials)
+      throws Exception {
     final ObjectNode artifact = inputs.input().configMap();
     artifact.withObject("metadata").put("name", "matching-daily-artifact");
     target.create(artifact);
@@ -128,6 +131,9 @@ final class RiskCommandDeployment {
             data.path("quickfix-gateway.properties").asText() + admission.properties());
         target.create(secret);
         target.create(credentials.tlsSecret());
+      } else if ("query-service".equals(owner)) {
+        target.create(KubernetesDocuments.data("Secret", "query-service-secrets",
+            queryCredentials.secret(dsn)));
       } else {
         target.create(KubernetesDocuments.data(
             "Secret", owner + "-secrets", Map.of("postgres_dsn", dsn)));

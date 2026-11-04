@@ -38,7 +38,7 @@ class RestingBuyKubernetesTest {
   void publicBuySurvivesOwnerRestartsAndDuplicateDelivery() throws Exception {
     final UUID account = UUID.randomUUID();
     try (var credentials = KubernetesFixCredentials.create(privateFiles.resolve("fix"), account)) {
-      final var environment = new KubernetesBusinessEnvironment(credentials);
+      final var environment = new KubernetesBusinessEnvironment(credentials, account);
       VerificationRun.verify(environment.request(), environment, run -> {
         try (credentials) {
           verify(environment.publicOrder(), credentials, account);
@@ -53,6 +53,7 @@ class RestingBuyKubernetesTest {
     final var target = context.target();
     final var postgres = new KubernetesPostgres(target);
     final var order = order(context, account);
+    UUID sourceOrderId = null;
     final var variables = Map.of("account_id", account.toString(),
         "trading_day", context.settings().day().toString(), "cl_ord_id", order.clOrdId(),
         "now_ms", Long.toString(System.currentTimeMillis()), "exec_type", "0");
@@ -98,6 +99,7 @@ class RestingBuyKubernetesTest {
         awaitFile(fix.resolve("completed.json"), finished);
         final var completed = json.readTree(fix.resolve("completed.json").toFile());
         final var baseline = new KubernetesOrderFacts(admission, delivery, durable, completed);
+        sourceOrderId = UUID.fromString(admission.path("orderId").asText());
         Files.writeString(target.run().evidence().resolve("order-facts.json"), json.writeValueAsString(baseline));
         assertFacts(context, order, baseline, 1);
         long matchingInputOffset;
@@ -125,8 +127,11 @@ class RestingBuyKubernetesTest {
       }
     }
     verifyDelayedOrder(context, credentials, order, events);
+    final var business = new KubernetesQueryBusinessRead(context, account,
+        java.util.Objects.requireNonNull(sourceOrderId),
+        order.instrument().instrument().venueMic(), order.instrument().instrument().symbol());
     try (var marketData = new KubernetesMarketData(context)) {
-      marketData.verify();
+      marketData.verify(business);
     }
   }
 

@@ -39,7 +39,8 @@ class KubernetesSourceTest {
         "services/quickfix-gateway/src/main/java/Gateway.java",
         "services/persistence/src/main/java/Persistence.java",
         "services/market-data-projection/src/main/java/Projection.java",
-        "services/marketdata-streamer/src/main/java/Streamer.java")) {
+        "services/marketdata-streamer/src/main/java/Streamer.java",
+        "services/query-service/src/main/java/Query.java")) {
       final Path file = repository.resolve(name);
       Files.createDirectories(file.getParent());
       final String before = KubernetesSource.fingerprint(repository, commands);

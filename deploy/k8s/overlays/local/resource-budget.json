@@ -42,7 +42,9 @@
       "Deployment/redis",
       "Deployment/market-data-projection",
       "Deployment/marketdata-streamer",
-      "Job/market-data-projection-flyway"
+      "Job/market-data-projection-flyway",
+      "Deployment/query-service",
+      "Job/query-service-flyway"
     ]
   }
 }
