@@ -278,6 +278,38 @@ replacement PASS. The separate R16 actual Redis outage/repair and
 public replay requirement is not retired. Complete source-aligned
 R16/R17 acceptance remains pending.
 
+### P4 R16 source/run provenance and failure cleanup
+
+The existing `run-certification.sh` remains the sole selected R16 deployed
+owner for actual deterministic replay through the public gRPC snapshot
+API and a real Redis outage with durable PostgreSQL pending-repair and
+convergence after restoration. The Java `MarketDataEvidenceVerifier` still
+owns its seven named business checks. No duplicate public gRPC protocol
+implementation or extra Redis outage has been created.
+
+The runner now requires the retained production-like namespace manager,
+matching namespace run ID, an exact clean source revision and verifier
+provenance, and immutable Market Data projection/streamer Deployment
+images from the retained source lock **before mutation**. This replaces
+the previous report-only Git HEAD label with actual fail-closed
+source/run/image binding. The retained run path uses the existing
+`SIMPLEMATCH_PRODUCTION_LIKE_EVIDENCE_DIR` override when required.
+
+The runtime now records mutation-possible flags **before** scaling Redis
+or projection or setting the temporary authenticated replay environment.
+Restoration flags clear only after a successful operation, allowing the
+EXIT cleanup to retry incomplete restoration and to reject an incomplete
+run. After a successful explicit restoration the EXIT trap does not
+repeat its rollout probes and risk invalidating an already finalized
+verdict. This changes failure handling, not the deterministic replay,
+source Kafka offset reset, durable pending-repair, Redis repair, or public
+snapshot assertions.
+
+The R16 live Kubernetes scenario has not been rerun for this change.
+Java and Shell contract tests establish local behavior only; a full
+source-aligned deployment, including actual Redis loss and recovery,
+remains mandatory for R16/P6 acceptance.
+
 For R20, reuse `OutboxCdcIntegrationTest` for actual RF1/RF3 broker outage, connector pause/recovery, and worker crash with captured source checkpoints and exact crash-induced redelivery. P3 owns deployed PostgreSQL interruption; R16 owns deployed Redis outage/repair. Retire the duplicate Kubernetes Connect-loss orchestration and its dedicated fixtures after their last callers move. This loses the separate Kubernetes Connect Pod/worker-loss claim; component recovery is not Kubernetes HA evidence.
 For R21, merge Query's Redis-outage read check with actual readiness, liveness, authenticated serving, and stable Pod UID/restart-count observations across the configured liveness window. Reuse that same outage and restoration; do not create another placement deployment. Retire repeated placement/report-shape fixtures and exact static probe snapshots. Keep the live probe/serving boundary: a successful business read alone cannot establish liveness or readiness.
 

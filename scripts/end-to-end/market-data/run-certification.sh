@@ -8,6 +8,8 @@ repo_root="$(cd -- "$script_dir/../../.." && pwd)"
 source "$repo_root/scripts/lib/local-common.sh"
 # shellcheck source=scripts/lib/local-kind.sh
 source "$repo_root/scripts/lib/local-kind.sh"
+# shellcheck source=scripts/lib/local-certification-provenance.sh
+source "$repo_root/scripts/lib/local-certification-provenance.sh"
 # shellcheck source=scripts/end-to-end/critical-consumers/lib/cluster-data.sh
 source "$repo_root/scripts/end-to-end/critical-consumers/lib/cluster-data.sh"
 # shellcheck source=scripts/end-to-end/critical-consumers/lib/test-interfaces.sh
@@ -31,6 +33,9 @@ observer_pid=""
 original_projection_replicas=""
 original_redis_replicas=""
 original_streamer_replicas=""
+retained_evidence_dir=""
+retained_run_id=""
+source_revision=""
 projection_environment_modified=false
 redis_scaled=false
 projection_scaled=false
@@ -48,7 +53,8 @@ Usage:
 
 Certifies the deployed runtime market-data projection through retained Kafka,
 the authenticated replay interface, Redis repair, and the public gRPC stream.
-The namespace must be lifecycle-labelled disposable.
+The namespace must belong to the source-aligned, lifecycle-labelled retained
+production-like run. Set SIMPLEMATCH_PRODUCTION_LIKE_EVIDENCE_DIR if needed.
 EOF_USAGE
 }
 
@@ -90,20 +96,27 @@ restore_environment() {
   stop_streamer_port_forward
 
   if [[ "$redis_scaled" == true && -n "$original_redis_replicas" ]]; then
-    scale_deployment redis "$original_redis_replicas" || restoration_failed=true
-    redis_scaled=false
+    if scale_deployment redis "$original_redis_replicas"; then
+      redis_scaled=false
+    else
+      restoration_failed=true
+    fi
   fi
   if [[ "$projection_environment_modified" == true ]]; then
-    kns set env deployment/market-data-projection \
+    if kns set env deployment/market-data-projection \
       SIMPLEMATCH_MARKET_DATA_PROJECTION_REBUILD_HTTP_ENABLED- \
-      SIMPLEMATCH_MARKET_DATA_PROJECTION_REBUILD_OPERATOR_TOKEN- >/dev/null 2>&1 ||
+      SIMPLEMATCH_MARKET_DATA_PROJECTION_REBUILD_OPERATOR_TOKEN- >/dev/null 2>&1; then
+      projection_environment_modified=false
+    else
       restoration_failed=true
-    projection_environment_modified=false
+    fi
   fi
   if [[ "$projection_scaled" == true && -n "$original_projection_replicas" ]]; then
-    scale_deployment market-data-projection "$original_projection_replicas" ||
+    if scale_deployment market-data-projection "$original_projection_replicas"; then
+      projection_scaled=false
+    else
       restoration_failed=true
-    projection_scaled=false
+    fi
   elif [[ -n "$original_projection_replicas" ]]; then
     kns rollout status deployment/market-data-projection \
       --timeout="${timeout_seconds}s" >/dev/null 2>&1 || restoration_failed=true
@@ -129,10 +142,17 @@ write_failure_verdict() {
 cleanup() {
   local status="$?"
   trap - ERR EXIT INT TERM
-  restore_environment
+  if [[ "$certification_succeeded" != true ]]; then
+    restore_environment
+  fi
   if [[ "$restoration_failed" == true ]]; then
     status=1
     [[ -n "$failure_reason" ]] || failure_reason="environment restoration failed"
+  fi
+  if [[ "$evidence_initialized" == true && "$certification_succeeded" != true ]] &&
+      (( status == 0 )); then
+    status=1
+    [[ -n "$failure_reason" ]] || failure_reason="certification ended without a passed verdict"
   fi
   if (( status != 0 )) || [[ "$certification_succeeded" != true ]]; then
     write_failure_verdict "$status"
@@ -359,8 +379,9 @@ evidence_verifier="$repo_root/tools/recovery-evidence-verifier/build/install/rec
 [[ "$(kubectl config current-context)" == "$context" ]] ||
   die "current Kubernetes context must be $context"
 kubectl get namespace "$namespace" >/dev/null 2>&1 || die "namespace does not exist"
-simplematch_kind_namespace_is_disposable "$context" "$namespace" ||
-  die "refusing certification outside a lifecycle-labelled disposable namespace"
+simplematch_kind_namespace_is_disposable \
+  "$context" "$namespace" local-production-like-certification ||
+  die "refusing certification outside the run-owned production-like namespace"
 
 mkdir -p "$evidence_dir"
 evidence_dir="$(cd -- "$evidence_dir" && pwd)"
@@ -370,6 +391,39 @@ shopt -u nullglob dotglob
 ((${#existing_evidence[@]} == 0)) || die "evidence directory must be empty"
 mkdir -p "$evidence_dir/diagnostics"
 evidence_initialized=true
+
+current_stage="verify retained runtime source and image identity"
+retained_evidence_dir="$(simplematch_production_like_evidence_dir "$repo_root")"
+simplematch_certification_verifier_image \
+  "$repo_root" "$namespace" "$retained_evidence_dir" >/dev/null ||
+  die "retained production-like source or verifier-image provenance is not valid"
+retained_run_id="$(awk -F= '$1 == "run_id" {print substr($0, index($0, "=") + 1)}' \
+  "$retained_evidence_dir/run-context")"
+namespace_run_id="$(kubectl --context "$context" get namespace "$namespace" \
+  -o jsonpath='{.metadata.labels.simplematch\.io/run-id}')"
+[[ -n "$retained_run_id" && "$namespace_run_id" == "$retained_run_id" ]] ||
+  die "namespace run-id does not match retained production-like evidence"
+source_revision="$(simplematch_certification_source_revision "$repo_root")" ||
+  die "current runtime source has uncommitted or untracked changes"
+expected_projection_image="$(simplematch_local_image_lock_digest_reference \
+  "$retained_evidence_dir/local-images.lock" market-data-projection)" ||
+  die "retained Market Data projection image lock is unavailable"
+expected_streamer_image="$(simplematch_local_image_lock_digest_reference \
+  "$retained_evidence_dir/local-images.lock" marketdata-streamer)" ||
+  die "retained public-streamer image lock is unavailable"
+kns get deployment market-data-projection marketdata-streamer redis -o json \
+  >"$evidence_dir/deployments-before.json" ||
+  die "deployed Market Data and Redis objects are unavailable"
+jq -e --arg projection "$expected_projection_image" --arg streamer "$expected_streamer_image" '
+  (.items | length) == 3
+  and ([.items[] | select(.metadata.name == "market-data-projection")
+    | .spec.template.spec.containers[]? | select(.name == "market-data-projection")
+    | .image] == [$projection])
+  and ([.items[] | select(.metadata.name == "marketdata-streamer")
+    | .spec.template.spec.containers[]? | select(.name == "marketdata-streamer")
+    | .image] == [$streamer])
+' "$evidence_dir/deployments-before.json" >/dev/null ||
+  die "Market Data deployed images do not match the retained immutable source lock"
 
 current_stage="capture baseline and provenance"
 original_projection_replicas="$(workload_replicas deployment market-data-projection)"
@@ -386,18 +440,34 @@ capture_projection_instrument "$evidence_dir/selected-instrument.json" ||
   die "projection has no retained instrument to replay"
 venue_mic="$(jq -er '.venueMic | select(length == 4)' "$evidence_dir/selected-instrument.json")"
 symbol="$(jq -er '.symbol | select(length > 0)' "$evidence_dir/selected-instrument.json")"
-kns get deployment market-data-projection marketdata-streamer redis -o json \
-  >"$evidence_dir/deployments-before.json"
 kns get pods \
   -l 'app.kubernetes.io/name in (market-data-projection,marketdata-streamer,redis)' \
-  -o json >"$evidence_dir/runtime-images-before.json"
+  -o json >"$evidence_dir/runtime-images-before.json" ||
+  die "Market Data runtime Pods cannot be inspected"
+jq -e --arg projection "$expected_projection_image" --arg streamer "$expected_streamer_image" '
+  [.items[] | select(.metadata.labels["app.kubernetes.io/name"] == "market-data-projection")] as $p |
+  [.items[] | select(.metadata.labels["app.kubernetes.io/name"] == "marketdata-streamer")] as $s |
+  ($p | length) > 0 and ($s | length) == 1
+  and all(($p + $s)[]; .metadata.deletionTimestamp == null
+    and .status.phase == "Running"
+    and any(.status.conditions[]?; .type == "Ready" and .status == "True"))
+  and all($p[]; ([.spec.containers[]?
+    | select(.name == "market-data-projection" and .image == $projection)] | length) == 1)
+  and all($s[]; ([.spec.containers[]?
+    | select(.name == "marketdata-streamer" and .image == $streamer)] | length) == 1)
+' "$evidence_dir/runtime-images-before.json" >/dev/null ||
+  die "Market Data running Pods do not match the retained locked images"
 jq -n \
-  --arg sourceRevision "$(git -C "$repo_root" rev-parse HEAD)" \
+  --arg sourceRevision "$source_revision" \
+  --arg runId "$retained_run_id" \
+  --arg projectionImage "$expected_projection_image" \
+  --arg streamerImage "$expected_streamer_image" \
   --arg namespace "$namespace" \
   --arg context "$context" \
   --arg venueMic "$venue_mic" \
   --arg symbol "$symbol" \
-  '{sourceRevision:$sourceRevision,namespace:$namespace,context:$context,
+  '{sourceRevision:$sourceRevision,runId:$runId,namespace:$namespace,context:$context,
+    images:{projection:$projectionImage,streamer:$streamerImage},
     instrument:{venueMic:$venueMic,symbol:$symbol}}' >"$evidence_dir/provenance.json"
 
 current_stage="enable the authenticated replay interface"
@@ -409,12 +479,12 @@ existing_override_count="$(
 )"
 (( existing_override_count == 0 )) || die "projection already defines replay environment overrides"
 operator_token="$(tr -d '-' </proc/sys/kernel/random/uuid)"
-scale_deployment market-data-projection 1
 projection_scaled=true
+scale_deployment market-data-projection 1
+projection_environment_modified=true
 kns set env deployment/market-data-projection \
   SIMPLEMATCH_MARKET_DATA_PROJECTION_REBUILD_HTTP_ENABLED=true \
   SIMPLEMATCH_MARKET_DATA_PROJECTION_REBUILD_OPERATOR_TOKEN="$operator_token" >/dev/null
-projection_environment_modified=true
 wait_deployment_replicas market-data-projection 1 || die "projection replay adapter is not ready"
 start_market_data_port_forwards
 
@@ -432,8 +502,8 @@ start_projection_port_forward
 
 current_stage="replay while Redis is unavailable"
 reset_projection_state rebuilt || die "outage projection reset failed"
-scale_deployment redis 0
 redis_scaled=true
+scale_deployment redis 0
 start_snapshot_observer rebuilt || die "rebuild gRPC observer did not become ready"
 reset_projection_offsets rebuilt || die "rebuild projection offset reset failed"
 restart_projection
