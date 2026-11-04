@@ -242,6 +242,42 @@ Retire the Python Lab's separate approval database, event timeline, collector-cr
 For R16, retain one actual deterministic projection replay observed through the public snapshot API. Also retain a real Redis outage with durable pending repair and convergence after restoration. `MarketDataProjectionApplicationServiceTest` owns projection transactions, replay identity, conflicts, gaps, and reset scope. `RuntimeMarketDataPublicationTest` uses a fake cache for failure/repair. It does not establish actual Redis integration. Reuse the existing snapshot observer instead of copying its protocol code.
 For R17, retain actual public-stream termination, replacement, resubscription, and a fresh complete snapshot through `MarketDataSnapshotRecoveryObserver`. `MarketDataGrpcServiceTest` owns request routing only. Retire the independent all-partition consumer-group ownership report and forced alternate-worker placement from this stream scenario. These add no separate basic public-stream requirement. This cutover makes no full-partition or worker-failure claim. Existing immutable identity, bounded failure, restoration, and cleanup requirements remain.
 
+### P4 R17 public-stream ownership cut
+
+The existing `run-streamer-recovery-certification.sh` remains the one
+selected deployed R17 owner until a source-aligned final run succeeds.
+Its public Java `MarketDataSnapshotRecoveryObserver` still observes an
+initial complete gRPC snapshot, actual stream termination during an
+ordinary `Recreate` Deployment restart, a new streamer Pod UID, a
+second connection and subscription, and a fresh complete snapshot.
+The scenario still uses the same client and local gRPC port, a bounded
+window, lifecycle-owned namespace and retained source/image provenance.
+Its cleanup still restores the temporary projection replay interface.
+
+The runner no longer patches a `kubernetes.io/hostname` selector to force
+another worker, nor does it capture Kafka consumer-group partition
+ownership before/after replacement. Those requirements have no
+independent R17 acceptance value. A replacement on the original worker
+can pass if its UID differs and the old Pod disappears before the
+new owner becomes Ready. The verdict no longer emits `nodesDiffer` or
+`partitionAssignment`. No all-partition rebalance, worker-loss or
+Kafka full-topic ownership claim follows from this scenario.
+
+Before mutation the runner checks the immutable deployed image
+against its retained image lock and explicitly requires one
+`Recreate` replica. It also requires each observed owner Pod to be
+Ready and to use the locked container image. The old Pod's absence
+is read through a successful Kubernetes Pod-list response, not inferred
+from a possibly unrelated failed `kubectl get`. The focused contract
+protects these conditions, the same-node case, the UID change and
+the existing port-forward/observer handoff. CI now runs that contract.
+The independent Java observer remains unchanged.
+
+This is a scope reduction and code-level test result, not a fresh live
+replacement PASS. The separate R16 actual Redis outage/repair and
+public replay requirement is not retired. Complete source-aligned
+R16/R17 acceptance remains pending.
+
 For R20, reuse `OutboxCdcIntegrationTest` for actual RF1/RF3 broker outage, connector pause/recovery, and worker crash with captured source checkpoints and exact crash-induced redelivery. P3 owns deployed PostgreSQL interruption; R16 owns deployed Redis outage/repair. Retire the duplicate Kubernetes Connect-loss orchestration and its dedicated fixtures after their last callers move. This loses the separate Kubernetes Connect Pod/worker-loss claim; component recovery is not Kubernetes HA evidence.
 For R21, merge Query's Redis-outage read check with actual readiness, liveness, authenticated serving, and stable Pod UID/restart-count observations across the configured liveness window. Reuse that same outage and restoration; do not create another placement deployment. Retire repeated placement/report-shape fixtures and exact static probe snapshots. Keep the live probe/serving boundary: a successful business read alone cannot establish liveness or readiness.
 

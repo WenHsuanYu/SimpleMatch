@@ -39,10 +39,7 @@ observer_pid=""
 original_projection_replicas=""
 projection_scaled=false
 projection_environment_modified=false
-temporary_streamer_selector=false
 operator_token=""
-streamer_topic_partition_count=""
-streamer_expected_assignment=""
 
 usage() {
   cat <<'EOF_USAGE'
@@ -89,16 +86,6 @@ stop_observer() {
   observer_pid=""
 }
 
-restore_streamer_selector() {
-  [[ "$temporary_streamer_selector" == true ]] || return 0
-  kns patch deployment/marketdata-streamer --type=json \
-    -p='[{"op":"remove","path":"/spec/template/spec/nodeSelector/kubernetes.io~1hostname"}]' \
-    >/dev/null || restoration_failed=true
-  temporary_streamer_selector=false
-  kns rollout status deployment/marketdata-streamer \
-    --timeout="${timeout_seconds}s" >/dev/null || restoration_failed=true
-}
-
 restore_projection_environment() {
   if [[ "$projection_environment_modified" == true ]]; then
     kns set env deployment/market-data-projection \
@@ -122,7 +109,6 @@ restore_environment() {
   stop_observer
   stop_streamer_port_forward
   stop_projection_port_forward
-  restore_streamer_selector
   restore_projection_environment
   set -e
 }
@@ -180,16 +166,16 @@ streamer_pod_json() {
     jq -e 'if (.items | length) == 1 then .items[0] else error("expected exactly one streamer Pod") end'
 }
 
-wait_for_streamer_ready_on_node() {
-  local expected_node="$1"
-  local old_uid="$2"
+wait_for_streamer_replacement() {
+  local old_uid="$1"
   for _ in $(seq 1 "$timeout_seconds"); do
     local pod
     pod="$(streamer_pods_json)"
-    if jq -e --arg node "$expected_node" --arg old_uid "$old_uid" '
+    if jq -e --arg old_uid "$old_uid" '
         (.items | length) == 1
         and .items[0].metadata.uid != $old_uid
-        and .items[0].spec.nodeName == $node
+        and (.items[0].metadata.deletionTimestamp == null)
+        and (.items[0].status.phase == "Running")
         and any(.items[0].status.conditions[]?; .type == "Ready" and .status == "True")
       ' <<<"$pod" >/dev/null; then
       return 0
@@ -201,8 +187,13 @@ wait_for_streamer_ready_on_node() {
 
 wait_for_old_streamer_pod_to_disappear() {
   local old_pod="$1"
+  local observed
   for _ in $(seq 1 "$timeout_seconds"); do
-    if ! kns get pod "$old_pod" >/dev/null 2>&1; then
+    observed="$(streamer_pods_json)" || return 1
+    if jq -e --arg old "$old_pod" '
+        (.items | type == "array")
+        and all(.items[]; .metadata.name != $old)
+      ' <<<"$observed" >/dev/null; then
       return 0
     fi
     sleep 1
@@ -283,57 +274,6 @@ reset_projection_offsets() {
     2>"$evidence_dir/projection/${phase}-offset-reset.stderr"
 }
 
-capture_streamer_group() {
-  local destination="$1"
-  local broker
-  broker="$(kafka_pod)"
-  kns exec "$broker" -c kafka -- /opt/kafka/bin/kafka-consumer-groups.sh \
-    --bootstrap-server kafka:9092 \
-    --describe --group marketdata-streamer --members --verbose \
-    >"$destination" 2>"$destination.stderr"
-}
-
-capture_streamer_topic_profile() {
-  local destination="$1"
-  local broker
-  broker="$(kafka_pod)"
-  kns exec "$broker" -c kafka -- /opt/kafka/bin/kafka-topics.sh \
-    --bootstrap-server kafka:9092 --describe --topic marketdata.events \
-    >"$destination" 2>"$destination.stderr" || return 1
-  streamer_topic_partition_count="$(awk '
-    { for (field = 1; field <= NF; field++) {
-        if ($field == "PartitionCount:") { print $(field + 1); exit }
-      }
-    }
-  ' "$destination")"
-  [[ "$streamer_topic_partition_count" =~ ^[0-9]+$ ]] || return 1
-  [[ "$streamer_topic_partition_count" == 15 ]] || return 1
-  streamer_expected_assignment="marketdata.events:$(seq -s, 0 $((streamer_topic_partition_count - 1)))"
-}
-
-wait_for_complete_streamer_group() {
-  local destination="$1"
-  local expected_assignment="$streamer_expected_assignment"
-  for _ in $(seq 1 "$timeout_seconds"); do
-    capture_streamer_group "$destination" || true
-    if awk -v expected="$expected_assignment" \
-      -v expectedPartitions="$streamer_topic_partition_count" '
-        NR == 1 { next }
-        $1 == "marketdata-streamer" {
-          rows++
-          if ($5 != expectedPartitions || $7 != expected) {
-            invalid=1
-          }
-        }
-        END { exit !(rows == 1 && invalid != 1) }
-      ' "$destination"; then
-      return 0
-    fi
-    sleep 1
-  done
-  return 1
-}
-
 write_runtime_verdict() {
   local old_uid="$1"
   local old_node="$2"
@@ -351,11 +291,9 @@ write_runtime_verdict() {
     --arg newNode "$new_node" \
     --argjson oldPodGoneEpochMs "$old_gone_epoch_ms" \
     --argjson newPodReadyEpochMs "$new_ready_epoch_ms" \
-    --argjson expectedPartitions "$streamer_topic_partition_count" \
     '{sourceRevision:$sourceRevision,namespace:$namespace,context:$context,
       oldUid:$oldUid,oldNode:$oldNode,newUid:$newUid,newNode:$newNode,
-      oldPodGoneEpochMs:$oldPodGoneEpochMs,newPodReadyEpochMs:$newPodReadyEpochMs,
-      expectedPartitions:$expectedPartitions}' |
+      oldPodGoneEpochMs:$oldPodGoneEpochMs,newPodReadyEpochMs:$newPodReadyEpochMs}' |
     write_streamer_recovery_verdict "$evidence_dir/verdict.pending.json"
 }
 
@@ -428,13 +366,20 @@ namespace_run_id="$(kubectl --context "$context" get namespace "$namespace" \
 expected_streamer_image="$(simplematch_local_image_lock_digest_reference \
   "$retained_evidence_dir/local-images.lock" marketdata-streamer)" ||
   die "retained market-data streamer image lock is unavailable"
-actual_streamer_image="$(kubectl --context "$context" -n "$namespace" \
-  get deployment marketdata-streamer -o json |
-  jq -er '.spec.template.spec.containers[]
-    | select(.name == "marketdata-streamer") | .image')" ||
+kns get deployment marketdata-streamer -o json \
+  >"$evidence_dir/streamer-deployment-before.json" ||
+  die "deployed market-data streamer Deployment is unavailable"
+actual_streamer_image="$(jq -er '
+    [.spec.template.spec.containers[]
+      | select(.name == "marketdata-streamer") | .image]
+    | if length == 1 then .[0] else error("streamer image is not unique") end
+  ' "$evidence_dir/streamer-deployment-before.json")" ||
   die "deployed market-data streamer image is unavailable"
 [[ "$actual_streamer_image" == "$expected_streamer_image" ]] ||
   die "deployed market-data streamer image does not match retained digest lock"
+streamer_recovery_require_recreate \
+  "$evidence_dir/streamer-deployment-before.json" "$expected_streamer_image" ||
+  die "streamer is not a single immutable Recreate owner"
 
 current_stage="capture baseline streamer owner"
 original_projection_replicas="$(workload_replicas deployment market-data-projection)"
@@ -442,6 +387,8 @@ original_projection_replicas="$(workload_replicas deployment market-data-project
 start_streamer_port_forward "$evidence_dir" initial ||
   die "market-data streamer port-forward did not become ready"
 streamer_pod_json >"$evidence_dir/streamer-before.json"
+streamer_recovery_require_ready_pod "$evidence_dir/streamer-before.json" "$expected_streamer_image" ||
+  die "baseline streamer Pod is not Ready with the locked image"
 old_uid="$(jq -er '.metadata.uid' "$evidence_dir/streamer-before.json")"
 old_pod="$(jq -er '.metadata.name' "$evidence_dir/streamer-before.json")"
 old_node="$(jq -er '.spec.nodeName' "$evidence_dir/streamer-before.json")"
@@ -459,47 +406,32 @@ wait_for_signal "$evidence_dir/signals/initial-subscription.ready" ||
 produce_projection_snapshot "$evidence_dir" initial
 wait_for_signal "$evidence_dir/signals/initial-snapshot.ready" ||
   die "public market-data client did not receive the initial snapshot"
-capture_streamer_topic_profile "$evidence_dir/topic-profile.txt" ||
-  die "deployed marketdata.events topic does not expose the expected partition profile"
-wait_for_complete_streamer_group "$evidence_dir/group-before.txt" ||
-  die "streamer did not own all expected marketdata.events partitions"
-
-current_stage="replace streamer on another worker"
-target_node="$(kubectl --context "$context" get nodes \
-  -l simplematch.io/node-pool=local-resilience -o json |
-  jq -er --arg old_node "$old_node" '
-    [.items[]
-      | select(.metadata.name != $old_node)
-      | select(any(.status.conditions[]?; .type == "Ready" and .status == "True"))
-      | .metadata.name]
-    | sort | .[0]')" || die "no alternate Ready local-resilience worker exists"
-selector_patch="$(jq -cn --arg node "$target_node" \
-  '[{op:"add",path:"/spec/template/spec/nodeSelector/kubernetes.io~1hostname",value:$node}]')"
-kns patch deployment/marketdata-streamer --type=json -p="$selector_patch" >/dev/null
-temporary_streamer_selector=true
+current_stage="replace the Recreate streamer owner"
+kns rollout restart deployment/marketdata-streamer >/dev/null ||
+  die "streamer Recreate replacement could not start"
 wait_for_old_streamer_pod_to_disappear "$old_pod" ||
   die "old streamer Pod did not disappear before replacement"
 old_gone_epoch_ms="$(date +%s%3N)"
-wait_for_streamer_ready_on_node "$target_node" "$old_uid" ||
-  die "streamer replacement did not become Ready on the alternate worker"
+wait_for_streamer_replacement "$old_uid" ||
+  die "new streamer Pod did not become Ready after old owner removal"
 new_ready_epoch_ms="$(date +%s%3N)"
 streamer_pod_json >"$evidence_dir/streamer-after.json"
+streamer_recovery_require_ready_pod "$evidence_dir/streamer-after.json" "$expected_streamer_image" ||
+  die "replacement streamer Pod is not Ready with the locked image"
 new_uid="$(jq -er '.metadata.uid' "$evidence_dir/streamer-after.json")"
 new_node="$(jq -er '.spec.nodeName' "$evidence_dir/streamer-after.json")"
-[[ "$new_node" == "$target_node" && "$new_uid" != "$old_uid" ]] ||
-  die "streamer replacement identity or placement did not change"
+[[ -n "$new_node" && "$new_uid" != "$old_uid" ]] ||
+  die "streamer replacement identity did not change"
 publish_streamer_replacement_ready "$evidence_dir"
 wait_for_signal "$evidence_dir/signals/disconnected.ready" ||
   die "public client did not observe the original stream termination"
 wait_for_signal "$evidence_dir/signals/reconnected.ready" ||
   die "public client did not issue the reconnect subscription"
 
-current_stage="verify resubscription and full-stream ownership"
+current_stage="verify public gRPC resubscription and new complete snapshot"
 produce_projection_snapshot "$evidence_dir" resubscribed
 wait_for_signal "$evidence_dir/signals/resubscribed-snapshot.ready" ||
   die "public client did not receive a snapshot after resubscription"
-wait_for_complete_streamer_group "$evidence_dir/group-after.txt" ||
-  die "replacement streamer did not reacquire all expected marketdata.events partitions"
 wait "$observer_pid" || {
   cat "$evidence_dir/diagnostics/streamer-client.log" >&2
   die "public market-data recovery observer failed"

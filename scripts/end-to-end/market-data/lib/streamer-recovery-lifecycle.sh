@@ -2,6 +2,32 @@
 
 # Lifecycle seams for the market-data streamer recovery certification.
 
+streamer_recovery_require_recreate() {
+  local deployment="$1" locked_image="$2"
+  jq -e --arg image "$locked_image" '
+    .metadata.name == "marketdata-streamer"
+    and .spec.replicas == 1
+    and .spec.strategy.type == "Recreate"
+    and ([.spec.template.spec.containers[]?
+      | select(.name == "marketdata-streamer" and .image == $image)] | length) == 1
+  ' "$deployment" >/dev/null
+}
+
+streamer_recovery_require_ready_pod() {
+  local pod="$1" locked_image="$2"
+  jq -e --arg image "$locked_image" '
+    .metadata.deletionTimestamp == null
+    and (.metadata.uid | type == "string" and length > 0)
+    and (.spec.nodeName | type == "string" and length > 0)
+    and .status.phase == "Running"
+    and any(.status.conditions[]?; .type == "Ready" and .status == "True")
+    and ([.spec.containers[]?
+      | select(.name == "marketdata-streamer" and .image == $image)] | length) == 1
+    and ([.status.containerStatuses[]?
+      | select(.name == "marketdata-streamer" and .ready == true)] | length) == 1
+  ' "$pod" >/dev/null
+}
+
 projection_port_forward_log_path() {
   local evidence_root="$1"
   local phase="$2"

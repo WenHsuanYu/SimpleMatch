@@ -78,6 +78,7 @@ jobs:
           bash scripts/end-to-end/query-service/tests/evidence-contract.sh
           bash scripts/end-to-end/query-service/tests/lifecycle-contract.sh
           bash scripts/end-to-end/query-service/tests/isolation-contract.sh
+          bash scripts/end-to-end/market-data/tests/streamer-recovery-contract.sh
           bash scripts/test-local-image-transport.sh
           bash scripts/test-local-image-rendering.sh
           bash scripts/test-local-certification-workloads.sh

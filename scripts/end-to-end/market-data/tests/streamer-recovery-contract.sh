@@ -54,16 +54,62 @@ jq -n \
   --arg newNode new-worker \
   --argjson oldPodGoneEpochMs 1000 \
   --argjson newPodReadyEpochMs 2000 \
-  --argjson expectedPartitions 15 \
   '{sourceRevision:$sourceRevision,namespace:$namespace,context:$context,
     oldUid:$oldUid,oldNode:$oldNode,newUid:$newUid,newNode:$newNode,
-    oldPodGoneEpochMs:$oldPodGoneEpochMs,newPodReadyEpochMs:$newPodReadyEpochMs,
-    expectedPartitions:$expectedPartitions}' >"$verdict_input"
+    oldPodGoneEpochMs:$oldPodGoneEpochMs,newPodReadyEpochMs:$newPodReadyEpochMs}' >"$verdict_input"
 write_streamer_recovery_verdict "$verdict_output" <"$verdict_input"
 assert_equal "$(jq -er '.streamer.newPodReadyEpochMs' "$verdict_output")" \
   '2000' 'verdict must retain the replacement readiness timestamp'
 assert_equal "$(jq -er '.streamer.noOverlap' "$verdict_output")" \
   'true' 'verdict must derive no-overlap from the two timestamps'
+jq -e 'has("partitionAssignment") | not' "$verdict_output" >/dev/null ||
+  fail 'retired whole-group assignment claim must not survive'
+jq '.newNode = .oldNode' "$verdict_input" >"$temporary_directory/same-worker.json"
+write_streamer_recovery_verdict "$temporary_directory/same-worker-verdict.json" \
+  <"$temporary_directory/same-worker.json"
+assert_equal "$(jq -er '.streamer.newNode' "$temporary_directory/same-worker-verdict.json")" \
+  'old-worker' 'ordinary streamer replacement may reuse the original node'
+jq '.newUid = .oldUid' "$verdict_input" >"$temporary_directory/unchanged-uid.json"
+if write_streamer_recovery_verdict "$temporary_directory/unchanged-uid-verdict.json" \
+    <"$temporary_directory/unchanged-uid.json" && \
+    [[ -s "$temporary_directory/unchanged-uid-verdict.json" ]]; then
+  fail 'unchanged streamer owner UID must not certify replacement'
+fi
+
+# Recreate and immutable Pod identity are real preconditions, not full-topic
+# group-membership or alternate-node assertions.
+locked_image="registry/marketdata-streamer@sha256:$(printf 'a%.0s' {1..64})"
+deployment="$temporary_directory/streamer-deployment.json"
+pod="$temporary_directory/streamer-pod.json"
+jq -n --arg image "$locked_image" '{
+  metadata:{name:"marketdata-streamer"},
+  spec:{replicas:1,strategy:{type:"Recreate"},
+        template:{spec:{containers:[{name:"marketdata-streamer",image:$image}]}}}
+}' >"$deployment"
+jq -n --arg image "$locked_image" '{
+  metadata:{name:"marketdata-streamer-abc",uid:"new-pod"},
+  spec:{nodeName:"old-worker",containers:[{name:"marketdata-streamer",image:$image}]},
+  status:{phase:"Running",conditions:[{type:"Ready",status:"True"}],
+          containerStatuses:[{name:"marketdata-streamer",ready:true}]}
+}' >"$pod"
+streamer_recovery_require_recreate "$deployment" "$locked_image" ||
+  fail 'valid Recreate/locked-image strategy was rejected'
+streamer_recovery_require_ready_pod "$pod" "$locked_image" ||
+  fail 'ready same-worker replacement was rejected'
+jq '.spec.strategy.type="RollingUpdate"' "$deployment" >"$temporary_directory/rolling.json"
+if streamer_recovery_require_recreate "$temporary_directory/rolling.json" "$locked_image"; then
+  fail 'RollingUpdate was accepted for the no-overlap owner'
+fi
+jq '.spec.containers[0].image="registry/marketdata-streamer:mutable"' \
+  "$pod" >"$temporary_directory/mutable-pod.json"
+if streamer_recovery_require_ready_pod "$temporary_directory/mutable-pod.json" "$locked_image"; then
+  fail 'wrong-image replacement was accepted'
+fi
+jq '.status.containerStatuses[0].ready=false' "$pod" \
+  >"$temporary_directory/not-ready-pod.json"
+if streamer_recovery_require_ready_pod "$temporary_directory/not-ready-pod.json" "$locked_image"; then
+  fail 'unready replacement was accepted'
+fi
 
 evidence_dir="$temporary_directory/evidence"
 requested_local_port=47111

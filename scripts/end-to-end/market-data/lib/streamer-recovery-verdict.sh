@@ -5,6 +5,12 @@
 write_streamer_recovery_verdict() {
   local destination="$1"
   jq -e '
+    select((.oldUid | type == "string" and length > 0)
+      and (.newUid | type == "string" and length > 0)
+      and (.oldNode | type == "string" and length > 0)
+      and (.newNode | type == "string" and length > 0)
+      and .oldUid != .newUid
+      and .newPodReadyEpochMs > .oldPodGoneEpochMs) |
     {
       status: "PASSED",
       sourceRevision: .sourceRevision,
@@ -16,7 +22,6 @@ write_streamer_recovery_verdict() {
         newPodUid: .newUid,
         newNode: .newNode,
         podUidsDiffer: (.oldUid != .newUid),
-        nodesDiffer: (.oldNode != .newNode),
         oldPodGoneEpochMs: .oldPodGoneEpochMs,
         newPodReadyEpochMs: .newPodReadyEpochMs,
         noOverlap: (.newPodReadyEpochMs > .oldPodGoneEpochMs)
@@ -26,10 +31,6 @@ write_streamer_recovery_verdict() {
         streamTerminated: true,
         reconnected: true,
         resubscribed: true
-      },
-      partitionAssignment: {
-        expectedPartitions: .expectedPartitions,
-        oneFullStreamConsumer: true
       }
     }
   ' >"$destination"
