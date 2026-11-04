@@ -20,8 +20,8 @@ source "$repo_root/scripts/end-to-end/critical-consumers/lib/test-interfaces.sh"
 source "$repo_root/scripts/end-to-end/critical-consumers/lib/failure-support.sh"
 # shellcheck source=scripts/end-to-end/critical-consumers/lib/system-observation.sh
 source "$repo_root/scripts/end-to-end/critical-consumers/lib/system-observation.sh"
-# shellcheck source=scripts/end-to-end/critical-consumers/lib/gateway-close-verification.sh
-source "$repo_root/scripts/end-to-end/critical-consumers/lib/gateway-close-verification.sh"
+# shellcheck source=scripts/end-to-end/query-service/lib/order-projection.sh
+source "$script_dir/lib/order-projection.sh"
 # shellcheck source=scripts/end-to-end/query-service/lib/active-liveness.sh
 source "$script_dir/lib/active-liveness.sh"
 # shellcheck source=scripts/end-to-end/query-service/lib/execution-fixture.sh

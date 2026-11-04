@@ -5,6 +5,9 @@ dated local evidence for #135 and its live-observation follow-up #160. The imple
 sections describe owned behavior; the deployed-smoke section preserves the source/environment of
 that run, and the later certification sections describe how to verify close coordination. The
 completion gate records acceptance criteria, while the owning Issues retain live workflow state.
+Issue #202 retired the old terminal-close Shell runner. The current selected
+close verification belongs to `KubernetesTradingClose` in Java/Jupiter.
+The older runner instructions below are historical and cannot be executed.
 
 QuickFIX Gateway operational code owns admission state, readiness evaluation, operator commands,
 audit records, automatic safety actions, and trading-day close coordination. Local test or deployed
@@ -293,10 +296,10 @@ directory, and prevents an uncommitted or untracked runtime harness change from 
 evidence for the recorded revision without coupling runtime certification to unrelated documentation
 edits.
 
-## Deployment close certification
+## Historical deployment close certification (retired)
 
-`scripts/end-to-end/critical-consumers/run-gateway-close-certification.sh` is a terminal capability
-runner over the existing critical-consumer verification runtime. It reuses the normalized
+The retired `run-gateway-close-certification.sh` was a terminal capability
+runner over the old critical-consumer verification runtime. It reused the normalized
 observation collector, Gateway HTTP adapter, prepared FIX client, warm Kafka observation adapter,
 Matching runtime evidence, PostgreSQL consumer-progress evidence, and the established exact-event
 inbox check.
@@ -306,8 +309,8 @@ preparation, Gateway opening, order submission, session close, Matching proof, t
 and verdict publication. The phases share the existing verification interfaces instead of creating a
 second cluster-access or readiness framework.
 
-The runner requires an already bootstrapped, lifecycle-labeled retained namespace with a clean
-baseline and performs this observable sequence:
+The old runner required a lifecycle-labeled retained namespace with a clean
+baseline and performed this observable sequence:
 
 1. Validate retained source, namespace, verifier-image reference and identity, and clean source
    state.
@@ -343,15 +346,13 @@ Matching admission terminal for that process/session. Exactly-once network deliv
 disconnected FIX client remains out of scope; durable QuickFIX consumer progress is the required
 boundary.
 
-A typical invocation is:
-
-```bash
-scripts/end-to-end/critical-consumers/run-gateway-close-certification.sh \
-  --namespace "$SIMPLEMATCH_CERTIFICATION_NAMESPACE" \
-  --retained-evidence-dir "$SIMPLEMATCH_CERTIFICATION_EVIDENCE_DIR" \
-  --evidence-dir "$GATEWAY_CLOSE_EVIDENCE_DIR" \
-  --timeout-seconds 300
-```
+The old command has no current entry point. The selected verification uses
+`KubernetesTradingClose` and the Java Kafka Close Barrier observer.
+It verifies the selected terminal event and its durable business effects,
+not the former all-partition consumer backlog-drain report.
+The 2026-11-04 canonical evidence contains 15 distinct closed owners with
+runtime state `RUNNING` and schema version 1. The Java checks now require
+these conditions. That canonical run predates the new assertions.
 
 ## Completion gate
 

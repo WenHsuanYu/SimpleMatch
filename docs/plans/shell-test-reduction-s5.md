@@ -216,14 +216,16 @@ The terminal scenario checks the selected expiration in all three consumer inbox
 
 | Requirement | Decision and retained value | Current owner and cutover condition |
 | --- | --- | --- |
-| R13 public resting order | Keep the real FIX → Risk/outbox → Kafka/Matching → Persistence/Account correlation. Component tests cannot detect cross-service identity or delivery wiring defects. Merge the standalone normal run into the pre-fault baseline of the retained recovery scenarios in complete-local selection; do not add a third identical baseline-only deployment. | The existing resting-buy runner/verifier remains authoritative until the deployed Jupiter owner proves the same chain. Keep the focused normal operator mode available during cutover. |
-| R14 Gateway same-owner recovery | Keep one restart, retained FIX session/WAL, reconnect/resend, original-order retry, and singular durable effects. A successful database replay does not prove protocol recovery. | Reuse the existing FIX retained-session client and Gateway JDBC/application tests for their separate seams. The deployed restart still needs its own owner before removing its Shell lifecycle and Ruby verdict support. |
-| R15 Matching business recovery | Keep one selected-owner replacement with replay progress, a new cancel, and explicit byte-identical redelivery with singular downstream effects. Ready alone cannot prove recovered business processing. | Current Matching recovery runner/verifier remains until the deployed scenario moves. Native replay and service inbox tests retain their independent local seams. Do not recreate the retired ten-cycle calibration or claim that restart caused the controlled redelivery. |
-| R11 critical-consumer failure | Keep actual deployed fail-closed and eventual durable-delivery behavior. The current mixed-outage runner is not equivalent to a normal restart and cannot be deleted on the strength of component tests or RM-1. | Review its necessary fault/observation boundaries with R12 before selecting a smaller coherent scenario. This remains an explicit unresolved cutover; no speculative Java copy or deletion is authorized by this table. |
-| R12 Gateway close/open safety | Keep authenticated transitions, actual eligibility, automatic stale-observation pause, restoration, and terminal day close. Successful OPEN alone cannot prove these distinct protections. | Existing Gateway application tests own policy branches. The deployed public FIX scenario owns ingress rejection and terminal business effects; reuse its live observations. |
+| R13 public resting order | Keep the real FIX → Risk/outbox → Kafka/Matching → Persistence/Account correlation. Component tests cannot detect cross-service identity or delivery wiring defects. Merge the standalone normal run into the pre-fault baseline of the retained recovery scenarios in complete-local selection; do not add a third identical baseline-only deployment. | Deployed Jupiter verified this chain in the canonical resting-buy run. The dedicated Shell entry point, Ruby verdict, and isolated result fixtures are retired; shared SQL remains a Java test input. |
+| R14 Gateway same-owner recovery | Keep one restart, retained FIX session/WAL, reconnect/resend, original-order retry, and singular durable effects. A successful database replay does not prove protocol recovery. | Deployed Jupiter verified the selected restart, FIX recovery, and unchanged business facts. Existing WAL/session tests own file integrity. The old node-local WAL prefix matrix and continuous sampler are retired, not copied. |
+| R15 Matching business recovery | Keep one selected-owner replacement with replay progress, a new cancel, and explicit byte-identical redelivery with singular downstream effects. Ready alone cannot prove recovered business processing. | Deployed Jupiter verified the selected owner, replay, cancel, and controlled redelivery. The dedicated Shell/Ruby reports are retired. Native replay and service inbox tests retain independent local seams. Do not claim that the restart caused redelivery. |
+| R11 critical-consumer failure | Keep actual deployed fail-closed and eventual durable-delivery behavior. The old mixed-outage runner is not equivalent to a normal restart. | Deployed Jupiter verified one actual PostgreSQL outage, held Matching publication, ingress rejection, and durable recovery. The mixed consumer-Pod outage runner and its static sequence/verdict contracts are retired under the P0 decision. No simultaneous Account/Persistence Pod failure is claimed. |
+| R12 Gateway close/open safety | Keep authenticated transitions, actual eligibility, automatic stale-observation pause, restoration, and terminal day close. Successful OPEN alone cannot prove these distinct protections. | Deployed Jupiter verified the selected open, pause, real FIX rejection, recovery, and terminal close. Gateway service tests retain policy branches. The old terminal-close runner and all-partition consumer-drain matrix are retired. |
 
-These decisions select requirements, not completed execution. The current pure Java recovery module owns CDC, dependency, placement, and Market Data evidence; it does not yet replace the critical-consumer resting/recovery Ruby verdicts.
-P3 must close those concrete ownership gaps before legacy removal. No PostgreSQL, deployed, or recovery PASS is inferred from this disposition.
+The canonical resting-buy run proves the selected R11–R15 live behavior.
+The dedicated R11–R15 Shell/Ruby scenario chains are retired after their
+last-caller and independent-value reviews. The Query runner still consumes
+shared observation helpers, so these helpers remain until the P4 cutover.
 
 ## P4 Query disposition before implementation
 
@@ -251,7 +253,7 @@ P3's selected Matching Pod replacement does not close R22's abrupt process-crash
 
 Create the root `verifyAll` task and connect existing ordinary Java suites, static analysis, native CTest, manifest, dependency/Flyway, local FIX certification, and Kubernetes owners.
 No test assertions move into Gradle. Complete selection defaults native checks to `full-native-dev`.
-The current entry must fail before build/deploy/test work because retained P3/P4 deployed requirements have no new owner yet.
+At the original P5a checkpoint, the entry had to fail before build/deploy/test work because retained P3/P4 requirements had no new owner.
 Name those unresolved requirements in a small explicit preflight list; provide no property that bypasses it.
 Dry-run must show actual owner tasks, with Query's ordinary suite and collector scheduled once each.
 Actual invocation must fail at scope preflight before root-build service tests, native work, or deployment, and leave native evidence absent. Normal Gradle included-build preparation remains permitted.
@@ -260,7 +262,9 @@ This is early wiring, not P5b completion or a complete-local PASS.
 P5a focused evidence: the task was initially absent (`/tmp/simplematch-202-p5a-red.log`).
 The new dry-run schedules existing owners (`/tmp/simplematch-202-p5a-graph.log`).
 Actual invocation and `--continue` both fail at scope validation with no service/native/deployment task executed; the selected native evidence path remains absent.
-The explicit preflight list remains blocking until P3/P4 owners or reviewed retirements close every named requirement.
+The explicit preflight remains blocking. P3 now has selected live owners, but
+its new test assertions still require final-source acceptance. P4/P5b/P6
+requirements also remain unresolved.
 
 
 ## Final Ruby and Python removal condition
@@ -268,7 +272,8 @@ The explicit preflight list remains blocking until P3/P4 owners or reviewed reti
 The owner requires all project Ruby and Python code removed at final delivery: standalone files, embedded programs, runtime dependencies, dedicated fixtures/tests, and callers.
 Do not translate each script into Java. Retire obsolete, duplicate, source-layout, and coverage-only responsibilities; reuse existing Java owners for necessary behavior.
 Historical results retain their original language and scope descriptions, but no project executable Ruby or Python path remains.
-The current inventory contains 12 tracked `.rb` files and 28 tracked `.py` files, plus embedded programs and their callers.
+After the R11–R15 retirement slice, the working tree contains 4 tracked `.rb`
+files and 28 tracked `.py` files, plus embedded programs and their callers.
 These counts describe the removal scope, not a target for equivalent Java files.
 Assess each test before changing it. Delete tests with no independent value instead of translating them.
 Keep necessary command safety, authorization, credential handling, lifecycle ownership, and cleanup behavior under suitable existing Java owners where possible.
@@ -292,7 +297,8 @@ The profile selects its service-owned Flyway Jobs and completes them before busi
 `RestingBuyKubernetesTest` reuses Gateway's `PreparedFixSubmission` test fixture for the public BUY, same-claim Gateway recovery, same-claim Matching recovery, cancel, and exact event redelivery.
 `KubernetesCriticalDelivery` owns the PostgreSQL outage and fail-closed ingress scenario.
 `KubernetesTradingClose` closes the same session last and observes terminal business effects.
-These are integrated implementations, not deployed PASS results.
+The canonical resting-buy run passed these selected deployed behaviors.
+The run did not complete the legacy caller and fixture cutover.
 The requirement dispositions above govern the retained assertions and intentional verification losses.
 
 `KubernetesFixCredentials` provisions private server/client identities with JDK keytool and binds one synthetic counterparty to the run's account.
@@ -309,7 +315,128 @@ The bounded [live-03 memory observations](../../out/verification/issue-202-p3-pu
 
 The Kubernetes-tool suite and global static analysis passed after terminal-close integration.
 Live-07's first preparation stopped for the owner's strict two-axis review. It created no test cluster or deployment ownership receipt. Its refreshed preparation uses a new reviewed build receipt and preserves the interrupted log; the deployed result still uses the fresh live-07 directory.
-The review found no confirmed Standards violations and two Spec defects: missing before/after retry equality and a pause window longer than native liveness permits. The fixes compare existing business facts, preserve baseline evidence, and cap paused work at 20 seconds with an independent 10-second restoration budget. The Spec reviewer checked both fixes; the tools suite passed 55 cases with no skips, and global static analysis passed. Live execution remains required.
+The review found no confirmed Standards violations and two Spec defects: missing before/after retry equality and a pause window longer than native liveness permits. The fixes compare existing business facts, preserve baseline evidence, and cap paused work at 20 seconds with an independent 10-second restoration budget. The Spec reviewer checked both fixes; the tools suite passed 55 cases with no skips, and global static analysis passed. At that checkpoint, live execution was still required. The later canonical PASS is recorded below.
 Earlier failed results remain unchanged. Live-05 and live-06 cleanup passed; each removed only its four nodes and four disposable volumes.
-P3 still requires successful retained live behavior, legacy caller/fixture cutover, and the milestone two-axis review.
+
+### P3 live acceptance and cutover checkpoint (2026-11-04)
+
+The canonical disposable `resting-buy` run passed on the native Docker Engine.
+Its run ID is `f0266058-ab47-45f8-84dc-ca85551fda1b`.
+The evidence directory is `out/verification/issue-202-sata-canonical-resting-20261104-1407/`.
+The `summary.json` records PASS for assertions, diagnostics, cleanup, and overall status.
+All 15 Matching owners became Ready. The run used no manual NetworkPolicy change.
+The test used one actual PostgreSQL outage and restored owned resources.
+This PASS covers the selected Jupiter scenario, not the complete S5 contract.
+The tested Git tree remained unchanged when 26 unpublished commits became 12 commits.
+
+| Requirement | Deployed Jupiter evidence | Remaining cutover boundary |
+| --- | --- | --- |
+| R11 | `KubernetesCriticalDelivery` holds the routed command, rejects an actual FIX order during ingress pause, removes PostgreSQL, and verifies durable recovery. | The old simultaneous consumer-Pod-loss runner was retired. No combined Pod failure or broader outage matrix is claimed. |
+| R12 | `KubernetesGatewayAdmission` and `KubernetesTradingClose` verify opening, automatic pause, recovery, close barriers, and selected terminal effects. | The old close runner and all-partition high-watermark predicates were retired. Keep Gateway policy tests. A reviewed Java assertion now checks each closed owner's runtime state, schema, and unique partition identity. |
+| R13 | `RestingBuyKubernetesTest` verifies one real FIX BUY, Risk admission, order delivery, Persistence, Account, and consumer inbox identity. | The legacy normal runner and Ruby verifier are retired. Java still reads the shared SQL observations; keep source-fingerprint coverage. |
+| R14 | `KubernetesGatewayRecovery` replaces the owner. The test compares admission, delivery intent, and durable state after a retry. | The old WAL/journal prefix and sampler assertions were intentionally retired. Keep independent Gateway WAL and session integrity tests. |
+| R15 | `KubernetesMatchingRecovery` verifies selected-owner replacement, replay, a new cancel, and controlled byte-identical redelivery. | The old recovery CLI/verdict is retired. Keep Native replay and inbox tests. Do not infer full-fleet crash recovery or restart-induced redelivery. |
+
+The old R11–R15 runners and their dedicated contracts had no active caller
+after the owner-approved coverage reductions. The original runbooks now
+describe retired historical commands, not supported entry points.
+The shared SQL observations remain direct Java test inputs.
+The canonical live PASS predates this cutover and the new Java close assertions.
+It is not a new
+source-aligned deployment of the modified tree.
+
+| Legacy group | Caller disposition | Retained value or intentional loss |
+| --- | --- | --- |
+| Normal and recovery Shell entry | Removed after reviewing the internal Ruby/helper chain and the last legacy CLI option-conflict test. | The actual public FIX/order/recovery behavior has one deployed Jupiter owner. No substitute legacy CLI is retained. |
+| Gateway recovery Ruby and fixtures | Removed the sole Shell caller, Ruby unit tests, and result baselines together. | `WalRecoveryJournalTest`, Gateway session tests, and Jupiter retain distinct integrity and business checks. The old node-local WAL prefix and owner sampler matrix is intentionally lost. |
+| Matching recovery Ruby and fixtures | Removed the sole Shell caller, Ruby unit tests, and result baselines together. | Jupiter owns selected-owner replay, new cancel, and redelivery; Native replay and service inbox tests keep their independent seams. |
+| Shared Shell/FIX/Kafka adapters | Renamed the former resting-buy adapter test to `shared-interface-contract.sh` and removed only obsolete recovery-specific assertions. | Preserve authenticated Gateway operation, automatic-close restoration, port-forward lifecycle, bounded calls, correlated `SENT` completion, and FIX state ownership. |
+| Dedicated recovery lifecycle and error contracts | Removed with their sole Shell recovery implementation. | No replacement test for a removed CLI deadline, sampler, or cleanup implementation. Active helpers keep their own tests. |
+| Critical failure runner | Retired `run-failure-certification.sh`, the source-order `deployment-contract.sh`, and the runner-specific `verdict-contract.sh`. Updated CI and the historical runbook. | R11 Jupiter covers actual PostgreSQL outage and recovery. The simultaneous Account/Persistence/Gateway Pod-loss, two-second open-to-send, and separate FIX retransmission matrix are not new S5 acceptance claims. Shared Risk/FIX/Kafka Query helpers remain. |
+| Terminal close runner | Retired `run-gateway-close-certification.sh`, its private predicates, and `gateway-close-contract.sh`. Updated CI and the historical runbook. | Jupiter covers all Close Barriers, 15 closed owners, selected terminal event, reservation release, and absence of quarantine. Retired the broad consumer-offset and fixture matrix. Query's live projection reader moved to `query-service/lib/order-projection.sh`. |
+| Shared SQL observations | `RestingBuyKubernetesTest`, `KubernetesCriticalDelivery`, `KubernetesTradingClose`, and `KubernetesMatchingRecovery` still read the legacy SQL directory. | Keep existing input paths and source fingerprinting until any coordinated migration. Removed only `gateway-session-state.sql`, whose sole reader was the retired Shell recovery helper. |
+
+P3's selected live behavior and R11–R15 legacy runner dispositions are recorded.
+The milestone two-axis review and final validation must still close the P3 slice.
+It does not require another identical deployment to prove this selected business flow.
 Ruby resource budgeting and the remaining Python/Ruby consumers remain explicit retirement work.
+
+#### R13–R15 retirement review (earlier checkpoint)
+
+**Standards:** The retained critical-consumer Shell contracts passed.
+The verifier provenance contract also passed in an isolated, clean snapshot
+of this change. The workflow YAML parses, all active CI command paths exist,
+and `git diff --check` passes. The Kubernetes manifest test passed.
+Kubernetes unit tests, Gateway tests, and static analysis passed with cached
+task results. No production Java code or Kubernetes manifest changed.
+
+**Spec:** The canonical live PASS proves the selected R13–R15 integration.
+It predates this Shell/Ruby retirement and does not certify the new Git tree.
+The retired node-local WAL prefix, owner sampler, old report baselines,
+and obsolete CLI-specific failure cases are intentional coverage losses.
+The Java WAL/session tests and shared Shell/FIX/Kafka contracts remain.
+At this earlier checkpoint, R11/R12 legacy runners still needed independent review.
+`verifyAllScope` still fails as designed for unresolved S5 requirements.
+
+#### P3 R11–R15 cutover checkpoint
+
+The R11 and R12 final-caller review found no requirement to preserve their
+dedicated Shell deployments. The P0 decision retains one actual PostgreSQL
+outage and one terminal close in the shared Jupiter resting-buy scenario.
+The retired R11 runner also stopped Account, Persistence, and Gateway Pods.
+That combined failure claim is intentionally lost. Its separate FIX send
+timing, retransmission, static sequence, and verdict checks are not new S5
+acceptance criteria. `KubernetesCriticalDelivery` retains the actual
+PostgreSQL loss, fail-closed FIX rejection, held command, and durable recovery.
+
+The retired R12 runner checked a separate full-topic consumer drain and
+quarantine history. P0 replaces that matrix with the selected order's exact
+terminal event in three consumer inboxes and the corresponding business facts.
+`KubernetesTradingClose` keeps all 15 Close Barriers and closed Matching owners.
+The review found a missing Java closed-runtime guard. The Java test now
+requires schema version 1, runtime state `RUNNING`, a matching Pod identity,
+and 15 distinct partition IDs before it accepts the closed-owner evidence.
+The existing canonical `close-facts.json` independently contains all these
+facts. This is an examination of historical evidence, not a new live run.
+
+The two old runners, three dedicated Shell contracts, and the close-only
+predicate helper are removed. Shared Query consumers still require
+`failure-support.sh`, `failure-recovery.sh`, and other critical-consumer
+adapters. Keep them until P4 changes their last callers. Query's projection
+reader now resides in `query-service/lib/order-projection.sh`. Its two
+functions are byte-identical to their old definitions. No current executable
+caller references either retired runner or the old close helper.
+
+Focused checks passed after this cutover: retained critical-consumer Shell
+contracts, 16 Query contracts, the provenance contract in a clean temporary
+source snapshot, Kubernetes Jupiter unit tests and manifest test, Gateway
+tests, and static analysis. Gradle reported 125 tasks, with three executed
+and 122 up-to-date. The CI workflow parses and all 30 command paths exist.
+`verifyAllScope` still fails before complete verification as intended.
+The final S5 source-aligned live deployment is a P6 obligation.
+
+The tracked working tree now contains 123 Shell files and 25,901 physical
+Shell lines. It also contains 4 Ruby files and 28 Python files.
+The Issue #202 minimum reduction gates (51 Shell files and 10,476 lines)
+remain unmet. No code was translated into another language for this metric.
+
+#### P3 milestone Standards / Spec review
+
+**Standards:** Review used `HEAD` (`3b340a6`) as the fixed point and compared
+the complete working-tree diff. The independent Standards worker did not
+finish, so the primary review checked repository workflow rules, the
+bad-smell list, CI callers, and the affected interfaces directly. No new
+production-service interface, second test framework, or duplicate Query
+projection implementation was introduced. The shared SQL inputs and their
+source fingerprints remain. Focused tests, source-aligned provenance,
+workflow path resolution, and `git diff --check` passed. The `graphify`
+command is not available on this host, so its update was not executed.
+
+**Spec:** An independent review compared this diff with Issue #202 and P0.
+It found one stale historical review status, which is now marked as an
+earlier checkpoint. It found no confirmed executable requirement regression.
+The selected live R11–R15 evidence and every intentional verification loss
+are recorded above. The Java close guard matches the retained close facts.
+This review closes the P3 ownership and old-runner cutover decisions, not
+the fresh final-source S5 acceptance requirement. `verifyAllScope` remains
+fail-closed for R11–R22 pending final integration and verification.

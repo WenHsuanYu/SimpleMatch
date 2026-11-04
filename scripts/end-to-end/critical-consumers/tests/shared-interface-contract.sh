@@ -34,7 +34,7 @@ restore_gateway_environment
 expected_close=false
 enable_gateway_operations
 restore_gateway_environment
-printf '%s\n' 'Normal flow preserves automatic close; legacy fault scenarios retain their explicit override.'
+printf '%s\n' 'Gateway adapter preserves automatic close and restores optional overrides.'
 
 temporary_directory="$(mktemp -d /tmp/simplematch-live-open.XXXXXX)"
 trap 'rm -rf -- "$temporary_directory"' EXIT
@@ -83,7 +83,7 @@ start_port_forward() {
 evidence_dir="$temporary_directory"
 start_fix_port_forward 45678
 [[ "$fix_port" == 45678 ]]
-printf '%s\n' 'Recovery rebinds the stable owner Service to the retained client port.'
+printf '%s\n' 'FIX interface rebinds the stable owner Service to the retained client port.'
 
 stop_background_process() { return 1; }
 fix_port_forward_pid=12345
@@ -133,67 +133,7 @@ if bounded_operation_timeout_seconds 15; then
 fi
 unset operation_deadline_epoch_ms
 [[ "$(bounded_operation_timeout_seconds 15)" == 15 ]]
-printf '%s\n' 'Recovery I/O uses remaining total time; existing scenarios keep their own limits.'
-
-# Reject a timed-out PV query through the same hard-kill contract as namespaced I/O.
-# shellcheck source=scripts/end-to-end/critical-consumers/lib/gateway-owner-recovery.sh
-source "$script_dir/../lib/gateway-owner-recovery.sh"
-fix_state_dir="$temporary_directory/private"
-context="kind-contract-test"
-mkdir -p "$evidence_dir/recovery"
-kns() {
-  [[ "$1" == get ]]
-  jq --arg resource "$2" '.[$resource]' "$script_dir/fixtures/gateway-owner-resources.json"
-}
-pv_timeout_checked=false
-timeout() {
-  [[ "$1" == --foreground && "$2" == --signal=TERM && "$3" == --kill-after=2s &&
-      "$4" == 10s && "$5" == kubectl ]] || die 'PV query must have TERM-to-KILL timeout escalation'
-  pv_timeout_checked=true
-  return 1
-}
-if capture_gateway_recovery_state before; then
-  die 'a failed PV query must reject the recovery observation'
-fi
-[[ "$pv_timeout_checked" == true ]]
-printf '%s\n' 'PV continuity reads escalate TERM to KILL and propagate query failure.'
-
-# Gateway's shell-less runtime is observed through its validated kind-local PV.
-private_resources="$fix_state_dir/owner-resources"
-jq '.pv' "$script_dir/fixtures/gateway-owner-resources.json" >"$private_resources/pv.json"
-test_node_cluster="${context#kind-}"
-docker() {
-  case "$1" in
-    inspect) printf '%s\n' "$test_node_cluster" ;;
-    exec)
-      [[ "$2" == worker-1 && "$3" == cat &&
-          "$4" == /var/local-path-provisioner/PRIVATE_TEST_VOLUME/wal/inbound.wal ]] ||
-        die 'WAL reads must use only the actual owner node and validated local PV'
-      printf '%s\n' 'redacted-test-wal-line' ;;
-    *) return 1 ;;
-  esac
-}
-timeout() {
-  [[ "$1" == --foreground && "$2" == --signal=TERM && "$3" == --kill-after=2s &&
-      "$4" == 10s && "$5" == docker ]] || die 'node-local WAL reads must remain bounded'
-  shift 4
-  "$@"
-}
-read_gateway_recovery_file "$private_resources" inbound.wal >"$temporary_directory/wal-read.txt"
-[[ "$(<"$temporary_directory/wal-read.txt")" == redacted-test-wal-line ]]
-if read_gateway_recovery_file "$private_resources" ../../another-file; then
-  die 'WAL observation must refuse unrelated files'
-fi
-test_node_cluster=unrelated-cluster
-if read_gateway_recovery_file "$private_resources" inbound.wal; then
-  die 'WAL observation must refuse a node from another kind cluster'
-fi
-test_node_cluster="${context#kind-}"
-jq '.pv | .spec.hostPath.path = "/unrelated-volume"' "$script_dir/fixtures/gateway-owner-resources.json" >"$private_resources/pv.json"
-if read_gateway_recovery_file "$private_resources" inbound.wal; then
-  die 'WAL observation must refuse an unsupported storage root'
-fi
-printf '%s\n' 'WAL reads use the exact owned local PV, with no shell dependency in Gateway.'
+printf '%s\n' 'Bounded I/O uses the remaining total time; ordinary calls keep their own limits.'
 
 # Exercise the shared prepared-client process and completion protocol through its CLI boundary.
 (
@@ -215,6 +155,7 @@ CLIENT
   chmod +x "$repo_root/gradlew"
   SIMPLEMATCH_RETAINED_FIX_STATE_DIR="$temporary_directory/shared-fix-state"
   prepare_fix_state_directory
+  fix_state_dir="${fix_state_dir:?prepared FIX state directory missing}"
   printf 'retained-sequence-ledger\n' >"$fix_state_dir/ledger"
   fix_wait_for_delivery=true
   gateway_recovery=false
@@ -222,6 +163,7 @@ CLIENT
   fix_port=12345 account_id=test-account symbol=test quantity=1 price=1 cl_ord_id=TEST-ORDER
   timeout_seconds=5
   start_fix_submit_client
+  fix_completion_file="${fix_completion_file:?prepared FIX completion file missing}"
   release_fix_submit_client
   wait_fix_submission_evidence
   kill -0 "$fix_submit_pid"

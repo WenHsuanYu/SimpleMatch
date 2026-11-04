@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 
-# Failure injection, recovery verification, diagnostics, and environment restoration.
+# Shared Risk, FIX, and Kafka observations used by the retained Query runner.
 
 fix_submission_outcome_is_unknown() {
   local submission="$1"
@@ -72,43 +72,6 @@ capture_risk_admission() {
   jq -e '.state == "ACCEPTED" and (.routingPartition >= 0 and .routingPartition <= 14)' \
     "$destination" >/dev/null ||
     die 'FIX submission did not produce an accepted routed Risk admission'
-}
-
-require_matching_command_held() {
-  local before="$1"
-  local partition="$2"
-  local after="$evidence_dir/submission/matching-commands-held.json"
-  capture_topic_offsets matching.commands "$after" || die 'cannot recapture matching.commands offsets'
-  local before_offset after_offset
-  before_offset="$(offset_for_partition "$before" "$partition")"
-  after_offset="$(offset_for_partition "$after" "$partition")"
-  [[ "$after_offset" == "$before_offset" ]] ||
-    die 'matching.commands moved while the Risk outbox connector was paused'
-}
-
-release_matching_command() {
-  local before="$1"
-  local partition="$2"
-  local before_offset
-  before_offset="$(offset_for_partition "$before" "$partition")"
-  resume_risk_outbox
-  local snapshot="$evidence_dir/submission/matching-commands-published.json"
-  for _ in $(seq 1 "$timeout_seconds"); do
-    capture_topic_offsets matching.commands "$snapshot" || {
-      sleep 1
-      continue
-    }
-    local after_offset
-    after_offset="$(offset_for_partition "$snapshot" "$partition")"
-    if (( after_offset > before_offset )); then
-      (( after_offset == before_offset + 1 )) ||
-        die 'more than one command reached the target partition during release'
-      pause_risk_outbox
-      return 0
-    fi
-    sleep 1
-  done
-  die 'accepted Risk command did not reach matching.commands after outbox resume'
 }
 
 create_observer_pod() {
@@ -183,33 +146,6 @@ wait_consumers_through() {
     sleep 1
   done
   die "critical consumers did not process matching.events partition $partition offset $offset"
-}
-
-require_exact_event_once() {
-  local event_id="$1"
-  local postgres
-  postgres="$(postgres_pod)"
-  [[ -n "$postgres" ]] || die 'cannot resolve PostgreSQL Pod for inbox verification'
-  local counts
-  counts="$(
-    kns exec "$postgres" -c postgres -- psql -U simplematch -d simplematch -At \
-      -v ON_ERROR_STOP=1 -c "
-        SELECT
-          (SELECT COUNT(*) FROM persistence.matching_event_inbox
-           WHERE consumer_name = 'persistence-matching-events'
-             AND event_id = decode('$event_id', 'hex'))
-          || '|' ||
-          (SELECT COUNT(*) FROM account_service.matching_event_inbox
-           WHERE consumer_name = 'account-final-matching-events'
-             AND event_id = decode('$event_id', 'hex'))
-          || '|' ||
-          (SELECT COUNT(*) FROM quickfix_gateway.matching_event_inbox
-           WHERE consumer_name = 'quickfix-final-matching-events'
-             AND event_id = decode('$event_id', 'hex'));
-      "
-  )"
-  [[ "$counts" == '1|1|1' ]] ||
-    die "exact Matching Event was not processed once by all critical consumers: $counts"
 }
 
 capture_exact_event_counts() {
@@ -339,75 +275,4 @@ wait_fix_intent_status() {
     sleep 1
   done
   die "QuickFIX delivery intent did not reach status $expected"
-}
-
-quickfix_pod_uid() {
-  kns get pod quickfix-gateway-0 -o jsonpath='{.metadata.uid}'
-}
-
-statefulset_revision_converged() {
-  local name="$1"
-  local replicas="$2"
-  local revision
-  revision="$(kns get "statefulset/$name" -o jsonpath='{.status.updateRevision}')" || return 1
-  [[ -n "$revision" ]] || return 1
-  kns get pods -l "app.kubernetes.io/name=$name" -o json |
-    jq -e --arg revision "$revision" --argjson replicas "$replicas" '
-      (.items | length) == $replicas
-      and all(.items[];
-        .metadata.labels["controller-revision-hash"] == $revision
-        and any(.status.conditions[]?; .type == "Ready" and .status == "True"))
-    ' >/dev/null
-}
-
-collect_diagnostics() {
-  kns get pods -o wide >"$evidence_dir/diagnostics/pods.txt" 2>&1 || true
-  kns get deployments,statefulsets,pods,pvc >"$evidence_dir/diagnostics/workloads.txt" 2>&1 || true
-  kns get statefulset quickfix-gateway -o json \
-    >"$evidence_dir/diagnostics/quickfix-gateway-statefulset.json" 2>&1 || true
-  kns get pod quickfix-gateway-0 -o json \
-    >"$evidence_dir/diagnostics/quickfix-gateway-pod.json" 2>&1 || true
-  kns logs quickfix-gateway-0 -c quickfix-gateway --previous --tail=300 \
-    >"$evidence_dir/diagnostics/quickfix-gateway-previous.log" 2>&1 || true
-  local selector
-  for selector in account-service persistence quickfix-gateway risk-service; do
-    kns logs -l "app.kubernetes.io/name=$selector" \
-      --all-containers=true --prefix=true --tail=300 \
-      >"$evidence_dir/diagnostics/${selector}.log" 2>&1 || true
-  done
-  kns logs -l app.kubernetes.io/name=matching \
-    --all-containers=true --prefix=true --tail=300 \
-    >"$evidence_dir/diagnostics/matching.log" 2>&1 || true
-}
-
-restore_workloads() {
-  set +e
-  [[ -z "$original_postgres_replicas" ]] ||
-    kns scale statefulset/postgres --replicas="$original_postgres_replicas" >/dev/null 2>&1
-  [[ -z "$original_account_replicas" ]] ||
-    kns scale deployment/account-service --replicas="$original_account_replicas" >/dev/null 2>&1
-  [[ -z "$original_persistence_replicas" ]] ||
-    kns scale deployment/persistence --replicas="$original_persistence_replicas" >/dev/null 2>&1
-  [[ -z "$original_quickfix_replicas" ]] ||
-    kns scale statefulset/quickfix-gateway --replicas="$original_quickfix_replicas" >/dev/null 2>&1
-  [[ -z "$original_matching_replicas" ]] ||
-    kns scale statefulset/matching --replicas="$original_matching_replicas" >/dev/null 2>&1
-
-  [[ -z "$original_postgres_replicas" || "$original_postgres_replicas" -eq 0 ]] ||
-    kns rollout status statefulset/postgres --timeout="${timeout_seconds}s" >/dev/null 2>&1 || restoration_failed=true
-  [[ -z "$original_account_replicas" || "$original_account_replicas" -eq 0 ]] ||
-    kns rollout status deployment/account-service --timeout="${timeout_seconds}s" >/dev/null 2>&1 || restoration_failed=true
-  [[ -z "$original_persistence_replicas" || "$original_persistence_replicas" -eq 0 ]] ||
-    kns rollout status deployment/persistence --timeout="${timeout_seconds}s" >/dev/null 2>&1 || restoration_failed=true
-  if [[ -n "$original_quickfix_replicas" && "$original_quickfix_replicas" -ne 0 ]]; then
-    if ! kns rollout status statefulset/quickfix-gateway \
-        --timeout="${timeout_seconds}s" >/dev/null 2>&1; then
-      restoration_failed=true
-    elif ! statefulset_revision_converged quickfix-gateway "$original_quickfix_replicas"; then
-      restoration_failed=true
-    fi
-  fi
-  [[ -z "$original_matching_replicas" || "$original_matching_replicas" -eq 0 ]] ||
-    kns rollout status statefulset/matching --timeout="${timeout_seconds}s" >/dev/null 2>&1 || restoration_failed=true
-  set -e
 }

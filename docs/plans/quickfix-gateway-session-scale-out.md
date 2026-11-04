@@ -99,16 +99,17 @@ delivery ledger 才是 restart-safe delivery authority。QuickFIX acceptor 使�
 現有 continuity config 裡的 FileStorePath / FileLogPath 不能作為啟用 file-backed factory 的依據。
 manifest 渲染結果不等於 runtime recovery 證據，也不重複驗證 Kubernetes scheduler、StatefulSet
 或 Kafka consumer group 已保證的語意。
-同一 owner 的 FIX reconnect/resend 與 streamer replacement/reconnect/resubscribe 由部署情境
-runner 負責：`scripts/end-to-end/critical-consumers/run-failure-certification.sh` 驗證 QuickFIX
-durable recovery，`scripts/end-to-end/market-data/run-streamer-recovery-certification.sh` 透過
+同一 owner 的 FIX reconnect/resend 已由 `RestingBuyKubernetesTest` 與
+`KubernetesGatewayRecovery` 的部署情境驗證。舊的 `run-failure-certification.sh` 已依 Issue #202
+退役，其混合故障矩陣不再是 S5 要求。Streamer replacement/reconnect/resubscribe 仍由
+`scripts/end-to-end/market-data/run-streamer-recovery-certification.sh` 透過
 公開 gRPC subscription、Kafka group assignment 與 Pod identity 驗證 streamer replacement。
 這些 runner 只檢查 issue 所需的 recovery boundary；它們不把每個 protobuf 欄位或平台已保證的
 基本 scheduler 語意重新複製成第二套 verifier。
 
-其中 critical-consumer runner 已包含相同 owner 的 Gateway restart、client reconnect 與 explicit
-resend 檢查，要求重送維持同一 ExecID / MsgSeqNum 並帶 PossDupFlag。這是現有驗證路徑的範圍，
-實際 PASS 仍須讀取對應 source / run evidence；本次文件整理沒有重跑它。下列原始清單中與
+先前 critical-consumer runner 包含相同 owner 的 Gateway restart、client reconnect 與 explicit
+resend 檢查，要求重送維持同一 ExecID / MsgSeqNum 並帶 PossDupFlag。現行 Java owner
+保留選定的 FIX 恢復行為，完整證據範圍以 S5 計畫和 canonical run 為準。下列原始清單中與
 registry recovery、dedup、outbound recovery 和 restart/reconnect 有關的項目，應依這些既有能力
 重新界定剩餘驗收範圍，不能把它們全視為未有實作，也不能據此宣稱 multi-owner routing、graceful
 drain 或 standby lease / fencing / takeover 已完成。

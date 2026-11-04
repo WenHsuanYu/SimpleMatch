@@ -57,20 +57,10 @@ jobs:
           ruby scripts/test-hard-reset-safety.rb
           bash scripts/end-to-end/critical-consumers/tests/matching-status-contract.sh
           bash scripts/end-to-end/critical-consumers/tests/system-observation-contract.sh
-          bash scripts/end-to-end/critical-consumers/tests/deployment-contract.sh
-          bash scripts/end-to-end/critical-consumers/tests/verdict-contract.sh
           bash scripts/end-to-end/critical-consumers/tests/admission-contract.sh
-          bash scripts/end-to-end/critical-consumers/tests/gateway-close-contract.sh
           bash scripts/end-to-end/critical-consumers/tests/verifier-helper-contract.sh
           bash scripts/end-to-end/critical-consumers/tests/verifier-image-identity-test.sh
-          ruby scripts/end-to-end/critical-consumers/tests/resting-buy-verification-test.rb
-          ruby scripts/end-to-end/critical-consumers/tests/gateway-recovery-verification-test.rb
-          ruby scripts/end-to-end/critical-consumers/tests/matching-recovery-verification-test.rb
-          ruby scripts/end-to-end/critical-consumers/tests/matching-owner-observation-test.rb
-          bash scripts/end-to-end/critical-consumers/tests/matching-recovery-adapters-test.sh
-          bash scripts/end-to-end/critical-consumers/tests/resting-buy-adapters-test.sh
-          bash scripts/end-to-end/critical-consumers/tests/business-recovery-lifecycle-test.sh
-          bash scripts/end-to-end/critical-consumers/tests/business-recovery-failure-test.sh
+          bash scripts/end-to-end/critical-consumers/tests/shared-interface-contract.sh
           python3 scripts/end-to-end/query-service/tests/security-fixtures-contract.py
           python3 scripts/end-to-end/query-service/tests/collector-http-contract.py
           python3 scripts/end-to-end/query-service/tests/policy-authority-contract.py

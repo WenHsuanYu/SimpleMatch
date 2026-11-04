@@ -1,22 +1,29 @@
 # Critical Matching Event failure certification
 
-This procedure is the final production-like failure test for the three critical
+This document records the retired mixed-outage procedure for the three critical
 `matching.events` consumers tracked by issues #130, #131, and #132:
 Persistence, Account, and QuickFIX Gateway.
+
+The Shell runner in this document no longer exists. Issue #202 retains one
+actual PostgreSQL outage with a held Matching input and fail-closed FIX ingress.
+`KubernetesCriticalDelivery` runs that scenario inside the Java/Jupiter
+`resting-buy` verification. The 2026-11-04 canonical run passed the selected
+behavior. See `docs/plans/shell-test-reduction-s5.md` for the exact evidence
+identity and limitations. Do not execute historical commands below.
 
 It verifies one real FIX order through a controlled Matching, PostgreSQL, and
 consumer outage. The test uses deployed Kubernetes workloads, Kafka,
 PostgreSQL, Kafka Connect, and an external FIX session. It does not call
 consumer implementation methods directly.
 
-For the smaller, single-Gateway same-owner recovery scenario owned by #164, use
-the existing resting-buy runner's `--gateway-recovery` option. Its
-[acceptance contract and command](../../scripts/end-to-end/critical-consumers/README.md#same-owner-gateway-recovery-acceptance-contract-164)
+The retired smaller #164 scenario used the old runner's `--gateway-recovery`
+option. Its historical
+[acceptance contract](../../scripts/end-to-end/critical-consumers/README.md#same-owner-gateway-recovery-acceptance-contract-164)
 retain the same client session store and order, perform one normal Pod restart,
 and check actual reconnect/resend plus unchanged durable business results. Do
 not run this mixed Matching/PostgreSQL/consumer outage merely to prove #164.
 
-For #168, use the same resting-buy runner with `--matching-recovery`. It replaces
+The retired #168 runner used `--matching-recovery`. It replaced
 only the Matching owner selected by the real command partition, then submits one
 new cancel for the recovered resting order. Its separate controlled redelivery
 reads and republishes the exact cancellation bytes and independently observes the
@@ -25,7 +32,7 @@ after consumers advance through that offset; it does not assume Matching replay
 republishes completed events. See the
 [business recovery contract](../../scripts/end-to-end/critical-consumers/README.md#matching-business-recovery-acceptance-contract-168).
 
-## Repository layout
+## Historical repository layout (retired)
 
 The canonical test lives under:
 
@@ -52,7 +59,8 @@ scripts/end-to-end/critical-consumers/
 production-like runner. It owns the retained source/image provenance consumed by
 verification helpers.
 
-Use the canonical runner directly. S5 retires the historical forwarding entrypoint.
+The entries above are a historical record, not current filesystem paths.
+S5 retired both the forwarding alias and the former canonical runner.
 
 ## Retained production-like provenance
 
@@ -330,31 +338,12 @@ Observation attempts under `baseline/observation-*-attempt-*` retain their own
 `result.json` and `timing.json`. Submitted attempts are archived under a
 Gateway-attempt-specific path before a later retry can reuse the original path.
 
-## Running the test
+## Current S5 verification
 
-Use a disposable namespace from a production-like certification that completed
-on the same repository revision. Retain that namespace with `--keep-resources`.
-Select a new evidence path for the parent run:
-
-```bash
-export SIMPLEMATCH_CERTIFICATION_EVIDENCE_DIR=/path/to/new-production-like-evidence
-bash scripts/run-local-production-like-certification.sh --keep-resources
-export SIMPLEMATCH_PRODUCTION_LIKE_EVIDENCE_DIR="$SIMPLEMATCH_CERTIFICATION_EVIDENCE_DIR"
-export SIMPLEMATCH_CERTIFICATION_NAMESPACE="$(
-  awk -F= '$1 == "namespace" {print $2}' \
-    "$SIMPLEMATCH_PRODUCTION_LIKE_EVIDENCE_DIR/run-context"
-)"
-```
-
-The failure evidence directory must be new and empty. Canonical command:
-
-```bash
-scripts/end-to-end/critical-consumers/run-failure-certification.sh \
-  --namespace "$SIMPLEMATCH_CERTIFICATION_NAMESPACE" \
-  --evidence-dir "$FAILURE_EVIDENCE_DIR" \
-  --timeout-seconds 300
-```
-
-
-Issues #130, #131, and #132 should remain open until a fresh production-like
-namespace produces a retained `verdict.json` with `status: PASS`.
+The selected R11 fault now belongs to `KubernetesCriticalDelivery` in
+`RestingBuyKubernetesTest`. Gradle selects the scenario with
+`-PkubernetesScenario=resting-buy` in `:tools:kubernetes-tests:kubernetesTest`.
+The build, source receipt, deployment, diagnostics, and owned cleanup are
+managed by the Kubernetes verification module. Historical runner verdicts
+do not certify a new source tree. The reduced test does not restart all
+three consumers or prove combined process failure recovery.

@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 
-# Compatibility aggregator for the failure-certification support modules.
+# Shared certification adapters retained by the Query workflow.
 module_dir="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
 # shellcheck source=scripts/end-to-end/critical-consumers/lib/cluster-data.sh
 source "$module_dir/cluster-data.sh"

@@ -17,7 +17,7 @@ fail() {
 bash -n "$cluster_module"
 bash -n "$recovery_module"
 
-# The shared decoder is still used by critical-consumer admission fixtures.
+# The shared decoder is still used by retained Query admission fixtures.
 (
   # shellcheck source=scripts/end-to-end/critical-consumers/lib/cluster-data.sh
   source "$cluster_module"
@@ -360,31 +360,4 @@ YAML
     fail 'unexpected FIX evidence must retain FIX status and Text(58)'
 )
 
-(
-  # shellcheck source=scripts/end-to-end/critical-consumers/lib/failure-recovery.sh
-  source "$recovery_module"
-  pod_revision='quickfix-gateway-new'
-  kns() {
-    if [[ "$1" == get && "$2" == statefulset/quickfix-gateway ]]; then
-      printf '%s' 'quickfix-gateway-new'
-      return 0
-    fi
-    if [[ "$1" == get && "$2" == pods ]]; then
-      jq -n --arg revision "$pod_revision" '{items:[{
-        metadata:{labels:{"controller-revision-hash":$revision}},
-        status:{conditions:[{type:"Ready",status:"True"}]}
-      }]}'
-      return 0
-    fi
-    return 1
-  }
-
-  statefulset_revision_converged quickfix-gateway 1 ||
-    fail 'restoration must accept a Ready Pod on updateRevision'
-  pod_revision='quickfix-gateway-old'
-  if statefulset_revision_converged quickfix-gateway 1; then
-    fail 'restoration must reject a Ready Pod on an older revision'
-  fi
-)
-
-printf 'QuickFIX admission deployment, evidence, recovery, and live-task contracts are valid.\n'
+printf 'QuickFIX admission, evidence, and live-task contracts are valid.\n'

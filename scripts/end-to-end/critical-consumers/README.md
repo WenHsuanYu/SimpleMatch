@@ -3,11 +3,25 @@
 This directory contains deployed-system certification for the three critical
 `matching.events` consumers: Persistence, Account, and QuickFIX Gateway.
 
+The current S5 Java/Jupiter `resting-buy` scenario passed its deployed
+business and recovery checks on 2026-11-04.
+See `docs/plans/shell-test-reduction-s5.md` for the run identity and scope.
+The #162, #164, and #168 Shell/Ruby entry points are retired after
+their last-caller review. The contracts and older PASS reports below record
+historical behavior; they are not current execution instructions or proof of
+the Java run. The R11 failure and R12 terminal-close Shell entry points
+are also retired under the reduced S5 requirements. Java/Jupiter now owns
+the selected R11–R15 integration. The remaining Shell modules also serve
+the active Query certification until its P4 cutover.
+
 The scripts exercise real Kubernetes workloads, Kafka, PostgreSQL, Kafka
 Connect, and an external FIX session. They are not unit-test helpers and do not
 call consumer implementation methods directly.
 
 ## Normal resting-buy acceptance contract (#162)
+
+This section records the former Shell contract. The current selected
+deployed scenario is implemented in Java/Jupiter.
 
 The smallest normal scenario submits one BUY / LIMIT / DAY order through a real
 FIX session in a fresh, dedicated local namespace. It uses an eligible instrument
@@ -53,7 +67,7 @@ trade, infrastructure-failure resilience, or a new `full-local` aggregate run.
 
 ## Same-owner Gateway recovery acceptance contract (#164)
 
-`--gateway-recovery` extends the resting-buy scenario with one normal Gateway
+The retired `--gateway-recovery` mode extended the resting-buy scenario with one normal Gateway
 Pod replacement. The original order, client session store, and approved trading
 day remain the test identities throughout recovery.
 
@@ -88,7 +102,7 @@ reviewable result baseline. This scenario exercises one Gateway restart.
 
 ## Matching business recovery acceptance contract (#168)
 
-`--matching-recovery` selects one recovery integration test: one real resting
+The retired `--matching-recovery` mode selected one recovery integration test: one real resting
 BUY, replacement of its observed Matching partition owner, a new FIX cancel
 command for the original order, and controlled byte-identical redelivery of its
 final cancellation event. It is mutually exclusive with `--gateway-recovery`.
@@ -129,18 +143,9 @@ these failures and cannot publish PASS before successful restoration. Evidence
 contains necessary identifiers/business facts only, never raw FIX/Kafka payloads
 or credentials. The approved deployment trading day is retained unchanged.
 
-Run against a completed deployment from the same clean, committed source. The
-example pins the approved historical day; the runner also reads `trading_day`
-from the retained deployment's `run-context` and rejects any explicit different
-day. Omitting the environment value retains that deployment day, not today's day:
-
-```bash
-SIMPLEMATCH_CERTIFICATION_TRADING_DAY=2026-08-27 \
-SIMPLEMATCH_PRODUCTION_LIKE_EVIDENCE_DIR=out/certification/local-production-like \
-  bash scripts/end-to-end/critical-consumers/run-resting-buy-certification.sh \
-    --namespace "$namespace" --evidence-dir out/certification/matching-recovery \
-    --matching-recovery --timeout-seconds 180
-```
+The retired runner used a completed source-aligned deployment. It read
+`trading_day` from its retained `run-context` and rejected a conflicting
+request. The old invocation is no longer available.
 
 The evidence directory must be new/empty. The operator needs no direct Kafka
 payload editing or manual FIX sequence manipulation. The runner creates an
@@ -188,21 +193,21 @@ caused by the restart. Cross-node recovery, filled trades, production
 exactly-once and full-local certification remain outside this result;
 GitHub owns the current remote-delivery status.
 
-## Structure
+## Structure and S5 cutover boundary
 
-- `run-resting-buy-certification.sh` owns the normal #162 scenario; the readable
-  `sql/` files and `lib/resting-buy-verification.rb` own its SQL observations and
-  cross-boundary business assertions. The verifier tests diff a generated result
-  against `tests/baselines/resting-buy-result.json` and reject corrupted facts.
-- `lib/gateway-owner-recovery.sh` adds the opt-in #164 restart and observations.
-  `lib/gateway-recovery-verification.rb` redacts owner/WAL observations and checks
-  recovery against the same business baseline. Its independent fixtures and
-  `tests/baselines/gateway-recovery-result.json` cover negative evidence as well.
-  S5 retires the dedicated SQL padding snapshot, its fixture/baseline, and its Shell alias.
-  The runtime SQL collector remains in use by the recovery scenario.
-  PostgreSQL smoke verifies migrations and core constraints without repeating this collector-report check.
-  See the [disposition](../../../docs/plans/shell-test-reduction-s5.md) for the intentional coverage loss.
-- `run-failure-certification.sh` owns only the failure and recovery scenario.
+- `RestingBuyKubernetesTest` and the Java recovery helpers own the selected
+  deployed R13-R15 FIX and business checks. The former Shell entry point,
+  its Ruby verdicts, recovery helpers, and dedicated fixtures are retired.
+  The Java test still reads the retained `sql/resting-buy-*.sql` files and
+  `sql/matching-recovery-progress.sql`.
+- `tests/shared-interface-contract.sh` keeps the distinct live Shell
+  Gateway/FIX/Kafka adapter contracts. It no longer tests the retired
+  recovery CLI or node-local WAL observer.
+- `KubernetesCriticalDelivery` owns the selected live PostgreSQL fault and
+  fail-closed delivery requirement. The old mixed-consumer-Pod outage runner
+  was retired without a separate replacement deployment.
+- `KubernetesTradingClose` owns the selected terminal `close-day` evidence.
+  The legacy full-consumer-offset matrix is not a current S5 requirement.
 - `lib/matching-status.sh` validates Matching runtime evidence and normalizes
   Kafka committed positions. It performs no Kubernetes or Kafka I/O.
 - `lib/system-observation.sh` collects one bounded Gateway readiness
@@ -211,100 +216,32 @@ GitHub owns the current remote-delivery status.
 - `lib/cluster-data.sh` contains Kubernetes, Kafka, PostgreSQL, and test-fixture
   access.
 - `lib/test-interfaces.sh` contains external FIX, Kafka Connect, and Gateway
-  operations adapters used only by the certification.
-- `lib/failure-recovery.sh` contains failure injection, recovery verification,
-  diagnostics, and environment restoration.
-- `tests/` contains shell contracts for the modules and deployment ordering.
+  operations adapters that the retained Query runner still uses.
+- `lib/failure-recovery.sh` provides shared Risk/FIX/Kafka observation helpers
+  to Query. The old R11 fault injection and restoration functions are removed.
+- `scripts/end-to-end/query-service/lib/order-projection.sh` owns the
+  retained Query projection polling functions from the old close helper.
+- `tests/` contains contracts for shared interfaces and observations.
 
-Use `scripts/end-to-end/critical-consumers/run-failure-certification.sh` directly.
-S5 retires the historical forwarding alias; scenario behavior remains with this canonical runner.
+The former failure and close runner commands are no longer available.
+Use the Java/Jupiter `resting-buy` scenario for the retained S5 behavior.
 
-## Run the normal scenario
+## Current S5 verification and former runner scope
 
-Start one source-aligned deployment with the existing production-like runner,
-retaining its disposable namespace. `--skip-compose` is sufficient for this
-Kubernetes-only scenario: its infrastructure report is intentionally `PARTIAL`,
-not a claim of `full-local` certification. Do not use `--matching-fleet-only`,
-which lacks the required Gateway, Risk, Persistence and Account workloads.
+The selected deployed scenario is `RestingBuyKubernetesTest`, selected with
+`-PkubernetesScenario=resting-buy` in `:tools:kubernetes-tests:kubernetesTest`.
+Its canonical PASS and source identity are recorded in the S5 plan. That PASS
+does not establish all historic runner assertions or full S5 acceptance.
 
-```bash
-test_trading_day=2026-08-27
-delivery_manifest=tools/market-reference-builder/data/$test_trading_day/delivery/manifest.yaml
-test -r "$delivery_manifest"
-
-SIMPLEMATCH_CERTIFICATION_TRADING_DAY="$test_trading_day" \
-SIMPLEMATCH_MARKET_REFERENCE_DELIVERY_MANIFEST="$delivery_manifest" \
-SIMPLEMATCH_CERTIFICATION_EVIDENCE_DIR=out/certification/issue-162-deployment \
-  scripts/run-local-production-like-certification.sh \
-    --skip-compose --keep-resources --image-transport kind-load
-
-SIMPLEMATCH_CERTIFICATION_TRADING_DAY="$test_trading_day" \
-SIMPLEMATCH_PRODUCTION_LIKE_EVIDENCE_DIR=out/certification/issue-162-deployment \
-  scripts/end-to-end/critical-consumers/run-resting-buy-certification.sh \
-    --namespace <retained-namespace> \
-    --evidence-dir out/certification/issue-162-resting-buy
-```
-
-For #164, use the same deployment command with a new, issue-specific deployment
-evidence directory, then run the normal scenario once with `--gateway-recovery`:
-
-```bash
-SIMPLEMATCH_CERTIFICATION_TRADING_DAY=2026-08-27 \
-SIMPLEMATCH_PRODUCTION_LIKE_EVIDENCE_DIR=out/certification/issue-164-deployment \
-  scripts/end-to-end/critical-consumers/run-resting-buy-certification.sh \
-    --namespace <retained-namespace> \
-    --evidence-dir out/certification/issue-164-gateway-recovery \
-    --gateway-recovery --timeout-seconds 180
-```
-
-The 180-second budget is a test deadline, not the Gateway's five-second freshness
-threshold. It starts immediately before the single Pod deletion and includes
-replacement, actual client reconnect/resend, authenticated reopen and final
-business/OPEN observations. Owner sampling is once per second while recovery is
-in progress; it is bounded observed evidence, not proof against every conceivable
-sub-second overlap. This test stays on the same node and storage, and does not
-claim cross-node HA, Matching replacement, or a complete infrastructure matrix.
-`business-result.json` is the initial order baseline; `recovery-result.json` is
-the recovery check. Only `verdict.json`, written after cleanup, is the final
-result: baseline PASS alone cannot satisfy a requested recovery run.
-
-Gateway uses a shell-less Java runtime image. WAL and recovery-journal reads
-therefore use the actual bound local-path PV on its observed kind node, not
-`kubectl exec ... cat` inside Gateway. The observer validates the Gateway mount,
-volume binding, node assignment and kind-container ownership before streaming
-only the two named files into the redacting verifier. Unsupported storage roots
-fail closed; this local-kind observation does not claim a portable storage or
-cross-node recovery contract.
-
-Every recovery I/O is limited by the remaining absolute deadline. Teardown has
-its existing separate, bounded restoration wait: it stops the test client,
-removes the temporary operation overrides and rolls back to the original
-configuration. The runner then checks the actual `/readyz` endpoint and verifies
-the overrides are absent from both the StatefulSet and restored Pod before
-publishing PASS. The verdict separates recovered `OPEN` before teardown from
-`restorationGatewayReady` afterward and explicitly sets
-`postRestorationOpenProven: false`; it does not leave operator HTTP enabled or
-claim the restored configuration is still open for new orders.
-
-Recovery execution ownership lives in `lib/business-recovery-lifecycle.sh`:
-both scenarios share the absolute deadline and borrowed timeout restoration,
-and it starts/stops the Gateway owner sampler. The runner keeps its single
-`EXIT` trap and notifies recovery to finish before restoring baseline resources;
-it does not inspect scenario-specific timeout or sampler state. Sampler stop
-failure retains its process identity for terminal cleanup and refuses PASS.
-Baseline FIX clients, tunnels, Kafka observation and environment overrides
-remain owned by their existing creators. The Gateway and Matching business
-sequences, verifiers, evidence formats and recovery/restoration clocks remain
-distinct and unchanged. Recovery is invoked as a simple command, with explicit
-failure propagation at observation and mutation steps; conditional Bash callers
-must not allow a failed step to fall through into later work.
-
-The lifecycle and failure contracts run without deployment access:
-
-```bash
-bash scripts/end-to-end/critical-consumers/tests/business-recovery-lifecycle-test.sh
-bash scripts/end-to-end/critical-consumers/tests/business-recovery-failure-test.sh
-```
+The retired Shell recovery runner used one 180-second recovery budget,
+node-local WAL observation, Gateway owner sampling, and a separate cleanup
+verdict. Its dedicated WAL prefix, sampler, output-baseline, and CLI-option
+tests were removed because they no longer protect an active interface.
+Gateway WAL/journal integrity has independent Java tests; the current Jupiter
+flow checks the selected retained claim and durable business effects.
+R11/R12 Shell runners and their runner-specific contracts are retired.
+The independent Gateway policy tests and Java Kafka Close Barrier observer
+remain available. Query still has active Shell helper consumers until P4.
 
 ### Recorded local verification
 

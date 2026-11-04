@@ -11,6 +11,7 @@ import java.math.BigDecimal;
 import java.nio.file.Files;
 import java.time.Duration;
 import java.util.HashMap;
+import java.util.HashSet;
 import java.util.List;
 import java.util.concurrent.TimeoutException;
 
@@ -76,6 +77,7 @@ final class KubernetesTradingClose {
             + target.run().runId(), "-o", "json").required("items");
     assertEquals(commands.partitions().size(), pods.size());
     final var runtimes = json.createArrayNode();
+    final var seenPartitions = new HashSet<Integer>();
     for (var pod : pods) {
       final String owner = pod.required("metadata").required("name").asText() + ":"
           + pod.required("metadata").required("uid").asText();
@@ -84,6 +86,9 @@ final class KubernetesTradingClose {
         final var runtime = target.matchingRuntime(pod);
         final int partition = runtime.required("admission").required("partition_id").asInt();
         assertEquals(owner, runtime.required("admission").required("owner_id").asText());
+        assertTrue(partition >= 0 && partition < commands.partitions().size(),
+            "closed owner partition must exist in the command snapshot");
+        assertEquals("matching-" + partition, pod.required("metadata").required("name").asText());
         if ("CLOSED".equals(runtime.path("partition_state").asText())
             && runtime.required("pending_inputs").asInt() == 0
             && runtime.required("pending_publications").asInt() == 0
@@ -92,12 +97,16 @@ final class KubernetesTradingClose {
           final long age = System.currentTimeMillis()
               - runtime.required("updated_at_epoch_ms").asLong();
           assertTrue(age >= 0 && age <= 5_000, "closed owner observation must be fresh");
+          assertEquals(1, runtime.required("schema_version").asInt());
+          assertEquals("RUNNING", runtime.required("runtime_state").asText());
+          assertTrue(seenPartitions.add(partition), "a close partition must have one observed owner");
           runtimes.add(runtime);
           break;
         }
         Thread.sleep(250);
       } while (true);
     }
+    assertEquals(commands.partitions().size(), seenPartitions.size());
     save("matching", runtimes);
   }
 

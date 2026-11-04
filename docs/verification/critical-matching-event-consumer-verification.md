@@ -135,7 +135,10 @@ opt into the critical consumer deliberately.
 
 S4 retired the standalone configuration snapshots in favor of shared manifest schema checks and basic probe policy.
 S5 removes the unused `test-critical-consumer-kubernetes-config.sh` alias.
-The canonical `scripts/end-to-end/critical-consumers/tests/deployment-contract.sh` still has current CI consumers.
+The former `scripts/end-to-end/critical-consumers/tests/deployment-contract.sh`
+was retired with the R11 mixed-outage Shell runner in Issue #202. The old
+source-order checks have no current caller. `KubernetesCriticalDelivery`
+and the shared verifier provenance checks own the retained behavior.
 Those checks do not independently prove that the rendered ConfigMap enables each critical consumer.
 Review current configuration and use actual deployed behavior for that requirement.
 See the [S5 disposition](../plans/shell-test-reduction-s5.md) for retained owners and intentional verification losses.

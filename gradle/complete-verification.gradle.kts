@@ -10,7 +10,7 @@ if (completeInvocation) {
     }
 }
 val unresolvedRequirements = listOf(
-    "R11-R15: deployed critical-consumer safety, public FIX and business recovery",
+    "R11-R15: fresh final-source deployed acceptance pending",
     "R16-R17: deployed Market Data rebuild and public-stream recovery",
     "R18-R19: deployed Query processing and policy lifecycle",
     "R20-R22: retained dependency, placement and Matching recovery dispositions"
@@ -29,7 +29,7 @@ val scope = tasks.register("verifyAllScope") {
 }
 val complete = tasks.register("verifyAll") {
     group = "verification"
-    description = "Runs complete local verification; currently blocked by missing P3/P4 owners."
+    description = "Runs complete local verification; blocked until retained S5 scope is accepted."
     dependsOn(scope, "staticAnalysis", "nativeTest", "manifestCheck", "verifyDependencies",
         "verifyKubernetes", ":services:quickfix-gateway:certificationTest")
 }
