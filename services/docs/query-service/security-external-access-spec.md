@@ -13,6 +13,11 @@ target contract, not a statement of implemented or certified capabilities.
 
 Phase 1 authorization and source-state statements below describe their recorded planning baseline.
 For current delivery status and evidence, see [QS1-07 / #194](https://github.com/WenHsuanYu/SimpleMatch/issues/194).
+Issue [#202](https://github.com/WenHsuanYu/SimpleMatch/issues/202) subsequently retired
+the **synthetic Local Lab** approval database, event timeline and collector export.
+The historical Q8 rollback-record and runner-restart proposals below do not
+describe the current R19 runner. This does not relax product authorization or
+establish a production revocation guarantee.
 
 Companion documents:
 

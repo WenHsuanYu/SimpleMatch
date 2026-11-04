@@ -1,7 +1,7 @@
 """Read-only validation of owner-private synthetic Query policy fixture bundles.
 
 This module is shared by the actual certification input checker and the
-interim Lab CLI. It is not a deployment approval service or policy registry.
+disposable lifecycle Lab. It is not a deployment approval service or policy registry.
 """
 
 import hashlib
@@ -88,3 +88,23 @@ def inspect_bundle(path):
             "identitiesDigest": hashlib.sha256((path / "fixture-identities.json").read_bytes()).hexdigest(),
             "credentialsDigest": hashlib.sha256(credential_bytes).hexdigest(),
             "path": str(path.resolve()), "verifiers": verifiers}
+
+
+def inspect_unchanged(path, expected):
+    """Fail closed if the previously inspected private policy or credentials changed."""
+    observed = inspect_bundle(path)
+    if any(observed[key] != expected[key] for key in
+           ("version", "digest", "identitiesDigest", "credentialsDigest")):
+        raise ValueError("Query policy fixture changed after inspection")
+    return observed
+
+
+def inspect_replacement(previous, successor, expected):
+    """Validate the next startup-only fixture without creating approval state."""
+    before = inspect_unchanged(previous, expected)
+    after = inspect_bundle(successor)
+    if (after["version"] != before["version"] + 1
+            or after["identitiesDigest"] != before["identitiesDigest"]
+            or not before["verifiers"].isdisjoint(after["verifiers"])):
+        raise ValueError("Query policy replacement must advance, retain identities and rotate credentials")
+    return after

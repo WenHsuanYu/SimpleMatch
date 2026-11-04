@@ -1,13 +1,12 @@
 # Query Local Lab policy lifecycle
 
-**Issue #202 S5 migration in progress.** The old independent Query
-policy-approval record is still used by this Lab and awaits R19 cutover.
-The dedicated unrelated rollback-image candidate, comment-only
-same-version mutation, simulated missing approval record, and deliberately
-unschedulable second replica have been retired from the deployed scenario.
-The corresponding historical reports below describe earlier source-scoped
-evidence, not checks run by the current scenario. Real old-generation
-drain, two new replicas, revoked credentials and Account catch-up remain.
+**Issue #202 S5 migration in progress.** The independent Lab approval database,
+synthetic event timeline, collector credential export and their dedicated tests
+have been retired. The separate rollback-image, comment-only edit, lost-record
+and unschedulable-replica simulations were retired earlier. Historical reports
+below describe earlier source-scoped evidence, not current-source acceptance.
+Actual old-generation drain, two new replicas, revoked credentials and Account
+catch-up remain required. No fresh deployed R19 PASS exists for this revision.
 
 QS1-06 / [#193](https://github.com/WenHsuanYu/SimpleMatch/issues/193) verifies a controlled
 policy replacement in a disposable, synthetic Local Lab. It uses the existing startup-only
@@ -16,7 +15,7 @@ existing Kafka consumers. It does not add a runtime entitlement service or chang
 permissions. Production transport, revocation SLAs, business grant approval, OAuth, Gateway,
 PKI and selective cache reintroduction retain their separate approval gates.
 
-## Authorities and access during verification
+## Controlled fixtures and actual verification
 
 The fixture provisioner creates credentials **before** either replica is deployed. Its
 `application.properties` contains verifiers; `credentials.json` contains private client material.
@@ -25,42 +24,32 @@ profiles replace every credential with zero overlap, first remove C's Y grant, t
 They preserve the other grants and the operations-read permission. These are deliberate test
 profiles, not a general account-grant approval interface or a production rotation requirement.
 
-`policy-authority.py` owns a private, run-scoped **deployment approval record**, independent of
-the application image. It pins namespace UID, image identity, policy version/content digest,
-fixture identities and credential material. It does not become a second Spring configuration
-source: each Java process still receives one complete validated policy at startup. Its owner
-is the trusted synthetic Lab operator; protection against a malicious host/Kubernetes
-administrator is outside this Lab's threat model.
-
-The authority rejects older policy, same-version edits, incompatible image identity and
-credential-content changes. A missing current record fails closed; another invocation cannot
-initialize V1 in the existing authority directory. A surviving namespace or Query CRI task
-also blocks a fresh run. Approval checks establish eligibility; the runner separately enforces
-the activation state and verifies actual mounted policy bytes and HTTP policy-version headers.
+The read-only `lib/policy_bundle.py` inspects each owner-private fixture, checks exact grants,
+credential verifier mapping and identity consistency, and rejects in-run edits. Before a
+replacement, the runner verifies increasing policy version, stable Principal/Account IDs
+and disjoint credential verifiers. These are fixture checks, not a business policy approval
+mechanism. Each Java process still loads one complete policy at startup. The runtime binds
+its namespace UID/run label, actual local and CRI image identity, Pod template annotation,
+mounted Secret bytes and observed HTTP policy. A surviving namespace or Query CRI task
+blocks a new run; any old Query task reappearing before replacement deployment fails closed.
 
 All client credentials stay under owner-private `private/` directories, never in Git or public
-reports. The verifier alone uses the new generation before Resume. Collector export is refused
-until all eligible replicas are verified and Resume is recorded. Old read and operations
-credentials must return 401 on every new replica; a failed verification never restores them.
-This withholding is suitable only for the fully controlled synthetic clients in this Lab.
+reports. No collector-export protocol exists in the focused test; only the runner reads the
+next private fixture for verification. Old read and operations credentials must return 401
+on every new replica; failed verification never restores the earlier generation.
 
-## State transitions and fencing
+## Runtime observations and fencing
 
-The retained timeline separates **revocation** from **service recovery**:
-
-| Event | Required observation |
-| --- | --- |
-| Tsubmit | The next version/digest is approved in the private run record |
-| Tblock | New connections, new requests on existing keep-alive connections and direct Pod paths reject work |
-| Tdrained | Captured old containers/tasks/PIDs have stopped; no other Query task exists on any eligible worker |
-| Trevoked | The old generation cannot generate another server-side response |
-| Tresume | Every eligible new replica passes policy, grant, credential and catch-up verification; collectors may receive new credentials |
+The runner writes direct, run-owned observations rather than a synthetic ordered approval
+timeline. `generation-N-fence.json` records actual transport rejection and the old CRI/task/PID
+drain. `generation-N-serving.json` records both new Pods' policy and authorization checks,
+old-credential rejection and durable Kafka catch-up. Failed observations block any PASS.
 
 The runner stops the entire Query Deployment, so its Kafka consumers pause too. It uses
 existing graceful shutdown, observes runtime container/PID identity rather than trusting
 readiness or Pod deletion, and terminates an exact-owned old PID when necessary. The in-flight
 scenario holds an Account table lock and records admitted JDBC work before Block. Those
-requests may finish normally before the observer reaches Tblock; verified process exit is
+requests may finish normally before the blocked-path observation; verified process exit is
 successful drain. Remaining exact-owned processes are terminated within the same budget.
 Fast OS-process contracts separately verify normal completion, forced termination and
 deadline failure without depending on a narrow JVM-suspension race. Direct access is
@@ -68,11 +57,11 @@ tested independently of the Service.
 Direct Pod probes explicitly bypass HTTP proxies. An indeterminate curl result is retained
 privately; timeout, partial response or observer failure is never evidence of rejection.
 An already stopped generation cannot accept reads even if its removed Pod IP only times out.
-Block therefore accepts either positive transport rejection or positive CRI/containerd/original-PID
+Blocked paths therefore accept either positive transport rejection or positive CRI/containerd/original-PID
 fencing. Each observation records which mechanism established the boundary. Uncertain runtime
 state remains FAIL, and the later drain still checks all eligible workers for uncaptured tasks.
 
-The initial **20s drain**, **90s submit-to-stop verification** and **120s catch-up** limits are
+The **20s blocked-to-drained**, **90s generation-submit-to-stop verification** and **120s catch-up** limits are
 Lab acceptance parameters. Exceeding one produces FAIL. A larger stop-verification window
 cannot extend drain. The existing **5s read transaction/JDBC statement budget** is distinct
 from total HTTP lifetime; the slow client intentionally waits longer. Already transmitted
@@ -80,9 +69,9 @@ bytes cannot be recalled. This proves bounded routine maintenance, not emergency
 cutoff, zero-downtime policy updates or a production revocation guarantee.
 
 The current runner starts both V2 replicas normally and verifies the current policy
-through each Pod. It no longer creates a deliberately unschedulable Pod to
-exercise the Lab authority's simulated partial-activation recovery branch;
-that historical claim is intentionally retired by Issue #202. Failure to
+through each Pod. It does not create a deliberately unschedulable Pod to
+exercise an artificial partial-activation recovery branch;
+that historical claim was intentionally retired by Issue #202. Failure to
 activate a replica still prevents a successful R19 verdict. The runner
 verifies C→Y 404, C→X 200 and B→Y 200 plus all five Principals' Account,
 Market and Operations permissions on **each** serving replica. Disabling D is a separate
@@ -126,7 +115,7 @@ Preflight renders the effective platform and Query configuration offline and che
 ConfigMap/Secret references and keys, volume mounts and artifact `file:` URIs. All external
 preflight commands have bounded deadlines. Issue #202 retired the requirement
 to inspect a **different, never-launched** Query rollback-image candidate.
-The runtime still pins and verifies the actual approved Query image during
+The runtime still pins and verifies the actual Query image during
 platform import and before starting each eligible replica.
 The focused image fingerprint includes both the normalization Dockerfile and its wrapper recipe.
 Raw containerd image probes are owner-labelled and recorded before launch. Their exact task,
@@ -141,7 +130,6 @@ GRADLE_USER_HOME="$HOME/.gradle" \
   --directory out/verification/query-security-lifecycle-NEW_RUN
 
 python3 scripts/end-to-end/query-service/tests/security-fixtures-contract.py
-python3 scripts/end-to-end/query-service/tests/policy-authority-contract.py
 python3 scripts/end-to-end/query-service/tests/lifecycle-deadline-contract.py
 python3 scripts/end-to-end/query-service/tests/lifecycle-drain-contract.py
 python3 scripts/end-to-end/query-service/tests/lifecycle-direct-contract.py
@@ -160,17 +148,18 @@ namespace finalizers or prune the canonical cluster. CLI contract tests use synt
 observation facts and establish only CLI behavior; they are not runtime attestations.
 
 The evidence directory records planner decisions/fingerprints, source HEAD/worktree, fixture
-class identity, runtime image identities/execution probes, HTTP matrices, Kafka receipts and
-catch-up, state-transition proofs and teardown. The private authority binds every proof to
-its run, namespace UID, image, policy and activation/verification IDs; it accepts only ordered
-observations from the trusted Lab adapter. It is not cryptographic remote attestation.
+class identity, runtime image identities/execution probes, old-generation fencing,
+per-replica HTTP matrices, Kafka receipts/catch-up and exact-owned teardown. The runner
+binds each observation to run/namespace UID and immutable image/policy digests; no
+independent stateful approval record or synthetic event transition is generated.
+It is not cryptographic remote attestation.
 Inspect `runtime/verdict.json` and all required phase results rather than one successful probe.
 
 | #193 requirement | Enforcement / evidence |
 | --- | --- |
-| A3; policy anti-rollback | Interim authority CLI tests; the separate runtime-only rollback-image/comment-edit/lost-record report was retired by Issue #202 |
-| INV-06/07; Block and drain | Real keep-alive/direct HTTP, CRI task and PID observations, ordered T events |
-| Credential lifecycle | Controlled provisioner tests, zero-overlap generation replacement, collector withholding and all-replica 401 |
+| A3; controlled fixture identity | Read-only policy inspection, monotone version/zero-overlap rotation; synthetic approval-record rollback, comment edit and lost-record checks retired by #202 |
+| INV-06/07; Block and drain | Real keep-alive/direct HTTP, CRI task and PID observations with bounded fencing record |
+| Credential lifecycle | Controlled provisioner tests, zero-overlap generation replacement and all-replica old-token 401 |
 | INV-01/02/03; grant isolation | Five-principal HTTP matrix on every replica; separate disabled-D policy |
 | Failed activation | Ordinary two-replica activation must pass or the run fails; deliberately unschedulable partial-activation/recovery simulation was retired |
 | INV-08; durable recovery | Paused-consumer publication, captured Kafka boundaries, exact inbox/hash and HTTP results |
@@ -198,9 +187,9 @@ within one complete certification run.
 The attempt count records the controller's forced-stop path; positive process absence is the
 acceptance fact, independently of whether a process exits just before its signal is delivered.
 Both serving replicas passed the five-principal Account/Operations/Market checks, including
-C→Y 404, C→X 200 and B→Y 200 after V2. Partial V2 activation withheld collector credentials;
-the same approved V2 recovered. Old policies, edited same-version content, a lost record,
-reinitialization and incompatible image identity were rejected. Four acknowledged Account
+C→Y 404, C→X 200 and B→Y 200 after V2. The historical source also checked a simulated
+partial V2 activation, collector withholding and approval-record rollback; those tests
+have since been retired and are not claims about the current runner. Four acknowledged Account
 inputs were matched against durable inbox hashes/checkpoints without rebuild or offset reset.
 
 After the first namespace's verified teardown, a new namespace used disjoint Principal/Account

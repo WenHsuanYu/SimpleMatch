@@ -18,6 +18,7 @@ import traceback
 import uuid
 from pathlib import Path
 
+from lib.policy_bundle import inspect_bundle, inspect_replacement, inspect_unchanged
 from lib.security_lab import LABEL, Lab, wait_for
 
 
@@ -210,7 +211,7 @@ def drain(lab, endpoints, seconds=20, force_after=8):
     return {"forcedContainers": forced, "elapsedSeconds": elapsed, "remainingQueryTasks": remaining}
 
 
-def stop(lab, endpoints, old_bundle, slow=False):
+def stop(lab, endpoints, old_bundle, generation, submitted, slow=False):
     credentials = json.loads((old_bundle / "credentials.json").read_text())
     token = credentials["client-c"]["token"]
     identities = json.loads((old_bundle / "fixture-identities.json").read_text())
@@ -257,19 +258,22 @@ def stop(lab, endpoints, old_bundle, slow=False):
         keep_alive = connections[:len(endpoints)]
         observations = wait_for("all direct/new/keep-alive paths acknowledging Block",
                                 lambda: blocked(lab, endpoints, token, keep_alive), 10)
-        proof = lab.proof("Tblock", newRequestsRejected=True, existingConnectionsRejected=True,
-                          directPathsRejected=True, observations=observations)
-        lab.approval("mark", "--event", "Tblock", "--evidence-file", proof)
+        blocked_at = time.monotonic()
         pending_at_block = sum(not future.done() for future in futures)
         drained = drain(lab, endpoints)
-        proof = lab.proof("Tdrained", oldProcessesStopped=True, tasks=endpoints,
-                          **drained, admittedRequests=len(futures), admittedBlockedReads=admitted_reads,
-                          pendingAtBlock=pending_at_block,
-                          pendingAtTermination=sum(not f.done() for f in futures),
-                          jdbcStatementBudgetSeconds=5, httpClientBudgetSeconds=25)
-        lab.approval("mark", "--event", "Tdrained", "--evidence-file", proof)
-        proof = lab.proof("Trevoked", oldProcessesStopped=True, tasks=endpoints)
-        lab.approval("mark", "--event", "Trevoked", "--evidence-file", proof)
+        if time.monotonic() - blocked_at > 20 or time.monotonic() - submitted > 90:
+            raise RuntimeError("Old Query generation exceeded the bounded stop verification window")
+        return lab.save(f"generation-{generation}-fence.json", {
+            "runId": lab.run_id, "namespace": lab.namespace, "namespaceUid": lab.uid,
+            "imageConfigId": lab.image_config_id, "retiredPolicyVersion": generation - 1,
+            "blockedPaths": observations, "oldTasks": endpoints, "drain": drained,
+            "admittedRequests": len(futures), "admittedBlockedReads": admitted_reads,
+            "pendingAtBlock": pending_at_block,
+            "pendingAtTermination": sum(not f.done() for f in futures),
+            "jdbcStatementBudgetSeconds": 5, "httpClientBudgetSeconds": 25,
+            "blockedToDrainedSeconds": time.monotonic() - blocked_at,
+            "submittedToStoppedSeconds": time.monotonic() - submitted,
+            "oldProcessesStopped": True, "observedAtEpochNs": time.time_ns()})
     finally:
         for connection in connections:
             connection.close()
@@ -284,26 +288,27 @@ def stop(lab, endpoints, old_bundle, slow=False):
 
 def lifecycle(lab, previous, generation, profile, slow=False):
     current = lab.bundle(generation, profile)
-    prior = lab.approval("status")
-    lab.approval("approve", "--bundle", current, "--expect-current-digest", prior["digest"])
-    stop(lab, previous["endpoints"], previous["bundle"], slow)
-    old = lab.approval("check", "--bundle", previous["bundle"], "--image", lab.image_id, check=False)
-    if old is not None:
-        raise RuntimeError("V1/old-policy reload was allowed after revocation")
+    candidate = inspect_replacement(previous["bundle"], current, previous["policy"])
+    if candidate["version"] != generation:
+        raise RuntimeError("Unexpected next Query policy generation")
+    submitted = time.monotonic()
+    fence = stop(lab, previous["endpoints"], previous["bundle"], generation, submitted, slow)
+    # No old generation is restarted after failure; ownership teardown is the only recovery.
     if generation == 2:
         lab.publish(current, "paused")
-    lab.approval("verify")
-    lab.deploy(current)
+    lab.deploy(current, candidate)
     endpoints = lab.endpoints(lab.ready())
     catchup = lab.catchup()
-    observations = lab.matrix(endpoints, current, generation, disabled=profile == "d-disabled")
+    observations = lab.matrix(endpoints, current, generation, candidate, disabled=profile == "d-disabled")
+    inspect_unchanged(previous["bundle"], previous["policy"])
     rejections = reject_old(lab, endpoints, previous["bundle"])
-    proof = lab.proof("Tresume", allReplicasVerified=True, oldCredentialsRejected=True,
-                      catchupComplete=True, matrix=observations, retiredCredentials=rejections,
-                      catchup=catchup)
-    lab.approval("mark", "--event", "Tresume", "--evidence-file", proof)
-    lab.approval("collectors", "--output-file", lab.private / f"collector-generation-{generation}.json")
-    return {"bundle": current, "endpoints": endpoints}
+    lab.save(f"generation-{generation}-serving.json", {
+        "runId": lab.run_id, "namespace": lab.namespace, "namespaceUid": lab.uid,
+        "imageConfigId": lab.image_config_id, "policyVersion": generation,
+        "policyDigest": candidate["digest"], "fenceEvidence": fence.name,
+        "replicaChecks": observations, "retiredCredentials": rejections,
+        "catchup": catchup, "observedAtEpochNs": time.time_ns()})
+    return {"bundle": current, "policy": candidate, "endpoints": endpoints}
 
 
 def run(arguments):
@@ -322,19 +327,24 @@ def run(arguments):
             else:
                 lab.image_config_id = labs[0].image_config_id
             first = lab.create()
+            first_policy = inspect_bundle(first)
             lab.platform()
             lab.seed_orders(first)
             lab.publish(first, "baseline")
-            lab.deploy(first)
+            lab.deploy(first, first_policy)
             endpoints = lab.endpoints(lab.ready())
-            lab.catchup()
-            matrix = lab.matrix(endpoints, first, 1)
-            proof = lab.proof("InitialActivated", allReplicasVerified=True, matrix=matrix)
-            lab.approval("activate", "--evidence-file", proof)
-            lab.approval("collectors", "--output-file", lab.private / "collector-generation-1.json")
+            initial_catchup = lab.catchup()
+            matrix = lab.matrix(endpoints, first, 1, first_policy)
+            lab.save("generation-1-serving.json", {
+                "runId": lab.run_id, "namespace": lab.namespace, "namespaceUid": lab.uid,
+                "imageConfigId": lab.image_config_id, "policyVersion": 1,
+                "policyDigest": first_policy["digest"], "replicaChecks": matrix,
+                "catchup": initial_catchup, "observedAtEpochNs": time.time_ns()})
+            final_policy = first_policy
             if not fresh:
-                second = lifecycle(lab, {"bundle": first, "endpoints": endpoints}, 2, "c-y-revoked", slow=True)
-                lifecycle(lab, second, 3, "d-disabled")
+                second = lifecycle(lab, {"bundle": first, "policy": first_policy, "endpoints": endpoints},
+                                   2, "c-y-revoked", slow=True)
+                final_policy = lifecycle(lab, second, 3, "d-disabled")["policy"]
                 identities = json.loads((first / "fixture-identities.json").read_text())
             else:
                 new = json.loads((first / "fixture-identities.json").read_text())
@@ -343,8 +353,8 @@ def run(arguments):
             result["runs"].append({"namespace": lab.namespace, "namespaceUid": lab.uid,
                                    "imageSourceId": lab.image_id, "imageConfigId": lab.image_config_id,
                                    "recordedInputs": len(lab.receipts),
-                                   "finalPolicyVersion": lab.approval("status")["version"],
-                                   "events": json.loads((lab.authority / "current.json").read_text())["events"]})
+                                   "finalPolicyVersion": final_policy["version"],
+                                   "finalPolicyDigest": final_policy["digest"]})
             lab.destroy()
         result["status"] = "PASS"
     except BaseException as error:

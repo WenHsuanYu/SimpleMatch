@@ -8,6 +8,10 @@ See the [revised specification](security-external-access-spec.md) and
 
 Phase 1 authorization and ticket-state statements below describe their recorded planning rounds.
 For current delivery status and evidence, see [QS1-07 / #194](https://github.com/WenHsuanYu/SimpleMatch/issues/194).
+Issue [#202](https://github.com/WenHsuanYu/SimpleMatch/issues/202) later retired
+the synthetic Local Lab approval DB, transition timeline and credential-export
+protocol. The earlier R19 proposals below remain historical decisions, not a
+description of the current disposable Lab runner or production authorization.
 
 ## Status vocabulary
 

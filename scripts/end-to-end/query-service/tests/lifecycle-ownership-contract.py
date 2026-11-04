@@ -73,7 +73,8 @@ class LifecycleOwnershipContract(unittest.TestCase):
                             lab.create()
                         if mode == "ambiguous":
                             self.assertEqual(lab.uid, uid)
-                            self.assertFalse(lab.authority.exists(), "Ambiguous create cannot activate another V1")
+                            self.assertFalse((lab.private / "generation-1").exists(),
+                                             "Ambiguous create cannot provision a new V1")
                             lab.destroy()
                             self.assertTrue(deleted)
                         else:

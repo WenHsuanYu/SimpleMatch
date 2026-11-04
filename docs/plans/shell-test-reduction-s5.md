@@ -297,25 +297,26 @@ The current Lab still performs its source-controlled image import, owned
 namespace preflight, the old-generation stop and exact process drain, new
 normal two-Pod activation, per-replica C→Y grant revocation and disabled-D
 Principal checks, old-credential rejection, and bounded Account Kafka
-catch-up after pause. Its separate Lab policy-approval record, ordered event
-timeline and collector-credential export protocol **still have live code
-callers** and remain an R19 unfinished migration obligation. Authority-only
-tests and historical #193 evidence are not relabelled as product policy
-revocation or fresh source-aligned deployment acceptance.
+catch-up after pause. The separate stateful approval DB/ordered timeline,
+collector-credential export protocol and nine authority-only contracts are
+now retired. The real CLI callers were replaced by direct read-only fixture
+inspection and concrete run/namespace/image/Pod/task evidence; no new mutable
+approval registry was introduced. Historical #193 evidence is not relabelled
+as product policy revocation or fresh source-aligned deployment acceptance.
 
 The existing full-local Query/FIX fixture checker also used
 `policy-authority.py` as a subprocess just to run its read-only
 `inspect-bundle` command. Before retiring the stateful Lab approval
-service, the controlled private-bundle parser was extracted into
+CLI, the controlled private-bundle parser was extracted into
 `lib/policy_bundle.py`. `certification_security.py` now calls this
-pure function directly, while the interim Lab CLI imports the same
-function. The parser still rejects invalid grants, duplicate keys,
+pure function directly; the retained Lab now calls the same parser
+for generation identity and rotation checks. The parser still rejects invalid grants, duplicate keys,
 incoherent verifier/token identities, foreign ownership and widened
 file permissions. It is explicitly included in the CDC/full-local
 runtime source fingerprint, so a changed parser invalidates retained
 source identity. This is a necessary shared input-security component,
-**not** a replacement approval database. The stateful authority's
-remaining runtime callers must be removed before that CLI can retire.
+**not** a replacement approval database. Its real runtime callers have
+been migrated, and the unused stateful authority CLI has been deleted.
 
 The read-only extraction passed all seven Query/FIX certification
 fixture tests, both production-like input contracts, all nine interim
@@ -326,13 +327,35 @@ Kubernetes policy-rotation PASS. The tracked source now has **113 Shell
 files / 23,665 physical lines**, **four Ruby files** and **29 Python
 files**. Both Shell reduction gates remain unmet.
 
-The retained 17 Query lifecycle CI contracts and interim policy-authority
-test passed. Managed PostgreSQL/JUnit and Query Java suites, static analysis,
-clean-source provenance and the S5 fail-closed preflight also passed.
-No new source-aligned Kubernetes policy replacement was executed. This cut
-leaves **113 tracked Shell files / 23,664 physical lines**, four Ruby
-files, and 28 Python files. The S5 minimum maximums of 51 Shell files
-and 10,476 Shell lines remain unmet.
+The earlier R19 synthetic-cut contract/JUnit/static checks passed on their
+own source revisions. The current direct-observation cut requires its own
+focused contract and provenance verification; no source-aligned deployed
+Kubernetes policy replacement has been run yet. Both S5 Shell reduction
+minimums remain unmet, and `verifyAllScope` remains fail-closed.
+
+### P4 R19 direct observation ownership cut
+
+`security-lifecycle.py` and `lib/security_lab.py` no longer call the Lab
+approval subprocess. They inspect each controlled private fixture directly,
+require stable identity digests, next-version progression and zero shared
+credential verifiers, and fail on changes to inspected policy/credential bytes.
+Actual namespace UID/run label, locked local and CRI image configuration,
+mounted policy digest, surviving old Query tasks, both replacement replicas,
+old-token rejection and bounded Account catch-up remain checked. The direct
+`generation-N-fence.json` and `generation-N-serving.json` records contain
+observations, not Lab state transitions or client material. A failed activation
+never re-deploys the revoked generation; teardown stays exact-owned.
+
+Removed `policy-authority.py` (255 physical lines), its authority-only contract
+(266 lines), its sole CI invocation and the Lab's approval/collector-export
+callers. Retained meaningful fixture negative checks, including special-file
+rejection and stale generation/credential drift, in the existing fixture
+contract. The original `docs/plans/shell-test-reduction-s0/script-ledger.json`
+is frozen historical inventory, not the current script roster. The current
+tracked baseline is **113 Shell files / 23,664 physical Shell lines**,
+**four Ruby files and 27 Python files**. R19 direct-observation runtime still
+needs a fresh source-aligned Kubernetes run before any live PASS claim; P5b/P6
+and both minimum Shell reduction gates remain unfinished.
 
 For R16, retain one actual deterministic projection replay observed through the public snapshot API. Also retain a real Redis outage with durable pending repair and convergence after restoration. `MarketDataProjectionApplicationServiceTest` owns projection transactions, replay identity, conflicts, gaps, and reset scope. `RuntimeMarketDataPublicationTest` uses a fake cache for failure/repair. It does not establish actual Redis integration. Reuse the existing snapshot observer instead of copying its protocol code.
 For R17, retain actual public-stream termination, replacement, resubscription, and a fresh complete snapshot through `MarketDataSnapshotRecoveryObserver`. `MarketDataGrpcServiceTest` owns request routing only. Retire the independent all-partition consumer-group ownership report and forced alternate-worker placement from this stream scenario. These add no separate basic public-stream requirement. This cutover makes no full-partition or worker-failure claim. Existing immutable identity, bounded failure, restoration, and cleanup requirements remain.

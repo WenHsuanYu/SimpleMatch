@@ -14,6 +14,7 @@ import time
 import uuid
 from pathlib import Path
 
+from .policy_bundle import inspect_bundle, inspect_unchanged
 from .read_fixtures import lifecycle_orders
 from .read_matrix import reader, verify
 
@@ -110,7 +111,6 @@ class Lab:
         self.run_id = str(uuid.uuid4())
         self.namespace = "query-security-" + uuid.UUID(self.run_id).hex[:12]
         self.uid = None
-        self.authority = self.private / "authority"
         self.forwards, self.containers = [], []
         self.probes = []
         self.counter = 0
@@ -208,11 +208,6 @@ class Lab:
             item["metadata"].setdefault("labels", {})[LABEL] = self.run_id
         self.kube("apply", "-f", "-", data=json.dumps({"apiVersion": "v1", "kind": "List", "items": objects}))
 
-    def approval(self, operation, *arguments, check=True):
-        result = self.command([sys.executable, str(self.repo / "scripts/end-to-end/query-service/policy-authority.py"),
-                               operation, str(self.authority), *map(str, arguments)], check=check)
-        return json.loads(result.stdout) if result.returncode == 0 else None
-
     def bundle(self, generation, profile="initial"):
         target = self.private / f"generation-{generation}"
         arguments = [sys.executable, str(self.repo / "scripts/end-to-end/query-service/provision-security-fixtures.py"),
@@ -221,15 +216,6 @@ class Lab:
             arguments += ["--previous-directory", str(self.private / f"generation-{generation-1}"), "--profile", profile]
         self.command(arguments)
         return target
-
-    def proof(self, name, **facts):
-        status = self.approval("status")
-        value = {key: status[key] for key in ("runId", "namespace", "namespaceUid", "image",
-                                              "activationId", "verificationId")}
-        value.update(event=name, policyVersion=status["version"], policyDigest=status["digest"],
-                     observedAtEpochNs=time.time_ns(), observedAtMonotonicNs=time.monotonic_ns(),
-                     eligibleReplicas=2, **facts)
-        return self.save(f"v{status['version']}-{name}-{len(list(self.root.glob('*.json')))}.json", value)
 
     def create(self):
         active = json.loads(self.kube("get", "namespaces", "-l", LABEL, "-o", "json").stdout)["items"]
@@ -253,8 +239,8 @@ class Lab:
                 self.save("ownership-recovery.json", {"status": "BLOCKED", "newV1Allowed": False})
             raise
         first = self.bundle(1)
-        self.approval("create", "--run-id", self.run_id, "--namespace", self.namespace,
-                      "--namespace-uid", self.uid, "--image", self.image_id, "--bundle", first)
+        if inspect_bundle(first)["version"] != 1:
+            raise RuntimeError("Initial Query Lab policy must have version one")
         return first
 
     def record_owner(self, namespace):
@@ -502,18 +488,18 @@ class Lab:
         spec["volumes"].append({"name": "query-policy", "secret": {"secretName": secret}})
         return deployment
 
-    def deploy(self, bundle):
+    def deploy(self, bundle, expected):
         self.guard()
-        approval = self.approval("check", "--bundle", bundle, "--image", self.image_id,
-                                 "--run-id", self.run_id, "--namespace", self.namespace,
-                                 "--namespace-uid", self.uid)
-        if approval["phase"] != ("APPROVED" if approval["version"] == 1 else "VERIFYING"):
-            raise RuntimeError("Policy eligibility alone does not authorize deployment in this lifecycle state")
+        inspected = inspect_unchanged(bundle, expected)
+        if inspected["version"] > 1 and self.running_tasks("query-service"):
+            raise RuntimeError("An old Query task appeared after the verified generation drain")
+        if json.loads(self.docker("image", "inspect", self.image).stdout)[0]["Id"] != self.image_id:
+            raise RuntimeError("Query source image changed after run creation")
         policy = (bundle / "application.properties").read_text()
-        secret = "query-policy-" + approval["digest"][:16]
+        secret = "query-policy-" + inspected["digest"][:16]
         self.apply([{"apiVersion": "v1", "kind": "Secret", "metadata": {"name": secret},
                      "immutable": True, "stringData": {"application.properties": policy}}])
-        deployment = self.deployment(secret, approval["digest"])
+        deployment = self.deployment(secret, inspected["digest"])
         spec = deployment["spec"]["template"]["spec"]
         for volume in spec["volumes"]:
             for kind, reference in (("secret", "secretName"), ("configMap", "name")):
@@ -579,21 +565,24 @@ class Lab:
     def direct_rejected(self, endpoint, token):
         return self.direct_status(endpoint, token) in (0, 503)
 
-    def matrix(self, endpoints, bundle, version, disabled=False):
+    def matrix(self, endpoints, bundle, version, expected, disabled=False):
+        inspected = inspect_unchanged(bundle, expected)
+        if inspected["version"] != version:
+            raise RuntimeError("Observed policy generation differs from the expected version")
         credentials = json.loads((bundle / "credentials.json").read_text())
         identities = json.loads((bundle / "fixture-identities.json").read_text())
         profile = "d-disabled" if disabled else ("initial" if version == 1 else "c-y-revoked")
         observations = []
         for endpoint in endpoints:
             pod = json.loads(self.kube("get", "pod", endpoint["pod"], "-o", "json").stdout)
-            status = self.approval("status")
-            if pod["metadata"]["annotations"]["simplematch.io/query-policy-digest"] != status["digest"]:
-                raise RuntimeError("Pod policy digest is not the approved deployment")
+            if (pod["metadata"]["labels"].get(LABEL) != self.run_id
+                    or pod["metadata"]["annotations"]["simplematch.io/query-policy-digest"] != inspected["digest"]):
+                raise RuntimeError("Pod does not match the run's inspected policy")
             # Read the observed mounted bytes on the owner node; the shell-less image needs no debug tools.
             path = f"/var/lib/kubelet/pods/{endpoint['uid']}/volumes/kubernetes.io~secret/query-policy/application.properties"
             mounted = self.docker("exec", endpoint["node"], "cat", path).stdout.encode()
-            if hashlib.sha256(mounted).hexdigest() != status["digest"]:
-                raise RuntimeError("Mounted policy bytes differ from the approved immutable snapshot")
+            if hashlib.sha256(mounted).hexdigest() != inspected["digest"]:
+                raise RuntimeError("Mounted policy bytes differ from the inspected immutable snapshot")
             container = next(c for c in pod["spec"]["containers"] if c["name"] == "query-service")
             if container["image"] != self.image or any("SECURITY_" in e["name"] for e in container["env"]):
                 raise RuntimeError("Unexpected image or competing security environment source")
@@ -723,9 +712,6 @@ class Lab:
             return all(self.docker("exec", node, "test", "!", "-e", f"/var/lib/kubelet/pods/{uid}",
                                    check=False).returncode == 0 for node, uid in paths)
         wait_for("owned emptyDir data cleanup", data_gone, 90)
-        if self.authority.exists():
-            proof = self.proof("Destroyed", namespaceGone=True, oldProcessesStopped=True, dataGone=True)
-            self.approval("destroyed", "--evidence-file", proof)
         self.save("teardown.json", {"namespaceUid": self.uid, "namespaceGone": True,
                                     "oldProcessesStopped": True, "dataGone": True,
                                     "captureFailures": len(capture_errors)})

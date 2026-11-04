@@ -4,6 +4,7 @@
 import base64
 import hashlib
 import json
+import os
 import re
 import stat
 import subprocess
@@ -14,11 +15,24 @@ from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from uuid import UUID
 
+sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+from lib.policy_bundle import inspect_bundle, inspect_replacement
+
 
 PROVISIONER = Path(__file__).resolve().parents[1] / "provision-security-fixtures.py"
 
 
 class SecurityFixtureContract(unittest.TestCase):
+    def test_read_only_bundle_inspection_rejects_nonregular_credential_material(self):
+        with tempfile.TemporaryDirectory(prefix="query-security-material-") as temporary:
+            bundle = Path(temporary) / "policy"
+            subprocess.run([sys.executable, str(PROVISIONER), str(bundle)],
+                           capture_output=True, check=True)
+            (bundle / "credentials.json").unlink()
+            os.mkfifo(bundle / "credentials.json", 0o600)
+            with self.assertRaisesRegex(ValueError, "unexpected type"):
+                inspect_bundle(bundle)
+
     def test_rotation_preserves_identities_and_replaces_all_credentials_with_only_c_y_revoked(self):
         with tempfile.TemporaryDirectory(prefix="query-security-rotation-") as temporary:
             first = Path(temporary) / "generation-1"
@@ -38,6 +52,12 @@ class SecurityFixtureContract(unittest.TestCase):
             new = json.loads((second / "credentials.json").read_text())
             self.assertTrue({c["token"] for c in old.values()}.isdisjoint(
                 {c["token"] for c in new.values()}), "Every credential must be replaced")
+            baseline = inspect_bundle(first)
+            self.assertEqual(inspect_replacement(first, second, baseline)["version"], 2)
+            with self.assertRaisesRegex(ValueError, "changed|replacement"):
+                inspect_replacement(first, first, baseline)
+            with self.assertRaisesRegex(ValueError, "changed"):
+                inspect_replacement(first, second, {**baseline, "digest": "0" * 64})
             identities = json.loads((second / "fixture-identities.json").read_text())
             properties = dict(line.split("=", 1) for line in
                               (second / "application.properties").read_text().splitlines())
