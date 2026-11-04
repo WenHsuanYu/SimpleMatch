@@ -1271,8 +1271,9 @@ removing the surviving Account grant. No credential or PostgreSQL DSN is
 written to evidence. The older policy is never restored after a failed
 activation; the outer owned-run cleanup remains authoritative.
 
-This is a narrower **actual Kubernetes policy-generation and revocation
-observer**, not the whole original R19 Local Lab. It uses the current run's
+At the original bounded R19 checkpoint, this was a narrower **Kubernetes
+policy-generation and revocation observer**, not the original R19 Local Lab.
+It uses the current run's
 Account reader and operations Principal, not the Lab's synthetic C/Y/D
 multi-Account fixture. It does **not** yet reproduce the old generation's
 existing keep-alive/direct-path Block matrix or publish new Account events
@@ -1284,3 +1285,68 @@ real two-Pod replacement. Both this new selected Jupiter observation and the
 Lab still need a fresh runtime result. Do not mark R19, P6, or
 `verifyAllScope` PASS; the tracked Shell/Python/Ruby counts are unchanged
 by this slice.
+
+## P4 R18/R19 source-integrated follow-up (runtime pending)
+
+The selected RestingBuyKubernetesTest now includes R18 live-business
+owners. KubernetesFixCredentials grants only two explicitly selected,
+run-owned Accounts. KubernetesQueryExecution submits a real public FIX BUY
+and SELL through the existing Gateway session. It checks Risk admission,
+actual Matching Kafka events, filled Persistence orders, Account reservations
+and limit state, delivered FIX intents, and nonempty authenticated Query
+Executions. The FIX session retains one sequence store across the original
+order, the cross, IOC, and later delayed order. The delayed order remains
+part of R11-R15. It is submitted after the cross so its resting BUY
+cannot preempt the SELL intended for R18.
+
+KubernetesQueryActiveProcessing submits an actual public IOC (TIF=3)
+while Query has zero Pods. The shared KubernetesQueryStopFence checks
+old Pod UIDs, CRI container IDs, worker IDs, PID start identities,
+and the absence of running tasks on all three workers within 20 seconds.
+Risk, Matching, Persistence, Account, and FIX assertions must complete
+before Query is restored. The delayed order and original 15 Matching
+close-barrier assertions remain selected. The close observer now
+preserves Account utilization from an earlier filled BUY. A valid fill
+must not be mistaken for zero utilized notional.
+
+KubernetesQueryReplay captures actual Kafka earliest and end offsets
+for all 15 partitions of matching.events and account.lifecycle.
+It uses a separate temporary Query operator Secret and proves that
+reader credentials cannot reset the Query-owned projections. It
+clears rebuildable PostgreSQL business rows, resets both stopped
+Query Kafka consumer groups to captured earliest offsets, and requires
+the restored consumers to reach the captured end offsets. It checks
+durable projection checkpoints and a normalized authenticated Query
+business snapshot, including nonempty R18 Executions. The operator
+environment is removed and two original-policy Query Pods are
+restored before R19 policy replacement. The temporary Secret is
+deleted only after checking its run owner.
+
+R19 V1-to-V2-to-V3 policy replacement now selects transport and source
+catch-up. KubernetesQueryTransport first proves both original Query
+replicas serve repeated HTTP/1.1 requests on the same keepalive
+connection and respond by direct Pod IP. After zero Pod and physical
+task fencing it attempts both paths again; stopping CRI tasks alone
+is not counted as HTTP Block. During each of the V2 and V3 stopped windows,
+KubernetesPausedAccountCatchup publishes two fresh, explicitly synthetic
+protobuf Account lifecycle events to real Kafka with broker ACK,
+partition, offset and payload digest. Query checkpoints must not
+advance while stopped. After the two new Ready Pods start, it requires
+the exact inbox event IDs, offsets, SHA-256 digests, Account read model,
+and READY checkpoints to reach the captured 15-partition Kafka end
+boundary within 120 seconds. This fixture is not represented as an
+Account Authority outbox publication. V2/V3 revoked-token and
+retained-reader checks remain selected.
+
+The current source passed :tools:kubernetes-tests:test, manifestCheck
+and staticAnalysis with 78 Jupiter tests across 31 suites.
+This is not a deployed R18 or R19 PASS. The local preflight found no
+canonical kind-simplematch-live node containers or kind executable;
+the previous kind API endpoint refused connections. Do not create
+or delete shared infrastructure merely to change this verdict.
+Actual R18/R19 source-aligned deployment, R19 independent C/Y/D
+and JDBC failure modes, P6 and S5 completion remain pending.
+Keep the old R18 operator, the R19 Python Lab, and their active
+documentation until accepted live parity and last-caller review.
+No old Shell, Python, or Ruby group is retired by this follow-up.
+Tracked file counts remain 102 Shell, 26 Python, and 3 Ruby.

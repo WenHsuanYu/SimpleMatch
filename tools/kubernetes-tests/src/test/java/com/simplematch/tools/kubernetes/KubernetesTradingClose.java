@@ -29,7 +29,7 @@ final class KubernetesTradingClose {
     this.events = events;
   }
 
-  void verify(JsonNode admission) throws Exception {
+  void verify(JsonNode admission, BigDecimal expectedUtilizedNotional) throws Exception {
     final var target = context.target();
     final var before = json.treeToValue(events.positions().required("matchingCommands"),
         TopicEndPositions.class);
@@ -48,7 +48,7 @@ final class KubernetesTradingClose {
         context.settings().day().toString(), context.input().artifact().identity().contentSha256(),
         context.input().artifact().artifact().metadata().routingAlgorithmVersion(), before, after)));
     awaitClosedOwners(after);
-    verifyExpiration(admission);
+    verifyExpiration(admission, expectedUtilizedNotional);
   }
 
   private TopicEndPositions awaitBarriers(TopicEndPositions before) throws Exception {
@@ -110,7 +110,8 @@ final class KubernetesTradingClose {
     save("matching", runtimes);
   }
 
-  private void verifyExpiration(JsonNode admission) throws Exception {
+  private void verifyExpiration(JsonNode admission, BigDecimal expectedUtilizedNotional)
+      throws Exception {
     final var postgres = new KubernetesPostgres(context.target());
     final var variables = new HashMap<String, String>();
     variables.put("account_id", admission.required("accountId").asText());
@@ -135,10 +136,12 @@ final class KubernetesTradingClose {
     save("delivery", delivery);
     save("durable", durable);
     assertEquals("RESERVATION_STATUS_RELEASED", durable.path("account").path("status").asText());
-    for (String field : List.of("remainingQuantity", "reservedNotional", "limitReservedNotional",
-        "limitUtilizedNotional")) {
+    for (String field : List.of("remainingQuantity", "reservedNotional", "limitReservedNotional")) {
       assertEquals(0, new BigDecimal(durable.required("account").required(field).asText()).signum());
     }
+    assertEquals(0, expectedUtilizedNotional.compareTo(new BigDecimal(
+        durable.required("account").required("limitUtilizedNotional").asText())),
+        "terminal close must not undo previously filled R18 BUY utilization");
     assertEquals(0, durable.required("events").required("quarantineCount").asInt());
     assertEquals(delivery.required("eventId"), durable.required("persistence").required("lastEventId"));
   }

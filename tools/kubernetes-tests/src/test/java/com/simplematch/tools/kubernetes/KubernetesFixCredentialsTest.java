@@ -34,7 +34,8 @@ class KubernetesFixCredentialsTest {
     final Path directory = temporary.resolve("fix");
     final Path sibling = Files.writeString(temporary.resolve("unrelated"), "keep");
     final UUID account = UUID.randomUUID();
-    try (var credentials = KubernetesFixCredentials.create(directory, account)) {
+    final UUID counterparty = UUID.randomUUID();
+    try (var credentials = KubernetesFixCredentials.create(directory, account, counterparty)) {
       assertEquals(PosixFilePermissions.fromString("rwx------"),
           Files.getPosixFilePermissions(directory));
       try (var files = Files.list(directory)) {
@@ -48,6 +49,8 @@ class KubernetesFixCredentialsTest {
           .path("stringData").path("quickfix-gateway.properties").asText()));
       final String prefix = "simplematch.quickfix-gateway.fix-security";
       assertEquals(account.toString(), properties.getProperty(prefix + ".counterparties[0].account-ids[0]"));
+      assertEquals(counterparty.toString(),
+          properties.getProperty(prefix + ".counterparties[0].account-ids[1]"));
       final char[] password = properties.getProperty(prefix + ".key-store-password").toCharArray();
       final var stores = credentials.tlsSecret().path("data");
       final SSLContext server = context(Base64.getDecoder().decode(stores.path("server.p12").asText()),

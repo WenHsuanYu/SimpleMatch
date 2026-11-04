@@ -12,24 +12,39 @@ import java.util.List;
 import java.util.Map;
 import java.util.UUID;
 
-/** Owns private disposable FIX identities for one account and their exact local cleanup. */
+/** Owns private disposable FIX identities and their exact local cleanup. */
 final class KubernetesFixCredentials implements AutoCloseable {
   private static final List<String> FILES = List.of(
       "server.p12", "client.p12", "server.crt", "client.crt", "clients.p12", "servers.p12");
   private final Path directory;
-  private final UUID account;
+  private final List<UUID> accounts;
   private final String username = "certification-" + UUID.randomUUID();
   private final String password = UUID.randomUUID().toString();
   private final String storePassword = UUID.randomUUID().toString();
 
-  private KubernetesFixCredentials(Path directory, UUID account) {
+  private KubernetesFixCredentials(Path directory, List<UUID> accounts) {
     this.directory = directory;
-    this.account = java.util.Objects.requireNonNull(account);
+    this.accounts = List.copyOf(accounts);
+    if (this.accounts.isEmpty() || this.accounts.size() > 2
+        || this.accounts.stream().anyMatch(java.util.Objects::isNull)
+        || this.accounts.stream().distinct().count() != this.accounts.size()) {
+      throw new IllegalArgumentException("FIX certification requires one or two distinct accounts");
+    }
   }
 
   /** Creates new owner-private material, without adopting an existing directory or store. */
   static KubernetesFixCredentials create(Path directory, UUID account) throws Exception {
-    final var credentials = new KubernetesFixCredentials(directory.toAbsolutePath(), account);
+    return create(directory, List.of(account));
+  }
+
+  /** Grants a second, explicitly chosen test account without broadening the legacy caller. */
+  static KubernetesFixCredentials create(Path directory, UUID first, UUID second) throws Exception {
+    return create(directory, List.of(first, second));
+  }
+
+  private static KubernetesFixCredentials create(Path directory, List<UUID> accounts)
+      throws Exception {
+    final var credentials = new KubernetesFixCredentials(directory.toAbsolutePath(), accounts);
     Files.createDirectory(credentials.directory,
         PosixFilePermissions.asFileAttribute(PosixFilePermissions.fromString("rwx------")));
     try {
@@ -74,15 +89,19 @@ final class KubernetesFixCredentials implements AutoCloseable {
 
   ObjectNode gatewaySecret(String dsn) {
     final String prefix = "simplematch.quickfix-gateway.fix-security.";
-    final String properties = String.join("\n",
+    final String prefixProperties = String.join("\n",
         prefix + "key-store-password=" + storePassword,
         prefix + "trust-store-password=" + storePassword,
         prefix + "counterparties[0].session-id=FIX.4.4:SIMPLEMATCH->CLIENT",
         prefix + "counterparties[0].username=" + username,
-        prefix + "counterparties[0].password=" + password,
-        prefix + "counterparties[0].account-ids[0]=" + account, "");
+        prefix + "counterparties[0].password=" + password);
+    final var properties = new StringBuilder(prefixProperties).append('\n');
+    for (int index = 0; index < accounts.size(); index++) {
+      properties.append(prefix).append("counterparties[0].account-ids[")
+          .append(index).append("]=").append(accounts.get(index)).append('\n');
+    }
     return KubernetesDocuments.data("Secret", "quickfix-gateway-secrets", Map.of(
-        "postgres_dsn", dsn, "quickfix-gateway.properties", properties));
+        "postgres_dsn", dsn, "quickfix-gateway.properties", properties.toString()));
   }
 
   ObjectNode tlsSecret() throws IOException {

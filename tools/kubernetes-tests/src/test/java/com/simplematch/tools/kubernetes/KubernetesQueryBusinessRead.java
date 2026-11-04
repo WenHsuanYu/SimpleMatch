@@ -84,6 +84,19 @@ final class KubernetesQueryBusinessRead {
         "Query's durable business view changed after Redis restoration");
   }
 
+  /** Records post-trading business facts without weakening the earlier Redis-outage baseline. */
+  void settledBaseline() throws Exception {
+    requireBaseline();
+    baseline = capture("settled-before-replay");
+  }
+
+  /** Requires a Kafka-backed reconstruction of the settled authenticated business view. */
+  void replayed() throws Exception {
+    requireBaseline();
+    assertEquals(baseline, capture("replayed"),
+        "replayed Query PostgreSQL rows differ from the previously observed source-backed view");
+  }
+
   private void requireBaseline() {
     if (baseline == null) {
       throw new IllegalStateException("R18 baseline business view was not observed");

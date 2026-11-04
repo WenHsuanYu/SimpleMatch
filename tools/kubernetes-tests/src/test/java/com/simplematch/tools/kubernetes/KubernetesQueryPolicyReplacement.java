@@ -66,10 +66,12 @@ final class KubernetesQueryPolicyReplacement {
     previous.add(context.queryCredentials().operationsToken());
     final String deploymentUid = deployment().path("metadata").path("uid").asText();
     String expectedSecretUid = secret.path("metadata").path("uid").asText();
+    String servingReader = context.queryCredentials().readerToken();
 
     for (int version : List.of(2, 3)) {
       final var generation = context.queryCredentials().replacement(version, dsn);
-      expectedSecretUid = replace(generation, original, deploymentUid, expectedSecretUid);
+      expectedSecretUid = replace(generation, original, deploymentUid, expectedSecretUid,
+          servingReader, order);
       final var retiredTokens = List.copyOf(previous);
       previous.add(generation.readerToken());
       previous.add(generation.operationsToken());
@@ -78,11 +80,13 @@ final class KubernetesQueryPolicyReplacement {
       verifyServing(version, current, generation, retiredTokens, account, order);
       // A new generation must revoke every token from earlier generations.
       assertEquals(2, current.size());
+      servingReader = generation.retainedReaderToken();
     }
   }
 
   private String replace(KubernetesQueryCredentials.Generation generation, List<Owner> baseline,
-      String deploymentUid, String expectedSecretUid) throws Exception {
+      String deploymentUid, String expectedSecretUid, String servingReader, UUID order)
+      throws Exception {
     requireNamespace();
     final var originalDeployment = deployment();
     assertEquals(deploymentUid, originalDeployment.path("metadata").path("uid").asText());
@@ -95,14 +99,29 @@ final class KubernetesQueryPolicyReplacement {
     }
     Files.write(evidence.resolve("v" + generation.version() + "-old-owners.json"),
         json.writeValueAsBytes(old));
-    final var tasks = new ArrayList<Task>();
-    for (var owner : old) {
-      tasks.add(captureTask(owner));
+    final var fence = new KubernetesQueryStopFence(context);
+    final var tasks = fence.capture();
+    assertEquals(old.stream().map(owner ->
+            owner.uid() + "/" + owner.node() + "/" + owner.containerId())
+            .collect(java.util.stream.Collectors.toSet()),
+        tasks.stream().map(task ->
+            task.podUid() + "/" + task.node() + "/" + task.containerId())
+            .collect(java.util.stream.Collectors.toSet()),
+        "physical Query tasks differ from the validated Pod ownership chain");
+    try (var transport = KubernetesQueryTransport.open(target, docker, ownership.docker().context(),
+        evidence, generation.version(), servingReader, order.toString(), old)) {
+      requireNamespace();
+      target.client().run("", "scale", "deployment/" + WORKLOAD, "--replicas=0");
+      awaitOldGenerationStopped(old, tasks, fence);
+      transport.verifyBlocked();
     }
-    target.client().run("", "scale", "deployment/" + WORKLOAD, "--replicas=0");
-    awaitOldGenerationStopped(old, tasks);
 
     // The old policy is never restored after this point, including on a failed rollout.
+    // Both replacement generations must demonstrate live stopped-window
+    // Account input and independent durable Query catch-up.
+    final var catchup = new KubernetesPausedAccountCatchup(
+        context, image, evidence, generation.version());
+    catchup.publishWhileStopped(fence, tasks);
     requireNamespace();
     final var previousSecret = currentSecret();
     final String oldSecretUid = previousSecret.path("metadata").path("uid").asText();
@@ -126,10 +145,12 @@ final class KubernetesQueryPolicyReplacement {
             "simplematch.io/policy-generation", Integer.toString(generation.version()),
             "simplematch.io/policy-digest", policyDigest))))));
     target.client().run("", "patch", "deployment", WORKLOAD, "--type=merge", "--patch", patch);
+    final OperationBudget recoveryBudget = OperationBudget.start(Duration.ofMinutes(2));
     target.client().run("", "scale", "deployment/" + WORKLOAD, "--replicas=2");
-    target.client().execute("", START_BUDGET, "rollout", "status", "deployment/" + WORKLOAD,
-        "--timeout=180s").checked();
-    awaitNewGeneration(generation.version(), old, deploymentUid, policyDigest);
+    target.client().execute("", recoveryBudget.remaining(Duration.ofSeconds(115)),
+        "rollout", "status", "deployment/" + WORKLOAD, "--timeout=110s").checked();
+    awaitNewGeneration(generation.version(), old, deploymentUid, policyDigest, recoveryBudget);
+    catchup.verifyCatchup(recoveryBudget);
     Files.write(evidence.resolve("v" + generation.version() + "-activation.json"),
         json.writeValueAsBytes(Map.of("policyVersion", generation.version(),
             "policyDigest", policyDigest, "secretUid",
@@ -137,114 +158,17 @@ final class KubernetesQueryPolicyReplacement {
     return nextSecret.path("metadata").path("uid").asText();
   }
 
-  private void awaitOldGenerationStopped(List<Owner> old, List<Task> tasks) throws Exception {
-    final var budget = OperationBudget.start(STOP_BUDGET);
-    while (true) {
-      budget.remaining();
-      requireNamespace();
-      final var deployment = deployment();
-      final var pods = queryPods();
-      if (deployment.path("spec").path("replicas").asInt(-1) == 0
-          && deployment.path("status").path("replicas").asInt() == 0
-          && deployment.path("status").path("readyReplicas").asInt() == 0
-          && pods.isEmpty()) {
-        if (allQueryTasksStopped(tasks, budget)) {
-          Files.write(evidence.resolve("v" + nextVersionFromOld(old) + "-fence.json"),
-              json.writeValueAsBytes(Map.of("runId", target.run().runId(),
-                  "oldPods", old, "observedTasks", tasks,
-                  "observedZeroPods", true, "oldTasksStopped", true)));
-          return;
-        }
-      }
-      Thread.sleep(budget.remaining(Duration.ofMillis(300)));
-    }
+  private void awaitOldGenerationStopped(List<Owner> old,
+      List<KubernetesQueryStopFence.Task> tasks, KubernetesQueryStopFence fence) throws Exception {
+    fence.awaitStopped(tasks, STOP_BUDGET);
+    Files.write(evidence.resolve("v" + nextVersionFromOld(old) + "-fence.json"),
+        json.writeValueAsBytes(Map.of("runId", target.run().runId(),
+            "oldPods", old, "observedTasks", tasks,
+            "observedZeroPods", true, "oldTasksStopped", true)));
   }
 
   private static int nextVersionFromOld(List<Owner> old) {
     return old.getFirst().policyVersion() + 1;
-  }
-
-  private Task captureTask(Owner owner) throws Exception {
-    requireWorker(owner.node(), Duration.ofSeconds(10));
-    final var detail = json.readTree(docker.run(ownership.docker().context().command(
-        "exec", owner.node(), "crictl", "inspect", owner.containerId()), "",
-        Duration.ofSeconds(10)).checked());
-    assertEquals("CONTAINER_RUNNING", detail.at("/status/state").asText());
-    assertEquals(owner.uid(), detail.at("/status/labels/io.kubernetes.pod.uid").asText());
-    assertEquals(WORKLOAD, detail.at("/status/metadata/name").asText());
-    final long pid = detail.at("/info/pid").asLong(-1);
-    assertTrue(pid > 0, "Query CRI task has no running process ID");
-    final String start = processStart(owner.node(), pid, Duration.ofSeconds(10));
-    assertFalse(start.isBlank(), "Query task has no process start identity");
-    return new Task(owner.node(), owner.containerId(), owner.uid(), pid, start);
-  }
-
-  private boolean allQueryTasksStopped(List<Task> captured, OperationBudget budget)
-      throws Exception {
-    for (String node : KubernetesImages.workerNodes(target.client())) {
-      requireWorker(node, budget.remaining(Duration.ofSeconds(5)));
-      final String running = docker.run(ownership.docker().context().command(
-          "exec", node, "crictl", "ps", "-o", "json"), "",
-          budget.remaining(Duration.ofSeconds(5))).checked();
-      final var tasks = json.readTree(running).path("containers");
-      assertTrue(tasks.isArray(), "CRI returned no authoritative running-task list");
-      for (var task : tasks) {
-        final String name = task.path("metadata").path("name").asText();
-        final String namespace = task.path("labels")
-            .path("io.kubernetes.pod.namespace").asText();
-        if (captured.stream().anyMatch(previous ->
-            previous.container().equals(task.path("id").asText()))
-            || (WORKLOAD.equals(name)
-                && (namespace.isBlank() || target.namespace().equals(namespace)))) {
-          return false;
-        }
-      }
-    }
-    for (var task : captured) {
-      final String running = docker.run(ownership.docker().context().command(
-          "exec", task.node(), "ctr", "-n", "k8s.io", "tasks", "ls", "-q"), "",
-          budget.remaining(Duration.ofSeconds(5))).checked();
-      if (running.lines().anyMatch(task.container()::equals)) {
-        return false;
-      }
-      final var inspection = docker.run(ownership.docker().context().command(
-          "exec", task.node(), "crictl", "inspect", task.container()), "",
-          budget.remaining(Duration.ofSeconds(5)));
-      if (inspection.exitCode() == 0) {
-        final var detail = json.readTree(inspection.checked());
-        if ("CONTAINER_RUNNING".equals(detail.at("/status/state").asText())) {
-          return false;
-        }
-      } else if (!inspection.error().toLowerCase(java.util.Locale.ROOT).contains("not found")
-          && !inspection.error().toLowerCase(java.util.Locale.ROOT).contains("notfound")) {
-        inspection.checked();
-        throw new IllegalStateException("Query task inspection failed without proven absence");
-      }
-      final var process = docker.run(ownership.docker().context().command(
-          "exec", task.node(), "cat", "/proc/" + task.pid() + "/stat"), "",
-          budget.remaining(Duration.ofSeconds(5)));
-      if (process.exitCode() == 0) {
-        if (task.start().equals(startTime(process.checked()))) {
-          return false;
-        }
-      } else if (!process.error().contains("No such file or directory")) {
-        process.checked();
-        throw new IllegalStateException("Query process absence is unproven");
-      }
-    }
-    return true;
-  }
-
-  private void requireWorker(String node, Duration budget) throws Exception {
-    final String id = json.readTree(docker.run(ownership.docker().context().command(
-        "inspect", node), "", budget).checked()).get(0).path("Id").asText();
-    assertTrue(ownership.cluster().nodeIds().contains(id),
-        "Query worker differs from the original Docker cluster identity");
-  }
-
-  private String processStart(String node, long pid, Duration budget) throws Exception {
-    return startTime(docker.run(ownership.docker().context().command(
-        "exec", node, "cat", "/proc/" + pid + "/stat"), "", budget).checked());
   }
 
   static String startTime(String stat) {
@@ -267,8 +191,9 @@ final class KubernetesQueryPolicyReplacement {
   }
 
   private void awaitNewGeneration(int version, List<Owner> old, String deploymentUid,
-      String policyDigest) throws Exception {
-    final var budget = OperationBudget.start(START_BUDGET);
+      String policyDigest, OperationBudget recoveryBudget) throws Exception {
+    final var budget = recoveryBudget == null
+        ? OperationBudget.start(START_BUDGET) : recoveryBudget;
     while (true) {
       budget.remaining();
       final var current = deployment();
@@ -379,7 +304,8 @@ final class KubernetesQueryPolicyReplacement {
       assertTrue(containerId.matches("containerd://[0-9a-f]{64}"),
           "Query Pod has no exact containerd task identity");
       selected.add(new Owner(ready.name(), ready.uid(), ready.node(),
-          containerId.substring("containerd://".length()), versionFromPod(pod)));
+          containerId.substring("containerd://".length()),
+          pod.path("status").path("podIP").asText(), versionFromPod(pod)));
     }
     selected.sort(Comparator.comparing(Owner::name));
     return List.copyOf(selected);
@@ -450,7 +376,7 @@ final class KubernetesQueryPolicyReplacement {
         .digest(value.getBytes(StandardCharsets.UTF_8)));
   }
 
-  record Owner(String name, String uid, String node, String containerId, int policyVersion) {}
+  record Owner(String name, String uid, String node, String containerId, String podIp,
+      int policyVersion) {}
 
-  record Task(String node, String container, String podUid, long pid, String start) {}
 }

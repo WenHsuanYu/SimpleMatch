@@ -37,11 +37,12 @@ class RestingBuyKubernetesTest {
   @Test
   void publicBuySurvivesOwnerRestartsAndDuplicateDelivery() throws Exception {
     final UUID account = UUID.randomUUID();
-    try (var credentials = KubernetesFixCredentials.create(privateFiles.resolve("fix"), account)) {
+    final UUID seller = UUID.randomUUID();
+    try (var credentials = KubernetesFixCredentials.create(privateFiles.resolve("fix"), account, seller)) {
       final var environment = new KubernetesBusinessEnvironment(credentials, account);
       VerificationRun.verify(environment.request(), environment, run -> {
         try (credentials) {
-          verify(environment.publicOrder(), credentials, account);
+          verify(environment.publicOrder(), credentials, account, seller);
           environment.verifyRuntime(run);
         }
       });
@@ -49,7 +50,7 @@ class RestingBuyKubernetesTest {
   }
 
   private void verify(KubernetesBusinessEnvironment.PublicOrder context,
-      KubernetesFixCredentials credentials, UUID account) throws Exception {
+      KubernetesFixCredentials credentials, UUID account, UUID seller) throws Exception {
     final var target = context.target();
     final var postgres = new KubernetesPostgres(target);
     final var order = order(context, account);
@@ -127,13 +128,22 @@ class RestingBuyKubernetesTest {
         finished.cancel(true);
       }
     }
-    verifyDelayedOrder(context, credentials, order, events);
     final var business = new KubernetesQueryBusinessRead(context, account,
         java.util.Objects.requireNonNull(sourceOrderId),
         order.instrument().instrument().venueMic(), order.instrument().instrument().symbol());
     try (var marketData = new KubernetesMarketData(context)) {
       marketData.verify(business);
     }
+    final var execution = new KubernetesQueryExecution(context, credentials, events, order, seller);
+    execution.verify();
+    new KubernetesQueryActiveProcessing(context, credentials, events, order, seller).verify();
+    // The delayed BUY must not preempt the real R18 BUY/SELL cross on the same book.
+    final var delayedAdmission = verifyDelayedOrder(context, credentials, order, events);
+    new KubernetesTradingClose(context, events).verify(
+        delayedAdmission, execution.utilizedNotional());
+    business.settledBaseline();
+    execution.settledBaseline();
+    new KubernetesQueryReplay(context).verify(business, execution);
     new KubernetesQueryPolicyReplacement(context).verify(account,
         java.util.Objects.requireNonNull(sourceOrderId));
   }
@@ -188,7 +198,7 @@ class RestingBuyKubernetesTest {
     assertEquals(order.account().toString(), report.path("accountId").asText());
   }
 
-  private void verifyDelayedOrder(KubernetesBusinessEnvironment.PublicOrder context,
+  private JsonNode verifyDelayedOrder(KubernetesBusinessEnvironment.PublicOrder context,
       KubernetesFixCredentials credentials, Order original, KubernetesMatchingEvents events)
       throws Exception {
     final var target = context.target();
@@ -227,9 +237,10 @@ class RestingBuyKubernetesTest {
         awaitFile(fix.resolve("receipt.json"), finished);
         assertEquals("A", json.readTree(fix.resolve("receipt.json").toFile()).path("execType").asText());
         final var facts = faults.recover(finished, fix);
-        assertFacts(context, order, facts, 2);
+        // The original canceled order and R18 filled BUY are both durable before this order.
+        assertFacts(context, order, facts, 3);
         finished.get(60, TimeUnit.SECONDS);
-        new KubernetesTradingClose(context, events).verify(facts.admission());
+        return facts.admission();
       } finally {
         finished.cancel(true);
       }
@@ -250,7 +261,7 @@ class RestingBuyKubernetesTest {
     return new Order(account, "P3-" + context.target().run().runId(), instrument, rule, route);
   }
 
-  private static Map<String, String> clientEnvironment(Path fix, KubernetesFixCredentials credentials,
+  static Map<String, String> clientEnvironment(Path fix, KubernetesFixCredentials credentials,
       Order order, int port) {
     final var values = new HashMap<>(credentials.clientEnvironment());
     values.put("SIMPLEMATCH_LIVE_FIX_HOST", "127.0.0.1");
@@ -277,7 +288,7 @@ class RestingBuyKubernetesTest {
     return Map.copyOf(values);
   }
 
-  private static void awaitFile(Path file, Future<?> client) throws Exception {
+  static void awaitFile(Path file, Future<?> client) throws Exception {
     final long deadline = System.nanoTime() + Duration.ofSeconds(90).toNanos();
     while (!Files.isRegularFile(file)) {
       if (client.isDone()) {
@@ -304,6 +315,6 @@ class RestingBuyKubernetesTest {
     }
   }
 
-  private record Order(UUID account, String clOrdId, ArtifactInstrument instrument,
+  record Order(UUID account, String clOrdId, ArtifactInstrument instrument,
       MarketRule rule, RoutingAssignment route) {}
 }
