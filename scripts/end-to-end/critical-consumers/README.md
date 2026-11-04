@@ -216,9 +216,8 @@ GitHub owns the current remote-delivery status.
   diagnostics, and environment restoration.
 - `tests/` contains shell contracts for the modules and deployment ordering.
 
-The historical entrypoint
-`scripts/run-critical-consumer-failure-certification.sh` remains as a thin
-compatibility wrapper. New documentation and CI use the path in this directory.
+Use `scripts/end-to-end/critical-consumers/run-failure-certification.sh` directly.
+S5 retires the historical forwarding alias; scenario behavior remains with this canonical runner.
 
 ## Run the normal scenario
 

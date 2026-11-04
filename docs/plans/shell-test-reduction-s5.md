@@ -37,6 +37,18 @@ Review each remaining legacy responsibility for an independent current purpose b
 Record a coherent retirement and its coverage loss before deleting its dedicated support.
 Do not build a second verification framework or copy historical Shell assertions into Java.
 
+## Accepted execution order
+
+The owner accepted two sequence refinements in [#202](https://github.com/WenHsuanYu/SimpleMatch/issues/202):
+P0 requirement decisions → P1/P2 Native and H2 work → P5a minimal Gradle entry → P3/P4 retained gaps → P5b final integration/retirement → P6 acceptance.
+P5a connects existing test owners early; it cannot report complete PASS while retained coverage is unresolved or unexecuted.
+
+[#203](https://github.com/WenHsuanYu/SimpleMatch/issues/203) owns focused hosted CI and final program acceptance.
+It may use the fresh #202 complete-local evidence when only CI wiring, documentation, or metadata changes.
+Runtime/build inputs, test definitions, complete-local scenario selection, and acceptance semantics must remain unchanged.
+Preserve the evidence's original source/run/image identities and prove that later differences are outside those inputs.
+Relevant input or semantic changes require a fresh complete-local run. Selected hosted CI still executes on the final head.
+
 ## Completed phase and source checks
 
 This disposition precedes deletion and execution of the remaining verification.
@@ -133,3 +145,171 @@ External plan/schema operators keep their existing explicit scope and current co
 The retired Gateway snapshot helper loses its dedicated padding fixture, JSON baseline, Gradle inputs, and Shell alias.
 Keep the Gateway runtime SQL collector while it still has live scenario consumers.
 No new Java verification layer or assertion matrix replaces the retired checks.
+
+## P0 findings for the first shared entry
+
+The ordinary service test task is not a complete list of retained owners.
+Gateway deliberately separates its in-process FIX/JDBC certification from `test`.
+The complete entry must select `certificationTest` explicitly; opt-in external FIX endpoints remain operator scope.
+Native complete-local selection must use `full-native-dev` to include messaging, while focused presets keep their narrower scope.
+
+Query currently runs the same JDBC/HTTP classes in both `test` and `postgresJdbcTest`.
+Merge execution ownership before adding the aggregate: keep those classes in `test`, make `postgresJdbcTest` depend on it, and select only the additional collector class in the latter task.
+Keep Redis TLS/ACL verification with `redisSecurityTest` through `verifyDependencies`.
+Acceptance: the Gradle graph schedules the ordinary Query suite once and the additional collector once, with no deleted business assertion or required exclusion.
+The ordinary suite retains its existing exclusions; it must not acquire a Python/psql collector prerequisite.
+Validate wiring without Docker now; complete Query execution remains required after Docker access is restored.
+
+Existing dependency owners retain PostgreSQL migrate/validate and RF1/RF3 exact CDC observations, connector/broker recovery, and crash redelivery.
+They do not establish Kubernetes worker recovery or the public FIX-to-downstream chain.
+`verifyKubernetes` currently owns the bounded Risk admission/outbox/Kafka scenario, with its existing build/lifecycle/cleanup support.
+R11–R21 and the remaining deployed R22 claims still require explicit P3/P4 dispositions before their old runners can be removed.
+No deletion of those unresolved deployed responsibilities is approved merely by the component results above.
+
+The Query task-wiring dry-run completed successfully with `test` followed by `postgresJdbcTest`, each scheduled once.
+Evidence: `/tmp/simplematch-202-query-task-wiring.log`.
+Dry-run `SKIPPED` labels mean no test executed; this is task-graph evidence only and does not satisfy runtime acceptance.
+
+## Trading-day source matcher retirement
+
+Retire `scripts/test-local-certification-trading-day.sh` and its Local Resource Lifecycle CI call.
+This script matches exact Shell assignments, function names, and adjacent source lines, then checks GNU `date` against a fixed timezone example.
+It does not invoke the actual live-input guard or submit an order.
+Those source-layout and operating-system checks do not merit migration under the owner's test-value rule.
+The intentional loss is automatic enforcement of the exact Taipei default expression and guard-to-release source adjacency.
+Keep the runtime trading-day guards and their current callers unchanged. This retirement is not evidence that stale-day rejection or deployed order handling passed.
+Acceptance: remove this checker and its active CI caller, preserve historical inventory entries, and introduce no replacement source matcher or date-library test.
+
+Keep the current workload adapter's unresolved-image negative check until its runtime caller moves.
+Keep the old skip-semantics test while the aggregate Shell engine remains active: it exercises occupied-evidence rejection, failure propagation, fresh execution, and PARTIAL results.
+Its historical phase IDs/report layout need no one-for-one replacement. P5 must retain the underlying safety rules through existing framework owners.
+After the trading-day source matcher retirement, the worktree contains 136 tracked Shell paths still present and 28,815 physical lines.
+Both reduction gates remain unmet. No runtime verification result follows from this retirement.
+
+## Review cadence
+
+The owner requires two-axis review at a completed sequence milestone, such as P3, rather than after every small slice.
+Use focused checks during implementation. At the milestone, review standards and specification, fix concrete findings, and verify the affected behavior.
+Do not repeat two-axis review for routine intermediate edits.
+
+## Critical-consumer invocation alias retirement
+
+Retire `scripts/run-critical-consumer-failure-certification.sh`, which only forwards arguments to the canonical runner.
+Remove its dedicated existence/executable/help assertions from `deployment-contract.sh` and update current runbook commands.
+The canonical failure runner and all actual failure/recovery assertions remain.
+The intentional loss is the historical alternate command path; it has no independent scenario or verdict.
+Acceptance: current commands use `scripts/end-to-end/critical-consumers/run-failure-certification.sh`, and no active consumer requires the alias.
+
+The retained deployment contract passed after alias removal; no deployment was executed.
+Current Shell worktree totals are 135 files and 28,806 physical lines, still above both minimum gates.
+
+## P0 critical business requirement decisions
+
+Integrate Gateway and Matching recovery after the new public FIX baseline instead of adding another baseline deployment.
+Retain actual reconnect/resend, stable claim identity and singular durable effects; retire the Gateway runner's independent WAL/journal byte-prefix matrix, continuous owner sampling and duplicate report fixtures.
+Existing WAL/session tests own file integrity; this cutover makes no new concurrent-owner or node-failure claim.
+Retire the callback-counter unit case in `FixRecoveryProbeTest`; actual FIX reconnect/resend owns recovery. Retain its body-digest case, which distinguishes altered order terms from advancing session headers.
+Retire `FixCancelProbeTest`'s positive field-copy case in favor of the real post-recovery cancel; retain its Pending Cancel and unrelated-order rejection case. Reuse `MatchingEventObservationMain` and `MatchingEventRedeliveryMain` without translating their Kafka algorithms.
+For R11, use one actual PostgreSQL outage with critical consumers running, plus a held routed Matching process. Retire simultaneous removal of all consumer Pods; the new scenario makes no combined Account/Persistence process-restart claim. R12 verifies automatic pause of new orders and actual FIX rejection, rather than treating stale input as terminal day closure.
+Retain terminal `close-day` as a distinct core workflow: the Gateway must initiate Risk-owned Close Barriers, Matching must expire the resting order, and downstream consumers must release the reservation and persist the terminal state. Run this last in the same deployed scenario. Automatic ingress pause does not prove terminal closure. Reuse the existing Kafka Close Barrier observer; do not port its Shell predicate matrix or add another deployment.
+The terminal scenario checks the selected expiration in all three consumer inboxes and the corresponding business state. Retire the separate all-partition consumer high-watermark report and predicate fixtures; this scenario makes no broader backlog-drain claim.
+
+| Requirement | Decision and retained value | Current owner and cutover condition |
+| --- | --- | --- |
+| R13 public resting order | Keep the real FIX → Risk/outbox → Kafka/Matching → Persistence/Account correlation. Component tests cannot detect cross-service identity or delivery wiring defects. Merge the standalone normal run into the pre-fault baseline of the retained recovery scenarios in complete-local selection; do not add a third identical baseline-only deployment. | The existing resting-buy runner/verifier remains authoritative until the deployed Jupiter owner proves the same chain. Keep the focused normal operator mode available during cutover. |
+| R14 Gateway same-owner recovery | Keep one restart, retained FIX session/WAL, reconnect/resend, original-order retry, and singular durable effects. A successful database replay does not prove protocol recovery. | Reuse the existing FIX retained-session client and Gateway JDBC/application tests for their separate seams. The deployed restart still needs its own owner before removing its Shell lifecycle and Ruby verdict support. |
+| R15 Matching business recovery | Keep one selected-owner replacement with replay progress, a new cancel, and explicit byte-identical redelivery with singular downstream effects. Ready alone cannot prove recovered business processing. | Current Matching recovery runner/verifier remains until the deployed scenario moves. Native replay and service inbox tests retain their independent local seams. Do not recreate the retired ten-cycle calibration or claim that restart caused the controlled redelivery. |
+| R11 critical-consumer failure | Keep actual deployed fail-closed and eventual durable-delivery behavior. The current mixed-outage runner is not equivalent to a normal restart and cannot be deleted on the strength of component tests or RM-1. | Review its necessary fault/observation boundaries with R12 before selecting a smaller coherent scenario. This remains an explicit unresolved cutover; no speculative Java copy or deletion is authorized by this table. |
+| R12 Gateway close/open safety | Keep authenticated transitions, actual eligibility, automatic stale-observation pause, restoration, and terminal day close. Successful OPEN alone cannot prove these distinct protections. | Existing Gateway application tests own policy branches. The deployed public FIX scenario owns ingress rejection and terminal business effects; reuse its live observations. |
+
+These decisions select requirements, not completed execution. The current pure Java recovery module owns CDC, dependency, placement, and Market Data evidence; it does not yet replace the critical-consumer resting/recovery Ruby verdicts.
+P3 must close those concrete ownership gaps before legacy removal. No PostgreSQL, deployed, or recovery PASS is inferred from this disposition.
+
+## P4 Query disposition before implementation
+
+| Responsibility | Decision and owner | Remaining gap or intentional loss |
+| --- | --- | --- |
+| R18 exhaustive Python route/read matrix | Retire the duplicate matrix when its runner moves. Keep `QueryOrderHttpTest`, `QueryExecutionsHttpTest`, `QueryAccountSummaryHttpTest`, and `QueryMarketHttpTest` as HTTP/PostgreSQL authorization owners. | Keep a basic authenticated deployed read of actual projected business data. Service tests do not establish Kafka-to-HTTP deployment wiring. |
+| R18 obsolete Redis response seeding and comparison | Retire the deployed legacy-cache fixtures and verdict fields. Existing HTTP tests explicitly prove no cache reads, fills, clears, or fallback to foreign/stale envelopes. | No separate deployment-wide legacy-cache mutation report. This retires completed compatibility verification, not PostgreSQL-only reads or fail-closed ownership. |
+| R18 Python collector selection contract and Java process wrapper | Retire with the old fixture-discovery collector. The new observation must select its own actual order/event identities. Do not port scratch fixture discovery or hardcoded migration-version assertions. | `QueryCollectorPostgresContractTest` currently launches Python; it is not an independent service requirement. Its removal waits for the collector's last consumer. |
+| R18 replay/isolation and R19 policy lifecycle | Keep unresolved until their runtime boundaries are reviewed. Reuse existing rebuild and policy tests for local behavior. | `QueryAccountPolicySnapshotHttpTest` explicitly tests a separately activated snapshot, not effective revocation or replica convergence. It cannot justify deleting the deployed lifecycle requirement. |
+
+R19 keeps one actual two-replica policy replacement. Stop the old generation and verify that its tasks exited before activation. Verify revoked grants, disabled Principals, and old-credential rejection through both new replicas. Keep source/run/image binding and bounded catch-up for captured Account events published during the stop. Reuse existing authorization tests for the exhaustive route matrix.
+Retire the Python Lab's separate approval database, event timeline, collector-credential export protocol, and restart/reinitialization simulation. Also retire its comment-only same-version edit, never-launched historical-image candidate, and deliberately unschedulable second replica. These verify a synthetic orchestration authority, not the startup-only product policy. The fresh-run/no-resume lifecycle must reject collisions and must never restore the revoked generation after a failure. This retirement loses the Lab approval-record and partial-activation recovery claims. It does not establish production revocation guarantees.
+
+For R16, retain one actual deterministic projection replay observed through the public snapshot API. Also retain a real Redis outage with durable pending repair and convergence after restoration. `MarketDataProjectionApplicationServiceTest` owns projection transactions, replay identity, conflicts, gaps, and reset scope. `RuntimeMarketDataPublicationTest` uses a fake cache for failure/repair. It does not establish actual Redis integration. Reuse the existing snapshot observer instead of copying its protocol code.
+For R17, retain actual public-stream termination, replacement, resubscription, and a fresh complete snapshot through `MarketDataSnapshotRecoveryObserver`. `MarketDataGrpcServiceTest` owns request routing only. Retire the independent all-partition consumer-group ownership report and forced alternate-worker placement from this stream scenario. These add no separate basic public-stream requirement. This cutover makes no full-partition or worker-failure claim. Existing immutable identity, bounded failure, restoration, and cleanup requirements remain.
+
+For R20, reuse `OutboxCdcIntegrationTest` for actual RF1/RF3 broker outage, connector pause/recovery, and worker crash with captured source checkpoints and exact crash-induced redelivery. P3 owns deployed PostgreSQL interruption; R16 owns deployed Redis outage/repair. Retire the duplicate Kubernetes Connect-loss orchestration and its dedicated fixtures after their last callers move. This loses the separate Kubernetes Connect Pod/worker-loss claim; component recovery is not Kubernetes HA evidence.
+For R21, merge Query's Redis-outage read check with actual readiness, liveness, authenticated serving, and stable Pod UID/restart-count observations across the configured liveness window. Reuse that same outage and restoration; do not create another placement deployment. Retire repeated placement/report-shape fixtures and exact static probe snapshots. Keep the live probe/serving boundary: a successful business read alone cannot establish liveness or readiness.
+
+For R22, native CTest remains the integrity, bounded replay, and capacity owner. Merge the separate deployed fleet/image inventory into the existing Kubernetes runtime observations. Retire its independent benchmark/report merge and optional CPU-affinity certification wrapper; make no CPU-pinning or production-performance claim.
+The old Kafka failure launcher only reclassifies topic/configuration metadata after one broker loss, two broker loss, and restoration. Retire those three classification runs with the old profile-report machinery. Keep actual topology assertions and RF1/RF3 outage/redelivery behavior in `OutboxCdcIntegrationTest`; these do not establish native Matching process-crash recovery.
+P3's selected Matching Pod replacement does not close R22's abrupt process-crash boundary. Keep that boundary unresolved until its necessary actual crash/recovery behavior has an owner. Do not infer crash-induced replay from graceful replacement or the separately controlled duplicate event.
+
+## P5a acceptance
+
+Create the root `verifyAll` task and connect existing ordinary Java suites, static analysis, native CTest, manifest, dependency/Flyway, local FIX certification, and Kubernetes owners.
+No test assertions move into Gradle. Complete selection defaults native checks to `full-native-dev`.
+The current entry must fail before build/deploy/test work because retained P3/P4 deployed requirements have no new owner yet.
+Name those unresolved requirements in a small explicit preflight list; provide no property that bypasses it.
+Dry-run must show actual owner tasks, with Query's ordinary suite and collector scheduled once each.
+Actual invocation must fail at scope preflight before root-build service tests, native work, or deployment, and leave native evidence absent. Normal Gradle included-build preparation remains permitted.
+This is early wiring, not P5b completion or a complete-local PASS.
+
+P5a focused evidence: the task was initially absent (`/tmp/simplematch-202-p5a-red.log`).
+The new dry-run schedules existing owners (`/tmp/simplematch-202-p5a-graph.log`).
+Actual invocation and `--continue` both fail at scope validation with no service/native/deployment task executed; the selected native evidence path remains absent.
+The explicit preflight list remains blocking until P3/P4 owners or reviewed retirements close every named requirement.
+
+
+## Final Ruby and Python removal condition
+
+The owner requires all project Ruby and Python code removed at final delivery: standalone files, embedded programs, runtime dependencies, dedicated fixtures/tests, and callers.
+Do not translate each script into Java. Retire obsolete, duplicate, source-layout, and coverage-only responsibilities; reuse existing Java owners for necessary behavior.
+Historical results retain their original language and scope descriptions, but no project executable Ruby or Python path remains.
+The current inventory contains 12 tracked `.rb` files and 28 tracked `.py` files, plus embedded programs and their callers.
+These counts describe the removal scope, not a target for equivalent Java files.
+Assess each test before changing it. Delete tests with no independent value instead of translating them.
+Keep necessary command safety, authorization, credential handling, lifecycle ownership, and cleanup behavior under suitable existing Java owners where possible.
+Do not introduce a different scripting language as a replacement.
+
+The Python inventory contains six Query certification library modules, four fixture/policy/lifecycle entry points, seventeen dedicated contract tests, and one recovery HTTP fixture.
+Review the seventeen tests individually against retained requirements and existing service/tool tests before deciding their disposition.
+The public FIX scenario must use a Java-owned synthetic credential/TLS fixture instead of introducing a new dependency on the Python bundle provisioner.
+Classification and removal accompany each delivered responsibility. Update the Issue only after a whole sequence milestone completes.
+
+Ruby test dispositions before migration: retain hard-reset's `healthy`, `absent`, and `dry-run` cases for actual mutation selection. Retain `missing-kind`, `discovery-failed`, and `observation-failed` because failed discovery must stop destructive work. Retain `invalid-role` for identity refusal. Retain `registry-refused`, `namespace-api-failed`, and `pv-api-failed` for failure propagation at distinct cleanup boundaries. Drop exact human-message matching; preserve exit/mutation behavior at the actual command entry point.
+For resource budgeting, keep phase-peak calculation, replica/init-container accounting, malformed-quantity rejection, and sufficient/insufficient capacity cases. Retire the old CLI's warning-only over-budget mode and exact legacy report-layout checks when that CLI loses its final caller. The Kubernetes preflight must remain fail-closed; do not build a second resource report framework.
+
+## P3 current implementation and acceptance
+
+`KubernetesBusinessEnvironment` owns build-receipt checks, setup, diagnostics, runtime identity, and exact cleanup for the selected profile.
+`resting-buy` runs Account, Risk, Persistence, Gateway, and all 15 Matching owners; RM-1 retains its smaller scope.
+The profile selects its service-owned Flyway Jobs and completes them before business startup.
+`KubernetesConnectors` registers and observes the Risk and Account CDC owners.
+
+`RestingBuyKubernetesTest` reuses Gateway's `PreparedFixSubmission` test fixture for the public BUY, same-claim Gateway recovery, same-claim Matching recovery, cancel, and exact event redelivery.
+`KubernetesCriticalDelivery` owns the PostgreSQL outage and fail-closed ingress scenario.
+`KubernetesTradingClose` closes the same session last and observes terminal business effects.
+These are integrated implementations, not deployed PASS results.
+The requirement dispositions above govern the retained assertions and intentional verification losses.
+
+`KubernetesFixCredentials` provisions private server/client identities with JDK keytool and binds one synthetic counterparty to the run's account.
+The fixture checks actual mutual TLS and cleanup without reproducing the Python Query policy framework.
+`KubernetesPostgres` owns SQL transport and bounded convergence.
+`KubernetesMatchingEvents` reuses the existing Kafka observation/redelivery implementations.
+Run-owned forwarders stop their own processes; authenticated Gateway operations use actual live eligibility.
+Verification fingerprints include shared FIX fixtures and executed SQL; image fingerprints exclude test-only inputs.
+
+The local Matching request is 1 GiB per main container; its limit remains 2 GiB and the fleet remains 15.
+The selected profile's 24.367 GiB steady request plus helper/control-plane reserve requires 28.867 GiB.
+Docker Desktop reports 37.275 GiB RAM. Swap does not increase schedulable guest RAM.
+The bounded [live-03 memory observations](../../out/verification/issue-202-p3-public-live-03/matching-memory.tsv) supported the local request adjustment; they are not load or production sizing evidence.
+
+The Kubernetes-tool suite and global static analysis passed after terminal-close integration.
+Live-07's first preparation stopped for the owner's strict two-axis review. It created no test cluster or deployment ownership receipt. Its refreshed preparation uses a new reviewed build receipt and preserves the interrupted log; the deployed result still uses the fresh live-07 directory.
+The review found no confirmed Standards violations and two Spec defects: missing before/after retry equality and a pause window longer than native liveness permits. The fixes compare existing business facts, preserve baseline evidence, and cap paused work at 20 seconds with an independent 10-second restoration budget. The Spec reviewer checked both fixes; the tools suite passed 55 cases with no skips, and global static analysis passed. Live execution remains required.
+Earlier failed results remain unchanged. Live-05 and live-06 cleanup passed; each removed only its four nodes and four disposable volumes.
+P3 still requires successful retained live behavior, legacy caller/fixture cutover, and the milestone two-axis review.
+Ruby resource budgeting and the remaining Python/Ruby consumers remain explicit retirement work.

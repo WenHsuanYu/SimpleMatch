@@ -51,24 +51,11 @@ tasks.register<Test>("redisSecurityTest") {
 
 tasks.register<Test>("postgresJdbcTest") {
     group = "verification"
-    description = "Runs Query JDBC, HTTP, and collector contracts against Testcontainers PostgreSQL."
+    description = "Runs the Query suite and its additional PostgreSQL collector contract once each."
     testClassesDirs = sourceSets.test.get().output.classesDirs
     classpath = sourceSets.test.get().runtimeClasspath
-    filter.includeTestsMatching("com.simplematch.queryservice.QueryServiceApplicationTest")
-    filter.includeTestsMatching("com.simplematch.queryservice.runtime.QueryProjectionRebuildServiceTest")
-    filter.includeTestsMatching("com.simplematch.queryservice.store.QueryFlywayMigrationTest")
-    filter.includeTestsMatching("com.simplematch.queryservice.store.JdbcQueryProjectionStoreTest")
+    dependsOn(tasks.test)
     filter.includeTestsMatching("com.simplematch.queryservice.store.QueryCollectorPostgresContractTest")
-    filter.includeTestsMatching("com.simplematch.queryservice.security.QueryHttpSecurityIntegrationTest")
-    filter.includeTestsMatching("com.simplematch.queryservice.security.QueryRebuildDisabledHttpTest")
-    filter.includeTestsMatching("com.simplematch.queryservice.security.QueryDirectHttpTest")
-    filter.includeTestsMatching("com.simplematch.queryservice.security.QueryAccountSummaryHttpTest")
-    filter.includeTestsMatching("com.simplematch.queryservice.security.QueryAccountPolicySnapshotHttpTest")
-    filter.includeTestsMatching("com.simplematch.queryservice.security.QueryOrderHttpTest")
-    filter.includeTestsMatching("com.simplematch.queryservice.security.QueryExecutionsHttpTest")
-    filter.includeTestsMatching("com.simplematch.queryservice.security.QueryExecutionsSnapshotHttpTest")
-    filter.includeTestsMatching("com.simplematch.queryservice.security.QueryMarketHttpTest")
-    filter.includeTestsMatching("com.simplematch.queryservice.security.QueryMarketSnapshotHttpTest")
     systemProperty("simplematch.repositoryRoot", rootProject.projectDir.absolutePath)
     maxParallelForks = 1
     outputs.upToDateWhen { false }

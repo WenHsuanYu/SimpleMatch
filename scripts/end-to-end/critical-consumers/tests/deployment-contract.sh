@@ -4,7 +4,6 @@ set -euo pipefail
 script_dir="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
 repo_root="$(cd -- "$script_dir/../../../.." && pwd)"
 canonical_runner="$script_dir/../run-failure-certification.sh"
-compatibility_runner="$repo_root/scripts/run-critical-consumer-failure-certification.sh"
 matching_module="$script_dir/../lib/matching-status.sh"
 observation_module="$script_dir/../lib/system-observation.sh"
 support_module="$script_dir/../lib/failure-support.sh"
@@ -23,7 +22,6 @@ fail() {
 
 for script in \
   "$canonical_runner" \
-  "$compatibility_runner" \
   "$matching_module" \
   "$observation_module" \
   "$support_module" \
@@ -35,8 +33,6 @@ for script in \
   bash -n "$script"
 done
 [[ -x "$canonical_runner" ]] || fail 'canonical failure certification must be executable'
-[[ -x "$compatibility_runner" ]] || fail 'compatibility runner must be executable'
-"$compatibility_runner" --help >/dev/null
 
 if grep -Fq 'OPERATIONS_MONITOR_ENABLED=false' "$canonical_runner" "$interfaces_module"; then
   fail 'failure certification must not disable the Gateway stale-observation monitor'

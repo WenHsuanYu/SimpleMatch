@@ -89,7 +89,6 @@ jobs:
           bash scripts/end-to-end/query-service/tests/isolation-contract.sh
           bash scripts/test-local-image-transport.sh
           bash scripts/test-local-image-rendering.sh
-          bash scripts/test-local-certification-trading-day.sh
           bash scripts/test-local-certification-workloads.sh
           bash scripts/test-local-certification-skip-semantics.sh
           bash scripts/test-local-certification-provenance.sh

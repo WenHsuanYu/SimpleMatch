@@ -81,14 +81,20 @@ This repo's Java dependencies use an explicit ownership model.
   contract, Spring JDBC, Kafka, Redis, Web, and the service-owned Flyway plugin. Its PostgreSQL
   datasource is supplied by the shared `simplematch-config` auto-configuration, not by a second
   datasource implementation.
-- Flyway and H2 runtime/test dependencies are versionless catalog aliases and resolve exclusively
+- Flyway dependencies are versionless catalog aliases and resolve exclusively
   through the Spring Boot BOM. `protoc` remains explicitly versioned because the protobuf BOM does
   not manage the compiler artifact. The Flyway Gradle plugin remains an explicit build-tool
   artifact, aligned with Spring Boot 4.1's Flyway line, because the BOM has no constraint for that
   plugin artifact.
-- H2 2.4 has a cross-session bug for `CHECK (... IN (...))` constraints. Flyway-managed enum checks
-  use versioned compatibility migrations with `CASE` expressions instead, while preserving the same
-  PostgreSQL constraint semantics.
+- Database-backed service tests use isolated PostgreSQL databases through Testcontainers.
+  Pure validation and dependency-error cases use mocks; configuration-only tests open no connection.
+  H2 dependencies and runtime compatibility are removed. Historical migration SQL remains versioned.
+  The [cutover record](../plans/h2-removal.md) distinguishes source changes from completed execution.
+
+
+The Query `postgresJdbcTest` task depends on the ordinary Query suite and separately selects only
+`QueryCollectorPostgresContractTest`. JDBC/HTTP cases execute once when both entry points are requested.
+The collector still requires Python 3 and `psql`; the ordinary suite keeps its existing prerequisites.
 
 ## Native Dependencies
 
@@ -168,3 +174,13 @@ All presets inherit the common Ninja and vcpkg toolchain configuration from the 
   manifest feature so GoogleTest is present when the test targets are configured.
 - Protobuf transitive dependencies such as Abseil and utf8-range are carried by the vcpkg-provided
   `protobuf::libprotobuf` target instead of a repository-owned pkg-config fallback.
+
+## Complete local entry under construction
+
+`./gradlew verifyAll` connects existing Java suites, local FIX certification, Native CTest,
+manifest, dependency/Flyway, and Kubernetes tasks. Complete invocation selects `full-native-dev`.
+The current P5a entry fails at `verifyAllScope` because retained P3/P4 deployed owners are missing.
+It is not a complete-local PASS command yet. Use existing focused tasks for current component work.
+Task exclusions are rejected; `--continue` cannot run root-build work that depends on failed scope validation.
+Normal Gradle included-build preparation can still execute. No scenario assertions or legacy phase dispatcher move into this entry.
+See the [S5 disposition](../plans/shell-test-reduction-s5.md) for the unresolved requirements.

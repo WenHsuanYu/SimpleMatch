@@ -52,8 +52,7 @@ scripts/end-to-end/critical-consumers/
 production-like runner. It owns the retained source/image provenance consumed by
 verification helpers.
 
-`scripts/run-critical-consumer-failure-certification.sh` remains as a
-compatibility entrypoint and delegates to the canonical runner.
+Use the canonical runner directly. S5 retires the historical forwarding entrypoint.
 
 ## Retained production-like provenance
 
@@ -356,14 +355,6 @@ scripts/end-to-end/critical-consumers/run-failure-certification.sh \
   --timeout-seconds 300
 ```
 
-The historical command remains valid:
-
-```bash
-scripts/run-critical-consumer-failure-certification.sh \
-  --namespace "$SIMPLEMATCH_CERTIFICATION_NAMESPACE" \
-  --evidence-dir "$FAILURE_EVIDENCE_DIR" \
-  --timeout-seconds 300
-```
 
 Issues #130, #131, and #132 should remain open until a fresh production-like
 namespace produces a retained `verdict.json` with `status: PASS`.
