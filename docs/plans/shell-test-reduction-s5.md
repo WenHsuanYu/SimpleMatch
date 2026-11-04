@@ -880,7 +880,7 @@ inventory is historical and remains unchanged.
 | R16 | `KubernetesMarketDataRebuild` in `RestingBuyKubernetesTest`, reusing `MarketDataEvidenceVerifier`; retained operator `end-to-end/market-data/run-certification.sh` | `verifyAll` selects the deployed R16 path through `verifyKubernetes`; hosted CI executes service and evidence tests, not live R16. The canonical operator Shell path remains available. | Execute and accept fresh final-source Redis outage, projection replay, repair, and seven-check public-snapshot evidence in P6. |
 | R17 | `KubernetesMarketDataStreamer` in the same run, reusing `MarketDataSnapshotRecoveryObserver`; retained operator `end-to-end/market-data/run-streamer-recovery-certification.sh` | `verifyAll` selects the deployed R17 path through `verifyKubernetes`; hosted CI executes the streamer lifecycle contract, not live R17. The canonical operator Shell path remains available. | Execute and accept fresh final-source public gRPC disconnect, Recreate replacement, and resubscription in P6. |
 | R18 | `end-to-end/query-service/run-certification.sh`, `QueryEvidenceVerifier`, Query HTTP/JDBC suites, and partial `KubernetesQueryBusinessRead` in `RestingBuyKubernetesTest` | `verifyAll` selects an actual run-owned FIX Order → Query PostgreSQL → authenticated HTTP read before, during and after R16's Redis outage. Hosted CI runs component checks, not this live path. The canonical Shell runner remains the full operator owner. | Add a real public FIX execution-backed cross, nonempty Executions, Query zero-Pod active isolation, independently authorized bounded Query reset/replay and full evidence verdict. Execute source-aligned live acceptance in P6. |
-| R19 | `run-query-security-lifecycle.sh` / `security-lifecycle.py` and Query authorization tests | Operator lifecycle runner; lifecycle CI runs focused Python contracts, while Gradle runs service tests. No Gradle live lifecycle owner yet. | Integrate and execute two-replica policy replacement and revocation. |
+| R19 | `KubernetesQueryPolicyReplacement` in the resting-buy Jupiter scenario for a bounded actual Query policy replacement; the original `run-query-security-lifecycle.sh` / `security-lifecycle.py` and Query authorization tests still own the broader Lab matrix | Gradle `verifyKubernetes` now selects a two-generation Query Secret replacement, old task fence and both new Pods' effective revocation probes; the focused Lab remains separately operator-selected. Neither has a fresh final-source P6 live result. | Complete old keep-alive/direct-path Block evidence, original C/Y/D matrix and Account events published during the stop with bounded source catch-up; then perform fresh source-aligned live acceptance before retiring the Lab. |
 | R20 | `OutboxCdcIntegrationTest` for broker/connector/worker crash and exact redelivery; selected PostgreSQL and Redis faults remain with R11/R16 | `verifyDependencies` → `verifyCdc`; CDC CI calls `verifyCdc`. `run-local-resilience-dependencies.sh` remains a distinct focused operator diagnostic. | Fresh final-source dependency acceptance; do not restore retired Kubernetes Connect-only claims. |
 | R21 | `KubernetesQueryHealth` observes both Query Pods during the R16 Redis outage in `RestingBuyKubernetesTest`; retained canonical Query operator runner and Query HTTP tests | `verifyAll` now selects the R21 deployed observation through the existing `verifyKubernetes` owner; hosted CI executes HTTP/component tests, not live R21. The canonical Query Shell runner remains an R18/R21 operator entry. | Execute and accept fresh final-source Query health, startup-policy authentication, Pod identity and zero-Redis serving in P6; R18 business-data replay remains separate. |
 | R22 | `nativeTest` CTest integrity/replay; `RestingBuyKubernetesTest` real Matching SIGKILL; separate manual E2E diagnostic | `verifyAll` selects `nativeTest` and resting-buy `verifyKubernetes`; Native CI runs CTest; the retained Shell E2E runner is operator-only. | Fresh final-source process-crash/recovery evidence; no inferred crash-induced uncommitted redelivery. |
@@ -1231,4 +1231,56 @@ Tracked Shell totals decrease from **103 files / 22,648 physical lines** to
 **102 files / 22,140 physical lines**. Python remains **26 files / 4,130
 lines** and Ruby remains **3 files / 316 lines**. The minimum
 **51-file / 10,476-line** Shell gate, Python/Ruby retirement, remaining
-R16/R17 and R18/R19 deployed integration, and final P6 run are still open.
+R16/R17 deployed live acceptance, R18/R19 remaining integration,
+and final P6 run are still open.
+
+## P4 R19 bounded deployed Query policy replacement
+
+`RestingBuyKubernetesTest` now selects a bounded Query policy replacement
+**after** its existing public FIX, Redis outage, Market Data replay, and streamer
+recovery have completed. The existing `VerificationRun` continues to own the
+immutable source/image receipts, namespace, diagnostics and exact teardown.
+This change introduces no second kind cluster or scripting framework.
+
+`KubernetesQueryPolicyReplacement` captures the two original Ready Query Pod
+UIDs, nodes, exact CRI container IDs and selected image. Before each policy
+activation it scales only the run-owned Query Deployment to zero. It requires
+zero Kubernetes Query Pods and verifies the previous generation's container IDs,
+containerd tasks and original Linux PID/start identities are gone within a strict
+20-second bound. It also inspects running Query CRI tasks across all three
+run-validated worker nodes, not just the two originally serving Pods.
+Only after that fence does it replace the run-owned immutable Query Secret,
+write a new policy-generation annotation on the Deployment template and start
+two replicas. The observer requires new Pod UIDs on separate workers,
+verifies each Pod → ReplicaSet → current Deployment ownership chain and
+per-Pod policy annotations, and checks the actual new image content with
+`KubernetesWorkloadImages`.
+
+The existing `KubernetesQueryCredentials` now produces two fresh generations
+with stable Principal IDs and disjoint credential verifiers. Version 2 removes
+the original reader's Account grant while keeping the Principal active,
+and adds a separately credentialed Account reader that keeps its grant.
+Version 3 disables the original Principal while retaining the allowed reader.
+This positive read is necessary to distinguish a revoked grant's 404 from
+a missing or unserved business Order. Each new Query Pod must show the expected
+policy version, reject all previously issued Bearer credentials with HTTP 401,
+reject the version-2 revoked Account read with HTTP 404, and accept the
+current independent operations credential and retained business reader.
+The disabled reader's current token is rejected in version 3, without
+removing the surviving Account grant. No credential or PostgreSQL DSN is
+written to evidence. The older policy is never restored after a failed
+activation; the outer owned-run cleanup remains authoritative.
+
+This is a narrower **actual Kubernetes policy-generation and revocation
+observer**, not the whole original R19 Local Lab. It uses the current run's
+Account reader and operations Principal, not the Lab's synthetic C/Y/D
+multi-Account fixture. It does **not** yet reproduce the old generation's
+existing keep-alive/direct-path Block matrix or publish new Account events
+while Query is stopped and prove bounded source catch-up. The focused Lab's
+Python runner, credential fixtures, safety negatives and documented entry
+therefore **remain required**; no Shell/Python deletion is justified by this
+partial handoff. Unit tests, static checks and task selection do not establish
+real two-Pod replacement. Both this new selected Jupiter observation and the
+Lab still need a fresh runtime result. Do not mark R19, P6, or
+`verifyAllScope` PASS; the tracked Shell/Python/Ruby counts are unchanged
+by this slice.

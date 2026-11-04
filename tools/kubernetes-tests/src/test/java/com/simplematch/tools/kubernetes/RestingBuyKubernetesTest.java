@@ -134,6 +134,8 @@ class RestingBuyKubernetesTest {
     try (var marketData = new KubernetesMarketData(context)) {
       marketData.verify(business);
     }
+    new KubernetesQueryPolicyReplacement(context).verify(account,
+        java.util.Objects.requireNonNull(sourceOrderId));
   }
 
   private void assertFacts(KubernetesBusinessEnvironment.PublicOrder context, Order order,
