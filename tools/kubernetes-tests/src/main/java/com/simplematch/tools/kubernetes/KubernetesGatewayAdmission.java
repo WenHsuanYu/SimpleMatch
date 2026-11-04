@@ -32,7 +32,7 @@ final class KubernetesGatewayAdmission {
         target.run().evidence().resolve(phase + "-management-forward.log"))) {
       final var result = open(forward.port(), Duration.ofMinutes(2));
       Files.writeString(target.run().evidence().resolve(phase + "-open.json"),
-          DiagnosticText.redact(result.toPrettyString()));
+          DiagnosticText.redact(result).toPrettyString());
       return result;
     }
   }

@@ -17,9 +17,9 @@ spec:
       ports:
         - protocol: TCP
           port: 443
-    # kind DNATs the in-cluster Kubernetes Service to the control-plane
-    # container. The control-plane address is allocated dynamically, so the
-    # canonical kind Docker network is the narrowest stable local allowance.
+    # kind DNATs the Kubernetes Service to its control-plane container.
+    # The local verifier replaces this baseline with the observed /32 address.
+    # Direct local deployments must check their kind network before applying it.
     - to:
         - ipBlock:
             cidr: 172.18.0.0/16

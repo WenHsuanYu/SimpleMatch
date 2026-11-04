@@ -67,16 +67,15 @@ final class KubernetesImages {
     final var client = kind.client();
     KindHealth.requireImageHeadroom(commands, context, client, run.evidence(), "before-import");
     final String helper = observeHelper(kind);
-    importImages(kind, run);
+    final List<String> workers = workerNodes(client);
+    importImages(kind, run, workers);
     Files.write(run.evidence().resolve("helper-image-identity.json"), json.writeValueAsBytes(
         Map.of("reference", helper, "host_index_id", identities.get(helper),
             "platform", "linux/amd64", "platform_config_id", configs.get(helper))));
     KindHealth.requireImageHeadroom(commands, context, client, run.evidence(), "after-import");
     KindHealth.requireStable(client, run.evidence(), "after-import");
     int number = 0;
-    for (var worker : client.read("get", "nodes", "-l",
-        "simplematch.io/node-pool=local-resilience", "-o", "json").path("items")) {
-      final String node = worker.path("metadata").path("name").asText();
+    for (String node : workers) {
       for (var image : identities.entrySet()) {
         if (!image.getKey().startsWith("simplematch-matching:") || matchingRuntime) {
           requireNodeIdentity(node, image.getKey());
@@ -103,7 +102,22 @@ final class KubernetesImages {
     return reference;
   }
 
-  private void importImages(KindEnvironment kind, VerificationContext run) throws Exception {
+  static List<String> workerNodes(KubernetesClient client) throws Exception {
+    final var workers = new ArrayList<String>();
+    for (var node : client.read("get", "nodes", "-o", "json").path("items")) {
+      if ("local-resilience".equals(node.path("metadata").path("labels")
+          .path("simplematch.io/node-pool").asText())) {
+        workers.add(node.path("metadata").path("name").asText());
+      }
+    }
+    if (workers.size() != 3 || workers.stream().anyMatch(String::isBlank)) {
+      throw new IllegalStateException("image import requires exactly three named workers");
+    }
+    return workers.stream().sorted().toList();
+  }
+
+  private void importImages(KindEnvironment kind, VerificationContext run, List<String> workers)
+      throws Exception {
     for (var image : identities.entrySet()) {
       if (image.getKey().startsWith("simplematch-matching:") && !matchingRuntime) {
         continue;
@@ -111,13 +125,18 @@ final class KubernetesImages {
       final var archive = kind.temporaryImageArchive();
       try (var exporter = new KubernetesImageArchive(commands, context, archive)) {
         configs.put(image.getKey(), exporter.save(image.getKey(), image.getValue()));
-        final var imported = commands.run(List.of("kind", "load", "image-archive",
-            archive.toString(), "--name", kind.cluster()), "", Duration.ofMinutes(3));
-        Files.writeString(run.evidence().resolve("image-import.log"),
-            "image=" + image.getKey() + " config=" + configs.get(image.getKey()) + "\n"
-                + DiagnosticText.redact(imported.output() + imported.error()),
-            java.nio.file.StandardOpenOption.CREATE, java.nio.file.StandardOpenOption.APPEND);
-        imported.checked();
+        for (String node : workers) {
+          // kind loads all nodes by default. Select one worker to bound import memory.
+          final var imported = commands.run(List.of("kind", "load", "image-archive",
+              archive.toString(), "--name", kind.cluster(), "--nodes", node), "",
+              Duration.ofMinutes(3));
+          Files.writeString(run.evidence().resolve("image-import.log"),
+              "image=" + image.getKey() + " node=" + node
+                  + " config=" + configs.get(image.getKey()) + "\n"
+                  + DiagnosticText.redact(imported.output() + imported.error()),
+              java.nio.file.StandardOpenOption.CREATE, java.nio.file.StandardOpenOption.APPEND);
+          imported.checked();
+        }
       }
     }
   }

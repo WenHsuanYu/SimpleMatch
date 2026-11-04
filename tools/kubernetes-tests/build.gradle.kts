@@ -21,8 +21,15 @@ dependencies {
     testRuntimeOnly(libs.junit.platform.launcher)
 }
 
-val scenario = providers.gradleProperty("kubernetesScenario").orElse("risk-command").get()
+val completeVerification = gradle.startParameter.taskNames.any {
+    it.substringAfterLast(':') == "verifyAll"
+}
+val scenario = providers.gradleProperty("kubernetesScenario")
+    .orElse(if (completeVerification) "resting-buy" else "risk-command").get()
 require(scenario in setOf("risk-command", "resting-buy")) { "Unsupported Kubernetes scenario" }
+require(!completeVerification || scenario == "resting-buy") {
+    "Complete verification requires the resting-buy Kubernetes business scenario."
+}
 val javaServices = if (scenario == "resting-buy")
     listOf("account-service", "risk-service", "persistence", "quickfix-gateway")
 else listOf("account-service", "risk-service")

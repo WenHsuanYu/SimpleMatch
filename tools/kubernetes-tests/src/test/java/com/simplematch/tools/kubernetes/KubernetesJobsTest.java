@@ -2,6 +2,7 @@ package com.simplematch.tools.kubernetes;
 
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 
 import java.nio.file.Files;
 import java.nio.file.Path;
@@ -31,6 +32,13 @@ class KubernetesJobsTest {
           "migration", new VerificationContext("run", temporary)));
       assertTrue(Files.isRegularFile(temporary.resolve("migration-job.json")));
       assertTrue(Files.isRegularFile(temporary.resolve("migration-pods.json")));
+      final String encoded = Files.readString(temporary.resolve("migration-pods.json"));
+      final var recorded = new com.fasterxml.jackson.databind.ObjectMapper().readTree(encoded);
+      final var flag = recorded.required("items").get(0).required("spec")
+          .required("automountServiceAccountToken");
+      assertTrue(flag.isBoolean());
+      assertFalse(flag.booleanValue());
+      assertFalse(encoded.contains("fixture-env-secret"));
       final String logs = Files.readString(temporary.resolve("migration-failed.log"));
       assertTrue(logs.contains("retry cause"));
       org.junit.jupiter.api.Assertions.assertFalse(logs.contains("fixture-secret"));
@@ -83,7 +91,9 @@ class KubernetesJobsTest {
     return Map.of("apiVersion", "v1", "kind", "Pod", "metadata", Map.of("name", name, "namespace", "scenario",
         "uid", name + "-uid", "labels", Map.of(OwnedNamespace.OWNER_LABEL, "run"),
         "ownerReferences", List.of(Map.of("kind", "Job", "uid", "job-uid"))),
-        "spec", Map.of("containers", List.of(Map.of("name", "main", "image", "fixture:tag"))),
+        "spec", Map.of("automountServiceAccountToken", false,
+            "containers", List.of(Map.of("name", "main", "image", "fixture:tag", "env",
+                List.of(Map.of("name", "OPERATOR_TOKEN", "value", "fixture-env-secret"))))),
         "status", Map.of("phase", phase, "containerStatuses", List.of(Map.of("name", "main",
             "state", Map.of("terminated", Map.of("exitCode", exit))))));
   }

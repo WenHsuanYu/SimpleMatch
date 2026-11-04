@@ -82,6 +82,7 @@ class RestingBuyKubernetesTest {
         awaitFile(fix.resolve("receipt.json"), finished);
         final var receipt = json.readTree(fix.resolve("receipt.json").toFile());
         assertEquals("A", receipt.path("execType").asText());
+        assertFixOrderIdentity(order, receipt);
         final var admission = postgres.await(legacy(context, "resting-buy-admission.sql"),
             variables, value -> "ACCEPTED".equals(value.path("state").asText()), Duration.ofSeconds(90));
         final var delivery = postgres.await(resource("/resting-buy/gateway-delivery.sql"),
@@ -133,6 +134,7 @@ class RestingBuyKubernetesTest {
     final var projection = durable.path("persistence");
     final var reservation = durable.path("account");
     final var events = durable.path("events");
+    assertFixOrderIdentity(order, completed);
     assertEquals(1, admission.path("count").asInt());
     assertEquals(1, admission.path("outboxCount").asInt());
     assertEquals(order.account().toString(), admission.path("accountId").asText());
@@ -148,7 +150,9 @@ class RestingBuyKubernetesTest {
     assertEquals(0, projection.path("fillCount").asInt());
     assertEquals(order.rule().boardLotShares(), projection.path("leavesQuantityShares").asLong());
     assertEquals(delivery.path("eventId"), projection.path("lastEventId"));
+    assertEquals(admission.path("orderId"), projection.path("orderId"));
     assertEquals(expectedOrders, reservation.path("reservationCount").asInt());
+    assertEquals(admission.path("orderId"), reservation.path("orderId"));
     assertEquals(admission.path("reservationId"), reservation.path("reservationId"));
     assertEquals("RESERVATION_STATUS_ACCEPTED", reservation.path("status").asText());
     final var notional = BigDecimal.valueOf(order.instrument().referencePriceUnits(), 4)
@@ -162,6 +166,13 @@ class RestingBuyKubernetesTest {
     assertEquals(events.path("persistencePayloadSha256"), events.path("accountPayloadSha256"));
     assertEquals(events.path("persistencePayloadSha256"), events.path("quickfixPayloadSha256"));
     assertEquals(0, events.path("quarantineCount").asInt());
+  }
+
+  private static void assertFixOrderIdentity(Order order, JsonNode report) {
+    // FIX tag 37 is Gateway's durable WAL identity; Risk uses a distinct UUID.
+    assertEquals("O-" + order.clOrdId(), report.path("orderId").asText());
+    assertEquals(order.clOrdId(), report.path("clOrdId").asText());
+    assertEquals(order.account().toString(), report.path("accountId").asText());
   }
 
   private void verifyDelayedOrder(KubernetesBusinessEnvironment.PublicOrder context,

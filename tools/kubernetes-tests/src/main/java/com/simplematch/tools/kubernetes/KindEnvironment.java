@@ -102,7 +102,12 @@ final class KindEnvironment {
   }
 
   Path temporaryImageArchive() throws java.io.IOException {
-    return Files.createTempFile(privateDirectory, "helper-", ".tar");
+    final Path directory = run.evidence();
+    final String fileSystem = Files.getFileStore(directory).type();
+    if (java.util.Set.of("tmpfs", "ramfs").contains(fileSystem)) {
+      throw new IllegalStateException("image archives require disk-backed evidence storage");
+    }
+    return Files.createTempFile(directory, "image-", ".tar");
   }
 
   KubernetesClient client() {

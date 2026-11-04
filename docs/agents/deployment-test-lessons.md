@@ -8,374 +8,57 @@ that those failures are expected to recur.
 
 ## Run preflight
 
-The RF3 CDC fixture exposed a Connect timing mismatch after all brokers stopped.
-The worker lost group membership and received an empty assignment with `delay=300000`.
-The default [cooperative rebalance delay](https://kafka.apache.org/43/kafka-connect/administration/)
-exceeded the fixture's 90-second recovery bound.
-The single-worker fixture now sets `CONNECT_SCHEDULED_REBALANCE_MAX_DELAY_MS=0`.
-It has no absent peer that needs delayed reassignment.
-The existing RF3 scenario holds the outage for 30 seconds so host shutdown speed cannot hide membership expiry.
-Keep the `RUNNING`, exact publication, actual crash/redelivery, and owned-cleanup assertions.
-Do not mask this delay with a longer observer wait or a connector restart.
-The [original CI failure](https://github.com/WenHsuanYu/SimpleMatch/actions/runs/41336494755/job/124937325562)
-reported `UNASSIGNED`. Local diagnostic `issue201-cdc-repro-r2` reproduced the empty delayed assignment
-and missing physical publication. The identical diagnostic passed in `issue201-cdc-repro-r3` after only the worker setting changed.
-Their redacted logs and test results remain under `.scratch/`.
-
-The first fresh S3 Desktop cluster also exposed the helper variant of DT-014/DT-017.
-The ten prepared business images imported successfully in an isolated diagnostic, but
-`kindest/local-path-helper:v20260131-7181c60a` failed through the default multi-platform import
-with missing layer `sha256:959433f9f27b9fe6ab8867d229431c2fefa961c9d624acbb3aa14939bc491a89`.
-An explicit `docker image save --platform linux/amd64` archive imported successfully, and CRI's
-config digest matched its exact config bytes. Use a platform-specific export for every selected image, validate its actual config digest,
-and execute it on every eligible worker before deployment or PVC creation. Preserve the failed run in
-`out/verification/s3-disposable-r5` and diagnostics in `s3-image-import-diagnostic-r{1,2,3,4}`;
-none is business PASS. Desktop also translates kind's bind Source from `/tmp/...` to
-`/host_mnt/tmp/...`; owner validation accepts this exact translation only on Desktop while retaining
-read-only, full run identity and original node-ID checks. Focused negative tests reject writable,
-foreign-run and wrong-context mounts.
-
-The reviewed S3 attempt `out/verification/s3-acceptance-disposable-r3` exposed the same failure
-outside the helper path: the normal all-platform import failed with missing content digest
-`sha256:1464d11a6f842657624811ea9edb070d105be0bf28a2aa6903021b396def5e5a`.
-Its diagnostics and exact namespace/node cleanup passed; business assertions did not execute.
-An offline Kafka export independently contains absent ARM64 and attestation manifest descriptors.
-The host adapter now uses the same `linux/amd64` archive exporter for every selected image, binds
-its config bytes to the unchanged host reference, and compares that config with the node's CRI
-identity. A filtered archive's index need not equal the original multi-platform host index.
-Validate the corrected export/import path with a focused diagnostic before another full scenario.
-The actual Pod may report the filtered archive's index digest under containerd's generated
-`import-<date>` name. Later imports can replace that name. Resolve the reported digest directly
-from the original node's content store, verify the bytes, select its sole `linux/amd64` manifest,
-and compare the config digest with the source-verified archive. A mutable tag lookup cannot
-establish which content the Pod executed.
-
-The retained S3 R5 deployment completed all image probes, bootstrap Jobs and application rollouts,
-but connector registration through the API Service Proxy timed out. This was a deterministic
-management-path mismatch: the Connect ingress policy permits Connect Pods on port 8083, while the
-API server originates on the control-plane node. Live kindnet enforced that policy. Control-plane
-curl timed out; the target Pod's worker, Pod-forward and Pod-local REST all succeeded. Do not
-increase the timeout or weaken the policy. Use an owned Ready Connect Pod's local REST client,
-compare an existing connector configuration, and resolve an uncertain POST by observation rather
-than blindly resubmitting it. The current Jupiter business assertion passed on the same retained
-runtime in `out/verification/s3-retained-business-diagnostic-r1`; this is diagnostic-only and does
-not upgrade R5's failed report. Validate the permitted management path before the next full run.
-
-The S3 host-capacity gate also stopped before creation when the user-level Gradle configuration
-reserved a 2 GiB initial heap (`-Xms2g`). At that time the selected RM-1 requests were 8.125 GiB steady
-plus 512 MiB for the verifier and 4 GiB for kind/control-plane reserve: 12.625 GiB in total.
-The reviewed profile removes unused Redis and now requires 8 GiB steady, 12.5 GiB with that reserve.
-Use a bounded Gradle heap for this focused run, then check available memory from inside the running
-Gradle/Jupiter invocation. The preflight error reports the measured memory and CPU values; do not
-lower Kubernetes requests or bypass the gate to compensate for build-tool memory.
-On Desktop, the workload budget belongs to the guest memory pool. A later preflight stopped
-with 7.882 GiB host availability while the guest had approximately 35 GiB available. Requiring
-the full budget in both pools counted the VM's allocated memory twice. The adapter now observes
-current guest availability through a new bounded, read-only container, requires the unchanged
-12.5 GiB there, and keeps a separate 1 GiB host-tool headroom check. Native Docker still requires
-the complete budget in host availability. Insufficient guest, host, CPU or configured memory
-remains a failure; no Desktop setting is changed.
-
-The first S3 Docker Desktop run failed during kind node creation because the ownership marker
-was under host `/tmp`, which was not shared with the Desktop VM. kind removed its partial nodes;
-the run remains FAIL with successful cleanup in `out/verification/s3-disposable-r1`.
-The owner requires the private marker and kubeconfig to remain under `/tmp`. Share only
-`/tmp/simplematch-kubernetes-coordination` with Desktop, keep private permissions and exact per-run
-ownership, and confirm that sharing is active before creation. Do not weaken cleanup ownership
-checks or share all host temporary files.
-
-
-The S2 CDC restart test found that Docker reallocated an ephemeral host port after a
-container stop/start. Kafka retained its originally advertised address, so a running broker
-remained unreachable. The isolated regression observed port `32806` change to `32807`.
-The test now binds a run-selected loopback port for the lifetime of each Kafka and Connect
-container. A competing bind fails startup. Before fault injection, verify the actual binding.
-After restart, require that binding and the real broker/connector interfaces to recover.
-The original failure remains in `out/verification/s2-a-r1/rf1-development-lock-update.log`.
-The port regression and its correction are in `kafka-restart-diagnostic-resolved.log` and
-`kafka-restart-diagnostic-fixed.log` in the same directory.
-
-
-The S2 PostgreSQL harness initially allowed convention tests and nested Gradle migration tasks
-to use generated plugin output concurrently. Eight convention tests failed with missing plugin
-classes, although the class files and JAR existed after execution.
-The harness now completes the included build's tests before starting its nested migration tasks.
-The ordered complete entry passed twice. Preserve the failed run in
-`out/verification/s2-b-r1/final-run1.log` and the ordered results in `final-run2.log` and `final-run3.log`.
-Before changing nested Gradle execution, verify this dependency ordering and run the complete entry.
-
-The 2026-10-28 Redis fixture preparation failed before container startup.
-The host OpenSSL reported CLI version 3.0.13 and library version 3.5.5.
-An isolated `req -x509 -addext` probe reproduced SIGSEGV (exit 139).
-The fixture now signs its untrusted certificate through a CSR and an extension file.
-Check every OpenSSL exit status before starting the tests. A partial certificate file does not establish success.
-
 Before applying deployment resources or injecting a deployment fault:
 
 1. Read the lessons below and run every prevention check that applies to the selected profile.
-2. Confirm the Docker daemon, canonical kind cluster, Kubernetes context, namespace, and expected
-   worker topology before selecting any Pod, Node, container, image, PVC, or topic.
-3. Resolve runtime identities from the deployed artifact and API objects. Do not substitute a unit
-   test fixture, expected ordinal, or remembered symbol for an observed assignment.
-4. Confirm that the run has an isolated namespace and clean, run-owned evidence directory. Reuse
-   an existing runtime only through a documented focused diagnostic with current source, image,
-   input, and namespace ownership checks. Full certification requires a new run directory.
-5. Inventory Docker resources and generated caches before and after the run. Cleanup must preserve
-   active resources and remove only exact run-owned disposable resources.
-6. Select an explicit trading day and readable approved delivery manifest before expensive builds.
-   A historical artifact must retain its original day; never relabel it or adjust the host clock.
-7. For kind-loaded helpers, compare matching identity types: Docker's immutable `.Id` may identify
-   an image config or an OCI index, while CRI `.status.id` identifies the config. When they differ,
-   verify the exact reference's containerd target digest instead. Require an execution probe on
-   every eligible worker as well; metadata equality alone cannot prove usable content.
-
-If a preflight check fails, stop before fault injection and record the result as an environment or
-precondition failure. Do not make the test green by changing Kafka offsets, deleting authoritative
-data, weakening fail-closed behavior, or guessing a replacement target.
-
-The #162 preflight found a missing current-day approved manifest, an unset image-reference argument
-in the fleet wrapper, and a false verifier identity rejection caused by comparing an OCI index
-with an image config. The safe corrections are explicit historical artifact selection, the existing
-image-transport resolver, and typed digest comparison plus execution probes. Checked-in command and
-identity baselines cover the latter two corrections. Preserve the original failed reports in
-`out/certification/issue-162-deployment-20261007-r1`, `issue-162-deployment-20260827-r3`, and
-`issue-162-runtime-baseline-20260827-r3`; they remain diagnostic failures, not business-flow evidence.
-These corrected deterministic defects are not recurring platform failures in the table below.
-
-The #164 run found two corrected shell-less-image observation mistakes. An initial
-node execution probe assumed every image provided `/bin/sh`; the normalized
-Paketo runtime did not. The safe probe uses its observed Java binary for Spring
-images and retains shell execution for helper images, after immutable identity
-comparison. The original failed report remains in
-`out/certification/issue-164-deployment-20260827-r2`; corrected probes execute on
-every eligible worker before workload application. The first recovery scenario
-then failed before restart because Gateway also lacks `cat`. Its retained FAIL
-is `out/certification/issue-164-gateway-recovery-20260827-r1/verdict.json`.
-The observer now reads only the two named files from the verified, bound
-kind-local PV on the actual owner node, with node/container ownership, mount,
-storage-root and deadline checks. Redaction tests and a read-only deployed
-observation cover that seam; no shell, schema or production endpoint was added.
-These are corrected verifier assumptions, not evidence of runtime corruption
-and not recurring platform failures in the table below.
-
-The #193 focused Query lifecycle completed its full synthetic Lab acceptance at source
-`f0cbe62` in `out/verification/issue-193-lifecycle/runtime-r13`. The
-[runbook](../../services/docs/query-service/lab-policy-lifecycle.md) records the measured
-revocation, recovery and teardown boundaries. The owner-approved retention scope keeps
-one complete successful run with consolidated validation/delivery evidence; corrected raw
-failures and intermediate directories are not retained acceptance evidence. Their original
-symptoms and fixes remain in Git history.
-
-The executable preflight and fast regressions now cover the known deterministic adapter
-boundaries: offline effective-manifest resources/keys/mounts and artifact `file:` URIs,
-actual producer timeout configuration, versioned Flyway history rather than a blind row
-count, unique worker slots and bounded command lifetimes. Platform-specific image export,
-typed digest comparison and execution on every eligible worker cover DT-014/DT-017.
-Raw containerd probes record exact ownership before launch and verify task/container/snapshot
-cleanup even when no namespace has yet been created.
-
-The first #194 full deployment at `6ceccbd` passed platform provisioning and migrations but
-Query failed with `unsupported Query security policy schema` and Gateway failed with
-`FIX requires explicit SocketKeyStorePassword`. The uploaded immutable Secret bytes were
-correct. Spring Cloud Kubernetes 5.0.2 defaults **Secret** reads to `BATCH`, independently of
-`config.read-type: SINGLE`; BATCH attempted LIST while these service accounts allow only GET
-of their named Secrets. The optional Secret failure left the security properties absent.
-The narrow correction explicitly sets `secrets.read-type: SINGLE` for Query and Gateway,
-preserving GET-only RBAC. Before another dependent deployment, run
-`KubernetesNamedSecretsContractTest` and `NamedSecuritySecretContractTest`: the former binds
-both actual service YAMLs and invokes the real Secret locator against a named-GET-only API;
-its negative reproduces LIST/403 when the setting is omitted. The latter independently checks
-the service-named property-file format. A parser-only test cannot prove the API read contract.
-The owner subsequently authorized removal of old local reports. The original failure remains a
-failure; its symptom, correction and source history are retained here rather than relabeled PASS.
-
-The final #194 lifecycle preflight also stopped before namespace creation when a new image build
-raised worker image-filesystem use from 74% to the 75% gate. Clearing inventoried, unreferenced Pack
-caches and one obsolete native-build cache restored 72%, while every image and application data
-volume remained intact. Check headroom **after builds**, before image loading or workload creation;
-reuse the completed image-build phase when retrying the fresh lifecycle gate. The previously passed
-full Query/placement gates need no rerun for this environment-only cleanup.
-
-For shutdown verification, a completed normal drain is valid; a test must not require an
-artificially live JVM afterward. A removed Pod IP may time out after its server has stopped.
-Accept positive transport rejection or independently verified CRI/task/original-PID fencing,
-record the mechanism, and never accept timeout or unknown runtime state alone. Direct probes
-bypass HTTP proxies and preserve indeterminate diagnostics privately. The 20s drain and 90s
-stop-verification limits remain separate; restart-inclusive catch-up retains its 120s limit.
-
-The second #164 recovery run completed the owner replacement and protocol/business
-observations but the strict verifier rejected `FIX.4.4 `: PostgreSQL had padded
-the existing `CHAR(8)` BeginString during JSON serialization. The read-only SQL
-now casts only that field to `text`; schema, session contents and verifier
-conditions are unchanged. PostgreSQL CI diffs the actual query output against a
-checked-in identity baseline using a rollback fixture that also preserves a
-significant trailing space in `VARCHAR`. Preserve
-`out/certification/issue-164-gateway-recovery-20260827-r2/verdict.json` as FAIL with
-successful restoration, not corrected deployed PASS evidence.
-
-A retained #164 deployment was also ineligible after the configured local 23:59
-automatic close: all 15 Risk session barriers were closed and Matching was no
-longer Ready for trading. Preserve the read-only diagnostic in
-`out/certification/issue-164-r4-closed-precondition-20261008`; no Gateway fault was
-injected. Start a fresh source-aligned disposable deployment in an eligible time
-window rather than changing the clock, reopening closed barriers or disabling
-automatic close. A historical trading artifact does not bypass the real local
-operations schedule.
-
-The #164 remote-delivery contracts failed on 2026-10-08 because the CDC input
-manifest test assumed a locally built native validator existed in a clean CI
-checkout. The CDC assertions now belong to
-`scripts/test-local-certification-artifact-fingerprint.sh`, which already owns
-an isolated repository and validator fixture; the live observer still checks
-and executes the real validator. Before delivery, run the workflow's contract
-commands from a clean checkout without generated native build output. Preserve
-the [original failed CI](https://github.com/WenHsuanYu/SimpleMatch/actions/runs/37720241668)
-as a test-fixture failure, not a deployed CDC failure.
-
-The first #168 remote lifecycle-contract run stopped with exit 127 because
-the new adapter test used optional `rg` to check a fixed error-message string.
-The runner did not provide ripgrep. Use standard `grep -Fq` for that literal
-assertion; do not add a CI package dependency or weaken the conflicting-option
-check. Run the adapter test with a tool PATH that excludes `rg` before delivery,
-then run the workflow's complete contracts. Preserve the
-[original failed CI](https://github.com/WenHsuanYu/SimpleMatch/actions/runs/37897697115)
-as test portability evidence, not a deployed Matching recovery failure.
-
-The first #162 resting-buy run reached the real command, `ORDER_RESTED`, and durable business
-effects but failed because the verifier equated the FIX Pending New `O-<ClOrdID>` WAL identity
-with Risk's derived order UUID. The corrected fixture checks the actual protocol identity and
-keeps account/ClOrdID correlation plus every downstream UUID equality; the fast verifier test
-must pass before deployment. Preserve `out/certification/issue-162-resting-buy-20260827-r4`
-as FAIL with successful restoration, never relabeling captured observations as a new run.
-
-The first #168 Matching recovery run reached real owner replacement, a new FIX
-cancel and controlled Kafka redelivery, but its verifier compared runtime
-`owner_id` with the Pod name alone. Matching actually identifies each execution
-as `<Pod name>:<Pod UID>` through the downward API and lease holder identity.
-The safe fix binds runtime evidence to the observed replacement UID; fixtures
-reject the old UID, another UID and an unqualified Pod name. Run the fast Ruby
-verifier tests before deployment. The captured trace also passes the corrected
-verifier in a separate offline diagnostic, not as deployed certification.
-Preserve `out/certification/issue-168-matching-recovery-20260827-r1/verdict.json`
-as FAIL with successful restoration; rerun against fresh source-aligned
-prerequisites without modifying business data, offsets or the failed report.
-This corrected verifier assumption is not a recurring runtime defect.
-
-The 2026-10-18 current-runtime verification preparation reproduced a handoff mismatch before
-deployment: the full-local report producer writes `PASSED`, but the resting-buy deployment verifier
-accepted only `PASS` or `PARTIAL`. Its existing public verifier test now consumes the real report
-producer's output; the original red result was `deployment completion does not match the resting-buy
-contract`. The fix accepts `PASSED` while preserving required phase, manifest, fingerprint and source
-checks. Negative fixtures reject failed, unknown, empty and duplicate statuses, plus missing/failed
-dependencies under both `PASSED` and `PARTIAL`. Run these regressions before dependent business
-verification. This is a corrected verifier vocabulary mismatch, not a deployed trading failure.
-
-The 2026-10-18 complete run stopped at `kubernetes-migrations`: all eight retained failed Flyway
-Pod logs recovered on 2026-10-19 show `BUILD FAILED` and Maven Central `UnknownHostException`
-before the Job deadline. PostgreSQL init probes accepted connections. The image seeded only the
-Gradle wrapper, so every fresh Pod still needed external build/plugin dependencies before SQL could
-run. Preserve `out/certification/current-runtime-20261018-r1` as FAILED and the recovered logs in
-`out/verification/current-runtime-20261019/preflight/all-flyway-logs`; the later host reboot did not
-cause the original failure. Current DNS success does not establish its historical availability.
-Prepare the complete migration dependency seed during image build and require the real entrypoint
-to migrate and repeat safely from a new writable cache with external repository access disabled.
-Missing seed must fail closed. Verify the existing owner/schema variants against disposable
-PostgreSQL before another full run; changing SQL, deadlines or network policy cannot substitute for
-this check. This dependency-packaging defect belongs to the image's deterministic validation.
-The corrected image passed all six owners twice against fresh PostgreSQL with a read-only root,
-new writable caches, a 2 GiB container limit and external access disabled. The 39 versioned
-migrations, unchanged repeat histories and shared-schema contracts passed; retain the diagnostic
-results in `out/verification/current-runtime-20261019/flyway-image/runtime-r2` separately from the
-subsequent complete deployment certification.
-
-The same preparation also found that CRI normalizes short image references while containerd
-execution needs the exact observed reference, and that a repository-prefix filter can include a
-shell-less application image among helper probes. Select helper/dependency images from the
-canonical inventory, resolve their observed containerd references, then execute each pinned helper
-on every eligible worker. Preserve those initial probe diagnostics separately from runtime image
-corruption; the corrected helper probes passed before the original deployment.
-
-The first dependent Query attempt after the 2026-10-19 aggregate stopped before releasing its
-public FIX order because the system observer read the old
-`/var/lib/simplematch/matching/runtime-metrics.json` path. All 15 deployed Matching containers
-explicitly configured `MATCHING_METRICS_PATH` under `/var/run/simplematch/matching/`; those files
-were fresh and reported Ready/Open. The deployment had moved runtime observations to a shared
-temporary volume, but four certification reads still used the former persistent-volume path.
-Resolve the path from the observed Matching Pod configuration through the shared reader contract;
-reject missing, duplicate or unsupported paths rather than falling back to a possibly stale PVC
-file. Regression checks must exercise the actual capture adapter, including both explicitly
-configured supported paths. Preserve `out/verification/current-runtime-20261019/gates/query` as
-FAIL with successful cleanup. This deterministic observer defect is separate from the preceding
-host OOM event and belongs to the reader's source validation.
-
-The 2026-10-20 Query attempt reached Risk acceptance and a resting Matching order, but its
-prepared FIX client closed after Pending New, before the asynchronous final delivery. Keep
-`out/verification/current-runtime-20261020/r4/gates/query/matching-fixture/buy/verdict.json` as FAIL;
-the parent aggregate's 62 PASS results remain a separate claim. Positive certification clients
-must retain their session until the runner observes the correlated durable SENT intent and the
-client receives that exact ExecID. Preserve receipt-only fault scenarios and their recovery
-protocols. Before the next deployment, require a real FIX regression with delayed final delivery,
-an unrelated ExecID, and the original receipt-only behavior, plus adapter checks rejecting PENDING
-or unrelated completion evidence. Sequential submissions to the same Gateway CLIENT identity
-must retain initiator sequence state; cleanup may remove only runner-owned temporary stores.
-Never reset session ledgers, mark intents SENT manually, or extend timeouts to mask this defect.
-Query EXIT reporting must retain the root evidence directory even while a fixture changes its
-working evidence scope. This is a corrected certification-client defect, not a recurring platform
-failure.
-
-Before dependent scenarios, verify that the retained trading window is still OPEN. The earlier
-aggregate's runtime had automatically closed at 23:59 while execution was interrupted; its PASS
-evidence was preserved, and a fresh run used the approved artifact's original trading day without
-changing the host clock or reopening a closed barrier. Before that fresh deployment, an idle
-Desktop VM still retained most host memory after the owned namespace and PVC cleanup. Only after
-confirming no application namespace/PV remained, the same Desktop service was restarted once;
-the daemon identity, canonical four nodes, registry, 21 volumes and 40 images were preserved.
-Repeat control-plane stability and all 15 helper execution probes after such a restart, and record
-host available memory and swap before starting another resource-intensive run.
-
-The 2026-10-20 R5 Query scenario received the actual final IOC cancellation and completed
-Risk, Matching, Account and projection processing, but its strict verdict correctly failed:
-the active-evidence producer copied the initial PendingNew receipt with empty terminal fields,
-and restoration compared an absent `riskQuarantines` field with zero. Preserve the original
-`out/verification/current-runtime-20261020/r5/gates/query/verdict.json` as FAIL. Bind the real
-completed FIX report to the original receipt and the exact SENT delivery intent before copying
-terminal metadata; retain the initial receipt identity. Consume the existing
-`critical_consumer_state_is_healthy` contract for restoration and explicitly propagate observer
-failures when the producer is called in an OR-list. Before deployment, run the actual producers
-through the unchanged nine-check verdict, including unrelated or incomplete completions, missing
-required health fields, pending delivery and observer nonzero exit. A corrected producer replay
-of retained data is diagnostic evidence only; it does not replace a source-aligned deployed run.
-
-The same run's Market Data and Streamer scenarios exited zero, but immediate external binding
-snapshots observed both new Ready Pods and old terminating Pods after restoration. Keep those
-failed snapshots, wait for the observed terminating Pods to disappear within a bounded window,
-then capture a new snapshot using the unchanged replica, ownership and image checks. Do not
-rerun a successful scenario or relax replica validation to conceal an observer timing error.
-The Streamer replacement acknowledgement intentionally has a zero-byte marker file; an independent
-audit must check that explicit signal exists while still checking nonempty client reports,
-actual two-snapshot recovery, group assignments and replacement timing. Preserve the original
-failed audit separately from its corrected read-only audit.
+   Confirm the Docker daemon, canonical `kind-simplematch-live` cluster, Kubernetes context,
+   namespace, and expected topology of one control plane and three labelled workers.
+2. Resolve runtime identities from deployed artifacts, live API objects, and node content before
+   selecting any Pod, Node, container, image, PVC, or topic. Do not substitute a unit-test fixture,
+   expected ordinal, or remembered symbol for an observed assignment.
+3. Require an isolated namespace and clean, run-owned evidence directory for full certification.
+   Reuse an existing runtime only through a documented focused diagnostic with current source,
+   image, input, and namespace ownership checks; do not promote offline diagnostics to deployed PASS.
+4. Inventory Docker resources and generated caches before and after the run. Remove only exact,
+   run-owned disposable resources; preserve authoritative data, Kafka offsets, and fail-closed
+   behavior rather than changing them to make a failed run green.
+5. Select an explicit trading day and readable approved delivery manifest before expensive builds.
+   Verify that the actual trading window and barriers remain OPEN before dependent scenarios.
+   A historical artifact retains its original day: never change the host clock or reopen closed barriers.
+6. For kind-loaded images, compare matching identity types: Docker's `.Id` may be an image config
+   or OCI index, while CRI `.status.id` identifies a config. Resolve exact containerd content when
+   needed and run an execution probe on every eligible worker. Do not assume shell-less images
+   provide `/bin/sh`.
+7. On Docker Desktop, check the VM guest workload budget separately from host tool headroom; do
+   not count VM-allocated memory twice. The source's selected profile required 12.5 GiB guest
+   availability and 1 GiB host-tool headroom; verify the current profile before using these limits.
+   Native Docker must meet the complete workload budget in host availability.
+8. Before creating kind on Desktop, confirm that only the required private coordination directory,
+   `/tmp/simplematch-kubernetes-coordination`, is shared with the VM. Retain private permissions
+   and ownership checks; do not share all host temporary files.
+9. Check worker image-filesystem usage and kubelet GC headroom again **after image builds**, before
+   image loading or workload creation. Also inspect host `MemAvailable`, swap, guest capacity, and
+   control-plane stability. Use the limits and deadlines specified by the current deployment profile.
+10. If any preflight check fails, stop before fault injection and record an environment or
+    precondition failure. Do not guess replacement targets, alter offsets or authoritative data,
+    weaken assertions, or extend timeouts to hide a deterministic defect.
 
 ## Recurring lessons
 
 | ID | Symptom | Root cause | Prevention check | Safe fix | Last verified |
 | --- | --- | --- | --- | --- | --- |
-| DT-002 | Kubernetes commands fail, or the API refuses connections | Docker is stopped, the kind cluster is absent, or the active context is not canonical | Run `docker info`, verify `kind-simplematch-live`, verify the current context, and verify one control plane plus three labelled workers before deployment work | Restore the daemon or select the verified canonical context in a run-scoped `KUBECONFIG`, preserving the user's default context; do not recreate or delete resources during a failed preflight | 2026-10-09 (redacted: #168 continuation found inactive Desktop and refused kind API, restarted the same daemon and verified the unchanged canonical topology; the user's default context remained `docker-desktop`. The interrupted r2 run could not resume its completed FORBID open-barrier phase, so r3 used fresh prerequisites.) |
+| DT-002 | Kubernetes commands fail, or the API refuses connections | Docker is stopped, the kind cluster is absent, or the active context is not canonical | Run `docker info`, verify `kind-simplematch-live`, verify the current context, and verify one control plane plus three labelled workers before deployment work | Restore the daemon or select the verified canonical context in a run-scoped `KUBECONFIG`, preserving the user's default context; do not recreate or delete resources during a failed preflight | 2026-10-09 (redacted: #168 continuation, canonical kind topology and Docker Desktop recovery) |
 | DT-005 | Native configure or image build is killed by the host | Parallel compilation exceeds the local memory budget | Check available Docker/host memory and use the documented bounded parallelism for the selected preset before starting the build | Lower build parallelism or adjust the local resource budget; do not misclassify exit 137 as a source failure | 2026-08-15 |
 | DT-010 | PostgreSQL and dependent workloads enter CrashLoopBackOff after Docker/kind recovery, or Docker Desktop metrics temporarily report zero CPUs | Docker Desktop retained a virtual-disk limit larger than the relocated host filesystem, then its sparse `Docker.raw` consumed all user-available ext4 blocks; local-path PVC requests are logical reservations rather than preallocated capacity | Before production-like work, require at least 40 GiB of host-usable space and require the Desktop disk limit to remain at or below 75% of its host filesystem; keep the existing worker `/var` and PVC-envelope checks | Inventory exact owners before cleanup; reclaim only unreferenced resources, and recreate or resize the Desktop disk only with explicit acknowledgement that shrinking discards its containers, images, volumes, and kind clusters | 2026-09-16 (redacted: Docker Desktop settings log and host filesystem measurements) |
 | DT-012 | A newly created kind control plane never becomes healthy and kubelet reports `overlay ... invalid argument` while creating Pod sandboxes | Docker's relocated data root was on an NTFS filesystem; images remained readable, but nested containerd overlay mounts used by kind could not be created reliably | Before creating kind, verify `docker info` storage root and `findmnt -T <DockerRootDir>`; require a Linux filesystem such as ext4 for the Docker data root and verify a disposable nested container before deployment | Move Docker data to a Docker Desktop-supported Linux VM disk or Linux filesystem, restart the daemon, delete only the failed canonical cluster, and rerun the repository cluster preflight | 2026-08-15 |
 | DT-014 | A kind helper Pod reports `/bin/sh: exec format error` after Docker data relocation | The relocated Docker image store retained a platform-resolution state that was not usable by the nested kind/containerd runtime, even though the image metadata appeared to be amd64 | Before deployment, verify the helper image can execute a minimal `/bin/sh -c true` on every canonical worker and verify the exact local image is exportable as `linux/amd64` | Rebuild or flatten only the exact helper image from its verified amd64 child manifest, load it into the canonical cluster, and rerun the affected phase; do not reset the Docker store or prune the cluster | 2026-08-15 |
 | DT-017 | BootBuildImage fails with a run-image platform/export error after Docker data relocation | A multi-platform Paketo tag resolved through an image index that the relocated local store could not export for the requested amd64 platform | Before BootBuildImage, verify host architecture, local run-image OS/architecture, and `docker image save --platform linux/amd64` for the exact reference | Use the verified amd64 local recovery reference or flattened image with `IF_NOT_PRESENT`; keep the canonical registry reference unchanged and never use broad Docker prune as repair | 2026-08-15 |
 | DT-025 | A retained KRaft topic-provisioning Job times out after a broker sandbox/runtime recreation, while the affected broker remains in CrashLoopBackOff with `UnknownHostException` for peer headless-service names | The broker-side runtime was recreated while the Kafka quorum was active; the affected JVM retained a negative peer-DNS result even after EndpointSlice records and `getent` recovered, so provisioning could create early topics but could not complete the retained topic set | Before provisioning and after any node/runtime disruption, resolve each `kafka-{0,1,2}.kafka-headless` name from a broker-side probe and require all three broker startup/readiness probes to pass continuously | Restart only the affected broker Pod after peer DNS is confirmed, preserving its retained PVC; if the scoped restart does not converge, stop and rebuild the canonical cluster through `manage-simplematch-live.sh` rather than changing Kafka data or offsets | 2026-08-31 (redacted: `out/certification/fresh-20260828-0827/kafka-failure/one-broker-loss/matching.commands.topic.txt`) |
-| DT-028 | A fresh production-like run times out at `kafka-connect` rollout after five minutes, while the connector Pods later become Ready without restarts | The first kind run had to pull and unpack the pinned roughly 1 GB Debezium image from Quay; the repository's 300-second rollout wait expired before the cold pull completed, so the timeout was an image-cache/startup-window failure rather than a connector application failure | Before applying workloads, verify the exact pinned Debezium image is available and executable on every eligible kind worker, and record whether the run is cold-cache or warm-cache; treat a cold pull that exceeds the rollout window as a precondition failure | Let the exact pinned image pull complete or pre-pull it through the verified worker runtime, then rerun the retained run without changing Kafka data, offsets, or connector semantics; preserve the timeout diagnostics | 2026-08-31 (redacted: `out/certification/issue-137-query-20260831-desktop-r1/logs/kubernetes-risk-outbox-connector.log`) |
+| DT-028 / DT-038 | A fresh run times out during `kafka-connect` rollout or `matching-fixture-publisher` readiness; the same pinned image later becomes Ready/Completed | A cold kind worker must pull and unpack the Debezium or native Matching image; the original 300-second Connect rollout or 120-second Matching fixture wait ends before image preparation finishes, without evidence of image corruption | Before workload application, verify the exact immutable image digest is executable on every eligible worker and record cold/warm cache state. Retain the bounded 600-second first-use Matching fixture wait; classify a Connect cold pull exceeding its rollout window as a precondition failure | Allow the same pinned image to finish pulling or pre-pull only that verified identity, then rerun the source-aligned phase. Preserve the timeout evidence; do not change Kafka data, offsets, connector semantics, or image identity | 2026-09-16 (combined: DT-028, 2026-08-31, `out/certification/issue-137-query-20260831-desktop-r1/logs/kubernetes-risk-outbox-connector.log`; DT-038, 2026-09-16, `out/certification/issues-158-159-20260916-r1/logs/kubernetes-open-barriers.log`) |
 | DT-029 | A clean Desktop kind cluster repeatedly places kube-controller-manager and kube-scheduler in CrashLoopBackOff, or namespace cleanup remains pending, while the application namespace is empty | Docker Desktop VM I/O stalls etcd's linearizable reads and lease transactions; the control-plane components lose their leases and fail their local probes even though etcd may later report Ready, so this is an environment stability failure rather than an application workload result | Before applying deployment resources or starting cleanup, require controller-manager, scheduler, and etcd to be Ready with unchanged restart counts across a bounded stability window, verify `/readyz?verbose`, and inspect recent control-plane events for lease timeouts or probe failures | Preserve the control-plane and etcd diagnostics, allow a bounded recovery, then rebuild only the canonical cluster through `manage-simplematch-live.sh` when the failure repeats; do not force-finalize namespaces, edit Kafka data, or reinterpret a run started during the unstable window | 2026-09-14 (redacted: Docker Desktop backend IPC `/ping` repeatedly timed out; controlled restart could not stop the VM) |
 | DT-034 | A source-aligned production-like run stops during the Matching image build with `rpc error: code = Unavailable desc = error reading from server: EOF` | Docker Desktop's BuildKit server was shut down while the vcpkg/Protobuf build was streaming; the application build had not produced a source or test failure | Before a long image build, require `docker info` and the selected BuildKit builder to be healthy, and keep Docker Desktop running until the command exits; classify a daemon shutdown as an environment precondition failure | Reopen Docker Desktop, wait for the Docker API and builder health checks to pass, then rerun the complete source-aligned run with a new evidence directory; do not promote partial build output to deployment evidence or alter source/build semantics | 2026-09-01 (redacted: `out/certification/issue-137-query-20260901-prod-final4/logs/local-image-build/matching.log`, Docker Desktop build log) |
-| DT-036 | Risk-service and QuickFIX Flyway Jobs are first recorded as `OOMKilled` under the local 2 GiB container limit, then succeed on the Job retry with the same image | A cold Gradle/Kotlin process can exceed the container cgroup peak even with a 1 GiB heap and in-process compiler; the sequential migration boundary prevents application contention but did not bound Gradle task workers | Rendered local Flyway Jobs must expose the bounded JVM, in-process compiler, and a positive `SIMPLEMATCH_GRADLE_MAX_WORKERS` value; inspect every failed Job Pod termination reason before publishing a migration PASS | Pass `--max-workers=1` through the shared Flyway runner and keep the existing backoff/complete-job proof; never treat an OOM retry as a source or schema failure | 2026-09-01 (redacted: retained namespace `simplematch-local-cert-20260901-063222-16645`, Pods `risk-service-flyway-fl2qj` and `quickfix-gateway-flyway-58462`) |
+| DT-036 | Risk-service and QuickFIX Flyway Jobs are first recorded as `OOMKilled` under the local 2 GiB container limit, then succeed on the Job retry with the same image | A cold Gradle/Kotlin process can exceed the container cgroup peak even with a 1 GiB heap and in-process compiler; the sequential migration boundary prevents application contention but did not bound Gradle task workers | Rendered local Flyway Jobs must expose the bounded JVM, in-process compiler, and a positive `SIMPLEMATCH_GRADLE_MAX_WORKERS` value; inspect every failed Job Pod termination reason before publishing a migration PASS | Pass `--max-workers=1` through the shared Flyway runner and keep the existing backoff/complete-job proof; never treat an OOM retry as a source or schema failure | 2026-09-01 (redacted: namespace `simplematch-local-cert-20260901-063222-16645`, Risk and QuickFIX Flyway Pod termination records) |
 | DT-037 | Matching owner `matching-0` exits during startup with `unable to query Matching Kafka committed offset: NOT_COORDINATOR` and is restarted before becoming Ready | The broker had accepted the topic/barrier setup but its group coordinator was not yet stable when the direct-assignment consumer queried committed offsets; the current Matching startup treats that transient metadata error as fatal | Before applying Matching, verify all Kafka brokers and headless peer names are Ready, then inspect every Matching Pod's restart count and previous log for coordinator errors; keep the startup result distinct from a later Ready state | Preserve the failed-Pod evidence, allow the bounded Kubernetes restart after Kafka metadata converges, and do not edit offsets or data; a client-side retry policy remains a separate follow-up if the race repeats | 2026-09-01 (redacted: retained namespace `simplematch-local-cert-20260901-063222-16645`, `matching-0 --previous`) |
-| DT-038 | A clean production-like run times out while waiting for `matching-fixture-publisher`, with only a `Pulling image` event; the Pod later becomes Ready/Completed with the same immutable digest | A cold kind worker had not yet cached the native Matching image, and the fixture readiness wait was 120 seconds although image unpacking could take longer; no registry digest, platform, snapshot, or execution failure was observed | Before deployment, verify the exact Matching digest is executable through each eligible worker's containerd; retain a bounded 600-second fixture wait for first-use pulls and record whether the cache is cold | Let the exact digest pull complete or warm only that digest in the affected workers, then rerun the source-aligned phase; preserve the original timeout evidence and never change Kafka data, offsets, or image identity | 2026-09-16 (redacted: `out/certification/issues-158-159-20260916-r1/logs/kubernetes-open-barriers.log`, worker containerd image/execution probes) |
-| DT-039 | BootBuildImage stops before pulling the public Paketo builder with `'username' must not be null` | The Docker credential helper supplied no usable credential, and Spring Boot 4.1.0 fell back to an empty Docker Hub `auths` entry, where it requires a username/password | Inspect credential-field presence only, never credential values; before a public-image build, verify the selected configuration can fetch registry metadata and still resolves to the intended daemon | Use a run-scoped anonymous `DOCKER_CONFIG` only for public images, retaining the original context metadata and verifying the daemon identity matches; leave the user's login configuration unchanged and preserve the failed report | 2026-10-05 (redacted: `out/certification/issue-160-images-20261005-r2/logs/account-image-stacktrace.log`; isolated configuration pulled the same public builder successfully) |
-| DT-040 | Java workloads enter ImagePullBackOff or execution probes find absent preloaded images | Kubelet image GC reached its separate 80% high threshold on Docker Desktop's shared VM image filesystem at 84% in #162 and 82% in #168 preload work; six concurrent migration Pods later raised #168 r2 to 84% and r3 to 81%, again removing unused source/helper images. Host filesystem headroom did not measure VM image headroom | Measure worker `/var/lib/containerd` filesystem usage before image builds, image load and workload apply, inspect the configured GC thresholds, and inventory exact references if approaching the high threshold; include image-build and concurrent migration temporary-data peaks, not only the initial preload measurement. Node Ready/DiskPressure alone is not an image-GC headroom check. Require current digest checks and execution probes after cleanup or reload | Preserve GC diagnostics; reload only the same verified immutable image identities into affected workers and allow normal workload retry. A completed migration phase may release its exact Succeeded, exit-zero, run-owned temporary Pods after saving Pod/Job owner UIDs and completion evidence; retain the completed Jobs and PostgreSQL data. After the run, remove exact unused build caches, disposable cache volumes and obsolete import references through supported reference-safe APIs, then recheck usage and execution; never delete runtime directories or prune the canonical cluster | 2026-10-19 (redacted: `out/verification/current-runtime-20261019/runtime-probes-after-build/` records 81% imagefs and kubelet deletion of all five dependency/helper preloads on all three workers after preparatory image builds; restore their previously verified immutable targets and repeat execution probes before deployment. The earlier 2026-10-09 evidence remains `out/certification/issue-168-preflight-20261009/preflight-notes.md`, `r3-migration-image-gc.log`, completed-Pod ownership/completion snapshots and exact cleanup logs; unchanged source/dependency identities were restored and 45 new worker execution probes passed before the actual recovery test. Earlier #162 diagnostics remain in `out/certification/issue-162-image-filesystem-cleanup-20261007/`) |
-| DT-041 | Docker Desktop stops and the kind API refuses connections after a retained aggregate has completed | The host kernel exhausted memory and swap and selected Desktop's QEMU process for a global OOM kill; the VM memory cap nearly equalled all host RAM while substantial browser processes also existed. The event does not identify a particular guest workload or a memory leak | Check host `MemAvailable`, swap availability and memory pressure separately from guest capacity before and during deployment gates; keep gates sequential and avoid concurrent builds or other heavy host work. VM sizing must reserve the measured non-VM host working set, and any future cap change must also recheck the full-profile request budget | Preserve the completed aggregate and later environment failure separately; restore the same daemon, verify canonical topology, immutable image execution and current scenario prerequisites before continuing. Do not attribute host OOM to Flyway container retries or weaken business gates | 2026-10-19 (redacted: `out/verification/current-runtime-20261019/desktop-oom/` records the 14:46 kernel global OOM with no free swap, after the 13:21 aggregate PASS; same-daemon recovery and 15 fresh worker probes are retained separately) |
 
 ## How to add a lesson
 

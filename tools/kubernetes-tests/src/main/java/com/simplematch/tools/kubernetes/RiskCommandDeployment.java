@@ -3,6 +3,7 @@ package com.simplematch.tools.kubernetes;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.node.ObjectNode;
 import com.fasterxml.jackson.dataformat.yaml.YAMLFactory;
+import java.nio.file.Files;
 import java.time.Duration;
 import java.util.Map;
 import java.util.Set;
@@ -14,13 +15,15 @@ final class RiskCommandDeployment {
   private final KubernetesPrerequisites inputs;
   private final KubernetesImages images;
   private final KubernetesScenarioTarget target;
+  private final String controlPlaneIp;
 
   RiskCommandDeployment(KubernetesSettings settings, KubernetesPrerequisites inputs,
-      KubernetesImages images, KubernetesScenarioTarget target) {
+      KubernetesImages images, KubernetesScenarioTarget target, String controlPlaneIp) {
     this.settings = settings;
     this.inputs = inputs;
     this.images = images;
     this.target = target;
+    this.controlPlaneIp = controlPlaneIp;
   }
 
   void start() throws Exception {
@@ -32,11 +35,7 @@ final class RiskCommandDeployment {
     if (inputs.profile().runsMatching() && (credentials == null || admission == null)) {
       throw new IllegalArgumentException("public FIX deployment requires run-owned access");
     }
-    for (var document : inputs.profile().documents()) {
-      if (!Set.of("Deployment", "StatefulSet", "Job").contains(document.path("kind").asText())) {
-        target.create(document);
-      }
-    }
+    createInfrastructure();
     configureInputs(credentials, admission);
     for (String name : java.util.List.of("postgres", "kafka")) {
       createNamed(name);
@@ -54,6 +53,27 @@ final class RiskCommandDeployment {
         settings.dockerContext(), target.client(), target.run().evidence(), "after-bootstrap");
     KindHealth.requireStable(target.client(), target.run().evidence(), "after-bootstrap");
     startBusinessServices();
+  }
+
+  private void createInfrastructure() throws Exception {
+    for (var document : inputs.profile().documents()) {
+      if (Set.of("Deployment", "StatefulSet", "Job")
+          .contains(document.path("kind").asText())) {
+        continue;
+      }
+      if ("NetworkPolicy".equals(document.path("kind").asText())
+          && "simplematch-java-services-kubernetes-api".equals(
+              document.path("metadata").path("name").asText())) {
+        target.create(KindApiEgress.bind(document, controlPlaneIp));
+        Files.write(target.run().evidence().resolve("kind-api-egress.json"),
+            new ObjectMapper().writeValueAsBytes(Map.of(
+                "policy", "simplematch-java-services-kubernetes-api",
+                "source_cidr", "172.18.0.0/16",
+                "run_control_plane_cidr", controlPlaneIp + "/32")));
+      } else {
+        target.create(document);
+      }
+    }
   }
 
   private void startBusinessServices() throws Exception {

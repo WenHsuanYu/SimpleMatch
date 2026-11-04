@@ -80,7 +80,9 @@ final class KubernetesBusinessEnvironment implements VerificationResources {
     requireStorageClass();
     target = new KubernetesScenarioTarget(kind.client(), kind.namespace(), run,
         images.replacements(settings.tag()));
-    new RiskCommandDeployment(settings, inputs, images, target).start(credentials, admission);
+    new RiskCommandDeployment(settings, inputs, images, target,
+        KindApiEgress.controlPlaneIp(kind.client(), kind.cluster()))
+        .start(credentials, admission);
     workloadImages.verify(kind.client(), run, "before-admission");
   }
 

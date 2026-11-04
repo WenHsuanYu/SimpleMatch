@@ -7,13 +7,12 @@ import java.time.Duration;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
-import java.util.concurrent.TimeoutException;
 
 /** Collects only bounded current namespace, failing workload and Job observations. */
 final class KubernetesDiagnostics {
   private final KubernetesClient client;
   private final VerificationContext run;
-  private final long deadline;
+  private final OperationBudget budget;
   private final ObjectMapper json = new ObjectMapper();
   private final List<Exception> failures = new ArrayList<>();
   private boolean interrupted;
@@ -21,7 +20,7 @@ final class KubernetesDiagnostics {
   KubernetesDiagnostics(KubernetesClient client, VerificationContext run, Duration budget) {
     this.client = client;
     this.run = run;
-    deadline = System.nanoTime() + budget.toNanos();
+    this.budget = OperationBudget.start(budget);
   }
 
   static void collect(KubernetesClient client, VerificationContext run) throws Exception {
@@ -36,6 +35,7 @@ final class KubernetesDiagnostics {
   }
 
   private void collect() throws Exception {
+    attempt(this::controlPlane);
     for (var entry : Map.of("events.json", List.of("get", "events", "-o", "json"),
         "workloads.json", List.of("get", "deployments,statefulsets,jobs", "-o", "json"))
         .entrySet()) {
@@ -67,6 +67,26 @@ final class KubernetesDiagnostics {
       final Exception first = failures.get(0);
       failures.stream().skip(1).forEach(first::addSuppressed);
       throw first;
+    }
+  }
+
+  /** Retains control-plane exits and failing/restarted component logs before node removal. */
+  void controlPlane() throws Exception {
+    final var pods = query(List.of("get", "pods", "--namespace=kube-system",
+        "-l", "tier=control-plane", "-o", "json"));
+    write("diagnostics-control-plane.json", pods);
+    for (var pod : pods.path("items")) {
+      final boolean ready = java.util.stream.StreamSupport.stream(
+          pod.path("status").path("conditions").spliterator(), false)
+          .anyMatch(condition -> "Ready".equals(condition.path("type").asText())
+              && "True".equals(condition.path("status").asText()));
+      final boolean restarted = java.util.stream.StreamSupport.stream(
+          pod.path("status").path("containerStatuses").spliterator(), false)
+          .anyMatch(container -> container.path("restartCount").asInt() > 0);
+      if (!ready || restarted) {
+        final String name = pod.path("metadata").path("name").asText();
+        attempt(() -> log(pod, "diagnostics-control-" + name));
+      }
     }
   }
 
@@ -117,9 +137,15 @@ final class KubernetesDiagnostics {
 
   private void containerLog(JsonNode pod, String container, boolean previous, String file)
       throws Exception {
-    final var result = client.execute("", remaining(), "logs",
+    final var arguments = new ArrayList<>(List.of("logs",
         pod.path("metadata").path("name").asText(), "--container", container,
-        "--previous=" + previous, "--prefix=true", "--tail=100", "--limit-bytes=131072");
+        "--previous=" + previous, "--prefix=true", "--tail=100", "--limit-bytes=131072"));
+    final String namespace = pod.path("metadata").path("namespace").asText();
+    if (!namespace.isBlank()) {
+      arguments.add("--namespace=" + namespace);
+    }
+    final var result = client.execute("", budget.remaining(Duration.ofSeconds(15)),
+        arguments.toArray(String[]::new));
     Files.writeString(run.evidence().resolve(file + ".log"),
         "container=" + container + " previous=" + previous + "\n"
             + DiagnosticText.redact(result.output() + result.error()),
@@ -128,20 +154,13 @@ final class KubernetesDiagnostics {
   }
 
   private JsonNode query(List<String> arguments) throws Exception {
-    return client.readWithin(remaining(), arguments.toArray(String[]::new));
+    return client.readWithin(budget.remaining(Duration.ofSeconds(15)),
+        arguments.toArray(String[]::new));
   }
 
   private void write(String file, JsonNode document) throws Exception {
     Files.writeString(run.evidence().resolve(file),
-        DiagnosticText.redact(json.writeValueAsString(document)));
-  }
-
-  private Duration remaining() throws TimeoutException {
-    final long nanos = deadline - System.nanoTime();
-    if (nanos <= 0) {
-      throw new TimeoutException("namespace diagnostics exceeded their aggregate budget");
-    }
-    return Duration.ofNanos(Math.min(nanos, Duration.ofSeconds(15).toNanos()));
+        json.writeValueAsString(DiagnosticText.redact(document)));
   }
 
   private void attempt(Observation observation) {

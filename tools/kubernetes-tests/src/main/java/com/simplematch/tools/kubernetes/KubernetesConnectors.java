@@ -33,7 +33,7 @@ final class KubernetesConnectors {
           connectRest(pod, "GET", "/connectors/" + name + "/status", "",
               budget.remaining()).checked());
       java.nio.file.Files.writeString(target.run().evidence().resolve(name + "-state.json"),
-          DiagnosticText.redact(status.toPrettyString()));
+          DiagnosticText.redact(status).toPrettyString());
       if (state.equals(status.path("connector").path("state").asText())
           && !status.path("tasks").isEmpty()
           && java.util.stream.StreamSupport.stream(status.path("tasks").spliterator(), false)
@@ -72,7 +72,7 @@ final class KubernetesConnectors {
       final var status = json.readTree(
           connectRest(pod, "GET", "/connectors/" + name + "/status", "").checked());
       java.nio.file.Files.writeString(target.run().evidence().resolve(name + ".json"),
-          DiagnosticText.redact(status.toPrettyString()));
+          DiagnosticText.redact(status).toPrettyString());
       running = "RUNNING".equals(status.path("connector").path("state").asText())
           && !status.path("tasks").isEmpty()
           && java.util.stream.StreamSupport.stream(status.path("tasks").spliterator(), false)
