@@ -11,6 +11,14 @@ Earlier recorded H2 results remain historical. See the [cutover record](../plans
 for the completed P2 PostgreSQL/component suites and separately recorded local FIX certification rerun.
 This does not complete the deployed or aggregate #202 acceptance.
 
+Issue #202 also selects a bounded **Persistence Pod restart** within the
+existing `RestingBuyKubernetesTest` after its first Matching recovery.
+The new Pod's reported in-memory Kafka next offsets must match the run-owned
+PostgreSQL durable progress plus one. The service restart unit test separately
+proves initialization from stored offsets. One other Persistence replica must keep the
+same Pod UID. The test does not restore the retired three-consumer idle
+restart matrix and has not yet passed a fresh source-aligned live run.
+
 ## Verification scope
 
 Verification is performed through the application Interfaces that own each

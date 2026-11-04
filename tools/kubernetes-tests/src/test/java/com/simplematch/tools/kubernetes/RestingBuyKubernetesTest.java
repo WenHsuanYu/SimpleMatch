@@ -122,6 +122,7 @@ class RestingBuyKubernetesTest {
           finished.get(60, TimeUnit.SECONDS);
         }
         new KubernetesMatchingCrash(context).verify(order.route().partitionId(), matchingInputOffset);
+        new KubernetesConsumerRestart(context).verify();
       } finally {
         finished.cancel(true);
       }

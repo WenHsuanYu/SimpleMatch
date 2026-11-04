@@ -1095,3 +1095,86 @@ file. Tracked Shell totals change from 107 files / 23,582 lines to
 106 files / 23,507 physical lines. Python remains 26 files / 4,130 lines.
 Ruby remains three files / 316 lines. The 51-file / 10,476-line Shell
 minimum remains unmet. R18/R19 and the full S5/P6 acceptance remain open.
+
+## P5b idle critical-consumer restart retirement
+
+Retire `scripts/run-critical-consumer-restart-certification.sh` and its
+standalone operator runbook `docs/verification/critical-consumer-restart-certification.md`.
+The runner had no current CI, Gradle, test, or other executable caller.
+The runbook and `docs/README.md` were its remaining operator references.
+The S5 P0 decision retains one actual PostgreSQL failure and recovered
+business delivery through `KubernetesCriticalDelivery` and
+`RestingBuyKubernetesTest`. The existing Persistence, Account, and QuickFIX
+consumer restart tests retain durable progress and quarantine restoration.
+`OutboxCdcIntegrationTest` separately retains actual broker failure and
+CDC worker recovery. No new verification code replaces the old runner.
+
+The retired runner required an already populated disposable namespace.
+It successively replaced Account, Persistence, and QuickFIX Pods, then a
+PostgreSQL Pod and one Kafka broker Pod while no traffic was admitted.
+It compared durable consumer progress and Kafka offsets after each restart.
+That combined no-traffic Kubernetes restart certification is intentionally
+lost. At this retirement checkpoint, the retained service tests did not prove
+Kubernetes Pod replacement; the bounded replacement added below restores a
+different, narrower deployed observation.
+The retained R11 test does not prove an idle Kafka broker replacement.
+Do not transfer the retired runner's PASS or claim equivalent coverage.
+The shared `local-common.sh` and `local-kind.sh` libraries have other callers
+and remain unchanged. Historical S0 inventory and prior reports remain
+unaltered. No Kubernetes deployment or fault was executed in this slice.
+
+This removes one Shell file and 360 physical Shell lines. Tracked Shell
+totals change from 106 files / 23,507 lines to 105 files / 23,147 lines.
+Both minimum reduction gates remain unmet. R18/R19 and final P6 live
+acceptance remain outstanding.
+
+## P5b one-Pod durable Consumer restart and legacy fixture retirement
+
+The existing `RestingBuyKubernetesTest` now selects one real Persistence Pod
+replacement **after** it observes the original Matching recovery, duplicate
+delivery and real Matching process restart, but **before** its next public FIX
+order. The retained source/run/image-bound Kubernetes client and ephemeral
+namespace own the fault and cleanup; no additional deployment or Shell
+orchestrator is introduced. The observer requires two Ready Persistence
+replicas and an owned, current Deployment/ReplicaSet. It deletes exactly one
+selected Pod, waits for a new Ready UID, and requires the other replica and
+Deployment UID to remain unchanged. The pre- and post-replacement image
+content is checked against the same run lock. A bounded local port-forward
+reads the **new Pod's** `/internal/critical-consumer-status` and confirms
+its in-memory next positions match PostgreSQL's existing nonempty durable
+`last_processed_offset + 1` positions. PostgreSQL progress remains unchanged
+through this no-new-traffic replacement. The next existing business-order
+scenario still checks actual downstream delivery; it does not prove that
+the particular replacement Pod consumed that order.
+
+`KubernetesConsumerRestartTest` tests rejection of stale Pod UIDs, wrong
+run/image identity, changed ReplicaSet, missing next offsets and quarantine.
+These tests do not execute an actual Kubernetes restart. There is no fresh
+source-aligned live PASS until P6. This new bounded requirement does **not**
+restore the old simultaneous Account/Persistence/Gateway restart, idle
+PostgreSQL replacement, idle Kafka broker replacement, or all-partition
+Kafka end-offset snapshot matrix. Those remain intentional verification
+losses; the old operator script and its runbook remain retired.
+
+Separately, the unselected synthetic scripts
+`scripts/test-local-certification-job-supervision.sh` (173 lines) and
+`scripts/test-local-kind-image-cache-preflight.sh` (143 lines) had no CI,
+Gradle, executable, or active operator caller. They are deleted without
+porting their fixture/source-layout assertions. The former retires exact
+timeout literals, synthetic Flyway submit-before-wait ordering, failed
+topic-provisioning/open-barrier stubs and old subshell cleanup simulation;
+the authoritative local runner still handles these operations, while
+Gradle `verifyKubernetes`, `manifestCheck`, and selected resource contracts
+own the retained basic behavior. The latter was the **only** consumer of
+`simplematch_kind_image_cache_preflight` and its two private timeout
+helpers. That dormant implementation (183 Shell lines) is removed from
+`scripts/lib/local-resilience.sh`. The active CDC/log-redaction, dependency
+recovery and verifier helpers in that library are preserved. The retired
+image-cache fixtures' node mismatch, CRI probe error and digest negative
+claims are not new S5 acceptance; run-owned `KubernetesImages` and
+`KubernetesWorkloadImages` check actual local image content instead.
+
+Tracked Shell totals decrease from **105 files / 23,147 physical lines**
+to **103 files / 22,648 physical lines**. Python remains 26 files /
+4,130 lines and Ruby 3 files / 316 lines. The 51-file / 10,476-line
+minimum gates, R18/R19 integration and P6 acceptance remain incomplete.
