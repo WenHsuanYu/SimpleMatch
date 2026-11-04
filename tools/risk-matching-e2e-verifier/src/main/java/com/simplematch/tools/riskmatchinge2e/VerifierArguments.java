@@ -50,19 +50,13 @@ record VerifierArguments(
     if (timeout.compareTo(MAX_TIMEOUT) > 0) {
       throw usage("--timeout-seconds must not exceed 300");
     }
-    final VerificationMode mode = parseMode(values.getOrDefault("--mode", "INITIAL"));
+    if (values.containsKey("--mode")) {
+      throw usage("--mode is retired; use the supported deployed command verification entry");
+    }
     final Side side = parseSide(values.getOrDefault("--side", "BUY"));
     final ExecutionOptions execution =
-        new ExecutionOptions(timeout, Path.of(required(values, "--evidence-dir")), mode);
+        new ExecutionOptions(timeout, Path.of(required(values, "--evidence-dir")));
     return new VerifierArguments(artifact, run, services, side, execution);
-  }
-
-  private static VerificationMode parseMode(String value) {
-    try {
-      return VerificationMode.valueOf(value.toUpperCase(Locale.ROOT));
-    } catch (IllegalArgumentException invalid) {
-      throw usage("--mode must be INITIAL or REPLAY");
-    }
   }
 
   private static Side parseSide(String value) {
@@ -109,8 +103,7 @@ record VerifierArguments(
             + "[--risk-target HOST:PORT] "
             + "[--kafka-bootstrap HOST:PORT] "
             + "[--topic matching.commands] "
-            + "[--timeout-seconds N] "
-            + "[--mode INITIAL|REPLAY]");
+            + "[--timeout-seconds N]");
   }
 
   /** Mounted Market Reference artifact and checksum paths. */
@@ -134,18 +127,11 @@ record VerifierArguments(
     }
   }
 
-  /** Execution mode for the deployed verifier. */
-  enum VerificationMode {
-    INITIAL,
-    REPLAY
-  }
-
-  /** One end-to-end timeout budget, evidence directory, and execution mode. */
-  record ExecutionOptions(Duration timeout, Path evidenceDir, VerificationMode mode) {
+  /** One end-to-end timeout budget and evidence directory. */
+  record ExecutionOptions(Duration timeout, Path evidenceDir) {
     ExecutionOptions {
       Objects.requireNonNull(timeout, "timeout is required");
       Objects.requireNonNull(evidenceDir, "evidence directory is required");
-      Objects.requireNonNull(mode, "verification mode is required");
       if (timeout.isZero() || timeout.isNegative()) {
         throw new IllegalArgumentException("timeout must be positive");
       }

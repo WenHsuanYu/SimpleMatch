@@ -4,8 +4,10 @@
 crosses the durable Risk admission/outbox boundary, Debezium, and `matching.commands`. The host
 adapter creates real kind nodes in the selected Docker engine and deploys real PostgreSQL, Kafka,
 Account, Risk, Connect and verifier workloads. This is local deployed evidence; its scope ends at
-the command topic. Matching execution, restart/replay, HA and aggregate `full-local` certification
-have separate gates.
+the command topic. Matching execution and aggregate `full-local` certification
+have separate scope and entry points; this command-topic check establishes no HA proof.
+The former separate Risk/Kafka Connect restart-and-equivalent-replay gate is retired
+under [S5](../plans/shell-test-reduction-s5.md), not an additional current gate.
 
 ## Ownership and design
 
@@ -204,8 +206,10 @@ original business/setup failure.
 
 ## Certification boundary
 
-The [restart/equivalent-replay gate](risk-matching-restart-replay.md) has its own retained-environment
-workflow. This Jupiter entry does not adopt that workflow or grant its coverage to a command-topic
-PASS. The [capability inventory](../status/phase-1-capability-inventory.md#rm-1-load-the-artifact-in-risk-and-publish-matching-commands)
+The former separate retained-environment Risk/Kafka Connect restart/equivalent-replay gate
+was retired under the [S5 scope decision](../plans/shell-test-reduction-s5.md).
+This Jupiter entry does not reproduce the combined Pod replacement, stable offsets during
+restart, and terminal equivalent replay proof; a command-topic PASS must not inherit it.
+The [capability inventory](../status/phase-1-capability-inventory.md#rm-1-load-the-artifact-in-risk-and-publish-matching-commands)
 records source-specific RM-1 status. An executable entry or a passing adapter fixture does not
 establish deployed, aggregate or production acceptance for a new source revision.

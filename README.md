@@ -78,8 +78,10 @@ the [domain parameter-safety refactor](docs/development/domain-parameter-safety-
 
 The `./gradlew verifyKubernetes` entry builds and verifies one deployed RM-1 BUY command through
 Risk and `matching.commands`. Its lifecycle and supported cluster modes are documented in the
-[accepted-command E2E runbook](docs/verification/risk-matching-command-e2e.md) and the retained
-[restart/equivalent-replay runbook](docs/verification/risk-matching-restart-replay.md). Risk and Account
+[accepted-command E2E runbook](docs/verification/risk-matching-command-e2e.md).
+The former separate Risk/Kafka Connect restart-and-equivalent-replay operator gate was retired under
+[S5's scope decision](docs/plans/shell-test-reduction-s5.md); this entry does not reproduce that
+combined no-new-traffic restart claim. Risk and Account
 transactional-outbox publication, outage recovery, duplicate delivery, and exact Kafka-record
 evidence are mapped in the
 [CDC publication verification guide](docs/verification/cdc-publication-verification.md).

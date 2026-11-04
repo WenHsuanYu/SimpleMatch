@@ -4,16 +4,14 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 
 import com.simplematch.contracts.common.v2.Side;
-import com.simplematch.tools.riskmatchinge2e.VerifierArguments.VerificationMode;
 import org.junit.jupiter.api.Test;
 
-/** Protects the initial/replay CLI mode contract used by the two deployed verifier Jobs. */
+/** Protects the retained deployed command verifier's CLI and retired-mode rejection. */
 class VerifierArgumentsTest {
   @Test
-  void defaultsToInitialMode() {
+  void defaultsToBuySide() {
     final VerifierArguments arguments = VerifierArguments.parse(baseArguments());
 
-    assertEquals(VerificationMode.INITIAL, arguments.execution().mode());
     assertEquals(Side.SIDE_BUY, arguments.side());
   }
 
@@ -54,23 +52,11 @@ class VerifierArgumentsTest {
   }
 
   @Test
-  void acceptsExplicitReplayModeCaseInsensitively() {
-    final String[] base = baseArguments();
-    final String[] replay = java.util.Arrays.copyOf(base, base.length + 2);
-    replay[base.length] = "--mode";
-    replay[base.length + 1] = "replay";
-
-    final VerifierArguments arguments = VerifierArguments.parse(replay);
-
-    assertEquals(VerificationMode.REPLAY, arguments.execution().mode());
-  }
-
-  @Test
-  void rejectsUnknownMode() {
+  void rejectsRetiredReplayMode() {
     final String[] base = baseArguments();
     final String[] invalid = java.util.Arrays.copyOf(base, base.length + 2);
     invalid[base.length] = "--mode";
-    invalid[base.length + 1] = "restart-ish";
+    invalid[base.length + 1] = "REPLAY";
 
     assertThrows(IllegalArgumentException.class, () -> VerifierArguments.parse(invalid));
   }
@@ -81,7 +67,7 @@ class VerifierArgumentsTest {
       "--checksum-path", "/tmp/market_reference.sha256",
       "--trading-day", "2026-08-17",
       "--account-id", "00000000-0000-0000-0000-000000000001",
-      "--run-id", "rm1-replay-test",
+      "--run-id", "rm1-verifier-test",
       "--evidence-dir", "/tmp/evidence"
     };
   }

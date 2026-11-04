@@ -293,10 +293,16 @@ fingerprint 過的 canonical script，避免 script 內部以自身目錄載入 
 
 ## Final Risk publication contract
 
-Issue #126 remains the canonical deployed certification for the post-cutover Risk path. Its retained
-evidence proves real Risk Admission/outbox -> Debezium -> `matching.commands` publication with the
-persisted explicit partition and exact Kafka payload bytes, plus restart/equivalent-replay behavior.
-The generic Compose Risk fixtures here preserve transport coverage but do not replace #126.
+Issue #126's completed, retained **historical evidence** establishes that the original
+post-cutover Risk path published real Admission/outbox -> Debezium ->
+`matching.commands` records with an explicit partition and exact payload bytes,
+and that the former combined Risk/Kafka Connect restart/equivalent-replay test passed
+for its recorded source. S5 has retired that separate operator and its Job.
+The current RM-1 Jupiter entry checks a deployed command-topic path, while the
+Risk service and CDC tests separately own replay/idempotency and delivery/recovery.
+Neither recreates the former combined restart/replay proof on the current source.
+The generic Compose Risk fixtures here preserve transport coverage, not the retired
+historical test's complete acceptance.
 
 ## GitHub Actions coverage
 
@@ -389,5 +395,8 @@ Finally run the repository Java quality gate:
 ./gradlew --no-daemon staticAnalysis
 ```
 
-The only non-PR-CI dependency for #92 is completed #126's deployed `matching.commands`
-certification. Re-run #126 locally only if that deployment path or contract changes.
+The completed #126 `matching.commands` evidence is historical support for #92,
+not a reusable PASS for a changed source. For a change to the currently retained
+Risk/CDC contracts, run their current source-aligned verification owners.
+The original combined Risk/Kafka Connect Pod restart and equivalent-replay gate
+cannot be re-run through the retired operator; its lost scope is recorded in S5.

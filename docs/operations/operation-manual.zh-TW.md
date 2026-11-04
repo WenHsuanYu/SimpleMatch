@@ -1136,7 +1136,7 @@ test -w "$VCPKG_ROOT" && echo writable || echo read-only
 - `docs/verification/local-production-like-certification.md`：local gate 與 staging/production certification boundary。
 - `config/market-reference/README.md`：Market Reference builder。
 - `docs/verification/risk-matching-command-e2e.md`：Risk-to-Matching accepted-command E2E。
-- `docs/verification/risk-matching-restart-replay.md`：restart / equivalent replay evidence。
+- `docs/plans/shell-test-reduction-s5.md`：舊 Risk／Kafka Connect restart / equivalent replay operator 的退役決策、仍由哪些驗證負責，以及未保留的聯合證明。
 - `docs/verification/cdc-publication-verification.md`：transactional outbox 與 CDC publication verification。
 
 新增的 query-service certification 入口：[query-service certification](../verification/query-service-certification.md)。

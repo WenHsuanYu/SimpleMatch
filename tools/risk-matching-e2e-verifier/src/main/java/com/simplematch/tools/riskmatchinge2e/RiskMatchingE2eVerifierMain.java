@@ -5,10 +5,8 @@ import com.simplematch.marketreference.MarketReferenceArtifactStartupValidator;
 import com.simplematch.marketreference.VerifiedMarketReferenceArtifact;
 import com.simplematch.tools.riskmatchinge2e.RiskAdmissionProbe.AdmissionObservation;
 import com.simplematch.tools.riskmatchinge2e.RiskAdmissionProbe.SubmissionObservation;
-import com.simplematch.tools.riskmatchinge2e.VerifierArguments.VerificationMode;
 import io.grpc.ManagedChannel;
 import io.grpc.ManagedChannelBuilder;
-import io.grpc.Status;
 import java.nio.file.Files;
 import java.time.Duration;
 import java.time.Instant;
@@ -18,11 +16,10 @@ import java.util.concurrent.TimeUnit;
 /**
  * Deployed RM-1 verifier entry point.
  *
- * <p>INITIAL mode submits one real Risk order and proves the resulting MatchingCommand on the
- * production {@code matching.commands} topic. REPLAY mode resubmits the same durably-equivalent
- * command identity after an externally controlled restart boundary and requires Risk to return the
- * already-terminal admission synchronously. PostgreSQL/outbox inspection remains in the outer shell
- * harness.
+ * <p>Submits one real Risk order and proves the resulting MatchingCommand on the
+ * production {@code matching.commands} topic. The former combined Risk/Connect
+ * restart-and-replay operator used a separate REPLAY mode, which was retired
+ * with that operator. This entry now verifies only the command-topic boundary.
  */
 public final class RiskMatchingE2eVerifierMain {
   private RiskMatchingE2eVerifierMain() {}
@@ -63,13 +60,7 @@ public final class RiskMatchingE2eVerifierMain {
     evidence.writeRequest(scenario.request());
 
     try {
-      if (arguments.execution().mode() == VerificationMode.REPLAY) {
-        final ReplayEvidenceWriter replayEvidence =
-            new ReplayEvidenceWriter(json, arguments.execution().evidenceDir());
-        verifyReplayScenario(arguments, scenario, deadline, evidence, replayEvidence);
-      } else {
-        verifyInitialScenario(arguments, scenario, deadline, evidence);
-      }
+      verifyInitialScenario(arguments, scenario, deadline, evidence);
     } catch (Exception failure) {
       evidence.writeFailure(failure, scenario.command().commandId().toString());
       throw failure;
@@ -111,38 +102,6 @@ public final class RiskMatchingE2eVerifierMain {
       evidence.writePass(admission, observed);
     } finally {
       closeRiskChannel(channel);
-    }
-  }
-
-  private static void verifyReplayScenario(
-      VerifierArguments arguments,
-      RiskMatchingScenario.Scenario scenario,
-      VerificationDeadline deadline,
-      VerificationEvidenceWriter evidence,
-      ReplayEvidenceWriter replayEvidence) throws Exception {
-    final ManagedChannel channel = createRiskChannel(arguments.services().riskTarget());
-    try {
-      final RiskAdmissionProbe admissionProbe = new RiskAdmissionProbe(channel);
-      final SubmissionObservation submission = admissionProbe.submit(scenario, deadline);
-      evidence.writeSubmission(submission);
-      final AdmissionObservation admission =
-          admissionProbe.awaitAccepted(scenario, submission, deadline);
-      evidence.writeAdmissionOutcome(admission);
-      requireTerminalReplay(submission, admission);
-      replayEvidence.writePass(admission);
-    } finally {
-      closeRiskChannel(channel);
-    }
-  }
-
-  private static void requireTerminalReplay(
-      SubmissionObservation submission, AdmissionObservation admission) {
-    if (submission.grpcCode() != Status.Code.OK
-        || admission.path() != RiskAdmissionProbe.AdmissionPath.SYNCHRONOUS_ACCEPTED) {
-      throw new VerificationFailure(
-          VerificationFailure.Stage.ADMISSION_REPLAY,
-          VerificationFailure.Code.ADMISSION_REPLAY_NOT_TERMINAL,
-          "equivalent replay did not return the durable terminal admission synchronously");
     }
   }
 

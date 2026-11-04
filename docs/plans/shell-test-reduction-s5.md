@@ -1178,3 +1178,57 @@ Tracked Shell totals decrease from **105 files / 23,147 physical lines**
 to **103 files / 22,648 physical lines**. Python remains 26 files /
 4,130 lines and Ruby 3 files / 316 lines. The 51-file / 10,476-line
 minimum gates, R18/R19 integration and P6 acceptance remain incomplete.
+
+## P5b RM-1 legacy combined restart/replay operator retirement
+
+Retire `scripts/run-risk-matching-restart-replay-e2e.sh` (508 physical Shell
+lines), its sole-use `deploy/k8s/verification/risk-matching-replay-verifier-job.yaml`
+(94 YAML lines), and its 168-line dedicated operator runbook. The Shell runner
+is not selected by CI, Gradle, or another executable entry. Its remaining
+consumer was a manual operator runbook, linked by the repository README,
+verification index, operation manual and RM-1 accepted-command runbook.
+Those active links now describe this retirement instead of presenting an
+unselectable completion gate. The frozen S0 inventory and baseline stay intact.
+The older S4 disposition reflects the earlier decision to keep this operator
+at that checkpoint; the amended S5 decision supersedes it.
+
+Keep the real RM-1 Risk-to-`matching.commands` Jupiter deployment scenario,
+the Risk application's synchronous equivalent-command replay and durable
+single-outbox tests, the typed `RiskMatchingE2eVerifierMain` and shared Java
+verifier tests, and `OutboxCdcIntegrationTest` broker/Connect failure and
+recovered publication. These retain independent core business and CDC
+assertions. They are **not** equivalent to the retired combined scenario.
+The obsolete operator used a previous passing baseline and a locally mutable
+verifier image. It replaced **all** Risk and Kafka Connect Pod UIDs, required
+the connector and tasks to return `RUNNING`, checked all 15
+`matching.commands` partition end offsets remained unchanged through the
+restart, then replayed the same command and demanded synchronous terminal
+`ACCEPTED`, identical durable Admission/outbox bytes and no appended
+Kafka record. No currently selected single owner re-proves this complete
+no-new-traffic Pod replacement/replay sequence. This is an intentional loss,
+not a transfer of its PASS to `verifyKubernetes`, the Java service tests,
+or CDC integration. Do not imply that historical RM-1/#126 acceptance is
+newly established by this retirement.
+
+No replacement test framework, relocated Shell script, or new Java test is
+introduced. Real credential, namespace/run/image, resource, failure cleanup,
+Query R18/R19, and destructive fault-injection negatives continue under
+their existing independent owners. This slice changes no live Kubernetes
+resource and does not perform P6 acceptance. `verifyAllScope` remains
+fail-closed for the outstanding deployed requirements.
+
+The dedicated replay-only `ReplayEvidenceWriter`, its verdict-shape JUnit
+test, and the now-unselected verifier `--mode REPLAY` branch are also
+retired. The existing command-topic verifier executes its unchanged
+submission/Kafka assertions, while `VerifierArguments` explicitly rejects
+the retired `--mode` option instead of silently treating it as an initial
+run. Preserve the unrelated Risk application equivalent-replay tests.
+The obsolete `ADMISSION_REPLAY` verifier failure codes are removed;
+no active manifest or Gradle task consumes them. The legacy REPLAY verdict
+schema is intentionally no longer generated, not reclassified as PASS.
+
+Tracked Shell totals decrease from **103 files / 22,648 physical lines** to
+**102 files / 22,140 physical lines**. Python remains **26 files / 4,130
+lines** and Ruby remains **3 files / 316 lines**. The minimum
+**51-file / 10,476-line** Shell gate, Python/Ruby retirement, remaining
+R16/R17 and R18/R19 deployed integration, and final P6 run are still open.

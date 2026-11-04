@@ -56,7 +56,7 @@
 | --- | --- |
 | Native build 與 CTest | [Native verification](verification/native-verification.md)：透過 `./gradlew nativeTest` 執行既有 CMake/CTest suite，並保留新的 JUnit 結果。 |
 | Risk → Account reservation | [Account v2 live verification](verification/account-reservation-v2-live-verification.md)：跨 gRPC、Account、DB 與 outbox 的本機驗收程序。 |
-| Risk → Matching 與 replay | [Risk-to-Matching deployed E2E](verification/risk-matching-command-e2e.md)、[Risk restart／equivalent replay](verification/risk-matching-restart-replay.md)：基線與依賴該基線的恢復程序。 |
+| Risk → Matching 與 replay | [Risk-to-Matching deployed E2E](verification/risk-matching-command-e2e.md)：保留公開命令與實際 Kafka delivery；Risk／Kafka Connect 聯合重啟後的 equivalent replay 舊 operator 已依 [S5 範圍決策](plans/shell-test-reduction-s5.md)退役，不視為目前部署測試的證明。 |
 | CDC publication | [Risk／Account CDC verification](verification/cdc-publication-verification.md)：應用交易與 Connect／Kafka 觀察的證據分層、retained evidence 與共用觀察介面。 |
 | Critical Matching Event consumers | [Repository verification 紀錄](verification/critical-matching-event-consumer-verification.md)、[現行 S5 驗證範圍](plans/shell-test-reduction-s5.md)：服務層 durable restart、`verifyKubernetes` 真實 PostgreSQL 故障／恢復，以及同一情境新增的 Persistence 單 Pod 進度恢復檢查。舊的多 Pod／Kafka 無流量重啟矩陣已退役，新檢查仍待 P6 實際部署驗收。 |
 | Gateway admission 與 FIX 整合 | [Gateway admission](verification/gateway-admission-verification.md)：目前契約、驗證方式與有日期的證據；[QuickFIX/J integration evidence](verification/quickfixj-integration-evidence.md)：repository 內 FIX simulator 的整合驗證。 |

@@ -31,7 +31,7 @@ S4 retires the following paths. Their source remains available at the preceding 
 | `scripts/test-matching-topic-cutover.sh` | Retire completed v1/v2 cutover, retired-file, and Shell function/dispatch shape assertions. F-01's old function-location failure already passed in current source. |
 | `scripts/test-matching-topic-profile.sh` | Retire the dedicated fixture matrix. Keep the existing topic validator and provisioner for actual operator/runtime use. |
 | `scripts/test-risk-matching-e2e-manifest.sh` | Replace schema responsibility. Retire exact Job, wrapper, and image-builder shape assertions. Keep the real RM-1 Kubernetes scenario. |
-| `scripts/test-risk-matching-restart-replay-manifest.sh` | Replace schema responsibility. Retire exact Job and orchestration-source matchers. Keep the actual replay entry point and verifier. |
+| `scripts/test-risk-matching-restart-replay-manifest.sh` | Replace schema responsibility. Retire exact Job and orchestration-source matchers. At the S4 checkpoint the actual replay entry point and verifier were retained; the later S5 scope decision retires only the dedicated restart/replay operator and its Job, not the shared Java verifier. |
 | `scripts/test-local-production-like.sh` | Retire the legacy runner's ConfigMap failure stub and synthetic placement/provenance framework. Remove its collection caller. Keep actual deployment and RM-1 verification. |
 | `scripts/test-phase1-deployment-contracts.sh` | Retire the Shell test-selection collector, its static phase, and its local/CI callers. Do not recreate its command list elsewhere. |
 
