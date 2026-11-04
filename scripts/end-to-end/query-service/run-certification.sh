@@ -239,8 +239,6 @@ account_id="$(jq -er '.accountId | select(length > 0)' "$evidence_dir/selected-f
 trading_day="$(jq -er '.tradingDay | select(length == 10)' "$evidence_dir/selected-fixture.json")"
 venue_mic="$(jq -er '.venueMic | select(length == 4)' "$evidence_dir/selected-fixture.json")"
 symbol="$(jq -er '.symbol | select(length > 0)' "$evidence_dir/selected-fixture.json")"
-current_stage="seed obsolete Redis response envelopes"
-seed_legacy_query_cache || die "cannot establish the obsolete Redis response fixtures"
 kns get deployment query-service redis -o json >"$evidence_dir/deployments-before.json"
 jq -n \
   --arg sourceRevision "$(git -C "$repo_root" rev-parse HEAD)" \
@@ -250,7 +248,6 @@ jq -n \
     retainedEvidenceDir:$retainedEvidenceDir}' >"$evidence_dir/provenance.json"
 capture_query_snapshot "$evidence_dir/baseline.json" || die "cannot capture baseline query views"
 capture_query_read_matrix || die "deployed Query replicas failed the approved read matrix"
-verify_legacy_query_cache_unchanged || die "business reads modified the obsolete Redis fixtures"
 
 current_stage="verify PostgreSQL-only reads during Redis outage"
 redis_scaled=true

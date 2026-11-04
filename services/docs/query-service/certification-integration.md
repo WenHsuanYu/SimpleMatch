@@ -10,6 +10,12 @@ The separately approved [Client/Account onboarding targets](../../../docs/plans/
 remain later work. Their two-Client/four-Account preset does not replace this slice's existing
 synthetic X/Y and five-Principal policy.
 
+Issue #202 later retired the obsolete Redis response-envelope poisoning
+and comparison check. Current Query evidence verification has eleven checks.
+The historical twelve-check PASS and four poisoned entries recorded below
+belong to the earlier #194 source and have not been reclassified or rerun.
+The actual Redis-outage PostgreSQL read verification remains required.
+
 ## Acceptance and public seams
 
 - Existing collector functions use the pre-deployed private fixture bundle over direct loopback

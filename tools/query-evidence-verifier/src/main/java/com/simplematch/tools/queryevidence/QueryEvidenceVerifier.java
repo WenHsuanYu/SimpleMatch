@@ -29,7 +29,6 @@ public final class QueryEvidenceVerifier {
           "rebuilt",
           "restoration",
           "read-matrix",
-          "legacy-cache",
           "operator-boundary");
   private static final List<String> BUSINESS_VIEWS =
       List.of("order", "executions", "accountSummary", "marketReference");
@@ -40,7 +39,7 @@ public final class QueryEvidenceVerifier {
           .enable(DeserializationFeature.USE_BIG_DECIMAL_FOR_FLOATS);
 
   /**
-   * Reads the evidence directory and returns the twelve-check verdict.
+   * Reads the evidence directory and returns the eleven-check verdict.
    *
    * @param directory directory containing the retained JSON evidence files
    * @return the verdict, including each named check and active-processing status
@@ -189,7 +188,6 @@ public final class QueryEvidenceVerifier {
 
   private void addSecurityChecks(ArrayNode checks, Map<String, JsonNode> evidence) {
     final JsonNode matrix = evidence.get("read-matrix");
-    final JsonNode cache = evidence.get("legacy-cache");
     final JsonNode boundary = evidence.get("operator-boundary");
     add(
         checks,
@@ -200,12 +198,6 @@ public final class QueryEvidenceVerifier {
             && JsonChecks.number(
                 matrix.path("observations"),
                 value -> value.compareTo(java.math.BigDecimal.valueOf(100)) >= 0));
-    add(
-        checks,
-        "obsoleteCacheIgnored",
-        JsonChecks.text(cache.path("status"), "PASS")
-            && JsonChecks.number(cache.path("seededEntries"), 4)
-            && cache.path("unchangedAfterReads").equals(BooleanNode.TRUE));
     add(
         checks,
         "operatorCredentialSeparation",

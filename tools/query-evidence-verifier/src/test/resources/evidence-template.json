@@ -466,11 +466,6 @@
       }
     ]
   },
-  "legacy-cache": {
-    "status": "PASS",
-    "seededEntries": 4,
-    "unchangedAfterReads": true
-  },
   "operator-boundary": {
     "status": "PASS",
     "observations": [

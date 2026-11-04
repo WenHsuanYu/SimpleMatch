@@ -115,45 +115,6 @@ capture_query_read_matrix() {
   jq -e '.status == "PASS"' "$evidence_dir/read-matrix.json" >/dev/null
 }
 
-seed_legacy_query_cache() {
-  local key kind payload="$evidence_dir/diagnostics/legacy-cache-payload.json"
-  mkdir -m 700 "$evidence_dir/legacy-cache"
-  jq -n --slurpfile ids "$query_fixture_directory/fixture-identities.json" --arg order "$order_id" '
-    {data:{orderId:$order,accountId:$ids[0].accounts.Y,artifactId:"legacy-cache-poison"},
-     freshness:{partitions:[{sourceTopic:"legacy-cache-poison",partition:0,
-       lastProcessedOffset:0,recoveryState:"READY",updatedAtUnixMs:1}]}}
-    ' >"$payload"
-  for kind in order executions account-summary market-reference; do
-    case "$kind" in
-      order|executions) key="query:v1:$kind:$order_id" ;;
-      account-summary) key="query:v1:$kind:$account_id" ;;
-      market-reference) key="query:v1:$kind:$trading_day:$venue_mic:$symbol" ;;
-    esac
-    kns exec -i deployment/redis -c redis -- redis-cli -x SET "$key" <"$payload" \
-      >"$evidence_dir/legacy-cache/$kind-set.txt" || return 1
-    kns exec deployment/redis -c redis -- redis-cli --raw GET "$key" \
-      >"$evidence_dir/legacy-cache/$kind-before.json" || return 1
-    jq -e '.freshness.partitions[0].sourceTopic == "legacy-cache-poison"' \
-      "$evidence_dir/legacy-cache/$kind-before.json" >/dev/null || return 1
-  done
-}
-
-verify_legacy_query_cache_unchanged() {
-  local kind key
-  for kind in order executions account-summary market-reference; do
-    case "$kind" in
-      order|executions) key="query:v1:$kind:$order_id" ;;
-      account-summary) key="query:v1:$kind:$account_id" ;;
-      market-reference) key="query:v1:$kind:$trading_day:$venue_mic:$symbol" ;;
-    esac
-    kns exec deployment/redis -c redis -- redis-cli --raw GET "$key" \
-      >"$evidence_dir/legacy-cache/$kind-after.json" || return 1
-    cmp "$evidence_dir/legacy-cache/$kind-before.json" "$evidence_dir/legacy-cache/$kind-after.json" || return 1
-  done
-  printf '%s\n' '{"status":"PASS","seededEntries":4,"unchangedAfterReads":true}' \
-    >"$evidence_dir/legacy-cache.json"
-}
-
 wait_for_query_fixture() {
   local attempt="$evidence_dir/diagnostics/selected-fixture-attempt.json"
   for _ in $(seq 1 "$timeout_seconds"); do

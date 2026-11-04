@@ -232,7 +232,7 @@ shared observation helpers, so these helpers remain until the P4 cutover.
 | Responsibility | Decision and owner | Remaining gap or intentional loss |
 | --- | --- | --- |
 | R18 exhaustive Python route/read matrix | Retire the duplicate matrix when its runner moves. Keep `QueryOrderHttpTest`, `QueryExecutionsHttpTest`, `QueryAccountSummaryHttpTest`, and `QueryMarketHttpTest` as HTTP/PostgreSQL authorization owners. | Keep a basic authenticated deployed read of actual projected business data. Service tests do not establish Kafka-to-HTTP deployment wiring. |
-| R18 obsolete Redis response seeding and comparison | Retire the deployed legacy-cache fixtures and verdict fields. Existing HTTP tests explicitly prove no cache reads, fills, clears, or fallback to foreign/stale envelopes. | No separate deployment-wide legacy-cache mutation report. This retires completed compatibility verification, not PostgreSQL-only reads or fail-closed ownership. |
+| R18 obsolete Redis response seeding and comparison | Retired the deployed legacy-cache fixtures, old Redis-key mutation and verifier check. Existing HTTP tests prove no cache reads, fills, clears, or fallback to foreign/stale envelopes. | No separate deployment-wide legacy-cache mutation report. This retires completed compatibility verification, not PostgreSQL-only reads, real Redis outage, or fail-closed ownership. |
 | R18 Python collector selection contract and Java process wrapper | Retire with the old fixture-discovery collector. The new observation must select its own actual order/event identities. Do not port scratch fixture discovery or hardcoded migration-version assertions. | `QueryCollectorPostgresContractTest` currently launches Python; it is not an independent service requirement. Its removal waits for the collector's last consumer. |
 | R18 replay/isolation and R19 policy lifecycle | Keep unresolved until their runtime boundaries are reviewed. Reuse existing rebuild and policy tests for local behavior. | `QueryAccountPolicySnapshotHttpTest` explicitly tests a separately activated snapshot, not effective revocation or replica convergence. It cannot justify deleting the deployed lifecycle requirement. |
 
@@ -419,6 +419,24 @@ The tracked working tree now contains 123 Shell files and 25,901 physical
 Shell lines. It also contains 4 Ruby files and 28 Python files.
 The Issue #202 minimum reduction gates (51 Shell files and 10,476 lines)
 remain unmet. No code was translated into another language for this metric.
+
+#### P4 R18 obsolete Redis-cache check retirement
+
+The current Query certification runner no longer writes legacy response
+envelopes into Redis or compares those obsolete keys after business reads.
+The two Shell functions, their evidence files, and the dedicated verifier
+check are retired. `QueryEvidenceVerifier` now evaluates eleven retained
+checks without the `legacy-cache.json` input. The existing contract version
+remains `query-security-phase1/2`; the removed check is an intentional
+verification-interface reduction with no remaining executable caller.
+The historical twelve-check #194 PASS remains unchanged and source-scoped.
+
+The runner still performs its actual Redis outage and compares PostgreSQL
+business responses across baseline, outage and rebuild. Query HTTP tests
+retain security and cache-non-use checks. The Python per-replica route matrix,
+collector, and policy lifecycle still have active callers and are not
+retired by this slice. R18 deployed business-read coverage and R19 two-replica
+policy replacement therefore remain open for P4 integration.
 
 #### P3 milestone Standards / Spec review
 
