@@ -35,11 +35,9 @@ def control_plane(context):
     return {p["metadata"]["uid"]: [s["restartCount"] for s in p["status"]["containerStatuses"]] for p in pods}
 
 
-def preflight(context, docker_context, rejection_image="simplematch/query-service:local"):
+def preflight(context, docker_context):
     """Read existing cluster identities before any build, deployment or fault."""
     before = control_plane(context)
-    rejected = json.loads(subprocess.check_output(["docker", "--context", docker_context,
-        "image", "inspect", rejection_image], text=True, timeout=20))[0]["Id"]
     if shutil.disk_usage(REPOSITORY).free < 40 * 1024**3:
         raise RuntimeError("Host usable space is below the existing 40 GiB deployment preflight floor")
     subprocess.check_output(["kubectl", "--context", context, "--request-timeout=15s",
@@ -85,7 +83,6 @@ def preflight(context, docker_context, rejection_image="simplematch/query-servic
     if control_plane(context) != before:
         raise RuntimeError("Control-plane restart counters changed during the stability window")
     return {"context": context, "dockerContext": docker_context, "workers": observed,
-            "rejectedImage": {"reference": rejection_image, "id": rejected, "launched": False},
             "manifestResources": manifest,
             "freshNamespaceRequired": True, "controlPlaneStable": True,
             "storage": "run-owned emptyDir; no PVC or storage-failover claim"}
@@ -97,8 +94,6 @@ def images(lab, cluster):
     observations = []
     for index, reference in enumerate(references):
         expected = json.loads(lab.docker("image", "inspect", reference).stdout)[0]
-        if reference == lab.image and expected["Id"] == cluster["rejectedImage"]["id"]:
-            raise RuntimeError("Rejection candidate must differ from the approved Query image")
         if expected["Os"] != "linux" or expected["Architecture"] != "amd64":
             raise RuntimeError("Image platform does not match the observed Lab workers")
         # Export only the installed child platform: a local OCI index may include absent children.
@@ -287,7 +282,7 @@ def stop(lab, endpoints, old_bundle, slow=False):
         executor.shutdown(wait=True, cancel_futures=True)
 
 
-def lifecycle(lab, previous, generation, profile, slow=False, partial=False):
+def lifecycle(lab, previous, generation, profile, slow=False):
     current = lab.bundle(generation, profile)
     prior = lab.approval("status")
     lab.approval("approve", "--bundle", current, "--expect-current-digest", prior["digest"])
@@ -296,49 +291,9 @@ def lifecycle(lab, previous, generation, profile, slow=False, partial=False):
     if old is not None:
         raise RuntimeError("V1/old-policy reload was allowed after revocation")
     if generation == 2:
-        # Simulate a lost current record while no Query process can serve; no reinitialization is allowed.
-        approval_file = lab.authority / "current.json"
-        withheld = lab.authority / "withheld-current.json"
-        approval_file.rename(withheld)
-        try:
-            if lab.approval("check", "--bundle", previous["bundle"], "--image", lab.image_id, check=False) is not None:
-                raise RuntimeError("Missing approval record allowed an old policy")
-            if lab.approval("create", "--run-id", lab.run_id, "--namespace", lab.namespace,
-                            "--namespace-uid", lab.uid, "--image", lab.image_id,
-                            "--bundle", previous["bundle"], check=False) is not None:
-                raise RuntimeError("Runner restart reinitialized a V1 authority")
-        finally:
-            withheld.rename(approval_file)
-        changed = lab.private / "same-version-edited"
-        shutil.copytree(current, changed)
-        with (changed / "application.properties").open("a") as edited:
-            edited.write("# changed same-version content\n")
-        if lab.approval("check", "--bundle", changed, "--image", lab.image_id, check=False) is not None:
-            raise RuntimeError("A same-version content edit passed approval")
-        # Use the preflight-pinned identity; this negative candidate is never launched.
-        old_image = lab.rejected_image["id"]
-        if old_image == lab.image_id or lab.approval("check", "--bundle", current, "--image", old_image, check=False) is not None:
-            raise RuntimeError("Unsafe historical image rollback was not rejected")
-        lab.save("rollback-rejections.json", {"oldPolicyRejected": True, "lostRecordRejected": True,
-            "runnerReinitializationRejected": True, "sameVersionEditRejected": True,
-            "incompatibleImageRejected": True, "rejectedImage": old_image, "imageLaunched": False})
         lab.publish(current, "paused")
     lab.approval("verify")
-    lab.deploy(current, partial=partial)
-    if partial:
-        one = lab.endpoints(lab.ready(1))
-        pending = wait_for("intentional unschedulable second replica", lambda: [p for p in lab.pods()
-            if any(c["type"] == "PodScheduled" and c["status"] == "False" and c.get("reason") == "Unschedulable"
-                   for c in p["status"].get("conditions", []))], 20)
-        reject_old(lab, one, previous["bundle"])
-        lab.approval("failure")
-        if lab.approval("collectors", "--output-file", lab.private / "premature-clients.json", check=False) is not None:
-            raise RuntimeError("Failed/partial activation released collector credentials")
-        lab.save("partial-activation.json", {"readyReplicas": 1, "expectedReplicas": 2,
-                 "phase": lab.approval("status")["phase"], "oldCredentialsRejected": True,
-                 "unschedulablePods": [p["metadata"]["uid"] for p in pending]})
-        lab.approval("verify")
-        lab.deploy(current)
+    lab.deploy(current)
     endpoints = lab.endpoints(lab.ready())
     catchup = lab.catchup()
     observations = lab.matrix(endpoints, current, generation, disabled=profile == "d-disabled")
@@ -352,18 +307,16 @@ def lifecycle(lab, previous, generation, profile, slow=False, partial=False):
 
 
 def run(arguments):
-    cluster = preflight(arguments.context, arguments.docker_context, arguments.rejection_image)
+    cluster = preflight(arguments.context, arguments.docker_context)
     labs = []
     result = {"status": "FAIL", "scope": "synthetic Query lifecycle only", "runs": []}
     try:
         for fresh in (False, True):
             if fresh:
-                preflight(arguments.context, arguments.docker_context, arguments.rejection_image)
+                preflight(arguments.context, arguments.docker_context)
             lab = Lab(REPOSITORY, arguments.directory / ("fresh-run" if fresh else "revocation-run"),
                       arguments.context, arguments.docker_context, arguments.image)
             labs.append(lab)
-            lab.rejected_image = cluster["rejectedImage"]
-            lab.save("rejected-image.json", lab.rejected_image)
             if not fresh:
                 images(lab, cluster)
             else:
@@ -380,7 +333,7 @@ def run(arguments):
             lab.approval("activate", "--evidence-file", proof)
             lab.approval("collectors", "--output-file", lab.private / "collector-generation-1.json")
             if not fresh:
-                second = lifecycle(lab, {"bundle": first, "endpoints": endpoints}, 2, "c-y-revoked", slow=True, partial=True)
+                second = lifecycle(lab, {"bundle": first, "endpoints": endpoints}, 2, "c-y-revoked", slow=True)
                 lifecycle(lab, second, 3, "d-disabled")
                 identities = json.loads((first / "fixture-identities.json").read_text())
             else:
@@ -431,7 +384,6 @@ def main():
     parser.add_argument("--docker-context", default="desktop-linux")
     parser.add_argument("--directory", type=Path, required=True)
     parser.add_argument("--image")
-    parser.add_argument("--rejection-image", default="simplematch/query-service:local")
     arguments = parser.parse_args()
     os.umask(0o077)
     signal.signal(signal.SIGTERM, interrupted)
@@ -439,7 +391,7 @@ def main():
         if arguments.operation == "preflight":
             arguments.directory.mkdir(parents=True, exist_ok=True)
             (arguments.directory / "preflight.json").write_text(json.dumps(preflight(
-                arguments.context, arguments.docker_context, arguments.rejection_image), indent=2) + "\n")
+                arguments.context, arguments.docker_context), indent=2) + "\n")
         else:
             run(arguments)
         return 0

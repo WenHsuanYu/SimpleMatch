@@ -1,5 +1,14 @@
 # Query Local Lab policy lifecycle
 
+**Issue #202 S5 migration in progress.** The old independent Query
+policy-approval record is still used by this Lab and awaits R19 cutover.
+The dedicated unrelated rollback-image candidate, comment-only
+same-version mutation, simulated missing approval record, and deliberately
+unschedulable second replica have been retired from the deployed scenario.
+The corresponding historical reports below describe earlier source-scoped
+evidence, not checks run by the current scenario. Real old-generation
+drain, two new replicas, revoked credentials and Account catch-up remain.
+
 QS1-06 / [#193](https://github.com/WenHsuanYu/SimpleMatch/issues/193) verifies a controlled
 policy replacement in a disposable, synthetic Local Lab. It uses the existing startup-only
 Spring Environment policy, two Query replicas, Query-owned PostgreSQL projections and the
@@ -70,10 +79,12 @@ from total HTTP lifetime; the slow client intentionally waits longer. Already tr
 bytes cannot be recalled. This proves bounded routine maintenance, not emergency immediate
 cutoff, zero-downtime policy updates or a production revocation guarantee.
 
-An intentionally unschedulable second V2 replica exercises partial activation. Collector
-material remains withheld, old credentials remain rejected, and the authority records
-`REVOKED_UNAVAILABLE`. Recovery retries the same approved V2; it cannot fall back to V1.
-The runner then verifies C→Y 404, C→X 200 and B→Y 200 plus all five Principals' Account,
+The current runner starts both V2 replicas normally and verifies the current policy
+through each Pod. It no longer creates a deliberately unschedulable Pod to
+exercise the Lab authority's simulated partial-activation recovery branch;
+that historical claim is intentionally retired by Issue #202. Failure to
+activate a replica still prevents a successful R19 verdict. The runner
+verifies C→Y 404, C→X 200 and B→Y 200 plus all five Principals' Account,
 Market and Operations permissions on **each** serving replica. Disabling D is a separate
 next-policy case, so grant revocation is not confused with principal disablement.
 
@@ -113,10 +124,10 @@ every eligible worker before workload application.
 
 Preflight renders the effective platform and Query configuration offline and checks required
 ConfigMap/Secret references and keys, volume mounts and artifact `file:` URIs. All external
-preflight commands have bounded deadlines. Require an existing **different** Query image as
-the incompatible-rollback negative candidate (`--rejection-image`, default
-`simplematch/query-service:local`). Preflight pins its immutable identity before any build or
-namespace creation; the test never launches it. A missing candidate fails before deployment.
+preflight commands have bounded deadlines. Issue #202 retired the requirement
+to inspect a **different, never-launched** Query rollback-image candidate.
+The runtime still pins and verifies the actual approved Query image during
+platform import and before starting each eligible replica.
 The focused image fingerprint includes both the normalization Dockerfile and its wrapper recipe.
 Raw containerd image probes are owner-labelled and recorded before launch. Their exact task,
 container and snapshot identities are cleaned and verified in `finally`, including ambiguous
@@ -157,11 +168,11 @@ Inspect `runtime/verdict.json` and all required phase results rather than one su
 
 | #193 requirement | Enforcement / evidence |
 | --- | --- |
-| A3; policy anti-rollback | Authority CLI rejection tests, same-version/lost-record/image rejection report |
+| A3; policy anti-rollback | Interim authority CLI tests; the separate runtime-only rollback-image/comment-edit/lost-record report was retired by Issue #202 |
 | INV-06/07; Block and drain | Real keep-alive/direct HTTP, CRI task and PID observations, ordered T events |
 | Credential lifecycle | Controlled provisioner tests, zero-overlap generation replacement, collector withholding and all-replica 401 |
 | INV-01/02/03; grant isolation | Five-principal HTTP matrix on every replica; separate disabled-D policy |
-| Failed activation | Actual unschedulable replica, `REVOKED_UNAVAILABLE`, same-V2 recovery |
+| Failed activation | Ordinary two-replica activation must pass or the run fails; deliberately unschedulable partial-activation/recovery simulation was retired |
 | INV-08; durable recovery | Paused-consumer publication, captured Kafka boundaries, exact inbox/hash and HTTP results |
 | Run separation | Namespace/task/data teardown and disjoint identities in a new V1 namespace |
 | Evidence / reuse | Four-phase planner, image execution, consolidated validation/delivery evidence and final owned-resource inventory |

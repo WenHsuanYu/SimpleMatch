@@ -40,8 +40,6 @@ class LifecyclePreflightContract(unittest.TestCase):
                 "status": {"conditions": [{"type": "Ready", "status": "True"}]}} for i in range(3)]}
         elif "namespaces" in arguments:
             value = {"items": []}
-        elif "image" in arguments:
-            value = [{"Id": "sha256:" + "b" * 64}]
         elif "inspect" in arguments:
             value = [{"Config": {"Labels": {"io.x-k8s.kind.cluster": "lab"}}, "Id": "node-id"}]
         elif "crictl" in arguments:
@@ -64,23 +62,8 @@ class LifecyclePreflightContract(unittest.TestCase):
                 patch("subprocess.run", return_value=subprocess.CompletedProcess([], 0)), \
                 patch("time.sleep"):
             result = LIFECYCLE.preflight("kind-lab", "lab")
-        self.assertEqual(result["rejectedImage"]["id"], "sha256:" + "b" * 64)
-
-    def test_missing_rejection_candidate_is_rejected_before_deployment(self):
-        calls = []
-
-        def missing(arguments, **options):
-            calls.append(arguments)
-            if "image" in arguments:
-                raise subprocess.CalledProcessError(1, arguments)
-            return self.external(arguments, **options)
-
-        with patch("subprocess.check_output", side_effect=missing), \
-                patch("subprocess.run", return_value=subprocess.CompletedProcess([], 0)), \
-                patch("time.sleep"):
-            with self.assertRaises(subprocess.CalledProcessError):
-                LIFECYCLE.preflight("kind-lab", "lab")
-        self.assertFalse(any("apply" in c or "create" in c for c in calls))
+        self.assertTrue(result["controlPlaneStable"])
+        self.assertEqual(len(result["workers"]), 3)
 
     def test_low_disk_space_blocks_deployment(self):
         with patch("subprocess.check_output", side_effect=self.external), \

@@ -7,21 +7,19 @@ context=kind-simplematch-live
 docker_context=desktop-linux
 evidence_dir=""
 image_tag="qs193-$(git -C "$repo_root" rev-parse --short HEAD)"
-rejection_image=simplematch/query-service:local
 while (($#)); do
   case "$1" in
     --help)
-      printf '%s\n' 'Usage: run-query-security-lifecycle.sh --directory NEW_PATH [--context CONTEXT] [--docker-context CONTEXT] [--image-tag TAG] [--rejection-image REFERENCE]'
+      printf '%s\n' 'Usage: run-query-security-lifecycle.sh --directory NEW_PATH [--context CONTEXT] [--docker-context CONTEXT] [--image-tag TAG]'
       printf '%s\n' 'Synthetic Local Lab only. Creates and destroys two owned namespaces; no resume or production guarantee.'
       exit 0 ;;
-    --directory|--context|--docker-context|--image-tag|--rejection-image)
+    --directory|--context|--docker-context|--image-tag)
       (($# >= 2)) || exit 2
       case "$1" in
         --directory) evidence_dir="$2" ;;
         --context) context="$2" ;;
         --docker-context) docker_context="$2" ;;
         --image-tag) image_tag="$2" ;;
-        --rejection-image) rejection_image="$2" ;;
       esac
       shift 2 ;;
     *) printf 'Unsupported option: %s\n' "$1" >&2; exit 2 ;;
@@ -64,7 +62,7 @@ for phase_id in "${phases[@]}"; do
   case "$phase_id" in
     source-preflight)
       python3 scripts/end-to-end/query-service/security-lifecycle.py preflight --context "$context" \
-        --docker-context "$docker_context" --directory "$evidence_dir" --rejection-image "$rejection_image"
+        --docker-context "$docker_context" --directory "$evidence_dir"
       git status --porcelain >"$evidence_dir/source-worktree.txt"
       git rev-parse HEAD >"$evidence_dir/source-head.txt"
       ;;
@@ -88,7 +86,7 @@ for phase_id in "${phases[@]}"; do
       mkdir "$evidence_dir/runtime"
       python3 scripts/end-to-end/query-service/security-lifecycle.py run --context "$context" \
         --docker-context "$docker_context" --directory "$evidence_dir/runtime" \
-        --image "simplematch/query-service:$image_tag" --rejection-image "$rejection_image"
+        --image "simplematch/query-service:$image_tag"
       jq -e '.status == "PASS"' "$evidence_dir/runtime/verdict.json" >/dev/null
       ;;
   esac

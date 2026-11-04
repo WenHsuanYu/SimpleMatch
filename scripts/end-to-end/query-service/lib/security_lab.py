@@ -467,7 +467,7 @@ class Lab:
             raise RuntimeError("Refusing to signal a reused PID")
         self.docker("exec", task["node"], "/bin/kill", "-" + name, str(task["pid"]))
 
-    def deployment(self, secret, digest, partial=False):
+    def deployment(self, secret, digest):
         """Prepare the exact Query pod configuration for preflight and activation."""
         deployment = copy.deepcopy(self.query_template)
         deployment["spec"]["replicas"] = 2
@@ -478,11 +478,6 @@ class Lab:
         spec["automountServiceAccountToken"] = False
         # This focused runner completes and verifies Flyway before applying Query.
         spec.pop("initContainers", None)
-        if partial:
-            spec.setdefault("nodeSelector", {})["simplematch.io/worker-slot"] = "1"
-            spec["affinity"] = {"podAntiAffinity": {"requiredDuringSchedulingIgnoredDuringExecution": [{
-                "labelSelector": {"matchLabels": {"app.kubernetes.io/name": "query-service"}},
-                "topologyKey": "kubernetes.io/hostname"}]}}
         container = next(c for c in spec["containers"] if c["name"] == "query-service")
         container["image"], container["imagePullPolicy"] = self.image, "Never"
         environment = {
@@ -507,7 +502,7 @@ class Lab:
         spec["volumes"].append({"name": "query-policy", "secret": {"secretName": secret}})
         return deployment
 
-    def deploy(self, bundle, partial=False):
+    def deploy(self, bundle):
         self.guard()
         approval = self.approval("check", "--bundle", bundle, "--image", self.image_id,
                                  "--run-id", self.run_id, "--namespace", self.namespace,
@@ -518,7 +513,7 @@ class Lab:
         secret = "query-policy-" + approval["digest"][:16]
         self.apply([{"apiVersion": "v1", "kind": "Secret", "metadata": {"name": secret},
                      "immutable": True, "stringData": {"application.properties": policy}}])
-        deployment = self.deployment(secret, approval["digest"], partial)
+        deployment = self.deployment(secret, approval["digest"])
         spec = deployment["spec"]["template"]["spec"]
         for volume in spec["volumes"]:
             for kind, reference in (("secret", "secretName"), ("configMap", "name")):

@@ -282,6 +282,35 @@ or moved merely to reduce the apparent Shell count.
 R19 keeps one actual two-replica policy replacement. Stop the old generation and verify that its tasks exited before activation. Verify revoked grants, disabled Principals, and old-credential rejection through both new replicas. Keep source/run/image binding and bounded catch-up for captured Account events published during the stop. Reuse existing authorization tests for the exhaustive route matrix.
 Retire the Python Lab's separate approval database, event timeline, collector-credential export protocol, and restart/reinitialization simulation. Also retire its comment-only same-version edit, never-launched historical-image candidate, and deliberately unschedulable second replica. These verify a synthetic orchestration authority, not the startup-only product policy. The fresh-run/no-resume lifecycle must reject collisions and must never restore the revoked generation after a failure. This retirement loses the Lab approval-record and partial-activation recovery claims. It does not establish production revocation guarantees.
 
+### P4 R19 synthetic negative-scenario cut
+
+The first R19 cut removes the never-launched incompatible-image preflight
+candidate, comment-only same-version change, simulated missing approval record
+and runner reinitialization, and intentionally unschedulable second V2 Pod.
+No second-Replica placement mutation or separate recovery attempt replaces
+these tests. The older `rollback-rejections.json` and
+`partial-activation.json` reports are no longer produced. This intentionally
+retires the negative synthetic Lab authority/partial-activation assertions,
+not the real Query startup-only policy enforcement.
+
+The current Lab still performs its source-controlled image import, owned
+namespace preflight, the old-generation stop and exact process drain, new
+normal two-Pod activation, per-replica C→Y grant revocation and disabled-D
+Principal checks, old-credential rejection, and bounded Account Kafka
+catch-up after pause. Its separate Lab policy-approval record, ordered event
+timeline and collector-credential export protocol **still have live code
+callers** and remain an R19 unfinished migration obligation. Authority-only
+tests and historical #193 evidence are not relabelled as product policy
+revocation or fresh source-aligned deployment acceptance.
+
+The retained 17 Query lifecycle CI contracts and interim policy-authority
+test passed. Managed PostgreSQL/JUnit and Query Java suites, static analysis,
+clean-source provenance and the S5 fail-closed preflight also passed.
+No new source-aligned Kubernetes policy replacement was executed. This cut
+leaves **113 tracked Shell files / 23,664 physical lines**, four Ruby
+files, and 28 Python files. The S5 minimum maximums of 51 Shell files
+and 10,476 Shell lines remain unmet.
+
 For R16, retain one actual deterministic projection replay observed through the public snapshot API. Also retain a real Redis outage with durable pending repair and convergence after restoration. `MarketDataProjectionApplicationServiceTest` owns projection transactions, replay identity, conflicts, gaps, and reset scope. `RuntimeMarketDataPublicationTest` uses a fake cache for failure/repair. It does not establish actual Redis integration. Reuse the existing snapshot observer instead of copying its protocol code.
 For R17, retain actual public-stream termination, replacement, resubscription, and a fresh complete snapshot through `MarketDataSnapshotRecoveryObserver`. `MarketDataGrpcServiceTest` owns request routing only. Retire the independent all-partition consumer-group ownership report and forced alternate-worker placement from this stream scenario. These add no separate basic public-stream requirement. This cutover makes no full-partition or worker-failure claim. Existing immutable identity, bounded failure, restoration, and cleanup requirements remain.
 
