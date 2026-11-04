@@ -37,7 +37,9 @@ class KubernetesSourceTest {
     for (String name : List.of("tools/kubernetes-tests/build.gradle.kts", "gradle.lockfile",
         "gradlew", "services/query-service/build.gradle.kts", "tools/other/gradle.lockfile",
         "services/quickfix-gateway/src/main/java/Gateway.java",
-        "services/persistence/src/main/java/Persistence.java")) {
+        "services/persistence/src/main/java/Persistence.java",
+        "services/market-data-projection/src/main/java/Projection.java",
+        "services/marketdata-streamer/src/main/java/Streamer.java")) {
       final Path file = repository.resolve(name);
       Files.createDirectories(file.getParent());
       final String before = KubernetesSource.fingerprint(repository, commands);

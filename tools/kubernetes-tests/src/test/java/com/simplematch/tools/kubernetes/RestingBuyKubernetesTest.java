@@ -28,7 +28,7 @@ import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 
-/** Verifies one real public BUY across FIX, Risk/CDC, Matching, Persistence, and Account. */
+/** Verifies public FIX delivery, Matching recovery, and Market Data in one owned run. */
 @Tag("kubernetes-live")
 class RestingBuyKubernetesTest {
   private final ObjectMapper json = new ObjectMapper();
@@ -125,6 +125,9 @@ class RestingBuyKubernetesTest {
       }
     }
     verifyDelayedOrder(context, credentials, order, events);
+    try (var marketData = new KubernetesMarketData(context)) {
+      marketData.verify();
+    }
   }
 
   private void assertFacts(KubernetesBusinessEnvironment.PublicOrder context, Order order,

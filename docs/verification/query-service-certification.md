@@ -130,7 +130,7 @@ bash scripts/run-local-production-like-certification.sh --keep-resources
 Then provide that run's namespace and evidence directory explicitly:
 
 ```bash
-bash scripts/run-query-service-certification.sh \
+bash scripts/end-to-end/query-service/run-certification.sh \
   --namespace "${SIMPLEMATCH_CERTIFICATION_NAMESPACE}" \
   --retained-evidence-dir "${SIMPLEMATCH_PRODUCTION_LIKE_EVIDENCE_DIR}" \
   --query-fixture-directory "${SIMPLEMATCH_QUERY_FIXTURE_DIRECTORY}" \

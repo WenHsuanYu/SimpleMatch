@@ -77,8 +77,12 @@ final class RiskCommandDeployment {
   }
 
   private void startBusinessServices() throws Exception {
+    if (inputs.profile().javaServices().contains("market-data-projection")) {
+      startWorkload("deployment", "redis");
+    }
     for (String name : java.util.List.of(
-        "account-service", "risk-service", "persistence", "kafka-connect")) {
+        "account-service", "risk-service", "persistence", "kafka-connect",
+        "market-data-projection", "marketdata-streamer")) {
       if ("kafka-connect".equals(name) || inputs.profile().javaServices().contains(name)) {
         startWorkload("deployment", name);
       }
@@ -114,6 +118,9 @@ final class RiskCommandDeployment {
     final var databaseOwners = new java.util.TreeSet<>(inputs.profile().javaServices());
     databaseOwners.add("simplematch-flyway");
     for (String owner : databaseOwners) {
+      if ("marketdata-streamer".equals(owner)) {
+        continue;
+      }
       if ("quickfix-gateway".equals(owner)) {
         final var secret = credentials.gatewaySecret(dsn);
         final var data = secret.withObject("stringData");

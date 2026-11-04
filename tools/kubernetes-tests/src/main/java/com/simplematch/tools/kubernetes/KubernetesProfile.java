@@ -24,7 +24,8 @@ record KubernetesProfile(List<JsonNode> documents) {
 
   private static final Set<String> TRADING_OWNERS = Set.of(
       "account-service", "risk-service", "persistence", "quickfix-gateway", "matching",
-      "kafka-connect", "kafka", "postgres");
+      "kafka-connect", "kafka", "postgres", "redis", "market-data-projection",
+      "marketdata-streamer");
   private static final Set<String> TRADING_EXTRA = Set.of(
       "Role/matching-partition-lease-holder", "RoleBinding/matching-partition-lease-holder",
       "Service/matching-headless", "Service/quickfix-gateway-headless",
@@ -67,7 +68,8 @@ record KubernetesProfile(List<JsonNode> documents) {
         Set.of("Deployment", "StatefulSet").contains(document.path("kind").asText()))
         .map(document -> document.path("metadata").path("name").asText())
         .filter(Set.of("account-service", "risk-service",
-            "persistence", "quickfix-gateway")::contains)
+            "persistence", "quickfix-gateway", "market-data-projection",
+            "marketdata-streamer")::contains)
         .collect(java.util.stream.Collectors.toUnmodifiableSet());
   }
 
@@ -80,7 +82,8 @@ record KubernetesProfile(List<JsonNode> documents) {
   /** Keeps schema initialization ahead of service startup for every selected database owner. */
   List<String> migrationJobs() {
     final var services = javaServices();
-    return List.of("account-service", "risk-service", "persistence", "quickfix-gateway")
+    return List.of("account-service", "risk-service", "persistence", "quickfix-gateway",
+        "market-data-projection")
         .stream().filter(services::contains).map(service -> service + "-flyway").toList();
   }
 

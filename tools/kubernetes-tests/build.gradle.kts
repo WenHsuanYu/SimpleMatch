@@ -9,6 +9,7 @@ plugins {
 }
 
 dependencies {
+    testImplementation(project(":tools:recovery-evidence-verifier"))
     implementation(platform(libs.spring.boot.bom))
     implementation(libs.jackson.databind)
     implementation(libs.jackson.dataformat.yaml)
@@ -31,7 +32,8 @@ require(!completeVerification || scenario == "resting-buy") {
     "Complete verification requires the resting-buy Kubernetes business scenario."
 }
 val javaServices = if (scenario == "resting-buy")
-    listOf("account-service", "risk-service", "persistence", "quickfix-gateway")
+    listOf("account-service", "risk-service", "persistence", "quickfix-gateway",
+        "market-data-projection", "marketdata-streamer")
 else listOf("account-service", "risk-service")
 
 val dockerContext = providers.gradleProperty("kubernetesDockerContext").orElse(providers.exec {
@@ -162,7 +164,7 @@ kubernetesTest.configure {
 }
 rootProject.tasks.register("verifyKubernetes") {
     group = "verification"
-    description = "Builds current RM-1 images and verifies deployed behavior with owned kind resources."
+    description = "Builds source-bound images and verifies the selected run-owned kind scenario."
     dependsOn(buildInputs, kubernetesTest)
 }
 kubernetesTest.configure { mustRunAfter(buildInputs) }

@@ -49,7 +49,7 @@ The repository-owned completion gate is
 Run it only against a lifecycle-labelled disposable namespace:
 
 ```bash
-bash scripts/run-market-data-certification.sh \
+bash scripts/end-to-end/market-data/run-certification.sh \
   --namespace "${SIMPLEMATCH_CERTIFICATION_NAMESPACE}" \
   --evidence-dir "${SIMPLEMATCH_MARKET_DATA_EVIDENCE_DIR}"
 ```

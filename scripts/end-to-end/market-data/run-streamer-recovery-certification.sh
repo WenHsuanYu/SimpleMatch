@@ -88,16 +88,20 @@ stop_observer() {
 
 restore_projection_environment() {
   if [[ "$projection_environment_modified" == true ]]; then
-    kns set env deployment/market-data-projection \
+    if kns set env deployment/market-data-projection \
       SIMPLEMATCH_MARKET_DATA_PROJECTION_REBUILD_HTTP_ENABLED- \
-      SIMPLEMATCH_MARKET_DATA_PROJECTION_REBUILD_OPERATOR_TOKEN- >/dev/null 2>&1 ||
+      SIMPLEMATCH_MARKET_DATA_PROJECTION_REBUILD_OPERATOR_TOKEN- >/dev/null 2>&1; then
+      projection_environment_modified=false
+    else
       restoration_failed=true
-    projection_environment_modified=false
+    fi
   fi
   if [[ "$projection_scaled" == true && -n "$original_projection_replicas" ]]; then
-    scale_deployment market-data-projection "$original_projection_replicas" ||
+    if scale_deployment market-data-projection "$original_projection_replicas"; then
+      projection_scaled=false
+    else
       restoration_failed=true
-    projection_scaled=false
+    fi
   elif [[ -n "$original_projection_replicas" ]]; then
     kns rollout status deployment/market-data-projection \
       --timeout="${timeout_seconds}s" >/dev/null 2>&1 || restoration_failed=true
@@ -116,7 +120,6 @@ restore_environment() {
 write_failure_verdict() {
   local status="$1"
   [[ "$evidence_initialized" == true ]] || return 0
-  [[ -f "$evidence_dir/verdict.json" ]] && return 0
   jq -n \
     --arg namespace "$namespace" \
     --arg stage "$current_stage" \
@@ -125,16 +128,24 @@ write_failure_verdict() {
     --argjson restorationFailed "$([[ "$restoration_failed" == true ]] && echo true || echo false)" \
     '{status:"FAIL",namespace:$namespace,stage:$stage,reason:$reason,
       exitStatus:$exitStatus,restorationFailed:$restorationFailed}' \
-    >"$evidence_dir/verdict.json"
+    >"$evidence_dir/verdict.failure.pending.json" || return 1
+  mv "$evidence_dir/verdict.failure.pending.json" "$evidence_dir/verdict.json"
 }
 
 cleanup() {
   local status="$?"
   trap - ERR EXIT INT TERM
-  restore_environment
+  if [[ "$certification_succeeded" != true ]]; then
+    restore_environment
+  fi
   if [[ "$restoration_failed" == true ]]; then
     status=1
     [[ -n "$failure_reason" ]] || failure_reason="environment restoration failed"
+  fi
+  if [[ "$evidence_initialized" == true && "$certification_succeeded" != true ]] &&
+      (( status == 0 )); then
+    status=1
+    [[ -n "$failure_reason" ]] || failure_reason="certification ended without a passed verdict"
   fi
   if ((status != 0)) || [[ "$certification_succeeded" != true ]]; then
     write_failure_verdict "$status"
@@ -239,10 +250,10 @@ start_projection_replay_interface() {
   operator_token="$(tr -d '-' </proc/sys/kernel/random/uuid)"
   projection_scaled=true
   scale_deployment market-data-projection 1
+  projection_environment_modified=true
   kns set env deployment/market-data-projection \
     SIMPLEMATCH_MARKET_DATA_PROJECTION_REBUILD_HTTP_ENABLED=true \
     SIMPLEMATCH_MARKET_DATA_PROJECTION_REBUILD_OPERATOR_TOKEN="$operator_token" >/dev/null
-  projection_environment_modified=true
   wait_deployment_replicas market-data-projection 1 ||
     die "projection replay adapter is not ready"
   start_projection_port_forward "$evidence_dir" setup ||

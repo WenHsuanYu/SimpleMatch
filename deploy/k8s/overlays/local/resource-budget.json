@@ -38,7 +38,11 @@
       "StatefulSet/quickfix-gateway",
       "StatefulSet/matching",
       "Job/persistence-flyway",
-      "Job/quickfix-gateway-flyway"
+      "Job/quickfix-gateway-flyway",
+      "Deployment/redis",
+      "Deployment/market-data-projection",
+      "Deployment/marketdata-streamer",
+      "Job/market-data-projection-flyway"
     ]
   }
 }

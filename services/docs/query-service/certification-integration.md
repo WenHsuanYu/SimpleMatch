@@ -45,9 +45,9 @@ PostgreSQL collector tests execute real selection SQL through the existing exter
 adapter seam. They require the runner-owned database marker and current Flyway migrations; they
 delete only their newly generated fixture rows and never initialize product schemas ad hoc.
 
-## Entry points and compatibility
+## Entry points and fixture policy
 
-`scripts/run-query-service-certification.sh` requires
+`scripts/end-to-end/query-service/run-certification.sh` requires
 `--query-fixture-directory PRIVATE_PATH`. The bundle is the owner-private output of
 `provision-security-fixtures.py`; credentials remain outside Git. The Query runner
 accepts `SIMPLEMATCH_QUERY_CERTIFICATION_FIXTURE_DIRECTORY` and the common
@@ -129,7 +129,7 @@ scripts/run-local-production-like-certification.sh --keep-resources
 export SIMPLEMATCH_QUERY_ISOLATION_COMMAND_TIMEOUT_SECONDS=30
 python3 scripts/end-to-end/query-service/lib/certification_security.py \
   --fixture-directory "$fixture_parent/bundle" --exec \
-  bash scripts/run-query-service-certification.sh \
+  bash scripts/end-to-end/query-service/run-certification.sh \
     --namespace RETAINED_NAMESPACE --retained-evidence-dir RETAINED_REPORT_DIRECTORY \
     --query-fixture-directory "$fixture_parent/bundle" \
     --evidence-dir NEW_QUERY_EVIDENCE_DIRECTORY

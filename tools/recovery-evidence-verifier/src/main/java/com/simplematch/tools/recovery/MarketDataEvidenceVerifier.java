@@ -10,7 +10,7 @@ import java.nio.file.Path;
 import java.util.List;
 
 /** Evaluates the seven retained Market Data rebuild and restoration checks. */
-final class MarketDataEvidenceVerifier {
+public final class MarketDataEvidenceVerifier {
   private static final List<String> INPUT_FILES = List.of(
       "critical-before.json", "critical-after.json", "baseline-snapshot.json",
       "rebuilt-snapshot.json", "restoration.json");
@@ -18,8 +18,15 @@ final class MarketDataEvidenceVerifier {
       "sourceMatchingEventId", "venueMic", "symbol", "instrumentSequence", "sourcePartitionId",
       "sourceKafkaOffset", "completeSnapshot", "lastTrade", "bids", "asks");
 
-  /** Removes old output before reading evidence and writes the current seven-check verdict. */
-  String write(Path directory, Path destination) throws IOException {
+  /**
+   * Removes old output before reading evidence and writes the current seven-check verdict.
+   *
+   * @param directory directory containing the five source evidence files
+   * @param destination output file for the current verdict
+   * @return the Market Data rebuild check identifier
+   * @throws IOException if the evidence cannot be read or the verdict cannot be written
+   */
+  public String write(Path directory, Path destination) throws IOException {
     final Path destinationName = destination.getFileName();
     if (destinationName == null || INPUT_FILES.contains(destinationName.toString())) {
       throw new IllegalArgumentException("Verdict destination must not replace an evidence input.");

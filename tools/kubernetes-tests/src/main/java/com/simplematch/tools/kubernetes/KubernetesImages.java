@@ -145,7 +145,8 @@ final class KubernetesImages {
       String name) throws Exception {
     // CNB's direct strategy avoids requiring Bash in the tiny Spring run images.
     final var command = java.util.Set.of(
-        "account-service", "risk-service", "persistence", "quickfix-gateway").stream()
+        "account-service", "risk-service", "persistence", "quickfix-gateway",
+        "market-data-projection", "marketdata-streamer").stream()
         .anyMatch(service -> image.startsWith("simplematch/" + service + ":"))
         ? List.of("/cnb/lifecycle/launcher", "--", "java", "-version")
         : List.of("/bin/sh", "-c", "true");

@@ -845,3 +845,100 @@ are recorded above. The Java close guard matches the retained close facts.
 This review closes the P3 ownership and old-runner cutover decisions, not
 the fresh final-source S5 acceptance requirement. `verifyAllScope` remains
 fail-closed for R11–R22 pending final integration and verification.
+
+## P5b first integration and legacy-entry retirement
+
+The first P5b group retires two root-level forwarding aliases:
+`scripts/run-market-data-certification.sh` and
+`scripts/run-query-service-certification.sh`. Each only executed its
+existing `scripts/end-to-end/{market-data,query-service}/run-certification.sh`
+target with unchanged arguments. Neither owned a check, fixture, report,
+deployment, or cleanup operation. The canonical R16 and R18/R21 deployed
+runners retain their source/run/image preflight, actual fault observations,
+bounded restoration, and cleanup. No independent verification is lost; the
+alternate command paths and their maintenance are intentionally retired.
+
+The Market Data alias had one current operator caller in
+`services/docs/platform/marketdata-projection-rebuild.md`. The Query alias
+had current operator references in
+`docs/verification/query-service-certification.md`,
+`services/docs/platform/query-service-rebuild.md`, and twice in
+`services/docs/query-service/certification-integration.md`.
+All five references now use the canonical entries. Neither alias had a
+Gradle, hosted CI, executable script, or fixture caller. The frozen S0
+inventory is historical and remains unchanged.
+
+### Retained R11–R22 ownership and execution boundary
+
+| Requirement | Authoritative behavior owner | Actual Gradle, CI, and operator selection | Still missing for full S5 |
+| --- | --- | --- | --- |
+| R11 | `KubernetesCriticalDelivery` in `RestingBuyKubernetesTest` | `verifyAll` selects the resting-buy `verifyKubernetes` task; no hosted live CI; operator uses the same Gradle Kubernetes scenario. | Fresh final-source deployed failure/recovery evidence. |
+| R12 | `KubernetesGatewayAdmission` and `KubernetesTradingClose` in the same scenario; Gateway service policy tests | `verifyKubernetes` plus ordinary Java `test`; CI Java runs service tests, not deployed Close. | Fresh deployed terminal Close acceptance. |
+| R13 | `RestingBuyKubernetesTest` public FIX and durable chain | `verifyKubernetes`; Java CI only component tests. | Fresh deployed business-chain acceptance. |
+| R14 | `KubernetesGatewayRecovery` in the resting-buy scenario; Gateway WAL/session tests | `verifyKubernetes` and Gateway `certificationTest`; Java CI runs the latter, not deployed recovery. | Fresh deployed reconnect/retry acceptance. |
+| R15 | `KubernetesMatchingRecovery` in the resting-buy scenario; native replay/inbox tests | `verifyKubernetes`, `nativeTest`, and component suites; Native CI invokes its own CTest gate. | Fresh deployed cancel/replay acceptance. |
+| R16 | `KubernetesMarketDataRebuild` in `RestingBuyKubernetesTest`, reusing `MarketDataEvidenceVerifier`; retained operator `end-to-end/market-data/run-certification.sh` | `verifyAll` selects the deployed R16 path through `verifyKubernetes`; hosted CI executes service and evidence tests, not live R16. The canonical operator Shell path remains available. | Execute and accept fresh final-source Redis outage, projection replay, repair, and seven-check public-snapshot evidence in P6. |
+| R17 | `KubernetesMarketDataStreamer` in the same run, reusing `MarketDataSnapshotRecoveryObserver`; retained operator `end-to-end/market-data/run-streamer-recovery-certification.sh` | `verifyAll` selects the deployed R17 path through `verifyKubernetes`; hosted CI executes the streamer lifecycle contract, not live R17. The canonical operator Shell path remains available. | Execute and accept fresh final-source public gRPC disconnect, Recreate replacement, and resubscription in P6. |
+| R18 | `end-to-end/query-service/run-certification.sh`, `QueryEvidenceVerifier` and Query HTTP/JDBC suites | Operator canonical Shell runner; Java/CDC Gradle and CI own component/JDBC checks, not deployed Query reads/replay. | Integrate and execute the public Kafka-to-HTTP and Redis fault path. |
+| R19 | `run-query-security-lifecycle.sh` / `security-lifecycle.py` and Query authorization tests | Operator lifecycle runner; lifecycle CI runs focused Python contracts, while Gradle runs service tests. No Gradle live lifecycle owner yet. | Integrate and execute two-replica policy replacement and revocation. |
+| R20 | `OutboxCdcIntegrationTest` for broker/connector/worker crash and exact redelivery; selected PostgreSQL and Redis faults remain with R11/R16 | `verifyDependencies` → `verifyCdc`; CDC CI calls `verifyCdc`. `run-local-resilience-dependencies.sh` remains a distinct focused operator diagnostic. | Fresh final-source dependency acceptance; do not restore retired Kubernetes Connect-only claims. |
+| R21 | Query runner's existing Redis fault and Pod-health/serving observations; Query HTTP tests | Same canonical R18 operator runner; Java CI checks HTTP/TLS but Gradle does not select the deployed R21 observation. | Integrate and execute live readiness/liveness and authenticated serving. |
+| R22 | `nativeTest` CTest integrity/replay; `RestingBuyKubernetesTest` real Matching SIGKILL; separate manual E2E diagnostic | `verifyAll` selects `nativeTest` and resting-buy `verifyKubernetes`; Native CI runs CTest; the retained Shell E2E runner is operator-only. | Fresh final-source process-crash/recovery evidence; no inferred crash-induced uncommitted redelivery. |
+
+The old 62-phase aggregate still has real operator references and shared
+provenance/phase-graph consumers. Its removal is blocked until R18–R19/R21
+owners are integrated and the deployed R16–R17 path is accepted with fresh
+source-aligned evidence. Deleting it now would leave retained checks unverified.
+`verifyAllScope` continues to block all R11–R22 pending fresh acceptance.
+This slice neither creates a second orchestration system nor changes the
+existing Gradle task graph. P6 must execute the final complete-local source.
+
+Focused canonical runner syntax/help and tracked last-caller checks passed.
+`staticAnalysis` completed successfully with cached tasks; the complete
+Gradle dry-run selected existing owners, and actual `verifyAllScope` rejected
+the unresolved requirements as intended. These are not deployment results.
+The tracked Shell inventory moves from **113 files / 23,665 lines** to
+**111 files / 23,655 lines**. Both 51-file / 10,476-line minimums remain
+unmet. Python/Ruby retirement, aggregate lifecycle cutover, and P6 remain
+open.
+
+## P5b R16–R17 Gradle owner integration
+
+The selected `resting-buy` `verifyKubernetes` run now includes R16 and R17.
+`KubernetesMarketData` reuses the current `VerificationRun` namespace, private
+Kubernetes context, build-input receipt, image identity checks, evidence path,
+diagnostics, and exact cleanup owner. The same Gradle image chain builds and
+imports `market-data-projection` and `marketdata-streamer` images. The selected
+profile now includes Redis, Market Data services, and projection migration.
+The runtime source fingerprint covers both Market Data services.
+The R16 preflight also checks the retained fifteen-partition, three-replica
+`marketdata.events` topic and its required retention, cleanup, and ISR policy.
+
+R16 uses the existing public gRPC snapshot observer and seven-check evidence
+verifier. It observes a baseline replay, stops Redis, repeats the replay, and
+requires durable pending Redis repair. It then restores Redis, confirms the
+repaired snapshot, removes the temporary projection operator API, and confirms
+the original projection replica count. It captures the existing critical
+consumer state fields before and after the replay. Only then can its seven-check
+verdict report PASS.
+
+R17 re-enables the projection replay API inside the same run. It requires the
+run-owned Recreate Deployment, a locked template image, and one Ready owner.
+It observes the original public gRPC subscription and snapshot. It then
+restarts the streamer, observes removal of the old Pod, and verifies the new
+Pod identity. The same Java observer reconnects through the original loopback
+port and receives a second complete snapshot. The run restores the temporary
+operator API before the outer Jupiter scenario can succeed. The retained R17
+Shell runner also now keeps failed-restoration flags and prevents a final EXIT
+cleanup from invalidating a published PASS verdict. A failure replaces any
+existing verdict atomically with FAIL.
+
+These implementations are selected in Gradle, but **not yet live accepted**.
+The focused Java and evidence-verifier unit tests, `manifestCheck`,
+`staticAnalysis`, and R17 Shell contract passed. The rendered `resting-buy`
+profile fits the declared 38 GiB reference budget. These checks do not prove
+runtime Redis repair or gRPC resubscription. P6 must execute the new source
+and inspect actual run-owned evidence, restoration, and image identities.
+`verifyAllScope` must remain blocked. The legacy operator scripts and aggregate
+are not yet safe to retire. The Shell inventory remains **111 files** and is
+now **23,666 lines**. The issue's reduction minimums remain unmet.

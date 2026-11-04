@@ -52,6 +52,8 @@ final class KubernetesSource {
     return file.startsWith("services/account-service/") || file.startsWith("services/risk-service/")
         || file.startsWith("services/quickfix-gateway/")
         || file.startsWith("services/persistence/") || file.startsWith("shared-java/")
+        || file.startsWith("services/market-data-projection/")
+        || file.startsWith("services/marketdata-streamer/")
         || file.startsWith("proto/")
         || file.startsWith("tools/risk-matching-e2e-verifier/")
         || file.startsWith("build-logic/") || file.startsWith("gradle/")
