@@ -28,6 +28,8 @@ source "$script_dir/lib/active-liveness.sh"
 source "$script_dir/lib/execution-fixture.sh"
 # shellcheck source=scripts/end-to-end/query-service/lib/evidence.sh
 source "$script_dir/lib/evidence.sh"
+# shellcheck source=scripts/end-to-end/query-service/lib/redis-health.sh
+source "$script_dir/lib/redis-health.sh"
 # shellcheck source=scripts/end-to-end/query-service/lib/run-lifecycle.sh
 source "$script_dir/lib/run-lifecycle.sh"
 
@@ -54,6 +56,7 @@ query_port=""
 replay_boundary_dir=""
 original_query_replicas=""
 original_redis_replicas=""
+query_redis_health_observe_seconds=""
 verifier_image_reference=""
 query_environment_modified=false
 query_scaled=false
@@ -248,15 +251,22 @@ jq -n \
     retainedEvidenceDir:$retainedEvidenceDir}' >"$evidence_dir/provenance.json"
 capture_query_snapshot "$evidence_dir/baseline.json" || die "cannot capture baseline query views"
 capture_query_read_matrix || die "deployed Query replicas failed the approved read matrix"
+query_redis_health_capture baseline || die "baseline Query Pod health or identity is invalid"
 
 current_stage="verify PostgreSQL-only reads during Redis outage"
 redis_scaled=true
 scale_deployment redis 0 || die "Redis could not be scaled down for fallback verification"
+query_redis_health_assert_outage || die "Redis outage was not observed"
 capture_query_snapshot "$evidence_dir/redis-outage.json" ||
   die "authorized PostgreSQL query APIs failed while Redis was unavailable"
+sleep "$query_redis_health_observe_seconds"
+query_redis_health_assert_outage || die "Redis recovered during the liveness observation window"
+query_redis_health_capture redis-outage ||
+  die "Query readiness, liveness, serving or Pod identity failed during Redis outage"
 scale_deployment redis "$original_redis_replicas" ||
   die "Redis could not be restored after fallback verification"
 redis_scaled=false
+query_redis_health_capture restored || die "Query Pod health or identity changed after Redis restoration"
 
 current_stage="prepare public active-processing liveness"
 prepare_query_active_liveness

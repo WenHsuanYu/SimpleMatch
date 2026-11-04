@@ -534,6 +534,44 @@ contracts passed in isolated clean Git snapshots containing the full deletion.
 They correctly rejected the incomplete dirty worktree while the Git index
 still named removed Connect sources. No provenance bypass was introduced.
 
+#### P4 R21 shared Query Redis outage and Pod-health verification
+
+The separate `run-local-java-placement-serving-check.sh` owned a second Redis
+outage, dedicated port-forward adapter, placement report generator, Java
+validator and 22 report/probe fixtures. Last-caller review found no active
+CI/Gradle/full-local use of that deployed runner; its remaining callers were
+the placement-only Java test and two Query HTTP adapter tests. The old runner,
+adapter, five Java placement-only classes, dedicated test and fixtures have
+been retired together. The two HTTP tests were reviewed: the useful
+credential/anonymous-health boundary is exercised at the **new** Query
+observer seam; the independent 600-second wrapper-budget check was removed.
+
+The retained `run-certification.sh` now owns R21 within its **existing**
+Redis outage and restoration. Before mutation it captures both Ready Query
+Pods, distinct nodes, immutable image identities, and the deployed liveness
+probe configuration. It requires an observation window of at least 60 seconds
+and no shorter than the actual liveness window, allowing up to 120 seconds.
+During the observed zero-Ready-Redis window it retains authenticated
+PostgreSQL business reads, then verifies both Pods' readiness, liveness and
+operations-authenticated serving through direct Pod port forwards. It
+requires identical Pod UID, node, image ID and restart count before the
+outage, after its window, and following Redis restoration. A missing/unhealthy
+Pod, failed probe, observed Redis recovery or changed identity rejects Query
+certification. The existing cleanup restores Redis on any failure.
+
+The newly scoped Shell contract checks negative restart, NotReady, failed
+HTTP/body and Redis-presence cases. Existing Query HTTP tests retain the
+operations credential, anonymous health, no-store and response schema checks.
+The old independent placement-report JSON/schema and duplicated Pod-probe
+fixtures are intentionally lost. The new raw observations are scoped to the
+Query run and do not independently constitute a deployment PASS.
+
+Current tracked worktree totals after this cut are **113 Shell files and
+23,643 physical Shell lines**, plus four Ruby and 28 Python files. Neither
+the 51-file nor the 10,476-line minimum has been reached. R18/R19 other
+deployed requirements, R16/R17, R22 abrupt process crash, P5b and P6
+final-source acceptance remain open.
+
 #### P3 milestone Standards / Spec review
 
 **Standards:** Review used `HEAD` (`3b340a6`) as the fixed point and compared

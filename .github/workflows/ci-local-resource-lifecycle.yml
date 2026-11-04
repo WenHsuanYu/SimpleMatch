@@ -63,6 +63,7 @@ jobs:
           bash scripts/end-to-end/critical-consumers/tests/shared-interface-contract.sh
           python3 scripts/end-to-end/query-service/tests/security-fixtures-contract.py
           python3 scripts/end-to-end/query-service/tests/collector-http-contract.py
+          bash scripts/end-to-end/query-service/tests/redis-health-contract.sh
           python3 scripts/end-to-end/query-service/tests/policy-authority-contract.py
           python3 scripts/end-to-end/query-service/tests/lifecycle-deadline-contract.py
           python3 scripts/end-to-end/query-service/tests/lifecycle-drain-contract.py

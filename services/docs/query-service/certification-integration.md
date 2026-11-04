@@ -47,14 +47,13 @@ delete only their newly generated fixture rows and never initialize product sche
 
 ## Entry points and compatibility
 
-Both `scripts/run-query-service-certification.sh` and
-`scripts/run-local-java-placement-serving-check.sh` now require
+`scripts/run-query-service-certification.sh` requires
 `--query-fixture-directory PRIVATE_PATH`. The bundle is the owner-private output of
-`provision-security-fixtures.py`; credentials remain outside Git. The standalone Query runner
-accepts `SIMPLEMATCH_QUERY_CERTIFICATION_FIXTURE_DIRECTORY`; placement accepts
-`SIMPLEMATCH_JAVA_PLACEMENT_QUERY_FIXTURE_DIRECTORY` as equivalent private path inputs.
-Both also accept the common `SIMPLEMATCH_CERTIFICATION_QUERY_FIXTURE_DIRECTORY` fallback;
-their dedicated setting or explicit CLI option takes precedence.
+`provision-security-fixtures.py`; credentials remain outside Git. The Query runner
+accepts `SIMPLEMATCH_QUERY_CERTIFICATION_FIXTURE_DIRECTORY` and the common
+`SIMPLEMATCH_CERTIFICATION_QUERY_FIXTURE_DIRECTORY` fallback. Issue #202 retired
+the separate placement runner; Query now checks selected Pod health and identity
+within its existing Redis outage.
 
 The bundle must already match the serving Query policy and the FIX Account allowlists before a
 real run. The tools neither register Principals nor change access policy. The Query runner checks

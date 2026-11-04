@@ -768,48 +768,18 @@ cluster。
 
 ### 13.5 Java placement/serving focused diagnostic（#157）
 
-若只需要補齊五個 Java workload 共用 placement contract 的代表性 deployed observation，對一個
-已由 source-aligned production-like run 建立、仍在服務的 disposable namespace 執行：
+Issue #202 已將獨立 `run-local-java-placement-serving-check.sh` 與 placement 專用 Java
+報表／fixtures 退役。原 #157 的獨立 60 秒 Redis outage 診斷及其 PASS 報表是歷史證據，
+不能當成目前版本的部署驗收。
 
-```bash
-bash scripts/run-local-java-placement-serving-check.sh \
-  --namespace <run-namespace> \
-  --namespace-run-id <namespace-run-id> \
-  --retained-evidence-dir out/certification/<retained-run> \
-  --query-fixture-directory /private/query-fixture-bundle \
-  --evidence-dir out/resilience/java-placement-serving-<run-id>
-```
-
-Runner 會先驗證 canonical `simplematch-live`/`kind-simplematch-live` context、namespace ownership、
-retained production-like report 為完整 `PASSED`、phase/evidence manifest、source revision、retained
-local image lock、verifier image provenance 與 control-plane stability；它不套用 manifest，也不建立
-第二條 full-local pipeline。代表性 target 固定是
-`query-service`：觀察兩個 Ready Pod
-分布在至少兩個 `local-resilience` worker，並記錄 Pod UID、Node、immutable image identity 與
-restart count。這個 focused claim 直接對 target Pod 做 port-forward；Service/EndpointSlice 的
-selector 與 endpoint 生成是 Kubernetes controller 的責任，不在此重複驗證。Runner 依序檢查
-`/actuator/health/readiness`、`/actuator/health/liveness` 與 `/api/v1/freshness` 的 JSON/HTTP 200
-回應；startup/readiness/liveness 的 path、responsibility 與 liveness timing 由 shared contract
-validator 驗證，runtime observer 只記錄這些端點的實際健康結果與 Pod-level serving。若 deployed
-timing 偏離 bounded window 的依據，observer 會在 mutation 前 fail closed。
-
-`--query-fixture-directory` 必須指向部署前產生、與目前 Query Policy 相符的私密測試 Bundle。
-Freshness 使用其中的 operations-read 身分，兩個最小 Health Probe 保持匿名；不會退回匿名
-Freshness，也不會使用 Rebuild Operator Token。Placement diagnostic report 使用 schema version 3，
-由 Java 驗證各階段 placement、health、authentication 與相關檔案；舊版報告保留
-原始版本與範圍，不會重新標示為新版安全驗收。工具測試通過仍不等同於 deployed PASS。
-
-為了驗證依賴故障時的 health boundary，Runner 只把 run-owned Redis Deployment 從一副本縮到零，
-先確認零 Ready replica，再依 live liveness probe 的 initial delay、period 與 failure threshold
-決定最低觀察時間。目前部署設定對應 60 秒，包含一個額外 period 以觀察 restart。
-`--observe-seconds` 可以增加時間。若設定低於 live probe 所需窗口，命令會在故障操作前拒絕。
-等待結束時再次確認 outage 仍然成立。Runner 接著
-重新觀察 query-service 的 readiness、liveness、serving、Pod UID、Node 與 restart count，再將 Redis
-恢復一副本並重複檢查。Redis outage 是此 diagnostic 的可逆 mutation；cleanup 另有 30 秒上限，
-失敗會讓報告 fail closed。PASS report 保留各階段 placement/health snapshots、response digest、
-replica 轉換，且明確標示 diagnostic-only，不能直接升級成 #151 的 full-local
-aggregate PASS。舊 retained evidence 若與目前 source revision 不同，必須先建立新的 source-aligned
-run。
+現行 R21 觀察已併入 `scripts/end-to-end/query-service/run-certification.sh` 的同一次
+Redis outage。該流程沿用既有 namespace、source/image provenance 與已核准的私密 Query
+operations 憑證；對兩個 Query Pod 分別確認 Ready、不可變映像與不同 worker，
+於 Redis 停用前、超過 live liveness probe 設定窗口後及恢復後，比對 Pod UID、Node、
+image ID 與 restart count。每階段都直接對 Pod 呼叫匿名 readiness／liveness（HTTP 200、
+JSON `UP`），以及受 operations-read 授權的 `/api/v1/freshness`。實際 Redis outage
+必須持續成立；任一檢查失敗則不發布 Query PASS，原有清理流程負責恢復 Redis。
+保留的 source-aligned run 與當次證據才可支持部署宣稱；本次程式修改尚未重新執行完整部署。
 
 ---
 

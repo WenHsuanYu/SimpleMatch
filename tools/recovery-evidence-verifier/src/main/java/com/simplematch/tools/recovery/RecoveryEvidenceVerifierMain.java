@@ -33,7 +33,6 @@ public final class RecoveryEvidenceVerifierMain {
         ReportFields.require(arguments.length == 3, "Provide a dependency and report file.");
         yield new DependencyRecoveryVerifier().verify(arguments[1], Path.of(arguments[2]));
       }
-      case "placement" -> PlacementCommands.execute(arguments);
       case "cdc" -> CdcCommands.execute(arguments);
       case "market-data" -> {
         ReportFields.require(

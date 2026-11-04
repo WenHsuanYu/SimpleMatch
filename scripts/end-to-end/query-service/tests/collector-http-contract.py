@@ -14,7 +14,7 @@ import unittest
 
 REPOSITORY = Path(__file__).resolve().parents[4]
 MODULE = REPOSITORY / "scripts/end-to-end/query-service/lib/evidence.sh"
-PLACEMENT = REPOSITORY / "scripts/lib/local-java-placement-serving.sh"
+QUERY_HEALTH = REPOSITORY / "scripts/end-to-end/query-service/lib/redis-health.sh"
 PROVISIONER = REPOSITORY / "scripts/end-to-end/query-service/provision-security-fixtures.py"
 
 
@@ -106,7 +106,7 @@ class CollectorHttpContract(unittest.TestCase):
     def collect(self, command):
         environment = os.environ | {
             "MODULE": str(MODULE), "evidence_dir": str(self.evidence),
-            "PLACEMENT": str(PLACEMENT),
+            "QUERY_HEALTH": str(QUERY_HEALTH),
             "RESILIENCE_EVIDENCE_VERIFIER_EXECUTABLE": str(REPOSITORY / (
                 "tools/recovery-evidence-verifier/build/install/"
                 "recovery-evidence-verifier/bin/recovery-evidence-verifier")),
@@ -182,38 +182,20 @@ class CollectorHttpContract(unittest.TestCase):
         self.assertNotEqual(result.returncode, 0, "Slow streaming exceeded the total request budget")
         self.assertFalse(output.exists(), "Timed-out responses must not become evidence")
 
-    def test_placement_serving_uses_operations_and_health_remains_anonymous(self):
-        (self.evidence / "health").mkdir()
-        result = self.collect('''source "$PLACEMENT"
-remaining_seconds() { printf '20\\n'; }
-run_bounded() { "$@"; }
-die() { printf '%s\\n' "$*" >&2; exit 1; }
-port_forward_port="$query_port"
-java_placement_serving_capture_http_probe baseline serving /api/v1/freshness >"$evidence_dir/serving-probe.json"
-java_placement_serving_capture_http_probe baseline readiness /actuator/health/readiness >"$evidence_dir/readiness-probe.json"
-java_placement_serving_capture_http_probe baseline liveness /actuator/health/liveness >"$evidence_dir/liveness-probe.json"
+    def test_redis_outage_health_uses_authenticated_serving_and_anonymous_actuator(self):
+        result = self.collect('''source "$QUERY_HEALTH"
+start_port_forward() { printf -v "$5" "$query_port"; }
+stop_query_port_forward() { :; }
+query_redis_health_probe baseline query-service-a
 ''')
         self.assertEqual(result.returncode, 0, result.stderr)
         self.assertEqual([path for path, _ in self.requests], [
-            "/api/v1/freshness", "/actuator/health/readiness", "/actuator/health/liveness"])
-        self.assertTrue(all(header is None for _, header in self.requests[1:]))
-        serving = json.loads((self.evidence / "serving-probe.json").read_text())
-        self.assertEqual(serving.get("authentication"), "query-operations-read")
-        for name in ("readiness", "liveness"):
-            probe = json.loads((self.evidence / f"{name}-probe.json").read_text())
-            self.assertEqual(probe.get("authentication"), "anonymous-health")
-
-    def test_placement_accepts_its_supported_600_second_observer_budget(self):
-        (self.evidence / "health").mkdir()
-        result = self.collect('''source "$PLACEMENT"
-remaining_seconds() { printf '600\\n'; }
-run_bounded() { "$@"; }
-die() { printf '%s\\n' "$*" >&2; exit 1; }
-port_forward_port="$query_port"
-java_placement_serving_capture_http_probe baseline serving /api/v1/freshness
-''')
-        self.assertEqual(result.returncode, 0, result.stderr)
-        self.assertEqual(len(self.requests), 1)
+            "/actuator/health/readiness", "/actuator/health/liveness", "/api/v1/freshness"])
+        self.assertTrue(all(header is None for _, header in self.requests[:2]))
+        self.assertEqual(self.requests[2][1],
+                         "Bearer " + self.credentials["operations"]["token"])
+        self.assertEqual(json.loads((self.evidence / "diagnostics/query-baseline-query-service-a-serving.json").read_text()),
+                         {"partitions": []})
 
 
 if __name__ == "__main__":

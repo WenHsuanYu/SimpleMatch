@@ -90,8 +90,9 @@ decisions; all other D1–D5 and OD-01–OD-19 approval boundaries remain in for
 - The [certification collector](../../../scripts/end-to-end/query-service/lib/evidence.sh) makes
   unauthenticated loopback HTTP requests, selects a latest joined fixture and expects sensitive
   Redis keys. Phase 1 must provision explicit synthetic account grants and revise those key
-  expectations. The [placement observer](../../../scripts/lib/local-java-placement-serving.sh)
-  uses `/api/v1/freshness`; its operations access needs an approved policy or observer change.
+  expectations. The former placement observer was later retired by Issue #202.
+  The Query certification runner now uses `/api/v1/freshness` with the pre-provisioned
+  operations-read identity during its Redis outage.
   No production Java HTTP caller was identified in the scoped search; off-repository consumers
   remain unconfirmed.
 - [Base manifests](../../../deploy/k8s/base/java-services.yaml) retain two Query replicas and an
