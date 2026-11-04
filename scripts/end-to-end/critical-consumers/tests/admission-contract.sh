@@ -5,7 +5,6 @@ script_dir="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
 repo_root="$(cd -- "$script_dir/../../../.." && pwd)"
 cluster_module="$script_dir/../lib/cluster-data.sh"
 recovery_module="$script_dir/../lib/failure-recovery.sh"
-quickfix_build="$repo_root/services/quickfix-gateway/build.gradle.kts"
 temporary_directory="$(mktemp -d "${TMPDIR:-/tmp}/simplematch-admission-contract.XXXXXX")"
 trap 'rm -rf "$temporary_directory"' EXIT
 
@@ -45,31 +44,6 @@ bash -n "$recovery_module"
     }
   done
 )
-
-ruby - "$quickfix_build" <<'RUBY'
-path = ARGV.fetch(0)
-build = File.read(path, encoding: "UTF-8")
-helper = build[/fun Test\.configureLiveCertification\(testClassName: String\) \{(.*?)^\}/m, 1]
-abort "QuickFIX live certification helper is missing" unless helper
-abort "QuickFIX live certification tasks must disable Gradle state tracking" unless
-  helper.include?("doNotTrackState(")
-
-%w[
-  liveCertificationTest
-  retainedSessionCertificationTest
-  preparedSubmissionCertificationTest
-].each do |task_name|
-  body = build[/tasks\.register<Test>\("#{Regexp.escape(task_name)}"\) \{(.*?)^\}/m, 1]
-  abort "#{task_name} is missing" unless body
-  abort "#{task_name} must use the untracked live certification configuration" unless
-    body.include?("configureLiveCertification(")
-end
-
-simulator = build[/tasks\.register<Test>\("certificationTest"\) \{(.*?)^\}/m, 1]
-abort "certificationTest is missing" unless simulator
-abort "simulator certification should retain normal Gradle state tracking" if
-  simulator.include?("configureLiveCertification(") || simulator.include?("doNotTrackState(")
-RUBY
 
 rendered="$temporary_directory/local.yaml"
 kubectl kustomize "$repo_root/deploy/k8s/overlays/local" \
@@ -360,4 +334,4 @@ YAML
     fail 'unexpected FIX evidence must retain FIX status and Text(58)'
 )
 
-printf 'QuickFIX admission, evidence, and live-task contracts are valid.\n'
+printf 'QuickFIX admission and evidence contracts are valid.\n'

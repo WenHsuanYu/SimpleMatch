@@ -18,7 +18,6 @@ on:
       - 'scripts/lib/**'
       - 'scripts/testdata/hard-reset/**'
       - 'scripts/testdata/focused-diagnostic/**'
-      - 'scripts/testdata/recovery-runners/**'
       - 'scripts/archive/**'
       - 'services/quickfix-gateway/*'
       - 'services/quickfix-gateway/src/test/java/com/simplematch/quickfixgateway/fix/**'

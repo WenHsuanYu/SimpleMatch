@@ -29,13 +29,20 @@ The old source-text checks for Dockerfile and wrapper formatting are retired.
 
 ## Read-only operators
 
-`scripts/verify-postgres-live-certification.sh` retains its `SIMPLEMATCH_LIVE_POSTGRES_*` environment interface.
-It invokes `postgresLiveTest` for primary, TLS, logical WAL, histories, Flyway validation, and query plans.
+`./gradlew :tools:dependency-tests:postgresLiveTest` accepts the existing
+`SIMPLEMATCH_LIVE_POSTGRES_*` environment interface.
+It checks primary, TLS, logical WAL, histories, Flyway validation, and query plans.
 TLS hostname verification remains required. Connections default to read-only transactions.
 It never runs migration or fixture methods.
 
-`scripts/check-flyway-query-plans.sh DATABASE SERVICE` invokes `queryPlanTest` with the existing `CI_POSTGRES_*` connection interface.
-Both operators retain their explicit schema and plan assertions.
+`./gradlew :tools:dependency-tests:queryPlanTest` accepts the existing
+`CI_POSTGRES_*` connection interface.
+Set `SIMPLEMATCH_PLAN_DATABASE` and `SIMPLEMATCH_PLAN_SERVICE` before this command.
+Both Gradle tests retain their explicit schema and plan assertions.
+
+For example, set `SIMPLEMATCH_PLAN_DATABASE=database_name` and
+`SIMPLEMATCH_PLAN_SERVICE=risk-service` with the required `CI_POSTGRES_*`
+connection variables. Then run `./gradlew :tools:dependency-tests:queryPlanTest`.
 The local migration smoke no longer repeats the table catalog and forced-plan checks.
 They do not substitute for deployed application or aggregate certification evidence.
 

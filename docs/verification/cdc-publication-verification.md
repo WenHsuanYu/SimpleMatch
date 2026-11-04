@@ -110,7 +110,13 @@ Three dependency seams are injected through environment-specific Adapters:
 - `CDC_KAFKA_EXEC` executes Kafka CLI reads.
 
 The #156 focused Kubernetes runner retains these collector adapters.
-`scripts/test-cdc-verifier.sh` is a compatibility entry for the Java contract suite.
+Run the Java CDC publication contract directly:
+
+```bash
+./gradlew :tools:recovery-evidence-verifier:test --tests '*CdcPublicationCommandsTest'
+```
+
+The former Shell forwarding entry has no independent checks.
 The new Testcontainers scenario observes JDBC, Kafka, and REST interfaces.
 It calls the same Java verifier. The adapters supply observations from each environment.
 The verifier does not manage Compose, Pods, worker selection, task reassignment, or namespaces.

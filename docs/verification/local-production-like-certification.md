@@ -48,8 +48,12 @@ not create a broker cluster, a PostgreSQL server, a Kubernetes cluster, or a FIX
 The repository contains fail-closed provisioning/verification tools and deployment contracts; an
 operator with access to those systems must supply the environment-specific values.
 
-The following commands are read-only unless explicitly marked as provisioning. `./gradlew verifyPostgres` creates disposable Testcontainers databases.
-Use `scripts/verify-postgres-live-certification.sh` for explicit read-only external checks.
+The external PostgreSQL inspection task is read-only.
+`./gradlew verifyPostgres` creates disposable Testcontainers databases.
+Use `./gradlew :tools:dependency-tests:postgresLiveTest` for explicit read-only external checks.
+The external QuickFIX task sends a real Order. Use only an approved isolated
+test account and session. Other resource operations follow their own
+ownership and preflight requirements.
 
 ## Local production-like certification
 
@@ -414,10 +418,10 @@ export SIMPLEMATCH_LIVE_POSTGRES_DATABASE='simplematch'
 export SIMPLEMATCH_LIVE_POSTGRES_SSLMODE='verify-full'
 export SIMPLEMATCH_LIVE_POSTGRES_SSLROOTCERT='/secure/postgres/ca.pem'
 
-bash scripts/verify-postgres-live-certification.sh
+./gradlew :tools:dependency-tests:postgresLiveTest
 ~~~
 
-The script checks that PostgreSQL is a primary, the connection is TLS-protected, wal_level is
+The Gradle test checks that PostgreSQL is a primary, the connection is TLS-protected, wal_level is
 logical, public.flyway_schema_history is absent, each current Flyway service schema has
 successful history and required smoke tables, each service's FlywayInfo and FlywayValidate
 tasks pass, and the named query-plan checks use their expected indexes. It never runs migrate,
@@ -444,8 +448,14 @@ export SIMPLEMATCH_LIVE_FIX_QUANTITY='1000'
 export SIMPLEMATCH_LIVE_FIX_PRICE='101.25'
 export SIMPLEMATCH_LIVE_FIX_CL_ORD_ID='CERT-20260811-001'
 export SIMPLEMATCH_LIVE_FIX_EXPECT_ACCEPTED='true'
+export SIMPLEMATCH_LIVE_FIX_USERNAME='provided-out-of-band'
+export SIMPLEMATCH_LIVE_FIX_PASSWORD='provided-out-of-band'
+export SIMPLEMATCH_LIVE_FIX_KEY_STORE='/secure/fix/client.p12'
+export SIMPLEMATCH_LIVE_FIX_KEY_STORE_PASSWORD='provided-out-of-band'
+export SIMPLEMATCH_LIVE_FIX_TRUST_STORE='/secure/fix/trusted-servers.p12'
+export SIMPLEMATCH_LIVE_FIX_TRUST_STORE_PASSWORD='provided-out-of-band'
 
-bash scripts/run-quickfix-live-certification.sh
+./gradlew --no-daemon :services:quickfix-gateway:liveCertificationTest
 ~~~
 
 The test performs Logon, sends one NewOrderSingle (35=D), waits for an ExecutionReport (35=8),

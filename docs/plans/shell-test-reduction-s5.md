@@ -1016,3 +1016,82 @@ R19 effective revocation and two-replica policy replacement remain separate.
 The new Gradle path is selected but has no fresh deployed evidence.
 Do not report a complete R18 PASS or retire the canonical Shell runner.
 Keep `verifyAllScope` blocked until the remaining owners pass live acceptance.
+
+## P5b existing Gradle operator-entry retirement
+
+Four Shell files only forwarded calls to existing Java Gradle tests.
+The retired entries are `scripts/test-cdc-verifier.sh`,
+`scripts/check-flyway-query-plans.sh`,
+`scripts/verify-postgres-live-certification.sh`, and
+`scripts/run-quickfix-live-certification.sh`.
+They did not own a business assertion, fixture, deployment, or cleanup.
+The tracked caller review found documentation references, not CI or
+another executable caller. Their documented commands now invoke Gradle directly.
+
+The CDC assertion owner remains `CdcPublicationCommandsTest`.
+`PostgresLiveTest` still checks the external read-only PostgreSQL contract.
+`PostgresQueryPlansTest` still checks the selected service's indexes.
+`QuickFixLiveCertificationTest` still validates its required environment
+and executes the real external FIX session. The Shell-only argument and help
+interfaces are intentionally retired. The required environment variables
+and the Java tests remain unchanged.
+The documented external FIX command retains `--no-daemon` to avoid
+reusing a Gradle daemon across credential-bearing certification invocations.
+
+This removal deletes four Shell files and 84 physical Shell lines.
+The tracked totals change from 111 files / 23,666 lines to
+107 files / 23,582 lines. The 51-file and 10,476-line gates remain unmet.
+The remaining Query R18/R19 operator flows still consume Python.
+The resource-budget and hard-reset contracts still consume Ruby.
+Do not claim final Python/Ruby removal or complete S5 acceptance.
+The canonical R18/R19 runners and `verifyAllScope` remain unchanged.
+
+Two unselected test doubles also have no executable last caller:
+`scripts/testdata/recovery-runners/command.rb` and
+`scripts/testdata/recovery-runners/http-fixture.py`.
+They simulated historical Kubernetes, Kafka, and HTTP commands.
+No current CI, Gradle task, or tracked test executes either fixture.
+Delete these test doubles instead of maintaining a simulated framework.
+Remove their unused CI path trigger. No current assertion is retired.
+The frozen S0 inventory remains historical.
+
+This deletes 199 Ruby lines and 29 Python lines.
+Python changes from 27 files / 4,159 lines to 26 files / 4,130 lines.
+Ruby changes from four files / 515 lines to three files / 316 lines.
+The remaining Python/Ruby code is still active or protects independent
+credential, rollout, cleanup, or capacity behavior. Review and retire it
+only when those responsibilities have an owner or an approved disposition.
+
+## P5b obsolete test-shape retirement
+
+Retire `scripts/end-to-end/query-service/tests/execution-fixture-contract.sh`.
+It matched literal Shell and Java source text rather than submitting a FIX order.
+Its isolated FIX port-forward smoke check overlapped the selected
+`shared-interface-contract.sh`, which retains failed-cleanup and retry guards.
+This unselected test had no current executable caller. The real R18
+`run-certification.sh` and `lib/execution-fixture.sh` remain unchanged.
+The intentionally lost check is the old fixture's exact source order and
+its synthetic log-directory creation assertion. It proves no R18 live PASS.
+
+Retire two `scripts/testdata/local-certification/fleet-*-command.txt`
+golden files. Remove exact command-array snapshots from the selected
+`test-local-certification-workloads.sh` contract. Keep semantic positive
+checks for the selected namespace, shared-node mode, and resolved image
+argument in both registry and kind-load modes. Keep the negative case:
+an unresolved image must fail before the live fleet verifier is invoked.
+The intentionally lost checks pinned exact argument order and file layouts.
+The live verifier remains unchanged.
+
+Remove the Ruby source-expression matcher for Gradle task registrations
+from `critical-consumers/tests/admission-contract.sh`. Keep the actual
+rendered-manifest, admission, and fail-closed contract cases. Current
+QuickFIX live Gradle tasks still configure untracked execution. This
+retirement loses only independent regex checks of their source layout;
+it does not establish live FIX acceptance or change the tasks.
+
+These retirements remove one tracked Shell file, two golden-text fixtures,
+and embedded Ruby source matching. They do not remove any `.py` or `.rb`
+file. Tracked Shell totals change from 107 files / 23,582 lines to
+106 files / 23,507 physical lines. Python remains 26 files / 4,130 lines.
+Ruby remains three files / 316 lines. The 51-file / 10,476-line Shell
+minimum remains unmet. R18/R19 and the full S5/P6 acceptance remain open.

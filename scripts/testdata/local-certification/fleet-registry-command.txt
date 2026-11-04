@@ -1,3 +1,0 @@
---namespace
-cached-matching-test
---allow-shared-node
