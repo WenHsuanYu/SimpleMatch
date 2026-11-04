@@ -717,6 +717,12 @@ parent #151 聚合的 fault-family verdict。
 
 ### 13.4 Kafka Connect worker-loss focused diagnostic（#156）
 
+**歷史流程（Issue #202 已退役）**：原本專用的 Kubernetes Connect worker-loss runner
+與對應 Java verifier、fixtures 已移除，不可再使用該舊命令。現行保留的 CDC 驗證入口是
+`./gradlew :tools:dependency-tests:cdcTest`，涵蓋 RF1/RF3 broker outage、connector pause/recovery、
+worker crash 與真正事件 redelivery，但**不驗證** Kubernetes Connect Pod 消失後 task 重新指派。
+本節其餘敘述與歷史證據只適用於 #156 當時的程式碼及環境。
+
 若只需要驗證 Debezium Kafka Connect task 在 worker Pod 消失後是否重新指派，以及重新指派後
 的 Account outbox 變更是否仍精確送達 Kafka，不需要先執行已退休的 aggregate runner。對一個已存在、
 具 `disposable` ownership label 的 production-like namespace 執行：
@@ -727,14 +733,6 @@ Java `recovery-evidence-verifier` 負責 task owner、Pod deletion、reassignmen
 
 保留規則前先確認它保護的實際風險。已解決問題的 debug 檢查、重複摘要與來源寫法檢查可以刪除。
 必要的 ownership、故障後資料正確性與清理結果則必須透過實際介面保留。
-
-```bash
-bash scripts/run-local-connect-worker-loss.sh \
-  --namespace <run-namespace> \
-  --namespace-run-id <namespace-run-id> \
-  --retained-evidence-dir out/certification/local-production-like \
-  --evidence-dir out/resilience/connect-worker-loss-<run-id>
-```
 
 `--retained-evidence-dir` 必須指向同一個 production-like run；其 `run-context` 的 namespace、
 run-id、`cdc_runtime_signature` 與 `cdc_verifier_signature` 都要存在。命令在任何 Pod mutation

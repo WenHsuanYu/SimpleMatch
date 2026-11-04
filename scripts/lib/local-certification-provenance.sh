@@ -54,16 +54,11 @@ simplematch_certification_cdc_verifier_source_paths() {
     scripts/lib/local-certification-focused-diagnostic.sh \
     scripts/lib/cdc-observer-fixture.sh \
     scripts/lib/cdc-verifier.sh \
-    scripts/lib/connect-rest-tunnel.sh \
     tools/recovery-evidence-verifier/src/main \
     tools/recovery-evidence-verifier/build.gradle.kts \
     tools/recovery-evidence-verifier/gradle.lockfile \
-    scripts/lib/connect-worker-loss-cli.sh \
-    scripts/lib/connect-worker-loss-scenario.sh \
-    scripts/lib/connect-worker-loss.sh \
     scripts/lib/local-resilience.sh \
     scripts/run-local-cdc-delivery-focused-diagnostic.sh \
-    scripts/run-local-connect-worker-loss.sh \
     scripts/run-risk-cdc-delivery-observer-check.sh \
     scripts/test-cdc-observer-fixture-contract.sh \
     scripts/test-local-certification-focused-diagnostic.sh

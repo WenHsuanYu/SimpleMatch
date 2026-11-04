@@ -57,15 +57,15 @@ These words describe different responsibilities; they are not interchangeable:
   condition that a validator can check. A JSON/YAML file is only the carrier for inputs or evidence;
   it cannot prove its own `PASS` value.
 - **Module** means the cohesive implementation that owns those rules behind a small Interface.
-  `scripts/lib/cdc-verifier.sh` owns outbox selection and exact publication checks, while
-  `scripts/lib/connect-worker-loss.sh` owns task-owner identity, Pod-loss, reassignment, and report
-  linkage. A caller should not repeat those rules.
+  `scripts/lib/cdc-verifier.sh` owns outbox selection and exact publication checks. The former
+  `connect-worker-loss.sh` owned a separate Kubernetes Connect reassignment diagnostic; Issue #202
+  retired that diagnostic, not the shared CDC verifier.
 
-The worker-loss command separates request parsing, REST tunnel ownership, live fault execution, and data evaluation.
-`connect-worker-loss-cli.sh` parses the request.
-`connect-rest-tunnel.sh` owns the recoverable tunnel.
-`connect-worker-loss-scenario.sh` performs the ordered operations and restores the fixture before PASSED publication.
-The Java [recovery verifier](../../tools/recovery-evidence-verifier/README.md) checks task identities, deletion, reassignment, and event linkage.
+The retired worker-loss command separated request parsing, REST tunnel ownership, live fault execution, and data evaluation.
+`connect-worker-loss-cli.sh` parsed the request.
+`connect-rest-tunnel.sh` owned the recoverable tunnel.
+`connect-worker-loss-scenario.sh` performed the ordered operations and restored the fixture before PASSED publication.
+The retired Java recovery verifier checked task identities, deletion, reassignment, and event linkage.
 The shared CDC validator checks exact Kafka bytes and metadata.
 
 The deployment preflight captures relevant prerequisite objects and invokes Java before fault injection.
@@ -186,6 +186,14 @@ same event id with different raw payload fails closed as a conflicting event.
 
 ## Issue #156 reuse contract
 
+**Historical only.** Issue #202 retired the dedicated Kubernetes Connect
+worker-loss Shell runner, REST tunnel, dedicated Java verifier, and fixtures.
+The original #156 outcome is not invalidated, but its executable workflow is
+no longer an S5 acceptance owner. `OutboxCdcIntegrationTest` now retains
+actual RF1/RF3 broker/connector failures, checkpoint-based worker crash, and
+redelivery without asserting Kubernetes Pod/task reassignment. The old
+requirements below describe the scoped historical #156 evidence.
+
 Issue #156 remains responsible for Kubernetes/Connect distributed-runtime orchestration. Its
 worker-loss case is exposed as the focused `scripts/run-local-connect-worker-loss.sh` diagnostic and
 must independently prove:
@@ -205,17 +213,8 @@ seam. Its controlled Account outbox fixture is deliberately a transport-level tr
 the resulting report does not claim Account RPC/business-transaction semantics or full-local
 certification. #176 intentionally contains no Kubernetes worker-loss orchestration.
 
-Run it only against a retained, disposable production-like namespace whose run-id is supplied
-exactly as labelled; the evidence directory must be empty and the command never applies manifests or
-deletes the cluster:
-
-```bash
-bash scripts/run-local-connect-worker-loss.sh \
-  --namespace <run-namespace> \
-  --namespace-run-id <namespace-run-id> \
-  --retained-evidence-dir out/certification/local-production-like \
-  --evidence-dir out/resilience/connect-worker-loss-<run-id>
-```
+The former command required a retained, disposable production-like namespace
+with a matching run-id and an empty evidence directory. It is no longer available.
 
 The retained directory must contain the same namespace/run-id and the `cdc_runtime_signature` and
 `cdc_verifier_signature` recorded by the full production-like run. The focused command compares the

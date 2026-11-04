@@ -34,7 +34,6 @@ public final class RecoveryEvidenceVerifierMain {
         yield new DependencyRecoveryVerifier().verify(arguments[1], Path.of(arguments[2]));
       }
       case "placement" -> PlacementCommands.execute(arguments);
-      case "connect" -> ConnectCommands.execute(arguments);
       case "cdc" -> CdcCommands.execute(arguments);
       case "market-data" -> {
         ReportFields.require(

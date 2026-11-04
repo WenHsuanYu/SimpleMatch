@@ -497,6 +497,43 @@ fresh-execution/skip-semantics contract, ShellCheck, and source/image
 provenance contract in an isolated clean snapshot also passed. These checks
 do not constitute a live Kubernetes Matching process-crash acceptance run.
 
+#### P4 R20 Kubernetes Connect worker-loss diagnostic retirement
+
+The original #156 worker-loss diagnostic required a dedicated Kubernetes
+Connect two-worker scenario, including Pod deletion, task reassignment, a
+fresh Account outbox transition and matching Kafka publication. Issue #202
+expressly retires that separate orchestration claim. Its local command had
+no current full-local or CI caller; only its private scenario, REST tunnel,
+CLI and fixture tests remained. The dedicated seven Shell files and their
+Java `connect` command/verifier/classes/test fixtures are removed together.
+The original #156 report is historical evidence for the exact old source and
+is not relabelled as new CDC or Kubernetes HA certification.
+
+Keep `OutboxCdcIntegrationTest` as the real RF1/RF3 owner. It exercises
+actual broker unavailability, connector pause/resume, source checkpoint,
+worker process crash and crash-induced redelivery against the test
+dependencies. It does **not** replace Kubernetes Connect Pod or task
+reassignment coverage. `cdc-verifier.sh`, `run-risk-cdc-delivery-observer-check.sh`,
+the retained CDC focused diagnostic, and `local-resilience.sh` still have
+active callers and remain unchanged. The scoped CDC verifier fingerprint
+no longer lists deleted Connect-only inputs; its runtime fingerprint and
+fail-closed source checks remain in place.
+
+After this retirement, the tracked worktree contains **113 Shell files and
+24,166 physical Shell lines**. The 51-file/10,476-line minimum gates are
+not met, and the full R16–R22/P5b/P6 acceptance gate remains unresolved.
+No Kubernetes Connect HA or final-source deployed PASS follows from this
+removal. The deleted Shell-specific tests have no surviving code contract;
+their assertions were not translated into another language.
+
+Focused validation of the cutover passed: the retained Java recovery verifier
+suite and static analysis, both RF1/RF3 `OutboxCdcIntegrationTest` cases
+(2/2, without skips), `manifestCheck`, the shared CDC payload verifier and
+observer fixture contracts. The CDC source-signature and focused-diagnostic
+contracts passed in isolated clean Git snapshots containing the full deletion.
+They correctly rejected the incomplete dirty worktree while the Git index
+still named removed Connect sources. No provenance bypass was introduced.
+
 #### P3 milestone Standards / Spec review
 
 **Standards:** Review used `HEAD` (`3b340a6`) as the fixed point and compared

@@ -1,6 +1,6 @@
 # Recovery evidence verifier
 
-This executable owns the data rules for dependency recovery, Query placement, Connect task reassignment, and Market Data rebuild evidence.
+This executable owns the data rules for dependency recovery, Query placement, and Market Data rebuild evidence.
 It uses the project's existing Jackson and JUnit libraries.
 The existing diagnostic commands collect live observations, enforce resource ownership, and restore their resources.
 
@@ -22,7 +22,6 @@ verifier=tools/recovery-evidence-verifier/build/install/recovery-evidence-verifi
 "$verifier" dependency redis REPORT_FILE
 "$verifier" dependency kafka REPORT_FILE
 "$verifier" placement verify REPORT_FILE
-"$verifier" connect verify REPORT_FILE
 "$verifier" market-data EVIDENCE_DIRECTORY VERDICT_FILE
 ```
 
@@ -32,7 +31,7 @@ Inputs must contain one JSON object. Duplicate fields and trailing JSON are inva
 Linked files must remain inside the evidence directory. Symlinks and path traversal are invalid.
 
 Dependency reports use schema version 2.
-Placement and Connect reports use schema version 3.
+Placement reports use schema version 3.
 Keep earlier reports as historical records. Create new evidence for the current source instead of changing old reports.
 
 ## Responsibility boundaries
@@ -41,22 +40,16 @@ Keep earlier reports as historical records. Create new evidence for the current 
 | --- | --- | --- |
 | Dependency | Pod or worker fault identity, PostgreSQL durable storage and marker, Redis disposable state, Kafka storage, ISR and catch-up | `run-local-resilience-dependencies.sh` |
 | Placement | Two Ready Pods on different workers, consistent immutable image, stable Pod identities and restarts, health and serving during a sufficient Redis outage | `run-local-java-placement-serving-check.sh` |
-| Connect | Exact task-owning Pod deletion, changed task worker and Pod identity, temporal order, baseline-aware Account event and publication linkage | `run-local-connect-worker-loss.sh` |
 | Market Data | Seven named isolation, deterministic-rebuild, repair, and restoration checks from five retained JSON files | `end-to-end/market-data/run-certification.sh` |
 
 The placement window follows the observed liveness probe configuration.
-A new Connect Pod can use the original node. Task reassignment does not require node loss.
 Exact claim sentences, copied summary fields, and unused report readers are absent.
-The Connect preflight checks relevant prerequisites before the fault. The final report does not repeat that deployment validation.
+The focused Kubernetes Connect worker-loss verifier and its exclusive commands
+were retired by Issue #202. Their original reports remain historical
+evidence, not inputs supported by this executable.
 
-The Connect command composes two validators.
-`cdc-verifier.sh` checks exact Kafka payload, key, timestamp, and headers.
-Java checks the task and event identities across the linked files.
-A standalone `connect verify` result proves only `local/connect-task-reassignment` from supplied files.
-It does not independently repeat the shared CDC byte checks.
-
-The collectors also use `placement snapshot`, `placement redis`, `placement probe`, `placement write`, `connect prerequisites`,
-`connect owner`, `connect reassigned`, and `connect draft` to normalize their observations.
+The retained placement collector uses `placement snapshot`, `placement redis`,
+`placement probe`, and `placement write` to normalize observations.
 These are file operations. They do not connect to Kubernetes, PostgreSQL, or Kafka.
 
 ## Market Data verdict
