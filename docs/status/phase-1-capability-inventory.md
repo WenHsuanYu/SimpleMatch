@@ -953,6 +953,12 @@ results below are historical evidence for their original source, not current
 executable commands. The current S5 native owner is `./gradlew nativeTest`;
 selected deployed behavior belongs to Kubernetes verification. This does
 not establish new performance or abrupt process-crash acceptance.
+The current `verifyKubernetes` resting-buy scenario now selects a separate
+run-owned Matching `SIGKILL` after its existing Pod-replacement and
+controlled-duplicate checks. It requires same-Pod recovery, the completed
+cancel input offset, and a subsequent real FIX order. This is current
+source coverage, not executed final-source R22 evidence. It does not prove
+crash-induced redelivery or production endurance.
 
 - **Current status:** `COMPLETED`
 - **Target behavior:** A reproducible benchmark fixes hardware, CPU affinity, wait strategy,

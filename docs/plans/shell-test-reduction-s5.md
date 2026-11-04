@@ -683,6 +683,73 @@ fresh-execution/skip-semantics contract, ShellCheck, and source/image
 provenance contract in an isolated clean snapshot also passed. These checks
 do not constitute a live Kubernetes Matching process-crash acceptance run.
 
+#### P4 R22 retained abrupt-crash observation hardening
+
+Keep the existing Shell Matching E2E runner for its distinct process-crash
+boundary. `KubernetesMatchingRecovery` already owns Pod deletion/replacement;
+converting the multi-mode Shell runner into another Java Kubernetes harness
+would duplicate that ownership without proving more. The retained runner
+now checks the actual kind worker role, original Pod UID, containerd ID and
+running CRI process before sending `SIGKILL` to the exact matching task.
+It also requires a disposable namespace owner and checks its UID/run ID
+again immediately before the fault.
+The replacement must retain the Pod UID/node/PV, use a new container ID,
+increment its restart count, and report exit code 137 before it is accepted
+as an abrupt process termination. The runner also rejects foreign helper
+Pod collisions, deletes only its run-labelled helper, and returns a nonzero
+exit status for a failed final recovery verdict or unproven helper cleanup.
+
+The old `matching_e2e_report_is_valid` function was called only by its own
+synthetic report-shape test, never by the runner. Both were removed rather
+than ported to Java; the live runner now checks its own final status. Static
+source-location assertions were retired from the Shell contract. The
+offset-progress and invalid runtime-metrics checks still exercise the real
+runner. No product code or JVM verification classes were added.
+
+This script sends one Kafka batch before the crash and another after the
+replacement becomes Ready. It proves **fresh post-crash traffic and bounded
+offset progress**, not crash-induced redelivery of an uncommitted command,
+whole-topic replay, or exactly-once effects for unrelated records. Final
+R22 acceptance still needs a fresh source/run/image-bound deployed test.
+The amended basic scope does not require a separately forced uncommitted
+redelivery at the point of SIGKILL. The
+focused Shell contract, `bash -n`, ShellCheck and diff checks pass, but these
+are not live Kubernetes evidence. This slice leaves **113 tracked Shell
+files / 23,665 physical lines**. S5's 51-file / 10,476-line minimums remain
+unmet, as do P5b/P6 and source-aligned R22 acceptance.
+
+#### P4 R22 Gradle-owned abrupt process recovery
+
+`verifyKubernetes` already selects `RestingBuyKubernetesTest` for the complete
+local scenario. That test owns a fresh Kubernetes run, image identities,
+the private kind context, business evidence, and exact resource cleanup.
+Its existing Matching recovery continues to delete a Pod and prove a new
+owner, a completed cancel, and singular durable effects after a controlled
+duplicate. The new R22 step uses the same run and the existing verified
+Matching process signal path. It sends `SIGKILL` to the precise CRI task
+after the R15 scenario ends. It requires the original Pod UID and node,
+a new container ID, increased restart count, exit code 137, unchanged
+PVC/PV, and a Ready, open owner with the completed cancel input offset.
+The next existing public FIX order then checks business delivery after the
+crash. The two faults use separate bounded verification intervals.
+
+The standalone 15-Pod Shell E2E runner remains a manual diagnostic.
+It has no active Gradle or CI caller. Running it as a second Gradle task
+would lose the Jupiter scenario's private context and run ownership after
+that test finishes. No second cluster, JVM business scenario, Kafka batch
+publisher, or parallel orchestration was added. The Native CTest replay
+checks and Jupiter's controlled duplicate retain their current owners.
+
+The R22 core requirement is real process failure, recovered ownership,
+bounded offset progress, and a successful new command. A dedicated test
+that forces an uncommitted Kafka command to redeliver at the instant of
+SIGKILL is not required by the amended basic verification scope. Neither
+the Shell diagnostic nor this Gradle-owned scenario claims such an event.
+The independent R20 CDC crash-induced redelivery requirement remains.
+This R22 integration passes the focused Java contract but has **not** run
+on a fresh source-aligned Kubernetes deployment. `verifyAllScope` continues
+to block complete PASS until remaining S5 work and P6 acceptance finish.
+
 #### P4 R20 Kubernetes Connect worker-loss diagnostic retirement
 
 The original #156 worker-loss diagnostic required a dedicated Kubernetes

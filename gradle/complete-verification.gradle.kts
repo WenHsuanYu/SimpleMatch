@@ -13,7 +13,8 @@ val unresolvedRequirements = listOf(
     "R11-R15: fresh final-source deployed acceptance pending",
     "R16-R17: deployed Market Data rebuild and public-stream recovery",
     "R18-R19: deployed Query processing and policy lifecycle",
-    "R20-R22: retained dependency, placement and Matching recovery dispositions"
+    "R20-R21: retained dependency and placement acceptance pending",
+    "R22: fresh source-aligned Matching process-crash acceptance pending"
 )
 val scope = tasks.register("verifyAllScope") {
     group = "verification"

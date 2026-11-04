@@ -7,7 +7,7 @@ import java.time.Duration;
 import java.util.Map;
 import java.util.regex.Pattern;
 
-/** Signals only a verified run-owned Matching task; refuses restoration after identity drift. */
+/** Signals only a verified run-owned Matching task and checks its current process identity. */
 final class KubernetesMatchingPause implements AutoCloseable {
   private final KubernetesBusinessEnvironment.PublicOrder context;
   private final KubernetesOwnership owner;
@@ -81,6 +81,21 @@ final class KubernetesMatchingPause implements AutoCloseable {
     }
   }
 
+  /** Kills the exact observed task without using a graceful container stop. */
+  static void crash(KubernetesBusinessEnvironment.PublicOrder context, int partition,
+      String expectedPodUid, String expectedContainerId) throws Exception {
+    final var matching = new KubernetesMatchingPause(context, partition);
+    if (!matching.podUid.equals(expectedPodUid)
+        || !("containerd://" + matching.container).equals(expectedContainerId)) {
+      throw new IllegalStateException("Matching owner changed before abrupt fault injection");
+    }
+    matching.signal("SIGKILL", OperationBudget.start(Duration.ofSeconds(20)));
+    Files.write(context.target().run().evidence().resolve("matching-crash-signal.json"),
+        matching.json.writeValueAsBytes(Map.of("pod_uid", matching.podUid,
+            "node_id", matching.nodeId, "container_id", matching.container,
+            "pid", matching.pid, "signal", "SIGKILL")));
+  }
+
   private JsonNode inspect() throws Exception {
     return inspect(Duration.ofSeconds(15));
   }
@@ -88,8 +103,15 @@ final class KubernetesMatchingPause implements AutoCloseable {
   private JsonNode inspect(Duration budget) throws Exception {
     final var status = json.readTree(commands.run(owner.docker().context().command("exec", node,
         "crictl", "inspect", container), "", budget).checked());
-    if (!container.equals(status.path("status").path("id").asText())
-        || !podUid.equals(status.path("status").path("labels").path("io.kubernetes.pod.uid").asText())) {
+    final var running = status.path("status");
+    final var labels = running.path("labels");
+    if (!container.equals(running.path("id").asText())
+        || !"CONTAINER_RUNNING".equals(running.path("state").asText())
+        || !"matching".equals(running.path("metadata").path("name").asText())
+        || !podUid.equals(labels.path("io.kubernetes.pod.uid").asText())
+        || !pod.equals(labels.path("io.kubernetes.pod.name").asText())
+        || !context.target().namespace().equals(
+            labels.path("io.kubernetes.pod.namespace").asText())) {
       throw new IllegalStateException("Matching task no longer belongs to the selected Pod");
     }
     return status;
@@ -97,6 +119,13 @@ final class KubernetesMatchingPause implements AutoCloseable {
 
   private void signal(String signal, OperationBudget budget) throws Exception {
     owner.docker().requireCurrent(commands, budget.remaining());
+    final var namespace = context.target().client().read("get", "namespace",
+        owner.namespace(), "-o", "json");
+    if (!owner.namespaceUid().equals(namespace.path("metadata").path("uid").asText())
+        || !owner.runId().equals(namespace.path("metadata").path("labels")
+            .path(OwnedNamespace.OWNER_LABEL).asText())) {
+      throw new IllegalStateException("Matching namespace identity changed before signal");
+    }
     final String currentNode = json.readTree(commands.run(owner.docker().context()
         .command("inspect", node), "", budget.remaining()).checked()).get(0).path("Id").asText();
     if (!nodeId.equals(currentNode)

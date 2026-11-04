@@ -34,11 +34,13 @@ final class KubernetesMatchingRecovery {
     postgres = new KubernetesPostgres(context.target());
   }
 
-  void verify(KubernetesMatchingEvents events, JsonNode original, JsonNode delivery,
+  /** Returns the confirmed cancel input offset for subsequent recovery checks. */
+  long verify(KubernetesMatchingEvents events, JsonNode original, JsonNode delivery,
       Map<String, String> originalVariables) throws Exception {
     final var rested = events.observe(original, delivery, "resting");
-    replaceOwner(original.required("routingPartition").asInt(),
-        rested.required("context").required("sourceInputOffset").asLong());
+    final int partition = original.required("routingPartition").asInt();
+    final long inputOffset = rested.required("context").required("sourceInputOffset").asLong();
+    replaceOwner(partition, inputOffset);
     context.admission().open(context.target(), "matching-recovered");
     Files.writeString(fix.resolve("cancel-release.next"),
         Long.toString(System.currentTimeMillis() + remaining().toMillis()));
@@ -90,6 +92,7 @@ final class KubernetesMatchingRecovery {
     final var after = json.readTree(postgres.execute(durableSql, variables));
     save("matching-redelivery-state.json", after);
     assertEquals(cancelled, after, "duplicate delivery must not change business state or revisions");
+    return cancelledEvent.required("context").required("sourceInputOffset").asLong();
   }
 
   private void replaceOwner(int partition, long inputOffset) throws Exception {

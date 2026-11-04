@@ -100,6 +100,7 @@ class RestingBuyKubernetesTest {
         final var baseline = new KubernetesOrderFacts(admission, delivery, durable, completed);
         Files.writeString(target.run().evidence().resolve("order-facts.json"), json.writeValueAsString(baseline));
         assertFacts(context, order, baseline, 1);
+        long matchingInputOffset;
         try (var recovered = new KubernetesGatewayRecovery(context, fix, finished).replace(forward)) {
           final var afterAdmission = json.readTree(postgres.execute(
               legacy(context, "resting-buy-admission.sql"), variables));
@@ -114,10 +115,11 @@ class RestingBuyKubernetesTest {
           assertEquals(baseline.admission(), afterAdmission, "retry must preserve the original admission");
           assertEquals(baseline.delivery(), afterDelivery, "retry must preserve singular delivery intent");
           assertEquals(baseline.durable(), afterDurable, "retry must not change durable state or revisions");
-          new KubernetesMatchingRecovery(context, fix, finished)
+          matchingInputOffset = new KubernetesMatchingRecovery(context, fix, finished)
               .verify(events, admission, delivery, durableVariables);
           finished.get(60, TimeUnit.SECONDS);
         }
+        new KubernetesMatchingCrash(context).verify(order.route().partitionId(), matchingInputOffset);
       } finally {
         finished.cancel(true);
       }

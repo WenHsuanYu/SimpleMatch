@@ -23,41 +23,7 @@ fi
 
 fixture_dir="$(mktemp -d)"
 trap 'rm -rf "$fixture_dir"' EXIT
-runtime_evidence="$(jq -cn '[range(0; 15) | {pod:("matching-" + tostring),uid:("uid-" + tostring),node:"worker-a"}]')"
-ring_evidence="$(jq -cn '[range(0; 15) | {runtime_state:"READY",input_ring:{capacity:1024,occupancy:0},output_ring:{capacity:2048,occupancy:0}}]')"
-valid_report="$fixture_dir/valid.json"
-jq -n --argjson rings "$ring_evidence" '
-  {status:"PASSED",kafka_e2e_latency_ns:{p50:1,p99:2,"p99_9":3,max:4},
-   kafka_e2e_latency_definition:"per-event helper observation",
-   ring_occupancy:{before:$rings,after:$rings},loss:0,duplicates:0,
-   replay_lag_seconds:1,replacement_seconds:2,command_end_offset:17,
-   fault_mode:"pod-delete",
-   target:{old_uid:"old",new_uid:"new",old_node:"worker-a",new_node:"worker-a",
-           pvc:"matching-baseline-matching-0",pv:"pv-0",old_restart_count:0,new_restart_count:0},
-   evidence:{e2e_before:"e2e-before.json",e2e_after:"e2e-after.json"}}' >"$valid_report"
-matching_e2e_report_is_valid "$valid_report" "$runtime_evidence"
-
-worker_stop_report="$fixture_dir/worker-stop.json"
-jq '.fault_mode = "worker-stop" |
-    .worker_stop = {node:"worker-a",container_id:"container-123",node_not_ready_observed:true,same_container_restarted:true} |
-    .target.old_uid = "same-pod" |
-    .target.new_uid = "same-pod" |
-    .target.new_restart_count = 1' "$valid_report" >"$worker_stop_report"
-matching_e2e_report_is_valid "$worker_stop_report" "$runtime_evidence"
-
-missing_worker_stop_evidence="$fixture_dir/missing-worker-stop-evidence.json"
-jq '.fault_mode = "worker-stop" | del(.worker_stop)' "$valid_report" >"$missing_worker_stop_evidence"
-if matching_e2e_report_is_valid "$missing_worker_stop_evidence" "$runtime_evidence"; then
-  printf '%s\n' 'Worker-stop report without worker evidence unexpectedly passed.' >&2
-  exit 1
-fi
-
 e2e_script="$script_dir/run-matching-e2e-certification.sh"
-grep -Fq 'helper_node=' "$e2e_script"
-grep -Fq 'simplematch.io/node-pool=local-resilience' "$e2e_script"
-grep -Fq 'distinct from $old_node' "$e2e_script"
-grep -Fq 'actual_helper_node' "$e2e_script"
-grep -Fq 'read_runtime_metrics_with_retry' "$e2e_script"
 
 # Drive the real CLI through baseline metrics collection, stopping at the helper
 # creation boundary. All external commands are local fixture adapters.
@@ -73,10 +39,20 @@ set -euo pipefail
 [[ "$1" != -n ]] || shift 2
 case "$1 $2" in
   'get nodes') printf '%s\n' '{"items":[{"metadata":{"labels":{"node-role.kubernetes.io/control-plane":""}}},{"metadata":{"labels":{"simplematch.io/node-pool":"local-resilience"}}},{"metadata":{"labels":{"simplematch.io/node-pool":"local-resilience"}}},{"metadata":{"labels":{"simplematch.io/node-pool":"local-resilience"}}}]}' ;;
-  'get namespace') printf '{}\n' ;;
+  'get namespace')
+    if [[ "${MATCHING_FOREIGN_NAMESPACE:-false}" == true ]]; then
+      printf '%s\n' '{"metadata":{"uid":"foreign-uid","labels":{"simplematch.io/lifecycle":"production"}}}'
+    else
+      printf '%s\n' '{"metadata":{"uid":"owned-uid","labels":{"simplematch.io/lifecycle":"disposable","simplematch.io/managed-by":"local-production-like-certification","simplematch.io/run-id":"owned-run"}}}'
+    fi ;;
   'get statefulset') cat "$MATCHING_READER_FIXTURE/statefulset.json" ;;
   'get pods') cat "$MATCHING_READER_FIXTURE/pods.json" ;;
-  'get pod') jq --arg name "$3" '.items[] | select(.metadata.name == $name)' "$MATCHING_READER_FIXTURE/pods.json" ;;
+  'get pod')
+    if [[ "${MATCHING_EXISTING_HELPER:-false}" == true && "$3" == matching-e2e-certifier-* ]]; then
+      printf '%s\n' '{"metadata":{"name":"other-run-helper","uid":"foreign-uid","labels":{}}}'
+    else
+      jq --arg name "$3" '.items[] | select(.metadata.name == $name)' "$MATCHING_READER_FIXTURE/pods.json"
+    fi ;;
   'get configmap')
     if [[ "$3" == matching-session-config ]]; then
       printf '%s\n' '{"data":{"trading_day":"2026-08-27","trading_session_id":"2026-08-27-regular","matching_image_digest":"fixture-image"}}'
@@ -149,18 +125,31 @@ for invalid in missing unknown duplicate; do
   }
 done
 
-invalid_node_report="$fixture_dir/invalid-node.json"
-jq '.target.new_node = "worker-b"' "$valid_report" >"$invalid_node_report"
-if matching_e2e_report_is_valid "$invalid_node_report" "$runtime_evidence"; then
-  printf '%s\n' 'Cross-node replacement unexpectedly passed.' >&2
+# Reject a non-disposable namespace before observing or modifying Matching.
+result=0
+PATH="$fixture_dir/bin:$PATH" MATCHING_READER_FIXTURE="$fixture_dir" \
+  MATCHING_FOREIGN_NAMESPACE=true SIMPLEMATCH_MATCHING_E2E_BIN=/bin/true \
+  bash "$e2e_script" --namespace contract --report "$fixture_dir/foreign/report.json" \
+  >"$fixture_dir/foreign.log" 2>&1 || result=$?
+[[ "$result" != 0 ]] && grep -Fq 'refusing Matching E2E outside' "$fixture_dir/foreign.log" || {
+  cat "$fixture_dir/foreign.log" >&2
+  printf '%s\n' 'Matching E2E accepted a non-disposable namespace.' >&2
   exit 1
-fi
+}
 
-incomplete_fleet_report="$fixture_dir/incomplete-fleet.json"
-jq '.ring_occupancy.after = .ring_occupancy.after[0:14]' "$valid_report" >"$incomplete_fleet_report"
-if matching_e2e_report_is_valid "$incomplete_fleet_report" "$runtime_evidence"; then
-  printf '%s\n' 'Incomplete fleet evidence unexpectedly passed.' >&2
+# A reused helper name must fail before creating or deleting another run's Pod.
+cp "$fixture_dir/valid-pods.json" "$fixture_dir/pods.json"
+result=0
+PATH="$fixture_dir/bin:$PATH" MATCHING_READER_FIXTURE="$fixture_dir" \
+  MATCHING_READER_PATH=/var/run/simplematch/matching/runtime-metrics.json \
+  MATCHING_EXISTING_HELPER=true SIMPLEMATCH_MATCHING_E2E_BIN=/bin/true \
+  SIMPLEMATCH_E2E_RUN_TOKEN=abcdef01 \
+  bash "$e2e_script" --namespace contract --report "$fixture_dir/collision/report.json" \
+  >"$fixture_dir/collision.log" 2>&1 || result=$?
+[[ "$result" != 0 ]] && grep -Fq 'refusing to adopt or delete' "$fixture_dir/collision.log" || {
+  cat "$fixture_dir/collision.log" >&2
+  printf '%s\n' 'Matching E2E accepted a foreign helper Pod or reached a later failure.' >&2
   exit 1
-fi
+}
 
 printf '%s\n' 'Matching deployed E2E contract tests passed.'

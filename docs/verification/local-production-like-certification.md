@@ -272,8 +272,28 @@ Kubernetes/Jupiter scenarios still observe actual Matching owners, selected
 recovery and terminal close, while the remaining Matching E2E scenario owns
 its explicitly selected real-failure mode. These owners do not reproduce
 the old collector's comprehensive fleet/image/CPU/e2e metrics report. The
-R22 abrupt process-crash acceptance boundary remains unresolved until its
-actual retained behavior has a final-source owner.
+R22 abrupt process-crash acceptance remains unresolved until the selected
+verification owner completes a fresh source-aligned deployment.
+
+Issue #202 now selects that owner inside the existing `verifyKubernetes`
+resting-buy scenario. The test retains the previous Pod-delete recovery.
+It then uses the run-owned Matching process signal path for one `SIGKILL`
+and checks same-Pod restart, exit 137, and completed input progress.
+The following real FIX order checks post-crash business delivery. The
+scenario reuses the existing image, source, namespace and cleanup checks.
+The new step has only passed its local Java contract. It has not yet
+passed a source-aligned deployed run.
+
+The retained `run-matching-e2e-certification.sh --fault-mode process-crash`
+uses exact-owned containerd task `SIGKILL` rather than a graceful stop. Its
+namespace must have a disposable ownership label and stable UID/run ID. Its
+replacement check requires exit code 137, a changed container ID, increased
+restart count, and unchanged Pod UID/node/PVC/PV. It also refuses helper Pod
+name collisions and fails when cleanup or the final verdict is unproven.
+This is currently a focused Shell implementation, not a fresh deployed
+acceptance result. The native E2E helper completes separate Kafka batches
+before the crash and after recovery. It does not independently establish
+crash-induced delivery of an uncommitted record or global exactly-once replay.
 
 The local native Kafka fixture publisher is:
 

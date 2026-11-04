@@ -38,8 +38,11 @@ run_token_override="${SIMPLEMATCH_E2E_RUN_TOKEN:-}"
 default_run_token="$(generate_run_token)"
 run_token="${run_token_override:-$default_run_token}"
 helper_pod="matching-e2e-certifier-$run_token"
+helper_label="simplematch.io/matching-e2e-helper"
 helper_path="/tmp/simplematch-matching-e2e-certification"
 helper_node=""
+helper_creation_attempted=false
+helper_uid=""
 
 usage() {
   cat <<'EOF'
@@ -151,7 +154,14 @@ configmap_value() {
 }
 
 cleanup_helper() {
-  kns delete pod "$helper_pod" --ignore-not-found --wait=true >/dev/null 2>&1 || true
+  [[ "$helper_creation_attempted" == true ]] || return 0
+  local observed
+  observed="$(kns get pod "$helper_pod" --ignore-not-found -o json)" || return 1
+  [[ -n "$observed" ]] || return 0
+  jq -e --arg key "$helper_label" --arg token "$run_token" --arg uid "$helper_uid" '
+    .metadata.labels[$key] == $token and
+    ($uid == "" or .metadata.uid == $uid)' <<<"$observed" >/dev/null || return 1
+  kns delete pod "$helper_pod" --wait=true >/dev/null
 }
 
 worker_stop_node=""
@@ -162,8 +172,14 @@ cleanup_worker() {
 }
 
 cleanup() {
-  cleanup_helper
+  local status="$?"
+  trap - EXIT
+  if ! cleanup_helper; then
+    printf 'matching E2E certification: owned helper cleanup is unproven\n' >&2
+    status=1
+  fi
   cleanup_worker
+  exit "$status"
 }
 trap cleanup EXIT
 
@@ -175,7 +191,17 @@ control_plane_count="$(jq '[.items[] | select(.metadata.labels["node-role.kubern
 [[ "$node_count" == 4 && "$worker_count" == 3 && "$control_plane_count" == 1 ]] ||
   die "canonical cluster topology is not one control-plane plus three workers"
 
-kns get namespace "$namespace" >/dev/null 2>&1 || die "namespace does not exist: $namespace"
+namespace_document="$(kube get namespace "$namespace" -o json)" ||
+  die "namespace does not exist: $namespace"
+namespace_uid="$(jq -er '
+  select(.metadata.labels["simplematch.io/lifecycle"] == "disposable" and
+    (.metadata.labels["simplematch.io/managed-by"] == "local-production-like-certification" or
+     .metadata.labels["simplematch.io/managed-by"] == "local-resilience") and
+    (.metadata.labels["simplematch.io/run-id"] | type == "string" and length > 0))
+  | .metadata.uid | strings | select(length > 0)' <<<"$namespace_document")" ||
+  die "refusing Matching E2E outside an owned disposable namespace"
+namespace_run_id="$(jq -r '.metadata.labels["simplematch.io/run-id"]' <<<"$namespace_document")"
+printf '%s\n' "$namespace_document" >"$evidence_dir/namespace.json"
 kns get statefulset "$statefulset_name" -o json >"$evidence_dir/statefulset.json"
 kns get pods -l app.kubernetes.io/name=matching -o json >"$evidence_dir/pods-before.json"
 
@@ -253,12 +279,14 @@ while IFS= read -r pod; do
     die "invalid runtime metrics from $pod before E2E"
 done < <(jq -r '.items[] | .metadata.name' "$evidence_dir/pods-before.json" | sort)
 
-kns delete pod "$helper_pod" --ignore-not-found --wait=true >/dev/null
+[[ -z "$(kns get pod "$helper_pod" --ignore-not-found -o json)" ]] ||
+  die "helper Pod name already exists; refusing to adopt or delete it"
 helper_run_args=(
   run "$helper_pod"
   --image="$helper_image"
   --image-pull-policy=IfNotPresent
   --restart=Never
+  --labels="$helper_label=$run_token"
 )
 if [[ -n "$helper_node" ]]; then
   helper_run_args+=(
@@ -267,8 +295,13 @@ if [[ -n "$helper_node" ]]; then
   )
 fi
 helper_run_args+=(--command -- sleep 600)
+helper_creation_attempted=true
 kns "${helper_run_args[@]}" >/dev/null
 kns wait --for=condition=Ready "pod/$helper_pod" --timeout=120s >/dev/null
+helper_observed="$(kns get pod "$helper_pod" -o json)"
+helper_uid="$(jq -er --arg key "$helper_label" --arg token "$run_token" '
+  select(.metadata.labels[$key] == $token) | .metadata.uid | select(length > 0)' \
+  <<<"$helper_observed")" || die "helper Pod is not owned by this run"
 if [[ -n "$helper_node" ]]; then
   actual_helper_node="$(kns get pod "$helper_pod" -o json | jq -r '.spec.nodeName // empty')"
   [[ "$actual_helper_node" == "$helper_node" ]] ||
@@ -306,9 +339,16 @@ if [[ "$fault_mode" == pod-delete ]]; then
   kns delete pod "$target_name" --wait=false >"$evidence_dir/replacement/delete.txt"
   kns wait --for=delete "pod/$target_name" --timeout=60s >/dev/null
 elif [[ "$fault_mode" == process-crash ]]; then
+  current_namespace="$(kube get namespace "$namespace" -o json)"
+  current_run_id="$(jq -r '.metadata.labels["simplematch.io/run-id"]' <<<"$current_namespace")"
+  [[ "$(jq -r '.metadata.uid' <<<"$current_namespace")" == "$namespace_uid" &&
+     "$current_run_id" == "$namespace_run_id" ]] ||
+    die "Matching namespace identity changed before process-crash injection"
   node_cluster="$(docker inspect --format '{{ index .Config.Labels "io.x-k8s.kind.cluster" }}' \
     "$old_node" 2>/dev/null || true)"
-  [[ "$node_cluster" == "$cluster_name" ]] ||
+  node_role="$(docker inspect --format '{{ index .Config.Labels "io.x-k8s.kind.role" }}' \
+    "$old_node" 2>/dev/null || true)"
+  [[ "$node_cluster" == "$cluster_name" && "$node_role" == worker ]] ||
     die "target node is not a worker in the selected kind cluster: $old_node"
   runtime_containers="$(docker exec "$old_node" crictl ps --name matching -o json 2>/dev/null || true)"
   runtime_container_id="$(jq -r --arg pod "$target_name" --arg namespace "$namespace" --arg uid "$old_uid" '
@@ -320,12 +360,28 @@ elif [[ "$fault_mode" == process-crash ]]; then
       .labels["io.kubernetes.pod.uid"] == $uid)]
     | if length == 1 then .[0].id else empty end
   ' <<<"$runtime_containers")"
-  [[ -n "$runtime_container_id" ]] ||
+  [[ "$runtime_container_id" =~ ^[0-9a-f]{64}$ ]] ||
     die "could not resolve a unique running Matching container for $target_name"
+  current_pod="$(kns get pod "$target_name" -o json)"
+  current_container="$(jq -r '[.status.containerStatuses[]? | select(.name == "matching")]
+    | if length == 1 then .[0].containerID else empty end' <<<"$current_pod")"
+  [[ "$(jq -r '.metadata.uid' <<<"$current_pod")" == "$old_uid" &&
+     "$(jq -r '.spec.nodeName' <<<"$current_pod")" == "$old_node" &&
+     "$current_container" == "containerd://$runtime_container_id" ]] ||
+    die "Matching Pod changed before the process-crash injection"
+  task="$(docker exec "$old_node" crictl inspect "$runtime_container_id")"
+  jq -e --arg id "$runtime_container_id" --arg uid "$old_uid" \
+    --arg namespace "$namespace" --arg pod "$target_name" '
+    .status.id == $id and .status.state == "CONTAINER_RUNNING" and
+    .status.labels["io.kubernetes.pod.uid"] == $uid and
+    .status.labels["io.kubernetes.pod.namespace"] == $namespace and
+    .status.labels["io.kubernetes.pod.name"] == $pod and
+    (.info.pid | type == "number" and . > 0)' <<<"$task" >/dev/null ||
+    die "Matching CRI process identity changed before SIGKILL"
   {
     printf 'node=%s\ncontainer_id=%s\npod_uid=%s\n' \
       "$old_node" "$runtime_container_id" "$old_uid"
-    docker exec "$old_node" crictl stop --timeout=0 "$runtime_container_id"
+    docker exec "$old_node" ctr -n k8s.io tasks kill --signal SIGKILL "$runtime_container_id"
   } >"$evidence_dir/replacement/process-crash.txt" 2>&1
 else
   node_cluster="$(docker inspect --format '{{ index .Config.Labels "io.x-k8s.kind.cluster" }}' \
@@ -370,8 +426,15 @@ while [[ "$(date +%s)" -le "$replacement_deadline" ]]; do
       [[ -n "$candidate_uid" && "$candidate_uid" != "$old_uid" && "$candidate_ready" == true ]] &&
         replacement_observed=true
     elif [[ "$fault_mode" == process-crash ]]; then
+      candidate_container="$(jq -r '[.status.containerStatuses[]? | select(.name == "matching")]
+        | if length == 1 then .[0].containerID else empty end' <<<"$target_after")"
+      previous_exit="$(jq -r '[.status.containerStatuses[]? | select(.name == "matching")]
+        | if length == 1 then .[0].lastState.terminated.exitCode // empty else empty end' <<<"$target_after")"
       [[ -n "$candidate_uid" && "$candidate_uid" == "$old_uid" && \
         "$candidate_restart_count" =~ ^[0-9]+$ && "$candidate_restart_count" -gt "$old_restart_count" && \
+        "$candidate_container" =~ ^containerd://[0-9a-f]{64}$ && \
+        "$candidate_container" != "containerd://$runtime_container_id" && \
+        "$previous_exit" == 137 && \
         "$candidate_ready" == true ]] && replacement_observed=true
     else
       [[ -n "$candidate_uid" && "$candidate_ready" == true ]] && replacement_observed=true
@@ -518,4 +581,6 @@ jq -n \
   >"$report_path"
 
 cat "$report_path"
+jq -e '.status == "PASSED"' "$report_path" >/dev/null ||
+  die "Matching E2E did not satisfy the required recovery bounds"
 printf 'E2E report written to %s\n' "$report_path" >&2
