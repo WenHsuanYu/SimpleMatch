@@ -250,7 +250,6 @@ jq -n \
   '{sourceRevision:$sourceRevision,namespace:$namespace,
     retainedEvidenceDir:$retainedEvidenceDir}' >"$evidence_dir/provenance.json"
 capture_query_snapshot "$evidence_dir/baseline.json" || die "cannot capture baseline query views"
-capture_query_read_matrix || die "deployed Query replicas failed the approved read matrix"
 query_redis_health_capture baseline || die "baseline Query Pod health or identity is invalid"
 
 current_stage="verify PostgreSQL-only reads during Redis outage"

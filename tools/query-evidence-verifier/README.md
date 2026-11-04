@@ -1,7 +1,7 @@
 # Query evidence verifier
 
 This executable evaluates retained Query certification evidence.
-It evaluates eleven retained checks and keeps the `query-security-phase1/2` verdict version.
+It evaluates ten retained checks and keeps the `query-security-phase1/2` verdict version.
 It does not contact services or change deployment resources.
 
 ## Evaluate evidence
@@ -24,7 +24,7 @@ The runner publishes a successful verdict only after environment restoration.
 
 | Exit status | Meaning |
 | --- | --- |
-| `0` | All eleven checks pass. The executable writes a PASS verdict. |
+| `0` | All ten checks pass. The executable writes a PASS verdict. |
 | `1` | At least one check fails. The executable writes a FAIL verdict. |
 | `2` | Arguments, input files, or output operations fail. The caller must reject the evaluation. |
 
@@ -40,7 +40,7 @@ The directory must contain these JSON objects:
 - `query-outage.json` and `critical-query-isolation-probe.json`
 - `baseline.json`, `redis-outage.json`, and `rebuilt.json`
 - `restoration.json`
-- `read-matrix.json` and `operator-boundary.json`
+- `operator-boundary.json`
 
 `active-processing-liveness.json` must prove the public IOC path for the verdict to pass.
 Each input file contains one object without duplicate keys or trailing JSON documents.

@@ -236,6 +236,49 @@ shared observation helpers, so these helpers remain until the P4 cutover.
 | R18 Python collector selection contract and Java process wrapper | Retire with the old fixture-discovery collector. The new observation must select its own actual order/event identities. Do not port scratch fixture discovery or hardcoded migration-version assertions. | `QueryCollectorPostgresContractTest` currently launches Python; it is not an independent service requirement. Its removal waits for the collector's last consumer. |
 | R18 replay/isolation and R19 policy lifecycle | Keep unresolved until their runtime boundaries are reviewed. Reuse existing rebuild and policy tests for local behavior. | `QueryAccountPolicySnapshotHttpTest` explicitly tests a separately activated snapshot, not effective revocation or replica convergence. It cannot justify deleting the deployed lifecycle requirement. |
 
+### P4 R18 duplicate deployed read-matrix retirement
+
+The deployed Query runner no longer executes the separate Python
+100-plus-observation authorization matrix per Pod or creates
+`read-matrix.json`. The associated Shell collector and redundant
+`deployedReadMatrix` Java verdict check have been removed. The
+`query-security-phase1/2` verdict version is retained and now contains
+**ten** checks rather than eleven. The previous eleven-check R18
+checkpoint and the original twelve-check #194 PASS are historical
+source-scoped reports, not evidence produced by the current runner.
+
+The required basic actual Kafka-to-HTTP evidence remains:
+`run_matching_fixture` submits the real public FIX cross,
+`wait_for_query_fixture` selects its completed Order/Execution from the
+durable Query projection and PostgreSQL ownership, and
+`capture_query_snapshot` reads the selected Order, nonempty Executions,
+Account summary and Market Reference through authenticated public HTTP.
+The same business data is verified during actual Redis loss and after
+bounded projection replay. R21 separately verifies two Query Pods'
+readiness/liveness, immutable image/UID and authenticated operations
+serving. Service HTTP/JDBC tests retain the denied-account, missing-parent,
+minimal-envelope and no-store rules.
+
+The loss is **intentional**: the deployed runner no longer reports the
+exhaustive X/Y/missing-order cross-Principal matrix for both replicas or
+an exact static policy-version 1 matrix count. These security behavior
+rules remain in service tests and the still-active R19 lifecycle
+components. `read_matrix.py` and `read_fixtures.py` cannot yet be removed:
+`security_lab.py`, `operator_boundary.py` and a PostgreSQL collector
+contract still import them. Their last-consumer review belongs to R19.
+This R18 change does not prove effective revocation or two-replica policy
+replacement; R19 still requires a separate source-aligned deployed run.
+
+The scoped cutover passed the managed Query `postgresJdbcTest`, all 17
+current Query CI contracts, the retained Python read-matrix and operator
+boundary tests, the ten-check Java verifier, and static analysis. The
+source/image provenance checks passed in an isolated clean source
+snapshot, while `verifyAllScope` remains fail-closed. These are not a
+new deployed Query acceptance run. The resulting tracked Shell inventory
+is **113 files / 23,666 physical lines**, still above the minimum S5
+maximums of **51 files / 10,476 lines**. No Python module was duplicated
+or moved merely to reduce the apparent Shell count.
+
 R19 keeps one actual two-replica policy replacement. Stop the old generation and verify that its tasks exited before activation. Verify revoked grants, disabled Principals, and old-credential rejection through both new replicas. Keep source/run/image binding and bounded catch-up for captured Account events published during the stop. Reuse existing authorization tests for the exhaustive route matrix.
 Retire the Python Lab's separate approval database, event timeline, collector-credential export protocol, and restart/reinitialization simulation. Also retire its comment-only same-version edit, never-launched historical-image candidate, and deliberately unschedulable second replica. These verify a synthetic orchestration authority, not the startup-only product policy. The fresh-run/no-resume lifecycle must reject collisions and must never restore the revoked generation after a failure. This retirement loses the Lab approval-record and partial-activation recovery claims. It does not establish production revocation guarantees.
 

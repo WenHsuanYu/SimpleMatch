@@ -502,11 +502,6 @@
     "queryPodCount": 0,
     "queryPodNames": []
   },
-  "read-matrix": {
-    "status": "PASS",
-    "replicas": 2,
-    "observations": 100
-  },
   "restoration": {
     "queryServiceReady": true,
     "queryOutageObserved": true,

@@ -34,7 +34,7 @@ class QueryEvidenceVerifierTest {
     assertEquals("query-security-phase1/2", verdict.path("contractVersion").asText());
     assertEquals("PASS", verdict.path("status").asText());
     assertEquals("PROVEN", verdict.path("activeProcessingLiveness").path("status").asText());
-    assertEquals(11, verdict.path("checks").size());
+    assertEquals(10, verdict.path("checks").size());
     verdict.path("checks").forEach(check -> assertTrue(check.path("passed").booleanValue()));
     assertEquals(
         List.of(
@@ -47,7 +47,6 @@ class QueryEvidenceVerifierTest {
             "activeProcessingLiveness",
             "criticalPathIsolationUnderQuiescence",
             "criticalPathIsolation",
-            "deployedReadMatrix",
             "operatorCredentialSeparation"),
         Stream.of(verdict.path("checks"))
             .flatMap(node -> java.util.stream.StreamSupport.stream(node.spliterator(), false))
@@ -92,7 +91,6 @@ class QueryEvidenceVerifierTest {
             "/quickfixPendingIntents",
             "1",
             "criticalPathIsolation"),
-        new Rejection("read-matrix", "/observations", "99", "deployedReadMatrix"),
         new Rejection(
             "operator-boundary", "/observations/0/status", "200", "operatorCredentialSeparation"),
         isolation("/samples/1/sampleIndex", "0"),
