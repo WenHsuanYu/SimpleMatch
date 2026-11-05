@@ -391,7 +391,7 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("operation", choices=("preflight", "run"))
     parser.add_argument("--context", default="kind-simplematch-live")
-    parser.add_argument("--docker-context", default="desktop-linux")
+    parser.add_argument("--docker-context", default="default")
     parser.add_argument("--directory", type=Path, required=True)
     parser.add_argument("--image")
     arguments = parser.parse_args()

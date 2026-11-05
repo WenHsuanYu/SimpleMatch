@@ -123,10 +123,14 @@ container and snapshot identities are cleaned and verified in `finally`, includi
 launch/timeout before a namespace exists. Surviving probe identities block a subsequent run;
 uncertain ownership is a failure, never a reason to delete an unverified resource.
 
+On this workstation, use Native Docker Context `default`. The build requires the pinned
+`paketobuildpacks/ubuntu-noble-run-tiny:0.0.122` image for `linux/amd64`.
+If the image is absent, pull this exact version before starting a new Lab run.
+
 ```bash
 GRADLE_USER_HOME="$HOME/.gradle" \
   bash scripts/run-query-security-lifecycle.sh \
-  --context kind-simplematch-live --docker-context desktop-linux \
+  --context kind-simplematch-live --docker-context default \
   --directory out/verification/query-security-lifecycle-NEW_RUN
 
 python3 scripts/end-to-end/query-service/tests/security-fixtures-contract.py

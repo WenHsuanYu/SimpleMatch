@@ -39,28 +39,25 @@ Run from the repository root with the project's Java/Gradle toolchain, Docker, k
 Ruby, jq, GNU tar and timeout available. The command does not install software or acquire credentials.
 Image builds and initial platform-image pulls need their normal dependency network access.
 
-Select the Docker engine explicitly. On this workstation use `desktop-linux`; its kind node
-containers are real Docker Desktop containers. The managed Desktop Kubernetes system containers
-belong to a separate cluster. The harness uses its own private kubeconfig, so the current kubectl
-context does not choose its target.
+Select the Docker engine explicitly. On this workstation use the Native Docker Engine via
+`docker context use default` and `DOCKER_CONTEXT=default`. Its Docker data root is on the host
+ext4 filesystem at `/run/media/alexyu/250g_ext4/docker-data`. The harness uses its own private
+kubeconfig, so the current kubectl context does not choose its target.
 
-Docker Desktop must share `/tmp/simplematch-kubernetes-coordination`. The adapter stores private
-per-run ownership markers and kubeconfigs below that directory. The latest creation receipt is atomically mirrored there
+The adapter stores private per-run ownership markers and kubeconfigs under
+`/tmp/simplematch-kubernetes-coordination`. The latest creation receipt is atomically mirrored there
 before updating evidence, so interrupted dedicated creation cannot be adopted as prepared and an
 old partial receipt cannot later delete a completed dedicated cluster. Each new node receives its run's
 UUID marker as a read-only bind mount. Keep this directory and the original ownership receipt until
-retained resources have been cleaned. Configure the exact share in Desktop's Resources > File
-sharing before running; the adapter does not change Desktop settings or restart it.
+retained resources have been cleaned. Native Docker does not require Docker Desktop file sharing.
 
-The current selected workload requests total 8 GiB and 3.5 CPU. Preflight adds the verifier's
-512 MiB request and a 4 GiB kind/control-plane reserve, and requires at least eight Docker CPUs.
-Native Docker requires that complete budget in current host available memory. Desktop requires it
-in current guest available memory and retains a separate 1 GiB of host-tool headroom. A new
-read-only, 32 MiB observer uses the selected PostgreSQL image to read the VM's memory; it removes
-its own container and anonymous volumes. This avoids reserving the VM's existing memory twice,
-without changing Desktop settings. The shared storage guard checks Desktop's actual backing filesystem. Worker image filesystems must remain below 75% use before and
-after import, before a new build against existing workers, and after bootstrap. The control plane
-must pass its stability observation after bootstrap and before namespace deletion. Requests describe declared
+The resource budget is rendered from the selected workload profile at each run. Preflight
+includes verifier requirements and the 4 GiB kind/control-plane reserve, and requires at least
+eight Docker CPUs. Native Docker requires the complete memory budget in the host's current
+available memory. The preflight checks that the native Docker data root is on a supported Linux
+filesystem. Worker image filesystems must remain below 75% use before and after image import,
+before builds against existing workers, and after bootstrap. The control plane must pass its
+stability observation after bootstrap and before namespace deletion. Requests describe declared
 scheduling requirements; they are not measurements of peak RSS.
 
 Run the offline suite and static analysis before a deployment:
@@ -76,6 +73,12 @@ business scenario.
 
 ## Run with a dedicated or disposable cluster
 
+Use Docker Context `default` (Native Docker Engine) for all future kind clusters and
+image builds on this workstation. Select it with `docker context use default`; use
+`DOCKER_CONTEXT=default` and `-PkubernetesDockerContext=default` when running tools.
+The Kubernetes context `kind-simplematch-live` is separate from the Docker context.
+Verify that all kind node `/var` filesystems are disk-backed and not tmpfs.
+
 The default `dedicated` mode validates and reuses `simplematch-live`, or creates it when missing.
 It requires one Ready control-plane node and three Ready workers with the canonical pool and unique
 slots `0`, `1`, `2`, bound to the original kind Docker containers. Each invocation still creates a
@@ -89,7 +92,7 @@ Use a new evidence path on every invocation:
 JAVA_TOOL_OPTIONS='-Xms32m -Xmx512m -XX:+UseSerialGC' \
 ./gradlew verifyKubernetes --no-daemon --max-workers=2 \
   -Dorg.gradle.jvmargs='-Xmx512m -Xms32m -XX:MaxMetaspaceSize=384m -XX:+UseSerialGC -Dfile.encoding=UTF-8' \
-  -PkubernetesDockerContext=desktop-linux \
+  -PkubernetesDockerContext=default \
   -PkubernetesMode=dedicated \
   -PkubernetesTradingDay=2026-08-17 \
   -PkubernetesEvidence=out/verification/rm1-dedicated-01

@@ -4,7 +4,7 @@ set -Eeuo pipefail
 umask 077
 repo_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 context=kind-simplematch-live
-docker_context=desktop-linux
+docker_context=default
 evidence_dir=""
 image_tag="qs193-$(git -C "$repo_root" rev-parse --short HEAD)"
 while (($#)); do
