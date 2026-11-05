@@ -48,4 +48,25 @@ class KubernetesQueryReplayTest {
     assertFalse(KubernetesQueryReplay.groupAtBoundaries(TOPIC,
         rows.replace(TOPIC + " 0 5 5 0", TOPIC + " 0 4 5 1"), expected));
   }
+
+  @Test
+  void resetNeedsExactCliReceiptAndCommittedOffsetsForEveryPartition() {
+    final String group = "query-service-matching-events";
+    final Map<Integer, Long> expected = IntStream.range(0, 15).boxed()
+        .collect(Collectors.toUnmodifiableMap(index -> index, index -> (long) index));
+    final String report = "GROUP TOPIC PARTITION NEW-OFFSET\n"
+        + IntStream.range(0, 15)
+            .mapToObj(index -> group + " " + TOPIC + " " + index + " " + index)
+            .collect(Collectors.joining("\n"));
+    assertTrue(KubernetesQueryReplay.resetReportedAtBoundaries(group, TOPIC, report, expected));
+    assertFalse(KubernetesQueryReplay.resetReportedAtBoundaries(group, TOPIC,
+        report.substring(0, report.lastIndexOf('\n')), expected));
+    assertFalse(KubernetesQueryReplay.resetReportedAtBoundaries(group, TOPIC,
+        report.replace(TOPIC + " 8 8", TOPIC + " 8 9"), expected));
+    assertFalse(KubernetesQueryReplay.resetReportedAtBoundaries(group, TOPIC,
+        report + "\n" + group + " " + TOPIC + " 0 0", expected));
+    assertFalse(KubernetesQueryReplay.resetReportedAtBoundaries(group, TOPIC,
+        "Error: Executing consumer group command failed due to "
+            + "com.fasterxml.jackson.databind.exc.MismatchedInputException: No content to map", expected));
+  }
 }

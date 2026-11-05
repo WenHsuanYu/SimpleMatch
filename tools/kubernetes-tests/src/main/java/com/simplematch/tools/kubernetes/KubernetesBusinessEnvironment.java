@@ -30,9 +30,13 @@ final class KubernetesBusinessEnvironment implements VerificationResources {
   }
 
   KubernetesBusinessEnvironment(KubernetesFixCredentials credentials, UUID account) {
+    this(credentials, account, UUID.randomUUID());
+  }
+
+  KubernetesBusinessEnvironment(KubernetesFixCredentials credentials, UUID account, UUID seller) {
     this.credentials = java.util.Objects.requireNonNull(credentials);
     admission = new KubernetesGatewayAdmission();
-    queryCredentials = new KubernetesQueryCredentials(account);
+    queryCredentials = new KubernetesQueryCredentials(account, seller);
   }
 
   PublicOrder publicOrder() {

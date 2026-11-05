@@ -92,8 +92,13 @@ final class KubernetesQueryBusinessRead {
 
   /** Requires a Kafka-backed reconstruction of the settled authenticated business view. */
   void replayed() throws Exception {
+    replayed("replayed");
+  }
+
+  /** Keeps the operator-enabled and fully restored replay observations independent. */
+  void replayed(String phase) throws Exception {
     requireBaseline();
-    assertEquals(baseline, capture("replayed"),
+    assertEquals(baseline, capture(phase),
         "replayed Query PostgreSQL rows differ from the previously observed source-backed view");
   }
 

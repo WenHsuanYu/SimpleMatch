@@ -39,7 +39,7 @@ class RestingBuyKubernetesTest {
     final UUID account = UUID.randomUUID();
     final UUID seller = UUID.randomUUID();
     try (var credentials = KubernetesFixCredentials.create(privateFiles.resolve("fix"), account, seller)) {
-      final var environment = new KubernetesBusinessEnvironment(credentials, account);
+      final var environment = new KubernetesBusinessEnvironment(credentials, account, seller);
       VerificationRun.verify(environment.request(), environment, run -> {
         try (credentials) {
           verify(environment.publicOrder(), credentials, account, seller);
@@ -136,7 +136,9 @@ class RestingBuyKubernetesTest {
     }
     final var execution = new KubernetesQueryExecution(context, credentials, events, order, seller);
     execution.verify();
-    new KubernetesQueryActiveProcessing(context, credentials, events, order, seller).verify();
+    final var active = new KubernetesQueryActiveProcessing(
+        context, credentials, events, order, seller);
+    active.verify();
     // The delayed BUY must not preempt the real R18 BUY/SELL cross on the same book.
     final var delayedAdmission = verifyDelayedOrder(context, credentials, order, events);
     new KubernetesTradingClose(context, events).verify(
@@ -144,8 +146,17 @@ class RestingBuyKubernetesTest {
     business.settledBaseline();
     execution.settledBaseline();
     new KubernetesQueryReplay(context).verify(business, execution);
-    new KubernetesQueryPolicyReplacement(context).verify(account,
-        java.util.Objects.requireNonNull(sourceOrderId));
+    final var policyFixture = new KubernetesQueryPolicyReplacement.Fixture(
+        new KubernetesQueryPolicyReplacement.Accounts(account, seller),
+        new KubernetesQueryPolicyReplacement.Orders(
+            java.util.Objects.requireNonNull(sourceOrderId),
+            UUID.fromString(execution.buyOrderId()),
+            UUID.fromString(execution.sellOrderId()),
+            UUID.fromString(active.cancelledOrderId())),
+        new KubernetesQueryPolicyReplacement.MarketKey(
+            order.instrument().instrument().venueMic(),
+            order.instrument().instrument().symbol()));
+    new KubernetesQueryPolicyReplacement(context).verify(policyFixture);
   }
 
   private void assertFacts(KubernetesBusinessEnvironment.PublicOrder context, Order order,

@@ -24,6 +24,16 @@ class KubernetesCapacityTest {
   }
 
   @Test
+  void explicitNativeOverrideBypassesOnlyMemoryAvailabilityNotCapacityOrCpu() {
+    assertDoesNotThrow(() -> new KubernetesCapacity.Snapshot(
+        8 * GIB, 8 * GIB, 38 * GIB, 16).require(REQUIRED, false, true));
+    assertThrows(IllegalStateException.class, () -> new KubernetesCapacity.Snapshot(
+        8 * GIB, 8 * GIB, 12 * GIB, 16).require(REQUIRED, false, true));
+    assertThrows(IllegalStateException.class, () -> new KubernetesCapacity.Snapshot(
+        8 * GIB, 8 * GIB, 38 * GIB, 4).require(REQUIRED, false, true));
+  }
+
+  @Test
   void desktopStillRejectsInsufficientGuestHostAndConfiguredCapacity() {
     for (var snapshot : java.util.List.of(
         new KubernetesCapacity.Snapshot(8 * GIB, 10 * GIB, 37 * GIB, 16),

@@ -5,12 +5,78 @@ import static org.junit.jupiter.api.Assertions.assertThrows;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.node.ObjectNode;
+import com.simplematch.contracts.account.v2.AccountLifecycleEvent;
+import com.simplematch.contracts.common.v2.EventMetadata;
+import com.simplematch.contracts.common.v2.TwdNotional;
 import java.util.Collections;
+import java.util.HexFormat;
+import java.util.UUID;
 import org.junit.jupiter.api.Test;
 
 /** Rejects foreign Query Pod ownership and ambiguous operating-system process identity. */
 class KubernetesQueryPolicyReplacementTest {
   private final ObjectMapper json = new ObjectMapper();
+
+  @Test
+  void realFixMatrixFixtureRejectsAmbiguousAccountAndOrderIdentities() {
+    final UUID buyer = UUID.randomUUID();
+    final UUID seller = UUID.randomUUID();
+    final UUID resting = UUID.randomUUID();
+    final UUID filledBuy = UUID.randomUUID();
+    final UUID filledSell = UUID.randomUUID();
+    final UUID ioc = UUID.randomUUID();
+
+    assertThrows(IllegalArgumentException.class,
+        () -> new KubernetesQueryPolicyReplacement.Accounts(buyer, buyer));
+    assertThrows(IllegalArgumentException.class,
+        () -> new KubernetesQueryPolicyReplacement.Orders(resting, filledBuy, filledSell,
+            filledSell));
+    assertThrows(IllegalArgumentException.class,
+        () -> new KubernetesQueryPolicyReplacement.MarketKey("", "1101"));
+
+    final var fixture = new KubernetesQueryPolicyReplacement.Fixture(
+        new KubernetesQueryPolicyReplacement.Accounts(buyer, seller),
+        new KubernetesQueryPolicyReplacement.Orders(resting, filledBuy, filledSell, ioc),
+        new KubernetesQueryPolicyReplacement.MarketKey("XTAI", "1101"));
+    assertEquals(buyer, fixture.accounts().buyer());
+    assertEquals(ioc, fixture.orders().cancelledIoc());
+    assertEquals("1101", fixture.market().symbol());
+  }
+
+  @Test
+  void accountMoneyOracleUsesAuthorityOutboxPayloadRatherThanQueryProjection()
+      throws Exception {
+    final String account = UUID.randomUUID().toString();
+    final String eventId = UUID.randomUUID().toString();
+    final String reservationId = UUID.randomUUID().toString();
+    final var event = AccountLifecycleEvent.newBuilder()
+        .setMetadata(EventMetadata.newBuilder().setSchemaVersion("v2")
+            .setSourceService("account-service").setEventId(eventId))
+        .setAccountId(account)
+        .setReservationId(reservationId)
+        .setReservedNotional(TwdNotional.newBuilder().setUnits(4300))
+        .build();
+    final var row = json.createObjectNode()
+        .put("accountId", account)
+        .put("sourceEventId", eventId)
+        .put("queryReservedNotional", 4300)
+        .put("outboxEventId", eventId)
+        .put("outboxTopic", "account.lifecycle")
+        .put("outboxMessageKey", account)
+        .put("outboxAggregateType", "account_reservation")
+        .put("outboxAggregateId", reservationId)
+        .put("payloadHex", HexFormat.of().formatHex(event.toByteArray()));
+    assertEquals(4300, KubernetesQueryPolicyReplacement.authoritativeReservedNotional(
+        row, account));
+
+    row.put("queryReservedNotional", 9999);
+    assertThrows(AssertionError.class, () ->
+        KubernetesQueryPolicyReplacement.authoritativeReservedNotional(row, account));
+    row.put("queryReservedNotional", 4300);
+    row.put("outboxMessageKey", UUID.randomUUID().toString());
+    assertThrows(AssertionError.class, () ->
+        KubernetesQueryPolicyReplacement.authoritativeReservedNotional(row, account));
+  }
 
   @Test
   void policyReplacementRequiresTheExactDeploymentAndReplicaSetChain() throws Exception {

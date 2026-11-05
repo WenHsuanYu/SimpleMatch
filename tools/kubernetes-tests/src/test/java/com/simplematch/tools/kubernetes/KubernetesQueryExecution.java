@@ -38,6 +38,7 @@ final class KubernetesQueryExecution {
   private JsonNode baseline;
   private java.math.BigDecimal utilizedNotional;
   private String buyOrderId;
+  private String sellOrderId;
 
   KubernetesQueryExecution(KubernetesBusinessEnvironment.PublicOrder context,
       KubernetesFixCredentials credentials, KubernetesMatchingEvents events,
@@ -56,16 +57,23 @@ final class KubernetesQueryExecution {
     final var values = Map.of("account_id", seller.toString(),
         "trading_day", context.settings().day().toString(),
         "now_ms", Long.toString(System.currentTimeMillis()));
-    // Only the newly generated seller is seeded; the existing X buyer belongs to the
-    // already admitted public FIX session, and its authoritative limit is left intact.
+    // Only the seller receives a new cash-limit fixture. The existing X buyer's
+    // authoritative daily limit is already reserved by its public FIX admission.
     postgres.execute(Files.readString(context.settings().root().resolve(
         "scripts/end-to-end/critical-consumers/sql/account-limit-fixture.sql")), values);
+    // Account Authority requires a provisioned position for both sides of a fill.
+    // The buyer starts with zero inventory; the seller holds exactly one board lot.
+    // Provisioning both before either FIX order is released also makes a missing
+    // position fail during fixture setup instead of quarantining a real trade.
     postgres.execute("""
         INSERT INTO account_service.account_positions (
           account_id, symbol, long_qty, short_qty, reserved_long_qty,
           reserved_short_qty, updated_at_unix_ms, version
-        ) VALUES (:'account_id'::uuid, :'symbol', :quantity, 0, 0, 0, :now_ms, 0);
-        """, Map.of("account_id", seller.toString(),
+        ) VALUES
+          (:'buyer_account_id'::uuid, :'symbol', 0, 0, 0, 0, :now_ms, 0),
+          (:'seller_account_id'::uuid, :'symbol', :quantity, 0, 0, 0, :now_ms, 0);
+        """, Map.of("buyer_account_id", selected.account().toString(),
+            "seller_account_id", seller.toString(),
             "symbol", selected.instrument().instrument().symbol(),
             "quantity", Long.toString(selected.rule().boardLotShares()),
             "now_ms", Long.toString(System.currentTimeMillis())));
@@ -73,6 +81,7 @@ final class KubernetesQueryExecution {
     final var buy = submit("buy", selected.account(), "1", "RESTING");
     buyOrderId = buy.path("orderId").asText();
     final var sell = submit("sell", seller, "2", "FILLED");
+    sellOrderId = sell.path("orderId").asText();
     assertFalse(buyOrderId.equals(sell.path("orderId").asText()));
     final var buyFinal = awaitFinal(buyOrderId, selected.account(), "FILLED");
     final var sellFinal = awaitFinal(sell.path("orderId").asText(), seller, "FILLED");
@@ -121,11 +130,23 @@ final class KubernetesQueryExecution {
     return buyOrderId;
   }
 
+  String sellOrderId() {
+    if (baseline == null || sellOrderId == null) {
+      throw new IllegalStateException("R18 SELL execution-backed view was not verified");
+    }
+    return sellOrderId;
+  }
+
   void replayed() throws Exception {
+    replayed("cross-replayed");
+  }
+
+  /** Retains separate nonempty execution observations before and after operator removal. */
+  void replayed(String phase) throws Exception {
     if (baseline == null) {
       throw new IllegalStateException("R18 execution-backed baseline was not observed");
     }
-    assertEquals(baseline, capture("cross-replayed"),
+    assertEquals(baseline, capture(phase),
         "Query replay changed a source-backed, nonempty execution business view");
   }
 
@@ -177,7 +198,8 @@ final class KubernetesQueryExecution {
         assertEquals(clOrdId, admission.path("clOrdId").asText());
         assertEquals(1, admission.path("count").asInt());
         assertEquals(1, admission.path("outboxCount").asInt());
-        assertEquals(side.equals("1") ? "BUY" : "SELL", admission.path("side").asText());
+        assertEquals(side.equals("1") ? "SIDE_BUY" : "SIDE_SELL",
+            admission.path("side").asText());
         awaitPersistence(admission.path("orderId").asText(), expectedStatus);
         final var delivery = postgres.await("""
             SELECT json_build_object('execId', exec_id, 'eventId', encode(event_id, 'hex'),

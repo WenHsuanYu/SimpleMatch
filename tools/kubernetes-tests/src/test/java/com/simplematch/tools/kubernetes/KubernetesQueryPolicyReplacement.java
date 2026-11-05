@@ -7,6 +7,7 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.simplematch.contracts.account.v2.AccountLifecycleEvent;
 import java.net.URI;
 import java.net.http.HttpClient;
 import java.net.http.HttpRequest;
@@ -20,8 +21,11 @@ import java.util.ArrayList;
 import java.util.Base64;
 import java.util.Comparator;
 import java.util.HexFormat;
+import java.util.HashMap;
+import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
+import java.util.Objects;
 import java.util.UUID;
 
 /** Replaces one run-owned Query policy only after the previous generation is stopped. */
@@ -40,6 +44,45 @@ final class KubernetesQueryPolicyReplacement {
   private final KubernetesOwnership ownership;
   private final BoundedCommand docker;
 
+  /** Typed identities from the real public FIX scenario, not synthetic Query rows. */
+  record Accounts(UUID buyer, UUID seller) {
+    Accounts {
+      Objects.requireNonNull(buyer, "buyer Account");
+      Objects.requireNonNull(seller, "seller Account");
+      if (buyer.equals(seller)) {
+        throw new IllegalArgumentException("Query matrix needs two distinct FIX Accounts");
+      }
+    }
+  }
+
+  record Orders(UUID restingBuy, UUID filledBuy, UUID filledSell, UUID cancelledIoc) {
+    Orders {
+      Objects.requireNonNull(restingBuy, "resting BUY");
+      Objects.requireNonNull(filledBuy, "filled BUY");
+      Objects.requireNonNull(filledSell, "filled SELL");
+      Objects.requireNonNull(cancelledIoc, "canceled IOC");
+      if (new HashSet<>(List.of(restingBuy, filledBuy, filledSell, cancelledIoc)).size() != 4) {
+        throw new IllegalArgumentException("real FIX Order identities must be distinct");
+      }
+    }
+  }
+
+  record MarketKey(String venue, String symbol) {
+    MarketKey {
+      if (venue == null || venue.isBlank() || symbol == null || symbol.isBlank()) {
+        throw new IllegalArgumentException("Query matrix requires a selected Market instrument");
+      }
+    }
+  }
+
+  record Fixture(Accounts accounts, Orders orders, MarketKey market) {
+    Fixture {
+      Objects.requireNonNull(accounts, "FIX Accounts");
+      Objects.requireNonNull(orders, "FIX Orders");
+      Objects.requireNonNull(market, "Market instrument");
+    }
+  }
+
   KubernetesQueryPolicyReplacement(KubernetesBusinessEnvironment.PublicOrder context)
       throws Exception {
     this.context = context;
@@ -54,16 +97,16 @@ final class KubernetesQueryPolicyReplacement {
     docker = ownership.docker().context().commands(context.settings().root());
   }
 
-  void verify(UUID account, UUID order) throws Exception {
+  void verify(Fixture fixture) throws Exception {
     final var secret = currentSecret();
     final String dsn = new String(Base64.getDecoder().decode(
         secret.path("data").path("postgres_dsn").asText()), StandardCharsets.UTF_8);
     assertFalse(dsn.isBlank(), "the run's Query PostgreSQL connection is missing");
     final var original = owners();
     assertEquals(2, original.size(), "Query policy requires two original replicas");
-    final var previous = new ArrayList<String>();
-    previous.add(context.queryCredentials().readerToken());
-    previous.add(context.queryCredentials().operationsToken());
+    final var resources = sourceFacts(fixture);
+    verifyMatrix(1, original, context.queryCredentials().tokens(), resources);
+    final var previous = new ArrayList<>(context.queryCredentials().tokens().values());
     final String deploymentUid = deployment().path("metadata").path("uid").asText();
     String expectedSecretUid = secret.path("metadata").path("uid").asText();
     String servingReader = context.queryCredentials().readerToken();
@@ -71,17 +114,163 @@ final class KubernetesQueryPolicyReplacement {
     for (int version : List.of(2, 3)) {
       final var generation = context.queryCredentials().replacement(version, dsn);
       expectedSecretUid = replace(generation, original, deploymentUid, expectedSecretUid,
-          servingReader, order);
+          servingReader, fixture.orders().restingBuy());
       final var retiredTokens = List.copyOf(previous);
-      previous.add(generation.readerToken());
-      previous.add(generation.operationsToken());
-      previous.add(generation.retainedReaderToken());
+      assertTrue(java.util.Collections.disjoint(previous, generation.tokens().values()),
+          "Query policy replacement reused a retired bearer credential");
+      previous.addAll(generation.tokens().values());
+      assertEquals(previous.size(), new HashSet<>(previous).size(),
+          "Query generations reused a credential identity");
       final var current = owners();
-      verifyServing(version, current, generation, retiredTokens, account, order);
-      // A new generation must revoke every token from earlier generations.
+      verifyServing(version, current, generation, retiredTokens,
+          fixture.accounts().buyer(), fixture.orders().restingBuy());
+      verifyMatrix(version, current, generation.tokens(), resources);
+      // A new generation must revoke every one of the five prior credentials.
       assertEquals(2, current.size());
       servingReader = generation.retainedReaderToken();
     }
+  }
+
+  private KubernetesQueryPermissionMatrix.Resources sourceFacts(Fixture fixture)
+      throws Exception {
+    final UUID account = fixture.accounts().buyer();
+    final UUID seller = fixture.accounts().seller();
+    final var idsFromFix = fixture.orders();
+    final var orders = List.of(
+        new KubernetesQueryPermissionMatrix.OrderFixture("X", idsFromFix.restingBuy(), false),
+        new KubernetesQueryPermissionMatrix.OrderFixture("X", idsFromFix.filledBuy(), true),
+        new KubernetesQueryPermissionMatrix.OrderFixture("Y", idsFromFix.filledSell(), true),
+        new KubernetesQueryPermissionMatrix.OrderFixture("Y", idsFromFix.cancelledIoc(), false));
+    final UUID missing = UUID.randomUUID();
+    final var postgres = new KubernetesPostgres(target);
+    final Map<String, String> ids = Map.of("x", account.toString(), "y", seller.toString(),
+        "resting", idsFromFix.restingBuy().toString(), "buy", idsFromFix.filledBuy().toString(),
+        "sell", idsFromFix.filledSell().toString(), "ioc", idsFromFix.cancelledIoc().toString(),
+        "missing", missing.toString());
+    final JsonNode actual = json.readTree(postgres.execute("""
+        SELECT COALESCE(json_agg(json_build_object(
+          'orderId', o.order_id::text, 'accountId', o.account_id::text,
+          'state', o.state,
+          'executions', (SELECT count(*) FROM query_service.execution_read_model e
+            WHERE e.order_id = o.order_id)) ORDER BY o.order_id), '[]'::json)::text
+        FROM query_service.order_read_model o
+        WHERE o.order_id IN (:'resting'::uuid, :'buy'::uuid, :'sell'::uuid, :'ioc'::uuid);
+        """, ids));
+    assertEquals(4, actual.size(), "Query matrix lacks one of the four real FIX Order parents");
+    for (var order : orders) {
+      final var matches = new ArrayList<JsonNode>();
+      for (var row : actual) {
+        if (order.order().toString().equals(row.path("orderId").asText())) {
+          matches.add(row);
+        }
+      }
+      assertEquals(1, matches.size(), "real Query Order fixture is missing or duplicated");
+      final var row = matches.getFirst();
+      assertEquals(("X".equals(order.account()) ? account : seller).toString(),
+          row.path("accountId").asText(), "real Query Order belongs to the wrong Account");
+      assertEquals(order.hasExecutions() ? "FILLED" : "CANCELED",
+          row.path("state").asText(), "real FIX Order has an unexpected projection state");
+      assertEquals(order.hasExecutions(), row.path("executions").asInt(-1) > 0,
+          "real FIX Order execution presence differs from the matrix fixture");
+    }
+    assertEquals("0", postgres.execute("""
+        SELECT count(*) FROM query_service.order_read_model
+        WHERE order_id = :'missing'::uuid;
+        """, ids).strip(), "the negative parent Order unexpectedly exists");
+    // Account Authority emits one event per reservation. The Query account summary is
+    // the latest lifecycle EVENT, not the aggregate account-limit ledger. Resolve its
+    // source event to the real Account outbox and derive the HTTP oracle from the
+    // original protobuf bytes rather than from the Query read model under test.
+    final JsonNode accounts = json.readTree(postgres.execute("""
+        SELECT COALESCE(json_agg(json_build_object(
+          'accountId', q.account_id::text, 'sourceEventId', q.source_event_id,
+          'queryReservedNotional', q.reserved_notional_units,
+          'outboxEventId', o.event_id::text, 'outboxTopic', o.topic,
+          'outboxMessageKey', o.message_key, 'outboxAggregateType', o.aggregate_type,
+          'outboxAggregateId', o.aggregate_id, 'payloadHex', encode(o.payload, 'hex'))
+          ORDER BY q.account_id), '[]'::json)::text
+        FROM query_service.account_summary_read_model q
+        JOIN account_service.outbox o ON o.event_id::text = q.source_event_id
+        WHERE q.account_id IN (:'x'::uuid, :'y'::uuid);
+        """, ids));
+    assertEquals(2, accounts.size(),
+        "both Query Account summaries must resolve to Account Authority outbox events");
+    final var notional = new HashMap<String, Long>();
+    final var authoritativeEvents = new ArrayList<Map<String, Object>>();
+    for (var row : accounts) {
+      final String id = row.path("accountId").asText();
+      final String alias = account.toString().equals(id) ? "X"
+          : seller.toString().equals(id) ? "Y" : "";
+      assertFalse(alias.isEmpty(), "an unrelated Account entered the run-owned matrix");
+      assertFalse(notional.containsKey(alias), "duplicate Account summary in Query source");
+      final long units = authoritativeReservedNotional(row, id);
+      notional.put(alias, units);
+      authoritativeEvents.add(Map.of(
+          "accountId", id, "sourceEventId", row.path("sourceEventId").asText(),
+          "reservedNotionalUnits", units));
+    }
+    assertEquals(java.util.Set.of("X", "Y"), notional.keySet());
+    final var resources = new KubernetesQueryPermissionMatrix.Resources(
+        account, seller, orders, missing, context.settings().day().toString(),
+        fixture.market().venue(), fixture.market().symbol(),
+        context.input().artifact().identity().value(), notional);
+    Files.write(evidence.resolve("matrix-source-facts.json"), json.writeValueAsBytes(Map.of(
+        "origin", "real FIX plus Kafka replay", "orders", actual,
+        "accountOracle", "account-service durable outbox protobuf",
+        "accounts", authoritativeEvents, "missingOrder", missing.toString(),
+        "marketArtifactId", resources.artifactId())));
+    return resources;
+  }
+
+  /** Uses authoritative outbox protobuf bytes, not a Query projection value, as oracle. */
+  static long authoritativeReservedNotional(JsonNode row, String expectedAccount) throws Exception {
+    final String eventId = row.path("sourceEventId").asText();
+    assertFalse(eventId.isBlank(), "Query Account summary lost its Account source event ID");
+    assertEquals(eventId, row.path("outboxEventId").asText());
+    assertEquals("account.lifecycle", row.path("outboxTopic").asText());
+    assertEquals(expectedAccount, row.path("outboxMessageKey").asText());
+    assertEquals("account_reservation", row.path("outboxAggregateType").asText());
+    final var event = AccountLifecycleEvent.parseFrom(
+        HexFormat.of().parseHex(row.path("payloadHex").asText()));
+    assertEquals(eventId, event.getMetadata().getEventId(),
+        "Query Account source event ID differs from Account outbox protobuf");
+    assertEquals("account-service", event.getMetadata().getSourceService());
+    assertEquals(expectedAccount, event.getAccountId(),
+        "Account outbox payload belongs to another Account");
+    assertEquals(event.getReservationId(), row.path("outboxAggregateId").asText());
+    final long units = event.getReservedNotional().getUnits();
+    assertTrue(units >= 0, "authoritative Account event contains a negative reservation");
+    assertEquals(units, row.path("queryReservedNotional").asLong(-1),
+        "Query Account projection diverges from the actual Account outbox event");
+    return units;
+  }
+
+  private void verifyMatrix(int version, List<Owner> current, Map<String, String> tokens,
+      KubernetesQueryPermissionMatrix.Resources resources) throws Exception {
+    assertEquals(2, current.size(), "matrix requires the two actual Query Pod owners");
+    final var matrix = new KubernetesQueryPermissionMatrix(resources);
+    final var observations = new ArrayList<KubernetesQueryPermissionMatrix.Observation>();
+    final var file = evidence.resolve("v" + version + "-five-principal-matrix.json");
+    try {
+      for (var pod : current) {
+        assertEquals(version, pod.policyVersion(),
+            "Query matrix owner belongs to another policy generation");
+        try (var forward = target.client().forward("pod/" + pod.name(), 8086,
+            evidence.resolve("v" + version + "-" + pod.name() + "-matrix-forward.log"));
+            var http = HttpClient.newBuilder().connectTimeout(Duration.ofSeconds(3)).build()) {
+          observations.addAll(matrix.verify(
+              pod.name(), pod.uid(), version, tokens, http, forward.port()));
+        }
+      }
+    } finally {
+      // Never put bearer material or HTTP bodies in evidence, including failed runs.
+      Files.write(file, json.writeValueAsBytes(Map.of(
+          "policyVersion", version, "verifiedCells", observations.size(),
+          "complete", observations.size() == 140, "realFixSource", true,
+          "observations", observations)));
+    }
+    assertEquals(140, observations.size(), "both Query replicas need all 70 matrix cells");
+    assertEquals(current, owners(), "Query owners changed while checking the policy matrix");
   }
 
   private String replace(KubernetesQueryCredentials.Generation generation, List<Owner> baseline,
@@ -242,8 +431,8 @@ final class KubernetesQueryPolicyReplacement {
         final String path = "/api/v1/orders/" + order;
         final int readerStatus = request(http, forward.port(), path,
             generation.readerToken()).statusCode();
-        assertEquals(version == 2 ? 404 : 401, readerStatus,
-            "revoked account grant or disabled Principal remained authorized");
+        assertEquals(200, readerStatus,
+            "client-c must retain X in V2 and V3 while losing only the Y grant");
         assertEquals(200, request(http, forward.port(), path,
             generation.retainedReaderToken()).statusCode(),
             "the permitted Account Order disappeared or a retained grant stopped working");

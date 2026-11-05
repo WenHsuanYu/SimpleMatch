@@ -7,23 +7,38 @@ import java.time.Duration;
 import java.time.Instant;
 import java.util.Base64;
 import java.util.HexFormat;
+import java.util.List;
 import java.util.Map;
 import java.util.UUID;
 
-/** Provisions one startup-only Query policy for the run-owned business account and operator. */
+/** Provisions five stable run-owned Principals with rotating credentials for both FIX Accounts. */
 final class KubernetesQueryCredentials {
   private static final String PREFIX = "simplematch.query-service.security.";
   private static final SecureRandom RANDOM = new SecureRandom();
   private final UUID account;
+  private final UUID seller;
   private final String reader = token();
   private final String operations = token();
+  private final String clientA = token();
+  private final String clientB = token();
+  private final String clientD = token();
   private final UUID readerPrincipal = UUID.randomUUID();
   private final UUID operationsPrincipal = UUID.randomUUID();
   private final UUID retainedReaderPrincipal = UUID.randomUUID();
+  private final UUID sellerPrincipal = UUID.randomUUID();
+  private final UUID ungrantedPrincipal = UUID.randomUUID();
   private final Instant expiresAt = Instant.now().plus(Duration.ofHours(6));
 
   KubernetesQueryCredentials(UUID account) {
+    this(account, UUID.randomUUID());
+  }
+
+  KubernetesQueryCredentials(UUID account, UUID seller) {
     this.account = java.util.Objects.requireNonNull(account);
+    this.seller = java.util.Objects.requireNonNull(seller);
+    if (account.equals(seller)) {
+      throw new IllegalArgumentException("the Query C/Y matrix needs distinct Accounts");
+    }
   }
 
   String operationsToken() {
@@ -34,26 +49,35 @@ final class KubernetesQueryCredentials {
     return reader;
   }
 
-  Map<String, String> secret(String dsn) throws Exception {
-    return secret(dsn, 1, reader, operations, null);
+  Map<String, String> tokens() {
+    return tokens(clientA, clientB, reader, operations, clientD);
   }
 
-  private Map<String, String> secret(String dsn, int version, String readerToken,
-      String operationsToken, String retainedReaderToken) throws Exception {
+  private static Map<String, String> tokens(String a, String b, String c, String ops, String d) {
+    return Map.of("client-a", a, "client-b", b, "client-c", c,
+        "operations", ops, "client-d", d);
+  }
+
+  Map<String, String> secret(String dsn) throws Exception {
+    return secret(dsn, 1, tokens());
+  }
+
+  private Map<String, String> secret(String dsn, int version, Map<String, String> tokens)
+      throws Exception {
     final var properties = new StringBuilder();
     properties.append(PREFIX).append("schema-version=1\n");
     properties.append(PREFIX).append("policy-version=").append(version).append('\n');
     principal(properties, 0, readerPrincipal, false,
-        version == 1 ? account.toString() : null, version == 3);
-    principal(properties, 1, operationsPrincipal, true, null);
-    if (version >= 2) {
-      principal(properties, 2, retainedReaderPrincipal, false, account.toString());
-    }
-    credential(properties, 0, readerPrincipal, readerToken);
-    credential(properties, 1, operationsPrincipal, operationsToken);
-    if (version >= 2) {
-      credential(properties, 2, retainedReaderPrincipal, retainedReaderToken);
-    }
+        version == 1 ? List.of(account, seller) : List.of(account), false);
+    principal(properties, 1, operationsPrincipal, true, List.of(), false);
+    principal(properties, 2, retainedReaderPrincipal, false, List.of(account), false);
+    principal(properties, 3, sellerPrincipal, false, List.of(seller), false);
+    principal(properties, 4, ungrantedPrincipal, false, List.of(), version == 3);
+    credential(properties, 0, readerPrincipal, tokens.get("client-c"));
+    credential(properties, 1, operationsPrincipal, tokens.get("operations"));
+    credential(properties, 2, retainedReaderPrincipal, tokens.get("client-a"));
+    credential(properties, 3, sellerPrincipal, tokens.get("client-b"));
+    credential(properties, 4, ungrantedPrincipal, tokens.get("client-d"));
     return Map.of("postgres_dsn", dsn, "query-service.properties", properties.toString());
   }
 
@@ -65,23 +89,20 @@ final class KubernetesQueryCredentials {
     final String nextReader = token();
     final String nextOperations = token();
     final String nextRetainedReader = token();
+    final var current = tokens(nextRetainedReader, token(), nextReader, nextOperations, token());
     return new Generation(version, nextReader, nextOperations, nextRetainedReader,
-        secret(dsn, version, nextReader, nextOperations, nextRetainedReader));
+        current, secret(dsn, version, current));
   }
 
   private static void principal(StringBuilder output, int index, UUID identity,
-      boolean operationsRead, String grant) {
-    principal(output, index, identity, operationsRead, grant, false);
-  }
-
-  private static void principal(StringBuilder output, int index, UUID identity,
-      boolean operationsRead, String grant, boolean disabled) {
+      boolean operationsRead, List<UUID> grants, boolean disabled) {
     final String prefix = PREFIX + "principals[" + index + "].";
     output.append(prefix).append("id=").append(identity).append('\n');
     output.append(prefix).append(disabled ? "status=DISABLED\n" : "status=ACTIVE\n");
     output.append(prefix).append("operations-read=").append(operationsRead).append('\n');
-    if (grant != null) {
-      output.append(prefix).append("account-grants[0]=").append(grant).append('\n');
+    for (int position = 0; position < grants.size(); position++) {
+      output.append(prefix).append("account-grants[").append(position).append("]=")
+          .append(grants.get(position)).append('\n');
     }
   }
 
@@ -106,9 +127,10 @@ final class KubernetesQueryCredentials {
 
   /** Private credentials are returned only to the in-process live verifier, never to evidence. */
   record Generation(int version, String readerToken, String operationsToken,
-      String retainedReaderToken,
+      String retainedReaderToken, Map<String, String> tokens,
       Map<String, String> secret) {
     Generation {
+      tokens = Map.copyOf(tokens);
       secret = Map.copyOf(secret);
     }
 

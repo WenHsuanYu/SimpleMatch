@@ -259,15 +259,20 @@ readiness/liveness, immutable image/UID and authenticated operations
 serving. Service HTTP/JDBC tests retain the denied-account, missing-parent,
 minimal-envelope and no-store rules.
 
-The loss is **intentional**: the deployed runner no longer reports the
-exhaustive X/Y/missing-order cross-Principal matrix for both replicas or
-an exact static policy-version 1 matrix count. These security behavior
-rules remain in service tests and the still-active R19 lifecycle
-components. `read_matrix.py` and `read_fixtures.py` cannot yet be removed:
+At this R18 retirement checkpoint the loss was **intentional**: the
+independent Python deployed runner stopped reporting its exhaustive
+X/Y/missing-order cross-Principal matrix and static V1 matrix count.
+Service tests retain the full HTTP authorization contract. The later
+selected R19 Jupiter lifecycle now checks a source-backed five-Principal
+V1/V2/V3 matrix on both live Query replicas (420 HTTP cells in the
+focused r2 PASS described below). It is integrated into the same deployed
+business/lifecycle run, not a restored independent Python matrix or a
+second exhaustive certification framework. `read_matrix.py` and
+`read_fixtures.py` cannot yet be removed:
 `security_lab.py`, `operator_boundary.py` and a PostgreSQL collector
 contract still import them. Their last-consumer review belongs to R19.
-This R18 change does not prove effective revocation or two-replica policy
-replacement; R19 still requires a separate source-aligned deployed run.
+The original R18-only cut did not prove effective revocation or two-replica
+policy replacement; the subsequent r2 R19 result has its own bounded scope.
 
 The scoped cutover passed the managed Query `postgresJdbcTest`, all 17
 current Query CI contracts, the retained Python read-matrix and operator
@@ -279,7 +284,14 @@ is **113 files / 23,666 physical lines**, still above the minimum S5
 maximums of **51 files / 10,476 lines**. No Python module was duplicated
 or moved merely to reduce the apparent Shell count.
 
-R19 keeps one actual two-replica policy replacement. Stop the old generation and verify that its tasks exited before activation. Verify revoked grants, disabled Principals, and old-credential rejection through both new replicas. Keep source/run/image binding and bounded catch-up for captured Account events published during the stop. Reuse existing authorization tests for the exhaustive route matrix.
+R19 keeps one actual two-replica policy replacement. Stop the old generation
+and verify that its tasks exited before activation. Verify revoked grants,
+disabled Principals, and old-credential rejection through both new replicas.
+Keep source/run/image binding and bounded catch-up for captured Account events
+published during the stop. Reuse service authorization tests for broad route
+semantics; the later selected Jupiter C/Y/D matrix covers the five named
+Principals against actual FIX/Query resources across V1/V2/V3, without
+restoring the independent Python matrix.
 Retire the Python Lab's separate approval database, event timeline, collector-credential export protocol, and restart/reinitialization simulation. Also retire its comment-only same-version edit, never-launched historical-image candidate, and deliberately unschedulable second replica. These verify a synthetic orchestration authority, not the startup-only product policy. The fresh-run/no-resume lifecycle must reject collisions and must never restore the revoked generation after a failure. This retirement loses the Lab approval-record and partial-activation recovery claims. It does not establish production revocation guarantees.
 
 ### P4 R19 synthetic negative-scenario cut
@@ -1286,7 +1298,7 @@ Lab still need a fresh runtime result. Do not mark R19, P6, or
 `verifyAllScope` PASS; the tracked Shell/Python/Ruby counts are unchanged
 by this slice.
 
-## P4 R18/R19 source-integrated follow-up (runtime pending)
+## P4 R18/R19 source-integrated follow-up (focused deployed r2 PASS)
 
 The selected RestingBuyKubernetesTest now includes R18 live-business
 owners. KubernetesFixCredentials grants only two explicitly selected,
@@ -1338,15 +1350,53 @@ boundary within 120 seconds. This fixture is not represented as an
 Account Authority outbox publication. V2/V3 revoked-token and
 retained-reader checks remain selected.
 
-The current source passed :tools:kubernetes-tests:test, manifestCheck
-and staticAnalysis with 78 Jupiter tests across 31 suites.
-This is not a deployed R18 or R19 PASS. The local preflight found no
-canonical kind-simplematch-live node containers or kind executable;
-the previous kind API endpoint refused connections. Do not create
-or delete shared infrastructure merely to change this verdict.
-Actual R18/R19 source-aligned deployment, R19 independent C/Y/D
-and JDBC failure modes, P6 and S5 completion remain pending.
-Keep the old R18 operator, the R19 Python Lab, and their active
-documentation until accepted live parity and last-caller review.
-No old Shell, Python, or Ruby group is retired by this follow-up.
-Tracked file counts remain 102 Shell, 26 Python, and 3 Ruby.
+The earlier source-only checkpoint passed :tools:kubernetes-tests:test,
+manifestCheck and staticAnalysis (78 Jupiter tests across 31 suites),
+but had no live result because the canonical kind runtime was unavailable.
+That checkpoint has now been superseded for the **selected focused live
+scenario only** by
+`out/verification/issue202-r19-five-principal-native-20261105-r2/summary.json`:
+run `d9077fe9-52d5-4535-98ad-c39db679b08e` reports assertions,
+diagnostics and cleanup **PASS**. Its
+`query-policy/v1-five-principal-matrix.json`,
+`v2-five-principal-matrix.json` and `v3-five-principal-matrix.json`
+each record `complete=true`, 140 observed HTTP cells across two distinct
+Query Pod UIDs (70 cells per Pod); **420/420 selected live cells passed**.
+The source-backed fixtures and bounded replacement evidence are under
+`query-policy/matrix-source-facts.json`, `v2-transport-block.json`,
+`v3-transport-block.json`, `account-catchup-v2/caught-up.json` and
+`account-catchup-v3/caught-up.json` in the same r2 run directory.
+The selected matrix checks real FIX-derived Order parents, execution
+presence, Account ownership and Query HTTP responses. At the recorded
+r2 source revision its Account reserved-notional comparison used the
+Query read model as its expected value; that historical r2 field only
+proved projection-to-HTTP consistency. The subsequent verification
+change instead resolves each Query source event ID to the durable
+Account Authority outbox and derives its expected amount from the
+original lifecycle protobuf payload. This distinguishes the Account
+event amount from the Query read model, but does not equate a
+single-reservation event amount with the aggregate Account limit ledger
+or independently prove that the selected event is the latest across
+all Account reservations. It also does not certify the complete
+Account Authority publication pipeline. This follow-up needs fresh executable-source evidence; the
+historical r2 PASS does not certify the modified verifier.
+
+The earlier
+`out/verification/issue202-r19-five-principal-native-20261105-r1/summary.json`
+remains **FAIL** (PostgreSQL observation timeout), with a separately
+observed Risk admission-journal optimistic version conflict in its
+diagnostics; the Risk CAS cause and retry behavior remain unresolved.
+The successful independent r2 run does not relabel or repair r1.
+V2/V3 stopped-window Account lifecycle publications were explicitly
+synthetic direct Kafka inputs with broker acknowledgments and durable
+Query catch-up. They do **not** establish the Account Authority outbox
+publication path, its atomicity or end-to-end authoritative delivery.
+
+This focused Jupiter PASS is **not** a complete-local certification,
+an R19 Python Lab retirement decision, or Issue #202 S5 P5b/P6 PASS.
+The full S5 acceptance, remaining required owners, last-consumer review
+and final complete-local run remain open. Keep the old R18 operator,
+R19 Python Lab and active documentation until their retirement is
+independently justified. This change retires no Shell/Python/Ruby files:
+tracked Shell remains **102 files / 22,140 physical lines** against the
+required **51 files / 10,476 lines** limits (Python **26**, Ruby **3**).

@@ -27,6 +27,7 @@ final class KubernetesQueryReplay {
   private static final String OPERATOR_SECRET = "query-replay-operator";
   private static final String MATCHING = "matching.events";
   private static final String ACCOUNT = "account.lifecycle";
+  private static final int OFFSET_RESET_ATTEMPTS = 3;
   private static final Duration REPLAY_BUDGET = Duration.ofMinutes(5);
   private final KubernetesBusinessEnvironment.PublicOrder context;
   private final KubernetesScenarioTarget target;
@@ -93,8 +94,8 @@ final class KubernetesQueryReplay {
           "--timeout=300s").checked();
       awaitCaughtUp(end);
       verifySourceCheckpoints(end);
-      business.replayed();
-      execution.replayed();
+      business.replayed("replayed-with-operator");
+      execution.replayed("cross-replayed-with-operator");
       Files.write(evidence.resolve("rebuild-observation.json"), json.writeValueAsBytes(Map.of(
           "runId", target.run().runId(), "namespace", target.namespace(),
           "deploymentUid", deploymentUid, "sourceBoundaries", end,
@@ -247,20 +248,37 @@ final class KubernetesQueryReplay {
       client().execute(offsetsFile.toString(), Duration.ofSeconds(20),
           "exec", "-i", "kafka-0", "-c", "kafka", "--",
           "sh", "-c", "cat > " + filename).checked();
-      final var output = client().execute("", Duration.ofSeconds(40),
-          "exec", "kafka-0", "-c", "kafka", "--",
-          "/opt/kafka/bin/kafka-consumer-groups.sh",
-          "--bootstrap-server", "kafka:9092", "--group", group,
-          "--reset-offsets", "--from-file", filename, "--execute").checked();
-      Files.writeString(evidence.resolve(group + "-reset.txt"),
-          DiagnosticText.redact(output));
-      requireBroker();
-      final var groupState = client().execute("", Duration.ofSeconds(25),
-          "exec", "kafka-0", "-c", "kafka", "--",
-          "/opt/kafka/bin/kafka-consumer-groups.sh",
-          "--bootstrap-server", "kafka:9092", "--group", group, "--describe").checked();
-      assertTrue(groupAtBoundaries(topic, groupState, earliest),
-          "Kafka replay reset did not commit exactly the captured earliest offsets");
+      // Kafka's administrative CLI can emit an error with exit code zero. Accept
+      // neither that output nor an incomplete group describe as a successful reset.
+      // All retries target the same captured boundaries while Query is stopped.
+      for (int attempt = 1; attempt <= OFFSET_RESET_ATTEMPTS; attempt++) {
+        requireBroker();
+        final var output = client().execute("", Duration.ofSeconds(40),
+            "exec", "kafka-0", "-c", "kafka", "--",
+            "/opt/kafka/bin/kafka-consumer-groups.sh",
+            "--bootstrap-server", "kafka:9092", "--group", group,
+            "--reset-offsets", "--from-file", filename, "--execute").checked();
+        Files.writeString(evidence.resolve(group + "-reset-attempt-" + attempt + ".txt"),
+            DiagnosticText.redact(output));
+        requireBroker();
+        final var groupState = client().execute("", Duration.ofSeconds(25),
+            "exec", "kafka-0", "-c", "kafka", "--",
+            "/opt/kafka/bin/kafka-consumer-groups.sh",
+            "--bootstrap-server", "kafka:9092", "--group", group, "--describe").checked();
+        Files.writeString(evidence.resolve(group + "-describe-attempt-" + attempt + ".txt"),
+            DiagnosticText.redact(groupState));
+        if (resetReportedAtBoundaries(group, topic, output, earliest)
+            && groupAtBoundaries(topic, groupState, earliest)) {
+          Files.writeString(evidence.resolve(group + "-reset.txt"),
+              DiagnosticText.redact(output));
+          return;
+        }
+        if (attempt < OFFSET_RESET_ATTEMPTS) {
+          Thread.sleep(500);
+        }
+      }
+      throw new IllegalStateException("Kafka reset did not report and commit all 15 captured "
+          + "offsets after " + OFFSET_RESET_ATTEMPTS + " bounded attempts: " + group);
     } finally {
       requireBroker();
       client().execute("", Duration.ofSeconds(20), "exec", "kafka-0", "-c", "kafka",
@@ -347,6 +365,34 @@ final class KubernetesQueryReplay {
       }
     }
     return partitions.size() == 15;
+  }
+
+  static boolean resetReportedAtBoundaries(String group, String topic, String output,
+      Map<Integer, Long> offsets) {
+    if (offsets.size() != 15) {
+      return false;
+    }
+    final var seen = new java.util.HashSet<Integer>();
+    for (String line : output.lines().map(String::strip).filter(value -> !value.isEmpty()).toList()) {
+      if (line.startsWith("GROUP ")) {
+        continue;
+      }
+      final String[] columns = line.split("\\s+");
+      if (columns.length != 4 || !group.equals(columns[0]) || !topic.equals(columns[1])) {
+        return false;
+      }
+      try {
+        final int partition = Integer.parseInt(columns[2]);
+        final long offset = Long.parseLong(columns[3]);
+        if (partition < 0 || partition >= 15 || !seen.add(partition)
+            || !offsets.containsKey(partition) || offset != offsets.get(partition)) {
+          return false;
+        }
+      } catch (NumberFormatException invalid) {
+        return false;
+      }
+    }
+    return seen.size() == 15;
   }
 
   private JsonNode deployment() throws Exception {

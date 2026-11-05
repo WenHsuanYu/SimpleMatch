@@ -62,6 +62,11 @@ final class KubernetesQueryTransport implements AutoCloseable {
         assertEquals(200, probe.connection.request(path, readerToken, true));
         assertEquals(400, transport.direct(probe.owner),
             "Query direct Pod path was blocked before stopping the generation");
+        probe.directRoute = transport.route(probe.owner);
+        if (!probe.directRoute.isAttachedPodInterface()) {
+          throw new IllegalStateException(
+              "Query direct Pod address has no attached node-local veth before stop");
+        }
       }
       return transport;
     } catch (Exception | AssertionError failure) {
@@ -84,13 +89,22 @@ final class KubernetesQueryTransport implements AutoCloseable {
           return connection.request(path, readerToken, false);
         }
       });
-      final int direct = direct(probe.owner);
-      if (direct != 0 && direct != 503) {
-        throw new IllegalStateException("old Query direct Pod path still accepts traffic");
+      // kindnet withdraws its per-Pod veth route when CNI releases the sandbox.
+      // A TCP probe against that now-unrouted IP can time out through the Docker
+      // gateway; a timeout is not proof of revocation. Instead prove that the
+      // exact interface which successfully routed the earlier HTTP request is
+      // gone and the old Pod IP no longer has a local delivery route.
+      final var after = route(probe.owner);
+      final boolean interfaceGone = interfaceGone(probe.owner, probe.directRoute.device());
+      if (!routeDetached(probe.directRoute, after, interfaceGone)) {
+        throw new IllegalStateException("old Query direct Pod route remains attached or its "
+            + "detachment was not conclusively observed");
       }
       results.add(Map.of("pod", probe.owner.name(), "uid", probe.owner.uid(),
           "containerId", probe.owner.containerId(), "existingConnection", existing,
-          "newConnection", fresh, "directPodPath", direct == 0 ? "connection-refused" : "http-503"));
+          "newConnection", fresh, "directPodPath", "node-veth-detached",
+          "directRouteBefore", probe.directRoute,
+          "directRouteAfter", after, "oldInterfaceAbsent", true));
     }
     Files.write(evidence.resolve("v" + version + "-transport-block.json"),
         json.writeValueAsBytes(results));
@@ -118,6 +132,48 @@ final class KubernetesQueryTransport implements AutoCloseable {
       throw new IllegalStateException("direct Query transport has no HTTP status");
     }
     return Integer.parseInt(code);
+  }
+
+  private DirectRoute route(KubernetesQueryPolicyReplacement.Owner owner) throws Exception {
+    final String ip = owner.podIp();
+    if (!ip.matches("(?:[0-9]{1,3}\\.){3}[0-9]{1,3}")) {
+      throw new IllegalArgumentException("Query route has no numeric Pod IPv4 address");
+    }
+    final String output = docker.run(dockerContext.command("exec", owner.node(),
+        "ip", "-j", "-4", "route", "get", ip), "", Duration.ofSeconds(4)).checked();
+    final var routes = json.readTree(output);
+    if (!routes.isArray() || routes.size() != 1
+        || !ip.equals(routes.get(0).path("dst").asText())) {
+      throw new IllegalStateException("Query worker returned an unexpected direct Pod route");
+    }
+    final var entry = routes.get(0);
+    final String device = entry.path("dev").asText();
+    if (device.isBlank()) {
+      throw new IllegalStateException("Query direct Pod route has no network device");
+    }
+    return new DirectRoute(device, entry.path("gateway").asText());
+  }
+
+  private boolean interfaceGone(KubernetesQueryPolicyReplacement.Owner owner, String device)
+      throws Exception {
+    if (!device.matches("veth[0-9a-f]{8}")) {
+      throw new IllegalArgumentException("unexpected kindnet Pod device identity");
+    }
+    final var result = docker.run(dockerContext.command("exec", owner.node(),
+        "test", "!", "-e", "/sys/class/net/" + device), "", Duration.ofSeconds(4));
+    return result.exitCode() == 0 && !result.truncated();
+  }
+
+  static boolean routeDetached(DirectRoute before, DirectRoute after, boolean interfaceGone) {
+    return before.isAttachedPodInterface() && interfaceGone
+        && !before.device().equals(after.device())
+        && "eth0".equals(after.device()) && !after.gateway().isBlank();
+  }
+
+  record DirectRoute(String device, String gateway) {
+    boolean isAttachedPodInterface() {
+      return device.matches("veth[0-9a-f]{8}") && gateway.isBlank();
+    }
   }
 
   @FunctionalInterface
@@ -180,6 +236,7 @@ final class KubernetesQueryTransport implements AutoCloseable {
     private final KubernetesQueryPolicyReplacement.Owner owner;
     private final KubernetesPortForward forward;
     private HttpPeer connection;
+    private DirectRoute directRoute;
 
     private Probe(KubernetesQueryPolicyReplacement.Owner owner, KubernetesPortForward forward) {
       this.owner = owner;

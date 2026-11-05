@@ -49,6 +49,8 @@ public final class KubernetesBuildInputs {
     Files.write(receipt, json.writeValueAsBytes(Map.of("source_fingerprint",
         observed.sourceFingerprint(), "daemon_id", observed.daemonId(),
         "docker_context", observed.docker().context().name(),
+        "host_memory_availability_override",
+        Boolean.getBoolean("kubernetesIgnoreHostMemoryAvailability"),
         "scenario", observed.budget().path("profile").asText(), "stage", "BUILDING")),
         StandardOpenOption.CREATE_NEW);
   }
@@ -64,6 +66,8 @@ public final class KubernetesBuildInputs {
     Files.write(receipt, json.writeValueAsBytes(Map.of("source_fingerprint",
         observed.sourceFingerprint(), "daemon_id", observed.daemonId(),
         "docker_context", observed.docker().context().name(),
+        "host_memory_availability_override",
+        Boolean.getBoolean("kubernetesIgnoreHostMemoryAvailability"),
         "scenario", observed.budget().path("profile").asText(), "stage", "IMAGES_BUILT",
         "images", images.identities())));
   }
@@ -85,6 +89,10 @@ public final class KubernetesBuildInputs {
   }
 
   private static void requireIdentity(JsonNode receipt, KubernetesPrerequisites inputs) {
+    if (receipt.path("host_memory_availability_override").asBoolean()
+        != Boolean.getBoolean("kubernetesIgnoreHostMemoryAvailability")) {
+      throw new IllegalStateException("build receipt capacity policy differs from current run");
+    }
     final var expected = Map.of("source_fingerprint", inputs.sourceFingerprint(),
         "scenario", inputs.budget().path("profile").asText(), "daemon_id", inputs.daemonId(),
         "docker_context", inputs.docker().context().name());

@@ -28,8 +28,20 @@ final class KubernetesCapacity {
     final long total = info.path("MemTotal").asLong();
     final int cpus = info.path("NCPU").asInt();
     final boolean desktop = "desktop-linux".equals(context.name());
+    final boolean ignoreAvailable = Boolean.getBoolean("kubernetesIgnoreHostMemoryAvailability");
+    if (ignoreAvailable && !"default".equals(context.name())) {
+      throw new IllegalArgumentException(
+          "host memory availability override is restricted to Native Docker default");
+    }
     final long host = available(Files.readString(Path.of("/proc/meminfo")));
-    new Snapshot(host, desktop ? total : host, total, cpus).require(required, desktop);
+    new Snapshot(host, desktop ? total : host, total, cpus)
+        .require(required, desktop, ignoreAvailable);
+    if (ignoreAvailable) {
+      System.err.printf(Locale.ROOT,
+          "RM-1 override requested: ignoring host MemAvailable %.3f GiB; "
+              + "required %.3f GiB. Docker total and CPU checks remain active.%n",
+          (double) host / GIB, (double) required / GIB);
+    }
     if (desktop) {
       final long guest = guestAvailable(platformImages);
       new Snapshot(available(Files.readString(Path.of("/proc/meminfo"))), guest, total, cpus)
@@ -64,9 +76,14 @@ final class KubernetesCapacity {
   /** Separates host process headroom from the memory pool that will execute the workloads. */
   record Snapshot(long hostAvailable, long runtimeAvailable, long dockerTotal, int cpus) {
     void require(long required, boolean desktop) {
+      require(required, desktop, false);
+    }
+
+    void require(long required, boolean desktop, boolean ignoreHostAvailability) {
       // kind's 4 GiB reserve is already inside required; host tools keep separate headroom.
       final long hostRequired = desktop ? GIB : required;
-      if (hostAvailable < hostRequired || runtimeAvailable < required
+      if ((!ignoreHostAvailability && (hostAvailable < hostRequired
+          || runtimeAvailable < required))
           || dockerTotal < required || cpus < 8) {
         throw new IllegalStateException(String.format(Locale.ROOT,
             "RM-1 requires %.3f GiB in the Docker runtime including control-plane reserve; "

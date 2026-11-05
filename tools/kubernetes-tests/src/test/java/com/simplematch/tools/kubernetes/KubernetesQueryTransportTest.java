@@ -1,7 +1,9 @@
 package com.simplematch.tools.kubernetes;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertThrows;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import java.io.BufferedReader;
 import java.io.EOFException;
@@ -60,5 +62,19 @@ class KubernetesQueryTransportTest {
       throw new EOFException("remote closed");
     }));
     assertThrows(AssertionError.class, () -> KubernetesQueryTransport.blocked(() -> 200));
+  }
+
+  @Test
+  void directPodDetachmentRequiresPriorVethAndActualInterfaceRemoval() {
+    final var attached = new KubernetesQueryTransport.DirectRoute("veth7bbae1e0", "");
+    final var fallback = new KubernetesQueryTransport.DirectRoute("eth0", "172.19.0.1");
+    assertTrue(attached.isAttachedPodInterface());
+    assertTrue(KubernetesQueryTransport.routeDetached(attached, fallback, true));
+    assertFalse(KubernetesQueryTransport.routeDetached(attached, fallback, false));
+    assertFalse(KubernetesQueryTransport.routeDetached(attached, attached, true));
+    assertFalse(KubernetesQueryTransport.routeDetached(attached,
+        new KubernetesQueryTransport.DirectRoute("eth0", ""), true));
+    assertFalse(KubernetesQueryTransport.routeDetached(
+        new KubernetesQueryTransport.DirectRoute("eth0", ""), fallback, true));
   }
 }

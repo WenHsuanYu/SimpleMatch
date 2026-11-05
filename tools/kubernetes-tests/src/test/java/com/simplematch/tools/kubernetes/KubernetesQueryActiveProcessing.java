@@ -29,6 +29,7 @@ final class KubernetesQueryActiveProcessing {
   private final KubernetesPostgres postgres;
   private final ObjectMapper json = new ObjectMapper();
   private final Path evidence;
+  private String cancelledOrderId;
 
   KubernetesQueryActiveProcessing(KubernetesBusinessEnvironment.PublicOrder context,
       KubernetesFixCredentials credentials, KubernetesMatchingEvents events,
@@ -105,6 +106,7 @@ final class KubernetesQueryActiveProcessing {
           final var admission = postgres.await(Files.readString(context.settings().root().resolve(
               "scripts/end-to-end/critical-consumers/sql/resting-buy-admission.sql")),
               variables, data -> "ACCEPTED".equals(data.path("state").asText()), IOC_BUDGET);
+          cancelledOrderId = admission.path("orderId").asText();
           assertEquals(1, admission.path("outboxCount").asInt(-1));
           final int partition = admission.path("routingPartition").asInt(-1);
           assertTrue(partition >= 0 && partition < 15);
@@ -190,6 +192,13 @@ final class KubernetesQueryActiveProcessing {
         finished.cancel(true);
       }
     }
+  }
+
+  String cancelledOrderId() {
+    if (cancelledOrderId == null || !Files.exists(evidence.resolve("zero-pod-ioc.json"))) {
+      throw new IllegalStateException("real Y IOC cancellation was not verified");
+    }
+    return cancelledOrderId;
   }
 
   private JsonNode ownedDeployment() throws Exception {
