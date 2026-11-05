@@ -1438,3 +1438,51 @@ The owner has since removed capacity budgeting entirely from the
 selected Jupiter preflight (including nonblocking Ruby reporting).
 Focused offline validation and a fresh selected Live run remain separate
 from the historical r2 PASS, and S5 P5b/P6 remain incomplete.
+
+### Risk journal concurrent-finalization correction
+
+`OrderAdmissionApplicationServiceTransactionTest` now uses two real
+PostgreSQL transactions for the same pending command. Both read version
+zero before attempting CAS. The original code failed with the same
+`admission journal optimistic version conflict` seen in r1 and r3.
+
+The correction keeps the versioned update and the journal/Outbox local
+transaction. Only an optimistic-version failure starts a fresh read
+after rollback. The caller receives the previously committed terminal
+result when another finalizer completed the same command. A missing or
+still-pending journal row remains a failure. The regression also
+requires exactly one Outbox event and journal version one. The
+concurrent test passed five repetitions after the correction.
+
+The production identity of the competing caller in r1/r3 is not
+established. The new source-bound selected Live result below verifies
+the correction. Neither the earlier r2 PASS nor the failed r3 run
+certifies the correction or completes S5 P5b/P6.
+
+### 2026-11-06 Risk correction: selected Kubernetes Live PASS
+
+Commit `cdab22d2` passed the current selected `verifyKubernetes`
+`resting-buy` run. Its new evidence directory is
+`out/verification/issue202-risk-cas-fixed-20261106-r1/`.
+Run `dde70b10-bcd0-4aef-bea3-b951339b68a2` reports
+`status=PASS`, `assertions=PASS`, `diagnostics=PASS` and
+`cleanup=PASS` in `summary.json`. Gradle reports `BUILD SUCCESSFUL`.
+The run-owned namespace was removed. The public FIX admission and
+Gateway delivery passed the former Risk CAS failure point without
+weakening their assertions or extending timeouts.
+
+`query-policy/matrix-source-facts.json` names the
+`account-service durable outbox protobuf` as the Account money oracle.
+Each of the V1, V2 and V3 five-principal matrix evidence files records
+`complete=true` and `verifiedCells=140`. The selected run therefore
+completed 420 observed HTTP cells using real FIX source data.
+The same run recorded real Query Kafka replay and two stopped-window
+transport and Account catch-up checks. The V2 and V3 Account Kafka
+events remain explicitly synthetic fixtures. They do not establish
+Account Authority outbox publication end to end. The single-event
+money oracle does not establish aggregate Account ledger correctness.
+
+This is **selected Jupiter Live PASS**, not complete Issue #202 S5
+acceptance. P5b retirements and P6 final complete-local verification
+remain open. Tracked Shell remains **102 files / 22,140 physical lines**
+against the **51 files / 10,476 lines** acceptance limits.

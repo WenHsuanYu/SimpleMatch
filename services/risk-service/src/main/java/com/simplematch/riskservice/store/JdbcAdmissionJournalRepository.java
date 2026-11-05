@@ -13,6 +13,7 @@ import java.util.Optional;
 import java.util.UUID;
 import lombok.NonNull;
 import lombok.RequiredArgsConstructor;
+import org.springframework.dao.OptimisticLockingFailureException;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.jdbc.core.RowMapper;
 import org.springframework.stereotype.Repository;
@@ -122,7 +123,7 @@ public class JdbcAdmissionJournalRepository implements AdmissionJournalRepositor
             entry.command().identity().commandId().value(),
             expectedVersion);
     if (updated != 1) {
-      throw new IllegalStateException("admission journal optimistic version conflict");
+      throw new OptimisticLockingFailureException("admission journal optimistic version conflict");
     }
   }
 

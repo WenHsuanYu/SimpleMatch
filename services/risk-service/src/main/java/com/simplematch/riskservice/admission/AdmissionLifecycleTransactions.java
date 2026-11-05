@@ -6,6 +6,7 @@ import java.util.Objects;
 import java.util.Optional;
 import java.util.UUID;
 import org.springframework.dao.DuplicateKeyException;
+import org.springframework.dao.OptimisticLockingFailureException;
 import org.springframework.transaction.support.TransactionTemplate;
 
 /** Owns the bounded local transactions for pending and terminal Admission state. */
@@ -51,13 +52,27 @@ public final class AdmissionLifecycleTransactions {
         "begin admission");
   }
 
-  /** Finalizes the journal and terminal event in one bounded local transaction. */
+  /**
+   * Finalizes the journal and terminal event atomically.
+   *
+   * <p>If another transaction completes the same command first, returns its durable terminal
+   * outcome. A missing or still-pending journal row remains a concurrency failure.
+   */
   public AdmissionResult finalizeAdmission(UUID commandId, ReservationOutcome reservation) {
     Objects.requireNonNull(commandId, "commandId");
-    return requireResult(
-        transactionTemplate.execute(
-            status -> finalizeAdmissionInTransaction(commandId, reservation)),
-        "finalize admission");
+    try {
+      return requireResult(
+          transactionTemplate.execute(
+              status -> finalizeAdmissionInTransaction(commandId, reservation)),
+          "finalize admission");
+    } catch (OptimisticLockingFailureException conflict) {
+      // A concurrent finalizer can commit the terminal state before this stale CAS.
+      // Read after the failed transaction rolls back. Do not repeat remote reservation work.
+      return journal.findByCommandId(commandId)
+          .filter(entry -> entry.lifecycle().state() != AdmissionState.PENDING)
+          .map(AdmissionResult::from)
+          .orElseThrow(() -> conflict);
+    }
   }
 
   /** Returns the durable Admission outcome currently visible for one command identity. */

@@ -29,16 +29,13 @@ Before applying deployment resources or injecting a deployment fault:
    or OCI index, while CRI `.status.id` identifies a config. Resolve exact containerd content when
    needed and run an execution probe on every eligible worker. Do not assume shell-less images
    provide `/bin/sh`.
-7. On Docker Desktop, check the VM guest workload budget separately from host tool headroom; do
-   not count VM-allocated memory twice. The source's selected profile required 12.5 GiB guest
-   availability and 1 GiB host-tool headroom; verify the current profile before using these limits.
-   Native Docker must meet the complete workload budget in host availability.
+7. The selected Kubernetes Jupiter run does not use capacity-based preflight checks.
+   Keep required source, image, topology, and ownership checks. Runtime resource failures remain failures.
 8. Before creating kind on Desktop, confirm that only the required private coordination directory,
    `/tmp/simplematch-kubernetes-coordination`, is shared with the VM. Retain private permissions
    and ownership checks; do not share all host temporary files.
-9. Check worker image-filesystem usage and kubelet GC headroom again **after image builds**, before
-   image loading or workload creation. Also inspect host `MemAvailable`, swap, guest capacity, and
-   control-plane stability. Use the limits and deadlines specified by the current deployment profile.
+9. Check control-plane stability before deployment. Do not restore removed memory, CPU,
+   Docker storage, or worker image-filesystem capacity gates in selected Jupiter.
 10. If any preflight check fails, stop before fault injection and record an environment or
     precondition failure. Do not guess replacement targets, alter offsets or authoritative data,
     weaken assertions, or extend timeouts to hide a deterministic defect.
@@ -61,6 +58,8 @@ Before applying deployment resources or injecting a deployment fault:
 | DT-037 | Matching owner `matching-0` exits during startup with `unable to query Matching Kafka committed offset: NOT_COORDINATOR` and is restarted before becoming Ready | The broker had accepted the topic/barrier setup but its group coordinator was not yet stable when the direct-assignment consumer queried committed offsets; the current Matching startup treats that transient metadata error as fatal | Before applying Matching, verify all Kafka brokers and headless peer names are Ready, then inspect every Matching Pod's restart count and previous log for coordinator errors; keep the startup result distinct from a later Ready state | Preserve the failed-Pod evidence, allow the bounded Kubernetes restart after Kafka metadata converges, and do not edit offsets or data; a client-side retry policy remains a separate follow-up if the race repeats | 2026-09-01 (redacted: retained namespace `simplematch-local-cert-20260901-063222-16645`, `matching-0 --previous`) |
 | DT-039 | Docker Desktop kind workers remain NotReady when kindnet fails to unpack layers with `no space left on device`, despite ample ext4 host space | Desktop kind node `/var` (including containerd) was a 3.8 GiB tmpfs; kubelet reported 4,002,340,864 bytes capacity and zero available. The relationship between this mount and Desktop's configured `data-root` was not conclusively established | Verify node `/var` mount type and kubelet `stats/summary`, not just host disk capacity or Docker's reported root path. The canonical workstation engine is now Native Docker Context `default`; check that its node `/var` is backed by ext4 | Under explicit workstation-owner authorization, Desktop VM was stopped and its disk removed, freeing its memory and stored runtime data. Native `default` registry and canonical 1+3 kind were rebuilt and verified; the old Desktop context must not be used for later certification | 2026-11-05 (redacted: `out/verification/issue202-canonical-create-20261105/desktop-failed-filesystem.json`; Native node `/var` mapped to `/dev/sda1`) |
 | DT-040 | The Query lifecycle Lab stops before deployment with `Run image does not exist locally` | The Native Docker image store did not contain the Lab's pinned Paketo run image after the Desktop-to-Native migration | Before the Lab image build, inspect the exact `paketobuildpacks/ubuntu-noble-run-tiny:0.0.122` image on Docker Context `default`. Verify the required `linux/amd64` platform | Pull that exact pinned image for `linux/amd64`. Start a new run with a new evidence directory. Do not substitute another image version or reuse the failed run's evidence | 2026-11-05 (redacted: `out/verification/issue202-r19-focused-native-20261105-r1/boot-image.log`; the source-aligned `r2` Local Lab returned PASS) |
+
+| DT-041 | A selected public FIX order returned `SYSTEM_ERROR`. Gateway delivery did not reach `SENT`. | Two Risk finalizers can read the same pending journal version. One CAS succeeds and the other fails. The second production caller is not yet identified. | Run the PostgreSQL two-finalizer concurrency test. Require one terminal journal revision and one Outbox event. | After rollback, read the durable terminal outcome. Return it only if another finalizer committed. Preserve errors for pending or missing rows. | 2026-11-06 (r1/r3 Risk errors; PostgreSQL red/green regression; `out/verification/issue202-risk-cas-fixed-20261106-r1/summary.json` selected Live PASS with diagnostics and cleanup PASS) |
 
 ## How to add a lesson
 

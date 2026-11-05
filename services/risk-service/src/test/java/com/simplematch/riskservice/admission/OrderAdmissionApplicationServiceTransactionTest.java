@@ -21,16 +21,24 @@ import java.time.Clock;
 import java.time.Instant;
 import java.time.LocalDate;
 import java.time.ZoneOffset;
+import java.util.List;
+import java.util.Optional;
 import java.util.UUID;
+import java.util.concurrent.BrokenBarrierException;
+import java.util.concurrent.CyclicBarrier;
+import java.util.concurrent.Executors;
+import java.util.concurrent.TimeUnit;
 import org.flywaydb.core.Flyway;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
+import org.junit.jupiter.api.RepeatedTest;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.Arguments;
 import org.junit.jupiter.params.provider.MethodSource;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
+import org.springframework.dao.OptimisticLockingFailureException;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.jdbc.datasource.DataSourceTransactionManager;
 import org.springframework.jdbc.datasource.DriverManagerDataSource;
@@ -86,6 +94,74 @@ class OrderAdmissionApplicationServiceTransactionTest {
     account.calls = 0;
     account.failure = null;
     routingResolver.reset();
+  }
+
+  @RepeatedTest(5)
+  void concurrentFinalizationReturnsTheSameCommittedOutcomeAndOneOutboxEvent()
+      throws Exception {
+    final NewOrderCommand command = command();
+    final UUID commandId = UUID.fromString(command.getCommandId());
+    final UUID reservationId = UUID.randomUUID();
+    admissions.beginAdmission(command);
+
+    // Both transactions must read the same PENDING revision before either writes.
+    final var coordinated = new CoordinatedJournalRepository(journal);
+    final var transactions = new AdmissionLifecycleTransactions(
+        coordinated, new JdbcOutboxRepository(jdbcTemplate),
+        new AdmissionOutboxFactory("matching.commands", clock),
+        routingResolver, clock, transactionTemplate);
+
+    try (var executor = Executors.newFixedThreadPool(2)) {
+      final var first = executor.submit(() -> transactions.finalizeAdmission(
+          commandId, ReservationOutcome.accepted(reservationId)));
+      final var second = executor.submit(() -> transactions.finalizeAdmission(
+          commandId, ReservationOutcome.accepted(reservationId)));
+      final AdmissionResult winner = first.get(12, TimeUnit.SECONDS);
+      final AdmissionResult replay = second.get(12, TimeUnit.SECONDS);
+      assertThat(winner).isEqualTo(replay);
+      assertThat(winner.state()).isEqualTo(AdmissionState.ACCEPTED);
+      assertThat(winner.commandId()).isEqualTo(commandId);
+      assertThat(winner.reservationId()).isEqualTo(reservationId);
+    }
+
+    assertThat(jdbcTemplate.queryForObject(
+        "SELECT version FROM risk_service.admission_journal WHERE command_id = ?",
+        Long.class, commandId)).isEqualTo(1L);
+    assertThat(jdbcTemplate.queryForObject(
+        "SELECT reservation_id FROM risk_service.admission_journal WHERE command_id = ?",
+        UUID.class, commandId)).isEqualTo(reservationId);
+    assertThat(jdbcTemplate.queryForObject(
+        "SELECT COUNT(*) FROM risk_service.outbox", Integer.class)).isEqualTo(1);
+    assertThat(jdbcTemplate.queryForObject(
+        "SELECT message_key FROM risk_service.outbox", String.class))
+        .isEqualTo(commandId.toString());
+  }
+
+  @Test
+  void optimisticConflictWithStillPendingJournalRemainsAnError() {
+    final NewOrderCommand command = command();
+    final UUID commandId = UUID.fromString(command.getCommandId());
+    admissions.beginAdmission(command);
+    final var stale = new JdbcAdmissionJournalRepository(jdbcTemplate) {
+      @Override
+      public void update(AdmissionJournalEntry entry, long expectedVersion) {
+        throw new OptimisticLockingFailureException("admission journal optimistic version conflict");
+      }
+    };
+    final var transactions = new AdmissionLifecycleTransactions(
+        stale, new JdbcOutboxRepository(jdbcTemplate),
+        new AdmissionOutboxFactory("matching.commands", clock),
+        routingResolver, clock, transactionTemplate);
+
+    assertThatThrownBy(() -> transactions.finalizeAdmission(
+        commandId, ReservationOutcome.accepted(UUID.randomUUID())))
+        .isInstanceOf(OptimisticLockingFailureException.class)
+        .hasMessage("admission journal optimistic version conflict");
+    assertThat(jdbcTemplate.queryForObject(
+        "SELECT state FROM risk_service.admission_journal WHERE command_id = ?",
+        String.class, commandId)).isEqualTo("PENDING");
+    assertThat(jdbcTemplate.queryForObject(
+        "SELECT COUNT(*) FROM risk_service.outbox", Integer.class)).isZero();
   }
 
   @DisplayName("begin and finalize commit journal state and one final matching command")
@@ -609,6 +685,49 @@ class OrderAdmissionApplicationServiceTransactionTest {
                 .build())
         .setSessionState(SessionState.SESSION_STATE_CONTINUOUS)
         .build();
+  }
+
+  /** Coordinates two JDBC revisions without replacing the real persistence adapter. */
+  private static final class CoordinatedJournalRepository implements AdmissionJournalRepository {
+    private final AdmissionJournalRepository delegate;
+    private final CyclicBarrier updates = new CyclicBarrier(2);
+
+    private CoordinatedJournalRepository(AdmissionJournalRepository delegate) {
+      this.delegate = delegate;
+    }
+
+    @Override
+    public Optional<AdmissionJournalEntry> findByCommandId(UUID commandId) {
+      return delegate.findByCommandId(commandId);
+    }
+
+    @Override
+    public Optional<AdmissionJournalEntry> findByBusinessKey(AdmissionCommand command) {
+      return delegate.findByBusinessKey(command);
+    }
+
+    @Override
+    public boolean insert(AdmissionJournalEntry entry) {
+      return delegate.insert(entry);
+    }
+
+    @Override
+    public void update(AdmissionJournalEntry entry, long expectedVersion) {
+      try {
+        updates.await(5, TimeUnit.SECONDS);
+      } catch (InterruptedException interrupted) {
+        Thread.currentThread().interrupt();
+        throw new IllegalStateException("concurrent admission test interrupted", interrupted);
+      } catch (BrokenBarrierException | java.util.concurrent.TimeoutException failure) {
+        throw new IllegalStateException("both finalizers must read PENDING first", failure);
+      }
+      delegate.update(entry, expectedVersion);
+    }
+
+    @Override
+    public List<AdmissionJournalEntry> findPendingBefore(Instant cutoff, int limit) {
+      return delegate.findPendingBefore(cutoff, limit);
+    }
   }
 
   @Configuration
