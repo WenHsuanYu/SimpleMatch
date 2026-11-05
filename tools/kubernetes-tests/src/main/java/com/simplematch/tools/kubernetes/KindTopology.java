@@ -42,7 +42,6 @@ final class KindTopology {
       KubernetesOwnership.requireReusable(settings, nodes,
           client.read("get", "namespace", "kube-system", "-o", "json")
               .path("metadata").path("uid").asText());
-      KindHealth.requireImageHeadroom(commands, settings.dockerContext(), client);
     } finally {
       Files.deleteIfExists(config);
     }

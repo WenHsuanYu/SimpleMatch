@@ -77,7 +77,7 @@ final class KubernetesBusinessEnvironment implements VerificationResources {
         "source_fingerprint", inputs.sourceFingerprint(), "daemon_id", inputs.daemonId(),
         "verification_source_fingerprint", inputs.verificationFingerprint(),
         "docker_context", settings.dockerContext().name(), "mode", settings.mode().value(),
-        "resource_budget", inputs.budget(), "trading_day", settings.day().toString(),
+        "trading_day", settings.day().toString(),
         "artifact_sha256", inputs.input().artifact().identity().contentSha256())));
     kind = new KindEnvironment(settings, run, inputs.docker());
     kind.prepare();

@@ -483,7 +483,17 @@ The public FIX scenario must use a Java-owned synthetic credential/TLS fixture i
 Classification and removal accompany each delivered responsibility. Update the Issue only after a whole sequence milestone completes.
 
 Ruby test dispositions before migration: retain hard-reset's `healthy`, `absent`, and `dry-run` cases for actual mutation selection. Retain `missing-kind`, `discovery-failed`, and `observation-failed` because failed discovery must stop destructive work. Retain `invalid-role` for identity refusal. Retain `registry-refused`, `namespace-api-failed`, and `pv-api-failed` for failure propagation at distinct cleanup boundaries. Drop exact human-message matching; preserve exit/mutation behavior at the actual command entry point.
-For resource budgeting, keep phase-peak calculation, replica/init-container accounting, malformed-quantity rejection, and sufficient/insufficient capacity cases. Retire the old CLI's warning-only over-budget mode and exact legacy report-layout checks when that CLI loses its final caller. The Kubernetes preflight must remain fail-closed; do not build a second resource report framework.
+The later owner direction removes **all capacity-based preflight checks**
+from the selected Kubernetes Jupiter path, including budget calculation,
+host/guest memory and CPU thresholds, Docker storage headroom and worker
+image-filesystem utilization. The selected preflight no longer runs the Ruby
+resource calculator, probe container, or storage capacity script; no
+capacity override is necessary. This does not remove the fail-closed
+requirements for approved input, source and image identity, Kubernetes
+topology, readiness, resource ownership or cleanup. Existing standalone
+budget tools and historical evidence remain separate from the selected
+Jupiter entry until last-consumer review; actual deployment/runtime resource
+failures still fail verification. Do not create a replacement budget framework.
 
 ## P3 current implementation and acceptance
 
@@ -1400,3 +1410,31 @@ R19 Python Lab and active documentation until their retirement is
 independently justified. This change retires no Shell/Python/Ruby files:
 tracked Shell remains **102 files / 22,140 physical lines** against the
 required **51 files / 10,476 lines** limits (Python **26**, Ruby **3**).
+
+### 2026-11-06 selected live attempt after capacity-preflight removal
+
+The later focused attempt
+`out/verification/issue202-r19-no-capacity-20261106-r3/summary.json`
+used run `163e951d-4204-4a67-bd48-1f75dff57b37`. Its Gradle
+`kubernetesBuildPreflight`, source-bound image build/import, migrations,
+platform startup and public FIX submission executed without a capacity
+threshold gate. The Jupiter `RestingBuyKubernetesTest` stopped at
+`RestingBuyKubernetesTest.java:90`: the PostgreSQL Gateway-delivery
+observation did not reach `SENT` within its bounded wait. The result
+remains **FAIL** with `assertions=FAIL`, `diagnostics=PASS` and
+`cleanup=PASS`. The run-owned Kubernetes namespace was cleaned up.
+Risk diagnostics recorded an `admission journal optimistic version
+conflict` at `JdbcAdmissionJournalRepository.java:125`, the same
+failure signature previously seen in r1; neither the cause nor a
+production-level correction is established by these failed attempts.
+The FIX receipt reflected a pending `SYSTEM_ERROR` outcome rather
+than an independently proven business delivery. R18/R19's new
+Authority-outbox Account oracle and five-Principal V1/V2/V3 matrix
+were **not reached** in this failed run. This historical r3 attempt
+also precedes the final deletion of informational preflight budgeting
+from executable source; it must not certify that subsequent source.
+
+The owner has since removed capacity budgeting entirely from the
+selected Jupiter preflight (including nonblocking Ruby reporting).
+Focused offline validation and a fresh selected Live run remain separate
+from the historical r2 PASS, and S5 P5b/P6 remain incomplete.

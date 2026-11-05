@@ -2,15 +2,14 @@ package com.simplematch.tools.kubernetes;
 
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
-import com.fasterxml.jackson.dataformat.yaml.YAMLFactory;
 import java.nio.file.Files;
 import java.nio.file.LinkOption;
 import java.time.Duration;
 import java.util.List;
 
-/** Checks host capacity and canonical inputs before creating deployment resources. */
+/** Validates canonical inputs and ownership prerequisites before deployment. */
 record KubernetesPrerequisites(DockerIdentity docker, KubernetesInput input,
-    KubernetesProfile profile, JsonNode budget, String sourceFingerprint,
+    KubernetesProfile profile, String scenario, String sourceFingerprint,
     String verificationFingerprint) {
   static KubernetesPrerequisites observe(KubernetesSettings settings) throws Exception {
     if (Files.exists(settings.evidence(), LinkOption.NOFOLLOW_LINKS)) {
@@ -25,28 +24,15 @@ record KubernetesPrerequisites(DockerIdentity docker, KubernetesInput input,
     final var profile = "resting-buy".equals(settings.scenario())
         ? KubernetesProfile.restingBuy(settings.root(), commands)
         : KubernetesProfile.render(settings.root(), commands);
-    final var yaml = new ObjectMapper(new YAMLFactory());
-    final var manifest = new StringBuilder();
-    for (var document : profile.documents()) {
-      manifest.append(yaml.writeValueAsString(document));
-    }
-    final JsonNode budget = json.readTree(commands.run(List.of("ruby",
-        "scripts/local-resource-budget.rb", "--manifest", "-", "--profile", settings.scenario(),
-        "--host-memory-bytes", info.path("MemTotal").asText(), "--check"),
-        manifest.toString(), Duration.ofSeconds(30)).checked());
     requireTools(commands);
     requireSharedDirectory(settings);
     KindTopology.preflight(settings, commands);
-    commands.run(List.of("bash", "scripts/lib/local-docker-storage.sh"), "",
-        Duration.ofSeconds(30)).checked();
     if (!"desktop-linux".equals(settings.dockerContext().name())) {
       checkFilesystem(commands, info);
     }
-    new KubernetesCapacity(commands, settings.dockerContext())
-        .require(info, budget, profile.platformImages());
     return new KubernetesPrerequisites(
         new DockerIdentity(settings.dockerContext(), info.path("ID").asText()), input, profile,
-        budget, KubernetesSource.fingerprint(settings.root(), commands),
+        settings.scenario(), KubernetesSource.fingerprint(settings.root(), commands),
         KubernetesSource.verificationFingerprint(settings.root(), commands));
   }
 

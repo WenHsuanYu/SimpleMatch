@@ -65,14 +65,12 @@ final class KubernetesImages {
   KubernetesWorkloadImages loadAndProbe(KindEnvironment kind, VerificationContext run)
       throws Exception {
     final var client = kind.client();
-    KindHealth.requireImageHeadroom(commands, context, client, run.evidence(), "before-import");
     final String helper = observeHelper(kind);
     final List<String> workers = workerNodes(client);
     importImages(kind, run, workers);
     Files.write(run.evidence().resolve("helper-image-identity.json"), json.writeValueAsBytes(
         Map.of("reference", helper, "host_index_id", identities.get(helper),
             "platform", "linux/amd64", "platform_config_id", configs.get(helper))));
-    KindHealth.requireImageHeadroom(commands, context, client, run.evidence(), "after-import");
     KindHealth.requireStable(client, run.evidence(), "after-import");
     int number = 0;
     for (String node : workers) {

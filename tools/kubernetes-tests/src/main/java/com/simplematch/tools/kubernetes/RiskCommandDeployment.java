@@ -51,8 +51,6 @@ final class RiskCommandDeployment {
       KubernetesJobs.awaitComplete(target.client(), name, target.run());
     }
     publishOpenBarriers();
-    KindHealth.requireImageHeadroom(settings.dockerContext().commands(settings.root()),
-        settings.dockerContext(), target.client(), target.run().evidence(), "after-bootstrap");
     KindHealth.requireStable(target.client(), target.run().evidence(), "after-bootstrap");
     startBusinessServices();
   }
