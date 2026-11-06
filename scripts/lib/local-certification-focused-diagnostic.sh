@@ -253,27 +253,39 @@ simplematch_focused_validate_namespace() {
     return 1
 }
 
+# The 2026 aggregate was retired. Retained CDC evidence still requires each
+# historical prerequisite PASS. This fixed list is an evidence contract only.
 simplematch_focused_collect_dependencies() {
-  local phase_id="$1"
-  local dependency dependency_output
+  local image_class service build_source repository
+  local -a image_dependencies=()
 
-  [[ -z "${SIMPLEMATCH_FOCUSED_DEPENDENCY_SEEN[$phase_id]+x}" ]] || return 0
-  SIMPLEMATCH_FOCUSED_DEPENDENCY_SEEN["$phase_id"]=true
-  dependency_output="$(certification_phase_dependencies "$phase_id")" || return 1
-  while IFS= read -r dependency; do
-    [[ -n "$dependency" ]] || continue
-    simplematch_focused_collect_dependencies "$dependency" || return 1
-  done <<<"$dependency_output"
-  [[ "$phase_id" == kubernetes-cdc-delivery ]] ||
-    SIMPLEMATCH_FOCUSED_DEPENDENCIES+=("$phase_id")
+  while IFS='|' read -r image_class service build_source repository; do
+    [[ -n "$service" ]] || continue
+    image_dependencies+=("local-image-build/$service" "registry-publish/$service")
+  done < <(simplematch_local_image_inventory_entries)
+  SIMPLEMATCH_FOCUSED_DEPENDENCIES=(
+    source-preflight static-kubernetes-overlays
+    compose-config cdc-outbox-failure-live compose-up compose-wait
+    kafka-create-matching-commands kafka-describe-matching-commands
+    kafka-config-matching-commands kafka-create-matching-events
+    kafka-describe-matching-events kafka-config-matching-events
+    kafka-broker-config kafka-capacity-evidence kafka-producer-contract
+    kafka-profile-validation compose-down-before-kubernetes
+    local-resource-budget local-image-inventory registry-connectivity
+    "${image_dependencies[@]}"
+    registry-image-lock kubernetes-manifest-split kubernetes-namespace
+    kubernetes-inputs kubernetes-platform-apply static-flyway-services
+    kubernetes-topic-provisioning kubernetes-migrations
+    kubernetes-connect-apply kubernetes-open-barriers
+    kubernetes-workload-apply kubernetes-risk-outbox-connector
+    kubernetes-account-outbox-connector kubernetes-workloads
+  )
 }
 
 simplematch_focused_validate_dependencies() {
   local dependency
 
-  SIMPLEMATCH_FOCUSED_DEPENDENCIES=()
-  declare -gA SIMPLEMATCH_FOCUSED_DEPENDENCY_SEEN=()
-  simplematch_focused_collect_dependencies kubernetes-cdc-delivery || \
+  simplematch_focused_collect_dependencies || \
     simplematch_focused_fail 'Cannot resolve the CDC dependency list.' || return 1
   for dependency in "${SIMPLEMATCH_FOCUSED_DEPENDENCIES[@]}"; do
     certification_validate_phase_result "$focused_evidence_dir" "$dependency" || \

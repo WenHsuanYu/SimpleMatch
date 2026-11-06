@@ -34,7 +34,7 @@ republishes completed events. See the
 
 ## Historical repository layout (retired)
 
-The canonical test lives under:
+The former Shell test lived under these paths, all of which are retired:
 
 ```text
 scripts/end-to-end/critical-consumers/

@@ -1,21 +1,19 @@
-# Certification implementation reference
+# Retired Shell certification implementation
 
-The custom cache and resume implementation retired on 2026-10-28 as part of category C.
-The [current execution contract](local-certification-phase-dag.md) replaces the previous planner and evidence-store design.
+Issue #202 S5 P5b removed the second 62-phase execution framework.
+The former phase graph, root runner, bootstrap, Connect/Kafka/Kubernetes/job/workload
+adapters, and generic execution reporter are no longer runnable.
+`./gradlew verifyAll` owns complete-local selection.
 
-The existing modules now have these responsibilities:
+The following helpers remain for read-only legacy CDC focused diagnostics:
 
-| Module | Responsibility |
+| Helper | Retained responsibility |
 | --- | --- |
-| `scripts/lib/local-certification-phase-graph.sh` | Select phases and order their dependencies. |
-| `scripts/lib/local-certification-run.sh` | Call existing runtime and build commands. |
-| `scripts/lib/local-certification-framework.sh` | Execute commands, preserve failures and logs, report results, and clean owned resources. |
-| `scripts/lib/local-certification-evidence.sh` | Write and check current-run results and completion inventories. |
-| `scripts/lib/local-certification-images.sh` | Construct and check the current registry image lock. |
+| `local-certification-focused-diagnostic.sh` | Validate legacy run ownership, prerequisites and the current CDC observer. |
+| `local-certification-provenance.sh` and `local-certification-runtime-provenance.sh` | Check scoped runtime/verifier source identity. |
+| `local-certification-evidence.sh` | Validate legacy schema v2 phase results. |
+| `local-certification-images.sh` | Validate the recorded registry image lock bytes. |
 
-The fingerprint, planner, and generic output-materialization modules no longer exist.
-The remaining phase list does not cache results or define reuse policy.
-The module filenames remain stable for existing navigation.
-
-Historical design and implementation remain available in Git at source `6bb24f6fc28edf516c3aa6bcc45abe50fee29af8`.
-Historical reports retain their original format and claims.
+The focused diagnostic holds historical phase IDs only to check retained evidence.
+It cannot plan or execute phases or publish an aggregate PASS.
+The original framework is available in Git history.

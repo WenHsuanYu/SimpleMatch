@@ -119,7 +119,7 @@ findmnt -T "$(docker info --format '{{.DockerRootDir}}')"
 | 準備 Kubernetes images | `scripts/prepare-local-kubernetes-images.sh` |
 | 發布 images 並產生 digest lock | `scripts/publish-local-images.sh` |
 | Render local Kubernetes manifest | `scripts/render-local-kubernetes-manifest.sh` |
-| Local production-like gate | `scripts/run-local-production-like-certification.sh` |
+| S5 complete-local 驗收 | `./gradlew verifyAll`（未完成的 requirement 由 `verifyAllScope` 拒絕） |
 | Rendered manifest checks | `./gradlew manifestCheck` |
 | Runtime recovery diagnostics | 使用第 13 節的 property-specific focused runners |
 | 資源報告 | `scripts/local-resource-report.sh` |
@@ -508,33 +508,35 @@ bash scripts/render-local-kubernetes-manifest.sh \
 
 ---
 
-## 12. Local production-like certification
+## 12. S5 complete-local verification
 
-權威入口：
-
-```bash
-bash scripts/run-local-production-like-certification.sh
-```
-
-一般完整 run 不需要先手動執行 `build-local-images.sh` 或 `prepare-local-kubernetes-images.sh`。Runner 依階段相依關係執行必要命令。每個選定階段都會執行，Gradle 與映像建置工具繼續使用各自的快取。自製歷史 PASS 快取與 `--resume` 已於 2026-10-28 移除。
-
-建議顯式指定核准的 trading day 與 delivery manifest：
+Issue #202 已移除原本獨立的 62-phase Shell certification runner。
+目前完整本機驗收的唯一選取入口：
 
 ```bash
-export SIMPLEMATCH_CERTIFICATION_TRADING_DAY=2026-08-11
-export SIMPLEMATCH_MARKET_REFERENCE_DELIVERY_MANIFEST=\
-tools/market-reference-builder/data/2026-08-11/delivery/manifest.yaml
-
-kubectl config use-context kind-simplematch-live
-bash scripts/manage-simplematch-live.sh verify
-bash scripts/run-local-production-like-certification.sh
+./gradlew --no-daemon verifyAll
 ```
 
-每次完整 run 使用新的證據目錄與執行身分。預設 Compose project 名稱包含 run ID；明確指定的 project 必須沒有既存容器。Namespace、migrations、topics、Open Barriers、workloads、Matching fleet verification 與 provenance 都在本次執行。
+執行前先完成 [deployment-test preflight](../agents/deployment-test-lessons.md)，
+並提交所有追蹤來源碼。`verifyAllScope` 會拒絕未追蹤的非私人建置輸入、
+未清理 Kubernetes 資源的保留模式，並檢查 `full-native-dev`、
+`resting-buy` Kubernetes scenario，以及 S5 Shell 數量門檻。
+`verifyAll` 連接 Java、靜態分析、Native、Flyway／依賴、QuickFIX
+與 run-owned Kubernetes 驗證；Kubernetes owner 會準備需要的映像與資源。
 
-Compose phase 與 Kubernetes local overlay 是不同驗證邊界；Kubernetes workloads 不應被理解為依賴已淘汰的 Compose bridge。
+`./gradlew verifyAll --dry-run` 只列出所選任務，不能證明前置閘門或 runtime 驗收通過。
+舊 runner 的 `--skip-*`、`--matching-fleet-only`、`--keep-resources`
+及 per-phase PASSED 已退役，沒有一對一的 Gradle 替代。
+單獨的 Compose Kafka／CDC、Kafka topic capacity 與本機資源預算報告
+也不再構成完整驗收要求。詳見
+[退役後的證據界線](../verification/local-certification-phase-dag.md)。
+2026-11-06 的 selected Live PASS 不能宣告 P6 `verifyAll` PASS。
 
-如果完整 run 的前置 phase 都是 PASS，只有 Risk CDC observer 因暫時性 runtime 問題失敗，可對同一份 retained evidence 執行 focused diagnostic：
+### 12.1 已退役 aggregate 的歷史 CDC 診斷
+
+以下為舊版 production-like namespace 使用的歷史命令，**目前不可用於續跑
+P5b 前的證據**。P5b 已修改 runtime provenance 的雜湊輸入並移除原本的
+62-phase aggregate，因此使用舊來源簽章的 retained run 都會被拒絕。
 
 ```bash
 bash scripts/run-local-cdc-delivery-focused-diagnostic.sh \
@@ -542,57 +544,15 @@ bash scripts/run-local-cdc-delivery-focused-diagnostic.sh \
   --timeout-seconds 180
 ```
 
-它只接受 full proof profile，並從 `run-context` 驗證 namespace/run-id、依賴 phase、immutable image lock、實際 workload image、session ConfigMap 與 PostgreSQL Secret。Focused preflight 另外確認 `local-images.lock` 的 SHA-256 等於該次執行留下的 `image-lock.sha256`。`run-context` 保存兩個 scoped identity：`cdc_runtime_signature` 涵蓋建立保留 namespace 所需的 manifest、Risk CDC runtime、image 與 orchestration 輸入；`cdc_verifier_signature` 涵蓋 observer、fixture、focused verifier，以及選定 contract 的 canonical path/content digest。無關 source commit 不會改變 runtime signature，因此不必重建 deployment；若只有 verifier signature 改變，會先執行快速 `test-cdc-observer-fixture-contract.sh`，再對同一個 retained runtime 執行 observer。runtime signature、namespace、image、input 或 dependency 任一漂移，或舊 `run-context` 沒有 scoped identity，都會在 observer side effect 前 fail-closed，必須重新建立完整 certification run。
+這個診斷驗證歷史 schema v2 phase PASS、namespace owner、source、
+runtime/verifier fingerprint 與 immutable image lock。它不建立新的完整部署。
+runtime signature 或必要環境漂移時會拒絕執行。
+`FOCUSED_DIAGNOSTIC` 的 PASS 不會升級歷史結果或 S5 完整驗收。
+新的 CDC 驗證使用 `./gradlew verifyCdc`；該測試也不等於 P6 完整驗收。
 
-Verifier identity 也會綁定 observer script 的 canonical path/content digest；每次 focused report 會
-另外保存 `verifier-observer.sh` 與 `verifier-contract.sh` 的相對 evidence copy。這些副本讓封存後
-的報告仍可檢查實際輸入，不必假設工作樹中的外部檔案永遠存在；執行時則仍使用已解析的原始
-script，因為它可能需要從自身目錄載入 shared library。
+### 12.2 獨立 Kubernetes requests 檢查
 
-這裡的「重用 runtime」只表示重新讀取同一個已驗證的 namespace；它不表示重用舊的 diagnostic
-報告。每次 focused 執行都會以目前 verifier 寫入新的 `verdict.json` 與 provenance，並明確
-記錄 retained/current verifier fingerprint 及是否發生 drift。
-
-成功結果會標示 `FOCUSED_DIAGNOSTIC` 且 `fullCertification=false`；即使 PASS，也只證明目前 verifier 對 retained runtime 的 CDC observer 結果，不能關閉或升級完整 certification，也不會改寫原本的 phase evidence。
-
-### 12.1 計畫與決策
-
-常用選項：
-
-```text
---tag TAG
---image-transport registry|kind-load
---skip-build
---skip-compose
---skip-kubernetes
---matching-fleet-only
---keep-resources
---query-fixture-directory PRIVATE_PATH
---dry-run
-```
-
-先檢查計畫：
-
-```bash
-bash scripts/run-local-production-like-certification.sh --dry-run
-```
-
-Dry-run 會列出選定階段及其命令，不建立執行證據。正式執行會為每個選定階段保存目前的結果。
-不再產生 `plan.json`、重用決策或續跑標記。
-
-### 12.2 不要把 partial run 當成完整 certification
-
-`--matching-fleet-only` 明確產生 PARTIAL evidence。`--skip-build`、`--skip-compose` 或 `--skip-kubernetes` 也代表 operator 主動省略 requirement。這些選項不會因 cache 中已有舊 PASS 就被升級成完整 certification。
-
-執行 Kubernetes 路徑前，runner 會以目前選用的 Docker daemon 記憶體容量檢查 render 後的整體
-requests，並將 `local-resource-budget.json` 存入該次 run evidence、在 `report.md` 標示結果。
-38 GiB 參考主機的 `--matching-fleet-only` 縮減 workload 在宣告 requests 下符合預算；
-目前完整 workload 超額時會警告，但仍可繼續部署。requests 不是實際記憶體用量，swap 可能
-幫助執行，卻不能把超額報告變成容量已通過的證據。兩種 profile 的範圍、計算及限制見
-[`deploy/k8s/README.md`](../../deploy/k8s/README.md#local-host-memory-budget)。
-
-若操作員只想手動確認縮減 profile 的宣告 requests 是否符合**目前 Docker daemon** 容量，
-從 repository root 執行（不會建立任何 Kubernetes 資源）：
+僅要確認目前 Docker daemon 的記憶體容量與 reduced profile 宣告 requests 時：
 
 ```bash
 kubectl kustomize deploy/k8s/overlays/local --load-restrictor LoadRestrictionsNone |
@@ -600,42 +560,7 @@ kubectl kustomize deploy/k8s/overlays/local --load-restrictor LoadRestrictionsNo
     --host-memory-bytes "$(docker info --format '{{.MemTotal}}')" --check
 ```
 
-`--manifest -` 的 `-` 表示從前面的 `kubectl kustomize` 管線讀取 YAML；沒有該管線，
-這不是一條完整的檢查命令。`--check` 僅讓這條明確的操作員檢查在超額時回傳非零狀態；
-正式 runner 不使用它，因此完整 profile 即使超額仍會留下警告並繼續。若要檢查 repository
-固定的 38 GiB 參考值與已審查 baseline，執行 `ruby scripts/test-local-resource-budget.rb`。
-
-
-### 12.3 Run evidence
-
-預設證據目錄是 `out/certification/local-production-like/<run-id>/`。
-也可用 `SIMPLEMATCH_CERTIFICATION_EVIDENCE_DIR` 指定新的目錄。
-已存在的路徑會在 daemon 查詢與報告寫入前被拒絕，原有證據不會被覆寫。
-
-Run evidence 保存 `run-context`、`source-revision`、`evidence-manifest.json`、各階段的 `result.json`、映像鎖檔、日誌與報告。
-結果與完成清單使用 schema version 2，並綁定相同 run ID 與來源身分。
-完成清單只列出階段 ID，不複製整份結果。
-目前不再使用 `out/certification-cache/`。
-
-### 12.4 `--keep-resources`
-
-這只保留目前 run 擁有的 Compose project 與 Kubernetes namespace，方便現場檢查。不要因為保留資源就改用 prefix 猜測 ownership；namespace 的 `simplematch.io/lifecycle=disposable` label 才是 routine cleanup 的自動刪除依據。
-
-<a id="125---resume-只繼續同一個-interrupted-run"></a>
-### 12.5 中斷後重新執行
-
-`--resume` 已退役。中斷後應使用新的證據目錄重新執行選定流程。
-先依既有 ownership 規則處理不再需要的舊資源，不要讓新 run 接管其他 run 的 namespace 或 Compose project。
-若只需在保留環境檢查必要情境，使用上列 documented focused diagnostic。
-它必須重新驗證目前環境，也不會把原本的失敗或部分結果升級為完整 PASS。
-目前讀取端不接受舊 schema version 1 的結果作為新的診斷前置證據。
-
-<a id="126-測量-coldwarm-reuse"></a>
-### 12.6 重用量測已退役
-
-歷史 PASS 快取及其 cold/warm 量測腳本一起移除，不再為了驗證這項快取而執行兩次部署。
-目前執行規則見 [認證執行契約](../verification/local-certification-phase-dag.md)。
-舊設計的歷史入口保留在 [量測退役說明](../verification/local-certification-reuse-measurement.md)。
+此命令不建立 Kubernetes 資源，結果也不代表完整 S5 驗收。
 
 ---
 
@@ -772,14 +697,13 @@ Issue #202 已將獨立 `run-local-java-placement-serving-check.sh` 與 placemen
 報表／fixtures 退役。原 #157 的獨立 60 秒 Redis outage 診斷及其 PASS 報表是歷史證據，
 不能當成目前版本的部署驗收。
 
-現行 R21 觀察已併入 `scripts/end-to-end/query-service/run-certification.sh` 的同一次
-Redis outage。該流程沿用既有 namespace、source/image provenance 與已核准的私密 Query
-operations 憑證；對兩個 Query Pod 分別確認 Ready、不可變映像與不同 worker，
-於 Redis 停用前、超過 live liveness probe 設定窗口後及恢復後，比對 Pod UID、Node、
-image ID 與 restart count。每階段都直接對 Pod 呼叫匿名 readiness／liveness（HTTP 200、
-JSON `UP`），以及受 operations-read 授權的 `/api/v1/freshness`。實際 Redis outage
-必須持續成立；任一檢查失敗則不發布 Query PASS，原有清理流程負責恢復 Redis。
-保留的 source-aligned run 與當次證據才可支持部署宣稱；本次程式修改尚未重新執行完整部署。
+現行 R21 由 `KubernetesQueryHealth` 在 `RestingBuyKubernetesTest` 的 R16 Redis outage
+期間驗證。入口為 `./gradlew verifyKubernetes`，也會被 S5 `verifyAll` 選取。
+這個檢查使用同一份 run-owned namespace 與 Query operations 憑證。
+它要求兩個 Query Pod 位於不同 worker，並核對 Ready、映像與 Pod identity。
+在 Redis 停用前、超過 liveness probe 窗口後及恢復後，它確認 Pod identity
+及健康端點和受授權的 freshness 回應。它也確認 Redis 在故障觀察時保持停用。
+只有新的 source-aligned Live 證據可支持目前版本的部署宣稱。
 
 ---
 
@@ -973,14 +897,14 @@ export SIMPLEMATCH_CERTIFICATION_TRADING_DAY=2026-08-11
 export SIMPLEMATCH_MARKET_REFERENCE_DELIVERY_MANIFEST=\
 tools/market-reference-builder/data/2026-08-11/delivery/manifest.yaml
 
-# 4. 跑完整 local gate；runner 執行本次建置與映像發布
-bash scripts/run-local-production-like-certification.sh
+# 4. 執行 S5 完整本機驗證（需已提交的追蹤來源碼）
+./gradlew --no-daemon verifyAll
 
 # 5. 觀察 cleanup 後的資源狀態
 bash scripts/local-resource-report.sh
 ```
 
-完整 certification 不需要預先手動建立全套images。若只是開發單一service或診斷image build，才使用第9節的focused image commands。
+verifyAll 的 Kubernetes owner 會準備所需測試映像。若只診斷單一 service 的 image build，使用第 9 節的 focused image commands。
 
 ### 17.2 日常修改單一 Java service
 

@@ -357,13 +357,10 @@ ReadWriteOncePod PVCs, and 15 distinct nodes. The complete Kafka, PostgreSQL, an
 QuickFIX sequence is recorded in
 [Production Live Certification](../../docs/verification/local-production-like-certification.md).
 
-The local production-like gate is
-`bash scripts/run-local-production-like-certification.sh`. It verifies the same logical 15-owner,
-Lease, PVC, Kafka, and restart/replay contracts with local images and disposable infrastructure;
-it does not require 15 physical nodes or real registry digests. The gate applies the approved
-immutable Market Reference under the local `matching-daily-artifact` name, creates the platform
-resources, runs Flyway Jobs before registering the retained Risk and Account outbox connectors and
-creating runtime workloads, and then verifies the Java, QuickFIX, and Matching rollouts. Risk and
-Query receive their local session identity from `matching-session-config`. The investigation and
-troubleshooting record is in
+The current complete-local selection is `./gradlew --no-daemon verifyAll`.
+Its `verifyKubernetes` owner builds run-owned images and runs the selected
+Kubernetes `resting-buy` scenario against disposable infrastructure.
+The former Shell production-like aggregate and independent Compose phases retired
+under Issue #202 S5 P5b. This selected scenario does not certify 15 physical
+nodes or an external production runtime. The historical investigation is in
 [Historical local production-like Kubernetes workload startup investigation](../../docs/archive/local-production-like-kubernetes-workload-startup.md).

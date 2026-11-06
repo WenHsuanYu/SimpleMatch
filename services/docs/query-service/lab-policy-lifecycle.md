@@ -1,210 +1,73 @@
-# Query Local Lab policy lifecycle
+# Query policy replacement and historical Local Lab
 
-**Issue #202 S5 migration in progress.** The independent Lab approval database,
-synthetic event timeline, collector credential export and their dedicated tests
-have been retired. The separate rollback-image, comment-only edit, lost-record
-and unschedulable-replica simulations were retired earlier. Historical reports
-below describe earlier source-scoped evidence, not current-source acceptance.
-Actual old-generation drain, two new replicas, revoked credentials and Account
-catch-up remain required. No fresh deployed R19 PASS exists for this revision.
+**Current owner:** [`KubernetesQueryPolicyReplacement`](../../../tools/kubernetes-tests/src/test/java/com/simplematch/tools/kubernetes/KubernetesQueryPolicyReplacement.java)
+in the selected [`RestingBuyKubernetesTest`](../../../tools/kubernetes-tests/src/test/java/com/simplematch/tools/kubernetes/RestingBuyKubernetesTest.java).
+Issue #202 S5 retired the independent Python Local Lab and
+`scripts/run-query-security-lifecycle.sh` after source-bound selected Live acceptance.
+Their former commands, CLI tests and report formats are historical.
 
-QS1-06 / [#193](https://github.com/WenHsuanYu/SimpleMatch/issues/193) verifies a controlled
-policy replacement in a disposable, synthetic Local Lab. It uses the existing startup-only
-Spring Environment policy, two Query replicas, Query-owned PostgreSQL projections and the
-existing Kafka consumers. It does not add a runtime entitlement service or change trading
-permissions. Production transport, revocation SLAs, business grant approval, OAuth, Gateway,
-PKI and selective cache reintroduction retain their separate approval gates.
-
-## Controlled fixtures and actual verification
-
-The fixture provisioner creates credentials **before** either replica is deployed. Its
-`application.properties` contains verifiers; `credentials.json` contains private client material.
-All five Principals have the same immutable IDs throughout one run. Explicit next-generation
-profiles replace every credential with zero overlap, first remove C's Y grant, then disable D.
-They preserve the other grants and the operations-read permission. These are deliberate test
-profiles, not a general account-grant approval interface or a production rotation requirement.
-
-The read-only `lib/policy_bundle.py` inspects each owner-private fixture, checks exact grants,
-credential verifier mapping and identity consistency, and rejects in-run edits. Before a
-replacement, the runner verifies increasing policy version, stable Principal/Account IDs
-and disjoint credential verifiers. These are fixture checks, not a business policy approval
-mechanism. Each Java process still loads one complete policy at startup. The runtime binds
-its namespace UID/run label, actual local and CRI image identity, Pod template annotation,
-mounted Secret bytes and observed HTTP policy. A surviving namespace or Query CRI task
-blocks a new run; any old Query task reappearing before replacement deployment fails closed.
-
-All client credentials stay under owner-private `private/` directories, never in Git or public
-reports. No collector-export protocol exists in the focused test; only the runner reads the
-next private fixture for verification. Old read and operations credentials must return 401
-on every new replica; failed verification never restores the earlier generation.
-
-## Runtime observations and fencing
-
-The runner writes direct, run-owned observations rather than a synthetic ordered approval
-timeline. `generation-N-fence.json` records actual transport rejection and the old CRI/task/PID
-drain. `generation-N-serving.json` records both new Pods' policy and authorization checks,
-old-credential rejection and durable Kafka catch-up. Failed observations block any PASS.
-
-The runner stops the entire Query Deployment, so its Kafka consumers pause too. It uses
-existing graceful shutdown, observes runtime container/PID identity rather than trusting
-readiness or Pod deletion, and terminates an exact-owned old PID when necessary. The in-flight
-scenario holds an Account table lock and records admitted JDBC work before Block. Those
-requests may finish normally before the blocked-path observation; verified process exit is
-successful drain. Remaining exact-owned processes are terminated within the same budget.
-Fast OS-process contracts separately verify normal completion, forced termination and
-deadline failure without depending on a narrow JVM-suspension race. Direct access is
-tested independently of the Service.
-Direct Pod probes explicitly bypass HTTP proxies. An indeterminate curl result is retained
-privately; timeout, partial response or observer failure is never evidence of rejection.
-An already stopped generation cannot accept reads even if its removed Pod IP only times out.
-Blocked paths therefore accept either positive transport rejection or positive CRI/containerd/original-PID
-fencing. Each observation records which mechanism established the boundary. Uncertain runtime
-state remains FAIL, and the later drain still checks all eligible workers for uncaptured tasks.
-
-The **20s blocked-to-drained**, **90s generation-submit-to-stop verification** and **120s catch-up** limits are
-Lab acceptance parameters. Exceeding one produces FAIL. A larger stop-verification window
-cannot extend drain. The existing **5s read transaction/JDBC statement budget** is distinct
-from total HTTP lifetime; the slow client intentionally waits longer. Already transmitted
-bytes cannot be recalled. This proves bounded routine maintenance, not emergency immediate
-cutoff, zero-downtime policy updates or a production revocation guarantee.
-
-The current runner starts both V2 replicas normally and verifies the current policy
-through each Pod. It does not create a deliberately unschedulable Pod to
-exercise an artificial partial-activation recovery branch;
-that historical claim was intentionally retired by Issue #202. Failure to
-activate a replica still prevents a successful R19 verdict. The runner
-verifies C→Y 404, C→X 200 and B→Y 200 plus all five Principals' Account,
-Market and Operations permissions on **each** serving replica. Disabling D is a separate
-next-policy case, so grant revocation is not confused with principal disablement.
-
-## Projection recovery and teardown
-
-The test-only Java publisher sends acknowledged protobuf Account facts for X and Y through
-the isolated Kafka, retaining event IDs, partition/offset, payload hashes and expected values.
-It publishes another batch while Query is stopped. Restart uses existing inbox/checkpoint
-semantics without rebuild, offset reset, projection deletion or changing Kafka source data.
-The verifier captures all 15 Account source boundaries, compares durable checkpoints and exact
-inbox receipts, then checks the values through HTTP. Empty partitions need no invented
-checkpoint. This workload proves delivery/recovery for these captured Account inputs; it
-does not certify every source event type or authoritative available trading capacity.
-
-PostgreSQL and Kafka reuse the existing manifests with **run-owned emptyDir** storage in the
-focused namespace. Their data survives Query-only replacement and is destroyed only with
-the entire run. The runner uses the existing Query Flyway task before starting Query,
-retains workload security settings and NetworkPolicies, and selects no unrelated service.
-The canonical kind cluster is retained. Its kindnet does not prove NetworkPolicy enforcement.
-The historical market artifact keeps its original 2026-08-11 date and checksum.
-
-Teardown verifies namespace UID/ownership, actual Query/platform task exit and removal of
-owned kubelet data directories. Only afterward does a second namespace use new identities,
-new data and fresh V1. Retained private evidence is not a permanent cross-Lab identity registry.
-On failure, preserve the FAIL report, stop exact-owned resources and keep reads unavailable;
-do not repair the result by resetting offsets, restoring an old policy or deleting the cluster.
-
-## Run and evidence
-
-Read [deployment-test lessons](../../../docs/agents/deployment-test-lessons.md) first. Require
-the healthy canonical three-worker Lab, the intended Docker context, disk/image-filesystem
-headroom and no surviving Query security run. The wrapper selects only four declared phases
-through the existing planner. Source and runtime execute fresh; image inventory/build may be
-reused only through validated fingerprint/output identities. The test publisher is compiled
-even when the boot image is reused. Actual platform-specific image execution is required on
-every eligible worker before workload application.
-
-Preflight renders the effective platform and Query configuration offline and checks required
-ConfigMap/Secret references and keys, volume mounts and artifact `file:` URIs. All external
-preflight commands have bounded deadlines. Issue #202 retired the requirement
-to inspect a **different, never-launched** Query rollback-image candidate.
-The runtime still pins and verifies the actual Query image during
-platform import and before starting each eligible replica.
-The focused image fingerprint includes both the normalization Dockerfile and its wrapper recipe.
-Raw containerd image probes are owner-labelled and recorded before launch. Their exact task,
-container and snapshot identities are cleaned and verified in `finally`, including ambiguous
-launch/timeout before a namespace exists. Surviving probe identities block a subsequent run;
-uncertain ownership is a failure, never a reason to delete an unverified resource.
-
-On this workstation, use Native Docker Context `default`. The build requires the pinned
-`paketobuildpacks/ubuntu-noble-run-tiny:0.0.122` image for `linux/amd64`.
-If the image is absent, pull this exact version before starting a new Lab run.
+The current deployment command is:
 
 ```bash
-GRADLE_USER_HOME="$HOME/.gradle" \
-  bash scripts/run-query-security-lifecycle.sh \
-  --context kind-simplematch-live --docker-context default \
-  --directory out/verification/query-security-lifecycle-NEW_RUN
-
-python3 scripts/end-to-end/query-service/tests/security-fixtures-contract.py
-python3 scripts/end-to-end/query-service/tests/lifecycle-deadline-contract.py
-python3 scripts/end-to-end/query-service/tests/lifecycle-drain-contract.py
-python3 scripts/end-to-end/query-service/tests/lifecycle-direct-contract.py
-python3 scripts/end-to-end/query-service/tests/lifecycle-cleanup-contract.py
-python3 scripts/end-to-end/query-service/tests/lifecycle-http-contract.py
-python3 scripts/end-to-end/query-service/tests/lifecycle-ownership-contract.py
-python3 scripts/end-to-end/query-service/tests/lifecycle-preflight-contract.py
-python3 scripts/end-to-end/query-service/tests/lifecycle-manifest-contract.py
-python3 scripts/end-to-end/query-service/tests/lifecycle-probe-contract.py
-bash scripts/end-to-end/query-service/tests/lifecycle-plan-contract.sh
+./gradlew verifyKubernetes -PkubernetesScenario=resting-buy --no-daemon
 ```
 
-The directory must be new. An interrupted run cannot be resumed by starting another V1.
-Inspect retained ownership and actual processes before exact-owned cleanup; never force
-namespace finalizers or prune the canonical cluster. CLI contract tests use synthetic
-observation facts and establish only CLI behavior; they are not runtime attestations.
+Read [Query deployed verification](../../../docs/verification/query-service-certification.md)
+for the current R18/R19/R21 assertions, execution scope and evidence limits.
 
-The evidence directory records planner decisions/fingerprints, source HEAD/worktree, fixture
-class identity, runtime image identities/execution probes, old-generation fencing,
-per-replica HTTP matrices, Kafka receipts/catch-up and exact-owned teardown. The runner
-binds each observation to run/namespace UID and immutable image/policy digests; no
-independent stateful approval record or synthetic event transition is generated.
-It is not cryptographic remote attestation.
-Inspect `runtime/verdict.json` and all required phase results rather than one successful probe.
+## Current R19 behavior
 
-| #193 requirement | Enforcement / evidence |
-| --- | --- |
-| A3; controlled fixture identity | Read-only policy inspection, monotone version/zero-overlap rotation; synthetic approval-record rollback, comment edit and lost-record checks retired by #202 |
-| INV-06/07; Block and drain | Real keep-alive/direct HTTP, CRI task and PID observations with bounded fencing record |
-| Credential lifecycle | Controlled provisioner tests, zero-overlap generation replacement and all-replica old-token 401 |
-| INV-01/02/03; grant isolation | Five-principal HTTP matrix on every replica; separate disabled-D policy |
-| Failed activation | Ordinary two-replica activation must pass or the run fails; deliberately unschedulable partial-activation/recovery simulation was retired |
-| INV-08; durable recovery | Paused-consumer publication, captured Kafka boundaries, exact inbox/hash and HTTP results |
-| Run separation | Namespace/task/data teardown and disjoint identities in a new V1 namespace |
-| Evidence / reuse | Four-phase planner, image execution, consolidated validation/delivery evidence and final owned-resource inventory |
+The selected test uses the same owned Kubernetes namespace as the public FIX and
+Query replay scenarios. Its fixture defines two distinct Accounts and five Principals.
+Policy versions V1, V2 and V3 replace credentials without overlap. V2 revokes an
+Account grant while retaining a positive read through an independent permitted Principal.
+V3 disables a Principal. The test checks the complete authorization matrix against
+each new Query Pod, including denied cross-Account access, old credential rejection,
+Market Reference and operations-read restrictions.
 
-QS1-07 / #194 remains responsible for integrating the ordinary certification collectors and
-the complete Phase 1 coverage/evidence review. This focused lifecycle test does not replace it.
+Before each replacement, the test records two old Query Pod and container identities.
+It proves real HTTP/1.1 keep-alive and direct Pod connectivity before the stop.
+It then reduces the Deployment to zero Pods. It checks blocked transport and a
+20-second fence for old containerd tasks and Linux PID identities.
+Each new generation must have two Ready replicas with the expected policy and image.
+All replicas must complete the observed authorization matrix.
 
-## Recorded Local Lab acceptance
+While Query is stopped, the selected test publishes new synthetic Account lifecycle
+protobuf events to the real Kafka broker. It records acknowledgments, partitions,
+offsets, event IDs and SHA-256 digests. The stopped consumer checkpoints must remain
+unchanged. After restart, Query must recover matching durable inbox rows, source
+checkpoints and Account projections within the bounded catch-up interval.
+The events are test fixtures published directly to Kafka. They are not evidence
+that the Account Authority outbox published those events.
 
-The complete `runtime-r13` run passed on 2026-10-25 at source
-`f0cbe6270a1d66453fdcf42f05f849a488a1f83c`. Its runtime input fingerprint is
-`sha256:941fa4a3d9b3a6711184fafd6c4e9a8b043aa82c82ced5e8d05bb5137ffc5756`.
-The planner executed source preflight and runtime fresh, and reused validated image inventory/build
-evidence. All four required phases passed. The retained bundle is
-`out/verification/issue-193-lifecycle/runtime-r13`; it contains both required namespace scenarios
-within one complete certification run.
+The independent [fixture provisioner](../../../scripts/end-to-end/query-service/provision-security-fixtures.py)
+and [policy validator](../../../scripts/end-to-end/query-service/lib/policy_bundle.py)
+remain available. The full-local input producer and source-provenance checks use
+the private Query certification bundle. No old Lab is needed to execute those checks.
 
-| Policy update | Block to drained | Submit to revoked | Restart-inclusive catch-up | Forced-stop attempts |
-| --- | --- | --- | --- | --- |
-| V2: revoke C→Y | 9.44s | 11.10s | 23.37s | 2 |
-| V3: disable D | 0.67s | 2.22s | 16.74s | 0 |
+## Historical accepted Lab evidence
 
-The attempt count records the controller's forced-stop path; positive process absence is the
-acceptance fact, independently of whether a process exits just before its signal is delivered.
-Both serving replicas passed the five-principal Account/Operations/Market checks, including
-C→Y 404, C→X 200 and B→Y 200 after V2. The historical source also checked a simulated
-partial V2 activation, collector withholding and approval-record rollback; those tests
-have since been retired and are not claims about the current runner. Four acknowledged Account
-inputs were matched against durable inbox hashes/checkpoints without rebuild or offset reset.
+The original #193 Local Lab completed a four-phase run in October 2026.
+Its retained `runtime-r13` report is under
+`out/verification/issue-193-lifecycle/runtime-r13` at source
+`f0cbe6270a1d66453fdcf42f05f849a488a1f83c`.
+That original source established two policy-generation replacements,
+the five-Principal matrix, direct/keep-alive blocking, bounded old-process
+drain and exact Account Kafka recovery. Its second namespace used
+new Principals, new Accounts and fresh projection data.
+Those historical results do not certify the current source.
 
-After the first namespace's verified teardown, a new namespace used disjoint Principal/Account
-identities and fresh data. Its two baseline inputs and V1 matrix passed, with 17.50s catch-up.
-Both teardowns proved namespace, process and data removal with zero capture failures. These are
-measured Lab results within the 20s/90s/120s bounds, not production SLAs or authoritative capacity.
-The focused Python contracts passed 42 tests; actual curl/TCP and OS-process tests cover transport
-ambiguity, normal/forced drain and deadline failure. The unchanged Query Java tree also retains
-the earlier service/static-analysis and native PostgreSQL verification evidence.
+The newer selected Jupiter Live run used commit `cdab22d2` and run
+`dde70b10-bcd0-4aef-bea3-b951339b68a2`.
+Evidence under `out/verification/issue202-risk-cas-fixed-20261106-r1/`
+records V1/V2/V3 matrices with 420 verified HTTP cells and two
+stopped-window Kafka catch-up checks. The result reports assertions,
+diagnostics and cleanup PASS. The original Lab's independent second
+namespace, per-worker image-import probes and old report/phase schema
+were not copied to Jupiter. A separate second-namespace failure matrix
+is no longer a current S5 core acceptance requirement.
 
-At the owner's request, only this complete successful run and its consolidated validation/delivery
-evidence are retained for #193. Corrected failures remain documented in Git history; raw failed
-and intermediate run directories are excluded from the retained acceptance bundle. Final-head CI
-and delivery status are recorded on [#193](https://github.com/WenHsuanYu/SimpleMatch/issues/193).
+The focused PASS cannot become an aggregate S5/P6 PASS.
+Production external transport, real Account Authority publication,
+operational revocation SLAs and customer credential governance remain
+outside the scope of both Local Lab and selected Jupiter evidence.

@@ -74,8 +74,8 @@ new test result and does not establish client-level monotonic reads.
 
 Reset deletes projection/inbox/checkpoints, then Redis clear occurs after the PostgreSQL
 transaction in [QueryProjectionRebuildService](../../query-service/src/main/java/com/simplematch/queryservice/runtime/QueryProjectionRebuildService.java).
-The [runner](../../../scripts/end-to-end/query-service/run-certification.sh) reduces replicas
-and uses the operator reset/replay seam. Neither this count change nor a listener stop proves
+The selected [Jupiter replay owner](../../../tools/kubernetes-tests/src/test/java/com/simplematch/tools/kubernetes/KubernetesQueryReplay.java)
+reduces replicas and uses the operator reset/replay seam. Neither this count change nor a listener stop proves
 all HTTP readers, cache fillers, old replicas and other projection writers are drained.
 Replay of the same ordered input should be evaluated for equivalent payloads; observation
 timestamps/checkpoints and any future revision may differ. Define stable identity versus new

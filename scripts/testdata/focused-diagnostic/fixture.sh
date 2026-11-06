@@ -8,8 +8,6 @@ source "$focused_fixture_lib_dir/local-image-inventory.sh"
 source "$focused_fixture_lib_dir/local-image-transport.sh"
 # shellcheck source=scripts/lib/local-certification-provenance.sh
 source "$focused_fixture_lib_dir/local-certification-provenance.sh"
-# shellcheck source=scripts/lib/local-certification-phase-graph.sh
-source "$focused_fixture_lib_dir/local-certification-phase-graph.sh"
 # shellcheck source=scripts/lib/local-certification-evidence.sh
 source "$focused_fixture_lib_dir/local-certification-evidence.sh"
 # shellcheck source=scripts/lib/local-certification-images.sh
@@ -152,9 +150,7 @@ write_dependencies() {
   skip_compose=false
   skip_kubernetes=false
   matching_fleet_only=false
-  SIMPLEMATCH_FOCUSED_DEPENDENCIES=()
-  declare -gA SIMPLEMATCH_FOCUSED_DEPENDENCY_SEEN=()
-  simplematch_focused_collect_dependencies kubernetes-cdc-delivery || return 1
+  simplematch_focused_collect_dependencies || return 1
   source_revision="$(git -C "$repo_root" rev-parse HEAD)"
   for dependency in "${SIMPLEMATCH_FOCUSED_DEPENDENCIES[@]}"; do
     result_file="$evidence_dir/phases/$dependency/result.json"
@@ -215,20 +211,4 @@ write_fixture() {
   write_dependencies "$evidence_dir"
   printf '%s\n' "$(git -C "$repo_root" rev-parse HEAD)" \
     >"$evidence_dir/source-revision"
-}
-
-
-# A complete same-source retained run for the placement command's stricter gate.
-write_complete_fixture() {
-  local evidence_dir="$1" source_signature="$2" phase required
-  local run_id=20260903-123456-1
-  write_fixture "$evidence_dir" "$source_signature"
-  required="$(certification_required_phase_ids)"
-  while IFS= read -r phase; do
-    certification_write_phase_result "$phase" PASS 0
-  done <<<"$required"
-  certification_write_completion_manifest "$evidence_dir" "$required"
-  printf '%s\n' '- status: PASSED' >"$evidence_dir/report.md"
-  printf 'sha256:%064d\n' 0 >"$evidence_dir/verifier-image-identity"
-  printf 'localhost:5001/fixture@sha256:%064d\n' 0 >"$evidence_dir/verifier-image-reference"
 }

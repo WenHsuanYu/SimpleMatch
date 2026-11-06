@@ -1,9 +1,9 @@
 # Current Development Verification and Throughput
 
-**Current baseline, 2026-10-20.** The complete local development aggregate, all six dependent
+**Historical baseline, 2026-10-20.** The former complete local development aggregate, all six dependent
 business scenarios, restoration and evidence audits passed. The existing native and deployed
 Matching throughput gates also passed and their measurements are recorded below. This record
-replaces r13/r14 as the current documentation baseline; their original reports and verdicts remain
+replaced r13/r14 as the historical documentation baseline; their original reports and verdicts remain
 historical evidence in the [evidence audit](local-certification-evidence-audit.md).
 
 The accepted scope is development-environment correctness, cross-service integration and the
@@ -25,7 +25,7 @@ Current diagnostics require schema version 2 results from a fresh run.
 | Aggregate run ID | `20261020-033756-224519` |
 | Aggregate evidence | `out/certification/current-runtime-20261020-r6/` |
 | Execution, snapshots, audits and scenarios | `out/verification/current-runtime-20261020/r6/` |
-| Command | `bash scripts/run-local-production-like-certification.sh --keep-resources` |
+| Historical command (retired under Issue #202) | `bash scripts/run-local-production-like-certification.sh --keep-resources` |
 | Start / finish, Asia/Taipei | 2026-10-20 11:37:56 / 2026-10-20 11:56:22 (UTC+08:00) |
 | Start / finish, UTC | 2026-10-20T03:37:56.458005+00:00 / 2026-10-20T03:56:22.274613+00:00 |
 | Kubernetes context | `kind-simplematch-live`; one control plane and three workers |

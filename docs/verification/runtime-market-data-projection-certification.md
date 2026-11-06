@@ -67,10 +67,12 @@ focused test results; it does not manufacture an invalid record in a shared auth
 The existing recovery evidence executable evaluates the five retained JSON files through its `market-data` command.
 See the [evaluator contract](../../tools/recovery-evidence-verifier/README.md#market-data-verdict) for check names and failure behavior.
 Its Jupiter tests replace the former Shell verdict contract.
-The deployed runner retains environment ownership and publishes PASS only after successful restoration.
+The deployed `KubernetesMarketDataRebuild` scenario uses the same verifier.
+`VerificationRun` owns the environment and requires successful restoration and cleanup.
 
-The certification writes machine-readable evidence under a run-owned directory and publishes
-`verdict.json` only after environment restoration. A passing verdict includes:
+The selected Jupiter scenario writes machine-readable evidence under a run-owned directory.
+It writes its R16 verdict only after checking restoration. The complete local result additionally
+requires the other retained S5 requirements and cleanup. Relevant evidence includes:
 
 - repository source revision, namespace, trading day, and image identities;
 - correlated Matching Event and market-data snapshot identities and positions;

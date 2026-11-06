@@ -23,28 +23,32 @@ These instructions apply to the whole repository.
   the dependent test. After a new or repeated deployment-test failure, record the symptom, root
   cause, safe fix, prevention check, and redacted evidence in that document before declaring the
   run complete.
-- Before an expensive certification run, review the selected profile, current source, and image
-  inputs against the [execution contract](docs/verification/local-certification-phase-dag.md).
-  Each run requires a new evidence directory and executes every selected phase.
+- Before an expensive certification run, review the complete-local Gradle task graph,
+  source revision and image inputs against the
+  [execution contract](docs/verification/local-certification-phase-dag.md).
+  Use `./gradlew verifyAll` for final source-aligned local acceptance.
+  Require a new run-owned Kubernetes evidence directory and completed cleanup.
   Use normal Gradle and image-builder caches for deterministic build work.
-  Explicit partial profiles remain PARTIAL and create no PASS result for omitted phases.
-  Interrupted certification starts a new run. Retained-environment diagnostics require their
-  documented current-state and ownership checks and cannot upgrade an earlier aggregate result.
+  Focused selections and interrupted runs cannot establish a complete-local PASS.
+  Retained-environment diagnostics require their documented current-state and ownership
+  checks and cannot upgrade an earlier aggregate result.
   Documentation or issue metadata changes that do not alter executable inputs require no runtime rerun.
   Changes to execution or acceptance semantics require corresponding contract and fixture review.
-- Use a focused CDC/Connect continuation only through a documented runner such as
-  `scripts/run-local-cdc-delivery-focused-diagnostic.sh` or
-  `scripts/run-local-connect-worker-loss.sh`. Its preflight must validate the retained runtime
+- Use a focused CDC continuation only through the retained
+  `scripts/run-local-cdc-delivery-focused-diagnostic.sh`. Its preflight must validate the retained runtime
   fingerprint, exact namespace/run-id ownership, immutable image identities, dependency PASS results,
   and evidence identity. A verifier-scope change, or an unrelated source change proven outside both
   runtime and verifier scopes, may reuse the retained runtime; runtime, input, dependency,
   namespace/environment, image, or evidence-identity drift requires the fresh source-aligned
   dependent path. The focused command must execute its current verifier/contract before any observer
   or state-changing mutation, write a new diagnostic-only report, never reuse or relabel an old
-  diagnostic report, and never upgrade focused PASS to certification PASS. Integrate and review all
-  scenario changes in one coherent source-aligned batch before one final `full-local` aggregate run
-  for that batch; this does not block independent changes or necessary focused diagnostics, and a
-  rerun is allowed after failure or invalidation. Do not start one full deployment per child issue.
+  diagnostic report, and never upgrade focused PASS to certification PASS. The P5b retirement
+  changed the CDC runtime signature. Pre-P5b legacy evidence is therefore incompatible with
+  the current focused diagnostic and must fail closed. The retired Shell aggregate cannot
+  create a replacement retained run. Integrate and review scenario changes in one coherent
+  source-aligned batch before one final `verifyAll` execution for that batch. This does not
+  block independent changes or necessary focused diagnostics. Rerun after failure or
+  invalidation. Do not start one full deployment per child issue.
 - For every implementation or test task, invoke the repository's `implement` skill when it is
   available and follow its acceptance-criteria, test, review, and handoff workflow. Keep the
   implementation slice narrow, run focused checks during the work, and run the relevant complete

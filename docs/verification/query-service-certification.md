@@ -1,158 +1,84 @@
-# Query-service production-like certification
+# Query-service deployed verification
 
-The secured Query contract now uses PostgreSQL-only business reads and authenticated Principals.
-QS1-05 removes the historical four-response-key restoration requirement; old #137 evidence remains
-historical. The [QS1-07 consumer slice](../../services/docs/query-service/certification-integration.md)
-adds credential-aware collectors, approved fixture selection and verdict contract
-`query-security-phase1/1`. Complete secured bootstrap and deployed aggregate acceptance remain
-pending under #194; focused tool/PostgreSQL PASS does not certify that deployment.
-
-This gate proves the required read-only query capability against a fresh retained local
-production-like deployment. It does not certify external production infrastructure. The runner
-uses only a lifecycle-labelled disposable namespace whose retained evidence identifies the same
-clean repository revision and immutable verifier image.
-
-The replacement current deployment baseline and the separately recorded Query verdict are
-listed in [Current development verification](current-local-certification.md). This document defines
-the gate; each retained result identifies its own tested source and restoration outcome.
-
-## Evidence contract
-
-The retained Kafka stream must contain an execution-backed order whose Account summary and active
-Market Reference row are queryable after the runner establishes its fixture. The runner rejects an
-empty execution set; a resting order alone is not trade-view evidence. It selects only the run's
-recorded BUY Order/Account X from query-owned PostgreSQL, with matching parent ownership and
-instrument/day. It never chooses an arbitrary newer Account or broadens grants to fit it,
-then reads all business data through the public versioned API:
-
-- order state and executions;
-- Account lifecycle summary;
-- active Market Reference trading day and artifact identity;
-- source-topic partition offsets and recovery state.
-
-The public runner establishes that prerequisite itself before selecting the fixture. It invokes the
-public FIX path twice: a BUY order uses pre-approved Account X with a seeded daily trading-notional
-limit and zero position, then a SELL order uses pre-approved Y with the same instrument's synthetic
-long position and crosses the resting order. Both commands use the same retained artifact-selected instrument,
-price, board lot, and partition; only their accounts and sides differ. The resulting evidence is
-kept under `matching-fixture/buy/` and `matching-fixture/sell/`, and the runner waits for the final
-Matching execution, Account lifecycle summary, and Market Reference joins to become visible in
-query PostgreSQL. A caller therefore does not need to run a separate Matching script or hand-seed
-an Account reservation row first; the only administrative fixture writes are the existing
-account-authority trading-limit and position seeds required by the public reservation use case.
-The private X/Y bundle must already be deployed as Query policy and authorized by the FIX session;
-ordinary reads use fixture-granted credentials, Market uses no-grant D, and full checkpoints use
-Operations. Minimal business envelopes contain no topic/partition/offset metadata.
-
-It captures the baseline, scales Redis to zero, and requires the same business view from the
-query-owned PostgreSQL read path. It then restores Redis, scales query-service to zero, records
-that no query Pod exists, and captures the Risk admission, Account reservation, Persistence,
-QuickFIX, and market-data projection state while the query API is actually unavailable. The
-critical snapshot must remain unchanged through the quiet portion of this fault window. During the
-outage it first runs a bounded quiescent-isolation probe (configurable with
-`SIMPLEMATCH_QUERY_ISOLATION_PROBE_SECONDS`, maximum 30 complete samples) and a per-command
-timeout (configured by `SIMPLEMATCH_QUERY_ISOLATION_COMMAND_TIMEOUT_SECONDS`, maximum 30 seconds).
-The configured probe value requests complete samples with one-second gaps; it is not a hard
-deadline for the shell collector. Kubernetes fault handling, Kafka committed-offset inspection,
-and evidence materialization can legitimately make wall-clock elapsed time longer. Every external
-command remains individually bounded, every requested sample must still pass all fail-closed
-checks, and the evidence records the actual probe start, completion, elapsed milliseconds, and
-sample indexes.
-Each sample also records the exact Matching fleet topology: ordinals 0 through 14, current
-StatefulSet revision and owner, Pod UID and node, the matching PVC and bound PV, and the PV
-node-affinity mapping. Unowned or extra Matching Pods fail the probe before a verdict is produced.
-Each sample confirms that query-service still has zero Pods, all 15 Matching partitions remain
-Ready, every critical-path workload remains Ready with stable Pod identities and restart counts,
-the critical-consumer state is healthy, and Matching committed offsets are present and
-non-decreasing. This repeated operational observation proves that the outage caused no observed
-health regression while the system was quiescent.
-
-The runner then releases one prepared public FIX NewOrderSingle with `TimeInForce=IOC` while the
-query deployment still has zero Pods. The FIX client is held at its ready barrier while the
-quiescent outage probe runs; immediately before release, the Gateway is opened from three fresh
-system observations. This placement keeps the final observation inside the five-second
-`stale-status-after` window instead of allowing the probe to race the fail-closed safety monitor.
-The submitted IOC uses approved Y with a newly seeded BUY limit, preserving X's Account baseline,
-and the immutable artifact-selected
-instrument. The active evidence must correlate the FIX acceptance, durable Risk admission, routed
-partition, exact `MATCHING_EVENT_TYPE_ORDER_CANCELLED`, terminal Persistence
-projection, market-data projection progress and inbox, all three critical-consumer inboxes, and a
-sent QuickFIX terminal delivery intent. It also requires zero quarantine history, zero pending FIX
-intents, and zero active Matching orders after the event. The IOC shape is intentional: with no
-opposite resting order it creates one deterministic terminal event without leaving state that would
-contaminate the later replay comparison. The active check fails closed when any identity, event
-offset, terminal status, inbox count, or query-outage assertion is absent. The Matching Event
-observer records both the configured Kafka seek start offset and the matched record offset, so the
-verdict can prove that the event came from the intended observation range. The critical-consumer
-snapshot also carries each market-data partition's `last_processed_offset` and `recovery_state`,
-so active progress is compared with the observed event offset rather than inferred from a summary
-counter. Query-service is restored
-only after this active proof and before the normally disabled authenticated reset adapter is enabled;
-the reset clears only query-owned rebuildable state. Immediately before the reset, it records the
-15-partition Kafka high-water
-offset for each source in `replay-boundary/manifest.json`. The reset input starts each partition at
-the captured earliest offset and the rebuilt run must commit exactly the recorded high-water offset;
-this prevents a moving `--to-earliest` replay from silently consuming events added after the
-certification boundary. The runner resets these two groups to the retained boundary:
-
-- `query-service-matching-events` on `matching.events`;
-- `query-service-account-lifecycle` on `account.lifecycle`.
-
-No critical consumer offset is changed. A rebuilt snapshot is eligible for comparison only after
-both query groups reach their captured offsets exactly and every disclosed checkpoint is `READY`.
-Business reads no longer recreate response-cache keys, and their presence is not restoration
-evidence. The final verdict requires the expanded critical snapshots to remain identical before and during the
-quiescent portion of the query outage, all 15 Matching partitions to remain ready, all
-critical-path workload health samples to remain stable, the active public IOC event proof to pass,
-and the query deployment to be restored. The active event is allowed to change authoritative
-consumer counters after the quiescent snapshot; those post-event changes are checked through the
-correlated active evidence instead of being misclassified as query-service isolation failure.
-
-The deterministic-rebuild comparison covers business fields only. Projection observation and
-artifact-install timestamps are operational metadata and may change during replay; the separate
-freshness response still proves that every source checkpoint is present, contiguous, and `READY`.
-
-## Run the gate
-
-Before deployment, provision the private Query bundle and independent FIX credentials/TLS material
-for the approved X/Y Accounts, and arrange for the serving workloads to consume them. The current
-stock full-local input producer does not automatically perform this security bootstrap; that
-integration remains a #194 gate. Do not run an anonymous compatibility profile or treat the commands
-below as newly accepted deployed evidence.
-
-Once those inputs are supported, create a fresh production-like run at the committed source revision
-and retain its namespace:
+The current S5 R18/R19/R21 deployment owner is
+[`RestingBuyKubernetesTest`](../../tools/kubernetes-tests/src/test/java/com/simplematch/tools/kubernetes/RestingBuyKubernetesTest.java).
+The selected Gradle entry builds source-bound images, creates a disposable Kubernetes namespace,
+runs the deployed checks and verifies cleanup. It uses the same run for the FIX business chain,
+Query read/replay, Redis outage and Query policy replacement.
 
 ```bash
-bash scripts/run-local-production-like-certification.sh --keep-resources
+./gradlew verifyKubernetes -PkubernetesScenario=resting-buy --no-daemon
 ```
 
-Then provide that run's namespace and evidence directory explicitly:
+Use the [deployment-test lessons](../agents/deployment-test-lessons.md) before a live run.
+The command needs the canonical kind runtime and its deployment prerequisites.
+The run must use fresh source and image receipts. Inspect its `summary.json`, diagnostics,
+scenario observations and cleanup result. A focused `verifyKubernetes` PASS cannot replace
+the final `verifyAll` acceptance required by Issue #202 S5.
 
-```bash
-bash scripts/end-to-end/query-service/run-certification.sh \
-  --namespace "${SIMPLEMATCH_CERTIFICATION_NAMESPACE}" \
-  --retained-evidence-dir "${SIMPLEMATCH_PRODUCTION_LIKE_EVIDENCE_DIR}" \
-  --query-fixture-directory "${SIMPLEMATCH_QUERY_FIXTURE_DIRECTORY}" \
-  --evidence-dir "${SIMPLEMATCH_QUERY_CERTIFICATION_EVIDENCE_DIR}"
-```
+## Current deployed assertions
 
-The output directory must be empty. On success, `verdict.json` contains a `PASS` result and the
-individual minimal-business-envelope, deterministic-rebuild, PostgreSQL-read, freshness, market-identity,
-service-restoration, active-processing-liveness, quiescent-critical-path-isolation, and
-critical-path-isolation checks. Baseline, active-event, outage, probe samples, rebuilt,
-consumer-state, offset-reset, provenance, deployment, and diagnostic evidence remain beside it.
+- **R18 public business reads:** A real FIX BUY/SELL cross produces a filled Order and nonempty
+  Executions in Query's PostgreSQL projection. Authorized HTTP reads verify Order parentage,
+  Account grants, Market Reference and source freshness. The same business data remains available
+  during the run-owned Redis outage.
+- **R18 active isolation:** The verifier reduces Query to zero Pods, fences original container
+  and PID identities, then submits a public FIX IOC. Risk, Matching, Account, Persistence and
+  FIX outcomes must complete while Query is unavailable.
+- **R18 deterministic replay:** The verifier captures earliest and end offsets for all
+  15 partitions of `matching.events` and `account.lifecycle`. An independent operator
+  credential resets only Query projections. Both Query consumer groups must reach the captured
+  end boundaries. Authenticated business data, including nonempty Executions, must match the
+  baseline. The verifier disables the operator adapter and restores two Query replicas.
+- **R19 policy replacement:** The selected owner performs V1, V2 and V3 policy activation with
+  two new Query Pods per generation. It verifies their image and controller identity, credential
+  invalidation, changed Account grants, and disabled Principals. The complete five-Principal
+  route matrix checks 140 HTTP cells per generation.
+- **R19 transport and catch-up:** The owner establishes usable keep-alive and direct Pod
+  connections before a stop. It verifies blocked transport and a 20-second process fence.
+  During each stopped window, the owner publishes acknowledged synthetic Account events.
+  The new generation must recover exact Query inbox rows, event hashes, checkpoints and
+  authenticated Account views within the bounded catch-up window.
+- **R21 serving:** Both Query Pods must preserve Ready and liveness behavior, image identity
+  and authenticated operations Freshness while Redis is unavailable.
 
-## Safety and restoration
+The Query service's HTTP/JDBC suites remain the component owners for authentication,
+authorized parent lookups, minimal envelopes, status codes and local PostgreSQL behavior.
+The Query fixture provisioner and `certification_security.py` remain inputs to the
+independent production-like certification and credential validation workflows.
 
-The runner requires the canonical kind Kubernetes context and refuses an ordinary namespace, stale source provenance, a
-different retained namespace, or pre-existing rebuild environment overrides. It restores the
-original Redis and query-service replica counts, removes only the two temporary query rebuild
-environment variables, stops the public FIX/Gateway/Kafka observer clients, removes only the
-run-owned observer Pods, restores the Gateway environment, and stops its port-forwards. A command
-failure or restoration failure emits a failing verdict instead of silently accepting partial
-evidence.
+## Retired standalone operators and explicit coverage loss
 
-Retained resources still belong to the production-like lifecycle. Clean them up with that
-workflow's repository helper; do not delete the namespace directly and do not use broad Docker or
-Kubernetes prune commands.
+Issue #202 S5 retired `scripts/end-to-end/query-service/run-certification.sh` and its
+dedicated Shell helpers and contracts after a selected source-bound Jupiter Live PASS.
+It also retired the focused `scripts/run-query-security-lifecycle.sh` Python Local Lab,
+its transport harness and isolated lifecycle contracts. These entries no longer provide
+current operator commands. The selected Gradle owner covers the required business,
+policy-generation, transport-block and durable catch-up behaviors.
+
+The old Query Shell operator also sampled a quiescent zero-Pod window repeatedly.
+It recorded every Matching Pod, PVC/PV placement, consumer offset and critical workload
+identity during that window. The new selected test checks real trading progress during the
+Query outage and the run-owned health/cleanup invariants. It does not reproduce that
+quiescent multi-sample report. The old Python Lab also ran a second fresh namespace with
+disjoint synthetic identities after first-run teardown. The selected Jupiter run owns
+one fresh namespace per execution. It does not publish the old Lab's second-namespace
+verdict schema or reproduce its independent image-import probe reports.
+The retired scripts' exact CLI, JSON evidence formats and source-layout contracts are
+intentional verification losses under the 2026-11-02 S5 requirement disposition.
+
+## Selected Live evidence and limits
+
+The source-bound selected run at commit `cdab22d2` used run
+`dde70b10-bcd0-4aef-bea3-b951339b68a2`.
+Its retained evidence directory is
+`out/verification/issue202-risk-cas-fixed-20261106-r1/`.
+It reports `assertions=PASS`, `diagnostics=PASS`, `cleanup=PASS`.
+The V1/V2/V3 matrix records 420 observed HTTP cells. The run also records the
+real FIX cross, Query replay, blocked transport and stopped-window Account catch-up.
+
+The stopped-window Kafka publications are synthetic test inputs.
+They do not establish an Account Authority outbox publication path.
+The Account money oracle compares one durable outbox protobuf event with its Query projection.
+It does not establish correctness of the aggregate Account limit ledger.
+This selected Live PASS does not certify a later source revision or complete S5/P6 acceptance.

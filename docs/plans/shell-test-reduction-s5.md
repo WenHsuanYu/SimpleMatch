@@ -1486,3 +1486,66 @@ This is **selected Jupiter Live PASS**, not complete Issue #202 S5
 acceptance. P5b retirements and P6 final complete-local verification
 remain open. Tracked Shell remains **102 files / 22,140 physical lines**
 against the **51 files / 10,476 lines** acceptance limits.
+
+### 2026-11-06 P5b: coherent operator and aggregate retirement
+
+The next P5b source change starts from `65d76697` and removes superseded
+Shell/Python/Java-adjacent orchestration. The immutable preceding counts and
+Live results above remain historical. The current P5b tracked inventory is
+**51 Shell files / 10,361 physical lines**, down from 102 / 22,140.
+Both minimum numeric gates are met. The revised tracked inventory also has
+**9 Python files and 3 Ruby files**. The count is a measurement, not proof
+that all S5 acceptance criteria passed.
+
+| Retired responsibility | Current test owner | Intentional verification loss |
+| --- | --- | --- |
+| R11–R15 old critical-consumer observation, Gateway/FIX/Kafka adapters and dedicated Shell contracts | `RestingBuyKubernetesTest`, `KubernetesCriticalDelivery`, `KubernetesGatewayRecovery`, `KubernetesMatchingRecovery`, `KubernetesTradingClose`, and service tests | Separate all-partition, bounded-observation timing, and obsolete CLI/schema baselines are no longer independently certified. |
+| R16/R17 independent Market Data rebuild and public-stream Shell runners | `KubernetesMarketDataRebuild` and `KubernetesMarketDataStreamer` through selected `verifyKubernetes`; existing seven-check verifier and gRPC observer | Independent operator verdict files and the older streamer assignment/placement profile no longer have a separate runner. |
+| R18/R19 independent Query certification, synthetic policy approval Lab, and their fixture/contract runners | `KubernetesQueryBusinessRead`, `KubernetesQueryExecution`, `KubernetesQueryReplay`, `KubernetesQueryPolicyReplacement`, security/JDBC tests | Separate Python read-matrix/report schemas, synthetic approval authority, independent Lab namespace, and historical quiescent observation matrix retire. Actual V2/V3 Account catch-up fixtures remain synthetic. |
+| R22 extra Matching deployed E2E helper, five-script operator/test group and unused native test executable | `KubernetesMatchingCrash`, `KubernetesMatchingRecovery`, CTest and retained Matching consumer tests | Manual worker-stop/whole-fleet ring samples, independent helper batch/latency schema, and a second process-crash assertion framework retire. No production HA claim follows. |
+| Old full-local 62-phase Shell aggregate, Composer/build/job/topology phase adapters, source-format checks and dedicated skip/workload tests | `verifyAll` uses existing Gradle `manifestCheck`, Flyway/dependencies/CDC, Java suites, `nativeTest` and selected `verifyKubernetes` owners | Old Compose-only deployment/failure matrix, historical phase IDs/PASS reuse, per-phase result manifest, and `--skip-*` runner interface are not reproduced. Existing focused CDC diagnostic remains independently scoped and cannot certify full S5. |
+
+The cutover updates remaining CI interpreter calls, operator navigation, and
+report documentation together with their final consumers. It preserves the
+real local image, topic, Flyway, resource, and CDC operator paths that still
+have a current owner. The old full-local aggregate and synthetic Query Lab
+cannot be selected as a second authoritative testing framework. No Shell
+logic moved into Java strings or workflows to meet the numeric gates.
+
+`verifyAllScope` now enforces a clean committed source, the supported
+full-native preset, the selected resting-buy Kubernetes scenario, and the
+51-file/10,476-line maximums. It also rejects a retained Kubernetes run,
+nonprivate untracked source, excluded Gradle tasks, and CLI `--tests` filters
+before any selected service test or Kubernetes deployment. `verifyAll` requires
+nonempty, zero-failure/error/skip JUnit reports from its retained service,
+dependency (including the ordinary dependency contract suite), manifest,
+verifier, and Kubernetes test owners. It requires the Kubernetes final summary
+to report `status`, `assertions`, `diagnostics`, and `cleanup` as `PASS`.
+The `--tests` negative preflight was executed with a filtered Query test task
+and rejected at `:verifyAllScope` before any service test. A
+`-PkubernetesRetain=true` negative preflight was also rejected. These checks
+do not substitute for executing the full task graph. Gradle configuration-cache
+compatibility is not part of this documented complete-local contract.
+Selected Live evidence from `cdab22d2` remains valid only for that source.
+It cannot serve as the P6 final-source run.
+
+The earlier final-language requirement in this plan still has outstanding
+work: nine tracked Python files support the Query/FIX credential, policy,
+HTTP, PostgreSQL collector and security fixture contracts. Three Ruby files
+support local resource budgets and hard-reset safety. These still have active
+tests or callers. The 2026-11-02 owner amendment directs retirement of
+obsolete and duplicate behavior, not automatic replacement or deletion of
+these safety owners. Shell reduction success does not prove final
+Python/Ruby removal. Do not delete these files solely to meet an inventory
+count or claim this remaining obligation is complete.
+
+P6 complete-local acceptance remains **not executed** for the final P5b
+source. Current Native Docker `default` reports a data root at
+`/run/media/alexyu/250g_ext4/docker-data`, but a host `findmnt` places
+that path on the 3.8-GiB `/run` tmpfs rather than an ext4 filesystem.
+The root filesystem has about 25 GiB free and `kind get clusters` returns
+no clusters. Do not build a fresh kind cluster on the current unverified
+storage root. Do not delete unrelated Docker resources to create room.
+Until the external storage/mount and canonical cluster prerequisites are
+restored safely, the P6 deployed run and both cluster-mode claims remain
+blocked. The current local source cannot claim a new P6 PASS.

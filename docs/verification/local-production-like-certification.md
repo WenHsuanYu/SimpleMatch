@@ -1,13 +1,14 @@
 # Local Production-Like Certification Runbook
 
-This document records the repeatable verification path for the Phase 1 Trading Release. The
-repository-owned local production-like gate is the current completion boundary; the staging and
-production sequence remains a separately rendered promotion template. A local pass is never
-reported as an external production certification.
+This document records the Phase 1 local verification and external promotion boundaries.
+Issue #202 S5 retired the separate Shell aggregate. `./gradlew verifyAll` now selects
+complete-local verification. `verifyAllScope` checks source, profile, and Shell limits.
+The staging and production sequence remains a separately rendered promotion template.
+A local pass is never reported as an external production certification.
 
-Use the local sections for the executable repository-owned workflow. The production target and
+Use the complete-local section for the executable repository-owned workflow. The production target and
 later staging/production instructions define the environment and promotion template an operator
-must supply and execute separately. Selected-phase or focused diagnostic results retain their
+must supply and execute separately. Selected-scenario or focused diagnostic results retain their
 own scope and cannot substitute for an aggregate `full-local` PASS.
 
 For the tested source, aggregate manifest and separately recorded public-interface/recovery
@@ -55,64 +56,40 @@ The external QuickFIX task sends a real Order. Use only an approved isolated
 test account and session. Other resource operations follow their own
 ownership and preflight requirements.
 
-## Local production-like certification
+## Complete-local verification
 
-The local gate runs with repository-built images and disposable infrastructure. It does not push
-images to GHCR or Docker Hub and does not require real staging/production registry digests,
-endpoints, CIDRs, credentials, or an external FIX counterparty.
+Issue #202 S5 P5b removed the former Shell production-like aggregate runner,
+including its 62-phase graph, Compose runtime phases, and independent PASS reporter.
+The repository's single complete-local selection is:
 
-The authoritative entrypoint is:
+```bash
+./gradlew --no-daemon verifyAll
+```
 
-~~~bash
-bash scripts/run-local-production-like-certification.sh
-~~~
+This task selects the Java, static analysis, native CTest, Flyway/dependency,
+QuickFIX and run-owned Kubernetes `resting-buy` owners. Its `verifyAllScope`
+preflight requires an unchanged committed source tree, native
+`full-native-dev`, Kubernetes `resting-buy` and the S5 Shell limits.
+The 2026-11-06 R11–R22 selected Live PASS is source-bound evidence for
+that scenario. It does **not** establish P6 complete-local `verifyAll` PASS.
 
-Each invocation uses a new directory under `out/certification/local-production-like/<run-id>/`.
-Every selected phase executes. Gradle and image builders retain their ordinary build caches.
-Custom historical PASS reuse and `--resume` retired on 2026-10-28.
-Read the [execution contract](local-certification-phase-dag.md) for result formats and partial-profile rules.
+The removed aggregate's independent Compose Kafka/PostgreSQL/Redis/Connect
+startup and fault phases are no longer selected. Neither are its local Kafka
+profile/capacity report, 15-owner phase report, resource-budget report,
+registry/kind-load publication matrix, partial profiles, or per-phase
+completion inventory. Existing native, Java, dependency and Kubernetes
+owners retain their specific checks only. See the
+[retirement contract](local-certification-phase-dag.md) and
+[S5 disposition](../plans/shell-test-reduction-s5.md) for explicit coverage.
 
-Before building images, a fresh resource-budget phase renders the local overlay and compares the
-selected profile's staged memory requests with the currently selected Docker daemon's memory.
-The reference 38 GiB local host fits the existing `--matching-fleet-only` reduced profile by
-declared requests; the full profile's steady requests exceed that reference. The runner warns but
-does not block a full runtime attempt: actual usage and swap can differ from declared requests.
-It records the profile, per-workload requests, host capacity, and comparison in its run-owned
-`local-resource-budget.json` and links the verdict from `report.md`. The reduced profile
-reports `PARTIAL` and cannot stand in for the full cross-service gate. See the
-[local host memory budget](../../deploy/k8s/README.md#local-host-memory-budget) for the calculations
-and the focused baseline test.
+Legacy aggregate evidence remains historical and keeps the run/source/image
+identity recorded at execution. The CDC focused diagnostic requires identical
+runtime provenance. P5b changed its hashed inputs and retired the aggregate
+producer. Consequently pre-P5b retained runs fail closed and cannot continue
+under current source. Historical or partial evidence never upgrades to S5.
 
-The local profile uses the current local deployment image set, a three-broker Kafka cluster with 15
-Matching partitions and replication factor 3, PostgreSQL, Redis, Debezium/Kafka Connect, and a
-disposable Kubernetes runtime for the 15 logical Matching owners. It verifies the Risk-to-Matching-
-to-consumer path, Flyway ownership, Lease/PVC behavior, restart/replay, and the relevant outage
-scenarios. It may run the dependency profile with Compose and the Kubernetes profile with kind; the
-runner owns only its named project, namespace, cluster, volumes, and evidence directory.
-
-The local Kafka capacity check keeps the production-shaped durability settings (RF3, minimum ISR 2,
-`acks=all`, 30-day retention, and 30% headroom) but uses the bounded workload envelope in
-`scripts/testdata/matching-topic-profile/local/capacity.properties`. That envelope is deliberately
-local side-project evidence, not a production throughput or capacity claim. A different workload
-envelope must be supplied explicitly through `SIMPLEMATCH_KAFKA_CAPACITY_WORKLOAD_FILE` and recorded
-with the run evidence; the 1,000,000-record/day fixture remains available for the stricter profile
-contract tests.
-
-The local image digest is recorded in the evidence report as a local image identity. It is not a
-promotion identity and must not replace the staging/production digest placeholders.
-
-The Kubernetes startup dependency investigation, including the read-only Flyway runtime fixes,
-diagnostic evidence, and migration-first apply sequence, is recorded in
-[Historical local production-like Kubernetes workload startup investigation](../archive/local-production-like-kubernetes-workload-startup.md).
-
-The local dependency/build versions are checked in the deployment documentation and contract test:
-Gradle 9.7.0, Spring Boot 4.1.0, vcpkg 2026.07.29, Apache Kafka 4.3.1, PostgreSQL 18.4, Redis
-8.10.3-alpine, Debezium 3.6.0.Final, and Ubuntu 26.04 LTS for the native image builder/runtime.
-The baseline version review dates to 2026-08-12; the Redis pin was updated on 2026-10-28 using the
-[upstream release](https://github.com/redis/redis/releases/tag/8.10.3) and
-[official image listing](https://github.com/docker-library/official-images/blob/master/library/redis).
-The contract intentionally avoids mutable `latest` and prerelease tags. Runtime certification
-evidence remains tied to the image identities retained for each run.
+The production target, external environment template, and dated baseline
+records below remain separate from this local verification entry.
 
 ### Normal resting-buy integration baseline (#162)
 
@@ -177,12 +154,12 @@ rows that were not rerun retain their original date and boundary.
 | Outbox contracts | ./gradlew verifyCdc | Passed in the disposable CDC environment |
 | Java services | Persistence, Account, QuickFIX, and Market Data module tests | Passed in the controlled Gradle environment |
 | Java quality gate | GRADLE_USER_HOME=/tmp/simplematch-gradle-cache ./gradlew --no-daemon -q staticAnalysis | Passed in the historical 2026-08-14 run; current-head validation is required after the #138 CDC changes |
-| Local production-like gate | `SIMPLEMATCH_CERTIFICATION_TRADING_DAY=2026-08-11 SIMPLEMATCH_MARKET_REFERENCE_DELIVERY_MANIFEST=tools/market-reference-builder/data/2026-08-11/delivery/manifest.yaml bash scripts/run-local-production-like-certification.sh --skip-build --skip-compose` | Fresh 2026-08-15 canonical three-worker Kubernetes run passed static contracts, image load, ordered Flyway migrations, workload rollout, Risk outbox connector, Open Barriers, and the 15-pod Matching fleet. The report is intentionally `PARTIAL` because build and Compose runtime phases were skipped; it is not a Compose or full local certification claim. |
+| Historical local production-like gate (retired) | Former `run-local-production-like-certification.sh` with `--skip-build --skip-compose` | The 2026-08-15 source-scoped run passed the recorded Kubernetes phase checks and reported `PARTIAL`. The Shell entry no longer exists. This result does not certify current source or complete-local acceptance. |
 | Market-data streamer and operational adapters | Focused service tests and Kubernetes overlay contract | Passed structural/runtime adapter checks; gRPC subscriber, live Gateway collectors, and projection replay remain capability-specific evidence |
 | Repo-local FIX certification | :services:quickfix-gateway:certificationTest | Passed; real in-process QuickFIX/J acceptor/initiator, H2, WAL, duplicate/cancel/recovery scenarios |
 | Disposable kind Matching smoke | One native matching-0 against one in-cluster broker | Lease/PVC/replay/Ready path passed; one node and RF1, therefore non-certifying |
 | Disposable kind restart | Delete/recreate one Matching pod normally | Old Lease blocked handover until expiry; new UID replayed baseline; no duplicate output |
-| Canonical three-worker Matching E2E | `bash scripts/run-matching-e2e-certification.sh --fault-mode pod-delete`, `--fault-mode process-crash`, and `--fault-mode worker-stop` | Fresh local runs passed with zero loss/duplicates. The worker-stop case observed `simplematch-live-worker2` become NotReady, restarted the same container, retained the same Pod UID/Node/PVC/PV, completed replacement in 76.956s, and reached replay catch-up in 3.542s. Evidence: `out/certification/local-production-like/worker-stop-prep-20260816-r3/worker-stop-e2e-r2/`. The claim is temporary same-worker recovery, not PVC loss, cross-node takeover, 24-hour endurance, or production certification. |
+| Historical three-worker Matching E2E (Shell runner retired in #202 S5) | Earlier standalone Pod-delete, process-crash, and worker-stop fault modes | The dated local runs passed with zero loss/duplicates. The worker-stop case observed `simplematch-live-worker2` become NotReady, restarted the same container, retained the same Pod UID/Node/PVC/PV, completed replacement in 76.956s, and reached replay catch-up in 3.542s. Evidence: `out/certification/local-production-like/worker-stop-prep-20260816-r3/worker-stop-e2e-r2/`. This historical result is temporary same-worker recovery, not PVC loss, cross-node takeover, 24-hour endurance, or production certification. |
 | Canonical three-broker Kafka replacement | Delete only `kafka-0`, run the real E2E helper during loss and after rejoin | Passed: two brokers remained usable for an 8-command/8-event batch with zero loss/duplicates; replacement returned on the same node and PVC/PV; all 15 partitions of both Matching topics restored ISR 0,1,2 and KRaft follower lag was zero. Evidence: `out/certification/matching-deployed/kafka-broker-replacement-20260815/`. |
 | Historical deployed Matching collector (retired by #202) | `scripts/run-matching-deployed-certification.sh` (removed) | The earlier report passed 15/15 fleet, 5/5/5 placement, 15 writer CPU-allowance records, native capacity benchmark, and worker-stop E2E evidence. Evidence: `out/certification/local-production-like/worker-stop-prep-20260816-r3/deployed-certification-local/report.json`. This is historical bounded evidence, not a current-run PASS, production latency, or production certification. |
 | Gateway kind inspection | Apply Gateway resources and inspect API objects | API-level checks passed, but placeholder image caused ErrImagePull; no runtime claim |
@@ -219,9 +196,9 @@ ctest --preset dev-debug --output-on-failure
 ./gradlew -q :tools:dependency-tests:test
 ./gradlew verifyCdc
 
-# The following phase is normally invoked by the full local certification runner after the
-# Kubernetes workloads and retained connectors are Ready. It is shown separately for operators
-# resuming a retained, lifecycle-owned namespace. Read the run id from the retained run context:
+# Historical retained namespace only: the retired aggregate used to invoke the following observer after
+# its Kubernetes workloads and connectors became Ready. It is shown for operators
+# examining old owned evidence; this is not a current complete-local entry:
 certification_evidence_dir="${SIMPLEMATCH_CERTIFICATION_EVIDENCE_DIR:-out/certification/local-production-like}"
 run_context_file="$certification_evidence_dir/run-context"
 certification_namespace="$(sed -n 's/^namespace=//p' "$run_context_file")"
@@ -271,33 +248,32 @@ The [S5 disposition](../plans/shell-test-reduction-s5.md) records the intentiona
 Historical ten-cycle results remain evidence for their original source and date.
 This native task does not establish Kafka latency, deployed recovery, or production endurance.
 
-The independent deployed report collector is also retired. Existing
-Kubernetes/Jupiter scenarios still observe actual Matching owners, selected
-recovery and terminal close, while the remaining Matching E2E scenario owns
-its explicitly selected real-failure mode. These owners do not reproduce
-the old collector's comprehensive fleet/image/CPU/e2e metrics report. The
-R22 abrupt process-crash acceptance remains unresolved until the selected
-verification owner completes a fresh source-aligned deployment.
+The independent deployed report collector and standalone Matching E2E runner
+are retired under Issue #202. Jupiter still observes actual Matching owners,
+selected recovery and terminal close. Native CTest retains bounded replay and
+integrity. The selected test does not reproduce the old whole-fleet ring
+occupancy, optional worker-stop recovery, benchmark/latency report or repeated
+independent post-crash Kafka fixture batch.
 
-Issue #202 now selects that owner inside the existing `verifyKubernetes`
-resting-buy scenario. The test retains the previous Pod-delete recovery.
-It then uses the run-owned Matching process signal path for one `SIGKILL`
-and checks same-Pod restart, exit 137, and completed input progress.
-The following real FIX order checks post-crash business delivery. The
-scenario reuses the existing image, source, namespace and cleanup checks.
-The new step has only passed its local Java contract. It has not yet
-passed a source-aligned deployed run.
+Issue #202 selects that owner inside the existing `verifyKubernetes`
+resting-buy scenario. The test retains the Pod-delete recovery.
+It sends `SIGKILL` to the exact run-owned CRI task and checks original
+Pod UID/node/PVC/PV, changed container, incremented restarts, exit 137,
+Ready state and completed input progress. The following public FIX order
+checks post-crash business delivery. The selected source-bound Kubernetes
+Live run at commit `cdab22d2` passed with assertions, diagnostics and cleanup
+PASS; evidence is under `out/verification/issue202-risk-cas-fixed-20261106-r1/`.
+This focused result does not establish complete S5/P6 acceptance.
 
-The retained `run-matching-e2e-certification.sh --fault-mode process-crash`
-uses exact-owned containerd task `SIGKILL` rather than a graceful stop. Its
-namespace must have a disposable ownership label and stable UID/run ID. Its
-replacement check requires exit code 137, a changed container ID, increased
-restart count, and unchanged Pod UID/node/PVC/PV. It also refuses helper Pod
-name collisions and fails when cleanup or the final verdict is unproven.
-This is currently a focused Shell implementation, not a fresh deployed
-acceptance result. The native E2E helper completes separate Kafka batches
-before the crash and after recovery. It does not independently establish
-crash-induced delivery of an uncommitted record or global exactly-once replay.
+The former standalone Matching E2E runner included independent process-crash,
+Pod-delete and worker-stop fault modes. It checked exact-owned namespace,
+helper Pod cleanup, 15-Pod runtime ring metrics and separate native Kafka
+batches before and after replacement. These auxiliary diagnostics were
+retired after the selected Jupiter fault/recovery owner passed Live.
+Its unique worker-stop NotReady/restart observation and whole-fleet ring
+report were intentionally not copied to Jupiter. Neither implementation
+proved SIGKILL-induced redelivery of an uncommitted Kafka record or global
+exactly-once replay; those are not required for basic R22 acceptance.
 
 The local native Kafka fixture publisher is:
 

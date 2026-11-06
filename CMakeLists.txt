@@ -114,17 +114,6 @@ if(SIMPLEMATCH_ENABLE_MESSAGING)
   endif()
 
   if(BUILD_TESTING)
-    add_executable(
-        simplematch-matching-e2e-certification
-        matching-engine/tests/matching_e2e_certification.cpp)
-    target_include_directories(
-        simplematch-matching-e2e-certification PRIVATE ${CMAKE_CURRENT_BINARY_DIR})
-    target_link_libraries(
-        simplematch-matching-e2e-certification
-        PRIVATE simplematch_matching_ingress RdKafka::rdkafka)
-    simplematch_enable_warnings(simplematch-matching-e2e-certification)
-    simplematch_enable_sanitizers(simplematch-matching-e2e-certification)
-
     add_test(
         NAME simplematch_matching_liveness_probe
         COMMAND bash

@@ -139,12 +139,14 @@ monitor runs, read-only status polls, no implicit reopening, and the unchanged e
 boundary. This recovery fix has local test evidence; it was not deployed in the smoke recorded
 above.
 
-### Observation contract baselines
+### Historical observation contract baselines (retired)
 
-`scripts/end-to-end/critical-consumers/tests/system-observation-contract.sh` runs independent named
-cases in subshells, so each case owns its temporary files and transport stubs. Run the script without
-arguments for the complete suite, or pass case names such as `json_encoding consumer_progress` for a
-focused check. Static input fixtures and expected outputs live under
+The former `system-observation-contract.sh` ran independent named cases in
+subshells. Issue #202 retired the standalone collector and its dedicated
+contract after the real Gateway/FIX admission behavior moved to
+`KubernetesGatewayAdmission` and `KubernetesCriticalDelivery`.
+The following paragraphs describe historical evidence, not current commands.
+Static input fixtures and expected outputs formerly lived under
 `scripts/end-to-end/critical-consumers/tests/baselines/system-observation/`; they are reviewed files,
 not expectations generated from the implementation under test.
 
@@ -161,7 +163,7 @@ runs the real source validation, 15-owner assembly, consumer normalization, and 
 both normalized sources and the final observation with complete baselines. This covers wiring that a
 direct encoder test alone cannot prove.
 
-Each invocation prints a review directory under `out/contracts/system-observation.*`, containing
+Each historical invocation wrote a review directory under `out/contracts/system-observation.*`, containing
 the canonical expected and actual JSON plus a diff for each comparison. A mismatch prints the diff
 and exits unsuccessfully. A changed contract requires deliberate review of both the implementation
 and its baseline; the script never updates baselines automatically. These local reports prove the

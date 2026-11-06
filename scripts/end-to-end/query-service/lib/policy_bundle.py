@@ -1,7 +1,8 @@
 """Read-only validation of owner-private synthetic Query policy fixture bundles.
 
-This module is shared by the actual certification input checker and the
-disposable lifecycle Lab. It is not a deployment approval service or policy registry.
+The certification input checker uses the read-only bundle inspector.
+The fixture-generator contract also checks credential rotation between
+synthetic policy generations. This module is not a policy approval service.
 """
 
 import hashlib

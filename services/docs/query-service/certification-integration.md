@@ -6,6 +6,13 @@ recorded on the owning issue. This work changes
 tools, CI and documentation; it does not add Client ownership, Account provisioning, new grants,
 Gateway/OAuth/mTLS, Redis optimization or production readiness.
 
+**Current S5 execution owner:** the selected `RestingBuyKubernetesTest` through
+`./gradlew verifyKubernetes -PkubernetesScenario=resting-buy --no-daemon`.
+Issue #202 retired the historical standalone Query Shell runner, the Python R19
+Local Lab, and their dedicated contracts. The commands and legacy evidence
+formats described below apply only to the original #194 source. See
+[current Query deployed verification](../../../docs/verification/query-service-certification.md).
+
 The separately approved [Client/Account onboarding targets](../../../docs/plans/client-account-onboarding.md)
 remain later work. Their two-Client/four-Account preset does not replace this slice's existing
 synthetic X/Y and five-Principal policy.
@@ -45,15 +52,16 @@ PostgreSQL collector tests execute real selection SQL through the existing exter
 adapter seam. They require the runner-owned database marker and current Flyway migrations; they
 delete only their newly generated fixture rows and never initialize product schemas ad hoc.
 
-## Entry points and fixture policy
+## Historical entry points and fixture policy
 
-`scripts/end-to-end/query-service/run-certification.sh` requires
-`--query-fixture-directory PRIVATE_PATH`. The bundle is the owner-private output of
+`scripts/end-to-end/query-service/run-certification.sh` formerly required
+`--query-fixture-directory PRIVATE_PATH`. This runner is retired in S5.
+The bundle was the owner-private output of
 `provision-security-fixtures.py`; credentials remain outside Git. The Query runner
-accepts `SIMPLEMATCH_QUERY_CERTIFICATION_FIXTURE_DIRECTORY` and the common
+accepted `SIMPLEMATCH_QUERY_CERTIFICATION_FIXTURE_DIRECTORY` and the common
 `SIMPLEMATCH_CERTIFICATION_QUERY_FIXTURE_DIRECTORY` fallback. Issue #202 retired
 the separate placement runner; Query now checks selected Pod health and identity
-within its existing Redis outage.
+within the selected Jupiter Redis outage.
 
 The bundle must already match the serving Query policy and the FIX Account allowlists before a
 real run. The tools neither register Principals nor change access policy. The Query runner checks
@@ -117,30 +125,18 @@ OpenSSL are required; cryptographic processing uses those tools rather than cust
 launcher passes FIX secrets in the child environment, never command arguments or shell `eval`.
 
 ```bash
-# Select the approved artifact's actual day, including for a historical Lab run.
-export SIMPLEMATCH_CERTIFICATION_TRADING_DAY=2026-08-19
-export SIMPLEMATCH_MARKET_REFERENCE_DELIVERY_MANIFEST="$PWD/config/market-reference/approved/$SIMPLEMATCH_CERTIFICATION_TRADING_DAY/delivery/manifest.yaml"
-fixture_parent="$(mktemp -d /tmp/simplematch-query-certification.XXXXXX)"
-python3 scripts/end-to-end/query-service/provision-certification-fixtures.py \
-  "$fixture_parent/bundle"
-export SIMPLEMATCH_CERTIFICATION_QUERY_FIXTURE_DIRECTORY="$fixture_parent/bundle"
-scripts/run-local-production-like-certification.sh --keep-resources
-# Use the actual retained namespace and report path produced by the deployment.
-export SIMPLEMATCH_QUERY_ISOLATION_COMMAND_TIMEOUT_SECONDS=30
-python3 scripts/end-to-end/query-service/lib/certification_security.py \
-  --fixture-directory "$fixture_parent/bundle" --exec \
-  bash scripts/end-to-end/query-service/run-certification.sh \
-    --namespace RETAINED_NAMESPACE --retained-evidence-dir RETAINED_REPORT_DIRECTORY \
-    --query-fixture-directory "$fixture_parent/bundle" \
-    --evidence-dir NEW_QUERY_EVIDENCE_DIRECTORY
+./gradlew verifyKubernetes -PkubernetesScenario=resting-buy --no-daemon
 ```
 
-The complete Query runner creates its X/Y trading fixtures once. It does not resume a failed
-scenario or reprovision existing Account limits/positions. If it fails after seeding, use a new
-disposable full-environment namespace and newly provisioned identities, with validated image and
-phase reuse. Do not delete ledger rows, reset reservations or broaden grants to make a retry pass.
-The isolation collector's supported command budget is configurable; 30 seconds retains all five
-observations without requiring each Kafka CLI process to finish within the 5-second default.
+The command above selects the replacement deployed R18/R19/R21 verification.
+The former combined private-bundle provisioning and standalone Query runner
+command was retired. `provision-certification-fixtures.py` and
+`certification_security.py` remain in use by production-like input validation.
+
+The retired Query Shell runner created its X/Y trading fixtures once and
+required a fresh disposable namespace after failure. It recorded five
+quiescent isolation samples, a report no longer reproduced by the selected
+Jupiter test. The current test owns fixture setup and exact namespace cleanup.
 
 Full Kubernetes deployment requires this bundle through the common environment variable or
 `--query-fixture-directory`. Help, dry-run, Compose-only and Matching-fleet-only profiles do
@@ -190,15 +186,15 @@ Focused checks:
 
 ```bash
 python3 scripts/end-to-end/query-service/tests/certification-fixtures-contract.py
-python3 scripts/end-to-end/query-service/tests/certification-inputs-contract.py
 ```
 
-The former exercises generated PKCS12 material through real loopback TLS, including client
-certificate and hostname rejection. The latter observes the input producer at the `kubectl`
-command seam, including immutable Secret bytes, no credential arguments and stale-input
-rejection. It is not a live Kubernetes API, Spring property binding, CNI or full trading test.
+The retained fixture test exercises generated PKCS12 material through real loopback TLS,
+including client certificate and hostname rejection. The former
+`certification-inputs-contract.py` was retired with the Shell aggregate's private
+`apply_local_kubernetes_inputs` adapter. That old synthetic `kubectl` seam is no longer a
+current verification owner.
 
-The replay verdict declares `contractVersion: query-security-phase1/2`, validates minimal business
+The retired Shell replay verdict declared `contractVersion: query-security-phase1/2`, validated minimal business
 envelopes in baseline/Redis-outage/rebuilt snapshots, and reports `postgresReadsDuringRedisOutage`
 instead of the old fallback name. It retains the existing deterministic replay, operations
 checkpoints and trading-isolation/active-processing conditions.
@@ -218,7 +214,7 @@ schema-1 and #137 reports keep their original source/scope; no report is rewritt
 | Full embedded business checkpoints | Minimal `freshness.projectionState`; full checkpoints only on operations-read Freshness. |
 | Redis-outage fallback evidence | Same authorized PostgreSQL business view while Redis is unavailable; this is not cache-only availability. |
 
-The current standalone runner has no remaining four-response-key existence assertion. Independent
+The retired standalone runner had no remaining four-response-key existence assertion. Independent
 Redis TLS/ACL/namespace tests and durable replay/checkpoint requirements remain applicable.
 Closed #137 is not reopened or invalidated; #138 is historical platform context, not this slice's
 parent or proof of Query HTTP authorization.
@@ -229,11 +225,11 @@ parent or proof of Query HTTP authorization.
 | --- | --- | --- |
 | INV-01/03, A3/A4: identity, policy, routes, challenges and denial | `QueryHttpSecurityIntegrationTest`, `QuerySecurityPolicyTest`, `QuerySecurityStartupTest`, `QueryDirectHttpTest` | Reuse actual FilterChain suites; client-tool fixtures alone are insufficient. |
 | INV-02: grants and trusted parent ownership | `QueryAccountSummaryHttpTest`, `QueryOrderHttpTest`, `QueryExecutionsHttpTest` and snapshot tests | Final deployed matrices cover both replicas, including lifecycle Order/Executions fixtures. |
-| INV-04, A1: cache non-use/identity and minimal responses | Existing business HTTP suites with cache probes; `collector-http-contract.py`; `QueryEvidenceVerifierTest` | Four actual obsolete Redis entries were ignored and remained unchanged. |
+| INV-04, A1: cache non-use/identity and minimal responses | Existing business HTTP suites with cache probes; selected Jupiter Query business reads | Four actual obsolete Redis entries were ignored in historical #194 evidence. |
 | INV-05/06: independent operator/FIX/direct trust | Existing FilterChain/direct/rebuild suites; per-Pod matrix; enabled operator boundary | All nine deployed negative credential checks passed; independent authorized rebuild succeeded. |
 | INV-07, A3: revoke/disable/rollback | Final-source `lifecycle-final` proof, separate from historical #193 | V1/V2/V3, rollback rejection, failed activation, no-reset recovery and fresh-run isolation passed. |
 | INV-08: no trading dependency on Query | Full Query verdict and actual public IOC/isolation evidence | Public FIX processing with zero Query Pods and separate deterministic rebuild/replay passed. |
-| A4, LAB consumer compatibility | `collector-http-contract.py`, `collector-postgres-contract.py`, placement contract | Tests prove tool behavior/real SQL, not NetworkPolicy or production transport. |
+| A4, historical LAB consumer compatibility | Retained `collector-postgres-contract.py` and Query HTTP/JDBC suites | The old standalone HTTP collector contract and placement contract are retired. |
 
 INV-09 and later Gateway/certificate portions of INV-10 retain their independent phase approvals.
 
@@ -258,13 +254,11 @@ adds only reporting/operational documentation, with source compatibility recorde
 evidence. Local Lab transport, revocation and synthetic-policy results do not establish production
 readiness, a hard revocation SLA, OAuth, Query incoming mTLS or Phase 2 cache performance.
 
-Focused checks:
+Current focused checks:
 
 ```bash
-python3 scripts/end-to-end/query-service/tests/collector-http-contract.py
-bash scripts/end-to-end/query-service/tests/evidence-contract.sh
-bash scripts/end-to-end/query-service/tests/active-liveness-contract.sh
-./gradlew -q :tools:query-evidence-verifier:check
+python3 scripts/end-to-end/query-service/tests/security-fixtures-contract.py
+python3 scripts/end-to-end/query-service/tests/certification-fixtures-contract.py
 ./gradlew :tools:recovery-evidence-verifier:test
 ./gradlew -q :services:query-service:test
 # Requires Docker, Python 3, and psql. The task also runs the PostgreSQL collector contract.

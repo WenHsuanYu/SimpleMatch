@@ -34,19 +34,17 @@ reset, source retention, replay boundaries, deterministic responses, Redis conve
 lag remain operator-owned evidence. Use the repository production-like certification workflow to
 retain that evidence; never treat the HTTP response alone as a completed replay.
 
-The repository-owned completion gate is
-[`docs/verification/query-service-certification.md`](../../../docs/verification/query-service-certification.md). It requires
-an explicit fresh retained production-like evidence directory:
+The repository-owned deployed verification gate is
+[`docs/verification/query-service-certification.md`](../../../docs/verification/query-service-certification.md).
+Issue #202 retired the standalone Shell replay certification. The selected
+Jupiter scenario now owns the source-bound, run-owned reset and replay:
 
 ```bash
-bash scripts/end-to-end/query-service/run-certification.sh \
-  --namespace "${SIMPLEMATCH_CERTIFICATION_NAMESPACE}" \
-  --retained-evidence-dir "${SIMPLEMATCH_PRODUCTION_LIKE_EVIDENCE_DIR}" \
-  --query-fixture-directory "${SIMPLEMATCH_QUERY_FIXTURE_DIRECTORY}" \
-  --evidence-dir "${SIMPLEMATCH_QUERY_CERTIFICATION_EVIDENCE_DIR}"
+./gradlew verifyKubernetes -PkubernetesScenario=resting-buy --no-daemon
 ```
 
-The private fixture bundle must match the pre-deployed Query policy and approved X/Y FIX
-allowlists. It supplies separate read/operations identities; it is not the rebuild operator token.
-See [collector integration](../query-service/certification-integration.md) for the current evidence
-boundary and pending secured deployment acceptance.
+This selected test creates its own disposable identities and uses a separate
+operator credential. It checks that reader and operations credentials cannot
+reset Query. It restores the original Query policy and replica count after
+successful replay. See [the historical collector integration](../query-service/certification-integration.md)
+for the original #194 evidence and input-security boundaries.

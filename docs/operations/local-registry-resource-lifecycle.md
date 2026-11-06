@@ -77,25 +77,23 @@ Each kind node receives `/etc/containerd/certs.d/localhost:<port>/hosts.toml`, w
 
 A same-named registry container is reused only after verifying its configured image, restart policy, data volume, and published port. The logical host is deliberately fixed to `localhost`; allowing a remote host would make a workflow intended for local-only publication capable of crossing that ownership boundary.
 
-The fallback remains available through:
+The explicit image-preparation fallback remains available through:
 
 ```bash
-bash scripts/run-local-production-like-certification.sh \
-  --image-transport kind-load
+bash scripts/prepare-local-kubernetes-images.sh --transport kind-load
 ```
 
 or:
 
 ```bash
-SIMPLEMATCH_LOCAL_IMAGE_TRANSPORT=kind-load \
-  bash scripts/run-local-production-like-certification.sh
+bash scripts/render-local-kubernetes-manifest.sh \
+  --transport kind-load --namespace simplematch-local \
+  --output out/simplematch-local-kind-load.yaml
 ```
 
-The phase declarations select the required transport operations and their dependency order.
-Every selected operation executes in the current run.
-Build tools retain their ordinary caches, and registry publication still supplies immutable runtime image references.
-The existing image adapters own Docker, registry, and kind behavior.
-The public `prepare-local-kubernetes-images.sh` command remains available for explicit image preparation.
+These commands prepare images or render manifests; neither starts a certification run.
+Build tools retain their ordinary caches. Registry publication still supplies immutable
+runtime image references through the existing image adapters.
 
 ## 4. Publication and digest lock
 
@@ -156,21 +154,16 @@ Arbitrary partial locks are rejected. After Kustomize runs, the renderer verifie
 
 For Matching, registry mode uses the registry OCI manifest digest as runtime/session/Open Barrier identity. The legacy direct-import path uses the exact local Docker image identity because it imports that image into kind.
 
-## Certification runner boundary
+## Complete-local verification boundary
 
-`run-local-production-like-certification.sh` remains the normal full-certification entry point.
-The [execution contract](../verification/local-certification-phase-dag.md) defines the current profile, result, and ownership rules.
-
-The phase list selects and orders work.
-Existing command adapters execute the selected phases.
-Current-run results and the completion inventory replace custom historical PASS lookup and output materialization.
-Registry image locks retain their recorded byte identity.
-
-Each run requires a new evidence directory.
-The default Compose project includes the run ID. An explicitly selected project must contain no existing containers.
-`--resume`, the content-addressed PASS cache, and reuse measurement retired on 2026-10-28.
-Interrupted certification starts a new run.
-Focused diagnostics retain their separate current-state checks and limited claims.
+Issue #202 S5 P5b removed the standalone Shell certification and its phase graph.
+`./gradlew --no-daemon verifyAll` is the complete-local verification entry.
+Its `verifyAllScope` gate checks committed source, selected profiles and Shell limits.
+The selected Kubernetes owner prepares its required images and disposable resources.
+See the [retirement contract](../verification/local-certification-phase-dag.md).
+The old aggregate's Compose phases and transport matrix are no longer a completion gate.
+Legacy focused CDC diagnostics may inspect compatible retained evidence, but cannot
+upgrade it to complete-local PASS.
 
 ## 6. Kubelet image-cache policy
 

@@ -37,7 +37,7 @@ Keep earlier reports as historical records. Create new evidence for the current 
 | Operation | Necessary rules | Runtime owner |
 | --- | --- | --- |
 | Dependency | Pod or worker fault identity, PostgreSQL durable storage and marker, Redis disposable state, Kafka storage, ISR and catch-up | `run-local-resilience-dependencies.sh` |
-| Market Data | Seven named isolation, deterministic-rebuild, repair, and restoration checks from five retained JSON files | `end-to-end/market-data/run-certification.sh` |
+| Market Data | Seven named isolation, deterministic-rebuild, repair, and restoration checks from five retained JSON files | `KubernetesMarketDataRebuild` via `verifyKubernetes` |
 
 Exact claim sentences, copied summary fields, and unused report readers are absent.
 The focused Kubernetes Connect worker-loss verifier and its exclusive commands
@@ -64,8 +64,8 @@ Required snapshot fields and consumer progress arrays must exist. Equal missing 
 Numeric JSON representations compare by value. Array order and business values remain significant.
 Snapshot observation fields outside the ten business fields do not affect deterministic equality.
 
-The live runner builds the executable before environment changes and evaluates a pending verdict.
-It publishes the final PASS only after successful environment restoration.
+The Jupiter Kubernetes scenario executes the existing verifier against current-run evidence.
+It completes only after successful environment restoration.
 The evaluator does not independently prove current source, image, namespace identity, or live recovery.
 
 ## Scope

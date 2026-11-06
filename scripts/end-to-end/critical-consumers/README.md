@@ -1,7 +1,8 @@
 # Critical consumer end-to-end certification
 
-This directory contains deployed-system certification for the three critical
-`matching.events` consumers: Persistence, Account, and QuickFIX Gateway.
+This directory retains shared SQL inputs, a Matching runtime parser, and
+historical acceptance contracts for the three critical `matching.events`
+consumers: Persistence, Account, and QuickFIX Gateway.
 
 The current S5 Java/Jupiter `resting-buy` scenario passed its deployed
 business and recovery checks on 2026-11-04.
@@ -11,8 +12,8 @@ their last-caller review. The contracts and older PASS reports below record
 historical behavior; they are not current execution instructions or proof of
 the Java run. The R11 failure and R12 terminal-close Shell entry points
 are also retired under the reduced S5 requirements. Java/Jupiter now owns
-the selected R11–R15 integration. The remaining Shell modules also serve
-the active Query certification until its P4 cutover.
+the selected R11–R15 integration. The shared Query/Market Shell observation
+adapters were retired after their final deployed consumers moved to Jupiter.
 
 The scripts exercise real Kubernetes workloads, Kafka, PostgreSQL, Kafka
 Connect, and an external FIX session. They are not unit-test helpers and do not
@@ -200,28 +201,23 @@ GitHub owns the current remote-delivery status.
   its Ruby verdicts, recovery helpers, and dedicated fixtures are retired.
   The Java test still reads the retained `sql/resting-buy-*.sql` files and
   `sql/matching-recovery-progress.sql`.
-- `tests/shared-interface-contract.sh` keeps the distinct live Shell
-  Gateway/FIX/Kafka adapter contracts. It no longer tests the retired
-  recovery CLI or node-local WAL observer.
+- `RestingBuyKubernetesTest` owns the real public FIX identity and durable
+  consumer checks. No separate Shell interface or JSON-encoder framework remains.
 - `KubernetesCriticalDelivery` owns the selected live PostgreSQL fault and
   fail-closed delivery requirement. The old mixed-consumer-Pod outage runner
   was retired without a separate replacement deployment.
 - `KubernetesTradingClose` owns the selected terminal `close-day` evidence.
   The legacy full-consumer-offset matrix is not a current S5 requirement.
-- `lib/matching-status.sh` validates Matching runtime evidence and normalizes
-  Kafka committed positions. It performs no Kubernetes or Kafka I/O.
-- `lib/system-observation.sh` collects one bounded Gateway readiness
-  observation. It parallelizes Matching reads and rejects an observation when
-  Kafka positions change during collection.
-- `lib/cluster-data.sh` contains Kubernetes, Kafka, PostgreSQL, and test-fixture
-  access.
-- `lib/test-interfaces.sh` contains external FIX, Kafka Connect, and Gateway
-  operations adapters that the retained Query runner still uses.
-- `lib/failure-recovery.sh` provides shared Risk/FIX/Kafka observation helpers
-  to Query. The old R11 fault injection and restoration functions are removed.
-- `scripts/end-to-end/query-service/lib/order-projection.sh` owns the
-  retained Query projection polling functions from the old close helper.
-- `tests/` contains contracts for shared interfaces and observations.
+- The old Matching runtime-metrics parser and its source contract were retired.
+  Their only executable consumer was the standalone Matching E2E diagnostic.
+  Native CTest owns integrity and replay; the selected Jupiter scenario owns
+  Pod deletion and exact Matching process crash recovery.
+- The former collector, Gateway/FIX/Kafka transport, recovery, and observation
+  helpers had no remaining executable callers after the Query/Market cutover.
+  Their associated Shell contracts were retired together.
+- The former independent observation-timing and all-partition snapshot
+  predicates are no longer S5 execution requirements. Existing Gateway
+  policy tests and selected Jupiter scenarios retain the required behavior.
 
 The former failure and close runner commands are no longer available.
 Use the Java/Jupiter `resting-buy` scenario for the retained S5 behavior.
@@ -241,7 +237,7 @@ Gateway WAL/journal integrity has independent Java tests; the current Jupiter
 flow checks the selected retained claim and durable business effects.
 R11/R12 Shell runners and their runner-specific contracts are retired.
 The independent Gateway policy tests and Java Kafka Close Barrier observer
-remain available. Query still has active Shell helper consumers until P4.
+remain available. No legacy Query or Market runner consumes the old helpers.
 
 ### Recorded local verification
 

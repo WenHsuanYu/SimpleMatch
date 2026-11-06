@@ -9,8 +9,6 @@ repo_root="$(cd -- "$script_dir/.." && pwd)"
 source "$script_dir/lib/local-image-transport.sh"
 # shellcheck source=scripts/lib/local-certification-provenance.sh
 source "$script_dir/lib/local-certification-provenance.sh"
-# shellcheck source=scripts/lib/local-certification-phase-graph.sh
-source "$script_dir/lib/local-certification-phase-graph.sh"
 # shellcheck source=scripts/lib/local-certification-evidence.sh
 source "$script_dir/lib/local-certification-evidence.sh"
 # shellcheck source=scripts/lib/local-certification-images.sh

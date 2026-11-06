@@ -102,9 +102,10 @@ manifest 渲染結果不等於 runtime recovery 證據，也不重複驗證 Kube
 同一 owner 的 FIX reconnect/resend 已由 `RestingBuyKubernetesTest` 與
 `KubernetesGatewayRecovery` 的部署情境驗證。舊的 `run-failure-certification.sh` 已依 Issue #202
 退役，其混合故障矩陣不再是 S5 要求。Streamer replacement/reconnect/resubscribe 仍由
-`scripts/end-to-end/market-data/run-streamer-recovery-certification.sh` 透過
-公開 gRPC subscription、Kafka group assignment 與 Pod identity 驗證 streamer replacement。
-這些 runner 只檢查 issue 所需的 recovery boundary；它們不把每個 protobuf 欄位或平台已保證的
+`KubernetesMarketDataStreamer` 已在 `RestingBuyKubernetesTest` 中透過
+公開 gRPC subscription、Kafka replay 和 Pod identity 驗證 streamer replacement。
+舊的獨立 Shell operator 與 fixture contract 已依 Issue #202 退役。
+現行 Jupiter 驗證只檢查 issue 所需的 recovery boundary；它不把每個 protobuf 欄位或平台已保證的
 基本 scheduler 語意重新複製成第二套 verifier。
 
 先前 critical-consumer runner 包含相同 owner 的 Gateway restart、client reconnect 與 explicit

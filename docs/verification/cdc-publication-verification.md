@@ -200,9 +200,9 @@ actual RF1/RF3 broker/connector failures, checkpoint-based worker crash, and
 redelivery without asserting Kubernetes Pod/task reassignment. The old
 requirements below describe the scoped historical #156 evidence.
 
-Issue #156 remains responsible for Kubernetes/Connect distributed-runtime orchestration. Its
-worker-loss case is exposed as the focused `scripts/run-local-connect-worker-loss.sh` diagnostic and
-must independently prove:
+The former Issue #156 worker-loss case used the now-retired
+`scripts/run-local-connect-worker-loss.sh` diagnostic. Its historical acceptance
+required the following observations:
 
 1. the current task owner is known,
 2. the owning worker actually disappears,
@@ -362,9 +362,9 @@ network. Reports are in `tools/dependency-tests/build/reports/dependency-tests/c
 This is dependency transport evidence. It does not establish a complete application path or
 Kubernetes recovery certification.
 
-When a retained full production-like run has already passed every predecessor of the Risk CDC
-observer but that observer ended with a transient failure, use the focused diagnostic instead of
-starting another full deployment:
+**Historical only (before Issue #202 P5b).** The former 62-phase aggregate
+could retain a source-compatible namespace after all predecessors passed.
+An observer failure could then use the following focused diagnostic:
 
 ```bash
 bash scripts/run-local-cdc-delivery-focused-diagnostic.sh \
@@ -382,7 +382,11 @@ code. An unrelated source commit does not change the runtime signature and there
 force a new deployment. If only the verifier signature changes, the fast
 `test-cdc-observer-fixture-contract.sh` check runs before the observer. A runtime-signature drift,
 namespace/input/image/dependency drift, or a retained context from before these scoped identities
-were recorded fails closed and requires a fresh full run.
+were recorded fails closed. P5b retired the producer of historical run-context
+records and changed the hashed runtime-provenance input set. Pre-P5b records
+cannot be reused by the current implementation. The command cannot start a
+replacement aggregate and is not a current continuation workflow. For new
+CDC verification, use `./gradlew verifyCdc`.
 
 The command writes a `FOCUSED_DIAGNOSTIC` verdict below the retained run's
 `focused-diagnostics/cdc-delivery/` directory. That verdict is deliberately not a phase result and

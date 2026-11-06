@@ -91,12 +91,12 @@ decisions; all other D1–D5 and OD-01–OD-19 approval boundaries remain in for
   Spring Environment and Kubernetes configuration imports. It does not designate an identity
   policy source. The opt-in [rebuild controller](../../query-service/src/main/java/com/simplematch/queryservice/runtime/QueryProjectionRebuildController.java)
   uses its independent operator credential; that credential provides no ordinary read identity.
-- The [certification collector](../../../scripts/end-to-end/query-service/lib/evidence.sh) makes
-  unauthenticated loopback HTTP requests, selects a latest joined fixture and expects sensitive
-  Redis keys. Phase 1 must provision explicit synthetic account grants and revise those key
-  expectations. The former placement observer was later retired by Issue #202.
-  The Query certification runner now uses `/api/v1/freshness` with the pre-provisioned
-  operations-read identity during its Redis outage.
+- At that historical review, the [collector](../../../scripts/end-to-end/query-service/lib/evidence.sh)
+  made unauthenticated loopback HTTP requests and expected sensitive Redis keys.
+  Phase 1 later introduced synthetic grants and PostgreSQL-only reads. Issue #202
+  retired the standalone Shell HTTP collector and placement observer after the
+  source-bound Jupiter Live check. The selected `KubernetesQueryHealth` uses
+  operations-read identity to verify `/api/v1/freshness` during Redis outage.
   No production Java HTTP caller was identified in the scoped search; off-repository consumers
   remain unconfirmed.
 - [Base manifests](../../../deploy/k8s/base/java-services.yaml) retain two Query replicas and an

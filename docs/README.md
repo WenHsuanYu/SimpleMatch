@@ -50,7 +50,7 @@
 
 ### 驗證、認證與執行紀錄
 
-[本機 production-like 認證 runbook](verification/local-production-like-certification.md) 是 repository-owned 完整認證的入口；部署前先讀[部署測試 lessons 與 preflight](agents/deployment-test-lessons.md)。[ADR 0011](adr/0011-local-production-like-certification-boundary.md) 定義目前完成邊界：本機程序與證據、特定來源版本的執行紀錄，以及 staging／production promotion templates 各有適用範圍。檔名中的 live 或 certification 須連同文件的環境和證據契約解讀。
+[本機 complete-local 驗證 runbook](verification/local-production-like-certification.md) 說明 `./gradlew verifyAll` 的唯一完整驗證入口；`verifyAllScope` 檢查已提交來源碼、所選 profile 與 Shell 數量門檻。部署前先讀[部署測試 lessons 與 preflight](agents/deployment-test-lessons.md)。[ADR 0011](adr/0011-local-production-like-certification-boundary.md) 定義本機程序、特定來源版本的執行紀錄，以及 staging／production promotion templates 的適用邊界。檔名中的 live 或 certification 須連同文件的環境和證據契約解讀。
 
 | 要驗證或查核的範圍 | 文件及角色 |
 | --- | --- |
@@ -61,7 +61,7 @@
 | Critical Matching Event consumers | [Repository verification 紀錄](verification/critical-matching-event-consumer-verification.md)、[現行 S5 驗證範圍](plans/shell-test-reduction-s5.md)：服務層 durable restart、`verifyKubernetes` 真實 PostgreSQL 故障／恢復，以及同一情境新增的 Persistence 單 Pod 進度恢復檢查。舊的多 Pod／Kafka 無流量重啟矩陣已退役，新檢查仍待 P6 實際部署驗收。 |
 | Gateway admission 與 FIX 整合 | [Gateway admission](verification/gateway-admission-verification.md)：目前契約、驗證方式與有日期的證據；[QuickFIX/J integration evidence](verification/quickfixj-integration-evidence.md)：repository 內 FIX simulator 的整合驗證。 |
 | Query 與 runtime market data | [Query certification](verification/query-service-certification.md)、[Market-data projection certification](verification/runtime-market-data-projection-certification.md)：各自公開介面的本機部署驗收。 |
-| 認證 phase 與證據重用 | [Phase DAG 設計](verification/local-certification-phase-dag.md)、[實作介面與驗證](verification/local-certification-phase-dag-implementation.md)、[重用量測程序](verification/local-certification-reuse-measurement.md)。 |
+| 已退役的 Shell aggregate | [歷史 phase graph 與證據界線](verification/local-certification-phase-dag.md)、[保留的 focused helper](verification/local-certification-phase-dag-implementation.md)、[歷史重用量測](verification/local-certification-reuse-measurement.md)。 |
 | 目前開發環境的驗證與吞吐量 | [Current development verification](verification/current-local-certification.md)：集中列出已測 source、完整 aggregate manifest、各項公開介面／復原情境 verdict、吞吐量實測、環境事件與證據邊界。 |
 | 歷史認證證據的可用性 | [Evidence audit](verification/local-certification-evidence-audit.md)：2026-10-18 歷史查核快照，區分 r13 完整歷史紀錄、r14 無法確認的整體完成狀態，以及原始檔缺失的引用；目前版本的驗證基線改由上列 Current local certification 記錄。 |
 | Schema 修改與當時驗證 | [Cleanup record](verification/schema-contract-cleanup-record.md)、[Follow-up record](verification/schema-contract-followup-record.md)、[Hardening record](verification/schema-contract-hardening-record.md)：不同來源批次的 schema 決策與檢查紀錄。 |

@@ -1,92 +1,42 @@
-# Local certification execution contract
+# Retired local certification phase graph
 
-The category C reduction on 2026-10-28 retired custom historical PASS reuse and same-run resume.
-The existing production-like runner remains the full-certification entry point.
-Its phase declarations now define dependencies, profile selection, and execution order only.
-
-## Start a run
-
-1. Check the required source, approved trading-day inputs, Docker daemon, and Kubernetes environment.
-2. Select the full profile or explicit partial options.
-3. Start the existing runner with a new evidence directory.
+Issue #202 S5 P5b retired the former 62-phase Shell runner, its graph, adapters, and aggregate reporter.
+The only complete-local verification entry now is:
 
 ```shell
-bash scripts/run-local-production-like-certification.sh
+./gradlew --no-daemon verifyAll
 ```
 
-The default evidence path is `out/certification/local-production-like/<run-id>/`.
-Set `SIMPLEMATCH_CERTIFICATION_EVIDENCE_DIR` to select another new path.
-The runner rejects an existing path before daemon queries or report writes.
-`--dry-run` prints selected phases and commands without creating execution evidence.
+`verifyAllScope` requires committed, unchanged tracked source, rejects non-private untracked
+inputs and `kubernetesRetain=true`, and enforces the `full-native-dev` native preset,
+the `resting-buy` Kubernetes scenario, and the S5 Shell inventory limits.
+`verifyAll` selects Java suites, static analysis, native CTest, manifest checks,
+dependency/Flyway tests, QuickFIX certification, and run-owned Kubernetes tests.
+The complete task requires the final Kubernetes report to record
+`status=PASS`, `assertions=PASS`, `diagnostics=PASS` and `cleanup=PASS`.
+The selected 2026-11-06 Live result does not establish a final P6 `verifyAll` PASS.
 
-Every selected phase executes.
-Gradle, BuildKit, and buildpacks retain their own ordinary build caches.
-The certification runner does not infer current PASS from an earlier result.
-A failed or interrupted run requires a new invocation and new runtime resources.
-The owner retired `--resume`.
+## Historical evidence and focused diagnostics
 
-## Profiles and execution order
+Older phase reports remain attributable to their original source, run, and image identities.
+The historical schema version 2 records `run-context`, `source-revision`,
+`phases/<phase-id>/result.json`, `evidence-manifest.json`, and image lock files.
+The retained `run-local-cdc-delivery-focused-diagnostic.sh` can validate only
+source-compatible legacy evidence, including exact historical CDC prerequisites,
+ownership, image locks and verifier signatures. P5b removed the original aggregate
+and changed the hashed runtime provenance. Therefore pre-P5b evidence is incompatible
+with the current code and intentionally fails closed. There is no current runner to
+produce a compatible legacy aggregate. This diagnostic is a historical validation
+tool, not a runnable continuation of a pre-P5b full-local run.
 
-The [phase declarations](../../scripts/lib/local-certification-phase-graph.sh) select and order existing command adapters.
-They preserve prerequisite ordering for migrations, topic provisioning, Connect, Open Barriers, workloads, and CDC verification.
-Image publication and node import use the selected transport.
-The runner does not maintain a second build cache or output-materialization layer.
+## Intentional coverage loss
 
-The `static-kubernetes-overlays` phase calls the shared [manifestCheck task](manifest-validation.md).
-S4 retires the separate static dependency, Matching-manifest, topic-fixture, and Phase 1 collection phases.
-Their old assertions are not translated individually or reported as newly passed.
-See the [owner-amended S4 scope](../plans/shell-test-reduction-s4.md) for the resulting coverage.
+The retired graph no longer verifies a separate Compose Kafka/PostgreSQL/Redis/Connect
+lifecycle; Compose startup, cleanup, broker/topic inspection and capacity evidence;
+standalone local resource-budget, image publication/import and 15-owner reports;
+or Shell partial profiles and per-phase aggregate results. The surviving native,
+Java, image, dependency, and Kubernetes owners verify only their stated assertions.
+No Compose-only PASS or full-local result is inferred from their tests.
 
-`--skip-build`, `--skip-compose`, `--skip-kubernetes`, and `--matching-fleet-only` produce PARTIAL reports.
-Omitted phases have no PASS result.
-A partial report cannot establish a complete `full-local` certification.
-A failed phase stops execution and produces a FAILED report.
-Cleanup failure also prevents aggregate success.
-
-## Current-run evidence
-
-Each run retains these files:
-
-- `run-context`: run, namespace, profile, and source identities.
-- `source-revision`: the source commit.
-- `phases/<phase-id>/result.json`: the current execution status, exit code, run identity, and source identity.
-- `evidence-manifest.json`: the ordered completion inventory and shared run/source identity.
-- `logs/` and scenario outputs: execution output and necessary failure diagnostics.
-- `local-images.lock` and `image-lock.sha256`: the generated image lock and its recorded byte identity for registry transport.
-- `report.md`: aggregate status and completed phases.
-
-Results and completion inventories use schema version 2.
-A command starts with RUNNING and finishes with PASS or FAIL.
-PASS requires exit code zero.
-Completion requires a valid result for every selected phase from the same run and source.
-The inventory lists phase IDs instead of duplicating their results.
-There is no `plan.json`, content-addressed evidence store, reusable result object, or phase completion marker.
-
-## Retained-environment diagnostics
-
-Focused CDC, Connect, and placement diagnostics retain their existing entry points and claim limits.
-They check current namespace ownership, source scope, image identity, required PASS results, and applicable runtime inputs.
-The registry image lock must match its recorded byte identity.
-A focused observer executes its current verifier and writes a new diagnostic report.
-Its PASS cannot upgrade an earlier aggregate result.
-
-Current readers reject historical schema version 1 results.
-Keep old reports as evidence for their recorded source and date.
-Use a fresh run for a current diagnostic that requires schema version 2.
-Do not relabel or rewrite an old report to satisfy the current reader.
-
-## Ownership and cleanup
-
-`--keep-resources` retains only the run's Compose project and disposable namespace for inspection.
-Normal cleanup preserves canonical clusters and unrelated resources.
-It deletes only resources whose ownership passes the existing cleanup checks.
-Starting a new run does not authorize deleting an older retained namespace.
-
-## Retired responsibilities
-
-The reduction deletes custom phase-input fingerprints, historical PASS lookup, immutable-result objects, output lineage, cache restoration, and reuse measurements.
-Their dedicated tests retire with those features.
-Existing execution, partial-profile, source, image, diagnostic, and ownership behavior checks remain.
-
-The [user-workflow comparison](../plans/certification-user-workflow-options.md) records the alternatives and maintenance trade-offs.
-The [runbook](local-production-like-certification.md) owns deployment prerequisites and claim boundaries.
+See the [operator runbook](local-production-like-certification.md),
+[S5 disposition](../plans/shell-test-reduction-s5.md), and dated evidence.

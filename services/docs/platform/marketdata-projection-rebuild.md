@@ -44,16 +44,18 @@ For a controlled replay:
 The endpoint response proves only that the local reset transaction completed. Kafka offset reset,
 source retention, replay boundary, and final convergence remain operator-owned evidence.
 
-The repository-owned completion gate is
-[`docs/verification/runtime-market-data-projection-certification.md`](../../../docs/verification/runtime-market-data-projection-certification.md).
-Run it only against a lifecycle-labelled disposable namespace:
+The repository-owned deployment verification is now part of the retained
+`RestingBuyKubernetesTest` Jupiter scenario. It verifies the projection and
+streamer in the same run as the public FIX business flow. Run it only in a
+supported, run-owned Kubernetes environment:
 
 ```bash
-bash scripts/end-to-end/market-data/run-certification.sh \
-  --namespace "${SIMPLEMATCH_CERTIFICATION_NAMESPACE}" \
-  --evidence-dir "${SIMPLEMATCH_MARKET_DATA_EVIDENCE_DIR}"
+./gradlew verifyKubernetes -PkubernetesScenario=resting-buy \
+  -PkubernetesMode=dedicated
 ```
 
-The runner temporarily reduces the projection to one owner so the authenticated reset stops the
-only active group member before offset reset. It restores the original replica count, replay
-configuration, and Redis availability before publishing a passing verdict.
+The run uses the authenticated projection reset, checks Kafka replay and
+Redis repair, and restores the original projection configuration. It also
+checks public gRPC reconnection after streamer replacement. Read the
+[retained requirements](../../../docs/verification/runtime-market-data-projection-certification.md)
+before using its evidence. This selected run is not the complete S5 P6 gate.

@@ -54,23 +54,13 @@ simplematch_certification_cdc_runtime_source_paths() {
     scripts/end-to-end/query-service/lib/policy_bundle.py \
     scripts/lib/local-certification-provenance.sh \
     scripts/lib/local-common.sh \
-    scripts/lib/local-certification-phase-graph.sh \
     scripts/lib/local-certification-evidence.sh \
     scripts/lib/local-certification-images.sh \
-    scripts/lib/local-certification-kafka.sh \
-    scripts/lib/local-certification-framework.sh \
-    scripts/lib/local-certification-job.sh \
-    scripts/lib/local-certification-connect.sh \
-    scripts/lib/local-certification-kubernetes.sh \
-    scripts/lib/local-certification-run.sh \
-    scripts/lib/local-certification-bootstrap.sh \
-    scripts/lib/local-certification-workloads.sh \
     scripts/lib/local-image-inventory.sh \
     scripts/lib/local-image-transport.sh \
     scripts/lib/local-kind.sh \
     scripts/build-local-images.sh \
     scripts/render-local-kubernetes-manifest.sh \
-    scripts/run-local-production-like-certification.sh \
     .dockerignore gradlew gradlew.bat \
     config \
     build.gradle.kts settings.gradle.kts gradle \
