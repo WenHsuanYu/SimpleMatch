@@ -24,6 +24,11 @@ val scope = tasks.register("verifyAllScope") {
             .equals("false", ignoreCase = true)) {
             "Complete verification requires Kubernetes cleanup; kubernetesRetain must be false."
         }
+        check(providers.gradleProperty("kubernetesDockerContext").orElse("default").get()
+            == "default") {
+            "Complete verification requires Native Docker context default; " +
+                "override any stale user Gradle property with -PkubernetesDockerContext=default."
+        }
         // Gradle applies --tests filters after task configuration, so check the
         // selected task graph at execution time, before any test can run.
         for (testTask in gradle.taskGraph.allTasks.filterIsInstance<Test>()) {

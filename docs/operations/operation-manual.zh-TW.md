@@ -904,18 +904,20 @@ bash scripts/manage-simplematch-live.sh create
 kubectl config use-context kind-simplematch-live
 bash scripts/manage-simplematch-live.sh verify
 
-# 3. 指定核准的 trading-day artifact
-export SIMPLEMATCH_CERTIFICATION_TRADING_DAY=2026-08-11
-export SIMPLEMATCH_MARKET_REFERENCE_DELIVERY_MANIFEST=\
-tools/market-reference-builder/data/2026-08-11/delivery/manifest.yaml
+# 3. 使用已核准的 2026-08-17 delivery，不更改 artifact 的歷史日期
+test -f tools/market-reference-builder/config/market-reference/approved/2026-08-17/delivery/manifest.yaml
 
 # 4. 執行 S5 完整本機驗證（需已提交的追蹤來源碼）
-./gradlew --no-daemon verifyAll
+./gradlew --no-daemon verifyAll -PnativePreset=full-native-dev \
+  -PkubernetesScenario=resting-buy -PkubernetesRetain=false \
+  -PkubernetesDockerContext=default -PkubernetesTradingDay=2026-08-17
 
 # 5. 觀察 cleanup 後的資源狀態
 bash scripts/local-resource-report.sh
 ```
 
+`-PkubernetesDockerContext=default` 明確覆蓋使用者層級 Gradle properties 可能留存的
+`desktop-linux` 設定。`verifyAllScope` 會在開始部署前拒絕非 `default` 的 Docker context。
 verifyAll 的 Kubernetes owner 會準備所需測試映像。若只診斷單一 service 的 image build，使用第 9 節的 focused image commands。
 
 ### 17.2 日常修改單一 Java service

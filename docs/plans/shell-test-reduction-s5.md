@@ -1616,3 +1616,11 @@ Kubernetes context `kind-simplematch-live` with four Ready nodes. The kind
 binary is at `/home/alexyu/go/bin/kind` and must be available on `PATH` for
 the selected verification. This environment observation alone is not P6.
 Only a fresh `verifyAll` against the committed final source can close P6.
+
+The first P6 attempt on committed `e46a43d4` passed `verifyAllScope`, native
+CTest (81/81), and static analysis. It failed at `kubernetesBuildPreflight`
+before workload deployment. The effective user-level Gradle property still
+selected deleted Docker context `desktop-linux`, overriding the repository's
+`default` fallback. The current source rejects this setting during
+`verifyAllScope` and the documented invocation explicitly supplies
+`-PkubernetesDockerContext=default`. Do not count the first attempt as P6 PASS.
