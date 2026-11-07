@@ -103,6 +103,32 @@ docker info --format '{{.DockerRootDir}}'
 findmnt -T "$(docker info --format '{{.DockerRootDir}}')"
 ```
 
+### 2.5 本機操作身分、contexts 與映像標籤
+
+在本機以一般使用者 `alexyu` 執行 Docker、kind 和 kubectl 指令。不要使用
+`sudo docker`、`sudo kind` 或 `sudo kubectl`。Docker daemon 可能仍以 root
+執行；這與使用 root 身分呼叫 Docker CLI 不同。清理時按容器、volume、映像與
+建置快取的可確認歸屬逐項處理，不能依檔案 owner 判斷建立 CLI 的使用者。
+
+```bash
+id -un                         # alexyu
+docker context show            # default
+kubectl config current-context # kind-simplematch-live
+kubectl config view --minify --output 'jsonpath={..namespace}'
+```
+
+Docker context `default` 指向 Native Docker Engine。本機 Kubernetes context
+是 `kind-simplematch-live`，而非名稱為 `default` 的 context；Kubernetes
+namespace 預設為 `default`。需要顯式選取時，使用
+`kubectl config use-context kind-simplematch-live`。在 kind cluster 刪除後，
+要先由本專案管理入口重建 cluster，才能選取該 context。
+
+`scripts/build-local-images.sh --tag local` 產生供開發者使用的 `:local`
+映像。完整本機驗證則使用 `local-<nonce>` 標籤，避免不同 Live run 共用同一個
+可變映像名稱。Spring Boot 建置中間映像使用對應的 `-boot` 後綴。驗證必須依
+source fingerprint、run identity 和 image digest 確認身分，不能只憑標籤
+宣告通過。
+
 ---
 
 ## 3. Repository 主要操作入口

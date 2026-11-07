@@ -22,7 +22,7 @@ record KubernetesSettings(Path root, Path evidence, Path coordination, LocalDate
       throw new IllegalArgumentException("kubernetesEvidence must name a new evidence directory");
     }
     final KindMode mode = KindMode.parse(System.getProperty("kubernetesMode", "dedicated"));
-    final String tag = System.getProperty("kubernetesImageTag", "kubernetes");
+    final String tag = System.getProperty("kubernetesImageTag", "local");
     if (!tag.matches("[a-zA-Z0-9_][a-zA-Z0-9_.-]{0,100}")) {
       throw new IllegalArgumentException("invalid Kubernetes image tag");
     }
@@ -36,6 +36,6 @@ record KubernetesSettings(Path root, Path evidence, Path coordination, LocalDate
             "tools/market-reference-builder/config/market-reference/approved/" + day
                 + "/delivery/manifest.yaml")), tag, mode,
         Boolean.parseBoolean(System.getProperty("kubernetesRetain", "false")),
-        new DockerContext(System.getProperty("kubernetesDockerContext")), scenario);
+        new DockerContext(System.getProperty("kubernetesDockerContext", "default")), scenario);
   }
 }

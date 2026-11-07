@@ -36,9 +36,9 @@ val javaServices = if (scenario == "resting-buy")
         "market-data-projection", "marketdata-streamer", "query-service")
 else listOf("account-service", "risk-service")
 
-val dockerContext = providers.gradleProperty("kubernetesDockerContext").orElse(providers.exec {
-    commandLine("docker", "context", "show")
-}.standardOutput.asText.map { it.trim() })
+// Local verification uses the Native Docker Engine. Do not inherit a stale
+// Docker Desktop context from a shell or an earlier workstation session.
+val dockerContext = providers.gradleProperty("kubernetesDockerContext").orElse("default")
 
 tasks.withType<Test>().configureEach {
     systemProperty("verificationRepoRoot", rootProject.projectDir.absolutePath)
@@ -83,8 +83,10 @@ val kubernetesTest = tasks.register<Test>("kubernetesTest") {
 }
 
 // Each invocation builds unique image references and executes live checks anew.
+// Use a unique, local-purpose tag for each live run. Source identity is bound
+// separately by the existing source fingerprint and image digest checks.
 val imageTag = providers.gradleProperty("kubernetesImageTag")
-    .orElse("k8s-" + UUID.randomUUID().toString().take(12)).get()
+    .orElse("local-" + UUID.randomUUID().toString().take(12)).get()
 val receipt = rootProject.file(providers.gradleProperty("kubernetesBuildReceipt")
     .orElse("out/kubernetes-build/" + UUID.randomUUID() + "/inputs.json").get())
 val runProperties = providers.gradlePropertiesPrefixedBy("kubernetes").get() + mapOf(
