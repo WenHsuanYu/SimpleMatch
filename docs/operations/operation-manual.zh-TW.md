@@ -564,29 +564,19 @@ Issue #202 已移除原本獨立的 62-phase Shell certification runner。
 P5b 前的證據**。P5b 已修改 runtime provenance 的雜湊輸入並移除原本的
 62-phase aggregate，因此使用舊來源簽章的 retained run 都會被拒絕。
 
-```bash
-bash scripts/run-local-cdc-delivery-focused-diagnostic.sh \
-  --evidence-dir out/certification/<retained-run> \
-  --timeout-seconds 180
-```
+舊命令 `scripts/run-local-cdc-delivery-focused-diagnostic.sh` 與 Risk CDC observer
+已整組退役。舊診斷曾檢查 namespace owner、來源簽章、image lock、Risk CDC
+lag／Actuator 與清理。現行程式不能產生與舊診斷相容的 retained run-context。
+不可重新執行舊命令，也不可重用 `FOCUSED_DIAGNOSTIC` PASS。
+新的 CDC transport 驗證使用 `./gradlew verifyCdc`；它不涵蓋已退役的 Kubernetes
+Risk CDC telemetry 場景，也不能單獨完成 P6 驗收。
 
-這個診斷驗證歷史 schema v2 phase PASS、namespace owner、source、
-runtime/verifier fingerprint 與 immutable image lock。它不建立新的完整部署。
-runtime signature 或必要環境漂移時會拒絕執行。
-`FOCUSED_DIAGNOSTIC` 的 PASS 不會升級歷史結果或 S5 完整驗收。
-新的 CDC 驗證使用 `./gradlew verifyCdc`；該測試也不等於 P6 完整驗收。
+### 12.2 已退役的獨立 Kubernetes requests 預算工具
 
-### 12.2 獨立 Kubernetes requests 檢查
-
-僅要確認目前 Docker daemon 的記憶體容量與 reduced profile 宣告 requests 時：
-
-```bash
-kubectl kustomize deploy/k8s/overlays/local --load-restrictor LoadRestrictionsNone |
-  ruby scripts/local-resource-budget.rb --manifest - --profile matching-fleet-only \
-    --host-memory-bytes "$(docker info --format '{{.MemTotal}}')" --check
-```
-
-此命令不建立 Kubernetes 資源，結果也不代表完整 S5 驗收。
+原 Ruby 預算工具只計算 manifest requests 與指定的 host-memory 門檻，未觀測實際配置。
+S5 已退役該命令及其專屬測試，不再提供獨立的 phase-budget 與 init-container 峰值計算。
+執行 `./gradlew manifestCheck` 檢查目前的清單契約；執行選定的 `verifyKubernetes`
+情境驗證 runtime。兩者都不等於整機容量驗證或完整 S5 驗收。
 
 ---
 
@@ -674,22 +664,18 @@ parent #151 聚合的 fault-family verdict。
 worker crash 與真正事件 redelivery，但**不驗證** Kubernetes Connect Pod 消失後 task 重新指派。
 本節其餘敘述與歷史證據只適用於 #156 當時的程式碼及環境。
 
-若只需要驗證 Debezium Kafka Connect task 在 worker Pod 消失後是否重新指派，以及重新指派後
-的 Account outbox 變更是否仍精確送達 Kafka，不需要先執行已退休的 aggregate runner。對一個已存在、
-具 `disposable` ownership label 的 production-like namespace 執行：
-
-共用 `scripts/lib/cdc-verifier.sh` 負責 outbox 定位與 Kafka 精確觀測。
-Java `recovery-evidence-verifier` 負責 task owner、Pod deletion、reassignment 與事件關係。
-既有 runner 負責 preflight、故障操作與清理，透過既有命令 adapter 接入外部服務。
+以下保留 #156 原診斷的驗證條件，僅供追溯既有報告。原流程使用具 `disposable`
+ownership label 的 production-like namespace。這些步驟已無可執行的 Shell 入口。
+現行 `recovery-evidence-verifier cdc` 的 Java Module 保留 outbox 與 Kafka publication
+的驗證能力。舊 `scripts/lib/cdc-verifier.sh` 已無執行呼叫者，因此已移除。
 
 保留規則前先確認它保護的實際風險。已解決問題的 debug 檢查、重複摘要與來源寫法檢查可以刪除。
 必要的 ownership、故障後資料正確性與清理結果則必須透過實際介面保留。
 
-`--retained-evidence-dir` 必須指向同一個 production-like run；其 `run-context` 的 namespace、
-run-id、`cdc_runtime_signature` 與 `cdc_verifier_signature` 都要存在。命令在任何 Pod mutation
-前比較 runtime fingerprint；runtime 不一致會 fail-closed，必須建立新的 source-aligned full
-run。verifier fingerprint 不一致不會重用舊 diagnostic，而是記錄 drift、先執行
-`test-cdc-observer-fixture-contract.sh`，再用目前 verifier 產生新的 report。命令先確認 Kafka topic provisioning、Account 與 Risk 的
+原命令的 `--retained-evidence-dir` 必須指向同一個 production-like run；其 `run-context` 的 namespace、
+run-id、`cdc_runtime_signature` 與 `cdc_verifier_signature` 都必須存在。舊命令在任何 Pod mutation
+前比較 runtime fingerprint；runtime 不一致會 fail-closed。verifier fingerprint 不一致時不會重用舊 diagnostic，而是記錄 drift、先執行
+當時的 fixture contract，再用舊版 verifier 產生新的 report。原命令先確認 Kafka topic provisioning、Account 與 Risk 的
 Flyway Job、PostgreSQL、兩個無 PVC 的 Connect worker、RF3/minISR2 internal topic、
 service-owned connector table 與 task-owning Pod identity。直接刪除 Pod 不測試 PDB eviction，
 因此不要求 PDB 或與此操作無關的其他服務 migration。這些應用層 prerequisite 通過後，才用一個 bounded runtime precondition 檢查
@@ -699,12 +685,12 @@ containerd 能以 `/bin/sh -c true` 啟動；這不重複驗證 Docker/Kubernete
 900 秒），不會被 setup 或 image preflight 消耗。接著用 JSON-Patch 的 UID test 加上 run-unique marker，只刪除唯一被標記且仍是
 原始 UID 的 Account connector task-owning Pod，並確認原始 UID 已消失，要求相同
 task id 改由不同 worker 與新 Pod UID 執行；單獨的 `RUNNING` status、Ready replacement Pod 或
-REST task listing 不能通過 recovery gate。故障恢復後由共用 `cdc-verifier.sh` 先捕捉 aggregate
+REST task listing 不能通過歷史 recovery gate。原 runner 曾捕捉 aggregate
 outbox baseline，再定位唯一的 post-transition row 並核對 Kafka exact record。
 
 Connect 報告使用 schema version 3。Java 驗證刪除前 UID、原始 Pod 消失、相同 task 的新 worker
 與新 Pod UID，以及 baseline、transition、publication 的事件關係。新 Pod 可以位於原節點。
-共用 `cdc-verifier.sh` 負責 Kafka payload、key、timestamp 與完整 headers 的精確比對。
+當時的 Shell adapter 曾負責 Kafka payload、key、timestamp 與完整 headers 的精確比對。
 最終報告不再重複驗證整套 prerequisite 或保留環境的前置檢查。
 
 `target-delete-observation.json` 記錄原始 Pod name 與 UID 已不存在。

@@ -48,9 +48,9 @@ The actual Redis-outage PostgreSQL read verification remains required.
 
 Loopback HTTP tests use an independent credential-checking TCP server to test **client tools**.
 They do not replace actual Spring Security FilterChain/PostgreSQL tests from QS1-01–05.
-PostgreSQL collector tests execute real selection SQL through the existing external database
-adapter seam. They require the runner-owned database marker and current Flyway migrations; they
-delete only their newly generated fixture rows and never initialize product schemas ad hoc.
+The retired Python/PostgreSQL collector executed standalone scratch-fixture selection SQL.
+Current Query JDBC and HTTP suites use their own Testcontainers databases and Flyway migrations.
+The selected Kubernetes owner observes business identities from real FIX-backed source events.
 
 ## Historical entry points and fixture policy
 
@@ -70,6 +70,10 @@ The full-local input producer now consumes a composite synthetic bundle as descr
 Secured multi-service deployment and complete cross-route acceptance have separate evidence below.
 
 ## Complete deployed acceptance
+
+**Historical description of the retired Query Lab and full-local runner.** The current
+execution owner is the selected `verifyKubernetes` `resting-buy` Jupiter scenario. The
+Python fixture, read-matrix, and legacy replay tools are no longer executable.
 
 The controlled lifecycle runner now seeds explicit migrated Query-owned Order/Execution DML:
 each X/Y Account has one parent with an Execution and one with an empty collection, plus a
@@ -103,6 +107,12 @@ lifecycle PASS is never relabeled as full-system certification PASS.
 
 ## Secured full-environment inputs
 
+**Historical Python bundle interface (retired by Issue #202).** The requirements below
+document the prior synthetic Lab material. The selected Java/Jupiter owner creates its own
+private FIX TLS and Query credentials. Its tests verify store privacy, mutual TLS,
+credential digests, replacement revocation, and the authorization matrix. It does not
+accept or validate a former Python certification bundle.
+
 `provision-certification-fixtures.py` reuses the existing five-Principal Query provisioner,
 then generates independent FIX Logon credentials and separate self-signed server/client PKCS12
 identities. The FIX allowlist contains exactly the same X/Y Accounts, on the existing acceptor
@@ -128,10 +138,8 @@ launcher passes FIX secrets in the child environment, never command arguments or
 ./gradlew verifyKubernetes -PkubernetesScenario=resting-buy --no-daemon
 ```
 
-The command above selects the replacement deployed R18/R19/R21 verification.
-The former combined private-bundle provisioning and standalone Query runner
-command was retired. `provision-certification-fixtures.py` and
-`certification_security.py` remain in use by production-like input validation.
+The command above selects the deployed R18/R19/R21 verification. The former
+private-bundle producer and validator were retired with their last executable callers.
 
 The retired Query Shell runner created its X/Y trading fixtures once and
 required a fresh disposable namespace after failure. It recorded five
@@ -182,14 +190,15 @@ The static phase includes the fixture and input-producer contracts, and Kubernet
 depend on that gate. The source/input fingerprints include their implementations and tests.
 Older phase evidence cannot stand in for the new semantics.
 
-Focused checks:
+Current Java checks for the retained behavior:
 
 ```bash
-python3 scripts/end-to-end/query-service/tests/certification-fixtures-contract.py
+./gradlew :tools:kubernetes-tests:test --tests '*KubernetesFixCredentialsTest'
+./gradlew :tools:kubernetes-tests:test --tests '*KubernetesQueryCredentialsTest'
 ```
 
-The retained fixture test exercises generated PKCS12 material through real loopback TLS,
-including client certificate and hostname rejection. The former
+The selected FIX test exercises generated PKCS12 material through a real loopback TLS
+handshake, including rejection of a client without a certificate. The former
 `certification-inputs-contract.py` was retired with the Shell aggregate's private
 `apply_local_kubernetes_inputs` adapter. That old synthetic `kubectl` seam is no longer a
 current verification owner.
@@ -229,7 +238,7 @@ parent or proof of Query HTTP authorization.
 | INV-05/06: independent operator/FIX/direct trust | Existing FilterChain/direct/rebuild suites; per-Pod matrix; enabled operator boundary | All nine deployed negative credential checks passed; independent authorized rebuild succeeded. |
 | INV-07, A3: revoke/disable/rollback | Final-source `lifecycle-final` proof, separate from historical #193 | V1/V2/V3, rollback rejection, failed activation, no-reset recovery and fresh-run isolation passed. |
 | INV-08: no trading dependency on Query | Full Query verdict and actual public IOC/isolation evidence | Public FIX processing with zero Query Pods and separate deterministic rebuild/replay passed. |
-| A4, historical LAB consumer compatibility | Retained `collector-postgres-contract.py` and Query HTTP/JDBC suites | The old standalone HTTP collector contract and placement contract are retired. |
+| A4, historical LAB consumer compatibility | Query HTTP/JDBC authorization tests and selected Kubernetes FIX-backed read/replay | The standalone Python-to-Shell SQL collector and its scratch-fixture selection contract are retired. No separate LAB collector verdict remains. |
 
 INV-09 and later Gateway/certificate portions of INV-10 retain their independent phase approvals.
 
@@ -254,20 +263,19 @@ adds only reporting/operational documentation, with source compatibility recorde
 evidence. Local Lab transport, revocation and synthetic-policy results do not establish production
 readiness, a hard revocation SLA, OAuth, Query incoming mTLS or Phase 2 cache performance.
 
-Current focused checks:
+Current focused Java checks:
 
 ```bash
-python3 scripts/end-to-end/query-service/tests/security-fixtures-contract.py
-python3 scripts/end-to-end/query-service/tests/certification-fixtures-contract.py
+./gradlew :tools:kubernetes-tests:test
 ./gradlew :tools:recovery-evidence-verifier:test
 ./gradlew -q :services:query-service:test
-# Requires Docker, Python 3, and psql. The task also runs the PostgreSQL collector contract.
+# The compatibility task selects the canonical Query suite once.
 ./gradlew -q :services:query-service:postgresJdbcTest
 ./gradlew -q staticAnalysis
 ```
 
-The PostgreSQL task runs the SQL contract and JDBC checks against the same Testcontainers database.
-`./gradlew verifyPostgres` invokes that task. HTTP/placement contracts run in Local Resource Lifecycle CI.
+The Query suite retains JDBC, FilterChain, and HTTP contracts with Testcontainers databases.
+`./gradlew verifyPostgres` invokes the same Query owner without the retired collector.
 Before expensive deployed acceptance, classify every required
 phase through the existing planner/evidence contract. No required phase may be silently skipped,
 and no focused diagnostic or tool PASS may be promoted to aggregate Phase 1 PASS.

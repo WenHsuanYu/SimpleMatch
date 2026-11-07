@@ -293,7 +293,7 @@ Deterministic validation covers:
 - kubelet image-GC configuration;
 - hard-reset manager delegation and aggressive-mode boundaries.
 
-Run `ruby scripts/test-hard-reset-safety.rb` for the behavioral deletion gate
+Run `./gradlew :tools:kubernetes-tests:test --tests '*HardResetSafetyTest'` for the behavioral deletion gate
 regression. It executes the real hard-reset and manager entry points in a temporary
 repository, with only fake Docker/kind tools on the child PATH. The checked-in
 `scripts/testdata/hard-reset/baseline.json` defines expected exit status, diagnostic,
@@ -302,4 +302,7 @@ It covers missing kind, failed discovery, manager identity refusal, failed Docke
 observation, healthy deletion, an already absent cluster, and dry-run. This test
 does not modify or certify a live Docker/kind deployment.
 
-The live kind smoke then proves real registry publication, digest rendering, on-demand node pull, baseline behavior, and cleanup. Local Resource Lifecycle CI protects the local certification contracts; CDC CI remains a regression boundary for the certification runner and Kafka Connect behavior.
+The isolated kind smoke proves registry publication, digest rendering, on-demand node pull,
+baseline behavior, and cleanup. The local-resource CI checks the remaining operator contracts.
+The Testcontainers CDC suite checks Kafka Connect transport recovery; the retired 62-phase
+Shell certification runner no longer has an executable owner.

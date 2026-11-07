@@ -1549,3 +1549,70 @@ storage root. Do not delete unrelated Docker resources to create room.
 Until the external storage/mount and canonical cluster prerequisites are
 restored safely, the P6 deployed run and both cluster-mode claims remain
 blocked. The current local source cannot claim a new P6 PASS.
+
+### 2026-11-08 P5c: 80% design-target retirement
+
+This section supersedes the P5b current-state claims above. The historical
+170-file / 34,923-line baseline and earlier dated PASS results remain unchanged.
+The final existing tracked Shell inventory for this retirement slice is
+**34 `.sh` files / 6,896 physical lines**. The 80% design limits are
+**34 files / 6,984 lines**. Both independent limits are met by actual deletion,
+not a changed threshold alone. `verifyAllScope` now enforces these limits and
+counts an unterminated final physical line. The original 70% minimum remains
+the historical specification, not the delivery standard for this slice.
+
+The retired `cdc-verifier.sh` adapter had no executable caller after the
+Kubernetes Connect reassignment runner was removed. The entire focused CDC
+continuation had no compatible source-aligned evidence producer after P5b
+removed the 62-phase aggregate. Its remaining Shell preflight, source
+fingerprints, diagnostic tests, and Risk CDC observer were retired together.
+The intentional loss is a standalone deployed Risk CDC pause/resume,
+durable lag and Actuator zero/positive/zero observation, deployed log screening,
+and bounded observer cleanup. `verifyCdc` still checks real PostgreSQL,
+Kafka, and Connect transport faults and exact redelivery. It does not prove
+the lost Kubernetes Risk telemetry behavior or Kubernetes Connect task
+reassignment. Historical focused verdicts are not reusable acceptance.
+
+The old Ruby host-resource calculator and fixture test are retired. They no
+longer produce an independent phase-budget, malformed quantity, or init-container
+peak calculation. `manifestCheck` and selected Jupiter resource/runtime checks
+retain their narrower authority. The old synthetic Query/FIX Python fixture
+generator, policy/HTTP tools, isolated SQL collector, and their contract tests
+also retired after the last executable runner was removed. Current Java owners
+are the Query HTTP/JDBC and startup suites, `KubernetesQueryCredentialsTest`,
+`KubernetesQueryPermissionMatrixTest`, `KubernetesFixCredentialsTest`, and the
+selected deployed Query R18/R19/R21 assertions. They do not provide the
+retired synthetic Lab CLI, independent PKCS12 bundle inspector, or scratch
+fixture selection verdict. The Query `postgresJdbcTest` command remains as
+a compatibility task that depends on the canonical `test` suite once.
+
+The former Ruby hard-reset test was replaced by `HardResetSafetyTest` under
+the existing Kubernetes JUnit owner. It invokes the real Shell reset and
+manager scripts through an isolated allowlisted fake CLI path. Ten original
+positive and rejection scenarios retain their exit status, messages, and
+exact mutation order. The standalone kind manager source-layout test retired.
+`manifestCheck`, actual `manage-simplematch-live.sh verify`, and the isolated
+CI kind integration smoke retain their separate scopes. The old sensitive-log
+test now runs inside the existing dependency diagnostic test. The nine-line
+Git hook installer was replaced by its direct `git config core.hooksPath`
+command. The matching fleet external strict operator gate remains available:
+its JSON checks now use `jq` instead of embedded Ruby and still require
+15 Ready owners, exact Lease holder/expiry, RWOP PVCs, and image identity.
+The external Kafka topic tools and focused R20 dependency diagnostic remain
+intact, with their independent operator and negative safety responsibility.
+
+This slice leaves **zero tracked project-executable `.py` and `.rb` files** and
+no embedded Ruby/Python in the retained `.sh` files. It did not create a
+replacement interpreter program or a second certification orchestrator.
+The remaining Shell metric does not count existing extensionless Git hooks;
+those were not renamed from `.sh` to achieve the target. The private
+untracked `.env`, `.secret`, `.scratch/`, and `secrets` inputs are excluded
+from source accounting and must not be inspected.
+
+The Docker data root and cluster blocker above was resolved by the separate
+Native Docker operator work. On 2026-11-08, the `alexyu` CLI used Docker
+context `default`, data root `/mnt/250g_ext4/docker-data` on ext4, and
+Kubernetes context `kind-simplematch-live` with four Ready nodes. The kind
+binary is at `/home/alexyu/go/bin/kind` and must be available on `PATH` for
+the selected verification. This environment observation alone is not P6.
+Only a fresh `verifyAll` against the committed final source can close P6.

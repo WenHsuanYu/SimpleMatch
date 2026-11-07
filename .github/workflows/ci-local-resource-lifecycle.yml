@@ -12,12 +12,9 @@ on:
       - 'deploy/k8s/**'
       - 'deploy/docker/**'
       - 'scripts/end-to-end/critical-consumers/**'
-      - 'scripts/end-to-end/market-data/**'
-      - 'scripts/end-to-end/query-service/**'
       - 'scripts/*'
       - 'scripts/lib/**'
       - 'scripts/testdata/hard-reset/**'
-      - 'scripts/testdata/focused-diagnostic/**'
       - 'scripts/archive/**'
       - 'services/quickfix-gateway/*'
       - 'services/quickfix-gateway/src/test/java/com/simplematch/quickfixgateway/fix/**'
@@ -53,13 +50,10 @@ jobs:
         run: ./gradlew manifestCheck --no-daemon
       - name: Validate shell lifecycle contracts
         run: |
-          ruby scripts/test-hard-reset-safety.rb
-          python3 scripts/end-to-end/query-service/tests/security-fixtures-contract.py
           bash scripts/test-local-image-transport.sh
           bash scripts/test-local-image-rendering.sh
-          bash scripts/test-local-certification-provenance.sh
           bash scripts/test-local-resource-report.sh
-          bash scripts/test-simplematch-kind-manager.sh
+          bash scripts/test-local-resilience-dependencies.sh
 
   kind-integration-smoke:
     name: Live kind registry and resource lifecycle smoke

@@ -55,9 +55,8 @@ scripts/end-to-end/critical-consumers/
     └── verifier-helper-contract.sh
 ```
 
-`scripts/lib/local-certification-provenance.sh` is shared with the local
-production-like runner. It owns the retained source/image provenance consumed by
-verification helpers.
+The former `scripts/lib/local-certification-provenance.sh` supplied the retired
+aggregate's scoped source/image fingerprint. It is no longer a current helper.
 
 The entries above are a historical record, not current filesystem paths.
 S5 retired both the forwarding alias and the former canonical runner.

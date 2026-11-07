@@ -7,6 +7,8 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 import java.io.ByteArrayInputStream;
 import java.io.IOException;
 import java.io.StringReader;
+import java.net.InetAddress;
+import java.net.Socket;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.attribute.PosixFilePermissions;
@@ -62,20 +64,38 @@ class KubernetesFixCredentialsTest {
           client.get("SIMPLEMATCH_LIVE_FIX_USERNAME"));
       assertEquals(properties.getProperty(prefix + ".counterparties[0].password"),
           client.get("SIMPLEMATCH_LIVE_FIX_PASSWORD"));
-      assertTrue(exchange(server, context(Files.readAllBytes(
-          Path.of(client.get("SIMPLEMATCH_LIVE_FIX_KEY_STORE"))), trust, clientPassword)));
+      final SSLContext knownClient = context(Files.readAllBytes(
+          Path.of(client.get("SIMPLEMATCH_LIVE_FIX_KEY_STORE"))), trust, clientPassword);
+      assertTrue(exchange(server, knownClient));
       assertFalse(exchange(server, context(null, trust, clientPassword)));
+      // Accept only the exact approved peer, not any otherwise well-formed client certificate.
+      try (var foreign = KubernetesFixCredentials.create(temporary.resolve("foreign-fix"),
+          UUID.randomUUID(), UUID.randomUUID())) {
+        final var unrelatedClient = foreign.clientEnvironment();
+        final SSLContext foreignContext = context(Files.readAllBytes(Path.of(
+            unrelatedClient.get("SIMPLEMATCH_LIVE_FIX_KEY_STORE"))), trust,
+            unrelatedClient.get("SIMPLEMATCH_LIVE_FIX_KEY_STORE_PASSWORD").toCharArray(),
+            clientPassword);
+        assertFalse(exchange(server, foreignContext));
+      }
+      // Server identity must match the requested hostname, not just a trusted issuer.
+      assertFalse(exchange(server, knownClient, "unapproved.example"));
     }
     assertFalse(Files.exists(directory));
     assertEquals("keep", Files.readString(sibling));
   }
 
   private static SSLContext context(byte[] identity, byte[] trust, char[] password) throws Exception {
+    return context(identity, trust, password, password);
+  }
+
+  private static SSLContext context(byte[] identity, byte[] trust,
+      char[] identityPassword, char[] trustPassword) throws Exception {
     final var trusts = TrustManagerFactory.getInstance(TrustManagerFactory.getDefaultAlgorithm());
-    trusts.init(store(trust, password));
+    trusts.init(store(trust, trustPassword));
     final var keys = KeyManagerFactory.getInstance(KeyManagerFactory.getDefaultAlgorithm());
     if (identity != null) {
-      keys.init(store(identity, password), password);
+      keys.init(store(identity, identityPassword), identityPassword);
     }
     final var context = SSLContext.getInstance("TLS");
     context.init(identity == null ? new KeyManager[0] : keys.getKeyManagers(),
@@ -92,6 +112,11 @@ class KubernetesFixCredentialsTest {
   }
 
   private static boolean exchange(SSLContext serverContext, SSLContext clientContext) throws Exception {
+    return exchange(serverContext, clientContext, "localhost");
+  }
+
+  private static boolean exchange(SSLContext serverContext, SSLContext clientContext,
+      String peerHost) throws Exception {
     try (var server = (SSLServerSocket) serverContext.getServerSocketFactory().createServerSocket(0);
         var executor = Executors.newVirtualThreadPerTaskExecutor()) {
       server.setNeedClientAuth(true);
@@ -107,15 +132,18 @@ class KubernetesFixCredentialsTest {
         }
       });
       boolean received = false;
-      try (var client = (SSLSocket) clientContext.getSocketFactory()
-          .createSocket("localhost", server.getLocalPort())) {
+      try (var transport = new Socket(InetAddress.getLoopbackAddress(), server.getLocalPort());
+          var client = (SSLSocket) clientContext.getSocketFactory()
+              .createSocket(transport, peerHost, server.getLocalPort(), true)) {
         client.setSoTimeout(5_000);
+        final var parameters = client.getSSLParameters();
+        parameters.setEndpointIdentificationAlgorithm("HTTPS");
+        client.setSSLParameters(parameters);
         received = client.getInputStream().read() == 42;
       } catch (IOException rejected) {
         received = false;
       }
-      assertEquals(accepted.get(10, TimeUnit.SECONDS), received);
-      return received;
+      return received && accepted.get(10, TimeUnit.SECONDS);
     }
   }
 }

@@ -80,40 +80,36 @@ claim follows from these tests. Keep pre-existing documentation work separate wh
 
 ## Provisioning and focused checks
 
-Create a new bundle outside the repository and keep it private:
+The former synthetic fixture CLI is retired under Issue #202. The selected Jupiter
+scenario creates its run-private Query policy and credentials. Do not reuse historical
+fixture bundles for current deployments.
 
-```bash
-query_fixture_root="$(mktemp -d)"
-python3 scripts/end-to-end/query-service/provision-security-fixtures.py \
-  "$query_fixture_root/bundle" --policy-version 1
-```
-
-The new directory is 0700 and its files are 0600. application.properties contains only verifier
+The former CLI created a 0700 directory with 0600 files. Its application.properties contained verifier
 policy; credentials.json contains private client material and fixture-identities.json records the
 synthetic ID mapping. Supply the complete properties through the existing Query Secret import
 or, for a loopback Local Lab process with its existing database configuration/migrations, Spring
 Config Data's additional-location pointing to this private file. Do not replace the existing
 Secret's database/Kafka material, print the bundle, put tokens in arguments/URLs, or commit it.
-The CLI creates a fresh disposable run, not a rotation of persistent Principals. All replicas
+That CLI created a fresh disposable run, not a rotation of persistent Principals. All replicas
 must receive the same approved policy file. The one-hour synthetic credential lifetime is a Lab
 test choice; it is not a production rotation/SLA contract. Real credentials require the separate
 approved transport gate. Query exposes no HTTP credential/registration API.
 
 ```bash
-python3 scripts/end-to-end/query-service/tests/security-fixtures-contract.py
+./gradlew -q :tools:kubernetes-tests:test
 ./gradlew -q :services:query-service:test
 ./gradlew -q :services:query-service:postgresJdbcTest
 ./gradlew -q staticAnalysis
 ```
 
-The PostgreSQL task requires Docker, Python 3, and `psql`.
+The PostgreSQL task requires Docker.
 Testcontainers creates an isolated database and removes its container after the test JVM exits.
 The fixture sets an ownership marker before Flyway migrations or fixture writes.
-The task includes JDBC, real FilterChain, loopback HTTP, and the existing Python collector contracts.
+The Query suite includes JDBC and real FilterChain/HTTP contracts. It no longer runs the Python collector.
 
 The ordinary and focused database suites now use Testcontainers PostgreSQL with the same
-canonical migrations. The ordinary task requires Docker; the focused task additionally needs
-Python 3 and `psql` for the collector. The managed Spring pool uses a dynamic canonical DSN,
+canonical migrations. Both entry points use the same ordinary Query tests, without the
+retired scratch-fixture collector. The managed Spring pool uses a dynamic canonical DSN,
 while HTTP tests retain their narrower fault-injection DataSource wrappers.
 Real loopback HTTP tests require local socket permission.
 Run the PostgreSQL task directly for this fixture. The multi-service Flyway/reset runner uses a separate database.

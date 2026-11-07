@@ -196,24 +196,8 @@ ctest --preset dev-debug --output-on-failure
 ./gradlew -q :tools:dependency-tests:test
 ./gradlew verifyCdc
 
-# Historical retained namespace only: the retired aggregate used to invoke the following observer after
-# its Kubernetes workloads and connectors became Ready. It is shown for operators
-# examining old owned evidence; this is not a current complete-local entry:
-certification_evidence_dir="${SIMPLEMATCH_CERTIFICATION_EVIDENCE_DIR:-out/certification/local-production-like}"
-run_context_file="$certification_evidence_dir/run-context"
-certification_namespace="$(sed -n 's/^namespace=//p' "$run_context_file")"
-namespace_run_id="$(sed -n 's/^run_id=//p' "$run_context_file")"
-[[ -n "$certification_namespace" && -n "$namespace_run_id" ]] || {
-  printf '%s\n' 'run-context must contain namespace and run_id' >&2
-  exit 1
-}
-bash scripts/run-risk-cdc-delivery-observer-check.sh \
-  --namespace "$certification_namespace" \
-  --namespace-run-id "$namespace_run_id" \
-  --evidence-dir "$certification_evidence_dir/cdc-delivery"
-
-# The observer accepts only a namespace labeled disposable and managed by
-# local-production-like-certification, and --namespace-run-id must match its run-id label.
+# The former Kubernetes Risk CDC observer is retired. See the CDC publication
+# verification guide for its historical scope and the current verifyCdc owner.
 
 ./gradlew --no-daemon :services:persistence:test :services:account-service:test :services:quickfix-gateway:test :services:quickfix-gateway:certificationTest :services:market-data-projection:test
 

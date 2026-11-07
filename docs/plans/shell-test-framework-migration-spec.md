@@ -361,7 +361,7 @@ These links support the baseline assessment. Future implementation paths can cha
 - [Query test tasks](../../services/query-service/build.gradle.kts) and [dependency lock](../../services/query-service/gradle.lockfile).
 - [Query evidence evaluator](../../tools/query-evidence-verifier/README.md).
 - [Market Data verdict](../../scripts/end-to-end/market-data/lib/verdict.sh).
-- [CDC verifier](../../scripts/lib/cdc-verifier.sh).
+- [CDC publication verifier](../../tools/recovery-evidence-verifier/README.md).
 - [Current phase declarations](../../scripts/lib/local-certification-phase-graph.sh).
 - [Existing lifecycle CI](../../.github/workflows/ci-local-resource-lifecycle.yml).
 

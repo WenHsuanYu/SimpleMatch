@@ -44,8 +44,11 @@ the final `verifyAll` acceptance required by Issue #202 S5.
 
 The Query service's HTTP/JDBC suites remain the component owners for authentication,
 authorized parent lookups, minimal envelopes, status codes and local PostgreSQL behavior.
-The Query fixture provisioner and `certification_security.py` remain inputs to the
-independent production-like certification and credential validation workflows.
+The legacy Python fixture provisioner and `certification_security.py` were retired.
+The selected Jupiter owner now builds its own run-private Query and FIX credentials.
+`KubernetesQueryCredentialsTest` validates generated policy and rotation. The FIX
+credential test verifies private stores and mutual TLS. Neither preserves the
+old standalone Python bundle-inspection interface.
 
 ## Retired standalone operators and explicit coverage loss
 

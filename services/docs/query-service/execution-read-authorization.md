@@ -103,10 +103,9 @@ TLS, Gateway, OAuth, certificate binding, Redis performance or production-readin
 ./gradlew -q staticAnalysis
 ```
 
-The PostgreSQL task requires Docker, Python 3, and `psql`.
-Testcontainers creates an isolated database with an ownership marker. The task also runs the existing Python collector contract.
-The ordinary Query task also uses the owned PostgreSQL fixture and executes these concurrent
-snapshot assertions. It requires Docker. Only the focused task needs the collector's Python 3 and
-`psql` prerequisites.
+Both Query task names use the same canonical PostgreSQL-backed test suite.
+The suite requires Docker. Testcontainers creates an owned disposable database.
+The independent Python scratch-fixture collector was retired under Issue #202.
+The HTTP/JDBC tests retain their concurrent snapshot assertions.
 Runtime counts, input fingerprints, original red tests, review, cleanup and final-head CI
 are recorded in the #191 handoff; do not infer a PASS from this runbook.

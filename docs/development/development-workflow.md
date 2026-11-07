@@ -190,7 +190,7 @@ Historical verification records retain the results of checks that ran before ret
     - `./gradlew riskServiceFlywayMigrate`
     - `./gradlew riskServiceFlywayValidate`
 - Local automation:
-    - `bash scripts/install-git-hooks.sh`
+    - `git config core.hooksPath .githooks`
     - Installed pre-commit hooks run targeted Gradle compile/checkstyle checks for staged Java or
       Gradle changes.
     - Installed pre-commit hooks also validate Flyway migration naming and directory placement.

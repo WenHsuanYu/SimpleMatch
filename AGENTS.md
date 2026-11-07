@@ -34,21 +34,13 @@ These instructions apply to the whole repository.
   checks and cannot upgrade an earlier aggregate result.
   Documentation or issue metadata changes that do not alter executable inputs require no runtime rerun.
   Changes to execution or acceptance semantics require corresponding contract and fixture review.
-- Use a focused CDC continuation only through the retained
-  `scripts/run-local-cdc-delivery-focused-diagnostic.sh`. Its preflight must validate the retained runtime
-  fingerprint, exact namespace/run-id ownership, immutable image identities, dependency PASS results,
-  and evidence identity. A verifier-scope change, or an unrelated source change proven outside both
-  runtime and verifier scopes, may reuse the retained runtime; runtime, input, dependency,
-  namespace/environment, image, or evidence-identity drift requires the fresh source-aligned
-  dependent path. The focused command must execute its current verifier/contract before any observer
-  or state-changing mutation, write a new diagnostic-only report, never reuse or relabel an old
-  diagnostic report, and never upgrade focused PASS to certification PASS. The P5b retirement
-  changed the CDC runtime signature. Pre-P5b legacy evidence is therefore incompatible with
-  the current focused diagnostic and must fail closed. The retired Shell aggregate cannot
-  create a replacement retained run. Integrate and review scenario changes in one coherent
-  source-aligned batch before one final `verifyAll` execution for that batch. This does not
-  block independent changes or necessary focused diagnostics. Rerun after failure or
-  invalidation. Do not start one full deployment per child issue.
+- Do not run the retired CDC continuation or Risk CDC observer scripts. P5b removed the
+  aggregate that produced their retained `run-context` and changed its source fingerprint.
+  The former continuation cannot produce current-source evidence. Run `./gradlew verifyCdc`
+  for current broker, connector, and publication contracts. It does not verify deployed
+  Kubernetes Risk CDC telemetry or Connect Pod/task reassignment. Do not reuse or upgrade
+  historical diagnostic reports. Integrate scenario changes in one source-aligned batch
+  before a final `verifyAll` execution. Rerun after failure or invalidation.
 - For every implementation or test task, invoke the repository's `implement` skill when it is
   available and follow its acceptance-criteria, test, review, and handoff workflow. Keep the
   implementation slice narrow, run focused checks during the work, and run the relevant complete

@@ -39,8 +39,8 @@ command -v "$kubectl_bin" >/dev/null 2>&1 || {
   printf 'Cannot find kubectl executable: %s\n' "$kubectl_bin" >&2
   exit 1
 }
-command -v ruby >/dev/null 2>&1 || {
-  printf '%s\n' 'Ruby is required for Kubernetes JSON validation.' >&2
+command -v jq >/dev/null 2>&1 || {
+  printf '%s\n' 'jq is required for Kubernetes JSON validation.' >&2
   exit 1
 }
 
@@ -58,135 +58,85 @@ trap 'rm -rf "$temporary_directory"' EXIT
 "$kubectl_bin" -n "$namespace" get pvc -o json \
   > "$temporary_directory/pvcs.json"
 
-ALLOW_SHARED_NODE="$allow_shared_node" LOCAL_IMAGE_REFERENCE="$local_image_reference" NAMESPACE="$namespace" STATEFULSET_NAME="$statefulset_name" ruby -rjson -rtime - \
-  "$temporary_directory/statefulset.json" \
-  "$temporary_directory/pods.json" \
-  "$temporary_directory/leases.json" \
-  "$temporary_directory/pvcs.json" <<'RUBY'
-namespace = ENV.fetch("NAMESPACE")
-statefulset_name = ENV.fetch("STATEFULSET_NAME")
-statefulset, pods, leases, pvcs = ARGV.map { |path| JSON.parse(File.read(path)) }
+jq --exit-status --null-input \
+  --arg namespace "$namespace" \
+  --arg stsName "$statefulset_name" \
+  --arg allowShared "$allow_shared_node" \
+  --arg localImage "$local_image_reference" \
+  --slurpfile sts "$temporary_directory/statefulset.json" \
+  --slurpfile pods "$temporary_directory/pods.json" \
+  --slurpfile leases "$temporary_directory/leases.json" \
+  --slurpfile pvcs "$temporary_directory/pvcs.json" '
+    def require($ok; $message): if $ok then true else error($message) end;
+    def pod_name($i): $stsName + "-" + ($i | tostring);
+    def lease_name($i): "matching-partition-" + (if $i < 10 then "0" else "" end)
+      + ($i | tostring);
+    def pvc_name($i): "matching-baseline-" + pod_name($i);
+    def epoch:
+      (capture("^(?<utc>[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2})(?<fraction>\\.[0-9]+)?(?<zone>Z|[+-][0-9]{2}:[0-9]{2})$")) as $value
+      | (($value.utc + "Z") | fromdateiso8601)
+        + (($value.fraction // "0") | tonumber)
+        - (if $value.zone == "Z" then 0 else
+            (($value.zone[1:3] | tonumber) * 3600
+              + ($value.zone[4:6] | tonumber) * 60)
+            * (if $value.zone[0:1] == "+" then 1 else -1 end)
+          end);
+    [range(0;15)] as $ordinals
+    | ($pods[0].items // [] | map(select(.metadata.labels["app.kubernetes.io/name"] == "matching"))) as $matching
+    | ($leases[0].items // []) as $fleetLeases
+    | ($pvcs[0].items // []) as $fleetPvcs
+    | [
+      require(([$sts,$pods,$leases,$pvcs] | all(.[]; length == 1)); "kubectl must return one JSON document per resource"),
+      require(($sts[0].spec.replicas == 15);
+        ($namespace + "/" + $stsName + " must declare 15 replicas")),
+      require(($matching | length) == 15; "expected exactly 15 Matching pods"),
+      require(([$matching[] | .metadata.name] | sort)
+        == ($ordinals | map(pod_name(.)) | sort); "Matching pod ordinals differ from 0-14"),
+      require(all($matching[]; any(.status.conditions[]?; .type == "Ready" and .status == "True"));
+        "every Matching pod must have Ready=True"),
+      require(all($matching[]; (.spec.nodeName | type == "string" and length > 0));
+        "every Matching pod must have a named node"),
+      require(($allowShared == "true") or ([$matching[].spec.nodeName] | unique | length) == 15;
+        "the 15 Matching pods must use distinct nodes"),
+      require(([$matching[] | .metadata.labels["apps.kubernetes.io/pod-index"]] | sort)
+        == ($ordinals | map(tostring) | sort); "Matching pod-index labels must cover 0-14"),
+      require(all($matching[];
+        (.spec.containers[0].image // "") as $image
+        | if $localImage != "" then $image == $localImage
+          else ($image | test("@sha256:[0-9a-f]{64}\\z"; "i")
+            and (test("@sha256:a{64}\\z"; "i") | not)) end);
+        "Matching image is not the exact selected image or a real digest"),
+      require(([$fleetLeases[] | .metadata.name] | sort)
+        == ($ordinals | map(lease_name(.)) | sort); "expected the 15 fixed Matching Leases"),
+      ($ordinals[] as $i
+        | ([$matching[] | select(.metadata.name == pod_name($i))] | .[0]) as $pod
+        | ([$fleetLeases[] | select(.metadata.name == lease_name($i))] | .[0]) as $lease
+        | ([$fleetPvcs[] | select(.metadata.name == pvc_name($i))]) as $pvc
+        | require(($pod.metadata.uid | type == "string" and length > 0);
+            (pod_name($i) + " lacks a Pod UID")),
+          require($lease.spec.leaseDurationSeconds == 15;
+            (lease_name($i) + " must use a 15-second Lease")),
+          require($lease.spec.holderIdentity == (pod_name($i) + ":" + $pod.metadata.uid);
+            (lease_name($i) + " has a different Lease holder or Pod UID")),
+          require((try (($lease.spec.renewTime | epoch) + 15 > now) catch false);
+            (lease_name($i) + " is expired or has an invalid renewTime")),
+          require(($pvc | length) == 1; ("missing or duplicate PVC " + pvc_name($i))),
+          require($pvc[0].status.phase == "Bound"; (pvc_name($i) + " is not Bound")),
+          require(any($pvc[0].spec.accessModes[]?; . == "ReadWriteOncePod");
+            (pvc_name($i) + " must use ReadWriteOncePod"))
+      )
+    ] | all(.)
+  ' >/dev/null
 
-def fail_gate(message)
-  warn message
-  exit 1
-end
-
-def require_gate(condition, message)
-  fail_gate(message) unless condition
-end
-
-def items(resource)
-  Array(resource.fetch("items"))
-end
-
-def ready?(pod)
-  Array(pod.dig("status", "conditions")).any? do |condition|
-    condition["type"] == "Ready" && condition["status"] == "True"
-  end
-end
-
-expected_partitions = (0...15).to_a
-expected_pod_names = expected_partitions.map { |partition| "#{statefulset_name}-#{partition}" }
-expected_lease_names = expected_partitions.map { |partition| format("matching-partition-%02d", partition) }
-
-require_gate(
-  statefulset.dig("spec", "replicas") == 15,
-  "#{namespace}/#{statefulset_name} declares #{statefulset.dig("spec", "replicas") || "no"} replicas; expected 15"
-)
-
-matching_pods = items(pods).select do |pod|
-  pod.dig("metadata", "labels", "app.kubernetes.io/name") == "matching"
-end
-require_gate(matching_pods.length == 15, "expected 15 Matching pods, got #{matching_pods.length}")
-require_gate(
-  matching_pods.map { |pod| pod.dig("metadata", "name") }.sort == expected_pod_names.sort,
-  "Matching pod names must be #{expected_pod_names.join(", ")}"
-)
-require_gate(
-  matching_pods.all? { |pod| ready?(pod) },
-  "every Matching pod must have Ready=True"
-)
-if ENV.fetch("ALLOW_SHARED_NODE", "false") == "true"
-  require_gate(
-    matching_pods.all? { |pod| pod.dig("spec", "nodeName").is_a?(String) && !pod.dig("spec", "nodeName").empty? },
-    "every Matching pod must be scheduled on a named node"
-  )
+if [[ "$allow_shared_node" == true ]]; then
+  node_summary='logical owners may share nodes'
 else
-  require_gate(
-    matching_pods.map { |pod| pod.dig("spec", "nodeName") }.uniq.length == 15,
-    "the 15 Matching pods must be scheduled on 15 distinct nodes because pod anti-affinity is required"
-  )
-end
-pod_partitions = matching_pods.map { |pod| pod.dig("metadata", "labels", "apps.kubernetes.io/pod-index") }
-require_gate(
-  pod_partitions.sort_by(&:to_i) == expected_partitions.map(&:to_s),
-  "Matching pod-index labels must cover every partition from 0 through 14 exactly once"
-)
-
-local_image_reference = ENV.fetch("LOCAL_IMAGE_REFERENCE", "")
-matching_pods.each do |pod|
-  image = pod.dig("spec", "containers", 0, "image").to_s
-  if !local_image_reference.empty?
-    require_gate(
-      image == local_image_reference,
-      "#{pod.dig("metadata", "name")} must use the expected kind-load fallback image #{local_image_reference}: #{image}"
-    )
-  else
-    require_gate(
-      image.match?(/@sha256:[0-9a-f]{64}\z/i),
-      "#{pod.dig("metadata", "name")} image is not digest pinned: #{image}"
-    )
-    require_gate(
-      !image.match?(/@sha256:a{64}\z/i),
-      "#{pod.dig("metadata", "name")} still uses the repository placeholder image digest"
-    )
-  end
-end
-
-lease_by_name = items(leases).to_h { |lease| [lease.dig("metadata", "name"), lease] }
-require_gate(
-  lease_by_name.keys.sort == expected_lease_names,
-  "expected exactly the 15 fixed Matching Leases"
-)
-
-matching_pods.each do |pod|
-  pod_name = pod.dig("metadata", "name")
-  partition = pod.dig("metadata", "labels", "apps.kubernetes.io/pod-index")
-  require_gate(partition && partition.match?(/\A(?:[0-9]|1[0-4])\z/), "#{pod_name} has no valid pod-index 0-14")
-  lease_name = format("matching-partition-%02d", Integer(partition))
-  lease = lease_by_name.fetch(lease_name)
-  spec = lease.fetch("spec")
-  require_gate(spec.fetch("leaseDurationSeconds") == 15, "#{lease_name} must use a 15-second Lease")
-  holder = spec["holderIdentity"]
-  expected_holder = "#{pod_name}:#{pod.dig("metadata", "uid")}"
-  require_gate(holder == expected_holder, "#{lease_name} holder #{holder.inspect} does not fence to #{expected_holder}")
-  renew_time = spec["renewTime"]
-  require_gate(renew_time.is_a?(String) && !renew_time.empty?, "#{lease_name} has no renewTime")
-  require_gate(
-    Time.parse(renew_time) + spec.fetch("leaseDurationSeconds") > Time.now,
-    "#{lease_name} is expired"
-  )
-end
-
-pvcs_by_name = items(pvcs).to_h { |pvc| [pvc.dig("metadata", "name"), pvc] }
-expected_partitions.each do |partition|
-  pvc_name = "matching-baseline-#{statefulset_name}-#{partition}"
-  pvc = pvcs_by_name.fetch(pvc_name) do
-    fail_gate("missing PVC #{pvc_name}")
-  end
-  require_gate(pvc.dig("status", "phase") == "Bound", "#{pvc_name} is not Bound")
-  require_gate(
-    Array(pvc.dig("spec", "accessModes")).include?("ReadWriteOncePod"),
-    "#{pvc_name} must use ReadWriteOncePod"
-  )
-end
-
-node_summary = if ENV.fetch("ALLOW_SHARED_NODE", "false") == "true"
-  "logical owners may share nodes"
+  node_summary='15 distinct nodes'
+fi
+if [[ -n "$local_image_reference" ]]; then
+  image_summary="exact kind-load image $local_image_reference"
 else
-  "15 distinct nodes"
-end
-image_summary = local_image_reference.empty? ? "digest-pinned images" : "exact kind-load image #{local_image_reference}"
-puts "Matching fleet certification passed: 15 Ready pods, 15 Lease holders, 15 RWOP PVCs, #{image_summary}, and #{node_summary} in #{namespace}."
-RUBY
+  image_summary='digest-pinned images'
+fi
+printf 'Matching fleet certification passed: 15 Ready pods, 15 Lease holders, 15 RWOP PVCs, %s, and %s in %s.\n' \
+  "$image_summary" "$node_summary" "$namespace"

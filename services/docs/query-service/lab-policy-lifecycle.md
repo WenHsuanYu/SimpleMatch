@@ -40,10 +40,9 @@ checkpoints and Account projections within the bounded catch-up interval.
 The events are test fixtures published directly to Kafka. They are not evidence
 that the Account Authority outbox published those events.
 
-The independent [fixture provisioner](../../../scripts/end-to-end/query-service/provision-security-fixtures.py)
-and [policy validator](../../../scripts/end-to-end/query-service/lib/policy_bundle.py)
-remain available. The full-local input producer and source-provenance checks use
-the private Query certification bundle. No old Lab is needed to execute those checks.
+Issue #202 retired the independent Python fixture provisioner and policy validator.
+The selected Jupiter run owns private Query credentials, policy snapshots, and
+run-owned FIX material. Historical Lab bundles are not inputs to current acceptance.
 
 ## Historical accepted Lab evidence
 

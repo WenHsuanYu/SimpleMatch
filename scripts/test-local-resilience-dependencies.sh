@@ -5,6 +5,8 @@ IFS=$'\n\t'
 script_dir="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
 # shellcheck source=scripts/lib/local-kind.sh
 source "$script_dir/lib/local-kind.sh"
+# shellcheck source=scripts/lib/local-resilience.sh
+source "$script_dir/lib/local-resilience.sh"
 # shellcheck source=scripts/lib/local-resilience-dependencies.sh
 source "$script_dir/lib/local-resilience-dependencies.sh"
 
@@ -15,6 +17,24 @@ fail() {
 
 fixture_dir="$(mktemp -d "${TMPDIR:-/tmp}/simplematch-dependency-resilience.XXXXXX")"
 trap 'rm -rf -- "$fixture_dir"' EXIT
+
+# Preserve the sensitive-log rejection interface of the retired standalone
+# resilience test. The dependency collector uses this same function.
+safe_log="$fixture_dir/safe.log"
+unsafe_log="$fixture_dir/unsafe.log"
+printf '%s\n' 'event=consumer_recovered correlation_id=abc-123' >"$safe_log"
+resilience_log_is_safe "$safe_log" || fail 'ordinary recovery log was rejected'
+for sensitive in \
+    'fromApp session=FIX.4.4 msg=8=FIX.4.4|35=D|55=2330' \
+    '{"event":"connection","password":"secret-value"}' \
+    '{"event":"connection","token":"token-value"}' \
+    '{"event":"connection","privateKey":"key-material"}' \
+    'authorization=Bearer eyJhbGciOiJIUzI1NiJ9.safe-token'; do
+  printf '%s\n' "$sensitive" >"$unsafe_log"
+  if resilience_log_is_safe "$unsafe_log"; then
+    fail 'sensitive recovery log was accepted'
+  fi
+done
 
 ready_true='{"status":{"conditions":[{"type":"Ready","status":"True"}]}}'
 ready_false='{"status":{"conditions":[{"type":"Ready","status":"False"}]}}'

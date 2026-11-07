@@ -21,27 +21,19 @@ application-to-Kafka E2E.
   and preserves the key, payload, timestamp, partition, and header mappings.
   `CompiledOutboxPublisherGuardTest` rejects direct producer dependencies in compiled Risk and
   Account classes. Source formatting is outside this contract.
-- `scripts/test-cdc-observer-fixture-contract.sh` verifies that the Kubernetes CDC observer fixture
-  writes the same `event_id`, `content_type`, and `payload_type` header shape as a normal outbox
-  event. It runs as part of the Phase 1 preflight, before migrations or workload startup.
 - `./gradlew verifyCdc` runs the shared Java contracts and real disposable PostgreSQL, Kafka,
   and Connect scenarios. It applies the owners' versioned Flyway migrations and exercises RF1 and
   RF3, connector pause/resume, broker stop/start, and actual Connect crash-induced redelivery.
 
+Issue #202 retired the standalone Kubernetes Risk CDC observer and its Shell-only fixture
+contract. `verifyCdc` does not replace the observer's deployed lag, Actuator, or cleanup checks.
+
 ## Shared CDC verification Module
 
-`CdcPublicationVerifier`, `CdcOutboxProbe`, and `CdcPublicationEvidence` own the publication,
-selection, and evidence rules. The installed `recovery-evidence-verifier cdc` CLI exposes these
-rules to retained collectors. `scripts/lib/cdc-verifier.sh` builds the current tool before adapter
-configuration and exposes the compatibility interface for #156 callers:
-
-1. `cdc_capture_topic_end_offsets <topic> <snapshot-file>`
-2. `cdc_wait_for_connector_state <connector-name> <expected-state> [timeout-seconds]`
-3. `cdc_capture_outbox_baseline <schema> <aggregate-type> <aggregate-id> <baseline-file>`
-4. `cdc_read_outbox_probe <schema> <aggregate-type> <aggregate-id> <probe-file> [baseline-file]`
-5. `cdc_assert_same_probe <expected-probe> <observed-probe>`
-6. `cdc_assert_probe_publication <probe-file> <baseline-snapshot> [publication-evidence-file]`
-7. `cdc_validate_publication_evidence <publication-evidence-file>`
+`CdcPublicationVerifier`, `CdcOutboxProbe`, and `CdcPublicationEvidence` own publication,
+selection, and evidence checks. The `recovery-evidence-verifier cdc` CLI exposes these checks.
+Issue #202 retired the unused `scripts/lib/cdc-verifier.sh` adapter after its last scenario
+caller was removed. Do not call the retired Shell functions from new verification code.
 
 The Module hides PostgreSQL outbox-row parsing, baseline event-id capture, post-transition event-id
 discovery, payload hashing, bounded Connect status polling, Kafka offset-window selection, Debezium
@@ -57,9 +49,9 @@ These words describe different responsibilities; they are not interchangeable:
   condition that a validator can check. A JSON/YAML file is only the carrier for inputs or evidence;
   it cannot prove its own `PASS` value.
 - **Module** means the cohesive implementation that owns those rules behind a small Interface.
-  `scripts/lib/cdc-verifier.sh` owns outbox selection and exact publication checks. The former
-  `connect-worker-loss.sh` owned a separate Kubernetes Connect reassignment diagnostic; Issue #202
-  retired that diagnostic, not the shared CDC verifier.
+  `CdcPublicationVerifier` retains the Java publication checks. Issue #202 retired the
+  Kubernetes Connect reassignment diagnostic and its unused Shell adapter. It did not
+  remove the Java publication checks.
 
 The retired worker-loss command separated request parsing, REST tunnel ownership, live fault execution, and data evaluation.
 `connect-worker-loss-cli.sh` parsed the request.
@@ -68,11 +60,11 @@ The retired worker-loss command separated request parsing, REST tunnel ownership
 The retired Java recovery verifier checked task identities, deletion, reassignment, and event linkage.
 The shared CDC validator checks exact Kafka bytes and metadata.
 
-The deployment preflight captures relevant prerequisite objects and invokes Java before fault injection.
-The final report links the recovery observations without repeating the full prerequisite or retained-runtime checks.
-Tests exercise command results, cleanup, and accepted or rejected evidence through the actual interfaces.
+The former deployment preflight captured prerequisites and invoked Java before fault injection.
+Its report linked recovery observations without repeating the prerequisites.
+The former tests checked command results, cleanup, and evidence through their interfaces.
 
-The #156 focused contract test applies the same separation to its own test
+The retired #156 focused contract test applied the same separation to its own test
 harness.  It exercises deterministic preflight rejections through the public
 `simplematch_focused_preflight` seam using copied fixture inputs, while one
 runner-level rejection preserves the observer-ordering check and the valid,
@@ -82,35 +74,28 @@ negative case mutates only its targeted input.  This shortens local feedback
 without skipping a production-like preflight or changing the evidence
 contract; a passing focused diagnostic remains diagnostic-only evidence and
 never becomes a complete certification PASS.
-- **Seam** (in the Michael Feathers sense) is the location where the Interface can be substituted
-  without editing the Module. In this design, `CDC_OUTBOX_EXEC`, `CDC_KAFKA_EXEC`, and
-  `CDC_CONNECT_STATUS_EXEC` are seams: the Module invokes them, while a test fake, Compose command,
-  or Kubernetes command can fill the same slot. A seam is therefore a replaceable code location,
-  not necessarily a service, network, or DDD boundary.
-- **Adapter** is the concrete implementation plugged into a seam. For example, the Kubernetes
-  runner's `postgres_exec`, `kafka_exec`, and `connect_status` translate `kubectl`, Kafka CLI, and
-  REST calls into the Module's narrow Interface. They provide access; they do not decide whether
-  the evidence passes.
-- **Runner** is the scenario orchestrator. It orders preflight, fault injection, cleanup, and
-  evidence files. Shell is appropriate here because it is excellent CI/deployment glue and a
-  transparent wrapper around existing command-line tools. It is a poor home for domain semantics,
-  complicated asynchronous state machines, or a second copy of the evidence rules.
+- **Seam** is a place where callers can replace an implementation without editing the Module.
+  The retired Shell adapter accepted `CDC_OUTBOX_EXEC`, `CDC_KAFKA_EXEC`, and
+  `CDC_CONNECT_STATUS_EXEC` as its command seams. These environment variables are not
+  active interfaces in the current verification workflow.
+- **Adapter** implements an Interface at a seam. The retired Kubernetes runner used
+  `postgres_exec`, `kafka_exec`, and `connect_status` to access the external systems.
+  Those commands did not decide whether publication evidence passed.
+- **Runner** orders scenario setup, faults, evidence collection, and cleanup. The old
+  Shell runner no longer owns a current acceptance requirement.
 
-The industry lifecycle is consequently additive: keep the Contract, schema, and Module while they
-are supported; keep the runner while it is an active operator or CI entry point; archive a runner
-only after a replacement has the same Interface, evidence shape, and regression coverage. Historical
-fixtures and evidence may be archived immediately when they are no longer current authorities, but
-they remain useful incident records. Archiving the shell wrapper must never remove the executable
-specification that prevents a false `PASS`.
+Retain a Contract and its Module while they own current requirements. Retire a runner only
+after checking its callers and its unique verification responsibility. Preserve historical
+reports as incident records. Do not use those reports as current-source acceptance evidence.
 
-Three dependency seams are injected through environment-specific Adapters:
+The retired Shell adapter injected three dependencies:
 
 - `CDC_OUTBOX_EXEC` executes the Module-owned PostgreSQL query.
 - `CDC_CONNECT_STATUS_EXEC` returns one connector status document.
 - `CDC_KAFKA_EXEC` executes Kafka CLI reads.
 
-The #156 focused Kubernetes runner retains these collector adapters.
-Run the Java CDC publication contract directly:
+The #156 Kubernetes runner and these collector adapters are retired.
+Run the retained Java CDC publication contract directly:
 
 ```bash
 ./gradlew :tools:recovery-evidence-verifier:test --tests '*CdcPublicationCommandsTest'
@@ -123,7 +108,7 @@ The verifier does not manage Compose, Pods, worker selection, task reassignment,
 
 ## CdcProbeIdentity
 
-`cdc_read_outbox_probe` materializes a temporary test-side JSON observation document called a
+The retired `cdc_read_outbox_probe` Shell function produced a temporary JSON observation called a
 `CdcProbeIdentity`. It is infrastructure test state, not a domain object and not a production
 contract. For a fresh aggregate, callers can use the four-argument form and identify a durable
 outbox row by aggregate identity. When an aggregate may already have lifecycle history, callers first
@@ -152,7 +137,8 @@ mismatches report event identity, topic, partition/offset, SHA-256 values, and b
 
 ## Exact publication and fault scenarios
 
-The live transport check uses the same `cdc_assert_probe_publication` Interface in every scenario:
+The former live transport checks used the retired `cdc_assert_probe_publication` Shell function.
+The current Java `verifyCdc` owner checks real transport failures and redelivery:
 
 - Baseline publication preserves exact key, complete known Debezium 3.6 header shape, timestamp,
   topic, payload bytes, event identity, and explicit partition only where the outbox supplies one.
@@ -222,22 +208,14 @@ certification. #176 intentionally contains no Kubernetes worker-loss orchestrati
 The former command required a retained, disposable production-like namespace
 with a matching run-id and an empty evidence directory. It is no longer available.
 
-The retained directory must contain the same namespace/run-id and the `cdc_runtime_signature` and
-`cdc_verifier_signature` recorded by the full production-like run. The focused command compares the
-runtime signature before any Pod mutation; a runtime mismatch fails closed and requires a fresh
-source-aligned full run. A verifier-signature mismatch is recorded as drift, then the current verifier
-contract is executed before any Pod mutation and the diagnostic writes new evidence. No old diagnostic
-report is reused. The diagnostic first verifies Flyway/topic prerequisites, two PVC-free Connect workers, RF3/minISR2
-internal topics, PDB protection, service-owned connector table/header boundaries, and strict Pod
-identity. It applies a JSON-Patch UID precondition and a run-unique marker, then deletes only the
-uniquely marked Pod and proves that the original UID disappears before waiting for reassignment. Its
-state flow verifies the report before restoring the fixture, while the EXIT cleanup trap remains a
-last-resort rollback. It then requires the same
-task id to move to a different worker and Pod UID, captures the outbox baseline before inserting one
-run-owned lifecycle fixture, and delegates post-transition selection and exact Kafka verification to
-`cdc-verifier.sh`. A passed report is focused diagnostic evidence only; it supports the exact
-Connect reassignment and CDC publication path that was observed and must not be relabelled as a
-complete local resilience or production certification.
+The retired command required matching namespace/run-id and scoped source signatures.
+It rejected runtime drift before Pod mutation. It recorded verifier drift and checked the
+current contract before changing Pods. The former runner checked Flyway and Kafka prerequisites,
+Connect workers, ownership, and Pod identity. It deleted one run-owned Pod with a UID
+precondition. It then checked task reassignment and published a post-reassignment outbox
+event. The removed Shell adapter selected that event and checked its exact Kafka record.
+These observations were diagnostic evidence only. They did not establish complete local
+resilience or production certification. No current workflow supports this Pod-reassignment test.
 
 The report links every prerequisite snapshot, the pre-delete UID recheck,
 `target-delete-observation.json`, `account-transition.json`, and
@@ -362,36 +340,18 @@ network. Reports are in `tools/dependency-tests/build/reports/dependency-tests/c
 This is dependency transport evidence. It does not establish a complete application path or
 Kubernetes recovery certification.
 
-**Historical only (before Issue #202 P5b).** The former 62-phase aggregate
-could retain a source-compatible namespace after all predecessors passed.
-An observer failure could then use the following focused diagnostic:
+**Historical only (before Issue #202 P5b).** The former 62-phase aggregate could retain a
+source-compatible namespace for a focused Risk CDC diagnostic. That diagnostic checked
+namespace/run-id ownership, the image lock, deployment inputs, the observer fixture, and
+scoped runtime/verifier fingerprints. It checked deployed Risk CDC outbox publication,
+lag transitions, Actuator freshness, log redaction, and cleanup.
 
-```bash
-bash scripts/run-local-cdc-delivery-focused-diagnostic.sh \
-  --evidence-dir out/certification/<retained-run> \
-  --timeout-seconds 180
-```
-
-The command reads the retained `run-context`, verifies the full proof profile, disposable
-namespace/run-id, executed dependency results, immutable image lock, deployed workload images,
-session ConfigMaps, and PostgreSQL secrets, and only then invokes the existing observer. The
-run-context records two scoped identities for this continuation: `cdc_runtime_signature` covers
-the manifests, Risk CDC runtime, image/fingerprint, and orchestration inputs that created the
-retained namespace; `cdc_verifier_signature` covers the observer, fixture, and focused verifier
-code. An unrelated source commit does not change the runtime signature and therefore does not
-force a new deployment. If only the verifier signature changes, the fast
-`test-cdc-observer-fixture-contract.sh` check runs before the observer. A runtime-signature drift,
-namespace/input/image/dependency drift, or a retained context from before these scoped identities
-were recorded fails closed. P5b retired the producer of historical run-context
-records and changed the hashed runtime-provenance input set. Pre-P5b records
-cannot be reused by the current implementation. The command cannot start a
-replacement aggregate and is not a current continuation workflow. For new
-CDC verification, use `./gradlew verifyCdc`.
-
-The command writes a `FOCUSED_DIAGNOSTIC` verdict below the retained run's
-`focused-diagnostics/cdc-delivery/` directory. That verdict is deliberately not a phase result and
-cannot close or upgrade the full certification; even a PASS proves only the observer against the
-retained runtime and current verifier, not a new full source revision.
+P5b removed the aggregate and changed the runtime fingerprint. No current command can
+produce the compatible retained `run-context`. Issue #202 therefore retired the focused
+continuation, observer, and Shell-only tests. Do not execute commands from historical
+reports. Historical `FOCUSED_DIAGNOSTIC` verdicts cannot establish current-source
+acceptance. For current CDC transport checks, run `./gradlew verifyCdc`. That task does
+not validate the retired Kubernetes Risk CDC telemetry scenario.
 
 Finally run the repository Java quality gate:
 

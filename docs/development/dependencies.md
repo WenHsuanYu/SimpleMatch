@@ -65,14 +65,12 @@ This repo's Java dependencies use an explicit ownership model.
   Versionless catalog aliases use the Spring Boot BOM. Run `./gradlew -q :services:query-service:redisSecurityTest` with Docker and OpenSSL.
   JUnit owns private temporary certificates and credentials. Testcontainers provides Redis startup, mapped ports, and readiness.
   JUnit closes the containers after the suite, including setup failures.
-- Query PostgreSQL contracts use the Testcontainers PostgreSQL module as a test-only dependency.
-  Both `:services:query-service:test` and `:services:query-service:postgresJdbcTest` use PostgreSQL
-  for every database-backed Query test. Testcontainers owns one disposable PostgreSQL instance per
-  test JVM, and Flyway applies the canonical Query migrations. Migration and reset tests receive
-  separate databases; HTTP fixtures retain their transaction and cleanup boundaries.
-  The ordinary task needs Docker. The focused PostgreSQL task additionally runs the existing Python
-  collector contract and needs Python 3 and `psql`. Pure tests do not start a database when selected
-  alone. Neither task falls back to H2 or skips PostgreSQL snapshot assertions.
+- Query PostgreSQL contracts use Testcontainers PostgreSQL as a test-only dependency.
+  `:services:query-service:test` runs the canonical PostgreSQL-backed JDBC and HTTP tests.
+  `:services:query-service:postgresJdbcTest` depends on that task without running a second suite.
+  Testcontainers owns the disposable database and Flyway applies Query migrations.
+  Migration, reset, and HTTP tests retain their existing fixture boundaries. Docker remains
+  required for database-backed tests. Neither entry falls back to H2 or skips assertions.
 - `tools/query-evidence-verifier` evaluates retained Query certification JSON with Jackson.
   JUnit tests its evidence interface and command exit status.
   It uses the existing version catalog and BOM, outside the Query service runtime.
@@ -92,9 +90,10 @@ This repo's Java dependencies use an explicit ownership model.
   The [cutover record](../plans/h2-removal.md) distinguishes source changes from completed execution.
 
 
-The Query `postgresJdbcTest` task depends on the ordinary Query suite and separately selects only
-`QueryCollectorPostgresContractTest`. JDBC/HTTP cases execute once when both entry points are requested.
-The collector still requires Python 3 and `psql`; the ordinary suite keeps its existing prerequisites.
+The former `QueryCollectorPostgresContractTest` and its Python/SQL selection script were
+retired under Issue #202. The selected Jupiter Query scenario observes actual FIX-backed
+orders and executions. The service HTTP/JDBC tests retain cross-account authorization
+and parent identity checks. The old independent scratch-fixture SQL selection is not repeated.
 
 ## Native Dependencies
 

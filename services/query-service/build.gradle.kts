@@ -36,7 +36,6 @@ tasks.test {
     maxParallelForks = 1
     outputs.upToDateWhen { false }
     exclude("**/QueryRedisSecurityIntegrationTest.class")
-    exclude("**/QueryCollectorPostgresContractTest.class")
 }
 
 tasks.register<Test>("redisSecurityTest") {
@@ -49,16 +48,10 @@ tasks.register<Test>("redisSecurityTest") {
     outputs.upToDateWhen { false }
 }
 
-tasks.register<Test>("postgresJdbcTest") {
+tasks.register("postgresJdbcTest") {
     group = "verification"
-    description = "Runs the Query suite and its additional PostgreSQL collector contract once each."
-    testClassesDirs = sourceSets.test.get().output.classesDirs
-    classpath = sourceSets.test.get().runtimeClasspath
+    description = "Runs the canonical Query JDBC and HTTP tests once, including PostgreSQL fixtures."
     dependsOn(tasks.test)
-    filter.includeTestsMatching("com.simplematch.queryservice.store.QueryCollectorPostgresContractTest")
-    systemProperty("simplematch.repositoryRoot", rootProject.projectDir.absolutePath)
-    maxParallelForks = 1
-    outputs.upToDateWhen { false }
 }
 
 simpleMatchFlyway {

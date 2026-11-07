@@ -54,11 +54,13 @@ val scope = tasks.register("verifyAllScope") {
         }.standardOutput.asText.get().split('\u0000').filter { it.isNotEmpty() }
         val trackedShellFiles = trackedShellPaths.map(rootProject::file).filter { it.isFile }
         val shellLines = trackedShellFiles.sumOf { file ->
-            file.inputStream().use { input -> input.readBytes().count { it == '\n'.code.toByte() } }
+            val bytes = file.readBytes()
+            bytes.count { it == '\n'.code.toByte() } +
+                if (bytes.isNotEmpty() && bytes.last() != '\n'.code.toByte()) 1 else 0
         }
-        check(trackedShellFiles.size <= 51 && shellLines <= 10476) {
+        check(trackedShellFiles.size <= 34 && shellLines <= 6984) {
             "S5 P5b Shell retirement is incomplete: ${trackedShellFiles.size} files / " +
-                "$shellLines physical lines; maximum 51 files / 10476 lines."
+                "$shellLines physical lines; 80% design target requires at most 34 files / 6984 lines."
         }
     }
 }
@@ -79,7 +81,6 @@ val complete = tasks.register("verifyAll") {
             ":services:market-data-projection" to "test",
             ":services:marketdata-streamer" to "test",
             ":services:query-service" to "test",
-            ":services:query-service" to "postgresJdbcTest",
             ":services:query-service" to "redisSecurityTest",
             ":tools:kubernetes-tests" to "test",
             ":tools:kubernetes-tests" to "manifestTest",
@@ -104,6 +105,19 @@ val complete = tasks.register("verifyAll") {
                     file.name.endsWith(".xml") }?.toList().orEmpty()
             check(results.isNotEmpty()) {
                 "Complete verification has no JUnit XML for $projectPath:$taskName."
+            }
+            if (projectPath == ":tools:kubernetes-tests" && taskName == "test") {
+                // These tests replace independent Shell/Ruby safety owners. Do not allow
+                // an unrelated successful JUnit suite to stand in for their execution.
+                for (name in listOf("HardResetSafetyTest", "MatchingFleetLiveSafetyTest")) {
+                    val report = results.singleOrNull {
+                        it.name == "TEST-com.simplematch.tools.kubernetes.$name.xml"
+                    } ?: error("Complete verification requires the $name safety contract.")
+                    val suite = factory.newDocumentBuilder().parse(report).documentElement
+                    check((suite.getAttribute("tests").toIntOrNull() ?: 0) > 0) {
+                        "Complete verification requires nonempty $name assertions."
+                    }
+                }
             }
             var testCases = 0
             for (result in results) {

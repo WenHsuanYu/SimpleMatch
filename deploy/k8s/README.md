@@ -84,10 +84,11 @@ It cannot establish broader resilience or production HA.
 
 All three kind workers share the Docker daemon's memory pool. The 38 GiB reference in
 `overlays/local/resource-budget.json` is a planning value, not a current measurement.
-Gradle prerequisites read the selected daemon, check workload requests plus the existing runtime
-reserve, and check host-tool headroom separately. Host swap is not additional Docker guest RAM.
-The legacy aggregate warns without blocking when its calculator omits `--check`; that path remains
-only during the S5 cutover.
+The former Ruby resource-budget calculator and its standalone contract test are retired.
+They no longer check a rendered manifest against a host-memory threshold. Check current
+resource declarations with `./gradlew manifestCheck`. Verify runtime behavior with the
+selected `verifyKubernetes` scenario. Neither check certifies total host capacity.
+Host swap is not additional Docker guest RAM.
 
 The current local overlay has these declared memory stages:
 
@@ -116,11 +117,10 @@ Neither their sum nor an allocation-only observation proves simultaneous peak ca
 See the [Kubernetes resource model](https://v1-36.docs.kubernetes.io/docs/concepts/configuration/manage-resources-containers/).
 The base and promotion templates retain their separate production resource contract.
 
-The remaining calculator fixture checks run with `ruby scripts/test-local-resource-budget.rb`
-during cutover. They protect phase-budget calculation, malformed quantities, and init-container
-peaks. Frozen rendered-text snapshots and duplicate RM-1 profile checks were retired; current
-profile selection belongs to the Kubernetes tests and preflight. Resource decisions use the fresh
-structured budget rather than a second baseline of presentation text.
+The retired calculator checked phase sums, malformed quantities, and init-container peaks.
+Those standalone calculations no longer have an executable test owner. The live scenario
+still checks its selected workload behavior and its own resource constraints. This does
+not replace the retired host-capacity calculation.
 
 ### Local production-like version contract
 

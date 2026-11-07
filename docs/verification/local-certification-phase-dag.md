@@ -21,13 +21,12 @@ The selected 2026-11-06 Live result does not establish a final P6 `verifyAll` PA
 Older phase reports remain attributable to their original source, run, and image identities.
 The historical schema version 2 records `run-context`, `source-revision`,
 `phases/<phase-id>/result.json`, `evidence-manifest.json`, and image lock files.
-The retained `run-local-cdc-delivery-focused-diagnostic.sh` can validate only
-source-compatible legacy evidence, including exact historical CDC prerequisites,
-ownership, image locks and verifier signatures. P5b removed the original aggregate
-and changed the hashed runtime provenance. Therefore pre-P5b evidence is incompatible
-with the current code and intentionally fails closed. There is no current runner to
-produce a compatible legacy aggregate. This diagnostic is a historical validation
-tool, not a runnable continuation of a pre-P5b full-local run.
+The former `run-local-cdc-delivery-focused-diagnostic.sh` accepted only source-compatible
+legacy evidence. P5b removed the aggregate and changed its runtime provenance. No
+current runner produces compatible retained evidence. Issue #202 therefore retired the
+focused continuation and its separate Risk CDC observer. These commands are not available.
+`verifyCdc` retains exact publication and broker/connector recovery checks in Testcontainers.
+It does not verify the old Kubernetes Risk CDC lag/Actuator recovery or observer cleanup.
 
 ## Intentional coverage loss
 

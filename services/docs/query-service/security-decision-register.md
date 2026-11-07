@@ -91,7 +91,7 @@ decisions; all other D1–D5 and OD-01–OD-19 approval boundaries remain in for
   Spring Environment and Kubernetes configuration imports. It does not designate an identity
   policy source. The opt-in [rebuild controller](../../query-service/src/main/java/com/simplematch/queryservice/runtime/QueryProjectionRebuildController.java)
   uses its independent operator credential; that credential provides no ordinary read identity.
-- At that historical review, the [collector](../../../scripts/end-to-end/query-service/lib/evidence.sh)
+- At that historical review, the now-retired Shell collector `scripts/end-to-end/query-service/lib/evidence.sh`
   made unauthenticated loopback HTTP requests and expected sensitive Redis keys.
   Phase 1 later introduced synthetic grants and PostgreSQL-only reads. Issue #202
   retired the standalone Shell HTTP collector and placement observer after the
