@@ -14,7 +14,15 @@ the `resting-buy` Kubernetes scenario, and the S5 Shell inventory limits.
 dependency/Flyway tests, QuickFIX certification, and run-owned Kubernetes tests.
 The complete task requires the final Kubernetes report to record
 `status=PASS`, `assertions=PASS`, `diagnostics=PASS` and `cleanup=PASS`.
-The selected 2026-11-06 Live result does not establish a final P6 `verifyAll` PASS.
+The selected 2026-11-06 Live result is historical, not a substitute for P6.
+The fresh 2026-11-08 complete-local run against executable source commit
+`1a3fa704f37873acacab54415ce794171fd4456a` passed `verifyAll` in
+37m17s (194 Gradle tasks), including 81/81 Native CTest checks and the
+run-owned dedicated Kubernetes `resting-buy` scenario. Run
+`6364220d-c45a-43e2-9100-daf098e78046` records all four summary fields
+as `PASS` in `out/verification/kubernetes/7458c622-11ad-4cdd-8f83-69bc519582ef/summary.json`;
+the run-owned namespace was cleaned up. It does not certify production HA,
+other separately selected cluster modes, or the remaining S6 hosted CI scope.
 
 ## Historical evidence and focused diagnostics
 

@@ -70,8 +70,15 @@ This task selects the Java, static analysis, native CTest, Flyway/dependency,
 QuickFIX and run-owned Kubernetes `resting-buy` owners. Its `verifyAllScope`
 preflight requires an unchanged committed source tree, native
 `full-native-dev`, Kubernetes `resting-buy` and the S5 Shell limits.
-The 2026-11-06 R11–R22 selected Live PASS is source-bound evidence for
-that scenario. It does **not** establish P6 complete-local `verifyAll` PASS.
+The 2026-11-06 R11–R22 selected Live PASS remains historical and cannot
+substitute for final-source P6. A fresh complete-local `verifyAll` on
+`1a3fa704f37873acacab54415ce794171fd4456a` passed on 2026-11-08:
+37m17s, 194 Gradle tasks, 81/81 Native CTest checks and dedicated
+Kubernetes run `6364220d-c45a-43e2-9100-daf098e78046`. Evidence under
+`out/verification/kubernetes/7458c622-11ad-4cdd-8f83-69bc519582ef/`
+records `status`, `assertions`, `diagnostics` and `cleanup` as `PASS`;
+the run-owned namespace was removed. This proves the selected local scope,
+not production HA, independently selected cluster modes or hosted S6.
 
 The removed aggregate's independent Compose Kafka/PostgreSQL/Redis/Connect
 startup and fault phases are no longer selected. Neither are its local Kafka

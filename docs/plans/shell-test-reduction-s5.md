@@ -1624,3 +1624,67 @@ selected deleted Docker context `desktop-linux`, overriding the repository's
 `default` fallback. The current source rejects this setting during
 `verifyAllScope` and the documented invocation explicitly supplies
 `-PkubernetesDockerContext=default`. Do not count the first attempt as P6 PASS.
+
+## 2026-11-09 final S5 P6 evidence and handoff
+
+The earlier dates, counts, blocked attempts, and selected-only reports above
+remain historical. They are not retroactively upgraded. The complete-local
+acceptance for the final executable S5 source is the committed fix
+`1a3fa704f37873acacab54415ce794171fd4456a`, now delivered on `master`.
+The first complete attempt on `fa035bdc` failed inside the R11 PostgreSQL
+zero-Pod observer: one 20-second Matching `SIGSTOP` window included the FIX
+rejection, SQL, CDC/Kafka observations, PostgreSQL scale/delete, and Pod poll.
+`KubernetesCriticalDelivery` now uses two independent bounded pauses with
+an intermediate CDC-held SQL and unchanged command-offset check. The original
+20-second cap, owned SIGCONT, durable delivery oracles and cleanup are retained.
+Focused RED/GREEN regressions exercise deadline separation and failure
+restoration; no timeout was enlarged to obtain a passing run.
+
+The source-aligned complete invocation was:
+
+```shell
+./gradlew verifyAll --offline --no-daemon --console=plain --max-workers=2 -PnativePreset=full-native-dev -PkubernetesScenario=resting-buy -PkubernetesRetain=false -PkubernetesDockerContext=default
+```
+
+It returned exit code **0**, `BUILD SUCCESSFUL in 37m 17s`, with 194 Gradle
+tasks (55 executed, 139 up-to-date) and **81/81** Native CTest cases passing.
+The single required `RestingBuyKubernetesTest` JUnit report records one test,
+zero failures/errors/skips. Fresh dedicated-mode run
+`6364220d-c45a-43e2-9100-daf098e78046` stored evidence under
+`out/verification/kubernetes/7458c622-11ad-4cdd-8f83-69bc519582ef/`.
+Its `summary.json` states `status`, `assertions`, `diagnostics`, and `cleanup`
+all `PASS`; the run-owned namespace has been removed, while the canonical
+four-node kind cluster remains intact. `matching-pause.json` records
+`restored=true`; the same run contains both rejected and accepted FIX receipts,
+the durable fault facts, and the published Matching outage event.
+
+The immutable evidence input fingerprints are runtime
+`025ade2427eaa7bed00bc499a46bb9515662c9d7b742744947cc74a8c659c954`
+and Kubernetes verification
+`24efd110a5c83c0438c32740e180d29faaf889f284759328803d5cc901fabbd7`.
+`KubernetesSource` excludes `.md` files from both fingerprint sets. This dated
+documentation update does not alter executable inputs, task selection,
+acceptance semantics, or the tested source fingerprints; it does not require
+relabeling the recorded result or repeating deployment.
+
+The final tracked inventory is **34 `.sh` files / 6,895 newline-counted
+physical lines** (both below the 34-file / 6,984-line design target) and
+**zero `.py` / `.rb` files**. The exact baseline was 170 Shell files / 34,923
+lines. The P0–P5 retirement decisions and intentional lost checks are recorded
+above and in the phase-graph retirement contract; retained R11–R22 owners
+and their Gradle discovery appear in the P5b owner matrix and `verifyAll`.
+Source/skip/filter/retention negative gates fail closed. Current H2 tests and
+runtime dependencies have been retired; required SQL semantics use PostgreSQL.
+
+Both dedicated reuse and run-owned disposable creation/deletion are supported
+by the existing kind lifecycle implementation and test contracts; Issue #200
+records historical live disposable cleanup evidence. The above final-source
+37-minute run exercised the **dedicated** mode only; it is **not** a second
+final-source disposable full-Live result. No unsupported production HA,
+all-partition fault matrix, Kubernetes Connect reassignment, or production
+performance claim follows. The independent push-selected business CI,
+hosted resource budgets and final program-wide acceptance remain owned by
+Issue #203 rather than Issue #202. The post-fix GitHub CI runs for Java,
+CDC/Connect, and both local-resource jobs passed on the same executable
+source, and the GitHub PR was withdrawn in favor of a normal local-master
+fast-forward and push.
