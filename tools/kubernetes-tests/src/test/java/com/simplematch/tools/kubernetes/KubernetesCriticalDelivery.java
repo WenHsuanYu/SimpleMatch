@@ -17,6 +17,8 @@ import java.util.concurrent.TimeoutException;
 
 /** Holds one accepted order, proves actual fail-closed ingress, and recovers delivery after DB loss. */
 final class KubernetesCriticalDelivery implements AutoCloseable {
+  private record PublishedBoundary(long eventStart, long commandEnd) {}
+
   private final KubernetesBusinessEnvironment.PublicOrder context;
   private final KubernetesMatchingEvents events;
   private final Map<String, String> variables;
@@ -58,51 +60,73 @@ final class KubernetesCriticalDelivery implements AutoCloseable {
     final long start = end(held, "matchingCommands", partition);
     assertEquals(start, end(events.positions(), "matchingCommands", partition),
         "the accepted command must still be held before failure injection");
-    final JsonNode observed;
     final var target = context.target();
+    final PublishedBoundary boundary;
     try (var management = target.client().forward("pod/" + target.gatewayPod(), 8080,
-            fix.resolve("paused-management-forward.log"));
-        var matching = KubernetesMatchingPause.stop(context, partition)) {
-      pausedMatching = matching;
-      requirePausedIngress(fix, management.port());
-      Files.writeString(fix.resolve("reject-release"), "reject\n");
-      awaitFile(fix.resolve("rejected.json"), client);
-      assertEquals("8", json.readTree(fix.resolve("rejected.json").toFile()).path("execType").asText());
-      final var rejected = new HashMap<>(variables);
-      rejected.put("cl_ord_id", "REJ-" + variables.get("cl_ord_id"));
-      final String rejectionSql = "SELECT count(*) FROM risk_service.admission_journal "
-          + "WHERE account_id = :'account_id'::uuid AND cl_ord_id = :'cl_ord_id';";
-      assertEquals("0", postgres.execute(rejectionSql, rejected, remaining()).strip());
-      connectors.setState("risk-service-outbox", "RUNNING", remaining());
-      riskPaused = false;
-      long published;
-      do {
-        remaining();
-        published = end(events.positions(remaining()), "matchingCommands", partition);
-        if (published > start) {
-          break;
-        }
-        Thread.sleep(250);
-      } while (true);
-      final long eventStart = end(events.positions(remaining()), "matchingEvents", partition);
-      postgresStopped = true;
-      scalePostgres(0, remaining());
-      target.client().execute("", remaining(), "delete", "pod", "postgres-0", "--ignore-not-found",
-          "--grace-period=1", "--wait=false").checked();
-      do {
-        remaining();
-        if (postgresPods() == 0) {
-          break;
-        }
-        Thread.sleep(250);
-      } while (true);
-      matching.close();
-      observed = events.observeAccepted(admission, eventStart, "outage");
-      assertEquals(0, postgresPods(), "Matching must publish while PostgreSQL has no Pod");
-      final long input = observed.required("context").required("sourceInputOffset").asLong();
-      assertTrue(input >= start && input < published);
-      restorePostgres();
+        fix.resolve("paused-management-forward.log"))) {
+      boundary = KubernetesCriticalDeliveryPauses.run(
+          () -> KubernetesMatchingPause.stop(context, partition),
+          matching -> {
+            pausedMatching = matching;
+            try {
+              requirePausedIngress(fix, management.port());
+              Files.writeString(fix.resolve("reject-release"), "reject\n");
+              awaitFile(fix.resolve("rejected.json"), client);
+              assertEquals("8", json.readTree(fix.resolve("rejected.json").toFile())
+                  .path("execType").asText());
+            } finally {
+              pausedMatching = null;
+            }
+          },
+          () -> {
+            // CDC stays paused while Matching resumes: the held command cannot be consumed.
+            final var rejected = new HashMap<>(variables);
+            rejected.put("cl_ord_id", "REJ-" + variables.get("cl_ord_id"));
+            final String rejectionSql = "SELECT count(*) FROM risk_service.admission_journal "
+                + "WHERE account_id = :'account_id'::uuid AND cl_ord_id = :'cl_ord_id';";
+            assertEquals("0", postgres.execute(rejectionSql, rejected, remaining()).strip());
+            assertEquals(start, end(events.positions(remaining()), "matchingCommands", partition),
+                "CDC must not publish the held command between Matching pauses");
+          },
+          matching -> {
+            pausedMatching = matching;
+            try {
+              assertEquals(start, end(events.positions(remaining()), "matchingCommands", partition),
+                  "CDC must remain held when the second Matching pause begins");
+              connectors.setState("risk-service-outbox", "RUNNING", remaining());
+              riskPaused = false;
+              long published;
+              do {
+                remaining();
+                published = end(events.positions(remaining()), "matchingCommands", partition);
+                if (published > start) {
+                  break;
+                }
+                Thread.sleep(250);
+              } while (true);
+              final long beforeEvents = end(events.positions(remaining()), "matchingEvents", partition);
+              postgresStopped = true;
+              scalePostgres(0, remaining());
+              target.client().execute("", remaining(), "delete", "pod", "postgres-0",
+                  "--ignore-not-found", "--grace-period=1", "--wait=false").checked();
+              do {
+                remaining();
+                if (postgresPods() == 0) {
+                  break;
+                }
+                Thread.sleep(250);
+              } while (true);
+              return new PublishedBoundary(beforeEvents, published);
+            } finally {
+              pausedMatching = null;
+            }
+          });
     }
+    final JsonNode observed = events.observeAccepted(admission, boundary.eventStart(), "outage");
+    assertEquals(0, postgresPods(), "Matching must publish while PostgreSQL has no Pod");
+    final long input = observed.required("context").required("sourceInputOffset").asLong();
+    assertTrue(input >= start && input < boundary.commandEnd());
+    restorePostgres();
     final var durableVariables = new HashMap<>(variables);
     durableVariables.put("order_id", admission.required("orderId").asText());
     durableVariables.put("event_id", observed.required("eventId").asText());
