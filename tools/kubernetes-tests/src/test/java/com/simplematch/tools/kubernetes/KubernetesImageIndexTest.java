@@ -61,6 +61,43 @@ class KubernetesImageIndexTest {
   }
 
   @Test
+  void acceptsContainerdAttachedUnknownPlatformManifestBoundToTheRunnableManifest()
+      throws Exception {
+    // containerd may append a platform-less subject manifest during image-archive import.
+    final var content = Map.of(
+        ROOT, index(List.of(descriptor(IMAGE, "linux", "amd64"),
+            containerdAttachment(OTHER_IMAGE, IMAGE))),
+        IMAGE, manifest(CONFIG),
+        CONFIG, config("linux", "amd64"),
+        OTHER_IMAGE, manifest(OTHER_CONFIG),
+        OTHER_CONFIG, config("unknown", "unknown"));
+    assertEquals(CONFIG, KubernetesImageIndex.resolveConfig(ROOT, content::get));
+  }
+
+  @Test
+  void rejectsContainerdAttachmentsWithoutAValidSubjectOrNonRunnableConfig() {
+    final var unrelated = Map.of(
+        ROOT, index(List.of(descriptor(IMAGE, "linux", "amd64"),
+            containerdAttachment(OTHER_IMAGE, NESTED))),
+        IMAGE, manifest(CONFIG),
+        CONFIG, config("linux", "amd64"),
+        OTHER_IMAGE, manifest(OTHER_CONFIG),
+        OTHER_CONFIG, config("unknown", "unknown"));
+    assertThrows(IllegalStateException.class,
+        () -> KubernetesImageIndex.resolveConfig(ROOT, unrelated::get));
+
+    final var runnableAttachment = Map.of(
+        ROOT, index(List.of(descriptor(IMAGE, "linux", "amd64"),
+            containerdAttachment(OTHER_IMAGE, IMAGE))),
+        IMAGE, manifest(CONFIG),
+        CONFIG, config("linux", "amd64"),
+        OTHER_IMAGE, manifest(OTHER_CONFIG),
+        OTHER_CONFIG, config("linux", "amd64"));
+    assertThrows(IllegalStateException.class,
+        () -> KubernetesImageIndex.resolveConfig(ROOT, runnableAttachment::get));
+  }
+
+  @Test
   void rejectsUnverifiedUnlabelledContentEvenWhenAnotherImageIsValid() {
     final var content = Map.of(
         ROOT, index(List.of(descriptor(IMAGE, "linux", "amd64"), descriptor(OTHER_IMAGE))),
@@ -200,6 +237,11 @@ class KubernetesImageIndexTest {
   private static Map<String, Object> descriptor(String digest, String os, String architecture) {
     return Map.of("digest", digest, "mediaType", MANIFEST_TYPE,
         "platform", Map.of("os", os, "architecture", architecture));
+  }
+
+  private static Map<String, Object> containerdAttachment(String digest, String subject) {
+    return Map.of("digest", digest, "mediaType", MANIFEST_TYPE,
+        "annotations", Map.of("io.containerd.manifest.subject", subject));
   }
 
   private static JsonNode manifest(String configDigest) {

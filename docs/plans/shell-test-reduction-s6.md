@@ -221,6 +221,13 @@ content hashes, and image config identities. It rejects ambiguous or
 wrong-platform runnable manifests.
 The three Error Prone warnings in the selected Kubernetes tests are
 also addressed without suppressions.
+Separate read-only inspection of a **local** kind image showed one
+linux/amd64 manifest and one platform-less containerd attachment.
+The attachment used `io.containerd.manifest.subject` to name the
+runnable manifest. Its config reported `unknown/unknown`. This
+observation does not identify the missing hosted index bytes. A
+focused regression now requires that such an attachment have a valid
+subject and a non-runnable config before the verifier ignores it.
 
 ## P4: source-aligned acceptance pre-audit
 

@@ -1,6 +1,7 @@
 package com.simplematch.tools.kubernetes;
 
 import com.fasterxml.jackson.databind.JsonNode;
+import java.util.ArrayList;
 import java.util.HashSet;
 import java.util.LinkedHashMap;
 import java.util.Map;
@@ -13,7 +14,7 @@ final class KubernetesImageIndex {
   private static final Set<String> INDEX_TYPES = Set.of(
       "application/vnd.oci.image.index.v1+json",
       "application/vnd.docker.distribution.manifest.list.v2+json");
-  private static final Set<String> MANIFEST_TYPES = Set.of(
+  static final Set<String> MANIFEST_TYPES = Set.of(
       "application/vnd.oci.image.manifest.v1+json",
       "application/vnd.docker.distribution.manifest.v2+json");
   private static final Set<String> CONFIG_TYPES = Set.of(
@@ -82,10 +83,27 @@ final class KubernetesImageIndex {
         throw new IllegalStateException("workload index has no valid manifest descriptors");
       }
       final Map<String, String> candidates = new LinkedHashMap<>();
+      final var attachments = new ArrayList<JsonNode>();
       for (var descriptor : index.path("manifests")) {
-        candidates.putAll(visitDescriptor(descriptor, requiredAmd64, depth));
+        requireDescriptorType(descriptor.path("mediaType").asText());
+        if (KubernetesImageAttachment.hasSubject(descriptor)) {
+          attachments.add(descriptor);
+        } else {
+          candidates.putAll(visitDescriptor(descriptor, requiredAmd64, depth));
+        }
+      }
+      for (var attachment : attachments) {
+        verifyContainerdAttachment(attachment, candidates, depth);
       }
       return candidates;
+    }
+
+    private void verifyContainerdAttachment(JsonNode descriptor,
+        Map<String, String> candidates, int depth) throws Exception {
+      KubernetesImageAttachment.requireSubject(descriptor, candidates);
+      final JsonNode manifest = load(descriptor.path("digest").asText(), depth + 1);
+      KubernetesImageAttachment.requireManifest(descriptor, manifest);
+      KubernetesImageAttachment.requireUnknownConfig(loadImageConfig(manifest, depth + 1));
     }
 
     private Map<String, String> visitDescriptor(JsonNode descriptor, boolean requiredAmd64,
@@ -152,7 +170,7 @@ final class KubernetesImageIndex {
     return !value.isBlank() && !"unknown".equals(value);
   }
 
-  private static void requireSchema(JsonNode document, Set<String> types) {
+  static void requireSchema(JsonNode document, Set<String> types) {
     if (document.path("schemaVersion").asInt(-1) != 2
         || !types.contains(document.path("mediaType").asText())) {
       throw new IllegalStateException("unsupported workload image content schema");
