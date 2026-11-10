@@ -39,6 +39,14 @@ else listOf("account-service", "risk-service")
 // Local verification uses the Native Docker Engine. Do not inherit a stale
 // Docker Desktop context from a shell or an earlier workstation session.
 val dockerContext = providers.gradleProperty("kubernetesDockerContext").orElse("default")
+// Only an explicit local opt-in changes BuildKit RUN networking. Hosted CI uses its default.
+val dockerBuildNetwork = providers.gradleProperty("kubernetesBuildNetwork").orElse("default").get()
+require(dockerBuildNetwork in setOf("default", "host")) {
+    "Unsupported Kubernetes Docker build network"
+}
+require(dockerBuildNetwork != "host" || dockerContext.get() == "default") {
+    "Host build networking requires Native Docker context default"
+}
 
 tasks.withType<Test>().configureEach {
     systemProperty("verificationRepoRoot", rootProject.projectDir.absolutePath)
@@ -135,7 +143,9 @@ fun dockerBuild(name: String, arguments: List<String>): TaskProvider<Exec> {
         workingDir(rootProject.projectDir)
         executable = "docker"
         argumentProviders.add(CommandLineArgumentProvider {
-            listOf("--context", dockerContext.get(), "build") + arguments + "."
+            listOf("--context", dockerContext.get(), "build") +
+                (if (dockerBuildNetwork == "host") listOf("--network", "host") else emptyList()) +
+                arguments + "."
         })
     }
     previous = task

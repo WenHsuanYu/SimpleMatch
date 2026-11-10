@@ -244,6 +244,15 @@ the profile mismatch. The Gradle run properties now include the selected
 scenario for both the build-input verifier and Jupiter. The failed
 invocation does not establish a complete-local PASS. A fresh source-bound
 `verifyAll` result is required after this correction.
+Two later complete-local attempts on source `8f6224aa` failed in the
+Flyway runner Docker image build, before Kubernetes deployment. Its Gradle
+Wrapper could not resolve `services.gradle.org`. A minimal Docker build
+reproduced the DNS failure under default BuildKit networking, while the
+same lookup succeeded in ordinary `docker run` and in a Docker build with
+`--network=host`. The workstation can select this proven local workaround
+with `-PkubernetesBuildNetwork=host`. Hosted CI retains default build
+networking; the opt-in does not alter business assertions or eliminate the
+need for a new full-local four-field PASS.
 
 ## P4: source-aligned acceptance pre-audit
 
