@@ -79,7 +79,7 @@ jobs:
   risk-command:
     name: Risk admission / durable outbox / Kafka (disposable kind)
     runs-on: ubuntu-24.04
-    timeout-minutes: 60
+    timeout-minutes: 80
     steps:
       - name: Checkout
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -144,7 +144,7 @@ jobs:
           ) >> "$metrics/host-samples.csv" 2>/dev/null &
           sampler_pid=$!
           trap 'kill "$sampler_pid" 2>/dev/null || true' EXIT
-          timeout --signal=TERM --kill-after=240s 45m \
+          timeout --signal=TERM --kill-after=240s 65m \
             ./gradlew verifyKubernetes --no-daemon --console=plain --stacktrace --max-workers=2 \
               -PkubernetesScenario=risk-command \
               -PkubernetesMode=disposable \
@@ -223,6 +223,9 @@ jobs:
             out/verification/kubernetes/ci-${{ github.run_id }}-${{ github.run_attempt }}/preflight.json
             out/verification/kubernetes/ci-${{ github.run_id }}-${{ github.run_attempt }}/image-identities.json
             out/verification/kubernetes/ci-${{ github.run_id }}-${{ github.run_attempt }}/image-import.log
+            out/verification/kubernetes/ci-${{ github.run_id }}-${{ github.run_attempt }}/kafka-topic-provisioning-job.json
+            out/verification/kubernetes/ci-${{ github.run_id }}-${{ github.run_attempt }}/kafka-topic-provisioning-pods.json
+            out/verification/kubernetes/ci-${{ github.run_id }}-${{ github.run_attempt }}/kafka-topic-provisioning-*.log
             out/verification/kubernetes/ci-${{ github.run_id }}-${{ github.run_attempt }}/diagnostics-*.json
             out/verification/kubernetes/ci-${{ github.run_id }}-${{ github.run_attempt }}/diagnostics-*.log
             out/verification/kubernetes/ci-${{ github.run_id }}-${{ github.run_attempt }}/setup-node-*.log

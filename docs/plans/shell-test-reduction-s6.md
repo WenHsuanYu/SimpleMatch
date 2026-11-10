@@ -121,14 +121,14 @@ It installs checksum-verified kind and kubectl binaries, uses Native Docker
 `default`, constructs run-attempt-specific image tags and evidence paths,
 and leaves `kubernetesRetain=false`. It binds image content to current
 source and Docker identities through existing Gradle and Jupiter owners.
-The job has a 60-minute hard budget and a 45-minute Gradle command budget,
+The job has an 80-minute hard budget and a 65-minute Gradle command budget,
 with up to four further minutes for graceful diagnostic and cleanup handling.
 On failure, it invokes the existing `cleanupKubernetesRun` only when a
 run-owned `ownership.json` exists. That separate cleanup has a five-minute
 budget and validates recorded daemon and Kubernetes identities. It does not
 change the original business verdict. Forced runner termination can still
 prevent the step from running. This bounds the worst-case Gradle attempt
-and cleanup to 54 minutes 45 seconds, reserving the rest of the job budget
+and cleanup to 74 minutes 45 seconds, reserving the rest of the job budget
 for setup, evidence collection and artifact upload.
 It requires the existing Kubernetes `status`, `assertions`, `diagnostics`,
 and `cleanup` summary fields to all equal `PASS`. A missing or failed
@@ -176,6 +176,35 @@ same package after `apt-get update`. Repository propagation is plausible
 but not proven. A second hosted attempt was requested on unchanged source.
 Preserve each attempt's actual outcome and evidence independently.
 
+The final P3 SHA `f263ce42` failed in
+[hosted run 42851141586](https://github.com/WenHsuanYu/SimpleMatch/actions/runs/42851141586)
+after all images were built. Its disposable Kubernetes run
+`0d7fe55d-ca4a-43b5-b273-4438253e6316` recorded
+`status=FAIL`, `assertions=FAIL`, `diagnostics=PASS` and
+`cleanup=PASS`. The `kafka-topic-provisioning` Job had one Pod
+terminate with exit code 1 and reached `BackoffLimitExceeded`.
+Kafka's three broker Pods remained Running, and the Account and Risk
+Flyway Jobs succeeded. The independent ownership-bound cleanup also
+returned PASS with the original target already absent. These facts do
+not establish the topic Job's internal error: the original artifact
+allowlist omitted its separately redacted Job log and Job/Pod records.
+The next workflow revision includes only those specific Job diagnostics,
+without changing the business assertions or deployment inputs.
+The original 45-minute Gradle limit left insufficient room for the
+business checks after the 43-minute failed setup. The workflow raises
+the finite Gradle limit to 65 minutes and the job limit to 80 minutes,
+leaving 5 minutes 15 seconds for setup and artifact collection after
+the maximum four-minute termination grace and five-minute
+45-second ownership recovery allowance.
+
+The failed hosted execution provides a measured **host-level** envelope:
+175 samples over 43.57 minutes, mean interval CPU busy fraction 44.7%
+(maximum 78.7%), minimum `MemAvailable` 10.88 GiB, and minimum
+Docker/workspace available space 35.53 GiB. These metrics do not prove
+per-container CPU, memory or image-transfer usage. Host network interface
+counts can decrease as kind interfaces disappear, so host network
+counter differences are not a reliable image-transfer measurement.
+
 ## P4: source-aligned acceptance pre-audit
 
 The file-level diff from complete-local source `1a3fa704` through the
@@ -199,8 +228,9 @@ issue handoff require a final review; an incomplete retained check
 cannot be recorded as an intentional retirement or PASS.
 
 This is a **selection and workflow contract**, not hosted PASS evidence.
-The standard runner's actual CPU, peak memory, disk, wall time, and image
-transfer envelope have not been measured. The risk-command build currently
+One failed hosted run now supplies host-level pressure and duration
+measurements, but no successful business verdict, per-container peak
+or exact image-transfer bytes. The risk-command build currently
 also builds the native Matching image to bind the open-barrier digest; its
 build costs cannot be estimated from the smaller 8 GiB steady Kubernetes
 request alone. Record the actual GitHub run conclusion and resource evidence
