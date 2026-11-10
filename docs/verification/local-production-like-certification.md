@@ -11,10 +11,11 @@ later staging/production instructions define the environment and promotion templ
 must supply and execute separately. Selected-scenario or focused diagnostic results retain their
 own scope and cannot substitute for an aggregate `full-local` PASS.
 
-For the tested source, aggregate manifest and separately recorded public-interface/recovery
-results of the replacement current baseline, read
-[Current development verification](current-local-certification.md). This runbook owns the procedure;
-the result record owns the dated outcome and evidence boundary.
+For the 2026-10-20 historical development baseline, aggregate manifest, and
+public-interface/recovery results, read
+[Current development verification](current-local-certification.md). The
+[final S5 P6 record](../plans/shell-test-reduction-s5.md#2026-11-09-final-s5-p6-evidence-and-handoff)
+owns the latest complete-local result. This runbook owns the procedure.
 
 For availability and consistency of retained historical records, read the
 [2026-10-18 evidence audit](local-certification-evidence-audit.md). It distinguishes a complete
@@ -143,9 +144,11 @@ trading day and trading session:
 
 ## Verification already completed or reconfirmed
 
-The following table preserves historical verification dates and sources. Use the
-[current certification record](current-local-certification.md) for the replacement current
-baseline; these older rows do not imply that every command was rerun for its tested source.
+The following table preserves historical verification dates and sources. The
+[2026-10-20 development record](current-local-certification.md) also remains
+historical. See the [final S5 P6 record](../plans/shell-test-reduction-s5.md#2026-11-09-final-s5-p6-evidence-and-handoff)
+for the latest complete-local result. These older rows do not imply that
+every command was rerun for its tested source.
 
 The table combines evidence recorded on 2026-08-12 with native checks reconfirmed on 2026-08-14;
 rows that were not rerun retain their original date and boundary.

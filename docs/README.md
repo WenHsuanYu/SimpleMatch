@@ -58,12 +58,12 @@
 | Risk → Account reservation | [Account v2 live verification](verification/account-reservation-v2-live-verification.md)：跨 gRPC、Account、DB 與 outbox 的本機驗收程序。 |
 | Risk → Matching 與 replay | [Risk-to-Matching deployed E2E](verification/risk-matching-command-e2e.md)：保留公開命令與實際 Kafka delivery；Risk／Kafka Connect 聯合重啟後的 equivalent replay 舊 operator 已依 [S5 範圍決策](plans/shell-test-reduction-s5.md)退役，不視為目前部署測試的證明。 |
 | CDC publication | [Risk／Account CDC verification](verification/cdc-publication-verification.md)：應用交易與 Connect／Kafka 觀察的證據分層、retained evidence 與共用觀察介面。 |
-| Critical Matching Event consumers | [Repository verification 紀錄](verification/critical-matching-event-consumer-verification.md)、[現行 S5 驗證範圍](plans/shell-test-reduction-s5.md)：服務層 durable restart、`verifyKubernetes` 真實 PostgreSQL 故障／恢復，以及同一情境新增的 Persistence 單 Pod 進度恢復檢查。舊的多 Pod／Kafka 無流量重啟矩陣已退役，新檢查仍待 P6 實際部署驗收。 |
+| Critical Matching Event consumers | [Repository verification 紀錄](verification/critical-matching-event-consumer-verification.md)、[S5 最終驗收](plans/shell-test-reduction-s5.md#2026-11-09-final-s5-p6-evidence-and-handoff)：服務層 durable restart、`verifyKubernetes` 真實 PostgreSQL 故障／恢復及 Persistence 單 Pod 進度恢復。最終可執行來源 `1a3fa704` 的完整 P6 已於 2026-11-08 PASS；舊多 Pod／Kafka 無流量重啟矩陣仍屬刻意退役範圍。 |
 | Gateway admission 與 FIX 整合 | [Gateway admission](verification/gateway-admission-verification.md)：目前契約、驗證方式與有日期的證據；[QuickFIX/J integration evidence](verification/quickfixj-integration-evidence.md)：repository 內 FIX simulator 的整合驗證。 |
 | Query 與 runtime market data | [Query certification](verification/query-service-certification.md)、[Market-data projection certification](verification/runtime-market-data-projection-certification.md)：各自公開介面的本機部署驗收。 |
-| 已退役的 Shell aggregate | [歷史 phase graph 與證據界線](verification/local-certification-phase-dag.md)、[保留的 focused helper](verification/local-certification-phase-dag-implementation.md)、[歷史重用量測](verification/local-certification-reuse-measurement.md)。 |
-| 目前開發環境的驗證與吞吐量 | [Current development verification](verification/current-local-certification.md)：集中列出已測 source、完整 aggregate manifest、各項公開介面／復原情境 verdict、吞吐量實測、環境事件與證據邊界。 |
-| 歷史認證證據的可用性 | [Evidence audit](verification/local-certification-evidence-audit.md)：2026-10-18 歷史查核快照，區分 r13 完整歷史紀錄、r14 無法確認的整體完成狀態，以及原始檔缺失的引用；目前版本的驗證基線改由上列 Current local certification 記錄。 |
+| 已退役的 Shell aggregate | [歷史 phase graph 與證據界線](verification/local-certification-phase-dag.md)、[已退役的執行框架與 focused helper](verification/local-certification-phase-dag-implementation.md)、[歷史重用量測](verification/local-certification-reuse-measurement.md)。 |
+| 2026-10-20 歷史開發驗證與吞吐量 | [Current development verification（歷史紀錄）](verification/current-local-certification.md)：保留當時的 source、aggregate manifest、公開介面與復原 verdict，以及吞吐量量測。現行完整本地驗收以 [S5 P6 紀錄](plans/shell-test-reduction-s5.md#2026-11-09-final-s5-p6-evidence-and-handoff) 為準；[S6 CI 選擇與責任對照](plans/shell-test-reduction-s6.md) 說明尚未完成的 hosted 驗收。 |
+| 歷史認證證據的可用性 | [Evidence audit](verification/local-certification-evidence-audit.md)：2026-10-18 歷史查核快照，區分 r13 完整歷史紀錄、r14 無法確認的整體完成狀態，以及原始檔缺失的引用；這些歷史來源的結果不代表現行 source 的 PASS。 |
 | Schema 修改與當時驗證 | [Cleanup record](verification/schema-contract-cleanup-record.md)、[Follow-up record](verification/schema-contract-followup-record.md)、[Hardening record](verification/schema-contract-hardening-record.md)：不同來源批次的 schema 決策與檢查紀錄。 |
 
 ### 能力狀態與演進計畫

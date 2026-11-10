@@ -1,8 +1,10 @@
 # Local Certification Evidence Audit
 
-**Historical audit, as of 2026-10-18.** For the replacement current verification baseline, read
-[Current development verification](current-local-certification.md). The original r13/r14 findings below
-remain unchanged; the new run cannot retroactively complete a historical run.
+**Historical audit, as of 2026-10-18.** The
+[2026-10-20 development record](current-local-certification.md) remains historical.
+The [final S5 P6 result](../plans/shell-test-reduction-s5.md#2026-11-09-final-s5-p6-evidence-and-handoff)
+records the latest complete-local verification. The original r13/r14 findings
+below remain unchanged; a later run cannot retroactively complete a historical run.
 
 Audit date: **2026-10-18**. Repository snapshot: `593c127cea5ae28e7561e8c011ad4f49940f8bd5`.
 This record reconciles historical evidence available in this workspace. It does not execute

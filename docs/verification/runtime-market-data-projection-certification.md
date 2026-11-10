@@ -98,8 +98,11 @@ delivery.
 
 ## Latest retained result
 
-The dated result below is historical. The replacement current baseline and its separately recorded
-market-data verdict are linked from [Current development verification](current-local-certification.md).
+The dated result below is historical. The 2026-10-20 development baseline and
+its separately recorded market-data verdict are in
+[Current development verification](current-local-certification.md).
+The [final S5 P6 result](../plans/shell-test-reduction-s5.md#2026-11-09-final-s5-p6-evidence-and-handoff)
+records the latest complete-local verification.
 
 The local production-like run on 2026-08-27 passed for source revision
 `10ba747c1ce8abd474468cd1b77042ebd1eaf505` and immutable projection image digest
