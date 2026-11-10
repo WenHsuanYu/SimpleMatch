@@ -27,6 +27,7 @@ on:
       - 'build-logic/**'
       - 'build.gradle.kts'
       - 'settings.gradle.kts'
+      - 'settings-gradle.lockfile'
       - 'gradle.properties'
       - 'gradlew'
       - 'config/**'
@@ -57,6 +58,7 @@ on:
       - 'build-logic/**'
       - 'build.gradle.kts'
       - 'settings.gradle.kts'
+      - 'settings-gradle.lockfile'
       - 'gradle.properties'
       - 'gradlew'
       - 'config/**'
@@ -122,7 +124,7 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          timeout --signal=TERM --kill-after=60s 55m \
+          timeout --signal=TERM --kill-after=240s 52m \
             ./gradlew verifyKubernetes --no-daemon --console=plain --stacktrace --max-workers=2 \
               -PkubernetesScenario=risk-command \
               -PkubernetesMode=disposable \

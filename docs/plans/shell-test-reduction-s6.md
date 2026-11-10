@@ -121,7 +121,8 @@ It installs checksum-verified kind and kubectl binaries, uses Native Docker
 `default`, constructs run-attempt-specific image tags and evidence paths,
 and leaves `kubernetesRetain=false`. It binds image content to current
 source and Docker identities through existing Gradle and Jupiter owners.
-The job has a 60-minute hard budget and a 55-minute Gradle command budget.
+The job has a 60-minute hard budget and a 52-minute Gradle command budget,
+with up to four further minutes for graceful diagnostic and cleanup handling.
 It requires the existing Kubernetes `status`, `assertions`, `diagnostics`,
 and `cleanup` summary fields to all equal `PASS`. A missing or failed
 summary cannot pass the step. Jupiter reports remain in the CI job workspace;
@@ -132,8 +133,9 @@ payloads are not uploaded because test output can contain sensitive details.
 The workflow uses identical push and PR path filters for services, shared
 contracts, Gradle, native/Matching build inputs, test owners, container
 builds, Kubernetes manifests, configuration and necessary Shell operators.
-A documentation-only commit does not trigger the expensive job. Concurrent
-invocations on the same ref queue instead of cancelling an active cluster.
+A documentation-only commit does not trigger the expensive job. Concurrency
+does not cancel a running cluster. GitHub keeps at most one pending run for
+the same ref and can replace an older pending run with a newer request.
 The existing run-owned verifier diagnoses before cleanup and refuses to
 adopt an old disposable cluster. GitHub cancellation and hard process-kill
 cleanup still require the explicit P3 failure-path audit.
