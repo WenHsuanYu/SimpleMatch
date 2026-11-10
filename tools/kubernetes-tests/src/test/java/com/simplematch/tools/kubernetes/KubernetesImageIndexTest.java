@@ -54,10 +54,34 @@ class KubernetesImageIndexTest {
         ROOT, index(List.of(descriptor(IMAGE, "linux", "amd64"), Map.of(
             "digest", OTHER_IMAGE,
             "mediaType", MANIFEST_TYPE,
-            "annotations", Map.of("vnd.docker.reference.type", "attestation-manifest")))),
+            "annotations", Map.of("vnd.docker.reference.type", "attestation-manifest",
+                "vnd.docker.reference.digest", IMAGE)))),
+        IMAGE, manifest(CONFIG),
+        CONFIG, config("linux", "amd64"),
+        OTHER_IMAGE, manifest(OTHER_CONFIG),
+        OTHER_CONFIG, config("unknown", "unknown"));
+    assertEquals(CONFIG, KubernetesImageIndex.resolveConfig(ROOT, content::get));
+  }
+
+  @Test
+  void rejectsDockerAttestationLabelsThatHideRunnableOrUnverifiedImages() {
+    final var runnable = Map.of(
+        ROOT, index(List.of(descriptor(IMAGE, "linux", "amd64"),
+            dockerAttestation(OTHER_IMAGE, IMAGE))),
+        IMAGE, manifest(CONFIG),
+        CONFIG, config("linux", "amd64"),
+        OTHER_IMAGE, manifest(OTHER_CONFIG),
+        OTHER_CONFIG, config("linux", "amd64"));
+    assertThrows(IllegalStateException.class,
+        () -> KubernetesImageIndex.resolveConfig(ROOT, runnable::get));
+
+    final var missingContent = Map.of(
+        ROOT, index(List.of(descriptor(IMAGE, "linux", "amd64"),
+            dockerAttestation(OTHER_IMAGE, IMAGE))),
         IMAGE, manifest(CONFIG),
         CONFIG, config("linux", "amd64"));
-    assertEquals(CONFIG, KubernetesImageIndex.resolveConfig(ROOT, content::get));
+    assertThrows(IllegalStateException.class,
+        () -> KubernetesImageIndex.resolveConfig(ROOT, missingContent::get));
   }
 
   @Test
@@ -242,6 +266,12 @@ class KubernetesImageIndexTest {
   private static Map<String, Object> containerdAttachment(String digest, String subject) {
     return Map.of("digest", digest, "mediaType", MANIFEST_TYPE,
         "annotations", Map.of("io.containerd.manifest.subject", subject));
+  }
+
+  private static Map<String, Object> dockerAttestation(String digest, String subject) {
+    return Map.of("digest", digest, "mediaType", MANIFEST_TYPE,
+        "annotations", Map.of("vnd.docker.reference.type", "attestation-manifest",
+            "vnd.docker.reference.digest", subject));
   }
 
   private static JsonNode manifest(String configDigest) {

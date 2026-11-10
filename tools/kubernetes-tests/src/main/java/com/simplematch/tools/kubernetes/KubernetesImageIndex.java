@@ -110,7 +110,7 @@ final class KubernetesImageIndex {
         int depth) throws Exception {
       final String type = descriptor.path("mediaType").asText();
       requireDescriptorType(type);
-      if (isAttestation(descriptor) || !selectedPlatform(descriptor)) {
+      if (!selectedPlatform(descriptor)) {
         return Map.of();
       }
       final boolean branchRequired = requiredAmd64 || declaredAmd64(descriptor);
@@ -126,10 +126,7 @@ final class KubernetesImageIndex {
       requireSchema(manifest, MANIFEST_TYPES);
       if ("application/vnd.docker.attestation.manifest.v1+json".equals(
           manifest.path("artifactType").asText())) {
-        if (requiredAmd64) {
-          throw new IllegalStateException("runnable image manifest is an attestation");
-        }
-        return Map.of();
+        throw new IllegalStateException("image attestation has no verified runnable subject");
       }
       final JsonNode config = loadImageConfig(manifest, depth);
       if (!validatedAmd64(config, requiredAmd64)) {
@@ -175,18 +172,6 @@ final class KubernetesImageIndex {
         || !types.contains(document.path("mediaType").asText())) {
       throw new IllegalStateException("unsupported workload image content schema");
     }
-  }
-
-  private static boolean isAttestation(JsonNode descriptor) {
-    if (!"attestation-manifest".equals(descriptor.path("annotations")
-        .path("vnd.docker.reference.type").asText())) {
-      return false;
-    }
-    if (!MANIFEST_TYPES.contains(descriptor.path("mediaType").asText())
-        || declaredAmd64(descriptor)) {
-      throw new IllegalStateException("runnable workload image marked as attestation");
-    }
-    return true;
   }
 
   private static boolean selectedPlatform(JsonNode descriptor) {

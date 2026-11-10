@@ -8,16 +8,29 @@ final class KubernetesImageAttachment {
   private KubernetesImageAttachment() {}
 
   static boolean hasSubject(JsonNode descriptor) {
-    return descriptor.path("annotations").has("io.containerd.manifest.subject");
+    return descriptor.path("annotations").has("io.containerd.manifest.subject")
+        || "attestation-manifest".equals(descriptor.path("annotations")
+            .path("vnd.docker.reference.type").asText());
   }
 
   static void requireSubject(JsonNode descriptor, Map<String, String> candidates) {
-    final String subject = descriptor.path("annotations")
-        .path("io.containerd.manifest.subject").asText();
+    final String subject = referencedSubject(descriptor);
     if (!KubernetesImageIndex.MANIFEST_TYPES.contains(descriptor.path("mediaType").asText())
         || !unlabelledPlatform(descriptor) || !candidates.containsKey(subject)) {
       throw new IllegalStateException("containerd attachment has no verified runnable subject");
     }
+  }
+
+  private static String referencedSubject(JsonNode descriptor) {
+    final var annotations = descriptor.path("annotations");
+    final boolean containerd = annotations.has("io.containerd.manifest.subject");
+    final boolean docker = "attestation-manifest".equals(
+        annotations.path("vnd.docker.reference.type").asText());
+    if (containerd && docker) {
+      throw new IllegalStateException("image attachment has two conflicting subject markers");
+    }
+    return annotations.path(containerd ? "io.containerd.manifest.subject"
+        : "vnd.docker.reference.digest").asText();
   }
 
   static void requireManifest(JsonNode descriptor, JsonNode manifest) {

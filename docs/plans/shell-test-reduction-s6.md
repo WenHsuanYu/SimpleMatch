@@ -228,6 +228,10 @@ runnable manifest. Its config reported `unknown/unknown`. This
 observation does not identify the missing hosted index bytes. A
 focused regression now requires that such an attachment have a valid
 subject and a non-runnable config before the verifier ignores it.
+The same validation now applies to Docker attestation descriptors.
+An attestation label alone cannot exclude a second runnable manifest.
+The verifier requires a verified runnable subject and an
+`unknown/unknown` config before excluding the attached content.
 
 ## P4: source-aligned acceptance pre-audit
 
