@@ -57,9 +57,10 @@ remain distinct from the R11-R22 deployed business assertions:
 The smaller `risk-command` live owner is `RiskCommandKubernetesTest` through
 `verifyKubernetes -PkubernetesScenario=risk-command`. It checks accepted Risk
 admission, durable outbox identity and exact Kafka payload bytes. It does not
-run Matching, the public FIX Gateway or Query. S6 P2 may select it in a
-disposable hosted kind job after measuring its actual resource requirements.
-It must not be labeled as R11-R19 or full-local certification.
+run Matching, the public FIX Gateway or Query. S6 P2 selects it in a
+disposable hosted kind job. It must not be labeled as R11-R19 or full-local
+certification. Hosted feasibility and complete outcome remain subject to
+the actual selected job run and P3 resource measurements.
 
 ## P0: retirement and remaining Shell responsibilities
 
@@ -94,6 +95,7 @@ The P1 changes add no business logic, interpreter program or test implementation
 | `ci-flyway.yml` | Dependency contracts and `verifyPostgres` | Push, PR and manual for database-owning services, SQL fixtures and Gradle infrastructure. Includes Projection already. |
 | `ci-native.yml` | Native CMake build and CTest | Push, PR and manual for Matching, CMake, protocol and native fixtures. |
 | `ci-local-resource-lifecycle.yml` | Existing Shell utility contracts and kind registry/resource smoke | PR and manual only. P1 bounds the `contracts` job. Neither job executes a deployed business scenario. |
+| `ci-business-kind.yml` | Existing `verifyKubernetes` → `RiskCommandKubernetesTest` | P2 selects the deployed Risk/Account/outbox/Kafka scenario on push, PR and manual dispatch; source and shared build/deployment inputs are included. The runner has an isolated disposable kind cluster. No other deployed scenario is claimed. |
 | `dependency-submission.yml` | Dependency graph submission | Push and manual; it is not a business assertion owner. |
 
 The current service, dependency and native workflows already run separately.
@@ -103,6 +105,47 @@ therefore makes complete hosted CI optional. P2 must add push-selected focused
 business kind coverage through the existing Gradle owner. Source, shared
 infrastructure, workflow and test changes must trigger all affected retained
 selected suites. P2 must test its final path filters on GitHub.
+
+## P2: selected hosted business kind execution
+
+The new [focused business workflow](../../.github/workflows/ci-business-kind.yml)
+reuses the Gradle test owner and the existing `RiskCommandKubernetesTest` without
+introducing another business assertion, Shell scenario, CI reporter or test
+framework. Its selected scope is Risk admission → durable PostgreSQL outbox →
+Kafka Connect publication and byte-exact Kafka record. This is independent
+of the existing Java, Native, Flyway and CDC jobs, and narrower than the
+`resting-buy` complete-local test.
+
+The job uses a GitHub-hosted Ubuntu runner and `kubernetesMode=disposable`.
+It installs checksum-verified kind and kubectl binaries, uses Native Docker
+`default`, constructs run-attempt-specific image tags and evidence paths,
+and leaves `kubernetesRetain=false`. It binds image content to current
+source and Docker identities through existing Gradle and Jupiter owners.
+The job has a 60-minute hard budget and a 55-minute Gradle command budget.
+It requires the existing Kubernetes `status`, `assertions`, `diagnostics`,
+and `cleanup` summary fields to all equal `PASS`. A missing or failed
+summary cannot pass the step. Jupiter reports remain in the CI job workspace;
+the uploaded artifact is limited to the source/image preflight, final summary,
+and selected redacted diagnostic files. Raw JUnit XML/HTML and business
+payloads are not uploaded because test output can contain sensitive details.
+
+The workflow uses identical push and PR path filters for services, shared
+contracts, Gradle, native/Matching build inputs, test owners, container
+builds, Kubernetes manifests, configuration and necessary Shell operators.
+A documentation-only commit does not trigger the expensive job. Concurrent
+invocations on the same ref queue instead of cancelling an active cluster.
+The existing run-owned verifier diagnoses before cleanup and refuses to
+adopt an old disposable cluster. GitHub cancellation and hard process-kill
+cleanup still require the explicit P3 failure-path audit.
+
+This is a **selection and workflow contract**, not hosted PASS evidence.
+The standard runner's actual CPU, peak memory, disk, wall time, and image
+transfer envelope have not been measured. The risk-command build currently
+also builds the native Matching image to bind the open-barrier digest; its
+build costs cannot be estimated from the smaller 8 GiB steady Kubernetes
+request alone. Record the actual GitHub run conclusion and resource evidence
+before accepting AC-10. Any subsequent executable build-graph reduction
+requires fresh source-aligned complete-local evidence.
 
 ## P0 handoff against AC-01 through AC-12
 

@@ -1,0 +1,157 @@
+name: Focused Business Kubernetes CI
+
+on:
+  push:
+    branches:
+      - master
+      - main
+    paths:
+      - '.github/workflows/ci-business-kind.yml'
+      - '.github/actions/setup-java-gradle/**'
+      - '.dockerignore'
+      - 'CMakeLists.txt'
+      - 'CMakePresets.json'
+      - 'vcpkg.json'
+      - 'vcpkg-configuration.json'
+      - 'triplets/**'
+      - 'third_party/**'
+      - 'src/**'
+      - 'include/**'
+      - 'tests/**'
+      - 'matching-engine/**'
+      - 'proto/**'
+      - 'shared-java/**'
+      - 'services/**'
+      - 'tools/**'
+      - 'gradle/**'
+      - 'build-logic/**'
+      - 'build.gradle.kts'
+      - 'settings.gradle.kts'
+      - 'gradle.properties'
+      - 'gradlew'
+      - 'config/**'
+      - 'deploy/k8s/**'
+      - 'deploy/kind/**'
+      - 'deploy/docker/**'
+      - 'scripts/**'
+  pull_request:
+    paths:
+      - '.github/workflows/ci-business-kind.yml'
+      - '.github/actions/setup-java-gradle/**'
+      - '.dockerignore'
+      - 'CMakeLists.txt'
+      - 'CMakePresets.json'
+      - 'vcpkg.json'
+      - 'vcpkg-configuration.json'
+      - 'triplets/**'
+      - 'third_party/**'
+      - 'src/**'
+      - 'include/**'
+      - 'tests/**'
+      - 'matching-engine/**'
+      - 'proto/**'
+      - 'shared-java/**'
+      - 'services/**'
+      - 'tools/**'
+      - 'gradle/**'
+      - 'build-logic/**'
+      - 'build.gradle.kts'
+      - 'settings.gradle.kts'
+      - 'gradle.properties'
+      - 'gradlew'
+      - 'config/**'
+      - 'deploy/k8s/**'
+      - 'deploy/kind/**'
+      - 'deploy/docker/**'
+      - 'scripts/**'
+  workflow_dispatch:
+
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+jobs:
+  risk-command:
+    name: Risk admission / durable outbox / Kafka (disposable kind)
+    runs-on: ubuntu-24.04
+    timeout-minutes: 60
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 1
+          persist-credentials: false
+      - name: Set up Java and Gradle
+        uses: ./.github/actions/setup-java-gradle
+      - name: Install pinned kind and kubectl
+        shell: bash
+        run: |
+          set -euo pipefail
+          curl --fail --silent --show-error --location \
+            --output /tmp/kind-linux-amd64 \
+            https://kind.sigs.k8s.io/dl/v0.32.0/kind-linux-amd64
+          curl --fail --silent --show-error --location \
+            --output /tmp/kind-linux-amd64.sha256sum \
+            https://kind.sigs.k8s.io/dl/v0.32.0/kind-linux-amd64.sha256sum
+          (cd /tmp && sha256sum --check kind-linux-amd64.sha256sum)
+          sudo install -m 0755 /tmp/kind-linux-amd64 /usr/local/bin/kind
+          curl --fail --silent --show-error --location \
+            --output /tmp/kubectl \
+            https://dl.k8s.io/release/v1.36.1/bin/linux/amd64/kubectl
+          curl --fail --silent --show-error --location \
+            --output /tmp/kubectl.sha256 \
+            https://dl.k8s.io/release/v1.36.1/bin/linux/amd64/kubectl.sha256
+          printf '%s  %s\n' "$(cat /tmp/kubectl.sha256)" /tmp/kubectl | sha256sum --check -
+          sudo install -m 0755 /tmp/kubectl /usr/local/bin/kubectl
+          kind version
+          kubectl version --client
+          for command in docker jq tar timeout findmnt; do command -v "$command"; done
+      - name: Check ephemeral Docker host
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(docker context show)" = default
+          docker info --format 'Docker driver={{.Driver}} root={{.DockerRootDir}}'
+          findmnt -T "$(docker info --format '{{.DockerRootDir}}')" -no FSTYPE
+          df -h "$GITHUB_WORKSPACE"
+          free -h
+      - name: Verify focused risk command in run-owned kind
+        shell: bash
+        run: |
+          set -euo pipefail
+          timeout --signal=TERM --kill-after=60s 55m \
+            ./gradlew verifyKubernetes --no-daemon --console=plain --stacktrace --max-workers=2 \
+              -PkubernetesScenario=risk-command \
+              -PkubernetesMode=disposable \
+              -PkubernetesRetain=false \
+              -PkubernetesDockerContext=default \
+              -PkubernetesImageTag=ci-${{ github.run_id }}-${{ github.run_attempt }} \
+              -PkubernetesBuildReceipt=out/kubernetes-build/ci-${{ github.run_id }}-${{ github.run_attempt }}/inputs.json \
+              -PkubernetesEvidence=out/verification/kubernetes/ci-${{ github.run_id }}-${{ github.run_attempt }}
+      - name: Require complete selected-run verdict
+        shell: bash
+        run: |
+          set -euo pipefail
+          jq --exit-status \
+            '.status == "PASS" and .assertions == "PASS" and .diagnostics == "PASS" and .cleanup == "PASS"' \
+            'out/verification/kubernetes/ci-${{ github.run_id }}-${{ github.run_attempt }}/summary.json'
+      - name: Upload selected-run reports and redacted diagnostics
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: risk-command-${{ github.run_id }}-${{ github.run_attempt }}
+          if-no-files-found: warn
+          retention-days: 7
+          path: |
+            out/kubernetes-build/ci-${{ github.run_id }}-${{ github.run_attempt }}/inputs.json
+            out/verification/kubernetes/ci-${{ github.run_id }}-${{ github.run_attempt }}/run-id
+            out/verification/kubernetes/ci-${{ github.run_id }}-${{ github.run_attempt }}/summary.json
+            out/verification/kubernetes/ci-${{ github.run_id }}-${{ github.run_attempt }}/preflight.json
+            out/verification/kubernetes/ci-${{ github.run_id }}-${{ github.run_attempt }}/image-identities.json
+            out/verification/kubernetes/ci-${{ github.run_id }}-${{ github.run_attempt }}/image-import.log
+            out/verification/kubernetes/ci-${{ github.run_id }}-${{ github.run_attempt }}/diagnostics-*.json
+            out/verification/kubernetes/ci-${{ github.run_id }}-${{ github.run_attempt }}/diagnostics-*.log
+            out/verification/kubernetes/ci-${{ github.run_id }}-${{ github.run_attempt }}/setup-node-*.log
