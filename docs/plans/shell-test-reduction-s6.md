@@ -121,8 +121,15 @@ It installs checksum-verified kind and kubectl binaries, uses Native Docker
 `default`, constructs run-attempt-specific image tags and evidence paths,
 and leaves `kubernetesRetain=false`. It binds image content to current
 source and Docker identities through existing Gradle and Jupiter owners.
-The job has a 60-minute hard budget and a 52-minute Gradle command budget,
+The job has a 60-minute hard budget and a 45-minute Gradle command budget,
 with up to four further minutes for graceful diagnostic and cleanup handling.
+On failure, it invokes the existing `cleanupKubernetesRun` only when a
+run-owned `ownership.json` exists. That separate cleanup has a five-minute
+budget and validates recorded daemon and Kubernetes identities. It does not
+change the original business verdict. Forced runner termination can still
+prevent the step from running. This bounds the worst-case Gradle attempt
+and cleanup to 54 minutes 45 seconds, reserving the rest of the job budget
+for setup, evidence collection and artifact upload.
 It requires the existing Kubernetes `status`, `assertions`, `diagnostics`,
 and `cleanup` summary fields to all equal `PASS`. A missing or failed
 summary cannot pass the step. Jupiter reports remain in the CI job workspace;
@@ -139,6 +146,57 @@ the same ref and can replace an older pending run with a newer request.
 The existing run-owned verifier diagnoses before cleanup and refuses to
 adopt an old disposable cluster. GitHub cancellation and hard process-kill
 cleanup still require the explicit P3 failure-path audit.
+
+## P3: host observations and recovery boundary
+
+The workflow collects 15-second host-level samples: CPU busy/idle jiffies,
+available memory, available Docker/workspace disk, and network byte counters.
+It also records Docker storage totals and the build-input stage on failure.
+These are infrastructure observations, not another business test owner.
+Host network deltas include other traffic and do not measure exact image
+archive transfer. The image importer removes each temporary archive after
+import. Retain the existing per-worker `image-import.log` as import evidence,
+and do not infer archive bytes from Docker image logical sizes.
+
+When the business step fails after recording run ownership, the existing
+`cleanupKubernetesRun` diagnoses and attempts exact owned cleanup. Its
+cleanup-only report is separate from the original business result. When
+no ownership receipt exists, no cleanup authority is available. The runner
+checks for leftover disposable kind containers without deleting them and
+fails closed if it finds any. Neither case establishes cancellation cleanup
+under forced runner termination;
+that requires a separate failure-path check.
+
+The first hosted execution of `be9820e2` failed before Kubernetes began:
+[run 42844556998, attempt 1](https://github.com/WenHsuanYu/SimpleMatch/actions/runs/42844556998).
+`buildKubernetesBarrierImage` received HTTP 404 for
+`perl-base_5.40.1-7ubuntu0.4_amd64.deb` from Ubuntu APT. On 2026-11-10
+a fresh local `ubuntu:26.04` container successfully downloaded the
+same package after `apt-get update`. Repository propagation is plausible
+but not proven. A second hosted attempt was requested on unchanged source.
+Preserve each attempt's actual outcome and evidence independently.
+
+## P4: source-aligned acceptance pre-audit
+
+The file-level diff from complete-local source `1a3fa704` through the
+P3 workflow-only changes contains only `.github/workflows/*.yml` and
+Markdown files. No service, native, Gradle, Kubernetes test, deployment
+manifest or acceptance evaluator input changed. These paths are excluded
+from both `KubernetesSource` fingerprints. The original S5 P6
+`verifyAll` PASS and its source/run/image identities therefore remain
+eligible for conditional reuse under the #203 owner amendment; do not
+relabel the historical report as a new run.
+
+The tracked S6 inventory remains 34 Shell files / 6,896 physical lines,
+with zero tracked Python and Ruby files. This P3 change adds host
+observations and exact-owner recovery calls to the existing workflow.
+It does not create or translate business tests, or add a Shell file.
+The requirement dispositions and intentional retirements in P0 and
+S5 remain authoritative. Final AC-10 requires a successful selected
+hosted business run on the final workflow revision, grounded resource
+evidence and a clear image-transfer limitation. AC-12 and the final
+issue handoff require a final review; an incomplete retained check
+cannot be recorded as an intentional retirement or PASS.
 
 This is a **selection and workflow contract**, not hosted PASS evidence.
 The standard runner's actual CPU, peak memory, disk, wall time, and image

@@ -121,10 +121,30 @@ jobs:
           df -h "$GITHUB_WORKSPACE"
           free -h
       - name: Verify focused risk command in run-owned kind
+        id: live
         shell: bash
         run: |
           set -euo pipefail
-          timeout --signal=TERM --kill-after=240s 52m \
+          # Sample host pressure, not application business outcomes. Network bytes
+          # include every host transfer and are not image-archive byte counts.
+          metrics=out/ci-capacity/ci-${{ github.run_id }}-${{ github.run_attempt }}
+          mkdir -p "$metrics"
+          docker_root=$(docker info --format '{{.DockerRootDir}}')
+          printf '%s\n' 'epoch_s,cpu_busy_jiffies,cpu_idle_jiffies,mem_available_bytes,docker_avail_bytes,workspace_avail_bytes,host_rx_bytes,host_tx_bytes' > "$metrics/host-samples.csv"
+          (
+            while :; do
+              read -r cpu_busy cpu_idle < <(awk '/^cpu / {printf "%.0f %.0f\n", $2+$3+$4+$7+$8+$9, $5+$6; exit}' /proc/stat)
+              mem_available=$(awk '/^MemAvailable:/ {printf "%.0f\n", $2*1024}' /proc/meminfo)
+              docker_avail=$(df -B1 --output=avail "$docker_root" | tail -n 1 | tr -d '[:space:]')
+              workspace_avail=$(df -B1 --output=avail "$GITHUB_WORKSPACE" | tail -n 1 | tr -d '[:space:]')
+              read -r host_rx host_tx < <(awk 'NR>2 {gsub(/:/, " "); if ($1 != "lo") {rx+=$2; tx+=$10}} END {printf "%.0f %.0f\n", rx, tx}' /proc/net/dev)
+              printf '%s,%s,%s,%s,%s,%s,%s,%s\n' "$(date -u +%s)" "$cpu_busy" "$cpu_idle" "$mem_available" "$docker_avail" "$workspace_avail" "$host_rx" "$host_tx"
+              sleep 15
+            done
+          ) >> "$metrics/host-samples.csv" 2>/dev/null &
+          sampler_pid=$!
+          trap 'kill "$sampler_pid" 2>/dev/null || true' EXIT
+          timeout --signal=TERM --kill-after=240s 45m \
             ./gradlew verifyKubernetes --no-daemon --console=plain --stacktrace --max-workers=2 \
               -PkubernetesScenario=risk-command \
               -PkubernetesMode=disposable \
@@ -133,6 +153,50 @@ jobs:
               -PkubernetesImageTag=ci-${{ github.run_id }}-${{ github.run_attempt }} \
               -PkubernetesBuildReceipt=out/kubernetes-build/ci-${{ github.run_id }}-${{ github.run_attempt }}/inputs.json \
               -PkubernetesEvidence=out/verification/kubernetes/ci-${{ github.run_id }}-${{ github.run_attempt }}
+      - name: Recover an incomplete disposable run by its recorded owner
+        if: ${{ always() && steps.live.outcome != 'success' }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          evidence=out/verification/kubernetes/ci-${{ github.run_id }}-${{ github.run_attempt }}
+          if [[ -f "$evidence/ownership.json" ]]; then
+            # The existing Gradle cleanup owner diagnoses before deleting only
+            # resources bound to the recorded Docker daemon and run identity.
+            timeout --signal=TERM --kill-after=45s 5m \
+              ./gradlew cleanupKubernetesRun --no-daemon --console=plain --max-workers=2 \
+                -PkubernetesOwnership="$evidence/ownership.json" \
+                -PkubernetesCleanupEvidence=out/verification/kubernetes-cleanup/ci-${{ github.run_id }}-${{ github.run_attempt }}
+          else
+            echo 'No owned Kubernetes receipt; cleanup remains unverified.'
+            if [[ -s "$evidence/run-id" ]] &&
+                docker ps -a --format '{{.Label "io.x-k8s.kind.cluster"}}' |
+                  grep -q '^simplematch-s3-'; then
+              echo 'A disposable kind cluster exists without a usable evidence receipt; refusing unowned deletion.' >&2
+              exit 1
+            fi
+          fi
+      - name: Record host capacity and build stage
+        if: always()
+        shell: bash
+        run: |
+          set -euo pipefail
+          metrics=out/ci-capacity/ci-${{ github.run_id }}-${{ github.run_attempt }}
+          receipt=out/kubernetes-build/ci-${{ github.run_id }}-${{ github.run_attempt }}/inputs.json
+          evidence=out/verification/kubernetes/ci-${{ github.run_id }}-${{ github.run_attempt }}
+          mkdir -p "$metrics"
+          stage=NO_BUILD_RECEIPT
+          if [[ -s "$receipt" ]]; then stage=$(jq -r '.stage // "UNKNOWN"' "$receipt"); fi
+          jq -n --arg sha "$GITHUB_SHA" --arg stage "$stage" \
+            --argjson attempt '${{ github.run_attempt }}' \
+            --argjson summary_present "$(test -f "$evidence/summary.json" && echo true || echo false)" \
+            '{source_sha: $sha, run_attempt: $attempt, build_stage: $stage, summary_present: $summary_present, scope: "risk-command-hosted"}' \
+            > "$metrics/stage.json"
+          printf 'Host memory:\n' > "$metrics/final-host.txt"
+          free -b >> "$metrics/final-host.txt"
+          printf 'Workspace and Docker filesystems:\n' >> "$metrics/final-host.txt"
+          df -B1 "$GITHUB_WORKSPACE" "$(docker info --format '{{.DockerRootDir}}')" >> "$metrics/final-host.txt" || true
+          printf 'Docker image/storage totals (not archive transfer bytes):\n' >> "$metrics/final-host.txt"
+          docker system df >> "$metrics/final-host.txt" || true
       - name: Require complete selected-run verdict
         shell: bash
         run: |
@@ -148,7 +212,12 @@ jobs:
           if-no-files-found: warn
           retention-days: 7
           path: |
+            out/ci-capacity/ci-${{ github.run_id }}-${{ github.run_attempt }}/host-samples.csv
+            out/ci-capacity/ci-${{ github.run_id }}-${{ github.run_attempt }}/stage.json
+            out/ci-capacity/ci-${{ github.run_id }}-${{ github.run_attempt }}/final-host.txt
             out/kubernetes-build/ci-${{ github.run_id }}-${{ github.run_attempt }}/inputs.json
+            out/verification/kubernetes-cleanup/ci-${{ github.run_id }}-${{ github.run_attempt }}/summary.json
+            out/verification/kubernetes-cleanup/ci-${{ github.run_id }}-${{ github.run_attempt }}/cleanup-target.json
             out/verification/kubernetes/ci-${{ github.run_id }}-${{ github.run_attempt }}/run-id
             out/verification/kubernetes/ci-${{ github.run_id }}-${{ github.run_attempt }}/summary.json
             out/verification/kubernetes/ci-${{ github.run_id }}-${{ github.run_attempt }}/preflight.json
