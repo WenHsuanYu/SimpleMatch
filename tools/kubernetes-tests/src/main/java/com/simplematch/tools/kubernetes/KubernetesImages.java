@@ -123,14 +123,19 @@ final class KubernetesImages {
       final var archive = kind.temporaryImageArchive();
       try (var exporter = new KubernetesImageArchive(commands, context, archive)) {
         configs.put(image.getKey(), exporter.save(image.getKey(), image.getValue()));
+        final long archiveBytes = Files.size(archive);
         for (String node : workers) {
           // kind loads all nodes by default. Select one worker to bound import memory.
+          final long startedNanos = System.nanoTime();
           final var imported = commands.run(List.of("kind", "load", "image-archive",
               archive.toString(), "--name", kind.cluster(), "--nodes", node), "",
               Duration.ofMinutes(3));
+          final long elapsedMillis = Duration.ofNanos(System.nanoTime() - startedNanos).toMillis();
           Files.writeString(run.evidence().resolve("image-import.log"),
               "image=" + image.getKey() + " node=" + node
-                  + " config=" + configs.get(image.getKey()) + "\n"
+                  + " config=" + configs.get(image.getKey())
+                  + " archive_bytes=" + archiveBytes + " import_elapsed_ms=" + elapsedMillis
+                  + "\n"
                   + DiagnosticText.redact(imported.output() + imported.error()),
               java.nio.file.StandardOpenOption.CREATE, java.nio.file.StandardOpenOption.APPEND);
           imported.checked();

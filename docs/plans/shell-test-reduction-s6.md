@@ -155,8 +155,11 @@ It also records Docker storage totals and the build-input stage on failure.
 These are infrastructure observations, not another business test owner.
 Host network deltas include other traffic and do not measure exact image
 archive transfer. The image importer removes each temporary archive after
-import. Retain the existing per-worker `image-import.log` as import evidence,
-and do not infer archive bytes from Docker image logical sizes.
+import. The per-worker `image-import.log` now records the actual archive
+file size (`archive_bytes`) and each `kind load` duration (`import_elapsed_ms`).
+The sum of archive sizes over successful node imports measures the payload
+offered to `kind load`, not network wire bytes or unique compressed layers.
+Do not infer archive bytes from Docker image logical sizes.
 
 When the business step fails after recording run ownership, the existing
 `cleanupKubernetesRun` diagnoses and attempts exact owned cleanup. Its
