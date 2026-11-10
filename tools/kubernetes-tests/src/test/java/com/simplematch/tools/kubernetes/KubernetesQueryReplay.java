@@ -315,11 +315,7 @@ final class KubernetesQueryReplay {
     final var seen = new java.util.HashSet<Integer>();
     boolean caughtUp = true;
     for (String line : output.lines().toList()) {
-      final var fields = java.util.regex.Pattern.compile("\\S+").matcher(line);
-      final var columns = new ArrayList<String>();
-      while (fields.find()) {
-        columns.add(fields.group());
-      }
+      final var columns = columns(line);
       if (columns.size() < 6 || !topic.equals(columns.get(1))) {
         continue;
       }
@@ -377,13 +373,13 @@ final class KubernetesQueryReplay {
       if (line.startsWith("GROUP ")) {
         continue;
       }
-      final String[] columns = line.split("\\s+");
-      if (columns.length != 4 || !group.equals(columns[0]) || !topic.equals(columns[1])) {
+      final var columns = columns(line);
+      if (columns.size() != 4 || !group.equals(columns.get(0)) || !topic.equals(columns.get(1))) {
         return false;
       }
       try {
-        final int partition = Integer.parseInt(columns[2]);
-        final long offset = Long.parseLong(columns[3]);
+        final int partition = Integer.parseInt(columns.get(2));
+        final long offset = Long.parseLong(columns.get(3));
         if (partition < 0 || partition >= 15 || !seen.add(partition)
             || !offsets.containsKey(partition) || offset != offsets.get(partition)) {
           return false;
@@ -393,6 +389,15 @@ final class KubernetesQueryReplay {
       }
     }
     return seen.size() == 15;
+  }
+
+  private static List<String> columns(String line) {
+    final var matcher = java.util.regex.Pattern.compile("\\S+").matcher(line);
+    final var columns = new ArrayList<String>();
+    while (matcher.find()) {
+      columns.add(matcher.group());
+    }
+    return columns;
   }
 
   private JsonNode deployment() throws Exception {

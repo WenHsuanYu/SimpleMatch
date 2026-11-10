@@ -7,6 +7,7 @@ import static org.junit.jupiter.api.Assertions.assertTimeout;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import java.io.IOException;
+import java.net.InetAddress;
 import java.net.ServerSocket;
 import java.net.Socket;
 import java.nio.file.Files;
@@ -26,7 +27,8 @@ class KubernetesPortForwardTest {
     final Path pid = temporary.resolve("pid");
     try (var forward = KubernetesPortForward.start(command("ready", pid),
         temporary.resolve("forward.log"), 5001);
-        var socket = new Socket("127.0.0.1", forward.port())) {
+        var socket = new Socket(InetAddress.getByAddress(new byte[] {127, 0, 0, 1}),
+            forward.port())) {
       socket.setSoTimeout(5_000);
       assertEquals(42, socket.getInputStream().read());
     }

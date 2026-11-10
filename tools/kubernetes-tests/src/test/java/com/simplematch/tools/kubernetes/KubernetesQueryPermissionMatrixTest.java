@@ -12,7 +12,6 @@ import org.junit.jupiter.api.Test;
 class KubernetesQueryPermissionMatrixTest {
   @Test
   void completeCYDAndFivePrincipalMatrixChangesOnlyTheSpecifiedGrantsAndStatus() {
-    final var matrix = KubernetesQueryPermissionMatrix.class;
     assertEquals(5, KubernetesQueryPermissionMatrix.ALIASES.size());
     for (int version = 1; version <= 3; version++) {
       for (String alias : KubernetesQueryPermissionMatrix.ALIASES) {

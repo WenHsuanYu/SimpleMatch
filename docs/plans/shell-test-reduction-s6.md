@@ -205,6 +205,23 @@ per-container CPU, memory or image-transfer usage. Host network interface
 counts can decrease as kind interfaces disappear, so host network
 counter differences are not a reliable image-transfer measurement.
 
+The next hosted selection on workflow SHA `68fbdc00`,
+[run 42861322462](https://github.com/WenHsuanYu/SimpleMatch/actions/runs/42861322462),
+also finished with `status=FAIL`, `assertions=FAIL`,
+`diagnostics=PASS`, and `cleanup=PASS`. Kafka topic provisioning,
+the Matching barrier fixture, and both Flyway Jobs succeeded.
+The verifier then rejected an imported workload image index with
+`workload index must identify one linux/amd64 manifest`.
+`KubernetesWorkloadImages` required one direct platform-labelled
+descriptor. The imported image IDs pointed to content-addressed OCI
+indexes. The artifact did not retain the index contents, so the exact
+descriptor arrangement remains unknown. The source correction checks
+nested indexes, supported OCI/Docker media types, declared platforms,
+content hashes, and image config identities. It rejects ambiguous or
+wrong-platform runnable manifests.
+The three Error Prone warnings in the selected Kubernetes tests are
+also addressed without suppressions.
+
 ## P4: source-aligned acceptance pre-audit
 
 The file-level diff from complete-local source `1a3fa704` through the
@@ -215,6 +232,10 @@ from both `KubernetesSource` fingerprints. The original S5 P6
 `verifyAll` PASS and its source/run/image identities therefore remain
 eligible for conditional reuse under the #203 owner amendment; do not
 relabel the historical report as a new run.
+The later OCI index verifier correction changes executable source and
+test definitions. The original P6 PASS remains historical evidence,
+but cannot certify the new source. Require a fresh source-aligned
+`verifyAll` PASS before declaring the final complete-local result.
 
 The tracked S6 inventory remains 34 Shell files / 6,896 physical lines,
 with zero tracked Python and Ruby files. This P3 change adds host

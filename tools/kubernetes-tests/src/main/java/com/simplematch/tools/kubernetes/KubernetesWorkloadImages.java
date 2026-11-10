@@ -136,25 +136,7 @@ final class KubernetesWorkloadImages {
   /** Resolves the reported immutable digest without depending on containerd's import alias. */
   private String configIdentity(String node, String actual) throws Exception {
     final String digest = actual.substring(actual.lastIndexOf('@') + 1);
-    JsonNode manifest = content(node, digest);
-    if (manifest.path("manifests").isArray()) {
-      final var selected = new ArrayList<String>();
-      for (var descriptor : manifest.path("manifests")) {
-        if ("linux".equals(descriptor.path("platform").path("os").asText())
-            && "amd64".equals(descriptor.path("platform").path("architecture").asText())) {
-          selected.add(descriptor.path("digest").asText());
-        }
-      }
-      if (selected.size() != 1) {
-        throw new IllegalStateException("workload index must identify one linux/amd64 manifest");
-      }
-      manifest = content(node, selected.get(0));
-    }
-    final String config = manifest.path("config").path("digest").asText();
-    if (!config.matches("sha256:[0-9a-f]{64}")) {
-      throw new IllegalStateException("workload manifest has no valid config identity");
-    }
-    return config;
+    return KubernetesImageIndex.resolveConfig(digest, selected -> content(node, selected));
   }
 
   /** Reads and verifies exact content bytes on the original, already validated Docker node. */
