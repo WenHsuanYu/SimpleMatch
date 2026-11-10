@@ -233,6 +233,15 @@ An attestation label alone cannot exclude a second runnable manifest.
 The verifier requires a verified runnable subject and an
 `unknown/unknown` config before excluding the attached content.
 
+The first fresh `verifyAll` invocation on source `49edc6c2` failed before
+Kubernetes deployment. Gradle selected `RestingBuyKubernetesTest`, but its
+JVM received no `kubernetesScenario` property. The JVM defaulted to
+`risk-command`, and `KubernetesBusinessEnvironment.preflight` rejected
+the profile mismatch. The Gradle run properties now include the selected
+scenario for both the build-input verifier and Jupiter. The failed
+invocation does not establish a complete-local PASS. A fresh source-bound
+`verifyAll` result is required after this correction.
+
 ## P4: source-aligned acceptance pre-audit
 
 The file-level diff from complete-local source `1a3fa704` through the

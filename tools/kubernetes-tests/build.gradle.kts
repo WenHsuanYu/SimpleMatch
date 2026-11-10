@@ -91,6 +91,7 @@ val receipt = rootProject.file(providers.gradleProperty("kubernetesBuildReceipt"
     .orElse("out/kubernetes-build/" + UUID.randomUUID() + "/inputs.json").get())
 val runProperties = providers.gradlePropertiesPrefixedBy("kubernetes").get() + mapOf(
     "verificationRepoRoot" to rootProject.projectDir.absolutePath,
+    "kubernetesScenario" to scenario,
     "kubernetesImageTag" to imageTag,
     "kubernetesBuildReceipt" to receipt.absolutePath,
     "kubernetesEvidence" to providers.gradleProperty("kubernetesEvidence")
