@@ -317,14 +317,14 @@ executable verifier change and must be rerun on the eventual final HEAD.
 | AC-01 | PASS: S0 baseline dispositions, S5 final retirement groups, the R01-R26 owner tables above and final S6 audit preserve every retained requirement's authoritative owner and document intentional verification losses. The S6 changes did not add business test owners or obsolete callers. |
 | AC-02 | PASS: recounted on `076cb0e7`, baseline 170 tracked Shell files / 34,923 physical lines to 34 files / 6,896 physical lines, with zero tracked Python/Ruby. File reduction is 80.00%; physical-line reduction is 80.25%. |
 | AC-03 | PASS: the S5 retirement audit records duplicate removal and no concealed language relocation. Final S6 changes add no Shell/Python/Ruby scripts, business assertions in workflow YAML, duplicate test framework, or permanent compatibility reporter. |
-| AC-04 | PASS: latest executable source `076cb0e7` passed the full unfiltered `verifyAll` with the retained `resting-buy` owners on 2026-11-11, including Native 85/85, R19 420/420 and source-bound images. The historical S5 `1a3fa704` PASS remains separate. |
+| AC-04 | CONDITIONAL: source `076cb0e7` passed full unfiltered `verifyAll` with `resting-buy`, Native 85/85, R19 420/420 and source-bound images. The subsequent Kafka provisioning manifest correction changes deployment inputs and requires a new complete-local execution. |
 | AC-05 | PASS: `verifyAllScope` blocks excluded tasks, filtered/dirty source and altered complete-local profiles. Live verification uses fresh run and image identities. |
 | AC-06 | BLOCKED: `076cb0e7` dedicated full-local run preserves `diagnostics=PASS`, `cleanup=PASS` and the canonical cluster. Hosted failure attempt 1 preserves FAIL/FAIL/PASS/PASS and an independently recorded owned cleanup PASS. Recoverable hosted cancellation after an owner receipt still lacks current-workflow execution evidence. |
 | AC-07 | PASS: existing JUnit/Gradle and `VerificationRun` report owners require named, non-skipped tests and four-field Kubernetes PASS. The separate cancellation evidence gap is tracked under AC-06. |
 | AC-08 | PASS: Spring-managed Jupiter, existing native tests and dependency Testcontainers owners remain authoritative. No new framework is required. |
 | AC-09 | PASS: existing pinned manifest owner is `manifestCheck`, selected in Java and CDC CI as well as `verifyAll`. |
-| AC-10 | BLOCKED: historical selected hosted run `42956991465` on `3a61065e` passed all four report fields, with capacity and archive-import metrics above. On new executable SHA `076cb0e7`, hosted run `42973661161` attempt 1 failed Kafka topic configuration describe before business assertions, with diagnostics and cleanup PASS. Attempt 2 was initiated without changing timeout or assertions; its actual four-field result must be checked before accepting this AC. Complete hosted CI is optional by owner amendment. |
-| AC-11 | PASS on committed `076cb0e7`: full-local `verifyAll` (37m15s, 194 Gradle tasks, 85/85 native CTest) on `full-native-dev` / `resting-buy`; run `b6ca4c11-db56-414b-8721-65296c006c38` has four-field PASS in `out/verification/kubernetes/f7b96765-5b9e-41cf-9928-d841f9a5a81a/summary.json`. Actual namespace absent after cleanup; original canonical cluster and registry Ready. Earlier FAIL runs remain independent historical records. |
+| AC-10 | BLOCKED: historical hosted PASS on `3a61065e` is not final-source evidence. Hosted `42973661161` attempts 1 and 2 on `076cb0e7` both failed the additional Kafka configuration Admin query before business assertions, with original FAIL/FAIL/PASS/PASS and separately owned cleanup PASS. The corrected source requires a fresh selected Hosted four-field PASS with host and image-import metrics. Complete hosted CI is optional. |
+| AC-11 | BLOCKED for the changed deployment input: `076cb0e7` previously passed full-local `verifyAll` (37m15s, 194 Gradle tasks, Native 85/85), four-field PASS, R19 420/420 and exact cleanup. This original report remains valid only for its source. The Kafka provisioning manifest correction requires a fresh full-local run before acceptance. |
 | AC-12 | BLOCKED: current plan, specification, and historical certification links were reconciled with retired Shell owners. A local-link audit of `docs/plans` and `docs/verification`, excluding the frozen S0 inventory, found no missing file targets. Final hosted evidence, cancellation cleanup and Issue status still require reconciliation; no Issue may close before those gates pass. |
 
 For historical comparison only, original S5 P6 evidence is run
@@ -338,8 +338,9 @@ The verification fingerprint is
 At the earlier P0/P1 review, only Markdown and GitHub Actions workflow
 definitions had changed, so conditional reuse was considered. Subsequent
 executable test and verifier changes made that reuse inapplicable. The
-`076cb0e7` complete-local run below is the current evidence; no historical
-result is relabeled or upgraded.
+`076cb0e7` complete-local run below remains valid for its original source.
+The later Kafka provisioning manifest correction requires a new complete-local
+result. No historical report is relabeled or upgraded.
 
 **S6 state (2026-11-11):** P0/P1 owner and workflow dispositions, focused
 business CI, and measured hosted resource/import evidence are available.
@@ -347,9 +348,10 @@ Failure-path owned cleanup is supported by real hosted failure artifacts.
 Recoverable hosted cancellation after an ownership receipt is still not
 proven by an actual current-workflow run; local interruption tests alone
 do not establish that AC-06 requirement. Do not cancel a production verification
-run to manufacture this evidence. The `076cb0e7` complete-local PASS is now
-recorded below; selected hosted CI on that SHA remains blocked by the actual
-first-attempt result pending a new four-field verdict. Keep #203 and #196 OPEN
+run to manufacture this evidence. The `076cb0e7` complete-local PASS is
+recorded below, but both selected Hosted attempts on that SHA failed.
+The Kafka provisioning correction requires new source-aligned local and Hosted
+four-field evidence. Keep #203 and #196 OPEN
 until the remaining gates and AC-12 source/evidence reconciliation are resolved.
 
 Three independent full-local runs on `3a61065e`, all with
@@ -428,10 +430,48 @@ these observations; do not label it a resource exhaustion or application
 assertion failure. The image log records 27 imports (nine distinct images to
 three workers), 15.408 GiB summed per-node archive payload (5.136 GiB of
 unique-image archive sizes), and a 27.350-second longest individual import;
-neither payload total is a measured network-transfer byte count. A single
-same-SHA failed-job rerun was requested as
-attempt 2, preserving attempt 1 evidence and the existing finite budgets.
-Neither attempt may be relabelled or inferred from another source's PASS.
+neither payload total is a measured network-transfer byte count. The same-SHA
+rerun was actually executed as **attempt 2**, preserving attempt 1 evidence.
+Its independent original artifact `risk-command-42973661161-2` also records
+`status=FAIL`, `assertions=FAIL`, `diagnostics=PASS`, and `cleanup=PASS`.
+The provisioning Job created `matching.commands` but failed the additional
+configuration description for that first topic. Its Pod terminated with exit
+code 1 and `BackoffLimitExceeded`. Independently invoked owned cleanup again
+recorded four-field PASS. Attempt 2 has 165 host samples over 41m03s, with
+mean CPU busy 47.00% (peak 81.76%), minimum host `MemAvailable` 9.304 GiB
+and minimum Docker/workspace free disk 35.541 GiB. Nine images imported 27
+times across three workers (15.408 GiB summed archive sizes); the longest
+single import took 25.086 seconds. These metrics are host aggregates and
+archive payload sizes, not per-container peaks or network-transfer bytes.
+Both attempts used the same source and verification fingerprints above.
+Neither original failure may be relabelled or upgraded.
+
+## Kafka provisioning correction after two failed hosted attempts
+
+The original provisioning Job launched `kafka-configs.sh --describe --all`
+after a successful `kafka-topics.sh --describe` for each topic. That extra
+Admin CLI did not succeed before the original shared 180-second deadline
+in either hosted attempt. The precise error was not emitted by the script.
+The artifacts do not prove CPU throttling, broker outage, or an application
+assertion failure.
+
+An isolated container running the pinned `apache/kafka:4.3.1` image confirmed
+that a topic description already contains partition count, replication factor
+and the explicit topic-level configuration overrides. The ignored regression
+fixture at `out/ci-investigation/s6-kafka-cli-regression/check.py` produced
+RED on the original script when this extra CLI returned failure, even with
+a valid topic description. The corrected script produced GREEN without a
+second Java Admin command. Additional negative fixtures reject wrong or
+prefix-matching partition counts, replication factors, cleanup policies,
+retention values, minimum ISR, and missing configuration overrides.
+
+The correction reads one exact topic header and parses explicit config
+tokens. It rejects missing, duplicate, malformed or mismatched required
+configurations. The original 15-second Kafka operation limit, shared
+180-second retry deadline and RF/partition/configuration contracts are
+unchanged. This is a new deployment input and does not inherit the prior
+complete-local PASS. New current-source local and Hosted evidence remain
+required before AC-10/AC-11 can pass.
 
 The final documentation audit also corrected references to retired bootstrap,
 phase-graph and Market Data verdict scripts. The historical certification

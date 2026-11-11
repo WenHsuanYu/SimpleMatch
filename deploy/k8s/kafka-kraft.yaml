@@ -142,7 +142,6 @@ data:
 
     bootstrap="${KAFKA_BOOTSTRAP_SERVERS:-kafka:9092}"
     topics_bin="${KAFKA_TOPICS_BIN:-/opt/kafka/bin/kafka-topics.sh}"
-    configs_bin="${KAFKA_CONFIGS_BIN:-/opt/kafka/bin/kafka-configs.sh}"
     admin_operation_timeout_seconds="${KAFKA_ADMIN_OPERATION_TIMEOUT_SECONDS:-15}"
     bootstrap_retry_seconds="${KAFKA_BOOTSTRAP_RETRY_SECONDS:-180}"
     retry_sleep_seconds=5
@@ -161,11 +160,6 @@ data:
     run_topics() {
       timeout --foreground "${admin_operation_timeout_seconds}s" \
         "$topics_bin" --bootstrap-server "$bootstrap" "$@"
-    }
-
-    run_configs() {
-      timeout --foreground "${admin_operation_timeout_seconds}s" \
-        "$configs_bin" --bootstrap-server "$bootstrap" "$@"
     }
 
     retry_before_deadline() {
@@ -189,18 +183,6 @@ data:
       while :; do
         if description="$(run_topics --describe --topic "$topic_name" 2>&1)"; then
           printf '%s\n' "$description"
-          return 0
-        fi
-        retry_before_deadline || return 1
-      done
-    }
-
-    wait_for_topic_configuration() {
-      topic_name="$1"
-      while :; do
-        if topic_config="$(run_configs \
-          --entity-type topics --entity-name "$topic_name" --describe --all 2>&1)"; then
-          printf '%s\n' "$topic_config"
           return 0
         fi
         retry_before_deadline || return 1
@@ -236,19 +218,67 @@ data:
 
       description="$(wait_for_topic_description "$name")" ||
         fail "cannot describe topic $name"
-      printf '%s\n' "$description" | grep -Fq "PartitionCount: $partitions" ||
+      tab="$(printf '\t')"
+      topic_header=""
+      while IFS= read -r line; do
+        case "$line" in
+          "Topic: $name${tab}"*)
+            [ -z "$topic_header" ] || fail "topic $name has duplicate description headers"
+            topic_header="$line" ;;
+        esac
+      done <<EOF_TOPIC_DESCRIPTION
+    $description
+    EOF_TOPIC_DESCRIPTION
+      [ -n "$topic_header" ] || fail "topic $name has no exact description header"
+      printf '%s\n' "$topic_header" | grep -Fq "PartitionCount: $partitions${tab}" ||
         fail "topic $name has the wrong partition count"
-      printf '%s\n' "$description" | grep -Fq 'ReplicationFactor: 3' ||
+      printf '%s\n' "$topic_header" | grep -Fq "ReplicationFactor: 3${tab}" ||
         fail "topic $name has the wrong replication factor"
 
-      topic_config="$(wait_for_topic_configuration "$name")" ||
-        fail "cannot describe configuration for topic $name"
-      printf '%s\n' "$topic_config" | grep -Fq "cleanup.policy=$cleanup_policy" ||
-        fail "topic $name has the wrong cleanup policy"
-      printf '%s\n' "$topic_config" | grep -Fq 'retention.ms=2592000000' ||
-        fail "topic $name has the wrong retention"
-      printf '%s\n' "$topic_config" | grep -Fq 'min.insync.replicas=2' ||
-        fail "topic $name has the wrong minimum ISR"
+      # TopicCommand's description includes explicit topic Configs. Check them
+      # in the same bounded Admin request instead of launching another JVM for
+      # kafka-configs --describe --all under the provisioning Job's CPU limit.
+      case "$topic_header" in
+        *"${tab}Configs: "*) topic_config="${topic_header#*${tab}Configs: }" ;;
+        *) fail "topic $name has no explicit configuration" ;;
+      esac
+      has_cleanup=false
+      has_retention=false
+      has_min_isr=false
+      while [ -n "$topic_config" ]; do
+        config_entry="${topic_config%%,*}"
+        if [ "$config_entry" = "$topic_config" ]; then
+          topic_config=""
+        else
+          topic_config="${topic_config#*,}"
+          [ -n "$topic_config" ] || fail "topic $name has a trailing config delimiter"
+        fi
+        case "$config_entry" in
+          *' '*|*"${tab}"*|=*) fail "topic $name has an invalid configuration token" ;;
+        esac
+        case "$config_entry" in
+          cleanup.policy=*)
+            [ "$has_cleanup" = false ] &&
+              [ "$config_entry" = "cleanup.policy=$cleanup_policy" ] ||
+              fail "topic $name has the wrong cleanup policy"
+            has_cleanup=true ;;
+          retention.ms=*)
+            [ "$has_retention" = false ] &&
+              [ "$config_entry" = 'retention.ms=2592000000' ] ||
+              fail "topic $name has the wrong retention"
+            has_retention=true ;;
+          min.insync.replicas=*)
+            [ "$has_min_isr" = false ] &&
+              [ "$config_entry" = 'min.insync.replicas=2' ] ||
+              fail "topic $name has the wrong minimum ISR"
+            has_min_isr=true ;;
+          ?*=?*) ;;
+          *) fail "topic $name has an invalid configuration token" ;;
+        esac
+      done
+      [ "$has_cleanup" = true ] || fail "topic $name has no cleanup policy override"
+      [ "$has_retention" = true ] || fail "topic $name has no retention override"
+      [ "$has_min_isr" = true ] || fail "topic $name has no minimum ISR override"
     }
 
     ensure_topic matching.commands 15 delete
