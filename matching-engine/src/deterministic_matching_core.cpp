@@ -1,6 +1,7 @@
 #include "simplematch/matching/core/deterministic_matching_core.hpp"
 
 #include <algorithm>
+#include <bit>
 #include <cctype>
 #include <limits>
 #include <stdexcept>
@@ -63,6 +64,91 @@ CoreTradeLegState resulting_state(std::int64_t leaves_quantity) {
   return leaves_quantity == 0 ? CoreTradeLegState::kFilled
                               : CoreTradeLegState::kPartiallyFilled;
 }
+
+struct QuotientRemainder {
+  std::uint64_t quotient;
+  std::uint64_t remainder;
+};
+
+// Computes (quantity * difference) / total without wider-than-64-bit integers.
+// quantity <= total <= INT64_MAX keeps every doubled or added remainder in
+// uint64_t.
+QuotientRemainder divide_price_difference(std::uint64_t quantity,
+                                          std::uint64_t difference,
+                                          std::uint64_t total) {
+  // The common case fits in 64 bits and needs only one multiply and division.
+  if (difference <= std::numeric_limits<std::uint64_t>::max() / quantity) {
+    const std::uint64_t product = quantity * difference;
+    return {product / total, product % total};
+  }
+
+  std::uint64_t quotient = 0;
+  std::uint64_t remainder = 0;
+  for (int bit = std::bit_width(difference) - 1; bit >= 0; --bit) {
+    quotient *= 2;
+    remainder *= 2;
+    if (remainder >= total) {
+      remainder -= total;
+      ++quotient;
+    }
+    if (((difference >> bit) & 1U) != 0U) {
+      remainder += quantity;
+      if (remainder >= total) {
+        remainder -= total;
+        ++quotient;
+      }
+    }
+  }
+  return {quotient, remainder};
+}
+
+// Maintains floor(sum(quantity * price) / sum(quantity)) with its exact
+// remainder. The process path stays allocation-free and uses only standard
+// C++20 integers.
+class TakerAveragePrice {
+public:
+  void add(std::int64_t matched, std::int64_t price, std::int64_t cumulative) {
+    const auto quantity = static_cast<std::uint64_t>(matched);
+    const auto price_units = static_cast<std::uint64_t>(price);
+    const auto total = static_cast<std::uint64_t>(cumulative);
+    if (total == quantity) {
+      average_ = price_units;
+      remainder_ = 0;
+      return;
+    }
+
+    if (price_units >= average_) {
+      const auto difference =
+          divide_price_difference(quantity, price_units - average_, total);
+      const std::uint64_t fractional = remainder_ + difference.remainder;
+      average_ += difference.quotient;
+      if (fractional >= total) {
+        ++average_;
+        remainder_ = fractional - total;
+      } else {
+        remainder_ = fractional;
+      }
+    } else {
+      const auto difference =
+          divide_price_difference(quantity, average_ - price_units, total);
+      average_ -= difference.quotient;
+      if (difference.remainder > remainder_) {
+        --average_;
+        remainder_ = total - (difference.remainder - remainder_);
+      } else {
+        remainder_ -= difference.remainder;
+      }
+    }
+  }
+
+  [[nodiscard]] std::int64_t value() const {
+    return static_cast<std::int64_t>(average_);
+  }
+
+private:
+  std::uint64_t average_{};
+  std::uint64_t remainder_{};
+};
 
 } // namespace
 
@@ -414,7 +500,7 @@ MatchingProcessResult DeterministicMatchingCore::process_new_order(
   }
 
   std::int64_t remaining = incoming.quantity.value();
-  unsigned __int128 taker_notional = 0;
+  TakerAveragePrice taker_average;
   std::int32_t output_index = 0;
   std::int32_t match_index = 0;
   while (remaining > 0 && !opposite_side.empty() && crosses(opposite_side.front())) {
@@ -443,12 +529,8 @@ MatchingProcessResult DeterministicMatchingCore::process_new_order(
     event.maker_resulting_state = resulting_state(event.maker_leaves_quantity.value());
     event.taker_resulting_state = resulting_state(event.taker_leaves_quantity.value());
     event.maker_average_price = maker.price;
-    taker_notional += static_cast<unsigned __int128>(matched) *
-                       static_cast<unsigned __int128>(maker.price.value());
-    event.taker_average_price =
-        FixedPrice(static_cast<std::int64_t>(
-            taker_notional /
-            static_cast<unsigned __int128>(event.taker_cumulative_quantity.value())));
+    taker_average.add(matched, maker.price.value(), event.taker_cumulative_quantity.value());
+    event.taker_average_price = FixedPrice(taker_average.value());
     events_.push_back(event);
     remaining -= matched;
     const std::int64_t maker_remaining = maker.remaining.value() - matched;

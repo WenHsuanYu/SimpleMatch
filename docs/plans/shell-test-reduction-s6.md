@@ -254,6 +254,13 @@ with `-PkubernetesBuildNetwork=host`. Hosted CI retains default build
 networking; the opt-in does not alter business assertions or eliminate the
 need for a new full-local four-field PASS.
 
+The matching core now calculates the taker weighted average with standard
+C++20 64-bit arithmetic instead of the compiler-specific `__int128` type.
+The replacement retains the exact integer quotient and remainder across
+partial fills. Native CTest and strict pedantic compilation verify this
+change. It changes executable verification inputs, so earlier full-local
+P6 evidence remains historical and cannot certify the updated source.
+
 ## P4: source-aligned acceptance pre-audit
 
 The file-level diff from complete-local source `1a3fa704` through the

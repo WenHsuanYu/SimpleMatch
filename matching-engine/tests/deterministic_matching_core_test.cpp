@@ -3,6 +3,7 @@
 
 #include <algorithm>
 #include <array>
+#include <limits>
 #include <string_view>
 #include <vector>
 
@@ -187,14 +188,117 @@ TEST(DeterministicMatchingCoreTest, MarketOrderIndexesTradesAndPublishesResultin
   EXPECT_EQ(engine.resting_order_count(instrument()), 1U);
 }
 
-TEST(DeterministicMatchingCoreTest, RejectsUnknownPartitionAndRetainsNoDynamicBookExpansion) {
+TEST(DeterministicMatchingCoreTest,
+     TakerAverageRetainsFractionalNotionalAcrossFills) {
   auto engine = core();
-  auto wrong_partition = new_order(
-      "0198a001-0000-7000-8000-000000000007",
-      "0198a001-0000-7000-8000-000000000017",
-      CoreSide::kBuy,
-      100,
-      1'000'000);
+  ASSERT_EQ(engine.process(new_order("0198a001-0000-7000-8000-000000000040",
+                                     "0198a001-0000-7000-8000-000000000050",
+                                     CoreSide::kSell, 2, 1)),
+            MatchingProcessResult::kApplied);
+  ASSERT_EQ(engine.process(new_order("0198a001-0000-7000-8000-000000000041",
+                                     "0198a001-0000-7000-8000-000000000051",
+                                     CoreSide::kSell, 3, 2)),
+            MatchingProcessResult::kApplied);
+  ASSERT_EQ(engine.process(new_order("0198a001-0000-7000-8000-000000000042",
+                                     "0198a001-0000-7000-8000-000000000052",
+                                     CoreSide::kSell, 2, 3)),
+            MatchingProcessResult::kApplied);
+  ASSERT_EQ(engine.process(new_order(
+                "0198a001-0000-7000-8000-000000000043",
+                "0198a001-0000-7000-8000-000000000053", CoreSide::kBuy, 7, 0,
+                CoreTimeInForce::kIoc, CoreOrderType::kMarket)),
+            MatchingProcessResult::kApplied);
+  ASSERT_EQ(engine.events().size(), 3U);
+  EXPECT_EQ(engine.events()[0].taker_average_price.value(), 1);
+  EXPECT_EQ(engine.events()[1].taker_average_price.value(), 1);
+  EXPECT_EQ(engine.events()[2].taker_average_price.value(), 2);
+}
+
+TEST(DeterministicMatchingCoreTest,
+     TakerAverageRoundsDownWhenLaterMakerPricesDecrease) {
+  auto engine = core();
+  ASSERT_EQ(engine.process(new_order("0198a001-0000-7000-8000-000000000044",
+                                     "0198a001-0000-7000-8000-000000000054",
+                                     CoreSide::kBuy, 2, 100)),
+            MatchingProcessResult::kApplied);
+  ASSERT_EQ(engine.process(new_order("0198a001-0000-7000-8000-000000000045",
+                                     "0198a001-0000-7000-8000-000000000055",
+                                     CoreSide::kBuy, 1, 99)),
+            MatchingProcessResult::kApplied);
+  ASSERT_EQ(engine.process(new_order("0198a001-0000-7000-8000-000000000046",
+                                     "0198a001-0000-7000-8000-000000000056",
+                                     CoreSide::kBuy, 2, 97)),
+            MatchingProcessResult::kApplied);
+  ASSERT_EQ(engine.process(new_order(
+                "0198a001-0000-7000-8000-000000000047",
+                "0198a001-0000-7000-8000-000000000057", CoreSide::kSell, 5, 0,
+                CoreTimeInForce::kIoc, CoreOrderType::kMarket)),
+            MatchingProcessResult::kApplied);
+  ASSERT_EQ(engine.events().size(), 3U);
+  EXPECT_EQ(engine.events()[0].taker_average_price.value(), 100);
+  EXPECT_EQ(engine.events()[1].taker_average_price.value(), 99);
+  EXPECT_EQ(engine.events()[2].taker_average_price.value(), 98);
+}
+
+TEST(DeterministicMatchingCoreTest,
+     TakerAverageHandlesProductsBeyondSixtyFourBits) {
+  auto engine = core();
+  constexpr std::int64_t maximum = std::numeric_limits<std::int64_t>::max();
+  const std::int64_t first_quantity = maximum / 2;
+  const std::int64_t second_quantity = maximum - first_quantity;
+  ASSERT_EQ(
+      engine.process(new_order("0198a001-0000-7000-8000-000000000048",
+                               "0198a001-0000-7000-8000-000000000058",
+                               CoreSide::kSell, first_quantity, maximum - 100)),
+      MatchingProcessResult::kApplied);
+  ASSERT_EQ(
+      engine.process(new_order("0198a001-0000-7000-8000-000000000049",
+                               "0198a001-0000-7000-8000-000000000059",
+                               CoreSide::kSell, second_quantity, maximum - 1)),
+      MatchingProcessResult::kApplied);
+  ASSERT_EQ(engine.process(new_order(
+                "0198a001-0000-7000-8000-00000000004a",
+                "0198a001-0000-7000-8000-00000000005a", CoreSide::kBuy, maximum,
+                0, CoreTimeInForce::kIoc, CoreOrderType::kMarket)),
+            MatchingProcessResult::kApplied);
+  ASSERT_EQ(engine.events().size(), 2U);
+  EXPECT_EQ(engine.events()[0].taker_average_price.value(), maximum - 100);
+  EXPECT_EQ(engine.events()[1].taker_average_price.value(), maximum - 51);
+  EXPECT_EQ(engine.events()[1].taker_cumulative_quantity.value(), maximum);
+}
+
+TEST(DeterministicMatchingCoreTest, TakerAverageHandlesLargeDecreasingPrice) {
+  auto engine = core();
+  constexpr std::int64_t maximum = std::numeric_limits<std::int64_t>::max();
+  const std::int64_t first_quantity = maximum / 2;
+  const std::int64_t second_quantity = maximum - first_quantity;
+  ASSERT_EQ(
+      engine.process(new_order("0198a001-0000-7000-8000-00000000004b",
+                               "0198a001-0000-7000-8000-00000000005b",
+                               CoreSide::kBuy, first_quantity, maximum - 1)),
+      MatchingProcessResult::kApplied);
+  ASSERT_EQ(
+      engine.process(new_order("0198a001-0000-7000-8000-00000000004c",
+                               "0198a001-0000-7000-8000-00000000005c",
+                               CoreSide::kBuy, second_quantity, maximum - 100)),
+      MatchingProcessResult::kApplied);
+  ASSERT_EQ(engine.process(new_order(
+                "0198a001-0000-7000-8000-00000000004d",
+                "0198a001-0000-7000-8000-00000000005d", CoreSide::kSell,
+                maximum, 0, CoreTimeInForce::kIoc, CoreOrderType::kMarket)),
+            MatchingProcessResult::kApplied);
+  ASSERT_EQ(engine.events().size(), 2U);
+  EXPECT_EQ(engine.events()[0].taker_average_price.value(), maximum - 1);
+  EXPECT_EQ(engine.events()[1].taker_average_price.value(), maximum - 51);
+  EXPECT_EQ(engine.events()[1].taker_cumulative_quantity.value(), maximum);
+}
+
+TEST(DeterministicMatchingCoreTest,
+     RejectsUnknownPartitionAndRetainsNoDynamicBookExpansion) {
+  auto engine = core();
+  auto wrong_partition = new_order("0198a001-0000-7000-8000-000000000007",
+                                   "0198a001-0000-7000-8000-000000000017",
+                                   CoreSide::kBuy, 100, 1'000'000);
   wrong_partition.context.partition_id = 1;
 
   EXPECT_EQ(engine.process(wrong_partition), MatchingProcessResult::kPartitionMismatch);
