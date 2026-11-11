@@ -95,11 +95,21 @@ The P1 changes add no business logic, interpreter program or test implementation
 | `ci-cdc.yml` | `manifestCheck`, `verifyCdc` | Push, PR and manual for CDC, shared contracts and dependency infrastructure. The old CDC continuation is not invoked. |
 | `ci-flyway.yml` | Dependency contracts and `verifyPostgres` | Push, PR and manual for database-owning services, SQL fixtures and Gradle infrastructure. Includes Projection already. |
 | `ci-native.yml` | Native CMake build and CTest | Push, PR and manual for Matching, CMake, protocol and native fixtures. |
-| `ci-local-resource-lifecycle.yml` | Existing Shell utility contracts and kind registry/resource smoke | PR and manual only. P1 bounds the `contracts` job. Neither job executes a deployed business scenario. |
+| `ci-local-resource-lifecycle.yml` | Existing Shell utility contracts; manual kind registry/resource smoke | Contracts run on selected PRs and manual dispatch. The real-kind smoke runs only on manual dispatch. Neither job executes a deployed business scenario. |
 | `ci-business-kind.yml` | Existing `verifyKubernetes` → `RiskCommandKubernetesTest` | P2 selects the deployed Risk/Account/outbox/Kafka scenario on push, PR and manual dispatch; source and shared build/deployment inputs are included. The runner has an isolated disposable kind cluster. No other deployed scenario is claimed. |
 | `dependency-submission.yml` | Dependency graph submission | Push and manual; it is not a business assertion owner. |
 
 The current service, dependency and native workflows already run separately.
+The lifecycle workflow no longer repeats `manifestCheck` or sets up Java/Gradle
+for its Shell-only contracts. Java and CDC CI retain the manifest owner.
+The four-node registry smoke has one distinct live contract: publish a local
+image by digest, pull it onto the scheduled worker, and confirm that other
+nodes did not preload it. This checks the local canonical registry transport,
+not the business CI's separate kind image import. Keep it available for manual
+regression checks, not as a mandatory PR job. The smoke now refuses an
+existing canonical kind cluster or registry before enabling cleanup; it must
+not delete a developer's persistent local resources.
+
 Splitting the remaining fifteen-owner Kubernetes `resting-buy` topology into
 jobs would change the behavior under test. The [approved CI scope decision](verification-ci-scope-decision.md)
 therefore makes complete hosted CI optional. P2 must add push-selected focused
@@ -124,13 +134,12 @@ and leaves `kubernetesRetain=false`. It binds image content to current
 source and Docker identities through existing Gradle and Jupiter owners.
 The job has an 80-minute hard budget and a 65-minute Gradle command budget,
 with up to four further minutes for graceful diagnostic and cleanup handling.
-On failure, it invokes the existing `cleanupKubernetesRun` only when a
-run-owned `ownership.json` exists. That separate cleanup has a five-minute
-budget and validates recorded daemon and Kubernetes identities. It does not
-change the original business verdict. Forced runner termination can still
-prevent the step from running. This bounds the worst-case Gradle attempt
-and cleanup to 74 minutes 45 seconds, reserving the rest of the job budget
-for setup, evidence collection and artifact upload.
+The normal `VerificationRun` path collects diagnostics and performs exact-owned
+cleanup when Gradle can finish. The hosted workflow no longer starts a second
+cleanup Gradle process after a failed or interrupted run. Job-VM-local resources
+are ultimately disposed of with the standard GitHub-hosted VM. The job budget
+also covers setup, host observations, and artifact upload; cancellation can
+prevent those later steps from completing.
 It requires the existing Kubernetes `status`, `assertions`, `diagnostics`,
 and `cleanup` summary fields to all equal `PASS`. A missing or failed
 summary cannot pass the step. Jupiter reports remain in the CI job workspace;
@@ -150,7 +159,7 @@ cannot guarantee a final diagnostic or cleanup step. This limitation is
 recorded in P3; it is not a separate hosted teardown acceptance gate for
 VM-local Docker and kind resources.
 
-## P3: host observations and recovery boundary
+## P3: host observations and VM-local cleanup boundary
 
 The workflow collects 15-second host-level samples: CPU busy/idle jiffies,
 available memory, available Docker/workspace disk, and network byte counters.
@@ -164,28 +173,23 @@ The sum of archive sizes over successful node imports measures the payload
 offered to `kind load`, not network wire bytes or unique compressed layers.
 Do not infer archive bytes from Docker image logical sizes.
 
-When the business step fails after recording run ownership, the existing
-`cleanupKubernetesRun` diagnoses and attempts exact owned cleanup. Its
-cleanup-only report is separate from the original business result. When
-no ownership receipt exists, no cleanup authority is available. The runner
-checks for leftover disposable kind containers without deleting them and
-fails closed if it finds any. The ordinary `VerificationRun` path already
-collects bounded redacted diagnostics before owned cleanup. The extra CI
-recovery step is a best-effort fallback for an abnormal Gradle exit. It can
-collect additional diagnostics while the disposable cluster still exists;
-it is not necessary for eventual disposal of resources on a GitHub-hosted VM.
-The primary CI deliverable on failure is the original failed step log and the
-curated redacted evidence artifact. The workflow currently runs the fallback
-before uploading artifacts. A failed or interrupted fallback can delay or
-prevent that upload. If this workflow is revised, prioritize an early upload
-of available sanitized failure evidence, then optional fallback diagnostics;
-any later cleanup report remains separate from the original failure result.
+The ordinary `VerificationRun` path collects bounded redacted diagnostics
+before exact-owned cleanup. The hosted workflow now omits the additional
+`cleanupKubernetesRun` fallback and its cleanup-only reports. This removes a
+second Gradle invocation that was unnecessary for eventual disposal of
+VM-local Docker/kind resources and could delay failure-artifact upload.
+An abruptly terminated Gradle process might not produce a final summary or
+complete normal cleanup. The runner's VM disposal is the final resource
+boundary, not an additional business PASS. The original failed step log and
+available curated diagnostics remain the primary failure evidence. The
+workflow attempts to upload them with `if: always()`; cancellation or runner
+termination can still prevent an upload from finishing.
 Never publish raw JUnit XML/HTML or business payloads without reviewing and
 enforcing redaction.
 GitHub's [workflow cancellation contract](https://docs.github.com/en/actions/reference/workflows-and-actions/workflow-cancellation)
 can interrupt the active step and forcibly terminate a cancelled job after
-five minutes. An `always()` cleanup condition can permit recovery while the
-runner is available. It does not guarantee completion.
+five minutes. Even an `always()` step cannot guarantee artifact upload after
+runner termination.
 [GitHub-hosted runner documentation](https://docs.github.com/en/actions/how-tos/manage-runners/github-hosted-runners/use-github-hosted-runners)
 states that each standard hosted job starts a VM which GitHub decommissions
 after the job. This workflow uses only job-VM-local Docker and disposable kind
@@ -210,8 +214,11 @@ No persistent hosted-resource leak was demonstrated. This additional gate is
 retired for the current *standard GitHub-hosted VM with VM-local kind* scope.
 Keep local cancellation/partial-setup and foreign-resource safety tests,
 bounded failure diagnostics, original failure status, and owner-scoped cleanup
-in graceful failure paths. Do not introduce a destructive cancellation drill
-or independent cleanup agent solely for ephemeral VM-local resources. If CI
+in graceful failure paths. The extra Hosted cleanup recovery step is also
+retired under this narrow scope; `cleanupKubernetesRun` remains available
+for persistent local run-owned resources. Do not introduce a destructive
+cancellation drill or independent cleanup agent solely for ephemeral VM-local
+resources. If CI
 later uses a self-hosted runner, remote Kubernetes cluster, or external cloud
 resources, re-evaluate this scope. Such resources can survive the runner and
 require durable ownership plus independent, idempotent recovery.
@@ -257,9 +264,10 @@ without changing the business assertions or deployment inputs.
 The original 45-minute Gradle limit left insufficient room for the
 business checks after the 43-minute failed setup. The workflow raises
 the finite Gradle limit to 65 minutes and the job limit to 80 minutes,
-leaving 5 minutes 15 seconds for setup and artifact collection after
-the maximum four-minute termination grace and five-minute
-45-second ownership recovery allowance.
+originally reserving five minutes 45 seconds for the additional owner
+recovery. That extra Hosted recovery is now retired. The current budget
+remains 65 minutes for Gradle, up to four minutes for forced termination,
+and 80 minutes for the job including setup and artifact upload.
 
 The failed hosted execution provides a measured **host-level** envelope:
 175 samples over 43.57 minutes, mean interval CPU busy fraction 44.7%
@@ -337,9 +345,10 @@ test definitions. The original P6 PASS remains historical evidence,
 but cannot certify the new source. Require a fresh source-aligned
 `verifyAll` PASS before declaring the final complete-local result.
 
-The tracked S6 inventory remains 34 Shell files / 6,896 physical lines,
-with zero tracked Python and Ruby files. This P3 change adds host
-observations and exact-owner recovery calls to the existing workflow.
+The current tracked S6 inventory is 34 Shell files / 6,911 physical lines,
+with zero tracked Python and Ruby files. The earlier P3 change added host
+observations and exact-owner recovery calls to the workflow. The latest
+Hosted simplification preserves host observations and removes those calls.
 It does not create or translate business tests, or add a Shell file.
 The requirement dispositions and intentional retirements in P0 and
 S5 remain authoritative. Final AC-10 requires a successful selected
@@ -368,17 +377,17 @@ executable verifier change and must be rerun on the eventual final HEAD.
 | Acceptance | Current evidence and remaining gate |
 | --- | --- |
 | AC-01 | PASS: S0 baseline dispositions, S5 final retirement groups, the R01-R26 owner tables above and final S6 audit preserve every retained requirement's authoritative owner and document intentional verification losses. The S6 changes did not add business test owners or obsolete callers. |
-| AC-02 | PASS: recounted on executable `7af4a1e1`, baseline 170 tracked Shell files / 34,923 physical lines to 34 files / 6,896 physical lines, with zero tracked Python/Ruby. File reduction is 80.00%; physical-line reduction is 80.25%. |
+| AC-02 | PASS: the frozen baseline is 170 tracked Shell files / 34,923 physical lines. The current inventory is 34 files / 6,911 lines, with zero tracked Python/Ruby. File reduction is 80.00%; physical-line reduction is 80.21%. The earlier executable `7af4a1e1` had 6,896 lines before the smoke preflight safety fix. |
 | AC-03 | PASS: the S5 retirement audit records duplicate removal and no concealed language relocation. Final S6 changes add no Shell/Python/Ruby scripts, business assertions in workflow YAML, duplicate test framework, or permanent compatibility reporter. |
 | AC-04 | PASS: current executable source `7af4a1e1` passed the full unfiltered `verifyAll` with `full-native-dev` / `resting-buy`, Native 85/85, R19 420/420 and source-bound images. The earlier `076cb0e7` and S5 runs remain separate. |
 | AC-05 | PASS: `verifyAllScope` blocks excluded tasks, filtered/dirty source and altered complete-local profiles. Live verification uses fresh run and image identities. |
-| AC-06 | PASS for the currently retained modes and resource scope: `7af4a1e1` dedicated full-local run preserves `diagnostics=PASS`, `cleanup=PASS` and canonical nodes. S3/#200 verified disposable ownership, partial setup, interruption, local retention and foreign-resource safety. Hosted real failures retain their original FAIL result with normal owner-scoped cleanup PASS; the separate fallback may find resources already absent. Standard hosted job VM disposal, not a successful post-cancellation cleanup step, is the final fallback for VM-local resources. The late-added mandatory Hosted cancellation drill is retired by the 2026-11-12 scope correction above; no cancellation-success evidence is claimed. |
+| AC-06 | PASS for the currently retained modes and resource scope: `7af4a1e1` dedicated full-local run preserves `diagnostics=PASS`, `cleanup=PASS` and canonical nodes. S3/#200 verified disposable ownership, partial setup, interruption, local retention and foreign-resource safety. Historic Hosted failure runs retained their original FAIL result with normal owner-scoped cleanup PASS. The extra Hosted recovery step has now been removed; VM retirement is the last fallback for VM-local resources after abrupt termination. No cancellation-success evidence is claimed or required within this scope. |
 | AC-07 | PASS: existing JUnit/Gradle and `VerificationRun` report owners require named, non-skipped tests and four-field Kubernetes PASS. A failed or cancelled workflow never inherits an earlier PASS. |
 | AC-08 | PASS: Spring-managed Jupiter, existing native tests and dependency Testcontainers owners remain authoritative. No new framework is required. |
 | AC-09 | PASS: existing pinned manifest owner is `manifestCheck`, selected in Java and CDC CI as well as `verifyAll`. |
-| AC-10 | PASS: final executable `7af4a1e1` focused Hosted Risk/Kafka run `42989471172` attempt 1 has independently verified original PASS/PASS/PASS/PASS, source/verification fingerprints matching complete-local, risk-admission/outbox assertions, 27 identity-checked worker image imports and 186 host resource samples. Complete hosted CI remains optional. The two failed `076cb0e7` attempts remain historical original failures. |
+| AC-10 | PENDING final Hosted workflow validation after the removal of its fallback recovery step. The earlier `7af4a1e1` focused Hosted Risk/Kafka run `42989471172` attempt 1 retains its independently verified original PASS/PASS/PASS/PASS, source/verification fingerprints, business assertions, 27 image imports and 186 host resource samples. This result applies to the prior workflow and is not a PASS for the revised workflow. Complete hosted CI remains optional. |
 | AC-11 | PASS on clean committed executable `7af4a1e1`: full-local `verifyAll` (37m15s, 194 Gradle tasks, Native 85/85) on `full-native-dev` / `resting-buy`; run `ff2f3aaf-90ba-4efb-aaac-11a53b4a6d0b` has original four-field PASS at `out/verification/kubernetes/bd4993ee-4095-434e-ada6-96ffdb816fda/summary.json`, R19 420/420, Kafka provisioning complete, owned namespace absent and original canonical nodes/registry retained. |
-| AC-12 | PASS for current evidence and documented limitations: updated S6 plan, specification and historical certification links match current Gradle/Jupiter owners; the link-target audit found no missing current planning/verification file targets (frozen S0 historical inventory excluded). Original source-aligned complete-local and Hosted reports and resource/image measures were reconciled and posted on #203 and parent #196. The 2026-11-12 AC-06 scope correction and its reason are separately recorded; final Issue closure is an explicit owner/reviewer decision. |
+| AC-12 | PENDING final reconciliation for the revised Hosted workflow. The prior S6 documentation, certification links, source-aligned complete-local and Hosted reports were reconciled and posted on #203 and parent #196. The 2026-11-12 AC-06 scope correction is recorded. Final revised-workflow evidence and issue closure remain separate acceptance decisions. |
 
 For historical comparison only, original S5 P6 evidence is run
 `6364220d-c45a-43e2-9100-daf098e78046` at
@@ -595,8 +604,10 @@ imports sum to 15.408 GiB in archive payload sizes, and the longest single
 import took 29.740 seconds. Archive bytes are **not** network transfer
 bytes, and host metrics are **not** container peak measurements.
 
-AC-10 and AC-11 now have separate source-aligned successful original reports;
-the earlier two failed Hosted attempts and three older failed local runs
+AC-10 and AC-11 obtained separate source-aligned successful original reports
+under the earlier workflow; the revised Hosted workflow still needs its own
+selected CI run before final AC-10 acceptance.
+The earlier two failed Hosted attempts and three older failed local runs
 retain their original FAIL status. The source and findings were posted in
 [#203 evidence update](https://github.com/WenHsuanYu/SimpleMatch/issues/203#issuecomment-6792327276)
 and [#196 parent update](https://github.com/WenHsuanYu/SimpleMatch/issues/196#issuecomment-6792327734).

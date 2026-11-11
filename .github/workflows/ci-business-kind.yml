@@ -121,7 +121,6 @@ jobs:
           df -h "$GITHUB_WORKSPACE"
           free -h
       - name: Verify focused risk command in run-owned kind
-        id: live
         shell: bash
         run: |
           set -euo pipefail
@@ -153,28 +152,6 @@ jobs:
               -PkubernetesImageTag=ci-${{ github.run_id }}-${{ github.run_attempt }} \
               -PkubernetesBuildReceipt=out/kubernetes-build/ci-${{ github.run_id }}-${{ github.run_attempt }}/inputs.json \
               -PkubernetesEvidence=out/verification/kubernetes/ci-${{ github.run_id }}-${{ github.run_attempt }}
-      - name: Recover an incomplete disposable run by its recorded owner
-        if: ${{ always() && steps.live.outcome != 'success' }}
-        shell: bash
-        run: |
-          set -euo pipefail
-          evidence=out/verification/kubernetes/ci-${{ github.run_id }}-${{ github.run_attempt }}
-          if [[ -f "$evidence/ownership.json" ]]; then
-            # The existing Gradle cleanup owner diagnoses before deleting only
-            # resources bound to the recorded Docker daemon and run identity.
-            timeout --signal=TERM --kill-after=45s 5m \
-              ./gradlew cleanupKubernetesRun --no-daemon --console=plain --max-workers=2 \
-                -PkubernetesOwnership="$evidence/ownership.json" \
-                -PkubernetesCleanupEvidence=out/verification/kubernetes-cleanup/ci-${{ github.run_id }}-${{ github.run_attempt }}
-          else
-            echo 'No owned Kubernetes receipt; cleanup remains unverified.'
-            if [[ -s "$evidence/run-id" ]] &&
-                docker ps -a --format '{{.Label "io.x-k8s.kind.cluster"}}' |
-                  grep -q '^simplematch-s3-'; then
-              echo 'A disposable kind cluster exists without a usable evidence receipt; refusing unowned deletion.' >&2
-              exit 1
-            fi
-          fi
       - name: Record host capacity and build stage
         if: always()
         shell: bash
@@ -216,8 +193,6 @@ jobs:
             out/ci-capacity/ci-${{ github.run_id }}-${{ github.run_attempt }}/stage.json
             out/ci-capacity/ci-${{ github.run_id }}-${{ github.run_attempt }}/final-host.txt
             out/kubernetes-build/ci-${{ github.run_id }}-${{ github.run_attempt }}/inputs.json
-            out/verification/kubernetes-cleanup/ci-${{ github.run_id }}-${{ github.run_attempt }}/summary.json
-            out/verification/kubernetes-cleanup/ci-${{ github.run_id }}-${{ github.run_attempt }}/cleanup-target.json
             out/verification/kubernetes/ci-${{ github.run_id }}-${{ github.run_attempt }}/run-id
             out/verification/kubernetes/ci-${{ github.run_id }}-${{ github.run_attempt }}/summary.json
             out/verification/kubernetes/ci-${{ github.run_id }}-${{ github.run_attempt }}/preflight.json

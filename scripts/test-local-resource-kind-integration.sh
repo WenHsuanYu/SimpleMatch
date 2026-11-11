@@ -3,7 +3,6 @@ set -Eeuo pipefail
 IFS=$'\n\t'
 
 script_dir="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
-repo_root="$(cd -- "$script_dir/.." && pwd)"
 # shellcheck source=scripts/lib/local-common.sh
 source "$script_dir/lib/local-common.sh"
 # shellcheck source=scripts/lib/local-kind.sh
@@ -22,6 +21,7 @@ report_file="$(mktemp "${TMPDIR:-/tmp}/simplematch-local-resource-report.XXXXXX.
 render_lock="$(mktemp "${TMPDIR:-/tmp}/simplematch-registry-render-lock.XXXXXX")"
 rendered_manifest="$(mktemp "${TMPDIR:-/tmp}/simplematch-registry-rendered.XXXXXX.yaml")"
 rm -f "$baseline_file" "$current_file" "$render_lock"
+trap 'rm -f "$baseline_file" "$current_file" "$report_file" "$render_lock" "$rendered_manifest"' EXIT
 
 export SIMPLEMATCH_LOCAL_RESOURCE_BASELINE_FILE="$baseline_file"
 export SIMPLEMATCH_LOCAL_RESOURCE_BASELINE_TIMEOUT_SECONDS="${SIMPLEMATCH_LOCAL_RESOURCE_BASELINE_TIMEOUT_SECONDS:-180}"
@@ -44,25 +44,40 @@ cleanup() {
   docker image rm "$smoke_source_image" >/dev/null 2>&1 || true
   rm -f "$baseline_file" "$current_file" "$report_file" "$render_lock" "$rendered_manifest"
 }
-trap cleanup EXIT
 
-for tool in docker kind kubectl jq; do
+for tool in docker kind kubectl jq flock; do
   command -v "$tool" >/dev/null 2>&1 || {
     printf '%s is required for live kind resource smoke test\n' "$tool" >&2
     exit 1
   }
 done
 
+exec 9>>/tmp/simplematch-kind-registry-smoke.lock
+if ! flock -n 9; then
+  printf '%s\n' 'refusing concurrent kind/registry integration smoke' >&2
+  exit 1
+fi
+
 docker info >/dev/null 2>&1 || {
   printf '%s\n' 'Docker daemon is not reachable' >&2
   exit 1
 }
 
+if [[ "${SIMPLEMATCH_KIND_CLUSTER_NAME:-simplematch-live}" != simplematch-live ]]; then
+  printf '%s\n' 'integration smoke requires the canonical simplematch-live cluster name' >&2
+  exit 1
+fi
 if kind get clusters 2>/dev/null | grep -Fxq simplematch-live; then
   printf '%s\n' 'refusing to run integration smoke with pre-existing simplematch-live cluster' >&2
   exit 1
 fi
+if simplematch_registry_container_exists ||
+    docker volume inspect "$SIMPLEMATCH_LOCAL_REGISTRY_DATA_VOLUME" >/dev/null 2>&1; then
+  printf '%s\n' 'refusing to run integration smoke with pre-existing local registry resources' >&2
+  exit 1
+fi
 
+trap cleanup EXIT
 bash "$manager" create
 [[ -s "$baseline_file" ]] || {
   printf '%s\n' 'manager create did not establish resource baseline' >&2

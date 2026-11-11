@@ -45,10 +45,6 @@ jobs:
         with:
           fetch-depth: 1
           persist-credentials: false
-      - name: Set up Java and Gradle
-        uses: ./.github/actions/setup-java-gradle
-      - name: Validate supported manifests
-        run: ./gradlew manifestCheck --no-daemon
       - name: Validate shell lifecycle contracts
         run: |
           bash scripts/test-local-image-transport.sh
@@ -58,6 +54,7 @@ jobs:
 
   kind-integration-smoke:
     name: Live kind registry and resource lifecycle smoke
+    if: github.event_name == 'workflow_dispatch'
     needs: contracts
     runs-on: ubuntu-latest
     timeout-minutes: 20
