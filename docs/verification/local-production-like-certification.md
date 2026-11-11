@@ -116,7 +116,7 @@ All nine trading prerequisites passed. The parent report remains intentionally `
 Compose was explicitly skipped; the business result is `PASS` with successful restoration, not a
 filled-trade, recovery, external-production or `full-local` certification claim. The disposable
 namespace and its 20 PVC/PVs were removed after verification; reports and current images remain.
-The linked historical [normal-scenario recipe](../../scripts/end-to-end/critical-consumers/README.md#run-the-normal-scenario)
+The linked historical [normal-scenario acceptance contract](../../scripts/end-to-end/critical-consumers/README.md#normal-resting-buy-acceptance-contract-162)
 documents that earlier certification, but does not authorize reusing its retired
 Shell verification path as current S6 acceptance. For current source-aligned
 complete-local acceptance, use `./gradlew verifyAll` with the documented

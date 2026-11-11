@@ -3,8 +3,9 @@
 Issue [#203](https://github.com/WenHsuanYu/SimpleMatch/issues/203) owns focused business CI and
 final program acceptance. Parent [#196](https://github.com/WenHsuanYu/SimpleMatch/issues/196)
 defines AC-01 through AC-12. This record applies the 2026-11-02 owner amendment.
-It records the P0 requirement review and the bounded P1 workflow corrections.
-It does **not** report a new hosted business Kubernetes run or final S6 acceptance.
+It records the P0 requirement review, the bounded P1 workflow corrections,
+the source-aligned complete-local PASS, and subsequent focused hosted attempts.
+It does **not** assert final S6 acceptance while the remaining gates are open.
 
 The implementation baseline is `ececf38c2297b89738b2f039fa6e81cf3bd99d81`.
 The S5 complete-local PASS belongs to executable source
@@ -169,6 +170,13 @@ checks for leftover disposable kind containers without deleting them and
 fails closed if it finds any. Neither case establishes cancellation cleanup
 under forced runner termination;
 that requires a separate failure-path check.
+GitHub's [workflow cancellation contract](https://docs.github.com/en/actions/reference/workflows-and-actions/workflow-cancellation)
+can interrupt the active step and forcibly terminate a cancelled job after
+five minutes. An `always()` cleanup condition allows recovery to execute, but
+does not prove it finished. AC-06 requires an isolated, recoverable hosted
+cancellation **after** an ownership receipt, followed by a verified
+source-run/cluster/namespace cleanup target and absence of its exact owned
+resources. A normal failed Job with successful recovery is separate evidence.
 
 The first hosted execution of `be9820e2` failed before Kubernetes began:
 [run 42844556998, attempt 1](https://github.com/WenHsuanYu/SimpleMatch/actions/runs/42844556998).
@@ -261,7 +269,7 @@ partial fills. Native CTest and strict pedantic compilation verify this
 change. It changes executable verification inputs, so earlier full-local
 P6 evidence remains historical and cannot certify the updated source.
 
-## P4: source-aligned acceptance pre-audit
+## P4: historical source-aligned acceptance pre-audit
 
 The file-level diff from complete-local source `1a3fa704` through the
 P3 workflow-only changes contains only `.github/workflows/*.yml` and
@@ -306,30 +314,32 @@ executable verifier change and must be rerun on the eventual final HEAD.
 
 | Acceptance | Current evidence and remaining gate |
 | --- | --- |
-| AC-01 | S0 baseline dispositions, S5 final retirement groups and the R11-R22 owner table above. P0 owner review complete; P4 will check final surviving callers after all changes. |
-| AC-02 | Baseline 170/34,923 to 34/6,896, zero tracked Python/Ruby. Recount on final S6 source. |
-| AC-03 | S5 retirement audit records duplicate removal and no concealed language relocation. Repeat the audit only for S6 additions at P4. |
-| AC-04 | S5 executable source `1a3fa704` passed `verifyAll` with retained owners on 2026-11-08. |
-| AC-05 | `verifyAllScope` blocks excluded tasks, filtered/dirty source and altered complete-local profiles. Live verification uses fresh run and image identities. |
-| AC-06 | Final S5 PASS used the dedicated cluster with exact cleanup. Disposable lifecycle has historical #200 evidence and existing tests; no new final-source disposable full-Live claim. |
-| AC-07 | Existing JUnit/Gradle and `VerificationRun` report owners require named, non-skipped tests and four-field Kubernetes PASS. Hosted cancellation evidence remains for P3. |
-| AC-08 | Spring-managed Jupiter, existing native tests and dependency Testcontainers owners remain authoritative. No new framework is required. |
-| AC-09 | Existing pinned manifest owner is `manifestCheck`, selected in Java and CDC CI as well as `verifyAll`. |
-| AC-10 | Selected hosted run `42956991465` on `3a61065e` passed all four report fields, with capacity and archive-import metrics above. An executable verifier change after that SHA requires a new hosted run. Full hosted CI is optional by owner amendment. |
-| AC-11 | Required fresh full-local `verifyAll` on final source remains unproven. Three distinct `3a61065e` attempts on 2026-11-11 failed; none may be relabelled PASS. The historical S5 P6 PASS certifies only its original executable source. |
-| AC-12 | Final source-aligned evidence and cleanup audit remain incomplete. No Issue may close until all applicable acceptance criteria, including AC-06 cancellation behavior, are supported. |
+| AC-01 | PASS: S0 baseline dispositions, S5 final retirement groups, the R01-R26 owner tables above and final S6 audit preserve every retained requirement's authoritative owner and document intentional verification losses. The S6 changes did not add business test owners or obsolete callers. |
+| AC-02 | PASS: recounted on `076cb0e7`, baseline 170 tracked Shell files / 34,923 physical lines to 34 files / 6,896 physical lines, with zero tracked Python/Ruby. File reduction is 80.00%; physical-line reduction is 80.25%. |
+| AC-03 | PASS: the S5 retirement audit records duplicate removal and no concealed language relocation. Final S6 changes add no Shell/Python/Ruby scripts, business assertions in workflow YAML, duplicate test framework, or permanent compatibility reporter. |
+| AC-04 | PASS: latest executable source `076cb0e7` passed the full unfiltered `verifyAll` with the retained `resting-buy` owners on 2026-11-11, including Native 85/85, R19 420/420 and source-bound images. The historical S5 `1a3fa704` PASS remains separate. |
+| AC-05 | PASS: `verifyAllScope` blocks excluded tasks, filtered/dirty source and altered complete-local profiles. Live verification uses fresh run and image identities. |
+| AC-06 | BLOCKED: `076cb0e7` dedicated full-local run preserves `diagnostics=PASS`, `cleanup=PASS` and the canonical cluster. Hosted failure attempt 1 preserves FAIL/FAIL/PASS/PASS and an independently recorded owned cleanup PASS. Recoverable hosted cancellation after an owner receipt still lacks current-workflow execution evidence. |
+| AC-07 | PASS: existing JUnit/Gradle and `VerificationRun` report owners require named, non-skipped tests and four-field Kubernetes PASS. The separate cancellation evidence gap is tracked under AC-06. |
+| AC-08 | PASS: Spring-managed Jupiter, existing native tests and dependency Testcontainers owners remain authoritative. No new framework is required. |
+| AC-09 | PASS: existing pinned manifest owner is `manifestCheck`, selected in Java and CDC CI as well as `verifyAll`. |
+| AC-10 | BLOCKED: historical selected hosted run `42956991465` on `3a61065e` passed all four report fields, with capacity and archive-import metrics above. On new executable SHA `076cb0e7`, hosted run `42973661161` attempt 1 failed Kafka topic configuration describe before business assertions, with diagnostics and cleanup PASS. Attempt 2 was initiated without changing timeout or assertions; its actual four-field result must be checked before accepting this AC. Complete hosted CI is optional by owner amendment. |
+| AC-11 | PASS on committed `076cb0e7`: full-local `verifyAll` (37m15s, 194 Gradle tasks, 85/85 native CTest) on `full-native-dev` / `resting-buy`; run `b6ca4c11-db56-414b-8721-65296c006c38` has four-field PASS in `out/verification/kubernetes/f7b96765-5b9e-41cf-9928-d841f9a5a81a/summary.json`. Actual namespace absent after cleanup; original canonical cluster and registry Ready. Earlier FAIL runs remain independent historical records. |
+| AC-12 | BLOCKED: current plan, specification, and historical certification links were reconciled with retired Shell owners. A local-link audit of `docs/plans` and `docs/verification`, excluding the frozen S0 inventory, found no missing file targets. Final hosted evidence, cancellation cleanup and Issue status still require reconciliation; no Issue may close before those gates pass. |
 
-Original P6 evidence is run `6364220d-c45a-43e2-9100-daf098e78046` at
+For historical comparison only, original S5 P6 evidence is run
+`6364220d-c45a-43e2-9100-daf098e78046` at
 `out/verification/kubernetes/7458c622-11ad-4cdd-8f83-69bc519582ef/`.
 Its `summary.json` records `status`, `assertions`, `diagnostics` and `cleanup`
 as `PASS`. The runtime fingerprint is
 `025ade2427eaa7bed00bc499a46bb9515662c9d7b742744947cc74a8c659c954`.
 The verification fingerprint is
 `24efd110a5c83c0438c32740e180d29faaf889f284759328803d5cc901fabbd7`.
-P0/P1 change only Markdown and GitHub Actions workflow definitions.
-Neither class of file contributes to these fingerprints. P4 must confirm the
-final diff, current acceptance semantics and image identities before reusing
-this evidence. No historical result is relabeled or upgraded.
+At the earlier P0/P1 review, only Markdown and GitHub Actions workflow
+definitions had changed, so conditional reuse was considered. Subsequent
+executable test and verifier changes made that reuse inapplicable. The
+`076cb0e7` complete-local run below is the current evidence; no historical
+result is relabeled or upgraded.
 
 **S6 state (2026-11-11):** P0/P1 owner and workflow dispositions, focused
 business CI, and measured hosted resource/import evidence are available.
@@ -337,9 +347,10 @@ Failure-path owned cleanup is supported by real hosted failure artifacts.
 Recoverable hosted cancellation after an ownership receipt is still not
 proven by an actual current-workflow run; local interruption tests alone
 do not establish that AC-06 requirement. Do not cancel a production verification
-run to manufacture this evidence. The final source-aligned complete-local
-PASS is also pending. Keep #203 and #196 OPEN until both blockers and the
-AC-12 source/evidence reconciliation are resolved.
+run to manufacture this evidence. The `076cb0e7` complete-local PASS is now
+recorded below; selected hosted CI on that SHA remains blocked by the actual
+first-attempt result pending a new four-field verdict. Keep #203 and #196 OPEN
+until the remaining gates and AC-12 source/evidence reconciliation are resolved.
 
 Three independent full-local runs on `3a61065e`, all with
 `-PkubernetesBuildNetwork=host` and the unmodified `resting-buy` acceptance
@@ -372,6 +383,60 @@ original veth to be absent afterward, with only an `eth0` fallback accepted.
 The independent CRI/PID stop fence, blocked old/new sockets and prohibition
 on treating timeouts as revocation remain mandatory. The RED regression
 reproduced the false-failure predicate; `:tools:kubernetes-tests:test` and
-`staticAnalysis` then passed after the correction. These focused results do
-**not** upgrade the third full-local run; a new clean-source complete-local
-`verifyAll` and final-source hosted CI are required.
+`staticAnalysis` then passed after the correction. These focused results did
+**not** upgrade the third failed full-local run. The subsequent clean-source
+complete-local PASS is documented below; final-source hosted CI remains a
+separate acceptance requirement.
+
+## Source-aligned S6 complete-local verification (2026-11-11)
+
+Commit [`076cb0e7`](https://github.com/WenHsuanYu/SimpleMatch/commit/076cb0e78bd7e5929ce09945087a0381a1499a84)
+includes the exact `/32` Query Pod route proof and its RED/GREEN tests, without
+weakening CRI stop, HTTP failure or ownership assertions. The unmodified full
+command `PATH=/home/alexyu/go/bin:$PATH VCPKG_ROOT=/home/alexyu/vcpkg
+./gradlew --no-daemon verifyAll --console=plain --max-workers=2
+-PkubernetesBuildNetwork=host` completed **BUILD SUCCESSFUL in 37m15s**, with
+194 Gradle tasks and native 85/85 CTest. Its run-owned Kubernetes identity
+`b6ca4c11-db56-414b-8721-65296c006c38` reports all four independent fields
+`status=PASS`, `assertions=PASS`, `diagnostics=PASS`, `cleanup=PASS` at
+`out/verification/kubernetes/f7b96765-5b9e-41cf-9928-d841f9a5a81a/summary.json`.
+The same directory's `preflight.json` records source fingerprint
+`38bc9a57cad46b01a34a68a976e6e6980bbb12583fd2b4f81f8c18187818f852`
+and verification fingerprint
+`1d6ff5db34500d8c03b7fdb373aa42dace0839eed2f7ceb584743262d1d52075`.
+R19 principal matrices each report `complete=true` and `verifiedCells=140`
+for V1/V2/V3, totaling 420 cells. V2/V3 transport evidence records each old
+Query veth and its `/32` route absent; both gateway-bearing and on-link
+`eth0` fallbacks were observed in genuine Kubernetes runs. The exact run-owned
+namespace was removed. All four original `simplematch-live` nodes remained
+Ready and `simplematch-local-registry` was retained. Only the four original
+private untracked paths remained after verification.
+
+The same executable SHA's focused hosted
+[run `42973661161`](https://github.com/WenHsuanYu/SimpleMatch/actions/runs/42973661161)
+**attempt 1** produced the independent original result
+`status=FAIL`, `assertions=FAIL`, `diagnostics=PASS`, `cleanup=PASS` in
+downloaded artifact `risk-command-42973661161-1`. Kafka brokers were Ready,
+but `kafka-topic-provisioning` created `matching.commands` and
+`matching.events`, then failed to describe configuration for `matching.events`
+within the already-bounded three-minute retry window. The Job reported
+`BackoffLimitExceeded`, exit code 1. The separately invoked owned cleanup
+returned four-field PASS. Host samples cover 40m05s (161 samples), mean
+interval CPU busy 47.33% (peak 82.03%), minimum `MemAvailable` 10.84 GiB,
+and minimum Docker/workspace available 35.54 GiB. Its cause is not proven by
+these observations; do not label it a resource exhaustion or application
+assertion failure. The image log records 27 imports (nine distinct images to
+three workers), 15.408 GiB summed per-node archive payload (5.136 GiB of
+unique-image archive sizes), and a 27.350-second longest individual import;
+neither payload total is a measured network-transfer byte count. A single
+same-SHA failed-job rerun was requested as
+attempt 2, preserving attempt 1 evidence and the existing finite budgets.
+Neither attempt may be relabelled or inferred from another source's PASS.
+
+The final documentation audit also corrected references to retired bootstrap,
+phase-graph and Market Data verdict scripts. The historical certification
+README link now targets its existing acceptance-contract section. A repository
+link-target scan found no missing local file links in the current planning and
+verification Markdown documents. The frozen S0 inventory intentionally retains
+links to scripts deleted by the migration; those links are historical records,
+not executable interfaces or current implementation guidance.

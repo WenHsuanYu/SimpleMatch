@@ -360,9 +360,11 @@ These links support the baseline assessment. Future implementation paths can cha
 - [Common Spring service convention](../../build-logic/src/main/kotlin/com/simplematch/gradle/SimpleMatchSpringServicePlugin.kt).
 - [Query test tasks](../../services/query-service/build.gradle.kts) and [dependency lock](../../services/query-service/gradle.lockfile).
 - [Query evidence evaluator](../../tools/query-evidence-verifier/README.md).
-- [Market Data verdict](../../scripts/end-to-end/market-data/lib/verdict.sh).
+- Historical Market Data Shell verdict: retired `scripts/end-to-end/market-data/lib/verdict.sh`.
+  The current deployed owner is [KubernetesMarketData](../../tools/kubernetes-tests/src/test/java/com/simplematch/tools/kubernetes/KubernetesMarketData.java).
 - [CDC publication verifier](../../tools/recovery-evidence-verifier/README.md).
-- [Current phase declarations](../../scripts/lib/local-certification-phase-graph.sh).
+- Historical phase declarations: retired `scripts/lib/local-certification-phase-graph.sh`.
+  The current complete entry point is the [Gradle/Jupiter verification owner](../../tools/kubernetes-tests/build.gradle.kts).
 - [Existing lifecycle CI](../../.github/workflows/ci-local-resource-lifecycle.yml).
 
 ### Approval and handoff
