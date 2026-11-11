@@ -315,17 +315,17 @@ executable verifier change and must be rerun on the eventual final HEAD.
 | Acceptance | Current evidence and remaining gate |
 | --- | --- |
 | AC-01 | PASS: S0 baseline dispositions, S5 final retirement groups, the R01-R26 owner tables above and final S6 audit preserve every retained requirement's authoritative owner and document intentional verification losses. The S6 changes did not add business test owners or obsolete callers. |
-| AC-02 | PASS: recounted on `076cb0e7`, baseline 170 tracked Shell files / 34,923 physical lines to 34 files / 6,896 physical lines, with zero tracked Python/Ruby. File reduction is 80.00%; physical-line reduction is 80.25%. |
+| AC-02 | PASS: recounted on executable `7af4a1e1`, baseline 170 tracked Shell files / 34,923 physical lines to 34 files / 6,896 physical lines, with zero tracked Python/Ruby. File reduction is 80.00%; physical-line reduction is 80.25%. |
 | AC-03 | PASS: the S5 retirement audit records duplicate removal and no concealed language relocation. Final S6 changes add no Shell/Python/Ruby scripts, business assertions in workflow YAML, duplicate test framework, or permanent compatibility reporter. |
-| AC-04 | CONDITIONAL: source `076cb0e7` passed full unfiltered `verifyAll` with `resting-buy`, Native 85/85, R19 420/420 and source-bound images. The subsequent Kafka provisioning manifest correction changes deployment inputs and requires a new complete-local execution. |
+| AC-04 | PASS: current executable source `7af4a1e1` passed the full unfiltered `verifyAll` with `full-native-dev` / `resting-buy`, Native 85/85, R19 420/420 and source-bound images. The earlier `076cb0e7` and S5 runs remain separate. |
 | AC-05 | PASS: `verifyAllScope` blocks excluded tasks, filtered/dirty source and altered complete-local profiles. Live verification uses fresh run and image identities. |
-| AC-06 | BLOCKED: `076cb0e7` dedicated full-local run preserves `diagnostics=PASS`, `cleanup=PASS` and the canonical cluster. Hosted failure attempt 1 preserves FAIL/FAIL/PASS/PASS and an independently recorded owned cleanup PASS. Recoverable hosted cancellation after an owner receipt still lacks current-workflow execution evidence. |
+| AC-06 | BLOCKED: `7af4a1e1` dedicated full-local run preserves `diagnostics=PASS`, `cleanup=PASS` and the canonical cluster. Both earlier Hosted failures preserve original FAIL/FAIL/PASS/PASS and independent exact-owned cleanup PASS. Recoverable Hosted cancellation after an ownership receipt still lacks current-workflow execution evidence. |
 | AC-07 | PASS: existing JUnit/Gradle and `VerificationRun` report owners require named, non-skipped tests and four-field Kubernetes PASS. The separate cancellation evidence gap is tracked under AC-06. |
 | AC-08 | PASS: Spring-managed Jupiter, existing native tests and dependency Testcontainers owners remain authoritative. No new framework is required. |
 | AC-09 | PASS: existing pinned manifest owner is `manifestCheck`, selected in Java and CDC CI as well as `verifyAll`. |
-| AC-10 | BLOCKED: historical hosted PASS on `3a61065e` is not final-source evidence. Hosted `42973661161` attempts 1 and 2 on `076cb0e7` both failed the additional Kafka configuration Admin query before business assertions, with original FAIL/FAIL/PASS/PASS and separately owned cleanup PASS. The corrected source requires a fresh selected Hosted four-field PASS with host and image-import metrics. Complete hosted CI is optional. |
-| AC-11 | BLOCKED for the changed deployment input: `076cb0e7` previously passed full-local `verifyAll` (37m15s, 194 Gradle tasks, Native 85/85), four-field PASS, R19 420/420 and exact cleanup. This original report remains valid only for its source. The Kafka provisioning manifest correction requires a fresh full-local run before acceptance. |
-| AC-12 | BLOCKED: current plan, specification, and historical certification links were reconciled with retired Shell owners. A local-link audit of `docs/plans` and `docs/verification`, excluding the frozen S0 inventory, found no missing file targets. Final hosted evidence, cancellation cleanup and Issue status still require reconciliation; no Issue may close before those gates pass. |
+| AC-10 | PASS: final executable `7af4a1e1` focused Hosted Risk/Kafka run `42989471172` attempt 1 has independently verified original PASS/PASS/PASS/PASS, source/verification fingerprints matching complete-local, risk-admission/outbox assertions, 27 identity-checked worker image imports and 186 host resource samples. Complete hosted CI remains optional. The two failed `076cb0e7` attempts remain historical original failures. |
+| AC-11 | PASS on clean committed executable `7af4a1e1`: full-local `verifyAll` (37m15s, 194 Gradle tasks, Native 85/85) on `full-native-dev` / `resting-buy`; run `ff2f3aaf-90ba-4efb-aaac-11a53b4a6d0b` has original four-field PASS at `out/verification/kubernetes/bd4993ee-4095-434e-ada6-96ffdb816fda/summary.json`, R19 420/420, Kafka provisioning complete, owned namespace absent and original canonical nodes/registry retained. |
+| AC-12 | PASS for current evidence and documented limitations: updated S6 plan, specification and historical certification links match current Gradle/Jupiter owners; the link-target audit found no missing current planning/verification file targets (frozen S0 historical inventory excluded). Original source-aligned complete-local and Hosted reports and resource/image measures were reconciled and posted on #203 and parent #196. Both Issues remain OPEN because AC-06 cancellation proof is still missing. |
 
 For historical comparison only, original S5 P6 evidence is run
 `6364220d-c45a-43e2-9100-daf098e78046` at
@@ -339,8 +339,9 @@ At the earlier P0/P1 review, only Markdown and GitHub Actions workflow
 definitions had changed, so conditional reuse was considered. Subsequent
 executable test and verifier changes made that reuse inapplicable. The
 `076cb0e7` complete-local run below remains valid for its original source.
-The later Kafka provisioning manifest correction requires a new complete-local
-result. No historical report is relabeled or upgraded.
+The later Kafka provisioning manifest correction has now been certified in a
+fresh full-local `verifyAll` on `7af4a1e1`, documented below; no historical
+result is relabeled or upgraded.
 
 **S6 state (2026-11-11):** P0/P1 owner and workflow dispositions, focused
 business CI, and measured hosted resource/import evidence are available.
@@ -349,10 +350,13 @@ Recoverable hosted cancellation after an ownership receipt is still not
 proven by an actual current-workflow run; local interruption tests alone
 do not establish that AC-06 requirement. Do not cancel a production verification
 run to manufacture this evidence. The `076cb0e7` complete-local PASS is
-recorded below, but both selected Hosted attempts on that SHA failed.
-The Kafka provisioning correction requires new source-aligned local and Hosted
-four-field evidence. Keep #203 and #196 OPEN
-until the remaining gates and AC-12 source/evidence reconciliation are resolved.
+retained as historical, and both selected Hosted attempts on that SHA failed.
+The Kafka provisioning correction `7af4a1e1` has a fresh complete-local PASS;
+the same executable source also has a fresh Hosted focused four-field PASS. Keep
+#203 and #196 OPEN until the separate Hosted cancellation-after-receipt
+cleanup gate is satisfied. The final-source complete-local and selected Hosted
+business gates have both passed; the owning issues and this plan now record
+the exact source/run identities, host measurements and remaining limitation.
 
 Three independent full-local runs on `3a61065e`, all with
 `-PkubernetesBuildNetwork=host` and the unmodified `resting-buy` acceptance
@@ -470,8 +474,82 @@ tokens. It rejects missing, duplicate, malformed or mismatched required
 configurations. The original 15-second Kafka operation limit, shared
 180-second retry deadline and RF/partition/configuration contracts are
 unchanged. This is a new deployment input and does not inherit the prior
-complete-local PASS. New current-source local and Hosted evidence remain
-required before AC-10/AC-11 can pass.
+complete-local PASS. The new current-source local proof is documented below;
+the separate final-source Hosted evidence is documented and passed below.
+
+## Final executable Kafka correction — complete-local PASS (2026-11-11)
+
+The clean committed executable source
+[`7af4a1e1`](https://github.com/WenHsuanYu/SimpleMatch/commit/7af4a1e1f48b6efe91a46cd444c29e28d1e21783)
+ran the original mandatory command with `PATH=/home/alexyu/go/bin:$PATH`,
+`VCPKG_ROOT=/home/alexyu/vcpkg`, `./gradlew --no-daemon verifyAll
+--console=plain --max-workers=2 -PkubernetesBuildNetwork=host`. Its terminal
+result was `BUILD SUCCESSFUL in 37m 15s`, 194 actionable tasks (55 executed,
+139 up-to-date), Native CTest 85/85. Original Kubernetes summary
+`out/verification/kubernetes/bd4993ee-4095-434e-ada6-96ffdb816fda/summary.json`
+records `status=PASS`, `assertions=PASS`, `diagnostics=PASS`, `cleanup=PASS`
+for run `ff2f3aaf-90ba-4efb-aaac-11a53b4a6d0b`.
+
+The preflight source fingerprint was
+`38bc9a57cad46b01a34a68a976e6e6980bbb12583fd2b4f81f8c18187818f852`;
+its fresh verification fingerprint is
+`e125b386353356272861bfb0ca9ecfca73cc24db2f61edfd10c18ace5153962c`;
+approved artifact digest is
+`7c6f567d824706b706dae6d0121c4c73f8d290f83959e5c4922190df1c5eefdf`.
+The actual `kafka-topic-provisioning` Job reports `Succeeded=1` and an exact
+`Complete=True` condition after provisioning all seven topics, without
+changing the Job's 250m CPU quota or 15s/180s budgets. V1/V2/V3 principal
+matrices each report `complete=true`, `realFixSource=true`, and 140/140,
+totaling 420/420. V2 route proofs show exact old veth and `/32` absent,
+with both gateway-bearing and on-link `eth0` fallbacks. The dedicated owned
+namespace `simplematch-s3-ff2f3aaf-90b` was deleted. All four original
+canonical kind nodes remained Ready, and no tracked source was dirty.
+
+This local result does not infer a Hosted PASS. Focused Hosted
+[run `42989471172`](https://github.com/WenHsuanYu/SimpleMatch/actions/runs/42989471172)
+was subsequently completed on the same executable SHA, with the independent
+original four-field PASS and source-bound evidence below. AC-06's recoverable
+Hosted cancellation after an ownership receipt remains a separate missing gate.
+
+## Final executable selected Hosted focused Risk/Kafka CI — PASS (2026-11-11)
+
+[GitHub Actions run `42989471172`, attempt 1](https://github.com/WenHsuanYu/SimpleMatch/actions/runs/42989471172)
+completed SUCCESS, job `130418521651`, on exact source
+`7af4a1e1f48b6efe91a46cd444c29e28d1e21783`. Its downloaded original
+artifact `risk-command-42989471172-1` records
+`verification/kubernetes/ci-42989471172-1/summary.json` with original
+`status=PASS`, `assertions=PASS`, `diagnostics=PASS`, `cleanup=PASS` for
+run `20dd6c7f-5ff9-46fd-ba76-db1863775728`. The selected Risk admission,
+durable outbox and Kafka message assertions completed. The actual Kafka
+provisioning Job reports `Succeeded=1`, `Complete=True`, zero failed Pods
+and its original Pod exit code 0. The normal exact-owned cleanup completed;
+there was no need to invoke the separate failed-run recovery step.
+
+The Hosted source fingerprint was
+`38bc9a57cad46b01a34a68a976e6e6980bbb12583fd2b4f81f8c18187818f852`,
+verification fingerprint
+`e125b386353356272861bfb0ca9ecfca73cc24db2f61edfd10c18ace5153962c`,
+and approved artifact SHA256
+`7c6f567d824706b706dae6d0121c4c73f8d290f83959e5c4922190df1c5eefdf`;
+all three match the final complete-local run. Import records for every one
+of nine images on each of three workers match the exact config digest in
+`image-identities.json`. The aggregate 186 host samples span 2,780 seconds
+(46m20s); average CPU busy was 47.50%, peak 99.01%, minimum `MemAvailable`
+8.891 GiB and minimum Docker/workspace free disk 35.539 GiB. The 27 node
+imports sum to 15.408 GiB in archive payload sizes, and the longest single
+import took 29.740 seconds. Archive bytes are **not** network transfer
+bytes, and host metrics are **not** container peak measurements.
+
+AC-10 and AC-11 now have separate source-aligned successful original reports;
+the earlier two failed Hosted attempts and three older failed local runs
+retain their original FAIL status. The source and findings were posted in
+[#203 evidence update](https://github.com/WenHsuanYu/SimpleMatch/issues/203#issuecomment-6792327276)
+and [#196 parent update](https://github.com/WenHsuanYu/SimpleMatch/issues/196#issuecomment-6792327734).
+The only remaining identified S6 acceptance blocker is AC-06: no actual
+current-workflow GitHub-hosted recoverable cancellation after a usable
+ownership receipt has proved exact-owned cleanup. Do not treat this ordinary
+successful cleanup or earlier failure recovery as cancellation proof; keep
+both Issues OPEN until that separate evidence exists.
 
 The final documentation audit also corrected references to retired bootstrap,
 phase-graph and Market Data verdict scripts. The historical certification
