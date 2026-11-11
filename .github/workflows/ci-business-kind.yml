@@ -150,6 +150,7 @@ jobs:
               -PkubernetesMode=disposable \
               -PkubernetesRetain=false \
               -PkubernetesDockerContext=default \
+              -PkubernetesBuildNetwork=host \
               -PkubernetesImageTag=ci-${{ github.run_id }}-${{ github.run_attempt }} \
               -PkubernetesBuildReceipt=out/kubernetes-build/ci-${{ github.run_id }}-${{ github.run_attempt }}/inputs.json \
               -PkubernetesEvidence=out/verification/kubernetes/ci-${{ github.run_id }}-${{ github.run_attempt }}
