@@ -146,7 +146,9 @@ does not cancel a running cluster. GitHub keeps at most one pending run for
 the same ref and can replace an older pending run with a newer request.
 The existing run-owned verifier diagnoses before cleanup and refuses to
 adopt an old disposable cluster. GitHub cancellation and hard process-kill
-cleanup still require the explicit P3 failure-path audit.
+cannot guarantee a final diagnostic or cleanup step. This limitation is
+recorded in P3; it is not a separate hosted teardown acceptance gate for
+VM-local Docker and kind resources.
 
 ## P3: host observations and recovery boundary
 
@@ -167,16 +169,67 @@ When the business step fails after recording run ownership, the existing
 cleanup-only report is separate from the original business result. When
 no ownership receipt exists, no cleanup authority is available. The runner
 checks for leftover disposable kind containers without deleting them and
-fails closed if it finds any. Neither case establishes cancellation cleanup
-under forced runner termination;
-that requires a separate failure-path check.
+fails closed if it finds any. The ordinary `VerificationRun` path already
+collects bounded redacted diagnostics before owned cleanup. The extra CI
+recovery step is a best-effort fallback for an abnormal Gradle exit. It can
+collect additional diagnostics while the disposable cluster still exists;
+it is not necessary for eventual disposal of resources on a GitHub-hosted VM.
+The primary CI deliverable on failure is the original failed step log and the
+curated redacted evidence artifact. The workflow currently runs the fallback
+before uploading artifacts. A failed or interrupted fallback can delay or
+prevent that upload. If this workflow is revised, prioritize an early upload
+of available sanitized failure evidence, then optional fallback diagnostics;
+any later cleanup report remains separate from the original failure result.
+Never publish raw JUnit XML/HTML or business payloads without reviewing and
+enforcing redaction.
 GitHub's [workflow cancellation contract](https://docs.github.com/en/actions/reference/workflows-and-actions/workflow-cancellation)
 can interrupt the active step and forcibly terminate a cancelled job after
-five minutes. An `always()` cleanup condition allows recovery to execute, but
-does not prove it finished. AC-06 requires an isolated, recoverable hosted
-cancellation **after** an ownership receipt, followed by a verified
-source-run/cluster/namespace cleanup target and absence of its exact owned
-resources. A normal failed Job with successful recovery is separate evidence.
+five minutes. An `always()` cleanup condition can permit recovery while the
+runner is available. It does not guarantee completion.
+[GitHub-hosted runner documentation](https://docs.github.com/en/actions/how-tos/manage-runners/github-hosted-runners/use-github-hosted-runners)
+states that each standard hosted job starts a VM which GitHub decommissions
+after the job. This workflow uses only job-VM-local Docker and disposable kind
+resources. A forced hosted cancellation therefore does not require a separate
+post-receipt cleanup-success proof. It must never count as a passing business
+run. GitHub-retained logs and artifacts uploaded before termination may remain
+available. Later steps and uploads are best effort, not guaranteed.
+
+**AC-06 scope correction (2026-11-12).** The original parent specification
+[#196](https://github.com/WenHsuanYu/SimpleMatch/issues/196) requires
+dedicated/disposable ownership, bounded diagnostics, exact cleanup, local
+retention and safe behavior on failure or interruption. The initial S6 plan
+[`71422c55`](https://github.com/WenHsuanYu/SimpleMatch/commit/71422c551)
+called for a cancellation audit but did not make a hosted VM cancellation
+drill the only way to satisfy AC-06. Commit
+[`f263ce42`](https://github.com/WenHsuanYu/SimpleMatch/commit/f263ce426)
+added the extra failure-recovery step. Commit
+[`021a8776`](https://github.com/WenHsuanYu/SimpleMatch/commit/021a8776775037d54bf9b5011a370e5389660835)
+later elevated a hosted post-receipt cancellation with successful exact-owned
+cleanup into a hard gate, because `always()` does not guarantee completion.
+No persistent hosted-resource leak was demonstrated. This additional gate is
+retired for the current *standard GitHub-hosted VM with VM-local kind* scope.
+Keep local cancellation/partial-setup and foreign-resource safety tests,
+bounded failure diagnostics, original failure status, and owner-scoped cleanup
+in graceful failure paths. Do not introduce a destructive cancellation drill
+or independent cleanup agent solely for ephemeral VM-local resources. If CI
+later uses a self-hosted runner, remote Kubernetes cluster, or external cloud
+resources, re-evaluate this scope. Such resources can survive the runner and
+require durable ownership plus independent, idempotent recovery.
+
+The attempted isolated Hosted cancellation exercise never reached that phase.
+[Run `43058966917`](https://github.com/WenHsuanYu/SimpleMatch/actions/runs/43058966917)
+attempts 1 and 2 failed before creating kind because Ubuntu APT could not
+resolve the archive and security hosts. A one-line experiment in the separate
+[`337bd180` branch](https://github.com/WenHsuanYu/SimpleMatch/commit/337bd1809cc445381ba911a95d1ba8385c71ba2a)
+selected host networking for Docker builds, but
+[run `43061274848`](https://github.com/WenHsuanYu/SimpleMatch/actions/runs/43061274848)
+still failed with the same DNS symptoms. No cancel request was submitted and
+no original result is upgraded. GitHub's
+[`actions/runner-images` issue #15296](https://github.com/actions/runner-images/issues/15296)
+records concurrent failures outside BuildKit; a GitHub team response links
+them to a widespread Canonical outage. The exact DNS failure component is
+not established, and the unsuccessful host-network workaround is not part
+of the `master` workflow.
 
 The first hosted execution of `be9820e2` failed before Kubernetes began:
 [run 42844556998, attempt 1](https://github.com/WenHsuanYu/SimpleMatch/actions/runs/42844556998).
@@ -319,13 +372,13 @@ executable verifier change and must be rerun on the eventual final HEAD.
 | AC-03 | PASS: the S5 retirement audit records duplicate removal and no concealed language relocation. Final S6 changes add no Shell/Python/Ruby scripts, business assertions in workflow YAML, duplicate test framework, or permanent compatibility reporter. |
 | AC-04 | PASS: current executable source `7af4a1e1` passed the full unfiltered `verifyAll` with `full-native-dev` / `resting-buy`, Native 85/85, R19 420/420 and source-bound images. The earlier `076cb0e7` and S5 runs remain separate. |
 | AC-05 | PASS: `verifyAllScope` blocks excluded tasks, filtered/dirty source and altered complete-local profiles. Live verification uses fresh run and image identities. |
-| AC-06 | BLOCKED: `7af4a1e1` dedicated full-local run preserves `diagnostics=PASS`, `cleanup=PASS` and the canonical cluster. Both earlier Hosted failures preserve original FAIL/FAIL/PASS/PASS and independent exact-owned cleanup PASS. Recoverable Hosted cancellation after an ownership receipt still lacks current-workflow execution evidence. |
-| AC-07 | PASS: existing JUnit/Gradle and `VerificationRun` report owners require named, non-skipped tests and four-field Kubernetes PASS. The separate cancellation evidence gap is tracked under AC-06. |
+| AC-06 | PASS for the currently retained modes and resource scope: `7af4a1e1` dedicated full-local run preserves `diagnostics=PASS`, `cleanup=PASS` and canonical nodes. S3/#200 verified disposable ownership, partial setup, interruption, local retention and foreign-resource safety. Hosted real failures retain their original FAIL result with normal owner-scoped cleanup PASS; the separate fallback may find resources already absent. Standard hosted job VM disposal, not a successful post-cancellation cleanup step, is the final fallback for VM-local resources. The late-added mandatory Hosted cancellation drill is retired by the 2026-11-12 scope correction above; no cancellation-success evidence is claimed. |
+| AC-07 | PASS: existing JUnit/Gradle and `VerificationRun` report owners require named, non-skipped tests and four-field Kubernetes PASS. A failed or cancelled workflow never inherits an earlier PASS. |
 | AC-08 | PASS: Spring-managed Jupiter, existing native tests and dependency Testcontainers owners remain authoritative. No new framework is required. |
 | AC-09 | PASS: existing pinned manifest owner is `manifestCheck`, selected in Java and CDC CI as well as `verifyAll`. |
 | AC-10 | PASS: final executable `7af4a1e1` focused Hosted Risk/Kafka run `42989471172` attempt 1 has independently verified original PASS/PASS/PASS/PASS, source/verification fingerprints matching complete-local, risk-admission/outbox assertions, 27 identity-checked worker image imports and 186 host resource samples. Complete hosted CI remains optional. The two failed `076cb0e7` attempts remain historical original failures. |
 | AC-11 | PASS on clean committed executable `7af4a1e1`: full-local `verifyAll` (37m15s, 194 Gradle tasks, Native 85/85) on `full-native-dev` / `resting-buy`; run `ff2f3aaf-90ba-4efb-aaac-11a53b4a6d0b` has original four-field PASS at `out/verification/kubernetes/bd4993ee-4095-434e-ada6-96ffdb816fda/summary.json`, R19 420/420, Kafka provisioning complete, owned namespace absent and original canonical nodes/registry retained. |
-| AC-12 | PASS for current evidence and documented limitations: updated S6 plan, specification and historical certification links match current Gradle/Jupiter owners; the link-target audit found no missing current planning/verification file targets (frozen S0 historical inventory excluded). Original source-aligned complete-local and Hosted reports and resource/image measures were reconciled and posted on #203 and parent #196. Both Issues remain OPEN because AC-06 cancellation proof is still missing. |
+| AC-12 | PASS for current evidence and documented limitations: updated S6 plan, specification and historical certification links match current Gradle/Jupiter owners; the link-target audit found no missing current planning/verification file targets (frozen S0 historical inventory excluded). Original source-aligned complete-local and Hosted reports and resource/image measures were reconciled and posted on #203 and parent #196. The 2026-11-12 AC-06 scope correction and its reason are separately recorded; final Issue closure is an explicit owner/reviewer decision. |
 
 For historical comparison only, original S5 P6 evidence is run
 `6364220d-c45a-43e2-9100-daf098e78046` at
@@ -343,20 +396,20 @@ The later Kafka provisioning manifest correction has now been certified in a
 fresh full-local `verifyAll` on `7af4a1e1`, documented below; no historical
 result is relabeled or upgraded.
 
-**S6 state (2026-11-11):** P0/P1 owner and workflow dispositions, focused
-business CI, and measured hosted resource/import evidence are available.
-Failure-path owned cleanup is supported by real hosted failure artifacts.
-Recoverable hosted cancellation after an ownership receipt is still not
-proven by an actual current-workflow run; local interruption tests alone
-do not establish that AC-06 requirement. Do not cancel a production verification
-run to manufacture this evidence. The `076cb0e7` complete-local PASS is
+**S6 state (updated 2026-11-12):** P0/P1 owner and workflow dispositions,
+focused business CI and measured hosted resource/import evidence are available.
+Actual hosted failure artifacts establish bounded, exact-owner graceful
+cleanup; local S3 and complete-local evidence establish dedicated and
+disposable lifecycle ownership. The mandatory hosted post-receipt cancellation
+drill was added later and is outside the current ephemeral VM resource scope;
+it is not a remaining AC-06 blocker. The `076cb0e7` complete-local PASS is
 retained as historical, and both selected Hosted attempts on that SHA failed.
-The Kafka provisioning correction `7af4a1e1` has a fresh complete-local PASS;
-the same executable source also has a fresh Hosted focused four-field PASS. Keep
-#203 and #196 OPEN until the separate Hosted cancellation-after-receipt
-cleanup gate is satisfied. The final-source complete-local and selected Hosted
-business gates have both passed; the owning issues and this plan now record
-the exact source/run identities, host measurements and remaining limitation.
+The Kafka provisioning correction `7af4a1e1` has its own fresh full-local
+PASS and independent Hosted focused four-field PASS. Do not cancel an
+existing production run to create redundant cleanup evidence. The source/run
+identities, resource measurements and limits remain attached to the original
+reports. #203 and #196 remain open pending final acceptance/closure review,
+not pending a destructive GitHub-hosted cancellation drill.
 
 Three independent full-local runs on `3a61065e`, all with
 `-PkubernetesBuildNetwork=host` and the unmodified `resting-buy` acceptance
@@ -508,8 +561,10 @@ canonical kind nodes remained Ready, and no tracked source was dirty.
 This local result does not infer a Hosted PASS. Focused Hosted
 [run `42989471172`](https://github.com/WenHsuanYu/SimpleMatch/actions/runs/42989471172)
 was subsequently completed on the same executable SHA, with the independent
-original four-field PASS and source-bound evidence below. AC-06's recoverable
-Hosted cancellation after an ownership receipt remains a separate missing gate.
+original four-field PASS and source-bound evidence below. The later-added
+AC-06 hosted cancellation gate was removed from the current scope on
+2026-11-12; this successful run is evidence of normal cleanup, not forced
+cancellation recovery.
 
 ## Final executable selected Hosted focused Risk/Kafka CI — PASS (2026-11-11)
 
@@ -545,11 +600,11 @@ the earlier two failed Hosted attempts and three older failed local runs
 retain their original FAIL status. The source and findings were posted in
 [#203 evidence update](https://github.com/WenHsuanYu/SimpleMatch/issues/203#issuecomment-6792327276)
 and [#196 parent update](https://github.com/WenHsuanYu/SimpleMatch/issues/196#issuecomment-6792327734).
-The only remaining identified S6 acceptance blocker is AC-06: no actual
-current-workflow GitHub-hosted recoverable cancellation after a usable
-ownership receipt has proved exact-owned cleanup. Do not treat this ordinary
-successful cleanup or earlier failure recovery as cancellation proof; keep
-both Issues OPEN until that separate evidence exists.
+The normal successful cleanup and earlier failure recovery do not prove
+post-cancellation cleanup. That proof is not required for the current
+standard GitHub-hosted VM; the 2026-11-12 AC-06 scope correction above
+explains why. Keep the owner/reviewer closure decision separate from the
+already-completed source-aligned acceptance results.
 
 The final documentation audit also corrected references to retired bootstrap,
 phase-graph and Market Data verdict scripts. The historical certification
