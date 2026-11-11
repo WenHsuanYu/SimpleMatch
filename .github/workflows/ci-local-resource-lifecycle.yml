@@ -51,29 +51,3 @@ jobs:
           bash scripts/test-local-image-rendering.sh
           bash scripts/test-local-resource-report.sh
           bash scripts/test-local-resilience-dependencies.sh
-
-  kind-integration-smoke:
-    name: Live kind registry and resource lifecycle smoke
-    if: github.event_name == 'workflow_dispatch'
-    needs: contracts
-    runs-on: ubuntu-latest
-    timeout-minutes: 20
-    steps:
-      - name: Checkout
-        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-        with:
-          fetch-depth: 1
-          persist-credentials: false
-      - name: Install kind v0.32.0
-        run: |
-          curl --fail --silent --show-error --location \
-            --output /tmp/kind-linux-amd64 \
-            https://kind.sigs.k8s.io/dl/v0.32.0/kind-linux-amd64
-          curl --fail --silent --show-error --location \
-            --output /tmp/kind-linux-amd64.sha256sum \
-            https://kind.sigs.k8s.io/dl/v0.32.0/kind-linux-amd64.sha256sum
-          (cd /tmp && sha256sum --check kind-linux-amd64.sha256sum)
-          sudo install -m 0755 /tmp/kind-linux-amd64 /usr/local/bin/kind
-          kind version
-      - name: Run live kind registry/resource smoke
-        run: bash scripts/test-local-resource-kind-integration.sh

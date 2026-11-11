@@ -75,15 +75,6 @@ The default registry is repository-owned and local-only:
 
 Each kind node receives `/etc/containerd/certs.d/localhost:<port>/hosts.toml`, which maps the logical image endpoint to `http://simplematch-local-registry:5000` on the Docker `kind` network. The host can therefore push to `localhost:<port>`, Kubernetes can keep the same image reference, and only a node that schedules a workload needs to pull that image.
 
-The optional `scripts/test-local-resource-kind-integration.sh` smoke test
-creates and then removes its own canonical-named kind cluster and local registry.
-It refuses to run when that cluster, registry container, or registry data volume
-already exists and rejects an overridden cluster name. Run it only against a
-disposable, exclusively owned local Docker environment, not against the
-persistent development lab. It takes a host-local lock to prevent two
-simultaneous smoke invocations on the same host. Other tools that do not use
-that lock must not create or remove the same resources concurrently.
-
 A same-named registry container is reused only after verifying its configured image, restart policy, data volume, and published port. The logical host is deliberately fixed to `localhost`; allowing a remote host would make a workflow intended for local-only publication capable of crossing that ownership boundary.
 
 The explicit image-preparation fallback remains available through:

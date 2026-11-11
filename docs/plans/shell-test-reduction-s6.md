@@ -46,7 +46,7 @@ remain distinct from the R11-R22 deployed business assertions:
 | R04, Matching topic safety | Retained topic validator/provisioner, native messaging checks and deployment configuration owners | Preserve RF/ISR, partition and producer contracts. Retire old cutover fixture matrices and static script-shape guards. |
 | R05, durable outbox publication | `verifyCdc` and its `OutboxCdcIntegrationTest` in CDC CI | Preserve actual event identity and redelivery. Retire legacy Compose connector adapters and duplicate Shell CDC observers. |
 | R06, source-bound images and runtime content | `KubernetesBuildInputs`, `KubernetesImages`, Java image integrity tests and narrow image transport Shell contracts | Preserve actual kind-node execution and digest checks. Retire duplicate build/report orchestration. Hosted business image-transfer measurements remain for P3. |
-| R07, owned kind lifecycle | `VerificationRun`, `KindEnvironment`, ownership Jupiter tests and lifecycle CI contracts/smoke | Preserve exact cleanup, diagnostics and foreign-resource safety. No standalone historical lifecycle PASS reuse. |
+| R07, owned kind lifecycle | `VerificationRun`, `KindEnvironment`, ownership Jupiter tests and lifecycle CI contracts | Preserve exact cleanup, diagnostics and foreign-resource safety. Retire the separate real-kind registry/resource smoke. |
 | R08, resource accounting | `manifestCheck` for declarations and retained local-resource report operations | The owner retired the numeric host-capacity preflight and its Ruby calculator. Neither manifest requests nor prior RSS measurements prove hosted feasibility. P3 must measure the selected CI job. |
 | R09, complete run selection and verdict | `verifyAllScope`, `verifyAll`, Jupiter XML and run-owned Kubernetes summary | Retire the 62-phase dispatcher, report adapters, synthetic PASS reuse and historical phase schema. |
 | R10, focused diagnostics | Retained bounded run-owned diagnostics, `verifyCdc` and narrowly scoped operator tools | Retire the old CDC continuation, Risk CDC observer and standalone Java placement collector. No focused report may upgrade a complete-local verdict. |
@@ -79,10 +79,10 @@ verification losses. These decisions remain in force:
 | Former 62-phase full-local runner, historical PASS reuse and static source-shape checks | Retired with phase adapters, wrappers and dedicated tests | Gradle `verifyAll`, `verifyAllScope`, service tests, Testcontainers, CTest and live Jupiter; no old phase IDs or Compose-only PASS |
 | Remaining Shell scripts | Retain narrow, actively consumed host operations | Local image, kind, resource, Flyway/topic and operator operations. The lifecycle CI Shell contracts test these utilities, not trading behavior. |
 
-The tracked inventory at P0 is **34 `.sh` files / 6,896 physical lines**.
-The newline count is 6,895 because one final line has no newline.
+The tracked inventory at P0 was **34 `.sh` files / 6,896 physical lines**.
+The newline count was 6,895 because one final line had no newline.
 The frozen baseline is **170 files / 34,923 lines**. No tracked `.py` or
-`.rb` file remains. The current count meets both 80% design limits:
+`.rb` file remained at P0. That count met both 80% design limits:
 34 files and 6,984 physical lines. The original reductions came from deleting
 obsolete responsibilities, not moving Shell into YAML, Gradle or Java strings.
 The P1 changes add no business logic, interpreter program or test implementation.
@@ -95,20 +95,22 @@ The P1 changes add no business logic, interpreter program or test implementation
 | `ci-cdc.yml` | `manifestCheck`, `verifyCdc` | Push, PR and manual for CDC, shared contracts and dependency infrastructure. The old CDC continuation is not invoked. |
 | `ci-flyway.yml` | Dependency contracts and `verifyPostgres` | Push, PR and manual for database-owning services, SQL fixtures and Gradle infrastructure. Includes Projection already. |
 | `ci-native.yml` | Native CMake build and CTest | Push, PR and manual for Matching, CMake, protocol and native fixtures. |
-| `ci-local-resource-lifecycle.yml` | Existing Shell utility contracts; manual kind registry/resource smoke | Contracts run on selected PRs and manual dispatch. The real-kind smoke runs only on manual dispatch. Neither job executes a deployed business scenario. |
+| `ci-local-resource-lifecycle.yml` | Existing Shell utility contracts | Contracts run on selected PRs and manual dispatch. No separate live-kind smoke or deployed business scenario is selected. |
 | `ci-business-kind.yml` | Existing `verifyKubernetes` → `RiskCommandKubernetesTest` | P2 selects the deployed Risk/Account/outbox/Kafka scenario on push, PR and manual dispatch; source and shared build/deployment inputs are included. The runner has an isolated disposable kind cluster. No other deployed scenario is claimed. |
 | `dependency-submission.yml` | Dependency graph submission | Push and manual; it is not a business assertion owner. |
 
 The current service, dependency and native workflows already run separately.
 The lifecycle workflow no longer repeats `manifestCheck` or sets up Java/Gradle
 for its Shell-only contracts. Java and CDC CI retain the manifest owner.
-The four-node registry smoke has one distinct live contract: publish a local
-image by digest, pull it onto the scheduled worker, and confirm that other
-nodes did not preload it. This checks the local canonical registry transport,
-not the business CI's separate kind image import. Keep it available for manual
-regression checks, not as a mandatory PR job. The smoke now refuses an
-existing canonical kind cluster or registry before enabling cleanup; it must
-not delete a developer's persistent local resources.
+The dedicated four-node real-kind registry smoke is retired with its script
+and CI job. Existing Shell contracts still check image inventory, digest locks,
+rendered image references, and resource-report rules. The local kind manager
+still checks its actual cluster topology, registry configuration, storage,
+and resource baseline during normal creation and verification. The retirement
+intentionally loses the separate live proof of registry push-to-worker pull
+and absence of preloaded images on unscheduled workers. The focused hosted
+business CI imports images through kind, not this local-registry transport.
+No replacement test or permanent verification helper is added.
 
 Splitting the remaining fifteen-owner Kubernetes `resting-buy` topology into
 jobs would change the behavior under test. The [approved CI scope decision](verification-ci-scope-decision.md)
@@ -345,7 +347,7 @@ test definitions. The original P6 PASS remains historical evidence,
 but cannot certify the new source. Require a fresh source-aligned
 `verifyAll` PASS before declaring the final complete-local result.
 
-The current tracked S6 inventory is 34 Shell files / 6,911 physical lines,
+The current tracked S6 inventory is 33 Shell files / 6,712 physical lines,
 with zero tracked Python and Ruby files. The earlier P3 change added host
 observations and exact-owner recovery calls to the workflow. The latest
 Hosted simplification preserves host observations and removes those calls.
@@ -377,7 +379,7 @@ executable verifier change and must be rerun on the eventual final HEAD.
 | Acceptance | Current evidence and remaining gate |
 | --- | --- |
 | AC-01 | PASS: S0 baseline dispositions, S5 final retirement groups, the R01-R26 owner tables above and final S6 audit preserve every retained requirement's authoritative owner and document intentional verification losses. The S6 changes did not add business test owners or obsolete callers. |
-| AC-02 | PASS: the frozen baseline is 170 tracked Shell files / 34,923 physical lines. The current inventory is 34 files / 6,911 lines, with zero tracked Python/Ruby. File reduction is 80.00%; physical-line reduction is 80.21%. The earlier executable `7af4a1e1` had 6,896 lines before the smoke preflight safety fix. |
+| AC-02 | PASS: the frozen baseline is 170 tracked Shell files / 34,923 physical lines. The current inventory is 33 files / 6,712 lines, with zero tracked Python/Ruby. File reduction is 80.59%; physical-line reduction is 80.78%. The earlier executable `7af4a1e1` had 6,896 lines before the smoke preflight safety fix and later retirement. |
 | AC-03 | PASS: the S5 retirement audit records duplicate removal and no concealed language relocation. Final S6 changes add no Shell/Python/Ruby scripts, business assertions in workflow YAML, duplicate test framework, or permanent compatibility reporter. |
 | AC-04 | PASS: current executable source `7af4a1e1` passed the full unfiltered `verifyAll` with `full-native-dev` / `resting-buy`, Native 85/85, R19 420/420 and source-bound images. The earlier `076cb0e7` and S5 runs remain separate. |
 | AC-05 | PASS: `verifyAllScope` blocks excluded tasks, filtered/dirty source and altered complete-local profiles. Live verification uses fresh run and image identities. |
