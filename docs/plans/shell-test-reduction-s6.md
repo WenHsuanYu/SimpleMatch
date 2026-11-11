@@ -287,15 +287,20 @@ evidence and a clear image-transfer limitation. AC-12 and the final
 issue handoff require a final review; an incomplete retained check
 cannot be recorded as an intentional retirement or PASS.
 
-This is a **selection and workflow contract**, not hosted PASS evidence.
-One failed hosted run now supplies host-level pressure and duration
-measurements, but no successful business verdict, per-container peak
-or exact image-transfer bytes. The risk-command build currently
-also builds the native Matching image to bind the open-barrier digest; its
-build costs cannot be estimated from the smaller 8 GiB steady Kubernetes
-request alone. Record the actual GitHub run conclusion and resource evidence
-before accepting AC-10. Any subsequent executable build-graph reduction
-requires fresh source-aligned complete-local evidence.
+The selected hosted workflow has now passed on source `3a61065e` in
+[run 42956991465](https://github.com/WenHsuanYu/SimpleMatch/actions/runs/42956991465).
+The downloaded `risk-command-42956991465-1` artifact contains the original
+`summary.json` verdict with `status=PASS`, `assertions=PASS`,
+`diagnostics=PASS`, and `cleanup=PASS`. Its stage evidence binds the full
+source revision and source/verification fingerprints. In 175 host samples
+covering 43 minutes 33 seconds, mean interval CPU busy was 40.24%, maximum
+98.73%, minimum `MemAvailable` was 7.289 GiB, and minimum Docker/workspace
+available space was 35.54 GiB. There were 27 image imports (nine distinct
+images on three workers); the sum of node-specific archive sizes was
+15.408 GiB and the longest single import took 29.004 seconds. Archive
+sizes are **not** network transfer bytes; host metrics are **not** per-container
+peaks. This source-bound hosted result is historical after any further
+executable verifier change and must be rerun on the eventual final HEAD.
 
 ## P0 handoff against AC-01 through AC-12
 
@@ -310,9 +315,9 @@ requires fresh source-aligned complete-local evidence.
 | AC-07 | Existing JUnit/Gradle and `VerificationRun` report owners require named, non-skipped tests and four-field Kubernetes PASS. Hosted cancellation evidence remains for P3. |
 | AC-08 | Spring-managed Jupiter, existing native tests and dependency Testcontainers owners remain authoritative. No new framework is required. |
 | AC-09 | Existing pinned manifest owner is `manifestCheck`, selected in Java and CDC CI as well as `verifyAll`. |
-| AC-10 | Open for P2/P3: push-selected business kind run, selected suite results, measured CPU, memory, disk, duration and image transfer. Complete hosted CI is optional. |
-| AC-11 | Existing P6 PASS may be reused only if later changes leave runtime/build inputs, test definitions, complete-local selection and acceptance semantics unchanged. Original identities must stay attached to the original run. |
-| AC-12 | P0/P1 document and CI alignment begins here. P4 must reconcile all active runbooks, report readers and final Issue evidence before closure. |
+| AC-10 | Selected hosted run `42956991465` on `3a61065e` passed all four report fields, with capacity and archive-import metrics above. An executable verifier change after that SHA requires a new hosted run. Full hosted CI is optional by owner amendment. |
+| AC-11 | Required fresh full-local `verifyAll` on final source remains unproven. Three distinct `3a61065e` attempts on 2026-11-11 failed; none may be relabelled PASS. The historical S5 P6 PASS certifies only its original executable source. |
+| AC-12 | Final source-aligned evidence and cleanup audit remain incomplete. No Issue may close until all applicable acceptance criteria, including AC-06 cancellation behavior, are supported. |
 
 Original P6 evidence is run `6364220d-c45a-43e2-9100-daf098e78046` at
 `out/verification/kubernetes/7458c622-11ad-4cdd-8f83-69bc519582ef/`.
@@ -326,9 +331,47 @@ Neither class of file contributes to these fingerprints. P4 must confirm the
 final diff, current acceptance semantics and image identities before reusing
 this evidence. No historical result is relabeled or upgraded.
 
-**S6 state:** P0 owner/disposition review and P1 workflow maintenance are
-separate from final acceptance. P2 must implement and execute selected hosted
-business CI. P3 must measure resources, set grounded execution budgets and
-prove failure/cancellation diagnostics and exact owned cleanup. P4 must run
-selected CI on final source, publish evidence and limitations, and complete
-the final AC-01 through AC-12 audit. Keep #203 and #196 open until then.
+**S6 state (2026-11-11):** P0/P1 owner and workflow dispositions, focused
+business CI, and measured hosted resource/import evidence are available.
+Failure-path owned cleanup is supported by real hosted failure artifacts.
+Recoverable hosted cancellation after an ownership receipt is still not
+proven by an actual current-workflow run; local interruption tests alone
+do not establish that AC-06 requirement. Do not cancel a production verification
+run to manufacture this evidence. The final source-aligned complete-local
+PASS is also pending. Keep #203 and #196 OPEN until both blockers and the
+AC-12 source/evidence reconciliation are resolved.
+
+Three independent full-local runs on `3a61065e`, all with
+`-PkubernetesBuildNetwork=host` and the unmodified `resting-buy` acceptance
+profile, have terminal **FAIL** results, each with `diagnostics=PASS` and
+`cleanup=PASS`:
+
+| Run | Evidence directory under `out/verification/kubernetes/` | Actual failure |
+| --- | --- | --- |
+| `b34e0031-bb75-4291-b1f9-09ba52c797cf` | same name | Kafka StatefulSet never Ready; 41m46s; Kafka quorum could not communicate across stale kindnet PodCIDR routes. |
+| `5562aa7f-2297-45ee-9909-8581ea9164d9` | same name | Kafka StatefulSet never Ready; 22m39s; correcting two stale CNI IPAM subnets exposed a second missing-route defect in old host-network kindnet Pod identity. |
+| `ebdce8af-f407-4ae6-9b0b-2fd28784e569` | same name | Full Kafka 3/3, Matching 15/15 and the real `resting-buy` lifecycle progressed into R19 V2; the exact old Query Pod-route detachment check failed; 35m15s. |
+
+The owned namespaces from all three failures were removed by their respective
+verification runs. Canonical `simplematch-live` (one control plane, three
+workers), its local registry, and non-owned persistent resources were retained.
+Two workers had stale CNI IPAM subnets. After backing up their original
+configuration under ignored `out/ci-investigation/`, the subnets were aligned
+to the live Node PodCIDRs. Two missing cross-node routes were then restored
+in place and verified through kindnet reconciliation cycles. These local
+environment actions are not repository code changes; they do not promise
+persistence through future Docker node-IP reassignment.
+
+R19 V2 captured real stopped Query Pod UIDs, container tasks and process
+identities before failing in `KubernetesQueryTransport.routeDetached`.
+The prior predicate required an `eth0` fallback to carry a gateway field,
+which is not guaranteed by Linux when the old Pod IP is no longer a directly
+attached veth. The strict verifier correction now captures the old Pod's exact
+node-local `/32` route before the stop and requires that exact route and the
+original veth to be absent afterward, with only an `eth0` fallback accepted.
+The independent CRI/PID stop fence, blocked old/new sockets and prohibition
+on treating timeouts as revocation remain mandatory. The RED regression
+reproduced the false-failure predicate; `:tools:kubernetes-tests:test` and
+`staticAnalysis` then passed after the correction. These focused results do
+**not** upgrade the third full-local run; a new clean-source complete-local
+`verifyAll` and final-source hosted CI are required.

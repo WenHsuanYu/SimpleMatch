@@ -3,6 +3,7 @@ package com.simplematch.tools.kubernetes;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 
+import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import java.io.BufferedInputStream;
 import java.io.BufferedOutputStream;
@@ -67,6 +68,13 @@ final class KubernetesQueryTransport implements AutoCloseable {
           throw new IllegalStateException(
               "Query direct Pod address has no attached node-local veth before stop");
         }
+        final var direct32 = transport.exactPodRoute(probe.owner);
+        if (direct32.size() != 1
+            || !probe.directRoute.device().equals(direct32.get(0).path("dev").asText())
+            || !matchesPodIp(direct32.get(0).path("dst").asText(), probe.owner.podIp())) {
+          throw new IllegalStateException(
+              "Query Pod route lacks its expected exact node-local /32 before stop");
+        }
       }
       return transport;
     } catch (Exception | AssertionError failure) {
@@ -96,15 +104,24 @@ final class KubernetesQueryTransport implements AutoCloseable {
       // gone and the old Pod IP no longer has a local delivery route.
       final var after = route(probe.owner);
       final boolean interfaceGone = interfaceGone(probe.owner, probe.directRoute.device());
-      if (!routeDetached(probe.directRoute, after, interfaceGone)) {
-        throw new IllegalStateException("old Query direct Pod route remains attached or its "
-            + "detachment was not conclusively observed");
-      }
+      final boolean exactRouteGone = exactPodRoute(probe.owner).isEmpty();
+      final boolean detached = routeDetached(
+          probe.directRoute, after, interfaceGone, exactRouteGone);
       results.add(Map.of("pod", probe.owner.name(), "uid", probe.owner.uid(),
           "containerId", probe.owner.containerId(), "existingConnection", existing,
-          "newConnection", fresh, "directPodPath", "node-veth-detached",
+          "newConnection", fresh,
+          "directPodPath", detached ? "node-veth-detached" : "unproven",
           "directRouteBefore", probe.directRoute,
-          "directRouteAfter", after, "oldInterfaceAbsent", true));
+          "directRouteAfter", after, "oldInterfaceAbsent", interfaceGone,
+          "oldPod32RouteAbsent", exactRouteGone));
+      if (!detached) {
+        Files.write(evidence.resolve("v" + version + "-transport-block.json"),
+            json.writeValueAsBytes(results));
+        throw new IllegalStateException("old Query direct Pod route remains attached or its "
+            + "detachment was not conclusively observed: before=" + probe.directRoute
+            + ", after=" + after + ", originalInterfaceAbsent=" + interfaceGone
+            + ", oldPod32RouteAbsent=" + exactRouteGone);
+      }
     }
     Files.write(evidence.resolve("v" + version + "-transport-block.json"),
         json.writeValueAsBytes(results));
@@ -154,6 +171,21 @@ final class KubernetesQueryTransport implements AutoCloseable {
     return new DirectRoute(device, entry.path("gateway").asText());
   }
 
+  private JsonNode exactPodRoute(KubernetesQueryPolicyReplacement.Owner owner) throws Exception {
+    final String output = docker.run(dockerContext.command("exec", owner.node(),
+        "ip", "-j", "-4", "route", "show", "exact", owner.podIp() + "/32"),
+        "", Duration.ofSeconds(4)).checked();
+    final var routes = json.readTree(output);
+    if (!routes.isArray()) {
+      throw new IllegalStateException("Query worker provided no exact Pod /32 route inventory");
+    }
+    return routes;
+  }
+
+  private static boolean matchesPodIp(String destination, String podIp) {
+    return podIp.equals(destination) || (podIp + "/32").equals(destination);
+  }
+
   private boolean interfaceGone(KubernetesQueryPolicyReplacement.Owner owner, String device)
       throws Exception {
     if (!device.matches("veth[0-9a-f]{8}")) {
@@ -164,10 +196,14 @@ final class KubernetesQueryTransport implements AutoCloseable {
     return result.exitCode() == 0 && !result.truncated();
   }
 
-  static boolean routeDetached(DirectRoute before, DirectRoute after, boolean interfaceGone) {
-    return before.isAttachedPodInterface() && interfaceGone
+  static boolean routeDetached(DirectRoute before, DirectRoute after, boolean interfaceGone,
+      boolean exactRouteGone) {
+    return before.isAttachedPodInterface() && interfaceGone && exactRouteGone
         && !before.device().equals(after.device())
-        && "eth0".equals(after.device()) && !after.gateway().isBlank();
+        // The kernel may omit the gateway for an on-link eth0 fallback. The
+        // route is detached only when the original node-local veth vanished;
+        // an eth0 fallback is never evidence that a new Pod is serving.
+        && "eth0".equals(after.device());
   }
 
   record DirectRoute(String device, String gateway) {

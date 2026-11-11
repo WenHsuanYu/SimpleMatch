@@ -69,12 +69,21 @@ class KubernetesQueryTransportTest {
     final var attached = new KubernetesQueryTransport.DirectRoute("veth7bbae1e0", "");
     final var fallback = new KubernetesQueryTransport.DirectRoute("eth0", "172.19.0.1");
     assertTrue(attached.isAttachedPodInterface());
-    assertTrue(KubernetesQueryTransport.routeDetached(attached, fallback, true));
-    assertFalse(KubernetesQueryTransport.routeDetached(attached, fallback, false));
-    assertFalse(KubernetesQueryTransport.routeDetached(attached, attached, true));
+    assertTrue(KubernetesQueryTransport.routeDetached(attached, fallback, true, true));
+    assertTrue(KubernetesQueryTransport.routeDetached(attached,
+        new KubernetesQueryTransport.DirectRoute("eth0", ""), true, true),
+        "a detached Pod veth can fall back to an on-link eth0 route without a gateway");
+    assertFalse(KubernetesQueryTransport.routeDetached(attached, fallback, false, true));
+    assertFalse(KubernetesQueryTransport.routeDetached(attached, fallback, true, false),
+        "an exact /32 route to the old Pod IP cannot establish detachment");
+    assertFalse(KubernetesQueryTransport.routeDetached(attached, attached, true, true));
     assertFalse(KubernetesQueryTransport.routeDetached(attached,
-        new KubernetesQueryTransport.DirectRoute("eth0", ""), true));
+        new KubernetesQueryTransport.DirectRoute("eth0", ""), false, true));
+    assertFalse(KubernetesQueryTransport.routeDetached(attached,
+        new KubernetesQueryTransport.DirectRoute("lo", ""), true, true));
+    assertFalse(KubernetesQueryTransport.routeDetached(attached,
+        new KubernetesQueryTransport.DirectRoute("cni0", ""), true, true));
     assertFalse(KubernetesQueryTransport.routeDetached(
-        new KubernetesQueryTransport.DirectRoute("eth0", ""), fallback, true));
+        new KubernetesQueryTransport.DirectRoute("eth0", ""), fallback, true, true));
   }
 }
