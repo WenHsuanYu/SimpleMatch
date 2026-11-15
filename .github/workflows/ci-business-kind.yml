@@ -166,6 +166,8 @@ jobs:
           if [[ "$host_samples_status" != VALID ]]; then
             printf '::warning::Host sampling evidence is %s; AC-10 capacity data is incomplete.\n' "$host_samples_status"
           fi
+          # An awk read/runtime error may emit no count; keep advisory diagnostics alive.
+          [[ "$host_sample_count" =~ ^[0-9]+$ ]] || host_sample_count=0
           jq -n --arg sha "$GITHUB_SHA" --arg stage "$stage" \
             --arg host_samples_status "$host_samples_status" \
             --argjson host_sample_count "$host_sample_count" \
