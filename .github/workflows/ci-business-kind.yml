@@ -5,7 +5,7 @@ on:
     branches:
       - master
       - main
-    paths:
+    paths: &business_paths
       - '.github/workflows/ci-business-kind.yml'
       - '.github/actions/setup-java-gradle/**'
       - '.dockerignore'
@@ -35,37 +35,11 @@ on:
       - 'deploy/kind/**'
       - 'deploy/docker/**'
       - 'scripts/**'
+      # Documentation with no selected build or verification inputs.
+      - '!services/docs/**/*.md'
+      - '!scripts/archive/README.md'
   pull_request:
-    paths:
-      - '.github/workflows/ci-business-kind.yml'
-      - '.github/actions/setup-java-gradle/**'
-      - '.dockerignore'
-      - 'CMakeLists.txt'
-      - 'CMakePresets.json'
-      - 'vcpkg.json'
-      - 'vcpkg-configuration.json'
-      - 'triplets/**'
-      - 'third_party/**'
-      - 'src/**'
-      - 'include/**'
-      - 'tests/**'
-      - 'matching-engine/**'
-      - 'proto/**'
-      - 'shared-java/**'
-      - 'services/**'
-      - 'tools/**'
-      - 'gradle/**'
-      - 'build-logic/**'
-      - 'build.gradle.kts'
-      - 'settings.gradle.kts'
-      - 'settings-gradle.lockfile'
-      - 'gradle.properties'
-      - 'gradlew'
-      - 'config/**'
-      - 'deploy/k8s/**'
-      - 'deploy/kind/**'
-      - 'deploy/docker/**'
-      - 'scripts/**'
+    paths: *business_paths
   workflow_dispatch:
 
 concurrency:
@@ -110,14 +84,12 @@ jobs:
           sudo install -m 0755 /tmp/kubectl /usr/local/bin/kubectl
           kind version
           kubectl version --client
-          for command in docker jq tar timeout findmnt; do command -v "$command"; done
       - name: Check ephemeral Docker host
         shell: bash
         run: |
           set -euo pipefail
           test "$(docker context show)" = default
           docker info --format 'Docker driver={{.Driver}} root={{.DockerRootDir}}'
-          findmnt -T "$(docker info --format '{{.DockerRootDir}}')" -no FSTYPE
           df -h "$GITHUB_WORKSPACE"
           free -h
       - name: Verify focused risk command in run-owned kind
@@ -129,6 +101,7 @@ jobs:
           metrics=out/ci-capacity/ci-${{ github.run_id }}-${{ github.run_attempt }}
           mkdir -p "$metrics"
           docker_root=$(docker info --format '{{.DockerRootDir}}')
+          date -u +%s > "$metrics/host-samples-start.txt"
           printf '%s\n' 'epoch_s,cpu_busy_jiffies,cpu_idle_jiffies,mem_available_bytes,docker_avail_bytes,workspace_avail_bytes,host_rx_bytes,host_tx_bytes' > "$metrics/host-samples.csv"
           (
             while :; do
@@ -142,7 +115,7 @@ jobs:
             done
           ) >> "$metrics/host-samples.csv" 2>/dev/null &
           sampler_pid=$!
-          trap 'kill "$sampler_pid" 2>/dev/null || true' EXIT
+          trap 'kill "$sampler_pid" 2>/dev/null || true; wait "$sampler_pid" 2>/dev/null || true' EXIT
           timeout --signal=TERM --kill-after=240s 65m \
             ./gradlew verifyKubernetes --no-daemon --console=plain --stacktrace --max-workers=2 \
               -PkubernetesScenario=risk-command \
@@ -162,18 +135,54 @@ jobs:
           evidence=out/verification/kubernetes/ci-${{ github.run_id }}-${{ github.run_attempt }}
           mkdir -p "$metrics"
           stage=NO_BUILD_RECEIPT
-          if [[ -s "$receipt" ]]; then stage=$(jq -r '.stage // "UNKNOWN"' "$receipt"); fi
+          if [[ -s "$receipt" ]]; then
+            stage=$(jq -er '.stage // "UNKNOWN" | select(type == "string" and length > 0)' "$receipt" 2>/dev/null) || stage=INVALID_RECEIPT
+          fi
+          host_samples_status=MISSING
+          host_sample_count=0
+          if [[ -f "$metrics/host-samples.csv" ]]; then
+            host_samples_status=INVALID
+            sampler_start=$(cat "$metrics/host-samples-start.txt" 2>/dev/null) || sampler_start=
+            # VALID means start/end coverage with <=60s gaps, not process liveness.
+            if host_sample_count=$(awk -F, -v now="$(date -u +%s)" -v start="$sampler_start" '
+              BEGIN { if (start !~ /^[0-9]+$/) invalid=1 }
+              NR == 1 { if ($1 != "epoch_s" || NF != 8) invalid=1; next }
+              {
+                if (NF != 8) invalid=1
+                for (i = 1; i <= NF; i++) if ($i !~ /^[0-9]+$/) invalid=1
+                if (count == 0 && ($1 < start || $1 - start > 60)) invalid=1
+                if (count && ($1 <= previous || $1 - previous > 60)) invalid=1
+                previous=$1
+                count++
+              }
+              END {
+                print count + 0
+                if (invalid || count < 2 || now < previous || now - previous > 60) exit 1
+              }
+            ' "$metrics/host-samples.csv"); then
+              host_samples_status=VALID
+            fi
+          fi
+          if [[ "$host_samples_status" != VALID ]]; then
+            printf '::warning::Host sampling evidence is %s; AC-10 capacity data is incomplete.\n' "$host_samples_status"
+          fi
           jq -n --arg sha "$GITHUB_SHA" --arg stage "$stage" \
+            --arg host_samples_status "$host_samples_status" \
+            --argjson host_sample_count "$host_sample_count" \
             --argjson attempt '${{ github.run_attempt }}' \
             --argjson summary_present "$(test -f "$evidence/summary.json" && echo true || echo false)" \
-            '{source_sha: $sha, run_attempt: $attempt, build_stage: $stage, summary_present: $summary_present, scope: "risk-command-hosted"}' \
+            '{source_sha: $sha, run_attempt: $attempt, build_stage: $stage, summary_present: $summary_present, scope: "risk-command-hosted", host_samples_status: $host_samples_status, host_sample_count: $host_sample_count}' \
             > "$metrics/stage.json"
           printf 'Host memory:\n' > "$metrics/final-host.txt"
           free -b >> "$metrics/final-host.txt"
           printf 'Workspace and Docker filesystems:\n' >> "$metrics/final-host.txt"
-          df -B1 "$GITHUB_WORKSPACE" "$(docker info --format '{{.DockerRootDir}}')" >> "$metrics/final-host.txt" || true
+          df -B1 "$GITHUB_WORKSPACE" >> "$metrics/final-host.txt" || true
+          docker_root=$(timeout 10s docker info --format '{{.DockerRootDir}}' 2>/dev/null) || docker_root=
+          if [[ -n "$docker_root" ]]; then
+            timeout 10s df -B1 "$docker_root" >> "$metrics/final-host.txt" || true
+          fi
           printf 'Docker image/storage totals (not archive transfer bytes):\n' >> "$metrics/final-host.txt"
-          docker system df >> "$metrics/final-host.txt" || true
+          timeout 15s docker system df >> "$metrics/final-host.txt" || true
       - name: Require complete selected-run verdict
         shell: bash
         run: |
@@ -190,6 +199,7 @@ jobs:
           retention-days: 7
           path: |
             out/ci-capacity/ci-${{ github.run_id }}-${{ github.run_attempt }}/host-samples.csv
+            out/ci-capacity/ci-${{ github.run_id }}-${{ github.run_attempt }}/host-samples-start.txt
             out/ci-capacity/ci-${{ github.run_id }}-${{ github.run_attempt }}/stage.json
             out/ci-capacity/ci-${{ github.run_id }}-${{ github.run_attempt }}/final-host.txt
             out/kubernetes-build/ci-${{ github.run_id }}-${{ github.run_attempt }}/inputs.json
@@ -198,9 +208,12 @@ jobs:
             out/verification/kubernetes/ci-${{ github.run_id }}-${{ github.run_attempt }}/preflight.json
             out/verification/kubernetes/ci-${{ github.run_id }}-${{ github.run_attempt }}/image-identities.json
             out/verification/kubernetes/ci-${{ github.run_id }}-${{ github.run_attempt }}/image-import.log
+            out/verification/kubernetes/ci-${{ github.run_id }}-${{ github.run_attempt }}/workload-image-identities-before-admission.json
+            out/verification/kubernetes/ci-${{ github.run_id }}-${{ github.run_attempt }}/workload-image-identities-after-business.json
             out/verification/kubernetes/ci-${{ github.run_id }}-${{ github.run_attempt }}/kafka-topic-provisioning-job.json
             out/verification/kubernetes/ci-${{ github.run_id }}-${{ github.run_attempt }}/kafka-topic-provisioning-pods.json
             out/verification/kubernetes/ci-${{ github.run_id }}-${{ github.run_attempt }}/kafka-topic-provisioning-*.log
             out/verification/kubernetes/ci-${{ github.run_id }}-${{ github.run_attempt }}/diagnostics-*.json
             out/verification/kubernetes/ci-${{ github.run_id }}-${{ github.run_attempt }}/diagnostics-*.log
+            out/verification/kubernetes/ci-${{ github.run_id }}-${{ github.run_attempt }}/diagnostics-setup.txt
             out/verification/kubernetes/ci-${{ github.run_id }}-${{ github.run_attempt }}/setup-node-*.log

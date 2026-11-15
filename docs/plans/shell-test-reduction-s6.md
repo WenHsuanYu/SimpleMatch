@@ -149,10 +149,13 @@ the uploaded artifact is limited to the source/image preflight, final summary,
 and selected redacted diagnostic files. Raw JUnit XML/HTML and business
 payloads are not uploaded because test output can contain sensitive details.
 
-The workflow uses identical push and PR path filters for services, shared
-contracts, Gradle, native/Matching build inputs, test owners, container
-builds, Kubernetes manifests, configuration and necessary Shell operators.
-A documentation-only commit does not trigger the expensive job. Concurrency
+The workflow shares one push/PR path list for services, shared contracts,
+Gradle, native/Matching build inputs, test owners, container builds,
+Kubernetes manifests, configuration and necessary Shell operators. The known
+Markdown files under `services/docs/` and the archived
+`scripts/archive/README.md` are excluded; non-Markdown additions in those
+directories, and documentation edits under other selected input paths, may
+still trigger the job. Concurrency
 does not cancel a running cluster. GitHub keeps at most one pending run for
 the same ref and can replace an older pending run with a newer request.
 The existing run-owned verifier diagnoses before cleanup and refuses to
@@ -167,6 +170,11 @@ The workflow collects 15-second host-level samples: CPU busy/idle jiffies,
 available memory, available Docker/workspace disk, and network byte counters.
 It also records Docker storage totals and the build-input stage on failure.
 These are infrastructure observations, not another business test owner.
+Sampler validity is an advisory start/end/gap coverage check with a 60-second
+tolerance, not proof that the sampler process remained alive throughout. The
+sample count reports observed CSV rows even if that coverage check fails.
+Final Docker diagnostics have separate short deadlines to avoid delaying
+failure evidence upload when the daemon is unhealthy.
 Host network deltas include other traffic and do not measure exact image
 archive transfer. The image importer removes each temporary archive after
 import. The per-worker `image-import.log` now records the actual archive
