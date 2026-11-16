@@ -1,0 +1,7 @@
+# Use the requested Google conventions plus all six requested analysis families.
+# A broad initial selection is intentional; CI gating follows baseline triage.
+Checks: '-*,clang-analyzer-*,modernize-*,performance-*,readability-*,cppcoreguidelines-*,misc-*,google-*,-modernize-use-trailing-return-type'
+WarningsAsErrors: ''
+HeaderFilterRegex: '(^|.*/)matching-engine/(include|src|tests)/'
+SystemHeaders: false
+FormatStyle: google
