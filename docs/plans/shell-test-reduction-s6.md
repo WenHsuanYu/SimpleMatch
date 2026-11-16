@@ -395,9 +395,9 @@ executable verifier change and must be rerun on the eventual final HEAD.
 | AC-07 | PASS: existing JUnit/Gradle and `VerificationRun` report owners require named, non-skipped tests and four-field Kubernetes PASS. A failed or cancelled workflow never inherits an earlier PASS. |
 | AC-08 | PASS: Spring-managed Jupiter, existing native tests and dependency Testcontainers owners remain authoritative. No new framework is required. |
 | AC-09 | PASS: existing pinned manifest owner is `manifestCheck`, selected in Java and CDC CI as well as `verifyAll`. |
-| AC-10 | PENDING final Hosted workflow validation after the removal of its fallback recovery step. The earlier `7af4a1e1` focused Hosted Risk/Kafka run `42989471172` attempt 1 retains its independently verified original PASS/PASS/PASS/PASS, source/verification fingerprints, business assertions, 27 image imports and 186 host resource samples. This result applies to the prior workflow and is not a PASS for the revised workflow. Complete hosted CI remains optional. |
+| AC-10 | PASS: the final workflow on `28adcd42` passed [Hosted focused run `43748373404` attempt 1](https://github.com/WenHsuanYu/SimpleMatch/actions/runs/43748373404), with the downloaded original four-field PASS artifact, matching approved source/verification fingerprints, real workload image identities, Kafka provisioning `Complete`, 27 image imports across three workers and 134 valid host samples. The earlier `7af4a1e1` run `42989471172` remains independent historical evidence; complete hosted CI is optional. See the final workflow evidence section below. |
 | AC-11 | PASS on clean committed executable `7af4a1e1`: full-local `verifyAll` (37m15s, 194 Gradle tasks, Native 85/85) on `full-native-dev` / `resting-buy`; run `ff2f3aaf-90ba-4efb-aaac-11a53b4a6d0b` has original four-field PASS at `out/verification/kubernetes/bd4993ee-4095-434e-ada6-96ffdb816fda/summary.json`, R19 420/420, Kafka provisioning complete, owned namespace absent and original canonical nodes/registry retained. |
-| AC-12 | PENDING final reconciliation for the revised Hosted workflow. The prior S6 documentation, certification links, source-aligned complete-local and Hosted reports were reconciled and posted on #203 and parent #196. The 2026-11-12 AC-06 scope correction is recorded. Final revised-workflow evidence and issue closure remain separate acceptance decisions. |
+| AC-12 | PASS for S6 evidence and documentation reconciliation: the requirement-owner dispositions and intentional verification losses, Shell baseline-to-final counts, native/full-local acceptance, AC-06 resource-scope correction, source-bound final Hosted report and known measurement limits are recorded here. The final evidence handoff to #203 and #196 is tracked separately from the parent program's closure decision; earlier failed reports keep their original FAIL status. |
 
 For historical comparison only, original S5 P6 evidence is run
 `6364220d-c45a-43e2-9100-daf098e78046` at
@@ -615,8 +615,8 @@ import took 29.740 seconds. Archive bytes are **not** network transfer
 bytes, and host metrics are **not** container peak measurements.
 
 AC-10 and AC-11 obtained separate source-aligned successful original reports
-under the earlier workflow; the revised Hosted workflow still needs its own
-selected CI run before final AC-10 acceptance.
+under the earlier workflow. The final revised Hosted workflow was subsequently
+verified on `28adcd42` below, without promoting the older run to final status.
 The earlier two failed Hosted attempts and three older failed local runs
 retain their original FAIL status. The source and findings were posted in
 [#203 evidence update](https://github.com/WenHsuanYu/SimpleMatch/issues/203#issuecomment-6792327276)
@@ -634,3 +634,73 @@ link-target scan found no missing local file links in the current planning and
 verification Markdown documents. The frozen S0 inventory intentionally retains
 links to scripts deleted by the migration; those links are historical records,
 not executable interfaces or current implementation guidance.
+
+## Final revised Hosted focused Risk/Kafka workflow — PASS (2026-11-16)
+
+[GitHub Actions run `43748373404`, attempt 1](https://github.com/WenHsuanYu/SimpleMatch/actions/runs/43748373404),
+job `132929481777`, completed **SUCCESS** on workflow and event source
+`28adcd42aa92f9dbb18c168aaa8554572e52d62d`. The original downloaded
+artifact `risk-command-43748373404-1` (GitHub artifact ID `14178455375`,
+archive digest `sha256:4c900f4a0a22aa072d61464ee40381fc5e667be2486b6ae51c1c2f52aae1176f`)
+contains `verification/kubernetes/ci-43748373404-1/summary.json`. Its
+run-owned ID `47cec254-e67b-4d66-9a57-49cb4c2ad5a7` has the four
+independent original verdicts **status=PASS, assertions=PASS,
+diagnostics=PASS, cleanup=PASS**. The Gradle selected Risk admission,
+durable outbox and Kafka assertions, final verdict gate and curated artifact
+upload steps all completed successfully. The actual Kafka topic provisioning
+Job is `Complete=True`, `succeeded=1`, with one successful Pod and container
+exit code zero; it retains the strict 600s Job deadline, 15s Admin-command
+timeout, 180s retry budget and `backoffLimit=0`.
+
+The original stage receipt records source SHA `28adcd42`, attempt 1,
+`build_stage=IMAGES_BUILT`, `summary_present=true`, `host_samples_status=VALID`
+and `host_sample_count=134`. The build and runtime preflight share Docker
+daemon ID `8fcd00e2-c8ec-49fc-a584-a2113079d563`, Docker context `default`,
+and source fingerprint
+`38bc9a57cad46b01a34a68a976e6e6980bbb12583fd2b4f81f8c18187818f852`.
+The runtime verification fingerprint
+`e125b386353356272861bfb0ca9ecfca73cc24db2f61edfd10c18ace5153962c`
+and accepted source artifact digest
+`7c6f567d824706b706dae6d0121c4c73f8d290f83959e5c4922190df1c5eefdf`
+match the clean executable source `7af4a1e1` full-local evidence.
+The intervening commits change only GitHub workflow wiring, Markdown, or
+remove a retired standalone real-kind registry smoke test; none change
+Gradle/JUnit/Native runtime inputs, retained complete-local scenario
+selection or `KubernetesSource` verification fingerprint inputs. Accordingly
+the original full-local `verifyAll` PASS is reused under the explicit #203
+CI-only/docs-only exception, not relabeled as a newly executed run.
+
+All **27 image imports** (nine distinct images on each of three disposable
+kind workers) have exact config digests matching their original
+`image-identities.json` and build receipt. The before-admission and
+after-business workload identity receipts contain respectively **19 and 20**
+actual Pod/container records with verified requested image, Pod UID, node ID,
+actual image ID and config ID. The `simplematch-matching` image is retained
+and its real digest is bound into the Risk/Open Barrier fixture even though
+this selected CI does not run a Matching fleet.
+
+The **134 host observations** cover **1,997 seconds** (33m17s), with a
+maximum observed interval of 16 seconds. Their mean host interval CPU busy
+is **42.13%**, peak **97.78%**, minimum host `MemAvailable` **7.708 GiB**
+and minimum Docker/workspace available filesystem space **38.015 GiB**.
+Across 27 node-specific image imports, summed archive payload is
+**15.400 GiB**, and the longest import took **23.654 seconds**. These
+archive sizes do **not** measure host network transfer, host RX/TX includes
+other traffic, and host measurements are **not** per-container peaks. The
+selected job completed in approximately 34 minutes inside its 80-minute
+job limit and the bounded 65-minute Gradle verification limit.
+
+The immediately prior intermediate workflow run
+[`43748282285`](https://github.com/WenHsuanYu/SimpleMatch/actions/runs/43748282285)
+at `99f9bff7` also succeeded with an uploaded artifact; it is **not** the
+final-source certificate. Earlier `b7af8f4a` run
+[`43085737842`](https://github.com/WenHsuanYu/SimpleMatch/actions/runs/43085737842)
+still has original GitHub conclusion **FAILURE** because artifact creation
+received five non-JSON HTML responses, although its Gradle business and
+strict four-field verdict steps had passed; that historical failure is
+not rewritten. No active CI run was cancelled. Resource ownership is proven
+through the successful normal run-owned cleanup; post-cancellation in-VM
+cleanup is neither claimed nor required for this standard GitHub-hosted
+VM-local disposable resource scope. The latest selected Hosted run completes
+the remaining AC-10 gate; the owning issue's final S6 evidence publication
+and parent #196 program closure decision remain distinct administrative acts.
