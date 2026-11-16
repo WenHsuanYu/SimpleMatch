@@ -5,7 +5,9 @@ final program acceptance. Parent [#196](https://github.com/WenHsuanYu/SimpleMatc
 defines AC-01 through AC-12. This record applies the 2026-11-02 owner amendment.
 It records the P0 requirement review, the bounded P1 workflow corrections,
 the source-aligned complete-local PASS, and subsequent focused hosted attempts.
-It does **not** assert final S6 acceptance while the remaining gates are open.
+Final S6 acceptance and its source-bound evidence are recorded below. Parent
+#196 requires its separate independent AC-01–AC-12 program-level review and
+closure decision; closing #203 alone does not certify the parent.
 
 The implementation baseline is `ececf38c2297b89738b2f039fa6e81cf3bd99d81`.
 The S5 complete-local PASS belongs to executable source
