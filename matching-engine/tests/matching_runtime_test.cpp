@@ -269,11 +269,11 @@ TEST(BoundedSpscRingTest, PreservesOrderAcrossRepeatedWrapAround) {
 
   for (std::uint64_t cycle = 0; cycle < 1'000; ++cycle) {
     for (std::uint64_t index = 0; index < 4; ++index) {
-      ASSERT_TRUE(ring.try_push(cycle * 4 + index));
+      ASSERT_TRUE(ring.try_push((cycle * 4) + index));
     }
     EXPECT_FALSE(ring.try_push(0));
     for (std::uint64_t index = 0; index < 4; ++index) {
-      ASSERT_EQ(ring.try_pop(), cycle * 4 + index);
+      ASSERT_EQ(ring.try_pop(), (cycle * 4) + index);
     }
   }
 }
