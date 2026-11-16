@@ -1,9 +1,11 @@
-#include "simplematch/matching/runtime/kubernetes_lease_ownership_adapter.hpp"
-#include "simplematch/matching/runtime/rdkafka_runtime_adapter.hpp"
+#include <gtest/gtest.h>
 
 #include <chrono>
+#include <limits>
+#include <stdexcept>
 
-#include <gtest/gtest.h>
+#include "simplematch/matching/runtime/kubernetes_lease_ownership_adapter.hpp"
+#include "simplematch/matching/runtime/rdkafka_runtime_adapter.hpp"
 
 namespace simplematch::matching {
 namespace {
@@ -21,6 +23,28 @@ TEST(RdkafkaRuntimeAdapterTest, GivesRecoveryMetadataQueriesAtLeastOneSecond) {
             std::chrono::seconds(1));
   EXPECT_EQ(detail::kafka_offset_query_timeout(std::chrono::milliseconds(1500)),
             std::chrono::milliseconds(1500));
+}
+
+TEST(RdkafkaRuntimeAdapterTest,
+     RejectsConsumerTimeoutBeyondLibrdkafkaIntRange) {
+  const auto timeout =
+      std::chrono::milliseconds(std::numeric_limits<int>::max()) +
+      std::chrono::milliseconds(1);
+
+  EXPECT_THROW(RdkafkaDirectPartitionKafkaConsumer(
+                   "127.0.0.1:1", "timeout-boundary-test", timeout),
+               std::invalid_argument);
+}
+
+TEST(RdkafkaRuntimeAdapterTest,
+     RejectsPublisherFlushTimeoutBeyondLibrdkafkaIntRange) {
+  const auto timeout =
+      std::chrono::milliseconds(std::numeric_limits<int>::max()) +
+      std::chrono::milliseconds(1);
+
+  EXPECT_THROW(
+      RdkafkaMatchingEventPublisher("127.0.0.1:1", "matching.events", timeout),
+      std::invalid_argument);
 }
 
 TEST(RdkafkaRuntimeAdapterTest, RetriesOnlyCoordinatorTransitions) {

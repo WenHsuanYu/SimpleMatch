@@ -59,6 +59,11 @@ std::int64_t checked_offset(std::int64_t offset) {
   return offset;
 }
 
+bool valid_librdkafka_timeout(std::chrono::milliseconds timeout) {
+  return timeout > std::chrono::milliseconds::zero() &&
+         timeout <= std::chrono::milliseconds(std::numeric_limits<int>::max());
+}
+
 } // namespace
 
 namespace detail {
@@ -112,8 +117,11 @@ RdkafkaDirectPartitionKafkaConsumer::RdkafkaDirectPartitionKafkaConsumer(
     std::string consumer_group,
     std::chrono::milliseconds poll_timeout)
     : implementation_(std::make_unique<Implementation>()), poll_timeout_(poll_timeout) {
-  if (bootstrap_servers.empty() || consumer_group.empty() || poll_timeout_ <= std::chrono::milliseconds::zero()) {
-    throw std::invalid_argument("Kafka consumer requires brokers, group, and positive poll timeout");
+  if (bootstrap_servers.empty() || consumer_group.empty() ||
+      !valid_librdkafka_timeout(poll_timeout_)) {
+    throw std::invalid_argument(
+        "Kafka consumer requires brokers, group, and poll timeout between 1 "
+        "and INT_MAX milliseconds");
   }
   std::unique_ptr<rd_kafka_conf_t, KafkaConfigurationDeleter> configuration(
       rd_kafka_conf_new());
@@ -164,7 +172,7 @@ void RdkafkaDirectPartitionKafkaConsumer::assign(
 }
 
 std::optional<AssignedCommandRecord> RdkafkaDirectPartitionKafkaConsumer::poll() {
-  const auto timeout = poll_timeout_.count();
+  const auto timeout = static_cast<int>(poll_timeout_.count());
   rd_kafka_message_t *message = rd_kafka_consumer_poll(implementation_->consumer, timeout);
   if (message == nullptr) {
     return std::nullopt;
@@ -396,8 +404,10 @@ RdkafkaMatchingEventPublisher::RdkafkaMatchingEventPublisher(
       flush_timeout_(flush_timeout),
       maximum_in_flight_(maximum_in_flight) {
   if (bootstrap_servers.empty() || topic_.empty() ||
-      flush_timeout_ <= std::chrono::milliseconds::zero() || implementation_ == nullptr) {
-    throw std::invalid_argument("Kafka publisher requires brokers, topic, and positive flush timeout");
+      !valid_librdkafka_timeout(flush_timeout_) || implementation_ == nullptr) {
+    throw std::invalid_argument(
+        "Kafka publisher requires brokers, topic, and flush timeout between 1 "
+        "and INT_MAX milliseconds");
   }
   std::unique_ptr<rd_kafka_conf_t, KafkaConfigurationDeleter> configuration(
       rd_kafka_conf_new());
@@ -419,7 +429,8 @@ RdkafkaMatchingEventPublisher::RdkafkaMatchingEventPublisher(
 
 RdkafkaMatchingEventPublisher::~RdkafkaMatchingEventPublisher() {
   if (implementation_ != nullptr && implementation_->producer != nullptr) {
-    rd_kafka_flush(implementation_->producer, flush_timeout_.count());
+    rd_kafka_flush(implementation_->producer,
+                   static_cast<int>(flush_timeout_.count()));
     rd_kafka_destroy(implementation_->producer);
   }
 }
@@ -440,7 +451,8 @@ bool RdkafkaMatchingEventPublisher::publish(const MatchingEventRecord &record) {
   if (submit_async(record, id) != MatchingPublicationSubmitResult::kSubmitted) {
     return false;
   }
-  if (rd_kafka_flush(implementation_->producer, flush_timeout_.count()) !=
+  if (rd_kafka_flush(implementation_->producer,
+                     static_cast<int>(flush_timeout_.count())) !=
       RD_KAFKA_RESP_ERR_NO_ERROR) {
     return false;
   }
