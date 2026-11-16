@@ -347,7 +347,7 @@ std::optional<ReplayChecksums> replay_checksum(
     event_checksum = checksum_event(event_checksum, replay.events().front());
     const auto encoded_cancel = encoder.encode(
         item.cancel.context,
-        kFirstInputOffset + static_cast<std::int64_t>(index * 2 + 1),
+        kFirstInputOffset + static_cast<std::int64_t>((index * 2) + 1),
         replay.events().front());
     if (!encoded_cancel.has_value()) {
       return std::nullopt;
@@ -436,48 +436,53 @@ void print_result(
       event_checksum_matches && serialized_event_checksum_matches &&
       serialized_event_bytes_match && state_checksum_matches;
   std::cout << std::fixed << std::setprecision(3)
-            << "{\"schema_version\":1,\"status\":\""
-            << (lost_commands == 0 && lost_events == 0 && measurements.duplicate_event_ids == 0
-                    && determinism_matches
-                ? "PASS"
-                : "FAIL")
-            << "\",\"book_count\":" << book_count
+            << R"({"schema_version":1,"status":")"
+            << (lost_commands == 0 && lost_events == 0 &&
+                        measurements.duplicate_event_ids == 0 &&
+                        determinism_matches
+                    ? "PASS"
+                    : "FAIL")
+            << R"(","book_count":)" << book_count
             << ",\"warmup_iterations\":" << options.warmup_iterations
             << ",\"measured_iterations\":" << options.measured_iterations
-            << ",\"maximum_resting_orders_per_book\":" << options.maximum_resting_orders
+            << ",\"maximum_resting_orders_per_book\":"
+            << options.maximum_resting_orders
             << ",\"measured_commands\":" << measurements.measured_commands
             << ",\"measured_events\":" << measurements.measured_events
             << ",\"commands_per_second\":" << commands_per_second
             << ",\"events_per_second\":" << events_per_second
-            << ",\"latency_ns\":{\"p50\":" << percentile(latencies, 0.50)
+            << R"(,"latency_ns":{"p50":)" << percentile(latencies, 0.50)
             << ",\"p99\":" << percentile(latencies, 0.99)
-            << ",\"p99_9\":" << percentile(latencies, 0.999)
-            << ",\"max\":"
-            << (latencies.empty() ? 0 : *std::max_element(latencies.begin(), latencies.end()))
+            << ",\"p99_9\":" << percentile(latencies, 0.999) << ",\"max\":"
+            << (latencies.empty()
+                    ? 0
+                    : *std::max_element(latencies.begin(), latencies.end()))
             << "},\"rss_peak_bytes\":" << peak_rss_bytes()
-            << ",\"effective_cpu_set\":\"" << cpu_affinity.set
-            << "\",\"effective_cpu_count\":" << cpu_affinity.count
-            << ",\"determinism\":{\"measured_event_checksum\":\""
-            << std::hex << std::setw(16) << std::setfill('0') << measurements.event_checksum
-            << "\",\"replay_event_checksum\":\"" << std::setw(16)
+            << R"(,"effective_cpu_set":")" << cpu_affinity.set
+            << R"(","effective_cpu_count":)" << cpu_affinity.count
+            << R"(,"determinism":{"measured_event_checksum":")" << std::hex
+            << std::setw(16) << std::setfill('0') << measurements.event_checksum
+            << R"(","replay_event_checksum":")" << std::setw(16)
             << replay_checksums.event_checksum
-            << "\",\"event_checksum_matches\":" << std::boolalpha << event_checksum_matches
-            << ",\"measured_serialized_event_checksum\":\"" << std::setw(16)
+            << R"(","event_checksum_matches":)" << std::boolalpha
+            << event_checksum_matches
+            << R"(,"measured_serialized_event_checksum":")" << std::setw(16)
             << measurements.serialized_event_checksum
-            << "\",\"replay_serialized_event_checksum\":\"" << std::setw(16)
+            << R"(","replay_serialized_event_checksum":")" << std::setw(16)
             << replay_checksums.serialized_event_checksum
-            << "\",\"serialized_event_bytes_match\":" << serialized_event_bytes_match
-            << ",\"measured_state_checksum\":\"" << std::setw(16)
-            << measurements.state_checksum
-            << "\",\"replay_state_checksum\":\"" << std::setw(16)
+            << R"(","serialized_event_bytes_match":)"
+            << serialized_event_bytes_match << R"(,"measured_state_checksum":")"
+            << std::setw(16) << measurements.state_checksum
+            << R"(","replay_state_checksum":")" << std::setw(16)
             << replay_checksums.state_checksum
-            << "\",\"state_checksum_matches\":" << state_checksum_matches
-            << ",\"checksum_matches\":" << determinism_matches << std::noboolalpha
-            << std::dec << "}"
-            << ",\"integrity\":{\"lost_commands\":" << lost_commands
+            << R"(","state_checksum_matches":)" << state_checksum_matches
+            << ",\"checksum_matches\":" << determinism_matches
+            << std::noboolalpha << std::dec << "}"
+            << R"(,"integrity":{"lost_commands":)" << lost_commands
             << ",\"lost_events\":" << lost_events
             << ",\"duplicate_event_ids\":" << measurements.duplicate_event_ids
-            << ",\"rejected_commands\":" << measurements.rejected_commands << "}}\n";
+            << ",\"rejected_commands\":" << measurements.rejected_commands
+            << "}}\n";
 }
 
 } // namespace
@@ -501,22 +506,13 @@ int main(int argc, char **argv) {
     const std::size_t warmup_work_items = options.warmup_iterations * instruments.size();
     for (std::size_t index = 0; index < warmup_work_items; ++index) {
       const WorkItem &item = work[index];
-      if (!process_one(
-              core,
-              item.rest,
-              CoreEventType::kOrderRested,
-              encoder,
-              kFirstInputOffset + static_cast<std::int64_t>(index * 2),
-              false,
-              measurements) ||
+      if (!process_one(core, item.rest, CoreEventType::kOrderRested, encoder,
+                       kFirstInputOffset + static_cast<std::int64_t>(index * 2),
+                       false, measurements) ||
           !process_one(
-              core,
-              item.cancel,
-              CoreEventType::kOrderCancelled,
-              encoder,
-              kFirstInputOffset + static_cast<std::int64_t>(index * 2 + 1),
-              false,
-              measurements)) {
+              core, item.cancel, CoreEventType::kOrderCancelled, encoder,
+              kFirstInputOffset + static_cast<std::int64_t>((index * 2) + 1),
+              false, measurements)) {
         std::cerr << "benchmark integrity check failed at work item " << index << '\n';
         return 1;
       }
@@ -524,22 +520,13 @@ int main(int argc, char **argv) {
     const auto measurement_started = std::chrono::steady_clock::now();
     for (std::size_t index = warmup_work_items; index < work.size(); ++index) {
       const WorkItem &item = work[index];
-      if (!process_one(
-              core,
-              item.rest,
-              CoreEventType::kOrderRested,
-              encoder,
-              kFirstInputOffset + static_cast<std::int64_t>(index * 2),
-              true,
-              measurements) ||
+      if (!process_one(core, item.rest, CoreEventType::kOrderRested, encoder,
+                       kFirstInputOffset + static_cast<std::int64_t>(index * 2),
+                       true, measurements) ||
           !process_one(
-              core,
-              item.cancel,
-              CoreEventType::kOrderCancelled,
-              encoder,
-              kFirstInputOffset + static_cast<std::int64_t>(index * 2 + 1),
-              true,
-              measurements)) {
+              core, item.cancel, CoreEventType::kOrderCancelled, encoder,
+              kFirstInputOffset + static_cast<std::int64_t>((index * 2) + 1),
+              true, measurements)) {
         std::cerr << "benchmark integrity check failed at work item " << index << '\n';
         return 1;
       }

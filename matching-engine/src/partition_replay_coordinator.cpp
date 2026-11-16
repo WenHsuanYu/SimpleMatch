@@ -73,7 +73,7 @@ std::array<char, 65> payload_fingerprint(std::string_view value) {
   std::array<char, 65> encoded{};
   for (std::size_t index = 0; index < digest.size(); ++index) {
     encoded[index * 2] = kHex[digest[index] >> 4];
-    encoded[index * 2 + 1] = kHex[digest[index] & 0x0F];
+    encoded[(index * 2) + 1] = kHex[digest[index] & 0x0F];
   }
   return encoded;
 }

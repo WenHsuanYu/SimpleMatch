@@ -115,7 +115,7 @@ AssignedCommandRecord matched_order_record(
   auto command = base_command(indexed_uuid(command_index));
   auto *order = command.mutable_new_order();
   order->set_order_id(indexed_uuid(0x100000 + command_index));
-  order->set_account_id(indexed_uuid(0x200000 + command_index / 2));
+  order->set_account_id(indexed_uuid(0x200000 + (command_index / 2)));
   order->mutable_instrument()->set_venue_mic("XTAI");
   order->mutable_instrument()->set_symbol("2330");
   order->set_side(side);
@@ -482,10 +482,10 @@ TEST(MatchingPartitionRuntimeDriverTest, ReplaysTheLocalFullDayEnvelopeInBounded
   for (std::size_t index = 0; index < kCommandsPerLocalDay / 2; ++index) {
     const auto sell_offset = kOpenOffset + 1 + static_cast<std::int64_t>(index * 2);
     consumer.retained.push_back(matched_order_record(
-        sell_offset, static_cast<std::uint64_t>(index * 2 + 2), simplematch::common::v2::SIDE_SELL));
+        sell_offset, static_cast<std::uint64_t>((index * 2) + 2),
+        simplematch::common::v2::SIDE_SELL));
     consumer.retained.push_back(matched_order_record(
-        sell_offset + 1,
-        static_cast<std::uint64_t>(index * 2 + 3),
+        sell_offset + 1, static_cast<std::uint64_t>((index * 2) + 3),
         simplematch::common::v2::SIDE_BUY));
   }
   RecordingPublisher publisher;

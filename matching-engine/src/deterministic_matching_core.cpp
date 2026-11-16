@@ -57,7 +57,7 @@ std::size_t maximum_output_events_for(
   if (book_count > (maximum_size - 1) / events_per_book) {
     throw std::invalid_argument("matching output capacity is too large");
   }
-  return book_count * events_per_book + 1;
+  return (book_count * events_per_book) + 1;
 }
 
 CoreTradeLegState resulting_state(std::int64_t leaves_quantity) {

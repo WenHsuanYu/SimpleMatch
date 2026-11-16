@@ -64,7 +64,7 @@ std::optional<SystemTime> parse_timestamp(std::string_view value) {
       if (digit < '0' || digit > '9') {
         break;
       }
-      milliseconds = milliseconds * 10 + (digit - '0');
+      milliseconds = (milliseconds * 10) + (digit - '0');
       ++digits;
     }
     while (digits < 3) {
