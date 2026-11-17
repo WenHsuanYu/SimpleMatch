@@ -81,6 +81,8 @@ jobs:
         run: ./gradlew manifestCheck --no-daemon --stacktrace
       - name: Run repo-wide Java static analysis
         run: ./gradlew --no-daemon --stacktrace staticAnalysis
+      - name: Verify included-build PMD policy structure
+        run: ./gradlew --no-daemon --stacktrace :build-logic:test --tests 'com.simplematch.gradle.PmdPolicyTest'
       - name: Run Java test suite
         run: ./gradlew --no-daemon --stacktrace test :services:quickfix-gateway:certificationTest
       - name: Run Query Redis TLS and ACL tests

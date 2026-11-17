@@ -33,7 +33,7 @@ class SimpleMatchJavaQualityPlugin : Plugin<Project> {
             toolVersion = catalog.findVersion("pmd").get().requiredVersion
             ruleSets = emptyList()
             ruleSetFiles =
-                project.files(project.rootProject.layout.projectDirectory.file(PmdPolicy.RULESET_PATH))
+                project.files(project.rootProject.layout.projectDirectory.file("config/pmd/simplematch-design.xml"))
         }
         project.extensions.getByType<SpotBugsExtension>().apply {
             toolVersion.set(catalog.findVersion("spotbugs-tool").get().requiredVersion)
