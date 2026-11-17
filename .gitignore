@@ -55,6 +55,11 @@ vcpkg_installed/
 # Local runtime config (do not commit secrets)
 config/simplematch.json
 
+# Root-local credentials and runtime configuration
+/.env
+/.secret
+/secrets
+
 # QuickFIX runtime artifacts (FileStoreFactory/FileLogFactory)
 data/quickfix/store/*
 !data/quickfix/store/.gitkeep

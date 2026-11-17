@@ -1,0 +1,86 @@
+{
+  "01": {
+    "number": 188,
+    "id": 5998583490,
+    "url": "https://github.com/WenHsuanYu/SimpleMatch/issues/188",
+    "title": "QS1-01: Authenticate operational reads and preserve rebuild",
+    "file": "tickets/01-authenticate-operational-reads.md",
+    "dependencies": [],
+    "body_sha256": "8f23115d556576257518305f5266c7a9354f7fae8699d9455df3a6e47d8b3c86",
+    "label": "ready-for-agent"
+  },
+  "02": {
+    "number": 189,
+    "id": 5998583694,
+    "url": "https://github.com/WenHsuanYu/SimpleMatch/issues/189",
+    "title": "QS1-02: Authorize Account Summary with minimal freshness",
+    "file": "tickets/02-authorize-account-summary.md",
+    "dependencies": [
+      "01"
+    ],
+    "body_sha256": "600db8228dc997449c2df488aacf95509436e1a068f9c6e8528619376c8476e4",
+    "label": "ready-for-agent"
+  },
+  "03": {
+    "number": 190,
+    "id": 5998584069,
+    "url": "https://github.com/WenHsuanYu/SimpleMatch/issues/190",
+    "title": "QS1-03: Authorize Order reads using durable ownership",
+    "file": "tickets/03-authorize-order-reads.md",
+    "dependencies": [
+      "02"
+    ],
+    "body_sha256": "1406d7070fd44b42959867c1e36c28f0ceb9ebd0ca56a149551275469860e27a",
+    "label": "ready-for-agent"
+  },
+  "04": {
+    "number": 191,
+    "id": 5998584473,
+    "url": "https://github.com/WenHsuanYu/SimpleMatch/issues/191",
+    "title": "QS1-04: Authorize Executions through their parent Order",
+    "file": "tickets/04-authorize-execution-reads.md",
+    "dependencies": [
+      "03"
+    ],
+    "body_sha256": "51900660c885dd13afc3240d4f645b76252e40f1ffe4d3407a909da0319b9d3d",
+    "label": "ready-for-agent"
+  },
+  "05": {
+    "number": 192,
+    "id": 5998584947,
+    "url": "https://github.com/WenHsuanYu/SimpleMatch/issues/192",
+    "title": "QS1-05: Serve authenticated Market Reference from PostgreSQL",
+    "file": "tickets/05-protect-market-reference.md",
+    "dependencies": [
+      "02"
+    ],
+    "body_sha256": "64e2ecf82beafc6853344fc7144478329038155091cbc209f462e884fb446fdc",
+    "label": "ready-for-agent"
+  },
+  "06": {
+    "number": 193,
+    "id": 5998585386,
+    "url": "https://github.com/WenHsuanYu/SimpleMatch/issues/193",
+    "title": "QS1-06: Prove run-scoped revocation and safe recovery",
+    "file": "tickets/06-prove-lab-revocation.md",
+    "dependencies": [
+      "02"
+    ],
+    "body_sha256": "6d75ae24bb7082ef4db59bd2bd85f9fe30664bab6504a874eec43a591168619a",
+    "label": "ready-for-agent"
+  },
+  "07": {
+    "number": 194,
+    "id": 5998585812,
+    "url": "https://github.com/WenHsuanYu/SimpleMatch/issues/194",
+    "title": "QS1-07: Integrate collectors and certify Phase 1",
+    "file": "tickets/07-certify-query-security.md",
+    "dependencies": [
+      "04",
+      "05",
+      "06"
+    ],
+    "body_sha256": "9d95bc9f7a66d84c5403fde8119963866dd2e62325c4478aa3e6c2bc7703d207",
+    "label": "ready-for-agent"
+  }
+}

@@ -1,0 +1,87 @@
+{
+  "01": {
+    "number": 188,
+    "url": "https://github.com/WenHsuanYu/SimpleMatch/issues/188",
+    "state": "open",
+    "blocked_by": [],
+    "label": "ready-for-agent",
+    "body_matches": true,
+    "implementation_start": "separately gated",
+    "created_at": "2026-10-23T13:23:43Z"
+  },
+  "02": {
+    "number": 189,
+    "url": "https://github.com/WenHsuanYu/SimpleMatch/issues/189",
+    "state": "open",
+    "blocked_by": [
+      188
+    ],
+    "label": "ready-for-agent",
+    "body_matches": true,
+    "implementation_start": "separately gated",
+    "created_at": "2026-10-23T13:23:43Z"
+  },
+  "03": {
+    "number": 190,
+    "url": "https://github.com/WenHsuanYu/SimpleMatch/issues/190",
+    "state": "open",
+    "blocked_by": [
+      189
+    ],
+    "label": "ready-for-agent",
+    "body_matches": true,
+    "implementation_start": "separately gated",
+    "created_at": "2026-10-23T13:23:45Z"
+  },
+  "04": {
+    "number": 191,
+    "url": "https://github.com/WenHsuanYu/SimpleMatch/issues/191",
+    "state": "open",
+    "blocked_by": [
+      190
+    ],
+    "label": "ready-for-agent",
+    "body_matches": true,
+    "implementation_start": "separately gated",
+    "created_at": "2026-10-23T13:23:47Z"
+  },
+  "05": {
+    "number": 192,
+    "url": "https://github.com/WenHsuanYu/SimpleMatch/issues/192",
+    "state": "open",
+    "blocked_by": [
+      189
+    ],
+    "label": "ready-for-agent",
+    "body_matches": true,
+    "implementation_start": "separately gated",
+    "created_at": "2026-10-23T13:23:48Z"
+  },
+  "06": {
+    "number": 193,
+    "url": "https://github.com/WenHsuanYu/SimpleMatch/issues/193",
+    "state": "open",
+    "blocked_by": [
+      189
+    ],
+    "label": "ready-for-agent",
+    "body_matches": true,
+    "implementation_start": "separately gated",
+    "created_at": "2026-10-23T13:23:50Z"
+  },
+  "07": {
+    "number": 194,
+    "url": "https://github.com/WenHsuanYu/SimpleMatch/issues/194",
+    "state": "open",
+    "blocked_by": [
+      191,
+      192,
+      193
+    ],
+    "label": "ready-for-agent",
+    "body_matches": true,
+    "implementation_start": "separately gated",
+    "created_at": "2026-10-23T13:23:52Z"
+  },
+  "verified_at": "2026-10-23T13:24:53.847840+00:00"
+}
