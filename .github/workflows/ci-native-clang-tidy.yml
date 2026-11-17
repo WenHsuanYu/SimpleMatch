@@ -13,6 +13,8 @@ on:
       - 'triplets/**'
       - 'proto/**'
       - 'matching-engine/**'
+      - 'tools/native/clang_tidy_ci.py'
+      - 'tools/native/tests/**'
   pull_request:
     paths:
       - '.github/workflows/ci-native-clang-tidy.yml'
@@ -24,6 +26,8 @@ on:
       - 'triplets/**'
       - 'proto/**'
       - 'matching-engine/**'
+      - 'tools/native/clang_tidy_ci.py'
+      - 'tools/native/tests/**'
   workflow_dispatch:
 
 permissions:
@@ -51,6 +55,15 @@ jobs:
       VCPKG_DEFAULT_BINARY_CACHE: ${{ github.workspace }}/.cache/vcpkg/binaries
       VCPKG_DOWNLOADS: ${{ github.workspace }}/.cache/vcpkg/downloads
     steps:
+      # Independent of checkout and the adapter: retain UNRUN on early failures.
+      - name: Initialize source-linked receipt
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p "$RUNNER_TEMP/native-tidy-artifact"
+          printf '{"status":"UNRUN","expected_commit_sha":"%s","commit_sha":null,"run_id":"%s","run_attempt":"%s","report_only":true,"reason":"workflow did not finalize"}\n' \
+            "$GITHUB_SHA" "$GITHUB_RUN_ID" "$GITHUB_RUN_ATTEMPT" > "$RUNNER_TEMP/native-tidy-artifact/verdict.json"
+
       - name: Checkout
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -75,39 +88,13 @@ jobs:
           restore-keys: |
             ${{ runner.os }}-${{ runner.arch }}-vcpkg-downloads-${{ env.VCPKG_VERSION }}-
 
-      - name: Install SHA-pinned LLVM 21 tools
-        id: toolchain
-        shell: bash
-        run: |
-          set -euo pipefail
-          python3 -m venv "$RUNNER_TEMP/llvm21"
-          "$RUNNER_TEMP/llvm21/bin/python" -m pip install --no-deps --no-cache-dir \
-            --require-hashes -r <(printf '%s\n' \
-              "clang-tidy==$LLVM_VERSION --hash=sha256:$LLVM_TIDY_WHEEL_SHA256" \
-              "clang-format==$LLVM_VERSION --hash=sha256:$LLVM_FORMAT_WHEEL_SHA256")
-          curl --fail --location --silent --show-error --retry 3 \
-            'https://raw.githubusercontent.com/llvm/llvm-project/llvmorg-21.1.6/clang-tools-extra/clang-tidy/tool/run-clang-tidy.py' \
-            --output "$RUNNER_TEMP/run-clang-tidy.py"
-          printf '%s  %s\n' "$LLVM_RUN_TIDY_SHA256" "$RUNNER_TEMP/run-clang-tidy.py" | sha256sum --check
-          chmod +x "$RUNNER_TEMP/run-clang-tidy.py"
-          tidy_version=$("$RUNNER_TEMP/llvm21/bin/clang-tidy" --version)
-          format_version=$("$RUNNER_TEMP/llvm21/bin/clang-format" --version)
-          printf '%s\n' "$tidy_version" "$format_version"
-          grep -Fq "$LLVM_VERSION" <<< "$tidy_version"
-          grep -Fq "$LLVM_VERSION" <<< "$format_version"
-          printf 'TIDY_BIN=%s\n' "$RUNNER_TEMP/llvm21/bin/clang-tidy" >> "$GITHUB_ENV"
-          printf 'FORMAT_BIN=%s\n' "$RUNNER_TEMP/llvm21/bin/clang-format" >> "$GITHUB_ENV"
-          printf 'RUN_TIDY_BIN=%s\n' "$RUNNER_TEMP/run-clang-tidy.py" >> "$GITHUB_ENV"
+      - name: Verify advisory evidence contract
+        id: selftest
+        run: python3 -B -m unittest discover -s tools/native/tests -p 'test_*.py'
 
-      - name: Verify exact toolchain identity
-        id: identity
-        shell: bash
-        run: |
-          set -euo pipefail
-          test -x "$TIDY_BIN" && test -x "$FORMAT_BIN" && test -x "$RUN_TIDY_BIN"
-          test "$(sha256sum "$RUN_TIDY_BIN" | cut -d' ' -f1)" = "$LLVM_RUN_TIDY_SHA256"
-          "$TIDY_BIN" --version | grep -Fq "$LLVM_VERSION"
-          "$FORMAT_BIN" --version | grep -Fq "$LLVM_VERSION"
+      - name: Install and verify SHA-pinned LLVM tools
+        id: toolchain
+        run: python3 tools/native/clang_tidy_ci.py install
 
       - name: Bootstrap pinned vcpkg
         id: bootstrap
@@ -121,7 +108,6 @@ jobs:
 
       - name: Configure handwritten Native analyzer
         id: configure
-        shell: bash
         run: |
           cmake --preset full-clang-tidy-report \
             -DSIMPLEMATCH_CLANG_TIDY_EXECUTABLE="$TIDY_BIN" \
@@ -137,187 +123,22 @@ jobs:
           cmake --build --preset full-clang-tidy-report --parallel 2 2>&1 |
             tee "$RUNNER_TEMP/native-clang-tidy-output.log"
 
-      - name: Verify report scope and write redacted source-aligned inventory
+      - name: Verify scope and prepare bounded evidence
         id: inventory
-        shell: bash
-        run: |
-          set -euo pipefail
-          mkdir -p "$RUNNER_TEMP/native-tidy-artifact"
-          "$TIDY_BIN" --list-checks -p out/build/full-clang-tidy-report \
-            matching-engine/src/input_offset_ledger.cpp > "$RUNNER_TEMP/native-tidy-artifact/selected-checks.txt"
-          "$FORMAT_BIN" --style=file matching-engine/src/input_offset_ledger.cpp > /dev/null
-          python3 - <<'PY'
-          import collections
-          import hashlib
-          import json
-          import os
-          import pathlib
-          import re
-          import subprocess
+        run: python3 tools/native/clang_tidy_ci.py report
 
-          repo = pathlib.Path.cwd()
-          output = pathlib.Path(os.environ['RUNNER_TEMP']) / 'native-tidy-artifact'
-          db_path = repo / 'out/build/full-clang-tidy-report/compile_commands.json'
-          db = json.loads(db_path.read_text())
-          owned_tus = []
-          generated_tus = []
-          for item in db:
-              name = pathlib.Path(item['file'])
-              if re.search(r'/matching-engine/(src|tests)/.*\.cpp$', str(name)):
-                  owned_tus.append(str(name))
-              if name.name.endswith('.pb.cc'):
-                  generated_tus.append(str(name))
-          if len(owned_tus) != 28 or len(generated_tus) != 3:
-              raise SystemExit(f'Unexpected source scope: handwritten={len(owned_tus)}, generated={len(generated_tus)}')
-
-          checks = [line.strip() for line in (output / 'selected-checks.txt').read_text().splitlines() if line.startswith('    ')]
-          families = ('clang-analyzer-', 'modernize-', 'performance-', 'readability-',
-                      'cppcoreguidelines-', 'misc-', 'google-')
-          if (len(checks) < 300 or 'modernize-use-trailing-return-type' in checks
-                  or any(not any(c.startswith(family) for c in checks) for family in families)):
-              raise SystemExit('Selected checks do not match approved advisory policy')
-
-          pattern = re.compile(r'^(.*/matching-engine/(?:include|src|tests)/[^:]+):(\d+):(\d+): warning: .* \[([^\]]+)\]$')
-          diagnostic = re.compile(r'^.+:\d+:\d+: warning: ')
-          progress = re.compile(r'^\[\s*(\d+)/28\]\[\d+(?:\.\d+)?s\]')
-          findings = collections.Counter()
-          sites = set()
-          scanned_tus = set()
-          unmatched_warnings = 0
-          analyzer_started = False
-          for line in (pathlib.Path(os.environ['RUNNER_TEMP']) / 'native-clang-tidy-output.log').open():
-              if 'Run report-only clang-tidy on handwritten Native C++ sources' in line:
-                  analyzer_started = True
-              if not analyzer_started:
-                  continue
-              matched_progress = progress.match(line)
-              if matched_progress:
-                  scanned_tus.add(int(matched_progress.group(1)))
-              match = pattern.match(line.rstrip())
-              if not match:
-                  if diagnostic.match(line):
-                      unmatched_warnings += 1
-                  continue
-              file_name, line_number, _, check_tag = match.groups()
-              relative = 'matching-engine/' + file_name.split('/matching-engine/', 1)[1]
-              findings[check_tag] += 1
-              sites.add((relative, line_number, check_tag))
-          if scanned_tus != set(range(1, len(owned_tus) + 1)):
-              raise SystemExit(f'Incomplete analyzer execution: scanned {len(scanned_tus)}/{len(owned_tus)} handwritten TUs')
-          if unmatched_warnings:
-              raise SystemExit(f'Unparsed warning records: {unmatched_warnings}; cannot claim complete or clean warning inventory')
-
-          sha256 = lambda data: hashlib.sha256(data).hexdigest()
-          paths = subprocess.check_output(['git', 'ls-files', '-z', 'matching-engine/src', 'matching-engine/include', 'matching-engine/tests']).decode().split('\0')
-          files = sorted(p for p in paths if p.endswith(('.cpp', '.hpp')))
-          source_hashes = {p: sha256((repo / p).read_bytes()) for p in files}
-          (output / 'owned-source-sha256.json').write_text(json.dumps(source_hashes, sort_keys=True, indent=2) + '\n')
-          normalized_sites = [
-              {'path': path, 'line': int(line), 'check_tag': tag}
-              for path, line, tag in sorted(sites)
-          ]
-          site_limit = 200
-          bounded_sites = {
-              'total_unique_sites': len(normalized_sites),
-              'sample_limit': site_limit,
-              'sample_truncated': len(normalized_sites) > site_limit,
-              'sites': normalized_sites[:site_limit],
-              'redaction': 'Only repo-relative owned source locations and check identifiers; no raw messages or source excerpts',
-          }
-          (output / 'warning-sites.json').write_text(json.dumps(bounded_sites, sort_keys=True, indent=2) + '\n')
-          head = subprocess.check_output(['git', 'rev-parse', 'HEAD'], text=True).strip()
-          if head != os.environ['GITHUB_SHA']:
-              raise SystemExit('Checkout differs from GitHub source SHA')
-          report = {
-              'status': 'PASS_WITH_ADVISORY_WARNINGS' if findings else 'PASS_CLEAN',
-              'commit_sha': head,
-              'run_id': os.environ['GITHUB_RUN_ID'],
-              'run_attempt': os.environ['GITHUB_RUN_ATTEMPT'],
-              'tool_version': os.environ['LLVM_VERSION'],
-              'tidy_wheel_sha256': os.environ['LLVM_TIDY_WHEEL_SHA256'],
-              'format_wheel_sha256': os.environ['LLVM_FORMAT_WHEEL_SHA256'],
-              'runner_sha256': os.environ['LLVM_RUN_TIDY_SHA256'],
-              'clang_tidy_binary_sha256': sha256(pathlib.Path(os.environ['TIDY_BIN']).read_bytes()),
-              'clang_format_binary_sha256': sha256(pathlib.Path(os.environ['FORMAT_BIN']).read_bytes()),
-              'policy_sha256': sha256((repo / '.clang-tidy').read_bytes()),
-              'format_policy_sha256': sha256((repo / '.clang-format').read_bytes()),
-              'compile_db_sha256': sha256(db_path.read_bytes()),
-              'selected_check_count': len(checks),
-              'selected_checks_sha256': sha256((output / 'selected-checks.txt').read_bytes()),
-              'handwritten_tu_count': len(owned_tus),
-              'excluded_generated_tu_count': len(generated_tus),
-              'owned_source_count': len(files),
-              'warning_emissions': sum(findings.values()),
-              'unique_owned_warning_sites': len(sites),
-              'parsed_warning_emissions': sum(findings.values()),
-              'unparsed_warning_emissions': unmatched_warnings,
-              'bounded_site_sample_limit': site_limit,
-              'per_check_emissions': dict(sorted(findings.items())),
-              'warnings_as_errors': False,
-              'finding_disposition': 'UNADJUDICATED unless explicitly reviewed in owning Issue #210',
-          }
-          (output / 'summary.json').write_text(json.dumps(report, sort_keys=True, indent=2) + '\n')
-          print('Advisory Native report:', report['warning_emissions'], 'warnings,', report['unique_owned_warning_sites'], 'unique sites across', len(owned_tus), 'handwritten TUs; no blocking warning gate')
-          PY
-
-      - name: Finalize source-aligned Hosted verdict
-        if: always()
-        shell: bash
+      - name: Record Hosted PASS, FAIL or UNRUN
+        if: always() && steps.selftest.outcome == 'success'
         env:
+          SELFTEST_OUTCOME: ${{ steps.selftest.outcome }}
           TOOLCHAIN_OUTCOME: ${{ steps.toolchain.outcome }}
-          IDENTITY_OUTCOME: ${{ steps.identity.outcome }}
           BOOTSTRAP_OUTCOME: ${{ steps.bootstrap.outcome }}
           CONFIGURE_OUTCOME: ${{ steps.configure.outcome }}
           ANALYZE_OUTCOME: ${{ steps.analyze.outcome }}
           INVENTORY_OUTCOME: ${{ steps.inventory.outcome }}
-        run: |
-          set -euo pipefail
-          mkdir -p "$RUNNER_TEMP/native-tidy-artifact"
-          python3 - <<'PY'
-          import json
-          import os
-          import pathlib
-          import subprocess
+        run: python3 tools/native/clang_tidy_ci.py verdict
 
-          output = pathlib.Path(os.environ['RUNNER_TEMP']) / 'native-tidy-artifact'
-          stages = {
-              'toolchain': os.environ['TOOLCHAIN_OUTCOME'],
-              'identity': os.environ['IDENTITY_OUTCOME'],
-              'bootstrap': os.environ['BOOTSTRAP_OUTCOME'],
-              'configure': os.environ['CONFIGURE_OUTCOME'],
-              'analyze': os.environ['ANALYZE_OUTCOME'],
-              'inventory': os.environ['INVENTORY_OUTCOME'],
-          }
-          completed = all(outcome == 'success' for outcome in stages.values())
-          summary_file = output / 'summary.json'
-          valid_summary = summary_file.is_file()
-          if completed and valid_summary:
-              status = json.loads(summary_file.read_text())['status']
-          elif any(outcome == 'failure' for outcome in stages.values()) or (completed and not valid_summary):
-              status = 'FAIL'
-          else:
-              status = 'UNRUN'
-
-          head = subprocess.run(['git', 'rev-parse', '--verify', 'HEAD'], capture_output=True, text=True)
-          receipt = {
-              'status': status,
-              'commit_sha': head.stdout.strip() if head.returncode == 0 else None,
-              'expected_commit_sha': os.environ['GITHUB_SHA'],
-              'run_id': os.environ['GITHUB_RUN_ID'],
-              'run_attempt': os.environ['GITHUB_RUN_ATTEMPT'],
-              'workflow_steps': stages,
-              'tool_version_requested': os.environ['LLVM_VERSION'],
-              'run_clang_tidy_sha256_requested': os.environ['LLVM_RUN_TIDY_SHA256'],
-              'inventory_available': valid_summary,
-              'report_only': True,
-          }
-          (output / 'verdict.json').write_text(json.dumps(receipt, sort_keys=True, indent=2) + '\n')
-          print('Native advisory Hosted verdict:', status)
-          if completed and not valid_summary:
-              raise SystemExit('Analysis completed but the source-aligned summary is missing')
-          PY
-
-      - name: Upload redacted Native clang-tidy evidence
+      - name: Upload redacted analyzer evidence
         if: always()
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:

@@ -134,14 +134,26 @@ The workflow analyzes only handwritten Native translation units from a
 real compilation database. Its retained, bounded artifact includes
 source/tool fingerprints, selected checks, warning counts and at most
 200 normalized repository-relative warning locations (no diagnostic
-messages or source snippets). A separate verdict receipt records each
-Hosted step as success, failure or skipped so early failures can be
-distinguished from unrun analysis. Raw analyzer logs, generated protobuf
+messages or source snippets). When the adapter finalizer runs, its verdict
+records each validation step as success, failure, or skipped. Before checkout,
+the workflow creates a minimal `UNRUN` receipt with the triggering SHA and run
+identity. If checkout or the adapter self-test fails, that fallback remains.
+The GitHub job conclusion identifies the failure, but the fallback does not
+contain individual step outcomes. The adapter replaces it when the finalizer
+runs.
+
+Raw analyzer logs, generated protobuf
 and private payloads are not part of the artifact. The workflow does
 not rewrite source files or enable `WarningsAsErrors`; advisory warnings
 remain **unadjudicated**, not a claim of a clean baseline. A local result
 does not prove Hosted acceptance: inspect the actual GitHub Actions run,
 `head_sha`, job conclusion and uploaded artifact before marking it PASS.
+
+The workflow contains only CI orchestration. The permanent, standard-library
+adapter `tools/native/clang_tidy_ci.py` owns the pinned tool installation,
+report parsing and verdict receipt; its focused regression tests are under
+`tools/native/tests/`. Keep report semantics in the adapter rather than
+embedding Python or extended shell programs in GitHub Actions YAML.
 
 Before enabling a blocking Native CI lint gate:
 
