@@ -47,6 +47,15 @@
       }
     },
     {
+      "name": "clang-tidy-report",
+      "displayName": "Google-style clang-tidy baseline (report-only)",
+      "inherits": "ci-fast",
+      "cacheVariables": {
+        "SIMPLEMATCH_ENABLE_CLANG_TIDY": "ON",
+        "CMAKE_CXX_SCAN_FOR_MODULES": "OFF"
+      }
+    },
+    {
       "name": "full-native-dev",
       "displayName": "Full Native Development Environment",
       "inherits": "vcpkg-base",
@@ -55,6 +64,15 @@
         "BUILD_TESTING": "ON",
         "VCPKG_MANIFEST_FEATURES": "tests;messaging;json-config",
         "SIMPLEMATCH_ENABLE_MESSAGING": "ON"
+      }
+    },
+    {
+      "name": "full-clang-tidy-report",
+      "displayName": "Full Native Kafka / Google-style clang-tidy baseline",
+      "inherits": "full-native-dev",
+      "cacheVariables": {
+        "SIMPLEMATCH_ENABLE_CLANG_TIDY": "ON",
+        "CMAKE_CXX_SCAN_FOR_MODULES": "OFF"
       }
     }
   ],
@@ -72,8 +90,22 @@
       "configurePreset": "ci-sanitize"
     },
     {
+      "name": "clang-tidy-report",
+      "configurePreset": "clang-tidy-report",
+      "targets": [
+        "simplematch_clang_tidy_report"
+      ]
+    },
+    {
       "name": "full-native-dev",
       "configurePreset": "full-native-dev"
+    },
+    {
+      "name": "full-clang-tidy-report",
+      "configurePreset": "full-clang-tidy-report",
+      "targets": [
+        "simplematch_clang_tidy_report"
+      ]
     }
   ],
   "testPresets": [

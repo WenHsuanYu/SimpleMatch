@@ -7,6 +7,7 @@ option(SIMPLEMATCH_ENABLE_WARNINGS "Enable compiler warnings" ON)
 option(SIMPLEMATCH_ENABLE_SANITIZERS "Enable AddressSanitizer + UndefinedBehaviorSanitizer" OFF)
 option(SIMPLEMATCH_ENABLE_MESSAGING "Build native Kafka runtime adapters" OFF)
 option(SIMPLEMATCH_BUILD_FIXTURE_TOOLS "Build Kafka deployment fixture tools" OFF)
+option(SIMPLEMATCH_ENABLE_CLANG_TIDY "Add an opt-in report-only clang-tidy target for native C++" OFF)
 
 function(simplematch_enable_warnings target_name)
   if(NOT SIMPLEMATCH_ENABLE_WARNINGS)
@@ -188,4 +189,79 @@ if(BUILD_TESTING)
               --warmup 1
               --iterations 5
               --maximum-resting-orders 32)
+endif()
+
+# Analyze only translation units in matching-engine, never generated protobuf or vcpkg sources.
+# Keep this separate from ALL, CTest and the normal Native CI build until findings are triaged.
+if(SIMPLEMATCH_ENABLE_CLANG_TIDY)
+  find_program(SIMPLEMATCH_CLANG_TIDY_EXECUTABLE
+      NAMES clang-tidy clang-tidy-21 clang-tidy-20 clang-tidy-19 clang-tidy-18 REQUIRED)
+  find_program(SIMPLEMATCH_RUN_CLANG_TIDY_EXECUTABLE
+      NAMES run-clang-tidy run-clang-tidy-21 run-clang-tidy-20 run-clang-tidy-19 run-clang-tidy-18 REQUIRED)
+
+  # CI pins both the analyzer version and the exact matching LLVM runner script.
+  # Keep the expectations opt-in so other local LLVM releases remain usable.
+  set(SIMPLEMATCH_EXPECTED_CLANG_TIDY_VERSION "" CACHE STRING
+      "Required clang-tidy version for reproducible analyzer runs")
+  set(SIMPLEMATCH_EXPECTED_RUN_CLANG_TIDY_SHA256 "" CACHE STRING
+      "Required SHA-256 of the run-clang-tidy script")
+  foreach(tool_path IN ITEMS
+      "${SIMPLEMATCH_CLANG_TIDY_EXECUTABLE}"
+      "${SIMPLEMATCH_RUN_CLANG_TIDY_EXECUTABLE}")
+    if(NOT EXISTS "${tool_path}")
+      message(FATAL_ERROR "Native clang-tidy executable does not exist: ${tool_path}")
+    endif()
+  endforeach()
+  if(SIMPLEMATCH_EXPECTED_CLANG_TIDY_VERSION)
+    execute_process(
+        COMMAND "${SIMPLEMATCH_CLANG_TIDY_EXECUTABLE}" --version
+        RESULT_VARIABLE tidy_version_exit
+        OUTPUT_VARIABLE tidy_version_output
+        ERROR_VARIABLE tidy_version_error)
+    if(NOT tidy_version_exit EQUAL 0)
+      message(FATAL_ERROR "Native clang-tidy version query failed: ${tidy_version_error}")
+    endif()
+    string(REGEX MATCH "[0-9]+[.][0-9]+[.][0-9]+"
+        tidy_version_actual "${tidy_version_output}")
+    if(NOT "${tidy_version_actual}" STREQUAL "${SIMPLEMATCH_EXPECTED_CLANG_TIDY_VERSION}")
+      message(FATAL_ERROR
+          "Native clang-tidy version mismatch: expected ${SIMPLEMATCH_EXPECTED_CLANG_TIDY_VERSION}, got ${tidy_version_actual}")
+    endif()
+  endif()
+  if(SIMPLEMATCH_EXPECTED_RUN_CLANG_TIDY_SHA256)
+    file(SHA256 "${SIMPLEMATCH_RUN_CLANG_TIDY_EXECUTABLE}" tidy_runner_sha256)
+    if(NOT "${tidy_runner_sha256}" STREQUAL "${SIMPLEMATCH_EXPECTED_RUN_CLANG_TIDY_SHA256}")
+      message(FATAL_ERROR
+          "Native run-clang-tidy SHA-256 mismatch: expected ${SIMPLEMATCH_EXPECTED_RUN_CLANG_TIDY_SHA256}, got ${tidy_runner_sha256}")
+    endif()
+  endif()
+
+  add_custom_target(simplematch_clang_tidy_report
+      COMMAND "${SIMPLEMATCH_RUN_CLANG_TIDY_EXECUTABLE}"
+              "-p=${CMAKE_CURRENT_BINARY_DIR}"
+              "-clang-tidy-binary=${SIMPLEMATCH_CLANG_TIDY_EXECUTABLE}"
+              "-j=2"
+              "-source-filter=^${CMAKE_CURRENT_SOURCE_DIR}/matching-engine/(src|tests)/.*[.]cpp$"
+              "-header-filter=^${CMAKE_CURRENT_SOURCE_DIR}/matching-engine/(include|src|tests)/"
+              "${CMAKE_CURRENT_SOURCE_DIR}/matching-engine/(src|tests)/.*[.]cpp$"
+      WORKING_DIRECTORY "${CMAKE_CURRENT_SOURCE_DIR}"
+      COMMENT "Run report-only clang-tidy on handwritten Native C++ sources"
+      VERBATIM)
+
+  add_dependencies(simplematch_clang_tidy_report simplematch_matching_ingress)
+  if(TARGET simplematch_matching_ingress_tests)
+    add_dependencies(simplematch_clang_tidy_report simplematch_matching_ingress_tests)
+  endif()
+  if(TARGET simplematch_matching_core_allocation_tests)
+    add_dependencies(simplematch_clang_tidy_report simplematch_matching_core_allocation_tests)
+  endif()
+  if(TARGET simplematch-matching-capacity-benchmark)
+    add_dependencies(simplematch_clang_tidy_report simplematch-matching-capacity-benchmark)
+  endif()
+  if(TARGET simplematch_matching_messaging)
+    add_dependencies(simplematch_clang_tidy_report simplematch_matching_messaging)
+  endif()
+  if(TARGET simplematch-matching)
+    add_dependencies(simplematch_clang_tidy_report simplematch-matching)
+  endif()
 endif()
