@@ -18,7 +18,9 @@
 
 ## 3. 選最小切片，先定義驗證
 
-選擇能獨立滿足驗收條件的最小改動，優先重用既有 module、interface 和 public test seam。編輯前閱讀 [badCodeSmell.md](../../badCodeSmell.md)，辨識這次容易引入的重複、責任混雜、命名不清或過度一般化；界面與 domain-value 的既有原則可查 [parameter-safety 指引](../development/domain-parameter-safety-refactor.md)。
+選擇能獨立滿足驗收條件的最小改動，優先重用既有 module、interface 和 public test seam。
+編輯前辨識這次容易引入的重複、責任混雜、命名不清或過度一般化，並在適用時使用 `codebase-design` skill。
+介面與 domain-value 的既有原則可查 [parameter-safety 指引](../development/domain-parameter-safety-refactor.md)。
 
 非平凡程式變更先寫能重現缺失行為的 focused test，再做最小 implementation。PostgreSQL schema 變更先設計 versioned Flyway migration、SQL review 和驗證方案，依 [database implementation guide](../development/database-implementation-guide.md) 進行。純文件調整則確認內容與目前規格及證據一致，再執行 `git diff --check`。
 
@@ -48,6 +50,8 @@ git diff --check
 
 完成實作後，更新行為、設定或入口所屬的文件，並同步 owning Issue 的驗收與證據；只有 capability、evidence、dependency 或 acceptance mapping 有變時，才更新 [能力清單](../status/phase-1-capability-inventory.md)。`tasks.md` 保持歷史導覽的角色。新增重要決策或改變 domain terminology 時，依 [domain 文件規則](../agents/domain.md) 維持 CONTEXT 和 ADR 的分工。
 
-最後對照驗收條件檢查 diff，確認程式、測試、文件與設定一致，並依 [badCodeSmell.md](../../badCodeSmell.md) 做一次精簡檢查。交付說明應讓 reviewer 看懂修改解決的行為、測試涵蓋的範圍，以及仍未驗證或刻意留待後續的項目。與 GitHub 發布或 push 有關的授權和操作，依 [AGENTS.md](../../AGENTS.md) 執行。
+最後對照驗收條件檢查 diff，確認程式、測試、文件與設定一致，並檢查剩餘設計風險。
+若適用且可用，使用 `code-review` skill。交付說明應讓 reviewer 看懂修改解決的行為、測試涵蓋的範圍，
+以及仍未驗證或刻意留待後續的項目。與 GitHub 發布或 push 有關的授權和操作，依 [AGENTS.md](../../AGENTS.md) 執行。
 
 當你能從 Issue 指到規格、從規格指到 owner 與測試，再以同一組驗收條件說明結果，就已具備繼續處理下一個切片的基本工作方式。其他主題可從 [文件總索引](../README.md) 查找。

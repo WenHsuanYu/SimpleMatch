@@ -28,7 +28,8 @@
 - [開發流程](development/development-workflow.md)：開始修改、設計、測試、檢查與交付的共同順序。
 - [依賴管理](development/dependencies.md)：Gradle conventions、版本目錄、BOM 與 dependency locking 的 ownership。
 - [資料庫實作指引](development/database-implementation-guide.md)：Flyway、schema 演進、connector 與驗證的實作入口；目標 topology 與資料擁有權見[平台資料庫規格](../services/docs/platform/database-architecture.md)。
-- [領域參數與介面 review](development/domain-parameter-safety-refactor.md)：現行設計原則、review 指引與歷史修改批次；搭配 [badCodeSmell.md](../badCodeSmell.md) 和 [PMD 政策](reference/pmd-quality-policy.md) 閱讀。
+- [領域參數與介面 review](development/domain-parameter-safety-refactor.md)：現行設計原則、review 指引與歷史修改批次；搭配 [PMD 政策](reference/pmd-quality-policy.md) 閱讀。
+  需要設計或 code-smell 審查時，使用 `codebase-design` 與 `code-review` skills。
 
 ### 政策、契約與實作參考
 
@@ -40,7 +41,11 @@
 | Risk admission 的持久化結果與恢復 | [Durable Risk admission](reference/durable-risk-admission.md) |
 | 離線 Market Reference 的輸入與輸出 | [官方來源契約](reference/market-reference-official-source-contract.md)、[每日 artifact 契約](reference/market-reference-artifact-contract.md) |
 | Matching journal 的 Kafka 耐久性設定 | [Matching Kafka durability profile](reference/kafka-matching-durability-profile.md) |
-| Java 靜態分析與 immutable ruleset | [PMD quality policy](reference/pmd-quality-policy.md) |
+| Java 靜態分析與開發者核准制的 PMD 規則集 | [PMD quality policy](reference/pmd-quality-policy.md) |
+| Native C++ Google 風格與 clang-tidy 報告 | [Native static analysis](reference/native-static-analysis.md) |
+
+兩項政策的原始決策與歷史驗證範圍，分別見 [PMD 擴充規格](plans/pmd-static-analysis-policy-expansion-spec.md)
+與 [Native clang-tidy 試行規格](plans/native-clang-tidy-google-spec.md)。現行執行方式仍以上表的參考文件與實際來源碼為準。
 
 ### 操作指南
 
