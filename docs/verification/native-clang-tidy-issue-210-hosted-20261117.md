@@ -18,38 +18,140 @@ The companion [complete 956-row ledger](native-clang-tidy-issue-210-hosted-20261
 
 The CSV intentionally **excludes raw diagnostic messages, source excerpts, credentials, local paths and runtime payloads**. Its rule-based lane is only an inspection queue, never a true-positive/false-positive determination. The full log remains GitHub-run evidence and is not copied into the repository.
 
-## Verified triage coverage — not a false clean claim
+## Verified triage coverage — still partial
 
-| Site review state | Unique line/tag sites | Meaning |
+The source-specific review covers **207 of 956** unique line/tag sites. An exact diagnostic site
+may be reported more than once across translation units; the ledger keeps the original **2,998**
+emitted occurrences. None of the counts below is a count of runtime bugs.
+
+| Site review state | Unique sites | Meaning |
 | --- | ---: | --- |
-| `UNADJUDICATED` | **921** | Auto-categorized for scheduling only; **no source-specific correctness or false-positive determination** |
-| `REVIEWED_CONTEXT_UNRESOLVED` | **31** | Source around the exact location examined and a contextual note recorded; true/false status still undetermined |
-| `CONFIRMED_STYLE_FINDING_UNFIXED` | **4** | Manually confirmed real syntactic unnamed-parameter findings; not correctness bugs; still unfixed |
-| **Total** | **956** | Full current-source inventory; only **35** have any manual source context |
+| `UNADJUDICATED` | **749** | No source-specific review; the rule-derived lane is only a work queue |
+| `REVIEWED_CONTEXT_UNRESOLVED` | **162** | Source and relevant contracts examined; true/false status not fully proved |
+| `REVIEWED_POTENTIAL_DEFECT_UNVERIFIED` | **3** | Plausible, localized correctness risk; no negative test or sanitizer reproduction yet |
+| `CONFIRMED_STYLE_FINDING_UNFIXED` | **42** | Source confirmed the syntactic style trigger; not a demonstrated runtime defect; still unfixed |
+| **Total** | **956** | **207** manually reviewed, **749** not yet reviewed |
 
-Auto-triage *lanes*, all unresolved unless explicitly reviewed, sum to 956: ABI/protocol/buffer (291), manual design/style (286), include dependencies (274), performance/layout (50), initialization/correctness (17), ownership/lifetime (17), test allocation interceptors (17), and callback/override naming (4). These counts are **not severity rankings**.
+Only the 42 confirmed style rows set `true_positive=STYLE_ONLY_CONFIRMED` and
+`false_positive=NO`. All other rows retain `UNDETERMINED` in both fields, including the
+three candidate defects. The original four callback/override naming sites remain in the 42.
+No class-wide false-positive conclusion or bulk suppression was recorded.
 
-## Source-specific inspection completed
+Auto-triage *lanes*, including unreviewed rows, still sum to 956: ABI/protocol/buffer (291),
+manual design/style (286), include dependencies (274), performance/layout (50),
+initialization/correctness (17), ownership/lifetime (17), test allocation interceptors (17),
+and callback/override naming (4). These lanes are **not severity rankings**.
 
-The following source-context notes were verified against the immutable commit above; exact corresponding ledger rows have review notes and statuses. These are **not blanket classifications of a check family**.
+## Evidence-based source decisions
 
-1. **Four true style-only unnamed-parameter findings:** `matching_main.cpp:41` is a POSIX signal-handler argument; `rdkafka_runtime_adapter.cpp:366` and `matching_kafka_fixture_publisher.cpp:170` are librdkafka callback ABI arguments; `matching_partition_runtime_driver_test.cpp:190` is a deliberately ignored fake-override record. Fixes, if desired, must preserve signatures and type identity. No correctness bug was demonstrated.
-2. **Seven `cppcoreguidelines-pro-type-member-init` sites:** `deterministic_matching_core.hpp:110,152`, `matching_command_decoder.hpp:28`, `matching_runtime.hpp:25,75`, and `partition_replay_coordinator.hpp:59,109`. Inspected producers include command factories, decoder aggregate returns, runtime output/input aggregate construction and JSON baseline loading. The sampled paths populate their values, but that does **not** establish that every construction/read path is safe. Remain unresolved pending bounded use-site proof and negative tests if a bug is confirmed.
-3. **Seventeen `cppcoreguidelines-owning-memory` / `cppcoreguidelines-no-malloc` line/tag sites:** `matching_core_allocation_test.cpp:36,53,66,144,148,152,156,188,193` (overlapping checks). They occur in intentional test-only global `new/delete` interception and allocation calibration; they are **not evidence of an allocation in the Matching Core hot path**. Any cleanup must preserve the full allocation operator ABI and positive calibration. Their policy disposition still requires explicit decision.
-4. **Two reinterpret casts:** `matching_event_encoder.cpp:110` converts SHA-256 bytes to a string's byte representation; `partition_replay_coordinator.cpp:72` passes `string_view` storage to the OpenSSL SHA256 C API. These are byte/ABI-boundary reviews, not automatic removal candidates. A change needs byte-identity and alignment/aliasing tests.
-5. **One forwarding warning:** `bounded_spsc_ring.hpp:74` invokes the named callback repeatedly; unconditional perfect-forwarding inside that loop could change callable state/lifetime semantics. No auto fix.
-6. **Four bounded-pointer sites:** `matching_event_encoder.cpp:69,77` guard a fixed buffer before copy/write; `matching_runtime_supervisor.cpp:36,37` construct `std::from_chars` pointer boundaries from `string_view`. The first helper should additionally retain a proof that input lengths cannot overflow `size_ + value.size()`; no reachable bug has been established.
+### Safety and correctness
+
+- **Seven member-initialization sites:** Inspecting every current factory, aggregate return,
+  ring publication and known consumer found no reachable read of an uninitialized scalar.
+  `MatchingCommandContext`, `CoreCommand`, decoder result, runtime input/output, Kafka offset
+  triples and baseline metadata are initialized on the traced paths. However, public aggregates
+  can still be default-constructed outside these paths. The seven rows remain unresolved rather
+  than being marked false positive. The ledger names exact creation/use lines and missing
+  invalid/default-object tests.
+- **40 pointer, index and reinterpret-cast sites:** Reviewed 20 constant-array-index sites,
+  18 pointer-arithmetic sites and two `reinterpret_cast` sites. UUID/SHA hex nibble indices,
+  bounded fixture `argv` uses, `from_chars` half-open ranges and immediate OpenSSL C byte views
+  have concrete local bounds or API contracts. Preserve the exact binary digest and wire bytes.
+  Three sites below need stronger negative evidence.
+- **20 related C-interoperability sites:** Reviewed 17 array-to-pointer-decay and three tagged
+  vararg sites. The libcurl/OpenSSL/librdkafka C boundaries must keep their buffer, header and
+  ownership contracts. In particular, librdkafka error buffers use stack `char[512]` and the
+  tagged `rd_kafka_producev` calls use `RD_KAFKA_MSG_F_COPY`; do not rewrite them mechanically.
+- **17 allocation-instrumentation sites:** The `no-malloc` and `owning-memory` findings occur
+  in the test executable's intentionally replaced global C++ `new/delete` operators and their
+  malloc/free/aligned storage backend. The positive calibration test verifies that ordinary and
+  aligned C++ allocations are counted, while warmed Matching tests require zero counted `new`.
+  This does **not** prove absence of direct C `malloc` in all paths and is not a reason to change
+  the allocation operator ABI.
+
+### Candidate defects — **end-to-end behavior not yet reproduced**
+
+| Tagged source site | Observed risk and required evidence |
+| --- | --- |
+| `deterministic_matching_core.cpp:405` | `CoreInstrument::symbol_length` is public and the core constructor does not recheck its limit against the 12-byte `symbol`. `create()` bounds normal ingress, but a directly constructed value with `symbol_length=13` may make checksum iteration read beyond the array. Add a direct-constructor negative test under sanitizer before classifying a confirmed defect. |
+| `matching_event_encoder.cpp:69` | `FixedText<Capacity>::length` can be changed after factory validation; `view()` does not recheck it. An oversized `trading_session_id` may lead to an out-of-range read during `HashInput::append`; the `size_ + value.size()` capacity expression also merits a subtraction-based overflow proof. Add a malformed public-aggregate test, 64/65 boundary tests and byte-identity assertion. |
+| `market_reference_artifact.cpp:180` | The `loads[partition]` index itself has a short-circuit 0–14 guard. The earlier JSON `partitionId.get<int32_t>()` narrows a larger integer *before* that guard. A standalone test against the pinned build header reproduced `4294967297` → `1` and `4294967310` → `14` while JSON still reports an integer. Full checksum-matched artifact acceptance remains untested; add boundary/negative tests and check `matching_main.cpp:297`. |
+
+An adjacent **benchmark-only** concern is not itself a pointer-index defect:
+`matching_capacity_benchmark.cpp:150-158` uses `std::strtoull` without explicit negative-sign
+or `ERANGE` rejection. The `argv` indices are guarded. A standalone C++20 test on this
+64-bit host confirmed that `-1` and an overflowing 64-bit value both become `SIZE_MAX`
+and pass the parser's current rejection condition. End-to-end benchmark CLI behavior and
+allocation failure have not been tested; add a focused negative CLI regression. This is a
+separate parser finding, **not** a proven pointer-arithmetic warning defect.
+
+### Ownership, performance and design
+
+- **12 special-member sites:** Checked C++ ownership, abstract interfaces, unique ownership
+  and thread topology. `CurlGlobalLifecycle` and its `CURL*` implementation would need an
+  explicit noncopyable contract before any new copy paths; Kafka producer contexts reference
+  in-flight callbacks; `MatchingRuntimeSupervisor` threads capture `this`. No actual duplicate
+  destruction was found. Do not generate move/copy operations from lint suggestions.
+- **20 enum-width and three padding sites:** Underlying enum widths and field placement can
+  affect C++ layout and API contracts. No measured throughput or layout benefit supports changes.
+  Require type/layout assertions, wire goldens, Kafka callback lifetime tests and matching
+  performance comparisons before any edit.
+- **Five value-parameter sites:** All are construction/startup paths. The Matching core vector
+  parameter, CPU set string and Kafka constructor strings could have narrower interfaces, but
+  caller ownership and public signature effects must be checked. The Kafka topic move remains
+  intentional.
+- **One forwarding site:** `BoundedSpscRing::consume_batch` calls a named callback repeatedly
+  as an lvalue. Forwarding it as an rvalue on every iteration may change `&&`-qualified callable
+  behavior. Preserve the current loop until a repeated-callback test proves a safe alternative.
+- **22 include-cleaner sites:** Reviewed direct declaration/header context in the Matching core,
+  input ledger and Kubernetes Lease adapter. Include ownership, pinned third-party umbrella
+  headers and actual Hosted suggestions are not yet proved by compiling a proposed edit.
+- **21 domain-number sites:** Three are confirmed duplicated style opportunities (12-character
+  symbol limit and fixed 15 partitions); the rest still require named-constant/protocol review.
+  The checksum seed `1469598103934665603ULL` is **not** the standard FNV-1a 64-bit basis;
+  no checksum migration is authorized. The 100 ms supervisor poll default is overridden by
+  the deployed configuration and must not be treated as the observed runtime cadence.
+- **20 public-member and 15 designated-initializer sites:** These are real syntactic style
+  findings, not proven false positives. Public domain aggregates expose direct field access;
+  changing access or replacing nested positional initializers can alter caller/API contracts,
+  inactive payload defaults and matching arrival order. The ledger records the field/aggregate
+  and its source-specific constraint.
 
 ## Next review batches and decision gates
 
-**Priority A — safety and correctness:** verify all seven member-init values from constructors/factories through consumers; study the 20 array-index and 18 pointer-arithmetic sites, 17 array-decay sites, C interop aliases, lifetime and special-member cases. Record one of: confirmed source bug with RED/GREEN regression; intentional, justified use with exact contract; or unresolved with stated missing proof. Avoid blanket suppressions.
+**Immediate:** Build bounded RED/negative tests for the three candidate correctness sites and
+for the benchmark parser; run focused Native/ASan tests before deciding whether to amend code.
+Keep source fixes separate from this source-pinned triage record. Do not run `clang-tidy -fix`.
 
-**Priority B — performance/ABI:** inspect 20 enum-width sites, three padding sites, five unnecessary-value-param sites and related ownership/lifetime warnings. Before changes to layouts, public signatures, hot-path algorithms or Kafka/FIX wire representation, require byte/ABI and throughput/alloc evidence rather than applying suggested fix-its.
+**Remaining site triage:** **749/956** sites are still unadjudicated, mainly further
+include-cleaner, magic-number, public-aggregate and initializer occurrences. Recheck each exact
+`(path,line,check_tag)` against immutable source; record a short decision with concrete type,
+usage and test or caller evidence. A provisional lane never substitutes for a human verdict.
 
-**Priority C — maintainability/style:** adjudicate 274 include-cleaner positions against actual include ownership; determine which magic-number and public-aggregate diagnostics express domain constants/DTO design rather than defects; apply only narrowly validated mechanical changes.
+**Local evidence boundary:** Two temporary, standalone C++20 reproductions were compiled and
+run, without modifying tracked C++ sources or running CTest/Hosted CI. One uses the existing
+`out/build/ci-fast` vcpkg nlohmann JSON header to confirm integer narrowing. The second
+replays the exact `strtoull`/`size_t` guard on the local 64-bit platform. They prove those
+conversion behaviors, **not** complete artifact acceptance, sanitizer detection or an end-to-end
+benchmark failure. Each temporary test source and binary was removed after execution.
 
-**Issue boundary:** [#210](https://github.com/WenHsuanYu/SimpleMatch/issues/210) must remain **OPEN** with its source-specific adjudication criterion unchecked. The initial 956-row ledger and 35 inspected sites do not satisfy full per-site true/false-positive triage. Parent [#209](https://github.com/WenHsuanYu/SimpleMatch/issues/209) AC-09 remains partial, and [#214](https://github.com/WenHsuanYu/SimpleMatch/issues/214) AC5 (mandatory subset and fixtures) remains blocked. No `-fix`, blanket `NOLINT`, rule suppression, formatting sweep or blocking CI change was made.
+**Compatibility gate:** Any edit to the hot path, FIX/Kafka/protobuf bytes, enum width,
+public signature, object lifetime, callback ownership or Lease fencing requires scoped tests
+and explicit source/ABI/wire compatibility evidence. Do not apply blanket `NOLINT`, broad
+suppression, formatting sweeps or a blocking CI gate. Mandatory checks remain part of #214 AC5
+and require separate approval and negative/allowed fixtures.
 
-## Publication / workspace limitation
+**Issue boundary:** [#210](https://github.com/WenHsuanYu/SimpleMatch/issues/210) remains
+**OPEN**, with the site-adjudication criterion unchecked. Parent
+[#209](https://github.com/WenHsuanYu/SimpleMatch/issues/209) AC-09 remains partial.
+[#214](https://github.com/WenHsuanYu/SimpleMatch/issues/214) AC5 remains pending.
 
-This evidence is committed on **`evidence/issue-210-hosted-triage-20261117`**, branched from the exact analyzed HEAD; it is **not merged into master**. The Chat On Steroids local-workspace tunnel was unavailable at execution time, so there was no change to the user's working tree, local validation environment or running CI. The CSV was read back and reconciled by exact site identity and emitted count against the GitHub-hosted source log. The branch can be reviewed and brought into the canonical workspace when its connection is restored.
+## Publication and workspace
+
+The initial 956-row evidence was committed as `0f90700e` and `77019c33` on a temporary
+`evidence/issue-210-hosted-triage-20261117` branch during a previous local-tunnel outage.
+After reconnection, both document-only commits were fast-forwarded into the **existing local
+`master`** without creating any additional Git worktree. The temporary local branch was
+removed. Further review changes belong directly to `master` and the analyzed C++ source
+remains pinned at `2b7eeaea2bf1a204d5043fd72428c2d9526f6e40`. The advisory warning
+inventory is historical evidence for that commit, not a claim about every future source HEAD.
