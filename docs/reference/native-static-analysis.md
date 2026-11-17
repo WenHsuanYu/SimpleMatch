@@ -123,41 +123,57 @@ The existing Native CI performs `ci-fast` configure, build, and CTest.
 It does not run the analyzer. The separate
 `.github/workflows/ci-native-clang-tidy.yml` workflow runs the full
 Kafka/messaging analyzer preset in **advisory-only** mode on Ubuntu 24.04.
-It pins LLVM `clang-tidy`/`clang-format` 21.1.6 PyPI wheels and the
-matching upstream `run-clang-tidy.py` script by SHA-256. That version is
+It pins the LLVM `clang-tidy` 21.1.6 wheel and the matching upstream
+`run-clang-tidy.py` script by SHA-256. That version is
 deliberately distinct from the original local 21.1.8 pilot: a 21.1.8
 `clang-tidy` wheel was not available when the CI pair was selected.
-The workflow records its actual enabled checks instead of transferring
-version-specific counts between toolchains.
+The workflow does not run `clang-format`. Formatting remains separate.
+The report records the actual enabled checks for its toolchain.
 
-The workflow analyzes only handwritten Native translation units from a
-real compilation database. Its retained, bounded artifact includes
-source/tool fingerprints, selected checks, warning counts and at most
-200 normalized repository-relative warning locations (no diagnostic
-messages or source snippets). When the adapter finalizer runs, its verdict
-records each validation step as success, failure, or skipped. Before checkout,
-the workflow creates a minimal `UNRUN` receipt with the triggering SHA and run
-identity. If checkout or the adapter self-test fails, that fallback remains.
-The GitHub job conclusion identifies the failure, but the fallback does not
-contain individual step outcomes. The adapter replaces it when the finalizer
-runs.
+The workflow checks the complete set of Git-tracked handwritten C++
+translation units against the compilation database. It then checks each
+source path reported by `run-clang-tidy` against that set. Matching only
+the number of compiled or scanned units is insufficient. Generated protobuf
+and third-party translation units remain excluded. The full preset must
+still contain its three generated protobuf units. The enabled check list
+must retain all seven approved families and at least 300 checks.
 
-Raw analyzer logs, generated protobuf
-and private payloads are not part of the artifact. The workflow does
-not rewrite source files or enable `WarningsAsErrors`; advisory warnings
-remain **unadjudicated**, not a claim of a clean baseline. A local result
-does not prove Hosted acceptance: inspect the actual GitHub Actions run,
-`head_sha`, job conclusion and uploaded artifact before marking it PASS.
+The workflow serves two purposes. GitHub Actions reports tool failures,
+invalid configuration and incomplete analysis. The analyzer step log shows
+**every diagnostic location and message**. Existing clang-tidy warnings
+remain advisory. They do not fail the job or establish a clean baseline.
 
-The workflow contains only CI orchestration. The permanent, standard-library
-adapter `tools/native/clang_tidy_ci.py` owns the pinned tool installation,
-report parsing and verdict receipt; its focused regression tests are under
-`tools/native/tests/`. Keep report semantics in the adapter rather than
-embedding Python or extended shell programs in GitHub Actions YAML.
+After a successful analysis, the workflow uploads `native-tidy-report.json`.
+It contains:
+
+- The analyzed commit SHA.
+- The clang-tidy version, expanded check names, analyzed source paths and
+  digests for owned source content, policy and compilation database.
+- The warning count, distinct location count, counts by diagnostic tag,
+  and one repository-relative example for up to ten frequent tags.
+
+Examples are **not** a complete diagnostic inventory. Read the analyzer
+step log to find all warnings. The artifact does not store raw diagnostic
+messages, source excerpts or private payloads. GitHub retains the report
+for 14 days. The workflow does not modify Native source files.
+
+GitHub Actions is the only owner of CI execution status. The upload step
+runs only after earlier steps succeed. Read the step logs when a job fails.
+The reporter fails the job if source coverage or diagnostic parsing is
+incomplete. A later failure or cancellation can still leave an uploaded
+report. **The GitHub job conclusion is the authoritative execution result.**
+Check the actual run, `head_sha`, job conclusion and report before claiming
+Hosted PASS.
+
+The YAML owns tool installation and supply-chain pinning. The CMake
+configure step checks the analyzer version and official runner SHA-256.
+The standard-library helper `tools/native/clang_tidy_ci.py` checks source
+coverage and summarizes the analyzer log. No step repeats these checks.
+The workflow does not add a separate adapter test file.
 
 Before enabling a blocking Native CI lint gate:
 
-1. Pin the clang-tidy and clang-format versions used locally and in CI.
+1. Pin the clang-tidy and runner versions used locally and in CI.
 2. Capture check-name lists and findings for both ordinary Native and
    optional messaging targets.
 3. Classify true positives and false positives, especially for

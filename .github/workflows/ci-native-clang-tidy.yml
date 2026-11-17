@@ -3,10 +3,9 @@ name: Native clang-tidy advisory
 on:
   push:
     branches: [master, main]
-    paths:
+    paths: &native_paths
       - '.github/workflows/ci-native-clang-tidy.yml'
       - '.clang-tidy'
-      - '.clang-format'
       - 'CMakeLists.txt'
       - 'CMakePresets.json'
       - 'vcpkg.json'
@@ -14,20 +13,8 @@ on:
       - 'proto/**'
       - 'matching-engine/**'
       - 'tools/native/clang_tidy_ci.py'
-      - 'tools/native/tests/**'
   pull_request:
-    paths:
-      - '.github/workflows/ci-native-clang-tidy.yml'
-      - '.clang-tidy'
-      - '.clang-format'
-      - 'CMakeLists.txt'
-      - 'CMakePresets.json'
-      - 'vcpkg.json'
-      - 'triplets/**'
-      - 'proto/**'
-      - 'matching-engine/**'
-      - 'tools/native/clang_tidy_ci.py'
-      - 'tools/native/tests/**'
+    paths: *native_paths
   workflow_dispatch:
 
 permissions:
@@ -42,7 +29,6 @@ env:
   VCPKG_COMMIT_SHA: 9e593bb18ea69cc5095e012465dcd675a822ed0d
   LLVM_VERSION: 21.1.6
   LLVM_TIDY_WHEEL_SHA256: 685e549e80461afb0f0c420ecfd0427e8bf38b927e989bdfee49dab4a9794cd1
-  LLVM_FORMAT_WHEEL_SHA256: 8a9d82d1d67ffdc491a0a1ce04d7740b6e7ccb1d9b6d2ab90b009040614030e9
   LLVM_RUN_TIDY_SHA256: 2b2bacf525daba5ab183f98fdbd0f21df8bb421e15d938b2245180944186fc73
 
 jobs:
@@ -54,23 +40,12 @@ jobs:
       VCPKG_ROOT: ${{ github.workspace }}/.vcpkg
       VCPKG_DEFAULT_BINARY_CACHE: ${{ github.workspace }}/.cache/vcpkg/binaries
       VCPKG_DOWNLOADS: ${{ github.workspace }}/.cache/vcpkg/downloads
+      LLVM_VENV: ${{ github.workspace }}/.ci-llvm
     steps:
-      # Independent of checkout and the adapter: retain UNRUN on early failures.
-      - name: Initialize source-linked receipt
-        shell: bash
-        run: |
-          set -euo pipefail
-          mkdir -p "$RUNNER_TEMP/native-tidy-artifact"
-          printf '{"status":"UNRUN","expected_commit_sha":"%s","commit_sha":null,"run_id":"%s","run_attempt":"%s","report_only":true,"reason":"workflow did not finalize"}\n' \
-            "$GITHUB_SHA" "$GITHUB_RUN_ID" "$GITHUB_RUN_ATTEMPT" > "$RUNNER_TEMP/native-tidy-artifact/verdict.json"
-
       - name: Checkout
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
-
-      - name: Prepare vcpkg caches
-        run: mkdir -p "$VCPKG_DEFAULT_BINARY_CACHE" "$VCPKG_DOWNLOADS"
 
       - name: Cache vcpkg binary packages
         uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
@@ -88,65 +63,52 @@ jobs:
           restore-keys: |
             ${{ runner.os }}-${{ runner.arch }}-vcpkg-downloads-${{ env.VCPKG_VERSION }}-
 
-      - name: Verify advisory evidence contract
-        id: selftest
-        run: python3 -B -m unittest discover -s tools/native/tests -p 'test_*.py'
-
-      - name: Install and verify SHA-pinned LLVM tools
-        id: toolchain
-        run: python3 tools/native/clang_tidy_ci.py install
-
-      - name: Bootstrap pinned vcpkg
-        id: bootstrap
+      - name: Install SHA-pinned clang-tidy and runner
         shell: bash
         run: |
           set -euo pipefail
+          python3 -m venv "$LLVM_VENV"
+          printf 'clang-tidy==%s --hash=sha256:%s\n' \
+            "$LLVM_VERSION" "$LLVM_TIDY_WHEEL_SHA256" |
+            "$LLVM_VENV/bin/python" -m pip install \
+              --no-deps --no-cache-dir --require-hashes -r /dev/stdin
+          curl --fail --location --silent --show-error --retry 3 \
+            --output "$LLVM_VENV/bin/run-clang-tidy" \
+            "https://raw.githubusercontent.com/llvm/llvm-project/llvmorg-${LLVM_VERSION}/clang-tools-extra/clang-tidy/tool/run-clang-tidy.py"
+          chmod +x "$LLVM_VENV/bin/run-clang-tidy"
+
+      - name: Bootstrap pinned vcpkg
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p "$VCPKG_DEFAULT_BINARY_CACHE" "$VCPKG_DOWNLOADS"
           git clone --filter=blob:none https://github.com/microsoft/vcpkg.git "$VCPKG_ROOT"
           git -C "$VCPKG_ROOT" checkout --detach "$VCPKG_VERSION"
           test "$(git -C "$VCPKG_ROOT" rev-parse HEAD)" = "$VCPKG_COMMIT_SHA"
           "$VCPKG_ROOT/bootstrap-vcpkg.sh" -disableMetrics
 
       - name: Configure handwritten Native analyzer
-        id: configure
         run: |
           cmake --preset full-clang-tidy-report \
-            -DSIMPLEMATCH_CLANG_TIDY_EXECUTABLE="$TIDY_BIN" \
-            -DSIMPLEMATCH_RUN_CLANG_TIDY_EXECUTABLE="$RUN_TIDY_BIN" \
+            -DSIMPLEMATCH_CLANG_TIDY_EXECUTABLE="$LLVM_VENV/bin/clang-tidy" \
+            -DSIMPLEMATCH_RUN_CLANG_TIDY_EXECUTABLE="$LLVM_VENV/bin/run-clang-tidy" \
             -DSIMPLEMATCH_EXPECTED_CLANG_TIDY_VERSION="$LLVM_VERSION" \
             -DSIMPLEMATCH_EXPECTED_RUN_CLANG_TIDY_SHA256="$LLVM_RUN_TIDY_SHA256"
 
       - name: Run report-only analyzer
-        id: analyze
         shell: bash
         run: |
           set -euo pipefail
           cmake --build --preset full-clang-tidy-report --parallel 2 2>&1 |
             tee "$RUNNER_TEMP/native-clang-tidy-output.log"
 
-      - name: Verify scope and prepare bounded evidence
-        id: inventory
-        run: python3 tools/native/clang_tidy_ci.py report
-
-      - name: Record Hosted PASS, FAIL or UNRUN
-        if: always() && steps.selftest.outcome == 'success'
-        env:
-          SELFTEST_OUTCOME: ${{ steps.selftest.outcome }}
-          TOOLCHAIN_OUTCOME: ${{ steps.toolchain.outcome }}
-          BOOTSTRAP_OUTCOME: ${{ steps.bootstrap.outcome }}
-          CONFIGURE_OUTCOME: ${{ steps.configure.outcome }}
-          ANALYZE_OUTCOME: ${{ steps.analyze.outcome }}
-          INVENTORY_OUTCOME: ${{ steps.inventory.outcome }}
-        run: python3 tools/native/clang_tidy_ci.py verdict
+      - name: Record advisory warning summary
+        run: python3 tools/native/clang_tidy_ci.py
 
       - name: Upload redacted analyzer evidence
-        if: always()
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: native-clang-tidy-advisory-${{ github.run_id }}-${{ github.run_attempt }}
           if-no-files-found: error
-          path: |
-            ${{ runner.temp }}/native-tidy-artifact/verdict.json
-            ${{ runner.temp }}/native-tidy-artifact/summary.json
-            ${{ runner.temp }}/native-tidy-artifact/selected-checks.txt
-            ${{ runner.temp }}/native-tidy-artifact/owned-source-sha256.json
-            ${{ runner.temp }}/native-tidy-artifact/warning-sites.json
+          retention-days: 14
+          path: ${{ runner.temp }}/native-tidy-report.json
