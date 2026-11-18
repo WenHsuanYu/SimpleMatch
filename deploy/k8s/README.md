@@ -356,10 +356,10 @@ The pending-publication limit must be at least `book_count × 2 × orders_per_si
 The current approved market-reference artifact assigns 1,928 instruments to 15 partitions,
 or 128/129 books per owner. The 150-book envelope permits a larger approved assignment.
 
-These are design targets, not validated load certifications. The proposed 4,000,000-command
-deduplication limit has no saturation or full-day memory evidence. The promotion templates retain
-the Matching main container's 4 GiB memory limit. Neither that limit nor sustained
-fill-cancel-refill throughput is certified by rendering or schema validation.
+The staging and production entries are offline configuration templates. Their acceptance is
+limited to rendered manifest/schema consistency and capacity arithmetic; only the local
+150-book fill-once workload is required as an executable capacity test. An additional
+Core-only high fill-cancel-refill run is retained as optional measurement evidence.
 
 The standard artifact source is the reviewed immutable `matching-daily-artifact` ConfigMap, whose
 `market_reference.json` and external `market_reference.sha256` are mounted at

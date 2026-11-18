@@ -189,10 +189,15 @@ pending publications, and a provisional budget of 4,000,000 distinct commands pe
 With 150 books, the local fill-once scenario requires at least 307,201 distinct commands, including
 one Open Barrier. The high-capacity fill-cancel-refill scenario requires at least 3,686,401. The
 distinct-command limit counts different command identities over the coordinator's lifetime. It is
-not the number of currently resting orders. The in-memory fingerprint map grows as commands are
-accepted; the capacity setting does not establish that the current 4 GiB high-capacity container
-memory limit is sufficient. The high-capacity value is a **design target**, not a load-tested
-production throughput or memory claim.
+not the number of currently resting orders. Local 150-book fill-once behavior is the executable
+acceptance target; staging and production remain offline configuration templates whose configured
+values are checked for consistency, not subjected to full trading-day workloads.
+
+An optional offline Core-only test has already processed all 3,686,401 high-template commands
+without a memory-limit failure. Constructor and fingerprint-map proxy observations are recorded
+as additional measurements in the
+[`Issue #217 capacity evidence`](../verification/matching-capacity-issue-217.md), not as
+staging/production acceptance requirements.
 
 These capacities do not expire fingerprints automatically. Changes to retention or memory policy
 must preserve Kafka replay, duplicate detection, publication-before-commit, and Lease fencing.

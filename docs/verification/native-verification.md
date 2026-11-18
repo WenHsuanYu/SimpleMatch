@@ -58,9 +58,52 @@ checksums. It also rejects duplicate output keys. It keeps the event keys but no
 value payloads. A Linux run reports the test process's peak RSS. That value is **not** the
 Matching Pod's memory use.
 
-This test does not exercise the Runtime Output Ring, Kafka recovery, the coordinator's complete
-command-fingerprint map, or Kubernetes. An over-capacity Core rejection causes the deployed
-coordinator to fail closed; the test does not prove non-disruptive live refusal.
-The large 4,096-order configuration remains an unverified
-promotion template. Its 150-book fill-cancel-refill workload and 4 GiB limit require separate
-memory and throughput evidence under [Issue #217](https://github.com/WenHsuanYu/SimpleMatch/issues/217).
+This is a deterministic Core and event-encoding test, not a deployed-service test. An
+over-capacity Core rejection causes the deployed coordinator to fail closed; the test does not
+prove non-disruptive live refusal.
+
+## Optional high-capacity Core workload
+
+The same opt-in executable has a smaller high-capacity sequence. It fills one instrument with
+4,096 orders on each side, cancels all 8,192 orders, and fills both sides again. It requires
+24,577 accepted Core commands including Open Barrier. It checks the per-phase order count,
+event semantics, serialized key/value digests, and final deterministic Core state. Run:
+
+```bash
+out/build/full-native-dev/simplematch_matching_capacity_envelope_test \
+  --gtest_filter='MatchingCapacityEnvelopeTest.RefillsOneBookAfter4096PerSideCancellation'
+```
+
+The 150-instrument high-capacity sequence is `DISABLED_StagedHigh150Books4096PerSide`.
+It requires both an exact GoogleTest filter with `--gtest_also_run_disabled_tests` and the
+`SIMPLEMATCH_HIGH_ENVELOPE_APPROVAL=RUN_3686400_CORE_COMMANDS` environment value. It will not
+run from ordinary CTest or the default opt-in test filter. Before running this expensive test,
+check current CPU and memory headroom and apply external resource and elapsed-time bounds.
+
+The high-capacity Core-only run is supplementary to the required local fill-once acceptance;
+the staging/production template contract is checked through manifests and capacity arithmetic.
+
+## Optional constructor and fingerprint memory profiles
+
+The following target is separate from default CMake `ALL` and CTest. The default invocation
+prints source-backed object sizes and samples a small Runtime and an 8,192-node map proxy:
+
+```bash
+cmake --build --preset full-native-dev --target simplematch_matching_memory_envelope_test --parallel 2
+out/build/full-native-dev/simplematch_matching_memory_envelope_test \
+  --gtest_filter='MatchingMemoryEnvelopeTest.*'
+```
+
+The high-capacity constructor profile needs `SIMPLEMATCH_RUN_MEMORY_ENVELOPE_FULL=1` and an
+exact GoogleTest filter. It applies a 2 GiB process virtual-memory limit on Linux before
+allocating its 150-book Core, 2,097,152-slot Runtime Ring, and empty Coordinator.
+
+The 4,000,000-node fingerprint *proxy* needs the exact
+`SIMPLEMATCH_MEMORY_PROXY_APPROVAL=RUN_4000000_PROXY_NODES` environment value, an exact filter,
+and `--gtest_also_run_disabled_tests`. It also applies a 2 GiB process virtual-memory limit.
+The proxy has the same key/value shape as the private Coordinator map, but it is not the actual
+Kafka command ingestion path. Both profiles should run under an external elapsed-time bound.
+
+The independent memory measurements and their resource bounds are documented in
+[`matching-capacity-issue-217.md`](matching-capacity-issue-217.md). These profiles are
+optional diagnostic tools, not additional staging/production acceptance workloads.

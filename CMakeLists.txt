@@ -147,6 +147,14 @@ if(BUILD_TESTING)
   simplematch_enable_warnings(simplematch_matching_capacity_envelope_test)
   simplematch_enable_sanitizers(simplematch_matching_capacity_envelope_test)
 
+  # Offline memory profiles are opt-in and may allocate large rings.
+  add_executable(simplematch_matching_memory_envelope_test EXCLUDE_FROM_ALL
+      matching-engine/tests/matching_memory_envelope_test.cpp)
+  target_link_libraries(simplematch_matching_memory_envelope_test
+      PRIVATE simplematch_matching_ingress GTest::gtest GTest::gtest_main Threads::Threads)
+  simplematch_enable_warnings(simplematch_matching_memory_envelope_test)
+  simplematch_enable_sanitizers(simplematch_matching_memory_envelope_test)
+
   add_executable(simplematch_matching_ingress_tests
       matching-engine/tests/market_reference_artifact_test.cpp
       matching-engine/tests/deterministic_matching_core_test.cpp

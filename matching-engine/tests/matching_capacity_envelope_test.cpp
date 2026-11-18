@@ -1,6 +1,8 @@
+#include <array>
 #include <chrono>
 #include <cstddef>
 #include <cstdint>
+#include <cstdlib>
 #include <iostream>
 #include <stdexcept>
 #include <string>
@@ -96,6 +98,28 @@ struct Checksum {
     integer(static_cast<std::uint64_t>(item.partition_id));
     integer(static_cast<std::uint64_t>(item.source_input_offset));
     integer(static_cast<std::uint64_t>(item.output_index));
+  }
+
+  void staged_expected(const CoreCommand& command) {
+    if (command.type == CoreCommandType::kNewOrder) {
+      integer(static_cast<std::uint64_t>(CoreEventType::kOrderRested));
+      expected(command);
+    } else {
+      const CoreCancelOrder& cancel = command.cancel_order();
+      integer(static_cast<std::uint64_t>(CoreEventType::kOrderCancelled));
+      uuid(command.command_id);
+      uuid(cancel.order_id);
+      uuid(cancel.account_id);
+      instrument(cancel.instrument);
+      integer(static_cast<std::uint64_t>(cancel.side));
+      integer(static_cast<std::uint64_t>(kQuantity));
+      integer(0);  // Cancellation does not have a transaction price.
+    }
+  }
+
+  void staged_observed(const CoreEvent& event) {
+    integer(static_cast<std::uint64_t>(event.type));
+    observed(event);
   }
 };
 
@@ -244,6 +268,183 @@ void fill_envelope(ReplaySummary* summary) {
   summary->elapsed_ms = std::chrono::duration_cast<std::chrono::milliseconds>(
                             std::chrono::steady_clock::now() - start)
                             .count();
+}
+
+constexpr std::size_t kHighRestingPerSide = 4096;
+constexpr std::size_t kStagedPhaseCount = 3;
+
+struct StagedSummary {
+  Checksum expected_events;
+  Checksum observed_events;
+  Checksum serialized_records;
+  std::array<std::size_t, kStagedPhaseCount> phase_events{};
+  std::array<std::uint64_t, kStagedPhaseCount> phase_record_checksums{};
+  std::array<std::uint64_t, kStagedPhaseCount> phase_state_checksums{};
+  std::uint64_t commands{};
+  std::size_t trades{};
+  std::int64_t elapsed_ms{};
+};
+
+// No command or event transcript is retained. The initial fill's order IDs are
+// reconstructed by position for cancellation, so memory scales with live books.
+void run_staged_envelope(std::size_t book_count, StagedSummary* summary) {
+  const auto start = std::chrono::steady_clock::now();
+  const auto keys = instruments(book_count);
+  const auto command_context = context();
+  DeterministicMatchingCore core(keys, kHighRestingPerSide, 0);
+  MatchingEventEncoder encoder;
+  const std::size_t orders_per_phase = book_count * 2 * kHighRestingPerSide;
+  ASSERT_EQ(core.maximum_output_events(), orders_per_phase + 1);
+  ASSERT_EQ(core.process(CoreCommand::open(command_context, uuid(0, 0x44), 15)),
+            MatchingProcessResult::kApplied);
+  ASSERT_TRUE(core.events().empty());
+  summary->commands = 1;
+
+  std::uint64_t serial = 0;
+  for (std::size_t phase = 0; phase < kStagedPhaseCount; ++phase) {
+    const auto expected_type = phase == 1 ? CoreEventType::kOrderCancelled
+                                          : CoreEventType::kOrderRested;
+    for (std::size_t book = 0; book < book_count; ++book) {
+      const CoreInstrument& instrument = keys[book];
+      for (std::size_t side_index = 0; side_index < 2; ++side_index) {
+        const CoreSide side =
+            side_index == 0 ? CoreSide::kBuy : CoreSide::kSell;
+        for (std::size_t index = 0; index < kHighRestingPerSide; ++index) {
+          // The first fill is serials [1, orders_per_phase]. Later new orders
+          // and cancel commands use fresh serials, never recycled identities.
+          const std::uint64_t initial_order_serial =
+              1 + (book * 2 + side_index) * kHighRestingPerSide + index;
+          const std::uint64_t command_serial = ++serial;
+          const CoreCommand command =
+              phase == 1
+                  ? CoreCommand::cancel(
+                        command_context, uuid(command_serial, 0x11),
+                        uuid(initial_order_serial, 0x22),
+                        uuid(initial_order_serial, 0x33), instrument, side)
+                  : order(command_context, instrument, side, command_serial);
+
+          summary->expected_events.staged_expected(command);
+          ASSERT_EQ(core.process(command), MatchingProcessResult::kApplied)
+              << "phase=" << phase << " command_serial=" << command_serial;
+          ASSERT_EQ(core.events().size(), 1U)
+              << "command_serial=" << command_serial;
+          const CoreEvent& event = core.events().front();
+          if (event.type == CoreEventType::kTradeExecuted) {
+            ++summary->trades;
+          }
+          ASSERT_EQ(event.type, expected_type)
+              << "command_serial=" << command_serial;
+          ASSERT_EQ(event.source_command_id, command.command_id);
+          const std::uint64_t order_serial =
+              phase == 1 ? initial_order_serial : command_serial;
+          ASSERT_EQ(event.order_id, uuid(order_serial, 0x22));
+          ASSERT_EQ(event.account_id, uuid(order_serial, 0x33));
+          ASSERT_EQ(event.instrument, instrument);
+          ASSERT_EQ(event.side, side);
+          ASSERT_EQ(event.leaves_quantity.value(), kQuantity);
+          ASSERT_EQ(event.price.value(), phase == 1               ? 0
+                                         : side == CoreSide::kBuy ? kBuyPrice
+                                                                  : kSellPrice);
+          ASSERT_EQ(event.output_index, 0);
+          if (phase == 1) {
+            ASSERT_EQ(event.cancellation_reason,
+                      CoreCancellationReason::kUserRequest);
+          }
+          summary->observed_events.staged_observed(event);
+
+          const auto encoded = encoder.encode(
+              command_context, static_cast<std::int64_t>(100 + command_serial),
+              event);
+          ASSERT_TRUE(encoded.has_value())
+              << "command_serial=" << command_serial;
+          ASSERT_EQ(encoded->key.size(), 32U);
+          ASSERT_FALSE(encoded->value.empty());
+          ASSERT_EQ(encoded->partition_id, 0);
+          ASSERT_EQ(encoded->source_input_offset,
+                    static_cast<std::int64_t>(100 + command_serial));
+          ASSERT_EQ(encoded->output_index, 0);
+          summary->serialized_records.record(*encoded);
+          ++summary->phase_events[phase];
+          ++summary->commands;
+        }
+      }
+      ASSERT_EQ(core.resting_order_count(instrument),
+                phase == 1 ? 0U : 2 * kHighRestingPerSide);
+    }
+    ASSERT_EQ(summary->phase_events[phase], orders_per_phase);
+    summary->phase_record_checksums[phase] = summary->serialized_records.value;
+    summary->phase_state_checksums[phase] = core.deterministic_state_checksum();
+  }
+
+  ASSERT_EQ(serial, kStagedPhaseCount * orders_per_phase);
+  ASSERT_EQ(summary->commands, 1 + kStagedPhaseCount * orders_per_phase);
+  ASSERT_EQ(summary->trades, 0U);
+  ASSERT_EQ(summary->expected_events.value, summary->observed_events.value);
+  summary->elapsed_ms = std::chrono::duration_cast<std::chrono::milliseconds>(
+                            std::chrono::steady_clock::now() - start)
+                            .count();
+}
+
+void expect_staged_replay_equal(const StagedSummary& first,
+                                const StagedSummary& replay) {
+  EXPECT_EQ(first.expected_events.value, replay.expected_events.value);
+  EXPECT_EQ(first.observed_events.value, replay.observed_events.value);
+  EXPECT_EQ(first.serialized_records.value, replay.serialized_records.value);
+  EXPECT_EQ(first.phase_events, replay.phase_events);
+  EXPECT_EQ(first.phase_record_checksums, replay.phase_record_checksums);
+  EXPECT_EQ(first.phase_state_checksums, replay.phase_state_checksums);
+  EXPECT_EQ(first.commands, replay.commands);
+  EXPECT_EQ(first.trades, replay.trades);
+}
+
+TEST(MatchingCapacityEnvelopeTest, RefillsOneBookAfter4096PerSideCancellation) {
+  StagedSummary first;
+  ASSERT_NO_FATAL_FAILURE(run_staged_envelope(1, &first));
+  StagedSummary replay;
+  ASSERT_NO_FATAL_FAILURE(run_staged_envelope(1, &replay));
+  EXPECT_EQ(first.phase_events[0], 2 * kHighRestingPerSide);
+  EXPECT_EQ(first.phase_events[1], 2 * kHighRestingPerSide);
+  EXPECT_EQ(first.phase_events[2], 2 * kHighRestingPerSide);
+  EXPECT_EQ(first.commands, 1 + 6 * kHighRestingPerSide);
+  EXPECT_EQ(first.trades, 0U);
+  EXPECT_EQ(first.expected_events.value, first.observed_events.value);
+  expect_staged_replay_equal(first, replay);
+  std::cout << "core_only_scaled_4096x3: first_ms=" << first.elapsed_ms
+            << " replay_ms=" << replay.elapsed_ms
+            << " commands=" << first.commands
+            << " events_checksum=" << first.serialized_records.value
+            << " final_state_checksum=" << first.phase_state_checksums[2]
+            << '\n';
+}
+
+// Explicit manual-only high profile. Both --gtest_also_run_disabled_tests and
+// the exact environment acknowledgement are needed to run 3,686,400 commands.
+TEST(MatchingCapacityEnvelopeTest, DISABLED_StagedHigh150Books4096PerSide) {
+  const char* approval = std::getenv("SIMPLEMATCH_HIGH_ENVELOPE_APPROVAL");
+  if (approval == nullptr ||
+      std::string_view(approval) != "RUN_3686400_CORE_COMMANDS") {
+    GTEST_SKIP()
+        << "Set SIMPLEMATCH_HIGH_ENVELOPE_APPROVAL=RUN_3686400_CORE_COMMANDS "
+           "and --gtest_also_run_disabled_tests with an exact test filter";
+  }
+
+  StagedSummary summary;
+  ASSERT_NO_FATAL_FAILURE(run_staged_envelope(kInstrumentCount, &summary));
+  constexpr std::size_t kHighOrdersPerPhase =
+      kInstrumentCount * 2 * kHighRestingPerSide;
+  for (const std::size_t count : summary.phase_events) {
+    EXPECT_EQ(count, kHighOrdersPerPhase);
+  }
+  EXPECT_EQ(summary.commands, 1 + 3 * kHighOrdersPerPhase);
+  EXPECT_EQ(summary.trades, 0U);
+  EXPECT_EQ(summary.expected_events.value, summary.observed_events.value);
+  std::cout << "core_only_HIGH_4096x3: elapsed_ms=" << summary.elapsed_ms
+            << " commands=" << summary.commands
+            << " events_checksum=" << summary.serialized_records.value
+            << " fill_state_checksum=" << summary.phase_state_checksums[0]
+            << " cleared_state_checksum=" << summary.phase_state_checksums[1]
+            << " refill_state_checksum=" << summary.phase_state_checksums[2]
+            << '\n';
 }
 
 TEST(MatchingCapacityEnvelopeTest, RejectsExtraRestingOrderOnEachSide) {
