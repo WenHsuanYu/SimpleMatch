@@ -411,6 +411,82 @@ TEST(DeterministicMatchingCoreTest, RejectsOrderBookCapacityWithoutExpandingTheB
   EXPECT_EQ(engine.resting_order_count(instrument()), 1U);
 }
 
+TEST(DeterministicMatchingCoreTest,
+     FillsCrossingRodLimitWithoutRequiringAFullSideRestingSlot) {
+  DeterministicMatchingCore engine({instrument()}, 1, 0);
+  const auto resting_buy = new_order("0198a001-0000-7000-8000-000000000060",
+                                     "0198a001-0000-7000-8000-000000000070",
+                                     CoreSide::kBuy, 100, 900'000);
+  const auto resting_sell = new_order("0198a001-0000-7000-8000-000000000061",
+                                      "0198a001-0000-7000-8000-000000000071",
+                                      CoreSide::kSell, 100, 1'100'000);
+  ASSERT_EQ(engine.process(resting_buy), MatchingProcessResult::kApplied);
+  ASSERT_EQ(engine.process(resting_sell), MatchingProcessResult::kApplied);
+  ASSERT_EQ(engine.resting_order_count(instrument()), 2U);
+
+  const auto crossing_buy = new_order("0198a001-0000-7000-8000-000000000062",
+                                      "0198a001-0000-7000-8000-000000000072",
+                                      CoreSide::kBuy, 100, 1'100'000);
+  ASSERT_EQ(engine.process(crossing_buy), MatchingProcessResult::kApplied);
+  ASSERT_EQ(engine.events().size(), 1U);
+  const CoreEvent& trade = engine.events().front();
+  EXPECT_EQ(trade.type, CoreEventType::kTradeExecuted);
+  EXPECT_EQ(trade.maker_order_id, resting_sell.new_order().order_id);
+  EXPECT_EQ(trade.taker_order_id, crossing_buy.new_order().order_id);
+  EXPECT_EQ(trade.price.value(), 1'100'000);
+  EXPECT_EQ(trade.quantity.value(), 100);
+  EXPECT_EQ(engine.resting_order_count(instrument()), 1U);
+}
+
+TEST(DeterministicMatchingCoreTest,
+     RejectsCrossingRodLimitAtomicallyWhenRemainderWouldRestOnFullSide) {
+  DeterministicMatchingCore engine({instrument()}, 1, 0);
+  ASSERT_EQ(engine.process(new_order("0198a001-0000-7000-8000-000000000063",
+                                     "0198a001-0000-7000-8000-000000000073",
+                                     CoreSide::kBuy, 100, 900'000)),
+            MatchingProcessResult::kApplied);
+  ASSERT_EQ(engine.process(new_order("0198a001-0000-7000-8000-000000000064",
+                                     "0198a001-0000-7000-8000-000000000074",
+                                     CoreSide::kSell, 100, 1'100'000)),
+            MatchingProcessResult::kApplied);
+  const auto checksum_before = engine.deterministic_state_checksum();
+
+  EXPECT_EQ(engine.process(new_order("0198a001-0000-7000-8000-000000000065",
+                                     "0198a001-0000-7000-8000-000000000075",
+                                     CoreSide::kBuy, 150, 1'100'000)),
+            MatchingProcessResult::kOrderBookFull);
+  EXPECT_TRUE(engine.events().empty());
+  EXPECT_EQ(engine.resting_order_count(instrument()), 2U);
+  EXPECT_EQ(engine.deterministic_state_checksum(), checksum_before);
+}
+
+TEST(DeterministicMatchingCoreTest,
+     FillsCrossingSellWithoutRequiringAFullSideRestingSlot) {
+  DeterministicMatchingCore engine({instrument()}, 1, 0);
+  const auto resting_sell = new_order("0198a001-0000-7000-8000-000000000066",
+                                      "0198a001-0000-7000-8000-000000000076",
+                                      CoreSide::kSell, 100, 1'200'000);
+  const auto resting_buy = new_order("0198a001-0000-7000-8000-000000000067",
+                                     "0198a001-0000-7000-8000-000000000077",
+                                     CoreSide::kBuy, 100, 1'000'000);
+  ASSERT_EQ(engine.process(resting_sell), MatchingProcessResult::kApplied);
+  ASSERT_EQ(engine.process(resting_buy), MatchingProcessResult::kApplied);
+  ASSERT_EQ(engine.resting_order_count(instrument()), 2U);
+
+  const auto crossing_sell = new_order("0198a001-0000-7000-8000-000000000068",
+                                       "0198a001-0000-7000-8000-000000000078",
+                                       CoreSide::kSell, 100, 1'000'000);
+  ASSERT_EQ(engine.process(crossing_sell), MatchingProcessResult::kApplied);
+  ASSERT_EQ(engine.events().size(), 1U);
+  const CoreEvent& trade = engine.events().front();
+  EXPECT_EQ(trade.type, CoreEventType::kTradeExecuted);
+  EXPECT_EQ(trade.maker_order_id, resting_buy.new_order().order_id);
+  EXPECT_EQ(trade.taker_order_id, crossing_sell.new_order().order_id);
+  EXPECT_EQ(trade.price.value(), 1'000'000);
+  EXPECT_EQ(trade.quantity.value(), 100);
+  EXPECT_EQ(engine.resting_order_count(instrument()), 1U);
+}
+
 TEST(DeterministicMatchingCoreTest, ReservesOutputCapacityForBothSidesOfCloseBarrier) {
   auto engine = DeterministicMatchingCore({instrument()}, 2, 0);
 

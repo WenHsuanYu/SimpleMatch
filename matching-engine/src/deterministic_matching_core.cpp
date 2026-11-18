@@ -468,25 +468,28 @@ MatchingProcessResult DeterministicMatchingCore::process_new_order(
     return incoming.side == CoreSide::kBuy ? incoming.limit_price.value() >= resting.price.value()
                                             : incoming.limit_price.value() <= resting.price.value();
   };
-  if (incoming.order_type == CoreOrderType::kLimit &&
+  const bool resting_side_full =
+      incoming.order_type == CoreOrderType::kLimit &&
       incoming.time_in_force == CoreTimeInForce::kRod &&
-      same_side.size() == maximum_resting_orders_per_instrument_) {
-    return MatchingProcessResult::kOrderBookFull;
-  }
-
-  if (incoming.time_in_force == CoreTimeInForce::kFok) {
-    std::int64_t available = 0;
+      same_side.size() == maximum_resting_orders_per_instrument_;
+  if (resting_side_full || incoming.time_in_force == CoreTimeInForce::kFok) {
+    // Admission must not mutate the book when a ROD remainder cannot rest.
+    // Use the same read-only liquidity check for FOK and capacity admission.
+    std::int64_t unfilled = incoming.quantity.value();
     for (const RestingOrder &resting : opposite_side) {
       if (!crosses(resting)) {
         break;
       }
-      if (available >= incoming.quantity.value() - resting.remaining.value()) {
-        available = incoming.quantity.value();
+      if (resting.remaining.value() >= unfilled) {
+        unfilled = 0;
         break;
       }
-      available += resting.remaining.value();
+      unfilled -= resting.remaining.value();
     }
-    if (available < incoming.quantity.value()) {
+    if (unfilled != 0) {
+      if (resting_side_full) {
+        return MatchingProcessResult::kOrderBookFull;
+      }
       CoreEvent event{};
       event.type = CoreEventType::kOrderCancelled;
       event.output_index = 0;

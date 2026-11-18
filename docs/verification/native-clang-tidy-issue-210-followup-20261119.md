@@ -59,3 +59,25 @@ not a complete-source clang-tidy rerun or a deployed runtime certification.
 Large but representable positive iteration counts remain a separate workload-sizing
 concern; this parser fix does not set a maximum benchmark-memory budget. The original
 956-row review counts remain source-pinned historical classifications.
+
+## Full-side ROD limit admission correction
+
+Current-source review also identified an order-book capacity error. A ROD limit order
+was rejected when its own resting side was full, even if opposite-side liquidity
+could fill the incoming order completely without adding a resting order. A public
+Matching Core test reproduced this rejection before the correction.
+
+The Core now checks crossing liquidity without changing the order book when the
+incoming ROD limit order might need a resting slot. A fully fillable order proceeds
+through the existing trade path. If the remaining quantity would require a slot on
+the full resting side, the Core rejects the whole command before any trade or book
+change. The same bounded, subtraction-based preflight also preserves FOK's existing
+all-or-nothing rule. No public C++ ABI or serialized event format was changed.
+
+Focused tests cover a completely filled BUY, its symmetric SELL case, and a partial
+crossing that must preserve its previous state checksum. The original failing case
+changed from RED to GREEN. Current-source `full-native-dev` CTest passed **109/109**,
+`ci-sanitize` CTest passed **92/92**, and the rebuilt opt-in local capacity target
+passed **5/5** with its historical event and state digests unchanged. Offline
+`manifestCheck staticAnalysis` passed. The 150-book high-template workload was not
+rerun, and staging/production deployment is not part of these results.
