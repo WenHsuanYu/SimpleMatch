@@ -174,6 +174,29 @@ public FIX IOC order while query-service is scaled to zero and requires correlat
 Matching, Persistence, Account, QuickFIX, and market-data evidence before it reports active
 processing liveness.
 
+## Native Matching capacity
+
+The C++ Matching executable uses `MATCHING_*` environment variables at startup. These variables
+are not Spring configuration properties. When no override is present, its local-size fallback is
+1,024 resting orders per instrument per side, 524,288 output slots, 524,288 pending publications,
+and 500,000 distinct command fingerprints. The input ring remains at 1,024 slots.
+
+The Kubernetes base retains the same local-size capacity. The `local` overlay has lower CPU and
+memory requests and does not require dedicated CPUs. The `staging` and `production` overlays select
+the shared high-capacity patch: 4,096 resting orders per side, 2,097,152 output slots, 1,500,000
+pending publications, and a provisional budget of 4,000,000 distinct commands per partition.
+
+With 150 books, the local fill-once scenario requires at least 307,201 distinct commands, including
+one Open Barrier. The high-capacity fill-cancel-refill scenario requires at least 3,686,401. The
+distinct-command limit counts different command identities over the coordinator's lifetime. It is
+not the number of currently resting orders. The in-memory fingerprint map grows as commands are
+accepted; the capacity setting does not establish that the current 4 GiB high-capacity container
+memory limit is sufficient. The high-capacity value is a **design target**, not a load-tested
+production throughput or memory claim.
+
+These capacities do not expire fingerprints automatically. Changes to retention or memory policy
+must preserve Kafka replay, duplicate detection, publication-before-commit, and Lease fencing.
+
 ## Kubernetes
 
 Each Spring service defaults to `optional:kubernetes:` through Config Data for local use. A

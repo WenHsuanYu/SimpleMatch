@@ -1,6 +1,7 @@
 package com.simplematch.tools.kubernetes;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
+import java.nio.file.Files;
 import java.nio.file.Path;
 import java.time.Duration;
 import java.util.List;
@@ -26,11 +27,46 @@ final class ManifestSchemas {
   }
 
   String render(String profile) throws Exception {
-    if (!List.of("local", "test", "staging", "production").contains(profile)) {
+    if (!List.of("local", "staging", "production").contains(profile)) {
       throw new IllegalArgumentException("unsupported manifest profile: " + profile);
     }
+    return renderDirectory(root.resolve("deploy/k8s/overlays/" + profile));
+  }
+
+  /** Renders the optional artifact data-image patch through a temporary Kustomize wrapper. */
+  String renderMatchingArtifactOciFallback(String profile) throws Exception {
+    // Apply the same allowed-profile contract as ordinary renders.
+    if (!List.of("local", "staging", "production").contains(profile)) {
+      throw new IllegalArgumentException("unsupported manifest profile: " + profile);
+    }
+    final Path wrapper = Files.createTempDirectory(root.resolve("deploy/k8s/overlays"),
+        "matching-oci-contract-");
+    final Path kustomization = wrapper.resolve("kustomization.yaml");
+    try {
+      Files.writeString(kustomization,
+          """
+          apiVersion: kustomize.config.k8s.io/v1beta1
+          kind: Kustomization
+          resources:
+            - ../__PROFILE__
+          patches:
+            - path: ../../matching-artifact-oci-data-image-patch.json
+              target:
+                group: apps
+                version: v1
+                kind: StatefulSet
+                name: matching
+          """.replace("__PROFILE__", profile));
+      return renderDirectory(wrapper);
+    } finally {
+      Files.deleteIfExists(kustomization);
+      Files.deleteIfExists(wrapper);
+    }
+  }
+
+  private String renderDirectory(Path directory) throws Exception {
     return new BoundedCommand(root, Map.of()).run(List.of(tools.resolve("kustomize").toString(),
-        "build", root.resolve("deploy/k8s/overlays/" + profile).toString(),
+        "build", directory.toString(),
         "--load-restrictor", "LoadRestrictionsNone"), "", Duration.ofMinutes(1)).checked();
   }
 

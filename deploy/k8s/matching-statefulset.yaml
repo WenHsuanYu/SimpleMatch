@@ -100,11 +100,13 @@ spec:
             - name: MATCHING_EVENTS_TOPIC
               value: matching.events
             - name: MATCHING_MAX_RESTING_ORDERS_PER_INSTRUMENT
-              value: "4096"
+              value: "1024"
             - name: MATCHING_OUTPUT_CAPACITY
-              value: "1048576"
+              value: "524288"
+            - name: MATCHING_MAX_DISTINCT_COMMANDS
+              value: "500000"
             - name: MATCHING_MAX_PENDING_PUBLICATIONS
-              value: "1000000"
+              value: "524288"
           resources:
             requests:
               cpu: "3"

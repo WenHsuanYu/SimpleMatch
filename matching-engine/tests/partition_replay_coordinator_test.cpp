@@ -152,6 +152,26 @@ TEST(PartitionReplayCoordinatorTest, AssignsASequenceToDeduplicatedInputsBeforeC
   EXPECT_FALSE(runtime.next_commit_offset().has_value());
 }
 
+TEST(PartitionReplayCoordinatorTest, DuplicateDoesNotConsumeDistinctCommandBudget) {
+  PartitionReplayCoordinator runtime(
+      assignment(), identity(), ready_permit(), core(), 4, 32, 1, 64);
+
+  ASSERT_EQ(runtime.ingest(open_record(10)), PartitionReplayResult::kAccepted);
+  ASSERT_TRUE(runtime.acknowledge_commit(11));
+  EXPECT_EQ(runtime.ingest(open_record(11)), PartitionReplayResult::kDuplicate);
+  ASSERT_TRUE(runtime.acknowledge_commit(12));
+
+  EXPECT_EQ(
+      runtime.ingest(order_record(
+          12,
+          "0198a001-0000-7000-8000-000000000002",
+          "0198a001-0000-7000-8000-000000000012",
+          simplematch::common::v2::SIDE_BUY)),
+      PartitionReplayResult::kFailedClosed);
+  EXPECT_EQ(runtime.status().state, PartitionSessionState::kFailedClosed);
+  EXPECT_EQ(runtime.status().reason, "MATCHING_COMMAND_DEDUPLICATION_CAPACITY_EXHAUSTED");
+}
+
 TEST(PartitionReplayCoordinatorTest, RebuildsFromTheRetainedBarrierWithoutRepublishingCommittedEffects) {
   auto first = coordinator();
   const auto open = open_record(20);

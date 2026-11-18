@@ -20,6 +20,16 @@
           "-ec",
           "cp /artifact/market_reference.json /work/market_reference.json && cp /artifact/market_reference.sha256 /work/market_reference.sha256"
         ],
+        "resources": {
+          "requests": {
+            "cpu": "100m",
+            "memory": "64Mi"
+          },
+          "limits": {
+            "cpu": "100m",
+            "memory": "64Mi"
+          }
+        },
         "volumeMounts": [
           {
             "name": "market-reference",

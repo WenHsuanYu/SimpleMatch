@@ -174,10 +174,10 @@ RuntimeConfiguration load_configuration() {
       environment_value("MATCHING_METRICS_PATH", std::string(kDefaultMetricsPath)),
       non_negative_environment<std::int32_t>("MATCHING_PARTITION_ID", -1),
       positive_environment<std::size_t>("MATCHING_INPUT_CAPACITY", 1024),
-      positive_environment<std::size_t>("MATCHING_OUTPUT_CAPACITY", 1048576),
-      positive_environment<std::size_t>("MATCHING_MAX_RESTING_ORDERS_PER_INSTRUMENT", 4096),
-      positive_environment<std::size_t>("MATCHING_MAX_DISTINCT_COMMANDS", 100000),
-      positive_environment<std::size_t>("MATCHING_MAX_PENDING_PUBLICATIONS", 1000000),
+      positive_environment<std::size_t>("MATCHING_OUTPUT_CAPACITY", 524288),
+      positive_environment<std::size_t>("MATCHING_MAX_RESTING_ORDERS_PER_INSTRUMENT", 1024),
+      positive_environment<std::size_t>("MATCHING_MAX_DISTINCT_COMMANDS", 500000),
+      positive_environment<std::size_t>("MATCHING_MAX_PENDING_PUBLICATIONS", 524288),
       std::chrono::milliseconds(
           positive_environment<std::int64_t>("MATCHING_POLL_TIMEOUT_MILLIS", 100)),
       std::chrono::milliseconds(

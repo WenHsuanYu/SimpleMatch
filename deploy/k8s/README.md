@@ -8,10 +8,10 @@ Secret outside Git and grant its service account only `get` access to named Conf
 For `staging` and `production`, each service Secret must contain the `postgres_dsn` key; no
 ConfigMap may define the canonical `simplematch.postgres.dsn` property. The service's
 `SIMPLEMATCH_POSTGRES_DSN` reference maps that Secret key to the canonical property. The
-quickfix-gateway StatefulSet is
-the reference deployment: it enables the non-optional Kubernetes Config Data import and uses the
-narrowly scoped RBAC manifest. The base manifest defaults to the `local` profile; the `test`,
-`staging`, and `production` overlays own their explicit Spring profile selection.
+quickfix-gateway StatefulSet is the reference deployment: it enables the non-optional Kubernetes
+Config Data import and uses the narrowly scoped RBAC manifest. The base selects the `local` Spring
+profile. The `staging` and `production` overlays select their respective profiles. The Spring
+`test` profile remains available for service tests.
 
 The staging/production overlays include a retained Debezium Kafka Connect worker. The worker's
 connector ConfigMaps contain only non-sensitive connector settings; the worker itself receives
@@ -25,7 +25,7 @@ and re-apply the connector definitions. Configuration reload is intentionally di
 Projection, Marketdata Streamer, and Query Service, plus the existing
 QuickFIX/Matching resources, service-local ConfigMaps, read-only configuration RBAC, migration Jobs,
 probes, and NetworkPolicy.
-The four overlays are `local`, `test`, `staging`, and `production`.
+The three deployment overlays are `local`, `staging`, and `production`.
 
 ## Environment separation
 
@@ -104,8 +104,9 @@ conservative review envelope, not the actual startup peak. The profiles remain p
 only execution of every retained requirement can establish a complete-local result.
 
 Each Matching main container requests 1 GiB and retains its 2 GiB limit. Fifteen main containers
-therefore request 15 GiB; status sidecars add 120 MiB. The 1,024-order and 524,288-slot local
-capacities, fifteen owners, ownership fencing, and production templates remain unchanged.
+therefore request 15 GiB; status sidecars add 120 MiB. Local inherits 1,024 orders per side per book
+and 524,288 output/pending slots from the base, with a 500,000-command deduplication cap.
+The fifteen owners and ownership fencing remain unchanged.
 This local reservation candidate follows the owner's resource assessment: the current native
 runtime initialized the largest approved partition, including its rings and Kafka adapters, at
 about 164.7 MiB peak RSS. That observation stopped at unavailable-broker startup and does not prove
@@ -115,7 +116,8 @@ See `out/verification/issue-202-p3-memory-assessment-02/` for the local observat
 Requests reserve scheduling capacity; limits bound a container's permitted memory use.
 Neither their sum nor an allocation-only observation proves simultaneous peak capacity for every Pod.
 See the [Kubernetes resource model](https://v1-36.docs.kubernetes.io/docs/concepts/configuration/manage-resources-containers/).
-The base and promotion templates retain their separate production resource contract.
+The base and promotion templates retain the three-CPU Matching main-container resource contract.
+Only staging and production give the entire Matching Pod Guaranteed QoS.
 
 The retired calculator checked phase sums, malformed quantities, and init-container peaks.
 Those standalone calculations no longer have an executable test owner. The live scenario
@@ -328,9 +330,36 @@ passes readiness; it never takes another ordinal's partition.
 
 Each ordinal receives its own `matching-baseline` PVC using `ReadWriteOncePod`. The configured
 `simplematch-rwo-pod` StorageClass must be backed by a compatible CSI driver. The baseline holds
-only recovery coordinates; Kafka remains the authoritative command journal. The workload requests
-and limits three CPUs and the same memory value so it receives Guaranteed QoS. Nodes must carry the
-`simplematch.io/cpu-manager-static=true` label only after CPU Manager static-policy certification.
+only recovery coordinates; Kafka remains the authoritative command journal. The Matching main
+container requests and limits three CPUs and the same memory value. Staging and production also
+set equal requests and limits for the `runtime-status` sidecar. This gives the entire Matching Pod
+Guaranteed QoS. The base remains Burstable because the sidecar has smaller requests than limits;
+the local overlay is also Burstable. Nodes must carry the `simplematch.io/cpu-manager-static=true`
+label only after CPU Manager static-policy certification.
+
+### Matching capacity envelopes
+
+The base owns the bounded local defaults. Staging and production share
+`overlays/matching-high-capacity-patch.yaml`. Kustomize must render these values:
+
+| Overlay | Orders per side per book | Output ring slots | Pending publications | Distinct commands | Matching Pod QoS |
+| --- | ---: | ---: | ---: | ---: | --- |
+| Base / local | 1,024 | 524,288 | 524,288 | 500,000 | Burstable |
+| Staging | 4,096 | 2,097,152 | 1,500,000 | 4,000,000 | Guaranteed |
+| Production | 4,096 | 2,097,152 | 1,500,000 | 4,000,000 | Guaranteed |
+
+The local design goal fills both sides of 150 books once: `150 × 2 × 1024 + 1 = 307201`
+distinct commands, including the session barrier. The promotion-template goal fills, cancels,
+and refills both sides once: `150 × 2 × 4096 × 3 + 1 = 3686401` distinct commands.
+The output ring must hold `book_count × 2 × orders_per_side + 2` slots, including the end marker.
+The pending-publication limit must be at least `book_count × 2 × orders_per_side + 1`.
+The current approved market-reference artifact assigns 1,928 instruments to 15 partitions,
+or 128/129 books per owner. The 150-book envelope permits a larger approved assignment.
+
+These are design targets, not validated load certifications. The proposed 4,000,000-command
+deduplication limit has no saturation or full-day memory evidence. The promotion templates retain
+the Matching main container's 4 GiB memory limit. Neither that limit nor sustained
+fill-cancel-refill throughput is certified by rendering or schema validation.
 
 The standard artifact source is the reviewed immutable `matching-daily-artifact` ConfigMap, whose
 `market_reference.json` and external `market_reference.sha256` are mounted at
@@ -344,8 +373,12 @@ artifact checksum, trading day, and image digest before the Gateway can open.
 When the final artifact exceeds 900 KiB, use the reviewed
 `matching-artifact-oci-data-image-patch.json` in the deployment renderer instead. It replaces the
 ConfigMap volume with an `emptyDir` populated by a digest-pinned data-image init container, while
-preserving the same runtime artifact path. Replace the placeholder digests in both manifests with
-approved image digests before deployment.
+preserving the same runtime artifact path. The init container declares equal 100m CPU and 64Mi
+memory requests and limits. This preserves Guaranteed QoS for staging and production, where both
+regular containers also have equal requests and limits. The local Pod remains Burstable. The
+100m/64Mi values are a bounded configuration candidate, not a measured copy-time or memory
+guarantee for larger artifacts. Replace the placeholder digests in both manifests with approved
+image digests before deployment.
 
 `./gradlew manifestCheck` validates rendered schemas and basic workload probes
 without a live cluster. See the [validation scope](../../docs/verification/manifest-validation.md). The normal recovery procedure is in

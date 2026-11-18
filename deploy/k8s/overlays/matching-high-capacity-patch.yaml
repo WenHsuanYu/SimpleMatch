@@ -1,0 +1,23 @@
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: matching
+spec:
+  template:
+    spec:
+      containers:
+        - name: matching
+          env:
+            - name: MATCHING_MAX_RESTING_ORDERS_PER_INSTRUMENT
+              value: "4096"
+            - name: MATCHING_OUTPUT_CAPACITY
+              value: "2097152"
+            - name: MATCHING_MAX_DISTINCT_COMMANDS
+              value: "4000000"
+            - name: MATCHING_MAX_PENDING_PUBLICATIONS
+              value: "1500000"
+        - name: runtime-status
+          resources:
+            requests:
+              cpu: 50m
+              memory: 32Mi

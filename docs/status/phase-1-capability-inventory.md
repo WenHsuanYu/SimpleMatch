@@ -865,7 +865,7 @@ implementation blocker.
   least-privilege policy, business-role readiness, structured safe application logs, basic
   health/metrics endpoints, and the key delivery/recovery metrics needed by the local lab.
   Matching-specific ownership and fencing remain in KD-1.
-- **Current evidence:** `deploy/k8s/base` and local/test/staging/production overlays now cover the
+- **Current evidence:** `deploy/k8s/base` and local/staging/production overlays now cover the
   Java services, retained QuickFIX/Matching resources, service ConfigMaps/RBAC, one-shot service-
   scoped Flyway Jobs, startup/readiness/liveness probes, non-root/read-only containers, scoped
   NetworkPolicy, digest-pinned promotion templates, external Secret contracts, Kafka SASL/TLS,
@@ -873,7 +873,7 @@ implementation blocker.
   all application services expose the basic health/info/metrics endpoint, and critical delivery
   paths register Micrometer counters and observations. The local resilience contract also rejects
   raw FIX message logging and unsafe account-payload templates. `./gradlew manifestCheck`
-  validates schemas and basic workload probes across all four overlays. The executable local overlay now also contains the node-local PostgreSQL
+  validates schemas and basic workload probes across all three overlays. The executable local overlay now also contains the node-local PostgreSQL
   singleton, disposable Redis cache, three-broker KRaft StatefulSet, bounded Flyway/PostgreSQL
   readiness gates, and explicit Kafka topic provisioning. S4 retires the older static fixture matrices
   under the [owner-amended scope](../plans/shell-test-reduction-s4.md). PostgreSQL

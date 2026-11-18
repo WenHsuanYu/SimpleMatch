@@ -20,13 +20,6 @@ spec:
               app.kubernetes.io/name: matching
       containers:
         - name: matching
-          env:
-            - name: MATCHING_MAX_RESTING_ORDERS_PER_INSTRUMENT
-              value: "1024"
-            - name: MATCHING_OUTPUT_CAPACITY
-              value: "524288"
-            - name: MATCHING_MAX_PENDING_PUBLICATIONS
-              value: "524288"
           resources:
             requests:
               cpu: 100m

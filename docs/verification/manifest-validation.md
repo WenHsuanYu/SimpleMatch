@@ -6,7 +6,7 @@ Run the shared local and CI check before deployment:
 ./gradlew manifestCheck
 ```
 
-The task renders `local`, `test`, `staging`, and `production` with the pinned Kustomize binary.
+The task renders `local`, `staging`, and `production` with the pinned Kustomize binary.
 It also validates every YAML workload in `deploy/k8s/verification/`.
 It uses no Docker daemon or Kubernetes API.
 JUnit reports appear in `tools/kubernetes-tests/build/reports/tests/manifestTest/`.
@@ -39,6 +39,15 @@ See the upstream [schema-location and strict-validation documentation](https://g
 Each Deployment and StatefulSet must contain a container with both startup and readiness probes.
 Kubernetes schemas permit these probes to be absent, so the project checks this condition separately.
 Basic rejection examples cover invalid schema, an unknown resource schema, empty input, and missing workload probes.
+
+The Matching manifest test also checks rendered capacity values and their cross-field bounds.
+It requires an output ring large enough for a 150-book event burst plus its marker, a pending
+publication limit that covers the burst, and a deduplication cap for each profile's command goal.
+It checks the CPU and memory requests and limits of every regular and init container to determine
+Matching Pod Guaranteed or Burstable QoS, including the optional OCI artifact-data-image fallback.
+The promotion-template test also checks three integer Matching CPUs and the static CPU Manager
+node selector, while local must not require that selector.
+These assertions do not measure memory or transaction throughput.
 
 The owner narrowed S4 on 2026-11-02 to reduce maintenance responsibilities.
 The check does not reproduce historical configuration snapshots or completed compatibility transitions.
