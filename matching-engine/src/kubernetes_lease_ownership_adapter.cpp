@@ -2,6 +2,7 @@
 
 #include <chrono>
 #include <cstddef>
+#include <cstdint>
 #include <ctime>
 #include <iomanip>
 #include <limits>
@@ -42,38 +43,83 @@ std::size_t append_response(char *data, std::size_t size, std::size_t count, voi
 }
 
 std::optional<SystemTime> parse_timestamp(std::string_view value) {
-  if (value.size() < 20 || value.back() != 'Z') {
+  if (value.size() < 20 || value[4] != '-' || value[7] != '-' || value[10] != 'T' ||
+      value[13] != ':' || value[16] != ':') {
     return std::nullopt;
   }
-  std::tm calendar{};
-  std::istringstream input(std::string(value.substr(0, 19)));
-  input >> std::get_time(&calendar, "%Y-%m-%dT%H:%M:%S");
-  if (input.fail()) {
+
+  auto number_at = [value](std::size_t offset, std::size_t count) -> std::optional<unsigned> {
+    unsigned result = 0;
+    for (std::size_t index = offset; index < offset + count; ++index) {
+      if (value[index] < '0' || value[index] > '9') {
+        return std::nullopt;
+      }
+      result = result * 10 + static_cast<unsigned>(value[index] - '0');
+    }
+    return result;
+  };
+
+  const auto year = number_at(0, 4);
+  const auto month = number_at(5, 2);
+  const auto day = number_at(8, 2);
+  const auto hour = number_at(11, 2);
+  const auto minute = number_at(14, 2);
+  const auto second = number_at(17, 2);
+  if (!year || !month || !day || !hour || !minute || !second ||
+      *hour > 23 || *minute > 59 || *second > 59) {
     return std::nullopt;
   }
-  const std::time_t seconds = timegm(&calendar);
-  if (seconds == static_cast<std::time_t>(-1)) {
+  const std::chrono::year_month_day date{
+      std::chrono::year{static_cast<int>(*year)}, std::chrono::month{*month},
+      std::chrono::day{*day}};
+  if (!date.ok()) {
     return std::nullopt;
   }
-  std::chrono::milliseconds fraction{};
-  if (value.size() > 20 && value[19] == '.') {
+
+  unsigned microseconds = 0;
+  if (value[19] == 'Z') {
+    if (value.size() != 20) {
+      return std::nullopt;
+    }
+  } else if (value[19] == '.' && value.size() > 21 && value.back() == 'Z') {
     std::size_t digits = 0;
-    int milliseconds = 0;
-    for (std::size_t index = 20; index < value.size() - 1 && digits < 3; ++index) {
+    bool discarded_nonzero_digit = false;
+    for (std::size_t index = 20; index < value.size() - 1; ++index) {
       const char digit = value[index];
       if (digit < '0' || digit > '9') {
-        break;
+        return std::nullopt;
       }
-      milliseconds = (milliseconds * 10) + (digit - '0');
+      if (digits < 6) {
+        microseconds = microseconds * 10 + static_cast<unsigned>(digit - '0');
+      } else if (digit != '0') {
+        discarded_nonzero_digit = true;
+      }
       ++digits;
     }
-    while (digits < 3) {
-      milliseconds *= 10;
+    while (digits < 6) {
+      microseconds *= 10;
       ++digits;
     }
-    fraction = std::chrono::milliseconds(milliseconds);
+    if (discarded_nonzero_digit) {
+      ++microseconds;
+    }
+  } else {
+    return std::nullopt;
   }
-  return std::chrono::system_clock::from_time_t(seconds) + fraction;
+
+  // Kubernetes emits microseconds. Round up a finer fraction so a competing
+  // holder's Lease cannot be considered expired before its actual deadline.
+  const auto timestamp = std::chrono::sys_days{date} + std::chrono::hours{*hour} +
+                         std::chrono::minutes{*minute} + std::chrono::seconds{*second} +
+                         std::chrono::microseconds{microseconds};
+  const auto min_time =
+      std::chrono::time_point_cast<std::chrono::microseconds>(SystemTime::min());
+  const auto max_time =
+      std::chrono::time_point_cast<std::chrono::microseconds>(SystemTime::max());
+  if (timestamp < min_time || timestamp > max_time) {
+    return std::nullopt;
+  }
+  return std::chrono::time_point_cast<SystemTime::duration>(timestamp);
 }
 
 std::string format_timestamp(SystemTime value) {
@@ -104,6 +150,63 @@ namespace detail {
 
 std::string format_kubernetes_lease_timestamp(SystemTime value) {
   return format_timestamp(value);
+}
+
+std::optional<SystemTime> parse_kubernetes_lease_timestamp(std::string_view value) {
+  return parse_timestamp(value);
+}
+
+std::optional<KubernetesLeaseObservation> inspect_kubernetes_lease_spec(
+    const Json &spec, SystemTime now) {
+  if (!spec.is_object()) {
+    return std::nullopt;
+  }
+  std::string holder;
+  if (const auto entry = spec.find("holderIdentity"); entry != spec.end()) {
+    if (!entry->is_string()) {
+      return std::nullopt;
+    }
+    holder = entry->get<std::string>();
+  }
+
+  int duration_seconds = 15;
+  if (const auto entry = spec.find("leaseDurationSeconds"); entry != spec.end()) {
+    if (entry->is_number_unsigned()) {
+      const auto duration = entry->get<std::uint64_t>();
+      if (duration == 0 || duration > static_cast<std::uint64_t>(std::numeric_limits<int>::max())) {
+        return std::nullopt;
+      }
+      duration_seconds = static_cast<int>(duration);
+    } else if (entry->is_number_integer()) {
+      const auto duration = entry->get<std::int64_t>();
+      if (duration <= 0 || duration > std::numeric_limits<int>::max()) {
+        return std::nullopt;
+      }
+      duration_seconds = static_cast<int>(duration);
+    } else {
+      return std::nullopt;
+    }
+  }
+
+  std::optional<SystemTime> renewed_at;
+  if (const auto entry = spec.find("renewTime"); entry != spec.end()) {
+    if (!entry->is_string()) {
+      return std::nullopt;
+    }
+    renewed_at = parse_kubernetes_lease_timestamp(entry->get<std::string>());
+    if (!renewed_at.has_value()) {
+      return std::nullopt;
+    }
+  }
+  // An unheld Lease may lack renewTime; a held Lease without it has unknown expiry.
+  if (!holder.empty() && !renewed_at.has_value()) {
+    return std::nullopt;
+  }
+  const bool expired = holder.empty() ||
+      std::chrono::floor<std::chrono::microseconds>(now) >=
+          std::chrono::time_point_cast<std::chrono::microseconds>(*renewed_at) +
+              std::chrono::seconds(duration_seconds);
+  return KubernetesLeaseObservation{holder, duration_seconds, expired};
 }
 
 } // namespace detail
@@ -201,20 +304,16 @@ bool KubernetesLeaseOwnershipAdapter::refresh() {
     return mark_uncertain();
   }
   const std::string resource_version = metadata["resourceVersion"].get<std::string>();
-  const std::string holder =
-      spec.contains("holderIdentity") && spec["holderIdentity"].is_string()
-          ? spec["holderIdentity"].get<std::string>()
-          : std::string{};
-  const int duration_seconds = spec.value("leaseDurationSeconds", 15);
-  const auto renewed_at =
-      spec.contains("renewTime") && spec["renewTime"].is_string()
-          ? parse_timestamp(spec["renewTime"].get<std::string>())
-          : std::optional<SystemTime>{};
-  const bool expired = holder.empty() || !renewed_at.has_value() ||
-                       now >= *renewed_at + std::chrono::seconds(duration_seconds);
-  if (!holder.empty() && holder != expected_identity_.holder_identity && !expired) {
+  const auto observation = detail::inspect_kubernetes_lease_spec(spec, now);
+  if (!observation.has_value() ||
+      (!observation->holder_identity.empty() &&
+       observation->holder_identity != expected_identity_.holder_identity &&
+       !observation->expired)) {
     return mark_uncertain();
   }
+
+  const std::string &holder = observation->holder_identity;
+  const int duration_seconds = observation->duration_seconds;
 
   Json patch = {{"metadata", Json::object()}};
   patch["metadata"]["resourceVersion"] = resource_version;

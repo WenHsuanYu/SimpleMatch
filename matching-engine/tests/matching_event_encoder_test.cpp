@@ -5,6 +5,7 @@
 #include <cctype>
 #include <fstream>
 #include <iterator>
+#include <limits>
 #include <string>
 #include <string_view>
 #include <vector>
@@ -141,6 +142,67 @@ TEST(MatchingEventEncoderTest, PublishesPinnedOrderRestedRecord) {
       "cpp-matching-order-rested-v1.hex",
       kRestedEventId,
       simplematch::matching::runtime::v1::MATCHING_EVENT_TYPE_ORDER_RESTED);
+}
+
+TEST(MatchingEventEncoderTest, RejectsOutOfBoundsContextTextLengths) {
+  DeterministicMatchingCore core({instrument()}, 16, 0);
+  ASSERT_EQ(core.process(new_order("0198a001-0000-7000-8000-000000000001",
+                                   "0198a001-0000-7000-8000-000000000011",
+                                   CoreSide::kSell)),
+            MatchingProcessResult::kApplied);
+  ASSERT_EQ(core.events().size(), 1U);
+  const CoreEvent event = core.events().front();
+  MatchingEventEncoder encoder;
+
+  auto oversized_session = context();
+  oversized_session.trading_session_id.length =
+      oversized_session.trading_session_id.bytes.size() + 1;
+  EXPECT_FALSE(encoder.encode(oversized_session, 41, event).has_value());
+
+  auto oversized_routing = context();
+  oversized_routing.routing_algorithm_version.length =
+      oversized_routing.routing_algorithm_version.bytes.size() + 1;
+  EXPECT_FALSE(encoder.encode(oversized_routing, 41, event).has_value());
+
+  auto oversized_artifact = context();
+  oversized_artifact.artifact_identity.length =
+      std::numeric_limits<std::size_t>::max();
+  EXPECT_FALSE(encoder.encode(oversized_artifact, 41, event).has_value());
+}
+
+TEST(MatchingEventEncoderTest, RejectsOutOfBoundsEventInstrumentSymbolLength) {
+  DeterministicMatchingCore core({instrument()}, 16, 0);
+  ASSERT_EQ(core.process(new_order("0198a001-0000-7000-8000-000000000001",
+                                   "0198a001-0000-7000-8000-000000000011",
+                                   CoreSide::kSell)),
+            MatchingProcessResult::kApplied);
+  ASSERT_EQ(core.events().size(), 1U);
+  CoreEvent malformed = core.events().front();
+  malformed.instrument.symbol_length =
+      static_cast<std::uint8_t>(malformed.instrument.symbol.size() + 1);
+  EXPECT_FALSE(
+      MatchingEventEncoder().encode(context(), 41, malformed).has_value());
+
+  malformed.instrument.symbol_length = 0;
+  EXPECT_FALSE(
+      MatchingEventEncoder().encode(context(), 41, malformed).has_value());
+}
+
+TEST(MatchingEventEncoderTest, AcceptsMaximumLengthContextText) {
+  DeterministicMatchingCore core({instrument()}, 16, 0);
+  ASSERT_EQ(core.process(new_order("0198a001-0000-7000-8000-000000000001",
+                                   "0198a001-0000-7000-8000-000000000011",
+                                   CoreSide::kSell)),
+            MatchingProcessResult::kApplied);
+  ASSERT_EQ(core.events().size(), 1U);
+  auto maximum_context = context();
+  maximum_context.trading_session_id =
+      *FixedText<64>::create(std::string(64, 's'));
+  maximum_context.routing_algorithm_version =
+      *FixedText<64>::create(std::string(64, 'r'));
+  EXPECT_TRUE(MatchingEventEncoder()
+                  .encode(maximum_context, 41, core.events().front())
+                  .has_value());
 }
 
 TEST(MatchingEventEncoderTest, PublishesPinnedCompleteTradeRecord) {

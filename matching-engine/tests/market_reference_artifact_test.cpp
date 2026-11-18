@@ -6,6 +6,7 @@
 #include <limits>
 #include <memory>
 #include <string>
+#include <utility>
 
 #include <gtest/gtest.h>
 #include <nlohmann/json.hpp>
@@ -76,6 +77,33 @@ TEST(MarketReferenceArtifactTest, StopsInsteadOfThrowingForOutOfRangePartition) 
             (MarketReferenceArtifactDecision{
                 MarketReferenceArtifactAction::kStop,
                 "MARKET_REFERENCE_ARTIFACT_INVALID"}));
+}
+
+TEST(MarketReferenceArtifactTest, RejectsPartitionIdsThatNarrowToValidValues) {
+  MarketReferenceArtifactLoader loader;
+  const std::array partitions = {
+      std::pair{1, 4'294'967'297LL}, std::pair{14, 4'294'967'310LL}};
+
+  for (const auto &[legal_partition, oversized_partition] : partitions) {
+    auto artifact = nlohmann::json::parse(load_fixture("market_reference.json"));
+    auto &assignment = artifact["routingPolicy"]["assignments"][0];
+    assignment["partitionId"] = legal_partition;
+    const auto legal_artifact = artifact.dump();
+
+    SCOPED_TRACE(oversized_partition);
+    EXPECT_EQ(loader.load(legal_artifact, sha256(legal_artifact), "2026-08-11"),
+              (MarketReferenceArtifactDecision{
+                  MarketReferenceArtifactAction::kProceed,
+                  "MARKET_REFERENCE_ARTIFACT_READY"}));
+
+    assignment["partitionId"] = oversized_partition;
+    const auto malformed_artifact = artifact.dump();
+    EXPECT_EQ(loader.load(malformed_artifact, sha256(malformed_artifact),
+                          "2026-08-11"),
+              (MarketReferenceArtifactDecision{
+                  MarketReferenceArtifactAction::kStop,
+                  "MARKET_REFERENCE_ARTIFACT_INVALID"}));
+  }
 }
 
 } // namespace

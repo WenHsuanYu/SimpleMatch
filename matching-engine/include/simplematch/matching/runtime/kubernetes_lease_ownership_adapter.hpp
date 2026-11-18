@@ -4,7 +4,11 @@
 
 #include <chrono>
 #include <memory>
+#include <optional>
 #include <string>
+#include <string_view>
+
+#include <nlohmann/json_fwd.hpp>
 
 namespace simplematch::matching {
 
@@ -12,6 +16,20 @@ namespace detail {
 
 /** Formats a Kubernetes Lease timestamp using RFC 3339 microsecond precision. */
 std::string format_kubernetes_lease_timestamp(std::chrono::system_clock::time_point value);
+
+/** Parses UTC RFC 3339, rounding sub-microsecond fractions up to protect Lease fencing. */
+std::optional<std::chrono::system_clock::time_point> parse_kubernetes_lease_timestamp(
+    std::string_view value);
+
+/** Validates Lease expiry facts; absent result requires renewal uncertainty. */
+struct KubernetesLeaseObservation {
+  std::string holder_identity;
+  int duration_seconds;
+  bool expired;
+};
+
+std::optional<KubernetesLeaseObservation> inspect_kubernetes_lease_spec(
+    const nlohmann::json &spec, std::chrono::system_clock::time_point now);
 
 } // namespace detail
 

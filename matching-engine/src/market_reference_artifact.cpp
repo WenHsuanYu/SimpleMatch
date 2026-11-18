@@ -173,9 +173,12 @@ bool validate_routes(const Json &routing_policy,
     if (key.empty() || !is_integer(assignment, "partitionId")) {
       return false;
     }
-    const auto partition = assignment.at("partitionId").get<std::int32_t>();
-    if (partition < 0 || partition >= kPartitionCount ||
-        !eligible_instruments.contains(key) ||
+    const auto &partition_id = assignment.at("partitionId");
+    if (partition_id < 0 || partition_id >= kPartitionCount) {
+      return false;
+    }
+    const auto partition = partition_id.get<std::int32_t>();
+    if (!eligible_instruments.contains(key) ||
         !routed_instruments.insert(key).second ||
         ++loads[partition] > kMaximumInstrumentsPerPartition) {
       return false;

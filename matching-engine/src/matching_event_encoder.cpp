@@ -63,7 +63,7 @@ private:
   }
 
   void append(std::string_view value) {
-    if (size_ + value.size() > bytes_.size()) {
+    if (value.size() > bytes_.size() - size_) {
       throw std::invalid_argument("deterministic identity input exceeds fixed capacity");
     }
     std::memcpy(bytes_.data() + size_, value.data(), value.size());
@@ -231,8 +231,18 @@ std::optional<MatchingEventRecord> MatchingEventEncoder::encode(
     const MatchingCommandContext &context,
     std::int64_t source_input_offset,
     const CoreEvent &event) const {
-  if (source_input_offset < 0 || event.output_index < 0 || context.partition_id < 0 ||
-      context.trading_session_id.empty()) {
+  if (context.artifact_identity.length >
+          context.artifact_identity.bytes.size() ||
+      context.trading_session_id.length >
+          context.trading_session_id.bytes.size() ||
+      context.routing_algorithm_version.length >
+          context.routing_algorithm_version.bytes.size() ||
+      event.instrument.symbol_length == 0 ||
+      event.instrument.symbol_length > event.instrument.symbol.size()) {
+    return std::nullopt;
+  }
+  if (source_input_offset < 0 || event.output_index < 0 ||
+      context.partition_id < 0 || context.trading_session_id.empty()) {
     return std::nullopt;
   }
   const auto artifact = artifact_parts(context.artifact_identity.view());

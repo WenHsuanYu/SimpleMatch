@@ -4,6 +4,7 @@
 #include <algorithm>
 #include <array>
 #include <limits>
+#include <stdexcept>
 #include <string_view>
 #include <vector>
 
@@ -39,6 +40,39 @@ CoreCommand new_order(
 
 DeterministicMatchingCore core() {
   return DeterministicMatchingCore({instrument()}, 16, 0);
+}
+
+TEST(DeterministicMatchingCoreTest,
+     RejectsAssignedInstrumentWithOutOfBoundsSymbolLength) {
+  auto malformed = instrument();
+  malformed.symbol_length =
+      static_cast<std::uint8_t>(malformed.symbol.size() + 1);
+  EXPECT_THROW((DeterministicMatchingCore({malformed}, 1, 0)),
+               std::invalid_argument);
+
+  malformed.symbol_length = std::numeric_limits<std::uint8_t>::max();
+  EXPECT_THROW((DeterministicMatchingCore({malformed}, 1, 0)),
+               std::invalid_argument);
+
+  malformed.symbol_length = 0;
+  EXPECT_THROW((DeterministicMatchingCore({malformed}, 1, 0)),
+               std::invalid_argument);
+}
+
+TEST(DeterministicMatchingCoreTest,
+     AcceptsAssignedInstrumentAtMaximumSymbolLength) {
+  const auto maximum_symbol = CoreInstrument::create("XTAI", "ABCDEFGHIJKL");
+  ASSERT_TRUE(maximum_symbol.has_value());
+  DeterministicMatchingCore engine({*maximum_symbol}, 1, 0);
+  auto order = new_order("0198a001-0000-7000-8000-000000000001",
+                         "0198a001-0000-7000-8000-000000000011", CoreSide::kBuy,
+                         100, 1'000'000);
+  order.new_order_payload.instrument = *maximum_symbol;
+  ASSERT_EQ(engine.process(order), MatchingProcessResult::kApplied);
+  ASSERT_EQ(engine.events().size(), 1U);
+  EXPECT_EQ(engine.events().front().instrument, *maximum_symbol);
+  EXPECT_EQ(engine.resting_order_count(*maximum_symbol), 1U);
+  EXPECT_NO_THROW((void)engine.deterministic_state_checksum());
 }
 
 TEST(DeterministicMatchingCoreTest, AppliesPriceTimePriorityAndEmitsStableMakerTakerTrade) {

@@ -327,6 +327,9 @@ DeterministicMatchingCore::DeterministicMatchingCore(
       maximum_output_events_for(assigned_instruments.size(), maximum_resting_orders_per_instrument);
   books_.reserve(assigned_instruments.size());
   for (const auto &instrument : assigned_instruments) {
+    if (instrument.symbol_length == 0 || instrument.symbol_length > instrument.symbol.size()) {
+      throw std::invalid_argument("matching core received invalid assigned instrument");
+    }
     if (find_book(instrument) != nullptr) {
       throw std::invalid_argument("matching core received duplicate assigned instrument");
     }
