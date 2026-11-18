@@ -37,3 +37,25 @@ not become a current-source fixed-count ledger merely because these sites change
 Remaining correctness/ABI/ownership questions need independent source-specific
 investigation. No bulk auto-fix of the 487 historical unresolved rows was attempted,
 and no fresh source-wide clang-tidy run, GitHub Issue change, or CI run is asserted.
+
+## Bounded benchmark CLI parser follow-up
+
+The historical advisory investigation also identified a separate input-validation risk
+in the Matching capacity benchmark. Its `strtoull` parser accepted `+1` and a leading
+space, and could accept negative or overflowing values as `SIZE_MAX` on a 64-bit host.
+The benchmark now parses unsigned decimal values directly into `std::size_t` with
+`std::from_chars`. It rejects signs, leading whitespace, zero, incomplete input,
+and representational overflow before constructing the benchmark workload.
+
+The new public-CLI CTest first failed because `+1` was accepted. After the parser
+change, the same test passed. It also checks leading whitespace. Both cases use
+small benchmark inputs, so a future parser regression cannot launch a large workload.
+Separate manually bounded commands checked `-1`, `18446744073709551616`, `0`, `1x`,
+and an empty value. Each returned the expected argument error with exit code 2.
+
+For this focused change, `full-native-dev` CTest passed **106/106**, `ci-sanitize`
+CTest passed **89/89**, and offline `manifestCheck staticAnalysis` passed. This is
+not a complete-source clang-tidy rerun or a deployed runtime certification.
+Large but representable positive iteration counts remain a separate workload-sizing
+concern; this parser fix does not set a maximum benchmark-memory budget. The original
+956-row review counts remain source-pinned historical classifications.

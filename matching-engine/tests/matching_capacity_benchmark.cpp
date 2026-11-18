@@ -3,17 +3,18 @@
 
 #include <algorithm>
 #include <array>
+#include <charconv>
 #include <chrono>
 #include <cstdint>
 #include <cstdlib>
 #include <iomanip>
 #include <iostream>
-#include <limits>
 #include <optional>
 #include <sstream>
 #include <stdexcept>
 #include <string>
 #include <string_view>
+#include <system_error>
 #include <unordered_set>
 #include <utility>
 #include <vector>
@@ -148,14 +149,17 @@ CoreUuid uuid(std::uint64_t sequence, std::uint8_t marker) {
 }
 
 std::size_t parse_positive_size(std::string_view name, std::string_view value) {
-  char *end = nullptr;
-  const std::string owned(value);
-  const unsigned long long parsed = std::strtoull(owned.c_str(), &end, 10);
-  if (end == owned.c_str() || *end != '\0' || parsed == 0 ||
-      parsed > std::numeric_limits<std::size_t>::max()) {
-    throw std::invalid_argument(std::string(name) + " must be a positive integer");
+  std::size_t parsed = 0;
+  if (!value.empty()) {
+    const auto [end, error] =
+        std::from_chars(value.data(), value.data() + value.size(), parsed);
+    if (error == std::errc{} && end == value.data() + value.size() &&
+        parsed != 0) {
+      return parsed;
+    }
   }
-  return static_cast<std::size_t>(parsed);
+  throw std::invalid_argument(std::string(name) +
+                              " must be a positive integer");
 }
 
 Options parse_options(int argc, char **argv) {

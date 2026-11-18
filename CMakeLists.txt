@@ -208,6 +208,11 @@ if(BUILD_TESTING)
               --warmup 1
               --iterations 5
               --maximum-resting-orders 32)
+  add_test(
+      NAME simplematch_matching_capacity_benchmark_invalid_args
+      COMMAND ${CMAKE_COMMAND}
+              "-DBENCHMARK_EXECUTABLE=$<TARGET_FILE:simplematch-matching-capacity-benchmark>"
+              -P "${CMAKE_CURRENT_SOURCE_DIR}/tools/native/verify_capacity_benchmark_args.cmake")
 endif()
 
 # Analyze only translation units in matching-engine, never generated protobuf or vcpkg sources.
