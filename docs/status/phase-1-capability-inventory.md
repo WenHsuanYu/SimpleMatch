@@ -969,7 +969,12 @@ crash-induced redelivery or production endurance.
   requested CPU set, and effective benchmark-process affinity in a JSON report. The benchmark now
   replays the same workload on a fresh core and fails when measured and replay state, event fields,
   or serialized event bytes differ. It is a direct-core integrity/capacity gate, not a production
-  performance claim. `scripts/run-matching-deployed-certification.sh` now collects read-only
+  performance claim. A separate opt-in #217 Core envelope test fills 150 books with 1,024 buy and
+  1,024 sell orders each, then rejects one extra order per side. It checks deterministic event
+  key uniqueness and compares serialized key/value digests and state across two runs.
+  This proves 307,200 simultaneous
+  Core resting orders, but not the Kafka coordinator, Pod memory limit, or high-capacity template.
+  `scripts/run-matching-deployed-certification.sh` now collects read-only
   deployed evidence for the canonical cluster: StatefulSet/pod readiness, Pod UID to Node and
   image identity, 5/5/5 placement, process CPU allowance, cgroup CPU quota, PVC/Lease snapshots,
   and the native benchmark report. It returns `INCOMPLETE` when the deployed fleet or required

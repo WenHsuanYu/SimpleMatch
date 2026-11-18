@@ -136,6 +136,17 @@ if(BUILD_TESTING)
   simplematch_enable_warnings(simplematch-matching-capacity-benchmark)
   simplematch_enable_sanitizers(simplematch-matching-capacity-benchmark)
 
+  # Full 150-book fill and sequential replay are intentionally opt-in. Do not
+  # add this executable to ALL or CTest: capacity runs are resource-intensive.
+  add_executable(simplematch_matching_capacity_envelope_test EXCLUDE_FROM_ALL
+      matching-engine/tests/matching_capacity_envelope_test.cpp)
+  target_link_libraries(simplematch_matching_capacity_envelope_test
+      PRIVATE simplematch_matching_ingress GTest::gtest GTest::gtest_main Threads::Threads)
+  target_include_directories(simplematch_matching_capacity_envelope_test
+      PRIVATE ${CMAKE_CURRENT_BINARY_DIR})
+  simplematch_enable_warnings(simplematch_matching_capacity_envelope_test)
+  simplematch_enable_sanitizers(simplematch_matching_capacity_envelope_test)
+
   add_executable(simplematch_matching_ingress_tests
       matching-engine/tests/market_reference_artifact_test.cpp
       matching-engine/tests/deterministic_matching_core_test.cpp

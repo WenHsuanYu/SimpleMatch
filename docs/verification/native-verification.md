@@ -33,3 +33,34 @@ The runtime-driver suite also includes bounded 10,000-command local-day replay.
 S5 retires the separate ten-cycle Shell loop and its aggregate schema.
 See the [disposition](../plans/shell-test-reduction-s5.md) for the intentional verification loss.
 Native results do not prove Kafka delivery, Kubernetes recovery, a wall-clock soak, or production capacity.
+
+## Optional 150-book saturation check
+
+The regular CTest capacity benchmark immediately cancels each resting order. It verifies
+command processing and replay, but it does not fill both sides of every order book.
+
+Use this separate target to check the complete local Matching Core envelope:
+
+```bash
+cmake --preset full-native-dev
+cmake --build --preset full-native-dev --target simplematch_matching_capacity_envelope_test --parallel 2
+out/build/full-native-dev/simplematch_matching_capacity_envelope_test --gtest_filter='MatchingCapacityEnvelopeTest.*'
+```
+
+The executable is excluded from CMake `ALL` and from CTest. It does not run during `nativeTest` or
+`verifyAll`. Its 150-book scenario accepts one Core Open Barrier and 307,200 non-crossing orders.
+Each book holds 1,024 buy orders and 1,024 sell orders. The test rejects 300 additional orders,
+one per side per book, without changing order counts. It requires zero unintended trades.
+
+Two separate Core instances process the same deterministic command sequence. The test compares
+accepted-command semantics, rolling digests of serialized event keys and values, and final state
+checksums. It also rejects duplicate output keys. It keeps the event keys but not the serialized
+value payloads. A Linux run reports the test process's peak RSS. That value is **not** the
+Matching Pod's memory use.
+
+This test does not exercise the Runtime Output Ring, Kafka recovery, the coordinator's complete
+command-fingerprint map, or Kubernetes. An over-capacity Core rejection causes the deployed
+coordinator to fail closed; the test does not prove non-disruptive live refusal.
+The large 4,096-order configuration remains an unverified
+promotion template. Its 150-book fill-cancel-refill workload and 4 GiB limit require separate
+memory and throughput evidence under [Issue #217](https://github.com/WenHsuanYu/SimpleMatch/issues/217).
