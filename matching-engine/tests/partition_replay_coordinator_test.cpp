@@ -2,15 +2,21 @@
 #include "simplematch/matching/runtime/partition_ownership_permit.hpp"
 
 #include <chrono>
+#include <cstdint>
 #include <filesystem>
+#include <fstream>
+#include <limits>
 #include <memory>
 #include <string>
 #include <string_view>
+#include <system_error>
+#include <utility>
 #include <vector>
 
 #include "matching_runtime_v1.pb.h"
 
 #include <gtest/gtest.h>
+#include <nlohmann/json.hpp>
 
 namespace simplematch::matching {
 namespace {
@@ -172,6 +178,23 @@ TEST(PartitionReplayCoordinatorTest, DuplicateDoesNotConsumeDistinctCommandBudge
   EXPECT_EQ(runtime.status().reason, "MATCHING_COMMAND_DEDUPLICATION_CAPACITY_EXHAUSTED");
 }
 
+TEST(PartitionReplayCoordinatorTest, ReusedCommandIdWithDifferentPayloadFailsClosed) {
+  auto runtime = coordinator();
+  ASSERT_EQ(runtime.ingest(open_record(10)), PartitionReplayResult::kAccepted);
+  ASSERT_TRUE(runtime.acknowledge_commit(11));
+
+  auto conflicting = open_record(11);
+  simplematch::matching::runtime::v1::MatchingCommand changed;
+  ASSERT_TRUE(changed.ParseFromString(conflicting.value));
+  changed.mutable_open_barrier()->set_event_schema_version(2);
+  conflicting.value = changed.SerializeAsString();
+
+  EXPECT_EQ(runtime.ingest(conflicting), PartitionReplayResult::kFailedClosed);
+  EXPECT_EQ(runtime.status().state, PartitionSessionState::kFailedClosed);
+  EXPECT_EQ(runtime.status().reason, "MATCHING_COMMAND_IDENTITY_CONFLICT");
+  EXPECT_FALSE(runtime.next_commit_offset().has_value());
+}
+
 TEST(PartitionReplayCoordinatorTest, RebuildsFromTheRetainedBarrierWithoutRepublishingCommittedEffects) {
   auto first = coordinator();
   const auto open = open_record(20);
@@ -312,16 +335,91 @@ TEST(PartitionReplayCoordinatorTest, RejectsARetainedBatchWithAnOffsetGap) {
   EXPECT_EQ(restarted.status().state, PartitionSessionState::kFailedClosed);
 }
 
+class ScopedBaselineFixture final {
+public:
+  ScopedBaselineFixture() {
+    const auto root = std::filesystem::temp_directory_path();
+    const auto unique_prefix = std::to_string(
+        std::chrono::steady_clock::now().time_since_epoch().count());
+    for (int attempt = 0; attempt < 32; ++attempt) {
+      auto candidate = root / ("simplematch-baseline-" + unique_prefix + "-" +
+                               std::to_string(attempt));
+      if (std::filesystem::create_directory(candidate)) {
+        directory_ = std::move(candidate);
+        return;
+      }
+    }
+    throw std::runtime_error("cannot create isolated baseline test directory");
+  }
+
+  ~ScopedBaselineFixture() {
+    std::error_code ignored;
+    std::filesystem::remove(file(), ignored);
+    std::filesystem::remove(directory_, ignored);
+  }
+
+  ScopedBaselineFixture(const ScopedBaselineFixture &) = delete;
+  ScopedBaselineFixture &operator=(const ScopedBaselineFixture &) = delete;
+
+  [[nodiscard]] std::filesystem::path file() const { return directory_ / "metadata.json"; }
+
+private:
+  std::filesystem::path directory_;
+};
+
 TEST(PartitionReplayCoordinatorTest, PersistsOnlyBoundedBaselineCoordinatesOnThePvc) {
-  const auto path = std::filesystem::temp_directory_path() / "simplematch-partition-baseline.json";
-  std::filesystem::remove(path);
-  PvcBaselineMetadataStore store(path.string());
+  const ScopedBaselineFixture fixture;
+  PvcBaselineMetadataStore store(fixture.file().string());
   const PartitionBaselineMetadata expected{assignment(), identity(), 100, 150};
 
   store.save(expected);
 
   EXPECT_EQ(store.load(), expected);
-  std::filesystem::remove(path);
+}
+
+TEST(PartitionReplayCoordinatorTest, RejectsBaselineNumbersThatNarrowOrTruncate) {
+  const ScopedBaselineFixture fixture;
+  const auto path = fixture.file();
+  PvcBaselineMetadataStore store(path.string());
+  const PartitionBaselineMetadata expected{assignment(), identity(), 100, 150};
+  store.save(expected);
+
+  nlohmann::json valid;
+  {
+    std::ifstream input(path);
+    ASSERT_TRUE(input.good());
+    input >> valid;
+  }
+  ASSERT_EQ(store.load(), expected);
+
+  for (const auto &[field, malformed] :
+       std::vector<std::pair<std::string, nlohmann::json>>{
+           {"partition", std::uint64_t{4'294'967'296ULL}},
+           {"partition", std::int64_t{-4'294'967'296LL}},
+           {"partition", 0.0},
+           {"commandSchemaVersion", std::uint64_t{4'294'967'297ULL}},
+           {"eventSchemaVersion", std::uint64_t{4'294'967'297ULL}},
+           {"eventIdentityVersion", std::uint64_t{4'294'967'297ULL}},
+           {"eventSchemaVersion", 1.0},
+           {"openBarrierOffset", 100.5},
+           {"committedOffset", 150.5},
+           {"openBarrierOffset", std::uint64_t{9'223'372'036'854'775'808ULL}},
+           {"committedOffset", std::uint64_t{9'223'372'036'854'775'808ULL}},
+           {"committedOffset", std::numeric_limits<std::int64_t>::max()}}) {
+    SCOPED_TRACE(field + "=" + malformed.dump());
+    auto changed = valid;
+    changed[field] = malformed;
+    {
+      std::ofstream output(path, std::ios::trunc);
+      ASSERT_TRUE(output.good());
+      output << changed.dump() << '\n';
+    }
+    EXPECT_THROW((void)store.load(), std::runtime_error);
+  }
+  EXPECT_THROW(
+      store.save(PartitionBaselineMetadata{
+          assignment(), identity(), 100, std::numeric_limits<std::int64_t>::max()}),
+      std::invalid_argument);
 }
 
 class RecordingDirectConsumer final : public DirectPartitionKafkaConsumer {

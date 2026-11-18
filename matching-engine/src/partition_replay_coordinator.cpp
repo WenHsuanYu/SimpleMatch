@@ -94,20 +94,46 @@ nlohmann::json metadata_json(const PartitionBaselineMetadata &metadata) {
 }
 
 PartitionBaselineMetadata metadata_from_json(const nlohmann::json &value) {
+  const auto &partition = value.at("partition");
+  const auto &command_schema = value.at("commandSchemaVersion");
+  const auto &event_schema = value.at("eventSchemaVersion");
+  const auto &event_identity = value.at("eventIdentityVersion");
+  const auto &open_offset = value.at("openBarrierOffset");
+  const auto &committed_offset = value.at("committedOffset");
+  const auto is_version_one = [](const nlohmann::json &encoded) {
+    return encoded.is_number_integer() && encoded == 1;
+  };
+  const auto valid_offset = [](const nlohmann::json &encoded) {
+    if (!encoded.is_number_integer()) {
+      return false;
+    }
+    if (encoded.is_number_unsigned()) {
+      return encoded.get<std::uint64_t>() <=
+             static_cast<std::uint64_t>(std::numeric_limits<std::int64_t>::max());
+    }
+    return encoded.get<std::int64_t>() >= 0;
+  };
+  if (!partition.is_number_integer() || partition < 0 || partition >= kPartitionCount ||
+      !is_version_one(command_schema) || !is_version_one(event_schema) ||
+      !is_version_one(event_identity) || !valid_offset(open_offset) ||
+      !valid_offset(committed_offset)) {
+    throw std::runtime_error("invalid partition baseline metadata numeric field");
+  }
   const PartitionBaselineMetadata metadata{
-      {value.at("topic").get<std::string>(), value.at("partition").get<std::int32_t>()},
+      {value.at("topic").get<std::string>(), partition.get<std::int32_t>()},
       {value.at("artifactIdentity").get<std::string>(),
        value.at("tradingSessionId").get<std::string>(),
        value.at("routingAlgorithmVersion").get<std::string>(),
        value.at("matchingImageDigest").get<std::string>(),
-       value.at("commandSchemaVersion").get<std::int32_t>(),
-       value.at("eventSchemaVersion").get<std::int32_t>(),
-       value.at("eventIdentityVersion").get<std::int32_t>()},
-      value.at("openBarrierOffset").get<std::int64_t>(),
-      value.at("committedOffset").get<std::int64_t>()};
+       command_schema.get<std::int32_t>(),
+       event_schema.get<std::int32_t>(),
+       event_identity.get<std::int32_t>()},
+      open_offset.get<std::int64_t>(),
+      committed_offset.get<std::int64_t>()};
   if (!valid_assignment(metadata.assignment) || !valid_identity(metadata.identity) ||
       metadata.open_barrier_offset < 0 ||
-      metadata.committed_offset < metadata.open_barrier_offset) {
+      metadata.committed_offset < metadata.open_barrier_offset ||
+      metadata.committed_offset == std::numeric_limits<std::int64_t>::max()) {
     throw std::runtime_error("invalid partition baseline metadata");
   }
   return metadata;
@@ -173,7 +199,8 @@ std::optional<PartitionBaselineMetadata> PvcBaselineMetadataStore::load() const 
 void PvcBaselineMetadataStore::save(const PartitionBaselineMetadata &metadata) const {
   if (!valid_assignment(metadata.assignment) || !valid_identity(metadata.identity) ||
       metadata.open_barrier_offset < 0 ||
-      metadata.committed_offset < metadata.open_barrier_offset) {
+      metadata.committed_offset < metadata.open_barrier_offset ||
+      metadata.committed_offset == std::numeric_limits<std::int64_t>::max()) {
     throw std::invalid_argument("invalid partition baseline metadata");
   }
   const std::filesystem::path destination(file_path_);
