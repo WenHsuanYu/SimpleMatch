@@ -271,7 +271,10 @@ void fill_envelope(ReplaySummary* summary) {
 }
 
 constexpr std::size_t kHighRestingPerSide = 4096;
-constexpr std::size_t kStagedPhaseCount = 3;
+enum class StagedPhase : std::uint8_t { kFill, kCancel, kRefill };
+constexpr std::array kStagedPhases{StagedPhase::kFill, StagedPhase::kCancel,
+                                   StagedPhase::kRefill};
+constexpr std::size_t kStagedPhaseCount = kStagedPhases.size();
 
 struct StagedSummary {
   Checksum expected_events;
@@ -284,6 +287,65 @@ struct StagedSummary {
   std::size_t trades{};
   std::int64_t elapsed_ms{};
 };
+
+struct StagedOrderSlot {
+  const CoreInstrument& instrument;
+  CoreSide side;
+  std::uint64_t initial_order_serial;
+};
+
+CoreCommand staged_command(StagedPhase phase,
+                           const MatchingCommandContext& command_context,
+                           const StagedOrderSlot& slot,
+                           std::uint64_t command_serial) {
+  if (phase == StagedPhase::kCancel) {
+    return CoreCommand::cancel(command_context, uuid(command_serial, 0x11),
+                               uuid(slot.initial_order_serial, 0x22),
+                               uuid(slot.initial_order_serial, 0x33),
+                               slot.instrument, slot.side);
+  }
+  return order(command_context, slot.instrument, slot.side, command_serial);
+}
+
+void expect_staged_event(const CoreCommand& command, const CoreEvent& event,
+                         StagedPhase phase, const StagedOrderSlot& slot,
+                         std::uint64_t command_serial) {
+  const bool cancelling = phase == StagedPhase::kCancel;
+  ASSERT_EQ(event.type, cancelling ? CoreEventType::kOrderCancelled
+                                   : CoreEventType::kOrderRested)
+      << "command_serial=" << command_serial;
+  ASSERT_EQ(event.source_command_id, command.command_id);
+  const std::uint64_t order_serial =
+      cancelling ? slot.initial_order_serial : command_serial;
+  ASSERT_EQ(event.order_id, uuid(order_serial, 0x22));
+  ASSERT_EQ(event.account_id, uuid(order_serial, 0x33));
+  ASSERT_EQ(event.instrument, slot.instrument);
+  ASSERT_EQ(event.side, slot.side);
+  ASSERT_EQ(event.leaves_quantity.value(), kQuantity);
+  ASSERT_EQ(event.price.value(), cancelling                    ? 0
+                                 : slot.side == CoreSide::kBuy ? kBuyPrice
+                                                               : kSellPrice);
+  ASSERT_EQ(event.output_index, 0);
+  if (cancelling) {
+    ASSERT_EQ(event.cancellation_reason, CoreCancellationReason::kUserRequest);
+  }
+}
+
+void expect_staged_encoding(MatchingEventEncoder& encoder,
+                            const MatchingCommandContext& command_context,
+                            const CoreEvent& event,
+                            std::uint64_t command_serial,
+                            Checksum* serialized_records) {
+  const auto source_offset = static_cast<std::int64_t>(100 + command_serial);
+  const auto encoded = encoder.encode(command_context, source_offset, event);
+  ASSERT_TRUE(encoded.has_value()) << "command_serial=" << command_serial;
+  ASSERT_EQ(encoded->key.size(), 32U);
+  ASSERT_FALSE(encoded->value.empty());
+  ASSERT_EQ(encoded->partition_id, 0);
+  ASSERT_EQ(encoded->source_input_offset, source_offset);
+  ASSERT_EQ(encoded->output_index, 0);
+  serialized_records->record(*encoded);
+}
 
 // No command or event transcript is retained. The initial fill's order IDs are
 // reconstructed by position for cancellation, so memory scales with live books.
@@ -301,9 +363,9 @@ void run_staged_envelope(std::size_t book_count, StagedSummary* summary) {
   summary->commands = 1;
 
   std::uint64_t serial = 0;
-  for (std::size_t phase = 0; phase < kStagedPhaseCount; ++phase) {
-    const auto expected_type = phase == 1 ? CoreEventType::kOrderCancelled
-                                          : CoreEventType::kOrderRested;
+  for (std::size_t phase_index = 0; phase_index < kStagedPhaseCount;
+       ++phase_index) {
+    const StagedPhase phase = kStagedPhases[phase_index];
     for (std::size_t book = 0; book < book_count; ++book) {
       const CoreInstrument& instrument = keys[book];
       for (std::size_t side_index = 0; side_index < 2; ++side_index) {
@@ -312,68 +374,42 @@ void run_staged_envelope(std::size_t book_count, StagedSummary* summary) {
         for (std::size_t index = 0; index < kHighRestingPerSide; ++index) {
           // The first fill is serials [1, orders_per_phase]. Later new orders
           // and cancel commands use fresh serials, never recycled identities.
-          const std::uint64_t initial_order_serial =
-              1 + (book * 2 + side_index) * kHighRestingPerSide + index;
+          const StagedOrderSlot slot{
+              instrument, side,
+              1 + (book * 2 + side_index) * kHighRestingPerSide + index};
           const std::uint64_t command_serial = ++serial;
           const CoreCommand command =
-              phase == 1
-                  ? CoreCommand::cancel(
-                        command_context, uuid(command_serial, 0x11),
-                        uuid(initial_order_serial, 0x22),
-                        uuid(initial_order_serial, 0x33), instrument, side)
-                  : order(command_context, instrument, side, command_serial);
+              staged_command(phase, command_context, slot, command_serial);
 
           summary->expected_events.staged_expected(command);
           ASSERT_EQ(core.process(command), MatchingProcessResult::kApplied)
-              << "phase=" << phase << " command_serial=" << command_serial;
+              << "phase_index=" << phase_index
+              << " command_serial=" << command_serial;
           ASSERT_EQ(core.events().size(), 1U)
               << "command_serial=" << command_serial;
           const CoreEvent& event = core.events().front();
           if (event.type == CoreEventType::kTradeExecuted) {
             ++summary->trades;
           }
-          ASSERT_EQ(event.type, expected_type)
-              << "command_serial=" << command_serial;
-          ASSERT_EQ(event.source_command_id, command.command_id);
-          const std::uint64_t order_serial =
-              phase == 1 ? initial_order_serial : command_serial;
-          ASSERT_EQ(event.order_id, uuid(order_serial, 0x22));
-          ASSERT_EQ(event.account_id, uuid(order_serial, 0x33));
-          ASSERT_EQ(event.instrument, instrument);
-          ASSERT_EQ(event.side, side);
-          ASSERT_EQ(event.leaves_quantity.value(), kQuantity);
-          ASSERT_EQ(event.price.value(), phase == 1               ? 0
-                                         : side == CoreSide::kBuy ? kBuyPrice
-                                                                  : kSellPrice);
-          ASSERT_EQ(event.output_index, 0);
-          if (phase == 1) {
-            ASSERT_EQ(event.cancellation_reason,
-                      CoreCancellationReason::kUserRequest);
-          }
+          ASSERT_NO_FATAL_FAILURE(
+              expect_staged_event(command, event, phase, slot, command_serial));
           summary->observed_events.staged_observed(event);
 
-          const auto encoded = encoder.encode(
-              command_context, static_cast<std::int64_t>(100 + command_serial),
-              event);
-          ASSERT_TRUE(encoded.has_value())
-              << "command_serial=" << command_serial;
-          ASSERT_EQ(encoded->key.size(), 32U);
-          ASSERT_FALSE(encoded->value.empty());
-          ASSERT_EQ(encoded->partition_id, 0);
-          ASSERT_EQ(encoded->source_input_offset,
-                    static_cast<std::int64_t>(100 + command_serial));
-          ASSERT_EQ(encoded->output_index, 0);
-          summary->serialized_records.record(*encoded);
-          ++summary->phase_events[phase];
+          ASSERT_NO_FATAL_FAILURE(expect_staged_encoding(
+              encoder, command_context, event, command_serial,
+              &summary->serialized_records));
+          ++summary->phase_events[phase_index];
           ++summary->commands;
         }
       }
       ASSERT_EQ(core.resting_order_count(instrument),
-                phase == 1 ? 0U : 2 * kHighRestingPerSide);
+                phase == StagedPhase::kCancel ? 0U : 2 * kHighRestingPerSide);
     }
-    ASSERT_EQ(summary->phase_events[phase], orders_per_phase);
-    summary->phase_record_checksums[phase] = summary->serialized_records.value;
-    summary->phase_state_checksums[phase] = core.deterministic_state_checksum();
+    ASSERT_EQ(summary->phase_events[phase_index], orders_per_phase);
+    summary->phase_record_checksums[phase_index] =
+        summary->serialized_records.value;
+    summary->phase_state_checksums[phase_index] =
+        core.deterministic_state_checksum();
   }
 
   ASSERT_EQ(serial, kStagedPhaseCount * orders_per_phase);

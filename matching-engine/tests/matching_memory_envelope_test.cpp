@@ -1,5 +1,6 @@
 #include <algorithm>
 #include <array>
+#include <cerrno>
 #include <cstddef>
 #include <cstdint>
 #include <cstdlib>
@@ -24,6 +25,7 @@
 #include <sys/resource.h>
 #endif
 
+#include <gtest/gtest-spi.h>
 #include <gtest/gtest.h>
 
 namespace simplematch::matching {
@@ -113,6 +115,58 @@ void print_sample(std::string_view phase, const MemorySample& before,
             << " vm_hwm_kib=" << after.vm_hwm_kib
             << " ru_maxrss_kib=" << after.ru_maxrss_kib << '\n';
 }
+
+#ifdef __linux__
+// Restores the process-wide soft limit even when a fatal GTest assertion
+// returns early from a profiling test. Never changes the inherited hard limit.
+class ScopedAddressSpaceLimit final {
+ public:
+  explicit ScopedAddressSpaceLimit(const struct rlimit& original)
+      : original_(original) {}
+
+  ScopedAddressSpaceLimit(const ScopedAddressSpaceLimit&) = delete;
+  ScopedAddressSpaceLimit& operator=(const ScopedAddressSpaceLimit&) = delete;
+
+  ~ScopedAddressSpaceLimit() {
+    if (applied_ && setrlimit(RLIMIT_AS, &original_) != 0) {
+      ADD_FAILURE() << "Cannot restore RLIMIT_AS soft limit; errno=" << errno;
+    }
+  }
+
+  [[nodiscard]] bool apply(rlim_t requested_soft_limit,
+                           std::uint64_t current_virtual_bytes) {
+    const rlim_t effective_limit =
+        original_.rlim_cur == RLIM_INFINITY
+            ? requested_soft_limit
+            : std::min(original_.rlim_cur, requested_soft_limit);
+    if (effective_limit <= current_virtual_bytes) {
+      return false;
+    }
+    const struct rlimit bounded{effective_limit, original_.rlim_max};
+    if (setrlimit(RLIMIT_AS, &bounded) != 0) {
+      return false;
+    }
+    applied_ = true;
+    return true;
+  }
+
+ private:
+  struct rlimit original_{};
+  bool applied_ = false;
+};
+
+void exit_early_with_scoped_address_space_limit() {
+  struct rlimit original{};
+  ASSERT_EQ(getrlimit(RLIMIT_AS, &original), 0);
+  const auto baseline = memory_sample();
+  ASSERT_TRUE(baseline.has_value());
+  ScopedAddressSpaceLimit limit(original);
+  ASSERT_TRUE(limit.apply(
+      static_cast<rlim_t>(baseline->vm_size_kib * kKiB + 128 * kMiB),
+      baseline->vm_size_kib * kKiB));
+  FAIL() << "intentional fatal assertion inside resource limit scope";
+}
+#endif
 
 std::vector<CoreInstrument> instruments(std::size_t count) {
   std::vector<CoreInstrument> result;
@@ -297,6 +351,50 @@ TEST(MatchingMemoryEnvelopeTest,
          " and_cannot_extrapolate_four_million_entries_exactly\n";
 }
 
+#ifdef __linux__
+TEST(MatchingMemoryEnvelopeTest, RestoresAddressSpaceLimitAfterScope) {
+  struct rlimit original{};
+  ASSERT_EQ(getrlimit(RLIMIT_AS, &original), 0);
+  const auto baseline = memory_sample();
+  ASSERT_TRUE(baseline.has_value());
+  const auto bounded_bytes = baseline->vm_size_kib * kKiB + 128 * kMiB;
+  if (original.rlim_cur != RLIM_INFINITY &&
+      original.rlim_cur <= bounded_bytes) {
+    GTEST_SKIP() << "Process virtual-memory limit leaves no test headroom";
+  }
+  {
+    ScopedAddressSpaceLimit limit(original);
+    ASSERT_TRUE(limit.apply(static_cast<rlim_t>(bounded_bytes),
+                            baseline->vm_size_kib * kKiB));
+    struct rlimit during{};
+    ASSERT_EQ(getrlimit(RLIMIT_AS, &during), 0);
+    EXPECT_EQ(during.rlim_cur, static_cast<rlim_t>(bounded_bytes));
+    EXPECT_EQ(during.rlim_max, original.rlim_max);
+  }
+  struct rlimit restored{};
+  ASSERT_EQ(getrlimit(RLIMIT_AS, &restored), 0);
+  EXPECT_EQ(restored.rlim_cur, original.rlim_cur);
+  EXPECT_EQ(restored.rlim_max, original.rlim_max);
+}
+
+TEST(MatchingMemoryEnvelopeTest, RestoresAddressSpaceLimitAfterFatalAssertion) {
+  struct rlimit original{};
+  ASSERT_EQ(getrlimit(RLIMIT_AS, &original), 0);
+  const auto baseline = memory_sample();
+  ASSERT_TRUE(baseline.has_value());
+  if (original.rlim_cur != RLIM_INFINITY &&
+      original.rlim_cur <= baseline->vm_size_kib * kKiB + 128 * kMiB) {
+    GTEST_SKIP() << "Process virtual-memory limit leaves no test headroom";
+  }
+  EXPECT_FATAL_FAILURE(exit_early_with_scoped_address_space_limit(),
+                       "intentional fatal assertion");
+  struct rlimit restored{};
+  ASSERT_EQ(getrlimit(RLIMIT_AS, &restored), 0);
+  EXPECT_EQ(restored.rlim_cur, original.rlim_cur);
+  EXPECT_EQ(restored.rlim_max, original.rlim_max);
+}
+#endif
+
 // This measures an equivalent key/value tree shape, not the private
 // coordinator map or its Kafka ingestion, and never runs without two opt-ins.
 TEST(MatchingMemoryEnvelopeTest,
@@ -316,14 +414,9 @@ TEST(MatchingMemoryEnvelopeTest,
   if (getrlimit(RLIMIT_AS, &current_limit) != 0) {
     GTEST_SKIP() << "Cannot read process virtual-memory limit";
   }
-  const rlim_t requested_limit = static_cast<rlim_t>(kTwoGiB);
-  const rlim_t effective_limit =
-      current_limit.rlim_cur == RLIM_INFINITY
-          ? requested_limit
-          : std::min(current_limit.rlim_cur, requested_limit);
-  struct rlimit bounded_limit{effective_limit, current_limit.rlim_max};
-  if (effective_limit <= baseline->vm_size_kib * kKiB ||
-      setrlimit(RLIMIT_AS, &bounded_limit) != 0) {
+  ScopedAddressSpaceLimit limit(current_limit);
+  if (!limit.apply(static_cast<rlim_t>(kTwoGiB),
+                   baseline->vm_size_kib * kKiB)) {
     GTEST_SKIP() << "Cannot apply the 2-GiB process virtual-memory bound";
   }
 
@@ -385,14 +478,9 @@ TEST(MatchingMemoryEnvelopeTest,
   if (getrlimit(RLIMIT_AS, &current_limit) != 0) {
     GTEST_SKIP() << "Cannot read RLIMIT_AS";
   }
-  const rlim_t requested_limit = static_cast<rlim_t>(kTwoGiB);
-  const rlim_t effective_limit =
-      current_limit.rlim_cur == RLIM_INFINITY
-          ? requested_limit
-          : std::min(current_limit.rlim_cur, requested_limit);
-  struct rlimit bounded_limit{effective_limit, current_limit.rlim_max};
-  if (effective_limit <= baseline->vm_size_kib * kKiB ||
-      setrlimit(RLIMIT_AS, &bounded_limit) != 0) {
+  ScopedAddressSpaceLimit limit(current_limit);
+  if (!limit.apply(static_cast<rlim_t>(kTwoGiB),
+                   baseline->vm_size_kib * kKiB)) {
     GTEST_SKIP() << "Cannot apply a safe process virtual-memory ceiling";
   }
 
