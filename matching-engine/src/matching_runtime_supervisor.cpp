@@ -207,7 +207,10 @@ std::optional<InputSequence> MatchingRuntimeSupervisor::submit(CoreCommand comma
   }
   const auto sequence = runtime_.submit(std::move(command));
   if (!sequence.has_value() && ownership_permit_->allows_processing()) {
-    state_.store(MatchingRuntimeSupervisorState::kBackpressured, std::memory_order_release);
+    auto expected = MatchingRuntimeSupervisorState::kRunning;
+    static_cast<void>(state_.compare_exchange_strong(
+        expected, MatchingRuntimeSupervisorState::kBackpressured,
+        std::memory_order_acq_rel, std::memory_order_acquire));
   }
   return sequence;
 }
@@ -333,8 +336,12 @@ void MatchingRuntimeSupervisor::writer_loop() {
       const auto step = runtime_.process_one();
       if (step == MatchingRuntimeStep::kProcessed) {
         backoff = std::chrono::microseconds(1);
-        if (state() == MatchingRuntimeSupervisorState::kBackpressured) {
-          state_.store(MatchingRuntimeSupervisorState::kRunning, std::memory_order_release);
+        if (state_.load(std::memory_order_acquire) ==
+            MatchingRuntimeSupervisorState::kBackpressured) {
+          auto expected = MatchingRuntimeSupervisorState::kBackpressured;
+          static_cast<void>(state_.compare_exchange_strong(
+              expected, MatchingRuntimeSupervisorState::kRunning,
+              std::memory_order_acq_rel, std::memory_order_acquire));
         }
         continue;
       }
@@ -349,12 +356,20 @@ void MatchingRuntimeSupervisor::writer_loop() {
       if (stop_requested() || state() == MatchingRuntimeSupervisorState::kFailedClosed) {
         break;
       }
-      if (state() != MatchingRuntimeSupervisorState::kQuiescing) {
-        state_.store(
-            step == MatchingRuntimeStep::kOutputBackpressured
-                ? MatchingRuntimeSupervisorState::kBackpressured
-                : MatchingRuntimeSupervisorState::kRunning,
-            std::memory_order_release);
+      const auto desired = step == MatchingRuntimeStep::kOutputBackpressured
+                               ? MatchingRuntimeSupervisorState::kBackpressured
+                               : MatchingRuntimeSupervisorState::kRunning;
+      auto observed = state_.load(std::memory_order_acquire);
+      while (observed == MatchingRuntimeSupervisorState::kRunning ||
+             observed == MatchingRuntimeSupervisorState::kBackpressured) {
+        if (observed == desired) {
+          break;
+        }
+        if (state_.compare_exchange_weak(observed, desired,
+                                         std::memory_order_acq_rel,
+                                         std::memory_order_acquire)) {
+          break;
+        }
       }
       if (state() == MatchingRuntimeSupervisorState::kQuiescing &&
           runtime_.input_size() == 0) {

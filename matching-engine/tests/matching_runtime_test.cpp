@@ -1,8 +1,10 @@
 #include "simplematch/matching/runtime/matching_runtime.hpp"
 
 #include <chrono>
+#include <condition_variable>
 #include <cstdint>
 #include <memory>
+#include <mutex>
 #include <stdexcept>
 #include <string>
 #include <string_view>
@@ -93,6 +95,81 @@ public:
   bool pin_current_thread() override { return false; }
 };
 
+// Holds the writer before process_one() and the submitter immediately before
+// attempting to enqueue into a full ring, allowing a deterministic state race.
+class InterleavedOwnershipPermit final : public PartitionOwnershipPermit {
+ public:
+  InterleavedOwnershipPermit() : owner_thread_(std::this_thread::get_id()) {}
+
+  [[nodiscard]] std::int32_t partition_id() const override { return 0; }
+
+  [[nodiscard]] bool allows_processing() const override {
+    std::unique_lock lock(mutex_);
+    const auto caller = std::this_thread::get_id();
+    if (caller == owner_thread_) {
+      return true;
+    }
+    if (caller == submitter_thread_) {
+      if (++submitter_checks_ == 2) {
+        submitter_blocked_ = true;
+        condition_.notify_all();
+        return condition_.wait_for(lock, std::chrono::seconds(3),
+                                   [this] { return release_submitter_; });
+      }
+      return true;
+    }
+    writer_blocked_ = true;
+    condition_.notify_all();
+    condition_.wait_for(lock, std::chrono::seconds(10),
+                        [this] { return release_writer_; });
+    return false;
+  }
+
+  [[nodiscard]] PartitionOwnershipStatus status() const override {
+    return {PartitionOwnershipState::kPermitted, {}};
+  }
+
+  void mark_submitter() {
+    std::scoped_lock lock(mutex_);
+    submitter_thread_ = std::this_thread::get_id();
+  }
+
+  [[nodiscard]] bool wait_for_writer() const {
+    std::unique_lock lock(mutex_);
+    return condition_.wait_for(lock, std::chrono::seconds(3),
+                               [this] { return writer_blocked_; });
+  }
+
+  [[nodiscard]] bool wait_for_submitter() const {
+    std::unique_lock lock(mutex_);
+    return condition_.wait_for(lock, std::chrono::seconds(3),
+                               [this] { return submitter_blocked_; });
+  }
+
+  void release_submitter() {
+    std::scoped_lock lock(mutex_);
+    release_submitter_ = true;
+    condition_.notify_all();
+  }
+
+  void release_writer() {
+    std::scoped_lock lock(mutex_);
+    release_writer_ = true;
+    condition_.notify_all();
+  }
+
+ private:
+  const std::thread::id owner_thread_;
+  mutable std::mutex mutex_;
+  mutable std::condition_variable condition_;
+  std::thread::id submitter_thread_{};
+  mutable int submitter_checks_{};
+  mutable bool writer_blocked_{};
+  mutable bool submitter_blocked_{};
+  bool release_submitter_{};
+  bool release_writer_{};
+};
+
 bool wait_for_output(MatchingRuntimeSupervisor &supervisor, std::size_t count) {
   const auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds(10);
   while (std::chrono::steady_clock::now() < deadline) {
@@ -180,6 +257,48 @@ TEST(MatchingRuntimeSupervisorTest, TerminalAlertStopsTheWriterWithoutUsingAData
 
   EXPECT_EQ(supervisor.state(), MatchingRuntimeSupervisorState::kFailedClosed);
   EXPECT_EQ(supervisor.failure_reason(), "TEST_TERMINAL_ALERT");
+}
+
+TEST(MatchingRuntimeSupervisorTest,
+     ConcurrentBackpressureCannotReplaceTerminalFailure) {
+  auto permit = std::make_shared<InterleavedOwnershipPermit>();
+  MatchingRuntime runtime(core(), 1, 4, permit);
+  ASSERT_TRUE(runtime.submit(order("0198a001-0000-7000-8000-000000000070",
+                                   "0198a001-0000-7000-8000-000000000080")));
+  MatchingRuntimeSupervisor supervisor(runtime, permit,
+                                       std::make_unique<AlwaysPinnedAffinity>(),
+                                       sanitizer_tolerant_supervisor_options());
+  ASSERT_TRUE(supervisor.start());
+  ASSERT_TRUE(supervisor.release_startup());
+  const bool writer_blocked = permit->wait_for_writer();
+  if (!writer_blocked) {
+    supervisor.fail_closed("TEST_UNEXPECTED_WRITER_STATE");
+    permit->release_writer();
+    EXPECT_TRUE(writer_blocked);
+    EXPECT_TRUE(supervisor.wait_until_stopped(std::chrono::seconds(3)));
+    return;
+  }
+
+  bool accepted = false;
+  std::jthread submitter([&] {
+    permit->mark_submitter();
+    accepted = supervisor
+                   .submit(order("0198a001-0000-7000-8000-000000000071",
+                                 "0198a001-0000-7000-8000-000000000081"))
+                   .has_value();
+  });
+  const bool submitter_blocked = permit->wait_for_submitter();
+  supervisor.fail_closed("TEST_TERMINAL_WHILE_SUBMITTING");
+  permit->release_submitter();
+  submitter.join();
+  EXPECT_TRUE(submitter_blocked);
+  EXPECT_FALSE(accepted);
+  EXPECT_EQ(supervisor.state(), MatchingRuntimeSupervisorState::kFailedClosed);
+
+  permit->release_writer();
+  ASSERT_TRUE(supervisor.wait_until_stopped(std::chrono::seconds(3)));
+  EXPECT_EQ(supervisor.state(), MatchingRuntimeSupervisorState::kFailedClosed);
+  EXPECT_EQ(supervisor.failure_reason(), "TEST_TERMINAL_WHILE_SUBMITTING");
 }
 
 TEST(MatchingRuntimeTest, BoundedInputRingNeverOverwritesAnUnreadCommand) {

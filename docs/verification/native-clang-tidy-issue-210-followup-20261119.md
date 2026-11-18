@@ -81,3 +81,27 @@ changed from RED to GREEN. Current-source `full-native-dev` CTest passed **109/1
 passed **5/5** with its historical event and state digests unchanged. Offline
 `manifestCheck staticAnalysis` passed. The 150-book high-template workload was not
 rerun, and staging/production deployment is not part of these results.
+
+## Supervisor terminal-state race correction
+
+The Matching Core has one writer, but its Supervisor state is shared by the
+submission thread, writer thread, and ownership observer. The pre-existing
+`submit()` backpressure path performed an unconditional state store after its
+earlier `kRunning` check. A test using bounded condition-variable gates
+reproduced `kFailedClosed` being replaced by `kBackpressured`, followed by the
+writer replacing the first failure reason with `MATCHING_OWNERSHIP_LOST`.
+
+Three running/backpressured transitions now use atomic compare-and-exchange
+instead of unconditional stores. Only an observed active state may be changed;
+the writer does not issue an atomic read-modify-write when the target state
+already matches. `kFailedClosed`, `kStopped`, and `kQuiescing` cannot be
+overwritten by these paths. The control-plane correction does not alter the
+SPSC ring publication protocol, one-writer Core, Kafka offsets, or wire events.
+
+The regression was RED on the original code and GREEN after the correction;
+100 bounded repetitions passed. Current-source Native CTest passed **110/110**,
+and ASan/UBSan CTest passed **93/93**. These tests establish the named terminal
+state invariant, not an equivalence certification with the complete LMAX
+Disruptor's sequencer, barriers, or consumer dependency graph. A separate
+review is needed to establish concurrent producer ownership and the ordering
+of command admission against terminal shutdown; no live cluster was exercised.
