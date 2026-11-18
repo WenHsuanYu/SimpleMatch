@@ -1,14 +1,20 @@
 #include "simplematch/matching/runtime/matching_runtime.hpp"
-#include "simplematch/matching/runtime/matching_runtime_supervisor.hpp"
-#include "simplematch/matching/runtime/partition_ownership_permit.hpp"
 
 #include <chrono>
 #include <cstdint>
 #include <memory>
 #include <stdexcept>
+#include <string>
 #include <string_view>
 #include <thread>
 #include <vector>
+
+#include "simplematch/matching/runtime/matching_runtime_supervisor.hpp"
+#include "simplematch/matching/runtime/partition_ownership_permit.hpp"
+
+#ifdef __linux__
+#include <sched.h>
+#endif
 
 #include <gtest/gtest.h>
 
@@ -104,6 +110,19 @@ RuntimeSupervisorOptions sanitizer_tolerant_supervisor_options() {
   options.output_drain_timeout = std::chrono::seconds(10);
   return options;
 }
+
+#ifdef __linux__
+TEST(RequestedCpuAffinityTest,
+     RejectsCpuIdsBeyondNativeAffinitySetBeforeExpandingRange) {
+  const std::string maximum = std::to_string(CPU_SETSIZE - 1);
+  const std::string unsupported = std::to_string(CPU_SETSIZE);
+  EXPECT_NO_THROW((RequestedCpuAffinity("0-" + maximum)));
+  EXPECT_THROW((RequestedCpuAffinity("0-" + unsupported)),
+               std::invalid_argument);
+  EXPECT_THROW((RequestedCpuAffinity(unsupported)), std::invalid_argument);
+  EXPECT_THROW((RequestedCpuAffinity("0-2147483647")), std::invalid_argument);
+}
+#endif
 
 TEST(MatchingRuntimeSupervisorTest, KeepsWriterParkedUntilStartupGateIsReleased) {
   const auto permit = ready_permit();

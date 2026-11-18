@@ -4,6 +4,7 @@
 #include <charconv>
 #include <fstream>
 #include <limits>
+#include <mutex>
 #include <stdexcept>
 #include <string_view>
 
@@ -16,6 +17,13 @@
 
 namespace simplematch::matching {
 namespace {
+
+#ifdef __linux__
+constexpr int kMaximumParsedCpuId = CPU_SETSIZE - 1;
+#else
+// Native affinity is unavailable on other platforms; bound parsing anyway.
+constexpr int kMaximumParsedCpuId = 1023;
+#endif
 
 std::vector<int> parse_cpu_set(std::string_view encoded) {
   if (encoded.empty()) {
@@ -34,7 +42,8 @@ std::vector<int> parse_cpu_set(std::string_view encoded) {
       }
       int value{};
       const auto parsed = std::from_chars(text.data(), text.data() + text.size(), value);
-      if (parsed.ec != std::errc{} || parsed.ptr != text.data() + text.size() || value < 0) {
+      if (parsed.ec != std::errc{} || parsed.ptr != text.data() + text.size() ||
+          value < 0 || value > kMaximumParsedCpuId) {
         throw std::invalid_argument("Matching CPU set contains an invalid CPU");
       }
       return value;
@@ -171,7 +180,7 @@ bool MatchingRuntimeSupervisor::start() {
 bool MatchingRuntimeSupervisor::release_startup() {
   bool accepted = false;
   {
-    std::lock_guard lock(control_mutex_);
+    std::scoped_lock lock(control_mutex_);
     accepted = writer_pinned_.load(std::memory_order_acquire) &&
                state_.load(std::memory_order_acquire) == MatchingRuntimeSupervisorState::kParked &&
                ownership_permit_->allows_processing();
@@ -214,7 +223,7 @@ std::size_t MatchingRuntimeSupervisor::output_size() const {
 void MatchingRuntimeSupervisor::fail_closed(std::string reason) {
   std::string recorded_reason;
   {
-    std::lock_guard lock(control_mutex_);
+    std::scoped_lock lock(control_mutex_);
     const auto current = state_.load(std::memory_order_acquire);
     if (current == MatchingRuntimeSupervisorState::kFailedClosed ||
         current == MatchingRuntimeSupervisorState::kStopped) {
@@ -235,7 +244,7 @@ void MatchingRuntimeSupervisor::shutdown(std::chrono::milliseconds deadline) {
   }
   bool quiescing_requested = false;
   {
-    std::lock_guard lock(control_mutex_);
+    std::scoped_lock lock(control_mutex_);
     const auto current = state_.load(std::memory_order_acquire);
     if (current != MatchingRuntimeSupervisorState::kFailedClosed &&
         current != MatchingRuntimeSupervisorState::kStopped) {
@@ -273,7 +282,7 @@ MatchingRuntimeSupervisorState MatchingRuntimeSupervisor::state() const noexcept
 }
 
 std::string MatchingRuntimeSupervisor::failure_reason() const {
-  std::lock_guard lock(control_mutex_);
+  std::scoped_lock lock(control_mutex_);
   return failure_reason_;
 }
 
@@ -288,7 +297,7 @@ void MatchingRuntimeSupervisor::writer_loop() {
       return;
     }
     {
-      std::lock_guard lock(control_mutex_);
+      std::scoped_lock lock(control_mutex_);
       writer_pinned_.store(true, std::memory_order_release);
       if (state_.load(std::memory_order_acquire) == MatchingRuntimeSupervisorState::kStarting) {
         state_.store(MatchingRuntimeSupervisorState::kParked, std::memory_order_release);
@@ -308,7 +317,7 @@ void MatchingRuntimeSupervisor::writer_loop() {
       if (state() == MatchingRuntimeSupervisorState::kQuiescing) {
         bool deadline_expired = false;
         {
-          std::lock_guard deadline_lock(control_mutex_);
+          std::scoped_lock deadline_lock(control_mutex_);
           deadline_expired = shutdown_deadline_.has_value() &&
                              std::chrono::steady_clock::now() >= *shutdown_deadline_;
         }
@@ -399,7 +408,7 @@ void MatchingRuntimeSupervisor::wait_for_work(std::chrono::microseconds &backoff
 
 void MatchingRuntimeSupervisor::mark_writer_stopped() {
   {
-    std::lock_guard lock(control_mutex_);
+    std::scoped_lock lock(control_mutex_);
     writer_stopped_.store(true, std::memory_order_release);
   }
   notify_all();
@@ -419,7 +428,7 @@ void MatchingRuntimeSupervisor::join_threads() {
     ownership_thread_.join();
   }
   {
-    std::lock_guard lock(control_mutex_);
+    std::scoped_lock lock(control_mutex_);
     if (writer_stopped_.load(std::memory_order_acquire) &&
         state_.load(std::memory_order_acquire) != MatchingRuntimeSupervisorState::kFailedClosed) {
       state_.store(MatchingRuntimeSupervisorState::kStopped, std::memory_order_release);

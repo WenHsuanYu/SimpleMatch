@@ -1,5 +1,6 @@
 #include "simplematch/matching/runtime/partition_ownership_permit.hpp"
 
+#include <mutex>
 #include <stdexcept>
 #include <utility>
 
@@ -26,7 +27,7 @@ bool LeaseFencedPartitionOwnershipPermit::confirm_renewal(
     const PartitionOwnershipIdentity &observed_identity,
     std::chrono::steady_clock::time_point observed_at) {
   static_cast<void>(observed_at);
-  std::lock_guard lock(mutex_);
+  std::scoped_lock lock(mutex_);
   if (state_.load(std::memory_order_acquire) == PartitionOwnershipState::kSelfFenced) {
     return false;
   }
@@ -45,7 +46,7 @@ bool LeaseFencedPartitionOwnershipPermit::confirm_renewal(
 
 void LeaseFencedPartitionOwnershipPermit::report_renewal_uncertainty(
     std::chrono::steady_clock::time_point observed_at) {
-  std::lock_guard lock(mutex_);
+  std::scoped_lock lock(mutex_);
   if (state_.load(std::memory_order_acquire) == PartitionOwnershipState::kSelfFenced) {
     return;
   }
@@ -58,7 +59,7 @@ void LeaseFencedPartitionOwnershipPermit::report_renewal_uncertainty(
 
 void LeaseFencedPartitionOwnershipPermit::evaluate_at(
     std::chrono::steady_clock::time_point observed_at) {
-  std::lock_guard lock(mutex_);
+  std::scoped_lock lock(mutex_);
   if (state_.load(std::memory_order_acquire) == PartitionOwnershipState::kSelfFenced ||
       !uncertainty_started_at_.has_value() || observed_at < *uncertainty_started_at_) {
     return;
@@ -80,12 +81,12 @@ bool LeaseFencedPartitionOwnershipPermit::allows_processing() const {
 }
 
 PartitionOwnershipStatus LeaseFencedPartitionOwnershipPermit::status() const {
-  std::lock_guard lock(mutex_);
+  std::scoped_lock lock(mutex_);
   return {state_.load(std::memory_order_acquire), reason_};
 }
 
 void LeaseFencedPartitionOwnershipPermit::self_fence(std::string reason) {
-  std::lock_guard lock(mutex_);
+  std::scoped_lock lock(mutex_);
   self_fence_locked(std::move(reason));
 }
 
