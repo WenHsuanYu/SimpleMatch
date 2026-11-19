@@ -362,6 +362,21 @@ class RingBuffer final {
     return *slot;
   }
 
+  // Only the current owning stage may mutate a published slot. A later stage
+  // must depend on that stage's release-published consumer Sequence; the
+  // terminal consumer must gate recycling until all stages are finished.
+  // Like at(), this accessor does not itself establish publication or safety.
+  [[nodiscard]] T& at_for_stage(SequenceNumber sequence) {
+    if (sequence < 0) {
+      throw std::out_of_range("Disruptor sequence must be nonnegative");
+    }
+    auto& slot = slots_[static_cast<std::size_t>(sequence) & mask_];
+    if (!slot.has_value()) {
+      throw std::logic_error("Disruptor slot is abandoned or not published");
+    }
+    return *slot;
+  }
+
   [[nodiscard]] const Sequencer& sequencer() const noexcept {
     return sequencer_;
   }

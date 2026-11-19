@@ -52,6 +52,56 @@ single-writer topology, single-producer sequencers are preferable to a
 multi-producer CAS hot path. Multi-producer support is a reusable capability,
 not authorization for multiple threads to call the current SPSC ingress.
 
+## Alternative: one ring with dependent stages
+
+The [LMAX Disruptor user guide](https://lmax-exchange.github.io/disruptor/user-guide/)
+supports one ring with dependent event processors. A valid pipeline is:
+
+```text
+Kafka ingress producer -> command/result slot in one ring
+                           -> Matching processor (matching_done)
+                           -> Publishing processor (publisher_done)
+                           -> Kafka delivery/ACK tracking (separate ledger)
+```
+
+The input producer must gate on the terminal `publisher_done` sequence.
+The publisher must depend on `matching_done`. The Matching stage may update
+its own slot only after it acquires the ingress publication. The publisher
+may read those results only after it acquires `matching_done`. The ring must
+keep the slot until the publisher copies all results to independently owned
+pending-publication storage or completes their delivery. Neither stage may
+keep a reference into an overwritten slot.
+
+The prototype provides `RingBuffer::at_for_stage()` for the owning Matching
+stage. This accessor checks only the slot's engagement. It does not establish
+publication, exclusive ownership, or a consumer gate. Those conditions must
+come from the caller's dependency graph and lifetime management. The
+processor still exposes a read-only event reference by default.
+
+The Matching Core emits a variable number of events per command. Each input
+also needs one `RuntimeEndOfInput` marker. The high template's maximum is
+`150 * 2 * 4096 + 1 = 1,228,801` Core events, plus the end marker.
+Allocating a worst-case output array in every command slot would require
+extensive memory. On the local GCC build, `sizeof(std::optional<RuntimeOutput>)`
+is 280 bytes. An inline worst-case array would require about 82 MiB per
+command slot for the local template and 328 MiB per slot for the high
+template, before input and other ring overhead. These are type-size
+calculations, not measured RSS. The existing Core event reserve alone
+represents about 291 MiB of virtual storage for the high template, as recorded in
+[Issue 217 capacity measurements](../verification/matching-capacity-issue-217.md).
+Keeping only a reference to `Core::events()` is unsafe: processing the next
+command clears that storage. A production one-ring design would therefore
+need a separately owned bounded output-batch pool or would block the Core
+until the publisher finishes the prior command.
+
+An in-memory `publisher_done` cursor is not Kafka ACK. The Kafka offset
+ledger must continue to wait for all event delivery ACKs before committing
+the highest contiguous completed input offset. The one-ring example does not
+implement that adapter, Lease fencing, publication retries, or replay.
+No production topology change is accepted by this ADR. Keep the two SPSC
+directions from ADR 0009 until a one-ring alternative demonstrates equivalent
+correctness, memory bounds, and acceptable latency under source-aligned tests.
+
 ## Implementation status and safe use
 
 The additive C++20 header currently implements single- and multi-producer
@@ -62,7 +112,7 @@ not replace the production `MatchingRuntime` rings.
 
 Callers must keep consumer `Sequence` objects alive until the owning ring is
 destroyed. They must also keep rings alive until all claims and processors
-finish. `RingBuffer::at()` and `has_event()` do not synchronize an arbitrary
+finish. `RingBuffer::at()`, `at_for_stage()`, and `has_event()` do not synchronize an arbitrary
 reader. A caller must first observe publication with acquire semantics and
 must hold a live consumer gate until it finishes reading that slot.
 
@@ -120,3 +170,6 @@ transactional boundary.
 
 Local verification: [Native Disruptor sequencing, 2026-11-19]
 (../verification/native-disruptor-sequencing-20261119.md).
+
+Single-ring feasibility verification: [Native Disruptor one-ring pipeline,
+2026-11-19](../verification/native-disruptor-one-ring-20261119.md).

@@ -7,7 +7,9 @@
 #include <exception>
 #include <future>
 #include <limits>
+#include <optional>
 #include <stdexcept>
+#include <string_view>
 #include <thread>
 #include <vector>
 
@@ -167,6 +169,77 @@ TEST(DisruptorSequencingTest, DependentProcessorCannotOvertakeItsPredecessor) {
   EXPECT_EQ(second_done.load(), 1);
 }
 
+TEST(DisruptorSequencingTest,
+     ConcurrentSingleRingStagesPublishOnlyCompletedResults) {
+  struct StageFrame {
+    int input;
+    int result;
+  };
+  constexpr int kEvents = 200;
+  Sequence matched;
+  Sequence published;
+  const std::array<const Sequence*, 1> gates{&published};
+  const std::array<const Sequence*, 1> dependencies{&matched};
+  RingBuffer<StageFrame, SingleProducerSequencer> ring(4, gates);
+  PipelineFailure failure;
+  SequenceBarrier matching_barrier(ring.sequencer(), {}, &failure);
+  SequenceBarrier publishing_barrier(ring.sequencer(), dependencies, &failure);
+  BatchEventProcessor matching(
+      ring, matching_barrier, matched,
+      [&](const StageFrame& frame, SequenceNumber sequence) {
+        ring.at_for_stage(sequence).result = frame.input * 2;
+      },
+      &failure);
+  std::vector<int> observed;
+  observed.reserve(kEvents);
+  BatchEventProcessor publisher(
+      ring, publishing_barrier, published,
+      [&](const StageFrame& frame, SequenceNumber) {
+        observed.push_back(frame.result);
+      },
+      &failure);
+
+  std::jthread matching_thread([&](std::stop_token stop) {
+    matching.run(stop, WaitStrategy::kBlocking, 4);
+  });
+  std::jthread publishing_thread([&](std::stop_token stop) {
+    publisher.run(stop, WaitStrategy::kBlocking, 4);
+  });
+  const auto deadline =
+      std::chrono::steady_clock::now() + std::chrono::seconds(5);
+  bool submitted = true;
+  for (int value = 0; value < kEvents; ++value) {
+    while (!ring.try_publish(StageFrame{value, -1})) {
+      if (std::chrono::steady_clock::now() >= deadline || failure.failed()) {
+        submitted = false;
+        break;
+      }
+      std::this_thread::yield();
+    }
+    if (!submitted) {
+      break;
+    }
+  }
+  while (submitted && published.load() != kEvents - 1 &&
+         std::chrono::steady_clock::now() < deadline && !failure.failed()) {
+    std::this_thread::yield();
+  }
+  const bool drained = published.load() == kEvents - 1;
+  matching_thread.request_stop();
+  publishing_thread.request_stop();
+  matching_barrier.alert();
+  publishing_barrier.alert();
+  matching_thread.join();
+  publishing_thread.join();
+  EXPECT_TRUE(submitted) << "Single-ring producer stalled";
+  EXPECT_TRUE(drained) << "Single-ring publisher stalled";
+  EXPECT_FALSE(failure.failed());
+  ASSERT_EQ(observed.size(), static_cast<std::size_t>(kEvents));
+  for (int value = 0; value < kEvents; ++value) {
+    EXPECT_EQ(observed[static_cast<std::size_t>(value)], value * 2);
+  }
+}
+
 TEST(DisruptorSequencingTest, FanOutWaitsForBothIndependentConsumers) {
   Sequence first_done;
   Sequence second_done;
@@ -304,6 +377,44 @@ TEST(DisruptorSequencingTest, UpstreamFailureStopsDependentConsumer) {
   EXPECT_EQ(downstream_done.load(), kInitialSequence);
 }
 
+TEST(DisruptorSequencingTest,
+     FailedSingleRingMutationNeverReachesDependentPublisher) {
+  struct StageFrame {
+    int input;
+    int output;
+  };
+  Sequence matched;
+  Sequence published;
+  const std::array<const Sequence*, 1> gates{&published};
+  const std::array<const Sequence*, 1> dependencies{&matched};
+  RingBuffer<StageFrame, SingleProducerSequencer> ring(2, gates);
+  PipelineFailure failure;
+  SequenceBarrier matching_barrier(ring.sequencer(), {}, &failure);
+  SequenceBarrier publishing_barrier(ring.sequencer(), dependencies, &failure);
+  BatchEventProcessor matching(
+      ring, matching_barrier, matched,
+      [&](const StageFrame&, SequenceNumber sequence) {
+        ring.at_for_stage(sequence).output = 42;
+        throw std::runtime_error(
+            "Matching stage failed after partial mutation");
+      },
+      &failure);
+  std::size_t publisher_calls = 0;
+  BatchEventProcessor publisher(
+      ring, publishing_barrier, published,
+      [&](const StageFrame&, SequenceNumber) { ++publisher_calls; }, &failure);
+  ASSERT_TRUE(ring.try_publish(StageFrame{7, -1}));
+  EXPECT_EQ(publisher.poll(1), 0U);
+  EXPECT_EQ(matching.poll(1), 0U);
+  EXPECT_TRUE(failure.failed());
+  EXPECT_EQ(matched.load(), kInitialSequence);
+  EXPECT_EQ(published.load(), kInitialSequence);
+  EXPECT_FALSE(
+      publishing_barrier.wait_for(0, WaitStrategy::kBlocking).has_value());
+  EXPECT_EQ(publisher.poll(1), 0U);
+  EXPECT_EQ(publisher_calls, 0U);
+}
+
 TEST(DisruptorSequencingTest, BarrierCanWaitAndHaltWithoutPublishing) {
   Sequence consumer;
   const std::array<const Sequence*, 1> gates{&consumer};
@@ -424,6 +535,130 @@ TEST(DisruptorSequencingTest, TwoDirectionalRingsFrameOneMatchingCommand) {
   EXPECT_EQ(end.input_sequence, 42U);
   EXPECT_EQ(end.output_count, 1U);
   EXPECT_EQ(core.resting_order_count(test_support::instrument()), 1U);
+}
+
+TEST(DisruptorSequencingTest, OneRingMatchingPipelineGatesOnSlowPublisher) {
+  // An event stays in the same ring across two dependent consumers. This is
+  // intentionally a small, bounded topology example, not a Kafka adapter.
+  constexpr std::size_t kMaximumFrames = 8;
+  struct MatchingFrame {
+    InputSequence input_sequence;
+    CoreCommand command;
+    std::array<std::optional<RuntimeOutput>, kMaximumFrames> outputs{};
+    std::size_t output_size{};
+  };
+
+  Sequence matched;
+  Sequence published;
+  const std::array<const Sequence*, 1> gates{&published};
+  const std::array<const Sequence*, 1> dependencies{&matched};
+  RingBuffer<MatchingFrame, SingleProducerSequencer> ring(2, gates);
+  PipelineFailure failure;
+  SequenceBarrier matching_barrier(ring.sequencer(), {}, &failure);
+  SequenceBarrier publishing_barrier(ring.sequencer(), dependencies, &failure);
+  DeterministicMatchingCore core({test_support::instrument()}, 3, 0);
+  ASSERT_LE(core.maximum_output_events() + 1, kMaximumFrames);
+
+  BatchEventProcessor matching(
+      ring, matching_barrier, matched,
+      [&](const MatchingFrame&, SequenceNumber sequence) {
+        MatchingFrame& frame = ring.at_for_stage(sequence);
+        if (core.process(frame.command) != MatchingProcessResult::kApplied) {
+          throw std::runtime_error("Single-ring Matching rejected command");
+        }
+        for (const CoreEvent& event : core.events()) {
+          if (frame.output_size == frame.outputs.size()) {
+            throw std::logic_error(
+                "Single-ring output batch exceeds slot bound");
+          }
+          const auto index = frame.output_size++;
+          frame.outputs[index].emplace(
+              RuntimeEventOutput{frame.input_sequence, index, event});
+        }
+        if (frame.output_size == frame.outputs.size()) {
+          throw std::logic_error("Single-ring output end marker exceeds bound");
+        }
+        frame.outputs[frame.output_size++].emplace(
+            RuntimeEndOfInput{frame.input_sequence, core.events().size()});
+      },
+      &failure);
+  std::vector<RuntimeOutput> delivered;
+  BatchEventProcessor publisher(
+      ring, publishing_barrier, published,
+      [&](const MatchingFrame& frame, SequenceNumber) {
+        for (std::size_t index = 0; index < frame.output_size; ++index) {
+          delivered.push_back(frame.outputs[index].value());
+        }
+      },
+      &failure);
+
+  const auto make_order = [](std::string_view command_id,
+                             std::string_view order_id, CoreSide side,
+                             std::int64_t quantity, CoreTimeInForce tif) {
+    return CoreCommand::new_order(
+        test_support::context(), test_support::uuid(command_id),
+        test_support::uuid(order_id),
+        test_support::uuid("0198a001-0000-7000-8000-0000000000aa"),
+        test_support::instrument(), side, ShareQuantity(quantity),
+        FixedPrice(1'000'000), CoreOrderType::kLimit, tif);
+  };
+  const auto resting_first =
+      make_order("0198a001-0000-7000-8000-000000000091",
+                 "0198a001-0000-7000-8000-000000000092", CoreSide::kBuy, 10,
+                 CoreTimeInForce::kRod);
+  const auto resting_second =
+      make_order("0198a001-0000-7000-8000-000000000093",
+                 "0198a001-0000-7000-8000-000000000094", CoreSide::kBuy, 10,
+                 CoreTimeInForce::kRod);
+  const auto crossing = make_order("0198a001-0000-7000-8000-000000000095",
+                                   "0198a001-0000-7000-8000-000000000096",
+                                   CoreSide::kSell, 30, CoreTimeInForce::kIoc);
+  ASSERT_TRUE(ring.try_publish(MatchingFrame{42, resting_first}));
+  ASSERT_TRUE(ring.try_publish(MatchingFrame{43, resting_second}));
+  EXPECT_EQ(publisher.poll(2), 0U);
+  EXPECT_FALSE(ring.try_publish(MatchingFrame{44, crossing}));
+  ASSERT_EQ(matching.poll(2), 2U);
+  EXPECT_EQ(matched.load(), 1);
+  EXPECT_FALSE(ring.try_publish(MatchingFrame{44, crossing}));
+  ASSERT_EQ(publisher.poll(1), 1U);
+  ASSERT_TRUE(ring.try_publish(MatchingFrame{44, crossing}));
+  EXPECT_EQ(publisher.poll(2), 1U);
+  ASSERT_EQ(matching.poll(1), 1U);
+  ASSERT_EQ(publisher.poll(1), 1U);
+  ASSERT_EQ(delivered.size(), 8U);
+  for (std::size_t index = 0; index < 2; ++index) {
+    const auto& event = std::get<RuntimeEventOutput>(delivered[index * 2]);
+    const auto& end = std::get<RuntimeEndOfInput>(delivered[index * 2 + 1]);
+    EXPECT_EQ(event.input_sequence, 42U + index);
+    EXPECT_EQ(event.output_index, 0U);
+    EXPECT_EQ(event.event.type, CoreEventType::kOrderRested);
+    EXPECT_EQ(end.input_sequence, 42U + index);
+    EXPECT_EQ(end.output_count, 1U);
+  }
+  for (std::size_t index = 0; index < 3; ++index) {
+    const auto& event = std::get<RuntimeEventOutput>(delivered[4 + index]);
+    EXPECT_EQ(event.input_sequence, 44U);
+    EXPECT_EQ(event.output_index, index);
+    EXPECT_EQ(event.event.type, index < 2 ? CoreEventType::kTradeExecuted
+                                          : CoreEventType::kOrderCancelled);
+  }
+  const auto& crossing_end = std::get<RuntimeEndOfInput>(delivered[7]);
+  EXPECT_EQ(crossing_end.input_sequence, 44U);
+  EXPECT_EQ(crossing_end.output_count, 3U);
+  EXPECT_EQ(core.resting_order_count(test_support::instrument()), 0U);
+
+  const auto close = CoreCommand::close(
+      test_support::context(),
+      test_support::uuid("0198a001-0000-7000-8000-000000000097"));
+  ASSERT_TRUE(ring.try_publish(MatchingFrame{45, close}));
+  ASSERT_EQ(matching.poll(1), 1U);
+  ASSERT_EQ(publisher.poll(1), 1U);
+  ASSERT_EQ(delivered.size(), 9U);
+  const auto& empty_end = std::get<RuntimeEndOfInput>(delivered.back());
+  EXPECT_EQ(empty_end.input_sequence, 45U);
+  EXPECT_EQ(empty_end.output_count, 0U);
+  EXPECT_EQ(published.load(), 3);
+  EXPECT_FALSE(failure.failed());
 }
 
 }  // namespace
