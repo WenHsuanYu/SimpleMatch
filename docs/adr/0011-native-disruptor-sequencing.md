@@ -119,6 +119,13 @@ failure state, and batch event processors. Focused tests exercise sequencing,
 gating, fan-out, failure, and two-direction Matching. The production runtime
 and Kafka callback completion transport now use Disruptor SPSC channels.
 
+The production Matching loop does not use the generic `BatchEventProcessor`
+or `SequenceBarrier`. `MatchingRuntime::process_one()` owns Core execution
+and frame admission. `MatchingRuntimeSupervisor` owns writer lifecycle and
+failure handling. The generic Disruptor graph functions remain available
+for other topologies, but they do not replace these application contracts.
+The Java Disruptor DSL is not part of the current Native runtime.
+
 Callers must keep consumer `Sequence` objects alive until the owning ring is
 destroyed. They must also keep rings alive until all claims and processors
 finish. `RingBuffer::at()`, `at_for_stage()`, and `has_event()` do not synchronize an arbitrary
@@ -204,3 +211,6 @@ Single-ring feasibility verification: [Native Disruptor one-ring pipeline,
 
 Two-ring production transport migration: [Native Disruptor two-ring migration,
 2026-11-19](../verification/native-disruptor-two-ring-migration-20261119.md).
+
+Java 4.0.0 scope comparison: [Native Disruptor feature parity audit,
+2026-11-19](../verification/native-disruptor-java4-feature-parity-20261119.md).
