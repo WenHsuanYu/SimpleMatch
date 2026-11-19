@@ -1,97 +1,145 @@
 # Deployment Test Lessons
 
-This is the living checklist for Compose, Docker, kind, and Kubernetes deployment tests. It retains
-only low-frequency environment/platform failures and genuine distributed-system transients that
-remain useful after deterministic defects are fixed. Product, verifier, fixture, and hygiene
-mistakes are removed once their logic or workflow has been corrected, so this table does not imply
-that those failures are expected to recur.
+This is the runtime-scoped preflight and prevention catalog for Compose, Docker, kind, and
+Kubernetes tests. It retains only platform/environment risks and distributed-system transients
+with lasting, evidence-backed prevention value. Track individual failures and deterministic
+product, verifier, fixture, or workflow defects in their owning Issue or run evidence.
 
 ## Run preflight
 
-Before applying deployment resources or injecting a deployment fault:
+Before applying deployment resources or injecting a deployment fault, check only the selected
+runtime and operation. These are entry checks, not a second certification suite:
 
-1. Read the lessons below and run every prevention check that applies to the selected profile.
-   Confirm the Docker daemon, canonical `kind-simplematch-live` cluster, Kubernetes context,
-   namespace, and expected topology of one control plane and three labelled workers.
-2. Resolve runtime identities from deployed artifacts, live API objects, and node content before
-   selecting any Pod, Node, container, image, PVC, or topic. Do not substitute a unit-test fixture,
-   expected ordinal, or remembered symbol for an observed assignment.
-3. Require an isolated namespace and clean, run-owned evidence directory for full certification.
-   Reuse an existing runtime only through a documented focused diagnostic with current source,
-   image, input, and namespace ownership checks; do not promote offline diagnostics to deployed PASS.
-4. Inventory Docker resources and generated caches before and after the run. Remove only exact,
-   run-owned disposable resources; preserve authoritative data, Kafka offsets, and fail-closed
-   behavior rather than changing them to make a failed run green.
-5. Select an explicit trading day and readable approved delivery manifest before expensive builds.
-   Verify that the actual trading window and barriers remain OPEN before dependent scenarios.
-   A historical artifact retains its original day: never change the host clock or reopen closed barriers.
-6. For kind-loaded images, compare matching identity types: Docker's `.Id` may be an image config
-   or OCI index, while CRI `.status.id` identifies a config. Resolve exact containerd content when
-   needed and run an execution probe on every eligible worker. Do not assume shell-less images
-   provide `/bin/sh`.
-7. The selected Kubernetes Jupiter run does not use capacity-based preflight checks.
-   Keep required source, image, topology, and ownership checks. Runtime resource failures remain failures.
-8. Before creating kind on Desktop, confirm that only the required private coordination directory,
-   `/tmp/simplematch-kubernetes-coordination`, is shared with the VM. Retain private permissions
-   and ownership checks; do not share all host temporary files.
-9. Check control-plane stability before deployment. Do not restore removed memory, CPU,
-   Docker storage, or worker image-filesystem capacity gates in selected Jupiter.
-10. If any preflight check fails, stop before fault injection and record an environment or
-    precondition failure. Do not guess replacement targets, alter offsets or authoritative data,
-    weaken assertions, or extend timeouts to hide a deterministic defect.
+1. **Docker-only:** Confirm that the selected Docker daemon and context are usable.
+2. **Compose:** Confirm the Docker prerequisites and identify the exact Compose project and
+   configuration being applied. Do not check kind or Kubernetes.
+3. **kind:** Confirm the intended cluster and Kubernetes context. Check Docker availability
+   when creating the cluster, loading images, or managing its containers. Check node topology
+   only when the selected scenario requires it.
+4. **Kubernetes:** Confirm API access, context, and namespace for the selected target. Do not
+   require a local Docker daemon or inspect unrelated nodes.
+5. **Changes, cleanup, or fault injection:** Identify the exact live target and its ownership
+   before acting. Resolve Pod, Node, container, image, PVC, or topic identity only when that
+   resource is part of the operation. Do not use guessed ordinals or fixture identities.
+6. **Full certification:** Follow the selected certification runbook for source/image
+   identity, required topology, isolated namespace, new run-owned evidence, and cleanup.
+   Reuse a runtime only for a documented focused diagnostic with current ownership and input
+   checks. A focused or offline result cannot establish a complete deployed PASS.
 
-## Recurring lessons
+Read the retained lessons below. Run a prevention check only when its failure mode applies
+to the selected runtime and scenario. Trading-day, delivery-manifest, barrier, control-plane
+stability, and worker image-execution checks belong to scenarios that depend on them, not
+to every Docker or Compose preflight. For helper images required on kind workers, verify
+actual execution on each eligible worker, not only image metadata. When creating kind on
+Docker Desktop, share only `/tmp/simplematch-kubernetes-coordination` with the VM and
+verify its private permissions and ownership. This step does not apply to Native Docker.
 
-| ID | Symptom | Root cause | Prevention check | Safe fix | Last verified |
-| --- | --- | --- | --- | --- | --- |
-| DT-002 | Kubernetes commands fail, or the API refuses connections | Docker is stopped, the kind cluster is absent, or the active context is not canonical | Run `docker info`, verify `kind-simplematch-live`, verify the current context, and verify one control plane plus three labelled workers before deployment work | Restore the daemon or select the verified canonical context in a run-scoped `KUBECONFIG`, preserving the user's default context; do not recreate or delete resources during a failed preflight | 2026-10-09 (redacted: #168 continuation, canonical kind topology and Docker Desktop recovery) |
-| DT-005 | Native configure or image build is killed by the host | Parallel compilation exceeds the local memory budget | Check available Docker/host memory and use the documented bounded parallelism for the selected preset before starting the build | Lower build parallelism or adjust the local resource budget; do not misclassify exit 137 as a source failure | 2026-08-15 |
-| DT-010 | PostgreSQL and dependent workloads enter CrashLoopBackOff after Docker/kind recovery, or Docker Desktop metrics temporarily report zero CPUs | Docker Desktop retained a virtual-disk limit larger than the relocated host filesystem, then its sparse `Docker.raw` consumed all user-available ext4 blocks; local-path PVC requests are logical reservations rather than preallocated capacity | Before production-like work, require at least 40 GiB of host-usable space and require the Desktop disk limit to remain at or below 75% of its host filesystem; keep the existing worker `/var` and PVC-envelope checks | Inventory exact owners before cleanup; reclaim only unreferenced resources, and recreate or resize the Desktop disk only with explicit acknowledgement that shrinking discards its containers, images, volumes, and kind clusters | 2026-09-16 (redacted: Docker Desktop settings log and host filesystem measurements) |
-| DT-012 | A newly created kind control plane never becomes healthy and kubelet reports `overlay ... invalid argument` while creating Pod sandboxes | Docker's relocated data root was on an NTFS filesystem; images remained readable, but nested containerd overlay mounts used by kind could not be created reliably | Before creating kind, verify `docker info` storage root and `findmnt -T <DockerRootDir>`; require a Linux filesystem such as ext4 for the Docker data root and verify a disposable nested container before deployment | Move Docker data to a Docker Desktop-supported Linux VM disk or Linux filesystem, restart the daemon, delete only the failed canonical cluster, and rerun the repository cluster preflight | 2026-08-15 |
-| DT-014 | A kind helper Pod reports `/bin/sh: exec format error` after Docker data relocation | The relocated Docker image store retained a platform-resolution state that was not usable by the nested kind/containerd runtime, even though the image metadata appeared to be amd64 | Before deployment, verify the helper image can execute a minimal `/bin/sh -c true` on every canonical worker and verify the exact local image is exportable as `linux/amd64` | Rebuild or flatten only the exact helper image from its verified amd64 child manifest, load it into the canonical cluster, and rerun the affected phase; do not reset the Docker store or prune the cluster | 2026-08-15 |
-| DT-017 | BootBuildImage fails with a run-image platform/export error after Docker data relocation | A multi-platform Paketo tag resolved through an image index that the relocated local store could not export for the requested amd64 platform | Before BootBuildImage, verify host architecture, local run-image OS/architecture, and `docker image save --platform linux/amd64` for the exact reference | Use the verified amd64 local recovery reference or flattened image with `IF_NOT_PRESENT`; keep the canonical registry reference unchanged and never use broad Docker prune as repair | 2026-08-15 |
-| DT-025 | A retained KRaft topic-provisioning Job times out after a broker sandbox/runtime recreation, while the affected broker remains in CrashLoopBackOff with `UnknownHostException` for peer headless-service names | The broker-side runtime was recreated while the Kafka quorum was active; the affected JVM retained a negative peer-DNS result even after EndpointSlice records and `getent` recovered, so provisioning could create early topics but could not complete the retained topic set | Before provisioning and after any node/runtime disruption, resolve each `kafka-{0,1,2}.kafka-headless` name from a broker-side probe and require all three broker startup/readiness probes to pass continuously | Restart only the affected broker Pod after peer DNS is confirmed, preserving its retained PVC; if the scoped restart does not converge, stop and rebuild the canonical cluster through `manage-simplematch-live.sh` rather than changing Kafka data or offsets | 2026-08-31 (redacted: `out/certification/fresh-20260828-0827/kafka-failure/one-broker-loss/matching.commands.topic.txt`) |
-| DT-028 / DT-038 | A fresh run times out during `kafka-connect` rollout or `matching-fixture-publisher` readiness; the same pinned image later becomes Ready/Completed | A cold kind worker must pull and unpack the Debezium or native Matching image; the original 300-second Connect rollout or 120-second Matching fixture wait ends before image preparation finishes, without evidence of image corruption | Before workload application, verify the exact immutable image digest is executable on every eligible worker and record cold/warm cache state. Retain the bounded 600-second first-use Matching fixture wait; classify a Connect cold pull exceeding its rollout window as a precondition failure | Allow the same pinned image to finish pulling or pre-pull only that verified identity, then rerun the source-aligned phase. Preserve the timeout evidence; do not change Kafka data, offsets, connector semantics, or image identity | 2026-09-16 (combined: DT-028, 2026-08-31, `out/certification/issue-137-query-20260831-desktop-r1/logs/kubernetes-risk-outbox-connector.log`; DT-038, 2026-09-16, `out/certification/issues-158-159-20260916-r1/logs/kubernetes-open-barriers.log`) |
-| DT-029 | A clean Desktop kind cluster repeatedly places kube-controller-manager and kube-scheduler in CrashLoopBackOff, or namespace cleanup remains pending, while the application namespace is empty | Docker Desktop VM I/O stalls etcd's linearizable reads and lease transactions; the control-plane components lose their leases and fail their local probes even though etcd may later report Ready, so this is an environment stability failure rather than an application workload result | Before applying deployment resources or starting cleanup, require controller-manager, scheduler, and etcd to be Ready with unchanged restart counts across a bounded stability window, verify `/readyz?verbose`, and inspect recent control-plane events for lease timeouts or probe failures | Preserve the control-plane and etcd diagnostics, allow a bounded recovery, then rebuild only the canonical cluster through `manage-simplematch-live.sh` when the failure repeats; do not force-finalize namespaces, edit Kafka data, or reinterpret a run started during the unstable window | 2026-09-14 (redacted: Docker Desktop backend IPC `/ping` repeatedly timed out; controlled restart could not stop the VM) |
-| DT-034 | A source-aligned production-like run stops during the Matching image build with `rpc error: code = Unavailable desc = error reading from server: EOF` | Docker Desktop's BuildKit server was shut down while the vcpkg/Protobuf build was streaming; the application build had not produced a source or test failure | Before a long image build, require `docker info` and the selected BuildKit builder to be healthy, and keep Docker Desktop running until the command exits; classify a daemon shutdown as an environment precondition failure | Reopen Docker Desktop, wait for the Docker API and builder health checks to pass, then rerun the complete source-aligned run with a new evidence directory; do not promote partial build output to deployment evidence or alter source/build semantics | 2026-09-01 (redacted: `out/certification/issue-137-query-20260901-prod-final4/logs/local-image-build/matching.log`, Docker Desktop build log) |
-| DT-036 | Risk-service and QuickFIX Flyway Jobs are first recorded as `OOMKilled` under the local 2 GiB container limit, then succeed on the Job retry with the same image | A cold Gradle/Kotlin process can exceed the container cgroup peak even with a 1 GiB heap and in-process compiler; the sequential migration boundary prevents application contention but did not bound Gradle task workers | Rendered local Flyway Jobs must expose the bounded JVM, in-process compiler, and a positive `SIMPLEMATCH_GRADLE_MAX_WORKERS` value; inspect every failed Job Pod termination reason before publishing a migration PASS | Pass `--max-workers=1` through the shared Flyway runner and keep the existing backoff/complete-job proof; never treat an OOM retry as a source or schema failure | 2026-09-01 (redacted: namespace `simplematch-local-cert-20260901-063222-16645`, Risk and QuickFIX Flyway Pod termination records) |
-| DT-037 | Matching owner `matching-0` exits during startup with `unable to query Matching Kafka committed offset: NOT_COORDINATOR` and is restarted before becoming Ready | The broker had accepted the topic/barrier setup but its group coordinator was not yet stable when the direct-assignment consumer queried committed offsets; the current Matching startup treats that transient metadata error as fatal | Before applying Matching, verify all Kafka brokers and headless peer names are Ready, then inspect every Matching Pod's restart count and previous log for coordinator errors; keep the startup result distinct from a later Ready state | Preserve the failed-Pod evidence, allow the bounded Kubernetes restart after Kafka metadata converges, and do not edit offsets or data; a client-side retry policy remains a separate follow-up if the race repeats | 2026-09-01 (redacted: retained namespace `simplematch-local-cert-20260901-063222-16645`, `matching-0 --previous`) |
-| DT-039 | Docker Desktop kind workers remain NotReady when kindnet fails to unpack layers with `no space left on device`, despite ample ext4 host space | Desktop kind node `/var` (including containerd) was a 3.8 GiB tmpfs; kubelet reported 4,002,340,864 bytes capacity and zero available. The relationship between this mount and Desktop's configured `data-root` was not conclusively established | Verify node `/var` mount type and kubelet `stats/summary`, not just host disk capacity or Docker's reported root path. The canonical workstation engine is now Native Docker Context `default`; check that its node `/var` is backed by ext4 | Under explicit workstation-owner authorization, Desktop VM was stopped and its disk removed, freeing its memory and stored runtime data. Native `default` registry and canonical 1+3 kind were rebuilt and verified; the old Desktop context must not be used for later certification | 2026-11-05 (redacted: `out/verification/issue202-canonical-create-20261105/desktop-failed-filesystem.json`; Native node `/var` mapped to `/dev/sda1`) |
-| DT-040 | The Query lifecycle Lab stops before deployment with `Run image does not exist locally` | The Native Docker image store did not contain the Lab's pinned Paketo run image after the Desktop-to-Native migration | Before the Lab image build, inspect the exact `paketobuildpacks/ubuntu-noble-run-tiny:0.0.122` image on Docker Context `default`. Verify the required `linux/amd64` platform | Pull that exact pinned image for `linux/amd64`. Start a new run with a new evidence directory. Do not substitute another image version or reuse the failed run's evidence | 2026-11-05 (redacted: `out/verification/issue202-r19-focused-native-20261105-r1/boot-image.log`; the source-aligned `r2` Local Lab returned PASS) |
+The selected Kubernetes Jupiter run has no capacity-based preflight gates. Do not restore
+removed memory, CPU, Docker storage, or worker image-filesystem gates. Its required source,
+image, topology, ownership, and runtime failure checks remain in force.
 
-| DT-041 | A selected public FIX order returned `SYSTEM_ERROR`. Gateway delivery did not reach `SENT`. | Two Risk finalizers can read the same pending journal version. One CAS succeeds and the other fails. The second production caller is not yet identified. | Run the PostgreSQL two-finalizer concurrency test. Require one terminal journal revision and one Outbox event. | After rollback, read the durable terminal outcome. Return it only if another finalizer committed. Preserve errors for pending or missing rows. | 2026-11-06 (r1/r3 Risk errors; PostgreSQL red/green regression; `out/verification/issue202-risk-cas-fixed-20261106-r1/summary.json` selected Live PASS with diagnostics and cleanup PASS) |
-| DT-042 | The final-source `resting-buy` Kubernetes run fails with `TimeoutException` while checking that PostgreSQL has zero Pods. | The 20-second Matching `SIGSTOP` budget also covered gateway rejection, connector and Kafka observations, PostgreSQL scale/delete, and Pod disappearance. The stack does not prove an API-server stall; the subsequent PostgreSQL Pod creation is consistent with failure cleanup. | Exercise the two-window timing and failure-restoration tests before Live; check that CDC remains paused between Matching resumes, the input offset is unchanged before the second stop, and all no-Pod checks run inside that stop's independent bounded budget. | Separate the real rejected-FIX gate and PostgreSQL fault into two independently bounded Matching pauses, resume before intermediate SQL, keep the connector paused until the second stop, and retain original 20-second safety, no-Pod assertion, and exact owned restoration. | 2026-11-08 (original source `fa035bdc`, `out/verification/kubernetes/f8ab1c11-476b-410b-90da-29b9f41b2e66/summary.json`: assertions FAIL, diagnostics/cleanup PASS; corrected source `1a3fa704`, `out/verification/kubernetes/7458c622-11ad-4cdd-8f83-69bc519582ef/summary.json`: full `verifyAll` PASS in 37m17s with assertions/diagnostics/cleanup PASS) |
+If a required preflight fails, stop before the affected operation and record a precondition
+failure. Do not alter Kafka offsets or authoritative data, guess replacement targets, weaken
+assertions, or extend timeouts to conceal a defect. Inventory resources before scoped cleanup;
+remove only exact run-owned disposable resources and verify what remains.
 
-| DT-043 | Hosted focused CI fails during the Matching barrier-image build when Ubuntu APT returns HTTP 404 for `perl-base`. | The `resolute-updates` index referenced `perl-base_5.40.1-7ubuntu0.4_amd64.deb`, but the archive fetch returned 404. Mirror/package propagation is plausible, not confirmed. No native compilation, kind deployment or business assertion had started. | In a fresh container from the selected Ubuntu release, run `apt-get update` and attempt to download the exact candidate package. Distinguish repository availability from application or capacity failures. | Preserve the original failure, confirm the package is available, then rerun the same source with a new attempt identity. Do not mask package-manager failures or treat a rerun as PASS before business assertions, diagnostics and cleanup pass. | 2026-11-10 ([CI first attempt](https://github.com/WenHsuanYu/SimpleMatch/actions/runs/42844556998) failed; same-day isolated `ubuntu:26.04` package-download probe PASS; hosted rerun outcome recorded separately). |
-| DT-044 | Hosted Risk CI reaches workload verification and reports `workload index must identify one linux/amd64 manifest`. | The verifier assumed that every imported OCI index contains exactly one direct descriptor labelled `linux/amd64`. OCI indexes can contain nested or platform-less descriptors. The failed run did not retain the exact index JSON. | Test one runnable image with nested indexes, duplicate descriptors, and a marked attestation. Also test ambiguous manifests and wrong architecture. Keep the original digest and image-config checks. | Resolve the selected index through bounded, content-addressed traversal. Require one distinct runnable `linux/amd64` manifest and the same exported config digest. Preserve failure on ambiguity. Re-run source-aligned acceptance. | 2026-11-11 ([hosted run 42861322462](https://github.com/WenHsuanYu/SimpleMatch/actions/runs/42861322462), four-field original result FAIL/FAIL/PASS/PASS; source regression tests run separately). |
-| DT-045 | Native local `verifyAll` fails in `Dockerfile.flyway-runner` while the Gradle Wrapper fetches `services.gradle.org`. | The BuildKit default RUN network cannot resolve `services.gradle.org` on this host. The same domain resolves in the host and ordinary Docker containers. The exact upstream resolver failure is not established. | Use a disposable Dockerfile with `getent ahostsv4 services.gradle.org`. Compare default BuildKit networking, `docker build --network=host`, and ordinary `docker run` without touching any canonical resources. | On this Native Docker workstation, explicitly select `-PkubernetesBuildNetwork=host` for a new full `verifyAll` run. Keep the default for hosted CI. Do not modify global Docker DNS or disable the Gradle Wrapper integrity checks. | 2026-11-11 (two full local build failures, then default-build DNS RED and host-build DNS GREEN in isolated `out/ci-investigation/s6-buildkit-dns-20261111/` fixture). |
-| DT-046 | Fresh `resting-buy` fails waiting for Kafka quorum despite Ready kind Nodes and existing Kafka images. An initial worker CNI IPAM correction improves readiness to two brokers, but the third cannot resolve peer names through CoreDNS. | Native Docker node IPs changed while some existing kindnet and kube-proxy host-network Pods retained old `status.podIP` values. Two CNI IPAM subnets also differed from the Kubernetes Node PodCIDRs. Kindnet consequently omitted routes to one or more remote PodCIDRs. | Before deploying, compare each Node's `spec.podCIDR` and current `InternalIP` with `/etc/cni/net.d/10-kindnet.conflist`, existing Pod IPs, and `ip -4 route` on its exact Docker node. Check the host-network kindnet Pod `status.podIP` against its `status.hostIP`. Confirm cross-node routes and CoreDNS reachability; Node Ready alone is insufficient. | Preserve the canonical cluster, registry, containers and persistent data. With no competing workload, back up the exact CNI configurations and correct only mismatched worker subnets. Add only verified missing node-to-PodCIDR routes, then check their persistence across kindnet reconciliation. A durable solution to stale host-network Pod identity remains separate from these runtime repairs; do not claim that a restart cannot regress them. | 2026-11-11 (local `verifyAll` run `b34e0031-bb75-4291-b1f9-09ba52c797cf` FAIL/FAIL/PASS/PASS; follow-up `5562aa7f-2297-45ee-9909-8581ea9164d9` FAIL/FAIL/PASS/PASS; run `ebdce8af-f407-4ae6-9b0b-2fd28784e569` deployed Kafka 3/3 and Matching 15/15 before reaching later R19 failure). |
-| DT-047 | Full local `resting-buy` reaches the R19 V2 Query policy replacement, proves both old CRI tasks stopped, but fails because the old Pod route was not conclusively detached. | The verifier required the fallback `ip route get` entry to have a nonempty `gateway`. Linux can select an `eth0` fallback without a gateway after removing the original node-local Pod `/32` veth route. The failed run did not preserve the exact before/after route objects, so the gateway-shape hypothesis is supported by post-run reproduction but is not uniquely proven from that run's artifact. | Use real `ip -j -4 route get IP` and `ip -j -4 route show exact IP/32` on the owned node. Check the original veth device under `/sys/class/net`, the exact old CRI/PID stop fence and whether an `eth0` fallback has a gateway. Test both gateway-bearing and on-link fallback cases, and reject a surviving `/32` or veth. | Require the original directly attached exact `/32` veth route before stopping the owned Query Pod; after stopping, require the same veth device and exact `/32` route to be absent, plus an `eth0` fallback. Preserve the old/fresh HTTP block evidence, timeout rejection and CRI/PID ownership fence. Persist sanitized route observations on predicate failure. Do not extend stop budgets or interpret timeouts as revocation. | 2026-11-11 (`out/verification/kubernetes/ebdce8af-f407-4ae6-9b0b-2fd28784e569/summary.json` FAIL/FAIL/PASS/PASS; RED unit regression, then `:tools:kubernetes-tests:test` and `staticAnalysis` PASS; fresh full-local acceptance still required). |
-| DT-048 | Two same-source hosted Risk runs fail the Kafka topic-provisioning Job after creating a topic, before reaching business assertions. The failed configuration lookup names `matching.events` in attempt 1 and `matching.commands` in attempt 2. | Provisioning required a second Java Admin CLI, `kafka-configs.sh --describe --all`, after the successful `kafka-topics.sh --describe` for every topic. Both attempts exhausted the existing shared 180-second retry deadline on this separate query. The script discarded its captured stderr, so the internal Admin error and any CPU throttling remain unproved. Kafka 4.3.1 TopicCommand already includes explicit topic config overrides in the topic-description header. | Verify the pinned Kafka CLI's topic header supplies the exact partitions, RF and explicit cleanup, retention and ISR values. Exercise missing, duplicate, prefix-matching, malformed and wrong configurations as failure cases. Keep the bounded command and original job diagnostics. | Check required configurations in the already-bounded topic description instead of starting the redundant config JVM. Preserve 15-second Admin operation timeouts, 180-second shared retry and the strict topic contract. Require new source-aligned local and hosted acceptance before classifying this mitigation as effective. | 2026-11-11 ([run 42973661161](https://github.com/WenHsuanYu/SimpleMatch/actions/runs/42973661161), attempts 1 and 2 original FAIL/FAIL/PASS/PASS with separate exact-owned cleanup PASS; ignored RED/GREEN fixture under `out/ci-investigation/s6-kafka-cli-regression/`; isolated Kafka 4.3.1 topic-description smoke). |
+## Retained environment and distributed-system lessons
 
-## How to add a lesson
+These entries apply only when the selected operation matches their scope. They are not a list of
+mandatory checks for every deployment. Individual failures, failed attempts, test fixes, and
+acceptance results belong in their owning Issue or run evidence, not in this living catalog.
 
-Add a row only when the failure is repeatable or materially risky. Each row must state:
+### DT-025 — Kafka peer DNS after broker runtime recreation
 
-- the observable symptom;
-- the concrete root cause, separated from unrelated defects;
-- a preflight check that can catch it before deployment or fault injection;
-- a safe fix that preserves authoritative data and fail-closed behavior;
-- the date and a redacted evidence source.
+- **Scope:** KRaft broker/runtime recreation or topic provisioning after node disruption.
+- **Signal:** A broker remains in `CrashLoopBackOff` with peer-name `UnknownHostException`;
+  the provisioning Job times out even after Kubernetes DNS records recover.
+- **Cause:** The affected JVM retained a negative peer-DNS result after runtime recreation.
+- **Check:** Confirm broker-side resolution of all `kafka-{0,1,2}.kafka-headless` names and
+  continuous readiness of all three brokers before dependent provisioning.
+- **Safe response:** Once DNS is healthy, restart only the affected broker Pod and preserve its
+  PVC. If scoped recovery fails, preserve diagnostics and propose a cluster rebuild, but do not
+  execute it without explicit workstation-owner authorization. Never change Kafka data or
+  offsets to force a pass.
+- **Evidence:** 2026-08-31, redacted
+  `out/certification/fresh-20260828-0827/kafka-failure/one-broker-loss/matching.commands.topic.txt`.
 
-Do not put credentials, bearer tokens, Secret values, raw FIX payloads, complete account payloads, or
-unredacted environment variables in this file or its evidence links. Review this table when changing
-deployment scripts, certification profiles, image/build workflows, or cleanup behavior, and remove
-or revise entries when the prevention check no longer matches the implementation.
+### DT-028 / DT-038 — Cold worker image preparation
 
-## Disk hygiene boundary
+- **Scope:** First use of a pinned Debezium or Matching image on a cold kind worker.
+- **Signal:** `kafka-connect` rollout or `matching-fixture-publisher` readiness exceeds its
+  bounded wait; the same image later reaches Ready or Completed.
+- **Cause:** A cold pull and unpack exceeded the original readiness window. This alone does
+  not establish corrupt image content.
+- **Check:** For the affected workload, verify the exact digest and whether the target worker
+  already has a usable image. Distinguish pull/unpack latency from application startup failure.
+- **Safe response:** Allow the exact pinned image to finish pulling or pre-pull only that
+  verified identity, then rerun with new source-aligned evidence. Keep the configured timeout
+  and the original failure record. Do not alter Kafka data, offsets, or image identity.
+- **Evidence:** DT-028, 2026-08-31,
+  `out/certification/issue-137-query-20260831-desktop-r1/logs/kubernetes-risk-outbox-connector.log`;
+  DT-038, 2026-09-16,
+  `out/certification/issues-158-159-20260916-r1/logs/kubernetes-open-barriers.log`.
 
-Disk cleanup is an inventory operation, not an availability shortcut:
+### DT-045 — Native Docker BuildKit DNS isolation
 
-- Preserve running containers, the canonical kind cluster, images loaded into it, active Compose
-  volumes, and caches required by a running build or test.
-- Compare image IDs/content, not tags alone. If duplicate tags point to one image and no active
-  resource references the older tag, retain the newest tag and remove the stale alias.
-- Treat generated `out/`, `build/`, `vcpkg_installed/`, Gradle, and Docker builder cache as
-  disposable only after confirming the current or next requested workflow does not rely on them.
-- After cleanup, record what was removed, what was retained, and the measured space change.
+- **Scope:** This Native Docker workstation, when BuildKit fetches Gradle Wrapper inputs.
+- **Signal:** `Dockerfile.flyway-runner` cannot resolve `services.gradle.org`, although the
+  host and an ordinary Docker container can resolve it.
+- **Cause:** The default BuildKit RUN network fails DNS resolution in this environment.
+  The upstream resolver cause is not established.
+- **Check:** Compare DNS lookup in a disposable default-network BuildKit build,
+  `docker build --network=host`, and an ordinary container. Do not touch canonical resources.
+- **Safe response:** Only when this failure is reproduced, use
+  `-PkubernetesBuildNetwork=host` for a fresh local `verifyAll` run. Leave hosted CI defaults
+  unchanged. Do not disable Gradle Wrapper integrity or change global Docker DNS settings.
+- **Evidence:** 2026-11-11, two failed full-local builds and isolated default-network RED /
+  host-network GREEN checks in `out/ci-investigation/s6-buildkit-dns-20261111/`.
+
+### DT-046 — Stale kind network identity after Docker node IP changes
+
+- **Scope:** Canonical kind nodes with changed Docker-side IPs after runtime or network changes.
+- **Signal:** Nodes report Ready but Kafka quorum or CoreDNS peer resolution fails.
+- **Cause:** Observed kindnet/kube-proxy host-network Pod IPs and CNI IPAM subnet values
+  disagreed with current Node IPs and PodCIDRs. The long-term fix is not established.
+- **Check:** Compare each Node's `spec.podCIDR` and `InternalIP` with the exact node's
+  `/etc/cni/net.d/10-kindnet.conflist`, host-network Pod IP/host IP, and `ip -4 route`.
+  Confirm cross-node PodCIDR routes and CoreDNS reachability. Node Ready alone is insufficient.
+- **Safe response:** Preserve cluster, registry, data, and diagnostics. Do not patch CNI files,
+  routes, or restart shared components without a scoped plan and authorization. If approved,
+  back up exact configurations, repair only proven mismatches, and verify persistence across
+  reconciliation. Do not claim the repair is durable without a fresh source-aligned run.
+- **Evidence:** 2026-11-11, runs
+  `b34e0031-bb75-4291-b1f9-09ba52c797cf` and
+  `5562aa7f-2297-45ee-9909-8581ea9164d9` (FAIL/FAIL/PASS/PASS);
+  `ebdce8af-f407-4ae6-9b0b-2fd28784e569` reached Kafka 3/3 and Matching 15/15
+  before a later R19 failure.
+
+## Recording and retirement policy
+
+A lesson is an actionable prevention rule, not a chronological incident log. Retain an entry
+only when all of these conditions hold:
+
+1. It describes a platform/environment failure or a distributed-system transient that can
+   still recur after deterministic product, verifier, fixture, or workflow fixes.
+2. It identifies the specific environment or operation that activates the check. It must
+   not impose a full-environment preflight on an unrelated task.
+3. It provides an observable symptom, an evidence-supported cause (or explicitly states
+   uncertainty), a focused check, and a safe response that preserves authoritative data.
+4. It gives a date and a traceable, redacted evidence source. A date alone is not sufficient.
+5. The check is not already fully enforced by a current owner such as a lifecycle manager,
+   automated test, or certification runbook.
+
+Keep the original DT ID for a retained entry. Use the same six fields: Scope, Signal, Cause,
+Check, Safe response, and Evidence. Do not renumber entries when one is removed. Record every
+new deployment failure in its owning Issue or run evidence regardless of whether it qualifies
+for this catalog. When a fix makes an entry obsolete, retire it here; the original incident
+remains in Git history and its owning evidence. Do not preserve historical-only rows or
+tombstones in this file.
+
+Do not put credentials, bearer tokens, Secret values, raw FIX payloads, complete account
+payloads, or unredacted environment variables here or in linked evidence. Review retention
+when deployment scripts, certification profiles, image workflows, or cleanup rules change.
+For image, cache, and disk cleanup, follow the
+[local registry and resource lifecycle](../operations/local-registry-resource-lifecycle.md)
+and the ownership rules in [AGENTS.md](../../AGENTS.md); do not duplicate them here.

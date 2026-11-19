@@ -188,11 +188,12 @@ PostgreSQL production connectivity, or external FIX interoperability.
 Run these in order from the repository root. GRADLE_USER_HOME is only needed when the normal
 Gradle cache is read-only or unsuitable; it is not a production setting.
 
-Before applying any Compose or Kubernetes resources, or injecting a deployment fault, complete the
-mandatory preflight in [Deployment Test Lessons](../agents/deployment-test-lessons.md). Confirm the
-Docker daemon, canonical kind context and worker topology, observed runtime identities, isolated
-namespace/evidence directory, and before/after resource inventory. Stop before fault injection if
-any preflight check fails.
+Before applying Compose or Kubernetes resources, or injecting a deployment fault, perform the
+minimal runtime-specific preflight in [Deployment Test Lessons](../agents/deployment-test-lessons.md).
+Docker and Compose checks do not require kind or Kubernetes. Complete-local certification
+separately enforces its required source/image identity, topology, namespace and evidence isolation,
+ownership, and cleanup checks. Do not impose those certification gates on unrelated workflows.
+Stop before the affected operation if its required preflight fails.
 
 Use `./gradlew manifestCheck` for rendered schemas and basic workload probes.
 S4 retires the former Phase 1 Shell collection and its static phase.

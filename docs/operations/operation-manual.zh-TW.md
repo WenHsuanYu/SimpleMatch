@@ -348,6 +348,9 @@ bash scripts/manage-simplematch-live.sh verify
 
 ### 7.3 刪除 cluster
 
+這是破壞性操作。必須先確認 canonical cluster 的實際身分、保留證據與依賴，
+並取得工作站擁有者對本次刪除或重建的明確授權，才可執行：
+
 ```bash
 bash scripts/manage-simplematch-live.sh delete
 ```
@@ -793,6 +796,8 @@ bash scripts/simplematch-clean-local-disk.sh --report-details
 
 ### 15.2 同時刪除 canonical cluster
 
+需先取得工作站擁有者對本次 canonical cluster 刪除的明確授權；例行清理不得附加此選項。
+
 ```bash
 bash scripts/simplematch-clean-local-disk.sh --delete-cluster
 ```
@@ -800,6 +805,9 @@ bash scripts/simplematch-clean-local-disk.sh --delete-cluster
 這會透過 `manage-simplematch-live.sh delete` 執行 cluster deletion，而不是自行繞過 manager。
 
 ### 15.3 清掉 registry data
+
+這會清除整個 local registry 的持久資料，不是淘汰單一舊 Image 的方式。必須先審核
+仍在使用的 digests、回滾版本及驗證證據，並取得工作站擁有者的明確授權。
 
 ```bash
 bash scripts/simplematch-clean-local-disk.sh --purge-registry
@@ -961,7 +969,8 @@ bash scripts/simplematch-clean-local-disk.sh --report-details
 bash scripts/manage-simplematch-live.sh verify
 ```
 
-若 verify 通過就繼續使用。若確認需要 rebuild：
+若 verify 通過就繼續使用。若確認需要 rebuild，先保留診斷證據，
+取得工作站擁有者對 canonical cluster 刪除與重建的明確授權，再執行：
 
 ```bash
 bash scripts/manage-simplematch-live.sh delete
@@ -970,7 +979,8 @@ bash scripts/manage-simplematch-live.sh create
 
 ### 18.2 Docker root 使用 NTFS / ntfs3
 
-不要嘗試繞過 filesystem guard。將 Docker data root 移到 Linux-backed filesystem，再重建 kind cluster。
+不要嘗試繞過 filesystem guard。將 Docker data root 移到 Linux-backed filesystem。
+若仍需重建 canonical kind cluster，須先保留資料與診斷證據，取得工作站擁有者明確授權。
 
 ### 18.3 Certification 說 current context 不正確
 

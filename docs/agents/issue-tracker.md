@@ -1,6 +1,8 @@
 # Issue tracker: GitHub
 
-Issues and PRDs for this repo live as GitHub issues. Use the `gh` CLI for all operations.
+Issues and PRDs for this repo live as GitHub issues. Use an available, authorized GitHub interface.
+Prefer the `gh` CLI when it is suitable; a connected GitHub tool with equivalent capabilities is also valid.
+Changing interfaces does not grant permission to create, update, close, publish, or merge anything.
 
 ## Authority model
 
@@ -18,6 +20,10 @@ Issues and PRDs for this repo live as GitHub issues. Use the `gh` CLI for all op
   clearly scoped follow-up), with real prerequisites encoded through GitHub `blocked by` dependencies.
 
 ## Conventions
+
+The commands below are `gh` CLI examples, not the only permitted interface. Resolve the intended
+repository and issue or PR identity before an action. Use an equivalent authorized operation when
+working through a connected GitHub tool.
 
 - **Create an issue**: `gh issue create --title "..." --body "..."`. Use a heredoc for multi-line
   bodies.
@@ -49,8 +55,8 @@ equivalents:
 - **Comment / label / close**: `gh pr comment`, `gh pr edit --add-label`/`--remove-label`,
   `gh pr close`.
 
-GitHub shares one number space across issues and PRs, so a bare `#42` may be either — resolve with
-`gh pr view 42` and fall back to `gh issue view 42`.
+GitHub shares one number space across issues and PRs, so a bare `#42` may be either. Confirm its type
+with the selected interface (for example, `gh pr view 42` and then `gh issue view 42`).
 
 ## When a skill says "publish to the issue tracker"
 
@@ -58,7 +64,8 @@ Create a GitHub issue.
 
 ## When a skill says "fetch the relevant ticket"
 
-Run `gh issue view <number> --comments`.
+Read the specified GitHub issue and comments through the selected authorized interface.
+For the CLI, use `gh issue view <number> --comments`.
 
 ## Wayfinding operations
 

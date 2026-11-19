@@ -52,6 +52,6 @@ git diff --check
 
 最後對照驗收條件檢查 diff，確認程式、測試、文件與設定一致，並檢查剩餘設計風險。
 若適用且可用，使用 `code-review` skill。交付說明應讓 reviewer 看懂修改解決的行為、測試涵蓋的範圍，
-以及仍未驗證或刻意留待後續的項目。與 GitHub 發布或 push 有關的授權和操作，依 [AGENTS.md](../../AGENTS.md) 執行。
+以及仍未驗證或刻意留待後續的項目。GitHub 發布或 push 必須遵守使用者對當前工作的既有授權與限制；commit message 格式依 [AGENTS.md](../../AGENTS.md) 執行。
 
 當你能從 Issue 指到規格、從規格指到 owner 與測試，再以同一組驗收條件說明結果，就已具備繼續處理下一個切片的基本工作方式。其他主題可從 [文件總索引](../README.md) 查找。

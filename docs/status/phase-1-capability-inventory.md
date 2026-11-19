@@ -203,8 +203,8 @@ not change accepted Phase 1 capability status or upgrade focused evidence to an 
 - The Docker data move was corrected before the fresh 2026-08-15 run: Docker now uses a
   Linux-backed root, the repository preflight verified `simplematch-live` as one control-plane plus
   three labelled workers, and the canonical Kubernetes workload run completed. The earlier NTFS
-  overlay failure remains documented as DT-012 for prevention; it is no longer the current
-  environment result.
+  overlay failure is historical; the kind creation guard and
+  [operation manual](../operations/operation-manual.zh-TW.md) now own filesystem prevention.
 - Gateway Kubernetes resources were applied and inspected at API level: one replica, digest-pinned
   image, Bound data PVC, owner-0 Service, and resource-scoped ConfigMap RBAC. The placeholder
   Gateway image is not available, so its Pod remained `ErrImagePull`; no Gateway runtime or
@@ -368,9 +368,10 @@ marker; Kafka retained the fixed ordinal/PVC/cluster identities, RF3 marker, ISR
 catch-up across both worker-loss and Pod-restart observations, with its run-owned marker topic
 removed after observation. The first Redis attempt is retained as a failed diagnostic because
 non-interactive `redis-cli GET` returned an empty line for a missing key; the reviewed classifier
-fix is recorded in `docs/agents/deployment-test-lessons.md` and the successful rerun is the report
-used above. An initial PostgreSQL Pod-restart preflight failure caused by the caller's global
-`docker-desktop` context is also retained separately and is not used as PASS evidence.
+fix belongs to the source and historical run evidence, not the active prevention catalog.
+The successful rerun is the report used above. An initial PostgreSQL Pod-restart preflight failure
+caused by the caller's global `docker-desktop` context is also retained separately and is not used
+as PASS evidence.
 
 ## Remaining portfolio-focused follow-ups
 

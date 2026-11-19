@@ -260,13 +260,19 @@ current artifacts, explicitly required rollback versions and original artifacts
 needed to repeat retained verification, including Boot exports. A tag count or an
 absent container reference is not sufficient evidence of retirement. Distinguish
 OCI index/manifest digests from image config IDs and keep unknown references
-until their ownership is resolved.
+until their ownership is resolved. A successful new build does not retire an
+older image. Host Docker, kind containerd, and the registry store separate
+copies. Clearing one store does not clear the others.
 
-Write an exact preserve/retire/unknown inventory before any manifest deletion.
-For the repository's `registry:3` container, the non-destructive GC preview is:
+Classify exact identities as PRESERVE, RETIRE, or UNKNOWN. Keep PRESERVE and
+UNKNOWN. Review dependencies and authorization before removing any RETIRE
+identity. Registry manifest deletion and actual GC require separate explicit
+approval. Never use `manage-local-registry.sh delete --purge-data` to retire
+one image. For the repository's `registry:3` container on Native Docker
+context `default`, the non-destructive GC preview is:
 
 ```bash
-docker --context desktop-linux exec simplematch-local-registry \
+docker --context default exec simplematch-local-registry \
   registry garbage-collect --dry-run /etc/distribution/config.yml
 ```
 
