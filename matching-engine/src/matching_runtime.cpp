@@ -110,10 +110,6 @@ std::optional<RuntimeOutput> MatchingRuntime::take_output() {
   return output_ring_.try_pop();
 }
 
-BoundedSpscRing<RuntimeOutput> &MatchingRuntime::output_ring() {
-  return output_ring_;
-}
-
 MatchingRuntimeMetrics MatchingRuntime::metrics() const {
   return {input_ring_.capacity(),
           input_ring_.size(),

@@ -28,6 +28,11 @@ Kafka ingress -> preallocated SPSC input ring -> single Matching core
               -> preallocated SPSC output ring -> Kafka publisher/coordinator
 ```
 
+The two-direction topology remains unchanged. The production SPSC rings now
+use the C++20 Disruptor sequencer and ring implementation described in
+[ADR 0011](0011-native-disruptor-sequencing.md). The previous standalone
+`BoundedSpscRing` implementation is retired.
+
 The core owns every mutable order book in its partition. It uses no locks, network I/O, disk I/O,
 or allocation after warmup. Rings never drop records, overwrite records, or expand. Ingress pauses
 when the input ring is full. The core waits when the output ring is full. Sustained high occupancy

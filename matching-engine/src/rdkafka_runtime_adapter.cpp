@@ -1,5 +1,5 @@
 #include "simplematch/matching/runtime/rdkafka_runtime_adapter.hpp"
-#include "simplematch/matching/runtime/bounded_spsc_ring.hpp"
+#include "simplematch/matching/disruptor/spsc_channel.hpp"
 
 #include <atomic>
 #include <chrono>
@@ -342,7 +342,13 @@ struct DeliveryCompletion {
 struct DeliveryState {
   explicit DeliveryState(std::size_t capacity) : completions(capacity) {}
 
-  BoundedSpscRing<DeliveryCompletion> completions;
+  // Delivery callbacks run on the thread polling/flushing this producer.
+  // The publisher's driver owns that polling thread and completion consumer.
+  disruptor::DisruptorSpscChannel<DeliveryCompletion> completions;
+  // A full completion channel violates the in-flight context bound. Preserve
+  // the first missing callback so the coordinator fails closed without an ACK.
+  std::atomic<DeliveryContext*> first_lost_context{};
+  bool fatal_reported{};  // Written only by the completion consumer.
 };
 
 struct DeliveryContext {
@@ -368,8 +374,13 @@ void delivery_report(rd_kafka_t *, const rd_kafka_message_t *message, void *) {
   if (context == nullptr || context->state == nullptr) {
     return;
   }
-  static_cast<void>(context->state->completions.try_push(
-      DeliveryCompletion{context->publication_id, delivery_status(message), context}));
+  DeliveryState &state = *context->state;
+  if (!state.completions.try_push(
+          DeliveryCompletion{context->publication_id, delivery_status(message), context})) {
+    DeliveryContext *expected = nullptr;
+    static_cast<void>(state.first_lost_context.compare_exchange_strong(
+        expected, context, std::memory_order_release, std::memory_order_relaxed));
+  }
 }
 
 struct RdkafkaMatchingEventPublisher::Implementation {
@@ -436,6 +447,10 @@ RdkafkaMatchingEventPublisher::~RdkafkaMatchingEventPublisher() {
 }
 
 bool RdkafkaMatchingEventPublisher::publish(const MatchingEventRecord &record) {
+  if (implementation_->delivery_state.first_lost_context.load(std::memory_order_acquire) !=
+      nullptr) {
+    return false;
+  }
   const bool another_publication_in_flight = std::any_of(
       implementation_->contexts.begin(), implementation_->contexts.end(),
       [](const DeliveryContext &context) {
@@ -456,6 +471,10 @@ bool RdkafkaMatchingEventPublisher::publish(const MatchingEventRecord &record) {
       RD_KAFKA_RESP_ERR_NO_ERROR) {
     return false;
   }
+  if (implementation_->delivery_state.first_lost_context.load(std::memory_order_acquire) !=
+      nullptr) {
+    return false;
+  }
   while (const auto completion = next_completion()) {
     if (completion->publication_id == id) {
       return completion->delivery == MatchingPublicationDelivery::kPersisted;
@@ -466,6 +485,10 @@ bool RdkafkaMatchingEventPublisher::publish(const MatchingEventRecord &record) {
 
 MatchingPublicationSubmitResult RdkafkaMatchingEventPublisher::submit_async(
     const MatchingEventRecord &record, std::uint64_t publication_id) {
+  if (implementation_->delivery_state.first_lost_context.load(std::memory_order_acquire) !=
+      nullptr) {
+    return MatchingPublicationSubmitResult::kFailedClosed;
+  }
   checked_partition(record.partition_id);
   if (record.key.empty() || record.value.empty()) {
     throw std::invalid_argument("Matching Event publication requires a key and value");
@@ -510,7 +533,19 @@ void RdkafkaMatchingEventPublisher::service() {
 }
 
 std::optional<MatchingPublicationCompletion> RdkafkaMatchingEventPublisher::next_completion() {
-  const auto completion = implementation_->delivery_state.completions.try_pop();
+  // Keep the failing context occupied: its ID must never be reused while the
+  // terminal callback failure is being reported to the offset coordinator.
+  DeliveryState &state = implementation_->delivery_state;
+  if (const DeliveryContext *lost = state.first_lost_context.load(std::memory_order_acquire);
+      lost != nullptr) {
+    if (state.fatal_reported) {
+      return std::nullopt;
+    }
+    state.fatal_reported = true;
+    return MatchingPublicationCompletion{lost->publication_id,
+                                         MatchingPublicationDelivery::kFatal};
+  }
+  const auto completion = state.completions.try_pop();
   if (!completion.has_value()) {
     return std::nullopt;
   }

@@ -1,6 +1,7 @@
 #include <gtest/gtest.h>
 
 #include <array>
+#include <atomic>
 #include <chrono>
 #include <cstddef>
 #include <cstdint>
@@ -15,10 +16,181 @@
 
 #include "matching_test_support.hpp"
 #include "simplematch/matching/disruptor/disruptor.hpp"
+#include "simplematch/matching/disruptor/spsc_channel.hpp"
 #include "simplematch/matching/runtime/matching_runtime.hpp"
 
 namespace simplematch::matching::disruptor {
 namespace {
+
+TEST(DisruptorSequencingTest, SpscChannelPreservesWrapAndCapacity) {
+  DisruptorSpscChannel<int> channel(4);
+  EXPECT_EQ(channel.capacity(), 4U);
+  EXPECT_EQ(channel.size(), 0U);
+  EXPECT_EQ(channel.available_to_write(), 4U);
+  for (int cycle = 0; cycle < 100; ++cycle) {
+    for (int index = 0; index < 4; ++index) {
+      ASSERT_TRUE(channel.try_push(cycle * 4 + index));
+    }
+    EXPECT_EQ(channel.available_to_write(), 0U);
+    EXPECT_FALSE(channel.try_push(-1));
+    for (int index = 0; index < 4; ++index) {
+      ASSERT_EQ(channel.try_pop(), cycle * 4 + index);
+    }
+    EXPECT_EQ(channel.size(), 0U);
+    EXPECT_EQ(channel.available_to_write(), 4U);
+  }
+  EXPECT_FALSE(channel.try_pop().has_value());
+}
+
+TEST(DisruptorSequencingTest, SpscChannelPublishesCompletedObjects) {
+  DisruptorSpscChannel<std::array<int, 3>> channel(1);
+  std::array<int, 3> observed{};
+  std::atomic<bool> completed{};
+  std::jthread consumer([&](std::stop_token stop) {
+    while (!stop.stop_requested()) {
+      if (auto value = channel.try_pop()) {
+        observed = *value;
+        completed.store(true, std::memory_order_release);
+        return;
+      }
+      std::this_thread::yield();
+    }
+  });
+  ASSERT_TRUE(channel.try_push({1, 2, 3}));
+  const auto deadline =
+      std::chrono::steady_clock::now() + std::chrono::seconds(5);
+  while (!completed.load(std::memory_order_acquire) &&
+         std::chrono::steady_clock::now() < deadline) {
+    std::this_thread::yield();
+  }
+  consumer.request_stop();
+  consumer.join();
+  ASSERT_TRUE(completed.load());
+  EXPECT_EQ(observed, (std::array<int, 3>{1, 2, 3}));
+}
+
+TEST(DisruptorSequencingTest, TerminalConsumerClearsSlotBeforeReleasingIt) {
+  Sequence consumed;
+  const std::array<const Sequence*, 1> gates{&consumed};
+  RingBuffer<int, SingleProducerSequencer> ring(1, gates);
+  ASSERT_TRUE(ring.try_publish(42));
+  const auto value = ring.take_for_consumer(0);
+  ASSERT_TRUE(value.has_value());
+  EXPECT_EQ(*value, 42);
+  EXPECT_FALSE(ring.has_event(0));
+  consumed.store(0);
+  EXPECT_TRUE(ring.try_publish(43));
+}
+
+TEST(DisruptorSequencingTest,
+     TwoRingChannelsPreserveZeroOneManyFramesConcurrently) {
+  struct Input {
+    int sequence;
+    int output_count;
+  };
+  struct Output {
+    int sequence;
+    int index;
+    bool end;
+  };
+  constexpr int kCommands = 300;
+  DisruptorSpscChannel<Input> input(2);
+  DisruptorSpscChannel<Output> output(4);
+  std::atomic<bool> failed{};
+  const auto deadline =
+      std::chrono::steady_clock::now() + std::chrono::seconds(5);
+  const auto should_abort = [&] {
+    return failed.load(std::memory_order_acquire) ||
+           std::chrono::steady_clock::now() >= deadline;
+  };
+
+  std::jthread writer([&](std::stop_token stop) {
+    for (int expected = 0; expected < kCommands && !stop.stop_requested();) {
+      // Maximum two business events plus one terminal marker per command.
+      if (output.available_to_write() < 3) {
+        if (should_abort()) {
+          failed.store(true);
+          return;
+        }
+        std::this_thread::yield();
+        continue;
+      }
+      auto command = input.try_pop();
+      if (!command) {
+        if (should_abort()) {
+          failed.store(true);
+          return;
+        }
+        std::this_thread::yield();
+        continue;
+      }
+      if (command->sequence != expected ||
+          command->output_count != expected % 3) {
+        failed.store(true);
+        return;
+      }
+      for (int index = 0; index < command->output_count; ++index) {
+        if (!output.try_push(Output{expected, index, false})) {
+          failed.store(true);
+          return;
+        }
+      }
+      if (!output.try_push(Output{expected, command->output_count, true})) {
+        failed.store(true);
+        return;
+      }
+      ++expected;
+    }
+  });
+
+  std::jthread publisher([&](std::stop_token stop) {
+    int expected_command = 0;
+    int expected_index = 0;
+    while (expected_command < kCommands && !stop.stop_requested()) {
+      auto next = output.try_pop();
+      if (!next) {
+        if (should_abort()) {
+          failed.store(true);
+          return;
+        }
+        std::this_thread::yield();
+        continue;
+      }
+      if (next->sequence != expected_command || next->index != expected_index) {
+        failed.store(true);
+        return;
+      }
+      if (next->end) {
+        if (expected_index != expected_command % 3) {
+          failed.store(true);
+          return;
+        }
+        ++expected_command;
+        expected_index = 0;
+      } else {
+        ++expected_index;
+      }
+    }
+  });
+
+  for (int sequence = 0; sequence < kCommands; ++sequence) {
+    while (!input.try_push(Input{sequence, sequence % 3})) {
+      if (should_abort()) {
+        failed.store(true);
+        break;
+      }
+      std::this_thread::yield();
+    }
+    if (failed.load()) {
+      break;
+    }
+  }
+  writer.join();
+  publisher.join();
+  EXPECT_FALSE(failed.load());
+  EXPECT_EQ(input.size(), 0U);
+  EXPECT_EQ(output.size(), 0U);
+}
 
 TEST(DisruptorSequencingTest, SingleProducerRespectsSlowestGatingConsumer) {
   Sequence fast;

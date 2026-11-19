@@ -1,7 +1,7 @@
 #pragma once
 
 #include "simplematch/matching/core/deterministic_matching_core.hpp"
-#include "simplematch/matching/runtime/bounded_spsc_ring.hpp"
+#include "simplematch/matching/disruptor/spsc_channel.hpp"
 #include "simplematch/matching/runtime/input_sequence.hpp"
 #include "simplematch/matching/runtime/partition_ownership_permit.hpp"
 
@@ -68,7 +68,6 @@ public:
   [[nodiscard]] std::size_t output_size() const;
   [[nodiscard]] std::size_t maximum_output_events() const;
   [[nodiscard]] std::optional<RuntimeOutput> take_output();
-  [[nodiscard]] BoundedSpscRing<RuntimeOutput> &output_ring();
   [[nodiscard]] MatchingRuntimeMetrics metrics() const;
 
 private:
@@ -79,8 +78,8 @@ private:
 
   std::shared_ptr<const PartitionOwnershipPermit> ownership_permit_;
   std::unique_ptr<DeterministicMatchingCore> core_;
-  BoundedSpscRing<RuntimeInput> input_ring_;
-  BoundedSpscRing<RuntimeOutput> output_ring_;
+  disruptor::DisruptorSpscChannel<RuntimeInput> input_ring_;
+  disruptor::DisruptorSpscChannel<RuntimeOutput> output_ring_;
   std::atomic<std::size_t> input_high_watermark_{};
   std::atomic<std::size_t> output_high_watermark_{};
   InputSequence next_input_sequence_{};

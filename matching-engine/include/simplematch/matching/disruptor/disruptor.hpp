@@ -377,6 +377,22 @@ class RingBuffer final {
     return *slot;
   }
 
+  // A terminal consumer moves the acquired event out of the ring. Destroy
+  // the source slot before advancing its gating Sequence. The caller must
+  // establish publication and exclusive terminal ownership before this call.
+  [[nodiscard]] std::optional<T> take_for_consumer(SequenceNumber sequence) {
+    if (sequence < 0) {
+      throw std::out_of_range("Disruptor sequence must be nonnegative");
+    }
+    auto& slot = slots_[static_cast<std::size_t>(sequence) & mask_];
+    if (!slot.has_value()) {
+      throw std::logic_error("Disruptor slot is abandoned or not published");
+    }
+    std::optional<T> value = std::move(slot);
+    slot.reset();
+    return value;
+  }
+
   [[nodiscard]] const Sequencer& sequencer() const noexcept {
     return sequencer_;
   }

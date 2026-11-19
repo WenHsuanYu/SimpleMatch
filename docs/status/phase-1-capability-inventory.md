@@ -528,10 +528,11 @@ implementation blocker.
   input ring, one CPU-pinned single-writer core owning at most 150 order books, preallocated SPSC
   output ring, and Kafka publisher/offset coordinator. The core performs no network or disk I/O,
   locks, or post-warmup allocation.
-- **Current evidence:** The native runtime has preallocated SPSC ingress/output rings, a
-  single-writer price-time order-book core capped at 150 instruments. The rings now use
-  cache-line-isolated monotonic producer/consumer sequences, power-of-two typed storage,
-  acquire/release publication, bounded batch consumption, and explicit full-capacity
+- **Current evidence:** The native runtime has two preallocated C++20 Disruptor SPSC
+  ingress/output rings and a single-writer price-time order-book core capped at 150
+  instruments. A Disruptor SPSC channel also carries librdkafka completion callbacks.
+  The channels use cache-line-isolated monotonic sequences, power-of-two typed storage,
+  acquire/release publication, terminal consumer gating, and explicit full-capacity
   backpressure. The writer reserves the mathematical worst-case event burst plus one
   `EndOfInput` marker before changing core state; output indices and the terminal count are checked
   before publication coordination. The runtime also has command decoding, direct

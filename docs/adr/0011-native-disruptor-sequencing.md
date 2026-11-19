@@ -1,13 +1,14 @@
 # Native C++ Disruptor sequencing for Matching
 
-Status: implementation in progress; supplements accepted ADR 0009.
+Status: implemented for the two-ring Native transport; full local certification
+and generic feature parity remain separate acceptance gates. Supplements ADR 0009.
 
 ## Problem and scope
 
 ADR 0009 correctly requires a single owner of each mutable order book and two
 preallocated, non-overwriting, single-producer/single-consumer (SPSC) directions.
-The current `BoundedSpscRing` implements a useful transport, but it is not a
-complete LMAX Disruptor: it has no separately claimed/published sequence,
+The former `BoundedSpscRing` implemented a useful transport, but it was not a
+complete LMAX Disruptor: it had no separately claimed/published sequence,
 multi-producer sequencer, dependency barriers, multiple gating consumers,
 or event-processor graph. The Supervisor also has a distinct multi-threaded
 control-plane state machine; single-writer book ownership does not serialize
@@ -45,6 +46,14 @@ its failure, shutdown, and backpressure transitions.
 Kafka ingest/replay owner -> input sequencer -> single Matching writer
 single Matching writer -> output sequencer -> publisher/coordinator
 ```
+
+`MatchingRuntime` now owns two `DisruptorSpscChannel<T>` instances backed by
+`RingBuffer<T, SingleProducerSequencer>`. Each channel owns its terminal
+consumer `Sequence`. The consumer moves an event from the ring before it
+releases that slot. `MatchingRuntime` preserves its public command, output,
+and metrics interfaces without exposing a mutable raw ring to callers.
+The librdkafka delivery-completion channel also uses the same Disruptor
+channel. That callback channel is separate from the two Matching data rings.
 
 The two directional rings are a **Matching-specific topology**, not a
 requirement of the Disruptor algorithm. For the existing single-ingress and
@@ -98,17 +107,17 @@ An in-memory `publisher_done` cursor is not Kafka ACK. The Kafka offset
 ledger must continue to wait for all event delivery ACKs before committing
 the highest contiguous completed input offset. The one-ring example does not
 implement that adapter, Lease fencing, publication retries, or replay.
-No production topology change is accepted by this ADR. Keep the two SPSC
-directions from ADR 0009 until a one-ring alternative demonstrates equivalent
+No topology change from ADR 0009 is accepted. Keep both Disruptor SPSC
+directions until a one-ring alternative demonstrates equivalent
 correctness, memory bounds, and acceptable latency under source-aligned tests.
 
 ## Implementation status and safe use
 
-The additive C++20 header currently implements single- and multi-producer
+The C++20 Disruptor implementation provides single- and multi-producer
 sequencers, fixed rings, RAII claims, barriers, three wait modes, shared
 failure state, and batch event processors. Focused tests exercise sequencing,
-gating, fan-out, failure, and a two-direction Matching example. This code does
-not replace the production `MatchingRuntime` rings.
+gating, fan-out, failure, and two-direction Matching. The production runtime
+and Kafka callback completion transport now use Disruptor SPSC channels.
 
 Callers must keep consumer `Sequence` objects alive until the owning ring is
 destroyed. They must also keep rings alive until all claims and processors
@@ -122,11 +131,11 @@ failure stops subsequent event processing when a processor observes it. A
 failure can race with an acknowledgement already in progress. This module
 does not provide a global atomic failure-and-acknowledgement transaction.
 
-The two-ring example is not a safe replacement for `MatchingRuntime`.
-Production processing checks capacity for the maximum Core event burst and
-the end marker **before** it mutates the order book. The example now checks
-that headroom under one output producer. It fails closed on insufficient
-headroom instead of preserving normal backpressure and retry semantics.
+The original two-ring GTest is an illustrative example, not the production
+integration. `MatchingRuntime` checks capacity for the maximum Core event
+burst and its end marker **before** it consumes a command or mutates the
+order book. An insufficient output capacity retains the unread input and
+returns ordinary backpressure, not terminal failure.
 `available_to_write()` is stable against new claims only for a single owning
 producer. It is advisory when several producers claim concurrently. An input
 consumer sequence records in-memory progress, not Kafka publication ACK or
@@ -135,10 +144,10 @@ offset commit.
 Capacity checks also stop at the final signed 64-bit sequence number. The
 sequencer does not wrap its absolute sequence ID or reuse a negative ID.
 
-Before production migration, implement output-capacity admission, preserve
-`RuntimeEndOfInput` framing, and prove one producer per SPSC direction.
+The transport migration retains `RuntimeEndOfInput`, pre-mutation burst
+admission, and one producer per direction in the current driver topology.
 Verify Kafka publication-before-commit, deterministic event bytes, replay,
-ownership fencing, and failure recovery against the existing runtime tests.
+ownership fencing, and failure recovery again under complete-local acceptance.
 The remaining generic parity work includes batch claims, explicit dependency
 graph lifecycle, stronger consumer-access guarantees, and bounded concurrency
 stress with ThreadSanitizer evidence where the toolchain supports it.
@@ -153,23 +162,45 @@ stress with ThreadSanitizer evidence where the toolchain supports it.
   from ASan/UBSan alone.
 - Preserve local capacity (150 books x 2 sides x 1024 orders), event byte
   digests, deterministic replay and published-before-commit behavior.
-- Prefer an additive, measured adoption path. Do not replace a production
-  SPSC transport or claim performance parity until source-aligned benchmarks
-  and a complete-local verification pass exist.
+- The two production rings use Disruptor SPSC sequencing. Do not claim
+  performance parity or complete-local certification until benchmarks and
+  a source-aligned `verifyAll` pass exist.
 - Staging/production remain offline configuration templates under the
   amended Issue #217; no staging/production performance certification is
   required to develop the generic sequencer.
 
 ## Remaining decision
 
-The project currently commits only to ADR 0009's LMAX-*style* SPSC topology.
-Upgrading it to a full producer/consumer dependency graph requires a design
-decision on where extra consumers sit and whether any must gate the writer.
+The project retains ADR 0009's two-direction SPSC topology with C++20
+Disruptor sequencing. Expanding production to a multi-consumer dependency
+graph requires a separate design decision on terminal consumer gates.
 The generic primitives must not silently introduce a new Kafka delivery or
 transactional boundary.
+
+## Retired legacy transport
+
+After migrating both `MatchingRuntime` directions and the librdkafka
+delivery-completion queue, the old `bounded_spsc_ring.hpp` became unused.
+It was removed with `BoundedSpscRing`, `SpscSequence`, and
+`kRuntimeCacheLineSize`. The old `MatchingRuntime::output_ring()` getter was
+also removed because only a test used it to inject synthetic output.
+That test now fills the real output ring through normal command processing.
+The four `BoundedSpscRingTest` cases were removed. Current Disruptor
+sequencing, gating, wrapping, threading, and batch tests own those contracts.
+No obsolete implementation is retained as an alternate production path.
+
+The callback channel remains single-producer. The driver services the
+librdkafka producer from one caller thread. If a delivery callback cannot
+enqueue a completion, it records the missing context. The publisher reports
+that publication as fatal without acknowledging it. Do not call `service()`
+or `publish()` concurrently from unrelated threads without a new ownership
+model. Kafka delivery ACKs remain separate from ring consumer sequences.
 
 Local verification: [Native Disruptor sequencing, 2026-11-19]
 (../verification/native-disruptor-sequencing-20261119.md).
 
 Single-ring feasibility verification: [Native Disruptor one-ring pipeline,
 2026-11-19](../verification/native-disruptor-one-ring-20261119.md).
+
+Two-ring production transport migration: [Native Disruptor two-ring migration,
+2026-11-19](../verification/native-disruptor-two-ring-migration-20261119.md).
