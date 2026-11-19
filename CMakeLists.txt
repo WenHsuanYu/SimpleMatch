@@ -164,6 +164,7 @@ if(BUILD_TESTING)
       matching-engine/tests/partition_replay_coordinator_test.cpp
       matching-engine/tests/input_offset_ledger_test.cpp
       matching-engine/tests/matching_runtime_test.cpp
+      matching-engine/tests/disruptor_sequencing_test.cpp
       matching-engine/tests/matching_runtime_observation_test.cpp
       matching-engine/tests/matching_partition_runtime_driver_test.cpp)
   target_link_libraries(simplematch_matching_ingress_tests
